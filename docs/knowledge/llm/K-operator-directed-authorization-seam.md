@@ -44,4 +44,29 @@ severity: P1
   `CV_PURPOSE`，`at your convenience` / `you are welcome to` 命中 `CV_OPTIONALITY`，且必须落在**同一句**
   内——切分单位是 `SENTENCE_SPLIT`）。
 
+## 2026-08-21 更新：第 6 处闸门（validateLockedItem 的 status 前置判定）已消除
+
+计划 `02-bound-facts-become-partial-evidence` 落地前，`TrustReplyWorkbenchService.validateLockedItem`
+的 `ANSWER_FROM_OPERATOR_INPUT` 分支里有一处**容易被漏掉的第 6 道闸**：
+
+```kotlin
+if (item.status != RequestGroundingStatus.UNSUPPORTED || instruction.isBlank() || ...)
+```
+
+即「运营答案锁定项只允许挂在 UNSUPPORTED 条目上」。它曾长期正确（当时手动绑定不改 status），
+但绑定事实把条目从 `UNSUPPORTED` 变成 `PARTIAL` 后，**已锁定的运营答案立刻非法**——
+整合永远抛 `TRUST_REPLY_LOCKED_ITEM_INVALID`，且报错码与 status 无关，排查会走很远。
+
+本计划已删除该前置判定：handling 合法性由 `requireAllowedHandlingForApi(item, locked.handling)`
+（I-5 的唯一表）完整覆盖，`ANSWER_FROM_OPERATOR_INPUT` 与新增的
+`ANSWER_EVIDENCE_WITH_OPERATOR_INPUT` 共用 `validateOperatorInstructionBackedItem`。
+
+教训：**status↔handling 的合法性规则曾有三份副本**（`TrustReplyWorkbenchService.allowedHandlings` /
+`AiReplyDraftService.validateItemHandling` / 本处 status 硬编码），任何一处改了另外两处就会
+漂移；现在全部收口到 `TrustReplyWorkbenchService.Companion.allowedHandlings(item)` 一张表。
+
+G1/G2 口径不变：`ANSWER_EVIDENCE_WITH_OPERATOR_INPUT` 的生成侧与锁定校验同样用
+`OPERATOR_DIRECTED_ALLOWED_ACTIONS`（G1 放开）+ `findViolations`（G2 不放开），
+`operatorAuthorizedActions` 也已纳入该 handling。
+
 关联：[[K-sensitive-material-cta-not-mention]]、[[K-ai-reply-action-cta-variant-coverage]]、[[K-grounded-proposed-action-body-parity]]、[[K-manual-send-safety-gate-first-hit-only]]

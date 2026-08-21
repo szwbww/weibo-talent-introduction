@@ -718,3 +718,92 @@ describe("P2a bound vs evidence split", () => {
         assert.ok(!/style=/.test(droppedSpan[0]));
     });
 });
+
+// ---- 计划 02: 依据+说明混合（S-1 渲染 / S-2 前置校验）----
+
+describe("计划 02 blended handling", () => {
+    function blendedPayload() {
+        const payload = bootstrapPayload("TRAINING_MAIL", 101, [1]);
+        payload.requestCoverage[0].status = "PARTIAL";
+        payload.requestCoverage[0].allowedHandlings = [
+            "ANSWER_SUPPORTED_PART",
+            "ANSWER_EVIDENCE_WITH_OPERATOR_INPUT",
+            "ANSWER_FROM_OPERATOR_INPUT",
+            "ACKNOWLEDGE_PENDING",
+            "OMIT"
+        ];
+        payload.requestCoverage[0].recommendedHandling = "ANSWER_SUPPORTED_PART";
+        return payload;
+    }
+
+    it("renders the blended option between supported part and operator input", async () => {
+        const { window, document } = createSandbox((url, options) => {
+            return Promise.resolve({ ok: true, status: 200, json: async () => blendedPayload() });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        assert.ok(
+            host.innerHTML.includes('<option value="ANSWER_EVIDENCE_WITH_OPERATOR_INPUT">依据+说明混合</option>'),
+            "the new handling must render as a data-driven option with the S-1 label"
+        );
+        const supportedIdx = host.innerHTML.indexOf('<option value="ANSWER_SUPPORTED_PART"');
+        const blendedIdx = host.innerHTML.indexOf('<option value="ANSWER_EVIDENCE_WITH_OPERATOR_INPUT"');
+        const operatorIdx = host.innerHTML.indexOf('<option value="ANSWER_FROM_OPERATOR_INPUT"');
+        assert.ok(supportedIdx >= 0 && blendedIdx > supportedIdx && operatorIdx > blendedIdx,
+            "option order must match the backend enum order (S-1)");
+        // S-1 禁止项: 新选项无 inline style、无新 CSS class。
+        assert.ok(
+            !/<option value="ANSWER_EVIDENCE_WITH_OPERATOR_INPUT"[^>]*style=/.test(host.innerHTML),
+            "the new option must not carry an inline style"
+        );
+        assert.ok(
+            !/<option value="ANSWER_EVIDENCE_WITH_OPERATOR_INPUT"[^>]*class=/.test(host.innerHTML),
+            "the new option must not carry a new CSS class"
+        );
+    });
+
+    it("empty instruction with blended handling is blocked before any request", async () => {
+        const calls = [];
+        const { window, document } = createSandbox((url, options) => {
+            calls.push(String(url));
+            return Promise.resolve({ ok: true, status: 200, json: async () => {
+                const payload = blendedPayload();
+                payload.requestCoverage[0].recommendedHandling = "ANSWER_EVIDENCE_WITH_OPERATOR_INPUT";
+                return payload;
+            } });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        // draftHandling 由 recommendedHandling 驱动 → 混合；说明框保持为空。
+        host.dispatchEvent("click", event(actionButton("adjust-item", "TRAINING_MAIL-101-request")));
+        await settle();
+
+        assert.ok(host.innerHTML.includes("请先填写回答说明"), "precheck must set the operator-facing error");
+        assert.ok(
+            host.innerHTML.includes("回答说明（AI 将仅据此生成）"),
+            "blended handling must keep the 'AI 将仅据此生成' instruction label (S-2)"
+        );
+        assert.ok(!host.innerHTML.includes('data-role="item-error"') ||
+            host.innerHTML.includes('class="ai-reply-error"'), "error uses the existing ai-reply-error class only");
+        // 前端拦下 → Network 里没有生成请求（只有 bootstrap 那次）。
+        assert.deepStrictEqual(
+            calls.filter((url) => url.endsWith("/generations/stream")),
+            [],
+            "no generation request may be sent when the instruction is empty (A-3)"
+        );
+    });
+});

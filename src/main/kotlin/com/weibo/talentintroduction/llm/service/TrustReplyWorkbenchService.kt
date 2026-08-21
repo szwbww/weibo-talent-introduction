@@ -28,6 +28,9 @@ enum class TrustReplySourceType {
 enum class TrustReplyItemHandling {
     ANSWER_WITH_EVIDENCE,
     ANSWER_SUPPORTED_PART,
+    // 计划 02 (I-5/I-7/I-8): 依据+说明混合——事实决定事实性内容、运营说明决定
+    // 意图与动作；claims 恒空，授权/合规沿用 operator-directed 口径。
+    ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
     ANSWER_FROM_OPERATOR_INPUT,
     ACKNOWLEDGE_PENDING,
     OMIT
@@ -387,7 +390,9 @@ class TrustReplyWorkbenchService(
 
     /**
      * I-6: 从一组锁定项推导「运营已批准的动作类型」。
-     * 只取 handling 为 ANSWER_FROM_OPERATOR_INPUT 且回答说明非空的条目，
+     * 只取 handling 为 ANSWER_FROM_OPERATOR_INPUT 或
+     * ANSWER_EVIDENCE_WITH_OPERATOR_INPUT（计划 02，I-7 口径一致：
+     * 混合生成的索要材料/约会议动作同样由运营说明授权）且回答说明非空的条目，
      * 并且只授权这些条目的答案正文里**实际出现过**的动作类型——不是无条件
      * 授权该 handling 的全集。无此类条目时返回空集，
      * 调用方行为与改动前逐字一致。
@@ -396,7 +401,8 @@ class TrustReplyWorkbenchService(
         lockedItems
             .asSequence()
             .filter {
-                it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT &&
+                (it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT ||
+                    it.handling == TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT) &&
                     it.operatorInstruction.isNotBlank()
             }
             .flatMap { AiReplyActionPolicy.detectActions(it.answerText).asSequence() }
@@ -1118,8 +1124,13 @@ class TrustReplyWorkbenchService(
         } ?: throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_REQUEST_KEY_INVALID")
         val perRequestEvidenceVersion = resolvedSelection.requestEvidenceVersions.getValue(request.requestKey)
         requireCurrentEvidenceVersion(request.expectedEvidenceSetVersion, perRequestEvidenceVersion)
-        requireAllowedHandlingForApi(item.status, request.handling)
-        if (request.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT) {
+        requireAllowedHandlingForApi(item, request.handling)
+        // 计划 02 (I-9): 新 handling 与 ANSWER_FROM_OPERATOR_INPUT 同样要求
+        // 非空且 ≤500 的回答说明——说明为空时该 handling 退化为「按依据生成但
+        // 没人告诉它要表达什么」，服务层 require 会抛 500，必须先 422 拦下。
+        if (request.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT ||
+            request.handling == TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT
+        ) {
             if (request.operatorInstruction?.trim()?.length ?: 0 > 500) {
                 throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID")
             }
@@ -1371,7 +1382,7 @@ class TrustReplyWorkbenchService(
         if (locked.evidenceSetVersion != evidenceSetVersion) {
             throw TrustReplyWorkbenchException(HttpStatus.CONFLICT, "TRUST_REPLY_EVIDENCE_STALE")
         }
-        requireAllowedHandlingForApi(item.status, locked.handling)
+        requireAllowedHandlingForApi(item, locked.handling)
         when (locked.handling) {
             TrustReplyItemHandling.OMIT -> {
                 if (locked.answerText.isNotEmpty() || locked.claims.isNotEmpty() ||
@@ -1390,26 +1401,17 @@ class TrustReplyWorkbenchService(
                     throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_ACKNOWLEDGEMENT_INVALID")
                 }
             }
-            TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT -> {
-                val instruction = locked.operatorInstruction.trim()
-                if (item.status != RequestGroundingStatus.UNSUPPORTED || instruction.isBlank() ||
-                    instruction.length > 500 || locked.operatorInstructionHash != sha256Hex(instruction) ||
-                    locked.answerText.isBlank() || locked.claims.isNotEmpty() ||
-                    locked.generationKind != TrustReplyItemGenerationKind.AI_GENERATED
-                ) {
-                    throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_LOCKED_ITEM_INVALID")
-                }
-                // I-3: 本分支不再用无条件 detectActions 判废——运营的回答说明已授权索要材料/
-                // 提议会议两类动作（I-1）。G2（敏感材料、CV 目的/自愿）仍由 findViolations 执行。
-                // 注意：下面 ANSWER_WITH_EVIDENCE / ANSWER_SUPPORTED_PART 分支的 detectActions
-                // 必须保留——grounded claim 正文永远不许含动作。
-                if (AiReplyActionPolicy.findViolations(
-                        locked.answerText,
-                        AiReplyActionPolicy.OPERATOR_DIRECTED_ALLOWED_ACTIONS
-                    ).isNotEmpty()
-                ) {
-                    throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIM_INVALID")
-                }
+            // 计划 02 (I-6 第 3 份副本): 原来的 `item.status != UNSUPPORTED` 前置判定
+            // 已删除——handling 合法性由上面的 requireAllowedHandlingForApi(item, ...)
+            // （I-5 唯一表）完整覆盖。删除后，先以 UNSUPPORTED 锁定的
+            // ANSWER_FROM_OPERATOR_INPUT 条目在绑定事实变 PARTIAL 后仍能整合
+            // （IP-2），否则 TRUST_REPLY_LOCKED_ITEM_INVALID 永远追不上 status 变化。
+            TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT -> {
+                // I-7: 新 handling 与 ANSWER_FROM_OPERATOR_INPUT 共用同一套校验——
+                // 不得复用 grounded 分支的 detectActions 无条件禁令（那会让
+                // 运营授权的索要材料/约会议动作被无条件判废）。
+                validateOperatorInstructionBackedItem(locked)
             }
             TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
             TrustReplyItemHandling.ANSWER_SUPPORTED_PART -> {
@@ -1426,6 +1428,31 @@ class TrustReplyWorkbenchService(
                     throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIM_INVALID")
                 }
             }
+        }
+    }
+
+    /**
+     * 计划 02 (I-6/I-7/I-8/I-9): ANSWER_FROM_OPERATOR_INPUT 与
+     * ANSWER_EVIDENCE_WITH_OPERATOR_INPUT 共用同一套锁定校验：
+     * 说明非空 / ≤500 / 哈希匹配、answerText 非空、claims 恒空（I-8）、
+     * generationKind == AI_GENERATED、G2（findViolations）照常执行。
+     * G1 已由 operator-directed 口径放开（OPERATOR_DIRECTED_ALLOWED_ACTIONS）。
+     */
+    private fun validateOperatorInstructionBackedItem(locked: TrustReplyLockedItemRequest) {
+        val instruction = locked.operatorInstruction.trim()
+        if (instruction.isBlank() ||
+            instruction.length > 500 || locked.operatorInstructionHash != sha256Hex(instruction) ||
+            locked.answerText.isBlank() || locked.claims.isNotEmpty() ||
+            locked.generationKind != TrustReplyItemGenerationKind.AI_GENERATED
+        ) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_LOCKED_ITEM_INVALID")
+        }
+        if (AiReplyActionPolicy.findViolations(
+                locked.answerText,
+                AiReplyActionPolicy.OPERATOR_DIRECTED_ALLOWED_ACTIONS
+            ).isNotEmpty()
+        ) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIM_INVALID")
         }
     }
 
@@ -1460,9 +1487,9 @@ class TrustReplyWorkbenchService(
         return canonical
     }
 
-    private fun requireAllowedHandlingForApi(status: RequestGroundingStatus, handling: TrustReplyItemHandling) {
+    private fun requireAllowedHandlingForApi(item: RequestFactItem, handling: TrustReplyItemHandling) {
         try {
-            requireAllowedHandling(status, handling)
+            requireAllowedHandling(item, handling)
         } catch (_: IllegalArgumentException) {
             throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_HANDLING_INVALID")
         }
@@ -1490,7 +1517,10 @@ class TrustReplyWorkbenchService(
         val normalizedClaims = if (
             handling == TrustReplyItemHandling.OMIT ||
             handling == TrustReplyItemHandling.ACKNOWLEDGE_PENDING ||
-            handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
+            handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT ||
+            // 计划 02 (I-8): 混合答案含运营说明内容，永远无法满足 canonicalizeClaims
+            // 的「answerText == claims 拼接」；claims 恒空，正文按原样保留。
+            handling == TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT
         ) {
             emptyList()
         } else {
@@ -1500,6 +1530,7 @@ class TrustReplyWorkbenchService(
             TrustReplyItemHandling.OMIT -> ""
             TrustReplyItemHandling.ACKNOWLEDGE_PENDING -> answerText.trim()
             TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT -> answerText.trim()
+            TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT -> answerText.trim()
             else -> normalizedClaims.joinToString(AiReplyDraftService.CLAIM_PARAGRAPH_SEPARATOR) { it.text }
         }
         val instructionHash = sha256Hex(normalizedInstruction).also { calculated ->
@@ -1938,8 +1969,8 @@ class TrustReplyWorkbenchService(
                     )
                 },
                 requestKey = requestKey(sourceVersion, item),
-                allowedHandlings = allowedHandlings(item.status).map { it.name },
-                recommendedHandling = recommendedHandling(item.status).name,
+                allowedHandlings = allowedHandlings(item).map { it.name },
+                recommendedHandling = recommendedHandling(item).name,
                 suggestedInstruction = suggestedInstructionFor(item, adjacentNames),
                 unrecognizedAsks = item.unrecognizedAsks.map { ask ->
                     TrustReplyUnrecognizedAsk(label = ask.label, quote = ask.quote)
@@ -2047,16 +2078,32 @@ class TrustReplyWorkbenchService(
             "[一二两三四五六七八九十几数半零\\d]+(天|日|周|星期|月|年|小时|分钟|秒)(后|内|之内|以内|前|之前|左右|以后|之后)"
         )
 
-        fun allowedHandlings(status: RequestGroundingStatus): List<TrustReplyItemHandling> = when (status) {
+        // 计划 02 (I-5): 允许集由「条目」而非「status」决定——PARTIAL 且带运营
+        // 绕过证据（operatorBypassedRuleIds 非空）的条目额外获得
+        // ANSWER_EVIDENCE_WITH_OPERATOR_INPUT 与 ANSWER_FROM_OPERATOR_INPUT
+        // （「按回答说明生成」显式加进含运营绑定的 PARTIAL 允许集，D1 的解法由
+        // 冻结 status 改为扩展允许集，冲突消失）。其余行与今日逐字一致。
+        fun allowedHandlings(item: RequestFactItem): List<TrustReplyItemHandling> = when (item.status) {
             RequestGroundingStatus.GROUNDED -> listOf(
                 TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
                 TrustReplyItemHandling.OMIT
             )
-            RequestGroundingStatus.PARTIAL -> listOf(
-                TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
-                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                TrustReplyItemHandling.OMIT
-            )
+            RequestGroundingStatus.PARTIAL ->
+                if (item.operatorBypassedRuleIds.isEmpty()) {
+                    listOf(
+                        TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
+                        TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+                        TrustReplyItemHandling.OMIT
+                    )
+                } else {
+                    listOf(
+                        TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
+                        TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
+                        TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+                        TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+                        TrustReplyItemHandling.OMIT
+                    )
+                }
             RequestGroundingStatus.UNSUPPORTED -> listOf(
                 TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
                 TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
@@ -2064,14 +2111,14 @@ class TrustReplyWorkbenchService(
             )
         }
 
-        fun recommendedHandling(status: RequestGroundingStatus): TrustReplyItemHandling = when (status) {
+        fun recommendedHandling(item: RequestFactItem): TrustReplyItemHandling = when (item.status) {
             RequestGroundingStatus.GROUNDED -> TrustReplyItemHandling.ANSWER_WITH_EVIDENCE
             RequestGroundingStatus.PARTIAL -> TrustReplyItemHandling.ANSWER_SUPPORTED_PART
             RequestGroundingStatus.UNSUPPORTED -> TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
         }
 
-        fun requireAllowedHandling(status: RequestGroundingStatus, handling: TrustReplyItemHandling) {
-            require(handling in allowedHandlings(status)) { "handling is not allowed for request status" }
+        fun requireAllowedHandling(item: RequestFactItem, handling: TrustReplyItemHandling) {
+            require(handling in allowedHandlings(item)) { "handling is not allowed for request status" }
         }
 
         fun requestKey(

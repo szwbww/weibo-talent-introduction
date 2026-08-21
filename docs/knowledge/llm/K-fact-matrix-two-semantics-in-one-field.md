@@ -61,4 +61,26 @@ if (item.factRuleIds != explicitIds) throw TrustReplyWorkbenchException(422, "TR
 **只改 `promptRuleIds` 是零效果的**，必须另给 `generateOperatorDirectedAnswer` 加一条事实通道，
 而那会修订 operator-directed 的 system message 契约（见 [[K-operator-directed-authorization-seam]]）。
 
-关联：[[K-ai-reply-prompt-vs-send-rule-ids]]、[[K-request-fact-assignment-version-must-include-mapping]]、[[K-operator-directed-authorization-seam]]
+## 2026-08-21 更新：D1/D2 已推翻，绑定事实可成为证据
+
+计划 `02-bound-facts-become-partial-evidence` 落地后，本文档的两条需求方决策作废：
+
+- **D1（手动绑定不改变 status）已推翻**：绑定事实现在可以改变 status——零意图命中的摘要
+  绑定事实后，条目从 `UNSUPPORTED` 变为 `PARTIAL`（「有部分依据」）。解法是 I-5 的
+  「允许集由条目而非 status 决定」：「按回答说明生成」被显式加进含运营绑定的 `PARTIAL`
+  允许集，不再需要靠冻结 status 保住 handling。
+- **D2（绑定但非证据的事实不进 sendQaRuleIds）已推翻**：「真证据」的定义扩展为
+  「系统匹配认可 ∪ 运营显式担保且已生效」。绑定事实经 `buildRequestFact` 的绕过路径
+  成为 `factRuleIds` 成员，从而**自动**进入 `sendQaRuleIds` 外发审计（I-10：不得在
+  `workbenchResult` 额外并入 `boundRuleIds`）。
+
+实现要点（全部在 `QaFactSelectionService.buildRequestFact` 内，I-1/I-2/I-4）：
+
+- 新增 `operatorBound` 形参，**只有** `resolveMatrixSelection`（`:190`）传 `true`；
+  auto/legacy 四处保持默认 `false`，自动回复链路逐字不变。
+- 绕过只改写已存在的 `RequestIntentCoverage` 条目（合并进 `general.answer` 的
+  evidenceRuleIds 并置 `SUPPORTED`），绝不增删条目——否则 requestKey 漂移、工作台打不开。
+- 只有「靠绕过才成立」的证据才把自然算得的 `GROUNDED` 下调为 `PARTIAL`
+  （`operatorBypassedRuleIds` 非空时）；严格命中的绑定保持 `GROUNDED`。
+
+关联：[[K-request-key-includes-intent-keys]]、[[K-workbench-matrix-path-is-operator-scoped]]、[[K-ai-reply-prompt-vs-send-rule-ids]]、[[K-request-fact-assignment-version-must-include-mapping]]、[[K-operator-directed-authorization-seam]]

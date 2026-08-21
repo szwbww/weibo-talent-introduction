@@ -194,7 +194,11 @@ class QaFactSelectionService(
                 promptSet = promptSet,
                 researchProfileSufficient = researchProfileSufficient,
                 askEnumeration = enumeration,
-                requestRange = unit.range
+                requestRange = unit.range,
+                // 计划 02 (I-1): 矩阵路径是唯一允许绕过关键词匹配的调用点——promptPool
+                // 恰为运营绑定集，绕过不会外溢到自动链路。其余 4 个调用点（auto /
+                // legacy 空选 / legacy / auto）靠默认值 false 逐字保持今日行为。
+                operatorBound = true
             )
             // P2a (I-1/I-4/I-6): 运营绑的原样进 boundRuleIds；factRuleIds 保持
             // "系统认可的证据"语义不变。相等性校验回到比对运营输入——由本行的
@@ -312,6 +316,9 @@ class QaFactSelectionService(
         // 并集顺序固定为「证据在前、绑定补在后」，保证两者相等时 promptIds 与 sendIds
         // 逐字相同（I-4）。
         val ordered = requestFacts.sortedBy { it.index }
+        // 计划 02 (I-10): D2 已于 2026-08-21 推翻——绑定事实通过成为 factRuleIds
+        // 成员（I-1/I-2 路径）自动进入外发审计；此处【不得】额外并入 boundRuleIds，
+        // 否则未被 I-2 采纳的绑定（droppedBindingRuleIds）也会进审计。
         val sendIds = ordered.flatMap { it.factRuleIds }.distinct()
         val promptIds = (sendIds + ordered.flatMap { it.boundRuleIds }).distinct()
         val unrecognizedAskCount = requestFacts.sumOf { it.unrecognizedAsks.size }
@@ -396,7 +403,13 @@ class QaFactSelectionService(
         promptSet: Set<Long>,
         researchProfileSufficient: Boolean,
         askEnumeration: AskEnumeration = AskEnumeration(false, emptyList()),
-        requestRange: IntRange? = null
+        requestRange: IntRange? = null,
+        // 计划 02 (I-1): 只在工作台矩阵路径为 true（resolveMatrixSelection 是唯一
+        // 传 true 的调用点）。为 true 时跳过 QaFactKeywordMatcher.matchesRule——
+        // 安全依据：矩阵路径的 promptPool 恰为运营绑定集，绕过不会让全库规则
+        // 成为每个问题的候选证据。auto / legacy 四处调用点靠默认值 false 逐字
+        // 保持今日行为（含关键词匹配）。
+        operatorBound: Boolean = false
     ): RequestFactItem {
         val normalizedRequest = QaFactKeywordMatcher.normalize(requestText)
         // P2a (plan 02, A-1): span-aware matching; the definitions are exactly
@@ -406,20 +419,51 @@ class QaFactSelectionService(
         val matchedIntents = matchedSpans.map { it.definition }
         val isResearch = matchedIntents.any { it.requiresProfile }
 
-        val candidateRules = promptPool.filter { rule ->
+        // 计划 02 (I-1): 严格候选集沿用今日逻辑（含关键词匹配）；绕过候选集只在
+        // 矩阵路径启用，等于 promptPool 全集（运营绑定集）。
+        val strictCandidateRules = promptPool.filter { rule ->
             rule.id != null &&
                 rule.id in promptSet &&
                 QaFactKeywordMatcher.matchesRule(rule, normalizedRequest)
         }
+        val effectiveCandidateRules = if (operatorBound) {
+            promptPool.filter { it.id != null && it.id in promptSet }
+        } else {
+            strictCandidateRules
+        }
 
-        val assignments = AiReplyIntentCatalog.assignRulesToIntents(candidateRules, matchedIntents)
-        val intentCoverages = matchedIntents.map { intent ->
+        val assignments = AiReplyIntentCatalog.assignRulesToIntents(effectiveCandidateRules, matchedIntents)
+        var intentCoverages = matchedIntents.map { intent ->
             val assignedIds = assignments[intent.key].orEmpty().mapNotNull { it.id }
             AiReplyIntentCatalog.resolveIntentEvidence(
                 intent = intent,
                 assignedRuleIds = assignedIds,
                 profileSufficient = researchProfileSufficient
             )
+        }
+
+        // 计划 02 (I-2): 运营绑定只能【改写已存在】的 coverage 条目，绝不增删条目
+        // ——否则 requestKey 的 intentKeys 投影漂移、工作台打不开、历史锁定项作废。
+        // 未被任何 intent 采纳的绑定规则，仅当该条目已有 general.answer coverage
+        // （零具名意图命中时由 catalog 合成）时并入其 evidenceRuleIds 并置 SUPPORTED；
+        // 否则保持未分配（落入 droppedBindingRuleIds，走既有 P1 提示）。
+        // 并入必须加 operatorBound 闸：auto/legacy 路径下关键词命中的规则也可能
+        // 无法分配给任何 intent（coverage 不匹配），无闸会让自动链路行为改变。
+        val assignedIds = assignments.values.flatten().mapNotNull { it.id }.toSet()
+        val unassignedBound = effectiveCandidateRules
+            .mapNotNull { it.id }
+            .filter { it !in assignedIds }
+        if (operatorBound && unassignedBound.isNotEmpty()) {
+            val generalIndex = intentCoverages.indexOfFirst { it.intentKey == "general.answer" }
+            if (generalIndex >= 0) {
+                val general = intentCoverages[generalIndex]
+                intentCoverages = intentCoverages.toMutableList().apply {
+                    this[generalIndex] = general.copy(
+                        evidenceRuleIds = (general.evidenceRuleIds + unassignedBound).distinct(),
+                        status = "SUPPORTED"
+                    )
+                }
+            }
         }
 
         // P2a (plan 02, I-7): an ask belongs to this request only when its
@@ -438,7 +482,11 @@ class QaFactSelectionService(
         val allSupported = intentCoverages.isNotEmpty() && intentCoverages.all { it.status == "SUPPORTED" }
         val anyPartial = intentCoverages.any { it.status == "PARTIAL" }
 
-        val status = when {
+        // 计划 02 (I-4): 自然算得的 status（表达式与今日逐字一致）暂存，再按
+        // operatorBypassedRuleIds 决定是否下调——只有「靠绕过才成立」的证据才把
+        // GROUNDED 压到 PARTIAL；否则今日已 GROUNDED 且已锁定 ANSWER_WITH_EVIDENCE
+        // 的条目会在下次 bootstrap 时允许集变化，requireAllowedHandlingForApi 抛 422。
+        val naturalStatus = when {
             researchWarned && !anySupported -> RequestGroundingStatus.UNSUPPORTED
             intentCoverages.isEmpty() -> RequestGroundingStatus.UNSUPPORTED
             allSupported -> RequestGroundingStatus.GROUNDED
@@ -452,9 +500,26 @@ class QaFactSelectionService(
             .flatMap { it.evidenceRuleIds }
             .toSet()
 
-        val factRuleIds = candidateRules
+        val factRuleIds = effectiveCandidateRules
             .mapNotNull { it.id }
             .filter { it in evidenceSet }
+
+        // 计划 02 (I-4): 靠绕过才成为证据 = 不在严格关键词候选集内（矩阵路径放行
+        // 的运营绑定），或经 I-2 的 general.answer 并入路径进来。operatorBound=false
+        // 时恒空（factRuleIds ⊆ strictCandidateRules 且与 unassignedBound 不相交）。
+        val operatorBypassedRuleIds = if (operatorBound) {
+            val strictIds = strictCandidateRules.mapNotNull { it.id }.toSet()
+            factRuleIds.filter { it !in strictIds || it in unassignedBound }
+        } else {
+            emptyList()
+        }
+        val status = if (operatorBypassedRuleIds.isNotEmpty() &&
+            naturalStatus == RequestGroundingStatus.GROUNDED
+        ) {
+            RequestGroundingStatus.PARTIAL
+        } else {
+            naturalStatus
+        }
 
         return RequestFactItem(
             index = index,
@@ -463,7 +528,8 @@ class QaFactSelectionService(
             status = status,
             requiresResearchContext = isResearch,
             intents = intentCoverages,
-            unrecognizedAsks = unrecognizedAsks
+            unrecognizedAsks = unrecognizedAsks,
+            operatorBypassedRuleIds = operatorBypassedRuleIds
         )
     }
 

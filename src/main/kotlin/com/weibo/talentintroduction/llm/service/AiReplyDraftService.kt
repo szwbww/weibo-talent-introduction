@@ -367,7 +367,14 @@ data class RequestFactItem(
     // 注意：本字段与 unrecognizedAsks / droppedBindingRuleIds 这类影子字段【不同】——
     // 它【会】进入 canonicalMatrix 与 requestEvidenceVersion 的身份哈希（I-2），
     // 默认值仅为源码兼容存在，生产路径一律在调用点显式赋值（I-1）。
-    val boundRuleIds: List<Long> = emptyList()
+    val boundRuleIds: List<Long> = emptyList(),
+    // 计划 02 (I-4/I-5): 「靠绕过才成为证据」的规则 id——不在严格关键词候选集
+    // 内、或经 I-2 的 general.answer 并入路径进来的那些。仅供 allowedHandlings /
+    // recommendedHandling 的判据（I-5）与 UI 使用：
+    // 不进任何哈希（canonicalMatrix / requestEvidenceVersion / versionId），
+    // 不进任何对外文本。它是 factRuleIds 的一个来源标注，factRuleIds 本身已通过
+    // sendQaRuleIds 影响审计。默认值仅供源码兼容，生产路径由 buildRequestFact 计算。
+    val operatorBypassedRuleIds: List<Long> = emptyList()
 )
 
 data class ResolvedQaRules(
@@ -421,7 +428,7 @@ class AiReplyDraftService(
     ): AiReplyItemGenerationResult {
         val instruction = operatorInstruction?.trim()?.takeIf { it.isNotEmpty() }
         require(instruction == null || instruction.length <= 500) { "operatorInstruction must not exceed 500 characters" }
-        validateItemHandling(requestFact.status, handling)
+        validateItemHandling(requestFact, handling)
         if (handling == TrustReplyItemHandling.OMIT) {
             return AiReplyItemGenerationResult(
                 itemAnswer = null,
@@ -452,6 +459,25 @@ class AiReplyDraftService(
                 inboundText = inboundText,
                 requestFact = requestFact,
                 boundRuleIds = requestFact.boundRuleIds,
+                requestKey = requestKey,
+                operatorInstruction = instruction,
+                expertProfile = expertProfile,
+                replyModel = replyModel,
+                llmAttemptTimeoutSeconds = llmAttemptTimeoutSeconds,
+                llmTotalTimeoutSeconds = llmTotalTimeoutSeconds,
+                cancellationToken = cancellationToken,
+                progressReporter = progressReporter
+            ))
+        }
+
+        // 计划 02 (T2.6/I-7/I-8): 依据+说明混合——事实与运营说明并列为两个权威
+        // 来源；事实块取 requestFact.factRuleIds（被 I-2 采纳的那些才是依据，
+        // 不是 boundRuleIds）；claims 恒空（I-8）。
+        if (handling == TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT) {
+            return rejectNonEnglishItemAnswer(generateBlendedAnswer(
+                inboundText = inboundText,
+                requestFact = requestFact,
+                factRuleIds = requestFact.factRuleIds,
                 requestKey = requestKey,
                 operatorInstruction = instruction,
                 expertProfile = expertProfile,
@@ -793,6 +819,164 @@ class AiReplyDraftService(
         )
     }
 
+    /**
+     * 计划 02 (T2.6/I-7/I-8): 「依据+说明混合」生成。以 generateOperatorDirectedAnswer
+     * 为模板，差异仅三处：
+     * 1. 事实块的取值从 boundRuleIds 改为 factRuleIds（被 I-2 采纳的才是依据）；
+     * 2. system message 为 T2.7 的逐字措辞——事实与运营说明并列为两个权威来源；
+     * 3. 返回的 handling 为 ANSWER_EVIDENCE_WITH_OPERATOR_INPUT，claims 恒空。
+     * allowedActions 取 OPERATOR_DIRECTED_ALLOWED_ACTIONS（G1 放开）；findViolations
+     * 照常执行（G2 不放开）；框架短语剥离与 operator-directed 共用同一策略
+     * （计划 01 I-6）。
+     */
+    private fun generateBlendedAnswer(
+        inboundText: String,
+        requestFact: RequestFactItem,
+        factRuleIds: List<Long>,
+        requestKey: String?,
+        operatorInstruction: String?,
+        expertProfile: String?,
+        replyModel: String?,
+        llmAttemptTimeoutSeconds: Int?,
+        llmTotalTimeoutSeconds: Int?,
+        cancellationToken: AiReplyCancellationToken?,
+        progressReporter: AiReplyProgressReporter
+    ): AiReplyItemGenerationResult {
+        val instruction = operatorInstruction?.trim().orEmpty()
+        require(instruction.isNotBlank()) { "operatorInstruction is required" }
+        val token = cancellationToken ?: AiReplyCancellationToken()
+        val policy = AiReplyTimeoutPolicy.resolve(llmAttemptTimeoutSeconds, llmTotalTimeoutSeconds)
+        val budget = policy.budget()
+        progressReporter.startBudget(budget)
+        val selectedModel = AiReplyModel.fromNullable(replyModel)
+        val client = llmDraftClientProvider.getIfAvailable()
+        if (!properties.enabled || client == null) {
+            return AiReplyItemGenerationResult(
+                itemAnswer = null,
+                handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
+                generationKind = null,
+                generationState = if (!properties.enabled) {
+                    AiReplyGenerationState.FALLBACK_LLM_DISABLED
+                } else {
+                    AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE
+                },
+                usedLlm = false,
+                lockable = false
+            )
+        }
+
+        val allowedActions = AiReplyActionPolicy.OPERATOR_DIRECTED_ALLOWED_ACTIONS
+        // 事实块与 operator-directed 同一套读取：逐个从仓库取当前正文，跳过空的；
+        // 为空时什么都不输出。取值是 factRuleIds——已被 I-2 采纳的绑定才是依据。
+        val factsBlock = factRuleIds.mapNotNull { ruleId ->
+            qaRuleRepository.findById(ruleId).orElse(null)?.let { rule ->
+                val body = rule.answerBody.trim()
+                if (body.isBlank()) return@mapNotNull null
+                val title = rule.displayName?.trim().takeIf { !it.isNullOrBlank() } ?: "Fact $ruleId"
+                "$title\n$body"
+            }
+        }.joinToString("\n\n").take(12000)
+        val messages = withActionBoundary(
+            listOf(
+                LlmChatMessage(
+                    role = "system",
+                    content = "Rewrite one recipient-facing answer that combines two authoritative sources: " +
+                        "the attached reference facts and the operator-provided answer basis. " +
+                        "Return English only, regardless of the language used in the target question, the facts, or the answer basis. " +
+                        "Factual content — institutions, programmes, funding, contracts, times, identities, numbers, URLs — " +
+                        "may come ONLY from the attached reference facts. " +
+                        "The operator-provided answer basis defines the intent, the framing and any outbound action; " +
+                        "it must not introduce new factual claims. " +
+                        "Write them as one continuous passage, not two separate paragraphs. " +
+                        "Return plain email prose only, with no JSON, headings, lists, status labels, or internal markers. " +
+                        "The answer basis may authorise asking the recipient for materials or proposing a meeting or call; " +
+                        "when it does, express that action in the reply. Do not introduce any outbound action that the answer basis does not state. " +
+                        "When the answer basis asks for a CV or other materials, the sentence that makes the request must, within that same sentence, " +
+                        "state the purpose using the words \"eligibility review\" and make it optional using the words \"at your convenience\". " +
+                        "Example of an acceptable request sentence: " +
+                        "\"If you would like to proceed, you are welcome to share your CV at your convenience so that we can carry out an initial eligibility review.\" " +
+                        "Never ask for passports, ID cards, work certificates, bank statements, or any other identity or financial document."
+                ),
+                LlmChatMessage(
+                    role = "user",
+                    content = buildString {
+                        appendLine("Target requestKey: ${requestKey ?: requestFact.index}")
+                        appendLine("Target question:")
+                        appendLine(requestFact.requestText)
+                        if (!expertProfile.isNullOrBlank()) {
+                            appendLine("Recipient context:")
+                            appendLine(expertProfile)
+                        }
+                        appendLine("operator-provided answer basis:")
+                        appendLine(instruction)
+                        if (factsBlock.isNotBlank()) {
+                            appendLine("Facts the operator attached to this question (reference material, not the answer basis):")
+                            appendLine(factsBlock)
+                        }
+                    }
+                )
+            ),
+            allowedActions
+        )
+
+        val observed = try {
+            executeWithRetry(
+                client = client,
+                messages = messages,
+                temperature = properties.temperature,
+                providerModel = selectedModel.resolveProviderModel(properties),
+                jsonOutput = false,
+                budget = budget,
+                cancellationToken = token,
+                progressReporter = progressReporter
+            ).first
+        } finally {
+            progressReporter.endProviderCall()
+        }
+        val candidate = observed.content?.trim().orEmpty()
+        // 计划 01（I-1/I-6）：与 operator-directed / acknowledgement 共用同一剥离策略。
+        val cleaned = AiReplyFramePhrasePolicy.strip(candidate)
+        val transportWarning = failureTypeToWarning(observed.failureType)
+        val warnings = buildList {
+            transportWarning?.let(::add)
+            if (cleaned.stripped) add(WARNING_FRAME_PHRASE_STRIPPED)
+            if (cleaned.skipped) add(WARNING_FRAME_PHRASE_STRIP_SKIPPED)
+        }
+        val invalid = cleaned.text.isBlank() || INTERNAL_RESPONSE_MARKER.containsMatchIn(cleaned.text) ||
+            AiReplyActionPolicy.findViolations(cleaned.text, allowedActions).isNotEmpty()
+        if (observed.failureType != LlmChatFailureType.SUCCESS || invalid) {
+            return AiReplyItemGenerationResult(
+                itemAnswer = null,
+                handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
+                generationKind = null,
+                generationState = if (observed.failureType == LlmChatFailureType.CLIENT_UNAVAILABLE) {
+                    AiReplyGenerationState.FALLBACK_CLIENT_UNAVAILABLE
+                } else {
+                    AiReplyGenerationState.FALLBACK_NO_RESPONSE
+                },
+                usedLlm = false,
+                lockable = false,
+                warningCodes = warnings
+            )
+        }
+        return AiReplyItemGenerationResult(
+            itemAnswer = AiReplyItemAnswer(
+                requestIndex = requestFact.index,
+                requestText = requestFact.requestText,
+                status = requestFact.status,
+                answerText = cleaned.text,
+                // I-8: claims 恒空——事实追溯依赖 sendQaRuleIds，逐 claim 归因留待后续。
+                claims = emptyList()
+            ),
+            handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
+            generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+            generationState = AiReplyGenerationState.LLM_USED,
+            usedLlm = true,
+            lockable = true,
+            warningCodes = warnings
+        )
+    }
+
     private fun rejectNonEnglishItemAnswer(result: AiReplyItemGenerationResult): AiReplyItemGenerationResult {
         val answer = result.itemAnswer ?: return result
         if (result.generationKind != TrustReplyItemGenerationKind.AI_GENERATED || !containsNonLatinLetter(answer.answerText)) {
@@ -833,24 +1017,11 @@ class AiReplyDraftService(
         warningCodes = warnings
     )
 
-    private fun validateItemHandling(status: RequestGroundingStatus, handling: TrustReplyItemHandling) {
-        val allowed = when (status) {
-            RequestGroundingStatus.GROUNDED -> setOf(
-                TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
-                TrustReplyItemHandling.OMIT
-            )
-            RequestGroundingStatus.PARTIAL -> setOf(
-                TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
-                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                TrustReplyItemHandling.OMIT
-            )
-            RequestGroundingStatus.UNSUPPORTED -> setOf(
-                TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
-                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                TrustReplyItemHandling.OMIT
-            )
-        }
-        require(handling in allowed) { "handling is not allowed for request status" }
+    // 计划 02 (I-6 第 2 份副本): 允许集表只有一份——TrustReplyWorkbenchService
+    // 的 companion.allowedHandlings(item)。本处不再自己写表，避免第三份副本漂移；
+    // 函数体内不得再出现 RequestGroundingStatus 字面量（I-6 验收）。
+    private fun validateItemHandling(item: RequestFactItem, handling: TrustReplyItemHandling) {
+        TrustReplyWorkbenchService.requireAllowedHandling(item, handling)
     }
 
     fun generate(

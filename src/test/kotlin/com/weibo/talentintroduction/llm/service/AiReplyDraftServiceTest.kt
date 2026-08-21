@@ -300,6 +300,141 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
+    fun `blended item takes facts from factRuleIds not boundRuleIds`() {
+        // 计划 02 (T2.6/I-7): 混合生成的「事实块」取 requestFact.factRuleIds
+        // （被 I-2 采纳的才是依据），boundRuleIds 里未被采纳的绑定绝不进入提示词。
+        stubEmptyFrame()
+        val factRule = sampleRule(42).copy(
+            displayName = "Research scope",
+            answerBody = "The programme covers AI and NLP research directions."
+        )
+        val rejectedBinding = sampleRule(99).copy(
+            displayName = "Unadopted fact",
+            answerBody = "NINETY NINE BODY THAT MUST NOT APPEAR."
+        )
+        stubMatchPool(factRule, rejectedBinding)
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult {
+                capturedMessages += messages
+                return LlmChatResult("We cover AI and NLP research directions.")
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "Could you share details?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "Could you share details?",
+                factRuleIds = listOf(42L),
+                boundRuleIds = listOf(99L),
+                status = RequestGroundingStatus.PARTIAL,
+                operatorBypassedRuleIds = listOf(42L)
+            ),
+            handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "Share the research directions covered."
+        )
+
+        assertTrue(result.lockable)
+        assertTrue(result.usedLlm)
+        assertEquals(TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT, result.handling)
+        assertEquals(TrustReplyItemGenerationKind.AI_GENERATED, result.generationKind)
+        assertTrue(result.itemAnswer?.claims?.isEmpty() == true)
+        val prompt = capturedMessages.single().joinToString("\n") { it.content }
+        assertTrue(prompt.contains("The programme covers AI and NLP research directions."))
+        assertFalse(prompt.contains("NINETY NINE BODY"))
+        assertFalse(prompt.contains("Unadopted fact"))
+    }
+
+    @Test
+    fun `blended item keeps an operator authorised compliant CV request`() {
+        // 计划 02 (I-7): G1 放开——运营说明授权索要材料；合规措辞（目的 +
+        // 自愿）通过 findViolations。
+        stubEmptyFrame()
+        val factRule = sampleRule(42).copy(
+            displayName = "Research scope",
+            answerBody = "The programme covers AI and NLP research directions."
+        )
+        stubMatchPool(factRule)
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult = LlmChatResult(
+                "If you would like to proceed, you are welcome to share your CV at your convenience " +
+                    "so that we can carry out an initial eligibility review."
+            )
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "Could you share details?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "Could you share details?",
+                factRuleIds = listOf(42L),
+                status = RequestGroundingStatus.PARTIAL,
+                operatorBypassedRuleIds = listOf(42L)
+            ),
+            handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "Ask for the CV at their convenience for an initial eligibility review."
+        )
+
+        assertTrue(result.lockable)
+        assertTrue(result.usedLlm)
+        assertEquals(TrustReplyItemGenerationKind.AI_GENERATED, result.generationKind)
+        assertTrue(result.itemAnswer?.answerText?.contains("eligibility review") == true)
+        assertTrue(result.itemAnswer?.claims?.isEmpty() == true)
+    }
+
+    @Test
+    fun `blended item still blocks an unauthorised sensitive material action`() {
+        // 计划 02 (I-7): G2 不放开——findViolations 照常执行，护照索取判废。
+        stubEmptyFrame()
+        val factRule = sampleRule(42).copy(
+            answerBody = "The programme covers AI and NLP research directions."
+        )
+        stubMatchPool(factRule)
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult = LlmChatResult("Please provide a copy of your passport for identity verification.")
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "Could you share details?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "Could you share details?",
+                factRuleIds = listOf(42L),
+                status = RequestGroundingStatus.PARTIAL,
+                operatorBypassedRuleIds = listOf(42L)
+            ),
+            handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "Share the research directions covered."
+        )
+
+        assertFalse(result.lockable)
+        assertFalse(result.usedLlm)
+        assertNull(result.itemAnswer)
+    }
+
+    @Test
     fun `operator directed item rejects a Chinese AI answer for an English reply`() {
         stubEmptyFrame()
         val client = object : LlmDraftClient {

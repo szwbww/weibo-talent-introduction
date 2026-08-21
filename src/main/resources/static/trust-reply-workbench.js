@@ -19,6 +19,7 @@
     const HANDLING_LABELS = Object.freeze({
         ANSWER_WITH_EVIDENCE: "依据完整回答",
         ANSWER_SUPPORTED_PART: "回答有依据部分",
+        ANSWER_EVIDENCE_WITH_OPERATOR_INPUT: "依据+说明混合",
         ANSWER_FROM_OPERATOR_INPUT: "按回答说明生成",
         ACKNOWLEDGE_PENDING: "确认待补充",
         OMIT: "省略此项"
@@ -28,6 +29,12 @@
         SAFE_TEMPLATE: "安全模板",
         OMITTED: "已省略"
     });
+    // 计划 02 (S-2): 需要非空回答说明的处理方式集合——「按回答说明生成」与
+    // 「依据+说明混合」；生成前置校验与说明框标签共用同一份常量。
+    const OPERATOR_INSTRUCTION_HANDLINGS = Object.freeze([
+        "ANSWER_FROM_OPERATOR_INPUT",
+        "ANSWER_EVIDENCE_WITH_OPERATOR_INPUT"
+    ]);
     const COVERAGE_LABELS = Object.freeze({
         GROUNDED: "GROUNDED · 依据充分",
         PARTIAL: "PARTIAL · 部分有据",
@@ -1098,13 +1105,12 @@
                 return;
             }
             if (request.pending) return;
-            if (request.draftHandling === "ANSWER_FROM_OPERATOR_INPUT" && !request.instruction.trim()) {
+            if (OPERATOR_INSTRUCTION_HANDLINGS.includes(request.draftHandling) && !request.instruction.trim()) {
                 request.error = "请先填写回答说明";
                 request.expanded = true;
                 render();
                 return;
-            }
-            const sourceSeq = state.bootSeq;
+            }            const sourceSeq = state.bootSeq;
             const generationId = makeId();
             const outcome = await requestItemVersion(request, sourceSeq, generationId, request.requestKey);
             if (!outcome || !outcome.version) return null;
@@ -2131,7 +2137,7 @@
             const resolved = resolvedVersion(request);
             const version = activeVersion(request);
             const isOmit = request.draftHandling === "OMIT";
-            const needsOperatorInstruction = request.draftHandling === "ANSWER_FROM_OPERATOR_INPUT";
+            const needsOperatorInstruction = OPERATOR_INSTRUCTION_HANDLINGS.includes(request.draftHandling);
             const generateDisabled = request.pending;
             const resolveDisabled = request.pending || (!resolved && !version && !isOmit);
             const action = resolved ? "resolve-item" : (version || isOmit ? "resolve-item" : "adjust-item");
@@ -2213,7 +2219,7 @@
             const action = requestAction(request);
             const resolved = action.resolved;
             const locked = action.locked;
-            const needsOperatorInstruction = request.draftHandling === "ANSWER_FROM_OPERATOR_INPUT";
+            const needsOperatorInstruction = OPERATOR_INSTRUCTION_HANDLINGS.includes(request.draftHandling);
             const options = request.availableHandlings.map((handling) => `<option value="${escapeText(handling)}"${handling === request.draftHandling ? " selected" : ""}>${escapeText(HANDLING_LABELS[handling] || handling)}</option>`).join("");
             const versions = request.versions.map((item, index) => `<option value="${escapeText(item.versionId)}"${item.versionId === request.activeVersionId ? " selected" : ""}>版本 ${index + 1} · ${escapeText(GENERATION_KIND_LABELS[item.generationKind] || item.generationKind || "版本")}</option>`).join("");
             const error = request.error ? `<div class="ai-reply-error" data-role="item-error" role="alert">${escapeText(request.error)}</div>` : "";
