@@ -193,6 +193,8 @@ function buildManualReplySubject(inboundSubject) {
 | 长度 300 的主题 | 结果长度 == `255` | I-2 |
 | `"Fwd: ${expertName} 的申请"` | `"Re: Fwd: ${expertName} 的申请"`（占位符**原样保留**） | I-4 |
 
+**T3-4**　`src/test/js/expertProfileAbsence.test.js`（A4）：`createRendererSandbox()`（约 `:326-349`）在 `showUnmatchedDetail` 注册（`:348`）之前新增一行 `vm.runInContext(extractFunction("buildManualReplySubject"), sandbox);`；其余**逐字不动**。原因：S-1 让 `showUnmatchedDetail` 调用新增的顶层函数 `buildManualReplySubject`，沙箱固定函数清单不含它 → `ReferenceError`（K-dom-stub-tests-hide-dangling-refs 的 vm 沙箱形态）。
+
 ---
 
 ## 变更文件清单
@@ -203,8 +205,11 @@ function buildManualReplySubject(inboundSubject) {
 | 2 | `src/main/resources/static/index.html` | 改（3 行） | T3-1 |
 | 3 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 改（3 行） | T3-2 |
 | 4 | `src/test/js/manualReplySubjectPrefill.test.js` | 新增 | T3-3 |
+| 5 | `src/test/js/checkRepliesRelocation.test.js` | 改 | A3：键 v10→v11 |
+| 6 | `src/test/js/overlayAndDialogContrast.test.js` | 改 | A3：键 v10→v11 |
+| 7 | `src/test/js/expertProfileAbsence.test.js` | 改（1 行） | T3-4（A4：沙箱注册 buildManualReplySubject） |
 
-合计 4 个文件，1 个子系统。`styles.css`、`trust-reply-workbench.js` 与全部 Kotlin 源码/测试**不在清单内**。
+合计 7 个文件，1 个子系统。`styles.css`、`trust-reply-workbench.js` 与全部 Kotlin 源码/测试**不在清单内**。
 
 ---
 
