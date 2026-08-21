@@ -54,9 +54,6 @@ function createSandbox() {
             apiCalls.push(url);
             if (url === "/api/qa/categories") return sandbox.state.categories;
             if (url === "/api/qa/rules") return sandbox.state.qaRules;
-            if (url === "/api/qa/coverage-keys") return sandbox.state.qaCoverageKeys || [];
-            if (url === "/api/qa/coverage-keys/controlled-groups") return sandbox.state.qaControlledGroups || [];
-            if (url === "/api/qa/coverage-keys/authorities") return sandbox.state.qaCoverageAuthorities || {};
             throw new Error("unexpected url: " + url);
         },
         apiCalls,

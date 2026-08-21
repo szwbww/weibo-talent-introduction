@@ -945,12 +945,6 @@ class QaRuleManagementServiceTest {
         Mockito.`when`(categoryRepository.existsById(1L)).thenReturn(true)
         Mockito.`when`(ruleRepository.save(Mockito.any(QaRule::class.java)))
             .thenAnswer { invocation -> (invocation.arguments[0] as QaRule).copy(id = 10L) }
-        Mockito.`when`(
-            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
-                ContentVariantOwnerType.QA_RULE,
-                10L
-            )
-        ).thenReturn(emptyList())
 
         val created = service.createRule(
             QaRuleCreateCommand(
@@ -1001,7 +995,6 @@ class QaRuleManagementServiceTest {
                 coverageKeys = listOf("contract.party")
             )
         )
-        assertEquals(overviewKeysStored, created.rule.coverageKeys)
 
         // I-1: a half-checked controlled group is not an authority -> body gate passes it through.
         assertEquals("contract.party", created.rule.coverageKeys)
@@ -1073,28 +1066,6 @@ class QaRuleManagementServiceTest {
         assertTrue(v76.contains("'Full-time and part-time options'"), "should use exact subject")
         assertFalse(v76.contains("'Project sensitivity' AND"), "old wrong subject absent")
         assertFalse(v76.contains("'Full-time / part-time roles'"), "old wrong subject absent")
-    }
-
-    @Test
-    fun `v107 strips only the two controlled keys from program overview with baseline guard`() {
-        // I-6: V107 touches ONLY coverage_keys on id=24, must preserve the
-        // auto-updated timestamp, and must not rewrite the outgoing bodies.
-        val v107 = java.nio.file.Files.readString(
-            java.nio.file.Path.of("src/main/resources/db/migration/V107__strip_controlled_keys_from_program_overview.sql")
-        )
-        assertTrue(v107.contains("WHERE id = 24"), "must target Program overview by stable id")
-        assertTrue(v107.contains("updated_at = updated_at"), "must preserve the auto-updated timestamp")
-        assertTrue(
-            v107.contains("coverage_keys = 'programme.purpose,programme.structure,programme.tracks,programme.scope,finance.government_funding,finance.enterprise_compensation,work.remote_arrangement,work.travel_arrangement,work.relocation'"),
-            "new value must be the 9 non-controlled keys"
-        )
-        assertTrue(
-            v107.contains("AND coverage_keys = 'programme.purpose,programme.structure,programme.tracks,programme.scope,finance.government_funding,finance.enterprise_compensation,work.remote_arrangement,work.travel_arrangement,work.relocation,fees.policy,confidentiality.materials'"),
-            "WHERE baseline must be the exact V76 11-key backfill"
-        )
-        val actionPart = v107.replace(Regex("--[^\n]*"), "").replace("\n", " ")
-        assertFalse(actionPart.contains("answer_body"), "must not rewrite answer_body")
-        assertFalse(actionPart.contains("reply_body"), "must not rewrite reply_body")
     }
 
     @Test

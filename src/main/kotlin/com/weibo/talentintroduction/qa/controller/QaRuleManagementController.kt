@@ -10,7 +10,6 @@ import com.weibo.talentintroduction.mail.service.PreviewVariableItem
 import com.weibo.talentintroduction.mail.service.VariableMeta
 import com.weibo.talentintroduction.qa.domain.QaCategory
 import com.weibo.talentintroduction.qa.domain.QaRule
-import com.weibo.talentintroduction.qa.service.AuthorityRuleResponse
 import com.weibo.talentintroduction.qa.service.QaCategoryCreateCommand
 import com.weibo.talentintroduction.qa.service.QaCoverageKeyCatalog
 import com.weibo.talentintroduction.qa.service.QaRuleCreateCommand
@@ -162,23 +161,6 @@ class QaRuleManagementController(
         service.listCoverageAuthorities().mapValues { (_, rules) ->
             rules.map { AuthorityRuleResponse(id = it.id ?: error("QA rule id is required"), displayName = it.displayName) }
         }
-
-    /** I-4: read-only definition of the four controlled groups; no write endpoint exists. */
-    @GetMapping("/coverage-keys/controlled-groups")
-    fun listControlledGroups(): List<ControlledGroupResponse> =
-        QaCoverageKeyCatalog.controlledGroups().map {
-            ControlledGroupResponse(
-                id = it.id,
-                name = it.name,
-                keys = it.keys.sorted(),
-                canonicalBody = it.canonicalAnswerBody
-            )
-        }
-
-    /** I-5: read-only last-authority source lookup, keyed by controlled key. */
-    @GetMapping("/coverage-keys/authorities")
-    fun listCoverageAuthorities(): Map<String, List<AuthorityRuleResponse>> =
-        service.listCoverageAuthorities()
 
     @GetMapping("/audit/rule-usage")
     fun ruleUsageAudit(

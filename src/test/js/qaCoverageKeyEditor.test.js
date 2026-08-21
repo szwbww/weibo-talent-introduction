@@ -30,102 +30,20 @@ function extractFn(name) {
     return appJsSource.substring(start, end + 1);
 }
 
-const escapeHtmlImpl = (value) => String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-
 function createLabelSandbox() {
     const sandbox = {
         state: { qaCoverageKeys: [] },
-        escapeHtml: escapeHtmlImpl,
+        escapeHtml: (value) => String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#039;"),
         badge: (label, type) => `<span class="badge ${type || "primary"}">${label}</span>`
     };
     vm.createContext(sandbox);
     vm.runInContext(extractFn("renderQaCoverageKeyLabels"), sandbox);
     return sandbox;
-}
-
-const DEFAULT_KEYS = [
-    { key: "general.answer", label: "通用回答", group: "通用", controlled: false },
-    { key: "company.legal_name", label: "公司法定名称", group: "公司信息", controlled: false },
-    { key: "fees.policy", label: "费用政策", group: "费用与保密", controlled: true, groupId: "G2", groupName: "费用政策" },
-    { key: "confidentiality.materials", label: "材料保密", group: "费用与保密", controlled: true, groupId: "G1", groupName: "材料保密" }
-];
-
-const DEFAULT_GROUPS = [
-    { id: "G1", name: "材料保密", keys: ["confidentiality.materials"], canonicalBody: "Your materials are kept strictly confidential." },
-    { id: "G2", name: "费用政策", keys: ["fees.policy"], canonicalBody: "We never charge any fees throughout the entire process." }
-];
-
-function createGateSandbox(overrides = {}) {
-    const inputs = (overrides.inputs || []).map((item) => {
-        const fakeItem = { classList: { remove() {}, toggle() {} } };
-        return {
-            checked: !!item.checked,
-            dataset: { coverageKey: item.key },
-            closest: () => fakeItem
-        };
-    });
-    const container = {
-        querySelectorAll: () => inputs,
-        querySelector: (selector) => {
-            const match = /data-coverage-key="([^"]+)"/.exec(selector);
-            if (!match) return null;
-            return inputs.find((input) => input.dataset.coverageKey === match[1]) || null;
-        }
-    };
-    const gate = {
-        className: "",
-        innerHTML: "",
-        insertAdjacentHTML: function (position, html) {
-            this.innerHTML += html;
-        }
-    };
-    const saveBtn = { disabled: false };
-    const saveBlock = { hidden: true, textContent: "" };
-    const badge = { hidden: true };
-    const textarea = { value: overrides.body || "" };
-    const countEl = { textContent: "" };
-    const chips = { innerHTML: "" };
-    const sandbox = {
-        state: {
-            qaCoverageKeys: overrides.keys || DEFAULT_KEYS,
-            qaControlledGroups: overrides.controlledGroups || DEFAULT_GROUPS,
-            qaCoverageAuthorities: overrides.authorities || {},
-            selectedRuleId: overrides.selectedRuleId || null
-        },
-        $: (selector) => {
-            if (selector === "#qaCoverageKeyOptions") return container;
-            if (selector === "#qaRuleAnswerBody") return textarea;
-            if (selector === "#qaRuleSaveBtn") return saveBtn;
-            if (selector === "#qaCoverageSaveBlock") return saveBlock;
-            if (selector === "#qaCoverageBodyBadge") return badge;
-            if (selector === "#qaCoverageGate") return gate;
-            if (selector === "#qaCoverageKeyCount") return countEl;
-            if (selector === "#qaCoverageKeyChips") return chips;
-            return null;
-        },
-        escapeHtml: escapeHtmlImpl
-    };
-    vm.createContext(sandbox);
-    [
-        "qaCoverageEntry",
-        "qaCoverageKeyControlled",
-        "collectQaCoverageKeys",
-        "evaluateQaCoverageGate",
-        "renderQaCoverageGate",
-        "renderGateRevokeCard",
-        "renderGateCanonCard",
-        "diffWordsForGate",
-        "updateCoverageKeyCount",
-        "renderQaCoverageKeyChips",
-        "uncheckCoverageKey",
-        "doGateRevoke"
-    ].forEach((name) => vm.runInContext(extractFn(name), sandbox));
-    return { sandbox, gate, saveBtn, saveBlock, badge, textarea, inputs };
 }
 
 describe("qa coverage key labels (legacy helper)", () => {

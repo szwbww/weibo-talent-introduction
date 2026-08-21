@@ -187,11 +187,6 @@ data class QaRuleDetail(
     val variants: List<String> = emptyList()
 )
 
-data class AuthorityRuleResponse(
-    val id: Long,
-    val displayName: String?
-)
-
 data class QaCategoryCreateCommand(
     val categoryCode: String,
     val categoryName: String,
