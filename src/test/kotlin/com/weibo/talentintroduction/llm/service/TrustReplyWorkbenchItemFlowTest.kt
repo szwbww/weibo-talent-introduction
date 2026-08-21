@@ -235,15 +235,22 @@ class TrustReplyWorkbenchItemFlowTest {
         // 开放 ANSWER_EVIDENCE_WITH_OPERATOR_INPUT 与 ANSWER_FROM_OPERATOR_INPUT；
         // 其余行逐字等于今日值。判据是 item.operatorBypassedRuleIds 显式字段，
         // 消费侧绝不重新推导。
+        // 计划 03 (I-5): ANSWER_FACTS_VERBATIM 只放开给有事实可引用的条目——
+        // GROUNDED 与 PARTIAL 两个分支均含；UNSUPPORTED 分支不得含。
         val groundedItem = item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)
         assertEquals(
-            setOf(TrustReplyItemHandling.ANSWER_WITH_EVIDENCE, TrustReplyItemHandling.OMIT),
+            setOf(
+                TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+                TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+                TrustReplyItemHandling.OMIT
+            ),
             TrustReplyWorkbenchService.allowedHandlings(groundedItem).toSet()
         )
         val partialItem = item(1, "What?", listOf(9L), RequestGroundingStatus.PARTIAL)
         assertEquals(
             setOf(
                 TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
+                TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
                 TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
                 TrustReplyItemHandling.OMIT
             ),
@@ -253,6 +260,7 @@ class TrustReplyWorkbenchItemFlowTest {
         assertEquals(
             listOf(
                 TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
+                TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
                 TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
                 TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
                 TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
@@ -387,6 +395,215 @@ class TrustReplyWorkbenchItemFlowTest {
         assertEquals("Salary info", response.itemVersions.single().answerText)
         assertTrue(response.itemVersions.single().claims.isEmpty())
         assertEquals("raw Salary info", response.rawDraftText)
+    }
+
+    // ---- 计划 03: 按事实原文回答（T4.1）----
+
+    @Test
+    fun `verbatim generation keeps fact order and assembles without version drift`() {
+        // 计划 03 (T4.1/IP-2/I-2): 走完「生成（generateItem 的 verbatim 分支）→
+        // 锁定（adjustItem）→ assemble」全流程。正文恰好 2 段、顺序等于
+        // factRuleIds；materializeVersion 只在 :1190（生成）与 :1256（assemble）
+        // 两处各算一次，versionId 必须逐字一致——出现
+        // TRUST_REPLY_ITEM_VERSION_INVALID 即失败。
+        val verbatimText = "Project overview body.\n\nSalary and funding support body."
+        val fixture = assembleFixture(
+            status = RequestGroundingStatus.GROUNDED,
+            handling = TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+            answerText = verbatimText,
+            claims = emptyList(),
+            generationKind = TrustReplyItemGenerationKind.SAFE_TEMPLATE,
+            factIds = listOf(2L, 1L),
+            factBodies = mapOf(
+                2L to "Project overview body.",
+                1L to "Salary and funding support body."
+            )
+        )
+        Mockito.`when`(fixture.draftService.composeVerbatimFactAnswer(
+            Mockito.any(RequestFactItem::class.java) ?: RequestFactItem(
+                index = 1,
+                requestText = "What?",
+                factRuleIds = listOf(2L, 1L),
+                status = RequestGroundingStatus.GROUNDED
+            )
+        ))
+            .thenReturn(verbatimText)
+        Mockito.`when`(
+            fixture.draftService.generateItem(
+                inboundText = Mockito.anyString(),
+                requestFact = Mockito.any(RequestFactItem::class.java) ?: RequestFactItem(
+                    index = 1,
+                    requestText = "What?",
+                    factRuleIds = listOf(2L, 1L),
+                    status = RequestGroundingStatus.GROUNDED
+                ),
+                handling = Mockito.eq(TrustReplyItemHandling.ANSWER_FACTS_VERBATIM) ?: TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+                requestKey = Mockito.anyString(),
+                operatorInstruction = Mockito.anyString(),
+                expertProfile = Mockito.anyString(),
+                mailHistory = Mockito.anyString(),
+                contextWarnings = Mockito.anyList<String>() ?: emptyList(),
+                replyModel = Mockito.isNull(),
+                researchProfileSufficient = Mockito.anyBoolean(),
+                llmAttemptTimeoutSeconds = Mockito.isNull(),
+                llmTotalTimeoutSeconds = Mockito.isNull(),
+                cancellationToken = Mockito.isNull(),
+                progressReporter = Mockito.any(AiReplyProgressReporter::class.java) ?: AiReplyProgressReporter.NOOP
+            )
+        ).thenReturn(
+            AiReplyItemGenerationResult(
+                itemAnswer = AiReplyItemAnswer(
+                    1,
+                    "What?",
+                    RequestGroundingStatus.GROUNDED,
+                    verbatimText,
+                    emptyList()
+                ),
+                handling = TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+                generationKind = TrustReplyItemGenerationKind.SAFE_TEMPLATE,
+                generationState = AiReplyGenerationState.LLM_USED,
+                usedLlm = false,
+                lockable = true
+            )
+        )
+
+        val adjusted = fixture.service.adjustItem(
+            TrustReplyItemAdjustmentRequest(
+                source = fixture.request.source,
+                expectedSourceVersion = fixture.request.expectedSourceVersion,
+                expectedEvidenceSetVersion = fixture.request.expectedEvidenceSetVersion,
+                requestKey = fixture.validLockedItem.requestKey,
+                handling = TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+                operatorInstruction = ""
+            )
+        )
+
+        assertEquals(verbatimText, adjusted.version.answerText)
+        assertEquals(2, adjusted.version.answerText.split("\n\n").size)
+        assertTrue(adjusted.version.claims.isEmpty())
+        assertEquals(TrustReplyItemGenerationKind.SAFE_TEMPLATE, adjusted.version.generationKind)
+
+        val locked = TrustReplyLockedItemRequest(
+            requestKey = adjusted.version.requestKey,
+            versionId = adjusted.version.versionId,
+            handling = adjusted.version.handling,
+            answerText = adjusted.version.answerText,
+            claims = adjusted.version.claims,
+            model = adjusted.version.model,
+            generationKind = adjusted.version.generationKind,
+            evidenceSetVersion = adjusted.version.evidenceSetVersion,
+            sourceVersion = adjusted.version.sourceVersion,
+            operatorInstructionHash = adjusted.version.operatorInstructionHash,
+            operatorInstruction = adjusted.version.operatorInstruction
+        )
+        val assembled = fixture.service.assemble(
+            TrustReplyAssembleRequest(
+                source = fixture.request.source,
+                expectedSourceVersion = fixture.request.expectedSourceVersion,
+                expectedEvidenceSetVersion = fixture.request.expectedEvidenceSetVersion,
+                lockedItems = listOf(locked)
+            )
+        )
+
+        val version = assembled.itemVersions.single()
+        assertEquals(adjusted.version.versionId, version.versionId)
+        assertEquals(verbatimText, version.answerText)
+        assertTrue(version.claims.isEmpty())
+        // I-2: 段数 = 事实数，顺序逐字等于 factRuleIds。
+        val segments = version.answerText.split("\n\n")
+        assertEquals(2, segments.size)
+        assertEquals("Project overview body.", segments[0])
+        assertEquals("Salary and funding support body.", segments[1])
+        assertTrue(assembled.rawDraftText.contains("Project overview body."))
+    }
+
+    @Test
+    fun `verbatim locked item with tampered answerText is rejected`() {
+        // 计划 03 (T4.1/I-4): 客户端篡改 answerText——锁定校验用 factRuleIds
+        // 从库重算比对，不等即 422 TRUST_REPLY_LOCKED_ITEM_INVALID，绝不外发。
+        val fixture = assembleFixture(
+            status = RequestGroundingStatus.GROUNDED,
+            handling = TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+            answerText = "Tampered body.",
+            claims = emptyList(),
+            generationKind = TrustReplyItemGenerationKind.SAFE_TEMPLATE
+        )
+        Mockito.`when`(fixture.draftService.composeVerbatimFactAnswer(
+            Mockito.any(RequestFactItem::class.java) ?: RequestFactItem(
+                index = 1,
+                requestText = "What?",
+                factRuleIds = listOf(9L),
+                status = RequestGroundingStatus.GROUNDED
+            )
+        ))
+            .thenReturn("Real fact body.")
+
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.assemble(fixture.request)
+        }
+
+        assertEquals("TRUST_REPLY_LOCKED_ITEM_INVALID", error.code)
+    }
+
+    @Test
+    fun `verbatim locked item with claims is rejected`() {
+        // 计划 03 (T4.1/I-3/I-4): verbatim claims 恒空——非空 claims 直接 422
+        // TRUST_REPLY_LOCKED_ITEM_INVALID（不落入 canonicalizeClaims 的
+        // TRUST_REPLY_CLAIMS_INVALID / ANSWER_CLAIMS_MISMATCH）。
+        val fixture = assembleFixture(
+            status = RequestGroundingStatus.GROUNDED,
+            handling = TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+            answerText = "Salary info",
+            claims = emptyList(),
+            generationKind = TrustReplyItemGenerationKind.SAFE_TEMPLATE
+        )
+        Mockito.`when`(fixture.draftService.composeVerbatimFactAnswer(
+            Mockito.any(RequestFactItem::class.java) ?: RequestFactItem(
+                index = 1,
+                requestText = "What?",
+                factRuleIds = listOf(9L),
+                status = RequestGroundingStatus.GROUNDED
+            )
+        ))
+            .thenReturn("Salary info")
+        val tampered = fixture.validLockedItem.copy(
+            claims = listOf(AiReplyItemClaim("general.answer", "Salary info", listOf(9L)))
+        )
+        val request = TrustReplyAssembleRequest(
+            source = fixture.request.source,
+            expectedSourceVersion = fixture.request.expectedSourceVersion,
+            expectedEvidenceSetVersion = fixture.request.expectedEvidenceSetVersion,
+            lockedItems = listOf(tampered)
+        )
+
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.assemble(request)
+        }
+
+        assertEquals("TRUST_REPLY_LOCKED_ITEM_INVALID", error.code)
+    }
+
+    @Test
+    fun `two verbatim summaries with identical fact text are rejected as duplicates`() {
+        // 计划 03 (T4.1/I-7): 既有行为固化——两条摘要的 verbatim 正文逐字相同时
+        // validateNoDuplicateClaims 必然 422 TRUST_REPLY_DUPLICATE_CLAIM。
+        // 注：同一事实集不能绑到两条摘要上（矩阵 I-2 的
+        // TRUST_REPLY_FACT_ALREADY_ASSIGNED 守卫，A-8 中该前置被拦的场景标记
+        // 不适用），可达的重复触发是两条摘要绑不同事实但 answerBody 逐字相同
+        // （QA 库重复文案）——verbatim 正文必然相同，查重同样生效。
+        // 正确处理是运营把其中一条改 OMIT 或调整事实绑定，不是放宽查重。
+        val fixture = duplicateFixture(
+            item1Text = "Salary info",
+            item2Text = "Salary info",
+            handling = TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+            generationKind = TrustReplyItemGenerationKind.SAFE_TEMPLATE
+        )
+
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            fixture.service.assemble(fixture.request)
+        }
+
+        assertEquals("TRUST_REPLY_DUPLICATE_CLAIM", error.code)
     }
 
     @Test
@@ -1424,7 +1641,11 @@ class TrustReplyWorkbenchItemFlowTest {
         item1Source: Long = 9L,
         item2Source: Long = 10L,
         item1Text: String = "Claim A",
-        item2Text: String = "Claim B"
+        item2Text: String = "Claim B",
+        // 计划 03 (T4.1/I-7): verbatim 重复用例——claims 恒空、SAFE_TEMPLATE，
+        // 两条摘要绑同一事实集时 answerText 逐字相同必然触发查重。
+        handling: TrustReplyItemHandling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+        generationKind: TrustReplyItemGenerationKind = TrustReplyItemGenerationKind.AI_GENERATED
     ): DuplicateFixture {
         val mailRecords = Mockito.mock(MailRecordRepository::class.java)
         val inboundProcessing = Mockito.mock(InboundMailProcessingRepository::class.java)
@@ -1438,6 +1659,7 @@ class TrustReplyWorkbenchItemFlowTest {
         val auditService = Mockito.mock(AiReplyReviewAuditService::class.java)
         val composer = Mockito.mock(AiReplyPointByPointComposer::class.java)
         val replySnippetService = Mockito.mock(ReplySnippetService::class.java)
+        val verbatim = handling == TrustReplyItemHandling.ANSWER_FACTS_VERBATIM
         val contact = ExpertContact(
             id = 7L,
             campaignId = 1L,
@@ -1544,16 +1766,20 @@ class TrustReplyWorkbenchItemFlowTest {
         )
         val emptyHash = AiReplyDraftService.sha256Hex("")
         fun locked(item: RequestFactItem, text: String, sourceId: Long): TrustReplyLockedItemRequest {
-            val claims = listOf(AiReplyItemClaim("general.answer", text, listOf(sourceId)))
+            val claims = if (verbatim) {
+                emptyList()
+            } else {
+                listOf(AiReplyItemClaim("general.answer", text, listOf(sourceId)))
+            }
             val requestKey = if (item.index == 1) key1 else key2
             val perRequest = perRequestOf(requestKey, sourceId)
             val versionId = TrustReplyWorkbenchService.versionId(
                 requestKey = requestKey,
-                handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+                handling = handling,
                 answerText = text,
                 claims = claims,
                 model = "DEEPSEEK_V4_FLASH",
-                generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+                generationKind = generationKind,
                 evidenceSetVersion = perRequest,
                 sourceVersion = sourceVersion,
                 operatorInstructionHash = emptyHash
@@ -1561,15 +1787,21 @@ class TrustReplyWorkbenchItemFlowTest {
             return TrustReplyLockedItemRequest(
                 requestKey = requestKey,
                 versionId = versionId,
-                handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+                handling = handling,
                 answerText = text,
                 claims = claims,
                 model = "DEEPSEEK_V4_FLASH",
-                generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+                generationKind = generationKind,
                 evidenceSetVersion = perRequest,
                 sourceVersion = sourceVersion,
                 operatorInstructionHash = emptyHash
             )
+        }
+        if (verbatim) {
+            // I-4: validateLockedItem 服务端重算比对——mock 的 verbatim 正文
+            // 逐字等于锁定正文。
+            Mockito.`when`(draftService.composeVerbatimFactAnswer(item1)).thenReturn(item1Text)
+            Mockito.`when`(draftService.composeVerbatimFactAnswer(item2)).thenReturn(item2Text)
         }
         val lockedItems = listOf(
             locked(item1, item1Text, item1Source),
@@ -2013,7 +2245,10 @@ class TrustReplyWorkbenchItemFlowTest {
         boundFactIds: List<Long> = emptyList(),
         // 计划 02 (I-5): 控制 item.operatorBypassedRuleIds——PARTIAL 条目的
         // 允许集与锁定校验用例依赖该显式字段。
-        operatorBypassedRuleIds: List<Long> = emptyList()
+        operatorBypassedRuleIds: List<Long> = emptyList(),
+        // 计划 03 (T4.1): 多事实 verbatim 用例需要自定义事实集与 answerBody。
+        factIds: List<Long> = listOf(9L),
+        factBodies: Map<Long, String> = emptyMap()
     ): AssembleFixture {
         val mailRecords = Mockito.mock(MailRecordRepository::class.java)
         val inboundProcessing = Mockito.mock(InboundMailProcessingRepository::class.java)
@@ -2050,7 +2285,7 @@ class TrustReplyWorkbenchItemFlowTest {
             receivedAt = LocalDateTime.of(2026, 7, 28, 10, 0),
             sentAt = null
         )
-        val baseItem = item(1, "What?", listOf(9L), status)
+        val baseItem = item(1, "What?", factIds, status)
         val item = if (intents.isEmpty()) baseItem else baseItem.copy(intents = intents)
         val boundItem = if (boundFactIds.isEmpty()) {
             item
@@ -2062,8 +2297,8 @@ class TrustReplyWorkbenchItemFlowTest {
             if (operatorBypassedRuleIds.isEmpty()) entry else entry.copy(operatorBypassedRuleIds = operatorBypassedRuleIds)
         }
         val selection = ResolvedQaRules(
-            sendQaRuleIds = listOf(9L),
-            promptRuleIds = (listOf(9L) + boundFactIds).distinct(),
+            sendQaRuleIds = factIds,
+            promptRuleIds = (factIds + boundFactIds).distinct(),
             requestFacts = listOf(boundItem),
             requestCount = 1,
             groundedRequestCount = if (status == RequestGroundingStatus.GROUNDED) 1 else 0
@@ -2082,21 +2317,32 @@ class TrustReplyWorkbenchItemFlowTest {
             )
         ).thenReturn(AiReplyContext("Name: Test", "history", emptyList(), true))
         Mockito.`when`(factSelection.selectForWorkbench("What?", null, null, true)).thenReturn(selection)
-        Mockito.`when`(qaRules.findById(9L)).thenReturn(Optional.of(QaRule(
-            id = 9L,
-            categoryId = 1,
-            keywords = "salary",
-            replyBody = "Salary info",
-            answerBody = "Salary info",
-            replySubject = null,
-            enabled = true
-        )))
-        val baseEvidenceSetVersion = AiReplyDraftService.sha256Hex(
-            "9:true:null:${AiReplyDraftService.sha256Hex("Salary info")}"
-        )
-        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
+        factIds.distinct().forEach { id ->
+            val body = factBodies[id] ?: "Salary info"
+            Mockito.`when`(qaRules.findById(id)).thenReturn(Optional.of(QaRule(
+                id = id,
+                categoryId = 1,
+                keywords = "salary",
+                replyBody = body,
+                answerBody = body,
+                replySubject = null,
+                enabled = true
+            )))
+        }
+        val baseEvidenceSetVersion = if (factIds == listOf(9L)) {
+            AiReplyDraftService.sha256Hex(
+                "9:true:null:${AiReplyDraftService.sha256Hex("Salary info")}"
+            )
+        } else {
+            AiReplyDraftService.sha256Hex(
+                factIds.joinToString(",") { id ->
+                    "$id:true:null:${AiReplyDraftService.sha256Hex(factBodies[id] ?: "Salary info")}"
+                }
+            )
+        }
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(factIds))
             .thenReturn(Triple(baseEvidenceSetVersion, emptyList(), emptyList()))
-        if (boundItem.boundRuleIds != listOf(9L)) {
+        if (boundItem.boundRuleIds != factIds) {
             Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(boundItem.boundRuleIds))
                 .thenReturn(Triple(baseEvidenceSetVersion, emptyList(), emptyList()))
         }
@@ -2118,7 +2364,9 @@ class TrustReplyWorkbenchItemFlowTest {
             handling == TrustReplyItemHandling.OMIT ||
             handling == TrustReplyItemHandling.ACKNOWLEDGE_PENDING ||
             // 计划 02 (I-8): 混合答案 claims 恒空。
-            handling == TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT
+            handling == TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT ||
+            // 计划 03 (I-3): verbatim 正文是事实 answerBody 逐字拼接，claims 恒空。
+            handling == TrustReplyItemHandling.ANSWER_FACTS_VERBATIM
         ) emptyList() else claims
         val defaultFrame = defaultResolvedFrame()
         Mockito.`when`(replySnippetService.resolveDefaultSelectableFrame()).thenReturn(defaultFrame)

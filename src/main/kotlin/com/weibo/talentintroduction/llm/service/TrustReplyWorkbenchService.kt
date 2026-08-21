@@ -28,6 +28,9 @@ enum class TrustReplySourceType {
 enum class TrustReplyItemHandling {
     ANSWER_WITH_EVIDENCE,
     ANSWER_SUPPORTED_PART,
+    // 计划 03 (I-1/I-2/I-3): 按事实原文回答——正文逐字取所选事实的
+    // answerBody，不调用 LLM；claims 恒空，段落单位 = 一条事实。
+    ANSWER_FACTS_VERBATIM,
     // 计划 02 (I-5/I-7/I-8): 依据+说明混合——事实决定事实性内容、运营说明决定
     // 意图与动作；claims 恒空，授权/合规沿用 operator-directed 口径。
     ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
@@ -1428,6 +1431,20 @@ class TrustReplyWorkbenchService(
                     throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIM_INVALID")
                 }
             }
+            // 计划 03 (I-1/I-2/I-4/I-6): 按事实原文回答——不信任客户端提交的
+            // answerText，必须用 factRuleIds 从库重算逐字比对；claims 恒空、
+            // generationKind 恒 SAFE_TEMPLATE。I-6: 不做动作检测判废——正文是
+            // QA 库受审内容，不是模型输出；外发把关由发送期
+            // collectSafetyFindings 统一承担，且那条路可二次确认。
+            TrustReplyItemHandling.ANSWER_FACTS_VERBATIM -> {
+                if (locked.answerText.isBlank() ||
+                    locked.claims.isNotEmpty() ||
+                    locked.generationKind != TrustReplyItemGenerationKind.SAFE_TEMPLATE ||
+                    locked.answerText != aiReplyDraftService.composeVerbatimFactAnswer(item)
+                ) {
+                    throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_LOCKED_ITEM_INVALID")
+                }
+            }
         }
     }
 
@@ -1520,7 +1537,11 @@ class TrustReplyWorkbenchService(
             handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT ||
             // 计划 02 (I-8): 混合答案含运营说明内容，永远无法满足 canonicalizeClaims
             // 的「answerText == claims 拼接」；claims 恒空，正文按原样保留。
-            handling == TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT
+            handling == TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT ||
+            // 计划 03 (I-3): verbatim 正文是事实 answerBody 的逐字拼接，无逐
+            // claim 归因；claims 恒空走旁路，否则 canonicalizeClaims 必然
+            // byKey.keys != expected → 422 TRUST_REPLY_CLAIMS_INVALID。
+            handling == TrustReplyItemHandling.ANSWER_FACTS_VERBATIM
         ) {
             emptyList()
         } else {
@@ -1531,6 +1552,8 @@ class TrustReplyWorkbenchService(
             TrustReplyItemHandling.ACKNOWLEDGE_PENDING -> answerText.trim()
             TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT -> answerText.trim()
             TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT -> answerText.trim()
+            // 计划 03 (I-3): verbatim 正文保持原样（I-2 的分段已在产出点拼好）。
+            TrustReplyItemHandling.ANSWER_FACTS_VERBATIM -> answerText.trim()
             else -> normalizedClaims.joinToString(AiReplyDraftService.CLAIM_PARAGRAPH_SEPARATOR) { it.text }
         }
         val instructionHash = sha256Hex(normalizedInstruction).also { calculated ->
@@ -2083,32 +2106,41 @@ class TrustReplyWorkbenchService(
         // ANSWER_EVIDENCE_WITH_OPERATOR_INPUT 与 ANSWER_FROM_OPERATOR_INPUT
         // （「按回答说明生成」显式加进含运营绑定的 PARTIAL 允许集，D1 的解法由
         // 冻结 status 改为扩展允许集，冲突消失）。其余行与今日逐字一致。
-        fun allowedHandlings(item: RequestFactItem): List<TrustReplyItemHandling> = when (item.status) {
-            RequestGroundingStatus.GROUNDED -> listOf(
-                TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
-                TrustReplyItemHandling.OMIT
-            )
-            RequestGroundingStatus.PARTIAL ->
-                if (item.operatorBypassedRuleIds.isEmpty()) {
-                    listOf(
-                        TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
-                        TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                        TrustReplyItemHandling.OMIT
-                    )
-                } else {
-                    listOf(
-                        TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
-                        TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
-                        TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
-                        TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                        TrustReplyItemHandling.OMIT
-                    )
+        // 计划 03 (I-5): ANSWER_FACTS_VERBATIM 只放开给「有事实可引用」的条目
+        // （factRuleIds 非空）——UNSUPPORTED 状态恒空、绝不加入；GROUNDED/PARTIAL
+        // 天然非空，仍显式守卫，防止未来取证口径变化后产出空正文。
+        fun allowedHandlings(item: RequestFactItem): List<TrustReplyItemHandling> {
+            val verbatimReferenceable = item.factRuleIds.isNotEmpty()
+            return when (item.status) {
+                RequestGroundingStatus.GROUNDED -> buildList {
+                    add(TrustReplyItemHandling.ANSWER_WITH_EVIDENCE)
+                    if (verbatimReferenceable) add(TrustReplyItemHandling.ANSWER_FACTS_VERBATIM)
+                    add(TrustReplyItemHandling.OMIT)
                 }
-            RequestGroundingStatus.UNSUPPORTED -> listOf(
-                TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
-                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                TrustReplyItemHandling.OMIT
-            )
+                RequestGroundingStatus.PARTIAL ->
+                    if (item.operatorBypassedRuleIds.isEmpty()) {
+                        buildList {
+                            add(TrustReplyItemHandling.ANSWER_SUPPORTED_PART)
+                            if (verbatimReferenceable) add(TrustReplyItemHandling.ANSWER_FACTS_VERBATIM)
+                            add(TrustReplyItemHandling.ACKNOWLEDGE_PENDING)
+                            add(TrustReplyItemHandling.OMIT)
+                        }
+                    } else {
+                        buildList {
+                            add(TrustReplyItemHandling.ANSWER_SUPPORTED_PART)
+                            if (verbatimReferenceable) add(TrustReplyItemHandling.ANSWER_FACTS_VERBATIM)
+                            add(TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT)
+                            add(TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT)
+                            add(TrustReplyItemHandling.ACKNOWLEDGE_PENDING)
+                            add(TrustReplyItemHandling.OMIT)
+                        }
+                    }
+                RequestGroundingStatus.UNSUPPORTED -> listOf(
+                    TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+                    TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
+                    TrustReplyItemHandling.OMIT
+                )
+            }
         }
 
         fun recommendedHandling(item: RequestFactItem): TrustReplyItemHandling = when (item.status) {

@@ -489,6 +489,29 @@ class AiReplyDraftService(
             ))
         }
 
+        // 计划 03 (T2.2/I-1/I-2/I-3): 按事实原文回答——正文逐字取所选事实的
+        // answerBody，不调用 LLM（usedLlm=false）；claims 恒空。形态照抄 OMIT
+        // 分支（generationState=LLM_USED + usedLlm=false 是既有先例）。T2.4:
+        // 必须位于 rejectNonEnglishItemAnswer 包装之外——事实正文由运营维护，
+        // 可能合法含非拉丁字符，不适用英文校验。
+        if (handling == TrustReplyItemHandling.ANSWER_FACTS_VERBATIM) {
+            val text = composeVerbatimFactAnswer(requestFact)
+            return AiReplyItemGenerationResult(
+                itemAnswer = if (text.isBlank()) null else AiReplyItemAnswer(
+                    requestIndex = requestFact.index,
+                    requestText = requestFact.requestText,
+                    status = requestFact.status,
+                    answerText = text,
+                    claims = emptyList()
+                ),
+                handling = handling,
+                generationKind = if (text.isBlank()) null else TrustReplyItemGenerationKind.SAFE_TEMPLATE,
+                generationState = AiReplyGenerationState.LLM_USED,
+                usedLlm = false,
+                lockable = text.isNotBlank()
+            )
+        }
+
         val token = cancellationToken ?: AiReplyCancellationToken()
         val policy = AiReplyTimeoutPolicy.resolve(llmAttemptTimeoutSeconds, llmTotalTimeoutSeconds)
         val budget = policy.budget()
@@ -1023,6 +1046,25 @@ class AiReplyDraftService(
     private fun validateItemHandling(item: RequestFactItem, handling: TrustReplyItemHandling) {
         TrustReplyWorkbenchService.requireAllowedHandling(item, handling)
     }
+
+    /**
+     * 计划 03 (I-1/I-2): verbatim 正文的唯一产出点——按 [item.factRuleIds] 的
+     * 运营顺序（即工作台 chips 上的顺序），每条事实的 `answerBody.trim()` 一段，
+     * 段间 `CLAIM_PARAGRAPH_SEPARATOR` 分隔。取不到的规则、`enabled == false`、
+     * `answerBody` 为空的规则跳过该条；全部跳过时返回空串，由调用方判失败。
+     * I-1: `replyBody` 与 `displayName` 在本链路禁止出现——本函数只读
+     * `QaRule.answerBody`，绝不回退旧邮件体裁正文。
+     */
+    internal fun composeVerbatimFactAnswer(item: RequestFactItem): String =
+        item.factRuleIds.mapNotNull { ruleId ->
+            qaRuleRepository.findById(ruleId).orElse(null)?.let { rule ->
+                if (!rule.enabled || rule.answerBody.isBlank()) {
+                    null
+                } else {
+                    rule.answerBody.trim()
+                }
+            }
+        }.joinToString(CLAIM_PARAGRAPH_SEPARATOR)
 
     fun generate(
         inboundText: String,

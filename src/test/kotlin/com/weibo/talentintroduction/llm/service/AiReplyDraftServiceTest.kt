@@ -617,6 +617,177 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
+    fun `verbatim answer composes answerBody segments in fact order and never replyBody`() {
+        // 计划 03 (T4.2/I-1/I-2): replyBody 与 answerBody 内容不同，断言产物只含
+        // answerBody（逐字、按 factRuleIds 顺序、\n\n 分段），replyBody 零命中。
+        stubMatchPool(
+            QaRule(
+                id = 1L,
+                categoryId = 1,
+                keywords = "salary",
+                replyBody = "LEGACY REPLY BODY ONE",
+                answerBody = "Salary and funding support body.",
+                replySubject = null,
+                enabled = true
+            ),
+            QaRule(
+                id = 2L,
+                categoryId = 1,
+                keywords = "salary",
+                replyBody = "LEGACY REPLY BODY TWO",
+                answerBody = "Project overview body.",
+                replySubject = null,
+                enabled = true
+            )
+        )
+        val result = service(LlmProperties(enabled = true), null).generateItem(
+            inboundText = "What is salary?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "What is salary?",
+                factRuleIds = listOf(2L, 1L),
+                status = RequestGroundingStatus.GROUNDED,
+                intents = listOf(
+                    RequestIntentCoverage(
+                        intentKey = "general.answer",
+                        title = "General answer",
+                        requiredCoverageKeys = emptyList(),
+                        missingEvidenceKeys = emptyList(),
+                        evidenceRuleIds = listOf(2L, 1L),
+                        status = "SUPPORTED",
+                        requiresResearchContext = false
+                    )
+                )
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+            requestKey = "request-key"
+        )
+
+        assertTrue(result.lockable)
+        assertFalse(result.usedLlm)
+        assertEquals(TrustReplyItemGenerationKind.SAFE_TEMPLATE, result.generationKind)
+        val answer = result.itemAnswer!!.answerText
+        assertEquals("Project overview body.\n\nSalary and funding support body.", answer)
+        assertEquals(2, answer.split("\n\n").size)
+        assertFalse(answer.contains("LEGACY REPLY BODY"))
+        assertTrue(result.itemAnswer!!.claims.isEmpty())
+    }
+
+    @Test
+    fun `verbatim answer skips disabled and blank answerBody rules`() {
+        // 计划 03 (T4.2): 禁用规则（enabled=false）与 answerBody 为空的规则
+        // 被跳过，剩余规则仍按顺序拼接。
+        stubMatchPool(
+            QaRule(
+                id = 1L,
+                categoryId = 1,
+                keywords = "salary",
+                replyBody = "Disabled body",
+                answerBody = "Keep this body.",
+                replySubject = null,
+                enabled = true
+            ),
+            QaRule(
+                id = 2L,
+                categoryId = 1,
+                keywords = "salary",
+                replyBody = "Disabled body",
+                answerBody = "Should not appear.",
+                replySubject = null,
+                enabled = false
+            ),
+            QaRule(
+                id = 3L,
+                categoryId = 1,
+                keywords = "salary",
+                replyBody = "Blank body",
+                answerBody = "   ",
+                replySubject = null,
+                enabled = true
+            )
+        )
+        val result = service(LlmProperties(enabled = true), null).generateItem(
+            inboundText = "What is salary?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "What is salary?",
+                factRuleIds = listOf(1L, 2L, 3L),
+                status = RequestGroundingStatus.GROUNDED,
+                intents = listOf(
+                    RequestIntentCoverage(
+                        intentKey = "general.answer",
+                        title = "General answer",
+                        requiredCoverageKeys = emptyList(),
+                        missingEvidenceKeys = emptyList(),
+                        evidenceRuleIds = listOf(1L, 2L, 3L),
+                        status = "SUPPORTED",
+                        requiresResearchContext = false
+                    )
+                )
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+            requestKey = "request-key"
+        )
+
+        assertTrue(result.lockable)
+        assertEquals("Keep this body.", result.itemAnswer!!.answerText)
+        assertEquals(1, result.itemAnswer!!.answerText.split("\n\n").size)
+    }
+
+    @Test
+    fun `verbatim item with no usable facts is not lockable`() {
+        // 计划 03 (T4.2): 全部规则被跳过时 composeVerbatimFactAnswer 返回空串，
+        // generateItem 产出 itemAnswer=null / generationKind=null / lockable=false，
+        // 由 TrustReplyWorkbenchService:1185 统一抛 TRUST_REPLY_ITEM_GENERATION_FAILED。
+        stubMatchPool(
+            QaRule(
+                id = 1L,
+                categoryId = 1,
+                keywords = "salary",
+                replyBody = "Disabled body",
+                answerBody = "Should not appear.",
+                replySubject = null,
+                enabled = false
+            ),
+            QaRule(
+                id = 2L,
+                categoryId = 1,
+                keywords = "salary",
+                replyBody = "Blank body",
+                answerBody = "",
+                replySubject = null,
+                enabled = true
+            )
+        )
+        val result = service(LlmProperties(enabled = true), null).generateItem(
+            inboundText = "What is salary?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "What is salary?",
+                factRuleIds = listOf(1L, 2L),
+                status = RequestGroundingStatus.GROUNDED,
+                intents = listOf(
+                    RequestIntentCoverage(
+                        intentKey = "general.answer",
+                        title = "General answer",
+                        requiredCoverageKeys = emptyList(),
+                        missingEvidenceKeys = emptyList(),
+                        evidenceRuleIds = listOf(1L, 2L),
+                        status = "SUPPORTED",
+                        requiresResearchContext = false
+                    )
+                )
+            ),
+            handling = TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+            requestKey = "request-key"
+        )
+
+        assertFalse(result.lockable)
+        assertNull(result.itemAnswer)
+        assertNull(result.generationKind)
+    }
+
+    @Test
     fun `timeout policy resolves defaults and rejects invalid boundaries`() {
         assertEquals(
             AiReplyTimeoutPolicy(30, 300),

@@ -807,3 +807,28 @@ describe("计划 02 blended handling", () => {
         );
     });
 });
+
+// ---- 计划 03: 按事实原文回答（T4.3）----
+
+describe("计划 03 verbatim handling", () => {
+    it("labels ANSWER_FACTS_VERBATIM as 按事实原文回答 in HANDLING_LABELS", () => {
+        // S-1: HANDLING_LABELS 新增且仅新增一行，逐字等于契约。
+        assert.match(workbench, /ANSWER_FACTS_VERBATIM:\s*"按事实原文回答"/);
+        // 与 allowedHandlings 的排列顺序一致：在 ANSWER_SUPPORTED_PART 之后、
+        // ANSWER_EVIDENCE_WITH_OPERATOR_INPUT 之前。
+        const supportedIdx = workbench.indexOf('ANSWER_SUPPORTED_PART: "回答有依据部分"');
+        const verbatimIdx = workbench.indexOf('ANSWER_FACTS_VERBATIM: "按事实原文回答"');
+        const blendedIdx = workbench.indexOf('ANSWER_EVIDENCE_WITH_OPERATOR_INPUT: "依据+说明混合"');
+        assert.ok(supportedIdx >= 0 && verbatimIdx > supportedIdx && blendedIdx > verbatimIdx,
+            "HANDLING_LABELS order must match the backend enum order (S-1)");
+    });
+
+    it("keeps ANSWER_FACTS_VERBATIM out of OPERATOR_INSTRUCTION_HANDLINGS", () => {
+        // I-8: verbatim 不调用 AI——绝不能进「必须非空回答说明」集合，
+        // 否则生成前置校验会强制要求填说明（422 TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID）。
+        const block = /OPERATOR_INSTRUCTION_HANDLINGS = Object\.freeze\(\[([\s\S]*?)\]\)/.exec(workbench);
+        assert.ok(block, "OPERATOR_INSTRUCTION_HANDLINGS block must exist");
+        assert.ok(!block[1].includes("ANSWER_FACTS_VERBATIM"),
+            "verbatim handling must not be added to OPERATOR_INSTRUCTION_HANDLINGS (I-8)");
+    });
+});

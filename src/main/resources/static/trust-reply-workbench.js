@@ -19,6 +19,9 @@
     const HANDLING_LABELS = Object.freeze({
         ANSWER_WITH_EVIDENCE: "依据完整回答",
         ANSWER_SUPPORTED_PART: "回答有依据部分",
+        // 计划 03 (S-1): 按事实原文回答——插在 ANSWER_SUPPORTED_PART 之后、
+        // ANSWER_EVIDENCE_WITH_OPERATOR_INPUT 之前，与 allowedHandlings 排列一致。
+        ANSWER_FACTS_VERBATIM: "按事实原文回答",
         ANSWER_EVIDENCE_WITH_OPERATOR_INPUT: "依据+说明混合",
         ANSWER_FROM_OPERATOR_INPUT: "按回答说明生成",
         ACKNOWLEDGE_PENDING: "确认待补充",
@@ -55,6 +58,7 @@
         TRUST_REPLY_CLAIM_INVALID: "生成的内容未通过内容安全校验。",
         TRUST_REPLY_ACKNOWLEDGEMENT_INVALID: "致意内容未通过内容安全校验。",
         TRUST_REPLY_LOCKED_ITEM_INVALID: "已锁定的回答与当前状态不一致，请重新生成本条。",
+        TRUST_REPLY_DUPLICATE_CLAIM: "多条摘要引用了完全相同的事实，正文会重复。请把其中一条改为「省略此项」或调整事实绑定。",
         TRUST_REPLY_ITEM_VERSION_INVALID: "版本身份校验未通过，请重新生成本条。",
         TRUST_REPLY_STATE_CONFLICT: "该封信的工作台状态已被其他页面修改，请刷新后重试。",
         AI_REPLY_GENERATION_FAILED: "AI 生成失败，请重试。"
@@ -2220,13 +2224,17 @@
             const resolved = action.resolved;
             const locked = action.locked;
             const needsOperatorInstruction = OPERATOR_INSTRUCTION_HANDLINGS.includes(request.draftHandling);
+            // 计划 03 (S-2): verbatim 不调用 AI——说明框置灰且标签明示不生效。
+            const instructionDisabled = request.pending || request.draftHandling === "ANSWER_FACTS_VERBATIM";
+            const instructionLabel = request.draftHandling === "ANSWER_FACTS_VERBATIM"
+                ? "AI 调整要求（本处理方式不调用 AI，此项不生效）"
+                : (needsOperatorInstruction ? "回答说明（AI 将仅据此生成）" : "AI 调整要求（仅调整表达，可留空）");
             const options = request.availableHandlings.map((handling) => `<option value="${escapeText(handling)}"${handling === request.draftHandling ? " selected" : ""}>${escapeText(HANDLING_LABELS[handling] || handling)}</option>`).join("");
             const versions = request.versions.map((item, index) => `<option value="${escapeText(item.versionId)}"${item.versionId === request.activeVersionId ? " selected" : ""}>版本 ${index + 1} · ${escapeText(GENERATION_KIND_LABELS[item.generationKind] || item.generationKind || "版本")}</option>`).join("");
             const error = request.error ? `<div class="ai-reply-error" data-role="item-error" role="alert">${escapeText(request.error)}</div>` : "";
             const questionTranslation = renderTranslation(request, null, request.questionTranslation);
             const answer = renderRequestAnswer(request);
-            const instructionLabel = needsOperatorInstruction ? "回答说明（AI 将仅据此生成）" : "AI 调整要求（仅调整表达，可留空）";
-            return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(request.coverage || "")}" data-locked="${locked}"><div class="trust-reply-item-head" data-role="item-header">${renderRequestHeader(request)}</div>${renderFactSection(request)}<div data-role="item-body"${request.expanded ? "" : " hidden"}>${questionTranslation}<div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">${instructionLabel}<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${request.pending ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${answer}${error}<div class="trust-reply-item-actions" data-role="item-actions">${renderItemActions(request)}</div></div></article>`;
+            return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(request.coverage || "")}" data-locked="${locked}"><div class="trust-reply-item-head" data-role="item-header">${renderRequestHeader(request)}</div>${renderFactSection(request)}<div data-role="item-body"${request.expanded ? "" : " hidden"}>${questionTranslation}<div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">${instructionLabel}<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${instructionDisabled ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${answer}${error}<div class="trust-reply-item-actions" data-role="item-actions">${renderItemActions(request)}</div></div></article>`;
         }
 
         // I-5/R-2: a finished assembly is never presented as send clearance.
