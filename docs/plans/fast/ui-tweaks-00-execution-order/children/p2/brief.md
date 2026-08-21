@@ -17,7 +17,7 @@
 3. `app.js` and all Kotlin source/tests are NOT in the file list — do not modify them.
 4. Commit locally as `feat(fast-p): implement p2`; exclude fast-p evidence files.
 
-## Authorized files (5 — exactly)
+## Authorized files (6 — exactly; A2 amended 2026-08-21)
 
 | # | File | Action |
 |---|---|---|
@@ -26,6 +26,15 @@
 | 3 | src/main/resources/static/index.html | modify 3 lines (T3-1) |
 | 4 | src/test/js/batchSendTaskConsoleVisualFix.test.js | modify 3 lines (T3-2) |
 | 5 | src/test/js/overlayAndDialogContrast.test.js | NEW (T3-3) |
+| 6 | src/test/js/checkRepliesRelocation.test.js | modify (T3-4, amendment A2) |
+
+Amendment A2 (approved 2026-08-21): T3-4 updates ONLY the CACHE_KEY const and the I-3 triad
+assertion in checkRepliesRelocation.test.js from `20260821-v9-check-replies-move` to
+`20260821-v10-overlay-contrast`; all other assertions verbatim.
+Amendment A3 (approved 2026-08-21, master plan): each later child (p3, p4) may likewise sync
+cache-key-asserting tests created by earlier children of this run (checkRepliesRelocation.test.js,
+overlayAndDialogContrast.test.js, manualReplySubjectPrefill.test.js) to its own triad value,
+counting them against its file budget.
 
 ## Key invariants (plan sections are authoritative)
 
