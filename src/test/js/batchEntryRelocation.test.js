@@ -28,11 +28,15 @@ describe("batch entry relocation (a3)", () => {
         assert.ok(btnIdx < inboundIdx, "button must come before view-inbound-summary");
     });
 
-    it("I3-2: button is the second child of the panel-head, right after the panel h2", () => {
-        const panelPattern = new RegExp(
-            `<div class="panel-head">\\s*<h2>${PANEL_HEADER}</h2>\\s*${BUTTON_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`
+    it("I3-2: both head buttons live in .panel-head-actions, 检查回复 before 批量发送", () => {
+        const headPattern = new RegExp(
+            `<div class="panel-head">\\s*<h2>${PANEL_HEADER}</h2>\\s*` +
+            `<div class="panel-head-actions">\\s*` +
+            `<button class="button" id="checkRepliesBtn" onclick="handleCheckReplies\\(\\)">检查回复</button>\\s*` +
+            `${BUTTON_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*` +
+            `</div>`
         );
-        assert.match(html, panelPattern, "bulkOutreachBtn must directly follow the 已激活账号收发邮件记录 h2 inside panel-head");
+        assert.match(html, headPattern, "panel-head must wrap both buttons in .panel-head-actions with 检查回复 first");
     });
 
     it("I3-2: button tag keeps class, onclick, and label verbatim", () => {

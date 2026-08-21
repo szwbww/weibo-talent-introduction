@@ -141,7 +141,6 @@ const state = {
 let aiTrainingTrustReplyInstance = null;
 let liveTrustReplyInstance = null;
 let liveTrustReplyToken = null;
-let autoPreviewTrustReplyInstance = null;
 let liveDetailLoadSeq = 0;
 let aiTrainingEvaluationContext = null;
 
@@ -165,16 +164,10 @@ function unmountLiveTrustReply() {
     liveTrustReplyToken = null;
 }
 
-function unmountAutoPreviewTrustReply() {
-    autoPreviewTrustReplyInstance?.unmount();
-    autoPreviewTrustReplyInstance = null;
-}
-
-// Single teardown point for every mailbox-detail workbench host (LIVE +
-// AUTO_PREVIEW): keeps the two unmounts in lockstep at all 8 call sites.
+// Single teardown point for every mailbox-detail workbench host. Kept as the
+// one named entry so future hosts can be added without touching 8 call sites.
 function unmountMailboxTrustReplyHosts() {
     unmountLiveTrustReply();
-    unmountAutoPreviewTrustReply();
 }
 
 function trustReplyUnauthorized(response) {
@@ -9633,81 +9626,6 @@ function mountLiveTrustReply(recordId) {
     liveTrustReplyToken = token;
 }
 
-function mountAutoPreviewTrustReply(recordId) {
-    unmountAutoPreviewTrustReply();
-    const host = document.querySelector("[data-trust-reply-auto-preview-host]");
-    if (!host) return;
-    const runtime = requireTrustReplyWorkbenchRuntime(host);
-    if (!runtime) return;
-    autoPreviewTrustReplyInstance = runtime.mount(host, {
-        mode: "AUTO_PREVIEW",
-        source: { sourceType: "LIVE_INBOUND", sourceId: Number(recordId) },
-        contextPath,
-        onUnauthorized: trustReplyUnauthorized
-    });
-    void loadAutoPreviewIntoHost(recordId, host);
-}
-
-// I-3/I-4: renders the preview into the read-only zone. wouldBeBlockedBy items
-// become visible gate pills; the body renders regardless of the gate list.
-function renderAutoPreviewIntoHost(host, preview) {
-    const gates = Array.isArray(preview.wouldBeBlockedBy) ? preview.wouldBeBlockedBy : [];
-    const gateItemsHtml = gates
-        .map((code) => `<li class="trust-reply-gate-item">${escapeHtml(String(code))}</li>`)
-        .join("");
-    const gateList = host && typeof host.querySelector === "function"
-        ? host.querySelector(".trust-reply-gate-list")
-        : null;
-    if (gateList && typeof gateList.insertAdjacentHTML === "function") {
-        gateList.insertAdjacentHTML("beforeend", gateItemsHtml);
-    }
-    // QA_GAP / QA_NO_MATCH / MANUAL_HANDOFF carry no replyBody: show the
-    // reason instead of an empty body zone.
-    const bodyHtml = preview.replyBody
-        ? `<h4>${escapeHtml(preview.replySubject || "（无主题）")}</h4>${translatableBody(preview.replyBody)}`
-        : `<p class="text-muted">${escapeHtml(preview.reason || "暂无自动回复正文")}</p>`;
-    if (host && typeof host.insertAdjacentHTML === "function") {
-        host.insertAdjacentHTML("beforeend", `<div data-auto-preview-body>${bodyHtml}</div>`);
-    }
-}
-
-function renderAutoPreviewError(host, error) {
-    if (!host || typeof host.insertAdjacentHTML !== "function") return;
-    host.insertAdjacentHTML("beforeend", `<div class="ai-reply-error" role="alert">${escapeHtml(error.message || "预览加载失败")}</div>`);
-}
-
-// The workbench replaces host.innerHTML when its bootstrap settles; wait for
-// that shell swap before applying the preview so it cannot be wiped.
-function waitForWorkbenchReady(host) {
-    const deadline = Date.now() + 10000;
-    const ready = () => !host || typeof host.innerHTML !== "string" || !host.innerHTML.includes("正在加载工作台");
-    if (ready()) return Promise.resolve();
-    return new Promise((resolve) => {
-        const poll = () => {
-            if (ready() || Date.now() >= deadline) return resolve();
-            setTimeout(poll, 50);
-        };
-        poll();
-    });
-}
-
-async function loadAutoPreviewIntoHost(recordId, host) {
-    try {
-        const preview = await api(`/api/mail/unmatched-inbound/${recordId}/auto-reply-${"preview"}`);
-        if (String(state.mailbox.detailContext?.id) !== String(recordId)) return;
-        await waitForWorkbenchReady(host);
-        if (String(state.mailbox.detailContext?.id) !== String(recordId)) return;
-        renderAutoPreviewIntoHost(host, preview);
-        const statusEl = document.querySelector("[data-auto-preview-status]");
-        if (statusEl) statusEl.textContent = "已生成";
-    } catch (error) {
-        if (String(state.mailbox.detailContext?.id) !== String(recordId)) return;
-        const statusEl = document.querySelector("[data-auto-preview-status]");
-        if (statusEl) statusEl.textContent = "加载失败";
-        renderAutoPreviewError(host, error);
-    }
-}
-
 function arraysEqual(a, b) {
     if (!a || !b) return (!a || a?.length === 0) && (!b || b?.length === 0);
     if (a.length !== b.length) return false;
@@ -9847,25 +9765,6 @@ async function showUnmatchedDetail(id) {
         ? `<div class="detail-section reply-workflow-detail compose-workbench-section" data-trust-reply-live-host></div>`
         : "";
 
-    // I-4: without a bound expert contact the preview has no context to resolve
-    // (the LIVE workbench would surface TRUST_REPLY_SOURCE_CONTACT_NOT_FOUND);
-    // render the static degraded copy instead of mounting the AUTO_PREVIEW host.
-    const autoPreviewHtml = record.expertContactId
-        ? `<details class="detail-section reply-workflow-detail compose-workbench-section auto-preview-section" data-record-id="${id}">
-            <summary class="reply-workflow-summary">
-                <span class="reply-workflow-icon" aria-hidden="true">自</span>
-                <span class="reply-workflow-title"><strong>自动回复预览</strong><small>若此刻开启自动回复，系统会怎么处理（只读，不发送、不写库）</small></span>
-                <span class="reply-workflow-status" data-auto-preview-status>未生成</span>
-                <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
-            </summary>
-            <div class="reply-workflow-content" data-trust-reply-auto-preview-host></div>
-        </details>`
-        : `<div class="detail-section reply-workflow-detail">
-            <div class="reply-workflow-content">
-                <p class="text-muted">该来信尚未绑定专家联系人，无法解析自动回复上下文。请先在上方完成绑定。</p>
-            </div>
-        </div>`;
-
     const historyMails = (history && history.mails) || [];
     const historyTimes = historyMails.map(formatMailTime).filter(Boolean).sort();
     const latestHistoryTime = historyTimes.length ? historyTimes[historyTimes.length - 1] : "";
@@ -9941,8 +9840,6 @@ async function showUnmatchedDetail(id) {
             <div class="mail-detail-group-label"><span>处理与回复</span></div>
             ${historyHtml}
 
-            ${autoPreviewHtml}
-
             ${composeWorkbenchHtml}
 
             <details class="detail-section reply-workflow-detail manual-rich-reply-section">
@@ -9982,7 +9879,6 @@ async function showUnmatchedDetail(id) {
 
     if (record.expertContactId) {
         mountLiveTrustReply(Number(id));
-        mountAutoPreviewTrustReply(Number(id));
     }
 
     focusMailboxProcessingPanel();

@@ -829,6 +829,13 @@ p {
     display: none;
 }
 
+.panel-head-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
 /* Tables */
 .table-wrap {
     overflow-x: auto;
