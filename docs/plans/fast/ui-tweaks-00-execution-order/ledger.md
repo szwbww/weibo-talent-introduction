@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-08-21/ui-tweaks-00-execution-order.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-08-21/ui-tweaks-00-execution-order.md (commit 5b6c6ffe777b00c447c81cc38700f80f9ec07fdb)
 - Amendments: A1, A2, A3
 - Master base: bb34ca2001d0abeac3bd7a8fc13995769e14143e
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-21T00:00:00Z
-- Current child: p2
-- Waiting role: VERIFIER
+- Current child: p3
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: P3 implementer proved that pre-existing src/test/js/expertProfileAbsence.test.js:384 (showUnmatchedDetail sandbox case) fails with ReferenceError: buildManualReplySubject is not defined after p3's mandated S-1 change — createRendererSandbox (lines 326-349) loads a fixed extractFunction list that excludes the new buildManualReplySubject. The file is NOT in p3's authorized 6-file list and the plan never mentions it/sandbox. Fix is one line (register buildManualReplySubject in the sandbox); requires amendment A4 adding it as the 7th authorized file. This is the vm-sandbox variant of the A1/A2 pattern (plan blind spot on dependent tests), not covered by A3 (A3 covers run-created triad-asserting tests only).
+- Resume from: 0ad6b3b (p3 base; partial uncommitted p3 edits retained: app.js, index.html, batchSendTaskConsoleVisualFix.test.js, checkRepliesRelocation.test.js, overlayAndDialogContrast.test.js, new manualReplySubjectPrefill.test.js)
 
 ## Baseline
 
@@ -34,8 +34,8 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | p1 | docs/plans/2026-08-21/ui-tweaks-01-check-replies-move-and-auto-preview-removal.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | none | 2 | LIGHT_PASS_WITH_NOTES | bb34ca2001d0abeac3bd7a8fc13995769e14143e | 9b90e41c678c396c7e720832c58e162e717f34da | 1 | 53e12b979025e1df5f36736b2baf30d9e0bc688e | 53e12b979025e1df5f36736b2baf30d9e0bc688e | b525450eeae6375db4ec64f1ca4e96360f941378 | epoch 2 (A1 approved 2026-08-21); round 1 FIXED; verifier P1Verifier-2; RECORD_ONLY O-1 (A1 guard asserts 2 extra absence tokens, benign); implementer P1Implementer-2 |
-| p2 | docs/plans/2026-08-21/ui-tweaks-02-overlay-and-dialog-contrast.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p1 | 2 | LIGHT_VERIFYING | 53e12b979025e1df5f36736b2baf30d9e0bc688e | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | 0 | — | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | — | epoch 2 (A2+A3 approved 2026-08-21); implementer P2Implementer (epochs 1-2); verifier dispatch pending |
-| p3 | docs/plans/2026-08-21/ui-tweaks-03-manual-reply-subject-prefill.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p2 | 1 | PENDING | — | — | 0 | — | — | — | 人工富文本回复主题预填；4 files |
+| p2 | docs/plans/2026-08-21/ui-tweaks-02-overlay-and-dialog-contrast.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p1 | 2 | LIGHT_PASS | 53e12b979025e1df5f36736b2baf30d9e0bc688e | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | 0 | — | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | 69a6ee46684c3e90e4a3161505ccca5e13df5e1f | epoch 2 (A2+A3 approved 2026-08-21); verifier P2Verifier; RECORD_ONLY O-1 (uncommitted doc-only edits at verify time, attributed to 0ad6b3b); implementer P2Implementer |
+| p3 | docs/plans/2026-08-21/ui-tweaks-03-manual-reply-subject-prefill.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p2 | 1 | PAUSED_FOR_HUMAN | 0ad6b3b188e4cef69229fc3e5a06f1251d343db9 | — | 0 | — | — | — | 人工富文本回复主题预填；6 files (4 plan + 2 per A3)；implementer P3Implementer paused on unlisted expertProfileAbsence.test.js sandbox ReferenceError — amendment A4 pending |
 | p4 | docs/plans/2026-08-21/qa-gate-visibility.md | commit:2cbf6d36518aa54dd1f0dd6e69291aa7cfb6e7fd | p3 | 1 | PENDING | — | — | 0 | — | — | — | QA 门禁可见化 + V107；10 files, 2 subsystems |
 
 ## Amendments
