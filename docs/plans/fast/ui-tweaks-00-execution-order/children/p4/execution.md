@@ -96,3 +96,8 @@
 ### Next Action
 
 - PLAN_CONFLICT → obtain the human/controller amendment for qaFactCardEditor.test.js (or an explicit ruling that the glob criterion is scoped to the authorized files), then flip the single assertion and re-run the three commands.
+
+## Finalization note (controller, 2026-08-21)
+
+- Amendment A5 approved; fix round 1 `0d0923f` applied (qaFactCardEditor.test.js stale absence case removed per T11); verifier P4Verifier2 verdict `LIGHT_PASS` (O-1 Flyway docker unexecutable, human-accepted text-level V107 substitute; O-2 brief mis-citation note) — see verify-log.md.
+- Final outcome: LIGHT_PASS, evidence commit recorded by controller.

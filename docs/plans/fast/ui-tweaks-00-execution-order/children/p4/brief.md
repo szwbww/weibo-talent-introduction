@@ -22,7 +22,7 @@
    if needed; never create/write it in this worktree.
 5. Commit locally as `feat(fast-p): implement p4`; exclude fast-p evidence files.
 
-## Authorized files (13 — 10 plan + 3 per amendment A3)
+## Authorized files (14 — 10 plan + 3 per A3 + 1 per A5)
 
 | # | File | Action |
 |---|---|---|
@@ -39,6 +39,15 @@
 | 11 | src/test/js/checkRepliesRelocation.test.js | modify (A3: key v11→v12 in CACHE_KEY + I-3 assertion) |
 | 12 | src/test/js/overlayAndDialogContrast.test.js | modify (A3: key v11→v12 in triad assertion) |
 | 13 | src/test/js/manualReplySubjectPrefill.test.js | modify (A3: key v11→v12 in triad assertion) |
+| 14 | src/test/js/qaFactCardEditor.test.js | modify (T11, amendment A5) |
+
+Amendment A5 (approved 2026-08-21): T11 — DELETE the stale case `loadQa does not request coverage-keys
+endpoint` (qaFactCardEditor.test.js :99-104, asserts `!apiCalls.includes("/api/qa/coverage-keys")`,
+contradicts I-3/T6); the file's positive case `loadQa fetches coverage-keys metadata plus gate
+endpoints` (:102) already covers the contract. All other cases verbatim.
+Flyway classification (HUMAN, 2026-08-21): the plan-required `mvn test -Dtest=FlywayMigrationIntegrationTest
+-DmigrationIt=true` is unexecutable (no Docker); accepted substitute = text-level V107 assertions in
+QaRuleManagementServiceTest (plan file #9), recorded as RECORD_ONLY at verification.
 
 Budget note: the plan states "文件数 10（上限 10）"; rows 11-13 are authorized by amendment A3
 (approved 2026-08-21, master plan §三键断言测试的跨计划同步规则) — the ≤10 figure was the
