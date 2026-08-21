@@ -144,6 +144,18 @@ class QaRuleManagementService(
         return QaRuleDetail(saved, loadVariantTexts(ruleId))
     }
 
+    /** All enabled rules that declare a controlled key, keyed by that key (I-5, advisory only). */
+    fun listCoverageAuthorities(): Map<String, List<QaRule>> {
+        val authorities = linkedMapOf<String, MutableList<QaRule>>()
+        ruleRepository.findAllEnabledOrdered().forEach { rule ->
+            val keys = QaCoverageKeyCatalog.parseStored(rule.coverageKeys)
+            keys.filter { QaCoverageKeyCatalog.isControlled(it) }.forEach { key ->
+                authorities.getOrPut(key) { mutableListOf() }.add(rule)
+            }
+        }
+        return authorities
+    }
+
     private fun rejectQaVariants(variants: List<String>) {
         if (variants.isNotEmpty()) {
             throw IllegalArgumentException("QA rule content variants are no longer supported")

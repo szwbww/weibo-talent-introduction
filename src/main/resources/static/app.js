@@ -9,6 +9,8 @@ const state = {
     categories: [],
     qaRules: [],
     qaCoverageKeys: [],
+    qaControlledGroups: [],
+    qaCoverageAuthorities: {},
     composeTemplates: [],
     mailTemplatesSubTab: "qa",
     selectedComposeTemplateId: null,
@@ -143,6 +145,10 @@ let liveTrustReplyInstance = null;
 let liveTrustReplyToken = null;
 let liveDetailLoadSeq = 0;
 let aiTrainingEvaluationContext = null;
+
+// QA coverage gate local UI state (canon diff / revoke card). Reset whenever the
+// editor opens or closes (K-shared-action-dialog-cleanup).
+let qaGateUiState = { canonOpen: false, revokeGroupId: null };
 
 function unmountAiTrainingTrustReply() {
     aiTrainingTrustReplyInstance?.unmount();
@@ -1994,31 +2000,327 @@ function renderQaCoverageKeyOptions(selectedKeys) {
     container.innerHTML = "";
     groups.forEach((entries, group) => {
         const title = document.createElement("div");
-        title.className = "field-label";
-        title.style.cssText = "grid-column:1/-1;margin-top:6px;";
+        title.className = "qa-cov-group-title";
         title.textContent = group;
         container.appendChild(title);
+        const grid = document.createElement("div");
+        grid.className = "qa-cov-grid";
         entries.forEach((entry) => {
+            const controlled = Boolean(entry.controlled);
+            const checked = selected.has(entry.key);
             const row = document.createElement("label");
-            row.className = "checkbox-row";
+            row.className = "qa-cov-item" + (controlled ? " is-controlled" : "") + (checked ? " checked" : "");
             row.title = escapeHtml(entry.description || "");
-            row.innerHTML = `<input type="checkbox" data-qa-coverage-key="${escapeHtml(entry.key)}" ${selected.has(entry.key) ? "checked" : ""}>
-                <span>${escapeHtml(entry.label)}</span>`;
-            container.appendChild(row);
+            row.innerHTML = `<input type="checkbox" class="qa-cov-input" data-coverage-key="${escapeHtml(entry.key)}"${checked ? " checked" : ""}>
+                <span class="qa-cov-text">${escapeHtml(entry.label)}</span>${controlled ? `<span class="qa-cov-lock">受控</span>` : ""}`;
+            grid.appendChild(row);
         });
+        container.appendChild(grid);
     });
     if (warning) {
         warning.style.display = selected.size > 0 ? "none" : "";
     }
 }
 
+function renderQaCoverageKeyChips(selectedKeys) {
+    const container = $("#qaCoverageKeyChips");
+    const countEl = $("#qaCoverageKeyCount");
+    const selected = selectedKeys || [];
+    const order = state.qaCoverageKeys.map((entry) => entry.key).filter((key) => selected.includes(key));
+    if (container) {
+        container.innerHTML = `<span class="qa-cov-chips-label">当前授权</span>` + (order.length
+            ? order.map((key) => {
+                const entry = state.qaCoverageKeys.find((e) => e.key === key);
+                const label = entry ? entry.label : key;
+                const controlled = Boolean(entry && entry.controlled);
+                return `<span class="qa-cov-chip${controlled ? " is-controlled" : ""}" title="${escapeHtml(key)}">${controlled ? "🔒 " : ""}${escapeHtml(label)}<span class="qa-cov-chip-x" data-coverage-unpick="${escapeHtml(key)}">×</span></span>`;
+            }).join("")
+            : `<span class="qa-cov-chips-none">未勾选任何能力 —— AI 不会引用这条事实作答</span>`);
+    }
+    if (countEl) {
+        const controlledCount = order.filter((key) => {
+            const entry = state.qaCoverageKeys.find((e) => e.key === key);
+            return entry ? Boolean(entry.controlled) : false;
+        }).length;
+        countEl.textContent = `已勾选 ${order.length} 项${controlledCount ? ` · 其中受控 ${controlledCount} 项` : ""}`;
+    }
+}
+
+// I-7: every coverage key stays resident in #qaCoverageKeyOptions; the collector
+// walks ALL .qa-cov-input entries and returns the checked keys in DOM order.
+function collectQaCoverageKeys() {
+    const container = $("#qaCoverageKeyOptions");
+    if (!container) return [];
+    return Array.from(container.querySelectorAll(".qa-cov-input"))
+        .filter((input) => input.checked)
+        .map((input) => input.getAttribute("data-coverage-key"));
+}
+
+async function loadQaCoverageMeta() {
+    const [controlledGroups, authorities] = await Promise.all([
+        api("/api/qa/coverage-keys/controlled-groups"),
+        api("/api/qa/coverage-keys/authorities")
+    ]);
+    state.qaControlledGroups = controlledGroups || [];
+    state.qaCoverageAuthorities = authorities || {};
+}
+
+// I-1 mirror: the frontend gate only engages when the selected set is EXACTLY one
+// controlled group; otherwise it is advisory (ok / partial) and never blocks save.
+function evaluateQaCoverageGate() {
+    const selectedKeys = collectQaCoverageKeys();
+    const selected = new Set(selectedKeys);
+    const controlledCount = selectedKeys.filter((key) => {
+        const entry = state.qaCoverageKeys.find((e) => e.key === key);
+        return entry ? Boolean(entry.controlled) : false;
+    }).length;
+    if (controlledCount === 0) return { kind: "none", level: "ok" };
+    const group = (state.qaControlledGroups || []).find((g) => g.keys.length === selected.size && g.keys.every((k) => selected.has(k)));
+    if (!group) return { kind: "partial", level: "warn" };
+    const answerBodyEl = $("#qaRuleAnswerBody");
+    const body = answerBodyEl ? String(answerBodyEl.value || "").trim() : "";
+    if (body !== group.canonicalBody) return { kind: "drift", level: "warn", group: group };
+    return { kind: "aligned", level: "ok", group: group };
+}
+
+// LCS word diff (S-5): returns [delHtml, insHtml]; all inserted text escaped.
+function diffWordsForGate(canonical, current) {
+    const a = String(canonical || "").split(/(\s+)/);
+    const b = String(current || "").split(/(\s+)/);
+    const m = a.length;
+    const n = b.length;
+    const d = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = m - 1; i >= 0; i--) {
+        for (let j = n - 1; j >= 0; j--) {
+            d[i][j] = a[i] === b[j] ? d[i + 1][j + 1] + 1 : Math.max(d[i + 1][j], d[i][j + 1]);
+        }
+    }
+    let i = 0;
+    let j = 0;
+    let delHtml = "";
+    let insHtml = "";
+    while (i < m && j < n) {
+        if (a[i] === b[j]) {
+            delHtml += escapeHtml(a[i]);
+            insHtml += escapeHtml(b[j]);
+            i++;
+            j++;
+        } else if (d[i + 1][j] >= d[i][j + 1]) {
+            delHtml += `<span class="del">${escapeHtml(a[i])}</span>`;
+            i++;
+        } else {
+            insHtml += `<span class="ins">${escapeHtml(b[j])}</span>`;
+            j++;
+        }
+    }
+    while (i < m) {
+        delHtml += `<span class="del">${escapeHtml(a[i])}</span>`;
+        i++;
+    }
+    while (j < n) {
+        insHtml += `<span class="ins">${escapeHtml(b[j])}</span>`;
+        j++;
+    }
+    return [delHtml, insHtml];
+}
+
+// S-5 revoke confirmation card; last-authority-source wording is advisory only (I-5).
+function renderQaGateRevokeCard(group) {
+    const currentRuleId = state.selectedRuleId;
+    const remainingNames = new Set();
+    group.keys.forEach((key) => {
+        const authorities = state.qaCoverageAuthorities?.[key] || [];
+        authorities.forEach((rule) => {
+            if (String(rule.id) !== String(currentRuleId)) remainingNames.add(rule.displayName || `#${rule.id}`);
+        });
+    });
+    const last = remainingNames.size === 0;
+    const impactHtml = last
+        ? `<span class="impact-bad">⚠ 这是最后一个授权源。</span>解除后，专家问到「${escapeHtml(group.name)}」相关问题时，AI 将<b>找不到任何依据</b>，该问题会判为 UNSUPPORTED 并<b>转人工处理</b>。`
+        : `<span class="impact-ok">✓ 仍有其它权威出处：</span>${escapeHtml(Array.from(remainingNames).join("、"))}，AI 回答不受影响。`;
+    return `<div class="qa-gate-revoke">
+        <h4>解除本规则对「${escapeHtml(group.name)}」的授权？</h4>
+        <div class="qa-gate-revoke-impact">这条规则将不再作为该事实的权威出处，正文可以自由编辑。影响：
+            <ul>
+                <li>取消勾选：${group.keys.map((k) => `<code>${escapeHtml(k)}</code>`).join(" 、 ")}</li>
+                <li>${impactHtml}</li>
+                <li>正文里已经写过的相关句子<b>不会被自动删除</b>，但 AI 不会再把它当作该问题的依据。</li>
+            </ul>
+        </div>
+        <div class="qa-gate-revoke-foot">
+            <button type="button" class="qa-gate-btn danger" data-gate-act="revoke-do" data-gate-group="${escapeHtml(group.id)}">确认解除授权</button>
+            <button type="button" class="qa-gate-btn" data-gate-act="revoke-cancel">再想想</button>
+        </div>
+    </div>`;
+}
+
+// A-7: drift -> red badge, aligned -> amber badge on the fact body header row.
+function renderQaGateBodyBadge(result) {
+    const head = document.querySelector(".qa-fact-body-head");
+    if (!head) return;
+    let badgeEl = head.querySelector(".badge");
+    if (!badgeEl) {
+        badgeEl = document.createElement("span");
+        badgeEl.className = "badge";
+        head.insertBefore(badgeEl, head.querySelector(".var-editor-toolbar"));
+    }
+    if (result.kind === "drift") {
+        badgeEl.className = "badge error";
+        badgeEl.textContent = "受控 · 正文不一致";
+    } else if (result.kind === "aligned") {
+        badgeEl.className = "badge warn";
+        badgeEl.textContent = "受控 · " + (result.group?.name || "");
+    } else {
+        badgeEl.className = "badge";
+        badgeEl.textContent = "";
+    }
+}
+
+// S-4/S-5/S-6: renders the gate bar, syncs save button and save-block message.
+function renderQaCoverageGate() {
+    const gate = $("#qaCoverageGate");
+    if (!gate) return;
+    const result = evaluateQaCoverageGate();
+    const group = result.group || null;
+    gate.className = "qa-gate " + result.level;
+    let html = "";
+    if (result.kind === "none") {
+        html = `<div class="qa-gate-line"><span class="qa-gate-ic">✓</span><div>本规则<b>未声明任何受控事实</b>，正文可自由编辑，保存不受门禁限制。</div></div>`;
+    } else if (result.kind === "aligned") {
+        html = `<div class="qa-gate-line"><span class="qa-gate-ic">✓</span><div>本规则是「<b>${escapeHtml(group.name)}</b>」的权威出处，正文与标准承诺<b>逐字一致</b>，可以保存。</div></div>
+            <div class="qa-gate-actions">
+                <button type="button" class="qa-gate-btn" data-gate-act="canon">${qaGateUiState.canonOpen ? "收起标准承诺" : "查看标准承诺"}</button>
+                <button type="button" class="qa-gate-btn danger" data-gate-act="revoke" data-gate-group="${escapeHtml(group.id)}">解除本规则对「${escapeHtml(group.name)}」的授权…</button>
+            </div>`;
+        if (qaGateUiState.canonOpen) {
+            html += `<div class="qa-gate-canon"><div class="qa-gate-canon-row"><div class="qa-gate-canon-label">标准承诺</div>${escapeHtml(group.canonicalBody)}</div></div>`;
+        }
+    } else if (result.kind === "drift") {
+        const answerBodyEl = $("#qaRuleAnswerBody");
+        const [delHtml, insHtml] = diffWordsForGate(group.canonicalBody, answerBodyEl ? String(answerBodyEl.value || "") : "");
+        html = `<div class="qa-gate-line"><span class="qa-gate-ic">⚠</span><div>正文与「<b>${escapeHtml(group.name)}</b>」的标准承诺<b>不一致</b>，无法保存。</div></div>
+            <div class="qa-gate-sub">这条规则被声明为该承诺的权威出处，AI 会以「依据充分」的姿态把它原样发给专家，所以措辞必须与标准承诺完全相同。</div>
+            <div class="qa-gate-actions">
+                <button type="button" class="qa-gate-btn" data-gate-act="canon">${qaGateUiState.canonOpen ? "收起差异" : "查看差异"}</button>
+                <button type="button" class="qa-gate-btn" data-gate-act="restore" data-gate-group="${escapeHtml(group.id)}">恢复标准正文</button>
+                <button type="button" class="qa-gate-btn danger" data-gate-act="revoke" data-gate-group="${escapeHtml(group.id)}">解除本规则对「${escapeHtml(group.name)}」的授权…</button>
+            </div>`;
+        if (qaGateUiState.canonOpen) {
+            html += `<div class="qa-gate-canon">
+                <div class="qa-gate-canon-row"><div class="qa-gate-canon-label">标准承诺</div>${delHtml}</div>
+                <div class="qa-gate-canon-row"><div class="qa-gate-canon-label">当前正文</div>${insHtml}</div>
+            </div>`;
+        }
+    } else if (result.kind === "partial") {
+        html = `<div class="qa-gate-line"><span class="qa-gate-ic">⚠</span><div>本规则<b>不构成权威出处</b>，AI 不会用它回答该类问题。</div></div>
+            <div class="qa-gate-sub">如需成为权威出处，请补齐该组的全部键。</div>`;
+    }
+    if (qaGateUiState.revokeGroupId && group && group.id === qaGateUiState.revokeGroupId) {
+        html += renderQaGateRevokeCard(group);
+    }
+    gate.innerHTML = html;
+
+    // Only drift blocks save; none/aligned/partial keep the button enabled (I-1).
+    const blocked = result.kind === "drift";
+    const saveBtn = $("#saveBtn");
+    if (saveBtn) saveBtn.disabled = blocked;
+    const saveBlock = $("#qaCoverageSaveBlock");
+    if (saveBlock) {
+        saveBlock.hidden = !blocked;
+        saveBlock.textContent = blocked ? "保存已被门禁拦截 —— 按上方任一条出路处理后即可保存" : "";
+    }
+    renderQaGateBodyBadge(result);
+}
+
+function handleQaCoverageKeyChange() {
+    qaGateUiState.revokeGroupId = null;
+    const selected = collectQaCoverageKeys();
+    renderQaCoverageKeyChips(selected);
+    renderQaCoverageGate();
+}
+
+function handleQaCoverageUnpick(key) {
+    qaGateUiState.revokeGroupId = null;
+    const container = $("#qaCoverageKeyOptions");
+    if (container) {
+        const input = container.querySelector('.qa-cov-input[data-coverage-key="' + key + '"]');
+        if (input) input.checked = false;
+    }
+    const selected = collectQaCoverageKeys();
+    renderQaCoverageKeyChips(selected);
+    renderQaCoverageGate();
+}
+
+// Keystroke handler: gate only, never the whole panel innerHTML (K-state-input-no-per-keystroke-innerhtml).
+function handleQaRuleBodyInput() {
+    renderQaCoverageGate();
+}
+
+function handleQaCoverageWhy() {
+    const body = $("#qaCoverageWhyBody");
+    if (!body) return;
+    if (!body.dataset.rendered) {
+        body.innerHTML = "勾选的能力决定 AI 在回答哪类问题时可以把这条事实当作依据引用。没有勾选，AI 就算读到这条正文也不会拿它作答。<br>"
+            + "带「受控」的四类是对外法律承诺（费用、材料保密、合同安排、签约前 IP）。一条规则要成为某类承诺的权威出处，"
+            + "它的覆盖能力必须<b>恰好</b>是该类的全部键；此时正文必须与标准承诺逐字一致，"
+            + "否则 AI 会以「依据充分」的姿态发出一句被改写过的承诺。";
+        body.dataset.rendered = "1";
+    }
+    body.hidden = !body.hidden;
+}
+
+function handleQaGateAction(button) {
+    const act = button.dataset.gateAct;
+    const groupId = button.dataset.gateGroup || null;
+    const group = (state.qaControlledGroups || []).find((g) => g.id === groupId) || null;
+    if (act === "canon") {
+        qaGateUiState.canonOpen = !qaGateUiState.canonOpen;
+        renderQaCoverageGate();
+    } else if (act === "restore") {
+        if (group) {
+            const answerBodyEl = $("#qaRuleAnswerBody");
+            if (answerBodyEl) answerBodyEl.value = group.canonicalBody;
+        }
+        qaGateUiState.canonOpen = false;
+        renderQaCoverageGate();
+    } else if (act === "revoke") {
+        qaGateUiState.revokeGroupId = groupId;
+        renderQaCoverageGate();
+    } else if (act === "revoke-cancel") {
+        qaGateUiState.revokeGroupId = null;
+        renderQaCoverageGate();
+    } else if (act === "revoke-do") {
+        revokeQaCoverageGroup(groupId);
+    }
+}
+
+// I-4: revoke removes EVERY key of the controlled group together (G3 pairs move as one).
+function revokeQaCoverageGroup(groupId) {
+    const group = (state.qaControlledGroups || []).find((g) => g.id === groupId);
+    if (!group) return;
+    const container = $("#qaCoverageKeyOptions");
+    group.keys.forEach((key) => {
+        if (container) {
+            const input = container.querySelector('.qa-cov-input[data-coverage-key="' + key + '"]');
+            if (input) input.checked = false;
+        }
+    });
+    qaGateUiState.revokeGroupId = null;
+    const selected = collectQaCoverageKeys();
+    renderQaCoverageKeyOptions(selected);
+    renderQaCoverageKeyChips(selected);
+    renderQaCoverageGate();
+}
+
 async function loadQa() {
-    const [categories, rules] = await Promise.all([
+    const [categories, rules, coverageKeys] = await Promise.all([
         api("/api/qa/categories"),
-        api("/api/qa/rules")
+        api("/api/qa/rules"),
+        api("/api/qa/coverage-keys")
     ]);
     state.categories = categories;
     state.qaRules = rules;
+    state.qaCoverageKeys = coverageKeys;
 
     const formSelect = $("#qaRuleForm").categoryId;
     const formSelectValue = formSelect.value;
@@ -2029,6 +2331,7 @@ async function loadQa() {
 
     renderQaRulesTable();
     renderQaAuditPanel();
+    loadQaCoverageMeta().catch(() => {});
 }
 
 async function loadQaAuditReport() {
@@ -2853,6 +3156,8 @@ function hideQaRuleEditor() {
     $("#qaRuleModal").hidden = true;
     document.body.classList.remove("modal-open");
     state.selectedRuleId = null;
+    qaGateUiState.canonOpen = false;
+    qaGateUiState.revokeGroupId = null;
     closePreviewDrawer();
 }
 
@@ -2872,11 +3177,17 @@ function fillQaRuleForm(rule) {
     form.replyPolicy.value = rule?.replyPolicy || "REVIEW";
     form.answerBody.value = rule?.answerBody || rule?.replyBody || "";
     form.enabled.checked = rule?.enabled ?? true;
+    qaGateUiState.canonOpen = false;
+    qaGateUiState.revokeGroupId = null;
     const answerBodyEl = $("#qaRuleAnswerBody");
     if (answerBodyEl) {
         updateVarValidationForTarget("qaRuleAnswerBody", answerBodyEl);
     }
     mountPreviewRail({ targetId: "qaRuleAnswerBody" });
+    const selectedCoverage = rule?.coverageKeys || [];
+    renderQaCoverageKeyOptions(selectedCoverage);
+    renderQaCoverageKeyChips(selectedCoverage);
+    renderQaCoverageGate();
 }
 
 async function saveQaRule(event) {
@@ -2896,7 +3207,8 @@ async function saveQaRule(event) {
         answerBody: values.answerBody,
         replyPolicy: values.replyPolicy,
         displayName: values.displayName?.trim() || null,
-        enabled: form.enabled.checked
+        enabled: form.enabled.checked,
+        coverageKeys: collectQaCoverageKeys()
     };
     const path = state.selectedRuleId ? `/api/qa/rules/${state.selectedRuleId}` : "/api/qa/rules";
     await api(path, { method: state.selectedRuleId ? "PUT" : "POST", body: JSON.stringify(payload) });
@@ -10971,6 +11283,32 @@ function bindEvents() {
     $("#loadQaAuditBtn")?.addEventListener("click", () => loadQaAuditReport().catch((e) => showStatus(e.message, "error")));
     $("#loadQaAuditBtn")?.addEventListener("click", () => loadQaAuditReport().catch((e) => showStatus(e.message, "error")));
     $("#qaRuleForm").addEventListener("submit", (event) => saveQaRule(event).catch((error) => showStatus(error.message, "error")));
+    $("#qaRuleForm").addEventListener("change", (event) => {
+        if (event.target.matches(".qa-cov-input")) {
+            handleQaCoverageKeyChange();
+        }
+    });
+    $("#qaRuleForm").addEventListener("input", (event) => {
+        if (event.target && event.target.id === "qaRuleAnswerBody") {
+            handleQaRuleBodyInput();
+        }
+    });
+    $("#qaRuleForm").addEventListener("click", (event) => {
+        const unpick = event.target.closest("[data-coverage-unpick]");
+        if (unpick) {
+            handleQaCoverageUnpick(unpick.dataset.coverageUnpick);
+            return;
+        }
+        if (event.target.id === "qaCoverageWhyBtn") {
+            handleQaCoverageWhy();
+            return;
+        }
+        const gateBtn = event.target.closest("[data-gate-act]");
+        if (gateBtn) {
+            event.preventDefault();
+            handleQaGateAction(gateBtn);
+        }
+    });
     document.addEventListener("click", (event) => {
         const insertBtn = event.target.closest(".var-insert-btn");
         if (insertBtn) {

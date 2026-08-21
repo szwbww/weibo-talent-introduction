@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260821-v11-reply-subject-prefill">
+    <link rel="stylesheet" href="styles.css?v=20260821-v12-qa-coverage-gate">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1782,6 +1782,19 @@
                     <option value="NEVER">NEVER（禁止外发）</option>
                 </select>
             </label>
+            <div class="qa-cov-panel span-2">
+                <div class="qa-cov-head">
+                    <span class="qa-cov-title">AI 覆盖能力（事实授权）</span>
+                    <span class="qa-cov-count" id="qaCoverageKeyCount"></span>
+                    <span class="qa-cov-spacer"></span>
+                    <button type="button" class="qa-cov-why" id="qaCoverageWhyBtn">为什么有的能力带锁？</button>
+                </div>
+                <div class="qa-cov-why-body" id="qaCoverageWhyBody" hidden></div>
+                <div class="qa-cov-chips" id="qaCoverageKeyChips"></div>
+                <div class="qa-cov-body" id="qaCoverageKeyOptions"></div>
+                <p class="qa-cov-warning" id="qaCoverageKeyWarning" hidden></p>
+            </div>
+            <div class="qa-gate span-2" id="qaCoverageGate"></div>
             <label class="span-2 qa-fact-body-field">
                 <div class="qa-fact-body-head">
                     <span>标准事实正文</span>
@@ -1798,8 +1811,9 @@
                 </div>
             </label>
             <label class="checkbox-row"><input name="enabled" type="checkbox" checked>启用事实</label>
+            <div class="qa-gate-save-block span-2" id="qaCoverageSaveBlock" hidden></div>
             <div class="form-actions modal-actions">
-                <button class="button primary" type="submit">保存事实</button>
+                <button class="button primary" type="submit" id="saveBtn">保存事实</button>
                 <button class="button secondary" type="button" id="clearQaRuleBtn">取消</button>
             </div>
         </form>
@@ -2073,7 +2087,7 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260821-v11-reply-subject-prefill"></script>
-<script src="app.js?v=20260821-v11-reply-subject-prefill"></script>
+<script src="trust-reply-workbench.js?v=20260821-v12-qa-coverage-gate"></script>
+<script src="app.js?v=20260821-v12-qa-coverage-gate"></script>
 </body>
 </html>

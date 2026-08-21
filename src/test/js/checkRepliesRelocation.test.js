@@ -8,7 +8,7 @@ const html = fs.readFileSync(path.join(root, "index.html"), "utf-8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf-8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf-8");
 
-const CACHE_KEY = "20260821-v11-reply-subject-prefill";
+const CACHE_KEY = "20260821-v12-qa-coverage-gate";
 const CHECK_REPLIES_TAG = '<button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>';
 
 describe("check replies relocation (p1)", () => {
@@ -54,7 +54,7 @@ describe("check replies relocation (p1)", () => {
             ".view sections must stay in the DOM");
     });
 
-    it("I-3: the cache-key triad is exactly 20260821-v11-reply-subject-prefill everywhere", () => {
+    it("I-3: the cache-key triad is exactly 20260821-v12-qa-coverage-gate everywhere", () => {
         const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
         assert.strictEqual(keys.length, 3, "index.html must carry exactly three cache-busted asset URLs");
         for (const key of keys) {
