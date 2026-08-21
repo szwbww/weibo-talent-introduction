@@ -1487,6 +1487,18 @@ function escapeHtml(value) {
         .replaceAll("'", "&#039;");
 }
 
+// P3 (I-1): mirrors GroundedAutoReplyDecisionService.buildReplySubject —
+// trim; blank -> "Re:"; already "Re:"-prefixed (case-insensitive) -> as is;
+// otherwise "Re: " + subject. I-2: cap at 255 so the server's length guard
+// (PendingMailOperationService: Subject exceeds 255 characters) can never be
+// tripped by the prefill itself. I-4: no placeholder rewriting here.
+function buildManualReplySubject(inboundSubject) {
+    const trimmed = String(inboundSubject ?? "").trim();
+    if (!trimmed) return "Re:";
+    const prefixed = trimmed.slice(0, 3).toLowerCase() === "re:" ? trimmed : `Re: ${trimmed}`;
+    return prefixed.slice(0, 255);
+}
+
 function encodeTranslateSrc(text) {
     try {
         return btoa(unescape(encodeURIComponent(String(text ?? ""))));
@@ -9850,7 +9862,7 @@ async function showUnmatchedDetail(id) {
                     <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
                 </summary>
                 <div class="reply-workflow-content">
-                <input id="manualReplySubject" placeholder="邮件主题" style="margin-bottom:8px;">
+                <input id="manualReplySubject" placeholder="邮件主题" value="${escapeHtml(buildManualReplySubject(record.subject))}" style="margin-bottom:8px;">
                 <div class="rich-toolbar">
                     <button type="button" data-action="rich-command" data-command="bold"><strong>B</strong></button>
                     <button type="button" data-action="rich-command" data-command="italic"><em>I</em></button>

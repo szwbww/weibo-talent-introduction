@@ -12,7 +12,7 @@ const styles = fs.readFileSync(stylesPath, "utf-8");
 const workbench = fs.readFileSync(workbenchPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260821-v10-overlay-contrast";
+const CACHE_KEY = "20260821-v11-reply-subject-prefill";
 
 // Source-text helpers (whitespace-normalized for the verbatim contract checks).
 function stripWs(text) {
@@ -263,7 +263,7 @@ describe("P2 overlay + dialog contrast (source contract)", () => {
         assert.ok(dark.includes("background: rgba(21, 31, 48, 0.97);"), "dark action-dialog override");
     });
 
-    it("I-8: the cache-key triad is exactly 20260821-v10-overlay-contrast, three sites, one value", () => {
+    it("I-8: the cache-key triad is exactly 20260821-v11-reply-subject-prefill, three sites, one value", () => {
         const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
         assert.strictEqual(keys.length, 3, "index.html must carry exactly three cache-busted asset URLs");
         assert.strictEqual(new Set(keys).size, 1, "all three keys must share one value");
