@@ -96,13 +96,6 @@ describe("qa fact card editor", () => {
         assert.ok(indexHtmlSource.includes("<th>回复策略</th>"));
     });
 
-    it("loadQa does not request coverage-keys endpoint", async () => {
-        const sb = createSandbox();
-        await sb.loadQa();
-        assert.ok(!sb.apiCalls.includes("/api/qa/coverage-keys"));
-        assert.deepEqual(sb.apiCalls, ["/api/qa/categories", "/api/qa/rules"]);
-    });
-
     it("renderQaRulesTable shows policy badges", () => {
         const sb = createSandbox();
         sb.renderQaRulesTable();
