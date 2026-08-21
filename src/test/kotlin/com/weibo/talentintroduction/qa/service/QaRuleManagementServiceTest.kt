@@ -1123,8 +1123,11 @@ class QaRuleManagementServiceTest {
         assertTrue(v107.contains("WHERE id = 24"), "V107 must target rule 24 only")
         assertTrue(v107.contains("coverage_keys = '$nineKeys'"), "V107 must write the 9-key stripped string")
         assertTrue(v107.contains("coverage_keys = '$baseline'"), "V107 baseline guard must match the V76 value verbatim")
-        assertFalse(v107.contains("answer_body"), "V107 must not touch answer_body")
-        assertFalse(v107.contains("reply_body"), "V107 must not touch reply_body")
+        val v107Sql = v107.lineSequence()
+            .filterNot { it.trimStart().startsWith("--") }
+            .joinToString("\n")
+        assertFalse(v107Sql.contains("answer_body"), "V107 must not touch answer_body")
+        assertFalse(v107Sql.contains("reply_body"), "V107 must not touch reply_body")
     }
 
     // ── P1-8: work arrangement labels match final body ──────────────────────────
