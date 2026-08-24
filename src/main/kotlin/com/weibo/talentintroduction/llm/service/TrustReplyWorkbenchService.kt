@@ -152,9 +152,14 @@ data class TrustReplyRequestCoverage(
     // 03a (I-1): per-request evidence version for this coverage item; the
     // default keeps every existing constructor site source-compatible.
     val evidenceSetVersion: String = "",
-    // P1 (I-2/I-3): 本条摘要中运营绑定但未被采纳的事实 id。影子字段，
-    // 默认值保证既有构造点源码兼容；不参与任何身份哈希（I-3）。
-    val droppedFactRuleIds: List<Long> = emptyList()
+    // 计划 02 (I-2): 本条人工最终事实中严格命中关键词并进入 SUPPORTED 意图证据
+    // 集的事实 id（自然诊断）。仅供 UI 提示，绝不进入授权、allowedHandlings、
+    // 版本拒绝或发送删减逻辑。默认值保证既有构造点源码兼容。
+    val intentMatchedFactRuleIds: List<Long> = emptyList(),
+    // 计划 02 (I-2): 本条人工最终事实中未通过严格关键词匹配的事实 id（按人工
+    // 顺序）。与 intentMatchedFactRuleIds 的并集按人工顺序等于 factRuleIds（I-1）。
+    // 仅供 UI 诊断提示，不参与任何身份哈希。
+    val intentMismatchFactRuleIds: List<Long> = emptyList()
 )
 
 /**
@@ -913,7 +918,9 @@ class TrustReplyWorkbenchService(
             versions += version
         }
         validateGroundedTrustBoundary(selection.requestFacts, groundedSections)
-        validateNoDuplicateClaims(versions)
+        // 计划 02 (I-6): 跨 item 重复 claim 查重已删除——同一事实可合法绑定多个
+        // request；单 item 内 claim set / source ids / answer-claim 一致性仍由
+        // canonicalizeClaims 保证。
         return LockedSubsetResult(kept = kept, droppedCount = droppedCount)
     }
 
@@ -1128,19 +1135,10 @@ class TrustReplyWorkbenchService(
         val perRequestEvidenceVersion = resolvedSelection.requestEvidenceVersions.getValue(request.requestKey)
         requireCurrentEvidenceVersion(request.expectedEvidenceSetVersion, perRequestEvidenceVersion)
         requireAllowedHandlingForApi(item, request.handling)
-        // 计划 02 (I-9): 新 handling 与 ANSWER_FROM_OPERATOR_INPUT 同样要求
-        // 非空且 ≤500 的回答说明——说明为空时该 handling 退化为「按依据生成但
-        // 没人告诉它要表达什么」，服务层 require 会抛 500，必须先 422 拦下。
-        if (request.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT ||
-            request.handling == TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT
-        ) {
-            if (request.operatorInstruction?.trim()?.length ?: 0 > 500) {
-                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID")
-            }
-            if (request.operatorInstruction?.trim().isNullOrEmpty()) {
-                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID")
-            }
-        }
+        // 计划 02 (I-4): 集中机械前置——4 种事实模式空事实 → TRUST_REPLY_FACT_REQUIRED
+        // （前端显示「请先添加事实」，下拉保留当前选择）；2 种说明模式空/超长说明
+        // → TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID（422，不是服务层 500）。
+        requireHandlingPrerequisites(item, request.handling, request.operatorInstruction)
         if (request.handling == TrustReplyItemHandling.OMIT) {
             cancellationToken?.throwIfCancelled()
             if (beforeCommit != null && !beforeCommit()) {
@@ -1277,8 +1275,9 @@ class TrustReplyWorkbenchService(
         }
 
         validateGroundedTrustBoundary(selection.requestFacts, groundedSections)
-
-        validateNoDuplicateClaims(versions)
+        // 计划 02 (I-6): 跨 item 重复 claim 查重已删除——同一事实可合法绑定多个
+        // request；单 item 内 claim set / source ids / answer-claim 一致性仍由
+        // canonicalizeClaims 保证。
 
         val orderedAnswers = versions.mapNotNull { version ->
             version.answerText.takeIf { version.handling != TrustReplyItemHandling.OMIT }
@@ -1292,8 +1291,6 @@ class TrustReplyWorkbenchService(
             contact = resolved.contact,
             senderAccountCode = resolved.senderAccountCode
         )
-        val factIds = linkedSetOf<Long>()
-        groundedSections.flatMap { it.answers }.flatMap { it.sourceRuleIds }.forEach(factIds::add)
         return TrustReplyAssembleResponse(
             source = resolved.source,
             sourceVersion = resolved.sourceVersion,
@@ -1301,7 +1298,9 @@ class TrustReplyWorkbenchService(
             rawDraftText = raw,
             renderedDraftText = preview.renderedText,
             draftHash = AiReplyDraftService.sha256Hex(raw),
-            canonicalFactIds = factIds.toList(),
+            // 计划 02 (I-7): canonical audit 来自选择（人工矩阵有序 union），
+            // 不随 verbatim/operator/ack/omit 等文案形态变化而丢失。
+            canonicalFactIds = selection.sendQaRuleIds,
             itemVersions = versions,
             contextVersion = resolved.contextVersion,
             requestedFactIds = selection.sendQaRuleIds,
@@ -1340,38 +1339,6 @@ class TrustReplyWorkbenchService(
         }
     }
 
-    private fun validateNoDuplicateClaims(versions: List<TrustReplyItemVersion>) {
-        val seenClaimKeys = mutableSetOf<Pair<String, Long>>()
-        val seenNormalizedAnswers = mutableMapOf<String, Int>()
-        versions.forEach { version ->
-            if (version.handling == TrustReplyItemHandling.OMIT) {
-                return@forEach
-            }
-            version.claims.forEach { claim ->
-                claim.sourceRuleIds.forEach { sourceRuleId ->
-                    if (!seenClaimKeys.add(claim.intentKey to sourceRuleId)) {
-                        throw TrustReplyWorkbenchException(
-                            HttpStatus.UNPROCESSABLE_ENTITY,
-                            "TRUST_REPLY_DUPLICATE_CLAIM"
-                        )
-                    }
-                }
-            }
-            if (version.answerText.isNotBlank()) {
-                val normalized = version.answerText.trim()
-                    .lowercase(Locale.ROOT)
-                    .replace(Regex("\\s+"), " ")
-                val previous = seenNormalizedAnswers.putIfAbsent(normalized, version.requestIndex)
-                if (previous != null) {
-                    throw TrustReplyWorkbenchException(
-                        HttpStatus.UNPROCESSABLE_ENTITY,
-                        "TRUST_REPLY_DUPLICATE_CLAIM"
-                    )
-                }
-            }
-        }
-    }
-
     private fun validateLockedItem(
         item: RequestFactItem,
         locked: TrustReplyLockedItemRequest,
@@ -1386,6 +1353,9 @@ class TrustReplyWorkbenchService(
             throw TrustReplyWorkbenchException(HttpStatus.CONFLICT, "TRUST_REPLY_EVIDENCE_STALE")
         }
         requireAllowedHandlingForApi(item, locked.handling)
+        // 计划 02 (I-4): 锁定/恢复/整合同样执行集中机械前置——空事实的
+        // 事实模式与空说明的说明模式在此一并 422。
+        requireHandlingPrerequisites(item, locked.handling, locked.operatorInstruction)
         when (locked.handling) {
             TrustReplyItemHandling.OMIT -> {
                 if (locked.answerText.isNotEmpty() || locked.claims.isNotEmpty() ||
@@ -1473,19 +1443,27 @@ class TrustReplyWorkbenchService(
         }
     }
 
+    // 计划 02 (I-5): 与 AiReplyGroundedContentPlanner 同一 canonical projection——
+    // supported intent pairs 之后追加 residual general pair（= 人工最终事实集 -
+    // 已使用 source ids）；residual 非空且已有 supported general.answer 时并入
+    // 该 pair（claim key 唯一）。回答段落顺序与 planner claims 顺序一致。
     private fun canonicalizeClaims(
         item: RequestFactItem,
         claims: List<AiReplyItemClaim>,
         answerText: String
     ): List<AiReplyItemClaim> {
         val supported = item.intents.filter { it.status == "SUPPORTED" }
-        val expected = if (supported.isNotEmpty()) {
-            supported.map { it.intentKey to it.evidenceRuleIds.distinct() }
-        } else if (item.factRuleIds.isNotEmpty()) {
-            listOf("general.answer" to item.factRuleIds.distinct())
-        } else {
-            emptyList()
+        val expectedKeys = linkedMapOf<String, MutableList<Long>>()
+        supported.forEach { intent ->
+            expectedKeys.getOrPut(intent.intentKey) { mutableListOf() }
+                .addAll(intent.evidenceRuleIds.distinct())
         }
+        val usedSourceIds = supported.flatMap { it.evidenceRuleIds }.toSet()
+        val residual = item.factRuleIds.filter { it !in usedSourceIds }
+        if (residual.isNotEmpty()) {
+            expectedKeys.getOrPut("general.answer") { mutableListOf() }.addAll(residual)
+        }
+        val expected = expectedKeys.map { (key, ids) -> key to ids.distinct() }
         val byKey = claims.groupBy { it.intentKey }
         if (byKey.size != claims.size || byKey.keys != expected.map { it.first }.toSet()) {
             throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIMS_INVALID")
@@ -1742,11 +1720,8 @@ class TrustReplyWorkbenchService(
             researchProfileSufficient = resolved.researchProfileSufficient
         )
         val matrix = canonicalMatrix(resolved.sourceVersion, selection)
-        val matrixIds = matrix.flatMap { it.factRuleIds }
-        if (matrixIds.size != matrixIds.toSet().size) {
-            // Duplicates that survive canonicalization (I-2) must never reach the store/composer.
-            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FACT_ALREADY_ASSIGNED")
-        }
+        // 计划 02 (I-6): 同一事实可合法绑定多个 request——不再对跨 request 重复
+        // 做 TRUST_REPLY_FACT_ALREADY_ASSIGNED 硬拦。
         // C-1: the base snapshot is computed per request subset (never the
         // full union) so a fact change in one request cannot perturb another
         // request's per-request version.
@@ -1999,8 +1974,10 @@ class TrustReplyWorkbenchService(
                     TrustReplyUnrecognizedAsk(label = ask.label, quote = ask.quote)
                 },
                 evidenceSetVersion = requestEvidenceVersions[requestKey(sourceVersion, item)].orEmpty(),
-                // P1 (I-2): 第三投影——只进 coverage，不进 canonicalMatrix。
-                droppedFactRuleIds = item.droppedBindingRuleIds
+                // 计划 02 (I-2): 诊断投影——只进 coverage，不进 canonicalMatrix、
+                // 不进任何身份哈希。
+                intentMatchedFactRuleIds = item.intentMatchedFactRuleIds,
+                intentMismatchFactRuleIds = item.intentMismatchFactRuleIds
             )
         }
     }
@@ -2101,47 +2078,11 @@ class TrustReplyWorkbenchService(
             "[一二两三四五六七八九十几数半零\\d]+(天|日|周|星期|月|年|小时|分钟|秒)(后|内|之内|以内|前|之前|左右|以后|之后)"
         )
 
-        // 计划 02 (I-5): 允许集由「条目」而非「status」决定——PARTIAL 且带运营
-        // 绕过证据（operatorBypassedRuleIds 非空）的条目额外获得
-        // ANSWER_EVIDENCE_WITH_OPERATOR_INPUT 与 ANSWER_FROM_OPERATOR_INPUT
-        // （「按回答说明生成」显式加进含运营绑定的 PARTIAL 允许集，D1 的解法由
-        // 冻结 status 改为扩展允许集，冲突消失）。其余行与今日逐字一致。
-        // 计划 03 (I-5): ANSWER_FACTS_VERBATIM 只放开给「有事实可引用」的条目
-        // （factRuleIds 非空）——UNSUPPORTED 状态恒空、绝不加入；GROUNDED/PARTIAL
-        // 天然非空，仍显式守卫，防止未来取证口径变化后产出空正文。
-        fun allowedHandlings(item: RequestFactItem): List<TrustReplyItemHandling> {
-            val verbatimReferenceable = item.factRuleIds.isNotEmpty()
-            return when (item.status) {
-                RequestGroundingStatus.GROUNDED -> buildList {
-                    add(TrustReplyItemHandling.ANSWER_WITH_EVIDENCE)
-                    if (verbatimReferenceable) add(TrustReplyItemHandling.ANSWER_FACTS_VERBATIM)
-                    add(TrustReplyItemHandling.OMIT)
-                }
-                RequestGroundingStatus.PARTIAL ->
-                    if (item.operatorBypassedRuleIds.isEmpty()) {
-                        buildList {
-                            add(TrustReplyItemHandling.ANSWER_SUPPORTED_PART)
-                            if (verbatimReferenceable) add(TrustReplyItemHandling.ANSWER_FACTS_VERBATIM)
-                            add(TrustReplyItemHandling.ACKNOWLEDGE_PENDING)
-                            add(TrustReplyItemHandling.OMIT)
-                        }
-                    } else {
-                        buildList {
-                            add(TrustReplyItemHandling.ANSWER_SUPPORTED_PART)
-                            if (verbatimReferenceable) add(TrustReplyItemHandling.ANSWER_FACTS_VERBATIM)
-                            add(TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT)
-                            add(TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT)
-                            add(TrustReplyItemHandling.ACKNOWLEDGE_PENDING)
-                            add(TrustReplyItemHandling.OMIT)
-                        }
-                    }
-                RequestGroundingStatus.UNSUPPORTED -> listOf(
-                    TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
-                    TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                    TrustReplyItemHandling.OMIT
-                )
-            }
-        }
+        // 计划 02 (I-3): 七种 handling 恒定开放——每条 coverage 的
+        // allowedHandlings 都是 enum 全量（按声明顺序）。status 只决定
+        // recommendedHandling 与提示，绝不决定可选集合；选项从不被隐藏/置灰。
+        fun allowedHandlings(item: RequestFactItem): List<TrustReplyItemHandling> =
+            TrustReplyItemHandling.values().toList()
 
         fun recommendedHandling(item: RequestFactItem): TrustReplyItemHandling = when (item.status) {
             RequestGroundingStatus.GROUNDED -> TrustReplyItemHandling.ANSWER_WITH_EVIDENCE
@@ -2152,6 +2093,42 @@ class TrustReplyWorkbenchService(
         fun requireAllowedHandling(item: RequestFactItem, handling: TrustReplyItemHandling) {
             require(handling in allowedHandlings(item)) { "handling is not allowed for request status" }
         }
+
+        // 计划 02 (I-4): 唯一机械前置条件表——供 generate、adjust、locked-item
+        // 校验、restore、assemble 共用。选项开放不等于绕过机械前置：4 种事实模式
+        // 要求本条最终 factRuleIds 非空（空 → TRUST_REPLY_FACT_REQUIRED）；
+        // 2 种说明模式要求非空且 ≤500 字 operator instruction。
+        // OMIT / ACKNOWLEDGE_PENDING 的结构校验由调用方各自保持现状。
+        fun requireHandlingPrerequisites(
+            item: RequestFactItem,
+            handling: TrustReplyItemHandling,
+            instruction: String? = null
+        ) {
+            if (handling in FACT_REQUIRED_HANDLINGS && item.factRuleIds.isEmpty()) {
+                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_FACT_REQUIRED")
+            }
+            if (handling in INSTRUCTION_REQUIRED_HANDLINGS) {
+                val trimmed = instruction?.trim().orEmpty()
+                if (trimmed.isBlank() || trimmed.length > 500) {
+                    throw TrustReplyWorkbenchException(
+                        HttpStatus.UNPROCESSABLE_ENTITY,
+                        "TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID"
+                    )
+                }
+            }
+        }
+
+        private val FACT_REQUIRED_HANDLINGS: Set<TrustReplyItemHandling> = setOf(
+            TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+            TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
+            TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+            TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT
+        )
+
+        private val INSTRUCTION_REQUIRED_HANDLINGS: Set<TrustReplyItemHandling> = setOf(
+            TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT
+        )
 
         fun requestKey(
             sourceVersion: String,

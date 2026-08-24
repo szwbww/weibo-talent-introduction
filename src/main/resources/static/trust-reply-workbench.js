@@ -52,6 +52,9 @@
         TRUST_REPLY_FACT_SELECTION_INVALID: "事实选择与来信摘要对不上，请刷新工作台后重试。",
         TRUST_REPLY_FACT_SELECTION_AMBIGUOUS: "事实选择参数冲突，请刷新工作台后重试。",
         TRUST_REPLY_FACT_ALREADY_ASSIGNED: "同一条事实被多个摘要绑定，请先解除其中一处。",
+        // 计划 02 (I-4): 四种事实模式在空事实时于生成/锁定阶段返回该 code；
+        // 前端固定文案「请先添加事实」，handling 下拉保留当前选择。
+        TRUST_REPLY_FACT_REQUIRED: "请先添加事实",
         TRUST_REPLY_HANDLING_INVALID: "该处理方式不适用于本条摘要的当前状态。",
         TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID: "回答说明为空或超过 500 字。",
         TRUST_REPLY_ITEM_GENERATION_FAILED: "AI 未能产出可用的回答，请重试或换一种处理方式。",
@@ -498,8 +501,9 @@
                 index: item.index == null ? index : item.index,
                 coverage: item.status || "",
                 factRuleIds: [...(item.factRuleIds || [])],
-                // P1 (I-2): 服务端未采纳的绑定，仅用于提示，不参与任何请求载荷。
-                droppedFactRuleIds: [...(item.droppedFactRuleIds || [])],
+                // 计划 02 (I-2): 服务端诊断字段——仅供提示，不参与任何请求载荷。
+                intentMatchedFactRuleIds: [...(item.intentMatchedFactRuleIds || [])],
+                intentMismatchFactRuleIds: [...(item.intentMismatchFactRuleIds || [])],
                 // 03a (I-1): per-request evidence version from the server
                 // coverage; the authority for this item's version identity.
                 // The aggregate fallback only covers pre-03a servers whose
@@ -582,28 +586,6 @@
         function factRuleById(factId) {
             const numeric = Number(factId);
             return state.rules.find((rule) => Number(rule.ruleId ?? rule.id) === numeric) || null;
-        }
-
-        // I-2: per-request ownership derived from the canonical matrix; a fact
-        // may belong to at most one request (server keeps the final word).
-        function factOwnerById() {
-            const owners = new Map();
-            state.requests.forEach((request) => {
-                (request.factRuleIds || []).forEach((factId) => {
-                    const numeric = Number(factId);
-                    if (!owners.has(numeric)) owners.set(numeric, request);
-                });
-            });
-            return owners;
-        }
-
-        function availableFactsFor(request) {
-            const owners = factOwnerById();
-            return state.rules.filter((rule) => {
-                const id = Number(rule.ruleId ?? rule.id);
-                const owner = owners.get(id);
-                return !owner || owner.requestKey === request.requestKey;
-            });
         }
 
         function applyBootstrap(data, seq) {
@@ -1638,12 +1620,8 @@
                 render();
                 return;
             }
-            const owner = factOwnerById().get(id);
-            if (owner && owner.requestKey !== request.requestKey) {
-                setStatus("该事实已被其他摘要使用", "ERROR");
-                render();
-                return;
-            }
+            // 计划 02 (I-6): 同一事实可绑定多个摘要——不再因其他 request 已选而
+            // 拒绝添加；本 request 已选仍短路。
             if ((request.factRuleIds || []).map(Number).includes(id)) return;
             await changeRequestFacts(request, [...(request.factRuleIds || []), id]);
         }
@@ -1857,22 +1835,10 @@
         }
 
         // I-2: per-card fact chips and picker. Owners, pending saves and server
-        // P1 (S-1): maps dropped binding ids to display names for the muted
-        // hint. Reuses the chips' state.rules lookup (factRuleById) and the
-        // same `事实 <id>` fallback — never a second id-lookup path.
-        function droppedFactLabels(request) {
-            return (request.droppedFactRuleIds || []).map((factId) => {
-                const id = Number(factId);
-                const rule = factRuleById(id);
-                return rule ? rule.displayName || `事实 ${id}` : `事实 ${id}`;
-            }).join("、");
-        }
-
         // re-validation keep the matrix canonical; disabled states are UX only.
         function renderFactSection(request) {
             const factActionReason = factActionReasonFor(request, state);
             const factActionsDisabled = !!factActionReason;
-            const owners = factOwnerById();
             // S-3: hint id derived from the request key (unique per summary,
             // instance-scoped so multiple workbenches on one page never clash).
             const gripHintId = `${state.instanceId}-fact-grip-hint-${request.requestKey}`;
@@ -1890,19 +1856,15 @@
             }).join("");
             const pickerOptions = state.rules.map((rule) => {
                 const id = Number(rule.ruleId ?? rule.id);
-                const owner = owners.get(id);
                 const selected = (request.factRuleIds || []).map(Number).includes(id);
-                const used = !!owner && owner.requestKey !== request.requestKey;
+                // 计划 02 (I-6): 其他摘要已选的事实仍显示「可添加」（跨摘要复用
+                // 合法）；本 request 已选与保存中仍 disabled。不再产出 used 状态。
                 let optionState = "available";
                 let label = "可添加";
                 let disabled = false;
                 if (selected) {
                     optionState = "selected";
                     label = "已选择";
-                    disabled = true;
-                } else if (used) {
-                    optionState = "used";
-                    label = `已用于摘要 ${Number(owner.index) + 1}`;
                     disabled = true;
                 } else if (factActionsDisabled) {
                     optionState = "pending";
@@ -1927,17 +1889,17 @@
                 : "") + (request.contextStale === true
                 ? `<span class="muted" data-role="item-context-stale">本条在旧训练知识/对话历史下生成</span>`
                 : "");
-            // P1 (S-1): only when this item's explicit bindings were dropped by
-            // the server is the verbatim muted hint appended after the stale
+            // 计划 02 (S-1/I-2): only when this item's manual facts include an
+            // intent mismatch is the fixed muted hint appended after the stale
             // hints; no new class, no inline style, no output when the
-            // condition is false.
-            const droppedMarkup = (Array.isArray(request.droppedFactRuleIds) && request.droppedFactRuleIds.length > 0)
-                ? `<span class="muted" data-role="item-facts-dropped">以下事实已绑定但不会作为本条回答的依据：${escapeText(droppedFactLabels(request))}。该问题未识别出可支持的意图，绑定会保留，但 AI 不会引用它们的正文。</span>`
+            // condition is false. 文案固定，不随事实 id/名称变化。
+            const mismatchMarkup = (Array.isArray(request.intentMismatchFactRuleIds) && request.intentMismatchFactRuleIds.length > 0)
+                ? `<span class="muted" data-role="item-facts-dropped">人工选择已生效；系统未匹配到对应意图，已记录供后续优化。</span>`
                 : "";
             const factActionStatus = factActionReason
                 ? `<span class="trust-reply-fact-action-status" data-role="fact-action-status">${escapeText(factActionReason)}</span>`
                 : "";
-            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span>${factActionStatus}<button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? ` disabled title="${escapeText(factActionReason)}"` : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>${staleMarkup}${droppedMarkup}`;
+            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span>${factActionStatus}<button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? ` disabled title="${escapeText(factActionReason)}"` : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>${staleMarkup}${mismatchMarkup}`;
         }
 
         function renderFrameSelects() {

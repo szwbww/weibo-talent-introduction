@@ -641,29 +641,34 @@ class QaFactSelectionServiceTest {
     }
 
     @Test
-    fun `matrix mode rejects the same rule assigned to two requests`() {
+    fun `matrix mode allows the same rule bound to two requests`() {
+        // 计划 02 (I-6): 跨摘要重复是合法人工决定——同一 fact 可绑定多个 request，
+        // 不再抛 TRUST_REPLY_FACT_ALREADY_ASSIGNED。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
         Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
 
-        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
-            service.selectForWorkbench(
-                inboundText = "- Salary?\n- Visa?",
-                selectionsByRequest = listOf(listOf(1L, 2L), listOf(2L)),
-                requestedFactIds = null,
-                researchProfileSufficient = true
-            )
-        }
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = listOf(listOf(1L, 2L), listOf(2L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
 
-        assertEquals("TRUST_REPLY_FACT_ALREADY_ASSIGNED", ex.code)
+        // I-1: 每 request 的最终事实集 = 人工矩阵（保序）。
+        assertEquals(listOf(1L, 2L), resolved.requestFacts[0].factRuleIds)
+        assertEquals(listOf(1L, 2L), resolved.requestFacts[0].boundRuleIds)
+        assertEquals(listOf(2L), resolved.requestFacts[1].factRuleIds)
+        // I-1: sendQaRuleIds = 按 request 顺序首次出现顺序去重。
+        assertEquals(listOf(1L, 2L), resolved.sendQaRuleIds)
     }
 
     @Test
-    fun `matrix mode keeps the request working when a bound fact matches another request only`() {
-        // P1 (I-1): "绑定的事实不匹配这条摘要"正是本刀降级的场景——服务端过滤掉
-        // 运营的绑定后不再抛 422，而是记进 droppedBindingRuleIds（原 :199-204
-        // 是唯一取消抛出的判据；本用例随 P1 语义从"rejects"改为"keeps working"）。
+    fun `matrix mode keeps an intent mismatched bound fact as final authority`() {
+        // 计划 02 (I-1/I-2): 绑定的事实不匹配这条摘要时仍整体生效——factRuleIds/
+        // boundRuleIds/matrix 保留该 id；mismatch 仅作为诊断记录；status 保持
+        // 自然检测（UNSUPPORTED）。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
@@ -677,12 +682,15 @@ class QaFactSelectionServiceTest {
         )
 
         val salaryItem = resolved.requestFacts[0]
-        assertEquals(emptyList<Long>(), salaryItem.factRuleIds)
-        assertEquals(listOf(2L), salaryItem.droppedBindingRuleIds)
+        assertEquals(listOf(2L), salaryItem.factRuleIds)
+        assertEquals(listOf(2L), salaryItem.boundRuleIds)
+        assertEquals(emptyList<Long>(), salaryItem.intentMatchedFactRuleIds)
+        assertEquals(listOf(2L), salaryItem.intentMismatchFactRuleIds)
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, salaryItem.status)
         val visaItem = resolved.requestFacts[1]
         assertEquals(emptyList<Long>(), visaItem.factRuleIds)
-        assertEquals(emptyList<Long>(), visaItem.droppedBindingRuleIds)
-        assertEquals(emptyList<Long>(), resolved.sendQaRuleIds)
+        assertEquals(emptyList<Long>(), visaItem.intentMismatchFactRuleIds)
+        assertEquals(listOf(2L), resolved.sendQaRuleIds)
     }
 
     @Test
@@ -741,11 +749,11 @@ class QaFactSelectionServiceTest {
     }
 
     @Test
-    fun `unsupported request adopts bound facts as partial evidence`() {
-        // 计划 02 (I-2/I-4，推翻 P1 的旧语义): 零意图命中的摘要（合成 general.answer
-        // coverage）上绑定的事实通过 I-2 并入路径成为证据：factRuleIds 采纳全部绑定、
-        // status 下调为 PARTIAL（不是 GROUNDED）、droppedBindingRuleIds 变空、
-        // 绑定事实经 factRuleIds 进 sendQaRuleIds（D2 已推翻，I-10）。
+    fun `unsupported request keeps natural status while manual facts stay final`() {
+        // 计划 02 (I-1/I-2): 零意图命中的摘要（合成 general.answer coverage）绑定
+        // 事实 → 人工矩阵整体生效（factRuleIds == boundRuleIds == explicitIds）、
+        // 全部落入 intentMismatchFactRuleIds 诊断、status 保持自然 UNSUPPORTED、
+        // 事实经 sendQaRuleIds 进入外发审计。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
@@ -761,14 +769,14 @@ class QaFactSelectionServiceTest {
         val item = resolved.requestFacts.single()
         assertEquals(listOf(2L, 1L), item.factRuleIds)
         assertEquals(listOf(2L, 1L), item.boundRuleIds)
-        assertEquals(emptyList<Long>(), item.droppedBindingRuleIds)
-        assertEquals(RequestGroundingStatus.PARTIAL, item.status)
-        assertEquals(listOf(2L, 1L), item.operatorBypassedRuleIds)
+        assertEquals(emptyList<Long>(), item.intentMatchedFactRuleIds)
+        assertEquals(listOf(2L, 1L), item.intentMismatchFactRuleIds)
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, item.status)
         assertEquals(listOf(2L, 1L), resolved.sendQaRuleIds)
     }
 
     @Test
-    fun `accepted bindings report no dropped ids`() {
+    fun `strictly matched bindings report no mismatch ids`() {
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
@@ -783,16 +791,17 @@ class QaFactSelectionServiceTest {
 
         assertEquals(listOf(1L), resolved.requestFacts[0].factRuleIds)
         assertEquals(listOf(2L), resolved.requestFacts[1].factRuleIds)
-        assertEquals(emptyList<Long>(), resolved.requestFacts[0].droppedBindingRuleIds)
-        assertEquals(emptyList<Long>(), resolved.requestFacts[1].droppedBindingRuleIds)
+        assertEquals(listOf(1L), resolved.requestFacts[0].intentMatchedFactRuleIds)
+        assertEquals(listOf(2L), resolved.requestFacts[1].intentMatchedFactRuleIds)
+        assertEquals(emptyList<Long>(), resolved.requestFacts[0].intentMismatchFactRuleIds)
+        assertEquals(emptyList<Long>(), resolved.requestFacts[1].intentMismatchFactRuleIds)
     }
 
     @Test
-    fun `matrix selection keeps operator bindings verbatim in boundRuleIds`() {
-        // 计划 02 (I-2，推翻 P2a 的旧语义): UNSUPPORTED 摘要绑 2 条 → boundRuleIds ==
-        // explicitIds（含运营顺序，必须-NOT-change 4）；绑定经 I-2 成为证据进
-        // factRuleIds（旧断言「factRuleIds 仍为空、status 仍为 UNSUPPORTED」随
-        // D1 推翻作废）。
+    fun `matrix selection keeps operator bindings verbatim in bound and final fact ids`() {
+        // 计划 02 (I-1，推翻 P1/P2a 的旧语义): UNSUPPORTED 摘要绑 2 条 →
+        // boundRuleIds == factRuleIds == explicitIds（含运营顺序）；status 保持
+        // 自然 UNSUPPORTED；事实进 sendQaRuleIds。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
@@ -808,15 +817,15 @@ class QaFactSelectionServiceTest {
         val item = resolved.requestFacts.single()
         assertEquals(listOf(2L, 1L), item.boundRuleIds)
         assertEquals(listOf(2L, 1L), item.factRuleIds)
-        assertEquals(RequestGroundingStatus.PARTIAL, item.status)
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, item.status)
         assertEquals(listOf(2L, 1L), resolved.sendQaRuleIds)
     }
 
     @Test
     fun `auto path never bypasses keyword matching even with bound facts present`() {
-        // 计划 02 (I-1): 绕过只发生在矩阵路径。自动回复/人工发送走 select()，
-        // operatorBound 恒 false——关键词完全不匹配的规则不进 factRuleIds，
-        // status 保持 UNSUPPORTED、operatorBypassedRuleIds 恒空。
+        // 计划 02 (I-8): 严格匹配只属于 select() 的自动/null/legacy 路径——
+        // 关键词完全不匹配的规则不进 factRuleIds，status 保持 UNSUPPORTED、
+        // intentMismatchFactRuleIds 恒空（人工诊断只由矩阵路径产生）。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(listOf(salaryRule, visaRule))
@@ -830,16 +839,18 @@ class QaFactSelectionServiceTest {
         val item = resolved.requestFacts.single()
         assertEquals(emptyList<Long>(), item.factRuleIds)
         assertEquals(RequestGroundingStatus.UNSUPPORTED, item.status)
-        assertEquals(emptyList<Long>(), item.operatorBypassedRuleIds)
+        assertEquals(emptyList<Long>(), item.intentMismatchFactRuleIds)
         assertEquals(emptyList<Long>(), resolved.sendQaRuleIds)
     }
 
     @Test
-    fun `matrix binding on zero intent hit merges into the existing general answer coverage only`() {
-        // 计划 02 (I-2): 零意图命中的摘要（catalog 合成 general.answer coverage）
-        // 绑定 2 条事实 → intents 条目数保持 1（绝不新增/移除条目，否则 requestKey
-        // 漂移）；requestKey 与改动前对同一 (sourceVersion, index, requestText) 的
-        // 计算值逐字相等（硬编码期望值锁死）。
+    fun `matrix binding on zero intent hit keeps natural missing coverage only`() {
+        // 计划 02 (I-2，推翻 operatorBound 的并入语义): 零意图命中的摘要（catalog
+        // 合成 general.answer coverage）绑定 2 条事实 → intents 条目数保持 1
+        // （绝不新增/移除条目，否则 requestKey 漂移）；coverage 保持自然 MISSING
+        // （人工事实不再改写它），全部事实落入 intentMismatchFactRuleIds 诊断；
+        // requestKey 与改动前对同一 (sourceVersion, index, requestText) 的计算值
+        // 逐字相等（硬编码期望值锁死）。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
@@ -855,11 +866,13 @@ class QaFactSelectionServiceTest {
         val item = resolved.requestFacts.single()
         assertEquals(1, item.intents.size)
         assertEquals("general.answer", item.intents[0].intentKey)
-        assertEquals("SUPPORTED", item.intents[0].status)
-        // assignRulesToIntents 按 (priority, id) 排序 → coverage 内 [1, 2]；
-        // factRuleIds 保持运营绑定顺序 [2, 1]（I-2 不改 boundRuleIds 取值与顺序）。
-        assertEquals(listOf(1L, 2L), item.intents[0].evidenceRuleIds)
+        assertEquals("MISSING", item.intents[0].status)
+        assertEquals(emptyList<Long>(), item.intents[0].evidenceRuleIds)
         assertEquals(listOf(2L, 1L), item.factRuleIds)
+        assertEquals(listOf(2L, 1L), item.boundRuleIds)
+        assertEquals(emptyList<Long>(), item.intentMatchedFactRuleIds)
+        assertEquals(listOf(2L, 1L), item.intentMismatchFactRuleIds)
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, item.status)
         // I-2: requestKey(sourceVersion, item) 与改动前对同一 (sourceVersion, index,
         // requestText) 计算出的值逐字相等（hardcoded）。
         assertEquals(
@@ -871,7 +884,8 @@ class QaFactSelectionServiceTest {
     @Test
     fun `matrix binding that matches no named intent never adds a coverage entry`() {
         // 计划 02 (I-2): 有具名意图命中的摘要上绑定一条对不上任何意图的事实 →
-        // intents.size 不变、该事实落入 droppedBindingRuleIds（不造新条目）。
+        // intents.size 不变（不造新条目）；该事实仍是最终事实（I-1），仅记入
+        // intentMismatchFactRuleIds 诊断。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
@@ -887,14 +901,16 @@ class QaFactSelectionServiceTest {
         val item = resolved.requestFacts.single()
         assertEquals(1, item.intents.size)
         assertEquals("finance.arrangements", item.intents[0].intentKey)
-        assertEquals(listOf(2L), item.droppedBindingRuleIds)
-        assertEquals(emptyList<Long>(), item.factRuleIds)
+        assertEquals(listOf(2L), item.factRuleIds)
+        assertEquals(emptyList<Long>(), item.intentMatchedFactRuleIds)
+        assertEquals(listOf(2L), item.intentMismatchFactRuleIds)
     }
 
     @Test
-    fun `strict keyword matched binding stays grounded with no bypassed rules`() {
-        // 计划 02 (I-4 例 1): 绑定的事实严格命中关键词且落进 SUPPORTED 意图 →
-        // operatorBypassedRuleIds 为空、status 为 GROUNDED（与改动前逐字一致）。
+    fun `strict keyword matched binding stays grounded with no mismatch ids`() {
+        // 计划 02 (I-2): 绑定的事实严格命中关键词且落进 SUPPORTED 意图 →
+        // intentMismatchFactRuleIds 为空、intentMatchedFactRuleIds 等于事实集、
+        // status 为 GROUNDED（自然检测）。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
 
@@ -907,14 +923,15 @@ class QaFactSelectionServiceTest {
 
         val item = resolved.requestFacts.single()
         assertEquals(listOf(1L), item.factRuleIds)
-        assertEquals(emptyList<Long>(), item.operatorBypassedRuleIds)
+        assertEquals(listOf(1L), item.intentMatchedFactRuleIds)
+        assertEquals(emptyList<Long>(), item.intentMismatchFactRuleIds)
         assertEquals(RequestGroundingStatus.GROUNDED, item.status)
     }
 
     @Test
-    fun `keyword non matching binding caps status at partial`() {
-        // 计划 02 (I-4 例 2): 绑定的事实关键词不命中 → 靠绕过才成为证据 →
-        // operatorBypassedRuleIds 非空、status 为 PARTIAL（不是 GROUNDED）。
+    fun `keyword non matching binding keeps natural unsupported status`() {
+        // 计划 02 (I-2): 绑定的事实关键词不命中 → 人工事实仍生效（I-1），但
+        // status 不再下调——保持自然 UNSUPPORTED；事实记入 intentMismatch 诊断。
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
 
@@ -927,14 +944,15 @@ class QaFactSelectionServiceTest {
 
         val item = resolved.requestFacts.single()
         assertEquals(listOf(2L), item.factRuleIds)
-        assertEquals(listOf(2L), item.operatorBypassedRuleIds)
-        assertEquals(RequestGroundingStatus.PARTIAL, item.status)
+        assertEquals(emptyList<Long>(), item.intentMatchedFactRuleIds)
+        assertEquals(listOf(2L), item.intentMismatchFactRuleIds)
+        assertEquals(RequestGroundingStatus.UNSUPPORTED, item.status)
     }
 
     @Test
-    fun `no binding keeps unsupported with empty bypassed rules`() {
-        // 计划 02 (I-4 例 3): 未绑定任何事实 → status 为 UNSUPPORTED、
-        // operatorBypassedRuleIds 为空。
+    fun `no binding keeps unsupported with empty mismatch ids`() {
+        // 计划 02 (I-2): 未绑定任何事实 → status 为 UNSUPPORTED、
+        // intentMismatchFactRuleIds 为空。
         Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
 
         val resolved = service.selectForWorkbench(
@@ -947,14 +965,13 @@ class QaFactSelectionServiceTest {
         val item = resolved.requestFacts.single()
         assertEquals(emptyList<Long>(), item.factRuleIds)
         assertEquals(RequestGroundingStatus.UNSUPPORTED, item.status)
-        assertEquals(emptyList<Long>(), item.operatorBypassedRuleIds)
+        assertEquals(emptyList<Long>(), item.intentMismatchFactRuleIds)
     }
 
     @Test
-    fun `send ids contain only adopted bindings never dropped ones`() {
-        // 计划 02 (I-10): 绑定 2 条、1 条被采纳 1 条落入 dropped →
-        // sendQaRuleIds 只含被采纳的那条（D2 推翻后的新定义：系统匹配认可 ∪
-        // 运营显式担保且已生效）。
+    fun `send ids contain the full manual matrix including mismatched facts`() {
+        // 计划 02 (I-1): 人工矩阵是最终事实集——sendQaRuleIds 含全部运营选择
+        // （含意图不匹配的），按 request 顺序有序 union。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
@@ -968,10 +985,10 @@ class QaFactSelectionServiceTest {
         )
 
         val item = resolved.requestFacts.single()
-        assertEquals(listOf(1L), item.factRuleIds)
-        assertEquals(listOf(2L), item.droppedBindingRuleIds)
-        assertEquals(listOf(1L), resolved.sendQaRuleIds)
-        assertFalse(2L in resolved.sendQaRuleIds)
+        assertEquals(listOf(1L, 2L), item.factRuleIds)
+        assertEquals(listOf(1L), item.intentMatchedFactRuleIds)
+        assertEquals(listOf(2L), item.intentMismatchFactRuleIds)
+        assertEquals(listOf(1L, 2L), resolved.sendQaRuleIds)
     }
 
     @Test
@@ -996,11 +1013,9 @@ class QaFactSelectionServiceTest {
     }
 
     @Test
-    fun `send rule ids stay evidence only while bound facts join prompt ids`() {
-        // P2b (I-1): 外发审计（sendQaRuleIds）仍只含系统认可的 evidence，绑定但非
-        // 证据的 id 只进入 promptRuleIds。本用例随 P2b 修订：P2a 时代断言
-        // 「promptRuleIds 不含绑定 id」的部分被本刀有意的契约修订取代
-        // （P2b 需求方决策 2：绑定进 prompt、不进 send）。
+    fun `send rule ids equal prompt rule ids on the full manual matrix`() {
+        // 计划 02 (I-1): 矩阵路径下 boundRuleIds == factRuleIds——send 与 prompt
+        // 逐字相等（旧 P2b 的「绑定补在后」分叉随人工权威语义消失）。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
@@ -1014,18 +1029,16 @@ class QaFactSelectionServiceTest {
         )
 
         val item = resolved.requestFacts.single()
-        assertEquals(listOf(1L), item.factRuleIds)
+        assertEquals(listOf(2L, 1L), item.factRuleIds)
         assertEquals(listOf(2L, 1L), item.boundRuleIds)
-        assertEquals(listOf(1L), resolved.sendQaRuleIds)
-        assertFalse(2L in resolved.sendQaRuleIds)
-        // P2b (I-1): 证据在前、绑定补在后。
-        assertEquals(listOf(1L, 2L), resolved.promptRuleIds)
+        assertEquals(listOf(2L, 1L), resolved.sendQaRuleIds)
+        assertEquals(listOf(2L, 1L), resolved.promptRuleIds)
     }
 
     @Test
-    fun `prompt rule ids include bound facts while send rule ids do not`() {
-        // P2b (C-1 / I-1 / IP-3): 绑定但非证据的事实进 promptRuleIds（证据在前、
-        // 绑定补在后），sendQaRuleIds 绝不包含它（外发审计只记真证据）。
+    fun `prompt rule ids include every manual fact on the matrix path`() {
+        // 计划 02 (I-1): 人工矩阵的全部事实同时进入 prompt 通道（factRuleIds 即
+        // 最终事实集）。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
@@ -1039,11 +1052,10 @@ class QaFactSelectionServiceTest {
         )
 
         val item = resolved.requestFacts.single()
-        assertEquals(listOf(1L), item.factRuleIds)
+        assertEquals(listOf(2L, 1L), item.factRuleIds)
         assertEquals(listOf(2L, 1L), item.boundRuleIds)
-        assertEquals(listOf(1L), resolved.sendQaRuleIds)
-        assertFalse(2L in resolved.sendQaRuleIds)
-        assertEquals(listOf(1L, 2L), resolved.promptRuleIds)
+        assertEquals(listOf(2L, 1L), resolved.sendQaRuleIds)
+        assertEquals(listOf(2L, 1L), resolved.promptRuleIds)
         assertTrue(2L in resolved.promptRuleIds)
     }
 
@@ -1068,9 +1080,10 @@ class QaFactSelectionServiceTest {
     }
 
     @Test
-    fun `dropped bindings are reported while still bound`() {
-        // P2a (I-6): droppedBindingRuleIds 非空（仍 = explicitIds - factRuleIds），
-        // 且 boundRuleIds 仍含这些 id——绑定保留、只是不作为证据。
+    fun `intent mismatch bindings are reported while still final facts`() {
+        // 计划 02 (I-2): intentMismatchFactRuleIds 非空（= explicitIds -
+        // intentMatchedFactRuleIds），且这些 id 仍是最终事实（boundRuleIds 与
+        // factRuleIds 均含）——诊断只标注、不删除。
         val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
         val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
         Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
@@ -1084,8 +1097,67 @@ class QaFactSelectionServiceTest {
         )
 
         val item = resolved.requestFacts.single()
-        assertEquals(listOf(2L), item.droppedBindingRuleIds)
-        assertTrue(item.boundRuleIds.containsAll(item.droppedBindingRuleIds))
+        assertEquals(listOf(2L), item.intentMismatchFactRuleIds)
+        assertTrue(item.boundRuleIds.containsAll(item.intentMismatchFactRuleIds))
+        assertTrue(item.factRuleIds.containsAll(item.intentMismatchFactRuleIds))
+        // I-2: matched 与 mismatch 互斥且并集恰为最终事实集（人工选择全覆盖，
+        // 无外部 id 混入）。
+        assertEquals(emptySet<Long>(), item.intentMatchedFactRuleIds.toSet() intersect item.intentMismatchFactRuleIds.toSet())
+        assertEquals(
+            item.factRuleIds.toSet(),
+            (item.intentMatchedFactRuleIds + item.intentMismatchFactRuleIds).toSet()
+        )
+    }
+
+    @Test
+    fun `grounded request keeps natural status with matched and mismatch facts`() {
+        // 计划 02 (I-1/I-2): 人工事实集 = [匹配, 不匹配] 并存时，status 仍由自然
+        // 检测决定（GROUNDED），mismatch 只进诊断，绝不改变状态或删除事实。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?",
+            selectionsByRequest = listOf(listOf(2L, 1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        val item = resolved.requestFacts.single()
+        assertEquals(listOf(2L, 1L), item.factRuleIds)
+        assertEquals(listOf(1L), item.intentMatchedFactRuleIds)
+        assertEquals(listOf(2L), item.intentMismatchFactRuleIds)
+        assertEquals(RequestGroundingStatus.GROUNDED, item.status)
+        assertEquals(listOf(2L, 1L), resolved.sendQaRuleIds)
+    }
+
+    @Test
+    fun `same fact bound to two requests splits diagnostics independently`() {
+        // 计划 02 (I-6): 同一事实跨 request 复用——各自独立计算 matched/mismatch。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        val visaRule = rule(id = 2, keywords = "visa", answerBody = "Visa body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+        Mockito.`when`(repository.findById(2L)).thenReturn(Optional.of(visaRule))
+
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = listOf(listOf(1L), listOf(1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        // request 1「Salary?」上 id=1 严格命中 → matched。
+        assertEquals(listOf(1L), resolved.requestFacts[0].factRuleIds)
+        assertEquals(listOf(1L), resolved.requestFacts[0].intentMatchedFactRuleIds)
+        assertEquals(emptyList<Long>(), resolved.requestFacts[0].intentMismatchFactRuleIds)
+        // request 2「Visa?」上 id=1 关键词不命中 → mismatch 诊断，但事实仍生效。
+        assertEquals(listOf(1L), resolved.requestFacts[1].factRuleIds)
+        assertEquals(emptyList<Long>(), resolved.requestFacts[1].intentMatchedFactRuleIds)
+        assertEquals(listOf(1L), resolved.requestFacts[1].intentMismatchFactRuleIds)
+        // I-1: send = 首次出现顺序去重。
+        assertEquals(listOf(1L), resolved.sendQaRuleIds)
     }
 
     @Test

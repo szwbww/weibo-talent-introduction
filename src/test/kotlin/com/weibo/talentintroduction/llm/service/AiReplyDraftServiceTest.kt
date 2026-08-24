@@ -335,7 +335,7 @@ class AiReplyDraftServiceTest {
                 factRuleIds = listOf(42L),
                 boundRuleIds = listOf(99L),
                 status = RequestGroundingStatus.PARTIAL,
-                operatorBypassedRuleIds = listOf(42L)
+                // 计划 02: operatorBypassedRuleIds 字段已删除——诊断不再参与生成路径。
             ),
             handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
             requestKey = "target-request",
@@ -351,6 +351,55 @@ class AiReplyDraftServiceTest {
         assertTrue(prompt.contains("The programme covers AI and NLP research directions."))
         assertFalse(prompt.contains("NINETY NINE BODY"))
         assertFalse(prompt.contains("Unadopted fact"))
+    }
+
+    @Test
+    fun `blended item renders the facts block in factRuleIds order`() {
+        // 计划 02 (I-5/阶段 3): 混合模式的事实块按 requestFact.factRuleIds 顺序
+        // 逐条渲染（人工矩阵顺序即 chips 顺序），与 verbatim 同一顺序口径。
+        stubEmptyFrame()
+        val first = sampleRule(42).copy(
+            displayName = "First fact",
+            answerBody = "FIRST FACT BODY."
+        )
+        val second = sampleRule(99).copy(
+            displayName = "Second fact",
+            answerBody = "SECOND FACT BODY."
+        )
+        stubMatchPool(first, second)
+        val capturedMessages = mutableListOf<List<LlmChatMessage>>()
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult {
+                capturedMessages += messages
+                return LlmChatResult("Combined answer.")
+            }
+        }
+
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "Could you share details?",
+            requestFact = RequestFactItem(
+                index = 1,
+                requestText = "Could you share details?",
+                factRuleIds = listOf(42L, 99L),
+                boundRuleIds = listOf(42L, 99L),
+                status = RequestGroundingStatus.PARTIAL
+            ),
+            handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
+            requestKey = "target-request",
+            operatorInstruction = "Combine both facts into one passage."
+        )
+
+        assertTrue(result.lockable)
+        assertTrue(result.itemAnswer?.claims?.isEmpty() == true)
+        val prompt = capturedMessages.single().joinToString("\n") { it.content }
+        assertTrue(prompt.indexOf("FIRST FACT BODY.") >= 0)
+        assertTrue(prompt.indexOf("SECOND FACT BODY.") > prompt.indexOf("FIRST FACT BODY."))
     }
 
     @Test
@@ -383,7 +432,7 @@ class AiReplyDraftServiceTest {
                 requestText = "Could you share details?",
                 factRuleIds = listOf(42L),
                 status = RequestGroundingStatus.PARTIAL,
-                operatorBypassedRuleIds = listOf(42L)
+                // 计划 02: operatorBypassedRuleIds 字段已删除——诊断不再参与生成路径。
             ),
             handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
             requestKey = "target-request",
@@ -422,7 +471,7 @@ class AiReplyDraftServiceTest {
                 requestText = "Could you share details?",
                 factRuleIds = listOf(42L),
                 status = RequestGroundingStatus.PARTIAL,
-                operatorBypassedRuleIds = listOf(42L)
+                // 计划 02: operatorBypassedRuleIds 字段已删除——诊断不再参与生成路径。
             ),
             handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
             requestKey = "target-request",
@@ -566,23 +615,75 @@ class AiReplyDraftServiceTest {
     }
 
     @Test
-    fun `item fallback and omit are not falsely marked as AI`() {
+    fun `item omit is not falsely marked as AI`() {
         val item = RequestFactItem(1, "Question?", emptyList(), RequestGroundingStatus.GROUNDED)
         val omitted = service(LlmProperties(enabled = true), null).generateItem(
             inboundText = "Question?",
             requestFact = item,
             handling = TrustReplyItemHandling.OMIT
         )
-        val failed = service(LlmProperties(enabled = true), null).generateItem(
-            inboundText = "Question?",
-            requestFact = item,
-            handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE
-        )
 
         assertTrue(omitted.lockable)
         assertEquals(TrustReplyItemGenerationKind.OMITTED, omitted.generationKind)
-        assertFalse(failed.lockable)
-        assertEquals(null, failed.generationKind)
+        assertFalse(omitted.usedLlm)
+    }
+
+    @Test
+    fun `each fact required handling fails with fact required when facts are empty`() {
+        // 计划 02 (I-4): 四种事实模式在空事实时于生成入口返回稳定错误
+        // TRUST_REPLY_FACT_REQUIRED（前端显示「请先添加事实」）。
+        val item = RequestFactItem(1, "Question?", emptyList(), RequestGroundingStatus.GROUNDED)
+        listOf(
+            TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+            TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
+            TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+            TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT
+        ).forEach { handling ->
+            val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+                service(LlmProperties(enabled = true), null).generateItem(
+                    inboundText = "Question?",
+                    requestFact = item,
+                    handling = handling,
+                    operatorInstruction = "Provide the answer."
+                )
+            }
+            assertEquals("TRUST_REPLY_FACT_REQUIRED", error.code)
+        }
+    }
+
+    @Test
+    fun `fact required handling generates once facts are present without changing handling`() {
+        // 计划 02 (I-4): 加事实后无需改 handling 即可生成——空事实失败、有事实成功。
+        stubEmptyFrame()
+        Mockito.`when`(replySnippetService.resolveAck(Mockito.isNull())).thenReturn(null)
+        stubMatchPool(sampleRule(42).copy(answerBody = "The programme covers AI and NLP research directions."))
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObserved(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String
+            ): LlmChatResult = LlmChatResult(
+                """{"claims":[{"claimKey":"r1:general.answer","text":"We cover AI and NLP research directions."}],"actionText":null}"""
+            )
+        }
+        val withFacts = RequestFactItem(
+            index = 1,
+            requestText = "Could you share details?",
+            factRuleIds = listOf(42L),
+            status = RequestGroundingStatus.GROUNDED
+        )
+        val result = service(LlmProperties(enabled = true, apiUrl = "http://llm"), client).generateItem(
+            inboundText = "Could you share details?",
+            requestFact = withFacts,
+            handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+            requestKey = "target-request"
+        )
+
+        assertTrue(result.lockable)
+        assertTrue(result.usedLlm)
+        assertEquals(TrustReplyItemHandling.ANSWER_WITH_EVIDENCE, result.handling)
     }
 
     @Test

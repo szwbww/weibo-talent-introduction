@@ -43,7 +43,10 @@ class AiReplyGroundedContentPlanner {
             val itemClaimKeys = mutableListOf<String>()
             val supportedIntents = item.intents.filter { it.status == "SUPPORTED" }
 
-            if (item.status == RequestGroundingStatus.UNSUPPORTED) {
+            // 计划 02 (I-5): UNSUPPORTED 且有人工事实时不进入 missing-only early
+            // return——落到下方 residual 通道生成 general.answer claim；无事实才
+            // 保持 missing。
+            if (item.status == RequestGroundingStatus.UNSUPPORTED && item.factRuleIds.isEmpty()) {
                 val missingIntentKeys = if (item.intents.isNotEmpty()) {
                     item.intents.map { it.intentKey }
                 } else {
@@ -70,20 +73,45 @@ class AiReplyGroundedContentPlanner {
                         itemClaimKeys += claimKey
                     }
                 }
-            } else if (item.factRuleIds.isNotEmpty()) {
-                val claimKey = "r${item.index}:general.answer"
-                if (claimKeys.add(claimKey)) {
-                    claims += GroundedClaimPlan(
-                        claimKey = claimKey,
-                        requestIndex = item.index,
-                        intentKey = "general.answer",
-                        sourceIds = item.factRuleIds
+            }
+
+            // 计划 02 (I-5): residual = 人工最终事实集 - 已被 supported intent claims
+            // 使用的 source ids；非空时汇入同 request 的 general.answer claim——
+            // 已存在（supported general.answer）则并入其 sourceIds，否则追加新
+            // claim。claimKey 保持唯一。
+            val usedSourceIds = supportedIntents.flatMap { it.evidenceRuleIds }.toSet()
+            val residual = item.factRuleIds.filter { it !in usedSourceIds }
+            if (residual.isNotEmpty()) {
+                val existingGeneral = claims.indexOfFirst {
+                    it.requestIndex == item.index && it.intentKey == "general.answer"
+                }
+                if (existingGeneral >= 0) {
+                    val merged = claims[existingGeneral].copy(
+                        sourceIds = (claims[existingGeneral].sourceIds + residual).distinct()
                     )
-                    itemClaimKeys += claimKey
+                    claims[existingGeneral] = merged
+                    itemClaimKeys += merged.claimKey
+                } else {
+                    val claimKey = "r${item.index}:general.answer"
+                    if (claimKeys.add(claimKey)) {
+                        claims += GroundedClaimPlan(
+                            claimKey = claimKey,
+                            requestIndex = item.index,
+                            intentKey = "general.answer",
+                            sourceIds = residual
+                        )
+                        itemClaimKeys += claimKey
+                    }
                 }
             }
 
-            val missingIntents = item.intents.filter { it.status != "SUPPORTED" }
+            // 计划 02 (I-5): 已由 residual general.answer claim 承载的 intent 不再
+            // 记为 missing，避免提示词同时要求「生成 rX:general.answer」与「不要为
+            // general.answer 生成 claim」的矛盾。
+            var missingIntents = item.intents.filter { it.status != "SUPPORTED" }
+            if (residual.isNotEmpty()) {
+                missingIntents = missingIntents.filter { it.intentKey != "general.answer" }
+            }
             if (missingIntents.isNotEmpty()) {
                 missingFacts += GroundedMissingFactPlan(
                     requestIndex = item.index,

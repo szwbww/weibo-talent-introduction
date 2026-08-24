@@ -62,7 +62,8 @@ describe("shared trust reply workbench", () => {
         assert.match(workbench, /requestFactSelections: serializeRequestFactSelections\(\)/);
         assert.match(workbench, /frameSnapshot: state\.frameSnapshot/);
         assert.match(workbench, /function sameFrameSnapshot\(/);
-        assert.match(workbench, /function factOwnerById\(/);
+        assert.match(workbench, /intentMismatchFactRuleIds/);
+        assert.doesNotMatch(workbench, /droppedFactRuleIds|droppedFactLabels/);
         assert.doesNotMatch(workbench, /requestedFactIds/);
         assert.doesNotMatch(workbench, /selectedFactIds/);
         assert.doesNotMatch(workbench, /\[data-role="fact"\]/);
@@ -91,14 +92,18 @@ describe("shared trust reply workbench", () => {
         assert.match(workbench, /data-role="raw-preview"/);
     });
 
-    it("exposes per-card fact chips and picker with owner labels", () => {
+    it("exposes per-card fact chips and picker without owner gating", () => {
+        // 计划 02 (I-6): picker 不再产出 used/owner 门禁——其他摘要已选的事实仍
+        // 显示「可添加」；本 request 已选与保存中仍 disabled。
         assert.match(workbench, /data-action="add-fact"/);
         assert.match(workbench, /data-action="remove-fact"/);
         assert.match(workbench, /data-action="toggle-fact-picker"/);
-        assert.match(workbench, /已用于摘要 /);
+        assert.doesNotMatch(workbench, /已用于摘要 |"used"|factOwnerById/);
         assert.match(workbench, /已选择/);
         assert.match(workbench, /保存中/);
         assert.match(workbench, /class="trust-reply-fact-picker-option"/);
+        assert.match(workbench, /optionState = "available"/);
+        assert.doesNotMatch(workbench, /optionState = "used"/);
     });
 
     it("exposes the one-click orchestration, machine-fill badge and separate verdict lines", () => {
@@ -204,8 +209,8 @@ function createSandbox(fetchImpl, confirmImpl) {
     return { sandbox, window, document };
 }
 
-function bootstrapPayload(sourceType, sourceId, factIds, droppedFactIds) {
-    const droppedIds = droppedFactIds || [];
+function bootstrapPayload(sourceType, sourceId, factIds, mismatchFactIds) {
+    const mismatchIds = mismatchFactIds || [];
     return {
         source: { sourceType, sourceId },
         sourceVersion: `${sourceType}-${sourceId}-v1`,
@@ -218,16 +223,17 @@ function bootstrapPayload(sourceType, sourceId, factIds, droppedFactIds) {
         defaultModel: "DEEPSEEK_V4_FLASH",
         suggestedFactIds: [...factIds],
         canonicalFactIds: [...factIds],
-        rulesByCategory: [...factIds, ...droppedIds].map((id) => ({ ruleId: id, displayName: `Fact ${id}`, answerBody: `body ${id}` })),
+        rulesByCategory: [...factIds, ...mismatchIds].map((id) => ({ ruleId: id, displayName: `Fact ${id}`, answerBody: `body ${id}` })),
         requestCoverage: [{
             index: 0,
             requestKey: `${sourceType}-${sourceId}-request`,
             requestText: "Question",
             status: "GROUNDED",
             factRuleIds: [...factIds],
-            // P1 (I-2): server-side shadow field, carried for the muted hint only.
-            droppedFactRuleIds: [...droppedIds],
-            allowedHandlings: ["ANSWER_WITH_EVIDENCE", "OMIT"],
+            // 计划 02 (I-2): server-side diagnostic fields, carried for the muted hint only.
+            intentMatchedFactRuleIds: [...factIds],
+            intentMismatchFactRuleIds: [...mismatchIds],
+            allowedHandlings: ["ANSWER_WITH_EVIDENCE", "ANSWER_SUPPORTED_PART", "ANSWER_FACTS_VERBATIM", "ANSWER_EVIDENCE_WITH_OPERATOR_INPUT", "ANSWER_FROM_OPERATOR_INPUT", "ACKNOWLEDGE_PENDING", "OMIT"],
             recommendedHandling: "ANSWER_WITH_EVIDENCE"
         }],
         draftReadiness: "READY",
@@ -591,10 +597,10 @@ describe("P0 SSE error code and state reset", () => {
     });
 });
 
-// ---- P1: dropped-binding muted hint + never-sent-back shadow field ----
+// ---- 计划 02 (I-2): intent-mismatch muted hint + never-sent-back diagnostics ----
 
-describe("P1 dropped binding hints", () => {
-    it("dropped bindings render a muted hint under the fact section", async () => {
+describe("intent mismatch hints", () => {
+    it("intent mismatches render the fixed muted hint under the fact section", async () => {
         const { window, document } = createSandbox((url, options) => {
             return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [], [10, 20]) });
         });
@@ -607,16 +613,16 @@ describe("P1 dropped binding hints", () => {
         });
         await settle();
 
-        const droppedSpan = /<span class="muted" data-role="item-facts-dropped">([^<]*)<\/span>/.exec(host.innerHTML);
-        assert.ok(droppedSpan, "dropped hint must render under the fact section");
-        assert.ok(droppedSpan[1].includes("Fact 10"), "hint lists the first dropped display name");
-        assert.ok(droppedSpan[1].includes("Fact 20"), "hint lists the second dropped display name");
+        const mismatchSpan = /<span class="muted" data-role="item-facts-dropped">([^<]*)<\/span>/.exec(host.innerHTML);
+        assert.ok(mismatchSpan, "mismatch hint must render under the fact section");
+        // S-1: 文案固定，不随事实 id/名称变化。
+        assert.strictEqual(mismatchSpan[1], "人工选择已生效；系统未匹配到对应意图，已记录供后续优化。");
         // S-1 禁止项: 提示片段无 inline style，且未引入新 CSS class。
-        assert.ok(!/style=/.test(droppedSpan[0]));
+        assert.ok(!/style=/.test(mismatchSpan[0]));
         assert.ok(!host.innerHTML.includes("trust-reply-fact-dropped"));
     });
 
-    it("no dropped bindings renders no hint", async () => {
+    it("no intent mismatches renders no hint", async () => {
         const { window, document } = createSandbox((url, options) => {
             return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [1, 2]) });
         });
@@ -632,7 +638,7 @@ describe("P1 dropped binding hints", () => {
         assert.ok(!host.innerHTML.includes('data-role="item-facts-dropped"'));
     });
 
-    it("dropped bindings are never sent back to the server", async () => {
+    it("diagnostic fields are never sent back to the server", async () => {
         let generationBody = null;
         const { window, document } = createSandbox((url, options) => {
             const body = JSON.parse(options.body);
@@ -661,7 +667,7 @@ describe("P1 dropped binding hints", () => {
         assert.ok(generationBody, "a generation request must have been sent");
         assert.ok(Array.isArray(generationBody.requestFactSelections));
         generationBody.requestFactSelections.forEach((selection) => {
-            // I-5/B-2: the canonical matrix carries ONLY requestKey + factRuleIds.
+            // 计划 02 (I-2): the canonical matrix carries ONLY requestKey + factRuleIds.
             assert.deepStrictEqual(Object.keys(selection).sort(), ["factRuleIds", "requestKey"]);
         });
     });
@@ -692,9 +698,9 @@ describe("P2a bound vs evidence split", () => {
         assert.deepStrictEqual(renderedFactIds(host), ["10", "20"]);
     });
 
-    it("hint wording says bound-but-not-evidence", async () => {
-        // P2a (I-6/S-1): 提示文案逐字含「已绑定但不会作为本条回答的依据」，
-        // 不再出现 P1 的「未被采纳」。
+    it("mismatch hint wording is the fixed manual-authority text", async () => {
+        // 计划 02 (S-1): 提示文案固定为「人工选择已生效；系统未匹配到对应意图，
+        // 已记录供后续优化。」，不出现 P1/P2a 的旧措辞。
         const { window, document } = createSandbox((url, options) => {
             return Promise.resolve({
                 ok: true,
@@ -711,11 +717,111 @@ describe("P2a bound vs evidence split", () => {
         });
         await settle();
 
-        const droppedSpan = /<span class="muted" data-role="item-facts-dropped">([^<]*)<\/span>/.exec(host.innerHTML);
-        assert.ok(droppedSpan, "dropped hint must render under the fact section");
-        assert.ok(droppedSpan[1].includes("已绑定但不会作为本条回答的依据"), "hint must say bound-but-not-basis");
-        assert.ok(!droppedSpan[1].includes("未被采纳"), "the P1 rejected wording must be gone");
-        assert.ok(!/style=/.test(droppedSpan[0]));
+        const mismatchSpan = /<span class="muted" data-role="item-facts-dropped">([^<]*)<\/span>/.exec(host.innerHTML);
+        assert.ok(mismatchSpan, "mismatch hint must render under the fact section");
+        assert.strictEqual(mismatchSpan[1], "人工选择已生效；系统未匹配到对应意图，已记录供后续优化。");
+        assert.ok(!mismatchSpan[1].includes("已绑定但不会"), "the P2a bound-but-not-basis wording must be gone");
+        assert.ok(!mismatchSpan[1].includes("未被采纳"), "the P1 rejected wording must be gone");
+        assert.ok(!/style=/.test(mismatchSpan[0]));
+    });
+});
+
+// ---- 计划 02 (I-3/I-6/I-4): 全开放 options、跨摘要复用、事实前置文案 ----
+
+describe("计划 02 workbench openness", () => {
+    it("renders all seven backend handling options for every coverage", async () => {
+        const { window, document } = createSandbox((url, options) => {
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [1]) });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        // I-3: 7 个后端 options 全部渲染，状态不参与过滤。
+        const seven = [
+            "ANSWER_WITH_EVIDENCE",
+            "ANSWER_SUPPORTED_PART",
+            "ANSWER_FACTS_VERBATIM",
+            "ANSWER_EVIDENCE_WITH_OPERATOR_INPUT",
+            "ANSWER_FROM_OPERATOR_INPUT",
+            "ACKNOWLEDGE_PENDING",
+            "OMIT"
+        ];
+        seven.forEach((handling) => {
+            assert.ok(host.innerHTML.includes(`<option value="${handling}"`), `option ${handling} must render`);
+        });
+        // 下拉不被状态置灰（只有 pending 才 disabled）。
+        assert.ok(!/data-role="handling"[^>]*disabled/.test(host.innerHTML));
+    });
+
+    it("facts selected by another request remain addable in the picker", async () => {
+        const twoRequestPayload = bootstrapPayload("TRAINING_MAIL", 101, [10]);
+        twoRequestPayload.requestCoverage.push({
+            index: 1,
+            requestKey: "TRAINING_MAIL-101-request-2",
+            requestText: "Second question",
+            status: "UNSUPPORTED",
+            factRuleIds: [],
+            intentMatchedFactRuleIds: [],
+            intentMismatchFactRuleIds: [],
+            allowedHandlings: ["ANSWER_WITH_EVIDENCE", "ANSWER_SUPPORTED_PART", "ANSWER_FACTS_VERBATIM", "ANSWER_EVIDENCE_WITH_OPERATOR_INPUT", "ANSWER_FROM_OPERATOR_INPUT", "ACKNOWLEDGE_PENDING", "OMIT"],
+            recommendedHandling: "ANSWER_FROM_OPERATOR_INPUT"
+        });
+        const { window, document } = createSandbox((url, options) => {
+            return Promise.resolve({ ok: true, status: 200, json: async () => twoRequestPayload });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        // 打开第二个摘要的 picker：事实 10 已被 request-1 选择，仍显示「可添加」。
+        host.dispatchEvent("click", event(actionButton("toggle-fact-picker", "TRAINING_MAIL-101-request-2")));
+        await settle();
+
+        const option = /<button type="button" class="trust-reply-fact-picker-option" data-action="add-fact" data-request-key="TRAINING_MAIL-101-request-2" data-fact-id="10" data-state="([^"]+)"[^>]*>([\s\S]*?)<\/button>/.exec(host.innerHTML);
+        assert.ok(option, "fact 10 option must render for the second request");
+        assert.strictEqual(option[1], "available", "cross-request fact must be available (I-6)");
+        assert.ok(option[2].includes("可添加"), "cross-request fact must not be disabled/used (I-6)");
+        assert.ok(!option[0].includes("disabled"), "cross-request fact option must not be disabled (I-6)");
+    });
+
+    it("TRUST_REPLY_FACT_REQUIRED renders 请先添加事实", async () => {
+        const { window, document } = createSandbox((url, options) => {
+            if (String(url).endsWith("/generations/stream")) {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    body: sseStream('event: error\ndata: {"code":"TRUST_REPLY_FACT_REQUIRED","message":"facts required"}\n\n')
+                });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [1, 2, 3]) });
+        }, () => false);
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+
+        host.dispatchEvent("click", event(actionButton("adjust-item", "TRAINING_MAIL-101-request")));
+        await settle();
+
+        // I-4: 前端显示「请先添加事实」；handling 下拉保留当前选择（不重置）。
+        assert.ok(host.innerHTML.includes("请先添加事实"));
+        assert.ok(host.innerHTML.includes("facts required") === false, "raw error message must not leak");
+        assert.ok(host.innerHTML.includes('<option value="ANSWER_WITH_EVIDENCE" selected'), "handling selection is retained");
     });
 });
 

@@ -356,25 +356,22 @@ data class RequestFactItem(
     // P2a (plan 02): shadow-period measurement only — never feeds status,
     // groundedRequestCount, unsupportedRequests or any hash (I-3/I-2).
     val unrecognizedAsks: List<EnumeratedAsk> = emptyList(),
-    // P1 (I-3): 影子字段——运营显式绑定但被 buildRequestFact 过滤掉的事实 id，
-    // 按运营原始顺序。仅供 UI 提示，绝不进入 status、factRuleIds、sendQaRuleIds、
-    // promptRuleIds、任何 evidence/version 哈希或任何对外文本。
-    val droppedBindingRuleIds: List<Long> = emptyList(),
-    // P2a (I-1/I-2): 运营绑定的事实 id，按运营给出的顺序。与 factRuleIds 的区别：
-    //   factRuleIds  = 系统认可、可用作回答依据的证据（关键词命中 + 落在 SUPPORTED 意图证据集）
-    //   boundRuleIds = 运营主张"这条事实属于这个问题"，不代表系统认可它是依据
-    // 自动匹配 / legacy 路径下两者相等；只有显式矩阵路径可能分叉。
-    // 注意：本字段与 unrecognizedAsks / droppedBindingRuleIds 这类影子字段【不同】——
-    // 它【会】进入 canonicalMatrix 与 requestEvidenceVersion 的身份哈希（I-2），
-    // 默认值仅为源码兼容存在，生产路径一律在调用点显式赋值（I-1）。
-    val boundRuleIds: List<Long> = emptyList(),
-    // 计划 02 (I-4/I-5): 「靠绕过才成为证据」的规则 id——不在严格关键词候选集
-    // 内、或经 I-2 的 general.answer 并入路径进来的那些。仅供 allowedHandlings /
-    // recommendedHandling 的判据（I-5）与 UI 使用：
-    // 不进任何哈希（canonicalMatrix / requestEvidenceVersion / versionId），
-    // 不进任何对外文本。它是 factRuleIds 的一个来源标注，factRuleIds 本身已通过
-    // sendQaRuleIds 影响审计。默认值仅供源码兼容，生产路径由 buildRequestFact 计算。
-    val operatorBypassedRuleIds: List<Long> = emptyList()
+    // 计划 02 (I-2): 人工矩阵路径下，严格关键词命中并进入 SUPPORTED 意图证据集的
+    // 事实 id（自然诊断）。仅供 UI 提示，绝不进入授权、allowedHandlings、版本拒绝
+    // 或发送删减逻辑。自动/legacy/null 选择路径下等于 factRuleIds。
+    val intentMatchedFactRuleIds: List<Long> = emptyList(),
+    // 计划 02 (I-2): 人工矩阵路径下，运营绑定但未通过严格关键词匹配的事实 id，
+    // 按运营给出的人工顺序（= factRuleIds - intentMatchedFactRuleIds）。仅供 UI
+    // 诊断提示；与 intentMatchedFactRuleIds 的并集按人工顺序等于 factRuleIds（I-1）。
+    // 自动/legacy/null 选择路径恒空。
+    val intentMismatchFactRuleIds: List<Long> = emptyList(),
+    // P2a (I-1/I-2): 运营绑定的事实 id，按运营给出的顺序。本计划 02 (I-1) 起
+    // 人工矩阵是最终事实集：boundRuleIds == factRuleIds == requestFactSelections.factRuleIds；
+    // 自动匹配 / legacy 路径同样两者相等。默认值仅为源码兼容存在，生产路径一律
+    // 在调用点显式赋值（I-1）。
+    // 注意：本字段不是影子字段——它【会】进入 canonicalMatrix 与
+    // requestEvidenceVersion 的身份哈希（I-2）。
+    val boundRuleIds: List<Long> = emptyList()
 )
 
 data class ResolvedQaRules(
@@ -429,6 +426,11 @@ class AiReplyDraftService(
         val instruction = operatorInstruction?.trim()?.takeIf { it.isNotEmpty() }
         require(instruction == null || instruction.length <= 500) { "operatorInstruction must not exceed 500 characters" }
         validateItemHandling(requestFact, handling)
+        // 计划 02 (I-4): 唯一机械前置条件表（companion.requireHandlingPrerequisites）
+        // ——4 种事实模式要求本条最终 factRuleIds 非空（否则
+        // TRUST_REPLY_FACT_REQUIRED），2 种说明模式要求非空且 ≤500 字说明。
+        // 选项始终全量开放，此处不做任何状态/下拉过滤。
+        TrustReplyWorkbenchService.requireHandlingPrerequisites(requestFact, handling, operatorInstruction)
         if (handling == TrustReplyItemHandling.OMIT) {
             return AiReplyItemGenerationResult(
                 itemAnswer = null,

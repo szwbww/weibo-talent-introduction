@@ -1192,24 +1192,25 @@ class TrustReplyWorkbenchServiceTest {
     }
 
     @Test
-    fun `bootstrap surfaces dropped bindings per request without failing`() {
-        // P1 (I-2/IP-2): 服务端过滤掉运营绑定后，bootstrap 仍然 200，且对应
-        // coverage 项携带 droppedFactRuleIds（第三投影，不进 canonicalMatrix）。
+    fun `bootstrap surfaces intent mismatch diagnostics per request without failing`() {
+        // 计划 02 (I-2): 人工事实整体生效（factRuleIds/boundRuleIds/canonicalMatrix
+        // 均为运营矩阵），intentMismatchFactRuleIds 作为诊断投影进 coverage，
+        // 不进 canonicalMatrix。
         val exact = mail(id = 11L, body = "What?")
         Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
         Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
         Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
-        val droppedItem = item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
-            .copy(droppedBindingRuleIds = listOf(10L, 20L))
+        val mismatchItem = item(1, "What?", listOf(10L, 20L), RequestGroundingStatus.UNSUPPORTED)
+            .copy(intentMatchedFactRuleIds = emptyList(), intentMismatchFactRuleIds = listOf(10L, 20L))
         val facts = ResolvedQaRules(
-            sendQaRuleIds = emptyList(),
-            promptRuleIds = emptyList(),
-            requestFacts = listOf(droppedItem),
+            sendQaRuleIds = listOf(10L, 20L),
+            promptRuleIds = listOf(10L, 20L),
+            requestFacts = listOf(mismatchItem),
             requestCount = 1,
             groundedRequestCount = 0
         )
         Mockito.`when`(factSelection.selectForWorkbench("What?", listOf(listOf(10L, 20L)), null, true)).thenReturn(facts)
-        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(10L, 20L)))
             .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
 
         val version = sourceVersion()
@@ -1220,70 +1221,72 @@ class TrustReplyWorkbenchServiceTest {
         ))
 
         val coverage = bootstrap.requestCoverage.single()
-        assertEquals(emptyList<Long>(), coverage.factRuleIds)
-        assertEquals(listOf(10L, 20L), coverage.droppedFactRuleIds)
-        // I-4: canonicalMatrix 投影仍只取 item.factRuleIds（空），逐字相等。
-        assertEquals(listOf(TrustReplyRequestFactSelection(key, emptyList())), bootstrap.requestFactSelections)
+        assertEquals(listOf(10L, 20L), coverage.factRuleIds)
+        assertEquals(emptyList<Long>(), coverage.intentMatchedFactRuleIds)
+        assertEquals(listOf(10L, 20L), coverage.intentMismatchFactRuleIds)
+        // I-2: canonicalMatrix 只投影 requestKey + factRuleIds（诊断不进矩阵）。
+        assertEquals(listOf(TrustReplyRequestFactSelection(key, listOf(10L, 20L))), bootstrap.requestFactSelections)
     }
 
     @Test
-    fun `dropped bindings never change the per-request evidence version`() {
-        // P1 (I-3/IP-4): 同一摘要，"绑定被丢弃"与"完全没绑定"两种输入产生的
-        // requestCoverage[].evidenceSetVersion 必须完全相同——影子字段不进哈希。
+    fun `intent mismatch diagnostics never change the per-request evidence version`() {
+        // 计划 02 (I-2): 同一事实集、不同 matched/mismatch 拆分产生的
+        // requestCoverage[].evidenceSetVersion 必须完全相同——诊断字段不进哈希。
         val exact = mail(id = 11L, body = "What?")
         Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
         Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
         Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
-        val droppedFacts = ResolvedQaRules(
-            sendQaRuleIds = emptyList(),
-            promptRuleIds = emptyList(),
-            requestFacts = listOf(item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
-                .copy(droppedBindingRuleIds = listOf(10L, 20L))),
+        val mismatchFacts = ResolvedQaRules(
+            sendQaRuleIds = listOf(9L),
+            promptRuleIds = listOf(9L),
+            requestFacts = listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.UNSUPPORTED)
+                .copy(intentMatchedFactRuleIds = emptyList(), intentMismatchFactRuleIds = listOf(9L))),
             requestCount = 1,
             groundedRequestCount = 0
         )
-        val unboundFacts = ResolvedQaRules(
-            sendQaRuleIds = emptyList(),
-            promptRuleIds = emptyList(),
-            requestFacts = listOf(item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)),
+        val matchedFacts = ResolvedQaRules(
+            sendQaRuleIds = listOf(9L),
+            promptRuleIds = listOf(9L),
+            requestFacts = listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.UNSUPPORTED)
+                .copy(intentMatchedFactRuleIds = listOf(9L), intentMismatchFactRuleIds = emptyList())),
             requestCount = 1,
             groundedRequestCount = 0
         )
-        Mockito.`when`(factSelection.selectForWorkbench("What?", listOf(listOf(10L, 20L)), null, true)).thenReturn(droppedFacts)
-        Mockito.`when`(factSelection.selectForWorkbench("What?", listOf(emptyList<Long>()), null, true)).thenReturn(unboundFacts)
-        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+        Mockito.`when`(factSelection.selectForWorkbench("What?", listOf(listOf(9L)), null, true))
+            .thenReturn(mismatchFacts, matchedFacts)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
             .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
 
         val version = sourceVersion()
         val key = canonicalKey(version)
-        val droppedBootstrap = service.bootstrap(TrustReplyBootstrapRequest(
+        val mismatchBootstrap = service.bootstrap(TrustReplyBootstrapRequest(
             source = TrustReplySourceRef(TRAINING_MAIL, 11L),
-            requestFactSelections = listOf(TrustReplyRequestFactSelection(key, listOf(10L, 20L)))
+            requestFactSelections = listOf(TrustReplyRequestFactSelection(key, listOf(9L)))
         ))
-        val unboundBootstrap = service.bootstrap(TrustReplyBootstrapRequest(
+        val matchedBootstrap = service.bootstrap(TrustReplyBootstrapRequest(
             source = TrustReplySourceRef(TRAINING_MAIL, 11L),
-            requestFactSelections = listOf(TrustReplyRequestFactSelection(key, emptyList()))
+            requestFactSelections = listOf(TrustReplyRequestFactSelection(key, listOf(9L)))
         ))
 
-        val droppedVersion = droppedBootstrap.requestCoverage.single().evidenceSetVersion
-        val unboundVersion = unboundBootstrap.requestCoverage.single().evidenceSetVersion
-        assertFalse(droppedVersion.isBlank())
-        assertEquals(unboundVersion, droppedVersion)
+        val mismatchVersion = mismatchBootstrap.requestCoverage.single().evidenceSetVersion
+        val matchedVersion = matchedBootstrap.requestCoverage.single().evidenceSetVersion
+        assertFalse(mismatchVersion.isBlank())
+        assertEquals(matchedVersion, mismatchVersion)
     }
 
     @Test
-    fun `canonical matrix and coverage both project boundRuleIds`() {
-        // P2a (I-2/I-3): canonicalMatrix 与 toCoverage 同一次提交同时切到
-        // boundRuleIds，且逐字相等（前端 applyBootstrap 守卫的比较对象）。
+    fun `canonical matrix and coverage both project the manual fact set`() {
+        // 计划 02 (I-1): canonicalMatrix 与 toCoverage 同一次提交逐字相等
+        // （前端 applyBootstrap 守卫的比较对象）——两者都投影人工最终事实集。
         val exact = mail(id = 11L, body = "What?")
         Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
         Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
         Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
-        val boundItem = item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
-            .copy(boundRuleIds = listOf(10L, 20L), droppedBindingRuleIds = listOf(10L, 20L))
+        val boundItem = item(1, "What?", listOf(10L, 20L), RequestGroundingStatus.UNSUPPORTED)
+            .copy(intentMismatchFactRuleIds = listOf(10L, 20L))
         val facts = ResolvedQaRules(
-            sendQaRuleIds = emptyList(),
-            promptRuleIds = emptyList(),
+            sendQaRuleIds = listOf(10L, 20L),
+            promptRuleIds = listOf(10L, 20L),
             requestFacts = listOf(boundItem),
             requestCount = 1,
             groundedRequestCount = 0

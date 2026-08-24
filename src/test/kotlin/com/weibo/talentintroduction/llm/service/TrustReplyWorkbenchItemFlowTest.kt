@@ -28,12 +28,10 @@ class TrustReplyWorkbenchItemFlowTest {
     fun `operator directed handling has canonical version fields`() {
         val operatorHandling = operatorDirectedHandling()
         val unsupportedItem = item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        // 计划 02 (I-3): 七种 handling 恒定开放——UNSUPPORTED 也包含
+        // ANSWER_FROM_OPERATOR_INPUT。
         assertEquals(
-            setOf(
-                operatorHandling,
-                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                TrustReplyItemHandling.OMIT
-            ),
+            TrustReplyItemHandling.values().toSet(),
             TrustReplyWorkbenchService.allowedHandlings(unsupportedItem).toSet()
         )
 
@@ -50,7 +48,10 @@ class TrustReplyWorkbenchItemFlowTest {
     }
 
     @Test
-    fun `operator directed handling on grounded item rejects before instruction validation`() {
+    fun `operator directed handling on grounded item still requires the instruction`() {
+        // 计划 02 (I-3/I-4): 七种 handling 对 GROUNDED 恒定开放（不再有
+        // TRUST_REPLY_HANDLING_INVALID 的状态门禁），但说明前置校验在生成/锁定
+        // 阶段执行——空说明 → TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID。
         val fixture = assembleFixture(status = RequestGroundingStatus.GROUNDED)
         val error = assertThrows(TrustReplyWorkbenchException::class.java) {
             fixture.service.adjustItem(
@@ -65,7 +66,7 @@ class TrustReplyWorkbenchItemFlowTest {
             )
         }
 
-        assertEquals("TRUST_REPLY_HANDLING_INVALID", error.code)
+        assertEquals("TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID", error.code)
     }
 
     @Test
@@ -230,84 +231,72 @@ class TrustReplyWorkbenchItemFlowTest {
     }
 
     @Test
-    fun `handling matrix is fail closed`() {
-        // 计划 02 (I-5): 允许集由「条目」决定——PARTIAL 且带运营绕过证据时额外
-        // 开放 ANSWER_EVIDENCE_WITH_OPERATOR_INPUT 与 ANSWER_FROM_OPERATOR_INPUT；
-        // 其余行逐字等于今日值。判据是 item.operatorBypassedRuleIds 显式字段，
-        // 消费侧绝不重新推导。
-        // 计划 03 (I-5): ANSWER_FACTS_VERBATIM 只放开给有事实可引用的条目——
-        // GROUNDED 与 PARTIAL 两个分支均含；UNSUPPORTED 分支不得含。
+    fun `handling matrix is fully open across every coverage`() {
+        // 计划 02 (I-3): 七种 TrustReplyItemHandling 对 GROUNDED/PARTIAL/UNSUPPORTED
+        // 每条 coverage 恒定开放（按 enum 声明顺序）；status 只决定
+        // recommendedHandling 与提示，绝不决定可选集合。
+        val allSeven = TrustReplyItemHandling.values().toList()
+        assertEquals(7, allSeven.size)
         val groundedItem = item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)
-        assertEquals(
-            setOf(
-                TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
-                TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
-                TrustReplyItemHandling.OMIT
-            ),
-            TrustReplyWorkbenchService.allowedHandlings(groundedItem).toSet()
-        )
         val partialItem = item(1, "What?", listOf(9L), RequestGroundingStatus.PARTIAL)
-        assertEquals(
-            setOf(
-                TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
-                TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
-                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                TrustReplyItemHandling.OMIT
-            ),
-            TrustReplyWorkbenchService.allowedHandlings(partialItem).toSet()
-        )
-        val partialWithBypass = partialItem.copy(operatorBypassedRuleIds = listOf(9L))
-        assertEquals(
-            listOf(
-                TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
-                TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
-                TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
-                TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
-                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                TrustReplyItemHandling.OMIT
-            ),
-            TrustReplyWorkbenchService.allowedHandlings(partialWithBypass)
-        )
         val unsupportedItem = item(1, "What?", emptyList(), RequestGroundingStatus.UNSUPPORTED)
+        listOf(groundedItem, partialItem, unsupportedItem).forEach { entry ->
+            assertEquals(allSeven, TrustReplyWorkbenchService.allowedHandlings(entry))
+            TrustReplyItemHandling.values().forEach { handling ->
+                // requireAllowedHandling 永不放行失败（全部开放）。
+                TrustReplyWorkbenchService.requireAllowedHandling(entry, handling)
+            }
+        }
         assertEquals(
-            setOf(
-                TrustReplyItemHandling.valueOf("ANSWER_FROM_OPERATOR_INPUT"),
-                TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-                TrustReplyItemHandling.OMIT
-            ),
-            TrustReplyWorkbenchService.allowedHandlings(unsupportedItem).toSet()
-        )
-        assertEquals(
-            TrustReplyItemHandling.valueOf("ANSWER_FROM_OPERATOR_INPUT"),
+            TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
             TrustReplyWorkbenchService.recommendedHandling(unsupportedItem)
         )
         assertEquals(
             TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
-            TrustReplyWorkbenchService.recommendedHandling(partialWithBypass)
+            TrustReplyWorkbenchService.recommendedHandling(partialItem)
         )
-        listOf(groundedItem, partialItem, partialWithBypass, unsupportedItem).forEach { entry ->
-            TrustReplyItemHandling.values()
-                .filterNot { it in TrustReplyWorkbenchService.allowedHandlings(entry) }
-                .forEach { handling ->
-                    assertThrows(IllegalArgumentException::class.java) {
-                        TrustReplyWorkbenchService.requireAllowedHandling(entry, handling)
-                    }
-                }
+        assertEquals(
+            TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+            TrustReplyWorkbenchService.recommendedHandling(groundedItem)
+        )
+    }
+
+    @Test
+    fun `fact required handlings fail with fact required at assemble when facts are empty`() {
+        // 计划 02 (I-4): 空事实的四种事实模式在锁定/整合同样 422
+        // TRUST_REPLY_FACT_REQUIRED——选项仍全部展示，机械校验在锁定阶段执行。
+        listOf(
+            TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+            TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
+            TrustReplyItemHandling.ANSWER_FACTS_VERBATIM,
+            TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT
+        ).forEach { handling ->
+            val fixture = assembleFixture(
+                status = RequestGroundingStatus.GROUNDED,
+                handling = handling,
+                answerText = "Salary info",
+                claims = emptyList(),
+                factIds = emptyList()
+            )
+            val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+                fixture.service.assemble(fixture.request)
+            }
+            assertEquals("TRUST_REPLY_FACT_REQUIRED", error.code)
         }
     }
 
     @Test
-    fun `operator directed lock survives binding fact that raises status to partial`() {
-        // 计划 02 (IP-2/I-6): 先以 UNSUPPORTED 锁定一条 ANSWER_FROM_OPERATOR_INPUT，
-        // 再给该条目绑定事实使其变 PARTIAL（带运营绕过证据）——锁定项仍能通过
-        // validateLockedItem 并成功 assemble（改动前 :1396 的 status != UNSUPPORTED
-        // 硬编码会让整合永远 422 TRUST_REPLY_LOCKED_ITEM_INVALID）。
+    fun `operator directed lock on unsupported item survives bound facts`() {
+        // 计划 02 (I-2): 人工绑定不再改变 status——UNSUPPORTED 条目带人工事实锁定
+        // ANSWER_FROM_OPERATOR_INPUT 后仍能通过 validateLockedItem 并成功 assemble
+        // （旧用例的「status 因绑定上升到 PARTIAL」随 operatorBypassed 语义删除；
+        // 新语义下 status 恒定自然值，锁定天然有效）。
         val fixture = assembleFixture(
-            status = RequestGroundingStatus.PARTIAL,
+            status = RequestGroundingStatus.UNSUPPORTED,
             handling = operatorDirectedHandling(),
             answerText = "We work with the named institutions.",
             claims = emptyList(),
-            operatorBypassedRuleIds = listOf(9L)
+            factIds = listOf(9L)
         )
 
         val response = fixture.service.assemble(fixture.request)
@@ -327,7 +316,6 @@ class TrustReplyWorkbenchItemFlowTest {
             handling = TrustReplyItemHandling.ANSWER_SUPPORTED_PART,
             answerText = "Salary info",
             claims = listOf(AiReplyItemClaim("general.answer", "Salary info", listOf(9L))),
-            operatorBypassedRuleIds = listOf(9L)
         )
 
         val response = fixture.service.assemble(fixture.request)
@@ -349,7 +337,6 @@ class TrustReplyWorkbenchItemFlowTest {
             answerText = "If you would like to proceed, you are welcome to share your CV at your convenience " +
                 "so that we can carry out an initial eligibility review.",
             claims = emptyList(),
-            operatorBypassedRuleIds = listOf(9L)
         )
 
         val response = fixture.service.assemble(fixture.request)
@@ -367,7 +354,6 @@ class TrustReplyWorkbenchItemFlowTest {
             handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
             answerText = "Please send your passport.",
             claims = emptyList(),
-            operatorBypassedRuleIds = listOf(9L)
         )
 
         val error = assertThrows(TrustReplyWorkbenchException::class.java) {
@@ -387,7 +373,6 @@ class TrustReplyWorkbenchItemFlowTest {
             handling = TrustReplyItemHandling.ANSWER_EVIDENCE_WITH_OPERATOR_INPUT,
             answerText = "Salary info",
             claims = emptyList(),
-            operatorBypassedRuleIds = listOf(9L)
         )
 
         val response = fixture.service.assemble(fixture.request)
@@ -584,14 +569,10 @@ class TrustReplyWorkbenchItemFlowTest {
     }
 
     @Test
-    fun `two verbatim summaries with identical fact text are rejected as duplicates`() {
-        // 计划 03 (T4.1/I-7): 既有行为固化——两条摘要的 verbatim 正文逐字相同时
-        // validateNoDuplicateClaims 必然 422 TRUST_REPLY_DUPLICATE_CLAIM。
-        // 注：同一事实集不能绑到两条摘要上（矩阵 I-2 的
-        // TRUST_REPLY_FACT_ALREADY_ASSIGNED 守卫，A-8 中该前置被拦的场景标记
-        // 不适用），可达的重复触发是两条摘要绑不同事实但 answerBody 逐字相同
-        // （QA 库重复文案）——verbatim 正文必然相同，查重同样生效。
-        // 正确处理是运营把其中一条改 OMIT 或调整事实绑定，不是放宽查重。
+    fun `two verbatim summaries with identical fact text assemble successfully`() {
+        // 计划 02 (I-6/I-7): 跨 item 查重已删除——两条摘要的 verbatim 正文逐字
+        // 相同是合法的（同一事实/重复文案可绑定多个 request）；canonical audit
+        // 来自 selection.sendQaRuleIds，不因重复正文丢失。
         val fixture = duplicateFixture(
             item1Text = "Salary info",
             item2Text = "Salary info",
@@ -599,11 +580,10 @@ class TrustReplyWorkbenchItemFlowTest {
             generationKind = TrustReplyItemGenerationKind.SAFE_TEMPLATE
         )
 
-        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
-            fixture.service.assemble(fixture.request)
-        }
+        val response = fixture.service.assemble(fixture.request)
 
-        assertEquals("TRUST_REPLY_DUPLICATE_CLAIM", error.code)
+        assertEquals(2, response.itemVersions.size)
+        assertEquals(listOf(9L, 10L), response.canonicalFactIds)
     }
 
     @Test
@@ -612,7 +592,6 @@ class TrustReplyWorkbenchItemFlowTest {
         // 422 TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID（不是服务层 require 的 500）。
         val fixture = assembleFixture(
             status = RequestGroundingStatus.PARTIAL,
-            operatorBypassedRuleIds = listOf(9L)
         )
 
         val error = assertThrows(TrustReplyWorkbenchException::class.java) {
@@ -1339,31 +1318,30 @@ class TrustReplyWorkbenchItemFlowTest {
         Mockito.verify(fixture.composer).composeLockedItems(listOf(canonical), fixture.defaultFrame)
     }
 
-    // ── I-7/I-8: cross-request duplicate claim guard before compose ────────────
+    // ── 计划 02 (I-6): cross-request reuse is a legal operator decision ─────────
 
     @Test
-    fun `assemble rejects the same source rule bound to two requests as already assigned`() {
+    fun `assemble accepts the same source rule bound to two requests`() {
+        // 计划 02 (I-6): 同一事实可合法绑定多个 request——不再抛
+        // TRUST_REPLY_FACT_ALREADY_ASSIGNED；canonical ids 为有序 union 去重。
         val fixture = duplicateFixture(item2Source = 9L, item2Text = "Claim B")
 
-        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
-            fixture.service.assemble(fixture.request)
-        }
+        val response = fixture.service.assemble(fixture.request)
 
-        assertEquals("TRUST_REPLY_FACT_ALREADY_ASSIGNED", error.code)
-        Mockito.verifyNoInteractions(fixture.composer)
-        Mockito.verifyNoInteractions(fixture.previewService)
+        assertEquals(2, response.itemVersions.size)
+        assertEquals(listOf(9L), response.canonicalFactIds)
+        assertEquals("raw Claim A|Claim B", response.rawDraftText)
     }
 
     @Test
-    fun `assemble rejects identical normalized answers across requests`() {
+    fun `assemble accepts identical normalized answers across requests`() {
+        // 计划 02 (I-6): 跨 item 重复正文不再 422 TRUST_REPLY_DUPLICATE_CLAIM。
         val fixture = duplicateFixture(item1Text = "Same  claim", item2Text = "Same CLAIM")
 
-        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
-            fixture.service.assemble(fixture.request)
-        }
+        val response = fixture.service.assemble(fixture.request)
 
-        assertEquals("TRUST_REPLY_DUPLICATE_CLAIM", error.code)
-        Mockito.verifyNoInteractions(fixture.composer)
+        assertEquals(2, response.itemVersions.size)
+        assertEquals("raw Same  claim|Same CLAIM", response.rawDraftText)
     }
 
     @Test
@@ -1489,14 +1467,15 @@ class TrustReplyWorkbenchItemFlowTest {
     }
 
     @Test
-    fun `duplicate claims across items still rejected despite paragraph and space variance`() {
+    fun `similar answers across items assemble despite paragraph and space variance`() {
+        // 计划 02 (I-6): 跨 item 归一化正文查重已删除——段落/空格差异不再触发
+        // TRUST_REPLY_DUPLICATE_CLAIM。
         val fixture = duplicateFixture(item1Text = "Same\n\nclaim", item2Text = "Same  claim")
 
-        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
-            fixture.service.assemble(fixture.request)
-        }
+        val response = fixture.service.assemble(fixture.request)
 
-        assertEquals("TRUST_REPLY_DUPLICATE_CLAIM", error.code)
+        assertEquals(2, response.itemVersions.size)
+        assertEquals(listOf(9L, 10L), response.canonicalFactIds)
     }
 
 
@@ -2243,9 +2222,6 @@ class TrustReplyWorkbenchItemFlowTest {
         generationKind: TrustReplyItemGenerationKind = TrustReplyItemGenerationKind.AI_GENERATED,
         intents: List<RequestIntentCoverage> = emptyList(),
         boundFactIds: List<Long> = emptyList(),
-        // 计划 02 (I-5): 控制 item.operatorBypassedRuleIds——PARTIAL 条目的
-        // 允许集与锁定校验用例依赖该显式字段。
-        operatorBypassedRuleIds: List<Long> = emptyList(),
         // 计划 03 (T4.1): 多事实 verbatim 用例需要自定义事实集与 answerBody。
         factIds: List<Long> = listOf(9L),
         factBodies: Map<Long, String> = emptyMap()
@@ -2290,11 +2266,7 @@ class TrustReplyWorkbenchItemFlowTest {
         val boundItem = if (boundFactIds.isEmpty()) {
             item
         } else {
-            // P2b (C-4): 运营额外绑定但非证据的事实（如 99L）与证据（9L）并存；
-            // prompt 通道携带绑定，send 通道只有证据。
             item.copy(boundRuleIds = boundFactIds + item.factRuleIds)
-        }.let { entry ->
-            if (operatorBypassedRuleIds.isEmpty()) entry else entry.copy(operatorBypassedRuleIds = operatorBypassedRuleIds)
         }
         val selection = ResolvedQaRules(
             sendQaRuleIds = factIds,
