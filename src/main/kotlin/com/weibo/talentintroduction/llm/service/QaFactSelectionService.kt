@@ -212,7 +212,16 @@ class QaFactSelectionService(
                 emptyList()
             } else {
                 try {
-                    validateExplicitSelection(explicitIds)
+                    val rules = validateExplicitSelection(explicitIds)
+                    // 计划 02 (I-6): 单条 request 内重复 id 仍是脏输入并硬拦；
+                    // 跨 request 复用（同 id 出现在不同 request）仍合法。
+                    if (explicitIds.size != explicitIds.toSet().size) {
+                        throw TrustReplyWorkbenchException(
+                            HttpStatus.UNPROCESSABLE_ENTITY,
+                            "TRUST_REPLY_FACT_SELECTION_INVALID"
+                        )
+                    }
+                    rules
                 } catch (_: IllegalArgumentException) {
                     throw TrustReplyWorkbenchException(
                         HttpStatus.UNPROCESSABLE_ENTITY,

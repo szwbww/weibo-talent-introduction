@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.springframework.http.HttpStatus
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Optional
@@ -662,6 +663,36 @@ class QaFactSelectionServiceTest {
         assertEquals(listOf(2L), resolved.requestFacts[1].factRuleIds)
         // I-1: sendQaRuleIds = 按 request 顺序首次出现顺序去重。
         assertEquals(listOf(1L, 2L), resolved.sendQaRuleIds)
+    }
+
+    @Test
+    fun `matrix mode hard rejects a duplicated fact id within one request`() {
+        // 计划 02 (I-6): 单条 request 内重复 id 仍是脏输入并硬拦——[1,1] 必须
+        // 422 TRUST_REPLY_FACT_SELECTION_INVALID，不得被静默复制进 factRuleIds。
+        val salaryRule = rule(id = 1, keywords = "salary", answerBody = "Salary body")
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(salaryRule))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.selectForWorkbench(
+                inboundText = "- Salary?",
+                selectionsByRequest = listOf(listOf(1L, 1L)),
+                requestedFactIds = null,
+                researchProfileSufficient = true
+            )
+        }
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.status)
+        assertEquals("TRUST_REPLY_FACT_SELECTION_INVALID", ex.code)
+
+        // I-6 反面：同一 fact id 出现在两个不同 request 仍合法（跨摘要复用）。
+        val resolved = service.selectForWorkbench(
+            inboundText = "- Salary?\n- Visa?",
+            selectionsByRequest = listOf(listOf(1L), listOf(1L)),
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+        assertEquals(listOf(1L), resolved.requestFacts[0].factRuleIds)
+        assertEquals(listOf(1L), resolved.requestFacts[1].factRuleIds)
+        assertEquals(listOf(1L), resolved.sendQaRuleIds)
     }
 
     @Test
