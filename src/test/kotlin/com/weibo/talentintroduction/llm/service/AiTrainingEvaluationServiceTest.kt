@@ -5,6 +5,9 @@ import com.weibo.talentintroduction.audit.domain.OperatorActionLog
 import com.weibo.talentintroduction.audit.repository.OperatorActionLogRepository
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.llm.service.TrustReplyDiagnosticFlag
+import com.weibo.talentintroduction.llm.service.TrustReplyDiagnostics
+import com.weibo.talentintroduction.llm.service.TrustReplyRequestDiagnostic
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -278,6 +281,7 @@ class AiTrainingEvaluationServiceTest {
             "requestCount", "handlingCounts", "models", "itemSnapshots", "itemTotal", "itemTruncated"
         )
         assertEquals(expectedKeys, snapshot.keys)
+        assertEquals("ai-training-reply-evaluation-v2", snapshot["schemaVersion"])
         assertEquals(51, snapshot["itemTotal"])
         assertEquals(true, snapshot["itemTruncated"])
         assertEquals(AiReplyDraftService.sha256Hex("SECRET-RAW-51"), snapshot["draftHash"])
@@ -292,6 +296,151 @@ class AiTrainingEvaluationServiceTest {
         assertTrue((first["requestKey"] as String).length <= 200)
         assertEquals(AiReplyDraftService.sha256Hex("SECRET-ANSWER-1"), first["answerHash"])
         assertEquals(51, ((snapshot["handlingCounts"] as Map<*, *>)[TrustReplyItemHandling.ANSWER_WITH_EVIDENCE.name]))
+    }
+
+    private fun trainingDiagnostics() = TrustReplyDiagnostics(
+        schemaVersion = TrustReplyDiagnostics.SCHEMA_VERSION,
+        flags = listOf(TrustReplyDiagnosticFlag.MANUAL_FACT_SELECTED),
+        requestSnapshots = listOf(
+            TrustReplyRequestDiagnostic(
+                requestKey = "training-request-1",
+                status = RequestGroundingStatus.GROUNDED.name,
+                handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE.name,
+                detectedIntentKeys = listOf("INTENT_A"),
+                unrecognizedAskCount = 0,
+                manualFactRuleIds = listOf(4L),
+                intentMatchedFactRuleIds = listOf(4L),
+                intentMismatchFactRuleIds = emptyList(),
+                flags = listOf(TrustReplyDiagnosticFlag.MANUAL_FACT_SELECTED),
+                factIdsTruncated = false,
+                intentKeysTruncated = false
+            )
+        ),
+        requestTotal = 1,
+        requestTruncated = false
+    )
+
+    // 04 (I-1): 三种 rating 都在既有 AI_TRAINING_REPLY_EVALUATED action snapshot 中
+    // 保存同结构 trustReplyDiagnostics（v2 schema），且动作行数保持 1 条/次评估。
+    @Test
+    fun `all ratings embed the same trust reply diagnostics structure`() {
+        val assembledWithDiagnostics = assembled.copy(diagnostics = trainingDiagnostics())
+        Mockito.`when`(workbenchService.assemble(assembly)).thenReturn(assembledWithDiagnostics)
+
+        AiTrainingEvaluationRating.values().forEach { rating ->
+            service.save(AiTrainingEvaluationRequest(assembly, rating.name))
+        }
+        val logs = Mockito.mockingDetails(operatorActionLogRepository).invocations
+            .filter { it.method.name == "save" }
+            .map { it.arguments[0] as OperatorActionLog }
+        assertEquals(3, logs.size)
+        val trees = logs.map { ObjectMapper().readTree(it.afterValue!!) }
+        val diagTrees = trees.map { it["trustReplyDiagnostics"] }
+        assertEquals(diagTrees[0], diagTrees[1])
+        assertEquals(diagTrees[0], diagTrees[2])
+        assertEquals("trust-reply-diagnostics-v1", diagTrees[0]["schemaVersion"].asText())
+        assertEquals("training-request-1", diagTrees[0]["requestSnapshots"][0]["requestKey"].asText())
+        assertEquals(4L, diagTrees[0]["requestSnapshots"][0]["manualFactRuleIds"][0].asLong())
+        assertEquals(1, diagTrees[0]["requestTotal"].asInt())
+        assertEquals(false, diagTrees[0]["requestTruncated"].asBoolean())
+        assertEquals(listOf("MEETS_EXPECTATION", "NEEDS_IMPROVEMENT", "UNUSABLE"), trees.map { it["rating"].asText() })
+    }
+
+    // 04 (I-4/I-5): 诊断有界 —— 51 requests 截断到 50、21 intents 截断到 20、
+    // 51 facts 截断到 50，字符串 ≤200；重复事实按逐 request 矩阵计数判定。
+    // 隐私回归：inbound body/request quote/answerText/operator instruction 的独特
+    // canary 字符串与字段名不得出现在序列化结果。
+    @Test
+    fun `trust reply diagnostics are bounded and never contain body or instruction content`() {
+        val canaryInboundBody = "PRIVACY-INBOUND-BODY-77"
+        val canaryQuote = "PRIVACY-REQUEST-QUOTE-88"
+        val canaryAnswer = "PRIVACY-ANSWER-TEXT-66"
+        val canaryInstruction = "PRIVACY-OPERATOR-INSTRUCTION-55"
+        val items = (1..51).map { index ->
+            val ids = (1..51).map { (index * 100 + it).toLong() } +
+                if (index <= 2) listOf(999L) else emptyList()
+            RequestFactItem(
+                index = index,
+                requestText = canaryInboundBody,
+                factRuleIds = ids,
+                status = if (index == 1) RequestGroundingStatus.UNSUPPORTED else RequestGroundingStatus.GROUNDED,
+                requiresResearchContext = false,
+                intents = (1..21).map { intentIndex ->
+                    RequestIntentCoverage(
+                        intentKey = "intent-key-$index-$intentIndex",
+                        title = "title-$index-$intentIndex",
+                        requiredCoverageKeys = emptyList(),
+                        evidenceRuleIds = emptyList(),
+                        status = "SUPPORTED",
+                        missingEvidenceKeys = emptyList()
+                    )
+                },
+                unrecognizedAsks = listOf(EnumeratedAsk("ask-label", canaryQuote, 0..5)),
+                intentMatchedFactRuleIds = ids,
+                intentMismatchFactRuleIds = if (index == 1) listOf(999L) else emptyList(),
+                boundRuleIds = ids
+            )
+        }
+        val versions = (1..51).map { index ->
+            item(
+                answer = canaryAnswer,
+                requestKey = "request-key-$index",
+                handling = if (index == 1) {
+                    TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
+                } else {
+                    TrustReplyItemHandling.ANSWER_WITH_EVIDENCE
+                },
+                requestIndex = index,
+                requestText = canaryInboundBody,
+                operatorInstruction = canaryInstruction
+            )
+        }
+
+        val diagnostics = buildTrustReplyDiagnostics(items, versions)
+        assertEquals(51, diagnostics.requestTotal)
+        assertTrue(diagnostics.requestTruncated)
+        assertEquals(50, diagnostics.requestSnapshots.size)
+        val first = diagnostics.requestSnapshots.first()
+        assertEquals(20, first.detectedIntentKeys.size)
+        assertTrue(first.intentKeysTruncated)
+        assertEquals(50, first.manualFactRuleIds.size)
+        assertTrue(first.factIdsTruncated)
+        assertEquals(1, first.unrecognizedAskCount)
+        assertTrue(first.requestKey.length <= 200)
+        assertTrue(first.status.length <= 200)
+        assertTrue(first.handling.length <= 200)
+        assertTrue(first.flags.contains(TrustReplyDiagnosticFlag.MANUAL_FACT_SELECTED))
+        assertTrue(first.flags.contains(TrustReplyDiagnosticFlag.INTENT_MISMATCH))
+        assertTrue(first.flags.contains(TrustReplyDiagnosticFlag.UNRECOGNIZED_ASK))
+        assertTrue(first.flags.contains(TrustReplyDiagnosticFlag.MANUAL_FACT_ON_UNSUPPORTED))
+        // I-5: 999 只在 request 1、2 的逐 request 矩阵中出现 → 两条带 DUPLICATE flag，
+        // 第三条不带；顶层 flag 存在。
+        assertTrue(first.flags.contains(TrustReplyDiagnosticFlag.DUPLICATE_MANUAL_FACT_ASSIGNMENT))
+        assertTrue(diagnostics.requestSnapshots[1].flags.contains(TrustReplyDiagnosticFlag.DUPLICATE_MANUAL_FACT_ASSIGNMENT))
+        assertFalse(diagnostics.requestSnapshots[2].flags.contains(TrustReplyDiagnosticFlag.DUPLICATE_MANUAL_FACT_ASSIGNMENT))
+        assertTrue(diagnostics.flags.contains(TrustReplyDiagnosticFlag.DUPLICATE_MANUAL_FACT_ASSIGNMENT))
+        assertTrue(diagnostics.flags.contains(TrustReplyDiagnosticFlag.UNRECOGNIZED_ASK))
+        assertTrue(diagnostics.flags.contains(TrustReplyDiagnosticFlag.MANUAL_FACT_ON_UNSUPPORTED))
+
+        val json = ObjectMapper().writeValueAsString(diagnostics)
+        assertFalse(json.contains(canaryInboundBody))
+        assertFalse(json.contains(canaryQuote))
+        assertFalse(json.contains(canaryAnswer))
+        assertFalse(json.contains(canaryInstruction))
+        assertFalse(json.contains("requestText"))
+        assertFalse(json.contains("answerText"))
+        assertFalse(json.contains("operatorInstruction"))
+        assertFalse(json.contains("quote"))
+
+        // 04 (阶段 2): 嵌入 evaluation snapshot 后整条序列化路径仍不含正文/说明。
+        val snapshot = service.buildSnapshot(assembled.copy(diagnostics = diagnostics), AiTrainingEvaluationRating.UNUSABLE)
+        val snapshotJson = ObjectMapper().writeValueAsString(snapshot)
+        assertFalse(snapshotJson.contains(canaryInboundBody))
+        assertFalse(snapshotJson.contains(canaryQuote))
+        assertFalse(snapshotJson.contains(canaryAnswer))
+        assertFalse(snapshotJson.contains(canaryInstruction))
+        assertEquals("trust-reply-diagnostics-v1", (snapshot["trustReplyDiagnostics"] as TrustReplyDiagnostics).schemaVersion)
+        assertEquals("ai-training-reply-evaluation-v2", snapshot["schemaVersion"])
     }
 
     private fun item(

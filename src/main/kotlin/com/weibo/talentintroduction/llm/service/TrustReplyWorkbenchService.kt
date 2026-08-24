@@ -348,6 +348,135 @@ data class TrustReplyAssembleRequest(
     val frameSnapshot: TrustReplyFrameSnapshot? = null
 )
 
+// 04 (I-4): 有界诊断上限 —— 最多 50 个 request snapshot、每条最多 20 个 intent key、
+// 50 个 fact id；requestKey/status/handling 等字符串最多 200 字符。
+private const val MAX_DIAGNOSTIC_REQUEST_SNAPSHOTS = 50
+private const val MAX_DIAGNOSTIC_INTENT_KEYS = 20
+private const val MAX_DIAGNOSTIC_FACT_IDS = 50
+private const val MAX_DIAGNOSTIC_STRING_LENGTH = 200
+
+/**
+ * 04 (I-5): 稳定诊断 flag 口径。flag 只描述、不阻断：绝不参与 status、factRuleIds、
+ * allowed handling、版本/证据 hash、safety、SMTP 或归档资格。
+ */
+enum class TrustReplyDiagnosticFlag {
+    MANUAL_FACT_SELECTED,
+    INTENT_MISMATCH,
+    UNRECOGNIZED_ASK,
+    MANUAL_FACT_ON_UNSUPPORTED,
+    DUPLICATE_MANUAL_FACT_ASSIGNMENT
+}
+
+/**
+ * 04 (I-2/I-4): 单 request 有界诊断。仅存 id、计数、短枚举、flags 与截断标记；
+ * 不存 inbound body、request quote、answerText、fact answerBody、operator instruction、
+ * 电话/地址等原文。
+ */
+data class TrustReplyRequestDiagnostic(
+    val requestKey: String,
+    val status: String,
+    val handling: String,
+    val detectedIntentKeys: List<String>,
+    val unrecognizedAskCount: Int,
+    val manualFactRuleIds: List<Long>,
+    val intentMatchedFactRuleIds: List<Long>,
+    val intentMismatchFactRuleIds: List<Long>,
+    val flags: List<TrustReplyDiagnosticFlag>,
+    val factIdsTruncated: Boolean,
+    val intentKeysTruncated: Boolean
+)
+
+/**
+ * 04 (I-1/I-4): 服务端权威有界诊断快照，仅附加到最终事件（LIVE 发送成功、
+ * TRAINING 评估）。schemaVersion 固定为 [SCHEMA_VERSION]，跨 TRAINING/LIVE 语义一致。
+ */
+data class TrustReplyDiagnostics(
+    val schemaVersion: String,
+    val flags: List<TrustReplyDiagnosticFlag>,
+    val requestSnapshots: List<TrustReplyRequestDiagnostic>,
+    val requestTotal: Int,
+    val requestTruncated: Boolean
+) {
+    companion object {
+        const val SCHEMA_VERSION = "trust-reply-diagnostics-v1"
+    }
+}
+
+/**
+ * 04 (I-2/I-5): 有界诊断 builder。输入仅为 verified assembly 的 selection
+ * （requestFacts）与 materialized versions（按 request index 关联），绝不接收客户端
+ * 自报 flags/ids/counts。重复事实按逐 request 矩阵 factRuleIds（boundRuleIds）计数
+ * 判定 —— 覆盖全部请求、不受 snapshot 截断影响，不能用已 distinct 的 canonical
+ * union 推导。
+ */
+internal fun buildTrustReplyDiagnostics(
+    requestFacts: List<RequestFactItem>,
+    versions: List<TrustReplyItemVersion>
+): TrustReplyDiagnostics {
+    val ordered = requestFacts.sortedBy { it.index }
+    val versionByIndex = versions.associateBy { it.requestIndex }
+    // I-5: duplicate 判定使用逐 request 矩阵计数（全部请求，含被截断的尾部）。
+    val matrixCounts = ordered
+        .flatMap { it.boundRuleIds }
+        .groupingBy { it }
+        .eachCount()
+    val duplicatedFactIds = matrixCounts.filterValues { it > 1 }.keys
+
+    val snapshots = ordered.take(MAX_DIAGNOSTIC_REQUEST_SNAPSHOTS).map { item ->
+        val manualFactRuleIds = item.boundRuleIds.take(MAX_DIAGNOSTIC_FACT_IDS)
+        val intentMatched = item.intentMatchedFactRuleIds.take(MAX_DIAGNOSTIC_FACT_IDS)
+        val intentMismatch = item.intentMismatchFactRuleIds.take(MAX_DIAGNOSTIC_FACT_IDS)
+        val detectedIntentKeys = item.intents
+            .map { it.intentKey.take(MAX_DIAGNOSTIC_STRING_LENGTH) }
+            .take(MAX_DIAGNOSTIC_INTENT_KEYS)
+        val version = versionByIndex[item.index]
+        val flags = buildList {
+            if (item.boundRuleIds.isNotEmpty()) add(TrustReplyDiagnosticFlag.MANUAL_FACT_SELECTED)
+            if (item.intentMismatchFactRuleIds.isNotEmpty()) add(TrustReplyDiagnosticFlag.INTENT_MISMATCH)
+            if (item.unrecognizedAsks.isNotEmpty()) add(TrustReplyDiagnosticFlag.UNRECOGNIZED_ASK)
+            if (item.status == RequestGroundingStatus.UNSUPPORTED && item.boundRuleIds.isNotEmpty()) {
+                add(TrustReplyDiagnosticFlag.MANUAL_FACT_ON_UNSUPPORTED)
+            }
+            if (item.boundRuleIds.any { it in duplicatedFactIds }) {
+                add(TrustReplyDiagnosticFlag.DUPLICATE_MANUAL_FACT_ASSIGNMENT)
+            }
+        }
+        TrustReplyRequestDiagnostic(
+            requestKey = (version?.requestKey ?: "").take(MAX_DIAGNOSTIC_STRING_LENGTH),
+            status = item.status.name.take(MAX_DIAGNOSTIC_STRING_LENGTH),
+            handling = (version?.handling?.name ?: "").take(MAX_DIAGNOSTIC_STRING_LENGTH),
+            detectedIntentKeys = detectedIntentKeys,
+            unrecognizedAskCount = item.unrecognizedAsks.size,
+            manualFactRuleIds = manualFactRuleIds,
+            intentMatchedFactRuleIds = intentMatched,
+            intentMismatchFactRuleIds = intentMismatch,
+            flags = flags,
+            factIdsTruncated = item.boundRuleIds.size > MAX_DIAGNOSTIC_FACT_IDS ||
+                item.intentMatchedFactRuleIds.size > MAX_DIAGNOSTIC_FACT_IDS ||
+                item.intentMismatchFactRuleIds.size > MAX_DIAGNOSTIC_FACT_IDS,
+            intentKeysTruncated = item.intents.size > MAX_DIAGNOSTIC_INTENT_KEYS
+        )
+    }
+    val topFlags = buildList {
+        if (ordered.any { it.boundRuleIds.isNotEmpty() }) add(TrustReplyDiagnosticFlag.MANUAL_FACT_SELECTED)
+        if (ordered.any { it.intentMismatchFactRuleIds.isNotEmpty() }) add(TrustReplyDiagnosticFlag.INTENT_MISMATCH)
+        if (ordered.any { it.unrecognizedAsks.isNotEmpty() }) add(TrustReplyDiagnosticFlag.UNRECOGNIZED_ASK)
+        if (ordered.any { it.status == RequestGroundingStatus.UNSUPPORTED && it.boundRuleIds.isNotEmpty() }) {
+            add(TrustReplyDiagnosticFlag.MANUAL_FACT_ON_UNSUPPORTED)
+        }
+        if (matrixCounts.values.any { it > 1 }) {
+            add(TrustReplyDiagnosticFlag.DUPLICATE_MANUAL_FACT_ASSIGNMENT)
+        }
+    }
+    return TrustReplyDiagnostics(
+        schemaVersion = TrustReplyDiagnostics.SCHEMA_VERSION,
+        flags = topFlags,
+        requestSnapshots = snapshots,
+        requestTotal = ordered.size,
+        requestTruncated = ordered.size > MAX_DIAGNOSTIC_REQUEST_SNAPSHOTS
+    )
+}
+
 data class TrustReplyAssembleResponse(
     val source: TrustReplySourceRef,
     val sourceVersion: String,
@@ -361,7 +490,11 @@ data class TrustReplyAssembleResponse(
     val contextVersion: String = "",
     val requestedFactIds: List<Long> = emptyList(),
     val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList(),
-    val frameSnapshot: TrustReplyFrameSnapshot? = null
+    val frameSnapshot: TrustReplyFrameSnapshot? = null,
+    // 04 (I-2/I-3): 服务端权威有界诊断快照。只读描述，绝不参与 draftHash、
+    // evidenceSetVersion、versionId、status、factRuleIds、handling、safety、SMTP
+    // 或归档资格；默认 null 保持既有构造点源码兼容。
+    val diagnostics: TrustReplyDiagnostics? = null
 )
 
 /**
@@ -1360,7 +1493,10 @@ class TrustReplyWorkbenchService(
                 frameSnapshot = TrustReplyFrameSnapshot(
                     selection = resolvedFrame.selection.toTrustReplyFrameSelection(),
                     version = resolvedFrame.version
-                )
+                ),
+                // 04 (I-2): 诊断只由本函数同一次执行的服务端 selection + materialized
+                // versions 计算；不参与 draftHash/evidenceSetVersion/versionId（I-3）。
+                diagnostics = buildTrustReplyDiagnostics(selection.requestFacts, versions)
             ),
             selection = selection
         )

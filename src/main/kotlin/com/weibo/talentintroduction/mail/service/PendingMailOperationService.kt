@@ -352,6 +352,10 @@ class PendingMailOperationService(
                                 inboundRecord = record,
                                 serverSuggestedFactIds = serverSuggestedFactIds,
                                 edited = edited,
+                                // 04 (I-1/I-7): 仅在该次发送存在 verified assembly 时把服务端
+                                // 诊断附加到既有发送 action；无 assembly（纯人工 rich reply、
+                                // legacy QA 发送）传 null，after payload 逐字不变。
+                                trustReplyDiagnostics = verifiedAssembly?.response?.diagnostics,
                                 note = buildString {
                                     append("Manual rich reply sent for inbound processing $inboundProcessingId")
                                     if (findings.isNotEmpty()) {

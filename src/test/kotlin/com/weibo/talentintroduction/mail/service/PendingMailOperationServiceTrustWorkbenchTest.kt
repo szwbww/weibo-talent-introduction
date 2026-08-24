@@ -24,9 +24,12 @@ import com.weibo.talentintroduction.llm.service.ResolvedQaRules
 import com.weibo.talentintroduction.llm.service.ResolvedTrustReplySource
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleResponse
+import com.weibo.talentintroduction.llm.service.TrustReplyDiagnosticFlag
+import com.weibo.talentintroduction.llm.service.TrustReplyDiagnostics
 import com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind
 import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
 import com.weibo.talentintroduction.llm.service.TrustReplyItemVersion
+import com.weibo.talentintroduction.llm.service.TrustReplyRequestDiagnostic
 import com.weibo.talentintroduction.llm.service.TrustReplyLockedItemRequest
 import com.weibo.talentintroduction.llm.service.TrustReplySourceRef
 import com.weibo.talentintroduction.llm.service.TrustReplySourceType
@@ -402,7 +405,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             eqValue(emptyList<Long>()), Mockito.eq(true),
             anyValue(DeliveredMail("", "")), eqValue("Re: Test"),
             Mockito.anyString(), eqValue("op"), anyValue(inbound()),
-            anyValue(emptyList<Long>()), anyValue(false), Mockito.anyString()
+            anyValue(emptyList<Long>()), anyValue(false), Mockito.anyString(),
+            anyValue(null)
         )
         Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
     }
@@ -774,7 +778,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             anyValue(emptyList<Long>()), anyValue(false),
             anyValue(DeliveredMail("", "")), anyValue("Re: Test"),
             anyValue("preview"), anyValue("op"), anyValue(inbound()),
-            anyValue(emptyList<Long>()), anyValue(false), anyValue("note")
+            anyValue(emptyList<Long>()), anyValue(false), anyValue("note"),
+            anyValue(null)
         )
 
         val result = service.sendManualRichReply(
@@ -921,7 +926,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             eqValue(listOf(10L)), Mockito.eq(true),
             anyValue(DeliveredMail("", "")), eqValue("Re: Test"),
             Mockito.anyString(), eqValue("op"), anyValue(inbound()),
-            anyValue(emptyList<Long>()), anyValue(false), anyValue("")
+            anyValue(emptyList<Long>()), anyValue(false), anyValue(""),
+            anyValue(null)
         )
     }
 
@@ -1174,7 +1180,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             anyValue(emptyList<Long>()), Mockito.eq(false),
             anyValue(DeliveredMail("", "")), Mockito.anyString(),
             Mockito.anyString(), eqValue(" operator-a "), anyValue(inbound()),
-            anyValue(emptyList<Long>()), anyValue(false), anyValue("")
+            anyValue(emptyList<Long>()), anyValue(false), anyValue(""),
+            anyValue(null)
         )
         order.verify(unsupportedAnswerIndexService).archiveLiveCanonicalVersions(
             Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
@@ -1910,6 +1917,216 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         Mockito.verify(trustReplyWorkbenchService, Mockito.never())
             .operatorAuthorizedActions(assembly.lockedItems)
         Mockito.verifyNoInteractions(mailDeliveryService, manualReplySendAttemptService)
+    }
+
+    private fun liveDiagnostics() = TrustReplyDiagnostics(
+        schemaVersion = TrustReplyDiagnostics.SCHEMA_VERSION,
+        flags = listOf(
+            TrustReplyDiagnosticFlag.MANUAL_FACT_SELECTED,
+            TrustReplyDiagnosticFlag.INTENT_MISMATCH
+        ),
+        requestSnapshots = listOf(
+            TrustReplyRequestDiagnostic(
+                requestKey = "live-request-1",
+                status = RequestGroundingStatus.GROUNDED.name,
+                handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT.name,
+                detectedIntentKeys = listOf("INTENT_A"),
+                unrecognizedAskCount = 0,
+                manualFactRuleIds = listOf(10L),
+                intentMatchedFactRuleIds = listOf(10L),
+                intentMismatchFactRuleIds = listOf(20L),
+                flags = listOf(
+                    TrustReplyDiagnosticFlag.MANUAL_FACT_SELECTED,
+                    TrustReplyDiagnosticFlag.INTENT_MISMATCH
+                ),
+                factIdsTruncated = false,
+                intentKeysTruncated = false
+            )
+        ),
+        requestTotal = 1,
+        requestTruncated = false
+    )
+
+    // 04 (I-1/I-2): LIVE 发送成功（SMTP SENT + finalizeSuccess 提交）后，把 verified
+    // assembly 的服务端诊断原样传给既有发送 action；未从客户端读取任何 flag/ids/counts。
+    @Test
+    fun `sendManualRichReply records trust reply diagnostics on verified assembly send success`() {
+        val assembly = liveAssembly()
+        val eligible = operatorDirectedVersion()
+        val assembled = assembledResponse(eligible).copy(
+            canonicalFactIds = listOf(10L),
+            diagnostics = liveDiagnostics()
+        )
+        Mockito.`when`(trustReplyWorkbenchService.verifyAssembly(assembly)).thenReturn(verified(assembled))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(qaRule(10L)))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", null, true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = listOf(10L),
+                    promptRuleIds = listOf(10L),
+                    requestFacts = emptyList()
+                )
+            )
+        stubSuccessfulSend()
+        Mockito.`when`(trustReplyWorkbenchService.resolveSource(assembly.source)).thenReturn(liveResolvedSource())
+        Mockito.`when`(
+            unsupportedAnswerIndexService.archiveLiveCanonicalVersions(
+                Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+                Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            )
+        ).thenReturn(UnsupportedAnswerIndexArchiveResult())
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test", htmlBody = "<p>${assembled.renderedDraftText}</p>",
+            textBody = assembled.renderedDraftText, operatorName = "op",
+            qaRuleIds = listOf(10L), templateTextBody = assembled.rawDraftText,
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        val invocation = Mockito.mockingDetails(manualReplySendAttemptService).invocations
+            .single { it.method.name == "recordSendAudit" }
+        val passed = requireNotNull(invocation.arguments[13] as TrustReplyDiagnostics?)
+        assertEquals(liveDiagnostics(), passed)
+        assertEquals(
+            listOf(TrustReplyDiagnosticFlag.MANUAL_FACT_SELECTED, TrustReplyDiagnosticFlag.INTENT_MISMATCH),
+            passed.flags
+        )
+        assertEquals(1, passed.requestTotal)
+        assertEquals(listOf(10L), passed.requestSnapshots.single().manualFactRuleIds)
+        assertEquals(listOf(20L), passed.requestSnapshots.single().intentMismatchFactRuleIds)
+        assertEquals(0, passed.requestSnapshots.single().unrecognizedAskCount)
+    }
+
+    // 04 (阶段 3): 工作台无事实但完成发送（rich reply 分支）仍传递诊断，用于记录
+    // unrecognized/unsupported 情况；SEND_MANUAL_RICH_REPLY action 保持不变。
+    @Test
+    fun `sendManualRichReply rich reply without facts still passes diagnostics`() {
+        val assembly = liveAssembly()
+        val eligible = operatorDirectedVersion()
+        val assembled = assembledResponse(eligible).copy(diagnostics = liveDiagnostics())
+        Mockito.`when`(trustReplyWorkbenchService.verifyAssembly(assembly)).thenReturn(verified(assembled))
+        stubSuccessfulSend()
+        Mockito.`when`(trustReplyWorkbenchService.resolveSource(assembly.source)).thenReturn(liveResolvedSource())
+        Mockito.`when`(
+            unsupportedAnswerIndexService.archiveLiveCanonicalVersions(
+                Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+                Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+                Mockito.anyString(),
+                Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            )
+        ).thenReturn(UnsupportedAnswerIndexArchiveResult())
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test", htmlBody = "<p>${assembled.renderedDraftText}</p>",
+            textBody = assembled.renderedDraftText, operatorName = "op",
+            templateTextBody = assembled.rawDraftText,
+            trustReplyAssembly = assembly
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        val invocation = Mockito.mockingDetails(manualReplySendAttemptService).invocations
+            .single { it.method.name == "recordSendAudit" }
+        assertEquals(liveDiagnostics(), invocation.arguments[13] as TrustReplyDiagnostics?)
+    }
+
+    // 04 (I-1): 发送失败（SMTP 未成功）不产生诊断审计 —— recordSendAudit 不被调用。
+    @Test
+    fun `sendManualRichReply send failure never records diagnostics`() {
+        val assembly = liveAssembly()
+        val assembled = assembledResponse(operatorDirectedVersion())
+        Mockito.`when`(trustReplyWorkbenchService.verifyAssembly(assembly)).thenReturn(verified(assembled))
+        val claim = ManualReplySendAttemptService.ClaimedAttempt(
+            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+            result = ManualReplySendAttemptService.ClaimResult.CLAIMED
+        )
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload()))).thenReturn(claim)
+        Mockito.`when`(
+            mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail()))
+        ).thenReturn(
+            DeliveredMail(
+                messageId = "<manual-rich-abc@weibo.com>",
+                status = "FAILED",
+                errorCategory = com.weibo.talentintroduction.mail.domain.SmtpErrorCategory.TRANSIENT,
+                smtpResponseCode = 451,
+                errorDetail = "try later"
+            )
+        )
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeFailure(
+                anyValue(sendPayload()), Mockito.eq(1L), Mockito.anyString(), Mockito.anyString(), Mockito.any()
+            )
+        ).thenReturn(501L)
+
+        assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+                textBody = "Remote work is possible.", operatorName = "op",
+                trustReplyAssembly = assembly
+            )
+        }
+        verifyNoSendAuditRecorded()
+    }
+
+    // 04 (I-1): safety blocked 在 claim 之前失败，不产生任何发送审计（无诊断）。
+    @Test
+    fun `sendManualRichReply safety blocked never records diagnostics`() {
+        val assembly = liveAssembly()
+        val assembled = assembledResponse(operatorDirectedVersion()).copy(canonicalFactIds = listOf(10L))
+        Mockito.`when`(trustReplyWorkbenchService.verifyAssembly(assembly)).thenReturn(verified(assembled))
+        Mockito.`when`(qaRuleRepository.findById(10L)).thenReturn(Optional.of(qaRule(10L)))
+        Mockito.`when`(qaFactSelectionService.select("Can I work remotely?", null, true))
+            .thenReturn(
+                ResolvedQaRules(
+                    sendQaRuleIds = listOf(10L),
+                    promptRuleIds = listOf(10L),
+                    requestFacts = emptyList()
+                )
+            )
+
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test", htmlBody = "<p>We guarantee 10 million RMB with no fees.</p>",
+                textBody = "We guarantee 10 million RMB with no fees.",
+                operatorName = "op", qaRuleIds = listOf(10L), trustReplyAssembly = assembly
+            )
+        }
+        assertTrue(ex.findings.isNotEmpty())
+        verifyNoSendAuditRecorded()
+    }
+
+    // 04 (I-7): 无 assembly 的纯人工 rich reply 发送，recordSendAudit 收到 null 诊断，
+    // after payload 不出现伪造诊断。
+    @Test
+    fun `sendManualRichReply without assembly passes null diagnostics`() {
+        stubSuccessfulSend()
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test", htmlBody = "<p>Remote work is possible.</p>",
+            textBody = "Remote work is possible.", operatorName = "op"
+        )
+        assertEquals("SENT", result.sendStatus)
+        val invocation = Mockito.mockingDetails(manualReplySendAttemptService).invocations
+            .single { it.method.name == "recordSendAudit" }
+        assertEquals(null, invocation.arguments[13])
+    }
+
+    private fun verifyNoSendAuditRecorded() {
+        Mockito.verify(manualReplySendAttemptService, Mockito.never()).recordSendAudit(
+            anyValue(100L), anyValue(1L), anyValue(500L),
+            anyValue(emptyList<Long>()), anyValue(false),
+            anyValue(DeliveredMail("", "")), anyValue("Re: Test"),
+            anyValue("preview"), anyValue("op"), anyValue(inbound()),
+            anyValue(emptyList<Long>()), anyValue(false), anyValue(""), anyValue(null)
+        )
     }
 
     private fun stubSuccessfulSend() {

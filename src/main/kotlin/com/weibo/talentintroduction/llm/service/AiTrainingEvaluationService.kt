@@ -41,7 +41,8 @@ class AiTrainingEvaluationService(
     private val log = LoggerFactory.getLogger(javaClass)
 
     companion object {
-        const val SNAPSHOT_SCHEMA_VERSION = "ai-training-reply-evaluation-v1"
+        // 04 (阶段 2): v2 在既有字段后追加 trustReplyDiagnostics（服务端有界诊断）。
+        const val SNAPSHOT_SCHEMA_VERSION = "ai-training-reply-evaluation-v2"
         private const val MAX_NOTE_LENGTH = 1000
         private const val MAX_OPERATOR_NAME_LENGTH = 128
         private const val MAX_ITEM_SNAPSHOTS = 50
@@ -154,7 +155,7 @@ class AiTrainingEvaluationService(
             .map { it.take(MAX_MODEL_LENGTH) }
             .toList()
 
-        return linkedMapOf(
+        val snapshot = linkedMapOf(
             "schemaVersion" to SNAPSHOT_SCHEMA_VERSION,
             "sourceVersion" to assembled.sourceVersion,
             "draftHash" to AiReplyDraftService.sha256Hex(assembled.rawDraftText),
@@ -167,6 +168,13 @@ class AiTrainingEvaluationService(
             "itemTotal" to allItems.size,
             "itemTruncated" to (allItems.size > MAX_ITEM_SNAPSHOTS)
         )
+        // 04 (I-1/I-7): 仅在 assembled response 携带服务端诊断时追加（生产路径
+        // assemble 恒有）；无诊断时保持既有字段逐字不变，不写伪造诊断。
+        return if (assembled.diagnostics != null) {
+            snapshot + ("trustReplyDiagnostics" to assembled.diagnostics)
+        } else {
+            snapshot
+        }
     }
 
     private fun parseRating(value: String?): AiTrainingEvaluationRating =

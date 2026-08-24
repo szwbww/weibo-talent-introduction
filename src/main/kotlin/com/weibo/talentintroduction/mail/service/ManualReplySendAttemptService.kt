@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.audit.domain.OperatorActionType
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
+import com.weibo.talentintroduction.llm.service.TrustReplyDiagnostics
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
@@ -350,7 +351,11 @@ class ManualReplySendAttemptService(
         inboundRecord: com.weibo.talentintroduction.mail.domain.InboundMailProcessing,
         serverSuggestedFactIds: List<Long>,
         edited: Boolean?,
-        note: String
+        note: String,
+        // 04 (I-1/I-7): 服务端权威有界诊断，仅由发送方在 verified assembly 存在时传入；
+        // null 时 after payload 保持既有字段逐字不变，不写伪造诊断。不进入 SendPayload
+        // 或 attempt 幂等键，不新增 action row/action type。
+        trustReplyDiagnostics: TrustReplyDiagnostics? = null
     ) {
         val auditTask = {
             try {
@@ -359,7 +364,7 @@ class ManualReplySendAttemptService(
                 } else {
                     OperatorActionType.SEND_MANUAL_RICH_REPLY
                 }
-                val after = if (carriesQa) {
+                val baseAfter = if (carriesQa) {
                     mapOf(
                         "mailRecordId" to mailRecordId,
                         "canonicalFactIds" to canonicalFactIds,
@@ -379,6 +384,13 @@ class ManualReplySendAttemptService(
                         "subject" to sendSubject,
                         "bodyPreviewText" to bodyPreviewText
                     )
+                }
+                // 04 (I-1): 两条既有分支都可携带诊断 —— 「工作台无事实但完成发送」仍能
+                // 记录 unrecognized/unsupported 诊断到 SEND_MANUAL_RICH_REPLY。
+                val after = if (trustReplyDiagnostics != null) {
+                    baseAfter + ("trustReplyDiagnostics" to trustReplyDiagnostics)
+                } else {
+                    baseAfter
                 }
                 operatorActionLogService.record(
                     targetType = "INBOUND_MAIL_PROCESSING",
