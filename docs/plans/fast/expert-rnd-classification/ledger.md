@@ -37,7 +37,7 @@ Plan family facts (from master plan):
 
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 01 | docs/plans/2026-08-24/01-expert-rnd-classification-core.md | commit:10ec2d4f64806f07979e858022dae7a2569c7894 | none | 2 | PENDING | c004a18d675b86040597f17f5911aa52f718d156 | a8cf1723df1403682a04babbf213f3c17a8ccc1b | 0 | — | — | — | epoch 1 PLAN_CONFLICT resolved via A1; epoch 2 resumes with guard pin sync; base = master base |
+| 01 | docs/plans/2026-08-24/01-expert-rnd-classification-core.md | commit:10ec2d4f64806f07979e858022dae7a2569c7894 | none | 2 | LIGHT_PASS | c004a18d675b86040597f17f5911aa52f718d156 | a8cf1723df1403682a04babbf213f3c17a8ccc1b | 1 | 773527c7ed2ac65d4ae92d0233be82ab7417b1ef | 773527c7ed2ac65d4ae92d0233be82ab7417b1ef | — | epoch 1 PLAN_CONFLICT resolved via A1; round 1 FIXED; all four gates PASS, no notes; verify-log in children/01 |
 | 02 | docs/plans/2026-08-24/02-expert-rnd-classification-backfill.md | commit:3a4162c9c458f899470f59ac6e1a07b9ba748b3a | 01 | 1 | PENDING | — | — | 0 | — | — | — | base = 01 code head |
 | 03 | docs/plans/2026-08-24/03-expert-rnd-send-gate.md | commit:3a4162c9c458f899470f59ac6e1a07b9ba748b3a | 01 | 1 | PENDING | — | — | 0 | — | — | — | plan 前置: 01; master order bases through 02 code head; production send gate needs 02 CANDIDATE backfill (M-6) |
 | 04 | docs/plans/2026-08-24/04-expert-rnd-incremental-classification.md | commit:3a4162c9c458f899470f59ac6e1a07b9ba748b3a | 01,02,03 | 1 | PENDING | — | — | 0 | — | — | — | 前置: 01~03 完成 + 02 CANDIDATE 回填/抽样通过 |
