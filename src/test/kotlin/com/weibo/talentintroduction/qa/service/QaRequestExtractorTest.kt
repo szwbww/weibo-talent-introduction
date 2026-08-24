@@ -211,6 +211,91 @@ class QaRequestExtractorTest {
         assertTrue(items[0].startOffset < items[1].startOffset)
     }
 
+    // ── 计划 01 (阶段 1): bullet marker 必须带空白，Markdown 强调签名不是 bullet ──
+
+    // 脱敏线上结构 (LIVE_INBOUND:124)：真实复合 question + 5 条 *...* 签名。
+    // 修复前 5 条签名被拆成 BULLET；修复后只保留 1 条 QUESTION，offset 可回切原文。
+    @Test
+    fun `live signature with markdown emphasis is not extracted as bullets`() {
+        val body = """
+            Could you tell me the official programme name and the usual form of collaboration?
+
+            *Name*
+            *Title*
+            *Institution*
+            *Phone*
+            *Address*
+        """.trimIndent()
+
+        val items = QaRequestExtractor.extract(body)
+        assertEquals(1, items.size, items.map { it.text }.toString())
+        assertEquals(QaRequestExtractor.Kind.QUESTION, items[0].kind)
+        assertTrue(items[0].text.contains("official programme name", ignoreCase = true))
+        assertTrue(items[0].text.contains("usual form of collaboration", ignoreCase = true))
+        assertFalse(items.any { it.text.contains("*") }, "signature lines must not be extracted: ${items.map { it.text }}")
+        assertTrue(items[0].startOffset in 0 until items[0].endOffset, "bad range: $items")
+        assertTrue(items[0].endOffset <= body.length, "end past body: $items")
+        assertEquals(foldLike(body.substring(items[0].startOffset, items[0].endOffset)), items[0].text)
+    }
+
+    // marker 边界表：五种合法 marker 均为 BULLET，且保持源顺序。
+    @Test
+    fun `all five explicit bullet markers are extracted in source order`() {
+        val body = """
+            - dash bullet
+            * star bullet
+            • dot bullet
+            1. numbered-dot bullet
+            1) numbered-paren bullet
+        """.trimIndent()
+
+        val items = QaRequestExtractor.extract(body)
+        assertEquals(5, items.size, items.map { it.text }.toString())
+        assertEquals(listOf(QaRequestExtractor.Kind.BULLET), items.map { it.kind }.distinct())
+        assertTrue(items[0].text.contains("dash bullet"))
+        assertTrue(items[1].text.contains("star bullet"))
+        assertTrue(items[2].text.contains("dot bullet"))
+        assertTrue(items[3].text.contains("numbered-dot bullet"))
+        assertTrue(items[4].text.contains("numbered-paren bullet"))
+        assertTrue(items.zipWithNext().all { (a, b) -> a.startOffset < b.startOffset })
+    }
+
+    // marker 边界表：无空白 marker 拒绝 —— Markdown 强调与连字符文本不是列表。
+    @Test
+    fun `markdown emphasis and hyphenated text are not bullets`() {
+        val body = """
+            *Name*
+            -not a list
+
+            What funding is available?
+        """.trimIndent()
+
+        val items = QaRequestExtractor.extract(body)
+        assertEquals(1, items.size, items.map { it.text }.toString())
+        assertEquals(QaRequestExtractor.Kind.QUESTION, items[0].kind)
+        assertTrue(items[0].text.contains("funding", ignoreCase = true))
+        assertFalse(items.any { it.text.contains("Name", ignoreCase = true) })
+        assertFalse(items.any { it.text.contains("not a list", ignoreCase = true) })
+    }
+
+    // 缩进续行规则不变：空白开头的续行仍折进 bullet。
+    @Test
+    fun `indented continuation lines still fold into the bullet`() {
+        val body = """
+            - first line
+              indented continuation
+            - second line
+        """.trimIndent()
+
+        val items = QaRequestExtractor.extract(body)
+        assertEquals(2, items.size, items.map { it.text }.toString())
+        assertTrue(items[0].text.contains("first line"))
+        assertTrue(items[0].text.contains("indented continuation"))
+        assertFalse(items[0].text.contains("\n"), "soft newlines must fold: ${items[0].text}")
+        assertTrue(items[1].text.contains("second line"))
+        assertTrue(items[0].startOffset < items[1].startOffset)
+    }
+
     private fun foldLike(text: String): String =
         text.replace(Regex("[ \\t]*\\r\\n[ \\t]*"), " ")
             .replace(Regex("[ \\t]*\\n[ \\t]*"), " ")

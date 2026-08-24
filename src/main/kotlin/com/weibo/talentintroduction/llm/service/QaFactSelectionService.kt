@@ -503,10 +503,23 @@ class QaFactSelectionService(
         // original range starts inside the request's original region, and it is
         // unrecognized only when no alias-hit span of this request overlaps it.
         // Shadow field — never feeds status/evidence/hashes (I-3/I-2).
+        //
+        // 计划 01 (I-3): matchIntentsWithSpans returns ranges LOCAL to the passed
+        // requestText, while ask.originalRange is absolute in the inbound text.
+        // Keep the local matchedSpans for intent/status and derive absolute
+        // spans only for the shadow claiming comparison (add requestRange.first).
+        val absoluteMatchedSpans = requestRange?.let { range ->
+            matchedSpans.map { span ->
+                span.copy(
+                    originalRanges = span.originalRanges.map { it.first + range.first..it.last + range.first }
+                )
+            }
+        }
         val unrecognizedAsks = askEnumeration.asks.filter { ask ->
             requestRange != null &&
                 ask.originalRange.first in requestRange &&
-                !claimed(ask, matchedSpans)
+                absoluteMatchedSpans != null &&
+                !claimed(ask, absoluteMatchedSpans)
         }
 
         val researchWarned = isResearch && !researchProfileSufficient

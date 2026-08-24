@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.llm.config.AskEnumeratorProperties
 import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.qa.service.QaRequestExtractor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -1474,6 +1475,54 @@ class QaFactSelectionServiceTest {
         assertEquals(1, resolved.unrecognizedAskCount)
         assertEquals(1, resolved.enumeratorClaimed)
         assertEquals(2, resolved.enumeratorEnumerated)
+    }
+
+    // 计划 01 (阶段 2, I-3): 前置正文把真实 request 起点推到 >0 后，局部 intent
+    // span 必须先 rebase 为整封邮件绝对坐标再交给 claimed()。修复前 "eligibility
+    // criteria" / "application process" / "expected timeline" 因局部/绝对混用而
+    // 全部误判 unrecognized；未知 technical-background ask 保持 unrecognized。
+    @Test
+    fun `asks claim against absolute spans when the request starts at nonzero offset`() {
+        Mockito.`when`(repository.findAllEnabledOrdered()).thenReturn(emptyList())
+        val enumerator = Mockito.mock(InboundAskEnumerator::class.java)
+        val mail = "Dear Sir or Madam,\n\nCould you tell me the eligibility criteria, the application process, " +
+            "the expected timeline, and the required technical background for the role?"
+        val request = QaRequestExtractor.extract(mail).single()
+        assertTrue(request.startOffset > 0, "preamble must push the request off zero: ${request.startOffset}")
+        Mockito.`when`(enumerator.enumerate(mail)).thenReturn(
+            AskEnumeration(
+                true,
+                listOf(
+                    ask("Eligibility", "eligibility criteria", mail),
+                    ask("Process", "application process", mail),
+                    ask("Timeline", "expected timeline", mail),
+                    ask("Technical background", "technical background", mail)
+                )
+            )
+        )
+        val selectionService = QaFactSelectionService(repository, enumerator, AskEnumeratorProperties())
+
+        val resolved = selectionService.selectForWorkbench(
+            inboundText = mail,
+            selectionsByRequest = null,
+            requestedFactIds = null,
+            researchProfileSufficient = true
+        )
+
+        // I-3: spans rebased to absolute coordinates — eligibility / application
+        // process / timeline are claimed; only the unknown ask stays unrecognized.
+        val fact = resolved.requestFacts.single()
+        assertEquals(listOf("technical background"), fact.unrecognizedAsks.map { it.quote })
+        assertEquals(3, resolved.enumeratorClaimed)
+        assertEquals(1, resolved.unrecognizedAskCount)
+        assertEquals(4, resolved.enumeratorEnumerated)
+        assertTrue(resolved.enumeratorClaimed >= 0)
+        assertTrue(resolved.unrecognizedAskCount >= 0)
+        assertEquals(
+            resolved.enumeratorClaimed + resolved.unrecognizedAskCount,
+            resolved.enumeratorEnumerated,
+            "enumerated count must be conserved"
+        )
     }
 
     // ── P2a (plan 02, I-6): auto-reply path gating ──────────────────────────

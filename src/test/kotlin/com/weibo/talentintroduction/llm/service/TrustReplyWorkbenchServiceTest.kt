@@ -995,6 +995,94 @@ class TrustReplyWorkbenchServiceTest {
         assertEquals("TRUST_REPLY_FACT_SELECTION_INVALID", explicit.code)
     }
 
+    // 计划 01 (阶段 3, I-5): 摘抄器收紧后旧快照含 5 条签名 requestKey，新
+    // extractor 只剩真实 question —— 隐式 saved 矩阵无法对应新 request 集合时
+    // bootstrap 回退默认选择并标 STALE（绝不 422），不猜测把旧事实重新绑定；
+    // 显式传入同一旧矩阵仍 422（未知 requestKey → TRUST_REPLY_REQUEST_KEY_INVALID）。
+    @Test
+    fun `old saved matrix with signature request keys falls back to stale after extractor tightening`() {
+        val body = listOf(
+            "Could you tell me the official programme name and the usual form of collaboration?",
+            "",
+            "*Name*",
+            "*Title*",
+            "*Institution*",
+            "*Phone*",
+            "*Address*"
+        ).joinToString("\n")
+        val exact = mail(id = 11L, body = body)
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+
+        val question = "Could you tell me the official programme name and the usual form of collaboration?"
+        val current = selection(item(1, question, listOf(9L), RequestGroundingStatus.GROUNDED))
+        Mockito.`when`(factSelection.selectForWorkbench(body, null, null, true)).thenReturn(current)
+        Mockito.`when`(factSelection.selectForWorkbench(body, null, listOf(9L), true)).thenReturn(current)
+        Mockito.`when`(factSelection.selectForWorkbench(body, listOf(listOf(9L)), null, true)).thenReturn(current)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(current.sendQaRuleIds))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+
+        val version = service.resolveSource(TrustReplySourceRef(TRAINING_MAIL, 11L)).sourceVersion
+        // 服务端 canonicalMatrix 的 key 取自 item.intents（stub 夹具为
+        // general.answer），而非 matchIntents 的目录意图；期望值必须镜像夹具。
+        val questionKey = TrustReplyWorkbenchService.requestKey(version, 1, question, listOf("general.answer"))
+        // 旧 extractor 的结果：真实 question（key 与新的 known key 一致）+ 5 条
+        // *...* 签名（旧 requestKey，已从新集合消失）→ 只有签名 key 漂移。
+        val oldQuestionKey = TrustReplyWorkbenchService.requestKey(
+            version, 1, question,
+            AiReplyIntentCatalog.matchIntents(question).map { it.key }
+        )
+        val oldMatrix = mutableListOf(
+            TrustReplyRequestFactSelection(oldQuestionKey, listOf(9L))
+        )
+        listOf("*Name*", "*Title*", "*Institution*", "*Phone*", "*Address*")
+            .forEachIndexed { i, text ->
+                oldMatrix += TrustReplyRequestFactSelection(
+                    TrustReplyWorkbenchService.requestKey(version, i + 2, text, emptyList()),
+                    listOf(9L)
+                )
+            }
+        val payload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = version,
+            evidenceSetVersion = "evidence-v1",
+            requestedFactIds = listOf(9L),
+            requestFactSelections = oldMatrix,
+            selectedModel = "DEEPSEEK_V4_FLASH",
+            lockedItems = emptyList()
+        )
+        Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(7L, LocalDateTime.now().plusDays(1), "{}")
+        )
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(payload)
+
+        // I-5: 隐式 saved 矩阵无法对应新 request 集合 → 默认选择 + STALE，绝不 422。
+        val restored = service.bootstrap(TrustReplyBootstrapRequest(TrustReplySourceRef(TRAINING_MAIL, 11L)))
+        assertEquals("STALE", restored.savedState?.status)
+        assertEquals(7L, restored.savedState?.stateVersion)
+        assert(restored.savedState?.lockedItems?.isEmpty() == true)
+        assertEquals(
+            listOf(TrustReplyRequestFactSelection(questionKey, listOf(9L))),
+            restored.requestFactSelections
+        )
+
+        // 显式传入同一旧矩阵仍 422：未知 requestKey → TRUST_REPLY_REQUEST_KEY_INVALID。
+        val explicit = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.bootstrap(
+                TrustReplyBootstrapRequest(
+                    source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                    requestFactSelections = oldMatrix
+                )
+            )
+        }
+        assertEquals("TRUST_REPLY_REQUEST_KEY_INVALID", explicit.code)
+    }
+
     @Test
     fun `bootstrap marks invalid payload and expired rows as non-restorable`() {
         stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))

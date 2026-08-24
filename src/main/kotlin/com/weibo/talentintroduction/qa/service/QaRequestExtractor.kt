@@ -334,5 +334,8 @@ object QaRequestExtractor {
             .trim()
 
     private val URL_PATTERN = Regex("https?://[^\\s<>]+", RegexOption.IGNORE_CASE)
-    private val BULLET_LINE_PATTERN = Regex("^(?:[-*•]|\\d+[.)]\\s)")
+    // 计划 01 (I-2): bullet markers are explicit list markers only — a symbol or
+    // numeric marker MUST be followed by whitespace. `*Name*`, `*Title*`,
+    // `-not a list` are Markdown emphasis / hyphenated text, never bullets.
+    private val BULLET_LINE_PATTERN = Regex("^(?:[-*•]\\s+|\\d+[.)]\\s+)")
 }

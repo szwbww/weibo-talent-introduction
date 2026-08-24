@@ -29,10 +29,13 @@ data class RequestIntentCoverage(
 
 /**
  * P2a (plan 02-unrecognized-request-detection, A-1): an intent match together
- * with the ORIGINAL-text coordinate ranges of every alias hit that produced
- * it. Ranges index the raw inbound text (not the canonical form) — see
- * [AiReplyIntentCatalog.matchIntentsWithSpans]. The [general.answer] fallback
- * carries an empty range list.
+ * with the original-text coordinate ranges of every alias hit that produced
+ * it. Ranges index the string passed to
+ * [AiReplyIntentCatalog.matchIntentsWithSpans] (not the canonical form, and
+ * not the raw inbound document). When a caller passes a request slice of a
+ * larger document, the caller MUST rebase each range by adding the slice's
+ * absolute start offset before comparing with whole-document coordinates
+ * (计划 01, I-3). The [general.answer] fallback carries an empty range list.
  */
 data class MatchedIntentSpan(
     val definition: RequestIntentDefinition,
