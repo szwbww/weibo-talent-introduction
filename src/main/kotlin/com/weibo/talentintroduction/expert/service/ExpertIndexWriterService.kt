@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.expert.domain.ExpertApplicationPromotion
+import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.repository.ExpertApplicationPromotionRepository
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
@@ -37,6 +38,14 @@ class ExpertIndexWriterService(
 ) {
     private val log = LoggerFactory.getLogger(ExpertIndexWriterService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
+    companion object {
+        /** 分类 bulk 单批上限（I2-2/Task 1）；实际批次大小由 backfill request.batchSize 控制。 */
+        const val CLASSIFICATION_BULK_BATCH_CAP = 1000
+
+        /** 失败样本保留上限：统计全部失败，但样本最多保留 100 条（I2-4）。 */
+        const val CLASSIFICATION_FAILURE_SAMPLE_CAP = 100
+    }
 
     fun markApplicationClosed(contact: ExpertContact) {
         if (!contact.applicationIndexed) return
@@ -208,6 +217,161 @@ class ExpertIndexWriterService(
             }
         }
         return overallResult
+    }
+
+    /**
+     * 分类批量局部更新的唯一写入口（I2-2，M-4）。
+     *
+     * 以调用方传入的 [level] 解析唯一目标 index（不跨三层循环，不做 ORCID→docId 二次查询）；
+     * 每个 item 按 [ClassificationBulkItem.esDocId] 更新原索引 `_id`，NDJSON data 逐字结构为
+     * `{"doc":{"expertClassification":{...}},"doc_as_upsert":false}` —— 只写分类对象，
+     * 不写根级 `updatedAt`、不自动创建缺失文档（`doc_as_upsert=false`）、不使用 `_update_by_query`。
+     *
+     * 返回每项 updated/noop/failure 状态；统计全部失败但只保留最多 100 条失败样本。
+     * 整批请求异常（ES 不可达 / bulk 被拒）时本批全部计 failure 并停止后续批次，
+     * 通过 [ClassificationBulkResult.wholesaleError] 暴露，由调用方决定是否中止整个任务。
+     */
+    fun bulkUpdateExpertClassifications(
+        level: ExpertIndexLevel,
+        updates: List<ClassificationBulkItem>
+    ): ClassificationBulkResult {
+        val index = expertIndexService.indexName(level)
+        val results = mutableListOf<ClassificationBulkItemResult>()
+        val failureSamples = mutableListOf<String>()
+        var anyMapperError = false
+        var wholesaleError: String? = null
+
+        for (batch in updates.chunked(CLASSIFICATION_BULK_BATCH_CAP)) {
+            val bulkBody = batch.joinToString(separator = "\n", postfix = "\n") { item ->
+                val meta = mapOf("update" to mapOf("_id" to item.esDocId, "_index" to index))
+                val data = mapOf(
+                    "doc" to mapOf("expertClassification" to classificationNode(item.classification)),
+                    "doc_as_upsert" to false
+                )
+                "${objectMapper.writeValueAsString(meta)}\n${objectMapper.writeValueAsString(data)}"
+            }
+            try {
+                val bulkUrl = "${properties.baseUrl}/_bulk"
+                val bulkHeaders = HttpHeaders().apply {
+                    contentType = MediaType.valueOf("application/x-ndjson")
+                    set(HttpHeaders.AUTHORIZATION, basicAuthHeader())
+                }
+                val responseNode = restTemplate.exchange(
+                    bulkUrl, HttpMethod.POST,
+                    HttpEntity(bulkBody, bulkHeaders),
+                    JsonNode::class.java
+                ).body
+                if (responseNode == null) {
+                    batch.forEach { item ->
+                        recordClassificationFailure(results, failureSamples, item.esDocId, "Empty bulk response from ES")
+                    }
+                    wholesaleError = "Empty bulk response from ES for index $index"
+                    break
+                }
+                val items = responseNode.path("items")
+                if (!items.isArray) {
+                    batch.forEach { item ->
+                        recordClassificationFailure(results, failureSamples, item.esDocId, "Bulk response items path is not an array")
+                    }
+                    wholesaleError = "Bulk response items path is not an array for index $index"
+                    break
+                }
+                for ((item, itemNode) in batch.zip(items)) {
+                    val updateNode = itemNode.path("update")
+                    val status = updateNode.path("status").asInt(200)
+                    val resultField = updateNode.path("result").asText("")
+                    when {
+                        status in 200..299 && resultField == "noop" ->
+                            results += ClassificationBulkItemResult(item.esDocId, ClassificationBulkItemStatus.NOOP)
+
+                        status in 200..299 ->
+                            results += ClassificationBulkItemResult(item.esDocId, ClassificationBulkItemStatus.UPDATED)
+
+                        else -> {
+                            val errorType = updateNode.path("error").path("type").asText("")
+                            val errReason = updateNode.path("error").path("reason").asText("Unknown error")
+                            if (errorType == "mapper_parsing_exception") {
+                                anyMapperError = true
+                            }
+                            recordClassificationFailure(results, failureSamples, item.esDocId, errReason)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                log.warn("Failed to bulk update expert classifications for index {}: {}", index, e.message, e)
+                batch.forEach { item ->
+                    recordClassificationFailure(results, failureSamples, item.esDocId, "Bulk request failed: ${e.message}")
+                }
+                wholesaleError = "Bulk request failed for index $index: ${e.message}"
+                break
+            }
+        }
+
+        val failures = results.count { it.status == ClassificationBulkItemStatus.FAILED }
+        return ClassificationBulkResult(
+            items = results,
+            failureSamples = failureSamples,
+            allFailedWithMapperError = results.isNotEmpty() && failures == results.size && anyMapperError,
+            wholesaleError = wholesaleError
+        )
+    }
+
+    /**
+     * 前置 mapping 检查（I2-2 立即 FAILED 前提）：确认 [level] 索引已声明
+     * `expertClassification.type`（keyword）。缺失/异常 → false，调用方应在扫描前停止。
+     */
+    fun checkExpertClassificationMapping(level: ExpertIndexLevel): Boolean {
+        val index = expertIndexService.indexName(level)
+        val url = "${properties.baseUrl}/$index/_mapping"
+        return try {
+            val response = restTemplate.exchange(
+                url, HttpMethod.GET,
+                HttpEntity(null, headers()),
+                JsonNode::class.java
+            ).body ?: return false
+            var found = false
+            response.fields().forEachRemaining { (_, indexNode) ->
+                val type = indexNode.path("mappings")
+                    .path("properties")
+                    .path("expertClassification")
+                    .path("properties")
+                    .path("type")
+                    .path("type")
+                    .asText()
+                if (type == "keyword") {
+                    found = true
+                }
+            }
+            found
+        } catch (e: Exception) {
+            log.warn("Failed to check expertClassification mapping for index {}", index, e)
+            false
+        }
+    }
+
+    private fun classificationNode(classification: ExpertClassification): JsonNode =
+        objectMapper.createObjectNode().apply {
+            put("type", classification.type.name)
+            put("sendable", classification.sendable)
+            put("productionScore", classification.productionScore)
+            put("researchScore", classification.researchScore)
+            putArray("positiveEvidence").apply { classification.positiveEvidence.forEach { add(it) } }
+            putArray("negativeEvidence").apply { classification.negativeEvidence.forEach { add(it) } }
+            put("version", classification.version)
+            put("sourceFingerprint", classification.sourceFingerprint)
+            put("classifiedAt", classification.classifiedAt.format(dateFormatter))
+        }
+
+    private fun recordClassificationFailure(
+        results: MutableList<ClassificationBulkItemResult>,
+        failureSamples: MutableList<String>,
+        esDocId: String,
+        reason: String
+    ) {
+        results += ClassificationBulkItemResult(esDocId, ClassificationBulkItemStatus.FAILED, reason)
+        if (failureSamples.size < CLASSIFICATION_FAILURE_SAMPLE_CAP) {
+            failureSamples.add("docId=$esDocId error: $reason")
+        }
     }
 
     private fun resolveOrcidToDocIds(index: String, orcidIds: List<String>): Map<String, String> {
@@ -685,4 +849,36 @@ data class BulkSyncResult(
             failure > 0 -> "FAILED"
             else -> "SUCCESS"
         }
+}
+
+/** 分类 bulk 更新单项（I2-2）：只含 esDocId + 分类对象。 */
+data class ClassificationBulkItem(
+    val esDocId: String,
+    val classification: ExpertClassification
+)
+
+enum class ClassificationBulkItemStatus { UPDATED, NOOP, FAILED }
+
+/** 分类 bulk 单项结果（I2-4）：保留每项 updated/noop/failure 状态。 */
+data class ClassificationBulkItemResult(
+    val esDocId: String,
+    val status: ClassificationBulkItemStatus,
+    val error: String? = null
+)
+
+/**
+ * 分类 bulk 汇总结果（I2-4/I2-6）。
+ * 统计全部失败（[failure]），样本 [failureSamples] 最多 100 条；
+ * [allFailedWithMapperError] 供调用方在首批全失败且均为 mapper_parsing_exception 时立即 FAILED；
+ * [wholesaleError] 非空表示整批请求异常（ES 不可达/被拒），调用方应停止整个扫描任务。
+ */
+data class ClassificationBulkResult(
+    val items: List<ClassificationBulkItemResult>,
+    val failureSamples: List<String>,
+    val allFailedWithMapperError: Boolean,
+    val wholesaleError: String? = null
+) {
+    val updated: Int get() = items.count { it.status == ClassificationBulkItemStatus.UPDATED }
+    val noop: Int get() = items.count { it.status == ClassificationBulkItemStatus.NOOP }
+    val failure: Int get() = items.count { it.status == ClassificationBulkItemStatus.FAILED }
 }

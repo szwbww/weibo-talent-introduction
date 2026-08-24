@@ -37,7 +37,7 @@ enum class Drilldown { MAIL_BY_EXECUTION, EXPERT_BY_POLL_DETAIL }
 object TaskTypeCatalog {
 
     /**
-     * 17 种类型，按「现状审计」grep 回执的 taskType 全集逐条声明。
+     * 18 种类型，按「现状审计」grep 回执的 taskType 全集逐条声明。
      *
      * metricLabel 证据（写入侧源码位置）：
      * - MANUAL_INITIAL_OUTREACH "已发送/失败"：ManualOutreachResult 实现 TaskExecutionSummaryProvider
@@ -46,6 +46,8 @@ object TaskTypeCatalog {
      * - AUTO_REPLY_ALL_DISPATCH "派发账号数/—"：QueueFanOutResult(dispatched)，成功侧命中 dispatched，失败侧无字段恒 0。
      * - AUTO_REPLY_ALL "轮询账号/失败账号"：BatchAutoMailReplyResult 实现 provider（successAccountCount / failedAccountCount）。
      * - OPERATOR_STATUS_RECONCILE "一致/异常"：ReconcileReport 实现 provider（consistent / dbVsExpected+esVsDb）。
+     * - EXPERT_CLASSIFICATION_BACKFILL "已处理/失败"：ExpertClassificationBackfillResult 实现
+     *   TaskExecutionSummaryProvider（taskSuccessCount=writeSuccess，DRY_RUN 为 scanned / taskFailureCount=writeFailure）。
      * - 其余均为 null：存量值由反射猜测（如 EXPERT_ENRICHMENT 的 enriched/failed 全不命中 → 恒 0/0），
      *   显式声明「无统计」比继续显示反射猜出来的 0/0 诚实。
      */
@@ -83,6 +85,10 @@ object TaskTypeCatalog {
         TaskTypeMeta(
             code = "DAILY_COUNT_RESET", label = "每日计数重置", group = "SCHEDULED",
             metricLabel = null, summaryRule = null, hasProgressUi = false, drilldown = null
+        ),
+        TaskTypeMeta(
+            code = "EXPERT_CLASSIFICATION_BACKFILL", label = "专家研发类型回填", group = "MANUAL",
+            metricLabel = "已处理/失败", summaryRule = null, hasProgressUi = true, drilldown = null
         ),
         TaskTypeMeta(
             code = "EXPERT_DISCOVERY", label = "深度发现（外部数据源）", group = "SCHEDULED",

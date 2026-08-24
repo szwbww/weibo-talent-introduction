@@ -34,4 +34,21 @@ class DiscoveryExecutorConfig(
         executor.initialize()
         return executor
     }
+
+    /**
+     * 专家分类回填专用单线程 executor（I2-5：同一时刻最多一个分类任务）。
+     * 队列容量 0 → 任务已在执行时新的 submit 立即抛 RejectedExecutionException，
+     * 由 ExpertClassificationAdminController 转为 409 并清理 pending context。
+     */
+    @Bean("expertClassificationExecutor")
+    fun expertClassificationExecutor(): Executor {
+        val executor = ThreadPoolTaskExecutor()
+        executor.corePoolSize = 1
+        executor.maxPoolSize = 1
+        executor.setQueueCapacity(0)
+        executor.setThreadNamePrefix("expert-classification-")
+        executor.setWaitForTasksToCompleteOnShutdown(true)
+        executor.initialize()
+        return executor
+    }
 }

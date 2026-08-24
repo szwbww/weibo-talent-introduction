@@ -1,15 +1,19 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.ElasticsearchProperties
+import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.expert.repository.ExpertApplicationPromotionRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
@@ -19,6 +23,7 @@ import org.springframework.web.client.RestTemplate
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito
+import java.time.LocalDateTime
 
 class ExpertIndexWriterServiceTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
@@ -691,5 +696,306 @@ class ExpertIndexWriterServiceTest {
         )
         val result = service.demoteToRaw("0001", contact)
         assertFalse(result)
+    }
+
+    private fun classification(type: ExpertType): ExpertClassification =
+        ExpertClassification(
+            type = type,
+            productionScore = 60,
+            researchScore = 40,
+            positiveEvidence = listOf("RESEARCH_RECENT_PUBLICATION"),
+            negativeEvidence = emptyList(),
+            version = "rnd-v1-2026",
+            sourceFingerprint = "a".repeat(64),
+            classifiedAt = LocalDateTime.of(2026, 1, 15, 10, 30)
+        )
+
+    private fun bulkResponse(vararg items: String): JsonNode =
+        mapper.readTree(
+            """{"took": 1, "errors": true, "items": [${items.joinToString(",")}]}"""
+        )
+
+    @Test
+    fun `bulkUpdateExpertClassifications sends exact NDJSON and aggregates per-item status (I2-2)`() {
+        val responseNode = bulkResponse(
+            """{ "update": { "_index": "orcid_info_candidate", "_id": "0001", "status": 200, "result": "updated" } }""",
+            """{ "update": { "_index": "orcid_info_candidate", "_id": "0002", "status": 200, "result": "noop" } }""",
+            """{ "update": { "_index": "orcid_info_candidate", "_id": "0003", "status": 404, "error": { "type": "document_missing_exception", "reason": "document missing" } } }""",
+            """{ "update": { "_index": "orcid_info_candidate", "_id": "0004", "status": 500, "error": { "type": "remote_transport_exception", "reason": "boom" } } }"""
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_bulk"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(responseNode, HttpStatus.OK))
+
+        val result = service.bulkUpdateExpertClassifications(ExpertIndexLevel.CANDIDATE, listOf(
+            ClassificationBulkItem("0001", classification(ExpertType.PRODUCTION_RND)),
+            ClassificationBulkItem("0002", classification(ExpertType.ACADEMIC_RND)),
+            ClassificationBulkItem("0003", classification(ExpertType.SERVICE_ONLY)),
+            ClassificationBulkItem("0004", classification(ExpertType.UNKNOWN))
+        ))
+
+        assertEquals(1, result.updated)
+        assertEquals(1, result.noop)
+        assertEquals(2, result.failure)
+        assertEquals(2, result.failureSamples.size)
+        assertFalse(result.allFailedWithMapperError)
+        assertTrue(result.failureSamples.all { it.startsWith("docId=") })
+
+        val captor = ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/_bulk"),
+            eq(HttpMethod.POST),
+            captor.capture(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        val body = captor.value.body as String
+        val lines = body.trim().split("\n")
+        assertEquals(8, lines.size)
+
+        // meta 行：_index + _id
+        assertEquals("""{"update":{"_id":"0001","_index":"orcid_info_candidate"}}""", lines[0])
+        assertEquals("""{"update":{"_id":"0002","_index":"orcid_info_candidate"}}""", lines[2])
+
+        // data 行逐字结构：{"doc":{"expertClassification":{...}},"doc_as_upsert":false}
+        val dataNode = mapper.readTree(lines[1])
+        assertEquals(false, dataNode.path("doc_as_upsert").asBoolean())
+        assertEquals(1, dataNode.path("doc").size(), "doc 只允许 expertClassification，禁止根级 updatedAt 等")
+        assertTrue(dataNode.path("doc").has("expertClassification"))
+        val cls = dataNode.path("doc").path("expertClassification")
+        assertEquals("PRODUCTION_RND", cls.path("type").asText())
+        assertEquals(true, cls.path("sendable").asBoolean())
+        assertEquals(60, cls.path("productionScore").asInt())
+        assertEquals(40, cls.path("researchScore").asInt())
+        assertEquals("RESEARCH_RECENT_PUBLICATION", cls.path("positiveEvidence").get(0).asText())
+        assertEquals(0, cls.path("negativeEvidence").size())
+        assertEquals("rnd-v1-2026", cls.path("version").asText())
+        assertEquals("a".repeat(64), cls.path("sourceFingerprint").asText())
+        assertEquals("2026-01-15 10:30:00", cls.path("classifiedAt").asText(), "classifiedAt 必须 yyyy-MM-dd HH:mm:ss 以匹配 mapping")
+        assertEquals(9, cls.size())
+    }
+
+    @Test
+    fun `bulkUpdateExpertClassifications targets only the caller level index (I2-2 no cross-layer loop)`() {
+        val responseNode = bulkResponse("""{ "update": { "_index": "orcid_info_candidate", "_id": "0001", "status": 200, "result": "updated" } }""")
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_bulk"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(responseNode, HttpStatus.OK))
+
+        val result = service.bulkUpdateExpertClassifications(ExpertIndexLevel.APPLICATION, listOf(
+            ClassificationBulkItem("0001", classification(ExpertType.PRODUCTION_RND))
+        ))
+
+        assertEquals(1, result.updated)
+        Mockito.verify(restTemplate, Mockito.times(1)).exchange(
+            eq("https://es.example.com:9200/_bulk"),
+            eq(HttpMethod.POST),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        val captor = ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/_bulk"),
+            eq(HttpMethod.POST),
+            captor.capture(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        val body = captor.value.body as String
+        assertTrue(body.contains("""{"update":{"_id":"0001","_index":"orcid_info_application"}}"""))
+        assertFalse(body.contains("orcid_info_candidate"))
+        assertFalse(body.contains(""""_index":"orcid_info"}"""))
+    }
+
+    @Test
+    fun `bulkUpdateExpertClassifications chunks batches at 1000`() {
+        val responseNode = bulkResponse()
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_bulk"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(responseNode, HttpStatus.OK))
+
+        val updates = (1..2500).map { ClassificationBulkItem("%04d".format(it), classification(ExpertType.PRODUCTION_RND)) }
+        service.bulkUpdateExpertClassifications(ExpertIndexLevel.CANDIDATE, updates)
+
+        Mockito.verify(restTemplate, Mockito.times(3)).exchange(
+            eq("https://es.example.com:9200/_bulk"),
+            eq(HttpMethod.POST),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        val captor = ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.verify(restTemplate, Mockito.times(3)).exchange(
+            eq("https://es.example.com:9200/_bulk"),
+            eq(HttpMethod.POST),
+            captor.capture(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        val lineCounts = captor.allValues.map { (it.body as String).trim().split("\n").size }
+        assertEquals(listOf(2000, 2000, 1000), lineCounts)
+    }
+
+    @Test
+    fun `bulkUpdateExpertClassifications keeps at most 100 failure samples but counts all failures (I2-4)`() {
+        val items = (1..150).map { i ->
+            """{ "update": { "_index": "orcid_info_candidate", "_id": "${"%04d".format(i)}", "status": 500, "error": { "type": "cluster_block_exception", "reason": "disk full" } } }""".trimIndent()
+        }
+        val responseNode = bulkResponse(*items.toTypedArray())
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_bulk"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(responseNode, HttpStatus.OK))
+
+        val updates = (1..150).map { ClassificationBulkItem("%04d".format(it), classification(ExpertType.PRODUCTION_RND)) }
+        val result = service.bulkUpdateExpertClassifications(ExpertIndexLevel.CANDIDATE, updates)
+
+        assertEquals(150, result.failure)
+        assertEquals(0, result.updated)
+        assertEquals(100, result.failureSamples.size)
+    }
+
+    @Test
+    fun `bulkUpdateExpertClassifications flags first-batch mapper errors (I2-2)`() {
+        val items = listOf(
+            """{ "update": { "_index": "orcid_info_candidate", "_id": "0001", "status": 400, "error": { "type": "mapper_parsing_exception", "reason": "failed to parse" } } }""",
+            """{ "update": { "_index": "orcid_info_candidate", "_id": "0002", "status": 400, "error": { "type": "mapper_parsing_exception", "reason": "failed to parse" } } }"""
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_bulk"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(bulkResponse(*items.toTypedArray()), HttpStatus.OK))
+
+        val result = service.bulkUpdateExpertClassifications(ExpertIndexLevel.CANDIDATE, listOf(
+            ClassificationBulkItem("0001", classification(ExpertType.PRODUCTION_RND)),
+            ClassificationBulkItem("0002", classification(ExpertType.PRODUCTION_RND))
+        ))
+
+        assertEquals(2, result.failure)
+        assertTrue(result.allFailedWithMapperError)
+    }
+
+    @Test
+    fun `bulkUpdateExpertClassifications records wholesaleError and stops on bulk exception`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_bulk"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(RuntimeException("ES unavailable"))
+
+        val result = service.bulkUpdateExpertClassifications(ExpertIndexLevel.CANDIDATE, listOf(
+            ClassificationBulkItem("0001", classification(ExpertType.PRODUCTION_RND)),
+            ClassificationBulkItem("0002", classification(ExpertType.PRODUCTION_RND))
+        ))
+
+        assertEquals(2, result.failure)
+        assertEquals(2, result.failureSamples.size)
+        assertNotNull(result.wholesaleError)
+        assertTrue(result.wholesaleError!!.contains("ES unavailable"))
+        Mockito.verify(restTemplate, Mockito.times(1)).exchange(
+            eq("https://es.example.com:9200/_bulk"),
+            eq(HttpMethod.POST),
+            any(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `checkExpertClassificationMapping returns true when keyword present`() {
+        val mapping = mapper.readTree(
+            """
+            {
+              "orcid_info_candidate": {
+                "mappings": {
+                  "dynamic": false,
+                  "properties": {
+                    "orcidId": { "type": "keyword" },
+                    "expertClassification": {
+                      "type": "object",
+                      "properties": {
+                        "type": { "type": "keyword" },
+                        "version": { "type": "keyword" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_mapping"),
+                eq(HttpMethod.GET),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapping, HttpStatus.OK))
+
+        assertTrue(service.checkExpertClassificationMapping(ExpertIndexLevel.CANDIDATE))
+    }
+
+    @Test
+    fun `checkExpertClassificationMapping returns false when field missing`() {
+        val mapping = mapper.readTree(
+            """
+            {
+              "orcid_info_candidate": {
+                "mappings": {
+                  "dynamic": false,
+                  "properties": {
+                    "orcidId": { "type": "keyword" }
+                  }
+                }
+              }
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_mapping"),
+                eq(HttpMethod.GET),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapping, HttpStatus.OK))
+
+        assertFalse(service.checkExpertClassificationMapping(ExpertIndexLevel.CANDIDATE))
+    }
+
+    @Test
+    fun `checkExpertClassificationMapping returns false on ES error`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_mapping"),
+                eq(HttpMethod.GET),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(RuntimeException("ES timeout"))
+
+        assertFalse(service.checkExpertClassificationMapping(ExpertIndexLevel.CANDIDATE))
     }
 }

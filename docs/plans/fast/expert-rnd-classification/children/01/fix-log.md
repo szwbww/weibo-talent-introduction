@@ -41,5 +41,3 @@
 - Worktree identity unchanged: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-expert-rnd-classification@fast/expert-rnd-classification@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-expert-rnd-classification`.
 - Implementation boundary now: `c004a18d..a8cf172` (epoch 1, 9 files) + `a8cf172..773527c` (fix round 1, 2 files).
 - docs/plans/fast/ evidence excluded from both commits; controller commits evidence separately.
-
-- Fix commit: 773527c7ed2ac65d4ae92d0233be82ab7417b1ef
