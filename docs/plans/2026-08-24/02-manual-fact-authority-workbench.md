@@ -144,6 +144,7 @@ grounded planner 先为严格 supported intents 生成 claims，再把尚未被�
 | `src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchItemFlowTest.kt` | 7 handling、生成/锁定/restore/assemble |
 | `src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt` | DTO、canonical matrix、跨摘要重复 |
 | `src/test/js/trustReplyWorkbench.test.js` | picker、7 options、提示、payload 契约 |
+| `src/test/js/trustReplyWorkbenchSharedMount.test.js` | A1 修订：更新过时的 used-owner picker gating 断言（2347-2398），事实跨 request 可选、无 `used` 状态/“已用于摘要 N”/disabled 分支；保留 remove/release 断言 |
 
 范围：10 个文件；2 个子系统（LLM 工作台、共享工作台前端）。无 DB migration、CSS、邮箱发送代码变更。
 
