@@ -2,7 +2,7 @@
 
 ## Epoch 2 — Round 1/3
 
-**Findings** (controller-supplied, A3 amendment; epoch-1 implementation commit f3da97af stands):
+**Findings** (controller-supplied, A3 amendment; epoch-1 implementation commit b2188438 stands):
 
 - F-1 `OperatorStatusWriteSeamGuardTest.kt` EXCLUDED_NOISE_SITES: `ExpertSearchService.kt` pin stale 445 (moved to 491 by T1 additions; context `operatorStatus = source.nullableText` unchanged).
 - F-2 `BatchSendTaskRuntimeIntegrationTest.kt` `tags use OR within field discipline and provider use AND` (~:228): INTRODUCTION `matchesExpert` gate rejects no-classification fixtures.
@@ -10,7 +10,7 @@
 
 **Before:** full regression `Tests run: 2822, Failures: 3, Errors: 0, Skipped: 4` → BUILD FAILURE (3 failures, all in the two now-authorized test files).
 
-**Fix commit:** `bad5a164fa0ea9ed4a41ae5f1871fd083cac932b` (`fix(fast-p): repair 03 round 1`), 2 files, +19/−3.
+**Fix commit:** `13d7edde81441cb19babcf681c4446fe26eabee2` (`fix(fast-p): repair 03 round 1`), 2 files, +19/−3.
 
 **Authorized files changed:**
 - `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` — EXCLUDED_NOISE_SITES pin 445→491; maintenance comment extended with A3 rationale (context unchanged, guard logic untouched).
@@ -25,6 +25,8 @@
 | JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test | PASS | Tests run: 2822, Failures: 0, Errors: 0, Skipped: 4; BUILD SUCCESS |
 | git diff --check | PASS | exit 0，无空白错误 |
 
-**Result:** FIXED — all three findings corrected, full regression green, no production-logic change (test fixtures/guard pin only). Implementation boundary for the round: `f3da97a..bad5a16`.
+**Result:** FIXED — all three findings corrected, full regression green, no production-logic change (test fixtures/guard pin only). Implementation boundary for the round: `b2188438..13d7edde`.
 
-**Notes:** Plan identity rechecked after commit: `3fcb5ae4164d78fc8edbc11c3c1459f37a629fd8ec49fd36e2ad5f0ea713fc2d` (unchanged since epoch-2 start). Worktree identity unchanged (root/branch/git-dir verified; worktree_identity.py still blocked by stale /sessions/* registrations, manual computation used, same as child 01). `bad5a16` is HEAD of `fast/expert-rnd-classification` and ancestor of the target branch; `docs/plans/fast/` excluded from the fix commit.
+**Notes:** Plan identity rechecked after commit: `3fcb5ae4164d78fc8edbc11c3c1459f37a629fd8ec49fd36e2ad5f0ea713fc2d` (unchanged since epoch-2 start). Worktree identity unchanged (root/branch/git-dir verified; worktree_identity.py still blocked by stale /sessions/* registrations, manual computation used, same as child 01). `13d7edde` is on `fast/expert-rnd-classification`; `docs/plans/fast/` excluded from the fix commit.
+
+- Fix commit: 13d7edde81441cb19babcf681c4446fe26eabee2
