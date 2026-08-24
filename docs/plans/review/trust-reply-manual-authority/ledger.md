@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-08-24/00-trust-reply-manual-authority-master.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-08-24/00-trust-reply-manual-authority-master.md (sha256 c63e57f0cb3f615a6b6322b8b3047fd3dba8662f8b07dabdbfc6aca7827929c7)
+- Governing master identity: sha256 c63e57f0cb3f615a6b6322b8b3047fd3dba8662f8b07dabdbfc6aca7827929c7; recorded commit 8dc7c96
+- Invoked master identity: SAME (sha256 c63e57f0cb3f615a6b6322b8b3047fd3dba8662f8b07dabdbfc6aca7827929c7)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: A1 — docs/plans/2026-08-24/02-manual-fact-authority-workbench.md, commit 8dc7c96 → commit 9705852; I-7; approval HUMAN:Approve A1: update obsolete used-gating test (2026-08-24 12:25)
+- Fast-p ledger: docs/plans/fast/trust-reply-manual-authority/ledger.md (sha256 fa23f6bd89d3928e90bf703924b7ef164ee04eb6b3ec0129f6577191f1f95ce2)
+- Fast-p handoff: docs/plans/fast/trust-reply-manual-authority/human-review-handoff.md (sha256 99ee0b80cea31cb9cd557eacccde6e92571f12e46e39c8dc8a8e06aff6957a24)
+- Master base: 99cef49a37f79b409504e89cd5cd942370966c39
+- Final code head: d9406ce
+- Evidence parent before next commit: 0faed6048a0c2923bf4b3888bc8a9725d57a8436
+- Previous evidence commit: N/A
+- Branch: fast/trust-reply-manual-authority
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction/.worktrees/trust-reply-manual-authority
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; matching READY_FOR_HUMAN_REVIEW fast-p ledger and handoff; 4 terminal children; base 99cef49a37f79b409504e89cd5cd942370966c39; code d9406ce
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md#epoch-1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Complete mandatory human acceptance A-1 through A-8 and explicitly sign off boundary d9406ce.
