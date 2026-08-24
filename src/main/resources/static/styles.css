@@ -7396,6 +7396,7 @@ tr td {
 
 .trust-reply-item {
   --item-accent: var(--text-muted);
+  position: relative;
   border: 1px solid var(--panel-border);
   border-left: 3px solid var(--item-accent);
   border-radius: var(--radius-md);
@@ -7403,6 +7404,49 @@ tr td {
   background: var(--panel-bg);
   box-shadow: var(--shadow-sm);
   transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+}
+
+/* 单条摘要操作只遮罩当前卡片；跨摘要生成/整合仍使用工作台级遮罩。 */
+.trust-reply-item-busy-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+.trust-reply-item-busy-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: 280px;
+  margin: 20px;
+  padding: 14px 18px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+
+.trust-reply-item-busy-text {
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.trust-reply-item-busy-hint {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.5;
 }
 
 .trust-reply-item[data-coverage="GROUNDED"] { --item-accent: var(--success); }
@@ -9634,7 +9678,16 @@ body.preview-available:not(.preview-docked) .preview-rail {
         background: rgba(13, 20, 32, 0.92);
     }
 
+    .trust-reply-item-busy-overlay {
+        background: rgba(13, 20, 32, 0.9);
+    }
+
     .trust-reply-busy-card {
+        background: rgba(21, 31, 48, 0.98);
+        border-color: rgba(148, 163, 184, 0.22);
+    }
+
+    .trust-reply-item-busy-card {
         background: rgba(21, 31, 48, 0.98);
         border-color: rgba(148, 163, 184, 0.22);
     }

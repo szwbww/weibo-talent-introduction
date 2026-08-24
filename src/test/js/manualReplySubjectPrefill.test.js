@@ -10,7 +10,7 @@ const indexPath = path.join(root, "index.html");
 const appJsSource = fs.readFileSync(appJsPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260821-v12-qa-coverage-gate";
+const CACHE_KEY = "20260824-v1-summary-loading-scope";
 
 function extractFn(name) {
     const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");
@@ -85,7 +85,7 @@ describe("manual reply subject prefill (p3)", () => {
         }
     });
 
-    it("I-5: the cache-key triad is exactly 20260821-v12-qa-coverage-gate, three sites, one value", () => {
+    it("I-5: the cache-key triad uses one current value, three sites, one value", () => {
         const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
         assert.strictEqual(keys.length, 3, "index.html must carry exactly three cache-busted asset URLs");
         assert.strictEqual(new Set(keys).size, 1, "all three keys must share one value");

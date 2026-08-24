@@ -12,7 +12,7 @@ const styles = fs.readFileSync(stylesPath, "utf-8");
 const workbench = fs.readFileSync(workbenchPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260821-v12-qa-coverage-gate";
+const CACHE_KEY = "20260824-v1-summary-loading-scope";
 
 // Source-text helpers (whitespace-normalized for the verbatim contract checks).
 function stripWs(text) {
@@ -74,6 +74,32 @@ function bootstrapPayload() {
         contextWarnings: [],
         evidenceSetVersion: "TRAINING_MAIL-101-e1"
     };
+}
+
+function multiRequestBootstrapPayload() {
+    const payload = bootstrapPayload();
+    payload.requestCoverage[0].factRuleIds = [1];
+    payload.requestCoverage = [
+        payload.requestCoverage[0],
+        {
+            index: 1,
+            requestKey: "TRAINING_MAIL-101-request-2",
+            requestText: "Second question",
+            status: "GROUNDED",
+            factRuleIds: [1],
+            droppedFactRuleIds: [],
+            allowedHandlings: ["ANSWER_WITH_EVIDENCE", "OMIT"],
+            recommendedHandling: "ANSWER_WITH_EVIDENCE"
+        }
+    ];
+    return payload;
+}
+
+function multiLockedBootstrapPayload() {
+    const payload = multiRequestBootstrapPayload();
+    const locked = lockedBootstrapPayload();
+    payload.savedState = locked.savedState;
+    return payload;
 }
 
 // A locked bootstrap: the one GROUNDED request arrives already resolved, so
@@ -196,12 +222,15 @@ describe("P2 overlay + dialog contrast (source contract)", () => {
             "no overlay token may precede the <summary> line (summary stays clickable, I-2)");
     });
 
-    it("I-3: the only new absolutely positioned element is the overlay", () => {
-        assert.strictEqual((styles.match(/position:\s*absolute/g) || []).length, 29,
-            "position: absolute count must be the pre-change 28 plus exactly 1 (the overlay)");
+    it("I-3: the workbench and each summary card have independent overlay anchors", () => {
+        assert.strictEqual((styles.match(/position:\s*absolute/g) || []).length, 30,
+            "position: absolute count must include the workbench and card-local overlays");
         const overlay = ruleBlock(styles, ".trust-reply-busy-overlay");
         assert.ok(stripWs(overlay).includes("position: absolute; inset: 0; z-index: 6;"),
             "the overlay must be the absolutely positioned child of .reply-workflow-content");
+        const itemOverlay = ruleBlock(styles, ".trust-reply-item-busy-overlay");
+        assert.ok(stripWs(itemOverlay).includes("position: absolute; inset: 0; z-index: 4;"),
+            "the local overlay must be anchored to the summary card");
     });
 
     it("I-4: the overlay cancel button reuses the delegated cancel-generation action", () => {
@@ -215,18 +244,20 @@ describe("P2 overlay + dialog contrast (source contract)", () => {
         assert.ok(overlay.includes('data-action="cancel-generation"'), "overlay button must reuse the action");
     });
 
-    it("I-5: busyOverlayState mirrors factActionBlockReason's first five branches, then completePending", () => {
-        const busy = fnSource(workbench, "busyOverlayState", "renderBusyOverlay");
+    it("I-5: the global mask only represents cross-summary operations", () => {
+        const busy = fnSource(workbench, "busyOverlayState", "itemBusyState");
         const conditions = [...busy.matchAll(/if\s*\(([\s\S]*?)\)\s*\{/g)].map((m) => stripWs(m[1]));
-        assert.strictEqual(conditions.length, 6, "busyOverlayState must have exactly six if branches");
+        assert.strictEqual(conditions.length, 4, "busyOverlayState must have exactly four if branches");
         assert.deepStrictEqual(conditions, [
-            "state.requests.some((request) => request.pending)",
-            "state.factChangePending",
             "state.stateSavePending",
             "state.generation.pending",
             "state.frameSavePending",
             "state.completePending"
-        ], "branch order must mirror the factActionBlockReason priority table + completePending");
+        ], "branch order must cover only global operation states");
+        const itemBusy = fnSource(workbench, "itemBusyState", "renderItemBusyOverlay");
+        assert.ok(itemBusy.includes("request.pending"), "single-item generation must be handled by the card-local state");
+        assert.ok(itemBusy.includes("request.factChangePending"), "single-item fact updates must be handled by the card-local state");
+        assert.ok(itemBusy.includes("request.stateSavePending"), "single-item saves must be handled by the card-local state");
         const fact = fnSource(workbench, "factActionBlockReason", "factActionReasonFor");
         const factConditions = [...fact.matchAll(/if\s*\(([^)]+)\)/g)].map((m) => m[1].replace(/\s+/g, " ").trim());
         assert.deepStrictEqual(factConditions, [
@@ -263,7 +294,7 @@ describe("P2 overlay + dialog contrast (source contract)", () => {
         assert.ok(dark.includes("background: rgba(21, 31, 48, 0.97);"), "dark action-dialog override");
     });
 
-    it("I-8: the cache-key triad is exactly 20260821-v12-qa-coverage-gate, three sites, one value", () => {
+    it("I-8: the cache-key triad is the current summary-loading key, three sites, one value", () => {
         const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
         assert.strictEqual(keys.length, 3, "index.html must carry exactly three cache-busted asset URLs");
         assert.strictEqual(new Set(keys).size, 1, "all three keys must share one value");
@@ -361,13 +392,87 @@ describe("P2 overlay + dialog contrast (rendered behavior)", () => {
         assert.ok(host.innerHTML.includes('data-action="cancel-generation"'), "the toolbar cancel button must stay rendered");
         assert.ok(host.innerHTML.includes('<div class="reply-workflow-content" aria-busy="true">'),
             "aria-busy must sit on the .reply-workflow-content container");
-        // I-5: once the per-item request is pending, the per-request branch
-        // wins (mirrors factActionBlockReason's requestPending priority).
-        assert.ok(host.innerHTML.includes("本条摘要正在生成…"), "overlay text must reflect the per-item branch");
-        assert.ok(host.innerHTML.includes("完成后可继续调整该条目。"), "overlay hint must reflect the per-item branch");
+        assert.ok(host.innerHTML.includes("正在生成有据回答"), "overlay text must reflect the multi-item sequence");
+        assert.ok(host.innerHTML.includes("生成期间不能改动事实与处理方式。"), "overlay hint must reflect the global branch");
         assert.ok(host.innerHTML.includes("正在生成有据回答"), "the status bar must still describe the sequence");
         assert.ok(!/style=/.test(overlayFragment(host.innerHTML)),
             "the overlay fragment must not contain inline style (I-6)");
+    });
+
+    it("single-item generation renders a card-local mask and leaves the workbench unmasked", async () => {
+        const { window, document } = createSandbox((url) => {
+            if (String(url).endsWith("/generations/stream")) {
+                return Promise.resolve({ ok: true, status: 200, body: neverResolvingStream() });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => multiRequestBootstrapPayload() });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        host.dispatchEvent("click", event(actionButton("adjust-item", "TRAINING_MAIL-101-request")));
+        await settle();
+
+        assert.ok(!host.innerHTML.includes('class="trust-reply-busy-overlay"'), "single-item generation must not mask the workbench");
+        assert.ok(host.innerHTML.includes('class="trust-reply-item-busy-overlay"'), "single-item generation must render a card-local mask");
+        assert.ok(host.innerHTML.includes('aria-busy="true"'), "the pending card must expose aria-busy");
+        assert.ok(host.innerHTML.includes("本条摘要正在生成…"), "the local mask must describe the current summary");
+        assert.ok(host.innerHTML.includes("Second question"), "the other summary must remain rendered");
+    });
+
+    it("single-item fact changes render a card-local mask while canonical reload is pending", async () => {
+        let bootstrapCalls = 0;
+        const { window, document } = createSandbox((url) => {
+            if (String(url).endsWith("/bootstrap")) {
+                bootstrapCalls += 1;
+                if (bootstrapCalls > 1) return new Promise(() => {});
+                return Promise.resolve({ ok: true, status: 200, json: async () => multiRequestBootstrapPayload() });
+            }
+            return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        const target = actionButton("add-fact", "TRAINING_MAIL-101-request-2");
+        target.dataset.factId = "2";
+        host.dispatchEvent("click", event(target));
+        await settle();
+
+        assert.ok(!host.innerHTML.includes('class="trust-reply-busy-overlay"'), "single-item fact changes must not mask the workbench");
+        assert.ok(host.innerHTML.includes('class="trust-reply-item-busy-overlay"'), "fact changes must render a card-local mask");
+        assert.ok(host.innerHTML.includes("正在更新本条事实…"), "the local mask must describe the fact update");
+        assert.ok(host.innerHTML.includes("Question"), "the other summary must remain rendered");
+    });
+
+    it("single-item adoption persistence renders a card-local mask", async () => {
+        const { window, document } = createSandbox((url) => {
+            if (String(url).includes("/state")) return new Promise(() => {});
+            return Promise.resolve({ ok: true, status: 200, json: async () => multiLockedBootstrapPayload() });
+        });
+        const host = new FakeElement(document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        host.dispatchEvent("click", event(actionButton("resolve-item", "TRAINING_MAIL-101-request")));
+        await settle();
+
+        assert.ok(!host.innerHTML.includes('class="trust-reply-busy-overlay"'), "single-item persistence must not mask the workbench");
+        assert.ok(host.innerHTML.includes('class="trust-reply-item-busy-overlay"'), "single-item persistence must render a card-local mask");
+        assert.ok(host.innerHTML.includes("正在保存本条摘要…"), "the local mask must describe the save");
+        assert.ok(host.innerHTML.includes("Second question"), "the other summary must remain rendered");
     });
 
     it("assembly pending renders the cancellable overlay card (I-4 runtime)", async () => {

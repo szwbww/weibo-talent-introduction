@@ -200,8 +200,8 @@
     function factActionReasonFor(request, state) {
         return factActionBlockReason({
             requestPending: request.pending,
-            factChangePending: state.factChangePending,
-            stateSavePending: state.stateSavePending,
+            factChangePending: request.factChangePending,
+            stateSavePending: request.stateSavePending || state.stateSavePending,
             generationPending: state.generation.pending,
             frameSavePending: state.frameSavePending
         });
@@ -285,7 +285,6 @@
             completePending: false,
             savedStateVersion: 0,
             stateSavePending: false,
-            factChangePending: false,
             sequenceCancelled: false,
             // I-3: grip keyboard moves re-render via bootstrap(); the next
             // render() restores focus to this fact's grip (consumed once).
@@ -531,6 +530,8 @@
                 answerTranslationsByVersionId: {},
                 requestSeq: 0,
                 pending: false,
+                factChangePending: false,
+                stateSavePending: false,
                 error: null
             }));
         }
@@ -1128,7 +1129,7 @@
         // re-bootstrap happens. After the whole run succeeds, one complete
         // snapshot persists the fresh context fingerprints durably.
         async function regenerateContextStale() {
-            if (state.generation.pending || state.stateSavePending || state.frameSavePending) return;
+            if (state.generation.pending || state.stateSavePending || state.frameSavePending || hasRequestMutationPending()) return;
             const seq = state.bootSeq;
             const keys = state.requests
                 .filter((request) => request.contextStale === true)
@@ -1198,7 +1199,7 @@
                 && !state.frameSavePending
                 && total > 0
                 && unresolvedManual === 0
-                && !state.requests.some((request) => request.pending);
+                && !state.requests.some((request) => request.pending || request.factChangePending || request.stateSavePending);
             return {
                 resolvedCount,
                 total,
@@ -1210,6 +1211,10 @@
                 autoFillableKeys: unresolvedManualKeys,
                 canStartAssembly
             };
+        }
+
+        function hasRequestMutationPending() {
+            return state.requests.some((request) => request.pending || request.factChangePending || request.stateSavePending);
         }
 
         function assemblyIdentityMatches(assembly) {
@@ -1371,7 +1376,7 @@
         // instruction — then the existing assemble() orchestration runs
         // unchanged. Nothing is sent and no external mail record is written.
         async function autoRun() {
-            if (state.generation.pending || state.stateSavePending || state.frameSavePending) return;
+            if (state.generation.pending || state.stateSavePending || state.frameSavePending || hasRequestMutationPending()) return;
             const seq = state.bootSeq;
             const readiness = computeReadiness();
             const manualKeys = readiness.autoFillableKeys;
@@ -1454,7 +1459,7 @@
         // and ES documents are untouched. After the DELETE the component
         // re-bootstraps, which rebuilds the request list from the server.
         async function autoReset() {
-            if (state.generation.pending || state.stateSavePending || state.frameSavePending) return;
+            if (state.generation.pending || state.stateSavePending || state.frameSavePending || hasRequestMutationPending()) return;
             if (typeof global.confirm === "function"
                 && !global.confirm("重置将清空本次编排产生的所有采用与说明，回到初始状态。QA 规则与历史记录不受影响，继续？")) {
                 render();
@@ -1546,13 +1551,13 @@
 
         async function persistDecisionUnlock(request, previous) {
             if (!previous.resolvedVersionId || state.destroyed) return;
-            state.stateSavePending = true;
+            request.stateSavePending = true;
             syncInstructionUi(request);
             try {
                 await persistResolvedSnapshot();
             } catch (error) {
                 if (!isLive()) return;
-                state.stateSavePending = false;
+                request.stateSavePending = false;
                 if (isFrameStaleError(error)) {
                     handleFrameStale(state.bootSeq, error.message || "框架配置已变化，请重新选择后整合");
                     return;
@@ -1567,7 +1572,7 @@
                 return;
             }
             if (!state.destroyed) {
-                state.stateSavePending = false;
+                request.stateSavePending = false;
                 syncInstructionUi(request);
             }
         }
@@ -1603,7 +1608,7 @@
                 render();
                 return;
             }
-            state.factChangePending = true;
+            request.factChangePending = true;
             render();
             try {
                 if (state.savedStateVersion > 0) {
@@ -1616,8 +1621,8 @@
                 request.factRuleIds = nextFactRuleIds;
                 await bootstrap({ preserveVersions: true });
             } finally {
+                request.factChangePending = false;
                 if (!state.destroyed) {
-                    state.factChangePending = false;
                     render();
                 }
             }
@@ -2062,15 +2067,10 @@
             </details>`;
         }
 
-        // P2 (I-5): overlay busy reasons mirror factActionBlockReason()'s
-        // priority so the mask and the per-fact tooltip never disagree.
+        // Workbench-level busy reasons are limited to operations that affect
+        // multiple summaries or the final assembled reply. Single-summary
+        // operations are rendered by itemBusyState() below.
         function busyOverlayState() {
-            if (state.requests.some((request) => request.pending)) {
-                return { text: "本条摘要正在生成…", hint: "完成后可继续调整该条目。", cancellable: false };
-            }
-            if (state.factChangePending) {
-                return { text: "正在更新事实…", hint: "服务端重算证据矩阵中，完成后可继续调整。", cancellable: false };
-            }
             if (state.stateSavePending) {
                 return { text: "正在保存工作台状态…", hint: "完成后可调整事实与处理方式。", cancellable: false };
             }
@@ -2084,6 +2084,30 @@
                 return { text: "正在整合整封回复…", hint: "服务端合成中，请勿离开本页。", cancellable: false };
             }
             return null;
+        }
+
+        function itemBusyState(request) {
+            // A global operation already owns the workbench mask. Local masks
+            // are reserved for operations that affect only this summary.
+            if (!request || state.generation.pending || state.frameSavePending || state.completePending || state.stateSavePending) {
+                return null;
+            }
+            if (request.pending) {
+                return { text: "本条摘要正在生成…", hint: "完成后可继续调整该条目。" };
+            }
+            if (request.factChangePending) {
+                return { text: "正在更新本条事实…", hint: "其他摘要仍可继续操作。" };
+            }
+            if (request.stateSavePending) {
+                return { text: "正在保存本条摘要…", hint: "其他摘要仍可继续操作。" };
+            }
+            return null;
+        }
+
+        function renderItemBusyOverlay(request) {
+            const busy = itemBusyState(request);
+            if (!busy) return "";
+            return `<div class="trust-reply-item-busy-overlay" role="status" aria-live="polite"><div class="trust-reply-item-busy-card"><span class="ai-reply-loading-spinner" aria-hidden="true"></span><span class="trust-reply-item-busy-text">${escapeText(busy.text)}</span><span class="trust-reply-item-busy-hint">${escapeText(busy.hint)}</span></div></div>`;
         }
 
         // P2 (I-1/I-2): the mask is part of renderMarkup() output and lives as
@@ -2215,8 +2239,8 @@
 
         function renderItemActions(request) {
             const action = requestAction(request);
-            const label = request.pending ? "生成中…" : state.stateSavePending ? "保存中…" : action.label;
-            const disabled = action.disabled || state.stateSavePending;
+            const label = request.pending || request.factChangePending || request.stateSavePending ? "处理中…" : action.label;
+            const disabled = action.disabled || request.factChangePending || request.stateSavePending || state.stateSavePending;
             return `<button type="button" class="button ${action.resolved ? "secondary" : "primary"}" aria-pressed="${action.locked}" data-action="${action.action}" data-request-key="${escapeText(request.requestKey)}"${disabled ? " disabled" : ""}>${label}</button>`;
         }
 
@@ -2261,7 +2285,7 @@
             const locked = action.locked;
             const needsOperatorInstruction = OPERATOR_INSTRUCTION_HANDLINGS.includes(request.draftHandling);
             // 计划 03 (S-2): verbatim 不调用 AI——说明框置灰且标签明示不生效。
-            const instructionDisabled = request.pending || request.draftHandling === "ANSWER_FACTS_VERBATIM";
+            const instructionDisabled = request.pending || request.factChangePending || request.stateSavePending || request.draftHandling === "ANSWER_FACTS_VERBATIM";
             const instructionLabel = request.draftHandling === "ANSWER_FACTS_VERBATIM"
                 ? "AI 调整要求（本处理方式不调用 AI，此项不生效）"
                 : (needsOperatorInstruction ? "回答说明（AI 将仅据此生成）" : "AI 调整要求（仅调整表达，可留空）");
@@ -2270,7 +2294,8 @@
             const error = request.error ? `<div class="ai-reply-error" data-role="item-error" role="alert">${escapeText(request.error)}</div>` : "";
             const questionTranslation = renderTranslation(request, null, request.questionTranslation);
             const answer = renderRequestAnswer(request);
-            return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(request.coverage || "")}" data-locked="${locked}"><div class="trust-reply-item-head" data-role="item-header">${renderRequestHeader(request)}</div>${renderFactSection(request)}<div data-role="item-body"${request.expanded ? "" : " hidden"}>${questionTranslation}<div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${request.pending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">${instructionLabel}<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${instructionDisabled ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${answer}${error}<div class="trust-reply-item-actions" data-role="item-actions">${renderItemActions(request)}</div></div></article>`;
+            const itemBusy = itemBusyState(request);
+            return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(request.coverage || "")}" data-locked="${locked}"${itemBusy ? ' aria-busy="true"' : ""}><div class="trust-reply-item-head" data-role="item-header">${renderRequestHeader(request)}</div>${renderFactSection(request)}<div data-role="item-body"${request.expanded ? "" : " hidden"}>${questionTranslation}<div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${request.pending || request.factChangePending || request.stateSavePending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${request.pending || request.factChangePending || request.stateSavePending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">${instructionLabel}<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${instructionDisabled ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${answer}${error}<div class="trust-reply-item-actions" data-role="item-actions">${renderItemActions(request)}</div></div>${renderItemBusyOverlay(request)}</article>`;
         }
 
         // I-5/R-2: a finished assembly is never presented as send clearance.
@@ -2486,7 +2511,7 @@
 
         async function toggleResolve(requestKey) {
             const request = findRequest(requestKey);
-            if (!request || request.pending || state.stateSavePending) return;
+            if (!request || request.pending || request.stateSavePending || state.stateSavePending) return;
             const previousResolved = request.resolvedVersionId;
             const previousExpanded = request.expanded;
             if (request.resolvedVersionId) {
@@ -2512,13 +2537,13 @@
                 request.expanded = false;
             }
             invalidateAssembly();
-            state.stateSavePending = true;
+            request.stateSavePending = true;
             render();
             try {
                 await persistResolvedSnapshot();
             } catch (error) {
                 if (!isLive()) return;
-                state.stateSavePending = false;
+                request.stateSavePending = false;
                 if (isFrameStaleError(error)) {
                     handleFrameStale(state.bootSeq, error.message || "框架配置已变化，请重新选择后整合");
                     return;
@@ -2534,7 +2559,7 @@
                 return;
             }
             if (!state.destroyed) {
-                state.stateSavePending = false;
+                request.stateSavePending = false;
                 render();
             }
         }
