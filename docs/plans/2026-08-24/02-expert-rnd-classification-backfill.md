@@ -183,8 +183,9 @@ confirmation: EXECUTE_<LEVEL>:rnd-v1-2026（EXECUTE必填）
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminControllerTest.kt` | API/互斥/认证测试 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalogTest.kt` | catalog 测试 |
 | 10 | `docs/runbooks/expert-classification-backfill.md` | 线上执行手册 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt` | **修正记录 A2（授权）：** 三个库存守卫 pin 同步（hasProgressUi 白名单 6→7、taskType 全集 17→18、总数 17→18，均仅追加 `EXPERT_CLASSIFICATION_BACKFILL`），遵 A2 修正记录 |
 
-共 10 个文件、2 个子系统（专家维护、任务基础设施）、不新增共享 store 字段。
+共 11 个文件、2 个子系统（专家维护、任务基础设施）、不新增共享 store 字段。
 
 ## 验收标准
 
@@ -236,3 +237,17 @@ confirmation: EXECUTE_<LEVEL>:rnd-v1-2026（EXECUTE必填）
 - 覆盖: I2-1～I2-6、需求描述
 
 人工验收开始时导出 `02-expert-rnd-classification-backfill-acceptance.md`。
+
+## 修正记录
+
+### A2（2026-08-24，fast-p 运行期）授权第 11 个文件：catalog 库存守卫 pin 同步
+
+- **决策方**：需求方（fast-p 运行期授权，ask 选项「Approve amendment A2」）。
+- **触发证据**：T4 强制登记新任务类型 `EXPERT_CLASSIFICATION_BACKFILL`（规范性：hasProgressUi=true、
+  metricLabel=已处理/失败），必然使 `TaskTypeCatalog` 成员集合 17→18、hasProgressUi 白名单 6→7。
+  `TaskExecutionSummaryExtractorTest` 的三个库存守卫（`hasProgressUi set equals the six-item whitelist`、
+  `catalog covers the sixteen audited task types`、`catalog metricLabel decisions are locked` 的总数断言 17）
+  将旧库存逐字锁死，任何满足 T4 的实现都无法保绿。该文件不在子计划 02 授权清单（10 个）内。
+- **影响**：变更文件清单新增第 11 项（仅 pin 同步：hasProgressUi 白名单追加
+  `EXPERT_CLASSIFICATION_BACKFILL`、audited 全集追加同 code、总数 17→18，零断言语义变更）。
+  文件数 10→11。
