@@ -32,7 +32,8 @@ import java.time.Duration
     WarmupProperties::class,
     LlmProperties::class,
     TranslationProperties::class,
-    PostmasterProperties::class
+    PostmasterProperties::class,
+    ExpertClassificationProperties::class
 )
 class RestTemplateConfig {
 

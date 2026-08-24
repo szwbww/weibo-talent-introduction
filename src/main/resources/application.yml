@@ -29,6 +29,12 @@ spring:
 talent-introduction:
   auth:
     enabled: ${AUTH_ENABLED:true}
+  expert-classification:
+    incremental-enabled: ${EXPERT_CLASSIFICATION_INCREMENTAL_ENABLED:false}
+    incremental-cron: ${EXPERT_CLASSIFICATION_INCREMENTAL_CRON:0 0 4 * * ?}
+    batch-size: ${EXPERT_CLASSIFICATION_BATCH_SIZE:500}
+    delay-ms: ${EXPERT_CLASSIFICATION_DELAY_MS:250}
+    max-docs-per-run: ${EXPERT_CLASSIFICATION_MAX_DOCS_PER_RUN:50000}
   elasticsearch:
     base-url: ${ES_BASE_URL:https://es-fcxvip4d.public.tencentelasticsearch.com:9200}
     username: ${ES_USERNAME:elastic}

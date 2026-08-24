@@ -314,8 +314,48 @@ curl -sS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
 
 ---
 
+## 12. 增量调度（自动任务）启用
+
+> 自动增量任务由子计划 04 提供，**默认关闭**：`EXPERT_CLASSIFICATION_INCREMENTAL_ENABLED` 未设置或
+> 为 `false` 时应用不创建调度 bean，发布/启动零副作用（I4-1）。**只有**第 4/5/8 步（CANDIDATE 全量
+> 回填、抽样、发送门禁验收）全部通过后，才在**下一次人工发布**时开启；不要与回填同一次发布启用。
+
+1. 开启前：查询任务历史并记录基线（应只有手动 `triggerType=MANUAL` 的 execution）：
+
+   ```bash
+   curl -sS -b "$COOKIE_JAR" "$BASE_URL/task-progress/EXPERT_CLASSIFICATION_BACKFILL/executions" | python3 -m json.tool
+   ```
+
+2. 在应用环境变量中配置并发布（`EXPERT_CLASSIFICATION_INCREMENTAL_ENABLED` 必设，其余可选、取默认值）：
+
+   ```bash
+   EXPERT_CLASSIFICATION_INCREMENTAL_ENABLED=true     # 必设：true 才创建调度 bean
+   # EXPERT_CLASSIFICATION_INCREMENTAL_CRON=0 0 4 * * ?   # 默认每天 04:00
+   # EXPERT_CLASSIFICATION_BATCH_SIZE=500                 # 100..1000
+   # EXPERT_CLASSIFICATION_DELAY_MS=250                   # 0..5000
+   # EXPERT_CLASSIFICATION_MAX_DOCS_PER_RUN=50000         # 1..200000
+   ```
+
+3. 自动任务固定行为（I4-2/I4-4）：只处理 **CANDIDATE** 中分类版本缺失/不符（`onlyPending=true`）
+   的文档，**不处理 RAW/APPLICATION、不强制重算**；每轮最多处理 `MAX_DOCS_PER_RUN` 条，
+   达到上限以 SUCCESS + remaining 结束，次日继续，不视为失败。
+
+4. 启用后：等待一次自动任务完成后再次查询任务历史，核对新增一条
+   `triggerType=SCHEDULED`、level=CANDIDATE 的 execution，并抽查 ES 中 CANDIDATE 的
+   `expertClassification.version` 写入情况。
+
+5. 明确边界（I4-5）：自动任务**不会**因 `updatedAt`/`enrichedAt` 变化重算同版本已分类文档；
+   新增正向证据可能延后到人工 force 或新 policy version，但现有 false/null 永不被自动放行；
+   分类结果仍为 **UNKNOWN 的候选保持不可发送**（子计划 03 门禁不变）。
+
+**停止条件**：第 4/5/8 步验收未通过 → 不设置 `EXPERT_CLASSIFICATION_INCREMENTAL_ENABLED=true`；
+任务历史出现非 CANDIDATE level 或非 SCHEDULED trigger 的自动 execution → 立即联系开发。
+
+---
+
 ## 变更记录
 
 | 日期 | 变更 |
 |---|---|
 | 2026-08-24 | 初版：子计划 02 交付（11 节；自动增量调度章节由子计划 04 追加） |
+| 2026-08-24 | 追加第 12 节：增量调度（自动任务）启用（子计划 04） |
