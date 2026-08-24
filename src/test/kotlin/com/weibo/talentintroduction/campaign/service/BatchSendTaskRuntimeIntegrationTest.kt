@@ -20,8 +20,10 @@ import com.weibo.talentintroduction.config.ManualOutreachProperties
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.config.WarmupProperties
 import com.weibo.talentintroduction.config.WarmupStep
+import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -708,7 +710,20 @@ class BatchSendTaskRuntimeIntegrationTest {
     private fun expert(orcidId: String, email: String, tags: List<String> = emptyList(), discipline: String? = null) =
         ExpertProfile(
             orcidId = orcidId, email = email, givenNames = null, familyNames = null,
-            country = null, keyword = null, employment = null, disciplineCategory = discipline, tags = tags
+            country = null, keyword = null, employment = null, disciplineCategory = discipline, tags = tags,
+            // A3: I3-2 门禁下 INTRODUCTION scope 的 fixture 必须 sendable=true，否则既有 scope-filter
+            // 断言（tags/domain/discipline/retry）全部因缺分类而失效；门禁拒绝行为由
+            // ManualInitialOutreachServiceTest 的专用用例覆盖。
+            expertClassification = ExpertClassification(
+                type = ExpertType.ACADEMIC_RND,
+                productionScore = 0,
+                researchScore = 55,
+                positiveEvidence = listOf("RESEARCH_PUBLICATION"),
+                negativeEvidence = emptyList(),
+                version = "rnd-v1-2026",
+                sourceFingerprint = "fixture",
+                classifiedAt = LocalDateTime.of(2026, 1, 1, 0, 0)
+            )
         )
 
     private fun contact(id: Long, orcidId: String, campaignId: Long) =
