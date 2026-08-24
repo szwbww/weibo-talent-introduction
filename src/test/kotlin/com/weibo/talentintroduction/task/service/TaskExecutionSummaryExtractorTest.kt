@@ -182,12 +182,13 @@ class TaskExecutionSummaryExtractorTest {
 
     // ---- TaskTypeCatalog 断言（原 TaskTypeCatalogTest 合并于此） ----
 
-    /** N1-2 锁定：hasProgressUi 的集合恰好等于既有 allowedTaskTypes 的 6 项。 */
+    /** N1-2 锁定：hasProgressUi 的集合恰好等于既有 allowedTaskTypes 的 7 项（A2：+EXPERT_CLASSIFICATION_BACKFILL）。 */
     @Test
     fun `catalog hasProgressUi set equals the six-item whitelist`() {
         val expected = setOf(
             "EXPERT_REVALIDATION", "RAW_PROMOTION_SCAN", "EXPERT_DISCOVERY",
-            "EXPERT_ENRICHMENT", "MANUAL_INITIAL_OUTREACH", "CHECK_REPLIES"
+            "EXPERT_ENRICHMENT", "MANUAL_INITIAL_OUTREACH", "CHECK_REPLIES",
+            "EXPERT_CLASSIFICATION_BACKFILL"
         )
         val actual = TaskTypeCatalog.entries.filter { it.value.hasProgressUi }.keys
         assertEquals(expected, actual)
@@ -213,7 +214,8 @@ class TaskExecutionSummaryExtractorTest {
         val auditedCodes = setOf(
             "AI_QA_EXTRACTION", "AUTO_REPLY_ACCOUNT", "AUTO_REPLY_ALL",
             "AUTO_REPLY_ALL_DISPATCH", "BOUNCE_COLLECTION", "CANDIDATE_OPERATOR_STATUS_SYNC",
-            "CHECK_REPLIES", "DAILY_COUNT_RESET", "EXPERT_DISCOVERY", "EXPERT_ENRICHMENT",
+            "CHECK_REPLIES", "DAILY_COUNT_RESET", "EXPERT_CLASSIFICATION_BACKFILL",
+            "EXPERT_DISCOVERY", "EXPERT_ENRICHMENT",
             "EXPERT_REVALIDATION", "INITIAL_OUTREACH", "MANUAL_INITIAL_OUTREACH",
             "OPERATOR_STATUS_RECONCILE", "POSTMASTER_REPUTATION", "RAW_PROMOTION_SCAN",
             "TASK_AUDIT_RETENTION"
@@ -234,6 +236,6 @@ class TaskExecutionSummaryExtractorTest {
         assertNull(meta("BOUNCE_COLLECTION").metricLabel)
         assertNull(meta("EXPERT_ENRICHMENT").metricLabel)
         assertNull(meta("DAILY_COUNT_RESET").metricLabel)
-        assertEquals(17, TaskTypeCatalog.entries.size)
+        assertEquals(18, TaskTypeCatalog.entries.size)
     }
 }
