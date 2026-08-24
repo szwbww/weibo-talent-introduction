@@ -136,8 +136,10 @@
 | 5 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt` | ES 查询测试 |
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt` | 批量四路径测试 |
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt` | 旧路径测试 |
+| 8 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | **修正记录 A3（授权）：** `EXCLUDED_NOISE_SITES` 中 `ExpertSearchService.kt` pin 行号 445→491（context 不变），遵该 guard 自带维护规程（`:130`）与 A1/A3 修正记录 |
+| 9 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt` | **修正记录 A3（授权）：** `expert()` fixture helper 默认附加可发信分类（`sendable=true`），使 tags/retry 等既有 scope 过滤断言在 I3-2 门禁下保持原意；零生产逻辑变更 |
 
-共 7 个文件、2 个子系统（专家查询、campaign 发送）、不新增 store 字段。
+共 9 个文件、2 个子系统（专家查询、campaign 发送）、不新增 store 字段。
 
 ## 验收标准
 
@@ -181,3 +183,21 @@
 - 覆盖: I3-5、必须保持不变第 1 条
 
 人工验收开始时导出 `03-expert-rnd-send-gate-acceptance.md`。
+
+## 修正记录
+
+### A3（2026-08-24，fast-p 运行期）授权第 8、9 个文件：guard pin 与批量 fixture 同步
+
+- **决策方**：需求方（fast-p 运行期授权，ask 选项「Approve amendment A3」）。
+- **触发证据**：
+  1. T1 在 `ExpertSearchService` 新增 `expertSendableFilter()`/`searchSendableExpertsWithEmail`（约 +46 行），
+     使 `OperatorStatusWriteSeamGuardTest.EXCLUDED_NOISE_SITES` 中该文件 pin 行号 445→491
+     （context `operatorStatus = source.nullableText` 不变），guard 自检（`staleExclusions`）必然失败。
+  2. I3-2 内存门禁（mailType=INTRODUCTION 时 `expertClassification?.sendable == true`）使
+     `BatchSendTaskRuntimeIntegrationTest`（baseSnapshot 默认 INTRODUCTION）中无分类 fixture 的
+     `matchesExpert` 返回 false：`tags use OR within field discipline` 的 assertTrue（:228）与
+     `retry path applies same scope filters as ES matcher` 的 targets=1（:253）必然失败。
+- **影响**：变更文件清单新增第 8、9 项。第 8 项仅行号 445→491，context 不变（同 A1 机制）。
+  第 9 项仅 `expert()` helper 默认附加可发信分类（type=ACADEMIC_RND、sendable=true、version=rnd-v1-2026），
+  使既有 scope 过滤断言语义不变；门禁拒绝行为由已授权的 `ManualInitialOutreachServiceTest` 新用例证明。
+  两者均零生产逻辑变更。文件数 7→9。
