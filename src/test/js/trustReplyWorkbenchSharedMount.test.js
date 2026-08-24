@@ -2344,7 +2344,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.ok(source.includes('[role="tab"][data-page="'), "component must query tabs by role + data-page");
     });
 
-    it("shows per-card fact chips with used owners disabled and releases facts on remove", async () => {
+    it("keeps a cross-request fact selectable in the picker and releases facts on remove", async () => {
         const sourceType = "TRAINING_MAIL";
         const sourceId = 502;
         const first = coverageItem(sourceType, sourceId, 0, "GROUNDED");
@@ -2380,10 +2380,14 @@ describe("shared trust reply workbench mount contract", () => {
 
         assert.match(host.innerHTML, new RegExp(`data-request-key="${first.requestKey}"[\\s\\S]*?class="trust-reply-fact-chip"`));
         click(host, "toggle-fact-picker", second.requestKey);
-        assert.match(host.innerHTML, /data-state="used"/);
-        assert.match(host.innerHTML, /已用于摘要 1/);
-        assert.match(host.innerHTML, /data-state="used"[^>]*disabled/);
-        assert.match(host.innerHTML, /data-state="available"/);
+        // 计划 02 (I-6): 同一 fact 可绑定多个 request；已绑定 request A 的
+        // fact 在 request B 的 picker 中仍显示「可添加」、可选，不产生
+        // used 状态、无「已用于摘要 N」提示、无 disabled 选项。
+        assert.match(host.innerHTML, /data-fact-id="1"[^>]*data-state="available"/);
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${second.requestKey}"[\\s\\S]*?data-fact-id="1"[^>]*data-state="available"`));
+        assert.doesNotMatch(host.innerHTML, /data-state="used"/);
+        assert.doesNotMatch(host.innerHTML, /已用于摘要 1/);
+        assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${second.requestKey}"[^>]*data-fact-id="1"[^>]*disabled`));
         assert.doesNotMatch(host.innerHTML, new RegExp(`data-request-key="${second.requestKey}"[^>]*data-state="selected"`));
 
         click(host, "remove-fact", first.requestKey, undefined, "1");
