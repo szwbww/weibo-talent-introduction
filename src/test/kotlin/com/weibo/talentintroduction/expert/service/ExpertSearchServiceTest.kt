@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.expert.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertType
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -19,6 +20,7 @@ import org.mockito.ArgumentMatchers.anyString
 import org.mockito.ArgumentMatchers.eq
 import org.mockito.Mockito
 import org.mockito.Mockito.times
+import java.time.LocalDateTime
 
 class ExpertSearchServiceTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
@@ -1560,5 +1562,386 @@ class ExpertSearchServiceTest {
         assertNotNull(regionFilter, "Other region filter missing from: $filter")
         val innerBool = (regionFilter as Map<*, *>)["bool"] as Map<*, *>
         assertEquals(1, innerBool["minimum_should_match"])
+    }
+
+    // ---- I1-5: expertClassification 读取与 mapping ----
+
+    @Test
+    fun `search request _source includes expertClassification (I1-5)`() {
+        val body = mapper.readTree("""{"hits":{"total":{"value":0},"hits":[]}}""")
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        service.searchExperts(10, ExpertIndexLevel.CANDIDATE)
+
+        val requestPayload = capture.value.body as Map<*, *>
+        val source = requestPayload["_source"] as List<*>
+        assertTrue(source.contains("expertClassification"), "sourceFields must include expertClassification: $source")
+    }
+
+    @Test
+    fun `parses expertClassification with type-derived sendable ignoring untrusted ES sendable (I1-5)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-0001",
+                      "email": "expert@example.com",
+                      "expertClassification": {
+                        "type": "PRODUCTION_RND",
+                        "sendable": false,
+                        "productionScore": 95,
+                        "researchScore": 15,
+                        "positiveEvidence": ["PROD_PATENTS", "PROD_ROLE"],
+                        "negativeEvidence": [],
+                        "version": "rnd-v1-2026",
+                        "sourceFingerprint": "abcd1234",
+                        "classifiedAt": "2026-01-15 10:30:00"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+
+        val c = result.experts.single().expertClassification!!
+        assertNotNull(c)
+        assertEquals(ExpertType.PRODUCTION_RND, c.type)
+        assertTrue(c.sendable, "domain sendable must derive from type, not from untrusted ES sendable=false")
+        assertEquals(95, c.productionScore)
+        assertEquals(15, c.researchScore)
+        assertEquals(listOf("PROD_PATENTS", "PROD_ROLE"), c.positiveEvidence)
+        assertEquals(emptyList<String>(), c.negativeEvidence)
+        assertEquals("rnd-v1-2026", c.version)
+        assertEquals("abcd1234", c.sourceFingerprint)
+        assertEquals(LocalDateTime.of(2026, 1, 15, 10, 30), c.classifiedAt)
+    }
+
+    @Test
+    fun `ES sendable=true cannot override OUT_OF_SCOPE derived sendable (I1-5)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-0001",
+                      "email": "expert@example.com",
+                      "expertClassification": {
+                        "type": "OUT_OF_SCOPE",
+                        "sendable": true,
+                        "productionScore": 0,
+                        "researchScore": 95,
+                        "positiveEvidence": [],
+                        "negativeEvidence": ["MEDICAL_DOMAIN_NO_WHITELIST"],
+                        "version": "rnd-v1-2026",
+                        "sourceFingerprint": "abcd1234",
+                        "classifiedAt": "2026-01-15 10:30:00"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+
+        val c = result.experts.single().expertClassification!!
+        assertNotNull(c)
+        assertEquals(ExpertType.OUT_OF_SCOPE, c.type)
+        assertFalse(c.sendable, "ES sendable=true must not override type-derived sendable")
+    }
+
+    @Test
+    fun `missing expertClassification maps to null (I1-5)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {"_source": {"orcidId": "0000-0001", "email": "expert@example.com"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+
+        assertNull(result.experts.single().expertClassification)
+    }
+
+    @Test
+    fun `explicit null expertClassification maps to null (I1-5)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {"_source": {"orcidId": "0000-0001", "email": "expert@example.com", "expertClassification": null}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+
+        assertNull(result.experts.single().expertClassification)
+    }
+
+    @Test
+    fun `unknown expertClassification type maps whole object to null (fail closed, I1-5)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-0001",
+                      "email": "expert@example.com",
+                      "expertClassification": {
+                        "type": "MYSTERY_TYPE",
+                        "sendable": true,
+                        "productionScore": 95,
+                        "researchScore": 15,
+                        "positiveEvidence": [],
+                        "negativeEvidence": [],
+                        "version": "rnd-v1-2026",
+                        "sourceFingerprint": "abcd1234",
+                        "classifiedAt": "2026-01-15 10:30:00"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+
+        assertNull(
+            result.experts.single().expertClassification,
+            "unknown type must fail closed to null, never silently map to UNKNOWN"
+        )
+    }
+
+    @Test
+    fun `partial expertClassification with missing subfields maps to null (I1-5)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-0001",
+                      "email": "expert@example.com",
+                      "expertClassification": {
+                        "type": "PRODUCTION_RND",
+                        "productionScore": 95,
+                        "researchScore": 15,
+                        "positiveEvidence": ["PROD_PATENTS"],
+                        "negativeEvidence": [],
+                        "version": "rnd-v1-2026",
+                        "sourceFingerprint": "abcd1234"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(1)
+
+        assertNull(
+            result.experts.single().expertClassification,
+            "missing classifiedAt must fail closed to null"
+        )
+    }
+
+    @Test
+    fun `classifiedAt supports date-only and epoch_millis formats (I1-5)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 2},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-0001",
+                      "email": "a@example.com",
+                      "expertClassification": {
+                        "type": "ACADEMIC_RND",
+                        "sendable": true,
+                        "productionScore": 0,
+                        "researchScore": 95,
+                        "positiveEvidence": [],
+                        "negativeEvidence": [],
+                        "version": "rnd-v1-2026",
+                        "sourceFingerprint": "abcd1234",
+                        "classifiedAt": "2026-01-15"
+                      }
+                    }
+                  },
+                  {
+                    "_source": {
+                      "orcidId": "0000-0002",
+                      "email": "b@example.com",
+                      "expertClassification": {
+                        "type": "ACADEMIC_RND",
+                        "sendable": true,
+                        "productionScore": 0,
+                        "researchScore": 95,
+                        "positiveEvidence": [],
+                        "negativeEvidence": [],
+                        "version": "rnd-v1-2026",
+                        "sourceFingerprint": "abcd1234",
+                        "classifiedAt": 1768444200000
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsWithEmail(2)
+
+        val experts = result.experts
+        assertEquals(2, experts.size)
+        assertEquals(LocalDateTime.of(2026, 1, 15, 0, 0), experts[0].expertClassification?.classifiedAt)
+        assertNotNull(experts[1].expertClassification?.classifiedAt, "epoch_millis classifiedAt must parse")
+    }
+
+    @Test
+    fun `all three ES mappings declare identical expertClassification object (I1-5)`() {
+        fun readProperties(name: String) =
+            mapper.readTree(
+                ExpertSearchServiceTest::class.java.getResourceAsStream("/es/$name.json")!!
+            ).path("mappings").path("properties")
+
+        val raw = readProperties("orcid_info_raw")
+        val candidate = readProperties("orcid_info_candidate")
+        val application = readProperties("orcid_info_application")
+
+        val rawEc = raw.path("expertClassification")
+        assertFalse(rawEc.isMissingNode, "RAW mapping must declare expertClassification")
+        assertEquals(rawEc, candidate.path("expertClassification"), "CANDIDATE mapping must be identical")
+        assertEquals(rawEc, application.path("expertClassification"), "APPLICATION mapping must be identical")
+
+        val props = rawEc.path("properties")
+        assertEquals("keyword", props.path("type").path("type").asText())
+        assertEquals("boolean", props.path("sendable").path("type").asText())
+        assertEquals("integer", props.path("productionScore").path("type").asText())
+        assertEquals("integer", props.path("researchScore").path("type").asText())
+        assertEquals("keyword", props.path("positiveEvidence").path("type").asText())
+        assertEquals("keyword", props.path("negativeEvidence").path("type").asText())
+        assertEquals("keyword", props.path("version").path("type").asText())
+        assertEquals("keyword", props.path("sourceFingerprint").path("type").asText())
+        assertEquals("date", props.path("classifiedAt").path("type").asText())
+        assertEquals(
+            "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis",
+            props.path("classifiedAt").path("format").asText()
+        )
+
+        // 不使用 enabled:false；无根级第二事实源（I1-5、M-3）
+        assertFalse(rawEc.toString().contains("enabled"))
+        assertFalse(raw.has("sendable"))
+        assertFalse(raw.has("expertType"))
+        assertTrue(raw.has("expertClassification"))
     }
 }

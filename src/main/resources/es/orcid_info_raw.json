@@ -37,6 +37,20 @@
       "patentTitles": { "type": "keyword" },
       "enrichedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },
       "enrichmentSource": { "type": "keyword" },
+      "expertClassification": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "keyword" },
+          "sendable": { "type": "boolean" },
+          "productionScore": { "type": "integer" },
+          "researchScore": { "type": "integer" },
+          "positiveEvidence": { "type": "keyword" },
+          "negativeEvidence": { "type": "keyword" },
+          "version": { "type": "keyword" },
+          "sourceFingerprint": { "type": "keyword" },
+          "classifiedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" }
+        }
+      },
       "updatedAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" }
     }
   }

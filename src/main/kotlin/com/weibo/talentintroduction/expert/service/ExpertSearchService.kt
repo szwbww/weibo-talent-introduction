@@ -3,8 +3,11 @@ package com.weibo.talentintroduction.expert.service
 import com.fasterxml.jackson.databind.JsonNode
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
+import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.domain.ExpertType
+import org.slf4j.LoggerFactory
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
@@ -12,6 +15,13 @@ import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
 import java.nio.charset.StandardCharsets
+import java.time.DateTimeException
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 import java.util.Base64
 
 @Service
@@ -20,8 +30,12 @@ class ExpertSearchService(
     private val properties: ElasticsearchProperties,
     private val expertIndexService: ExpertIndexService
 ) {
+    private val log = LoggerFactory.getLogger(ExpertSearchService::class.java)
     companion object {
         val ALLOWED_HAS_FIELDS = setOf("employment", "degree", "institution", "researchFields", "patentTitles", "recentWorkTitles")
+
+        private val CLASSIFIED_AT_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        private val CLASSIFIED_AT_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd")
 
         /**
          * Fields whose ES mapping type is `keyword`, so an empty-string term can
@@ -434,8 +448,76 @@ class ExpertSearchService(
             patentTitles = source.path("patentTitles").takeIf { it.isArray }
                 ?.map { it.asText() }?.filter { it.isNotBlank() },
             enrichedAt = source.nullableText("enrichedAt"),
-            enrichmentSource = source.nullableText("enrichmentSource")
+            enrichmentSource = source.nullableText("enrichmentSource"),
+            expertClassification = parseExpertClassification(source.path("expertClassification"))
         )
+    }
+
+    /**
+     * 显式解析 ES 中的 `expertClassification` 对象（I1-5）。缺失/null → null；
+     * 未知 `type` 记录 warn 并将整个对象视为 null（fail closed，绝不悄悄映射为 UNKNOWN）。
+     * `sendable` 不读自 ES：领域 getter 恒由 type 派生，ES 中不可信的 sendable 值无法覆盖。
+     */
+    private fun parseExpertClassification(node: JsonNode): ExpertClassification? {
+        if (node.isMissingNode || node.isNull) return null
+        val typeName = node.nullableText("type") ?: return null
+        val type = try {
+            ExpertType.valueOf(typeName)
+        } catch (e: IllegalArgumentException) {
+            log.warn(
+                "Unknown expertClassification type '{}'; treating whole classification as null (fail closed)",
+                typeName
+            )
+            return null
+        }
+        val productionScore = node.path("productionScore").takeIf { it.isIntegralNumber }?.asInt() ?: return null
+        val researchScore = node.path("researchScore").takeIf { it.isIntegralNumber }?.asInt() ?: return null
+        val positiveEvidence = stringArrayOrNull(node, "positiveEvidence") ?: return null
+        val negativeEvidence = stringArrayOrNull(node, "negativeEvidence") ?: return null
+        val version = node.nullableText("version") ?: return null
+        val sourceFingerprint = node.nullableText("sourceFingerprint") ?: return null
+        val classifiedAt = parseClassifiedAt(node.path("classifiedAt")) ?: return null
+        return ExpertClassification(
+            type = type,
+            productionScore = productionScore,
+            researchScore = researchScore,
+            positiveEvidence = positiveEvidence,
+            negativeEvidence = negativeEvidence,
+            version = version,
+            sourceFingerprint = sourceFingerprint,
+            classifiedAt = classifiedAt
+        )
+    }
+
+    private fun stringArrayOrNull(node: JsonNode, field: String): List<String>? {
+        val array = node.path(field)
+        if (array.isMissingNode || array.isNull) return null
+        if (!array.isArray) return null
+        if (!array.all(JsonNode::isTextual)) return null
+        return array.map { it.asText() }
+    }
+
+    /** 支持 mapping 声明的三种格式：`yyyy-MM-dd HH:mm:ss`、`yyyy-MM-dd`、epoch_millis。 */
+    private fun parseClassifiedAt(node: JsonNode): LocalDateTime? {
+        if (node.isMissingNode || node.isNull) return null
+        if (node.isIntegralNumber) {
+            return try {
+                LocalDateTime.ofInstant(Instant.ofEpochMilli(node.asLong()), ZoneId.systemDefault())
+            } catch (e: DateTimeException) {
+                null
+            }
+        }
+        if (!node.isTextual) return null
+        val raw = node.asText()
+        return try {
+            LocalDateTime.parse(raw, CLASSIFIED_AT_TIME_FORMATTER)
+        } catch (e: DateTimeParseException) {
+            try {
+                LocalDate.parse(raw, CLASSIFIED_AT_DATE_FORMATTER).atStartOfDay()
+            } catch (e2: DateTimeParseException) {
+                null
+            }
+        }
     }
 
     private fun JsonNode.nullableText(field: String): String? {
@@ -456,7 +538,8 @@ class ExpertSearchService(
             "tags",
             "updatedAt",
             "operatorStatus",
-            "recentWorkTitles", "patentTitles", "enrichedAt", "enrichmentSource"
+            "recentWorkTitles", "patentTitles", "enrichedAt", "enrichmentSource",
+            "expertClassification"
         )
 
     private fun sortFields(level: ExpertIndexLevel): List<Map<String, Any>> =
