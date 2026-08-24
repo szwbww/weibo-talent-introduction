@@ -133,8 +133,10 @@
 | 7 | `src/main/resources/es/orcid_info_application.json` | APPLICATION mapping |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationServiceTest.kt` | 分类规则测试 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt` | ES 解析/round-trip 测试 |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexServiceTest.kt` | **修正记录 A1（授权）：** RAW mapping 声明字段计数 pin 32→33（`singleFieldPuts` 断言），遵 A1 修正记录 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | **修正记录 A1（授权）：** `EXCLUDED_NOISE_SITES` 中 `ExpertSearchService.kt` pin 行号 431→445（context 不变），遵该 guard 自带维护规程（`:130`）与 A1 修正记录 |
 
-共 9 个文件、1 个子系统、每个共享索引 1 个新顶层字段。
+共 11 个文件、1 个子系统、每个共享索引 1 个新顶层字段。
 
 ## 验收标准
 
@@ -166,3 +168,16 @@
 - 覆盖: 必须保持不变第 4 条、范围外“批量回填”
 
 人工验收开始时导出 `01-expert-rnd-classification-core-acceptance.md`。
+
+## 修正记录
+
+### A1（2026-08-24，fast-p 运行期）授权第 10、11 个文件：guard 测试 pin 同步
+
+- **决策方**：需求方（fast-p 运行期授权，ask 选项「Approve amendment A1」）。
+- **触发证据**：T3 强制三份 mapping 同构新增 `expertClassification`，使 `orcid_info_raw.json` 声明字段 32→33；
+  `ExpertIndexServiceTest` 的 RAW per-field PUT 计数 pin（`assertEquals(32, singleFieldPuts)`）必然过期。
+  同一 T3 在 `ExpertSearchService` 新增分类解析与 logger 导入，使 `OperatorStatusWriteSeamGuardTest.EXCLUDED_NOISE_SITES`
+  中 `ExpertSearchService.kt` pin 行号 431→445（context 不变），guard 自检（`staleExclusions`）必然失败。
+  任何满足 I1-5「三份 mapping 使用完全相同的 expertClassification.properties」的实现都无法避免这两处漂移。
+- **影响**：变更文件清单新增第 10、11 项（仅 pin 刷新：计数 32→33、行号 431→445，context 不变，零断言语义变更）。
+  文件数 9→11，仍 ≤ 上限。
