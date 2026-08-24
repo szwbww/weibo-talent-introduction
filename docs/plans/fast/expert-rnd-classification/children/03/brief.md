@@ -17,7 +17,7 @@
 6. Serial writer rule (master plan): shared files across children must be modified by one writer at a time; child 03 is the sole writer now. `ExpertSearchService.kt` was modified by child 01 (authorized); child 03 extends it (T1).
 7. Do not review or implement later children (04). Do not repair unrelated behavior. Skip formatters/linters and project-wide suites beyond the required commands.
 
-## Authorized files (7; modify nothing else)
+## Authorized files (9; modify nothing else)
 
 1. src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt (T1)
 2. src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt (T2)
@@ -26,6 +26,8 @@
 5. src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt (T1)
 6. src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt (T2)
 7. src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt (T3, T4)
+8. src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt (A3: EXCLUDED_NOISE_SITES ExpertSearchService.kt line 445→491, context unchanged)
+9. src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt (A3: expert() fixture helper gains default sendable classification — type=ACADEMIC_RND, sendable=true, version=rnd-v1-2026; no other change)
 
 ## Required commands (run all; from plan 验收标准 + master plan)
 
@@ -50,3 +52,7 @@
 
 Read the committed plan file: docs/plans/2026-08-24/03-expert-rnd-send-gate.md
 Follow its 需求描述 / 关键不变量 I3-1..I3-5 / 现状审计 / 实现方案 T1-T4 / 变更文件清单 / 验收标准 exactly. Predicate forms, reason code, last-check placement, and MATERIAL_REMINDER exemptions are normative.
+
+## Amendment A3 (approved 2026-08-24, epoch 2)
+
+Authorized two test-file refreshes (files 8-9): seam guard `ExpertSearchService.kt` pin 445→491 (context unchanged, same mechanism as A1); `BatchSendTaskRuntimeIntegrationTest.expert()` helper gains a default sendable classification (`type=ACADEMIC_RND`, sendable=true, `version=rnd-v1-2026`) so existing scope-filter assertions keep their meaning under the I3-2 gate — the gate's rejection behavior is proven by the authorized `ManualInitialOutreachServiceTest` additions. Zero production-logic change. Epoch 1 implementation commit f3da97af stays; remaining work is exactly these two refreshes plus a green full regression.
