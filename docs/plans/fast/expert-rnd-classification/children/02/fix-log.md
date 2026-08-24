@@ -24,7 +24,7 @@
 
 ### Fix commit
 
-- fb19d05290f1865f4ce862b74ba22d8bd3235451 — `fix(fast-p): repair 02 round 1`
+- ec7226b485dbfff98a33260e68ef289df3fa1169 — `fix(fast-p): repair 02 round 1`
 
 ### Authorized files changed
 
@@ -41,11 +41,9 @@
 
 ### Result
 
-- FIXED：3 个 finding 全部修正，全量回归 BUILD SUCCESS（2810/0/0/4），提交 fb19d052 为 fast/expert-rnd-classification HEAD，仅含 1 个授权文件。
+- FIXED：3 个 finding 全部修正，全量回归 BUILD SUCCESS（2810/0/0/4），提交 ec7226b 为 fast/expert-rnd-classification HEAD，仅含 1 个授权文件。
 - 计划身份复检：SHA-256 1ec8cf6d... 不变；工作树身份复检通过（--expect-root/branch/git-dir）。
 
 ### Notes
 
 - 无遗留阻塞；epoch 1 的 execution.md 已记录 PLAN_CONFLICT 原因与本轮授权（A2）对应关系。
-
-- Fix commit: fb19d05290f1865f4ce862b74ba22d8bd3235451

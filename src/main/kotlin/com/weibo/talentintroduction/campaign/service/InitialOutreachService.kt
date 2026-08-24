@@ -30,13 +30,20 @@ class InitialOutreachService(
     private val senderAccountBindingService: SenderAccountBindingService
 ) {
     fun sendInitialBatch(campaignId: Long, size: Int, taskExecutionId: Long? = null): InitialOutreachBatchResult {
-        val experts = expertSearchService.searchExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE).experts
+        val experts = expertSearchService.searchSendableExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE).experts
         val assignments = mutableListOf<SenderExpertAssignment>()
         val stock = senderAccountAssignmentService.loadBindingStock()
         val sentResults = mutableListOf<InitialOutreachSendResult>()
         var skipped = 0
 
         experts.forEachIndexed { index, expert ->
+            // I3-1/I3-4：发送前最后门禁 —— 查询/缓存/未来重构错误可能绕过硬门禁，创建 contact 前再次检查。
+            // null/false 均拒绝，计 skipped，不创建 contact、不渲染、不投递。
+            if (expert.expertClassification?.sendable != true) {
+                skipped += 1
+                return@forEachIndexed
+            }
+
             if (expertContactRepository.existsByCampaignIdAndOrcidId(campaignId, expert.orcidId)) {
                 skipped += 1
                 return@forEachIndexed

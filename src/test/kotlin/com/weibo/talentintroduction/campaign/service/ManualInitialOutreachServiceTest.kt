@@ -15,8 +15,10 @@ import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepositor
 import com.weibo.talentintroduction.config.ManualOutreachProperties
 import com.weibo.talentintroduction.config.WarmupProperties
 import com.weibo.talentintroduction.config.WarmupStep
+import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.mail.domain.MailRecord
@@ -1219,8 +1221,9 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
         Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
 
-        // P2a: 单值配置经 KV 桥接成单元素 list，ES 侧走多域版过滤器。
-        val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters(listOf("gmail.com"))
+        // P2a: 单值配置经 KV 桥接成单元素 list，ES 侧走多域版过滤器；I3-2 追加 sendable term。
+        val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters(listOf("gmail.com")).toMutableList()
+        expectedFilters.add(ExpertSearchService.expertSendableFilter())
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
@@ -1254,7 +1257,8 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
         Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
 
-        val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters(listOf("gmail.com"), "HUMANITIES")
+        val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters(listOf("gmail.com"), "HUMANITIES").toMutableList()
+        expectedFilters.add(ExpertSearchService.expertSendableFilter())
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
@@ -2786,6 +2790,7 @@ class ManualInitialOutreachServiceTest {
         )
         val expectedFilters = ExpertSearchService.notContactedWithEmailFilters().toMutableList()
         ExpertSearchService.regionsFilter(listOf("Europe"))?.let { expectedFilters.add(it) }
+        expectedFilters.add(ExpertSearchService.expertSendableFilter())
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
@@ -2873,6 +2878,8 @@ class ManualInitialOutreachServiceTest {
         // Regression: the INTRODUCTION+CANDIDATE branch already routed through disciplineFilter; must stay correct.
         assertTrue(expectedFilters.any { (it["bool"] as? Map<*, *>)?.get("must_not") != null })
         assertTrue(expectedFilters.none { it.containsKey("term") })
+        // I3-2: INTRODUCTION 追加 sendable term（末尾）。
+        expectedFilters.add(ExpertSearchService.expertSendableFilter())
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
@@ -3043,6 +3050,8 @@ class ManualInitialOutreachServiceTest {
                 )
             )
         )
+        // I3-2: INTRODUCTION 追加 sendable term（末尾）。
+        expectedFilters.add(ExpertSearchService.expertSendableFilter())
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
@@ -3073,6 +3082,8 @@ class ManualInitialOutreachServiceTest {
         // I-3: NOT_CONTACTED 的唯一语义是 must_not exists operatorStatus，绝不写 term operatorStatus=NOT_CONTACTED。
         assertTrue(expectedFilters.any { (it["bool"] as? Map<*, *>)?.get("must_not") != null })
         assertTrue(expectedFilters.none { it.containsKey("term") })
+        // I3-2: INTRODUCTION 追加 sendable term（末尾）。
+        expectedFilters.add(ExpertSearchService.expertSendableFilter())
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
@@ -3160,8 +3171,9 @@ class ManualInitialOutreachServiceTest {
             selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE"
         )
-        // 留空 = 不限：过滤条件与升级前逐字一致（不多不少）。
+        // 留空 = 不限：状态过滤条件与升级前逐字一致（不多不少）；I3-2 追加 sendable term。
         val expectedFilters = ExpertSearchService.notContactedWithEmailFilters().toMutableList()
+        expectedFilters.add(ExpertSearchService.expertSendableFilter())
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
@@ -3276,13 +3288,14 @@ class ManualInitialOutreachServiceTest {
         assertTrue(scoped.matchesExpert(expert("0001", "x@b.com")))
         assertFalse(scoped.matchesExpert(expert("0002", "x@c.com")))
 
-        // I2a-2: 空集合 = 不限 —— 即使 profile 无 email 也不判定。
+        // I2a-2: 空集合 = 不限 —— 即使 profile 无 email 也不判定（仍须通过 I3-1 sendable 门禁）。
         val unrestricted = scoped.copy(emailDomains = emptyList())
         assertTrue(
             unrestricted.matchesExpert(
                 ExpertProfile(
                     orcidId = "0003", email = null, givenNames = "G", familyNames = "F",
-                    country = null, keyword = null, employment = null
+                    country = null, keyword = null, employment = null,
+                    expertClassification = sendableClassification()
                 )
             )
         )
@@ -3323,6 +3336,7 @@ class ManualInitialOutreachServiceTest {
 
         // 改动前基线逐字硬编码（不调用任何 helper 生成）：operatorStatus 留空（不限）时
         // CANDIDATE 分支走 notContacted 基座且不追加任何状态 filter —— 必须逐字相等（N3a-2）。
+        // I3-2: INTRODUCTION 在 filters 末尾追加共享 sendable term（N3a-2 只约束状态基座本身）。
         val baseline = listOf(
             mapOf("exists" to mapOf("field" to "email")),
             mapOf(
@@ -3334,7 +3348,7 @@ class ManualInitialOutreachServiceTest {
                 )
             )
         )
-        assertEquals(baseline, filters)
+        assertEquals(baseline + ExpertSearchService.expertSendableFilter(), filters)
     }
 
     @Test
@@ -3347,7 +3361,7 @@ class ManualInitialOutreachServiceTest {
         )
         val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
 
-        // 与上一条相同：仅选 NOT_CONTACTED 也必须与改动前逐字一致（N3a-2）。
+        // 与上一条相同：仅选 NOT_CONTACTED 也必须与改动前逐字一致（N3a-2）；I3-2 追加 sendable term。
         val baseline = listOf(
             mapOf("exists" to mapOf("field" to "email")),
             mapOf(
@@ -3359,7 +3373,7 @@ class ManualInitialOutreachServiceTest {
                 )
             )
         )
-        assertEquals(baseline, filters)
+        assertEquals(baseline + ExpertSearchService.expertSendableFilter(), filters)
     }
 
     @Test
@@ -3531,7 +3545,8 @@ class ManualInitialOutreachServiceTest {
         assertEquals(emptyList<String>(), scope.gateEsFields)
 
         val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
-        // 改动前基线逐字硬编码（I4a-1 / N4a-1）：门禁关闭时不追加任何 filter。
+        // 改动前基线逐字硬编码（I4a-1 / N4a-1）：模板门禁关闭时不追加任何 gate 字段 filter。
+        // I3-2: INTRODUCTION 分类门禁独立于模板门禁，仍在末尾追加 sendable term。
         val baseline = listOf(
             mapOf("exists" to mapOf("field" to "email")),
             mapOf(
@@ -3543,7 +3558,7 @@ class ManualInitialOutreachServiceTest {
                 )
             )
         )
-        assertEquals(baseline, filters)
+        assertEquals(baseline + ExpertSearchService.expertSendableFilter(), filters)
         // 开关关闭时不得触碰模板解析。
         Mockito.verify(mailComposeTemplateService, Mockito.never()).requiredEsFields(Mockito.anyLong())
     }
@@ -3576,7 +3591,7 @@ class ManualInitialOutreachServiceTest {
                 )
             )
         )
-        assertEquals(baseline, filters)
+        assertEquals(baseline + ExpertSearchService.expertSendableFilter(), filters)
         // 无 templateId → resolveScope 提前返回，不查模板。
         Mockito.verify(mailComposeTemplateService, Mockito.never()).requiredEsFields(Mockito.anyLong())
     }
@@ -3610,7 +3625,7 @@ class ManualInitialOutreachServiceTest {
                 )
             )
         )
-        assertEquals(baseline, filters)
+        assertEquals(baseline + ExpertSearchService.expertSendableFilter(), filters)
     }
 
     @Test
@@ -3631,8 +3646,9 @@ class ManualInitialOutreachServiceTest {
         assertEquals(listOf("institution", "researchFields"), scope.gateEsFields)
 
         val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
-        // I4a-2: 基线 2 项 + 恰好 2 项门禁 filter（每字段一个独立 filter，平铺进 bool.filter）。
-        assertEquals(4, filters.size)
+        // I4a-2: 基线 2 项 + 恰好 2 项模板门禁 filter（每字段一个独立 filter，平铺进 bool.filter）
+        // + I3-2: 末尾 1 项 INTRODUCTION sendable term。
+        assertEquals(5, filters.size)
         assertEquals(mapOf("exists" to mapOf("field" to "institution")), filters[2])
         assertEquals(
             mapOf(
@@ -3643,6 +3659,7 @@ class ManualInitialOutreachServiceTest {
             ),
             filters[3]
         )
+        assertEquals(ExpertSearchService.expertSendableFilter(), filters[4])
         // 门禁语义是 AND（任一缺失即拦）：任何 filter 都不得是 should 块。
         val json = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(filters)
         assertFalse(json.contains("\"should\""), "gate filters must be AND (flat), not should")
@@ -3667,8 +3684,10 @@ class ManualInitialOutreachServiceTest {
         assertEquals(listOf("institution"), scope.gateEsFields)
 
         val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
-        assertEquals(3, filters.size)
+        // 基线 2 项 + institution 存在性 + I3-2 sendable term。
+        assertEquals(4, filters.size)
         assertEquals(mapOf("exists" to mapOf("field" to "institution")), filters[2])
+        assertEquals(ExpertSearchService.expertSendableFilter(), filters[3])
     }
 
     @Test
@@ -3690,9 +3709,11 @@ class ManualInitialOutreachServiceTest {
             .thenReturn(emptyList())
         Mockito.`when`(mailComposeTemplateService.requiredEsFields(42L)).thenReturn(listOf("institution"))
 
-        // 门禁开启的预期 filter 列表：基线 + institution 存在性 filter（I4a-2 平铺）。
+        // 门禁开启的预期 filter 列表：基线 + institution 存在性 filter（I4a-2 平铺）
+        // + I3-2: INTRODUCTION sendable term（末尾）。
         val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters().toMutableList()
         expectedFilters.add(mapOf("exists" to mapOf("field" to "institution")))
+        expectedFilters.add(ExpertSearchService.expertSendableFilter())
         Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(1L)
 
@@ -3791,6 +3812,199 @@ class ManualInitialOutreachServiceTest {
         assertTrue(none.matchesExpert(base.copy(institution = null, degree = null)))
     }
 
+    // ──── P3b: INTRODUCTION sendable gate (child 03 / I3-1..I3-5) ────────────
+
+    @Test
+    fun `matchesExpert INTRODUCTION sendable gate rejects null false and non-sendable types allows only sendable (I3-1)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null
+        )
+        // 三种可发 type 全部允许。
+        listOf(ExpertType.PRODUCTION_RND, ExpertType.ACADEMIC_RND, ExpertType.HYBRID_RND).forEach { type ->
+            assertTrue(
+                scope.matchesExpert(expert("0001", "a@b.com").copy(expertClassification = classification(type))),
+                "sendable type $type must be allowed"
+            )
+        }
+        // 三种不可发 type 全部拒绝。
+        listOf(ExpertType.SERVICE_ONLY, ExpertType.OUT_OF_SCOPE, ExpertType.UNKNOWN).forEach { type ->
+            assertFalse(
+                scope.matchesExpert(expert("0001", "a@b.com").copy(expertClassification = classification(type))),
+                "non-sendable type $type must be rejected"
+            )
+        }
+        // null / false 均拒绝（fail closed，I3-1）。
+        assertFalse(scope.matchesExpert(expert("0001", "a@b.com").copy(expertClassification = null)))
+    }
+
+    @Test
+    fun `matchesExpert sendable gate agrees with ES sendable term per profile (I3-2)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null
+        )
+        val profiles = listOf(
+            expert("0001", "a@b.com").copy(expertClassification = classification(ExpertType.PRODUCTION_RND)),
+            expert("0002", "b@b.com").copy(expertClassification = classification(ExpertType.ACADEMIC_RND)),
+            expert("0003", "c@b.com").copy(expertClassification = classification(ExpertType.HYBRID_RND)),
+            expert("0004", "d@b.com").copy(expertClassification = classification(ExpertType.SERVICE_ONLY)),
+            expert("0005", "e@b.com").copy(expertClassification = classification(ExpertType.OUT_OF_SCOPE)),
+            expert("0006", "f@b.com").copy(expertClassification = classification(ExpertType.UNKNOWN)),
+            expert("0007", "g@b.com").copy(expertClassification = null)
+        )
+        // 内存谓词 expertClassification?.sendable == true 与 ES term 命中语义逐 profile 一致。
+        profiles.forEach { profile ->
+            val esTermMatches = profile.expertClassification?.sendable == true
+            assertEquals(
+                esTermMatches,
+                scope.matchesExpert(profile),
+                "memory/ES parity mismatch for ${profile.orcidId}"
+            )
+        }
+    }
+
+    @Test
+    fun `buildEsFiltersForLevel appends sendable term to every INTRODUCTION level not MATERIAL_REMINDER (I3-2 I3-5)`() {
+        val introScope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE", "APPLICATION"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null
+        )
+        setOf("CANDIDATE", "APPLICATION").forEach { level ->
+            val filters = invokeBuildEsFiltersForLevel(service, introScope, level)
+            assertEquals(
+                ExpertSearchService.expertSendableFilter(),
+                filters.last(),
+                "INTRODUCTION $level must end with the sendable term: $filters"
+            )
+        }
+
+        val reminderScope = RecipientScope(
+            mailType = "MATERIAL_REMINDER", funnelLevels = setOf("APPLICATION"),
+            tags = listOf("承诺回复材料"), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null
+        )
+        val reminderFilters = invokeBuildEsFiltersForLevel(service, reminderScope, "APPLICATION")
+        val json = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(reminderFilters)
+        assertFalse(json.contains("expertClassification"), "MATERIAL_REMINDER query must not carry the sendable term: $json")
+    }
+
+    @Test
+    fun `MATERIAL_REMINDER applies no classification gate in memory (I3-5)`() {
+        val scope = RecipientScope(
+            mailType = "MATERIAL_REMINDER", funnelLevels = setOf("APPLICATION"),
+            tags = listOf("承诺回复材料"), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null
+        )
+        // 缺分类的 APPLICATION 联系人在内存侧仍通过（I3-5 / A3-5 / M-5）。
+        assertTrue(scope.matchesExpert(expert("M001", "m@b.com").copy(tags = listOf("承诺回复材料"), expertClassification = null)))
+        // 即使分类存在也不影响材料提醒（sendable=false 同样放行）。
+        assertTrue(scope.matchesExpert(expert("M002", "m2@b.com").copy(tags = listOf("承诺回复材料"), expertClassification = classification(ExpertType.UNKNOWN))))
+    }
+
+    @Test
+    fun `INTRODUCTION preview and execution both exclude non-sendable experts (I3-3 I3-1 I3-4)`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        // 1 个 retryable NEW 联系人，其 ES profile 为 SERVICE_ONLY → 从 retryable 排除。
+        val retryableContact = ExpertContact(id = 1L, campaignId = 10L, orcidId = "R001", expertEmail = "r1@b.com", expertName = "R1", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(retryableContact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("R001"))).thenReturn(listOf(
+            expert("R001", "r1@b.com").copy(expertClassification = classification(ExpertType.SERVICE_ONLY))
+        ))
+        // ES page：1 可发 + 1 不可发（模拟竞态：ES 侧已按 term 过滤，但分页仍可能带回脏数据）。
+        stubScrolledExperts(listOf(
+            expert("0001", "a@b.com"),
+            expert("0002", "c@d.com").copy(expertClassification = classification(ExpertType.UNKNOWN))
+        ))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001", "a@b.com")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)))
+            .thenReturn(account("chen"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("0001", "a@b.com")), Mockito.isNull()))
+            .thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account("chen")), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail(messageId = "msg1", status = "SENT"))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION", roundSize = 10, roundsPerRun = 1,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE"
+        )
+
+        // 预估：不可发专家同时从 pending(ES) 与 retryable(内存) 口径排除 ——
+        // ES pending 由 countExperts 的过滤器（含 sendable term）保证；内存 retryable 由 matchesExpert 保证。
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(0, preview.retryable, "SERVICE_ONLY retryable profile must be excluded")
+        assertEquals(2, preview.pending)
+        assertEquals(2, preview.totalSendable)
+
+        // 执行（同一 snapshot）：totalEstimate 与 preview 一致；最后门禁拦下竞态返回的 UNKNOWN profile。
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+        assertEquals(preview.totalSendable, result.total)
+        assertEquals(1, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.skipped)
+        val skippedReasons = result.outcome?.skippedReasons.orEmpty()
+        assertEquals(1, skippedReasons[BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE]?.count)
+        assertEquals("专家非生产/科研可发类型", skippedReasons[BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE]?.label)
+        // 仅可发专家创建 contact / 选号 / 渲染 / 投递各一次。
+        val contactCaptor = org.mockito.ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository, Mockito.times(1)).save(
+            captureValue(contactCaptor, ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
+        )
+        assertEquals("0001", contactCaptor.value.orcidId)
+        Mockito.verify(senderAccountAssignmentService, Mockito.times(1)).selectAccount(
+            anyValue(expert("0001", "a@b.com")), anyValue(mutableListOf()), Mockito.anyBoolean(), anyValue(SenderBindingStock.EMPTY)
+        )
+        Mockito.verify(introductionMailComposer, Mockito.times(1)).compose(
+            eqValue("chen"), anyValue(expert("0001", "a@b.com")), Mockito.isNull()
+        )
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(
+            anyValue(account("chen")), anyValue(ComposedMail("", "", ""))
+        )
+    }
+
+    @Test
+    fun `round loop last gate blocks null classification with no writes (I3-4)`() {
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+        // 竞态场景：iterator 返回缺分类 profile（I3-4：查询/缓存错误可绕过硬门禁）。
+        stubScrolledExperts(listOf(expert("0001", "a@b.com").copy(expertClassification = null)))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION", roundSize = 10, roundsPerRun = 1,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE"
+        )
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(1, result.total)
+        assertEquals(0, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.skipped)
+        assertEquals(
+            1,
+            result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE)?.count ?: 0
+        )
+        // 不创建 contact、不选账号、不渲染、不投递。
+        Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
+        Mockito.verify(senderAccountAssignmentService, Mockito.never()).selectAccount(
+            anyValue(expert("0001", "a@b.com")), anyValue(mutableListOf()), Mockito.anyBoolean(), anyValue(SenderBindingStock.EMPTY)
+        )
+        Mockito.verifyNoInteractions(introductionMailComposer)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
     // ──── Helpers ────
 
     private fun expert(orcidId: String, email: String): ExpertProfile =
@@ -3801,7 +4015,33 @@ class ManualInitialOutreachServiceTest {
             familyNames = "Family",
             country = "China",
             keyword = "keyword",
-            employment = "University"
+            employment = "University",
+            // I3-1: 默认 fixture 为可发类型；缺分类/不可发场景用 expert(...).copy(expertClassification = ...) 显式构造。
+            expertClassification = sendableClassification()
+        )
+
+    private fun sendableClassification(): ExpertClassification =
+        ExpertClassification(
+            type = ExpertType.PRODUCTION_RND,
+            productionScore = 80,
+            researchScore = 20,
+            positiveEvidence = listOf("RND_PRODUCTION"),
+            negativeEvidence = emptyList(),
+            version = "rnd-v1-2026",
+            sourceFingerprint = "fp-0001",
+            classifiedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
+        )
+
+    private fun classification(type: ExpertType): ExpertClassification =
+        ExpertClassification(
+            type = type,
+            productionScore = if (type in ExpertClassification.SENDABLE_TYPES) 60 else 0,
+            researchScore = if (type in ExpertClassification.SENDABLE_TYPES) 60 else 0,
+            positiveEvidence = listOf("EVIDENCE"),
+            negativeEvidence = if (type in ExpertClassification.SENDABLE_TYPES) emptyList() else listOf("NOT_SENDABLE"),
+            version = "rnd-v1-2026",
+            sourceFingerprint = "fp-$type",
+            classifiedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
         )
 
     private fun stubPagedExperts(experts: List<ExpertProfile>) {

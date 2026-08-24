@@ -601,6 +601,23 @@ class ManualInitialOutreachService(
                 val (existingContact, expert) = targetIterator.next()
                 val normOrcid = normalizeOrcid(expert.orcidId)
 
+                // I3-4：INTRODUCTION 最后门禁 —— 取回 profile 后、邮箱/账号/contact 处理前再次检查。
+                // 查询/缓存/未来重构错误可绕过硬门禁；null/false 均拒绝，记录 EXPERT_NOT_SENDABLE，
+                // 不创建 contact、不选账号、不渲染、不投递（I3-1）。
+                if (expert.expertClassification?.sendable != true) {
+                    accumulator.recordSkipped(
+                        BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE,
+                        "专家非生产/科研可发类型：${expert.orcidId}"
+                    )
+                    processedTotal++
+                    roundProcessed++
+                    roundRejected++
+                    updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                        "RUNNING", "专家非生产/科研可发类型：${expert.orcidId}", errors, mode, roundNumber, config, runAccountStats,
+                        roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
+                    continue
+                }
+
                 val email = expert.email
                 if (email.isNullOrBlank() || emailSuppressionService.isSuppressed(email)) {
                     accumulator.recordSkipped(BatchOutcomeReasonCodes.SUPPRESSED, "已跳过抑制邮箱：${email ?: ""}")
@@ -1298,6 +1315,12 @@ class ManualInitialOutreachService(
         // I4a-2: 门禁字段之间 AND —— 平铺进 filter 数组，不用 should。
         // I4a-1: 空集合时 fieldPresenceFilters 返回空列表，不追加任何项。
         filters.addAll(ExpertSearchService.fieldPresenceFilters(scope.gateEsFields))
+        // I3-2/I3-5: INTRODUCTION 的所有 funnel level 在 filters 末尾追加共享 sendable term
+        // （预估 countEsTargets / fetchEsPage / buildMaterialReminderSnapshot 复用同一 seam）；
+        // MATERIAL_REMINDER 不追加，零影响（I3-5）。
+        if (scope.mailType == BatchSendType.INTRODUCTION.name) {
+            filters.add(ExpertSearchService.expertSendableFilter())
+        }
         return filters
     }
 

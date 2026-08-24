@@ -48,6 +48,14 @@ class ExpertSearchService(
         )
 
         /**
+         * I3-2：INTRODUCTION 唯一共享 ES 谓词 —— 逐字返回 term expertClassification.sendable=true。
+         * 只用于 INTRODUCTION 目标查询（buildEsFiltersForLevel / searchSendableExpertsWithEmail）；
+         * MATERIAL_REMINDER 不得追加（I3-5）。谓词形式是本计划规范内容，禁止在别处另写。
+         */
+        fun expertSendableFilter(): Map<String, Any> =
+            mapOf("term" to mapOf("expertClassification.sendable" to true))
+
+        /**
          * Existence filter for a hasField-style query. For `keyword` fields the
          * `exists` check is combined with `must_not term ""` so blank values do
          * not count as present; for `text` fields a bare `exists` is used (I-9).
@@ -321,6 +329,44 @@ class ExpertSearchService(
                 "bool" to mapOf(
                     "filter" to listOf(
                         mapOf("exists" to mapOf("field" to "email"))
+                    )
+                )
+            ),
+            "sort" to sortFields(level)
+        )
+
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return ExpertSearchResult(emptyList(), 0L)
+
+        val totalHits = response.path("hits").path("total").path("value").asLong(0L)
+        val experts = response.path("hits")
+            .path("hits")
+            .map { hit -> toExpertProfile(hit) }
+        return ExpertSearchResult(experts = experts, totalHits = totalHits)
+    }
+
+    /**
+     * INTRODUCTION 首发专用查询（I3-1/I3-2）：filter = exists email AND expertSendableFilter()。
+     * 保留 [searchExpertsWithEmail] 作为通用读 API，避免把发信门禁悄悄加进通用查询。
+     */
+    fun searchSendableExpertsWithEmail(
+        size: Int,
+        level: ExpertIndexLevel = ExpertIndexLevel.CANDIDATE
+    ): ExpertSearchResult {
+        require(size in 1..1000) { "size must be between 1 and 1000" }
+
+        val requestBody = mapOf(
+            "size" to size,
+            "_source" to sourceFields(),
+            "query" to mapOf(
+                "bool" to mapOf(
+                    "filter" to listOf(
+                        mapOf("exists" to mapOf("field" to "email")),
+                        expertSendableFilter()
                     )
                 )
             ),

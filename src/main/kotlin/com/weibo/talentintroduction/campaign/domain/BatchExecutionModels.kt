@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.campaign.domain
 
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.service.BatchSendType
 import java.time.LocalDateTime
 
 /** Immutable launch snapshot consumed once per execution (I-1). */
@@ -58,6 +59,10 @@ data class RecipientScope(
     val gateEsFields: List<String> = emptyList()
 ) {
     fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
+        // I3-1/I3-2：INTRODUCTION 内存 sendable 门禁 —— null/false 都拒绝（fail closed），
+        // 与 ES 的 expertSendableFilter() 同口径；仅在 mailType=INTRODUCTION 应用，
+        // MATERIAL_REMINDER 零影响（I3-5）。
+        if (mailType == BatchSendType.INTRODUCTION.name && profile.expertClassification?.sendable != true) return false
         // I3a-5：与 ES 的 operatorStatusesFilter 同口径 —— 多状态取 OR；
         // NOT_CONTACTED = ES 文档无该字段（I3a-1）；空集合不判定（I3a-3）。
         if (operatorStatuses.isNotEmpty()) {
@@ -144,6 +149,7 @@ object BatchOutcomeReasonCodes {
     const val DAILY_CAP_EXCEEDED = "DAILY_CAP_EXCEEDED"
     const val CANCELLED = "CANCELLED"
     const val PERSONALIZATION_INCOMPLETE = "PERSONALIZATION_INCOMPLETE"
+    const val EXPERT_NOT_SENDABLE = "EXPERT_NOT_SENDABLE"
 
     val LABELS = mapOf(
         SEND_EXCEPTION to "发送异常",
@@ -154,7 +160,8 @@ object BatchOutcomeReasonCodes {
         DEDUP to "去重跳过",
         DAILY_CAP_EXCEEDED to "超日限额",
         CANCELLED to "被取消",
-        PERSONALIZATION_INCOMPLETE to "个性化字段缺失"
+        PERSONALIZATION_INCOMPLETE to "个性化字段缺失",
+        EXPERT_NOT_SENDABLE to "专家非生产/科研可发类型"
     )
 
     fun label(code: String): String = LABELS[code] ?: code

@@ -3,8 +3,10 @@ package com.weibo.talentintroduction.campaign.service
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
+import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ExpertSearchResult
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -72,7 +74,7 @@ class InitialOutreachServiceTest {
     @Test
     fun `sendInitialBatch commits each success independently when later send throws`() {
         val experts = listOf(expert("0001"), expert("0002"), expert("0003"))
-        Mockito.`when`(expertSearchService.searchExpertsWithEmail(3, ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(3, ExpertIndexLevel.CANDIDATE))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 3))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)))
@@ -114,7 +116,7 @@ class InitialOutreachServiceTest {
     @Test
     fun `sendInitialBatch all success preserves result semantics`() {
         val experts = listOf(expert("0001"), expert("0002"))
-        Mockito.`when`(expertSearchService.searchExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 2))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)))
@@ -145,7 +147,7 @@ class InitialOutreachServiceTest {
     @Test
     fun `sendInitialBatch saves NEW contact before SMTP and records failure without success transition`() {
         val experts = listOf(expert("0001"))
-        Mockito.`when`(expertSearchService.searchExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 1))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), eqValue("0001"))).thenReturn(false)
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)))
@@ -191,7 +193,7 @@ class InitialOutreachServiceTest {
         val suppressedExpert = expert("0001").copy(email = "blocked@example.com")
         val normalExpert = expert("0002")
         val experts = listOf(suppressedExpert, normalExpert)
-        Mockito.`when`(expertSearchService.searchExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 2))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
         Mockito.`when`(emailSuppressionService.isSuppressed("blocked@example.com")).thenReturn(true)
@@ -223,7 +225,7 @@ class InitialOutreachServiceTest {
         val suppressedExpert1 = expert("0001").copy(email = "blocked1@example.com")
         val suppressedExpert2 = expert("0002").copy(email = "blocked2@example.com")
         val experts = listOf(suppressedExpert1, suppressedExpert2)
-        Mockito.`when`(expertSearchService.searchExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 2))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
         Mockito.`when`(emailSuppressionService.isSuppressed("blocked1@example.com")).thenReturn(true)
@@ -250,7 +252,7 @@ class InitialOutreachServiceTest {
         val suppressedExpert = expert("0001").copy(email = "blocked@example.com")
         val existingExpert = expert("0002")
         val experts = listOf(suppressedExpert, existingExpert)
-        Mockito.`when`(expertSearchService.searchExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 2))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), eqValue("0002"))).thenReturn(true)
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), eqValue("0001"))).thenReturn(false)
@@ -273,7 +275,7 @@ class InitialOutreachServiceTest {
     fun `sendInitialBatch creates contact with autoReplyEnabled false when global switch off`() {
         Mockito.`when`(autoReplySettingService.isGlobalEnabled()).thenReturn(false)
         val experts = listOf(expert("0001"))
-        Mockito.`when`(expertSearchService.searchExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 1))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), eqValue("0001"))).thenReturn(false)
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)))
@@ -295,7 +297,7 @@ class InitialOutreachServiceTest {
     @Test
     fun `sendInitialBatch binds selected account on contact creation`() {
         val experts = listOf(expert("0001"))
-        Mockito.`when`(expertSearchService.searchExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 1))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), eqValue("0001"))).thenReturn(false)
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)))
@@ -337,7 +339,7 @@ class InitialOutreachServiceTest {
             senderAccountBindingService = senderAccountBindingService
         )
         val experts = listOf(expert("0001"), expert("0002"))
-        Mockito.`when`(expertSearchService.searchExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 2))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)))
@@ -357,7 +359,7 @@ class InitialOutreachServiceTest {
     @Test
     fun `loads binding stock once per batch`() {
         val experts = listOf(expert("0001"), expert("0002"), expert("0003"))
-        Mockito.`when`(expertSearchService.searchExpertsWithEmail(3, ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(3, ExpertIndexLevel.CANDIDATE))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 3))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
         Mockito.`when`(senderAccountAssignmentService.loadBindingStock())
@@ -379,7 +381,7 @@ class InitialOutreachServiceTest {
     @Test
     fun `sendInitialBatch passes taskExecutionId through to txHelper`() {
         val experts = listOf(expert("0001"))
-        Mockito.`when`(expertSearchService.searchExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 1))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)))
@@ -402,6 +404,67 @@ class InitialOutreachServiceTest {
         )
     }
 
+    @Test
+    fun `sendInitialBatch last-chance gate skips non-sendable expert without contact or delivery (I3-4)`() {
+        // 模拟查询/缓存竞态：ES 查询本应排除，但非可发专家仍随结果返回 —— 最后门禁必须兜住。
+        val experts = listOf(nonSendableExpert("0001"), expert("0002"))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
+            .thenReturn(ExpertSearchResult(experts = experts, totalHits = 2))
+        Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0002")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)))
+            .thenReturn(account("chen"))
+        Mockito.`when`(senderAccountBindingService.bindingFieldsFor(eqValue("chen"), anyValue(LocalDateTime.now())))
+            .thenReturn("chen" to LocalDateTime.of(2026, 8, 10, 9, 30, 0))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("0002")), Mockito.isNull()))
+            .thenReturn(ComposedMail("0002@example.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account("chen")), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail(messageId = "msg-2", status = "SENT"))
+
+        val result = service.sendInitialBatch(campaignId = 1L, size = 2)
+
+        assertEquals(2, result.candidates)
+        assertEquals(1, result.sent)
+        assertEquals(1, result.skipped)
+        assertEquals(0, result.failed)
+        // 只有 0002 创建 contact；0001 不创建、不渲染、不投递。
+        val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository, Mockito.times(1)).save(
+            captureValue(contactCaptor, ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
+        )
+        assertEquals("0002", contactCaptor.value.orcidId)
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(
+            anyValue(account("chen")),
+            anyValue(ComposedMail("", "", ""))
+        )
+        Mockito.verify(introductionMailComposer, Mockito.times(1)).compose(
+            eqValue("chen"), anyValue(expert("0002")), Mockito.isNull()
+        )
+    }
+
+    @Test
+    fun `sendInitialBatch last-chance gate rejects null classification with zero writes (I3-1)`() {
+        val experts = listOf(nonSendableExpert("0001"))
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(1, ExpertIndexLevel.CANDIDATE))
+            .thenReturn(ExpertSearchResult(experts = experts, totalHits = 1))
+
+        val result = service.sendInitialBatch(campaignId = 1L, size = 1)
+
+        assertEquals(1, result.candidates)
+        assertEquals(0, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.skipped)
+        // 门禁在 existsByCampaignIdAndOrcidId / 选号 / 渲染 / 投递 之前拦截。
+        Mockito.verify(expertContactRepository, Mockito.never()).existsByCampaignIdAndOrcidId(Mockito.anyLong(), Mockito.anyString())
+        Mockito.verify(expertContactRepository, Mockito.never()).save(
+            anyValue(ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
+        )
+        Mockito.verify(senderAccountAssignmentService, Mockito.never()).selectAccount(
+            anyValue(expert("")), anyValue(mutableListOf()), Mockito.anyBoolean(), anyValue(SenderBindingStock.EMPTY)
+        )
+        Mockito.verifyNoInteractions(introductionMailComposer)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
     private fun expert(orcidId: String): ExpertProfile =
         ExpertProfile(
             orcidId = orcidId,
@@ -410,7 +473,24 @@ class InitialOutreachServiceTest {
             familyNames = "Family",
             country = "China",
             keyword = "keyword",
-            employment = "University"
+            employment = "University",
+            // I3-1: 默认 fixture 为可发类型；不可发场景用 nonSendableExpert() 显式构造。
+            expertClassification = sendableClassification()
+        )
+
+    private fun nonSendableExpert(orcidId: String): ExpertProfile =
+        expert(orcidId).copy(expertClassification = null)
+
+    private fun sendableClassification(): ExpertClassification =
+        ExpertClassification(
+            type = ExpertType.PRODUCTION_RND,
+            productionScore = 80,
+            researchScore = 20,
+            positiveEvidence = listOf("RND_PRODUCTION"),
+            negativeEvidence = emptyList(),
+            version = "rnd-v1-2026",
+            sourceFingerprint = "fp-0001",
+            classifiedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
         )
 
     private fun account(accountCode: String): MailSenderAccount =
