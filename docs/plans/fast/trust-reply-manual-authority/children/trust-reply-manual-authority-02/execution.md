@@ -72,7 +72,3 @@ Implementation boundary: 7989af6..78e17225f20a92f338fa2e47878b343b028d92ff
 ### Next Action
 - PLAN_CONFLICT → obtain a human decision or amend the plan (authorize the shared-mount test-file update), then re-run the required mvn command.
 
-
-## Controller finalization note (2026-08-24)
-
-Original evidence commit 5bc7c03 did not record this file (it had been committed earlier in pause commit d1ede90); the fast-p validator requires the child evidence commit to record execution.md. Approved reconstruction (user instruction '继续' following the reconstruction proposal) recreated evidence commit 5bc7c03' with this note appended. Log content otherwise unchanged; implementation report above is the complete Impl02 record.

@@ -33,6 +33,7 @@ import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
 import com.weibo.talentintroduction.llm.service.TrustReplySourceType
 import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchException
 import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchService
+import com.weibo.talentintroduction.llm.service.VerifiedTrustReplyAssembly
 import com.weibo.talentintroduction.llm.service.UnsupportedAnswerArchiveStatus
 import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexArchiveResult
 import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexService
@@ -164,8 +165,46 @@ class PendingMailOperationService(
 
         val inboundText = inboundMessageBody(record)
         val researchProfileSufficient = resolveResearchProfileSufficient(contact, inboundText)
-        val carriesQa = !qaRuleIds.isNullOrEmpty()
-        val factResolution = if (carriesQa) {
+
+        // 03 (I-1): 可信 workbench assembly 必须在任何发送副作用（suppression /
+        // prepareAndClaim / SMTP / DB 成功落库）之前完成服务端重算验证；source 必须
+        // 指向本次来信，验证失败在 claim 前稳定失败，且不烧掉 attempt（I-7）。
+        val verifiedAssembly = trustReplyAssembly?.let { assembly ->
+            if (assembly.source.sourceType != TrustReplySourceType.LIVE_INBOUND ||
+                assembly.source.sourceId != inboundProcessingId
+            ) {
+                throw ResponseStatusException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Trust reply assembly must target the current inbound"
+                )
+            }
+            try {
+                trustReplyWorkbenchService.verifyAssembly(assembly)
+                    ?: error("Trust reply assembly verification returned no result")
+            } catch (ex: TrustReplyWorkbenchException) {
+                throw ResponseStatusException(ex.status, ex.code)
+            }
+        }
+        // 03 (I-2): 有 assembly 时 canonical facts 只来自服务端重算；客户端
+        // qaRuleIds 必须与 verified canonical facts 逐元素相等（任一缺失/增加/乱序都
+        // 在 claim 前失败），绝不静默采纳客户端 ids、不回退自动推荐、不部分删减。
+        if (verifiedAssembly != null && qaRuleIds.orEmpty() != verifiedAssembly.response.canonicalFactIds) {
+            throw ResponseStatusException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "qaRuleIds must equal the server-verified canonical fact ids"
+            )
+        }
+        // 03 (阶段 2.3): carriesQa —— assembly 路径按 verified canonical 是否非空；
+        // 无 assembly 的 legacy 路径保留「客户端提交过 qaRuleIds」的既有判据。
+        val carriesQa = if (verifiedAssembly != null) {
+            verifiedAssembly.response.canonicalFactIds.isNotEmpty()
+        } else {
+            !qaRuleIds.isNullOrEmpty()
+        }
+        val factResolution = if (verifiedAssembly != null) {
+            // 03 (I-2/I-6): 无 degraded codes，canonical ids 原样进入 safety 与 SendPayload。
+            CanonicalFactResolution(verifiedAssembly.response.canonicalFactIds, emptyList())
+        } else if (carriesQa) {
             canonicalizeFactRuleIds(inboundText, qaRuleIds!!, researchProfileSufficient)
         } else {
             CanonicalFactResolution(emptyList(), emptyList())
@@ -215,14 +254,11 @@ class PendingMailOperationService(
         mailVariableService.requireValidPlaceholders(finalTextBody)
         mailVariableService.requireValidPlaceholders(finalHtmlBody)
 
-        // I-6 / I-8: 授权只能由服务端从本次请求已携带的锁定集合推导；
-        // assembly 必须指向本次来信，否则视为未授权（照抄 :573-576 的身份守卫）。
-        val operatorAuthorized = trustReplyAssembly
-            ?.takeIf {
-                it.source.sourceType == TrustReplySourceType.LIVE_INBOUND &&
-                    it.source.sourceId == inboundProcessingId
-            }
-            ?.let { trustReplyWorkbenchService.operatorAuthorizedActions(it.lockedItems) }
+        // 03 (I-5): operator action 授权只来自通过 verifyAssembly 的 locked versions
+        // （服务端重算结果），绝不再直接读取客户端 lockedItems；assembly 无效时
+        // verifiedAssembly 为 null 且发送已失败，授权集合自然为空（fail-closed）。
+        val operatorAuthorized = verifiedAssembly
+            ?.let { trustReplyWorkbenchService.operatorAuthorizedActionsFromVerifiedVersions(it.response.itemVersions) }
             .orEmpty()
 
         val findings = collectSafetyFindings(
@@ -233,7 +269,10 @@ class PendingMailOperationService(
             inboundText = inboundText,
             researchProfileSufficient = researchProfileSufficient,
             operatorAuthorizedActions = operatorAuthorized,
-            degradedFactCodes = factResolution.degradedCodes
+            degradedFactCodes = factResolution.degradedCodes,
+            // 03 (I-4): 可信 assembly 路径复用服务端已验证 selection 作为事实选择数据源，
+            // 禁止再次调用 qaFactSelectionService.select() 做语义重筛。
+            verifiedSelection = verifiedAssembly?.selection
         )
         val requiresStrong = findings.any { it.severity == SafetySeverity.STRONG }
         if (findings.isNotEmpty() && !safetyWarningConfirmed) {
@@ -354,7 +393,7 @@ class PendingMailOperationService(
                             finalTextBody = finalTextBody,
                             operatorName = operatorName,
                             outboundMailRecordId = mailRecordId,
-                            candidateAssembly = trustReplyAssembly
+                            verifiedAssembly = verifiedAssembly
                         )
                         PendingMailSendResult(
                             contactId = contactId,
@@ -426,7 +465,7 @@ class PendingMailOperationService(
                     finalTextBody = finalTextBody,
                     operatorName = operatorName,
                     outboundMailRecordId = existingRecord?.id,
-                    candidateAssembly = trustReplyAssembly
+                    verifiedAssembly = verifiedAssembly
                 )
                 PendingMailSendResult(
                     contactId = contactId,
@@ -613,23 +652,22 @@ class PendingMailOperationService(
         finalTextBody: String,
         operatorName: String?,
         outboundMailRecordId: Long?,
-        candidateAssembly: TrustReplyAssembleRequest?
+        // 03 (阶段 4): 直接复用发送前 verifyAssembly 的已验证结果；不再发送成功后
+        // 二次 assemble（避免前后两次解析漂移）。
+        verifiedAssembly: VerifiedTrustReplyAssembly?
     ): UnsupportedAnswerIndexArchiveResult {
-        if (candidateAssembly == null || outboundMailRecordId == null) {
+        if (verifiedAssembly == null || outboundMailRecordId == null) {
             return UnsupportedAnswerIndexArchiveResult()
         }
-        val operatorDirectedCount = candidateAssembly.lockedItems.count {
+        val assembled = verifiedAssembly.response
+        val operatorDirectedCount = assembled.itemVersions.count {
             it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
         }
         return try {
-            if (candidateAssembly.source.sourceType != TrustReplySourceType.LIVE_INBOUND ||
-                candidateAssembly.source.sourceId != inboundProcessingId
-            ) {
-                return failedArchive(operatorDirectedCount)
-            }
-            val assembled = trustReplyWorkbenchService.assemble(candidateAssembly)
             val rawTemplate = templateTextBody?.takeIf { it.isNotBlank() }
                 ?: return UnsupportedAnswerIndexArchiveResult()
+            // 03 (阶段 4): 仅当实际发送正文仍等于 assembly 产物时才归档 operator-directed
+            // 样本；运营编辑正文可正常发送但不归档。
             if (assembled.rawDraftText != rawTemplate || assembled.renderedDraftText != finalTextBody) {
                 return failedArchive(operatorDirectedCount)
             }
@@ -637,7 +675,7 @@ class PendingMailOperationService(
             if (eligibleVersions.isEmpty()) {
                 return UnsupportedAnswerIndexArchiveResult()
             }
-            val resolved = trustReplyWorkbenchService.resolveSource(candidateAssembly.source)
+            val resolved = trustReplyWorkbenchService.resolveSource(assembled.source)
             unsupportedAnswerIndexService.archiveLiveCanonicalVersions(
                 source = resolved,
                 versions = eligibleVersions,
@@ -658,7 +696,7 @@ class PendingMailOperationService(
                 inboundProcessingId,
                 error.javaClass.simpleName
             )
-            failedArchive(operatorDirectedCount.coerceAtLeast(eligibleFailureCount(candidateAssembly)))
+            failedArchive(operatorDirectedCount.coerceAtLeast(eligibleFailureCount(verifiedAssembly)))
         }
     }
 
@@ -668,8 +706,8 @@ class PendingMailOperationService(
             failedCount = failedCount.coerceAtLeast(1)
         )
 
-    private fun eligibleFailureCount(candidateAssembly: TrustReplyAssembleRequest): Int =
-        candidateAssembly.lockedItems.count {
+    private fun eligibleFailureCount(verifiedAssembly: VerifiedTrustReplyAssembly): Int =
+        verifiedAssembly.response.itemVersions.count {
             it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
         }.coerceAtLeast(1)
 
@@ -756,7 +794,11 @@ class PendingMailOperationService(
         operatorAuthorizedActions: Set<AiReplyAction>,
         // 计划 04 (T2.4): 发送路径显式 QA 选择被降级时产生的诊断码（默认空，预检不传——
         // 预检已有 AI_REPLY_PREFLIGHT_SOURCE_CHANGED，不重复报，N-6）。
-        degradedFactCodes: List<String> = emptyList()
+        degradedFactCodes: List<String> = emptyList(),
+        // 03 (I-4): 可信 assembly 路径复用服务端已验证 selection（非 null 时禁止再次
+        // 调用 qaFactSelectionService.select()）；legacy 路径保持 null 与既有 strict
+        // select 行为逐字一致。
+        verifiedSelection: ResolvedQaRules? = null
     ): List<SafetyFinding> {
         val findings = mutableListOf<SafetyFinding>()
         fun add(code: String, sentence: String? = null) {
@@ -801,7 +843,7 @@ class PendingMailOperationService(
             add(AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC)
         }
 
-        val selection = if (canonicalFactIds.isNotEmpty()) {
+        val selection = verifiedSelection ?: if (canonicalFactIds.isNotEmpty()) {
             qaFactSelectionService.select(inboundText, canonicalFactIds, researchProfileSufficient)
         } else {
             qaFactSelectionService.select(inboundText, null, researchProfileSufficient)

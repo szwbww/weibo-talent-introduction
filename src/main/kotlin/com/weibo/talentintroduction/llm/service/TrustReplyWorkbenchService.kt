@@ -364,6 +364,16 @@ data class TrustReplyAssembleResponse(
     val frameSnapshot: TrustReplyFrameSnapshot? = null
 )
 
+/**
+ * 03 (I-1/I-5): 服务端可信 assembly 验证结果 —— response 提供 canonical fact ids
+ * 与已验证的 item versions；selection 是内部权威事实选择，供发送期 safety 直接复用，
+ * 避免发送服务二次调用 select() 或自行重写解析器。仅 JVM 内部使用，不新增 HTTP 字段。
+ */
+internal data class VerifiedTrustReplyAssembly(
+    val response: TrustReplyAssembleResponse,
+    val selection: ResolvedQaRules
+)
+
 open class TrustReplyWorkbenchException(
     val status: HttpStatus,
     val code: String
@@ -406,7 +416,21 @@ class TrustReplyWorkbenchService(
      * 调用方行为与改动前逐字一致。
      */
     fun operatorAuthorizedActions(lockedItems: List<TrustReplyLockedItemRequest>): Set<AiReplyAction> =
-        lockedItems
+        collectOperatorAuthorizedActions(lockedItems.map { it.toActionSource() })
+
+    /**
+     * 03 (I-5): 从通过 verifyAssembly 的已验证 item versions 推导「运营已批准的动作
+     * 类型」。发送路径只允许使用本入口（来自服务端重算结果），不得直接读取客户端
+     * lockedItems；判据与 lockedItems 重载逐字一致（handling + 非空说明 + 正文实际
+     * 出现过的动作），已验证 versions 为空时返回空集（fail-closed）。
+     * internal：仅发送服务与 04 诊断使用，不扩大公开 API。
+     */
+    internal fun operatorAuthorizedActionsFromVerifiedVersions(
+        versions: List<TrustReplyItemVersion>
+    ): Set<AiReplyAction> = collectOperatorAuthorizedActions(versions.map { it.toActionSource() })
+
+    private fun collectOperatorAuthorizedActions(sources: List<TrustReplyOperatorActionSource>): Set<AiReplyAction> =
+        sources
             .asSequence()
             .filter {
                 (it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT ||
@@ -415,6 +439,24 @@ class TrustReplyWorkbenchService(
             }
             .flatMap { AiReplyActionPolicy.detectActions(it.answerText).asSequence() }
             .toSet()
+
+    private data class TrustReplyOperatorActionSource(
+        val handling: TrustReplyItemHandling,
+        val operatorInstruction: String,
+        val answerText: String
+    )
+
+    private fun TrustReplyLockedItemRequest.toActionSource() = TrustReplyOperatorActionSource(
+        handling = handling,
+        operatorInstruction = operatorInstruction,
+        answerText = answerText
+    )
+
+    private fun TrustReplyItemVersion.toActionSource() = TrustReplyOperatorActionSource(
+        handling = handling,
+        operatorInstruction = operatorInstruction,
+        answerText = answerText
+    )
 
     /**
      * I-8: 预检侧入口——没有 assembly 请求时，从持久化快照读回锁定项。
@@ -1209,7 +1251,16 @@ class TrustReplyWorkbenchService(
         )
     }
 
-    fun assemble(request: TrustReplyAssembleRequest): TrustReplyAssembleResponse {
+    fun assemble(request: TrustReplyAssembleRequest): TrustReplyAssembleResponse =
+        verifyAssembly(request).response
+
+    /**
+     * 03 (I-1): 权威重算验证。公开 assemble 复用本方法 —— response 与 selection
+     * 由同一次执行产生，禁止调用方「先 assemble 再另行 resolve selection」。
+     * internal：返回类型 VerifiedTrustReplyAssembly 仅 JVM 模块内使用（发送服务、
+     * 04 诊断），不新增 HTTP 字段。
+     */
+    internal fun verifyAssembly(request: TrustReplyAssembleRequest): VerifiedTrustReplyAssembly {
         val resolved = resolveSource(request.source)
         requireCurrentSourceVersion(request.expectedSourceVersion, resolved.sourceVersion)
         val resolvedSelection = resolveCanonicalSelection(
@@ -1291,24 +1342,27 @@ class TrustReplyWorkbenchService(
             contact = resolved.contact,
             senderAccountCode = resolved.senderAccountCode
         )
-        return TrustReplyAssembleResponse(
-            source = resolved.source,
-            sourceVersion = resolved.sourceVersion,
-            evidenceSetVersion = resolvedSelection.evidenceSetVersion,
-            rawDraftText = raw,
-            renderedDraftText = preview.renderedText,
-            draftHash = AiReplyDraftService.sha256Hex(raw),
-            // 计划 02 (I-7): canonical audit 来自选择（人工矩阵有序 union），
-            // 不随 verbatim/operator/ack/omit 等文案形态变化而丢失。
-            canonicalFactIds = selection.sendQaRuleIds,
-            itemVersions = versions,
-            contextVersion = resolved.contextVersion,
-            requestedFactIds = selection.sendQaRuleIds,
-            requestFactSelections = resolvedSelection.requestFactSelections,
-            frameSnapshot = TrustReplyFrameSnapshot(
-                selection = resolvedFrame.selection.toTrustReplyFrameSelection(),
-                version = resolvedFrame.version
-            )
+        return VerifiedTrustReplyAssembly(
+            response = TrustReplyAssembleResponse(
+                source = resolved.source,
+                sourceVersion = resolved.sourceVersion,
+                evidenceSetVersion = resolvedSelection.evidenceSetVersion,
+                rawDraftText = raw,
+                renderedDraftText = preview.renderedText,
+                draftHash = AiReplyDraftService.sha256Hex(raw),
+                // 计划 02 (I-7): canonical audit 来自选择（人工矩阵有序 union），
+                // 不随 verbatim/operator/ack/omit 等文案形态变化而丢失。
+                canonicalFactIds = selection.sendQaRuleIds,
+                itemVersions = versions,
+                contextVersion = resolved.contextVersion,
+                requestedFactIds = selection.sendQaRuleIds,
+                requestFactSelections = resolvedSelection.requestFactSelections,
+                frameSnapshot = TrustReplyFrameSnapshot(
+                    selection = resolvedFrame.selection.toTrustReplyFrameSelection(),
+                    version = resolvedFrame.version
+                )
+            ),
+            selection = selection
         )
     }
 

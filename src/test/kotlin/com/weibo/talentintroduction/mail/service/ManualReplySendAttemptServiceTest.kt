@@ -195,6 +195,42 @@ class ManualReplySendAttemptServiceTest {
         assertEquals(500L, mailRecordId)
     }
 
+    // 03 (I-6): mail_record_qa_rule 按 SendPayload.canonicalQaRuleIds 的 ordinal
+    // 逐元素精确写入 —— 与 verified canonical facts 完全一致，无自动推荐事实、
+    // 无漏项、无重复键（canonical union 已在 assembly selection 侧去重）。
+    @Test
+    fun `finalizeSuccess writes QA associations in exact payload ordinal order`() {
+        val orderedPayload = payload.copy(canonicalQaRuleIds = listOf(10L, 20L, 30L))
+        val attempt = createAttempt(
+            MailSendAttemptStatus.DELIVERY_IN_PROGRESS,
+            service.computeFingerprint(orderedPayload)
+        )
+        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+            .thenAnswer { it.getArgument<MailRecord>(0).copy(id = 500L) }
+
+        val mailRecordId = service.finalizeSuccess(orderedPayload, 1L, "<manual-rich-abc@weibo.com>")
+
+        assertEquals(500L, mailRecordId)
+        val order = Mockito.inOrder(mailRecordQaRuleRepository)
+        order.verify(mailRecordQaRuleRepository).save(
+            com.weibo.talentintroduction.mail.domain.MailRecordQaRule(
+                mailRecordId = 500L, qaRuleId = 10L, ordinal = 0
+            )
+        )
+        order.verify(mailRecordQaRuleRepository).save(
+            com.weibo.talentintroduction.mail.domain.MailRecordQaRule(
+                mailRecordId = 500L, qaRuleId = 20L, ordinal = 1
+            )
+        )
+        order.verify(mailRecordQaRuleRepository).save(
+            com.weibo.talentintroduction.mail.domain.MailRecordQaRule(
+                mailRecordId = 500L, qaRuleId = 30L, ordinal = 2
+            )
+        )
+    }
+
     @Test
     fun `finalizeFailure creates failed mail record with error summary`() {
         val attempt = createAttempt(MailSendAttemptStatus.DELIVERY_IN_PROGRESS, service.computeFingerprint(payload))
