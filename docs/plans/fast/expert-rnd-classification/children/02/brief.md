@@ -17,7 +17,7 @@
 6. Serial writer rule (master plan): shared files across children must be modified by one writer at a time; child 02 is the sole writer now. Child 04 appends to `docs/runbooks/expert-classification-backfill.md` later — do not pre-write its section.
 7. Do not review or implement later children (03/04). Do not repair unrelated behavior. Skip formatters/linters and project-wide suites beyond the required commands.
 
-## Authorized files (10; modify nothing else)
+## Authorized files (11; modify nothing else)
 
 1. src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt (T1)
 2. src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillService.kt (NEW, T2)
@@ -29,6 +29,7 @@
 8. src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminControllerTest.kt (NEW, T3)
 9. src/test/kotlin/com/weibo/talentintroduction/task/domain/TaskTypeCatalogTest.kt (NEW, T4)
 10. docs/runbooks/expert-classification-backfill.md (NEW, T5)
+11. src/test/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractorTest.kt (A2: three catalog inventory-lock pins — hasProgressUi whitelist 6→7, audited task-type set 17→18, total count 17→18; all three add exactly EXPERT_CLASSIFICATION_BACKFILL)
 
 ## Required commands (run all; from plan 验收标准 + master plan)
 
@@ -51,3 +52,7 @@
 
 Read the committed plan file: docs/plans/2026-08-24/02-expert-rnd-classification-backfill.md
 Follow its 需求描述 / 关键不变量 I2-1..I2-6 / 现状审计 / 实现方案 T1-T5 / 变更文件清单 / 验收标准 exactly. Request field defaults, scan filters, endpoint contract, catalog values, and the 11-section runbook outline are normative.
+
+## Amendment A2 (approved 2026-08-24, epoch 2)
+
+Authorized the catalog inventory-lock pin sync above (file 11): `TaskExecutionSummaryExtractorTest.kt` — hasProgressUi whitelist 6→7 (+`EXPERT_CLASSIFICATION_BACKFILL`), audited task-type set 17→18 (+`EXPERT_CLASSIFICATION_BACKFILL`), `entries.size` 17→18. Zero assertion-semantics change. Epoch 1 implementation commit 9d1d9f8 stays; the remaining work is exactly this sync plus a green full regression.
