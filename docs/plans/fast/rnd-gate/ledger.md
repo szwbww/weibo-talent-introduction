@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-08-25/00-rnd-gate-master.md
 
-- Status: PAUSED_FOR_HUMAN
+- Status: RUNNING
 - Master plan: docs/plans/2026-08-25/00-rnd-gate-master.md (commit 2b80a92)
-- Amendments: N/A
+- Amendments: A1
 - Master base: f2935072c819a9167e75220a6a959b0769462fde
 - Branch: fast/rnd-gate
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-rnd-gate
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-26T00:00:00Z
 - Current child: 01-expert-list-type-filter
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Implementer PLAN_CONFLICT: child 01's mandatory (authorized) Task 1-3 edits shift three line-pinned NoiseSite exclusions in unlisted src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt (ExpertIndexController.kt 90->91, 431->436; ExpertSearchService.kt 498->542), so plan-mandated `mvn test` exit 0 is unsatisfiable inside the authorized file set. Verified: base tree guard test passes; failing tree fails only this test (implementer stash experiment + controller re-run). Amendment required: authorize line-number-only maintenance of OperatorStatusWriteSeamGuardTest.kt in child 01.
-- Resume from: N/A (pending human amendment approval)
+- Pause reason: N/A
+- Resume from: 1ef8c0f (pause evidence; resumed epoch 2 after amendment A1)
 
 ## Baseline
 
@@ -25,7 +25,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 01-expert-list-type-filter | docs/plans/2026-08-25/01-expert-list-type-filter.md | commit:2b80a92 | none | 1 | PAUSED_FOR_HUMAN | f2935072c819a9167e75220a6a959b0769462fde | N/A | 0 | — | N/A | N/A | First child; product base = master base. Implementer finished code, uncommitted; full suite fails only on guard test line pins |
+| 01-expert-list-type-filter | docs/plans/2026-08-25/01-expert-list-type-filter.md | commit:0232a4f | none | 2 | PENDING | f2935072c819a9167e75220a6a959b0769462fde | N/A | 0 | — | N/A | N/A | First child; product base = master base. Epoch 1 impl present uncommitted (plan conflict, A1); resumed epoch 2 |
 | 02-batch-send-type-filter | docs/plans/2026-08-25/02-batch-send-type-filter.md | commit:2b80a92 | 01-expert-list-type-filter | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | Consumes 01's expertTypesFilter/ALLOWED_EXPERT_TYPES |
 | 03-promotion-classification-gate | docs/plans/2026-08-25/03-promotion-classification-gate.md | commit:2b80a92 | none | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | Independent; ordered after 02 per master |
 | 04-discovery-subject-scope | docs/plans/2026-08-25/04-discovery-subject-scope.md | commit:2b80a92 | none | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | Independent; ordered after 03 per master |
@@ -33,3 +33,4 @@
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-08-25/01-expert-list-type-filter.md | commit:2b80a92 | commit:0232a4f | 主计划「验证命令/通过判据」回归门禁（mvn test 退出码 0） | Task 1-3 强制编辑推移守卫测试钉死的噪声行号，授权文件集内无法同时满足穷举清单与全量测试绿 | HUMAN:ask 2026-08-25T23:54:59Z "Approve A1, resume child 01" |

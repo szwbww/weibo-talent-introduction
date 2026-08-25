@@ -265,6 +265,9 @@
 | 4 | `src/main/resources/static/app.js` | 取值函数 + chip 事件 + 3 处注册点 + 列表行 chip |
 | 5 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt` | 新增 filter 构造测试 |
 | 6 | `src/test/js/expertTypeFilter.test.js` | 新增前端行为测试 |
+| 7 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | **A1 授权（fast-p 2026-08-26，见 ledger）**：仅更新 3 处行号钉死的 `EXCLUDED_NOISE_SITES` 条目（`ExpertIndexController.kt` 90→91、431→436；`ExpertSearchService.kt` 498→542），context 子串逐字不变；不得改动白名单、规则或其它任何内容 |
+
+> A1（2026-08-26，HUMAN 批准）：本计划 Task 1-3 的强制编辑会推移守卫测试钉死的噪声行号，导致计划要求的 `mvn test` 退出码 0 在授权文件集内不可达。按守卫测试自身注释记载的维护契约（「A1 授权行号修正」先例）与主计划「验证命令/通过判据」回归门禁，授权上表第 7 行的行号-only 维护。
 
 合计 6 个文件，2 个子系统（后端查询/接口、前端列表），符合范围上限。
 
