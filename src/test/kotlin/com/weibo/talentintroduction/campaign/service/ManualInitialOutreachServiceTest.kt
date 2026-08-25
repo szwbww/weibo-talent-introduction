@@ -19,6 +19,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.ExpertType
+import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.mail.domain.MailRecord
@@ -3855,15 +3856,31 @@ class ManualInitialOutreachServiceTest {
             expert("0006", "f@b.com").copy(expertClassification = classification(ExpertType.UNKNOWN)),
             expert("0007", "g@b.com").copy(expertClassification = null)
         )
-        // 内存谓词 expertClassification?.sendable == true 与 ES term 命中语义逐 profile 一致。
+        // 内存谓词与 ES 的 sendable + current-policy-version 组合门禁逐 profile 一致。
         profiles.forEach { profile ->
-            val esTermMatches = profile.expertClassification?.sendable == true
+            val classification = profile.expertClassification
+            val esTermMatches = classification?.sendable == true &&
+                classification.version == ExpertClassificationService.VERSION
             assertEquals(
                 esTermMatches,
                 scope.matchesExpert(profile),
                 "memory/ES parity mismatch for ${profile.orcidId}"
             )
         }
+    }
+
+    @Test
+    fun `matchesExpert rejects sendable classification from a stale policy version`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null
+        )
+        val stale = classification(ExpertType.PRODUCTION_RND).copy(version = "rnd-v1-2026")
+
+        assertFalse(
+            scope.matchesExpert(expert("0001", "a@b.com").copy(expertClassification = stale))
+        )
     }
 
     @Test
@@ -4027,7 +4044,7 @@ class ManualInitialOutreachServiceTest {
             researchScore = 20,
             positiveEvidence = listOf("RND_PRODUCTION"),
             negativeEvidence = emptyList(),
-            version = "rnd-v1-2026",
+            version = ExpertClassificationService.VERSION,
             sourceFingerprint = "fp-0001",
             classifiedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
         )
@@ -4039,7 +4056,7 @@ class ManualInitialOutreachServiceTest {
             researchScore = if (type in ExpertClassification.SENDABLE_TYPES) 60 else 0,
             positiveEvidence = listOf("EVIDENCE"),
             negativeEvidence = if (type in ExpertClassification.SENDABLE_TYPES) emptyList() else listOf("NOT_SENDABLE"),
-            version = "rnd-v1-2026",
+            version = ExpertClassificationService.VERSION,
             sourceFingerprint = "fp-$type",
             classifiedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
         )

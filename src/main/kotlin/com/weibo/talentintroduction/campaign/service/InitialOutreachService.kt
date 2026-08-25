@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
@@ -38,8 +39,9 @@ class InitialOutreachService(
 
         experts.forEachIndexed { index, expert ->
             // I3-1/I3-4：发送前最后门禁 —— 查询/缓存/未来重构错误可能绕过硬门禁，创建 contact 前再次检查。
-            // null/false 均拒绝，计 skipped，不创建 contact、不渲染、不投递。
-            if (expert.expertClassification?.sendable != true) {
+            // null/false/旧策略版本均拒绝，计 skipped，不创建 contact、不渲染、不投递。
+            val classification = expert.expertClassification
+            if (classification?.sendable != true || classification.version != ExpertClassificationService.VERSION) {
                 skipped += 1
                 return@forEachIndexed
             }

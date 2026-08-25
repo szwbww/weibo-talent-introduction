@@ -15,6 +15,7 @@ import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepositor
 import com.weibo.talentintroduction.config.ManualOutreachProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
@@ -602,9 +603,10 @@ class ManualInitialOutreachService(
                 val normOrcid = normalizeOrcid(expert.orcidId)
 
                 // I3-4：INTRODUCTION 最后门禁 —— 取回 profile 后、邮箱/账号/contact 处理前再次检查。
-                // 查询/缓存/未来重构错误可绕过硬门禁；null/false 均拒绝，记录 EXPERT_NOT_SENDABLE，
+                // 查询/缓存/未来重构错误可绕过硬门禁；null/false/旧策略版本均拒绝，记录 EXPERT_NOT_SENDABLE，
                 // 不创建 contact、不选账号、不渲染、不投递（I3-1）。
-                if (expert.expertClassification?.sendable != true) {
+                val classification = expert.expertClassification
+                if (classification?.sendable != true || classification.version != ExpertClassificationService.VERSION) {
                     accumulator.recordSkipped(
                         BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE,
                         "专家非生产/科研可发类型：${expert.orcidId}"

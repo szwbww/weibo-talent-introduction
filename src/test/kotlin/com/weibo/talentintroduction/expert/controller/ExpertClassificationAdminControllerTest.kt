@@ -80,23 +80,23 @@ class ExpertClassificationAdminControllerTest {
         )
 
     private fun validDryRunBody() =
-        """{"level":"CANDIDATE","mode":"DRY_RUN","version":"rnd-v1-2026","batchSize":500,"delayMs":250}"""
+        """{"level":"CANDIDATE","mode":"DRY_RUN","version":"rnd-v2-2026","batchSize":500,"delayMs":250}"""
 
     private fun validDryRunRequest() = ExpertClassificationBackfillRequest(
         level = ExpertIndexLevel.CANDIDATE,
         mode = BackfillMode.DRY_RUN,
-        version = "rnd-v1-2026",
+        version = "rnd-v2-2026",
         batchSize = 500,
         delayMs = 250
     )
 
-    private fun executeBody(confirmation: String? = "EXECUTE_CANDIDATE:rnd-v1-2026") =
-        """{"level":"CANDIDATE","mode":"EXECUTE","version":"rnd-v1-2026","batchSize":500,"delayMs":250,"confirmation":${if (confirmation == null) "null" else "\"$confirmation\""}}"""
+    private fun executeBody(confirmation: String? = "EXECUTE_CANDIDATE:rnd-v2-2026") =
+        """{"level":"CANDIDATE","mode":"EXECUTE","version":"rnd-v2-2026","batchSize":500,"delayMs":250,"confirmation":${if (confirmation == null) "null" else "\"$confirmation\""}}"""
 
     private fun result() = ExpertClassificationBackfillResult(
         level = ExpertIndexLevel.CANDIDATE,
         mode = BackfillMode.DRY_RUN,
-        policyVersion = "rnd-v1-2026",
+        policyVersion = "rnd-v2-2026",
         scanned = 3,
         classifiedByType = ExpertType.values().associate { it.name to 0L } + mapOf(ExpertType.PRODUCTION_RND.name to 1L),
         sendable = 1,
@@ -303,7 +303,7 @@ class ExpertClassificationAdminControllerTest {
                 .content("""{"level":"CANDIDATE","mode":"DRY_RUN","version":"rnd-v2"}""")
         )
             .andExpect(status().isBadRequest)
-            .andExpect(jsonPath("$.message").value("version 只允许 rnd-v1-2026"))
+            .andExpect(jsonPath("$.message").value("version 只允许 rnd-v2-2026"))
 
         mockMvc.perform(
             post("/api/expert-classification/backfill")
@@ -312,22 +312,22 @@ class ExpertClassificationAdminControllerTest {
                 .content(executeBody(confirmation = null))
         )
             .andExpect(status().isBadRequest)
-            .andExpect(jsonPath("$.message").value("EXECUTE 需要 confirmation = EXECUTE_CANDIDATE:rnd-v1-2026"))
+            .andExpect(jsonPath("$.message").value("EXECUTE 需要 confirmation = EXECUTE_CANDIDATE:rnd-v2-2026"))
 
         mockMvc.perform(
             post("/api/expert-classification/backfill")
                 .session(authorizedSession())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(executeBody(confirmation = "EXECUTE_RAW:rnd-v1-2026"))
+                .content(executeBody(confirmation = "EXECUTE_RAW:rnd-v2-2026"))
         )
             .andExpect(status().isBadRequest)
-            .andExpect(jsonPath("$.message").value("EXECUTE 需要 confirmation = EXECUTE_CANDIDATE:rnd-v1-2026"))
+            .andExpect(jsonPath("$.message").value("EXECUTE 需要 confirmation = EXECUTE_CANDIDATE:rnd-v2-2026"))
 
         mockMvc.perform(
             post("/api/expert-classification/backfill")
                 .session(authorizedSession())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"level":"CANDIDATE","mode":"DRY_RUN","version":"rnd-v1-2026","batchSize":50}""")
+                .content("""{"level":"CANDIDATE","mode":"DRY_RUN","version":"rnd-v2-2026","batchSize":50}""")
         )
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.message").value("batchSize 必须在 100..1000"))
@@ -336,7 +336,7 @@ class ExpertClassificationAdminControllerTest {
             post("/api/expert-classification/backfill")
                 .session(authorizedSession())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"level":"CANDIDATE","mode":"DRY_RUN","version":"rnd-v1-2026","maxDocs":0}""")
+                .content("""{"level":"CANDIDATE","mode":"DRY_RUN","version":"rnd-v2-2026","maxDocs":0}""")
         )
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.message").value("maxDocs 必须是正整数"))
@@ -353,7 +353,7 @@ class ExpertClassificationAdminControllerTest {
             post("/api/expert-classification/backfill")
                 .session(authorizedSession())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"level":"RAW","mode":"EXECUTE","version":"rnd-v1-2026","confirmation":"EXECUTE_RAW:rnd-v1-2026"}""")
+                .content("""{"level":"RAW","mode":"EXECUTE","version":"rnd-v2-2026","confirmation":"EXECUTE_RAW:rnd-v2-2026"}""")
         )
             .andExpect(status().isAccepted)
             .andExpect(jsonPath("$.taskType").value("EXPERT_CLASSIFICATION_BACKFILL"))

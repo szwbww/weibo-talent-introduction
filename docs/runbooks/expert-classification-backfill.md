@@ -1,7 +1,9 @@
 # 专家研发类型分类回填线上执行手册
 
 > 对应计划：`docs/plans/2026-08-24/02-expert-rnd-classification-backfill.md`（子计划 02）
-> 政策版本：`rnd-v1-2026`（分类只由 `ExpertClassificationService` 计算，M-2）
+> 政策版本：`rnd-v2-2026`（分类只由 `ExpertClassificationService` 计算，M-2）
+
+> 本次为规则修复版本：已有 `rnd-v1-2026` 分类会被 `onlyPending=true` 识别为版本不符并重新分类；不得继续使用 v1 的确认串。
 > 任务类型：`EXPERT_CLASSIFICATION_BACKFILL`
 > 前置：子计划 01（分类领域对象 + ES mapping）已发布。
 
@@ -134,7 +136,7 @@ curl -sS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
   -d '{
         "level":"CANDIDATE",
         "mode":"DRY_RUN",
-        "version":"rnd-v1-2026",
+        "version":"rnd-v2-2026",
         "batchSize":500,
         "delayMs":250,
         "onlyPending":false
@@ -183,7 +185,7 @@ done
 
 ## 6. CANDIDATE 正式回填（EXECUTE）
 
-确认串必须**精确**等于 `EXECUTE_CANDIDATE:rnd-v1-2026`（I2-3），只回填仍缺分类/版本不符的文档
+确认串必须**精确**等于 `EXECUTE_CANDIDATE:rnd-v2-2026`（I2-3），只回填仍缺分类/版本不符的文档
 （`onlyPending=true`，I2-4）：
 
 ```bash
@@ -191,11 +193,11 @@ curl -sS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
   -d '{
         "level":"CANDIDATE",
         "mode":"EXECUTE",
-        "version":"rnd-v1-2026",
+        "version":"rnd-v2-2026",
         "batchSize":500,
         "delayMs":250,
         "onlyPending":true,
-        "confirmation":"EXECUTE_CANDIDATE:rnd-v1-2026"
+        "confirmation":"EXECUTE_CANDIDATE:rnd-v2-2026"
       }' \
   "$BASE_URL/expert-classification/backfill" | python3 -m json.tool
 ```
@@ -228,7 +230,7 @@ curl -sS -b "$COOKIE_JAR" -X POST "$BASE_URL/task-progress/EXPERT_CLASSIFICATION
 ## 7. APPLICATION 层
 
 数量虽小，仍走与 CANDIDATE 完全相同的步骤：先 DRY_RUN（`level:"APPLICATION"`，`onlyPending:false`），
-核对比例后 EXECUTE（`confirmation:"EXECUTE_APPLICATION:rnd-v1-2026"`，`onlyPending:true`）。
+核对比例后 EXECUTE（`confirmation:"EXECUTE_APPLICATION:rnd-v2-2026"`，`onlyPending:true`）。
 停止条件同第 4/6 步。
 
 ---
@@ -268,16 +270,16 @@ discovery / enrichment 并跑**（会互相放大 ES 压力）。
 ```bash
 # ① 小样本 DRY_RUN：maxDocs=10000
 curl -sS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
-  -d '{"level":"RAW","mode":"DRY_RUN","version":"rnd-v1-2026","batchSize":500,"delayMs":250,"maxDocs":10000,"onlyPending":true}' \
+  -d '{"level":"RAW","mode":"DRY_RUN","version":"rnd-v2-2026","batchSize":500,"delayMs":250,"maxDocs":10000,"onlyPending":true}' \
   "$BASE_URL/expert-classification/backfill" | python3 -m json.tool
 # 轮询结束后核对统计（同第 4 步）
 # ② 全量 DRY_RUN（onlyPending=true 即可，无需 force）
 curl -sS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
-  -d '{"level":"RAW","mode":"DRY_RUN","version":"rnd-v1-2026","batchSize":500,"delayMs":250,"onlyPending":true}' \
+  -d '{"level":"RAW","mode":"DRY_RUN","version":"rnd-v2-2026","batchSize":500,"delayMs":250,"onlyPending":true}' \
   "$BASE_URL/expert-classification/backfill" | python3 -m json.tool
-# ③ EXECUTE（确认串精确：EXECUTE_RAW:rnd-v1-2026）
+# ③ EXECUTE（确认串精确：EXECUTE_RAW:rnd-v2-2026）
 curl -sS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
-  -d '{"level":"RAW","mode":"EXECUTE","version":"rnd-v1-2026","batchSize":500,"delayMs":250,"onlyPending":true,"confirmation":"EXECUTE_RAW:rnd-v1-2026"}' \
+  -d '{"level":"RAW","mode":"EXECUTE","version":"rnd-v2-2026","batchSize":500,"delayMs":250,"onlyPending":true,"confirmation":"EXECUTE_RAW:rnd-v2-2026"}' \
   "$BASE_URL/expert-classification/backfill" | python3 -m json.tool
 ```
 
@@ -304,7 +306,7 @@ curl -sS -b "$COOKIE_JAR" -H 'Content-Type: application/json' \
 | 项 | 值 |
 |---|---|
 | task execution id | `/executions` 返回的 `executionId` |
-| policy version | `rnd-v1-2026` |
+| policy version | `rnd-v2-2026` |
 | 各层 doc count（回填前后） | RAW / CANDIDATE / APPLICATION |
 | 各层 `sendable=true` 计数 | 回填完成后 |
 | 失败/重跑次数 | 每次 `PARTIAL_SUCCESS`/`FAILED` 及重跑记录 |

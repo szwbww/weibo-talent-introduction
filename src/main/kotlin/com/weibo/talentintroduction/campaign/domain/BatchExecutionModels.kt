@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.campaign.domain
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.service.BatchSendType
+import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import java.time.LocalDateTime
 
 /** Immutable launch snapshot consumed once per execution (I-1). */
@@ -59,10 +60,13 @@ data class RecipientScope(
     val gateEsFields: List<String> = emptyList()
 ) {
     fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
-        // I3-1/I3-2：INTRODUCTION 内存 sendable 门禁 —— null/false 都拒绝（fail closed），
+        // I3-1/I3-2：INTRODUCTION 内存门禁 —— null/false/旧策略版本都拒绝（fail closed），
         // 与 ES 的 expertSendableFilter() 同口径；仅在 mailType=INTRODUCTION 应用，
         // MATERIAL_REMINDER 零影响（I3-5）。
-        if (mailType == BatchSendType.INTRODUCTION.name && profile.expertClassification?.sendable != true) return false
+        val classification = profile.expertClassification
+        if (mailType == BatchSendType.INTRODUCTION.name &&
+            (classification?.sendable != true || classification.version != ExpertClassificationService.VERSION)
+        ) return false
         // I3a-5：与 ES 的 operatorStatusesFilter 同口径 —— 多状态取 OR；
         // NOT_CONTACTED = ES 文档无该字段（I3a-1）；空集合不判定（I3a-3）。
         if (operatorStatuses.isNotEmpty()) {

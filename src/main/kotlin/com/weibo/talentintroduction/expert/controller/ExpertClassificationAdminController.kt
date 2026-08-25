@@ -144,7 +144,7 @@ class ExpertClassificationAdminController(
             ))
     }
 
-    /** I2-3：level/mode/version 显式必填、version 只允许 rnd-v1-2026、EXECUTE 精确确认串。 */
+    /** I2-3：level/mode/version 显式必填、version 只允许 rnd-v2-2026、EXECUTE 精确确认串。 */
     private fun validationError(request: ExpertClassificationBackfillRequest): String? {
         val level = request.level ?: return "level 必填: RAW | CANDIDATE | APPLICATION"
         val mode = request.mode ?: return "mode 必填: DRY_RUN | EXECUTE"

@@ -488,7 +488,7 @@ class InitialOutreachServiceTest {
             researchScore = 20,
             positiveEvidence = listOf("RND_PRODUCTION"),
             negativeEvidence = emptyList(),
-            version = "rnd-v1-2026",
+            version = "rnd-v2-2026",
             sourceFingerprint = "fp-0001",
             classifiedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
         )

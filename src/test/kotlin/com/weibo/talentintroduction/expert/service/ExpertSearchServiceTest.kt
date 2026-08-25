@@ -1948,9 +1948,16 @@ class ExpertSearchServiceTest {
     // ──── I3: INTRODUCTION sendable gate (child 03) ──────────────────────────
 
     @Test
-    fun `expertSendableFilter returns exactly the sendable term (I3-2)`() {
+    fun `expertSendableFilter requires sendable and current policy version (I3-2)`() {
         assertEquals(
-            mapOf("term" to mapOf("expertClassification.sendable" to true)),
+            mapOf(
+                "bool" to mapOf(
+                    "filter" to listOf(
+                        mapOf("term" to mapOf("expertClassification.sendable" to true)),
+                        mapOf("term" to mapOf("expertClassification.version" to ExpertClassificationService.VERSION))
+                    )
+                )
+            ),
             ExpertSearchService.expertSendableFilter()
         )
     }
@@ -2009,11 +2016,11 @@ class ExpertSearchServiceTest {
         val query = request["query"] as Map<*, *>
         val bool = query["bool"] as Map<*, *>
         val filter = bool["filter"] as List<*>
-        assertEquals(2, filter.size, "sendable query must carry exactly exists email + sendable term")
+        assertEquals(2, filter.size, "sendable query must carry exactly exists email + current-policy sendable gate")
         assertTrue(filter.toString().contains("exists") && filter.toString().contains("email"))
         assertEquals(
-            mapOf("term" to mapOf("expertClassification.sendable" to true)),
-            filter.firstOrNull { item -> (item as Map<*, *>).containsKey("term") }
+            ExpertSearchService.expertSendableFilter(),
+            filter.firstOrNull { item -> item == ExpertSearchService.expertSendableFilter() }
         )
         // I3-2: 查询仍按现有层级排序 —— CANDIDATE 使用 candidateValidatedAt。
         val sort = request["sort"] as List<*>
@@ -2053,8 +2060,8 @@ class ExpertSearchServiceTest {
         val request = entityCaptor.value.body as Map<*, *>
         val filter = ((request["query"] as Map<*, *>)["bool"] as Map<*, *>)["filter"] as List<*>
         assertEquals(
-            mapOf("term" to mapOf("expertClassification.sendable" to true)),
-            filter.firstOrNull { item -> (item as Map<*, *>).containsKey("term") }
+            ExpertSearchService.expertSendableFilter(),
+            filter.firstOrNull { item -> item == ExpertSearchService.expertSendableFilter() }
         )
         val sort = request["sort"] as List<*>
         assertTrue(sort.toString().contains("applicationPromotedAt"), "APPLICATION sort must be applicationPromotedAt: $sort")

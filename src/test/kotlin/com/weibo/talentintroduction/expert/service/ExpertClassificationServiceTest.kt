@@ -152,6 +152,29 @@ class ExpertClassificationServiceTest {
     }
 
     @Test
+    fun `clinical specialty affiliations without pharma or device evidence are OUT_OF_SCOPE`() {
+        val affiliations = listOf(
+            "Department of Dentistry, University",
+            "Department of Neurology, University",
+            "Department of Pediatrics, University"
+        )
+
+        affiliations.forEach { affiliation ->
+            val result = service.classify(
+                profile(
+                    employment = affiliation,
+                    institution = "University",
+                    lastPublicationYear = 2026
+                )
+            )
+
+            assertEquals(ExpertType.OUT_OF_SCOPE, result.type, affiliation)
+            assertFalse(result.sendable, affiliation)
+            assertTrue(result.negativeEvidence.contains("MEDICAL_DOMAIN_NO_WHITELIST"), affiliation)
+        }
+    }
+
+    @Test
     fun `adding drug development or medical device whitelist flips OUT_OF_SCOPE to an rnd type (I1-3)`() {
         val base = profile(
             researchFields = "oncology",

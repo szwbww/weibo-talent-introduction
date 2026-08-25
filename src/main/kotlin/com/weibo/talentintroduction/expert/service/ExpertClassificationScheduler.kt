@@ -19,7 +19,7 @@ import java.util.concurrent.RejectedExecutionException
  * - 默认关闭：`talent-introduction.expert-classification.incremental-enabled` 为 false/未配置时
  *   bean 不创建，发布/启动不产生任务记录或 ES 写入（I4-1）。
  * - 固定请求：只处理 CANDIDATE 中 pending（缺失分类版本或版本不符）的文档
- *   （CANDIDATE/EXECUTE/rnd-v1-2026/onlyPending=true，确认串 `EXECUTE_CANDIDATE:rnd-v1-2026`），
+ *   （CANDIDATE/EXECUTE/rnd-v2-2026/onlyPending=true，确认串 `EXECUTE_CANDIDATE:rnd-v2-2026`），
  *   不自动扫描 RAW/APPLICATION、不 force（I4-2）。分类语义仍只在 `ExpertClassificationService`（M-2）。
  * - 与人工回填共享 `EXPERT_CLASSIFICATION_BACKFILL` taskType、同一 [ExpertClassificationBackfillService]
  *   与同一 `expertClassificationExecutor`：抢锁失败只记 skip，不排队第二个任务（I4-3）。

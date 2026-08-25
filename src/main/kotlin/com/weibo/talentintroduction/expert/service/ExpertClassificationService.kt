@@ -12,7 +12,7 @@ import java.time.LocalDateTime
 import java.util.Locale
 
 /**
- * rnd-v1-2026 专家研发类型分类策略（I1-1 ~ I1-4，M-2）。
+ * rnd-v2-2026 专家研发类型分类策略（I1-1 ~ I1-4，M-2）。
  *
  * 确定性的纯函数：同一输入 + 同一 [clock] 产出逐字一致的结果；只有
  * [ExpertClassification.classifiedAt] 来自注入的 [clock]。
@@ -217,7 +217,7 @@ class ExpertClassificationService(
     }
 
     companion object {
-        const val VERSION = "rnd-v1-2026"
+        const val VERSION = "rnd-v2-2026"
         const val RECENT_PAPER_CUTOFF_YEAR = 2021
         const val PRODUCTION_THRESHOLD = 50
         const val RESEARCH_THRESHOLD = 50
@@ -262,7 +262,21 @@ class ExpertClassificationService(
         private val MEDICAL_DOMAIN_TERMS = listOf(
             "medicine", "medical", "clinical", "patient", "hospital", "healthcare",
             "therapy", "disease", "oncology", "cardiology", "surgery", "diagnosis",
-            "医学", "临床", "患者", "医院", "疾病", "诊疗"
+            "dental", "dentistry", "odontology", "oral medicine", "oral surgery",
+            "orthodontics", "endodontics", "periodontics", "prosthodontics",
+            "neurology", "neurological", "neurosurgery", "neuroscience",
+            "pediatrics", "paediatrics", "pediatric", "paediatric", "neonatology", "child health",
+            "dermatology", "anesthesiology", "anaesthesiology", "radiology", "urology",
+            "gynecology", "gynaecology", "obstetrics", "ophthalmology", "otolaryngology",
+            "gastroenterology", "nephrology", "pulmonology", "rheumatology", "endocrinology",
+            "hematology", "haematology", "pathology", "psychiatry", "internal medicine",
+            "family medicine", "emergency medicine", "nursing", "public health", "critical care",
+            "intensive care",
+            "医学", "临床", "患者", "医院", "疾病", "诊疗", "牙科", "口腔", "牙医学",
+            "正畸", "牙髓", "牙周", "口腔颌面", "神经科", "神经学", "神经科学", "神经外科",
+            "儿科", "小儿科", "儿童医学", "新生儿", "皮肤科", "麻醉科", "放射科", "泌尿科",
+            "妇产科", "眼科", "耳鼻喉", "消化科", "肾脏科", "呼吸科", "风湿科", "内分泌科",
+            "血液科", "病理科", "精神科", "内科", "急诊", "重症", "护理", "公共卫生"
         )
 
         // 制药研发白名单（I1-3；计划 Task 2 第 5 条，逐字规范）。

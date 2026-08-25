@@ -15,7 +15,7 @@ enum class ExpertType {
 }
 
 /**
- * rnd-v1-2026 分类结果对象（I1-5 顶层 ES 对象）。
+ * rnd-v2-2026 分类结果对象（I1-5 顶层 ES 对象）。
  *
  * 构造函数不接受调用方传入的 [sendable]（I1-1）：`sendable` 是只读派生 getter，
  * 仅当 [type] 属于 [SENDABLE_TYPES] 时为 true。Jackson 序列化仍会输出 `sendable`

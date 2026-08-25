@@ -720,7 +720,7 @@ class BatchSendTaskRuntimeIntegrationTest {
                 researchScore = 55,
                 positiveEvidence = listOf("RESEARCH_PUBLICATION"),
                 negativeEvidence = emptyList(),
-                version = "rnd-v1-2026",
+                version = "rnd-v2-2026",
                 sourceFingerprint = "fixture",
                 classifiedAt = LocalDateTime.of(2026, 1, 1, 0, 0)
             )

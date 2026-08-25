@@ -73,7 +73,7 @@ data class ExpertClassificationBackfillResult(
  *
  * - 只扫描、分类、聚合（DRY_RUN）；EXECUTE 时调用 [ExpertIndexWriterService.bulkUpdateExpertClassifications]
  *   做局部更新，绝不复制分类规则或 bulk 协议（M-2）。
- * - onlyPending 过滤 = `must_not exists expertClassification.version OR must_not term version=rnd-v1-2026`
+ * - onlyPending 过滤 = `must_not exists expertClassification.version OR must_not term version=rnd-v2-2026`
  *   （should/minimum_should_match=1），同版本文档重跑自动跳过（I2-4）。
  * - 每批前检查取消；限速 delay 分段等待（单次 sleep <= 1s）并重复检查取消（I2-4）。
  * - mapping 缺失或首批全部 mapper 错误 → 立即 FAILED，不继续刷失败请求（I2-2）。
@@ -175,7 +175,7 @@ class ExpertClassificationBackfillService(
         }
     }
 
-    /** I2-4：onlyPending 过滤 —— 缺失分类版本或版本 != rnd-v1-2026 视为待处理。 */
+    /** I2-4：onlyPending 过滤 —— 缺失分类版本或版本 != rnd-v2-2026 视为待处理。 */
     private fun pendingOnlyFilter(): Map<String, Any> =
         mapOf(
             "bool" to mapOf(
