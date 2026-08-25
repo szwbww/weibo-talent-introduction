@@ -10109,11 +10109,17 @@ async function showUnmatchedDetail(id) {
             </div>
         </details>
     ` : "";
+    const resolvedActionHtml = record.processStatus === "MANUAL_REVIEW"
+        ? `<button class="button primary" data-action="mark-unmatched-resolved" data-id="${id}">标记已处理</button>`
+        : "";
 
     panel.innerHTML = `
         <div class="panel-head">
             <h2>来信详情与处理</h2>
-            <button class="button secondary" data-action="close-unmatched-detail">关闭</button>
+            <div class="panel-head-actions">
+                ${resolvedActionHtml}
+                <button class="button secondary" data-action="close-unmatched-detail">关闭</button>
+            </div>
         </div>
         <div class="unmatched-detail-body">
             <div class="mail-detail-group-label"><span>基本信息</span></div>
@@ -10239,6 +10245,8 @@ async function handleUnmatchedAction(element) {
         });
         showStatus("已标记为处理完成");
         unmountMailboxTrustReplyHosts();
+        $("#unmatchedDetailPanel").hidden = true;
+        state.mailbox.detailContext = null;
         await refreshMailboxAfterPendingAction();
         return;
     }

@@ -10,7 +10,7 @@ const indexPath = path.join(root, "index.html");
 const appJsSource = fs.readFileSync(appJsPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260824-v1-summary-loading-scope";
+const CACHE_KEY = "20260825-v1-inbound-detail-resolved";
 
 function extractFn(name) {
     const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");
