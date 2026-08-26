@@ -673,8 +673,8 @@ class TrustReplyWorkbenchServiceTest {
         assertFalse(instruction.contains("三天后"), "the time-commitment name must be omitted")
         assertFalse(instruction.contains("天后"), "the time-commitment phrase must be omitted")
         assertTrue(instruction.contains("薪资标准"), "safe adjacent names must remain")
-        assertTrue(instruction.contains("先明说没有确认答案"))
-        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+        assertTrue(instruction.contains("先说明它取决于什么、还没定下来的原因"))
+        assertTrue(instruction.contains("交出下一步但不承诺具体时间"))
     }
 
     // V-4: a display name that equals a 12+-character fragment of an adjacent
@@ -701,8 +701,8 @@ class TrustReplyWorkbenchServiceTest {
         assertFalse(instruction.contains(bodyFragment), "answer body must never enter the suggestion")
         assertFalse(instruction.contains(bodyFragment.take(12)), "a 12+ char body fragment carried by the display name must be omitted")
         assertTrue(instruction.contains("薪资标准"), "distinct safe adjacent names must remain")
-        assertTrue(instruction.contains("先明说没有确认答案"))
-        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+        assertTrue(instruction.contains("先说明它取决于什么、还没定下来的原因"))
+        assertTrue(instruction.contains("交出下一步但不承诺具体时间"))
     }
 
     @Test
@@ -1372,7 +1372,7 @@ class TrustReplyWorkbenchServiceTest {
         assertTrue(instruction.length <= 500)
         assertFalse(instruction.contains("绑定未认可事实"), "a bound-but-unsupported fact must never be suggested as basis")
         assertTrue(instruction.contains("已认可事实"), "evidence-backed adjacent names must remain")
-        assertTrue(instruction.contains("先明说没有确认答案"))
+        assertTrue(instruction.contains("先说明它取决于什么、还没定下来的原因"))
     }
 
     @Test
@@ -1461,8 +1461,8 @@ class TrustReplyWorkbenchServiceTest {
 
         assertTrue(instruction.isNotBlank())
         assertTrue(instruction.length <= 500, "instruction length must stay within 500, was ${instruction.length}")
-        assertTrue(instruction.contains("先明说没有确认答案"))
-        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+        assertTrue(instruction.contains("先说明它取决于什么、还没定下来的原因"))
+        assertTrue(instruction.contains("交出下一步但不承诺具体时间"))
         // names are included greedily while the budget allows
         assertTrue(instruction.contains(name))
         assertFalse(instruction.contains("${name}丁"), "the 4th 120-char adjacent name must be dropped to stay within 500")
@@ -1494,8 +1494,8 @@ class TrustReplyWorkbenchServiceTest {
         assertFalse(instruction.contains("2026"), "digit-carrying name must be omitted")
         assertFalse(instruction.contains("http", ignoreCase = true), "link-carrying name must be omitted")
         assertFalse(instruction.contains("尽快"), "time-promise name must be omitted")
-        assertTrue(instruction.contains("先明说没有确认答案"))
-        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+        assertTrue(instruction.contains("先说明它取决于什么、还没定下来的原因"))
+        assertTrue(instruction.contains("交出下一步但不承诺具体时间"))
     }
 
     // V-2: URL/domain and Chinese-numeral time-commitment display names are
@@ -1522,8 +1522,8 @@ class TrustReplyWorkbenchServiceTest {
         assertFalse(instruction.contains("一周内"), "time-promise name must be omitted")
         assertFalse(instruction.contains("example.com"), "dotted domain must be omitted")
         assertTrue(instruction.contains("薪资标准"), "safe adjacent names must remain")
-        assertTrue(instruction.contains("先明说没有确认答案"))
-        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+        assertTrue(instruction.contains("先说明它取决于什么、还没定下来的原因"))
+        assertTrue(instruction.contains("交出下一步但不承诺具体时间"))
     }
 
     // V-1: when every adjacent name is unsafe the instruction must still be
@@ -1549,8 +1549,8 @@ class TrustReplyWorkbenchServiceTest {
         assertFalse(instruction.contains("2026"))
         assertFalse(instruction.contains("http", ignoreCase = true))
         assertFalse(instruction.contains("尽快"))
-        assertTrue(instruction.contains("先明说没有确认答案"))
-        assertTrue(instruction.contains("最后交出下一步但不承诺具体时间"))
+        assertTrue(instruction.contains("先说明它取决于什么、还没定下来的原因"))
+        assertTrue(instruction.contains("交出下一步但不承诺具体时间"))
     }
 
     // I-0: the machine instruction describes HOW to answer; it must never carry

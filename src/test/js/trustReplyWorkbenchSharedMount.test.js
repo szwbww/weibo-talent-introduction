@@ -2235,10 +2235,10 @@ describe("shared trust reply workbench mount contract", () => {
         await settle();
         const bootstrapCalls = calls.filter((call) => call.url.includes("/bootstrap")).length;
         assert.match(host.innerHTML, /role="tablist"/);
-        assert.strictEqual((host.innerHTML.match(/role="tab"/g) || []).length, 2);
+        assert.strictEqual((host.innerHTML.match(/role="tab"[^>]*data-page="/g) || []).length, 2);
         assert.match(host.innerHTML, /data-page-panel="facts"/);
         assert.match(host.innerHTML, /data-page-panel="frame"[^>]* hidden/);
-        assert.strictEqual((host.innerHTML.match(/aria-selected="true"/g) || []).length, 1);
+        assert.strictEqual((host.innerHTML.match(/data-page="[^"]*"[^>]*aria-selected="true"/g) || []).length, 1);
         const factsPanelId = host.innerHTML.match(/data-page-panel="facts" id="([^"]+)"/)?.[1];
         const framePanelId = host.innerHTML.match(/data-page-panel="frame" id="([^"]+)"/)?.[1];
         assert.ok(factsPanelId && framePanelId && factsPanelId !== framePanelId, "panel ids must be instance-unique");
