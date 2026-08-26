@@ -527,11 +527,23 @@
                         学科分类:
                         <select id="expertDisciplineFilter">
                             <option value="">全部学科</option>
-                            <option value="STEM">理工科</option>
+                            <option value="STEM">理工科（含医学）</option>
                             <option value="HUMANITIES">文社科</option>
                             <option value="UNCLASSIFIED">未分类</option>
                         </select>
                     </label>
+                    <span class="toolbar-label">
+                        研发类型:
+                        <span class="tag-select" id="expertTypeTagSelect">
+                            <button type="button" class="tag-chip" data-value="PRODUCTION_RND">生产研发</button>
+                            <button type="button" class="tag-chip" data-value="ACADEMIC_RND">学术科研</button>
+                            <button type="button" class="tag-chip" data-value="HYBRID_RND">混合研发</button>
+                            <button type="button" class="tag-chip" data-value="SERVICE_ONLY">纯服务</button>
+                            <button type="button" class="tag-chip" data-value="OUT_OF_SCOPE">医学越界</button>
+                            <button type="button" class="tag-chip" data-value="UNKNOWN">未知</button>
+                            <button type="button" class="tag-chip" data-value="UNCLASSIFIED">未分类</button>
+                        </span>
+                    </span>
                     <label class="toolbar-label">
                         H-Index ≥:
                         <input type="number" id="expertHIndexMinFilter" min="0" step="1" placeholder="不限" style="width: 70px;">

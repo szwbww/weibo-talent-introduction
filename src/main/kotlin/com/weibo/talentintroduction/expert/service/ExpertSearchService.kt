@@ -105,6 +105,49 @@ class ExpertSearchService(
             }
         }
 
+        /**
+         * I1-1: 研发类型筛选取值白名单 —— 唯一权威声明处。
+         * 从 [ExpertType] 枚举派生（禁止手写六值名单，M-2）；`UNCLASSIFIED` 是字面量，
+         * 语义为 `expertClassification.type` 字段**不存在**（见 [expertTypePredicate]）。
+         */
+        val ALLOWED_EXPERT_TYPES: Set<String> =
+            ExpertType.values().map { it.name }.toSet() + "UNCLASSIFIED"
+
+        /**
+         * I1-2/I1-3: N 个研发类型取 OR，产出**单个** bool.should + minimum_should_match:1
+         * 的 filter 项；空集合返回 null（I1-2，调用方不得追加，禁止产出
+         * `should: [] + minimum_should_match: 1`）。逐字照 [operatorStatusesFilter] 的
+         * map/trim/filter/distinct 结构。
+         */
+        fun expertTypesFilter(types: List<String>): Map<String, Any>? {
+            val values = types.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (values.isEmpty()) return null
+            values.forEach { require(it in ALLOWED_EXPERT_TYPES) { "Invalid expert type: $it" } }
+            return mapOf(
+                "bool" to mapOf(
+                    "should" to values.map { expertTypePredicate(it) },
+                    "minimum_should_match" to 1
+                )
+            )
+        }
+
+        /**
+         * I1-1: 单个研发类型的**纯谓词** —— 只判定类型本身，不得在分支内混入
+         * `exists email` 之类的 AND 语义条件，否则其余 should 分支会绕过它
+         * （K-batch-multi-value-filter-seams）。`UNCLASSIFIED` = `expertClassification.type`
+         * 字段不存在（must_not exists），不是某个字符串 term。
+         */
+        private fun expertTypePredicate(type: String): Map<String, Any> =
+            if (type == "UNCLASSIFIED") {
+                mapOf(
+                    "bool" to mapOf(
+                        "must_not" to listOf(mapOf("exists" to mapOf("field" to "expertClassification.type")))
+                    )
+                )
+            } else {
+                mapOf("term" to mapOf("expertClassification.type" to type))
+            }
+
         fun regionFilter(region: String): Map<String, Any> {
             if (region == CountryContinentMapping.REGION_OTHER) {
                 val knownValues = CountryContinentMapping.allKnownEsTermValues().toList()
@@ -277,13 +320,14 @@ class ExpertSearchService(
         citationCountMin: Int? = null,
         recentYears: Int? = null,
         hasField: List<String>? = null,
-        discipline: String? = null
+        discipline: String? = null,
+        expertTypes: List<String> = emptyList()
     ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
         require(from >= 0) { "from must be >= 0" }
 
         val filters = buildExpertFilters(
-            tag, operatorStatus, emailDomain, region, hIndexMin, citationCountMin, recentYears, hasField, discipline
+            tag, operatorStatus, emailDomain, region, hIndexMin, citationCountMin, recentYears, hasField, discipline, expertTypes
         )
 
         val query = if (filters.isEmpty()) {
@@ -1047,7 +1091,8 @@ class ExpertSearchService(
         citationCountMin: Int? = null,
         recentYears: Int? = null,
         hasField: List<String>? = null,
-        discipline: String? = null
+        discipline: String? = null,
+        expertTypes: List<String> = emptyList()
     ): MutableList<Map<String, Any>> {
         val filters = mutableListOf<Map<String, Any>>()
 
@@ -1088,6 +1133,8 @@ class ExpertSearchService(
         if (!discipline.isNullOrBlank()) {
             filters.add(disciplineFilter(discipline))
         }
+
+        expertTypesFilter(expertTypes)?.let { filters.add(it) }
 
         return filters
     }

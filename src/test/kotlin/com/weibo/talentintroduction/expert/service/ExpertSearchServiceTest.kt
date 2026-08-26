@@ -1340,6 +1340,183 @@ class ExpertSearchServiceTest {
     }
 
     @Test
+    fun `ALLOWED_EXPERT_TYPES derives exactly from ExpertType enum plus UNCLASSIFIED (I1-1)`() {
+        assertEquals(
+            ExpertType.values().map { it.name }.toSet() + "UNCLASSIFIED",
+            ExpertSearchService.ALLOWED_EXPERT_TYPES
+        )
+        assertEquals(ExpertType.values().size + 1, ExpertSearchService.ALLOWED_EXPERT_TYPES.size)
+        assertTrue("UNCLASSIFIED" in ExpertSearchService.ALLOWED_EXPERT_TYPES)
+    }
+
+    @Test
+    fun `expertTypesFilter empty list returns null meaning unrestricted (I1-2)`() {
+        assertNull(ExpertSearchService.expertTypesFilter(emptyList()))
+        assertNull(ExpertSearchService.expertTypesFilter(listOf("  ", "")))
+    }
+
+    @Test
+    fun `expertTypesFilter single value produces one term predicate (I1-1 I1-3)`() {
+        val filter = ExpertSearchService.expertTypesFilter(listOf("ACADEMIC_RND"))
+        assertNotNull(filter)
+        val bool = filter!!["bool"] as Map<*, *>
+        assertEquals(1, bool["minimum_should_match"])
+        val should = bool["should"] as List<*>
+        assertEquals(1, should.size)
+        val term = (should[0] as Map<*, *>)["term"] as Map<*, *>
+        assertEquals("ACADEMIC_RND", term["expertClassification.type"])
+    }
+
+    @Test
+    fun `expertTypesFilter multiple values produces single should with minimum_should_match 1 (I1-3)`() {
+        val filter = ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND", "ACADEMIC_RND"))
+        assertNotNull(filter)
+        // I1-3：顶层不得出现平铺的 filter 键（那是 AND，恒零命中），只能是单个 bool.should
+        assertEquals(setOf("bool"), filter!!.keys)
+        val bool = filter["bool"] as Map<*, *>
+        assertEquals(1, bool["minimum_should_match"])
+        val should = bool["should"] as List<*>
+        assertEquals(2, should.size)
+        val types = should.map { ((it as Map<*, *>)["term"] as Map<*, *>)["expertClassification.type"] }
+        assertEquals(listOf("PRODUCTION_RND", "ACADEMIC_RND"), types)
+    }
+
+    @Test
+    fun `expertTypesFilter trims and dedups values like operatorStatusesFilter`() {
+        val filter = ExpertSearchService.expertTypesFilter(listOf(" ACADEMIC_RND ", "ACADEMIC_RND", "out_of_scope".uppercase()))
+        assertNotNull(filter)
+        val bool = filter!!["bool"] as Map<*, *>
+        val should = bool["should"] as List<*>
+        assertEquals(2, should.size)
+    }
+
+    @Test
+    fun `expertTypesFilter UNCLASSIFIED produces must_not exists on expertClassification dot type (I1-1)`() {
+        val filter = ExpertSearchService.expertTypesFilter(listOf("UNCLASSIFIED"))
+        assertNotNull(filter)
+        val bool = filter!!["bool"] as Map<*, *>
+        val should = bool["should"] as List<*>
+        assertEquals(1, should.size)
+        val innerBool = (should[0] as Map<*, *>)["bool"] as Map<*, *>
+        val mustNot = innerBool["must_not"] as List<*>
+        val exists = (mustNot[0] as Map<*, *>)["exists"] as Map<*, *>
+        assertEquals("expertClassification.type", exists["field"])
+    }
+
+    @Test
+    fun `expertTypesFilter rejects unknown value with IllegalArgumentException (I1-1)`() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
+            ExpertSearchService.expertTypesFilter(listOf("NOT_A_TYPE"))
+        }
+    }
+
+    @Test
+    fun `searchExperts with empty expertTypes keeps filter array identical to default (I1-2 I1-4)`() {
+        fun captureQueryBody(expertTypes: List<String>): com.fasterxml.jackson.databind.JsonNode {
+            val body = mapper.readTree(
+                """
+                {
+                  "hits": {
+                    "total": {"value": 1},
+                    "hits": [
+                      {"_source": {"orcidId": "0001", "email": "a@x.com"}}
+                    ]
+                  }
+                }
+                """.trimIndent()
+            )
+            val entityCaptor = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+            Mockito.`when`(
+                restTemplate.exchange(
+                    eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                    eq(HttpMethod.POST),
+                    any(),
+                    eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+                )
+            ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+            service.searchExperts(
+                size = 10,
+                level = ExpertIndexLevel.CANDIDATE,
+                tag = "verified",
+                discipline = "STEM",
+                expertTypes = expertTypes
+            )
+            Mockito.verify(restTemplate).exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                entityCaptor.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+            @Suppress("UNCHECKED_CAST")
+            return mapper.valueToTree((entityCaptor.value.body as Map<String, Any>)["query"])
+        }
+
+        val withDefault = captureQueryBody(emptyList())
+        Mockito.clearInvocations(restTemplate)
+        val withExplicitEmpty = captureQueryBody(listOf())
+        assertEquals(withDefault, withExplicitEmpty)
+        // 空集合不追加任何 filter：只有 tag + discipline 两项，无 expertType 结构
+        assertEquals(2, withExplicitEmpty["bool"]["filter"].size())
+    }
+
+    @Test
+    fun `searchExperts passes expertType multi-term should filter to ES (I1-1 I1-3)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {"_source": {"orcidId": "0001", "email": "a@x.com"}}
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val entityCaptor = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        service.searchExperts(
+            size = 10,
+            level = ExpertIndexLevel.CANDIDATE,
+            expertTypes = listOf("ACADEMIC_RND", "OUT_OF_SCOPE")
+        )
+
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+            eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val request = entityCaptor.value.body as Map<String, Any>
+        @Suppress("UNCHECKED_CAST")
+        val query = request["query"] as Map<String, Any>
+        @Suppress("UNCHECKED_CAST")
+        val bool = query["bool"] as Map<String, Any>
+        @Suppress("UNCHECKED_CAST")
+        val filter = bool["filter"] as List<Map<String, Any>>
+        val expertTypeFilter = filter.first { it.containsKey("bool") && (it["bool"] as Map<*, *>).containsKey("should") }
+        @Suppress("UNCHECKED_CAST")
+        val should = (expertTypeFilter["bool"] as Map<String, Any>)["should"] as List<Map<String, Any>>
+        assertEquals(2, should.size)
+        assertEquals(
+            mapOf("bool" to mapOf("should" to listOf(
+                mapOf("term" to mapOf("expertClassification.type" to "ACADEMIC_RND")),
+                mapOf("term" to mapOf("expertClassification.type" to "OUT_OF_SCOPE"))
+            ), "minimum_should_match" to 1)),
+            expertTypeFilter
+        )
+    }
+
+    @Test
     fun `ALLOWED_HAS_FIELDS includes recentWorkTitles so gate fields never 500`() {
         assertTrue("recentWorkTitles" in ExpertSearchService.ALLOWED_HAS_FIELDS)
         assertTrue(

@@ -4848,6 +4848,17 @@ function renderMailboxExpertTagEditor(expertRef, tags, editorId = "mailboxExpert
 const ES_MAX_RESULT_WINDOW = 10000;
 const ES_PAGE_SIZE_MAX = 1000;
 
+/* I1-5: 研发类型多选 —— 读取 #expertTypeTagSelect 内 .tag-chip.active 的 data-value 数组。
+   照 initExpertGateFilter 的 gateChips/gateActiveValues 范式；.tag-select 无 change 事件，
+   chip 点击在 bindEvents 的 initExpertTypeTags 中直接 toggle 并触发 reloadContactsFromStart()。 */
+function expertTypeActiveValues() {
+    const container = $("#expertTypeTagSelect");
+    if (!container) return [];
+    return Array.from(container.querySelectorAll(".tag-chip"))
+        .filter((c) => c.classList.contains("active"))
+        .map((c) => c.dataset.value);
+}
+
 async function loadContacts() {
     const level = $("#expertIndexLevel").value;
     const size = Number($("#expertIndexSize").value || "50");
@@ -4857,6 +4868,8 @@ async function loadContacts() {
     const emailDomain = $("#expertEmailDomainFilter")?.value || "";
     const region = $("#expertRegionFilter")?.value || "";
     const discipline = $("#expertDisciplineFilter")?.value || "";
+    // I1-5: typeof 兜底 —— vm 沙箱单测以函数为单位抽取源码，未注册本函数时退化为空数组
+    const expertTypes = typeof expertTypeActiveValues === "function" ? expertTypeActiveValues() : [];
     let tag = $("#expertTagFilter")?.value || "";
     const useDbContactPath = needsAttention || replyMode;
     renderContactListSkeleton();
@@ -5007,6 +5020,7 @@ async function loadContacts() {
         if (emailDomain) params.set("emailDomain", emailDomain);
         if (region) params.set("region", region);
         if (discipline) params.set("discipline", discipline);
+        expertTypes.forEach((v) => params.append("expertType", v));
         const sortBy = $("#expertSortBy")?.value || "";
         if (sortBy) params.set("sortBy", sortBy);
         const hIndexMin = $("#expertHIndexMinFilter")?.value || "";
@@ -5049,7 +5063,10 @@ async function loadContacts() {
             institution: e.institution || "",
             worksCount: e.worksCount ?? null,
             enrichedAt: e.enrichedAt || null,
-            reachability: e.reachability ?? null
+            reachability: e.reachability ?? null,
+            expertType: e.expertType ?? null,
+            expertProductionScore: e.expertProductionScore ?? null,
+            expertResearchScore: e.expertResearchScore ?? null
         }));
     }
     } catch (e) {
@@ -5110,6 +5127,18 @@ function renderContactListItems() {
         : (v || "");
     const domainOf = (email) => (email || "").split("@")[1] || "";
     const isBlockedReach = (v) => typeof v === "string" && v.indexOf("BLOCKED_") === 0;
+    // 研发类型中文名（仅展示用；允许取值白名单唯一权威在 ExpertSearchService.ALLOWED_EXPERT_TYPES，I1-1）。
+    // 定义在函数体内：Node 测试以「函数」为单位抽取源码到 vm 沙箱执行，顶层常量/函数引用会触发
+    // ReferenceError（同 reachabilityMeta 的既有约定）。
+    const expertTypeLabels = {
+        PRODUCTION_RND: "生产研发",
+        ACADEMIC_RND: "学术科研",
+        HYBRID_RND: "混合研发",
+        SERVICE_ONLY: "纯服务",
+        OUT_OF_SCOPE: "医学越界",
+        UNKNOWN: "未知",
+        UNCLASSIFIED: "未分类"
+    };
 
     $("#contactList").innerHTML = state.contacts.map((contact) => {
         const status = contact.operatorStatus
@@ -5141,6 +5170,10 @@ function renderContactListItems() {
         const senderChangedTag = contact.senderAccountChanged
             ? `<span class="expert-row-tags"><span class="expert-tag tag-sender-changed">发送账号已变更</span></span>`
             : "";
+        // S-2: 类型缺失时不渲染该元素（无占位文本）；title 内两个分数 escapeHtml 转义后插值。
+        const expertTypeChip = contact.expertType
+            ? `<span class="tag-chip" title="生产分 ${escapeHtml(contact.expertProductionScore ?? "")} / 科研分 ${escapeHtml(contact.expertResearchScore ?? "")}">${escapeHtml(expertTypeLabels[contact.expertType] || contact.expertType)}</span>`
+            : "";
         const hoverInfo = [
             contact.orcidId ? `ORCID: ${contact.orcidId}` : "",
             contact.keyword || ""
@@ -5162,11 +5195,11 @@ function renderContactListItems() {
                     </div>
                     ${badge(status, statusType)}
                 </div>
-                ${contact.employment || tagsHtml || hIndexBadge || enrichedBadge || bindingText ? `
+                ${contact.employment || tagsHtml || hIndexBadge || enrichedBadge || bindingText || expertTypeChip ? `
                 <div class="expert-row-sub">
                     ${contact.employment ? `<span>${escapeHtml(contact.employment)}</span>` : ""}
                     ${bindingText}
-                    ${reachBadge}${hIndexBadge}${enrichedBadge}
+                    ${reachBadge}${hIndexBadge}${enrichedBadge}${expertTypeChip}
                     ${tagsHtml ? `<span class="expert-row-tags">${tagsHtml}</span>` : ""}
                     ${senderChangedTag}
                 </div>` : ""}
@@ -11862,6 +11895,7 @@ function bindEvents() {
             $("#expertEmailDomainFilter")?.value !== "",
             $("#expertRegionFilter")?.value !== "",
             $("#expertDisciplineFilter")?.value !== "",
+            expertTypeActiveValues().length > 0,
             ($("#expertHIndexMinFilter")?.value || "") !== "",
             ($("#expertCitationMinFilter")?.value || "") !== "",
             ($("#expertRecentYearsFilter")?.value || "") !== "",
@@ -11918,6 +11952,18 @@ function bindEvents() {
         container.appendChild(shimEl);
 
         chips.forEach((chip) => chip.addEventListener("click", () => {
+            chip.classList.toggle("active");
+            reloadContactsFromStart();
+        }));
+    })();
+
+    /* ── 研发类型多选 (I1-5)：.tag-select 是按钮组，无 change 事件；
+       点 chip 直接 toggle .active 并主动调 reloadContactsFromStart（照 initHasFieldTags 范式）。
+       不把 #expertTypeTagSelect 加入上方 change 监听数组（注册点 4 明确排除）。 ── */
+    (function initExpertTypeTags() {
+        const container = $("#expertTypeTagSelect");
+        if (!container) return;
+        container.querySelectorAll(".tag-chip").forEach((chip) => chip.addEventListener("click", () => {
             chip.classList.toggle("active");
             reloadContactsFromStart();
         }));
@@ -12134,6 +12180,8 @@ function initExpertGateFilter(reloadContactsFromStart) {
         if (region) params.set("region", region);
         const discipline = $("#expertDisciplineFilter")?.value || "";
         if (discipline) params.set("discipline", discipline);
+        // I1-5: typeof 兜底 —— vm 沙箱单测以函数为单位抽取源码，未注册本函数时退化为空数组
+        (typeof expertTypeActiveValues === "function" ? expertTypeActiveValues() : []).forEach((v) => params.append("expertType", v));
         const sortBy = $("#expertSortBy")?.value || "";
         if (sortBy) params.set("sortBy", sortBy);
         const hIndexMin = $("#expertHIndexMinFilter")?.value || "";
