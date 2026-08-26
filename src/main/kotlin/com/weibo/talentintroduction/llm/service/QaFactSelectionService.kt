@@ -604,9 +604,20 @@ class QaFactSelectionService(
         val factRuleIds = (strictCandidateRules.mapNotNull { it.id }.filter { it in evidenceSet }
             + retrievedRules.mapNotNull { it.id }).distinct()
 
-        // 计划 01 (I-6): 有事实就不是 UNSUPPORTED——今日结论为 UNSUPPORTED 且最终
-        // factRuleIds 非空时降为 PARTIAL（不得直接判 GROUNDED，自动发面不扩大）。
+        // 计划 01 (I-6) + 计划 02 (I-1/I-3): 单一 status 表达式，先算 01 的提升、
+        // 再算 02 的封顶（两条计划编号同注释，避免后续 merge 时其中一条被覆盖）。
+        // 01: 今日结论 UNSUPPORTED 且最终 factRuleIds 非空时降为 PARTIAL
+        //     （不得直接判 GROUNDED，自动发面不扩大）。
+        // 02: 枚举器可用且本条存在未被任何 alias span 认领的诉求时，状态封顶为
+        //     PARTIAL——"我认出来的都答了"不等于"专家问的都答了"；
+        //     available=false（LLM 关闭/超时/解析失败/全部条目被 verbatim 校验丢弃）
+        //     一律不封顶，行为与本计划落地前逐字相同 (I-3)。
         val status = if (naturalStatus == RequestGroundingStatus.UNSUPPORTED && factRuleIds.isNotEmpty()) {
+            RequestGroundingStatus.PARTIAL
+        } else if (askEnumeration.available &&
+            unrecognizedAsks.isNotEmpty() &&
+            naturalStatus == RequestGroundingStatus.GROUNDED
+        ) {
             RequestGroundingStatus.PARTIAL
         } else {
             naturalStatus
