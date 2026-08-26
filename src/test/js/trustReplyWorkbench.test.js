@@ -92,6 +92,42 @@ describe("shared trust reply workbench", () => {
         assert.match(workbench, /data-role="raw-preview"/);
     });
 
+    it("renders the three-tab preview with rendered default and no querySelector (计划 03)", () => {
+        // I-6: default preview reads the rendered draft with the raw fallback.
+        assert.match(workbench, /renderedDraftText \|\| assembly\.rawDraftText/);
+        // S-2: the shared pre renders exactly one literal data-role per tab;
+        // the rendered DOM form data-role="rendered-preview" is asserted in the
+        // sandbox cases of autoRunOrchestration.test.js.
+        assert.match(workbench, /<pre class="pre" data-role="rendered-preview">/);
+        assert.match(workbench, /<pre class="pre" data-role="local-preview">/);
+        assert.match(workbench, /<pre class="pre" data-role="raw-preview">/);
+        // S-1: the preview tab bar uses the contract action + key shape; the
+        // three keys/labels are source literals (the rendered literal form
+        // data-action="set-preview-tab" data-preview-tab="rendered" is asserted
+        // in the sandbox cases of autoRunOrchestration.test.js).
+        assert.match(workbench, /data-action="set-preview-tab" data-preview-tab="\$\{entry\.key\}"/);
+        assert.match(workbench, /key: "rendered"/);
+        assert.match(workbench, /key: "local"/);
+        assert.match(workbench, /key: "raw"/);
+        assert.match(workbench, /发送正文/);
+        assert.match(workbench, /服务端原始正文/);
+        assert.match(styles, /\.trust-reply-preview-tabs \{/);
+        assert.match(styles, /\.trust-reply-preview-tab \{/);
+        // I-7: tab switching must go through state + render(), never the host DOM.
+        assert.doesNotMatch(workbench, /host\.querySelector\([^)]*preview/);
+        // S-2: the preview block keeps the shared pre shape and carries no
+        // inline style. The only inline style anywhere in the workbench source
+        // is the pre-existing progress-bar width span — it sits in the return
+        // template, not in the preview markup, and stays untouched.
+        const inlineStyleLines = workbench.split("\n").filter((line) => line.includes('style="'));
+        assert.strictEqual(inlineStyleLines.length, 1);
+        assert.match(inlineStyleLines[0], /trust-reply-progress/);
+        const previewMarkupStart = workbench.indexOf("const previewTabBar");
+        const previewMarkupEnd = workbench.indexOf("const previewBlock =") + workbench.slice(workbench.indexOf("const previewBlock =")).indexOf("</div>`;");
+        const previewMarkup = workbench.slice(previewMarkupStart, previewMarkupEnd);
+        assert.doesNotMatch(previewMarkup, /style="/);
+    });
+
     it("exposes per-card fact chips and picker without owner gating", () => {
         // 计划 02 (I-6): picker 不再产出 used/owner 门禁——其他摘要已选的事实仍
         // 显示「可添加」；本 request 已选与保存中仍 disabled。
