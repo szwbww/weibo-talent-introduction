@@ -465,6 +465,45 @@ class InitialOutreachServiceTest {
         Mockito.verifyNoInteractions(mailDeliveryService)
     }
 
+    @Test
+    fun `sendInitialBatch last-chance gate rejects legacy version and accepts current VERSION (I5a2-9)`() {
+        // 竞态场景：sendable=true 但版本过期（rnd-v1-legacy）—— 最后门禁必须兜住；
+        // 当前 VERSION 的 sendable profile 放行。
+        val stale = sendableClassification().copy(version = "rnd-v1-legacy")
+        val experts = listOf(
+            expert("0001").copy(expertClassification = stale),
+            expert("0002")
+        )
+        Mockito.`when`(expertSearchService.searchSendableExpertsWithEmail(2, ExpertIndexLevel.CANDIDATE))
+            .thenReturn(ExpertSearchResult(experts = experts, totalHits = 2))
+        Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0002")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)))
+            .thenReturn(account("chen"))
+        Mockito.`when`(senderAccountBindingService.bindingFieldsFor(eqValue("chen"), anyValue(LocalDateTime.now())))
+            .thenReturn("chen" to LocalDateTime.of(2026, 8, 10, 9, 30, 0))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("0002")), Mockito.isNull()))
+            .thenReturn(ComposedMail("0002@example.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account("chen")), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail(messageId = "msg-2", status = "SENT"))
+
+        val result = service.sendInitialBatch(campaignId = 1L, size = 2)
+
+        assertEquals(2, result.candidates)
+        assertEquals(1, result.sent)
+        assertEquals(1, result.skipped)
+        assertEquals(0, result.failed)
+        // 只有 0002 创建 contact；0001（旧版本）不创建、不渲染、不投递。
+        val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository, Mockito.times(1)).save(
+            captureValue(contactCaptor, ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
+        )
+        assertEquals("0002", contactCaptor.value.orcidId)
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(
+            anyValue(account("chen")),
+            anyValue(ComposedMail("", "", ""))
+        )
+    }
+
     private fun expert(orcidId: String): ExpertProfile =
         ExpertProfile(
             orcidId = orcidId,

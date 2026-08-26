@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.discovery.service.ArxivDataSource
 import com.weibo.talentintroduction.discovery.service.CoreDataSource
 import com.weibo.talentintroduction.discovery.service.CrossrefDataSource
 import com.weibo.talentintroduction.discovery.service.EnrichmentResult
+import com.weibo.talentintroduction.discovery.service.EnrichmentScope
 import com.weibo.talentintroduction.discovery.service.EnrichmentStats
 import com.weibo.talentintroduction.discovery.service.ExpertDiscoveryService
 import com.weibo.talentintroduction.discovery.service.OpenAlexDataSource
@@ -244,7 +245,7 @@ class ExpertDiscoveryControllerTest {
 
     @Test
     fun `getEnrichmentStats returns stats from service`() {
-        Mockito.doReturn(EnrichmentStats(pending = 10, enrichedLast30d = 90, total = 100))
+        Mockito.doReturn(EnrichmentStats(pending = 10, enrichedLast30d = 90, total = 100, institutionTypePending = 5))
             .`when`(discoveryService).getEnrichmentStats()
 
         val stats = controller.getEnrichmentStats()
@@ -252,6 +253,7 @@ class ExpertDiscoveryControllerTest {
         assertEquals(10, stats.pending)
         assertEquals(90, stats.enrichedLast30d)
         assertEquals(100, stats.total)
+        assertEquals(5, stats.institutionTypePending)
     }
 
     @Test
@@ -280,6 +282,23 @@ class ExpertDiscoveryControllerTest {
         val body = result.body as Map<*, *>
         assertEquals("任务已启动", body["message"])
         Mockito.verify(discoveryService).enrichExistingExperts()
+    }
+
+    @Test
+    fun `enrichExperts forwards INSTITUTION_TYPE_BACKFILL scope to service`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.doReturn(EnrichmentResult(enriched = 1, failed = 0))
+            .`when`(discoveryService).enrichExistingExperts(EnrichmentScope.INSTITUTION_TYPE_BACKFILL)
+
+        val result = controller.enrichExperts(EnrichmentScope.INSTITUTION_TYPE_BACKFILL)
+        assertEquals(HttpStatus.ACCEPTED, result.statusCode)
+        Mockito.verify(discoveryService).enrichExistingExperts(EnrichmentScope.INSTITUTION_TYPE_BACKFILL)
     }
 
     @Test

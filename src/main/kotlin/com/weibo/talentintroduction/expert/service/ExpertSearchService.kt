@@ -48,7 +48,7 @@ class ExpertSearchService(
         )
 
         /**
-         * I3-2：INTRODUCTION 唯一共享 ES 谓词 —— 只放行当前策略版本且 sendable=true。
+         * I3-2：INTRODUCTION 唯一共享 ES 谓词 —— 只放行可接受策略版本（I5a2-9）且 sendable=true。
          * 只用于 INTRODUCTION 目标查询（buildEsFiltersForLevel / searchSendableExpertsWithEmail）；
          * MATERIAL_REMINDER 不得追加（I3-5）。谓词形式是本计划规范内容，禁止在别处另写。
          */
@@ -57,7 +57,9 @@ class ExpertSearchService(
                 "bool" to mapOf(
                     "filter" to listOf(
                         mapOf("term" to mapOf("expertClassification.sendable" to true)),
-                        mapOf("term" to mapOf("expertClassification.version" to ExpertClassificationService.VERSION))
+                        mapOf("terms" to mapOf(
+                            "expertClassification.version" to ExpertClassificationService.ACCEPTED_CLASSIFICATION_VERSIONS
+                        ))
                     )
                 )
             )

@@ -218,6 +218,14 @@ class ExpertClassificationService(
 
     companion object {
         const val VERSION = "rnd-v2-2026"
+
+        /**
+         * I5a2-9：发信门禁接受的策略版本。日常只含 VERSION；
+         * 仅在 VERSION 切换的迁移窗口内临时并列旧版本，回填完成且旧版本计数归零后立即摘除。
+         * 顺序即 ES `terms` 数组顺序，必须稳定（逐字断言依赖它）。
+         */
+        val ACCEPTED_CLASSIFICATION_VERSIONS: List<String> = listOf(VERSION)
+
         const val RECENT_PAPER_CUTOFF_YEAR = 2021
         const val PRODUCTION_THRESHOLD = 50
         const val RESEARCH_THRESHOLD = 50

@@ -498,4 +498,25 @@ class ExpertClassificationServiceTest {
         )
         assertEquals(a, withPersonalData)
     }
+
+    // ---- I5a2-10: 发信门禁版本集合 —— 日常只含当前 VERSION ----
+
+    @Test
+    fun `ACCEPTED_CLASSIFICATION_VERSIONS contains VERSION without duplicates and size 1 (I5a2-10)`() {
+        val accepted = ExpertClassificationService.ACCEPTED_CLASSIFICATION_VERSIONS
+        assertTrue(
+            ExpertClassificationService.VERSION in accepted,
+            "ACCEPTED_CLASSIFICATION_VERSIONS must contain the current VERSION"
+        )
+        assertEquals(
+            accepted.size,
+            accepted.distinct().size,
+            "ACCEPTED_CLASSIFICATION_VERSIONS must not contain duplicates"
+        )
+        assertEquals(
+            1,
+            accepted.size,
+            "ACCEPTED_CLASSIFICATION_VERSIONS must hold exactly the current VERSION outside a migration window"
+        )
+    }
 }

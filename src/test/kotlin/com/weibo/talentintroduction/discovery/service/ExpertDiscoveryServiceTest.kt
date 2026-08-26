@@ -1118,6 +1118,46 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `enrichExistingExperts INSTITUTION_TYPE_BACKFILL scope uses backfill filter excluding EMAIL- (I5a2-1 I5a2-3)`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 0L, 0L)
+        ScrollExpertsMockHelper.stubSearchAfterExpertsFiltered(expertSearchService, emptyList())
+
+        val result = svc.enrichExistingExperts(EnrichmentScope.INSTITUTION_TYPE_BACKFILL)
+
+        assertEquals(0, result.enriched)
+        assertEquals(0, result.failed)
+        val filters = ScrollExpertsMockHelper.captureNonEmptyCountExpertsFilters(expertSearchService)
+        @Suppress("UNCHECKED_CAST")
+        val bool = filters[0]["bool"] as Map<String, Any>
+        @Suppress("UNCHECKED_CAST")
+        val must = bool["must"] as List<Map<String, Any>>
+        @Suppress("UNCHECKED_CAST")
+        val mustNot = bool["must_not"] as List<Map<String, Any>>
+        fun existsField(clause: Map<String, Any>): String? =
+            (clause["exists"] as? Map<*, *>)?.get("field") as? String
+        assertTrue(must.any { existsField(it) == "enrichedAt" }, "backfill must must include exists enrichedAt")
+        assertTrue(mustNot.any { existsField(it) == "institutionType" }, "backfill must_not must include exists institutionType")
+        assertTrue(filters.toString().contains("EMAIL-"), "backfill filter must exclude EMAIL- prefix")
+    }
+
+    @Test
+    fun `getEnrichmentStats reports institutionTypePending backfill count (A5-1)`() {
+        val svc = createService()
+        ScrollExpertsMockHelper.stubEnrichmentStatsCounts(expertSearchService, 10L, 3L, 6L)
+
+        val stats = svc.getEnrichmentStats()
+
+        assertEquals(3L, stats.pending)
+        assertEquals(6L, stats.enrichedLast30d)
+        assertEquals(10L, stats.total)
+        assertEquals(3L, stats.institutionTypePending)
+    }
+
+    @Test
     fun `enrichExistingExperts resumes from where it left off on next run`() {
         val svc = createService()
         val openAlex = Mockito.mock(OpenAlexDataSource::class.java)

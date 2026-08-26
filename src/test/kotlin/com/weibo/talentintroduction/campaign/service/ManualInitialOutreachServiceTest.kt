@@ -4016,11 +4016,11 @@ class ManualInitialOutreachServiceTest {
             expert("0006", "f@b.com").copy(expertClassification = classification(ExpertType.UNKNOWN)),
             expert("0007", "g@b.com").copy(expertClassification = null)
         )
-        // 内存谓词与 ES 的 sendable + current-policy-version 组合门禁逐 profile 一致。
+        // 内存谓词与 ES 的 sendable + accepted-policy-version 组合门禁逐 profile 一致（I5a2-9）。
         profiles.forEach { profile ->
             val classification = profile.expertClassification
             val esTermMatches = classification?.sendable == true &&
-                classification.version == ExpertClassificationService.VERSION
+                classification.version in ExpertClassificationService.ACCEPTED_CLASSIFICATION_VERSIONS
             assertEquals(
                 esTermMatches,
                 scope.matchesExpert(profile),
@@ -4040,6 +4040,24 @@ class ManualInitialOutreachServiceTest {
 
         assertFalse(
             scope.matchesExpert(expert("0001", "a@b.com").copy(expertClassification = stale))
+        )
+    }
+
+    @Test
+    fun `matchesExpert rejects rnd-v1-legacy and accepts current VERSION (I5a2-9 I5a2-12)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null
+        )
+        val legacy = sendableClassification().copy(version = "rnd-v1-legacy")
+        assertFalse(
+            scope.matchesExpert(expert("0001", "a@b.com").copy(expertClassification = legacy)),
+            "sendable=true but legacy version must be rejected"
+        )
+        assertTrue(
+            scope.matchesExpert(expert("0002", "b@b.com")),
+            "current VERSION with sendable=true must be accepted"
         )
     }
 
@@ -4156,6 +4174,42 @@ class ManualInitialOutreachServiceTest {
             .thenReturn(emptyList())
         // 竞态场景：iterator 返回缺分类 profile（I3-4：查询/缓存错误可绕过硬门禁）。
         stubScrolledExperts(listOf(expert("0001", "a@b.com").copy(expertClassification = null)))
+        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION", roundSize = 10, roundsPerRun = 1,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE"
+        )
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(1, result.total)
+        assertEquals(0, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.skipped)
+        assertEquals(
+            1,
+            result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE)?.count ?: 0
+        )
+        // 不创建 contact、不选账号、不渲染、不投递。
+        Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
+        Mockito.verify(senderAccountAssignmentService, Mockito.never()).selectAccount(
+            anyValue(expert("0001", "a@b.com")), anyValue(mutableListOf()), Mockito.anyBoolean(), anyValue(SenderBindingStock.EMPTY)
+        )
+        Mockito.verifyNoInteractions(introductionMailComposer)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `round loop last gate rejects stale policy version with no writes (I5a2-9)`() {
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+        // 竞态场景：sendable=true 但版本过期（rnd-v1-legacy）—— 最后门禁必须拒绝。
+        val stale = sendableClassification().copy(version = "rnd-v1-legacy")
+        stubScrolledExperts(listOf(expert("0001", "a@b.com").copy(expertClassification = stale)))
         Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
 
         val snapshot = BatchExecutionSnapshot(

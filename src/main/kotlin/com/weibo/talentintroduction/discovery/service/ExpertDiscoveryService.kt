@@ -804,7 +804,10 @@ class ExpertDiscoveryService(
             ExpertIndexLevel.CANDIDATE,
             listOf(mapOf("range" to mapOf("enrichedAt" to mapOf("gte" to cutoff))))
         )
-        return EnrichmentStats(pending, enrichedRecently, total)
+        val institutionTypePending = expertSearchService.countExperts(
+            ExpertIndexLevel.CANDIDATE, buildInstitutionTypeBackfillFilters()
+        )
+        return EnrichmentStats(pending, enrichedRecently, total, institutionTypePending)
     }
 
     private fun buildEnrichmentFilters(cutoff: String): List<Map<String, Any>> {
@@ -835,6 +838,17 @@ class ExpertDiscoveryService(
         )
     }
 
+    /** I5a2-1/I5a2-3：补采只针对 OpenAlex 认得（有 enrichedAt）且尚无 institutionType 的人。 */
+    private fun buildInstitutionTypeBackfillFilters(): List<Map<String, Any>> = listOf(
+        mapOf("bool" to mapOf(
+            "must" to listOf(mapOf("exists" to mapOf("field" to "enrichedAt"))),
+            "must_not" to listOf(
+                mapOf("exists" to mapOf("field" to "institutionType")),
+                mapOf("prefix" to mapOf("orcidId" to "EMAIL-"))
+            )
+        ))
+    )
+
     private fun sleepInterruptible(taskType: String, ms: Long): Boolean {
         if (ms <= 0) return progressStore.isCancelled(taskType)
         var remaining = ms
@@ -852,11 +866,14 @@ class ExpertDiscoveryService(
         return (retryAfterMs ?: exponential).coerceAtMost(openAlexProperties.enrichmentMaxBackoffMs)
     }
 
-    fun enrichExistingExperts(): EnrichmentResult {
+    fun enrichExistingExperts(scope: EnrichmentScope = EnrichmentScope.DEFAULT): EnrichmentResult {
         val taskType = "EXPERT_ENRICHMENT"
         val execId = progressStore.getCurrentExecutionId(taskType)
         val cutoff = LocalDateTime.now().minusDays(30).format(dateFormatter)
-        val filters = buildEnrichmentFilters(cutoff)
+        val filters = when (scope) {
+            EnrichmentScope.DEFAULT -> buildEnrichmentFilters(cutoff)
+            EnrichmentScope.INSTITUTION_TYPE_BACKFILL -> buildInstitutionTypeBackfillFilters()
+        }
         val pendingCount = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, filters)
         val rateLimitMode = openAlexProperties.enrichmentRateLimitMode.uppercase(Locale.ROOT)
         progressStore.update(taskType, TaskProgress(
@@ -1299,7 +1316,9 @@ class ExpertDiscoveryService(
     }
 }
 
-data class EnrichmentStats(val pending: Long, val enrichedLast30d: Long, val total: Long)
+enum class EnrichmentScope { DEFAULT, INSTITUTION_TYPE_BACKFILL }
+
+data class EnrichmentStats(val pending: Long, val enrichedLast30d: Long, val total: Long, val institutionTypePending: Long)
 
 data class EnrichmentResult(
     val enriched: Int,

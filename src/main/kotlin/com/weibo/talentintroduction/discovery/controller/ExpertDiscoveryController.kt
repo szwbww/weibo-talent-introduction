@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.service.ArxivDataSource
 import com.weibo.talentintroduction.discovery.service.CoreDataSource
 import com.weibo.talentintroduction.discovery.service.CrossrefDataSource
+import com.weibo.talentintroduction.discovery.service.EnrichmentScope
 import com.weibo.talentintroduction.discovery.service.EnrichmentStats
 import com.weibo.talentintroduction.discovery.service.ExpertDiscoveryService
 import com.weibo.talentintroduction.discovery.service.OpenAlexDataSource
@@ -214,7 +215,9 @@ class ExpertDiscoveryController(
     }
 
     @PostMapping("/enrich")
-    fun enrichExperts(): ResponseEntity<Any> {
+    fun enrichExperts(
+        @RequestParam(required = false) scope: EnrichmentScope? = null
+    ): ResponseEntity<Any> {
         val taskType = "EXPERT_ENRICHMENT"
         val (started, pendingToken) = progressStore.tryStartWithToken(taskType, TaskProgress(
             taskType = taskType, status = "RUNNING",
@@ -224,6 +227,7 @@ class ExpertDiscoveryController(
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "任务正在执行中，请等待完成"))
         }
+        val enrichmentScope = scope ?: EnrichmentScope.DEFAULT
 
         try {
             enrichmentExecutor.execute {
@@ -236,7 +240,7 @@ class ExpertDiscoveryController(
                             progressStore.bindExecutionId(taskType, pendingToken, id)
                         }
                     ) {
-                        discoveryService.enrichExistingExperts()
+                        discoveryService.enrichExistingExperts(enrichmentScope)
                     }
                 } catch (ex: Exception) {
                     progressStore.update(taskType, TaskProgress(

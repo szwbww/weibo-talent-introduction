@@ -606,7 +606,9 @@ class ManualInitialOutreachService(
                 // 查询/缓存/未来重构错误可绕过硬门禁；null/false/旧策略版本均拒绝，记录 EXPERT_NOT_SENDABLE，
                 // 不创建 contact、不选账号、不渲染、不投递（I3-1）。
                 val classification = expert.expertClassification
-                if (classification?.sendable != true || classification.version != ExpertClassificationService.VERSION) {
+                if (classification?.sendable != true ||
+                    classification.version !in ExpertClassificationService.ACCEPTED_CLASSIFICATION_VERSIONS
+                ) {
                     accumulator.recordSkipped(
                         BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE,
                         "专家非生产/科研可发类型：${expert.orcidId}"

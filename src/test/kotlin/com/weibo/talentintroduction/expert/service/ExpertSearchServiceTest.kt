@@ -2230,13 +2230,15 @@ class ExpertSearchServiceTest {
     // ──── I3: INTRODUCTION sendable gate (child 03) ──────────────────────────
 
     @Test
-    fun `expertSendableFilter requires sendable and current policy version (I3-2)`() {
+    fun `expertSendableFilter requires sendable and accepted policy version (I3-2 I5a2-9)`() {
         assertEquals(
             mapOf(
                 "bool" to mapOf(
                     "filter" to listOf(
                         mapOf("term" to mapOf("expertClassification.sendable" to true)),
-                        mapOf("term" to mapOf("expertClassification.version" to ExpertClassificationService.VERSION))
+                        mapOf("terms" to mapOf(
+                            "expertClassification.version" to ExpertClassificationService.ACCEPTED_CLASSIFICATION_VERSIONS
+                        ))
                     )
                 )
             ),

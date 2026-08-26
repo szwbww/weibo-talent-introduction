@@ -123,21 +123,6 @@ describe("batch send task console visual repair", () => {
         assert.ok(app.includes("readBatchTagPickerValue"));
     });
 
-    it("offers the unknown reachability filter in scheduled and manual forms", () => {
-        const unknownOption = '<option value="UNKNOWN_ONLY">仅未知</option>';
-        const editor = html.match(/<select id="batchConfigEditorReachabilityFilter"[\s\S]*?<\/select>/);
-        const manual = html.match(/<select id="batchManualReachabilityFilter"[\s\S]*?<\/select>/);
-        assert.ok(editor && editor[0].includes(unknownOption), "scheduled form must offer 仅未知");
-        assert.ok(manual && manual[0].includes(unknownOption), "manual form must offer 仅未知");
-    });
-
-    it("refreshes scheduled recipient preview when reachability filter changes", () => {
-        const listenerBlock = app.match(/\["batchConfigEditorTemplateId"[\s\S]*?\}\);/);
-        assert.ok(listenerBlock, "scheduled preview listener block must exist");
-        assert.ok(listenerBlock[0].includes('"batchConfigEditorReachabilityFilter"'),
-            "scheduled reachability filter must trigger recipient preview");
-    });
-
     it("repairs legacy seed names with an ASCII-only utf8mb4 migration", () => {
         assert.ok(fs.existsSync(migrationPath), "V74 repair migration must exist");
         const sql = fs.readFileSync(migrationPath, "utf-8");

@@ -41,7 +41,9 @@ class InitialOutreachService(
             // I3-1/I3-4：发送前最后门禁 —— 查询/缓存/未来重构错误可能绕过硬门禁，创建 contact 前再次检查。
             // null/false/旧策略版本均拒绝，计 skipped，不创建 contact、不渲染、不投递。
             val classification = expert.expertClassification
-            if (classification?.sendable != true || classification.version != ExpertClassificationService.VERSION) {
+            if (classification?.sendable != true ||
+                classification.version !in ExpertClassificationService.ACCEPTED_CLASSIFICATION_VERSIONS
+            ) {
                 skipped += 1
                 return@forEachIndexed
             }

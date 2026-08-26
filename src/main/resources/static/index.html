@@ -561,16 +561,6 @@
                             <option value="10">近 10 年</option>
                         </select>
                     </label>
-                    <label class="toolbar-label">
-                        可达性:
-                        <select id="expertReachabilityFilter">
-                            <option value="">全部</option>
-                            <option value="HIGH_ONLY">仅高可达</option>
-                            <option value="EXCLUDE_BLOCKED">高+低（排除已失效）</option>
-                            <option value="UNKNOWN_ONLY">仅未知</option>
-                            <option value="BLOCKED_ONLY">仅已失效</option>
-                        </select>
-                    </label>
                     <span class="toolbar-label">
                         数据完整度:
                         <span class="tag-select" id="hasFieldTagSelect">
@@ -606,6 +596,7 @@
                             <button class="dropdown-item" id="promoteRawBtn" onclick="handleDiscoverOption('quick')">快速晋升（扫描 RAW）</button>
                             <button class="dropdown-item" id="discoverDeepBtn" onclick="handleDiscoverOption('deep')">深度发现（外部数据源）</button>
                             <button class="dropdown-item" onclick="handleDiscoverOption('enrich')">补充学术数据（OpenAlex）</button>
+                            <button class="dropdown-item" id="enrichBackfillBtn" onclick="handleDiscoverOption('enrichBackfill')">补采机构类型（一次性）</button>
                             <hr class="dropdown-divider">
                             <button class="dropdown-item" onclick="handleDiscoverOption('revalidate')">重新验证候选人</button>
                         </div>
@@ -1299,16 +1290,6 @@
                             </div>
                             <div class="batch-gate-keys" id="batchConfigEditorGateFilterKeys" hidden></div>
                         </div>
-                        <div class="batch-config-field" id="editorFieldReachabilityFilter">
-                            <span class="batch-config-field-label">可达性过滤</span>
-                            <select id="batchConfigEditorReachabilityFilter" class="bsc-input bsc-select">
-                                <option value="">不过滤</option>
-                                <option value="EXCLUDE_BLOCKED">排除已失效</option>
-                                <option value="HIGH_ONLY">仅高可达</option>
-                                <option value="UNKNOWN_ONLY">仅未知</option>
-                            </select>
-                            <span class="batch-gate-hint">已退订与硬退专家不会被发送；「仅高可达」排除数据未补充的专家，「仅未知」只选择尚未完成可达性判定的专家。</span>
-                        </div>
                     </div>
                 </section>
 
@@ -1519,18 +1500,6 @@
                             <span class="batch-gate-hint" id="batchManualGateFilterHint">仅影响本次执行，不修改原定时任务。</span>
                         </div>
                         <div class="batch-gate-keys" id="batchManualGateFilterKeys" hidden></div>
-                        <span class="batch-config-diff-badge" hidden>已修改</span>
-                        <div class="batch-config-diff-original" hidden></div>
-                    </div>
-                    <div class="batch-config-field" id="manualFieldReachabilityFilter">
-                        <span class="batch-config-field-label">可达性过滤</span>
-                        <select id="batchManualReachabilityFilter" class="bsc-input bsc-select">
-                            <option value="">不过滤</option>
-                            <option value="EXCLUDE_BLOCKED">排除已失效</option>
-                            <option value="HIGH_ONLY">仅高可达</option>
-                            <option value="UNKNOWN_ONLY">仅未知</option>
-                        </select>
-                        <span class="batch-gate-hint">已退订与硬退专家不会被发送；「仅高可达」排除数据未补充的专家，「仅未知」只选择尚未完成可达性判定的专家。</span>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
                     </div>

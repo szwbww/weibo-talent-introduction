@@ -68,7 +68,8 @@ data class RecipientScope(
         // MATERIAL_REMINDER 零影响（I3-5）。
         val classification = profile.expertClassification
         if (mailType == BatchSendType.INTRODUCTION.name &&
-            (classification?.sendable != true || classification.version != ExpertClassificationService.VERSION)
+            (classification?.sendable != true ||
+                classification.version !in ExpertClassificationService.ACCEPTED_CLASSIFICATION_VERSIONS)
         ) return false
         // I3a-5：与 ES 的 operatorStatusesFilter 同口径 —— 多状态取 OR；
         // NOT_CONTACTED = ES 文档无该字段（I3a-1）；空集合不判定（I3a-3）。

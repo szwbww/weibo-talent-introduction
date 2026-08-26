@@ -8291,47 +8291,6 @@ tr td {
     font-weight: 500;
 }
 
-/* === 可达性徽章（列表项） === */
-.reach-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 11px;
-    font-weight: 600;
-    padding: 1px 7px;
-    border-radius: 999px;
-    line-height: 1.6;
-    cursor: help;
-}
-.reach-badge::before {
-    content: '';
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: currentColor;
-    flex-shrink: 0;
-}
-.reach-high {
-    background: var(--success-bg);
-    color: #15803d;
-    border: 1px solid var(--success-border);
-}
-.reach-low {
-    background: var(--warning-bg);
-    color: var(--warning-strong);
-    border: 1px solid var(--warning-border);
-}
-.reach-unknown {
-    background: var(--surface);
-    color: var(--text-muted);
-    border: 1px solid var(--border);
-}
-.reach-blocked {
-    background: var(--error-bg);
-    color: var(--error-strong);
-    border: 1px solid var(--error-border);
-}
-
 /* === 详情 sub-tab === */
 .detail-sub-tabs {
     display: flex;
