@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-08-25/00-rnd-gate-master.md
 
 - Status: RUNNING
-- Master plan: docs/plans/2026-08-25/00-rnd-gate-master.md (commit 2b80a92)
-- Amendments: A1, A2
+- Master plan: docs/plans/2026-08-25/00-rnd-gate-master.md (commit 5718abb)
+- Amendments: A1, A2, A3
 - Master base: f2935072c819a9167e75220a6a959b0769462fde
 - Branch: fast/rnd-gate
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-rnd-gate
@@ -36,3 +36,4 @@
 |---|---|---|---|---|---|---|
 | A1 | docs/plans/2026-08-25/01-expert-list-type-filter.md | commit:2b80a92 | commit:0232a4f | 主计划「验证命令/通过判据」回归门禁（mvn test 退出码 0） | Task 1-3 强制编辑推移守卫测试钉死的噪声行号，授权文件集内无法同时满足穷举清单与全量测试绿 | HUMAN:ask 2026-08-25T23:54:59Z "Approve A1, resume child 01" |
 | A2 | docs/plans/2026-08-25/02-batch-send-type-filter.md | commit:2b80a92 | commit:77d77c7 | 子计划 02 Task 1「新增文件 V100」+ Flyway 版本唯一性前提 | 计划审计前提「最新迁移为 V99」过期：V100 已被 V100__add_task_execution_indexes.sql 占用（评审时已在库），最新为 V107；重复版本号会导致 Flyway 启动失败；唯一确定的修正是 V108 | HUMAN:ask 2026-08-26T01:54:13Z "Approve A2: use V108, resume child 02" |
+| A3 | docs/plans/2026-08-25/00-rnd-gate-master.md | commit:2b80a92 | commit:5718abb | 主计划「已识别但本轮不做：SBIR 接入」节 | 用户更新计划文件：SBIR 三轮实测定性为地域/IP 封禁（非服务端问题），改挂起（PARKED）并给出离线摄入架构结论；01-04 四份子计划契约逐字不变 | HUMAN:direct user plan-file update 2026-08-26 "计划文件有更新 你记得看最新版" |
