@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-08-26/00-execution-order.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-08-26/00-execution-order.md (commit ee0749d3beedea7e26f4bf4e097b3d33a1684b7d)
 - Amendments: N/A
 - Master base: f2935072c819a9167e75220a6a959b0769462fde
@@ -13,8 +13,8 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: c3 PLAN_CONFLICT — two pre-existing test files not authorized by plan 03 break plan-required commands: TrustReplyWorkbenchServiceTest.kt (7 old-wording assertions; plan T1.3 mandates verbatim new wording) and trustReplyWorkbenchSharedMount.test.js:2238 (role="tab" count 2; S-1 mandates 3-button preview tab bar). Amendment to authorize both files required (see Amendments on resume).
+- Resume from: c3 epoch 2, base f6dc048359b0d7f46b335f640d78033fa7747a27, next action apply A1 amendment + fix round 1
 
 ## Baseline
 
@@ -29,7 +29,7 @@
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | c1 | docs/plans/2026-08-26/01-llm-fact-retrieval.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | none | 1 | LIGHT_PASS_WITH_NOTES | f2935072c819a9167e75220a6a959b0769462fde | de5e130a84fba33296ea906734a1c7f071e3383a | 0 | — | de5e130a84fba33296ea906734a1c7f071e3383a | 46232e4 | RECORD_ONLY O-1..O-6 (verify-log); worktree-identity gate manual (O-1) |
 | c2 | docs/plans/2026-08-26/02-unrecognized-asks-and-orphan-keys.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | c1 | 1 | LIGHT_PASS_WITH_NOTES | de5e130a84fba33296ea906734a1c7f071e3383a | f6dc048359b0d7f46b335f640d78033fa7747a27 | 0 | — | f6dc048359b0d7f46b335f640d78033fa7747a27 | 98a7ce0 | RECORD_ONLY O-1..O-3 (verify-log); worktree-identity gate manual (O-1) |
-| c3 | docs/plans/2026-08-26/03-orchestration-and-preview.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | c1 | 1 | PENDING | f6dc048359b0d7f46b335f640d78033fa7747a27 |  | 0 | — |  |  | Letter orchestration + preview tabs |
+| c3 | docs/plans/2026-08-26/03-orchestration-and-preview.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | c1 | 1 | PAUSED_FOR_HUMAN | f6dc048359b0d7f46b335f640d78033fa7747a27 | 9b7e32ca073cad06a0f81e4d60cd38fb5917bfe0 | 0 | — | 9b7e32ca073cad06a0f81e4d60cd38fb5917bfe0 |  | PLAN_CONFLICT at implementer: 2 unauthorized test files break required commands; A1 amendment pending (see Pause reason) |
 
 ## Amendments
 
