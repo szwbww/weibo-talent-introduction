@@ -23,6 +23,7 @@ data class BatchSendTaskConfig(
     val emailDomainsJson: String = "[]",
     val discipline: String? = null,
     val operatorStatusesJson: String = "[]",
+    val expertTypesJson: String = "[]",
     val templateId: Long? = null,
     val gateFilterEnabled: Boolean = false,
     val legacyCode: String? = null,
@@ -48,6 +49,7 @@ data class BatchSendTaskConfigView(
     val emailDomains: List<String> = emptyList(),
     val discipline: String?,
     val operatorStatuses: List<String> = emptyList(),
+    val expertTypes: List<String> = emptyList(),
     val templateId: Long?,
     val gateFilterEnabled: Boolean = false,
     val createdAt: LocalDateTime?,
@@ -73,6 +75,7 @@ data class BatchSendTaskConfigCreateCommand(
     val emailDomains: List<String> = emptyList(),
     val discipline: String? = null,
     val operatorStatuses: List<String> = emptyList(),
+    val expertTypes: List<String> = emptyList(),
     val templateId: Long? = null,
     val gateFilterEnabled: Boolean = false
 )
@@ -92,6 +95,7 @@ data class BatchSendTaskConfigUpdateCommand(
     val emailDomains: List<String> = emptyList(),
     val discipline: String? = null,
     val operatorStatuses: List<String> = emptyList(),
+    val expertTypes: List<String> = emptyList(),
     val templateId: Long? = null,
     val gateFilterEnabled: Boolean = false
 )

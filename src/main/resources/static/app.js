@@ -14128,6 +14128,7 @@ function showBatchConfigEditor(config) {
     setBatchTagPickerValue("batchConfigEditorTags", config && Array.isArray(config.tags) ? config.tags : []);
     setVal("batchConfigEditorDiscipline", config ? (config.discipline || "") : "");
     setBatchMultiPickerValue("batchConfigEditorOperatorStatuses", config && Array.isArray(config.operatorStatuses) ? config.operatorStatuses : []);
+    setBatchMultiPickerValue("batchConfigEditorExpertTypes", config && Array.isArray(config.expertTypes) ? config.expertTypes : []);
     setVal("batchConfigEditorRoundsPerRun", config ? config.roundsPerRun : "1");
     setVal("batchConfigEditorRoundSize", config ? config.roundSize : "50");
     setBatchRegionPickerValue("batchConfigEditorRegions", config && Array.isArray(config.regions) ? config.regions : []);
@@ -14514,6 +14515,16 @@ var BATCH_MULTI_PICKER_REGISTRY = {
         options: function() { return batchOperatorStatusOptions(); },
         emptyText: "没有匹配状态",
         previewKind: "manual"
+    },
+    batchConfigEditorExpertTypes: {
+        options: function() { return batchExpertTypeOptions(); },
+        emptyText: "没有匹配类型",
+        previewKind: "editor"
+    },
+    batchManualExpertTypes: {
+        options: function() { return batchExpertTypeOptions(); },
+        emptyText: "没有匹配类型",
+        previewKind: "manual"
     }
 };
 
@@ -14528,6 +14539,20 @@ function batchOperatorStatusOptions() {
 function operatorStatusLabel(value) {
     var hit = (operatorStatusOptions || []).find(function(o) { return o[0] === value; });
     return hit ? hit[1] : String(value);
+}
+
+/* I2-1: 研发类型选项 —— value 为 ExpertType 英文枚举名 + "UNCLASSIFIED"（进 payload /
+   diff 比较），label 为中文展示（与子计划 01 的 chip 文案逐字一致）。 */
+function batchExpertTypeOptions() {
+    return [
+        { value: "PRODUCTION_RND", label: "生产研发" },
+        { value: "ACADEMIC_RND", label: "学术科研" },
+        { value: "HYBRID_RND", label: "混合研发" },
+        { value: "SERVICE_ONLY", label: "纯服务" },
+        { value: "OUT_OF_SCOPE", label: "医学越界" },
+        { value: "UNKNOWN", label: "未知" },
+        { value: "UNCLASSIFIED", label: "未分类" }
+    ];
 }
 
 // 服务商选项：从预加载列表产出 [{value,label}]。兼容既有两种元素形态
@@ -14868,6 +14893,7 @@ function buildConfigEditorRecipientSnapshot() {
         emailDomains: readBatchMultiPickerValue("batchConfigEditorEmailDomains"),
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
+        expertTypes: readBatchMultiPickerValue("batchConfigEditorExpertTypes"),
         gateFilterEnabled: gateToggleChecked("editor"),
         reachabilityFilter: val("batchConfigEditorReachabilityFilter") || null,
         templateId: templateId
@@ -15010,6 +15036,7 @@ async function saveBatchConfigEditor() {
         emailDomains: readBatchMultiPickerValue("batchConfigEditorEmailDomains"),
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
+        expertTypes: readBatchMultiPickerValue("batchConfigEditorExpertTypes"),
         gateFilterEnabled: gateToggleChecked("editor"),
         reachabilityFilter: val("batchConfigEditorReachabilityFilter") || null,
         templateId: templateId
@@ -15095,6 +15122,7 @@ function deepCloneConfig(c) {
         emailDomains: Array.isArray(c.emailDomains) ? c.emailDomains.slice() : [],
         discipline: c.discipline || "",
         operatorStatuses: Array.isArray(c.operatorStatuses) ? c.operatorStatuses.slice() : [],
+        expertTypes: Array.isArray(c.expertTypes) ? c.expertTypes.slice() : [],
         gateFilterEnabled: c.gateFilterEnabled === true,
         reachabilityFilter: c.reachabilityFilter || "",
         roundSize: c.roundSize || 50,
@@ -15117,6 +15145,7 @@ function fillManualFormDefaults() {
         emailDomains: [],
         discipline: "",
         operatorStatuses: [],
+        expertTypes: [],
         gateFilterEnabled: false,
         reachabilityFilter: "",
         roundSize: 50,
@@ -15142,6 +15171,7 @@ function fillManualFormFromDraft() {
     setBatchMultiPickerValue("batchManualEmailDomains", Array.isArray(d.emailDomains) ? d.emailDomains : []);
     setVal("batchManualDiscipline", d.discipline || "");
     setBatchMultiPickerValue("batchManualOperatorStatuses", Array.isArray(d.operatorStatuses) ? d.operatorStatuses : []);
+    setBatchMultiPickerValue("batchManualExpertTypes", Array.isArray(d.expertTypes) ? d.expertTypes : []);
     setVal("batchManualReachabilityFilter", d.reachabilityFilter || "");
     setVal("batchManualRoundSize", d.roundSize);
     setVal("batchManualRoundsPerRun", d.roundsPerRun);
@@ -15226,6 +15256,7 @@ function readManualFormValues() {
         emailDomains: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualEmailDomains") : [],
         discipline: val("batchManualDiscipline") || null,
         operatorStatuses: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualOperatorStatuses") : [],
+        expertTypes: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualExpertTypes") : [],
         gateFilterEnabled: Boolean(gateCheckboxEl && gateCheckboxEl.checked),
         reachabilityFilter: val("batchManualReachabilityFilter") || null,
         roundSize: parseNum("batchManualRoundSize"),
@@ -15245,6 +15276,7 @@ function normalizeManualSnapshot(v) {
         emailDomains: (Array.isArray(v.emailDomains) ? v.emailDomains : []).map(function(s) { return String(s).trim(); }).filter(Boolean).slice().sort(),
         discipline: (v.discipline || "").trim() || null,
         operatorStatuses: (Array.isArray(v.operatorStatuses) ? v.operatorStatuses : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
+        expertTypes: (Array.isArray(v.expertTypes) ? v.expertTypes : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
         gateFilterEnabled: Boolean(v.gateFilterEnabled),
         reachabilityFilter: (v.reachabilityFilter || "").trim() || null,
         roundSize: Number.isFinite(v.roundSize) ? v.roundSize : null,
@@ -15275,6 +15307,10 @@ function formatManualDiffValue(key, value) {
         return String(value);
     }
     if (key === "operatorStatuses") return (Array.isArray(value) && value.length > 0) ? value.map(operatorStatusLabel).join("、") : "全部状态";
+    if (key === "expertTypes") {
+        var labels = batchExpertTypeOptions().reduce(function(acc, o) { acc[o.value] = o.label; return acc; }, {});
+        return (Array.isArray(value) && value.length > 0) ? value.map(function(v) { return labels[v] || v; }).join("、") : "全部类型";
+    }
     if (key === "tags") {
         var tags = Array.isArray(value) ? value : [];
         return tags.length > 0 ? tags.join(", ") : "(无)";
@@ -15296,6 +15332,7 @@ function computeManualDiffs() {
         { key: "emailDomains", label: "邮箱服务商" },
         { key: "discipline", label: "学科" },
         { key: "operatorStatuses", label: "专家状态" },
+        { key: "expertTypes", label: "研发类型" },
         { key: "gateFilterEnabled", label: "邮件模版门禁过滤" },
         { key: "reachabilityFilter", label: "可达性过滤" },
         { key: "roundsPerRun", label: "执行轮次" },
@@ -15344,6 +15381,7 @@ function computeAndRenderDiffs() {
         emailDomains: "manualFieldEmailDomain",
         discipline: "manualFieldDiscipline",
         operatorStatuses: "manualFieldOperatorStatus",
+        expertTypes: "manualFieldExpertTypes",
         gateFilterEnabled: "manualFieldGateFilter",
         reachabilityFilter: "manualFieldReachabilityFilter",
         roundsPerRun: "manualFieldRoundsPerRun",
@@ -15375,7 +15413,7 @@ function computeAndRenderDiffs() {
 
 function clearAllDiffMarkers() {
     var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldRegions", "manualFieldEmailDomain",
-        "manualFieldDiscipline", "manualFieldOperatorStatus", "manualFieldGateFilter", "manualFieldReachabilityFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
+        "manualFieldDiscipline", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldGateFilter", "manualFieldReachabilityFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
         var el = document.getElementById(id);
@@ -16012,6 +16050,8 @@ function bindBatchSendTaskEvents() {
     bindBatchMultiPicker("batchManualEmailDomains");
     bindBatchMultiPicker("batchConfigEditorOperatorStatuses");
     bindBatchMultiPicker("batchManualOperatorStatuses");
+    bindBatchMultiPicker("batchConfigEditorExpertTypes");
+    bindBatchMultiPicker("batchManualExpertTypes");
 
     // Cron preview test button
     var cronTestBtn = document.getElementById("batchConfigEditorCronTestBtn");

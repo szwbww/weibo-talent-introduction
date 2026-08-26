@@ -1275,6 +1275,18 @@
                                 <div id="batchConfigEditorOperatorStatusesDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
                             </div>
                         </div>
+                        <div class="batch-config-field">
+                            <span class="batch-config-field-label">研发类型</span>
+                            <div class="batch-tag-picker" data-tag-picker="batchConfigEditorExpertTypes">
+                                <div class="batch-tag-picker-control">
+                                    <div id="batchConfigEditorExpertTypesChips" class="batch-tag-picker-chips"></div>
+                                    <input type="search" id="batchConfigEditorExpertTypesSearch" class="batch-tag-picker-search" placeholder="搜索并选择研发类型" autocomplete="off" aria-controls="batchConfigEditorExpertTypesDropdown" aria-expanded="false">
+                                    <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                                </div>
+                                <input type="hidden" id="batchConfigEditorExpertTypes" value="">
+                                <div id="batchConfigEditorExpertTypesDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                            </div>
+                        </div>
                         <div class="batch-config-field batch-gate-field" id="editorFieldGateFilter">
                             <span class="batch-config-field-label">邮件模版门禁过滤</span>
                             <div class="batch-gate-row">
@@ -1478,6 +1490,20 @@
                             </div>
                             <input type="hidden" id="batchManualOperatorStatuses" value="">
                             <div id="batchManualOperatorStatusesDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                        </div>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </div>
+                    <div class="batch-config-field" id="manualFieldExpertTypes">
+                        <span class="batch-config-field-label">研发类型</span>
+                        <div class="batch-tag-picker" data-tag-picker="batchManualExpertTypes">
+                            <div class="batch-tag-picker-control">
+                                <div id="batchManualExpertTypesChips" class="batch-tag-picker-chips"></div>
+                                <input type="search" id="batchManualExpertTypesSearch" class="batch-tag-picker-search" placeholder="搜索并选择研发类型" autocomplete="off" aria-controls="batchManualExpertTypesDropdown" aria-expanded="false">
+                                <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                            </div>
+                            <input type="hidden" id="batchManualExpertTypes" value="">
+                            <div id="batchManualExpertTypesDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
                         </div>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>

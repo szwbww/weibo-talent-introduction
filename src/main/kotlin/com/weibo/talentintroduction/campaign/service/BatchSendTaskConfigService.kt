@@ -75,6 +75,7 @@ class BatchSendTaskConfigService(
                 emailDomainsJson = normalized.emailDomainsJson,
                 discipline = normalized.discipline,
                 operatorStatusesJson = normalized.operatorStatusesJson,
+                expertTypesJson = normalized.expertTypesJson,
                 templateId = normalized.templateId,
                 gateFilterEnabled = normalized.gateFilterEnabled,
                 createdAt = now,
@@ -109,6 +110,7 @@ class BatchSendTaskConfigService(
                 emailDomainsJson = normalized.emailDomainsJson,
                 discipline = normalized.discipline,
                 operatorStatusesJson = normalized.operatorStatusesJson,
+                expertTypesJson = normalized.expertTypesJson,
                 templateId = normalized.templateId,
                 gateFilterEnabled = normalized.gateFilterEnabled,
                 updatedAt = now
@@ -191,6 +193,8 @@ class BatchSendTaskConfigService(
                 discipline = request.discipline.ifBlank { null },
                 // M-2: 旧 typed API 不传该字段，必须显式保留现有多值状态（漏写会命中默认值静默重置）。
                 operatorStatuses = parseOperatorStatuses(existing.operatorStatusesJson),
+                // I2-5: 旧 typed API 不传类型筛选，必须显式保留（漏写会命中默认值静默重置）。
+                expertTypes = parseExpertTypes(existing.expertTypesJson),
                 templateId = request.templateId,
                 // I4a-6 (M-2): 旧 typed API 不传门禁开关，必须显式保留存量值（漏写会命中默认值静默重置为 false）。
                 gateFilterEnabled = existing.gateFilterEnabled,
@@ -290,6 +294,20 @@ class BatchSendTaskConfigService(
         }
         val operatorStatusesJson = objectMapper.writeValueAsString(operatorStatuses)
 
+        // I2-1: 白名单直接引用子计划 01 的 ExpertSearchService.ALLOWED_EXPERT_TYPES（M-2）。
+        // 逗号是前端 picker 的分隔符（K-batch-picker-comma-delimited-contract）。
+        val expertTypes = fields.expertTypes
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        expertTypes.forEach {
+            require(it in ExpertSearchService.ALLOWED_EXPERT_TYPES) {
+                "expertType must be one of ${ExpertSearchService.ALLOWED_EXPERT_TYPES}: $it"
+            }
+            require(!it.contains(",")) { "expertType must not contain a comma: $it" }
+        }
+        val expertTypesJson = objectMapper.writeValueAsString(expertTypes)
+
         val tags = normalizeTags(fields.tags)
         val tagsJson = objectMapper.writeValueAsString(tags)
         val regions = normalizeRegions(fields.regions)
@@ -312,6 +330,7 @@ class BatchSendTaskConfigService(
             emailDomainsJson = emailDomainsJson,
             discipline = discipline,
             operatorStatusesJson = operatorStatusesJson,
+            expertTypesJson = expertTypesJson,
             templateId = fields.templateId,
             gateFilterEnabled = fields.gateFilterEnabled
         )
@@ -425,6 +444,19 @@ class BatchSendTaskConfigService(
         }
     }
 
+    // I2-4: expert_types_json 是唯一事实源；解析失败按不限（空集合）处理，不抛异常。
+    private fun parseExpertTypes(json: String?): List<String> {
+        val text = json?.trim().orEmpty()
+        if (text.isEmpty()) return emptyList()
+        return try {
+            objectMapper.readValue(text, object : TypeReference<List<String>>() {})
+                .map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        } catch (e: Exception) {
+            log.warn("Failed to parse expert_types_json, treating as unrestricted: {}", e.message)
+            emptyList()
+        }
+    }
+
     private fun toView(row: BatchSendTaskConfig, lastExecutedAt: LocalDateTime? = null): BatchSendTaskConfigView {
         val id = row.id ?: error("Batch send task config id is required")
         return BatchSendTaskConfigView(
@@ -444,6 +476,7 @@ class BatchSendTaskConfigService(
             emailDomains = parseEmailDomains(row.emailDomainsJson),
             discipline = row.discipline,
             operatorStatuses = parseOperatorStatuses(row.operatorStatusesJson),
+            expertTypes = parseExpertTypes(row.expertTypesJson),
             templateId = row.templateId,
             gateFilterEnabled = row.gateFilterEnabled,
             createdAt = row.createdAt,
@@ -536,6 +569,7 @@ class BatchSendTaskConfigService(
         val emailDomains: List<String>,
         val discipline: String?,
         val operatorStatuses: List<String>,
+        val expertTypes: List<String> = emptyList(),
         val templateId: Long?,
         val gateFilterEnabled: Boolean = false
     )
@@ -556,6 +590,7 @@ class BatchSendTaskConfigService(
         val emailDomainsJson: String,
         val discipline: String?,
         val operatorStatusesJson: String,
+        val expertTypesJson: String,
         val templateId: Long?,
         val gateFilterEnabled: Boolean = false
     )
@@ -575,6 +610,7 @@ class BatchSendTaskConfigService(
         emailDomains = emailDomains,
         discipline = discipline,
         operatorStatuses = operatorStatuses,
+        expertTypes = expertTypes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled
     )
@@ -594,6 +630,7 @@ class BatchSendTaskConfigService(
         emailDomains = emailDomains,
         discipline = discipline,
         operatorStatuses = operatorStatuses,
+        expertTypes = expertTypes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled
     )
@@ -613,6 +650,7 @@ class BatchSendTaskConfigService(
         emailDomains = parseEmailDomains(emailDomainsJson),
         discipline = discipline,
         operatorStatuses = parseOperatorStatuses(operatorStatusesJson),
+        expertTypes = parseExpertTypes(expertTypesJson),
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled
     )

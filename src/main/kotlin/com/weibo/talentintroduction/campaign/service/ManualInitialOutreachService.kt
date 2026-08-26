@@ -1321,6 +1321,8 @@ class ManualInitialOutreachService(
         // （预估 countEsTargets / fetchEsPage / buildMaterialReminderSnapshot 复用同一 seam）；
         // MATERIAL_REMINDER 不追加，零影响（I3-5）。
         if (scope.mailType == BatchSendType.INTRODUCTION.name) {
+            // I2-1/I2-6: 类型筛选是硬门禁之内的可选收窄（空集合返回 null，不追加，I2-3）。
+            ExpertSearchService.expertTypesFilter(scope.expertTypes)?.let { filters.add(it) }
             filters.add(ExpertSearchService.expertSendableFilter())
         }
         return filters

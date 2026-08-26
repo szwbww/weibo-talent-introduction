@@ -3527,6 +3527,166 @@ class ManualInitialOutreachServiceTest {
         }
     }
 
+    // ── P3c: expertTypes 研发类型多值（I2-1 / I2-2 / I2-3 / I2-6）──────────────────
+
+    @Test
+    fun `empty expertTypes keeps pre-change baseline filters verbatim on CANDIDATE (I2-3)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null,
+            operatorStatuses = emptyList(),
+            expertTypes = emptyList()
+        )
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+
+        // I2-3: 空集合 = 不限 —— 与改动前基线逐字相同（notContacted 基座 + I3-2 sendable term）。
+        val baseline = listOf(
+            mapOf("exists" to mapOf("field" to "email")),
+            mapOf(
+                "bool" to mapOf(
+                    "must_not" to listOf(
+                        mapOf("exists" to mapOf("field" to "operatorStatus")),
+                        mapOf("term" to mapOf("operatorStatus" to "EMAIL_INVALID"))
+                    )
+                )
+            )
+        )
+        assertEquals(baseline + ExpertSearchService.expertSendableFilter(), filters)
+    }
+
+    @Test
+    fun `non-empty expertTypes adds type filter and keeps sendable hard gate (I2-1)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null,
+            operatorStatuses = emptyList(),
+            expertTypes = listOf("PRODUCTION_RND", "ACADEMIC_RND")
+        )
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+
+        // I2-1: 同一 filter 数组内必须同时存在类型 filter 与 sendable 硬门禁 term（AND 并存）。
+        assertTrue(filters.contains(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND", "ACADEMIC_RND"))!!))
+        assertTrue(filters.contains(ExpertSearchService.expertSendableFilter()))
+        // 类型 filter 追加在 sendable 硬门禁之前。
+        assertEquals(filters.indexOf(ExpertSearchService.expertSendableFilter()), filters.size - 1)
+    }
+
+    @Test
+    fun `MATERIAL_REMINDER with expertTypes adds no type filter (I2-6)`() {
+        val scope = RecipientScope(
+            mailType = "MATERIAL_REMINDER", funnelLevels = setOf("APPLICATION"),
+            tags = listOf("承诺回复材料"), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null,
+            operatorStatuses = emptyList(),
+            expertTypes = listOf("PRODUCTION_RND")
+        )
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "APPLICATION")
+
+        // I2-6: 类型筛选只在 INTRODUCTION 生效；材料提醒既无类型 filter 也无 sendable term。
+        assertFalse(filters.contains(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND"))!!))
+        assertFalse(filters.contains(ExpertSearchService.expertSendableFilter()))
+    }
+
+    @Test
+    fun `matchesExpert hard gate wins over expert type match (I2-1)`() {
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null,
+            operatorStatuses = emptyList(),
+            expertTypes = listOf("PRODUCTION_RND")
+        )
+        // 硬门禁不通过（缺分类 / 旧策略版本）→ 无论类型是否命中一律 false。
+        assertFalse(scope.matchesExpert(expert("0001", "a@b.com").copy(expertClassification = null)))
+        val stale = classification(ExpertType.PRODUCTION_RND).copy(version = "stale-v1")
+        assertFalse(scope.matchesExpert(expert("0002", "b@b.com").copy(expertClassification = stale)))
+        // 类型命中且硬门禁通过 → true。
+        assertTrue(scope.matchesExpert(expert("0003", "c@b.com")))
+    }
+
+    @Test
+    fun `matchesExpert type semantics per profile including UNCLASSIFIED and empty (I2-1 I2-3)`() {
+        // 与 ES expertTypesFilter 同口径：UNCLASSIFIED = expertClassification.type 缺失（I2-1）。
+        // INTRODUCTION 硬门禁内 null 分类恒 false（I2-1 优先级）—— UNCLASSIFIED 的
+        // null-type 分支与 ES must_not-exists 语义一致，但门禁先于类型判定执行。
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null,
+            operatorStatuses = emptyList(),
+            expertTypes = listOf("PRODUCTION_RND", "UNCLASSIFIED")
+        )
+        // PRODUCTION_RND 命中 → 放行。
+        assertTrue(scope.matchesExpert(expert("0001", "a@b.com")))
+        // ACADEMIC_RND 未命中 → 拒绝。
+        assertFalse(
+            scope.matchesExpert(expert("0002", "b@b.com").copy(expertClassification = classification(ExpertType.ACADEMIC_RND)))
+        )
+        // null 分类：UNCLASSIFIED 语义上匹配（type 缺失），但硬门禁优先拒绝（I2-1）。
+        assertFalse(scope.matchesExpert(expert("0003", "c@b.com").copy(expertClassification = null)))
+        // UNCLASSIFIED 不匹配带显式类型的 profile。
+        val onlyUnclassified = scope.copy(expertTypes = listOf("UNCLASSIFIED"))
+        assertFalse(
+            onlyUnclassified.matchesExpert(expert("0006", "f@b.com")),
+            "UNCLASSIFIED must not match a profile with an explicit type"
+        )
+
+        // I2-3: 空集合不判定 —— 硬门禁内 profile 放行，硬门禁本身仍生效。
+        val unrestricted = scope.copy(expertTypes = emptyList())
+        assertTrue(
+            unrestricted.matchesExpert(expert("0004", "d@b.com").copy(expertClassification = classification(ExpertType.HYBRID_RND)))
+        )
+        assertFalse(
+            unrestricted.matchesExpert(expert("0005", "e@b.com").copy(expertClassification = classification(ExpertType.SERVICE_ONLY))),
+            "empty expertTypes must not weaken the sendable hard gate"
+        )
+    }
+
+    @Test
+    fun `preview and execution use identical filter arrays for same scope with expertTypes (I2-2)`() {
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+
+        // 预期 filter 列表：notContacted 基座 + 类型 filter + sendable 硬门禁（I2-1 顺序）。
+        val expectedFilters = ExpertSearchService.notContactedWithEmailFilters().toMutableList()
+        expectedFilters.add(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND"))!!)
+        expectedFilters.add(ExpertSearchService.expertSendableFilter())
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(1L)
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION",
+            roundSize = 10,
+            roundsPerRun = 1,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            expertTypes = listOf("PRODUCTION_RND")
+        )
+
+        // 预估路径（countBySnapshot → resolveScope → countEsTargets）
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(1, preview.pending)
+        assertEquals(0, preview.retryable)
+        assertEquals(1, preview.totalSendable)
+
+        // 执行路径（无可用账号 → 停在轮次闸口，不发信）
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+        val result = service.run(snapshot, 12347L, ExecutionMode.MANUAL, oneRoundOnly = true)
+        assertEquals(preview.totalSendable, result.total)
+
+        // I2-2: 两条路径对同一 snapshot 使用完全相同的 filter 列表（同源同口径）。
+        // 调用次数 = 预估 countEsTargets(1) + 执行 countEsTargets(1) + 执行 fetchEsPage
+        // 首页预取(1)；全部命中同一列表。
+        Mockito.verify(expertSearchService, Mockito.times(3))
+            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
     // ── P4a: 邮件模版门禁过滤（I4a-1..I4a-6 / M-1 / M-2 / M-4）────────────────────
 
     @Test

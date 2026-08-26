@@ -20,6 +20,7 @@ data class BatchExecutionSnapshot(
     val emailDomains: List<String> = emptyList(),
     val discipline: String? = null,
     val operatorStatuses: List<String> = emptyList(),
+    val expertTypes: List<String> = emptyList(),
     val templateId: Long? = null,
     val gateFilterEnabled: Boolean = false,
     val oneRoundOnly: Boolean = false
@@ -56,6 +57,8 @@ data class RecipientScope(
     val emailDomains: List<String>,
     val discipline: String?,
     val operatorStatuses: List<String> = emptyList(),
+    /** I2-1: 研发类型收窄（INTRODUCTION 专属，空集合 = 不限）。 */
+    val expertTypes: List<String> = emptyList(),
     /** I4a-4: 已解析的门禁 ES 字段（ALLOWED_HAS_FIELDS 交集）；解析只发生在 resolveScope。 */
     val gateEsFields: List<String> = emptyList()
 ) {
@@ -73,6 +76,15 @@ data class RecipientScope(
             val matched = operatorStatuses.any {
                 if (it == "NOT_CONTACTED") profile.operatorStatus.isNullOrBlank()
                 else profile.operatorStatus == it
+            }
+            if (!matched) return false
+        }
+        // I2-1/I2-6: 类型筛选是硬门禁之内的可选收窄，只在 INTRODUCTION 下判定；
+        // 空集合不判定（I2-3）。硬门禁（:65-69）不得被本段替代。
+        if (mailType == BatchSendType.INTRODUCTION.name && expertTypes.isNotEmpty()) {
+            val typeName = profile.expertClassification?.type?.name
+            val matched = expertTypes.any {
+                if (it == "UNCLASSIFIED") typeName == null else typeName == it
             }
             if (!matched) return false
         }
@@ -137,7 +149,9 @@ data class RecipientScope(
                 emailDomains = snapshot.emailDomains.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
                 discipline = snapshot.discipline?.trim()?.takeIf { it.isNotEmpty() },
                 // I3a-3：trim、丢空、去重保序；空集合 = 不限。
-                operatorStatuses = snapshot.operatorStatuses.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+                operatorStatuses = snapshot.operatorStatuses.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
+                // I2-3：trim、丢空、去重保序；空集合 = 不限。
+                expertTypes = snapshot.expertTypes.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
             )
         }
     }
@@ -281,6 +295,15 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
     } catch (_: Exception) {
         emptyList()
     }
+    // I2-4: expert_types_json 是唯一事实源；解析失败按不限（空集合）处理。
+    val expertTypes = try {
+        objectMapper.readValue(expertTypesJson, object : TypeReference<List<String>>() {})
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+    } catch (_: Exception) {
+        emptyList()
+    }
     return BatchExecutionSnapshot(
         mailType = mailType,
         roundSize = roundSize,
@@ -294,6 +317,7 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         emailDomains = emailDomains,
         discipline = discipline,
         operatorStatuses = operatorStatuses,
+        expertTypes = expertTypes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         oneRoundOnly = oneRoundOnly

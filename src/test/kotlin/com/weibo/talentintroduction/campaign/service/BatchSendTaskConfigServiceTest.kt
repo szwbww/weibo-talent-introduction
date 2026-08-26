@@ -68,6 +68,7 @@ class BatchSendTaskConfigServiceTest {
         emailDomains: List<String> = emptyList(),
         discipline: String? = null,
         operatorStatuses: List<String> = emptyList(),
+        expertTypes: List<String> = emptyList(),
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false
     ) = BatchSendTaskConfigCreateCommand(
@@ -85,6 +86,7 @@ class BatchSendTaskConfigServiceTest {
         emailDomains = emailDomains,
         discipline = discipline,
         operatorStatuses = operatorStatuses,
+        expertTypes = expertTypes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled
     )
@@ -104,6 +106,7 @@ class BatchSendTaskConfigServiceTest {
         emailDomains: List<String> = emptyList(),
         discipline: String? = null,
         operatorStatuses: List<String> = emptyList(),
+        expertTypes: List<String> = emptyList(),
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false
     ) = BatchSendTaskConfigUpdateCommand(
@@ -121,6 +124,7 @@ class BatchSendTaskConfigServiceTest {
         emailDomains = emailDomains,
         discipline = discipline,
         operatorStatuses = operatorStatuses,
+        expertTypes = expertTypes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled
     )
@@ -137,6 +141,7 @@ class BatchSendTaskConfigServiceTest {
         emailDomainsJson: String = "[]",
         discipline: String? = null,
         operatorStatusesJson: String = "[]",
+        expertTypesJson: String = "[]",
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false,
         deletedAt: LocalDateTime? = null,
@@ -157,6 +162,7 @@ class BatchSendTaskConfigServiceTest {
         emailDomainsJson = emailDomainsJson,
         discipline = discipline,
         operatorStatusesJson = operatorStatusesJson,
+        expertTypesJson = expertTypesJson,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         deletedAt = deletedAt,
@@ -1009,6 +1015,168 @@ class BatchSendTaskConfigServiceTest {
         // M-2: legacy request never carries operatorStatuses; the entity's multi-value json
         // must survive — 漏写会命中 Kotlin 默认值静默重置。
         assertEquals("""["CONTACTED"]""", captor.value.operatorStatusesJson)
+    }
+
+    // ── P3c: expertTypes 研发类型多值（I2-1 / I2-3 / I2-4 / I2-5）────────────────
+
+    @Test
+    fun `create persists expertTypes multi-value and get returns them in order (I2-4)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("类型任务")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 60L)
+        }
+
+        val view = service().create(
+            createCmd(name = "类型任务", expertTypes = listOf("PRODUCTION_RND", "ACADEMIC_RND"))
+        )
+
+        assertEquals(listOf("PRODUCTION_RND", "ACADEMIC_RND"), view.expertTypes)
+        verify(repository).save(captor.capture())
+        assertEquals("""["PRODUCTION_RND","ACADEMIC_RND"]""", captor.value.expertTypesJson)
+
+        // row → View 映射同样携带该字段（读路径）。
+        `when`(repository.findByIdAndDeletedAtIsNull(60L)).thenReturn(captor.value.copy(id = 60L))
+        assertEquals(listOf("PRODUCTION_RND", "ACADEMIC_RND"), service().get(60L).expertTypes)
+    }
+
+    @Test
+    fun `create normalizes whitespace and duplicate expertTypes (I2-4)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("类型去重")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 61L)
+        }
+
+        val view = service().create(
+            createCmd(name = "类型去重", expertTypes = listOf("  PRODUCTION_RND  ", "", "PRODUCTION_RND", "HYBRID_RND"))
+        )
+
+        assertEquals(listOf("PRODUCTION_RND", "HYBRID_RND"), view.expertTypes)
+        verify(repository).save(captor.capture())
+        assertEquals("""["PRODUCTION_RND","HYBRID_RND"]""", captor.value.expertTypesJson)
+    }
+
+    @Test
+    fun `create rejects expertType containing comma (I2-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("逗号类型")).thenReturn(null)
+
+        // 逗号分隔符值既不在白名单（先触发 whitelist require），也满足逗号防御性 require；
+        // 无论哪条命中，契约都是：含逗号的类型被拒、不落库。
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "逗号类型", expertTypes = listOf("PRODUCTION_RND,ACADEMIC_RND")))
+        }
+        assertTrue(
+            ex.message!!.contains("expertType must be one of") || ex.message!!.contains("comma"),
+            "rejection must name the expertType constraint, got: ${ex.message}"
+        )
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create rejects unknown expertType value with allowed list (I2-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("非法类型")).thenReturn(null)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "非法类型", expertTypes = listOf("BOGUS")))
+        }
+        assertTrue(ex.message!!.contains("expertType must be one of"))
+        assertTrue(ex.message!!.contains("PRODUCTION_RND"), "message must show the enum-derived whitelist")
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create with empty expertTypes persists empty json and view returns empty (I2-3)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("无类型")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 62L)
+        }
+
+        val view = service().create(createCmd(name = "无类型", expertTypes = emptyList()))
+
+        assertEquals(emptyList<String>(), view.expertTypes)
+        verify(repository).save(captor.capture())
+        assertEquals("[]", captor.value.expertTypesJson)
+
+        // 存量行 expert_types_json = "[]"（迁移回填形态）→ 视图同样为空集合。
+        `when`(repository.findByIdAndDeletedAtIsNull(63L)).thenReturn(
+            row(id = 63L, name = "存量空类型", expertTypesJson = "[]")
+        )
+        assertEquals(emptyList<String>(), service().get(63L).expertTypes)
+    }
+
+    @Test
+    fun `invalid expertTypesJson parses as empty list without throwing (I2-4)`() {
+        `when`(repository.findByIdAndDeletedAtIsNull(64L)).thenReturn(
+            row(id = 64L, name = "坏类型JSON", expertTypesJson = "not-json")
+        )
+
+        val view = service().get(64L)
+        assertEquals(emptyList<String>(), view.expertTypes)
+    }
+
+    @Test
+    fun `entity toFields roundtrip preserves expertTypes and setEnabled revalidation passes (I2-4)`() {
+        // entity → ConfigFields（setEnabled(true) 走 existing.toFields().copy(autoEnabled=true)）→
+        // 校验通过且保存不丢 expert_types_json。
+        val existing = row(
+            id = 65L, name = "往返类型", autoEnabled = false,
+            expertTypesJson = """["PRODUCTION_RND","UNCLASSIFIED"]"""
+        )
+        `when`(repository.findByIdAndDeletedAtIsNull(65L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("往返类型")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 65L)
+        }
+
+        service().setEnabled(65L, true)
+        verify(repository).save(captor.capture())
+        assertEquals("""["PRODUCTION_RND","UNCLASSIFIED"]""", captor.value.expertTypesJson)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves existing expertTypesJson entity value (I2-5)`() {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
+            emailDomainsJson = "[]", operatorStatusesJson = "[]",
+            expertTypesJson = """["PRODUCTION_RND","HYBRID_RND"]""",
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        // I2-5: legacy request never carries expertTypes; the entity's json must survive —
+        // 漏写会命中 Kotlin 默认值静默重置。
+        assertEquals("""["PRODUCTION_RND","HYBRID_RND"]""", captor.value.expertTypesJson)
     }
 
     // ── P4a: gateFilterEnabled 门禁开关（I4a-1 / I4a-6 / M-2）────────────────────
