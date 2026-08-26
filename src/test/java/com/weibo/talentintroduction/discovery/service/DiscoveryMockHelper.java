@@ -188,7 +188,7 @@ public class DiscoveryMockHelper {
             OrcidDataSource.OrcidRecord record = invocation.getArgument(0);
             return record.getEmails().stream()
                 .map(email -> new AuthorEmail(email, record.getGivenNames(), record.getFamilyNames(),
-                    false, record.getInstitutionName(), record.getOrcidId()))
+                    false, record.getInstitutionName(), record.getOrcidId(), null))
                 .collect(java.util.stream.Collectors.toList());
         }).when(mock).orcidRecordToAuthorEmails(Mockito.any(OrcidDataSource.OrcidRecord.class));
     }

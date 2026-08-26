@@ -258,6 +258,39 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `discover writes institutionType into RAW index map (I5a-3 I5a-4)`() {
+        val svc = createService()
+        val p1 = paper("PMC1", "Test Paper")
+
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001",
+                institutionType = "education")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        val capturedMaps = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            capturedMaps.add(invocation.getArgument(1) as Map<String, Any?>)
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        val map = capturedMaps.single()
+        assertEquals("education", map["institutionType"])
+        // 回归：键集合 = 改动前集合 + 仅新增 institutionType 一项（I5a-4 语义，逐字锚定改动前键集）。
+        val preChangeKeys = setOf(
+            "orcidId", "email", "givenNames", "familyNames", "country", "keyword", "employment",
+            "institution", "lastPublicationYear", "emailSource", "emailVerifiedLevel", "dataSource",
+            "externalIds", "discoveredAt", "updatedAt", "filterResult", "filterRejectReason", "tags"
+        )
+        assertEquals(preChangeKeys + "institutionType", map.keys)
+    }
+
+    @Test
     fun `discover counts papers without emails`() {
         val svc = createService()
         val p1 = paper("PMC1", "Test").copy(pmcId = null)
@@ -1186,6 +1219,97 @@ class ExpertDiscoveryServiceTest {
         @Suppress("UNCHECKED_CAST")
         val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
         assertFalse(doc.containsKey("disciplineCategory"))
+    }
+
+    @Test
+    fun `enrichExistingExperts omits institutionType key when null (I5a-3)`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val expert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-NULL", email = "null@example.com",
+            givenNames = "Test", familyNames = "Null",
+            country = "US", keyword = null, employment = null
+        )
+        val enrichment = AuthorEnrichment(
+            hIndex = 10, citationCount = 100, worksCount = 5,
+            disciplineCategory = null
+        )
+
+        ScrollExpertsMockHelper.stubSearchAfterExpertsFiltered(expertSearchService, listOf(listOf(expert)))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 1L, 1L)
+        Mockito.doReturn(mapOf("0000-NULL" to EnrichmentOutcome.Success(enrichment)))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(),
+                Mockito.eq(HttpMethod.POST),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        svc.enrichExistingExperts()
+
+        @Suppress("UNCHECKED_CAST")
+        val entityCaptor = ArgumentCaptor.forClass(HttpEntity::class.java) as ArgumentCaptor<HttpEntity<*>>
+        Mockito.verify(restTemplate, Mockito.atLeastOnce()).exchange(
+            Mockito.contains("/_update/"),
+            Mockito.eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
+        assertFalse(doc.containsKey("institutionType"))
+    }
+
+    @Test
+    fun `enrichExistingExperts writes institutionType unconditionally overwriting prior value (I5a-8)`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val expert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-COMP", email = "comp@example.com",
+            givenNames = "Test", familyNames = "Comp",
+            country = "US", keyword = null, employment = null,
+            institutionType = "education"
+        )
+        // I5a-8: 文档已有 institutionType=education，enrichment 返回 company → _update + doc 局部覆盖为 company。
+        // 单元层断言：doc 体无条件携带 institutionType=company（无「已有值则跳过」保护），覆盖由 ES _update 语义完成。
+        val enrichment = AuthorEnrichment(
+            hIndex = 10, citationCount = 100, worksCount = 5,
+            disciplineCategory = "STEM", institutionType = "company"
+        )
+
+        ScrollExpertsMockHelper.stubSearchAfterExpertsFiltered(expertSearchService, listOf(listOf(expert)))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 1L, 1L)
+        Mockito.doReturn(mapOf("0000-COMP" to EnrichmentOutcome.Success(enrichment)))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(),
+                Mockito.eq(HttpMethod.POST),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        svc.enrichExistingExperts()
+
+        @Suppress("UNCHECKED_CAST")
+        val entityCaptor = ArgumentCaptor.forClass(HttpEntity::class.java) as ArgumentCaptor<HttpEntity<*>>
+        Mockito.verify(restTemplate, Mockito.atLeastOnce()).exchange(
+            Mockito.contains("/_update/"),
+            Mockito.eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
+        assertEquals("company", doc["institutionType"])
     }
 
     @Test

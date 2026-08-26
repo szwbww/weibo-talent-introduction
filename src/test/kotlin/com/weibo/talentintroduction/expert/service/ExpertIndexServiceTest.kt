@@ -166,8 +166,9 @@ class ExpertIndexServiceTest {
         }
         // I-2: all three indices still get their batch PUT attempt
         org.junit.jupiter.api.Assertions.assertEquals(3, batchPuts, "each index must get one batch PUT attempt")
-        // I-2: the failing RAW batch degrades to one PUT per JSON-declared field (33 in orcid_info_raw.json)
-        org.junit.jupiter.api.Assertions.assertEquals(33, singleFieldPuts, "RAW batch failure must degrade to per-field PUTs for every declared field")
+        // I-2: the failing RAW batch degrades to one PUT per JSON-declared field (34 in orcid_info_raw.json;
+        // 05A 新增 institutionType 使计数 33 → 34)
+        org.junit.jupiter.api.Assertions.assertEquals(34, singleFieldPuts, "RAW batch failure must degrade to per-field PUTs for every declared field")
     }
 
     @Test

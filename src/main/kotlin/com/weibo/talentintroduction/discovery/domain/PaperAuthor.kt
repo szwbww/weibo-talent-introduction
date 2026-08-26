@@ -6,5 +6,6 @@ data class PaperAuthor(
     val orcidId: String?,
     val affiliation: String?,
     val isCorresponding: Boolean = false,
-    val email: String? = null
+    val email: String? = null,
+    val institutionType: String? = null
 )

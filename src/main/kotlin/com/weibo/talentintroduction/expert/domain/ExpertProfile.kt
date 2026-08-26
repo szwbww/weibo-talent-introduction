@@ -30,7 +30,14 @@ data class ExpertProfile(
     val patentTitles: List<String>? = null,
     val enrichedAt: String? = null,
     val enrichmentSource: String? = null,
-    val expertClassification: ExpertClassification? = null
+    val expertClassification: ExpertClassification? = null,
+    /**
+     * 机构类型（OpenAlex 枚举）。两条写入路径语义不同，不得假设与 [institution] 同源：
+     * - works 路径（发现时）：该专家被发现的那篇论文上的署名机构的类型，与 institution / employment 同源。
+     * - authors 路径（enrichment 时）：该作者的当前已知机构（last_known_institutions[0]）的类型，
+     *   与 institution 很可能不是同一个机构（institution 永远停留在发现时的论文署名机构）。
+     */
+    val institutionType: String? = null
 ) {
     val displayName: String
         get() = listOfNotNull(givenNames, familyNames)

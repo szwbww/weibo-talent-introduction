@@ -752,7 +752,8 @@ class ExpertDiscoveryService(
             keyword = null, employment = authorEmail.affiliation, institution = authorEmail.affiliation,
             lastPublicationYear = paper.pubYear, emailSource = "PAPER_FULLTEXT",
             emailVerifiedLevel = emailVerifiedLevel, dataSource = paper.source,
-            externalIds = buildExternalIds(paper, authorEmail)
+            externalIds = buildExternalIds(paper, authorEmail),
+            institutionType = authorEmail.institutionType
         )
     }
 
@@ -764,6 +765,7 @@ class ExpertDiscoveryService(
             "givenNames" to profile.givenNames, "familyNames" to profile.familyNames,
             "country" to profile.country, "keyword" to profile.keyword,
             "employment" to profile.employment, "institution" to profile.institution,
+            "institutionType" to profile.institutionType,
             "lastPublicationYear" to profile.lastPublicationYear,
             "emailSource" to profile.emailSource, "emailVerifiedLevel" to profile.emailVerifiedLevel,
             "dataSource" to profile.dataSource,
@@ -1102,6 +1104,8 @@ class ExpertDiscoveryService(
         enrichment.recentWorkTitles?.takeIf { it.isNotEmpty() }?.let { doc["recentWorkTitles"] = it }
         enrichment.patentTitles?.takeIf { it.isNotEmpty() }?.let { doc["patentTitles"] = it }
         enrichment.disciplineCategory?.let { doc["disciplineCategory"] = it }
+        // I5a-3: null 时不写入该键，避免覆盖存量值；I5a-8: 无条件 ?.let，enrichment 值覆盖发现时的值。
+        enrichment.institutionType?.let { doc["institutionType"] = it }
         val updateBody = mapOf("doc" to doc)
         for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
             if (!documentExistsInIndex(level, orcidId)) continue

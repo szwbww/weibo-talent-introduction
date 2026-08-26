@@ -1765,6 +1765,111 @@ class ExpertSearchServiceTest {
     }
 
     @Test
+    fun `search request _source includes institutionType (I5a-4)`() {
+        val body = mapper.readTree("""{"hits":{"total":{"value":0},"hits":[]}}""")
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        service.searchExperts(10, ExpertIndexLevel.CANDIDATE)
+
+        val requestPayload = capture.value.body as Map<*, *>
+        val source = requestPayload["_source"] as List<*>
+        assertTrue(source.contains("institutionType"), "sourceFields must include institutionType: $source")
+    }
+
+    @Test
+    fun `toExpertProfile parses institutionType from source (I5a-4)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-0001-2345-6789",
+                      "email": "test@example.com",
+                      "givenNames": "John",
+                      "familyNames": "Smith",
+                      "country": "GB",
+                      "institution": "OpenAlex",
+                      "institutionType": "nonprofit"
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val profile = service.searchExpertsWithEmail(1).experts.single()
+        assertEquals("nonprofit", profile.institutionType)
+        assertEquals("OpenAlex", profile.institution)
+    }
+
+    @Test
+    fun `toExpertProfile institutionType null when key missing or blank (I5a-3)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 2},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0000-0001-2345-6789",
+                      "email": "missing@example.com",
+                      "givenNames": "John",
+                      "familyNames": "Smith"
+                    }
+                  },
+                  {
+                    "_source": {
+                      "orcidId": "0000-0002-2345-6789",
+                      "email": "blank@example.com",
+                      "givenNames": "Jane",
+                      "familyNames": "Doe",
+                      "institutionType": ""
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val experts = service.searchExpertsWithEmail(2).experts
+        assertNull(experts[0].institutionType)
+        assertNull(experts[1].institutionType)
+    }
+
+    @Test
     fun `parses expertClassification with type-derived sendable ignoring untrusted ES sendable (I1-5)`() {
         val body = mapper.readTree(
             """

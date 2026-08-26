@@ -93,10 +93,13 @@ class OpenAlexDataSource(
                     val orcid = author.path("orcid").asText(null)?.removePrefix("https://orcid.org/")
                     val nameParts = author.path("display_name").asText("").split(" ", limit = 2)
                     val institution = authorship.path("institutions").firstOrNull()
+                    // I5a-2: 与 affiliation 取自同一个（第一个）机构对象；I5a-3: 无 type/空串均产出 null。
+                    val institutionType = institution?.path("type")?.asText(null)?.takeIf { it.isNotBlank() }
                     PaperAuthor(
                         givenNames = nameParts.getOrNull(0), familyNames = nameParts.getOrNull(1),
                         orcidId = orcid, affiliation = institution?.path("display_name")?.asText(null),
-                        isCorresponding = authorship.path("is_corresponding").asBoolean(false)
+                        isCorresponding = authorship.path("is_corresponding").asBoolean(false),
+                        institutionType = institutionType
                     )
                 }
                 PaperMetadata(pmcId = pmcId, pmid = pmid, doi = doi,
@@ -284,6 +287,10 @@ class OpenAlexDataSource(
             ?.take(5)
             ?.mapNotNull { it.path("display_name").asText(null) }
         val disciplineCategory = resolveDisciplineCategory(topicsNode)
+        // I5a-2/I5a-7: 取 last_known_institutions 第一项的 type（与 works 路径的署名机构不同源）；
+        // I5a-3: 数组为空、无 type 键、type 为空串均产出 null。
+        val institutionType = node.path("last_known_institutions").firstOrNull()
+            ?.path("type")?.asText(null)?.takeIf { it.isNotBlank() }
         val worksUrl = node.path("works_api_url").asText(null)
         val recentWorkTitles = if (fetchWorksAndPatents && worksUrl != null) fetchRecentWorks(worksUrl, limit = 3) else null
         val patentTitles = if (fetchWorksAndPatents && worksUrl != null) fetchPatents(worksUrl, limit = 3) else null
@@ -294,7 +301,8 @@ class OpenAlexDataSource(
             topics = topics,
             recentWorkTitles = recentWorkTitles,
             patentTitles = patentTitles,
-            disciplineCategory = disciplineCategory
+            disciplineCategory = disciplineCategory,
+            institutionType = institutionType
         )
     }
 
@@ -327,5 +335,6 @@ data class AuthorEnrichment(
     val topics: List<String>? = null,
     val recentWorkTitles: List<String>? = null,
     val patentTitles: List<String>? = null,
-    val disciplineCategory: String? = null
+    val disciplineCategory: String? = null,
+    val institutionType: String? = null
 )

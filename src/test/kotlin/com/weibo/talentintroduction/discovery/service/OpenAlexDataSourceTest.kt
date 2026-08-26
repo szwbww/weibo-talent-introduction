@@ -63,9 +63,11 @@ class OpenAlexDataSourceTest {
         assertEquals("0000-0001-2345-6789", paper.authors[0].orcidId)
         assertEquals("University of Oxford", paper.authors[0].affiliation)
         assertTrue(paper.authors[0].isCorresponding)
+        assertEquals("education", paper.authors[0].institutionType)
         assertEquals("Alice", paper.authors[1].givenNames)
         assertEquals("Jones", paper.authors[1].familyNames)
         assertNull(paper.authors[1].orcidId)
+        assertEquals("company", paper.authors[1].institutionType)
     }
 
     @Test
@@ -83,6 +85,7 @@ class OpenAlexDataSourceTest {
         assertEquals(18, result!!.hIndex)
         assertEquals(1200, result.citationCount)
         assertEquals(45, result.worksCount)
+        assertEquals("nonprofit", result.institutionType)
     }
 
     @Test
@@ -235,6 +238,7 @@ class OpenAlexDataSourceTest {
                   "cited_by_count": 100,
                   "summary_stats": {"h_index": 5},
                   "topics": [{"display_name": "AI", "count": 3}],
+                  "last_known_institutions": [{"display_name": "Big Corp", "type": "company"}],
                   "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"
                 },
                 {
@@ -274,6 +278,7 @@ class OpenAlexDataSourceTest {
         assertEquals(5, first.data.hIndex)
         assertNull(first.data.recentWorkTitles)
         assertNull(first.data.patentTitles)
+        assertEquals("company", first.data.institutionType)
     }
 
     @Test
@@ -509,5 +514,137 @@ class OpenAlexDataSourceTest {
         assertNull(first.data.recentWorkTitles)
         assertNull(first.data.patentTitles)
         assertInstanceOf(EnrichmentOutcome.RateLimited::class.java, outcomes["0000-0002"])
+    }
+
+    @Test
+    fun `works path takes institutionType from first institution same object as affiliation (I5a-2)`() {
+        stubWorksResponse(
+            """
+            {
+              "meta": {"count": 1, "next_cursor": null},
+              "results": [{
+                "id": "https://openalex.org/W1",
+                "authorships": [{
+                  "author": {"display_name": "Jane Doe"},
+                  "institutions": [
+                    {"display_name": "First University", "type": "education"},
+                    {"display_name": "Second Lab", "type": "company"}
+                  ],
+                  "is_corresponding": true
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+        val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
+        assertEquals("First University", author.affiliation)
+        assertEquals("education", author.institutionType)
+    }
+
+    @Test
+    fun `works path institutionType null when institutions empty (I5a-3)`() {
+        stubWorksResponse(
+            """
+            {
+              "meta": {"count": 1, "next_cursor": null},
+              "results": [{
+                "id": "https://openalex.org/W1",
+                "authorships": [{
+                  "author": {"display_name": "Jane Doe"},
+                  "institutions": [],
+                  "is_corresponding": true
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+        val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
+        assertNull(author.institutionType)
+        assertNull(author.affiliation)
+    }
+
+    @Test
+    fun `works path institutionType null when type key missing (I5a-3)`() {
+        stubWorksResponse(
+            """
+            {
+              "meta": {"count": 1, "next_cursor": null},
+              "results": [{
+                "id": "https://openalex.org/W1",
+                "authorships": [{
+                  "author": {"display_name": "Jane Doe"},
+                  "institutions": [{"display_name": "Some Lab"}],
+                  "is_corresponding": true
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+        val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
+        assertNull(author.institutionType)
+        assertEquals("Some Lab", author.affiliation)
+    }
+
+    @Test
+    fun `works path institutionType null when type empty string (I5a-3)`() {
+        stubWorksResponse(
+            """
+            {
+              "meta": {"count": 1, "next_cursor": null},
+              "results": [{
+                "id": "https://openalex.org/W1",
+                "authorships": [{
+                  "author": {"display_name": "Jane Doe"},
+                  "institutions": [{"display_name": "Some Lab", "type": ""}],
+                  "is_corresponding": true
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+        val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
+        assertNull(author.institutionType)
+    }
+
+    @Test
+    fun `authors path takes institutionType from first last_known_institution (I5a-2)`() {
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[],
+               "last_known_institutions":[
+                 {"display_name":"First Lab", "type":"company"},
+                 {"display_name":"Second Lab", "type":"education"}
+               ]}"""
+        )
+        assertEquals("company", dataSource.enrichAuthor("A1")!!.institutionType)
+    }
+
+    @Test
+    fun `authors path institutionType null when last_known_institutions missing (I5a-3)`() {
+        stubAuthorEnrichment("""{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[]}""")
+        assertNull(dataSource.enrichAuthor("A1")!!.institutionType)
+    }
+
+    @Test
+    fun `authors path institutionType null when last_known_institutions empty (I5a-3)`() {
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[],
+               "last_known_institutions":[]}"""
+        )
+        assertNull(dataSource.enrichAuthor("A1")!!.institutionType)
+    }
+
+    @Test
+    fun `authors path institutionType null when type empty string (I5a-3)`() {
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[],
+               "last_known_institutions":[{"display_name":"Some Lab","type":""}]}"""
+        )
+        assertNull(dataSource.enrichAuthor("A1")!!.institutionType)
+    }
+
+    private fun stubWorksResponse(json: String) {
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(mapper.readTree(json))
     }
 }

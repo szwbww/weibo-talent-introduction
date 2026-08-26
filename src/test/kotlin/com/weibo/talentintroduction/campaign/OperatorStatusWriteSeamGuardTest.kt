@@ -59,8 +59,9 @@ class OperatorStatusWriteSeamGuardTest {
         // ES 文档 → 响应 DTO 映射：读取 ES 字段写入 DTO，非 DB 写入
         // （05 P-E 新增 operatorStatusFilter 使钉死点 :332 偏移至 :345，A5 授权行号修正；
         //   fast-p 01 A1：T3 分类解析/logger 导入使 :431 偏移至 :445，A1 授权行号修正，context 不变；
-        //   expertSendableFilter() 当前新增版本门禁使 :491 偏移至 :498，保持读取映射排除点精确对齐
-        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 542, "operatorStatus = source.nullableText"),
+        //   expertSendableFilter() 当前新增版本门禁使 :491 偏移至 :498，保持读取映射排除点精确对齐；
+        //   05A toExpertProfile 新增 institutionType 读取行使 :542 偏移至 :543，本计划授权行号修正
+        NoiseSite("com/weibo/talentintroduction/expert/service/ExpertSearchService.kt", 543, "operatorStatus = source.nullableText"),
         // ── ES 侧写入（非 expert_contact 表写入，扫描模式天然不命中）──
         // 03 P-B T-3 后：ExpertIndexWriterService 的 operatorStatus 同步改为三层 doc 部分更新
         // （"operatorStatus" to operatorStatus），旧脚本行 ctx._source.operatorStatus = params.status

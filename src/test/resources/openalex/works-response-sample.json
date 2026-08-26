@@ -28,7 +28,8 @@
           "institutions": [
             {
               "id": "https://openalex.org/I123",
-              "display_name": "University of Oxford"
+              "display_name": "University of Oxford",
+              "type": "education"
             }
           ],
           "is_corresponding": true
@@ -42,7 +43,8 @@
           "institutions": [
             {
               "id": "https://openalex.org/I456",
-              "display_name": "MIT, CSAIL"
+              "display_name": "MIT, CSAIL",
+              "type": "company"
             }
           ],
           "is_corresponding": false

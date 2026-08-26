@@ -36,6 +36,7 @@
       "researchFields": { "type": "keyword" },
       "disciplineCategory": { "type": "keyword" },
       "institution": { "type": "text" },
+      "institutionType": { "type": "keyword" },
       "emailSource": { "type": "keyword" },
       "emailVerifiedLevel": { "type": "integer" },
       "dataSource": { "type": "keyword" },

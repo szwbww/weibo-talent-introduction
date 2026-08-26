@@ -109,7 +109,8 @@ class EuropePmcDataSource(
                 familyNames = author.familyNames,
                 isCorresponding = author.isCorresponding,
                 affiliation = author.affiliation,
-                orcidId = author.orcidId
+                orcidId = author.orcidId,
+                institutionType = author.institutionType
             )
         }
         if (searchEmails.isNotEmpty()) {

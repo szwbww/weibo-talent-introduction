@@ -6,5 +6,6 @@ data class AuthorEmail(
     val familyNames: String?,
     val isCorresponding: Boolean,
     val affiliation: String?,
-    val orcidId: String?
+    val orcidId: String?,
+    val institutionType: String? = null
 )

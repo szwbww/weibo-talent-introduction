@@ -188,11 +188,12 @@ class PdfEmailExtractor(
             }
             if (matchedAuthor != null) {
                 AuthorEmail(email, matchedAuthor.givenNames, matchedAuthor.familyNames,
-                    matchedAuthor.isCorresponding, matchedAuthor.affiliation, matchedAuthor.orcidId)
+                    matchedAuthor.isCorresponding, matchedAuthor.affiliation, matchedAuthor.orcidId,
+                    matchedAuthor.institutionType)
             } else if (knownAuthors.size == 1 && emails.size == 1) {
                 val sole = knownAuthors[0]
                 AuthorEmail(email, sole.givenNames, sole.familyNames,
-                    sole.isCorresponding, sole.affiliation, sole.orcidId)
+                    sole.isCorresponding, sole.affiliation, sole.orcidId, sole.institutionType)
             } else {
                 AuthorEmail(email, null, null, false, null, null)
             }
