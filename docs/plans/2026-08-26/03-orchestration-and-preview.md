@@ -469,7 +469,7 @@ I-5（构造超长名称列表，断言返回值长度 ≤ 500 且不出现被�
 
 ---
 
-## 变更文件清单（6 个，≤10 ✅；子系统 2 个：工作台后端 + 静态前端 ✅）
+## 变更文件清单（8 个，≤10 ✅；子系统 2 个：工作台后端 + 静态前端 ✅）
 
 | # | 文件 | 新增/修改 | 涉及不变量 / 契约 |
 |---|---|---|---|
@@ -479,6 +479,8 @@ I-5（构造超长名称列表，断言返回值长度 ≤ 500 且不出现被�
 | 4 | `src/test/js/trustReplyWorkbench.test.js` | 修改（新增断言） | I-6 I-7 S-1 |
 | 5 | `src/test/js/autoRunOrchestration.test.js` | 修改（fixture 区分 + 新增沙箱用例） | I-6 |
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplySuggestedInstructionTest.kt` | 新增 | I-2 I-3 I-4 I-5 |
+| 7 | `src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt` | 修改（A1：7 处旧措辞断言 `先明说没有确认答案` / `最后交出下一步但不承诺具体时间` 更新为 T1.3 逐字新措辞；见 `:676-677` `:704-705` `:1375` `:1464-1465` `:1497`） | I-3 |
+| 8 | `src/test/js/trustReplyWorkbenchSharedMount.test.js` | 修改（A1：`:2238` 的 `role="tab"` 计数断言 2→5，匹配 S-1 新增的三按钮预览页签条；其余断言不动） | S-1 |
 
 ---
 
