@@ -1,3 +1,22 @@
+# Fast-P Child Brief — 04-discovery-subject-scope
+
+- Master: docs/plans/2026-08-25/00-rnd-gate-master.md (commit 2b80a92)
+- Approved plan (full contract, verbatim below): docs/plans/2026-08-25/04-discovery-subject-scope.md (commit 2b80a92)
+- Child product base: b2fdf028d16b1669c9c3f481fb5b94abd77d4e60
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-rnd-gate (branch fast/rnd-gate)
+
+## Global constraints (master plan)
+- M-6: `subjectScope` null on manual entry points / absent config → each source's query string byte-identical to pre-change; scheduler explicitly enables `RND_TARGET`; manual endpoints may override via body.
+- Master must-keep: `resolveDisciplineCategory` untouched; `PaperMetadata`/`PaperAuthor` field sets untouched; email-extraction chain untouched; six existing `PaperSearchCriteria` fields unchanged (new field MUST be trailing with default null); manual discovery UI "数据源平台" semantics unchanged.
+- Master F-2/F-5: six OpenAlex field ids (Chemical Engineering 15, Computer Science 17, Engineering 22, Energy 21, Materials Science 25, Physics and Astronomy 31) are实测 2026-08-25 values; RND_TARGET positive-lock only, NO `domain.id:!4` overlay; Pharma/Health-Sciences coverage explicitly OUT of scope (option 1).
+
+## Downstream interfaces
+- None consumed by later children. Deliverables: `SubjectScopeCatalog` (single source of truth — no hardcoded field ids/arxiv cats outside it, per I4-1); `PaperSearchCriteria.subjectScope: String? = null` trailing field; `EuropePmcProperties` injected into `ExpertDiscoveryService` (constructor, appended last).
+
+## Verification
+- JDK 11 mandatory: `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn ...`
+- Full suite: `JAVA_HOME=... mvn test` (exit 0, "Tests run: N, Failures: 0, Errors: 0").
+- Targeted: `mvn test -Dtest='SubjectScopeCatalogTest,OpenAlexDataSourceTest,ArxivDataSourceTest,ExpertDiscoveryServiceTest,ExpertDiscoverySchedulerTest'`; `git diff --check`.
 # 子计划 04：深度发现按学科范围取数 + EuropePMC 开关缺陷修复
 
 ## 需求描述
