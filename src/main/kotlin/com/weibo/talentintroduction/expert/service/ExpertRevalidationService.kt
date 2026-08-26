@@ -1,6 +1,10 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.weibo.talentintroduction.config.ExpertClassificationProperties
+import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.expert.domain.PromotionScanResult
 import com.weibo.talentintroduction.expert.domain.PromotionScanStats
 import com.weibo.talentintroduction.expert.domain.RevalidationResult
@@ -17,7 +21,9 @@ class ExpertRevalidationService(
     private val emailValidationService: EmailValidationService,
     private val expertIndexWriterService: ExpertIndexWriterService,
     private val progressStore: TaskProgressStore,
-    private val eligibilityFilterService: EligibilityFilterService
+    private val eligibilityFilterService: EligibilityFilterService,
+    private val expertClassificationService: ExpertClassificationService = ExpertClassificationService(),
+    private val expertClassificationProperties: ExpertClassificationProperties = ExpertClassificationProperties()
 ) {
     private val log = LoggerFactory.getLogger(ExpertRevalidationService::class.java)
 
@@ -157,6 +163,19 @@ class ExpertRevalidationService(
                         continue
                     }
 
+                    // I3-3: 现算，不读 profile.expertClassification（RAW 层几乎恒为 null）。
+                    val classification = expertClassificationService.classify(profile)
+                    // I3-1/I3-5: 宽档——只拒证据充分的两类，UNKNOWN 放行；开关关闭时不拒绝，但下方仍写入。
+                    // I3-2: 被拒不可逆——enrichExistingExperts（ExpertDiscoveryService.kt:845-877）只扫
+                    // CANDIDATE（:850、:877），被挡回 RAW 的文档永不补数据，故只拒证据充分者。
+                    if (expertClassificationProperties.promotionGateEnabled &&
+                        (classification.type == ExpertType.SERVICE_ONLY || classification.type == ExpertType.OUT_OF_SCOPE)
+                    ) {
+                        stats.filtered++
+                        stats.filterReasons.merge("CLASSIFICATION:${classification.type.name}", 1) { a, b -> a + b }
+                        continue
+                    }
+
                     val exists: Boolean
                     try {
                         val docId = profile.esDocId ?: profile.orcidId
@@ -182,7 +201,7 @@ class ExpertRevalidationService(
                         }
                     }
 
-                    val success = promoteRawToCandidate(profile)
+                    val success = promoteRawToCandidate(profile, classification)
                     if (success) {
                         stats.promoted++
                     } else {
@@ -238,7 +257,7 @@ class ExpertRevalidationService(
         return PromotionScanResult(stats)
     }
 
-    private fun promoteRawToCandidate(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
+    private fun promoteRawToCandidate(profile: ExpertProfile, classification: ExpertClassification): Boolean {
         val docId = profile.esDocId ?: profile.orcidId
         val rawDoc = expertIndexWriterService.readRawDocument(docId)
             ?: return false
@@ -254,6 +273,7 @@ class ExpertRevalidationService(
             put("candidateValidatedAt", now)
             put("updatedAt", now)
             put("tags", newTags)
+            put("expertClassification", expertIndexWriterService.classificationNode(classification))
         }
 
         return expertIndexWriterService.writeCandidateDocument(docId, doc)

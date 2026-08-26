@@ -349,7 +349,7 @@ class ExpertIndexWriterService(
         }
     }
 
-    private fun classificationNode(classification: ExpertClassification): JsonNode =
+    fun classificationNode(classification: ExpertClassification): JsonNode =
         objectMapper.createObjectNode().apply {
             put("type", classification.type.name)
             put("sendable", classification.sendable)

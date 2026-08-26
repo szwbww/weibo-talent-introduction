@@ -31,6 +31,7 @@ talent-introduction:
     enabled: ${AUTH_ENABLED:true}
   expert-classification:
     incremental-enabled: ${EXPERT_CLASSIFICATION_INCREMENTAL_ENABLED:false}
+    promotion-gate-enabled: ${EXPERT_CLASSIFICATION_PROMOTION_GATE_ENABLED:false}
     incremental-cron: ${EXPERT_CLASSIFICATION_INCREMENTAL_CRON:0 0 4 * * ?}
     batch-size: ${EXPERT_CLASSIFICATION_BATCH_SIZE:500}
     delay-ms: ${EXPERT_CLASSIFICATION_DELAY_MS:250}
