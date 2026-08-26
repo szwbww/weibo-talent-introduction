@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-08-25/00-rnd-gate-master.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-08-25/00-rnd-gate-master.md (sha256: 0fb670be5d91dad6f4172d515fc00cee95208a0a12df7c11b4125a1c75e10ac5)
+- Governing master identity: worktree sha256 0fb670be5d91dad6f4172d515fc00cee95208a0a12df7c11b4125a1c75e10ac5; recorded commit 5718abb
+- Invoked master identity: SAME (sha256: 0fb670be5d91dad6f4172d515fc00cee95208a0a12df7c11b4125a1c75e10ac5)
+- Master identity state: CONSISTENT
+- Governing amendment: A3; rule: 主计划「已识别但本轮不做：SBIR 接入」节; reason: SBIR 地域/IP 封禁定性，01-04 子计划契约不变; approval: HUMAN direct user plan-file update 2026-08-26
+- Amendments: A1, A2, A3; paths: docs/plans/2026-08-25/{01-expert-list-type-filter.md,02-batch-send-type-filter.md,00-rnd-gate-master.md}
+- Fast-p ledger: docs/plans/fast/rnd-gate/ledger.md (sha256: fc4e06058c748a27d5f47b3450faf032cec4bf2d3e97fdd6226ab7a386f59630)
+- Fast-p handoff: docs/plans/fast/rnd-gate/human-review-handoff.md (sha256: 5093c3d59ba2430da5d35c45211ec7b552bdac7923e24f4e3eb52ecb9ddfda79)
+- Master base: f2935072c819a9167e75220a6a959b0769462fde
+- Final code head: ee152d2b21030f6b86da16769f638b29d4be094b
+- Evidence parent before next commit: c694896bd4edcfbbb665e4bfdc0fc1d4f6c3cce2
+- Previous evidence commit: N/A
+- Branch: fast/rnd-gate
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-rnd-gate
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; branch fast/rnd-gate; base f2935072c819a9167e75220a6a959b0769462fde; final code ee152d2b21030f6b86da16769f638b29d4be094b
+- Misdirected review evidence: N/A
+- Reviewer: 01a03c5f-b084-7db3-b270-4d39b913c865 (Hilbert; fresh isolated reviewer)
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: docs/plans/review/rnd-gate/machine-verification.md#epoch-1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human completes A-1, A-2, A-3 and explicitly accepts final code head ee152d2b21030f6b86da16769f638b29d4be094b.
