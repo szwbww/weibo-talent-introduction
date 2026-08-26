@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-26T12:24:20Z
-- Current child: c2
+- Current child: c3
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -28,8 +28,8 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | c1 | docs/plans/2026-08-26/01-llm-fact-retrieval.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | none | 1 | LIGHT_PASS_WITH_NOTES | f2935072c819a9167e75220a6a959b0769462fde | de5e130a84fba33296ea906734a1c7f071e3383a | 0 | — | de5e130a84fba33296ea906734a1c7f071e3383a | 46232e4 | RECORD_ONLY O-1..O-6 (verify-log); worktree-identity gate manual (O-1) |
-| c2 | docs/plans/2026-08-26/02-unrecognized-asks-and-orphan-keys.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | c1 | 1 | PENDING |  |  | 0 | — |  |  | Unrecognized-ask status cap + coverage key closure |
-| c3 | docs/plans/2026-08-26/03-orchestration-and-preview.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | c1 | 1 | PENDING |  |  | 0 | — |  |  | Letter orchestration + preview tabs |
+| c2 | docs/plans/2026-08-26/02-unrecognized-asks-and-orphan-keys.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | c1 | 1 | LIGHT_PASS_WITH_NOTES | de5e130a84fba33296ea906734a1c7f071e3383a | f6dc048359b0d7f46b335f640d78033fa7747a27 | 0 | — | f6dc048359b0d7f46b335f640d78033fa7747a27 | 98a7ce0 | RECORD_ONLY O-1..O-3 (verify-log); worktree-identity gate manual (O-1) |
+| c3 | docs/plans/2026-08-26/03-orchestration-and-preview.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | c1 | 1 | PENDING | f6dc048359b0d7f46b335f640d78033fa7747a27 |  | 0 | — |  |  | Letter orchestration + preview tabs |
 
 ## Amendments
 
