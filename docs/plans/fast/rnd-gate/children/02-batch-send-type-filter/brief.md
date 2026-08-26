@@ -38,13 +38,13 @@
 
 ### Invariant I2-3: 空集合 = 不限
 - Rule: `expertTypesFilter(emptyList())` 返回 `null`（由子计划 01 保证）；`buildEsFiltersForLevel` 用 `?.let { filters.add(it) }` 追加；`matchesExpert` 在 `expertTypes.isEmpty()` 时不做任何判定直接跳过。迁移默认值为 `'[]'`。
-- Applies to: `buildEsFiltersForLevel`、`matchesExpert`、`V100` 迁移、`BatchSendTaskConfig.expertTypesJson` 的 Kotlin 默认值。
+- Applies to: `buildEsFiltersForLevel`、`matchesExpert`、`V108` 迁移、`BatchSendTaskConfig.expertTypesJson` 的 Kotlin 默认值。
 - Violation consequence: 存量任务全部静默停发。
 - 来源: K-batch-multi-value-filter-seams
 
 ### Invariant I2-4: JSON 列是唯一事实源
 - Rule: `expert_types_json TEXT NOT NULL` 是唯一存储；不得并列保留任何单值列。解析失败按空集合（不限）处理，不抛异常。
-- Applies to: `V100` 迁移、`BatchSendTaskConfig.kt`、`BatchExecutionModels.kt` 的 entity→snapshot 解析（`:275-283` 的 `operatorStatuses` 解析块是逐字范式）。
+- Applies to: `V108` 迁移、`BatchSendTaskConfig.kt`、`BatchExecutionModels.kt` 的 entity→snapshot 解析（`:275-283` 的 `operatorStatuses` 解析块是逐字范式）。
 - Violation consequence: 双事实源，旧 typed API 改一次即分叉。
 - 来源: K-batch-multi-value-filter-seams
 
@@ -112,15 +112,15 @@
 ## 现状审计
 
 ### `batch_send_task_config` 表
-- Schema: `BatchSendTaskConfig.kt:10-32`。既有多值列一律为 `TEXT NOT NULL DEFAULT '[]'` 的 JSON：`tagsJson`、`regionsJson`、`emailDomainsJson`、`operatorStatusesJson`（`:22-25`）；单值 `discipline: String?`（`:24`）。最新迁移为 `V99__add_gate_filter_enabled_to_batch_send_task_config.sql`，故新迁移编号 **V100**。
+- Schema: `BatchSendTaskConfig.kt:10-32`。既有多值列一律为 `TEXT NOT NULL DEFAULT '[]'` 的 JSON：`tagsJson`、`regionsJson`、`emailDomainsJson`、`operatorStatusesJson`（`:22-25`）；单值 `discipline: String?`（`:24`）。**A2 复核（2026-08-26）**：最新迁移为 `V107__strip_controlled_keys_from_program_overview.sql`；V100 已被 `V100__add_task_execution_indexes.sql` 占用（评审时审计前提「最新为 V99」已过期），故新迁移编号 **V108**。
 - 迁移范式（`V98__add_operator_statuses_to_batch_send_task_config.sql` 逐字）：MySQL 的 `TEXT` 列不能带 `DEFAULT`，故分两步 `ALTER ... ADD COLUMN ... NOT NULL AFTER <col>` + `UPDATE ... SET ... = '[]'`。
-- **Flyway 约束**：本仓库 `application.yml:8-13` 已显式设 `placeholder-replacement: false`，并有回归断言 `UnsubscribeBodyLinkMigrationTest.kt:46`。V100 不含 `${...}`，无新增风险，但**不得在清理 yml 时删除该配置项**（来源: K-flyway-placeholder-replacement）。
+- **Flyway 约束**：本仓库 `application.yml:8-13` 已显式设 `placeholder-replacement: false`，并有回归断言 `UnsubscribeBodyLinkMigrationTest.kt:46`。V108 不含 `${...}`，无新增风险，但**不得在清理 yml 时删除该配置项**（来源: K-flyway-placeholder-replacement）。
 - Write paths:
   1. `BatchSendTaskConfigService.create`（`:59` 经 `cmd.toFields()`）
   2. `BatchSendTaskConfigService.update`（`:93` 经 `cmd.toFields()`）
   3. `BatchSendTaskConfigService`（`:133`，启用时 `existing.toFields().copy(autoEnabled = true)`）
   4. `BatchSendTaskConfigService.updateLegacyConfig`（`:173-195`）—— 旧 typed API 适配器，调用全量 `update`
-  5. `V100` 迁移（本计划新增）
+  5. `V108` 迁移（本计划新增）
 - Read paths:
   1. `BatchSendTaskConfigService.toView`（`:428-450`，`:446` 解析 `operatorStatusesJson`）→ 前端配置面板
   2. `BatchSendTaskConfigService.toLegacyConfig`（`:225`）→ `BatchSendConfig` KV 兼容层
@@ -174,7 +174,7 @@
 
 ### Task 1：迁移（I2-3、I2-4）
 
-新增文件：`src/main/resources/db/migration/V100__add_expert_types_to_batch_send_task_config.sql`
+新增文件：`src/main/resources/db/migration/V108__add_expert_types_to_batch_send_task_config.sql`
 
 逐字照 V98 的两步范式（不删任何旧列——本维度无旧单值列）：
 
@@ -283,7 +283,7 @@ ExpertSearchService.expertTypesFilter(scope.expertTypes)?.let { filters.add(it) 
 
 | # | 文件 | 变更 |
 |---|---|---|
-| 1 | `src/main/resources/db/migration/V100__add_expert_types_to_batch_send_task_config.sql` | 新增列（两步范式） |
+| 1 | `src/main/resources/db/migration/V108__add_expert_types_to_batch_send_task_config.sql` | 新增列（两步范式） |
 | 2 | `src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendTaskConfig.kt` | 实体 + View 各加 1 字段 |
 | 3 | `src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt` | Snapshot / RecipientScope / fromSnapshot / matchesExpert / entity→snapshot 共 5 处 |
 | 4 | `src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt` | ConfigFields + 3×toFields + 校验 + updateLegacyConfig + toView |
@@ -360,7 +360,7 @@ git diff --check
 
 ### A2-3: 未选类型时行为不变（回归）
 - 前置条件: 部署前记录某 INTRODUCTION 任务的预估数字 M 与一次执行的实际发送数。
-- 操作步骤: 1. 部署含 V100 的版本；2. 不改任何配置；3. 读取同一任务的预估；4. 执行一轮。
+- 操作步骤: 1. 部署含 V108 的版本；2. 不改任何配置；3. 读取同一任务的预估；4. 执行一轮。
 - 预期结果: 预估等于 M；实际发送数与部署前同条件下一致。
 - 覆盖: I2-3、必须保持不变第 4 条
 
