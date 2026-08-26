@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-08-26/00-execution-order.md
 
-- Status: PAUSED_FOR_HUMAN
+- Status: RUNNING
 - Master plan: docs/plans/2026-08-26/00-execution-order.md (commit ee0749d3beedea7e26f4bf4e097b3d33a1684b7d)
-- Amendments: N/A
+- Amendments: A1
 - Master base: f2935072c819a9167e75220a6a959b0769462fde
 - Branch: fast/2026-08-26-execution-order
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-26-execution-order
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-26T12:24:20Z
 - Current child: c3
-- Waiting role: N/A
+- Waiting role: FIXER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: c3 PLAN_CONFLICT — two pre-existing test files not authorized by plan 03 break plan-required commands: TrustReplyWorkbenchServiceTest.kt (7 old-wording assertions; plan T1.3 mandates verbatim new wording) and trustReplyWorkbenchSharedMount.test.js:2238 (role="tab" count 2; S-1 mandates 3-button preview tab bar). Amendment to authorize both files required (see Amendments on resume).
-- Resume from: c3 epoch 2, base f6dc048359b0d7f46b335f640d78033fa7747a27, next action apply A1 amendment + fix round 1
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Baseline
 
@@ -29,9 +29,10 @@
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | c1 | docs/plans/2026-08-26/01-llm-fact-retrieval.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | none | 1 | LIGHT_PASS_WITH_NOTES | f2935072c819a9167e75220a6a959b0769462fde | de5e130a84fba33296ea906734a1c7f071e3383a | 0 | — | de5e130a84fba33296ea906734a1c7f071e3383a | 46232e4 | RECORD_ONLY O-1..O-6 (verify-log); worktree-identity gate manual (O-1) |
 | c2 | docs/plans/2026-08-26/02-unrecognized-asks-and-orphan-keys.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | c1 | 1 | LIGHT_PASS_WITH_NOTES | de5e130a84fba33296ea906734a1c7f071e3383a | f6dc048359b0d7f46b335f640d78033fa7747a27 | 0 | — | f6dc048359b0d7f46b335f640d78033fa7747a27 | 98a7ce0 | RECORD_ONLY O-1..O-3 (verify-log); worktree-identity gate manual (O-1) |
-| c3 | docs/plans/2026-08-26/03-orchestration-and-preview.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | c1 | 1 | PAUSED_FOR_HUMAN | f6dc048359b0d7f46b335f640d78033fa7747a27 | 9b7e32ca073cad06a0f81e4d60cd38fb5917bfe0 | 0 | — | 9b7e32ca073cad06a0f81e4d60cd38fb5917bfe0 |  | PLAN_CONFLICT at implementer: 2 unauthorized test files break required commands; A1 amendment pending (see Pause reason) |
+| c3 | docs/plans/2026-08-26/03-orchestration-and-preview.md | commit:dc5c11e129ae5a7aaf6b5261bb30d0990427c98f | c1 | 2 | AUTO_FIXING | f6dc048359b0d7f46b335f640d78033fa7747a27 | 9b7e32ca073cad06a0f81e4d60cd38fb5917bfe0 | 1 |  | 9b7e32ca073cad06a0f81e4d60cd38fb5917bfe0 |  | Epoch 2 resumed after A1 (plan identity commit:dc5c11e); fix round 1 = two unauthorized test files |
 
 ## Amendments
 
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-08-26/03-orchestration-and-preview.md | commit:ee0749d3beedea7e26f4bf4e097b3d33a1684b7d | commit:dc5c11e129ae5a7aaf6b5261bb30d0990427c98f | 03 T1.3 verbatim wording + S-1 mandated 3-button tab bar + 验证命令 (mvn test / sharedMount JS must pass) | Two pre-existing test files (TrustReplyWorkbenchServiceTest.kt, trustReplyWorkbenchSharedMount.test.js) not in the 6-file list assert old wording and tab count; the plan's own mandated changes break them, and the plan uniquely determines the repair; test-file authorization only, no product change | HUMAN:Approve A1 exactly as scoped 2026-08-26T14:51:29Z |
