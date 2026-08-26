@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-26T00:00:00Z
-- Current child: 01-expert-list-type-filter
+- Current child: 02-batch-send-type-filter
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
@@ -25,8 +25,8 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 01-expert-list-type-filter | docs/plans/2026-08-25/01-expert-list-type-filter.md | commit:0232a4f | none | 2 | PENDING | f2935072c819a9167e75220a6a959b0769462fde | N/A | 0 | — | N/A | N/A | First child; product base = master base. Epoch 1 impl present uncommitted (plan conflict, A1); resumed epoch 2 |
-| 02-batch-send-type-filter | docs/plans/2026-08-25/02-batch-send-type-filter.md | commit:2b80a92 | 01-expert-list-type-filter | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | Consumes 01's expertTypesFilter/ALLOWED_EXPERT_TYPES |
+| 01-expert-list-type-filter | docs/plans/2026-08-25/01-expert-list-type-filter.md | commit:0232a4f | none | 2 | LIGHT_PASS | f2935072c819a9167e75220a6a959b0769462fde | 7c703e3 | 0 | — | 7c703e3 | ce27d1f | First child; product base = master base. Epoch 1 conflict resolved by A1; epoch 2 implementer Impl01Epoch2; verifier Verify01Light LIGHT_PASS |
+| 02-batch-send-type-filter | docs/plans/2026-08-25/02-batch-send-type-filter.md | commit:2b80a92 | 01-expert-list-type-filter | 1 | PENDING | 7c703e3 | N/A | 0 | — | N/A | N/A | Base = child 01 Code head; consumes 01's expertTypesFilter/ALLOWED_EXPERT_TYPES |
 | 03-promotion-classification-gate | docs/plans/2026-08-25/03-promotion-classification-gate.md | commit:2b80a92 | none | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | Independent; ordered after 02 per master |
 | 04-discovery-subject-scope | docs/plans/2026-08-25/04-discovery-subject-scope.md | commit:2b80a92 | none | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | Independent; ordered after 03 per master |
 
