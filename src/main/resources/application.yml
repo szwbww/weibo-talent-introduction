@@ -121,6 +121,11 @@ talent-introduction:
     reply-flash-model: ${LLM_REPLY_MODEL_FLASH:deepseek-v4-flash}
     reply-pro-model: ${LLM_REPLY_MODEL_PRO:deepseek-v4-pro}
     timeout-ms: ${LLM_TIMEOUT_MS:30000}
+    fact-retriever:
+      enabled: ${LLM_FACT_RETRIEVER_ENABLED:false}
+      enabled-for-auto-reply: ${LLM_FACT_RETRIEVER_AUTO_REPLY_ENABLED:false}
+      max-facts-per-request: ${LLM_FACT_RETRIEVER_MAX_FACTS:3}
+      max-rules-in-prompt: ${LLM_FACT_RETRIEVER_MAX_RULES:60}
   translation:
     enabled: ${TRANSLATION_ENABLED:false}
     base-url: ${TRANSLATION_BASE_URL:http://127.0.0.1:5000}
