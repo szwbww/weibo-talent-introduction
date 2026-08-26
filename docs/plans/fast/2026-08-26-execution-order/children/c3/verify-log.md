@@ -22,3 +22,6 @@ Verifier: C3Verifier
 
 ### Required Action
 - COMPLETE_CHILD
+
+---
+Controller evidence note (2026-08-26T15:23:31Z): report verbatim from C3Verifier; appended only for evidence-commit completeness.

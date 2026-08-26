@@ -137,3 +137,7 @@ required full gate pass: (1) `TrustReplyWorkbenchServiceTest.kt` — 7 wording-a
 - PLAN_CONFLICT → obtain a human/controller decision: amend the plan's 变更文件清单 to add the
   two test files (and re-dispatch this implementation to finish + recommit), or explicitly relax
   the affected gate requirements.
+
+---
+## Epoch 2 completion note (controller, 2026-08-26T15:23:31Z)
+- A1 amendment approved (HUMAN:Approve A1 exactly as scoped 2026-08-26T14:51:29Z). Fix round 1 = commit cb30230 (two A1-authorized test files). Re-verified: LIGHT_PASS_WITH_NOTES (verify-log). Epoch 1 PLAN_CONFLICT report above is historical record.
