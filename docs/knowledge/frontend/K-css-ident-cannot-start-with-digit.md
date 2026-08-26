@@ -2,8 +2,8 @@
 id: K-css-ident-cannot-start-with-digit
 domain: frontend
 created: 2026-08-19
-last_used: 2026-08-19
-hit_count: 0
+last_used: 2026-08-26
+hit_count: 2
 source: create-p:workbench-repair-01-tab-focus-selector
 severity: P1
 ---

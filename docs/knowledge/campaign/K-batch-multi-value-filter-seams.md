@@ -2,8 +2,8 @@
 id: K-batch-multi-value-filter-seams
 domain: campaign
 created: 2026-08-15
-last_used: 2026-08-15
-hit_count: 0
+last_used: 2026-08-25
+hit_count: 1
 source: create-p:batch-task-filters-main
 severity: P1
 ---
@@ -63,3 +63,21 @@ ALTER TABLE t DROP COLUMN old;      -- 同一迁移里删旧列，避免双事�
 
 值以逗号分隔存隐藏 input，见 [[K-batch-picker-comma-delimited-contract]]。校验层必须
 `require(!value.contains(","))`，否则回显时被拆坏、筛选静默命中 0 条。
+
+
+**2026-08-25 复核（create-p:02-batch-send-type-filter）——两条来源的表述再收紧一次**：
+
+「两条活体目标来源」成立，但**第 1 条的第 3 个调用点写错了**。逐字更正：
+
+`buildEsFiltersForLevel` 的 3 个调用点是
+`countEsTargets:1265`、`fetchEsPage:1277`、**`buildMaterialReminderSnapshotFromScope:1211`**。
+也就是说材料提醒与 INTRODUCTION **共用同一个 filter 构造函数**，
+`buildMaterialReminderEsFilters:1153` 依旧零调用方（`grep -rn` 只命中定义行）。
+
+直接后果：任何「本维度不应用于 MATERIAL_REMINDER」的需求，
+**不能**靠「不改 `buildMaterialReminderEsFilters`」来实现——那是死代码，改不改都无行为。
+唯一屏障是 `buildEsFiltersForLevel` 内部的 `scope.mailType == BatchSendType.INTRODUCTION.name` 判定
+（`:1301` 与 `:1323` 两个分支）。验收断言也必须落在这里，不能落在死函数的 diff 上。
+
+另：`countBySnapshot:451` 与执行路径共用 `resolveScope:428` → 同一个 `RecipientScope`，
+所以「预估/ES 执行/MySQL 重试」三条路径**不需要三处分别改**，改上述两个函数即四路同源。

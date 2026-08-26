@@ -2,8 +2,8 @@
 id: K-intent-keyword-two-sided-normalization
 domain: qa
 created: 2026-08-19
-last_used: 2026-08-19
-hit_count: 0
+last_used: 2026-08-26
+hit_count: 1
 source: create-p:01-fact-and-catalog
 severity: P1
 ---

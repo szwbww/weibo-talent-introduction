@@ -2,8 +2,8 @@
 id: K-filter-option-scope-parity
 domain: frontend
 created: 2026-07-02
-last_used: 2026-07-18
-hit_count: 6
+last_used: 2026-08-25
+hit_count: 7
 source: fix-v:ai-training-redesign:fix-1
 severity: P1
 ---

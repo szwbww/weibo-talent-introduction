@@ -2,8 +2,8 @@
 id: K-qa-migration-preserve-auto-updated-timestamp
 domain: qa
 created: 2026-07-17
-last_used: 2026-07-21
-hit_count: 6
+last_used: 2026-08-21
+hit_count: 7
 source: fix-v:qa-refactor-02-fact-card-foundation:fix-1
 last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 severity: P1

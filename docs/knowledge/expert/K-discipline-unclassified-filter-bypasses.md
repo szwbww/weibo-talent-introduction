@@ -2,11 +2,29 @@
 id: K-discipline-unclassified-filter-bypasses
 domain: expert
 created: 2026-08-12
-last_used: 2026-08-12
-hit_count: 0
+last_used: 2026-08-25
+hit_count: 1
 source: create-p:batch-send-rhythm-and-filter-00-master
 severity: P1
 ---
+
+> **2026-08-25 复核更正（create-p:02-batch-send-type-filter）**：本条描述的三条 ES 旁路
+> **均已修复**，两处白名单**修复其一**。逐项实测：
+> - `ManualInitialOutreachService.buildEsFiltersForLevel:1308` 已改为
+>   `scope.discipline?.let { base.add(ExpertSearchService.disciplineFilter(it)) }`；
+>   notContacted 基座分支（`:1302`）也把 discipline 透传给 `notContactedWithEmailDomainsFilters`。
+> - `ManualInitialOutreachService.buildMaterialReminderEsFilters:1165` 已调
+>   `ExpertSearchService.disciplineFilter(config.discipline)`。
+> - `RecipientScope.matchesExpert`（`BatchExecutionModels.kt:80-88`）已有
+>   `if (discipline == "UNCLASSIFIED") profile.disciplineCategory.isNullOrBlank()` 分支。
+> - `BatchSendTaskConfigService.kt:633` 已改为 `val ALLOWED_DISCIPLINES = ExpertSearchService.ALLOWED_DISCIPLINES`。
+> - **仍未修**：`BatchSendSettingService.kt:236` 的 `setOf("", "STEM", "HUMANITIES")`，
+>   使用点 `:152`（校验）与 `:196`（归一化），属 KV 兼容层。
+>
+> 本条语义因此从「待修复缺陷清单」转为「**必须维持的约束**」：新增筛选维度时
+> 仍须复用 `ExpertSearchService` 的单一 filter 实现，并确认白名单指向同一常量。
+> 权威行号也已漂移：`disciplineFilter` 现在 `ExpertSearchService.kt:96-106`、
+> `ALLOWED_DISCIPLINES` 在 `:94`（原记 `:55-65` / `:53`）。下方原文保留。
 
 `UNCLASSIFIED`（未分类）学科的语义是「`disciplineCategory` 字段**不存在**」，
 不是某个字符串值。权威实现只有一处：

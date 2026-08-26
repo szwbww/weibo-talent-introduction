@@ -2,8 +2,8 @@
 id: K-task-type-semantics-three-lists
 domain: task
 created: 2026-08-16
-last_used: 2026-08-16
-hit_count: 0
+last_used: 2026-08-25
+hit_count: 2
 source: create-p:p1-task-type-catalog-semantics
 severity: P1
 ---

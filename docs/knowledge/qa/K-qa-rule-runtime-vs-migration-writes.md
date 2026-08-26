@@ -2,8 +2,8 @@
 id: K-qa-rule-runtime-vs-migration-writes
 domain: qa
 created: 2026-07-11
-last_used: 2026-08-04
-hit_count: 20
+last_used: 2026-08-26
+hit_count: 22
 source: create-p:qa-keyword-gap-v68
 last_source: fix-v:ai-reply-failure-trust-closure-master-plan:blocked-after-fix-1
 ---

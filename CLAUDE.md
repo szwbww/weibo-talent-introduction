@@ -68,6 +68,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - 新增前端侧栏 Tab/视图须四处同步注册：① `index.html` 侧栏 `.nav-tab[data-view]`；② `index.html` `<section class="view" id="view-<name>">`；③ `app.js` `viewMeta`；④ `app.js` `refreshCurrentView()`。缺一即切换报错。(K-view-registration-triad)
 - AI 草稿链路里"给 LLM 的 QA 知识范围（promptRuleIds，可回退全集）"与"发送审计子集（sendQaRuleIds，只能是真实匹配/显式勾选）"是两个语义，进 `mail_record_qa_rule` 的只能是后者；模拟路径产物永不落审计。(K-ai-reply-prompt-vs-send-rule-ids)
 - 人工富文本回复只要携带 QA 规则，就必须同时写 `mail_record_qa_rule` 并沿用 `SEND_MANUAL_COMPOSED_REPLY` 审计；纯人工空规则回复不得用 QA 全集兜底。(K-rich-reply-qa-audit-reuse)
+- `TrustReplyWorkbench` 显式人工矩阵中的可用事实是最终结果：intent/关键词不匹配只记诊断，不得删除事实或阻断 handling/发送；auto、legacy、普通 QA 路径仍严格匹配。(K-explicit-fact-selection-must-match-request)
 - 多问题 AI 回复必须保留按原邮件顺序的 request→factRuleIds→groundingStatus 矩阵，生成与 fallback 共用矩阵，发送审计规则集单独维护。(K-request-facts-not-flat-pool)
 - QA 使用审计的实际选用规则必须以 `mail_record_qa_rule` 为准；操作日志仅记录上下文，只有历史关联缺失时才允许回退日志字段。(K-audit-selected-source)
 - QA 人工外发回复的纯文本与 HTML 渲染、风险校验、落库和审计必须共享同一 canonical `qaRuleIds`，并在 SMTP 前完成校验。(K-qa-outbound-render-seams)
@@ -132,6 +133,9 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - `GroundedAutoReplyDecisionService.decide()`（自动预览 + 自动实发的共享决策点，生产调用方恒 2 处）**从不调 `aiReplyContextService.build()`**，直接 `generate(inboundText, operatorTurns = emptyList())`：`expertProfile`/`mailHistory` 为 null、训练知识零注入、`contextWarnings` 为空使 `researchProfileSufficient` **恒 true**，于是 `resolveIntentEvidence()` 的 `requiresProfile && !profileSufficient → MISSING` 永不触发——同一封研究匹配类来信，工作台判 UNSUPPORTED 要人工、自动路判 SUPPORTED 可直发。当前靠 `LLM_AUTO_REPLY_ENABLED=false` 兜着，开之前必修。注意 `PendingMailOperationService:535` 的 `trainingKnowledge=""` 是误报（只读回 researchProfileSufficient），prompt 配置也本来就一致（`AiReplyDraftService:2114/2414`），别顺手改。(K-auto-reply-decide-context-parity)
 - `trust-reply-workbench.js` 的 `validateMount()` 用二元三目判 mode↔source 配对（`mode === SIMULATION ? TRAINING_MAIL : LIVE_INBOUND`）；`MODES` 一旦扩到第三个值，新模式会被静默当 LIVE 放行并拿到全部可写能力。扩模式必须先改成显式映射表。同类对称性坑：`unmountLiveTrustReply` 有 8 个调用点（app.js 1627/9722/9769/10019/10044/10058/10099/11567），新增宿主应收进统一 unmount 函数而不是逐点补。(K-workbench-mode-source-ternary-trap)
 - 删除 UI 功能必须同步删/改直接断言旧 DOM id、函数名、endpoint、表格列的前端契约测试，并把这些测试文件列入变更清单；否则全量测试持续失败阻塞发布。反向陷阱：本仓 JS 测试用 DOM stub，`document.getElementById` 永远返回元素，**真实 index.html 里 id 已删除测试仍全绿**，故还须对新增 id 做一次源文本存在性断言。(K-ui-removal-retires-obsolete-contract-tests, K-dom-stub-tests-hide-dangling-refs)
+- 任何 claim/source 真实性校验只能读 enabled 且非空的 `answerBody`；`displayName` 只能作 UI/prompt 标签，不得参与事实匹配。(K-answerbody-source-exclusive)
+- `sendQaRuleIds` 有两套产生口径：`select()` 走 `orderEvidenceRuleIds`（只读 intent 证据），workbench 走 `flatMap { factRuleIds }`；任何扩大 `factRuleIds` 的改动必须同时评估两条，否则正文与 `mail_record_qa_rule` 审计对不上。(K-send-rule-ids-two-derivations)
+- 本仓没有任何缓存框架（无 Spring Cache/Caffeine/Redis）；需要缓存只有「服务字段上的 ConcurrentHashMap」或「新建带 expiresAt 的表 + Flyway 迁移」两条路。(K-no-cache-framework-in-repo)
 
 ---
 

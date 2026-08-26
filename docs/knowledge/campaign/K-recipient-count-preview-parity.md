@@ -2,8 +2,8 @@
 id: K-recipient-count-preview-parity
 domain: campaign
 created: 2026-08-13
-last_used: 2026-08-14
-hit_count: 3
+last_used: 2026-08-25
+hit_count: 5
 source: plan:2026-08-13:06-recipient-count-preview
 severity: P1
 ---

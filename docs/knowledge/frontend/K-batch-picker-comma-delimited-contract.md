@@ -2,8 +2,8 @@
 id: K-batch-picker-comma-delimited-contract
 domain: frontend
 created: 2026-08-15
-last_used: 2026-08-15
-hit_count: 0
+last_used: 2026-08-25
+hit_count: 1
 source: create-p:batch-task-filters-main
 severity: P2
 ---
@@ -50,3 +50,21 @@ function readBatchRegionPickerValue(valueId) {
 新维度只注册不实现；**但不要顺手把既有 tag/region picker 迁过去** —— 那会把回归面从 1 个字段扩到 3 个。
 
 关联：[[K-batch-multi-value-filter-seams]]、[[K-region-constant-not-display-label]]
+
+**2026-08-25 复核更正（create-p:02-batch-send-type-filter）——注册表基座已建成**：
+
+本条末段建议的 `BATCH_MULTI_PICKER_REGISTRY` **已经实现**，新增维度现在确实只需注册、不需实现：
+
+- 注册表：`app.js:14450-14470`，每项 `{ options: fn, emptyText: string, previewKind: "editor"|"manual" }`
+- 通用基座：`bindBatchMultiPicker(valueId)`（调用点 `:15965-15966`）、
+  `readBatchMultiPickerValue(valueId)`（`:14822`、`:14964`、`:15180`）、
+  `setBatchMultiPickerValue(valueId, arr)`（`:14082`、`:15096`）
+- 选项来源范式：`batchOperatorStatusOptions()`（`:14474-14478`）从既有常量派生，
+  `value` 为英文枚举名（进 payload 与 diff 比较），`label` 只用于展示
+
+因此新增一个批量多选维度的前端改动固定为 6 步：DOM 两块（editor + manual）、注册表两项、
+`bindBatchMultiPicker` 两行、读值三处、回填两处、选项函数一个。**零新增 CSS**——
+`.batch-tag-picker` 族 13 个规则块在 `styles.css:9219-9344`。
+
+本条其余内容（逗号分隔契约、外层必须是 `<div>`、picker 无 `change` 事件）**全部仍然成立**，
+是新增维度时最容易踩的三个坑。

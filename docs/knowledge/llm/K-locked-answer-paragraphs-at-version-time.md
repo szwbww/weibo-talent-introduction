@@ -2,8 +2,8 @@
 id: K-locked-answer-paragraphs-at-version-time
 domain: llm
 created: 2026-08-19
-last_used: 2026-08-19
-hit_count: 0
+last_used: 2026-08-21
+hit_count: 1
 source: create-p:workbench-repair-02-claim-paragraphs
 severity: P1
 ---

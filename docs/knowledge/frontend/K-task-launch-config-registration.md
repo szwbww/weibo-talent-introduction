@@ -2,8 +2,8 @@
 id: K-task-launch-config-registration
 domain: frontend
 created: 2026-07-07
-last_used: 2026-07-14
-hit_count: 7
+last_used: 2026-08-21
+hit_count: 8
 source: create-p:enrichment-improvement-v2
 ---
 

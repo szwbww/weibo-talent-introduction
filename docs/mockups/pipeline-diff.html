@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一键预判 执行流程对比</title>
+<style>
+:root{
+  --primary:#1e40af; --primary-light:rgba(30,64,175,.07);
+  --bg-main:#f5f7fb; --panel:#fff;
+  --line:rgba(15,23,42,.055); --border:rgba(15,23,42,.11); --border-strong:#cbd5e1;
+  --surface:rgba(15,23,42,.022);
+  --ink:#1e293b; --text-secondary:#475569; --text-muted:#94a3b8; --text-strong:#334155;
+  --success:#059669; --success-bg:rgba(5,150,105,.07); --success-border:rgba(5,150,105,.22);
+  --warning:#d97706; --warning-bg:rgba(217,119,6,.07); --warning-border:rgba(217,119,6,.22);
+  --error:#e11d48; --error-bg:rgba(225,29,72,.06); --error-border:rgba(225,29,72,.20);
+  --radius:10px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-main);color:var(--ink);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:32px 20px 72px}
+h1{font-size:22px;margin:0 0 6px;letter-spacing:-.01em}
+h2{font-size:16px;margin:0 0 16px}
+.sub{color:var(--text-secondary);margin:0 0 26px;font-size:13px}
+section{margin:0 0 38px}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;
+  background:var(--surface);padding:1px 4px;border-radius:4px;color:var(--text-strong)}
+.eyebrow{display:inline-block;font-size:11px;letter-spacing:.08em;color:var(--primary);
+  background:var(--primary-light);border-radius:999px;padding:3px 10px;margin-bottom:10px}
+.muted{color:var(--text-muted)}
+.small{font-size:12px}
+
+/* legend */
+.legend{display:flex;flex-wrap:wrap;gap:14px;background:var(--panel);border:1px solid var(--border);
+  border-radius:var(--radius);padding:12px 16px;margin-bottom:22px;font-size:12px}
+.legend span{display:flex;align-items:center;gap:6px}
+.sw{width:13px;height:13px;border-radius:4px;border:1px solid}
+.sw.same{background:var(--surface);border-color:var(--border)}
+.sw.bad{background:var(--error-bg);border-color:var(--error-border)}
+.sw.new{background:var(--primary-light);border-color:rgba(30,64,175,.35)}
+.sw.chg{background:var(--warning-bg);border-color:var(--warning-border)}
+.sw.del{background:transparent;border-color:var(--border-strong);border-style:dashed}
+
+/* flow grid */
+.flowhead{display:grid;grid-template-columns:1fr 128px 1fr;gap:10px;margin-bottom:8px;
+  position:sticky;top:0;background:var(--bg-main);padding:8px 0;z-index:5}
+.flowhead div{font-size:12px;font-weight:600;color:var(--text-strong);text-align:center;
+  background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:6px}
+.flowhead div.mid{background:transparent;border:none}
+
+.row{display:grid;grid-template-columns:1fr 128px 1fr;gap:10px;align-items:stretch;margin-bottom:6px}
+.box{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:9px 12px;
+  font-size:12.5px;line-height:1.5;display:flex;flex-direction:column;justify-content:center}
+.box b{font-weight:600;display:block;margin-bottom:2px}
+.box .d{font-size:11.5px;color:var(--text-secondary)}
+.box.bad{background:var(--error-bg);border-color:var(--error-border)}
+.box.bad b{color:var(--error)}
+.box.new{background:var(--primary-light);border-color:rgba(30,64,175,.35)}
+.box.new b{color:var(--primary)}
+.box.chg{background:var(--warning-bg);border-color:var(--warning-border)}
+.box.chg b{color:#b45309}
+.box.del{background:transparent;border-style:dashed;border-color:var(--border-strong);opacity:.6}
+.box.del b{text-decoration:line-through;color:var(--text-muted)}
+.box.empty{background:transparent;border:none}
+.verdict{display:flex;align-items:center;justify-content:center;font-size:11px;text-align:center;
+  color:var(--text-muted);letter-spacing:.02em}
+.verdict span{border:1px solid var(--border);background:var(--panel);border-radius:999px;padding:3px 9px;white-space:nowrap}
+.verdict span.k-del{border-color:var(--border-strong);color:var(--text-muted)}
+.verdict span.k-new{border-color:rgba(30,64,175,.35);color:var(--primary);background:var(--primary-light)}
+.verdict span.k-chg{border-color:var(--warning-border);color:#b45309;background:var(--warning-bg)}
+.verdict span.k-same{opacity:.55}
+
+.grpbar{grid-column:1/-1;font-size:11px;letter-spacing:.06em;color:var(--text-muted);
+  border-top:1px solid var(--border);padding:14px 0 5px;margin-top:6px}
+
+/* tables */
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px}
+.tbl-scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:620px;font-size:12.5px}
+th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11px;letter-spacing:.04em;color:var(--text-muted);font-weight:600;border-bottom:1px solid var(--border)}
+tbody tr:last-child td{border-bottom:none}
+.num{font-variant-numeric:tabular-nums}
+
+.note{border-left:3px solid var(--primary);background:var(--primary-light);
+  padding:11px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin-top:16px;color:var(--text-secondary)}
+.note.warn{border-left-color:var(--warning);background:var(--warning-bg)}
+
+/* escape hatch */
+.hatch{display:grid;grid-template-columns:1fr;gap:8px}
+.hchain{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.hstep{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:7px 11px;font-size:12px}
+.hstep.key{background:var(--success-bg);border-color:var(--success-border);color:var(--success);font-weight:600}
+.hstep.skip{border-style:dashed;color:var(--text-muted);background:transparent}
+.arw{color:var(--text-muted);font-size:11px}
+@media (max-width:860px){
+  .row,.flowhead{grid-template-columns:1fr;gap:5px}
+  .flowhead{position:static}
+  .flowhead div.mid{display:none}
+  .verdict{justify-content:flex-start;padding:2px 0}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>一键预判 · 执行流程对比</h1>
+<p class="sub">左＝现在（main @f293507 实读），右＝改后。同一行是同一个环节，方便看清哪一步真的变了。</p>
+
+<div class="legend">
+  <span><i class="sw same"></i>不变</span>
+  <span><i class="sw bad"></i>现在坏在这</span>
+  <span><i class="sw chg"></i>改口径 / 加约束</span>
+  <span><i class="sw new"></i>新增</span>
+  <span><i class="sw del"></i>删除（降级为诊断）</span>
+</div>
+
+<section>
+  <div class="flowhead">
+    <div>现在</div><div class="mid"></div><div>改后</div>
+  </div>
+
+  <div class="row"><div class="grpbar">A · 入口与切分　<span class="muted">TrustReplyWorkbenchService.bootstrap</span></div></div>
+
+  <div class="row">
+    <div class="box"><b>取来信正文</b><span class="d"><code>cleanedBody ?: body</code></span></div>
+    <div class="verdict"><span class="k-same">不变</span></div>
+    <div class="box"><b>取来信正文</b><span class="d">同左</span></div>
+  </div>
+
+  <div class="row">
+    <div class="box"><b>切分诉求</b><span class="d"><code>QaRequestExtractor.extract()</code> · bullet / ? / FALLBACK</span></div>
+    <div class="verdict"><span class="k-same">不变</span></div>
+    <div class="box"><b>切分诉求</b><span class="d">同左 —— <code>requestKey</code> 依赖它的 index+requestText，不能动</span></div>
+  </div>
+
+  <div class="row">
+    <div class="box chg"><b>LLM 枚举诉求</b><span class="d"><code>InboundAskEnumerator.enumerate()</code><br>结果只写进 <code>unrecognizedAsks</code>，<b>不参与任何判定</b></span></div>
+    <div class="verdict"><span class="k-chg">改用途</span></div>
+    <div class="box chg"><b>LLM 枚举诉求</b><span class="d">同一次调用，结果<b>接进状态判定</b>——成为覆盖率的分母</span></div>
+  </div>
+
+  <div class="row"><div class="grpbar">B · 召回与判定　<span class="muted">QaFactSelectionService.resolveAutoSelection → buildRequestFact</span></div></div>
+
+  <div class="row">
+    <div class="box"><b>取候选池</b><span class="d"><code>findAllEnabledOrdered()</code> · 约 30 条启用规则</span></div>
+    <div class="verdict"><span class="k-same">不变</span></div>
+    <div class="box"><b>取候选池</b><span class="d">同左（全库 ≈ 2 万字符 ≈ 5K tokens）</span></div>
+  </div>
+
+  <div class="row">
+    <div class="box bad"><b>关键词召回</b><span class="d"><code>matchesRule()</code> 纯 <code>lowercase + contains</code><br><b>← 三条问题在这里丢失</b>（"IP" ≠ "intellectual property"）</span></div>
+    <div class="verdict"><span class="k-new">替换 + 兜底</span></div>
+    <div class="box new"><b>全库 LLM 检索</b><span class="d">整封信 + 全库 → <b>1 次</b>调用 → <code>{诉求序号:[ruleId]}</code><br>只返回 ID，不写正文；服务端校验后<b>与关键词命中取并集</b></span></div>
+  </div>
+
+  <div class="row">
+    <div class="box"><b>意图匹配</b><span class="d"><code>matchIntents()</code> · 20 条硬编码 alias</span></div>
+    <div class="verdict"><span class="k-chg">降级为诊断</span></div>
+    <div class="box chg"><b>意图匹配</b><span class="d">保留，但不再决定召回；只用于展示与审计</span></div>
+  </div>
+
+  <div class="row">
+    <div class="box bad"><b>准入过滤</b><span class="d"><code>isCoverageEligible()</code> / <code>selectIntentKeyForRule()</code><br>规则的 coverage_keys 必须与 intent 有交集<br><b>← 5 个死键的成因</b></span></div>
+    <div class="verdict"><span class="k-del">删掉这道闸</span></div>
+    <div class="box del"><b>准入过滤</b><span class="d">不再拦截；同时清掉 <code>company.verification_evidence</code> 等 5 个死键</span></div>
+  </div>
+
+  <div class="row">
+    <div class="box bad"><b>状态判定</b><span class="d">status 只在 <code>intentCoverages</code> 上算<br><b>← 认不出的问题永远不会变 MISSING</b>，越读不懂越显示"依据充分"</span></div>
+    <div class="verdict"><span class="k-chg">改分母</span></div>
+    <div class="box chg"><b>状态判定</b><span class="d">分母改用枚举出的 asks；漏掉的诉求成为<b>自己的 MISSING 项</b>，拉低状态</span></div>
+  </div>
+
+  <div class="row">
+    <div class="box"><b>事实全信去重</b><span class="d"><code>remaining.removeAll(consumedIds)</code> —— 本来就有</span></div>
+    <div class="verdict"><span class="k-same">不变</span></div>
+    <div class="box"><b>事实全信去重</b><span class="d">同左，改由编排表定稿</span></div>
+  </div>
+
+  <div class="row"><div class="grpbar">C · 编排（全新的一层）</div></div>
+
+  <div class="row">
+    <div class="box empty"></div>
+    <div class="verdict"><span class="k-new">新增</span></div>
+    <div class="box new"><b>整封信编排</b><span class="d">① 事实分配定稿（谁归谁）<br>② 每条<b>段落角色</b>：正面回答 / 条件化说明 / 有理由的拒绝+替代路径<br>③ <b>CTA 唯一落点</b>（其余条目一律禁 CTA）</span></div>
+  </div>
+
+  <div class="row">
+    <div class="box bad"><b>写死的回答说明</b><span class="d"><code>suggestedInstructionFor()</code> 对所有 UNSUPPORTED 返回同一句<br>"先明说没有确认答案 + 邻近事实 + 交出下一步 + 不要数字/链接/时间"<br><b>← 四段复读、CTA 撞车、官网 URL 结构性不可能出现</b></span></div>
+    <div class="verdict"><span class="k-chg">由编排生成</span></div>
+    <div class="box chg"><b>角色化的回答说明</b><span class="d">按段落角色出措辞（"说明取决于什么 + 定了之后给什么"），<br>邻近事实按<b>分配表</b>给而不是给全集；数字/链接改白名单——已审核事实里的可引用</span></div>
+  </div>
+
+  <div class="row"><div class="grpbar">D · 逐条生成与整合　<span class="muted">前端 autoRun() → assemble()</span></div></div>
+
+  <div class="row">
+    <div class="box bad"><b>逐条独立 LLM ×N</b><span class="d"><code>runItemSequence()</code>；每条只看得见自己<br><b>← 互不知情，所以复读与撞车无法避免</b></span></div>
+    <div class="verdict"><span class="k-chg">加约束</span></div>
+    <div class="box chg"><b>逐条 LLM ×N（带编排约束）</b><span class="d">调用次数不变，但每条带上<b>段落角色</b>与<b>本条是否允许 CTA</b></span></div>
+  </div>
+
+  <div class="row">
+    <div class="box"><b>整合</b><span class="d"><code>composeLockedItems()</code> 首尾相接 + 框架块</span></div>
+    <div class="verdict"><span class="k-chg">加校验</span></div>
+    <div class="box chg"><b>整合 + 按编排校验</b><span class="d">事实不重复、CTA 恰好 1 处；不满足则拦回而不是照发</span></div>
+  </div>
+
+  <div class="row">
+    <div class="box"><b>渲染预览</b><span class="d"><code>preview()</code> 产出 <code>rawDraftText</code> + <code>renderedDraftText</code></span></div>
+    <div class="verdict"><span class="k-same">不变</span></div>
+    <div class="box"><b>渲染预览</b><span class="d">同左（后端本来就返回两份）</span></div>
+  </div>
+
+  <div class="row">
+    <div class="box bad"><b>前端显示</b><span class="d"><code>trust-reply-workbench.js:2307</code> 只展示 <code>rawDraftText</code><br><b>← <code>${expertFamilyName|Colleague}</code> 裸奔</b></span></div>
+    <div class="verdict"><span class="k-chg">改一行</span></div>
+    <div class="box chg"><b>前端显示</b><span class="d">展示 <code>renderedDraftText</code>；原始正文降级为第三页签</span></div>
+  </div>
+
+  <div class="row">
+    <div class="box"><b>门禁与打分</b><span class="d"><code>GroundedAutoReplyDecisionService.decide()</code> → CRS + 硬门禁 → 可自动发 / 转人工</span></div>
+    <div class="verdict"><span class="k-same">不变</span></div>
+    <div class="box"><b>门禁与打分</b><span class="d">同左 —— 但因为状态判定收紧了，"铁律"这次是<b>真的保护网</b></span></div>
+  </div>
+</section>
+
+<!-- escape hatch -->
+<section>
+  <span class="eyebrow">别碰的通路</span>
+  <h2>手动编排 + 原文输出：整条绕开新层</h2>
+  <div class="card">
+    <div class="hatch">
+      <div class="hchain">
+        <span class="hstep">运营在矩阵里勾事实</span><span class="arw">→</span>
+        <span class="hstep skip">全库 LLM 检索（跳过）</span><span class="arw">→</span>
+        <span class="hstep skip">意图匹配（仅诊断）</span><span class="arw">→</span>
+        <span class="hstep key">resolveMatrixSelection<br><span class="small" style="font-weight:400">factRuleIds = boundRuleIds = explicitIds</span></span><span class="arw">→</span>
+        <span class="hstep key">composeVerbatimFactAnswer<br><span class="small" style="font-weight:400">逐字取 answerBody · usedLlm=false</span></span><span class="arw">→</span>
+        <span class="hstep">整合发送</span>
+      </div>
+    </div>
+    <div class="note">
+      这两个能力<b>已经不受意图层管辖</b>了（计划 02 落地）：人工矩阵直接就是最终事实集，
+      <code>allowedHandlings()</code> 恒返回 7 种全量，<code>droppedBindingRuleIds</code> 全仓已消失。
+      所以新方案对它们要做的不是"预留"，是<b>别碰</b> —— 模型检索错了、生成崩了，
+      运营仍能手选事实 + 原文输出把信发出去。<b>LLM 检索只接进 auto 路，绝不回写矩阵路径。</b>
+    </div>
+  </div>
+</section>
+
+<!-- cost -->
+<section>
+  <span class="eyebrow">代价</span>
+  <h2>多了多少开销</h2>
+  <div class="card">
+    <div class="tbl-scroll">
+    <table>
+      <thead><tr><th style="width:34%">每封信</th><th style="width:22%">现在</th><th style="width:22%">改后</th><th style="width:22%">差</th></tr></thead>
+      <tbody>
+        <tr><td>诉求枚举</td><td class="num">1 次</td><td class="num">1 次</td><td class="muted">—</td></tr>
+        <tr><td>事实召回</td><td class="num">0 次（关键词）</td><td class="num">1 次</td><td class="num">+1</td></tr>
+        <tr><td>编排</td><td class="num">0 次</td><td class="num">0 次<span class="small muted">（并入召回同一次）</span></td><td class="muted">—</td></tr>
+        <tr><td>逐条生成（4 条诉求）</td><td class="num">4 次</td><td class="num">4 次</td><td class="muted">—</td></tr>
+        <tr><td><b>合计调用</b></td><td class="num"><b>5 次</b></td><td class="num"><b>6 次</b></td><td class="num"><b>+1</b></td></tr>
+        <tr><td>新增输入 tokens</td><td class="muted">—</td><td class="num">≈ 5K<span class="small muted">（全库正文）</span></td><td class="num">+5K</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="note warn">
+      <b>两个必须配套的东西，否则会出新问题：</b><br>
+      ① <b>确定性</b> —— 关键词是确定的，LLM 不是。必须 <code>temperature=0</code> +
+      按 <code>(sourceVersion, 规则集哈希)</code> 缓存检索结果，否则 <code>evidenceSetVersion</code> 会漂，工作台不停提示"事实已变化"。<br>
+      ② <b>兜底用并集不是替代</b> —— 关键词命中的必进，保住确定性下限；LLM 超时或挂了，最坏退化成今天的行为，不会更差。
+    </div>
+    <div class="note">
+      <b>最硬的一条约束（要先定）：</b><code>requestKey = sha256(sourceVersion, index, requestText, <b>intentKeys</b>)</code>。
+      intentKeys 在哈希里，所以只要动 intent 目录（删死键、补 alias、改 coverage 归属），
+      <code>trust_reply_workbench_state</code>（V83）里的历史锁定项就会全部失配。
+      两条路：保持 intentKeys 的<b>取值口径</b>不变（只改怎么用、不改算出什么），或接受一次性 state 迁移。
+    </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

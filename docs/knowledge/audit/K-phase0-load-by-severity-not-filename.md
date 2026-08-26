@@ -2,8 +2,8 @@
 id: K-phase0-load-by-severity-not-filename
 domain: audit
 created: 2026-08-16
-last_used: 2026-08-16
-hit_count: 0
+last_used: 2026-08-21
+hit_count: 1
 source: create-p:task-records-refactor-main
 severity: P1
 ---

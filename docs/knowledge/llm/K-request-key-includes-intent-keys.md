@@ -2,8 +2,8 @@
 id: K-request-key-includes-intent-keys
 domain: llm
 created: 2026-08-21
-last_used: 2026-08-21
-hit_count: 0
+last_used: 2026-08-26
+hit_count: 3
 source: create-p:02-bound-facts-become-partial-evidence
 severity: P1
 ---

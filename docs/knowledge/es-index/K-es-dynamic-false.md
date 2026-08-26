@@ -2,8 +2,8 @@
 id: K-es-dynamic-false
 domain: es-index
 created: 2026-08-13
-last_used: 2026-08-13
-hit_count: 7
+last_used: 2026-08-25
+hit_count: 9
 source: create-p:expert-enrichment-backend
 last_source: create-p:batch-send-status-consistency (03 P-B re-validated)
 ---

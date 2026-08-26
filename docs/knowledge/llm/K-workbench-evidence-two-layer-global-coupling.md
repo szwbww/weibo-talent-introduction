@@ -2,8 +2,8 @@
 id: K-workbench-evidence-two-layer-global-coupling
 domain: llm
 created: 2026-08-19
-last_used: 2026-08-20
-hit_count: 1
+last_used: 2026-08-26
+hit_count: 2
 source: create-p:workbench-repair-03a-per-request-evidence-version
 severity: P1
 ---

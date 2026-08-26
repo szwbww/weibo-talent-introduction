@@ -2,8 +2,8 @@
 id: K-suppression-check-call-sites
 domain: mail
 created: 2026-08-11
-last_used: 2026-08-11
-hit_count: 0
+last_used: 2026-08-21
+hit_count: 1
 source: create-p:unsubscribe-02-suppression-gate
 severity: P1
 ---

@@ -2,8 +2,8 @@
 id: K-promotion-source-passthrough
 domain: es-index
 created: 2026-07-11
-last_used: 2026-07-11
-hit_count: 2
+last_used: 2026-08-25
+hit_count: 4
 source: create-p:discipline-category-data
 ---
 

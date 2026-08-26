@@ -2,8 +2,8 @@
 id: K-qa-replybody-outbound-sites
 domain: qa
 created: 2026-07-09
-last_used: 2026-07-17
-hit_count: 13
+last_used: 2026-08-21
+hit_count: 14
 source: create-p:cv-3-reply-paths
 ---
 

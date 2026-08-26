@@ -2,8 +2,8 @@
 id: K-batch-send-filter-retry-parity
 domain: campaign
 created: 2026-07-11
-last_used: 2026-07-14
-hit_count: 8
+last_used: 2026-08-25
+hit_count: 11
 source: fix-v:discipline-filter-batch-send:fix-1
 severity: P1
 ---

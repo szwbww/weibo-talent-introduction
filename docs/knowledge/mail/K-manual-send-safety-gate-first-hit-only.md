@@ -1,9 +1,9 @@
 ---
 id: K-manual-send-safety-gate-first-hit-only
 domain: mail
-created: 2026-08-20
-last_used: 2026-08-20
-hit_count: 1
+created: 2026-08-21
+last_used: 2026-08-21
+hit_count: 2
 source: create-p:manual-send-safety-confirm
 severity: P1
 ---
@@ -43,3 +43,34 @@ severity: P1
   两条 `valid=false` 出口都带非空 `warningCodes`。
 
 关联：[[K-preview-mirrors-pipeline]]、[[K-ai-reply-action-cta-variant-coverage]]、[[K-sensitive-material-cta-not-mention]]
+
+
+---
+
+## 2026-08-21 修订：前半段已过时，`performFinalBlockingCheck` 已不存在
+
+`grep -rn "performFinalBlockingCheck" src/` **零命中**（2026-08-21 实测）。本条记录当初提出的
+"第一步必须先把它改成收集全集"**已经落地**：现在是
+`PendingMailOperationService.collectSafetyFindings`（`:709-813`），返回 `List<SafetyFinding>`，
+一次请求产出**全部**命中项；`add()`（`:719-731`）按 code 去重，只有
+`AiReplyActionPolicy.CODE_ACTION_SENSITIVE_MATERIAL` 判 `STRONG`，其余 `NORMAL`。
+配套确认通道也已建成：`ManualSendSafetyBlockedException`（`:1136-1138`）→
+`GlobalExceptionHandler:32-42`（`MANUAL_SEND_SAFETY_BLOCKED` + `findings` +
+`requiresStrongConfirmation`）→ `app.js:10677-10714`（一次 confirm，STRONG 再要求逐字输入「确认发送」）。
+
+**仍然成立的部分**（不要当作已修）：
+
+- `ActionViolation.code == null` 的语义与两个后果（裸 `ACTION_VIOLATION`、预检 `:1024` 的
+  `if (code != null && ...)` 丢弃该类违规）**未修复**。
+- `findViolations` 全仓 **12 个调用点**（2026-08-21 实测：`AiReplyActionPolicy.kt` 2、
+  `AiReplyDraftService.kt` 6、`AiReplyHighRiskClaimValidator.kt` 1、
+  `TrustReplyWorkbenchService.kt` 2、`PendingMailOperationService.kt` 1），
+  除 `PendingMailOperationService` 外仍无一处读 `.code`。
+
+**其中一个"不可达分支"即将变可达**：`collectSafetyFindings:742-745` 的
+`QA_FACTS_ALL_INVALID` 之所以到不了，是因为 `:176-181` 的 422 抛在前面。
+计划 `docs/plans/2026-08-21/04-manual-send-fact-gate-downgrade.md` 会删掉那个 422，
+届时该分支即为正常路径——**不要再把它当作"已知不可达，不用管"**。
+另一条（`:703` 的 `?: "CLAIM_VALIDATION_FAILED"`）仍然不可达。
+
+关联：[[K-manual-send-fact-gate-is-the-only-seam]]

@@ -2,8 +2,8 @@
 id: K-progress-log-pending-token-orphan
 domain: task
 created: 2026-08-06
-last_used: 2026-08-06
-hit_count: 0
+last_used: 2026-08-24
+hit_count: 1
 source: create-p:batch-execution-log-process-visibility-p1
 severity: P1
 ---

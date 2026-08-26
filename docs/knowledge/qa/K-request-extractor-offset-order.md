@@ -2,8 +2,8 @@
 id: K-request-extractor-offset-order
 domain: qa
 created: 2026-07-13
-last_used: 2026-07-13
-hit_count: 3
+last_used: 2026-08-24
+hit_count: 4
 source: create-p:ai-reply-01-source-order-request-extraction
 severity: P1
 ---

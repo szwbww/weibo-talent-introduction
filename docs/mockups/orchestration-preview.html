@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一次编排 · 前端预览</title>
+<style>
+:root{
+  --primary:#1e40af; --primary-rgb:30,64,175;
+  --primary-light:rgba(30,64,175,.07); --primary-tint:rgba(30,64,175,.10);
+  --bg-main:#f5f7fb; --panel:#fff;
+  --line:rgba(15,23,42,.055); --border:rgba(15,23,42,.11); --border-strong:#cbd5e1;
+  --surface:rgba(15,23,42,.022);
+  --ink:#1e293b; --text-secondary:#475569; --text-muted:#94a3b8; --text-strong:#334155;
+  --success:#059669; --success-bg:rgba(5,150,105,.08); --success-border:rgba(5,150,105,.20);
+  --warning:#d97706; --warning-bg:rgba(217,119,6,.08); --warning-border:rgba(217,119,6,.20);
+  --error:#e11d48; --error-bg:rgba(225,29,72,.07); --error-border:rgba(225,29,72,.18);
+  --radius:10px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-main);color:var(--ink);
+  font:14px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;}
+.wrap{max-width:1120px;margin:0 auto;padding:32px 20px 72px}
+h1{font-size:22px;margin:0 0 6px;letter-spacing:-.01em}
+h2{font-size:16px;margin:0 0 14px;letter-spacing:-.005em}
+h3{font-size:13px;margin:0 0 10px;color:var(--text-strong);text-transform:none;letter-spacing:.02em}
+.sub{color:var(--text-secondary);margin:0 0 28px;font-size:13px}
+section{margin:0 0 34px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px}
+.muted{color:var(--text-muted)}
+.small{font-size:12px}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;
+  background:var(--surface);padding:1px 5px;border-radius:4px;color:var(--text-strong)}
+
+/* section label */
+.eyebrow{display:inline-block;font-size:11px;letter-spacing:.08em;color:var(--primary);
+  background:var(--primary-light);border-radius:999px;padding:3px 10px;margin-bottom:10px}
+
+/* tables */
+.tbl-scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:13px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:11.5px;letter-spacing:.04em;color:var(--text-muted);font-weight:600;
+  border-bottom:1px solid var(--border)}
+tbody tr:last-child td{border-bottom:none}
+
+/* pills */
+.pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;
+  border:1px solid transparent;white-space:nowrap}
+.pill.ok{color:var(--success);background:var(--success-bg);border-color:var(--success-border)}
+.pill.warn{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-border)}
+.pill.bad{color:var(--error);background:var(--error-bg);border-color:var(--error-border)}
+.pill.neutral{color:var(--text-secondary);background:var(--surface);border-color:var(--border)}
+.pill.pri{color:var(--primary);background:var(--primary-light);border-color:rgba(30,64,175,.18)}
+
+/* pipeline */
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:6px 0 0}
+.step{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  padding:7px 11px;font-size:12.5px;white-space:nowrap}
+.step.new{background:var(--primary-light);border-color:rgba(30,64,175,.28);color:var(--primary);font-weight:600}
+.arrow{color:var(--text-muted);font-size:12px}
+.flow-row{margin-bottom:16px}
+.flow-row:last-child{margin-bottom:0}
+.flow-label{font-size:12px;color:var(--text-muted);margin-bottom:7px}
+
+/* ===== mock UI ===== */
+.mock{background:var(--bg-main);border:1px solid var(--border-strong);border-radius:12px;
+  padding:18px;box-shadow:0 1px 3px rgba(15,23,42,.05)}
+.mock-chrome{display:flex;align-items:center;gap:8px;margin:-4px 0 14px;
+  font-size:11px;color:var(--text-muted)}
+.dot{width:9px;height:9px;border-radius:50%;background:#e2e8f0;display:inline-block}
+
+.autorun{display:flex;flex-wrap:wrap;align-items:center;gap:10px;background:var(--panel);
+  border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px}
+.btn{border:1px solid var(--border);background:var(--panel);color:var(--text-strong);
+  border-radius:7px;padding:6px 13px;font-size:12.5px;cursor:default;font-family:inherit}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+.btn.sm{padding:3px 9px;font-size:11.5px}
+.hint{font-size:11.5px;color:var(--text-muted)}
+
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:16px 18px;margin-bottom:14px}
+.panel.newfeat{border-color:rgba(30,64,175,.32);box-shadow:0 0 0 3px rgba(30,64,175,.05)}
+.panel-head{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin-bottom:12px}
+.panel-head h3{margin:0}
+.tag-new{font-size:10.5px;letter-spacing:.06em;color:#fff;background:var(--primary);
+  border-radius:4px;padding:2px 6px}
+
+/* fact chips */
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-size:11.5px;padding:2.5px 8px;border-radius:6px;border:1px solid var(--border);
+  background:var(--surface);color:var(--text-strong);white-space:nowrap}
+.chip.kw{border-color:rgba(5,150,105,.28);background:var(--success-bg);color:var(--success)}
+.chip.sem{border-color:rgba(30,64,175,.28);background:var(--primary-light);color:var(--primary)}
+.chip.moved{color:var(--text-muted);background:transparent;border-style:dashed;text-decoration:line-through}
+
+/* item card */
+.item{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+  padding:14px 16px;margin-bottom:10px}
+.item-head{display:flex;align-items:flex-start;gap:10px}
+.idx{flex:0 0 22px;height:22px;border-radius:6px;background:var(--surface);color:var(--text-secondary);
+  font-size:12px;display:grid;place-items:center;margin-top:1px}
+.item-title{flex:1;min-width:0}
+.item-title strong{font-weight:600;font-size:13.5px;display:block;margin-bottom:5px}
+.item-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.recall{margin-top:11px;padding-top:11px;border-top:1px dashed var(--line)}
+.recall-row{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;margin-bottom:6px}
+.recall-row:last-child{margin-bottom:0}
+.recall-label{flex:0 0 78px;font-size:11.5px;color:var(--text-muted)}
+.whynot{font-size:11.5px;color:var(--text-secondary);background:var(--warning-bg);
+  border:1px solid var(--warning-border);border-radius:6px;padding:6px 9px;margin-top:7px}
+.whynot code{background:rgba(255,255,255,.6)}
+
+.fields{display:flex;flex-wrap:wrap;gap:12px;margin-top:11px}
+.field{flex:1 1 200px;min-width:180px}
+.field label{display:block;font-size:11.5px;color:var(--text-muted);margin-bottom:4px}
+.select{width:100%;border:1px solid var(--border);border-radius:7px;padding:6px 9px;
+  font-size:12.5px;background:var(--panel);color:var(--text-strong)}
+.select.derived{background:var(--primary-light);border-color:rgba(30,64,175,.24);color:var(--primary)}
+
+/* draft compare */
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tab{border:1px solid var(--border);background:var(--panel);border-radius:7px;padding:6px 14px;
+  font-size:12.5px;cursor:pointer;color:var(--text-secondary);font-family:inherit}
+.tab[aria-selected="true"]{background:var(--primary);border-color:var(--primary);color:#fff}
+pre.draft{margin:0;white-space:pre-wrap;word-break:break-word;font-size:12.5px;line-height:1.75;
+  font-family:inherit;background:var(--surface);border:1px solid var(--line);
+  border-radius:8px;padding:14px 16px;max-height:none}
+pre.draft mark{background:rgba(225,29,72,.13);color:var(--error);padding:0 2px;border-radius:3px}
+pre.draft ins{background:rgba(5,150,105,.12);color:#047857;text-decoration:none;padding:0 2px;border-radius:3px}
+.legend{font-size:11.5px;color:var(--text-muted);margin-top:9px}
+
+.note{border-left:3px solid var(--primary);background:var(--primary-light);
+  padding:11px 14px;border-radius:0 8px 8px 0;font-size:12.5px;margin-top:14px;color:var(--text-secondary)}
+ul.tight{margin:8px 0 0;padding-left:20px}
+ul.tight li{margin-bottom:5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>一次编排 · 前端预览</h1>
+  <p class="sub">回复台「一键预判」改造方案 · 以 Al-Bitar 教授那封信为样本</p>
+
+  <!-- ============ 0. 更正 ============ -->
+  <section>
+    <span class="eyebrow">更正我上一轮的判断</span>
+    <h2>事实库不缺答案 —— 4 条问题里有 3 条的答案早就在库里</h2>
+    <div class="card">
+      <div class="tbl-scroll">
+      <table>
+        <thead><tr>
+          <th style="width:26%">专家问的</th><th style="width:30%">库里已有的事实</th>
+          <th style="width:26%">关键词命中</th><th style="width:18%">实际判定</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>企业类型与常见研发缺口</td>
+            <td><code>Partner company information</code><br><span class="small muted">"…will introduce the matched partner company with a profile, website, address…"</span></td>
+            <td><span class="pill bad">零命中</span><br><span class="small muted">库里写 <code>which company</code> / <code>how do you match</code>，来信写 "what types of companies"</span></td>
+            <td><span class="pill bad">UNSUPPORTED</span></td>
+          </tr>
+          <tr>
+            <td>IP 归属</td>
+            <td><code>Pre-contract IP boundary</code><br><span class="small muted">"Until a contract is signed, nothing you share transfers any rights…"—— 与真人回复几乎逐字相同</span></td>
+            <td><span class="pill bad">零命中</span><br><span class="small muted">库里写 <code>who owns the</code>，来信写 "Who owns <b>IP</b> arising"，差一个词</span></td>
+            <td><span class="pill bad">UNSUPPORTED</span></td>
+          </tr>
+          <tr>
+            <td>报酬结构</td>
+            <td><code>Funding support</code></td>
+            <td><span class="pill ok">compensation</span></td>
+            <td><span class="pill ok">GROUNDED</span></td>
+          </tr>
+          <tr>
+            <td>官网 / 顾问名单 / 周期</td>
+            <td><code>Programme name and public visibility</code>（"not publicly listed and has no public project website"）<br><code>Application process</code></td>
+            <td><span class="pill warn">只中 timeline</span><br><span class="small muted">官网那条的关键词是 <code>official name</code> / <code>what is it called</code></span></td>
+            <td><span class="pill warn">PARTIAL</span></td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="note">
+        <b>真正的根因：召回，不是知识。</b><code>QaFactSelectionService.matchesRule()</code> 是纯 <code>lowercase + contains</code>，
+        无词形、无同义、无语义。库里那句完美的 IP 口径，因为专家写的是 "IP" 而不是 "intellectual property"，
+        结构性不可达 —— 于是系统只好说 "we do not have a confirmed answer on file"。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 1. 一次编排是什么 ============ -->
+  <section>
+    <span class="eyebrow">概念</span>
+    <h2>「一次编排」= 在逐条生成之前，先对整封信做一次全局规划</h2>
+    <div class="card">
+      <div class="flow-row">
+        <div class="flow-label">现在 —— 每条自己管自己，没有任何一步看得见整封信</div>
+        <div class="flow">
+          <span class="step">切分 4 条</span><span class="arrow">→</span>
+          <span class="step">逐条关键词匹配</span><span class="arrow">→</span>
+          <span class="step">逐条独立 LLM ×4</span><span class="arrow">→</span>
+          <span class="step">首尾相接</span>
+        </div>
+      </div>
+      <div class="flow-row">
+        <div class="flow-label">改后 —— 中间插入一层编排，逐条生成时带着编排结果作为约束</div>
+        <div class="flow">
+          <span class="step">切分 4 条</span><span class="arrow">→</span>
+          <span class="step new">全信事实召回<br><span class="small" style="font-weight:400">关键词 + 语义</span></span><span class="arrow">→</span>
+          <span class="step new">编排<br><span class="small" style="font-weight:400">去重 · 定角色 · 定 CTA</span></span><span class="arrow">→</span>
+          <span class="step">逐条 LLM ×4<br><span class="small">（带编排约束）</span></span><span class="arrow">→</span>
+          <span class="step new">按编排校验整合</span>
+        </div>
+      </div>
+      <div class="note">
+        编排这一层解决三件现在做不到的事：<br>
+        ① <b>事实全信去重</b> —— 现在每条无据项拿到的「邻近事实」是整封信的并集（<code>toCoverage()</code> 里 <code>flatMap</code>，无据项自身 <code>factRuleIds</code> 恒空，过滤器不起作用），所以四段复读同一批内容；<br>
+        ② <b>CTA 全信唯一</b> —— 现在每条都开着 <code>REQUEST_MATERIALS + PROPOSE_MEETING</code>，所以第 1 段要简历、第 2 段约会议；<br>
+        ③ <b>段落角色</b> —— 事实本身写着「取决于未来匹配/合同」时，应答成「条件化说明」，而不是「我们库里没有确认口径」。
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 2. 前端预览 ============ -->
+  <section>
+    <span class="eyebrow">前端预览</span>
+    <h2>回复台改后长这样</h2>
+
+    <div class="mock">
+      <div class="mock-chrome"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        &nbsp;可信回复工作台 · LIVE · inbound #4821</div>
+
+      <!-- autorun bar (unchanged) -->
+      <div class="autorun">
+        <button class="btn primary">一键预判</button>
+        <button class="btn">重置</button>
+        <span class="hint">有据项自动生成，无据项由系统代填回答说明；汇总后仍可逐项调整。不发送、不写外发记录。</span>
+      </div>
+
+      <!-- NEW: orchestration panel -->
+      <div class="panel newfeat">
+        <div class="panel-head">
+          <h3>编排总览</h3><span class="tag-new">新增</span>
+          <span class="pill ok">4/4 已召回</span>
+          <span class="pill neutral">事实 7 条 · 去重后 7 条</span>
+          <span class="pill neutral">CTA 1 处</span>
+        </div>
+        <div class="tbl-scroll">
+        <table>
+          <thead><tr>
+            <th style="width:5%">序</th><th style="width:27%">诉求</th>
+            <th style="width:36%">分配到的事实</th><th style="width:22%">段落角色</th><th style="width:10%">CTA</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td class="muted">1</td>
+              <td>企业类型与常见研发缺口</td>
+              <td><div class="chips">
+                <span class="chip sem">Partner company information</span>
+                <span class="chip sem">Enterprise matching basis</span>
+              </div></td>
+              <td><span class="pill pri">条件化说明</span><div class="small muted" style="margin-top:4px">依据取决于未来匹配</div></td>
+              <td class="muted small">—</td>
+            </tr>
+            <tr>
+              <td class="muted">2</td>
+              <td>IP 归属</td>
+              <td><div class="chips">
+                <span class="chip sem">Pre-contract IP boundary</span>
+                <span class="chip sem">Contract arrangements</span>
+              </div></td>
+              <td><span class="pill pri">条件化说明</span></td>
+              <td class="muted small">—</td>
+            </tr>
+            <tr>
+              <td class="muted">3</td>
+              <td>报酬结构</td>
+              <td><div class="chips">
+                <span class="chip kw">Funding support</span>
+                <span class="chip moved" title="已分配给第 2 条">Contract arrangements</span>
+              </div>
+              <div class="small muted" style="margin-top:5px">重复事实已归第 2 条，本条不再复述</div></td>
+              <td><span class="pill ok">正面回答</span></td>
+              <td class="muted small">—</td>
+            </tr>
+            <tr>
+              <td class="muted">4</td>
+              <td>官网 / 顾问名单 / 周期</td>
+              <td><div class="chips">
+                <span class="chip sem">Programme name and public visibility</span>
+                <span class="chip sem">Programme sponsorship</span>
+                <span class="chip kw">Application process</span>
+              </div></td>
+              <td><span class="pill warn">有理由的拒绝 + 替代路径</span></td>
+              <td class="muted small">—</td>
+            </tr>
+          </tbody>
+        </table>
+        </div>
+        <div class="fields" style="border-top:1px solid var(--line);margin-top:12px;padding-top:12px">
+          <div class="field">
+            <label>全信 CTA 落点（只允许一处）</label>
+            <select class="select"><option>收尾段 · 索取 CV（eligibility review）</option>
+              <option>第 4 条末尾</option><option>不带 CTA</option></select>
+          </div>
+          <div class="field">
+            <label>未召回诉求</label>
+            <div style="padding-top:5px"><span class="pill ok">0 条</span>
+              <span class="small muted">&nbsp;未被匹配器认出的问题会在此单列，并计入覆盖率分母</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- items -->
+      <div class="panel">
+        <div class="panel-head"><h3>逐条处理</h3></div>
+
+        <!-- item 2, expanded, shows the recall diagnostics -->
+        <article class="item">
+          <div class="item-head">
+            <span class="idx">2</span>
+            <div class="item-title">
+              <strong>Who owns IP arising from advisory input—me or the company?</strong>
+              <div class="item-meta">
+                <span class="pill ok">依据充分</span>
+                <span class="pill neutral">条件化说明</span>
+                <button class="btn sm">收起</button>
+              </div>
+            </div>
+            <span class="pill ok">待生成</span>
+          </div>
+
+          <div class="recall">
+            <div class="recall-row">
+              <span class="recall-label">已召回</span>
+              <div class="chips">
+                <span class="chip sem">Pre-contract IP boundary <span class="muted">语义 0.91</span></span>
+                <span class="chip sem">Contract arrangements <span class="muted">语义 0.78</span></span>
+              </div>
+            </div>
+            <div class="recall-row">
+              <span class="recall-label">关键词</span>
+              <span class="small muted">本条零命中</span>
+            </div>
+            <div class="whynot">
+              <b>为什么关键词没中</b> —— <code>Pre-contract IP boundary</code> 的关键词是
+              <code>intellectual property</code> / <code>who owns the</code> / <code>ip rights</code>；
+              来信写的是 "Who owns <b>IP</b> arising"，纯 <code>contains</code> 匹配不到。
+              <button class="btn sm" style="margin-left:8px">把 <code>who owns ip</code> 加进该规则关键词</button>
+            </div>
+          </div>
+
+          <div class="fields">
+            <div class="field"><label>处理方式</label>
+              <select class="select"><option>按依据回答</option><option>按事实原文回答</option><option>依据 + 说明混合</option></select></div>
+            <div class="field"><label>段落角色 <span class="muted">（由编排推导）</span></label>
+              <select class="select derived"><option>条件化说明 —— 说明取决于什么、定了之后给什么</option>
+                <option>正面回答</option><option>有理由的拒绝 + 替代路径</option></select></div>
+            <div class="field"><label>本条 CTA</label>
+              <select class="select" disabled><option>无（全信 CTA 已落在收尾段）</option></select></div>
+          </div>
+        </article>
+
+        <!-- collapsed items -->
+        <article class="item">
+          <div class="item-head"><span class="idx">1</span>
+            <div class="item-title"><strong>What types of companies do you typically work with, and what are the common R&amp;D gaps they face?</strong>
+              <div class="item-meta"><span class="pill ok">依据充分</span><span class="pill neutral">条件化说明</span>
+                <span class="pill pri">语义召回 2 条</span><button class="btn sm">展开</button></div></div>
+            <span class="pill ok">待生成</span></div>
+        </article>
+
+        <article class="item">
+          <div class="item-head"><span class="idx">3</span>
+            <div class="item-title"><strong>What is the compensation structure for advisors (retainer, hourly, or project-based)?</strong>
+              <div class="item-meta"><span class="pill ok">依据充分</span><span class="pill neutral">正面回答</span>
+                <span class="pill warn">1 条事实已归第 2 条</span><button class="btn sm">展开</button></div></div>
+            <span class="pill ok">待生成</span></div>
+        </article>
+
+        <article class="item">
+          <div class="item-head"><span class="idx">4</span>
+            <div class="item-title"><strong>Can you share a program website or current advisor list for verification, and what is the typical timeline for matching?</strong>
+              <div class="item-meta"><span class="pill ok">依据充分</span><span class="pill neutral">有理由的拒绝 + 替代路径</span>
+                <span class="pill pri">语义召回 2 条</span><button class="btn sm">展开</button></div></div>
+            <span class="pill ok">待生成</span></div>
+        </article>
+      </div>
+
+      <!-- summary -->
+      <div class="panel">
+        <div class="panel-head"><h3>整合摘要</h3>
+          <span class="pill ok">可自动发</span><span class="pill neutral">无未通过硬性闸门</span></div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" aria-selected="false" data-view="before">现在的产出</button>
+          <button class="tab" role="tab" aria-selected="true" data-view="after">一次编排后</button>
+          <button class="tab" role="tab" aria-selected="false" data-view="raw">服务端原始正文</button>
+        </div>
+
+        <pre class="draft" id="draft"></pre>
+        <div class="legend" id="legend"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3. 改动清单 ============ -->
+  <section>
+    <span class="eyebrow">改动落点</span>
+    <h2>前端只有三处改动，其余全在后端</h2>
+    <div class="card">
+      <ul class="tight">
+        <li><b>新增「编排总览」面板</b> —— 插在一键预判条与条目列表之间。数据全部来自 assemble 返回的新字段（事实分配、角色、CTA 落点、未召回诉求），前端不做判断。</li>
+        <li><b>条目卡新增「事实召回」区</b> —— 展示命中/未命中来源与关键词差距，并给一个「把这个说法加进该规则关键词」的快捷入口，让运营能自己补召回，而不是每次都转人工。</li>
+        <li><b>摘要区改渲染 <code>renderedDraftText</code></b> —— 后端 <code>:1471-1477</code> 已经返回了变量替换后的版本，<code>trust-reply-workbench.js:2307</code> 只展示了 <code>rawDraftText</code>，所以预览里 <code>${expertFamilyName|Colleague}</code> 裸奔。原始正文降级为第三个页签。</li>
+      </ul>
+      <div class="note">
+        实施顺序建议：先做<b>语义召回</b>（收益最大，且不动任何前端契约），再做<b>编排层</b>，最后补前端三处。
+        召回一通，四条里三条从 UNSUPPORTED 变 GROUNDED，"we do not have a confirmed answer on file" 这句话自然就不再出现了。
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+const drafts = {
+  before: {
+    legend: '标红 = 暴露内部库存状态 / 复读 / CTA 撞车 / 占位符未替换',
+    text: `Dear Professor \${expertFamilyName|Colleague},
+
+<mark>We do not have a confirmed answer on file</mark> regarding the types of companies we typically work with or the common R&D gaps they face, as these vary considerably from one enterprise partner and project to another. What we can confirm is that the programme includes <mark>salary and funding support</mark> for participants, and that <mark>the application process works as follows</mark>: you submit your materials, our PhD team matches you with an appropriate enterprise and prepares the application, and it is then submitted for review. As a next step, if you would like to proceed, <mark>you are welcome to share your CV</mark> at your convenience so that we can carry out an initial eligibility review.
+
+For questions of IP ownership arising from advisory input, <mark>we do not have a confirmed position in our records</mark>. What we can confirm are the details concerning <mark>salary and financial support, as well as how the application process works</mark>. To give you a clearer picture, <mark>we propose a call or meeting</mark> where we can go over these points.
+
+After a successful application, selected candidates may receive government research funding in the range of 3–12 million RMB, with enterprises providing personal salary support separately.
+
+<mark>The application process starts when you submit the required materials.</mark> Our PhD team then matches relevant enterprises based on your research direction and prepares the application documents, after which the materials are submitted for review. The whole process typically takes about half a year or longer; <mark>a public program website or current advisor list is not specified in the confirmed information</mark>.
+
+Best regards,
+\${senderName}, \${senderTitle} \${teamName} \${countryName}`
+  },
+  after: {
+    legend: '标绿 = 库里本来就有、现在才被召回的事实。全篇零「没有确认口径」，零复读，CTA 只有一处',
+    text: `Dear Professor Al-Bitar,
+
+Thank you for setting out these questions clearly. I will address them in the same order.
+
+We do not work from a fixed public list of companies. Enterprise matching is based on your research direction and the R&D needs of potential partner enterprises. <ins>Once a potential match is identified, we will introduce the matched partner company with a profile, website, address, and how their direction aligns with your research expertise.</ins> As no enterprise has been matched to your profile yet, the specific company and its R&D needs are not determined at this stage.
+
+<ins>Until a contract is signed, nothing you share with us transfers any rights; any final intellectual-property arrangements will be set out in the future written agreement.</ins> <ins>After selection, you will sign a labor contract directly with the matched enterprise, and you may review the full terms before making any commitment.</ins>
+
+There is no single compensation model that applies to every adviser. After a successful application, personal subsidies and research funding may be available, and personal compensation is provided by the matched enterprise under that contract. If you are willing to establish a technology company in China, further support may also be provided for start-up capital or subsequent project funding.
+
+<ins>The programme runs as three schemes: the Innovative Talent Project, the Entrepreneurial Talent Project and the Young Talent Project. The programme itself is not publicly listed and has no public project website; in formal documents it is identified by the scheme name together with the applying agency and the application year.</ins> <ins>It is a national-level talent scheme, and applications are organised locally through municipal governments and their talent offices.</ins> Our company registration information can be provided for independent verification. On timing: you submit the required materials, our PhD team matches relevant enterprises according to your research direction and prepares the application documents, and the materials are then submitted for review; the whole process usually takes about half a year or longer.
+
+If you would like to proceed, you are welcome to share your CV at your convenience so that we can carry out an initial eligibility review.
+
+Best regards,
+WuWei, Customer Care Officer
+Qingfei Tech Talent Team`
+  },
+  raw: {
+    legend: '第三页签保留服务端原始正文（含占位符），供排查用',
+    text: `Dear Professor \${expertFamilyName|Colleague},
+
+Thank you for setting out these questions clearly. I will address them in the same order.
+
+[…answers 1-4…]
+
+Best regards,
+\${senderName}, \${senderTitle}
+\${teamName}`
+  }
+};
+const draftEl = document.getElementById('draft');
+const legendEl = document.getElementById('legend');
+function show(view){
+  draftEl.innerHTML = drafts[view].text;
+  legendEl.textContent = drafts[view].legend;
+  document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected', String(t.dataset.view===view)));
+}
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>show(t.dataset.view)));
+show('after');
+</script>
+</body>
+</html>

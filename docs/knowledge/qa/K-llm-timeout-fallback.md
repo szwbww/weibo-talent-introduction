@@ -2,8 +2,8 @@
 id: K-llm-timeout-fallback
 domain: qa
 created: 2026-07-21
-last_used: 2026-07-25
-hit_count: 32
+last_used: 2026-08-26
+hit_count: 33
 source: fix-v:qa-rules-phase3:fix-1
 last_source: fix-v:ai-reply-streaming-dual-ttl-cancel-plan:blocked-after-fix-1
 severity: P1

@@ -2,8 +2,8 @@
 id: K-openalex-fetch-works-gated
 domain: es-index
 created: 2026-08-16
-last_used: 2026-08-16
-hit_count: 0
+last_used: 2026-08-25
+hit_count: 1
 source: create-p:expert-reachability-01-last-publication-year
 severity: P1
 ---

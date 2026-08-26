@@ -2,8 +2,8 @@
 id: K-es-mapping-single-declaration-source
 domain: es-index
 created: 2026-08-13
-last_used: 2026-08-13
-hit_count: 0
+last_used: 2026-08-25
+hit_count: 1
 source: create-p:batch-send-status-consistency (03 P-B)
 ---
 

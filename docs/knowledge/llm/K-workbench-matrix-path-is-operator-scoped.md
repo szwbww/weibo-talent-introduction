@@ -2,8 +2,8 @@
 id: K-workbench-matrix-path-is-operator-scoped
 domain: llm
 created: 2026-08-21
-last_used: 2026-08-21
-hit_count: 0
+last_used: 2026-08-26
+hit_count: 2
 source: create-p:02-bound-facts-become-partial-evidence
 severity: P2
 ---

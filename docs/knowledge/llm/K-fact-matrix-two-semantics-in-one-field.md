@@ -2,8 +2,8 @@
 id: K-fact-matrix-two-semantics-in-one-field
 domain: llm
 created: 2026-08-20
-last_used: 2026-08-20
-hit_count: 0
+last_used: 2026-08-26
+hit_count: 4
 source: create-p:P1-fact-binding-drop-not-fatal / P2a-bound-vs-evidence-split
 severity: P1
 ---
@@ -84,3 +84,7 @@ if (item.factRuleIds != explicitIds) throw TrustReplyWorkbenchException(422, "TR
   （`operatorBypassedRuleIds` 非空时）；严格命中的绑定保持 `GROUNDED`。
 
 关联：[[K-request-key-includes-intent-keys]]、[[K-workbench-matrix-path-is-operator-scoped]]、[[K-ai-reply-prompt-vs-send-rule-ids]]、[[K-request-fact-assignment-version-must-include-mapping]]、[[K-operator-directed-authorization-seam]]
+
+## 2026-08-24 产品决策：人工矩阵成为最终事实
+
+8 月 21 日的“operatorBound 改 status / dropped 仍非证据”方案再次被产品决策取代：工作台显式矩阵中的可用事实全部成为最终 `factRuleIds/sendQaRuleIds`，关键词/intent 匹配只拆分 `intentMatchedFactRuleIds` 与 `intentMismatchFactRuleIds` 诊断，不再产生 dropped 或 handling 门禁；自动/legacy 路径继续严格匹配。实现计划见 `02-manual-fact-authority-workbench`。

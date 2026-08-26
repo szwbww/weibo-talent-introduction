@@ -2,8 +2,8 @@
 id: K-circuit-breaker-terminal-status
 domain: task
 created: 2026-07-08
-last_used: 2026-07-08
-hit_count: 1
+last_used: 2026-08-24
+hit_count: 2
 source: fix-v:enrichment-cross-day-resilient-run:fix-2
 severity: P1
 ---

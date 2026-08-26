@@ -2,8 +2,8 @@
 id: K-workbench-mode-source-ternary-trap
 domain: frontend
 created: 2026-08-18
-last_used: 2026-08-18
-hit_count: 0
+last_used: 2026-08-21
+hit_count: 1
 source: create-p:02-preview-into-workbench
 severity: P1
 ---
