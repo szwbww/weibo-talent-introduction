@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -70,6 +71,8 @@ class OpenAlexDataSource(
         if (criteria.keywords.isNotEmpty()) {
             parts += "title_and_abstract.search:${criteria.keywords.joinToString("|")}"
         }
+        // I4-2: subjectScope == null 时返回空列表，parts 内容与改动前逐字相同（含参数顺序）。
+        parts += SubjectScopeCatalog.openAlexFilterParts(criteria.subjectScope)
         return parts.joinToString(",")
     }
 

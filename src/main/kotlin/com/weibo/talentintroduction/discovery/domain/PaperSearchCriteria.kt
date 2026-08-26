@@ -9,5 +9,6 @@ data class PaperSearchCriteria(
     val openAccessOnly: Boolean = true,
     val pageSize: Int = 100,
     val cursor: String? = null,
-    val sources: List<String> = emptyList()
+    val sources: List<String> = emptyList(),
+    val subjectScope: String? = null
 )

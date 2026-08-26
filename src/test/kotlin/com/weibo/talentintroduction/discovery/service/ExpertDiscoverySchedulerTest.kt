@@ -181,4 +181,30 @@ class ExpertDiscoverySchedulerTest {
 
         Mockito.verify(progressStore).clearExecutionContext("EXPERT_DISCOVERY", -1L)
     }
+
+    @Test
+    fun `scheduleDiscovery criteria enables RND_TARGET subject scope`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString(),
+            Mockito.anyBoolean()
+        )
+
+        scheduler.scheduleDiscovery()
+
+        val captor = ArgumentCaptor.forClass(PaperSearchCriteria::class.java)
+        Mockito.verify(discoveryService).discover(
+            captor.capture() ?: PaperSearchCriteria(),
+            Mockito.anyString(),
+            Mockito.anyBoolean()
+        )
+        assertEquals(com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog.RND_TARGET, captor.value.subjectScope)
+    }
 }

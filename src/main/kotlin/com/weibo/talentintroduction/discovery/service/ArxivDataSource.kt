@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
@@ -32,7 +33,13 @@ class ArxivDataSource(
         val keywordQuery = if (criteria.keywords.isNotEmpty()) {
             criteria.keywords.joinToString("+AND+") { "all:\"${URLEncoder.encode(it, "UTF-8")}\"" }
         } else {
-            "all:*"
+            // I4-2: 无关键词且无学科分类时兜底 "all:*"，与改动前逐字相同。
+            val cats = SubjectScopeCatalog.arxivCategories(criteria.subjectScope)
+            if (cats.isNotEmpty()) {
+                cats.joinToString("+OR+") { "cat:$it*" }
+            } else {
+                "all:*"
+            }
         }
 
         val start = criteria.cursor?.toIntOrNull() ?: 0

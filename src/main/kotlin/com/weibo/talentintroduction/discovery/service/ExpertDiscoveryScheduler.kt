@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
+import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -39,7 +40,8 @@ class ExpertDiscoveryScheduler(
         try {
             val criteria = PaperSearchCriteria(
                 excludeCountries = listOf("CN"),
-                openAccessOnly = true
+                openAccessOnly = true,
+                subjectScope = SubjectScopeCatalog.RND_TARGET
             )
             taskExecutionService.runAndRecord("EXPERT_DISCOVERY", "SCHEDULED", criteria,
                 onStarted = { id ->

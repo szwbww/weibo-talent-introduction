@@ -4,7 +4,9 @@ import com.weibo.talentintroduction.config.ArxivProperties
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
+import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -31,6 +33,54 @@ class ArxivDataSourceTest {
         val publishedNodes = entry.getElementsByTagName("published")
         assertTrue(publishedNodes.length > 0, "Should find published element, found ${publishedNodes.length}")
         assertEquals("2024-01-15T10:00:00Z", publishedNodes.item(0).textContent)
+    }
+
+    private fun capturedSearchUrl(criteria: PaperSearchCriteria): String {
+        val urlCaptor = mutableListOf<String>()
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(String::class.java))
+        ).thenAnswer { invocation ->
+            urlCaptor.add(invocation.arguments[0] as String)
+            ""
+        }
+        dataSource.searchPapers(criteria)
+        return urlCaptor.single()
+    }
+
+    @Test
+    fun `searchPapers uses all-star query when no keywords and scope null`() {
+        // I4-2 锚点断言：无关键词 + subjectScope == null 时保持改动前的 all:* 兜底。
+        val url = capturedSearchUrl(PaperSearchCriteria())
+        assertTrue(url.contains("search_query=all:*"), "null scope must keep pre-change all-star query")
+    }
+
+    @Test
+    fun `searchPapers builds OR-joined category query for RND_TARGET scope`() {
+        val url = capturedSearchUrl(PaperSearchCriteria(subjectScope = SubjectScopeCatalog.RND_TARGET))
+        assertTrue(
+            url.contains("search_query=cat:cs*+OR+cat:eess*+OR+cat:cond-mat*+OR+cat:physics*"),
+            "RND_TARGET must map to arXiv category prefixes, got: $url"
+        )
+    }
+
+    @Test
+    fun `searchPapers prefers keywords over subjectScope`() {
+        val url = capturedSearchUrl(
+            PaperSearchCriteria(keywords = listOf("deep learning"), subjectScope = SubjectScopeCatalog.RND_TARGET)
+        )
+        assertTrue(url.contains("search_query=all:\"deep+learning\""), "keywords branch must stay verbatim")
+        assertFalse(url.contains("cat:"), "subjectScope must not leak into the keywords branch")
+    }
+
+    @Test
+    fun `searchPapers keywords branch is unaffected by scope`() {
+        val withScope = capturedSearchUrl(
+            PaperSearchCriteria(keywords = listOf("deep learning"), subjectScope = SubjectScopeCatalog.RND_TARGET)
+        )
+        val withoutScope = capturedSearchUrl(
+            PaperSearchCriteria(keywords = listOf("deep learning"), subjectScope = null)
+        )
+        assertEquals(withScope, withoutScope, "keywords present must produce identical query regardless of scope")
     }
 
     @Test

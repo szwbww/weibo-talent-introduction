@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.discovery.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
+import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -108,6 +109,66 @@ class OpenAlexDataSourceTest {
         assertTrue(url.contains("is_oa:true"), "Filter should contain is_oa:true")
         assertTrue(url.contains("publication_year:2022-2025"), "Filter should contain year range")
         assertTrue(url.contains("authorships.institutions.country_code:!CN"), "Filter should exclude CN")
+    }
+
+    @Test
+    fun `buildFilter is byte-identical to pre-change when subjectScope is null`() {
+        // I4-2 锚点断言：subjectScope == null 时查询串必须与改动前逐字相同（硬编码字面量，不得用被测代码反算）。
+        val response = mapper.readTree("""{"meta":{"count":0,"next_cursor":null},"results":[]}""")
+        val urlCaptor = mutableListOf<String>()
+
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenAnswer { invocation ->
+            urlCaptor.add(invocation.arguments[0] as String)
+            response
+        }
+
+        val criteria = PaperSearchCriteria(
+            publicationYearFrom = 2022,
+            publicationYearTo = 2025,
+            openAccessOnly = true,
+            excludeCountries = listOf("CN"),
+            subjectScope = null
+        )
+        dataSource.searchPapers(criteria)
+
+        assertEquals(
+            "https://api.openalex.org/works?filter=is_oa:true,publication_year:2022-2025," +
+                "authorships.institutions.country_code:!CN&per_page=100&cursor=*",
+            urlCaptor.single()
+        )
+    }
+
+    @Test
+    fun `buildFilter appends RND_TARGET field lock after existing parts`() {
+        // I4-1/I4-3: RND_TARGET 下原有三段（is_oa、publication_year、country_code:!CN）位置与内容不变，
+        // 学科片段追加在其后（硬编码字面量）。
+        val response = mapper.readTree("""{"meta":{"count":0,"next_cursor":null},"results":[]}""")
+        val urlCaptor = mutableListOf<String>()
+
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenAnswer { invocation ->
+            urlCaptor.add(invocation.arguments[0] as String)
+            response
+        }
+
+        val criteria = PaperSearchCriteria(
+            publicationYearFrom = 2022,
+            publicationYearTo = 2025,
+            openAccessOnly = true,
+            excludeCountries = listOf("CN"),
+            subjectScope = SubjectScopeCatalog.RND_TARGET
+        )
+        dataSource.searchPapers(criteria)
+
+        assertEquals(
+            "https://api.openalex.org/works?filter=is_oa:true,publication_year:2022-2025," +
+                "authorships.institutions.country_code:!CN,primary_topic.field.id:22|31|17|25|21|15" +
+                "&per_page=100&cursor=*",
+            urlCaptor.single()
+        )
     }
 
     @Test

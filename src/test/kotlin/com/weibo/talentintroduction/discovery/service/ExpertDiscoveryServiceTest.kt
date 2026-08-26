@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
+import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
 import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.config.DiscoveryExecutorConfig
@@ -11,6 +12,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.expert.domain.EmailValidationResult
 import com.weibo.talentintroduction.expert.service.CandidateEligibilityService
 import com.weibo.talentintroduction.expert.service.EmailValidationService
@@ -121,14 +123,16 @@ class ExpertDiscoveryServiceTest {
     private fun createService(
         props: ExpertDiscoveryProperties = discoveryProperties,
         executor: Executor = Executor { it.run() },
-        openAlexProps: OpenAlexProperties = openAlexProperties
+        openAlexProps: OpenAlexProperties = openAlexProperties,
+        europePmcProps: EuropePmcProperties = EuropePmcProperties()
     ): ExpertDiscoveryService {
         return ExpertDiscoveryService(
             europePmc, openAlexProvider, crossrefProvider, arxivProvider,
             pmcOaProvider, orcidProvider, coreProvider,
             emailValidationService, eligibilityService,
             indexWriterService, indexService, revalidationService, expertSearchService, restTemplate, esProperties,
-            props, openAlexProps, objectMapper, progressStore, cursorRepository, executor
+            props, openAlexProps, objectMapper, progressStore, cursorRepository, executor,
+            europePmcProps
         )
     }
 
@@ -137,6 +141,99 @@ class ExpertDiscoveryServiceTest {
             title = title, pubYear = pubYear, journal = "Nature",
             authors = listOf(PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK")),
             source = "EUROPE_PMC")
+
+    private fun stubSource(source: AcademicDataSource, name: String) {
+        Mockito.doReturn(name).`when`(source).sourceName
+        Mockito.doReturn("FULLTEXT_XML").`when`(source).emailExtractionMethod
+        Mockito.doReturn(10).`when`(source).maxPapersPerSource
+        // 不 stub searchPapers：Mockito 返回 null，discoverFromSource 以 batch == null 空批次退出，
+        // bySource 条目仍会创建 —— 这足以验证 resolveEnabledSources 的启用集合。
+    }
+
+    @Test
+    fun `resolveEnabledSources excludes EUROPE_PMC when disabled even with empty sources`() {
+        // I4-4 核心断言（当前缺陷的回归测试）：EUROPE_PMC_ENABLED=false + sources 为空（定时发现路径）
+        // 时，Europe PMC 不得加入启用源列表。修复前 :209 的 add 从不读 enabled，此处必含 EUROPE_PMC。
+        val svc = createService(europePmcProps = EuropePmcProperties(enabled = false))
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        assertFalse(result.stats.bySource.containsKey("EUROPE_PMC"),
+            "Europe PMC must not run when europePmcProperties.enabled=false")
+    }
+
+    @Test
+    fun `resolveEnabledSources keeps all six sources when enabled and scope null`() {
+        // I4-2：enabled=true + subjectScope == null 时结果与改动前一致（六源全在）。
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        val crossref = Mockito.mock(CrossrefDataSource::class.java)
+        val arxiv = Mockito.mock(ArxivDataSource::class.java)
+        val pmcOa = Mockito.mock(PmcOaDataSource::class.java)
+        val core = Mockito.mock(CoreDataSource::class.java)
+        stubSource(openAlex, "OPENALEX")
+        stubSource(crossref, "CROSSREF")
+        stubSource(arxiv, "ARXIV")
+        stubSource(pmcOa, "PMC_OA")
+        stubSource(core, "CORE")
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        Mockito.doReturn(crossref).`when`(crossrefProvider).getIfAvailable()
+        Mockito.doReturn(arxiv).`when`(arxivProvider).getIfAvailable()
+        Mockito.doReturn(pmcOa).`when`(pmcOaProvider).getIfAvailable()
+        Mockito.doReturn(core).`when`(coreProvider).getIfAvailable()
+
+        val svc = createService()
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        val sourceNames = result.stats.bySource.keys
+        assertTrue(sourceNames.containsAll(listOf("EUROPE_PMC", "PMC_OA", "OPENALEX", "CROSSREF", "CORE", "ARXIV")),
+            "null scope must keep all six sources, got: $sourceNames")
+    }
+
+    @Test
+    fun `resolveEnabledSources excludes EUROPE_PMC and PMC_OA under RND_TARGET`() {
+        // I4-3：RND_TARGET 下生物医学两源「本次不参与」，其余四源保留。
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        val crossref = Mockito.mock(CrossrefDataSource::class.java)
+        val arxiv = Mockito.mock(ArxivDataSource::class.java)
+        val pmcOa = Mockito.mock(PmcOaDataSource::class.java)
+        val core = Mockito.mock(CoreDataSource::class.java)
+        stubSource(openAlex, "OPENALEX")
+        stubSource(crossref, "CROSSREF")
+        stubSource(arxiv, "ARXIV")
+        stubSource(pmcOa, "PMC_OA")
+        stubSource(core, "CORE")
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        Mockito.doReturn(crossref).`when`(crossrefProvider).getIfAvailable()
+        Mockito.doReturn(arxiv).`when`(arxivProvider).getIfAvailable()
+        Mockito.doReturn(pmcOa).`when`(pmcOaProvider).getIfAvailable()
+        Mockito.doReturn(core).`when`(coreProvider).getIfAvailable()
+
+        val svc = createService()
+        val result = svc.discover(
+            PaperSearchCriteria(subjectScope = SubjectScopeCatalog.RND_TARGET),
+            "TEST"
+        )
+
+        val sourceNames = result.stats.bySource.keys
+        assertFalse(sourceNames.contains("EUROPE_PMC"), "RND_TARGET must exclude EUROPE_PMC, got: $sourceNames")
+        assertFalse(sourceNames.contains("PMC_OA"), "RND_TARGET must exclude PMC_OA, got: $sourceNames")
+        assertTrue(sourceNames.containsAll(listOf("OPENALEX", "CROSSREF", "CORE", "ARXIV")),
+            "RND_TARGET must keep the other four sources, got: $sourceNames")
+    }
+
+    @Test
+    fun `resolveEnabledSources scope exclusion overrides manual sources selection`() {
+        // I4-3 语义固定：手动指定 sources=["EUROPE_PMC"] 且 enabled=true 时，
+        // subjectScope=RND_TARGET 仍排除 Europe PMC —— scope 排除优先于手动指定。
+        val svc = createService()
+        val result = svc.discover(
+            PaperSearchCriteria(sources = listOf("EUROPE_PMC"), subjectScope = "RND_TARGET"),
+            "TEST"
+        )
+
+        assertFalse(result.stats.bySource.containsKey("EUROPE_PMC"),
+            "scope exclusion must override manual sources selection")
+    }
 
     @Test
     fun `discover processes papers and extracts emails`() {

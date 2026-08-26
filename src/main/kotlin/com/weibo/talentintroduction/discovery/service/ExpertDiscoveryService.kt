@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
+import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
 import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
@@ -12,6 +13,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
 import com.weibo.talentintroduction.discovery.domain.SourceStats
+import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
@@ -68,7 +70,8 @@ class ExpertDiscoveryService(
     private val progressStore: TaskProgressStore,
     private val cursorRepository: DiscoverySourceCursorRepository,
     @Qualifier("discoveryFetchExecutor")
-    private val discoveryFetchExecutor: Executor
+    private val discoveryFetchExecutor: Executor,
+    private val europePmcProperties: EuropePmcProperties
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
@@ -202,11 +205,16 @@ class ExpertDiscoveryService(
         val sources = mutableListOf<AcademicDataSource>()
         fun add(provider: () -> AcademicDataSource?, name: String) {
             val src = provider()
-            if (src != null && (criteria.sources.isEmpty() || criteria.sources.contains(name))) {
+            // I4-3: 学科范围排除是「本次不参与」的运行时过滤 —— 六行注册全部保留，
+            // 其他 scope 或手动指定 sources 时仍可使用被排除源。
+            if (src != null && (criteria.sources.isEmpty() || criteria.sources.contains(name))
+                && name !in SubjectScopeCatalog.excludedSources(criteria.subjectScope)) {
                 sources.add(src)
             }
         }
-        add({ europePmc }, europePmc.sourceName)
+        // I4-4: EuropePmcDataSource 是七源中唯一无 @ConditionalOnProperty 的（裸 @Service），
+        // 故必须在此显式读 enabled，否则 EUROPE_PMC_ENABLED=false 对定时发现（sources 为空）无效。
+        if (europePmcProperties.enabled) add({ europePmc }, europePmc.sourceName)
         add({ pmcOaProvider.getIfAvailable() }, "PMC_OA")
         add({ openAlexProvider.getIfAvailable() }, "OPENALEX")
         add({ crossrefProvider.getIfAvailable() }, "CROSSREF")

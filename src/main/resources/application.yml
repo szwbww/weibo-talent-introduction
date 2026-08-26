@@ -166,7 +166,7 @@ talent-introduction:
       polite-email: ${OPENALEX_POLITE_EMAIL:wuwei@qftechtalent.com}
       base-url: ${OPENALEX_BASE_URL:https://api.openalex.org}
       request-delay-ms: ${OPENALEX_REQUEST_DELAY_MS:100}
-      max-papers-per-source: ${OPENALEX_MAX_PAPERS:1200}
+      max-papers-per-source: ${OPENALEX_MAX_PAPERS:2500}
       connect-timeout-ms: ${OPENALEX_CONNECT_TIMEOUT_MS:5000}
       read-timeout-ms: ${OPENALEX_READ_TIMEOUT_MS:15000}
       enrichment-delay-ms: ${OPENALEX_ENRICHMENT_DELAY_MS:300}
@@ -180,7 +180,7 @@ talent-introduction:
       base-url: ${CROSSREF_BASE_URL:https://api.crossref.org}
       polite-email: ${CROSSREF_POLITE_EMAIL:wuwei@qftechtalent.com}
       request-delay-ms: ${CROSSREF_REQUEST_DELAY_MS:200}
-      max-papers-per-source: ${CROSSREF_MAX_PAPERS:500}
+      max-papers-per-source: ${CROSSREF_MAX_PAPERS:300}
     unpaywall:
       base-url: ${UNPAYWALL_BASE_URL:https://api.unpaywall.org/v2}
       email: ${UNPAYWALL_EMAIL:wuwei@qftechtalent.com}
@@ -189,7 +189,7 @@ talent-introduction:
       enabled: ${ARXIV_ENABLED:true}
       base-url: ${ARXIV_BASE_URL:http://export.arxiv.org/api}
       request-delay-ms: ${ARXIV_REQUEST_DELAY_MS:3000}
-      max-papers-per-source: ${ARXIV_MAX_PAPERS:200}
+      max-papers-per-source: ${ARXIV_MAX_PAPERS:800}
     pdf-extraction:
       max-pdf-size-bytes: ${PDF_MAX_SIZE:10485760}
       download-timeout-ms: ${PDF_DOWNLOAD_TIMEOUT_MS:60000}
