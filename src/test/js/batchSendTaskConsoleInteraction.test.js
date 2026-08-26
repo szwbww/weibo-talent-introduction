@@ -168,6 +168,33 @@ describe("batch send task console interactions", () => {
         assert.deepStrictEqual(selected, [2]);
     });
 
+    it("rechecks editor gate state after async templates arrive", () => {
+        const refreshSelectors = extractFn("refreshBatchTemplateSelectors");
+        assert.ok(refreshSelectors, "refreshBatchTemplateSelectors must exist");
+
+        const editorSelect = element("");
+        const gateRefreshes = [];
+        const sandbox = {
+            batchTaskState: {
+                editorMode: "edit",
+                editorId: 1,
+                configs: [{ id: 1, templateId: 5 }],
+                manualDraft: null
+            },
+            document: {
+                getElementById: (id) => id === "batchConfigEditorTemplateId" ? editorSelect : null
+            },
+            fillBatchConfigEditorTemplateSelector: (id) => { editorSelect.value = String(id); },
+            refreshBatchGateState: (kind) => gateRefreshes.push(kind)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(refreshSelectors, sandbox);
+
+        sandbox.refreshBatchTemplateSelectors();
+
+        assert.deepStrictEqual(gateRefreshes, ["editor"]);
+    });
+
     it("detaches a selected task when its search text is cleared and removes diff state", () => {
         const detachSource = extractFn("detachBatchManualSourcePreservingDraft");
         const searchSource = extractFn("handleManualSourceSearch");

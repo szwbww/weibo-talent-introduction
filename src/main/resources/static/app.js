@@ -14203,6 +14203,9 @@ function refreshBatchTemplateSelectors() {
         });
         var editorTemplateId = editorConfig ? editorConfig.templateId : (editorSelect.value || null);
         fillBatchConfigEditorTemplateSelector(editorTemplateId);
+        if (batchTaskState.editorMode && typeof refreshBatchGateState === "function") {
+            refreshBatchGateState("editor");
+        }
     }
     var manualSelect = document.getElementById("batchManualTemplateId");
     if (manualSelect) {
