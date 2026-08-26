@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-26T00:00:00Z
-- Current child: 03-promotion-classification-gate
+- Current child: 04-discovery-subject-scope
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
@@ -27,7 +27,8 @@
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | 01-expert-list-type-filter | docs/plans/2026-08-25/01-expert-list-type-filter.md | commit:0232a4f | none | 2 | LIGHT_PASS | f2935072c819a9167e75220a6a959b0769462fde | 7c703e3 | 0 | — | 7c703e3 | ce27d1f | First child; product base = master base. Epoch 1 conflict resolved by A1; epoch 2 implementer Impl01Epoch2; verifier Verify01Light LIGHT_PASS |
 | 02-batch-send-type-filter | docs/plans/2026-08-25/02-batch-send-type-filter.md | commit:77d77c7 | 01-expert-list-type-filter | 2 | LIGHT_PASS_WITH_NOTES | 7c703e3 | 05ad78b | 0 | — | 05ad78b | 022d259 | Base = child 01 Code head. Epoch 1 stopped (V100 taken, A2); epoch 2 implementer Impl02Epoch2; verifier Verify02Light LIGHT_PASS_WITH_NOTES (O-1 diff wiring, O-2 Docker skip) |
-| 03-promotion-classification-gate | docs/plans/2026-08-25/03-promotion-classification-gate.md | commit:2b80a92 | none | 1 | PENDING | 05ad78b | N/A | 0 | — | N/A | N/A | Base = child 02 Code head |
+| 03-promotion-classification-gate | docs/plans/2026-08-25/03-promotion-classification-gate.md | commit:2b80a92 | none | 1 | LIGHT_PASS_WITH_NOTES | 05ad78b | b2fdf02 | 0 | — | b2fdf02 | 64289d8 | Base = child 02 Code head. Implementer Impl03PromoGate; verifier Verify03Light LIGHT_PASS_WITH_NOTES (D-1 constructor defaults) |
+| 04-discovery-subject-scope | docs/plans/2026-08-25/04-discovery-subject-scope.md | commit:2b80a92 | none | 1 | PENDING | b2fdf02 | N/A | 0 | — | N/A | N/A | Base = child 03 Code head |
 | 03-promotion-classification-gate | docs/plans/2026-08-25/03-promotion-classification-gate.md | commit:2b80a92 | none | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | Independent; ordered after 02 per master |
 | 04-discovery-subject-scope | docs/plans/2026-08-25/04-discovery-subject-scope.md | commit:2b80a92 | none | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | Independent; ordered after 03 per master |
 
