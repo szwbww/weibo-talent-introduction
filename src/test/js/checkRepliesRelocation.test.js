@@ -8,7 +8,7 @@ const html = fs.readFileSync(path.join(root, "index.html"), "utf-8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf-8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf-8");
 
-const CACHE_KEY = "20260825-v1-inbound-detail-resolved";
+const CACHE_KEY = "20260827-v2-trust-reply-preview";
 const CHECK_REPLIES_TAG = '<button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>';
 
 describe("check replies relocation (p1)", () => {
