@@ -116,7 +116,11 @@ class QaFactRetriever(
             return cachePut(cacheKey, FactRetrieval(true, emptyMap(), requested = requests.size))
         }
 
-        val poolById = pool.filter { it.id != null }.associateBy { it.id!! }
+        // Repair V-1 (fix/00-execution-order R-1): 校验表必须与 prompt 实际看到的规则
+        // 完全一致——prompt 用的是 pool.take(maxRulesInPrompt) 截断后的 promptPool，
+        // 若用未截断的 pool 建表，截断范围外的 id 会被误判为「在池内」。
+        // 模型只应选择 prompt 里给出的 id（01 I-4：在 promptPool 内）。
+        val poolById = promptPool.filter { it.id != null }.associateBy { it.id!! }
         var returned = 0
         var rejected = 0
         val acceptedByRequest = linkedMapOf<Int, LinkedHashSet<Long>>()

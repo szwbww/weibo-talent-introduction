@@ -220,6 +220,33 @@ class QaFactRetrieverTest {
         assertTrue(logs.any { it.contains("truncated requestIndex=1 count=2") && it.contains("[10, 11, 12, 13, 14]") })
     }
 
+    // ── Repair V-1 (fix/00-execution-order R-1): prompt-pool authority ─────
+
+    @Test
+    fun `rejects an id that is absent from the truncated prompt pool`() {
+        // maxRulesInPrompt = 1 → prompt 只含 rule(10)；rule(11) 在完整 pool 里但
+        // 不在 prompt 里。模型返回两个 id：10 应被采纳，11 必须按 not_in_pool 拒绝。
+        val pool = listOf(rule(10), rule(11))
+        val client = RecordingClient("""[{"requestIndex": 1, "ruleIds": [10, 11]}]""")
+        val logs = captureRetrieverLogs {
+            val result = retriever(
+                client,
+                properties = FactRetrieverProperties(enabled = true, maxRulesInPrompt = 1)
+            ).retrieve("mail text", listOf("q1"), pool)
+
+            assertTrue(result.available)
+            assertEquals(mapOf(1 to listOf(10L)), result.byRequestIndex)
+            assertEquals(2, result.returned)
+            assertEquals(1, result.accepted)
+            assertEquals(1, result.rejected)
+            assertEquals(0, result.truncated)
+        }
+        assertTrue(logs.any { it.contains("rejected ruleId=11 requestIndex=1 reason=not_in_pool") })
+        // prompt 截断可见且模型实际只看到 rule 10。
+        assertTrue(client.lastMessages[1].content.contains("10 | Rule 10 | Fact body 10"))
+        assertTrue(!client.lastMessages[1].content.contains("11 | Rule 11"))
+    }
+
     // ── I-7: 确定性 — 同输入同输出、一次 LLM、temperature 0.0 ──────────────
 
     @Test
