@@ -8020,7 +8020,8 @@ function renderLogDetail(log) {
                     : ""}
             </div>`;
         }
-        case "MARK_INBOUND_RESOLVED": {
+        case "MARK_INBOUND_RESOLVED":
+        case "CANCEL_INBOUND_RESOLVED": {
             return `<div class="log-transition">
                 ${labelStatus(before?.processStatus) || "?"} → ${labelStatus(after?.processStatus) || "?"}
             </div>`;
@@ -8075,7 +8076,8 @@ function actionTypeLabel(type) {
         SEND_QA_REPLY: "发送 QA 邮件",
         SEND_MANUAL_RICH_REPLY: "人工回复邮件",
         SEND_MANUAL_COMPOSED_REPLY: "组装 QA 回复",
-        MARK_INBOUND_RESOLVED: "标记已处理"
+        MARK_INBOUND_RESOLVED: "标记已处理",
+        CANCEL_INBOUND_RESOLVED: "取消处理"
     };
     return map[type] || type;
 }
@@ -9527,6 +9529,13 @@ function renderMailboxActions(row) {
             actions.push(`<button class="button" data-action="open-monitoring-contact" data-id="${row.expertContactId}">查看专家</button>`);
         }
         actions.push(`<button class="button" data-action="view-mail" data-source="${escapeHtml(row.source || "")}" data-id="${escapeHtml(row.id)}">查看</button>`);
+        const canCancel = row.source === "INBOUND_PROCESSING"
+            && row.processStatus === "PROCESSED"
+            && row.reasonType === "MANUAL_RESOLVED"
+            && row.inboundProcessingId;
+        if (canCancel) {
+            actions.push(`<button class="button secondary" data-action="cancel-unmatched-resolved" data-id="${row.inboundProcessingId}">取消处理</button>`);
+        }
     }
     return actions.join(" ") || "-";
 }
@@ -10256,6 +10265,17 @@ async function handleUnmatchedAction(element) {
         unmountMailboxTrustReplyHosts();
         $("#unmatchedDetailPanel").hidden = true;
         state.mailbox.detailContext = null;
+        await refreshMailboxAfterPendingAction();
+        return;
+    }
+    if (action === "cancel-unmatched-resolved") {
+        const payload = await openActionDialog("cancel-unmatched-resolved");
+        if (!payload) return;
+        await api(`/api/mail/unmatched-inbound/${id}/cancel-resolved`, {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+        showStatus("已取消处理，可重新处理");
         await refreshMailboxAfterPendingAction();
         return;
     }
@@ -12240,6 +12260,13 @@ const ACTION_DIALOG_SCHEMAS = {
             { name: "note", label: "处理备注", type: "textarea", required: false }
         ]
     },
+    "cancel-unmatched-resolved": {
+        title: "取消处理",
+        fields: [
+            { name: "operatorName", label: "操作人姓名", type: "text", required: true },
+            { name: "note", label: "取消原因", type: "textarea", required: false }
+        ]
+    },
     "bind-unmatched-contact": {
         title: "绑定未匹配来信",
         fields: [
@@ -12550,7 +12577,7 @@ function initBulkAutoReply() {
             await showMailDetail(target.dataset.source, target.dataset.id);
             return;
         }
-        if (["open-pending", "mark-unmatched-resolved", "view-unmatched", "open-contact-from-unmatched"].includes(target.dataset.action)) {
+        if (["open-pending", "mark-unmatched-resolved", "view-unmatched", "open-contact-from-unmatched", "cancel-unmatched-resolved"].includes(target.dataset.action)) {
             handleUnmatchedAction(target).catch((error) => showStatus(error.message, "error"));
         }
     });
