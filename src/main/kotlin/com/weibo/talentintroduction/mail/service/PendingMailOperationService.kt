@@ -1003,6 +1003,73 @@ class PendingMailOperationService(
         )
     }
 
+    @Transactional
+    fun cancelResolved(
+        inboundProcessingId: Long,
+        operatorName: String?,
+        note: String?
+    ) {
+        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+            .orElseThrow {
+                ResponseStatusException(
+                    HttpStatus.NOT_FOUND,
+                    "Inbound mail processing not found: $inboundProcessingId"
+                )
+            }
+        if (record.processStatus != "PROCESSED" ||
+            record.processReason != "MANUAL_RESOLVED" ||
+            record.reasonType != "MANUAL_RESOLVED"
+        ) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Record $inboundProcessingId is not manually resolved and cannot be cancelled"
+            )
+        }
+
+        val actualOperator = operatorName?.takeIf { it.isNotBlank() } ?: "UNKNOWN"
+        val now = LocalDateTime.now()
+        val updated = inboundMailProcessingRepository.reopenManualResolved(inboundProcessingId, now)
+        if (updated != 1) {
+            throw ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Record $inboundProcessingId changed concurrently and cannot be cancelled"
+            )
+        }
+
+        val contactId = record.expertContactId
+        if (contactId != null) {
+            expertContactRepository.findById(contactId).ifPresent { contact ->
+                if (!contact.needsManualAttention) {
+                    expertContactRepository.save(contact.copy(needsManualAttention = true))
+                }
+            }
+        }
+
+        operatorActionLogService.record(
+            targetType = "INBOUND_MAIL_PROCESSING",
+            targetId = inboundProcessingId,
+            actionType = OperatorActionType.CANCEL_INBOUND_RESOLVED,
+            expertContactId = contactId,
+            inboundProcessingId = inboundProcessingId,
+            before = mapOf(
+                "processStatus" to record.processStatus,
+                "processReason" to record.processReason,
+                "reasonType" to record.reasonType,
+                "resolvedBy" to record.resolvedBy,
+                "resolvedAt" to record.resolvedAt
+            ),
+            after = mapOf(
+                "processStatus" to "MANUAL_REVIEW",
+                "processReason" to "MANUAL_REOPENED",
+                "reasonType" to null,
+                "resolvedBy" to null,
+                "resolvedAt" to null
+            ),
+            operatorName = actualOperator,
+            note = note
+        )
+    }
+
     fun preflightEditedAiReply(
         inboundProcessingId: Long,
         factRuleIds: List<Long>,

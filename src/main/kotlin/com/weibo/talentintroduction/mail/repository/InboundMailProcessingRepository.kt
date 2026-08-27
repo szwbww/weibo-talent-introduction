@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.repository
 
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
+import org.springframework.data.jdbc.repository.query.Modifying
 import org.springframework.data.jdbc.repository.query.Query
 import org.springframework.data.repository.CrudRepository
 import java.time.LocalDateTime
@@ -17,6 +18,22 @@ data class SenderAccountLastReceived(
 
 interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing, Long> {
     fun findBySenderAccountCodeAndImapUid(senderAccountCode: String, imapUid: Long): InboundMailProcessing?
+
+    @Modifying
+    @Query("""
+        UPDATE inbound_mail_processing
+           SET process_status = 'MANUAL_REVIEW',
+               process_reason = 'MANUAL_REOPENED',
+               reason_type = NULL,
+               resolved_at = NULL,
+               resolved_by = NULL,
+               updated_at = :now
+         WHERE id = :id
+           AND process_status = 'PROCESSED'
+           AND process_reason = 'MANUAL_RESOLVED'
+           AND reason_type = 'MANUAL_RESOLVED'
+    """)
+    fun reopenManualResolved(id: Long, now: LocalDateTime): Int
 
     fun findAllByProcessStatusOrderByReceivedAtDesc(processStatus: String): List<InboundMailProcessing>
 

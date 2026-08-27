@@ -178,6 +178,18 @@ class UnmatchedInboundMailController(
         )
     }
 
+    @PostMapping("/unmatched-inbound/{id}/cancel-resolved")
+    fun cancelResolved(
+        @PathVariable id: Long,
+        @RequestBody request: CancelResolvedRequest
+    ) {
+        pendingMailOperationService.cancelResolved(
+            inboundProcessingId = id,
+            operatorName = request.operatorName,
+            note = request.note
+        )
+    }
+
     @GetMapping("/unmatched-inbound/search-contacts")
     fun searchContacts(@RequestParam query: String): List<CandidateResponse> {
         val contacts = unmatchedInboundMailService.searchContacts(query)
@@ -862,6 +874,11 @@ data class MarkResolvedRequest(
     val resolvedBy: String?,
     val operatorName: String? = null,
     val note: String?
+)
+
+data class CancelResolvedRequest(
+    val operatorName: String? = null,
+    val note: String? = null
 )
 
 data class OperatorStatusChangeRequest(

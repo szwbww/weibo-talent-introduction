@@ -44,10 +44,12 @@ class OperatorStatusWriteSeamGuardTest {
     private val EXCLUDED_NOISE_SITES: List<NoiseSite> = listOf(
         // ── DTO 构造命名参数（7 处，P-A 现状审计确认，非 DB 写入）──
         // 入站处理请求 DTO 构造：把请求体字段透传到处理 DTO，不落库
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 203, "operatorStatus = request.operatorStatus"),
+        // （2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :203 偏移至 :215）
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 215, "operatorStatus = request.operatorStatus"),
         // 响应 DTO 构造：把当前值原样回显到出参 DTO
-        // （守卫误报修正：行号登记 1098 → 实际 1099，2026-08-20 人工回复透传新增一行导致偏移）
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1099, "operatorStatus = operatorStatus"),
+        // （守卫误报修正：行号登记 1098 → 实际 1099，2026-08-20 人工回复透传新增一行导致偏移；
+        //   2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :1099 偏移至 :1116）
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1116, "operatorStatus = operatorStatus"),
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 165, "operatorStatus = summary.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO

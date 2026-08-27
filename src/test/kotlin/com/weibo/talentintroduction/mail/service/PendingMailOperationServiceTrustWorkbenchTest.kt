@@ -2152,6 +2152,211 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         ).thenReturn(500L)
     }
 
+    private fun resolvedInbound(expertContactId: Long? = 1L, id: Long = 100L) = InboundMailProcessing(
+        id = id,
+        senderAccountCode = "sender-1",
+        imapUid = 1L,
+        messageId = "in-1",
+        fromEmail = "expert@test.com",
+        subject = "Question",
+        body = "Can I work remotely?",
+        cleanedBody = "Can I work remotely?",
+        receivedAt = LocalDateTime.of(2026, 8, 1, 9, 0),
+        processStatus = "PROCESSED",
+        processReason = "MANUAL_RESOLVED",
+        reasonType = "MANUAL_RESOLVED",
+        resolvedBy = "op1",
+        resolvedAt = LocalDateTime.of(2026, 8, 1, 10, 0),
+        expertContactId = expertContactId
+    )
+
+    @Test
+    fun `cancelResolved reopens record flags expert attention and audits`() {
+        Mockito.`when`(inboundMailProcessingRepository.findById(100L))
+            .thenReturn(Optional.of(resolvedInbound()))
+        Mockito.`when`(
+            inboundMailProcessingRepository.reopenManualResolved(
+                Mockito.eq(100L), anyValue(LocalDateTime.now())
+            )
+        ).thenReturn(1)
+
+        val saved = mutableListOf<ExpertContact>()
+        Mockito.doAnswer { invocation ->
+            val contact = invocation.getArgument<ExpertContact>(0)
+            saved += contact
+            contact
+        }.`when`(expertContactRepository).save(Mockito.any(ExpertContact::class.java))
+
+        service.cancelResolved(100L, "op2", "误操作")
+
+        assertEquals(listOf(contact.copy(needsManualAttention = true)), saved)
+        val before = mapOf(
+            "processStatus" to "PROCESSED",
+            "processReason" to "MANUAL_RESOLVED",
+            "reasonType" to "MANUAL_RESOLVED",
+            "resolvedBy" to "op1",
+            "resolvedAt" to LocalDateTime.of(2026, 8, 1, 10, 0)
+        )
+        val after = mapOf(
+            "processStatus" to "MANUAL_REVIEW",
+            "processReason" to "MANUAL_REOPENED",
+            "reasonType" to null,
+            "resolvedBy" to null,
+            "resolvedAt" to null
+        )
+        Mockito.verify(operatorActionLogService).record(
+            eqValue("INBOUND_MAIL_PROCESSING"),
+            eqValue(100L),
+            eqValue(OperatorActionType.CANCEL_INBOUND_RESOLVED),
+            eqValue(1L),
+            eqValue(100L),
+            eqValue(before),
+            eqValue(after),
+            eqValue("op2"),
+            eqValue("误操作"),
+            Mockito.isNull()
+        )
+        Mockito.verifyNoMoreInteractions(operatorActionLogService)
+    }
+
+    @Test
+    fun `cancelResolved without linked expert skips expert update`() {
+        Mockito.`when`(inboundMailProcessingRepository.findById(100L))
+            .thenReturn(Optional.of(resolvedInbound(expertContactId = null)))
+        Mockito.`when`(
+            inboundMailProcessingRepository.reopenManualResolved(
+                Mockito.eq(100L), anyValue(LocalDateTime.now())
+            )
+        ).thenReturn(1)
+
+        service.cancelResolved(100L, "op2", null)
+
+        Mockito.verifyNoInteractions(expertContactRepository)
+        Mockito.verify(operatorActionLogService).record(
+            eqValue("INBOUND_MAIL_PROCESSING"),
+            eqValue(100L),
+            eqValue(OperatorActionType.CANCEL_INBOUND_RESOLVED),
+            Mockito.isNull(),
+            eqValue(100L),
+            Mockito.any(),
+            Mockito.any(),
+            eqValue("op2"),
+            Mockito.isNull(),
+            Mockito.isNull()
+        )
+    }
+
+    @Test
+    fun `cancelResolved rejects each non matching triplet field with 409 and no writes`() {
+        val mismatches = listOf(
+            resolvedInbound().copy(processStatus = "MANUAL_REVIEW"),
+            resolvedInbound().copy(processReason = "MANUAL_BOUND"),
+            resolvedInbound().copy(reasonType = "AUTO_NOOP")
+        )
+        for (record in mismatches) {
+            Mockito.`when`(inboundMailProcessingRepository.findById(100L))
+                .thenReturn(Optional.of(record))
+            val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+                service.cancelResolved(100L, "op2", "note")
+            }
+            assertEquals(HttpStatus.CONFLICT, ex.status)
+        }
+        Mockito.verify(
+            inboundMailProcessingRepository,
+            Mockito.never()
+        ).reopenManualResolved(Mockito.anyLong(), anyValue(LocalDateTime.now()))
+        Mockito.verifyNoInteractions(expertContactRepository, operatorActionLogService)
+    }
+
+    @Test
+    fun `cancelResolved returns 409 when conditional update affects zero rows`() {
+        Mockito.`when`(inboundMailProcessingRepository.findById(100L))
+            .thenReturn(Optional.of(resolvedInbound()))
+        Mockito.`when`(
+            inboundMailProcessingRepository.reopenManualResolved(
+                Mockito.eq(100L), anyValue(LocalDateTime.now())
+            )
+        ).thenReturn(0)
+
+        val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.cancelResolved(100L, "op2", "note")
+        }
+        assertEquals(HttpStatus.CONFLICT, ex.status)
+        Mockito.verifyNoInteractions(expertContactRepository, operatorActionLogService)
+    }
+
+    @Test
+    fun `cancelResolved returns 404 for missing record`() {
+        Mockito.`when`(inboundMailProcessingRepository.findById(100L))
+            .thenReturn(Optional.empty())
+
+        val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            service.cancelResolved(100L, "op2", "note")
+        }
+        assertEquals(HttpStatus.NOT_FOUND, ex.status)
+        Mockito.verify(
+            inboundMailProcessingRepository,
+            Mockito.never()
+        ).reopenManualResolved(Mockito.anyLong(), anyValue(LocalDateTime.now()))
+        Mockito.verifyNoInteractions(expertContactRepository, operatorActionLogService)
+    }
+
+    @Test
+    fun `cancelResolved falls back to UNKNOWN operator when name blank`() {
+        Mockito.`when`(inboundMailProcessingRepository.findById(100L))
+            .thenReturn(Optional.of(resolvedInbound(expertContactId = null)))
+        Mockito.`when`(
+            inboundMailProcessingRepository.reopenManualResolved(
+                Mockito.eq(100L), anyValue(LocalDateTime.now())
+            )
+        ).thenReturn(1)
+
+        service.cancelResolved(100L, "   ", "note")
+
+        Mockito.verify(operatorActionLogService).record(
+            eqValue("INBOUND_MAIL_PROCESSING"),
+            eqValue(100L),
+            eqValue(OperatorActionType.CANCEL_INBOUND_RESOLVED),
+            Mockito.isNull(),
+            eqValue(100L),
+            Mockito.any(),
+            Mockito.any(),
+            eqValue("UNKNOWN"),
+            eqValue("note"),
+            Mockito.isNull()
+        )
+    }
+
+    @Test
+    fun `cancelResolved does not re-save expert already flagged`() {
+        Mockito.`when`(inboundMailProcessingRepository.findById(100L))
+            .thenReturn(Optional.of(resolvedInbound()))
+        Mockito.`when`(expertContactRepository.findById(1L))
+            .thenReturn(Optional.of(contact.copy(needsManualAttention = true)))
+        Mockito.`when`(
+            inboundMailProcessingRepository.reopenManualResolved(
+                Mockito.eq(100L), anyValue(LocalDateTime.now())
+            )
+        ).thenReturn(1)
+
+        service.cancelResolved(100L, "op2", "note")
+
+        Mockito.verify(expertContactRepository, Mockito.never())
+            .save(Mockito.any(ExpertContact::class.java))
+        Mockito.verify(operatorActionLogService).record(
+            eqValue("INBOUND_MAIL_PROCESSING"),
+            eqValue(100L),
+            eqValue(OperatorActionType.CANCEL_INBOUND_RESOLVED),
+            eqValue(1L),
+            eqValue(100L),
+            Mockito.any(),
+            Mockito.any(),
+            eqValue("op2"),
+            eqValue("note"),
+            Mockito.isNull()
+        )
+    }
+
     private fun liveAssembly(): TrustReplyAssembleRequest {
         val source = TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, 100L)
         val version = operatorDirectedVersion()
