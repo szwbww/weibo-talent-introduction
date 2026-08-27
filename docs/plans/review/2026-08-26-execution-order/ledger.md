@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-08-26/00-execution-order.md
 
 - Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Review epoch: 2
 - Master plan: docs/plans/2026-08-26/00-execution-order.md (sha256 01c95b5dde2180ce0beaac0b08361a8c11dae0bd8929389e2058914d76dd4da8)
 - Governing master identity: sha256 01c95b5dde2180ce0beaac0b08361a8c11dae0bd8929389e2058914d76dd4da8; recorded commit ee0749d3beedea7e26f4bf4e097b3d33a1684b7d
 - Invoked master identity: SAME (sha256 01c95b5dde2180ce0beaac0b08361a8c11dae0bd8929389e2058914d76dd4da8)
@@ -11,23 +11,23 @@
 - Fast-p ledger: docs/plans/fast/2026-08-26-execution-order/ledger.md (sha256 c4bc352c64416d02f4d4e15f0214eac9e90a37da35d79302625e407505d292c2)
 - Fast-p handoff: docs/plans/fast/2026-08-26-execution-order/human-review-handoff.md (sha256 2a6dcb3b4f681bad5671fd4fd81691863385671bd8361d533254669e3d6ba6b4)
 - Master base: f2935072c819a9167e75220a6a959b0769462fde
-- Final code head: cb30230970d12e649e9faac2835335345daac793
-- Evidence parent before next commit: 0511e63526fa05dab5c8dcb13238f558bd4639ae
-- Previous evidence commit: 0511e63526fa05dab5c8dcb13238f558bd4639ae
+- Final code head: 7ce95dba4b01d559ce580cc964564cc648c292a4
+- Evidence parent before next commit: 130cd68e218e54ade24e71d3ec18b0621a962378
+- Previous evidence commit: 130cd68e218e54ade24e71d3ec18b0621a962378
 - Branch: fast/2026-08-26-execution-order
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-26-execution-order
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
 - Discovery evidence: SELECTED by /Users/lukai/.agents/skills/review-fast-p/scripts/discover_fast_p.py; one candidate, matching READY_FOR_HUMAN_REVIEW fast-p ledger/handoff, terminal c1/c2/c3, valid base/code ancestry.
 - Misdirected review evidence: N/A
-- Reviewer: 01a040d3-201f-7730-8782-ac18de6a38db (Ampere)
+- Reviewer: 01a040fe-131e-7d82-b6c3-c05beac25a55 (Mencius)
 - Reviewer attempt: 1
 - Machine result: FAIL
-- Machine report epoch: machine-verification.md — Epoch 1
+- Machine report epoch: machine-verification.md — Epoch 2
 - Repair artifact: docs/plans/fix/00-execution-order/repair.md
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: HUMAN `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-26-execution-order/docs/plans/fix/00-execution-order/repair.md` (2026-08-27)
+- Repair executor: fast-p controller (Main), execute-p contract
+- Repair code head: 7ce95dba4b01d559ce580cc964564cc648c292a4
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: V-1 requires approved repair execution; send `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-26-execution-order/docs/plans/fix/00-execution-order/repair.md`.
+- Blocker/next action: V-2 requires approved repair execution; send `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-26-execution-order/docs/plans/fix/00-execution-order/repair.md`.
