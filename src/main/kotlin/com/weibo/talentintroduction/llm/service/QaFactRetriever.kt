@@ -49,16 +49,41 @@ class QaFactRetriever(
     private val cache = ConcurrentHashMap<String, FactRetrieval>()
 
     /**
+     * Repair V-2 (fix/00-execution-order R-1): I-8 的每一条失败路径都必须既 fail-open
+     * 又留下一条带 outcome 的分类 warn——调用方日志不能替代 retriever 自己 seam 上的记录。
+     * 返回的 [FactRetrieval] 与落地前逐字段一致（available=false、byRequestIndex 恒空、
+     * outcome 与既有计数不变）。既有更细的 transport/parse/无效 id/截断诊断照旧保留。
+     */
+    private fun failOpen(
+        outcome: String,
+        requested: Int = 0,
+        returned: Int = 0,
+        rejected: Int = 0,
+        truncated: Int = 0
+    ): FactRetrieval {
+        log.warn("[FACT_RETRIEVAL] fail-open outcome={}", outcome)
+        return FactRetrieval(
+            available = false,
+            byRequestIndex = emptyMap(),
+            outcome = outcome,
+            requested = requested,
+            returned = returned,
+            rejected = rejected,
+            truncated = truncated
+        )
+    }
+
+    /**
      * I-8: 每一条失败路径都返回 `available = false` 且绝不抛进调用方；失败类型经
      * [FactRetrieval.outcome] 带给调用方记录（DISABLED / CLIENT_ABSENT /
      * TRANSPORT_ERROR / EMPTY_RESPONSE / PARSE_ERROR / ALL_REJECTED）。
      */
     fun retrieve(inboundText: String, requests: List<String>, pool: List<QaRule>): FactRetrieval {
         if (!factRetrieverProperties.enabled || !llmProperties.enabled) {
-            return FactRetrieval(false, emptyMap(), outcome = "DISABLED")
+            return failOpen("DISABLED")
         }
         val client = llmDraftClientProvider.getIfAvailable()
-            ?: return FactRetrieval(false, emptyMap(), outcome = "CLIENT_ABSENT")
+            ?: return failOpen("CLIENT_ABSENT")
         if (pool.isEmpty() || requests.isEmpty()) {
             // 直接空结果（T1.2）——调用点已保证非空才调用，这里只是防御。
             return FactRetrieval(false, emptyMap())
@@ -90,26 +115,26 @@ class QaFactRetriever(
             )
         } catch (ex: Exception) {
             log.warn("Fact retrieval LLM failed: {}", ex.message)
-            return FactRetrieval(false, emptyMap(), outcome = "TRANSPORT_ERROR")
+            return failOpen("TRANSPORT_ERROR")
         }
         if (llmResult.failureType == LlmChatFailureType.EMPTY_RESPONSE) {
-            return FactRetrieval(false, emptyMap(), outcome = "EMPTY_RESPONSE")
+            return failOpen("EMPTY_RESPONSE")
         }
         if (llmResult.failureType != LlmChatFailureType.SUCCESS) {
             log.warn("Fact retrieval LLM failed: {}", llmResult.failureType)
-            return FactRetrieval(false, emptyMap(), outcome = "TRANSPORT_ERROR")
+            return failOpen("TRANSPORT_ERROR")
         }
         val raw = llmResult.content
         if (raw.isNullOrBlank()) {
-            return FactRetrieval(false, emptyMap(), outcome = "EMPTY_RESPONSE")
+            return failOpen("EMPTY_RESPONSE")
         }
         val extracted = extractJsonPayload(raw)
         if (extracted == null) {
-            return FactRetrieval(false, emptyMap(), outcome = "PARSE_ERROR")
+            return failOpen("PARSE_ERROR")
         }
         val elements = parseElements(extracted)
         if (elements == null) {
-            return FactRetrieval(false, emptyMap(), outcome = "PARSE_ERROR")
+            return failOpen("PARSE_ERROR")
         }
         if (elements.isEmpty()) {
             // 模型明确说没有事实：这是「模型说没有」而非「模型没跑」（I-8）。
@@ -187,10 +212,8 @@ class QaFactRetriever(
 
         if (returned > 0 && accepted == 0) {
             // I-8: 模型给了候选但全部未通过校验。
-            return FactRetrieval(
-                false,
-                emptyMap(),
-                outcome = "ALL_REJECTED",
+            return failOpen(
+                "ALL_REJECTED",
                 requested = requests.size,
                 returned = returned,
                 rejected = rejected,

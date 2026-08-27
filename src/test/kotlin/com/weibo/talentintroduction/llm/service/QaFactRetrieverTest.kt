@@ -247,6 +247,75 @@ class QaFactRetrieverTest {
         assertTrue(!client.lastMessages[1].content.contains("11 | Rule 11"))
     }
 
+    // ── Repair V-2 (fix/00-execution-order R-1): classified fail-open warns ──
+
+    @Test
+    fun `every fail-open outcome emits a classified retriever warn`() {
+        // 六条 I-8 失败路径各自独立断言：available=false、结果空、outcome 不变、
+        // 且 retriever 自己的 logger 出现带该 outcome 的 warn。
+        lateinit var result: FactRetrieval
+        var logs: List<String>
+
+        // DISABLED
+        logs = captureRetrieverLogs {
+            result = retriever(
+                RecordingClient("""[{"requestIndex": 1, "ruleIds": [999]}]"""),
+                properties = FactRetrieverProperties(enabled = false)
+            ).retrieve("mail text", listOf("q1"), listOf(rule(10)))
+        }
+        assertFalse(result.available)
+        assertTrue(result.byRequestIndex.isEmpty())
+        assertEquals("DISABLED", result.outcome)
+        assertTrue(logs.any { it.contains("[FACT_RETRIEVAL] fail-open outcome=DISABLED") })
+
+        // CLIENT_ABSENT
+        logs = captureRetrieverLogs {
+            result = retriever(null).retrieve("mail text", listOf("q1"), listOf(rule(10)))
+        }
+        assertFalse(result.available)
+        assertTrue(result.byRequestIndex.isEmpty())
+        assertEquals("CLIENT_ABSENT", result.outcome)
+        assertTrue(logs.any { it.contains("[FACT_RETRIEVAL] fail-open outcome=CLIENT_ABSENT") })
+
+        // TRANSPORT_ERROR
+        logs = captureRetrieverLogs {
+            result = retriever(ThrowingClient()).retrieve("mail text", listOf("q1"), listOf(rule(10)))
+        }
+        assertFalse(result.available)
+        assertTrue(result.byRequestIndex.isEmpty())
+        assertEquals("TRANSPORT_ERROR", result.outcome)
+        assertTrue(logs.any { it.contains("[FACT_RETRIEVAL] fail-open outcome=TRANSPORT_ERROR") })
+
+        // EMPTY_RESPONSE
+        logs = captureRetrieverLogs {
+            result = retriever(RecordingClient(null)).retrieve("mail text", listOf("q1"), listOf(rule(10)))
+        }
+        assertFalse(result.available)
+        assertTrue(result.byRequestIndex.isEmpty())
+        assertEquals("EMPTY_RESPONSE", result.outcome)
+        assertTrue(logs.any { it.contains("[FACT_RETRIEVAL] fail-open outcome=EMPTY_RESPONSE") })
+
+        // PARSE_ERROR
+        logs = captureRetrieverLogs {
+            result = retriever(RecordingClient("this is not json"))
+                .retrieve("mail text", listOf("q1"), listOf(rule(10)))
+        }
+        assertFalse(result.available)
+        assertTrue(result.byRequestIndex.isEmpty())
+        assertEquals("PARSE_ERROR", result.outcome)
+        assertTrue(logs.any { it.contains("[FACT_RETRIEVAL] fail-open outcome=PARSE_ERROR") })
+
+        // ALL_REJECTED
+        logs = captureRetrieverLogs {
+            result = retriever(RecordingClient("""[{"requestIndex": 1, "ruleIds": [999]}]"""))
+                .retrieve("mail text", listOf("q1"), listOf(rule(10)))
+        }
+        assertFalse(result.available)
+        assertTrue(result.byRequestIndex.isEmpty())
+        assertEquals("ALL_REJECTED", result.outcome)
+        assertTrue(logs.any { it.contains("[FACT_RETRIEVAL] fail-open outcome=ALL_REJECTED") })
+    }
+
     // ── I-7: 确定性 — 同输入同输出、一次 LLM、temperature 0.0 ──────────────
 
     @Test
