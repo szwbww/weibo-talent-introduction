@@ -279,7 +279,8 @@ object AiReplyIntentCatalog {
             key = "application.next_stages",
             title = "Next stages",
             requestAliases = listOf("next stages", "next steps", "what happens next", "application process", "timeline"),
-            requiredCoverageKeys = listOf("application.steps")
+            requiredCoverageKeys = listOf("application.steps"),
+            alternativeCoverageKeys = listOf("application.required_materials")
         ),
         RequestIntentDefinition(
             key = "work.time_commitment",

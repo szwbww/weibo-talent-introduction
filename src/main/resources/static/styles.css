@@ -7699,6 +7699,57 @@ tr td {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.trust-reply-preview-tabs {
+    display: flex;
+    gap: 4px;
+    margin: 0 0 8px;
+    padding: 3px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+}
+
+.trust-reply-preview-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 26px;
+    padding: 3px 10px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font-family: var(--font-body);
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.trust-reply-preview-tab:hover:not([aria-selected="true"]) {
+    background: var(--bg-sidebar-hover);
+    color: var(--text-secondary);
+}
+
+.trust-reply-preview-tab[aria-selected="true"] {
+    border-color: var(--panel-border);
+    background: #ffffff;
+    color: var(--primary);
+}
+
+.trust-reply-preview-tab:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 1px;
+}
+
+.trust-reply-preview-tab:disabled {
+    color: var(--text-muted);
+    cursor: default;
+    opacity: .55;
+}
 .trust-reply-assembly:empty::before { content: "锁定所有需回复条目后生成整合预览"; color: var(--text-muted); }
 .trust-reply-lock-hint { margin: 0; color: var(--text-muted); font-size: 11px; line-height: 1.5; white-space: nowrap; }
 .trust-reply-final-actions { display: flex; gap: 8px; margin-left: auto; padding: 0; border: none; }

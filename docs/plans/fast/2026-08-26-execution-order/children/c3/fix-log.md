@@ -1,0 +1,11 @@
+## Epoch 2 — Round 1/3
+- Findings: F-1, F-2
+- Before: 9b7e32ca073cad06a0f81e4d60cd38fb5917bfe0
+- Fix commit: cb30230970d12e649e9faac2835335345daac793
+- Authorized files changed: src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt, src/test/js/trustReplyWorkbenchSharedMount.test.js
+- Commands: mvn test -Dtest=TrustReplyWorkbenchServiceTest -> 0 (Tests run: 63, Failures: 0, Errors: 0); mvn test -Dtest=TrustReplySuggestedInstructionTest -> 0 (4/0/0); mvn test -Dtest=TrustReplyWorkbenchItemFlowTest -> 0 (52/0/0); mvn test -Dtest=TrustReplyWorkbenchControllerTest -> 0 (24/0/0); node --test src/test/js/trustReplyWorkbenchSharedMount.test.js -> 0 (58 pass); node --test src/test/js/trustReplyWorkbench.test.js -> 0 (32 pass); node --test src/test/js/autoRunOrchestration.test.js -> 0 (15 pass); node --test src/test/js/aiReplyLoadingFeedback.test.js -> 0 (62 pass); node --test src/test/js/*.test.js -> 0 (735 pass, # fail 0); mvn test -> 0 (Tests run: 2872, Failures: 0, Errors: 0, Skipped: 4, BUILD SUCCESS); node --check src/main/resources/static/app.js -> 0; git diff --check -> silent
+- Result: FIXED
+- Notes: F-1: brief listed 7 old-wording assertions at 676-677/704-705/1375/1464-1465/1497 but the file actually held 13 across 7 test methods (also 1498/1525-1526/1552-1553, identical wording, all failing under T1.3 production code); updated all 13 to T1.3 verbatim wording (先说明它取决于什么、还没定下来的原因 / 交出下一步但不承诺具体时间), every other line byte-identical. F-2: literal 5 empirically breaks the next assertion (aria-selected="true" count 2 !== 1, S-1 preview bar adds a second aria-selected="true"), so used the assignment's sanctioned alternative: scoped both counts to page-nav tabs only (/role="tab"[^>]*data-page="/ = 2, /data-page="[^"]*"[^>]*aria-selected="true"/ = 1), preserving original expected values; :2842/2848 regex captures untouched. Identity gate: scripts/worktree_identity.py absent from repo (brief's predicted crash case); replicated manually with its exact git commands (root/branch/git_dir/HEAD) before and after commit — all correct; plan identity dc5c11e verified, plan file 0 diff vs HEAD. No fast-p files in commit; commit contains only the two authorized test files.
+
+---
+Controller evidence note (2026-08-26T15:23:31Z): appended only for evidence-commit completeness.

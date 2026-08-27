@@ -269,6 +269,9 @@
             frameSnapshot: null,
             frameSavePending: false,
             assemblyStale: false,
+            // 计划 03 (I-6/I-7): 整合摘要预览区的内部页签——"rendered" | "local" | "raw"。
+            // 切换只走 state + 全量 render()，绝不 host.querySelector（I-7）。
+            previewTab: "rendered",
             selectedModel: "DEEPSEEK_V4_FLASH",
             availableModels: ["DEEPSEEK_V4_FLASH"],
             llmEnabled: true,
@@ -2303,9 +2306,42 @@
                 ? `尚有 ${readiness.unresolvedManual} 项待人工处理`
                 : "";
             const stateKey = previewState();
-            const previewBlock = stateKey === "CURRENT" && assembly
-                ? `<div class="trust-reply-assembly"><div class="muted">服务端原始正文</div><pre class="pre" data-role="raw-preview">${escapeText(assembly.rawDraftText || "")}</pre></div>`
-                : `<div class="trust-reply-assembly"><div class="muted">配置预览 · 未整合</div><pre class="pre" data-role="local-preview">${escapeText(renderFrameLocalPreview())}</pre></div>`;
+            // 计划 03 (S-1/S-2 + I-6/I-7): 预览区内部三页签（发送正文 / 配置预览 /
+            // 服务端原始正文）。未整合（非 CURRENT）时只渲染 local 一个可用页签，
+            // 其余两个 disabled；整合完成后默认渲染已替换变量的 rendered 正文，
+            // raw 降级为第三页签且不得删除。页签切换只走 state.previewTab +
+            // 全量 render()，绝不 host.querySelector（I-7）。
+            const previewCurrent = stateKey === "CURRENT" && assembly;
+            const previewTabDefs = [
+                { key: "rendered", label: "发送正文" },
+                { key: "local", label: "配置预览" },
+                { key: "raw", label: "服务端原始正文" }
+            ];
+            const activePreviewTab = previewCurrent &&
+                (state.previewTab === "rendered" || state.previewTab === "local" || state.previewTab === "raw")
+                ? state.previewTab
+                : "local";
+            const previewTabBar = `<div class="trust-reply-preview-tabs" role="tablist">${previewTabDefs.map((entry) => {
+                const enabled = previewCurrent || entry.key === "local";
+                const selected = activePreviewTab === entry.key;
+                return `<button type="button" class="trust-reply-preview-tab" role="tab" data-action="set-preview-tab" data-preview-tab="${entry.key}" aria-selected="${selected ? "true" : "false"}"${enabled ? "" : " disabled"}>${entry.label}</button>`;
+            }).join("")}</div>`;
+            const previewBody = previewCurrent
+                ? (activePreviewTab === "rendered"
+                    ? escapeText(assembly.renderedDraftText || assembly.rawDraftText || "")
+                    : activePreviewTab === "raw"
+                        ? escapeText(assembly.rawDraftText || "")
+                        : escapeText(renderFrameLocalPreview()))
+                : escapeText(renderFrameLocalPreview());
+            // S-2: 三个页签共用同一个 <pre class="pre">，仅 data-role 与内容随
+            // 页签变化（字面量角色，保证既有 data-role 断言继续成立）。
+            const previewBlock = `<div class="trust-reply-assembly">${previewTabBar}` + (
+                previewCurrent && activePreviewTab === "rendered"
+                    ? `<pre class="pre" data-role="rendered-preview">${previewBody}</pre>`
+                    : previewCurrent && activePreviewTab === "raw"
+                        ? `<pre class="pre" data-role="raw-preview">${previewBody}</pre>`
+                        : `<pre class="pre" data-role="local-preview">${previewBody}</pre>`
+            ) + `</div>`;
             const completeDisabled = !assembly || stateKey !== "CURRENT" || state.completePending;
             return `<h4>整合摘要</h4>${renderVerdict()}<p class="trust-reply-lock-hint">${lockHint}${assembleHint ? ` · ${assembleHint}` : ""}</p><div class="trust-reply-progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>${previewBlock}<div class="trust-reply-final-actions"><button type="button" class="button primary" data-action="assemble"${canAssemble() ? "" : " disabled"}>${assembleLabel}</button><button type="button" class="button secondary" data-action="complete"${completeDisabled ? " disabled" : ""}>${state.mode === MODES.SIMULATION ? "完成模拟并评估" : "采用到人工回复"}</button></div>`;
         }
@@ -2386,6 +2422,11 @@
             if (action === "assemble") void assemble();
             if (action === "complete") void complete();
             if (action === "auto-run") void autoRun();
+            if (action === "set-preview-tab") {
+                state.previewTab = button.dataset.previewTab;
+                render();
+                return;
+            }
             if (action === "auto-reset") void autoReset();
             if (action === "reset-workbench-state") void resetWorkbenchState();
             if (action === "regenerate-context-stale") void regenerateContextStale();

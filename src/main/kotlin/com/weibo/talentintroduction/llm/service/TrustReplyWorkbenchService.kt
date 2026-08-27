@@ -2130,17 +2130,33 @@ class TrustReplyWorkbenchService(
             rule.displayName?.takeIf { it.isNotBlank() } ?: "未命名事实"
         }
         val bodyById = adjacentRules.mapValues { (_, rule) -> rule.answerBody.orEmpty() }
-        return map { item ->
-            val adjacent = if (item.status == RequestGroundingStatus.UNSUPPORTED) {
-                adjacentRules.filterKeys { it !in item.factRuleIds }
-            } else {
-                emptyMap()
+        // 计划 03 (I-2): 两趟。第一趟按 index 升序为每条无据条目确定最终能列出的
+        // 邻近事实名单——已被前面条目「采纳进建议说明」的名称（usedNames）不再进入
+        // 后续条目，同一条事实在整封信的全部建议说明中最多出现一次；第二趟构造
+        // coverage。
+        val ordered = sortedBy { it.index }
+        val lastUnsupportedIndex = ordered
+            .filter { it.status == RequestGroundingStatus.UNSUPPORTED }
+            .maxOfOrNull { it.index }
+        val usedNames = mutableSetOf<String>()
+        val selectedNamesByIndex = mutableMapOf<Int, List<String>>()
+        for (item in ordered) {
+            if (item.status != RequestGroundingStatus.UNSUPPORTED) {
+                selectedNamesByIndex[item.index] = emptyList()
+                continue
             }
+            val adjacent = adjacentRules.filterKeys { it !in item.factRuleIds }
             val adjacentBodies = adjacent.values.map { it.answerBody.orEmpty() }
             val adjacentNames = nameById.filterKeys { it in adjacent.keys }
                 .values
                 .distinct()
                 .filter { name -> !overlapsAnswerBodyFragment(name, adjacentBodies) }
+                .filterNot { it in usedNames }
+            val selected = selectInstructionNames(adjacentNames, item.index == lastUnsupportedIndex)
+            usedNames.addAll(selected)
+            selectedNamesByIndex[item.index] = selected
+        }
+        return map { item ->
             TrustReplyRequestCoverage(
                 index = item.index,
                 requestText = item.requestText,
@@ -2159,7 +2175,11 @@ class TrustReplyWorkbenchService(
                 requestKey = requestKey(sourceVersion, item),
                 allowedHandlings = allowedHandlings(item).map { it.name },
                 recommendedHandling = recommendedHandling(item).name,
-                suggestedInstruction = suggestedInstructionFor(item, adjacentNames),
+                suggestedInstruction = suggestedInstructionFor(
+                    item,
+                    selectedNamesByIndex[item.index].orEmpty(),
+                    item.index == lastUnsupportedIndex
+                ),
                 unrecognizedAsks = item.unrecognizedAsks.map { ask ->
                     TrustReplyUnrecognizedAsk(label = ask.label, quote = ask.quote)
                 },
@@ -2170,6 +2190,25 @@ class TrustReplyWorkbenchService(
                 intentMismatchFactRuleIds = item.intentMismatchFactRuleIds
             )
         }
+    }
+
+    // 计划 03 (I-2/I-5): 与 suggestedInstructionFor 同一贪心口径——budget 按本条
+    // 实际 suffix 长度重算（两种 tail 长度不同），先经 unsafe 过滤，再按预算完整
+    // 装入（单个名称绝不截断）。返回本条最终被采纳的名称，供 toCoverage 第一趟
+    // 跨条目去重（I-2）。
+    private fun selectInstructionNames(adjacentNames: List<String>, isLastUnsupported: Boolean): List<String> {
+        val suffix = if (isLastUnsupported) INSTRUCTION_TAIL_WITH_ACTION else INSTRUCTION_TAIL_WITHOUT_ACTION
+        val budget = 500 - (INSTRUCTION_PREFIX.length + INSTRUCTION_OPEN.length + INSTRUCTION_CLOSE.length + suffix.length)
+        val selected = mutableListOf<String>()
+        var used = 0
+        for (name in adjacentNames) {
+            if (containsUnsafeNameContent(name)) continue
+            val extra = name.length + if (selected.isEmpty()) 0 else 1
+            if (used + extra > budget) break
+            selected.add(name)
+            used += extra
+        }
+        return selected
     }
 
     // I-0: the machine-composed instruction only describes HOW to answer
@@ -2183,14 +2222,19 @@ class TrustReplyWorkbenchService(
     // entirely, never truncated or rewritten, and answer bodies are never read
     // for them. Names are also included greedily only while the complete
     // mandatory safety/structure wording stays within the 500-char contract.
-    private fun suggestedInstructionFor(item: RequestFactItem, adjacentNames: List<String>): String? {
+    private fun suggestedInstructionFor(
+        item: RequestFactItem,
+        adjacentNames: List<String>,
+        isLastUnsupported: Boolean
+    ): String? {
         if (item.status != RequestGroundingStatus.UNSUPPORTED) return null
-        val prefix = "这一条我们库里没有确认口径。请按真人对接人的方式回答：先明说没有确认答案"
-        val open = "，再给出能确认的邻近事实（"
-        val close = "）"
-        val suffix = "，最后交出下一步但不承诺具体时间。不要出现数字、链接或时间承诺。"
-        val fixedLength = prefix.length + open.length + close.length + suffix.length
-        val budget = 500 - fixedLength
+        val prefix = INSTRUCTION_PREFIX
+        val open = INSTRUCTION_OPEN
+        val close = INSTRUCTION_CLOSE
+        val suffix = if (isLastUnsupported) INSTRUCTION_TAIL_WITH_ACTION else INSTRUCTION_TAIL_WITHOUT_ACTION
+        // 计划 03 (I-5): budget 按本条实际取值重算——with/without action 两种 tail
+        // 长度不同，不得用固定值。
+        val budget = 500 - (prefix.length + open.length + close.length + suffix.length)
         val selected = mutableListOf<String>()
         var used = 0
         for (name in adjacentNames) {
@@ -2250,6 +2294,20 @@ class TrustReplyWorkbenchService(
             .joinToString(",")
 
     companion object {
+        // 计划 03 (I-3/I-4): 机器建议说明的固定措辞（逐字定稿）。四种字面量均不含
+        // 数字、http/www/://、点分域名形态与时间承诺词（I-4）；budget 按本条实际
+        // tail 长度重算（I-5）。两种 tail 分别用于最后一条无据条目（交出下一步）
+        // 与其余无据条目（明确不索取材料/不约会议/不给下一步）——全信 CTA 只出现
+        // 一次且只在最后一条无据条目（I-3）。
+        private val INSTRUCTION_PREFIX = "这一条我们暂时给不出确定答案。请按真人对接人的方式回答：" +
+            "先说明它取决于什么、还没定下来的原因"
+        private val INSTRUCTION_OPEN = "，再给出现在就能确认的邻近事实（"
+        private val INSTRUCTION_CLOSE = "）"
+        private val INSTRUCTION_TAIL_WITH_ACTION = "，最后说明确定之后会提供什么，并交出下一步但不承诺具体时间。" +
+            "不要出现数字、链接或时间承诺。"
+        private val INSTRUCTION_TAIL_WITHOUT_ACTION = "，最后说明确定之后会提供什么。不要在本条里索取材料、" +
+            "提议会议或给出下一步。不要出现数字、链接或时间承诺。"
+
         // I-0/V-2: time-promise tokens that adjacent display names must not
         // introduce into the operator instruction ("周内" covers 一周内/两周内…).
         private val timePromiseTokens = listOf(

@@ -168,7 +168,7 @@ function assembleResponse(current, itemVersions) {
         sourceVersion: current.sourceVersion,
         evidenceSetVersion: current.evidenceSetVersion,
         rawDraftText: "assembled draft",
-        renderedDraftText: "assembled draft",
+        renderedDraftText: "assembled draft with variables replaced",
         draftHash: "hash",
         canonicalFactIds: [1],
         itemVersions,
@@ -328,6 +328,64 @@ describe("one-click orchestration (auto-run / auto-reset)", () => {
         assert.match(host.innerHTML, /汇总已完成/);
         assert.match(host.innerHTML, /硬性闸门：尚未预判/);
         assert.match(host.innerHTML, /assembled draft/);
+    });
+
+    it("defaults the integration preview to the rendered draft and switches to raw via set-preview-tab (计划 03)", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 633;
+        const unsupported = coverageItem(sourceType, sourceId, 0, "UNSUPPORTED");
+        const current = bootstrap(sourceType, sourceId, [unsupported]);
+        const { window } = createSandbox((url, options) => {
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                const payload = JSON.parse(options.body);
+                const version = itemVersion(payload.requestKey, current, payload.handling || "ANSWER_FROM_OPERATOR_INPUT");
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version
+                }));
+            }
+            if (url.includes("/state")) return Promise.resolve(stateResponse(1));
+            if (url.includes("/assemble")) return Promise.resolve(assembleResponse(current, [unsupported]));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "auto-run");
+        await settle();
+
+        // I-6: after assembly the default preview tab shows the rendered draft
+        // (variables replaced) — never the raw placeholder text.
+        assert.match(host.innerHTML, /data-role="rendered-preview"/);
+        assert.match(host.innerHTML, /assembled draft with variables replaced/);
+        assert.doesNotMatch(host.innerHTML, />assembled draft</);
+
+        // I-7: switching tabs goes through state + full render() — the click
+        // only carries the dataset; no host DOM query is involved.
+        host.dispatchEvent("click", {
+            dataset: { action: "set-preview-tab", previewTab: "raw" },
+            closest: () => ({ dataset: { action: "set-preview-tab", previewTab: "raw" } })
+        });
+        assert.match(host.innerHTML, /data-role="raw-preview"/);
+        assert.match(host.innerHTML, />assembled draft</);
+        assert.doesNotMatch(host.innerHTML, /assembled draft with variables replaced/);
+
+        // S-1/S-2: the three tab buttons render; both legacy preview roles stay
+        // reachable in the component source.
+        assert.match(host.innerHTML, /data-action="set-preview-tab" data-preview-tab="rendered"/);
+        assert.match(host.innerHTML, /data-action="set-preview-tab" data-preview-tab="local"/);
+        assert.match(host.innerHTML, /data-action="set-preview-tab" data-preview-tab="raw"/);
+        assert.match(source, /data-role="local-preview"/);
+        assert.match(source, /data-role="raw-preview"/);
     });
 
     it("handles every coverage kind with the recommended handling and calls assemble exactly once", async () => {

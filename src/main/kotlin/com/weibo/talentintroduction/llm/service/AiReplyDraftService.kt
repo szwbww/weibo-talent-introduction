@@ -371,7 +371,11 @@ data class RequestFactItem(
     // 在调用点显式赋值（I-1）。
     // 注意：本字段不是影子字段——它【会】进入 canonicalMatrix 与
     // requestEvidenceVersion 的身份哈希（I-2）。
-    val boundRuleIds: List<Long> = emptyList()
+    val boundRuleIds: List<Long> = emptyList(),
+    // 计划 01 (T2.4, I-1): 仅由 LLM 检索补入的事实 id（按模型返回顺序）。只读诊断
+    // 字段，仅供展示与审计——绝不进入授权、版本哈希或发送逻辑（与
+    // intentMatchedFactRuleIds/intentMismatchFactRuleIds 同级）。
+    val retrievedFactRuleIds: List<Long> = emptyList()
 )
 
 data class ResolvedQaRules(

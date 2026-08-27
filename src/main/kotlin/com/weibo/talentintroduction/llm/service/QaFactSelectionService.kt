@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.llm.service
 
 import com.weibo.talentintroduction.llm.config.AskEnumeratorProperties
+import com.weibo.talentintroduction.llm.config.FactRetrieverProperties
 import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
@@ -16,7 +17,10 @@ class QaFactSelectionService(
     // P2a (plan 02): nullable so the historical single-arg constructor sites
     // (unit tests) compile unchanged; Spring injects the real bean.
     private val inboundAskEnumerator: InboundAskEnumerator? = null,
-    private val askEnumeratorProperties: AskEnumeratorProperties = AskEnumeratorProperties()
+    private val askEnumeratorProperties: AskEnumeratorProperties = AskEnumeratorProperties(),
+    // 计划 01 (T2.1): 同样可空+默认值，既有测试单参构造不变；Spring 注入真 bean。
+    private val qaFactRetriever: QaFactRetriever? = null,
+    private val factRetrieverProperties: FactRetrieverProperties = FactRetrieverProperties()
 ) {
     private val logger = LoggerFactory.getLogger(QaFactSelectionService::class.java)
     fun select(
@@ -45,6 +49,16 @@ class QaFactSelectionService(
             AskEnumeration(false, emptyList())
         }
 
+        // 计划 01 (T2.7, I-2): select() 是自动/人工发送路径，仅当
+        // enabledForAutoReply 为真才调用检索；QaFactRetriever 自身 fail-open（I-8）。
+        val retrieval = if (factRetrieverProperties.enabledForAutoReply &&
+            requestTexts.isNotEmpty() && promptPool.isNotEmpty()
+        ) {
+            qaFactRetriever?.retrieve(inboundText, requestTexts, promptPool)
+        } else {
+            null
+        }
+
         val requestFacts = if (requestTexts.isEmpty()) {
             emptyList()
         } else {
@@ -56,7 +70,8 @@ class QaFactSelectionService(
                     promptSet = promptSet,
                     researchProfileSufficient = researchProfileSufficient,
                     askEnumeration = enumeration,
-                    requestRange = unit.range
+                    requestRange = unit.range,
+                    retrievedRuleIds = retrieval?.byRequestIndex?.get(idx + 1) ?: emptyList()
                 )
             }
         }
@@ -96,6 +111,22 @@ class QaFactSelectionService(
                 kind = requests.map { it.kind.name }.distinct().sorted().joinToString(",")
             )
         )
+
+        // 计划 01 (T2.8): 每次实际发起的检索打一行固定 [FACT_RETRIEVAL] 日志，
+        // 失败（available=false）按 warn 记录，成功按 info。
+        retrieval?.let { r ->
+            val line = buildFactRetrievalLogLine(
+                source = "AUTO",
+                available = r.available,
+                requested = r.requested,
+                returned = r.returned,
+                accepted = r.accepted,
+                rejected = r.rejected,
+                truncated = r.truncated,
+                outcome = r.outcome
+            )
+            if (r.available) logger.info(line) else logger.warn(line)
+        }
         return result
     }
 
@@ -182,12 +213,37 @@ class QaFactSelectionService(
             else -> {
                 val matchableRules = qaRuleRepository.findAllEnabledOrdered()
                     .filter { it.isMatchable() && it.answerBody.trim().isNotBlank() }
-                resolveAutoSelection(
+                // 计划 01 (T2.7, I-2): 工作台 auto 分支在 resolveAutoSelection 前调用
+                // 检索；门控（factRetrieverProperties.enabled）在 QaFactRetriever 内部
+                // 生效——开关关闭时返回 outcome=DISABLED 并照常打一行可观测日志（A-3），
+                // 工作台不受 enabledForAutoReply 限制（与枚举器同构）。
+                val retrieval = if (requestTexts.isNotEmpty() && matchableRules.isNotEmpty()) {
+                    qaFactRetriever?.retrieve(inboundText, requestTexts, matchableRules)
+                } else {
+                    null
+                }
+                val result = resolveAutoSelection(
                     requests = requests,
                     matchableRules = matchableRules,
                     researchProfileSufficient = researchProfileSufficient,
-                    enumeration = enumeration
+                    enumeration = enumeration,
+                    retrieval = retrieval
                 )
+                // 计划 01 (T2.8): 每次实际发起的检索打一行固定 [FACT_RETRIEVAL] 日志。
+                retrieval?.let { r ->
+                    val line = buildFactRetrievalLogLine(
+                        source = "WORKBENCH",
+                        available = r.available,
+                        requested = r.requested,
+                        returned = r.returned,
+                        accepted = r.accepted,
+                        rejected = r.rejected,
+                        truncated = r.truncated,
+                        outcome = r.outcome
+                    )
+                    if (r.available) logger.info(line) else logger.warn(line)
+                }
+                result
             }
         }
     }
@@ -240,7 +296,9 @@ class QaFactSelectionService(
                 promptSet = promptSet,
                 researchProfileSufficient = researchProfileSufficient,
                 askEnumeration = enumeration,
-                requestRange = unit.range
+                requestRange = unit.range,
+                // 计划 01 (I-2): 人工矩阵是最终权威——检索必须旁路。
+                retrievedRuleIds = emptyList()
             )
             val matchedIds = item.factRuleIds.toSet()
             // I-1: factRuleIds/boundRuleIds 直接取运营矩阵（人工最终权威）。
@@ -282,7 +340,9 @@ class QaFactSelectionService(
                         promptSet = emptySet(),
                         researchProfileSufficient = researchProfileSufficient,
                         askEnumeration = enumeration,
-                        requestRange = unit.range
+                        requestRange = unit.range,
+                        // 计划 01 (I-2): legacy 空选路径同样旁路检索。
+                        retrievedRuleIds = emptyList()
                     )
                 },
                 enumeration
@@ -308,7 +368,9 @@ class QaFactSelectionService(
                 promptSet = promptSet,
                 researchProfileSufficient = researchProfileSufficient,
                 askEnumeration = enumeration,
-                requestRange = unit.range
+                requestRange = unit.range,
+                // 计划 01 (I-2): legacy 主分支同样旁路检索。
+                retrievedRuleIds = emptyList()
             )
             val consumedIds = item.factRuleIds.toSet()
             remaining.removeAll { rule -> rule.id in consumedIds }
@@ -328,7 +390,8 @@ class QaFactSelectionService(
         requests: List<RequestUnit>,
         matchableRules: List<QaRule>,
         researchProfileSufficient: Boolean,
-        enumeration: AskEnumeration
+        enumeration: AskEnumeration,
+        retrieval: FactRetrieval? = null
     ): ResolvedQaRules {
         val remaining = matchableRules.toMutableList()
         val requestFacts = requests.mapIndexed { idx, unit ->
@@ -341,7 +404,9 @@ class QaFactSelectionService(
                 promptSet = promptSet,
                 researchProfileSufficient = researchProfileSufficient,
                 askEnumeration = enumeration,
-                requestRange = unit.range
+                requestRange = unit.range,
+                // 计划 01 (I-2): auto 路径传真值；已消费的 id 因不在当前 pool 而自然失效。
+                retrievedRuleIds = retrieval?.byRequestIndex?.get(idx + 1) ?: emptyList()
             )
             val consumedIds = item.factRuleIds.toSet()
             remaining.removeAll { rule -> rule.id in consumedIds }
@@ -448,7 +513,10 @@ class QaFactSelectionService(
         promptSet: Set<Long>,
         researchProfileSufficient: Boolean,
         askEnumeration: AskEnumeration = AskEnumeration(false, emptyList()),
-        requestRange: IntRange? = null
+        requestRange: IntRange? = null,
+        // 计划 01 (T2.2): 本 request 的检索结果（I-4 校验后）。5 个调用点必须
+        // 逐个显式赋值（I-2），默认值仅为源码兼容。
+        retrievedRuleIds: List<Long> = emptyList()
     ): RequestFactItem {
         val normalizedRequest = QaFactKeywordMatcher.normalize(requestText)
         // P2a (plan 02, A-1): span-aware matching; the definitions are exactly
@@ -466,6 +534,14 @@ class QaFactSelectionService(
                 rule.id in promptSet &&
                 QaFactKeywordMatcher.matchesRule(rule, normalizedRequest)
         }
+
+        // 计划 01 (T2.3, I-3): 并集不是替代——候选集 = 严格关键词命中 ∪ 检索结果。
+        // assignRulesToIntents 的入参保持 strictCandidateRules 不变（I-1：检索结果
+        // 不影响 intent 分配，从而不影响 intentCoverages 与 requestKey）。
+        val retrievedRuleIdsSet = retrievedRuleIds.toSet()
+        val retrievedRules = promptPool
+            .filter { it.id != null && it.id in retrievedRuleIdsSet }
+            .filter { it !in strictCandidateRules }
 
         val assignments = AiReplyIntentCatalog.assignRulesToIntents(strictCandidateRules, matchedIntents)
         val intentCoverages = matchedIntents.map { intent ->
@@ -508,7 +584,8 @@ class QaFactSelectionService(
 
         // 计划 02 (I-2): 自然 status——表达式与今日逐字一致，仅供诊断/推荐/UI；
         // 不再有人工绑定导致的状态下调（operatorBypassedRuleIds 语义已删除）。
-        val status = when {
+        // 计划 01 (I-6): 今日结论先记在 naturalStatus，随后追加一层降级。
+        val naturalStatus = when {
             researchWarned && !anySupported -> RequestGroundingStatus.UNSUPPORTED
             intentCoverages.isEmpty() -> RequestGroundingStatus.UNSUPPORTED
             allSupported -> RequestGroundingStatus.GROUNDED
@@ -522,9 +599,29 @@ class QaFactSelectionService(
             .flatMap { it.evidenceRuleIds }
             .toSet()
 
-        val factRuleIds = strictCandidateRules
-            .mapNotNull { it.id }
-            .filter { it in evidenceSet }
+        // 计划 01 (T2.4, I-1): 关键词命中（且进入 SUPPORTED 证据集）在前，
+        // 检索补入在后，去重保序；检索结果绝不改动 intents。
+        val factRuleIds = (strictCandidateRules.mapNotNull { it.id }.filter { it in evidenceSet }
+            + retrievedRules.mapNotNull { it.id }).distinct()
+
+        // 计划 01 (I-6) + 计划 02 (I-1/I-3): 单一 status 表达式，先算 01 的提升、
+        // 再算 02 的封顶（两条计划编号同注释，避免后续 merge 时其中一条被覆盖）。
+        // 01: 今日结论 UNSUPPORTED 且最终 factRuleIds 非空时降为 PARTIAL
+        //     （不得直接判 GROUNDED，自动发面不扩大）。
+        // 02: 枚举器可用且本条存在未被任何 alias span 认领的诉求时，状态封顶为
+        //     PARTIAL——"我认出来的都答了"不等于"专家问的都答了"；
+        //     available=false（LLM 关闭/超时/解析失败/全部条目被 verbatim 校验丢弃）
+        //     一律不封顶，行为与本计划落地前逐字相同 (I-3)。
+        val status = if (naturalStatus == RequestGroundingStatus.UNSUPPORTED && factRuleIds.isNotEmpty()) {
+            RequestGroundingStatus.PARTIAL
+        } else if (askEnumeration.available &&
+            unrecognizedAsks.isNotEmpty() &&
+            naturalStatus == RequestGroundingStatus.GROUNDED
+        ) {
+            RequestGroundingStatus.PARTIAL
+        } else {
+            naturalStatus
+        }
 
         return RequestFactItem(
             index = index,
@@ -537,7 +634,11 @@ class QaFactSelectionService(
             // 计划 02 (I-2): 自然路径 matched 默认等于自身事实集、mismatch 恒空；
             // 矩阵路径由 resolveMatrixSelection 的 copy 显式覆盖。
             intentMatchedFactRuleIds = factRuleIds,
-            intentMismatchFactRuleIds = emptyList()
+            intentMismatchFactRuleIds = emptyList(),
+            // 计划 01 (T2.4, I-1): 仅由 LLM 检索补入的事实 id（按模型返回顺序）。
+            // 只读诊断字段——绝不进入授权、版本哈希或发送逻辑（与
+            // intentMatchedFactRuleIds/intentMismatchFactRuleIds 同级）。
+            retrievedFactRuleIds = retrievedRules.mapNotNull { it.id }
         )
     }
 
@@ -555,6 +656,11 @@ class QaFactSelectionService(
                     .sortedWith(compareBy({ priorityById[it] ?: Int.MAX_VALUE }, { it }))
                     .forEach { ordered.add(it) }
             }
+            // 计划 01 (T2.6, I-5): 检索补入的事实也必须进入 sendQaRuleIds——在既有
+            // intent 证据序之后追加本 request 的 factRuleIds 中尚未出现的 id
+            // （保 request 顺序、保 linkedSetOf 去重）。无检索时追加恒为空集，
+            // 与今日行为逐字节一致。
+            item.factRuleIds.forEach { ordered.add(it) }
         }
         return ordered.toList()
     }

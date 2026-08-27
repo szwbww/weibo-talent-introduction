@@ -106,7 +106,12 @@ object QaCoverageKeyCatalog {
         // keys in catalog declaration order, so inserting mid-list would reorder
         // existing rules' serialized coverage_keys (plan A-1 note).
         Entry("programme.name", "项目名称与可见性", "对外可用的计划名称与项目是否公开", "项目概况"),
-        Entry("governance.sponsor_level", "背书层级与组织方", "项目的政府背书层级与具体组织申报的机构层级", "公司信息")
+        Entry("governance.sponsor_level", "背书层级与组织方", "项目的政府背书层级与具体组织申报的机构层级", "公司信息"),
+        // 计划 02 (I-4): 追加在末尾——normalizeAndValidate 按目录声明顺序返回，
+        // 中插会改变既有规则再次保存时 coverage_keys 的字符串顺序。
+        // 这两个键此前是"intent 要、目录没有"的反向失配，任何规则都存不进去。
+        Entry("work.time_commitment", "投入时间", "每周/每月投入的时间承诺", "工作安排"),
+        Entry("work.advisory_duration", "顾问期限", "顾问合作的典型时长", "工作安排")
     ).associateBy { it.key }
 
     fun all(): List<Entry> = catalog.values.toList()
