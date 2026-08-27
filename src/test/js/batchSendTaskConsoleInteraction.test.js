@@ -539,6 +539,39 @@ describe("batch send task console interactions", () => {
         assert.strictEqual(el("batchConfigEditorTime").value, "03:15");
     });
 
+    it("refreshes editor gate state only after the template selector is populated", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const events = [];
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => { events.push("template"); },
+            setBatchMultiPickerValue: () => {},
+            updateBatchConfigVolumeHint: () => {},
+            refreshBatchGateState: () => { events.push("gate"); }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        sandbox.showBatchConfigEditor({ id: 1, templateId: 5, configName: "任务", cron: "0 15 3 * * ?", tags: [], regions: [] });
+
+        assert.deepStrictEqual(events, ["template", "gate"]);
+    });
+
     it("U1: echoes a range cron (0 0 9-17 * * ?) as custom with the raw expression (I1-1)", () => {
         const showEditor = extractFn("showBatchConfigEditor");
         assert.ok(showEditor, "showBatchConfigEditor must exist");

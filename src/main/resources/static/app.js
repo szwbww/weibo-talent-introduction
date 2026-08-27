@@ -14095,7 +14095,6 @@ function showBatchConfigEditor(config) {
     batchTaskState.editorAutoEnabled = config ? Boolean(config.autoEnabled) : false;
     var gateCheckbox = document.getElementById("batchConfigEditorGateFilter");
     if (gateCheckbox) gateCheckbox.checked = Boolean(config && config.gateFilterEnabled);
-    if (typeof refreshBatchGateState === "function") refreshBatchGateState("editor");
 
     // Cron 回显走白名单反解（I1-1）：只有完全匹配预设格式的表达式才映射到
     // 每小时 / 每天 / 每周一；其余（范围、列表、步长、工作日、月/日限制…）
@@ -14123,6 +14122,7 @@ function showBatchConfigEditor(config) {
 
     // Fill template selector and provider dropdown
     fillBatchConfigEditorTemplateSelector(config ? config.templateId : null);
+    if (typeof refreshBatchGateState === "function") refreshBatchGateState("editor");
     setBatchMultiPickerValue("batchConfigEditorEmailDomains", config && Array.isArray(config.emailDomains) ? config.emailDomains : []);
     updateBatchConfigVolumeHint();
     if (typeof scheduleRecipientPreview === "function") scheduleRecipientPreview("editor");
