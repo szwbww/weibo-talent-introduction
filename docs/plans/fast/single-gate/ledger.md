@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-08-28/00-single-gate-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-08-28/00-single-gate-master.md (commit 1f5a916489933fc9b2e8e469037fc912d55edd5d)
 - Amendments: A1, A2
 - Master base: de228e17cc0134a7c11dea7cbf82054e8d249f99
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-28T15:30:17+0800
 - Current child: 05
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: 子计划 05 实施前 I5-5 范围闸门触发（实现者正确停止，零改动）：grep -rln "sendable" 命中 18 文件，减 10 授权 + ManualInitialOutreachService.kt 后仍剩 7 个计划审计未覆盖的文件。逐一核查：仅 ExpertSearchServiceTest.kt 含真实属性读取（:1918/:1973 两个 I1-5 派生用例读 c.sendable，删属性即编译失败，必须处理）；其余 6 个文件全部为计划自身规定零改动（ExpertClassificationService.kt:20 KDoc — M-3；ExpertSearchService.kt:512 KDoc — I5-4）或纯装饰性陈旧名称/注释（V109ExpertTypesMigrationTest 用例名+注释、InitialOutreachServiceTest / ManualInitialOutreachServiceTest 的 sendableClassification() 构造 helper 与发件账号语义、BatchSendTaskRuntimeIntegrationTest:777 注释），均不读属性、不触发守卫正则。需人工批准 A3 授权 ExpertSearchServiceTest.kt 删除两个 I5a2 派生用例并修订 I5-5 闸门口径。
+- Resume from: 05 epoch 1, base 960fbe48e0b1ad7edd3f2ca68eccd29adafa654b, no implementation commit, next action A3 批准后实施
 
 ## Baseline
 
