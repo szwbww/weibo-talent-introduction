@@ -135,7 +135,10 @@ describe("Batch ExpertType Filter (child 02)", () => {
             api: async (url, opts) => {
                 captured = opts && opts.body ? JSON.parse(opts.body) : null;
                 return {};
-            }
+            },
+            // I3-1/I3-6: 编辑器保存要求研发类型非空（空集合被前端拦截），
+            // 新建配置默认三类（与 batchExpertTypeOptions 前三个 value 逐字一致）。
+            readBatchMultiPickerValue: () => ["PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"]
         });
         sb.batchTaskState = { editorAutoEnabled: false, editorMode: "create", editorId: null };
         sb.__store.el("batchConfigEditorName").value = "任务X";
@@ -143,7 +146,7 @@ describe("Batch ExpertType Filter (child 02)", () => {
         await vm.runInContext("saveBatchConfigEditor()", sb);
         assert.ok(captured, "api must be invoked with a payload");
         assert.ok(Object.prototype.hasOwnProperty.call(captured, "expertTypes"), "editor save payload must carry expertTypes");
-        assert.deepStrictEqual(captured.expertTypes, []);
+        assert.deepStrictEqual(captured.expertTypes, ["PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"]);
     });
 
     it("manual form values payload includes expertTypes key", () => {

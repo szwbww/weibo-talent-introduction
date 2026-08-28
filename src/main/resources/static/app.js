@@ -14114,7 +14114,7 @@ function showBatchConfigEditor(config) {
     setBatchTagPickerValue("batchConfigEditorTags", config && Array.isArray(config.tags) ? config.tags : []);
     setVal("batchConfigEditorDiscipline", config ? (config.discipline || "") : "");
     setBatchMultiPickerValue("batchConfigEditorOperatorStatuses", config && Array.isArray(config.operatorStatuses) ? config.operatorStatuses : []);
-    setBatchMultiPickerValue("batchConfigEditorExpertTypes", config && Array.isArray(config.expertTypes) ? config.expertTypes : []);
+    setBatchMultiPickerValue("batchConfigEditorExpertTypes", config && Array.isArray(config.expertTypes) ? config.expertTypes : ["PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"]);
     setVal("batchConfigEditorRoundsPerRun", config ? config.roundsPerRun : "1");
     setVal("batchConfigEditorRoundSize", config ? config.roundSize : "50");
     setBatchRegionPickerValue("batchConfigEditorRegions", config && Array.isArray(config.regions) ? config.regions : []);
@@ -15030,6 +15030,9 @@ async function saveBatchConfigEditor() {
     if (payload.perMailIntervalMs < 0) { showStatus("每封间隔需 ≥ 0", "error"); return; }
     if (payload.perRoundIntervalMs < 0) { showStatus("每轮间隔需 ≥ 0", "error"); return; }
     if (payload.selfCheckTtlMinutes < 1) { showStatus("自检 TTL 需 ≥ 1", "error"); return; }
+    if (readBatchMultiPickerValue("batchConfigEditorExpertTypes").length === 0) {
+        showStatus("请至少选择一个研发类型", "error"); return;
+    }
 
     var btn = document.getElementById("batchConfigEditorSaveBtn");
     if (btn) btn.disabled = true;
@@ -15127,7 +15130,7 @@ function fillManualFormDefaults() {
         emailDomains: [],
         discipline: "",
         operatorStatuses: [],
-        expertTypes: [],
+        expertTypes: ["PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"],
         gateFilterEnabled: false,
         roundSize: 50,
         roundsPerRun: 1,

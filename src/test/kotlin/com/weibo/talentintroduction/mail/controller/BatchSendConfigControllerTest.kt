@@ -62,6 +62,8 @@ class BatchSendConfigControllerTest {
         perRoundIntervalMs = 60000,
         selfCheckTtlMinutes = 30,
         tagsJson = "[]",
+        // I3-1: V109 之后 INTRODUCTION 存量配置全部非空 —— updateLegacyConfig 会重新校验。
+        expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
         legacyCode = "INTRODUCTION",
         createdAt = LocalDateTime.now(),
         updatedAt = LocalDateTime.now()

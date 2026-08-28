@@ -86,6 +86,8 @@ class BatchSendControlServiceTest {
             perMailIntervalMs = 0,
             perRoundIntervalMs = 0,
             selfCheckTtlMinutes = 30,
+            // I3-2: V109 之后存量配置全部非空 —— 快照校验要求 INTRODUCTION 研发类型必填。
+            expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
             legacyCode = "INTRODUCTION"
         )
         Mockito.`when`(batchSendTaskConfigRepository.findByLegacyCode("INTRODUCTION")).thenReturn(legacyIntroConfig)
@@ -607,6 +609,8 @@ class BatchSendControlServiceTest {
             perMailIntervalMs = 0,
             perRoundIntervalMs = 0,
             selfCheckTtlMinutes = 30,
+            // I3-2: V109 之后存量配置全部非空 —— startScheduled 走快照校验。
+            expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
             legacyCode = null
         )
         Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(5L)).thenReturn(config)
@@ -631,7 +635,8 @@ class BatchSendControlServiceTest {
             sourceUpdatedAt = null,
             snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
                 mailType = "INTRODUCTION", roundSize = 10,
-                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                expertTypes = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND")
             )
         )
         Mockito.`when`(mailSenderAccountService.remainingDailyCapacity(eqValue(true))).thenReturn(0)
@@ -727,5 +732,58 @@ class BatchSendControlServiceTest {
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
         // I-6/X-1: legacy KV fallback derives roundsPerRun = ceil(dailyCap / roundSize)
         assertEquals(10, captor.value.roundsPerRun)
+    }
+
+    @Test
+    fun `startManual(request) rejects INTRODUCTION snapshot with empty expertTypes with 422 (I3-2)`() {
+        val request = com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest(
+            sourceConfigId = null,
+            sourceUpdatedAt = null,
+            snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "INTRODUCTION", roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+            )
+        )
+
+        val response = control.startManual(request)
+
+        // I3-2: 手动路径的快照直接来自请求体，不经配置服务，必须在此独立校验。
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, response.statusCode)
+        assertTrue((response.body?.get("message") as String).contains("研发类型至少选择一个"))
+        Mockito.verify(manualOutreachExecutor, Mockito.never()).execute(Mockito.any(Runnable::class.java))
+    }
+
+    @Test
+    fun `startManual(request) launches MATERIAL_REMINDER snapshot with empty expertTypes (I3-1)`() {
+        Mockito.`when`(mailComposeTemplateService.getById(42L)).thenReturn(
+            com.weibo.talentintroduction.template.service.MailComposeTemplateDetail(
+                id = 42L, templateCode = "T42", templateName = "材料提醒", subject = "材料",
+                description = null, mailType = "MATERIAL_REMINDER", subjectVariants = null,
+                enabled = true, blocks = emptyList(), createdAt = null, updatedAt = null
+            )
+        )
+        Mockito.doReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
+            .`when`(manualInitialOutreachService).run(
+            anySnapshot(),
+            eqValue(99L),
+            eqValue(ExecutionMode.MANUAL),
+            eqValue(false)
+        )
+
+        val request = com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest(
+            sourceConfigId = null,
+            sourceUpdatedAt = null,
+            snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "MATERIAL_REMINDER", roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                templateId = 42L
+            )
+        )
+
+        val response = control.startManual(request)
+
+        // I3-1: 必填只对 INTRODUCTION 生效 —— MATERIAL_REMINDER 空 expertTypes 正常启动。
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        Mockito.verify(manualOutreachExecutor).execute(Mockito.any(Runnable::class.java))
     }
 }

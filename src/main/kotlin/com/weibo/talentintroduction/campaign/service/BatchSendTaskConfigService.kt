@@ -314,6 +314,12 @@ class BatchSendTaskConfigService(
         val regionsJson = objectMapper.writeValueAsString(regions)
         val mailType = resolveMailType(fields.templateId)
 
+        // I3-1/I3-2: INTRODUCTION 的研发类型必填非空 —— 空集合在子计划 04 之后
+        // 等价于「发给零个人」，必须在保存时就拒绝，不能留到运行时。
+        if (mailType == BatchSendType.INTRODUCTION.name) {
+            require(expertTypes.isNotEmpty()) { "研发类型至少选择一个" }
+        }
+
         return NormalizedConfig(
             configName = configName,
             mailType = mailType,

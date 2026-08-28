@@ -68,7 +68,7 @@ class BatchSendTaskConfigServiceTest {
         emailDomains: List<String> = emptyList(),
         discipline: String? = null,
         operatorStatuses: List<String> = emptyList(),
-        expertTypes: List<String> = emptyList(),
+        expertTypes: List<String> = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"),
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false
     ) = BatchSendTaskConfigCreateCommand(
@@ -106,7 +106,7 @@ class BatchSendTaskConfigServiceTest {
         emailDomains: List<String> = emptyList(),
         discipline: String? = null,
         operatorStatuses: List<String> = emptyList(),
-        expertTypes: List<String> = emptyList(),
+        expertTypes: List<String> = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"),
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false
     ) = BatchSendTaskConfigUpdateCommand(
@@ -527,6 +527,7 @@ class BatchSendTaskConfigServiceTest {
             autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomainsJson = "[]",
+            expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
@@ -611,6 +612,7 @@ class BatchSendTaskConfigServiceTest {
             roundsPerRun = 7,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", emailDomainsJson = "[]",
+            expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
@@ -730,7 +732,8 @@ class BatchSendTaskConfigServiceTest {
             roundsPerRun = 7,
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""", regionsJson = """["Europe"]""",
-            emailDomainsJson = "[]", discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            emailDomainsJson = "[]", expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
         `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
@@ -835,6 +838,7 @@ class BatchSendTaskConfigServiceTest {
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
             emailDomainsJson = """["a.com","b.com"]""",
+            expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
@@ -984,6 +988,7 @@ class BatchSendTaskConfigServiceTest {
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
             emailDomainsJson = "[]", operatorStatusesJson = """["CONTACTED"]""",
+            expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
@@ -1086,24 +1091,63 @@ class BatchSendTaskConfigServiceTest {
     }
 
     @Test
-    fun `create with empty expertTypes persists empty json and view returns empty (I2-3)`() {
+    fun `create with empty expertTypes on INTRODUCTION is rejected (I3-1 I3-2)`() {
         `when`(repository.findByConfigNameAndDeletedAtIsNull("无类型")).thenReturn(null)
-        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
-        `when`(repository.save(any())).thenAnswer { invocation ->
-            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 62L)
+
+        // I3-1/I3-2: INTRODUCTION 空集合在保存时即拒绝 —— 子计划 04 之后
+        // 空集合等价于「发给零个人」，必须提交时就报错，不能留到运行时。
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "无类型", expertTypes = emptyList()))
         }
+        assertTrue(ex.message!!.contains("研发类型至少选择一个"))
+        verify(repository, never()).save(any())
 
-        val view = service().create(createCmd(name = "无类型", expertTypes = emptyList()))
-
-        assertEquals(emptyList<String>(), view.expertTypes)
-        verify(repository).save(captor.capture())
-        assertEquals("[]", captor.value.expertTypesJson)
-
-        // 存量行 expert_types_json = "[]"（迁移回填形态）→ 视图同样为空集合。
+        // 读侧语义不变（空 = 不限，翻转是 04）：存量 '[]' 行视图仍为空集合。
         `when`(repository.findByIdAndDeletedAtIsNull(63L)).thenReturn(
             row(id = 63L, name = "存量空类型", expertTypesJson = "[]")
         )
         assertEquals(emptyList<String>(), service().get(63L).expertTypes)
+    }
+
+    @Test
+    fun `create with empty expertTypes on MATERIAL_REMINDER still saves (I3-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("材料提醒空类型")).thenReturn(null)
+        `when`(mailComposeTemplateService.getById(42L)).thenReturn(templateDetail(42L, "MATERIAL_REMINDER"))
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 66L)
+        }
+
+        // I3-1: 必填只对 INTRODUCTION 生效 —— MATERIAL_REMINDER 空集合仍放行。
+        val view = service().create(
+            createCmd(name = "材料提醒空类型", templateId = 42L, expertTypes = emptyList())
+        )
+
+        assertEquals("MATERIAL_REMINDER", view.mailType)
+        assertEquals(emptyList<String>(), view.expertTypes)
+        verify(repository).save(captor.capture())
+        assertEquals("[]", captor.value.expertTypesJson)
+    }
+
+    @Test
+    fun `create with non-empty expertTypes on INTRODUCTION persists verbatim (I3-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("必填类型")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 67L)
+        }
+
+        // I3-1/I3-3: INTRODUCTION 非空 → 保存成功，expertTypesJson 逐字为传入值的 JSON。
+        val view = service().create(
+            createCmd(
+                name = "必填类型",
+                expertTypes = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND")
+            )
+        )
+
+        assertEquals(listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"), view.expertTypes)
+        verify(repository).save(captor.capture())
+        assertEquals("""["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""", captor.value.expertTypesJson)
     }
 
     @Test
@@ -1224,6 +1268,7 @@ class BatchSendTaskConfigServiceTest {
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
             emailDomainsJson = "[]", operatorStatusesJson = "[]",
+            expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             gateFilterEnabled = true,
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()

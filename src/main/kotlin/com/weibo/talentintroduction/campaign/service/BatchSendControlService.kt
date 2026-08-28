@@ -429,6 +429,10 @@ class BatchSendControlService(
             snapshot.regions.forEach { region ->
                 require(region in CountryContinentMapping.allRegions()) { "Invalid region: $region" }
             }
+            // I3-2: 手动路径的快照直接来自请求体，不经配置服务，必须在此独立校验。
+            if (snapshot.mailType == BatchSendType.INTRODUCTION.name) {
+                require(snapshot.expertTypes.any { it.isNotBlank() }) { "研发类型至少选择一个" }
+            }
             null
         } catch (e: IllegalArgumentException) {
             ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)

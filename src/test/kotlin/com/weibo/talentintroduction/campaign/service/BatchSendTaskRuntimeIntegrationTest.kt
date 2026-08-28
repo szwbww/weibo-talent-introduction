@@ -629,6 +629,8 @@ class BatchSendTaskRuntimeIntegrationTest {
         roundSize = 10, perMailIntervalMs = 0, perRoundIntervalMs = 0,
         selfCheckTtlMinutes = 30, funnelLevel = funnelLevel, tagsJson = tagsJson,
         emailDomainsJson = emailDomainsJson, discipline = discipline, templateId = templateId,
+        // I3-2: V109 之后存量配置全部非空 —— 快照校验要求 INTRODUCTION 研发类型必填。
+        expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
         updatedAt = LocalDateTime.of(2026, 7, 14, 10, 0)
     )
 
@@ -642,7 +644,9 @@ class BatchSendTaskRuntimeIntegrationTest {
         mailType = "INTRODUCTION", roundSize = 10,
         perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
         funnelLevel = funnelLevel, tags = tags, emailDomains = emailDomains,
-        discipline = discipline, templateId = templateId
+        discipline = discipline, templateId = templateId,
+        // I3-2: INTRODUCTION 快照必须携带非空研发类型才能通过 validateSnapshotFields。
+        expertTypes = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND")
     )
 
     private fun buildManualOutreachService(): ManualOutreachHarness {

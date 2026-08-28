@@ -3203,6 +3203,7 @@ class ManualInitialOutreachServiceTest {
             perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
             funnelLevel = "CANDIDATE", tagsJson = "[]", regionsJson = "[]",
             emailDomainsJson = "[]", discipline = null, operatorStatusesJson = """["NOT_CONTACTED"]""",
+            expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
             templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
