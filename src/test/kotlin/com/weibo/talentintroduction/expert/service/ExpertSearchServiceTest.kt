@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpEntity
@@ -2376,5 +2377,122 @@ class ExpertSearchServiceTest {
         val filter = ((request["query"] as Map<*, *>)["bool"] as Map<*, *>)["filter"] as List<*>
         assertEquals(1, filter.size, "generic searchExpertsWithEmail must keep only exists email")
         assertFalse(filter.toString().contains("expertClassification"), "generic query must not carry the sendable term")
+    }
+
+    // ──── I2: 旧首发链路显式类型集合（child 02） ─────────────────────────────
+
+    @Test
+    fun `searchExpertsByTypesWithEmail filter is exactly exists email plus types filter (I2-4)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "hits": {
+                "total": {"value": 1},
+                "hits": [
+                  {
+                    "_source": {
+                      "orcidId": "0001",
+                      "email": "a@example.com",
+                      "givenNames": "Ada",
+                      "familyNames": "Lovelace",
+                      "expertClassification": {
+                        "type": "PRODUCTION_RND",
+                        "productionScore": 80,
+                        "researchScore": 20,
+                        "positiveEvidence": ["RND_PRODUCTION"],
+                        "negativeEvidence": [],
+                        "version": "rnd-v2-2026",
+                        "sourceFingerprint": "fp",
+                        "classifiedAt": "2026-08-01 12:00:00"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+            """.trimIndent()
+        )
+        val entityCaptor = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val types = listOf("PRODUCTION_RND", "OUT_OF_SCOPE")
+        val result = service.searchExpertsByTypesWithEmail(1, expertTypes = types)
+
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+            eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        val request = entityCaptor.value.body as Map<*, *>
+        val query = request["query"] as Map<*, *>
+        val bool = query["bool"] as Map<*, *>
+        val filter = bool["filter"] as List<*>
+        assertEquals(2, filter.size, "I2-4: types query must carry exactly exists email + types filter")
+        assertTrue(filter.toString().contains("exists") && filter.toString().contains("email"))
+        assertEquals(
+            ExpertSearchService.expertTypesFilter(types),
+            filter.firstOrNull { item -> item == ExpertSearchService.expertTypesFilter(types) }
+        )
+        // I2-4: 不得混入 sendable/version 等任何其他条件（M-1）。
+        assertFalse(filter.toString().contains("sendable"), "I2-4: types query must not carry the sendable gate")
+        assertFalse(filter.toString().contains("version"), "I2-4: types query must not carry the version gate")
+        // 排序与旧方法一致 —— CANDIDATE 使用 candidateValidatedAt。
+        val sort = request["sort"] as List<*>
+        assertTrue(sort.toString().contains("candidateValidatedAt"), "CANDIDATE sort must be candidateValidatedAt: $sort")
+
+        // 结果映射仍完整（含分类对象）。
+        assertEquals(1, result.experts.size)
+        assertEquals("0001", result.experts.single().orcidId)
+        assertEquals(ExpertType.PRODUCTION_RND, result.experts.single().expertClassification?.type)
+        assertEquals(1L, result.totalHits)
+    }
+
+    @Test
+    fun `searchExpertsByTypesWithEmail rejects empty expertTypes (I2-2)`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.searchExpertsByTypesWithEmail(1, expertTypes = emptyList())
+        }
+        assertTrue(ex.message!!.contains("expertTypes must not be empty"))
+    }
+
+    @Test
+    fun `searchExpertsByTypesWithEmail honors explicit level and its sort (I2-4)`() {
+        val body = mapper.readTree("""{"hits":{"total":{"value":0},"hits":[]}}""")
+        val entityCaptor = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_application/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val result = service.searchExpertsByTypesWithEmail(5, ExpertIndexLevel.APPLICATION, listOf("ACADEMIC_RND"))
+
+        assertEquals(0, result.experts.size)
+        assertEquals(0L, result.totalHits)
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_application/_search"),
+            eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        val request = entityCaptor.value.body as Map<*, *>
+        val filter = ((request["query"] as Map<*, *>)["bool"] as Map<*, *>)["filter"] as List<*>
+        assertEquals(
+            ExpertSearchService.expertTypesFilter(listOf("ACADEMIC_RND")),
+            filter.firstOrNull { item -> item == ExpertSearchService.expertTypesFilter(listOf("ACADEMIC_RND")) }
+        )
+        val sort = request["sort"] as List<*>
+        assertTrue(sort.toString().contains("applicationPromotedAt"), "APPLICATION sort must be applicationPromotedAt: $sort")
     }
 }

@@ -17,5 +17,7 @@ data class MailSchedulingProperties(
     val operatorStatusSyncCron: String = "-",
     val operatorStatusReconcileCron: String = "-",
     val aiQaExtractionCron: String = "-",
-    val aiQaExtractionMaxContacts: Int = 20
+    val aiQaExtractionMaxContacts: Int = 20,
+    /** I2-1：旧首发链路的研发类型集合。**无代码默认值**，未配置即空 → 启动时快速失败（I2-2）。 */
+    val initialOutreachExpertTypes: List<String> = emptyList()
 )

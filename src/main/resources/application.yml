@@ -77,6 +77,7 @@ talent-introduction:
     initial-outreach-batch-size: ${MAIL_SCHEDULING_INITIAL_OUTREACH_BATCH_SIZE:10}
     initial-outreach-send-interval-ms: ${MAIL_SCHEDULING_INITIAL_OUTREACH_SEND_INTERVAL_MS:30000}
     initial-outreach-send-jitter-ms: ${MAIL_SCHEDULING_INITIAL_OUTREACH_SEND_JITTER_MS:60000}
+    initial-outreach-expert-types: ${MAIL_SCHEDULING_INITIAL_OUTREACH_EXPERT_TYPES:}
     operator-status-sync-cron: ${MAIL_SCHEDULING_OPERATOR_STATUS_SYNC_CRON:-}
     ai-qa-extraction-cron: ${MAIL_SCHEDULING_AI_QA_EXTRACTION_CRON:-}
     ai-qa-extraction-max-contacts: ${MAIL_SCHEDULING_AI_QA_EXTRACTION_MAX_CONTACTS:20}

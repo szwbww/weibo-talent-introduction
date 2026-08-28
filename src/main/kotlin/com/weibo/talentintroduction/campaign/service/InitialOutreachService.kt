@@ -4,7 +4,6 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
-import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
@@ -31,19 +30,29 @@ class InitialOutreachService(
     private val senderAccountBindingService: SenderAccountBindingService
 ) {
     fun sendInitialBatch(campaignId: Long, size: Int, taskExecutionId: Long? = null): InitialOutreachBatchResult {
-        val experts = expertSearchService.searchSendableExpertsWithEmail(size, ExpertIndexLevel.CANDIDATE).experts
+        // I2-2: 未配置即快速失败，绝不退化成"不限"。
+        val types = schedulingProperties.initialOutreachExpertTypes
+            .map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        require(types.isNotEmpty()) {
+            "未配置 talent-introduction.scheduling.initial-outreach-expert-types，旧首发链路拒绝执行"
+        }
+        // I2-3: 白名单唯一权威在 ExpertSearchService。
+        types.forEach {
+            require(it in ExpertSearchService.ALLOWED_EXPERT_TYPES) { "Invalid expert type: $it" }
+        }
+        val experts = expertSearchService
+            .searchExpertsByTypesWithEmail(size, ExpertIndexLevel.CANDIDATE, types).experts
         val assignments = mutableListOf<SenderExpertAssignment>()
         val stock = senderAccountAssignmentService.loadBindingStock()
         val sentResults = mutableListOf<InitialOutreachSendResult>()
         var skipped = 0
 
         experts.forEachIndexed { index, expert ->
-            // I3-1/I3-4：发送前最后门禁 —— 查询/缓存/未来重构错误可能绕过硬门禁，创建 contact 前再次检查。
-            // null/false/旧策略版本均拒绝，计 skipped，不创建 contact、不渲染、不投递。
-            val classification = expert.expertClassification
-            if (classification?.sendable != true ||
-                classification.version !in ExpertClassificationService.ACCEPTED_CLASSIFICATION_VERSIONS
-            ) {
+            // I2-5：发送前内存门禁与查询同口径 —— UNCLASSIFIED = 分类对象/类型不存在；
+            // 创建 contact 前再次检查，查询/缓存/未来重构错误可能绕过。
+            val typeName = expert.expertClassification?.type?.name
+            val matched = types.any { if (it == "UNCLASSIFIED") typeName == null else typeName == it }
+            if (!matched) {
                 skipped += 1
                 return@forEachIndexed
             }

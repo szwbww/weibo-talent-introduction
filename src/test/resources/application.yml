@@ -63,6 +63,7 @@ talent-introduction:
     initial-outreach-cron: ${MAIL_SCHEDULING_INITIAL_OUTREACH_CRON:-}
     initial-outreach-campaign-id: ${MAIL_SCHEDULING_INITIAL_OUTREACH_CAMPAIGN_ID:0}
     initial-outreach-batch-size: ${MAIL_SCHEDULING_INITIAL_OUTREACH_BATCH_SIZE:10}
+    initial-outreach-expert-types: ${MAIL_SCHEDULING_INITIAL_OUTREACH_EXPERT_TYPES:}
   manual-outreach:
     send-interval-ms: ${MANUAL_OUTREACH_SEND_INTERVAL_MS:1000}
   academic-filter:

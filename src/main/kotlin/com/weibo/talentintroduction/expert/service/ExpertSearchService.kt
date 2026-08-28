@@ -1184,6 +1184,48 @@ class ExpertSearchService(
             )
         }
     }
+    /**
+     * I2-4: 旧首发链路专用 —— filter 只有两项：exists email 与研发类型集合。
+     * 不得追加任何其他条件（主计划 M-1：唯一收口点）。
+     * 调用方保证 expertTypes 非空（I2-2），故这里不处理空集合。
+     */
+    fun searchExpertsByTypesWithEmail(
+        size: Int,
+        level: ExpertIndexLevel = ExpertIndexLevel.CANDIDATE,
+        expertTypes: List<String>
+    ): ExpertSearchResult {
+        require(size in 1..1000) { "size must be between 1 and 1000" }
+        val typesFilter = expertTypesFilter(expertTypes)
+            ?: throw IllegalArgumentException("expertTypes must not be empty")
+
+        val requestBody = mapOf(
+            "size" to size,
+            "_source" to sourceFields(),
+            "query" to mapOf(
+                "bool" to mapOf(
+                    "filter" to listOf(
+                        mapOf("exists" to mapOf("field" to "email")),
+                        typesFilter
+                    )
+                )
+            ),
+            "sort" to sortFields(level)
+        )
+
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/${expertIndexService.indexName(level)}/_search",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return ExpertSearchResult(emptyList(), 0L)
+
+        val totalHits = response.path("hits").path("total").path("value").asLong(0L)
+        val experts = response.path("hits")
+            .path("hits")
+            .map { hit -> toExpertProfile(hit) }
+        return ExpertSearchResult(experts = experts, totalHits = totalHits)
+    }
+
 }
 
 data class ExpertSearchResult(
