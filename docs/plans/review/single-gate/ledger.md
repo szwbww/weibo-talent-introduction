@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-08-28/00-single-gate-master.md
+
+- Status: REPAIR_PLAN_READY
+- Review epoch: 1
+- Master plan: docs/plans/2026-08-28/00-single-gate-master.md (sha256: fb2e511d39b90da7a5d81057263b85899b97bdb2a586652e91eea371ed901184)
+- Governing master identity: sha256 fb2e511d39b90da7a5d81057263b85899b97bdb2a586652e91eea371ed901184; recorded identity commit 1f5a916489933fc9b2e8e469037fc912d55edd5d
+- Invoked master identity: SAME (sha256 fb2e511d39b90da7a5d81057263b85899b97bdb2a586652e91eea371ed901184)
+- Master identity state: CONSISTENT
+- Governing amendment: A1–A5, recorded in fast-p ledger (each includes master rule, reason, and HUMAN approval)
+- Amendments: A1–A5 in docs/plans/fast/single-gate/ledger.md
+- Fast-p ledger: docs/plans/fast/single-gate/ledger.md (sha256: 12f1b3e32ac68acd7bb0c8258bc0a66354fd380b6b046e40534fb9eef1b4f9f3)
+- Fast-p handoff: docs/plans/fast/single-gate/human-review-handoff.md (sha256: 674652aae67cf90d53a323e50c8e09322b2479bf40f2470185996a8e97980ea1)
+- Master base: de228e17cc0134a7c11dea7cbf82054e8d249f99
+- Final code head: 4636727749202052c6affd2550e5353139fcb4a1
+- Evidence parent before next commit: 225e75120bbb85303ce745b142623df1fd38a614
+- Previous evidence commit: 34e5a1e
+- Branch: fast/single-gate
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-single-gate
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: exact matching registered worktree, branch, READY_FOR_HUMAN_REVIEW ledger/handoff, five terminal children, existing evidence commits, and valid `de228e17cc0134a7c11dea7cbf82054e8d249f99..4636727749202052c6affd2550e5353139fcb4a1` ancestry; script was invoked from the selected worktree because the caller copy is in another registered worktree.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: FAIL
+- Machine report epoch: docs/plans/review/single-gate/machine-verification.md#epoch-1
+- Repair artifact: docs/plans/fix/00-single-gate-master/repair.md
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: human approval required to execute docs/plans/fix/00-single-gate-master/repair.md.
