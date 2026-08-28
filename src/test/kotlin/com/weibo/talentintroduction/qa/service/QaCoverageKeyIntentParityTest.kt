@@ -6,6 +6,8 @@ import com.weibo.talentintroduction.qa.domain.QaRule
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.nio.file.Files
+import java.nio.file.Path
 
 class QaCoverageKeyIntentParityTest {
     // 计划 02 (I-5) 例外集合：每条都必须写明理由，删掉理由即视为缺陷。
@@ -16,6 +18,14 @@ class QaCoverageKeyIntentParityTest {
         // Workplace arrangement 与 Program overview 都同时带 work.travel_arrangement，
         // 后者已被 intent 引用，故这两条规则仍可达；本键无实害，暂不删。
         "work.relocation"
+    )
+
+    // 计划 11 (T-3) 例外集合：intent 可达但没有任何迁移规则占用（"可达但无主"）的键。
+    // 理由：本轮无经需求方确认的权威正文，编造对外承诺违反可追溯原则；补上正文后
+    // 须从本集合删除。该集合是随 12/13/14 变短的活文件——每次有新事实落库都应变短，
+    // 绝不允许变长来"让测试变绿"。
+    private val knownUnownedKeys = setOf(
+        "publication.authorship"
     )
 
     // matchIntentsWithSpans 对 next_stages 的 timing 组合（asksTiming 且无工作类
@@ -98,5 +108,57 @@ class QaCoverageKeyIntentParityTest {
         val nextStages = AiReplyIntentCatalog.definitions.single { it.key == "application.next_stages" }
         val assigned = AiReplyIntentCatalog.assignRulesToIntents(listOf(rule), listOf(nextStages))
         assertEquals(listOf(rule), assigned["application.next_stages"])
+    }
+
+    @Test
+    fun `every intent reachable coverage key is owned by at least one migration seeded rule`() {
+        // 计划 11 (T-3): I-2 的对称缺陷——intent 认得出问题，却没有任何事实能供证，
+        // 该 intent 恒 MISSING 且不体现为任何报错。V109 占用 6 个"可达但无主"键，
+        // 剩 publication.authorship 显式留空（本轮无经需求方确认的权威正文）。
+        val migrationDir = Path.of("src/main/resources/db/migration")
+        val ownedKeys = mutableSetOf<String>()
+        Files.newDirectoryStream(migrationDir, "*.sql").use { stream ->
+            stream.sorted().forEach { file ->
+                ownedKeys += coverageKeysOwnedBy(Files.readString(file))
+            }
+        }
+        val unowned = (intentReferencedKeys() - knownUnreferencedKeys) - ownedKeys
+        assertEquals(
+            knownUnownedKeys,
+            unowned,
+            "intent-reachable keys with no migration-seeded rule: $unowned"
+        )
+    }
+
+    // 提取单份迁移里被赋给某条规则的 coverage keys：
+    // 1) coverage_keys = '...' 赋值（UPDATE 与 INSERT 的 SET 均适用）；
+    // 2) INSERT 内联覆盖键列——列清单含 coverage_keys 的 INSERT 语句，
+    //    其取值是 SELECT 值列表中紧跟 WHERE NOT EXISTS 之前的最后一个字面量。
+    // 与计划 11 T-2 断言 7 的提取口径一致（按语句切分、先剥离行注释）。
+    private fun coverageKeysOwnedBy(sql: String): Set<String> {
+        val clean = sql.lineSequence().joinToString("\n") { it.replace(Regex("--.*"), "") }
+        val owned = mutableSetOf<String>()
+
+        Regex("coverage_keys\\s*=\\s*'([^']*)'").findAll(clean).forEach { m ->
+            owned += m.groupValues[1].split(",").map { it.trim() }.filter { it.isNotEmpty() }
+        }
+
+        clean.split(Regex(";\\s*\n")).forEach { stmt ->
+            if ("INSERT INTO qa_rule" !in stmt) return@forEach
+            val cols = Regex("\\(([^)]*)\\)\\s*(SELECT|VALUES)").find(stmt)
+                ?.groupValues?.get(1) ?: return@forEach
+            if ("coverage_keys" !in cols) return@forEach
+            val lines = stmt.lines()
+            for (i in lines.indices) {
+                if ("WHERE NOT EXISTS" in lines[i] && i > 0) {
+                    val literals = Regex("'([^']*)'").findAll(lines[i - 1]).toList()
+                    if (literals.isNotEmpty()) {
+                        owned += literals.last().groupValues[1]
+                            .split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                    }
+                }
+            }
+        }
+        return owned
     }
 }
