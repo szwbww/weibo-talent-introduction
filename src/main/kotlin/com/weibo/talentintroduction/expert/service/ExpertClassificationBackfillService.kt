@@ -2,7 +2,6 @@ package com.weibo.talentintroduction.expert.service
 
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
-import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -40,9 +39,7 @@ data class ExpertClassificationBackfillResult(
     val mode: BackfillMode,
     val policyVersion: String,
     val scanned: Long,
-    val classifiedByType: Map<String, Long>,
-    val sendable: Long,
-    val notSendable: Long,
+    val byType: Map<String, Long>,
     val writeSuccess: Long,
     val writeNoop: Long,
     val writeFailure: Long,
@@ -251,27 +248,23 @@ class ExpertClassificationBackfillService(
 
     private fun progressMessage(request: ExpertClassificationBackfillRequest, counters: BackfillCounters): String =
         if (request.mode == BackfillMode.DRY_RUN) {
-            "已扫描 ${counters.scanned}，可发信 ${counters.sendable}，不可发信 ${counters.notSendable}"
+            "已扫描 ${counters.scanned}，${counters.byType.entries.joinToString("，") { "${it.key} ${it.value}" }}"
         } else {
             "已扫描 ${counters.scanned}，成功 ${counters.writeSuccess}，失败 ${counters.writeFailure}"
         }
 
     private class BackfillCounters {
         var scanned: Long = 0
-        var sendable: Long = 0
-        var notSendable: Long = 0
         var writeSuccess: Long = 0
         var writeNoop: Long = 0
         var writeFailure: Long = 0
         var skippedMissingDocId: Long = 0
-        val classifiedByType: MutableMap<String, Long> =
-            ExpertType.values().associateTo(mutableMapOf()) { it.name to 0L }
+        val byType: MutableMap<String, Long> = linkedMapOf()
         val reasonCounts: MutableMap<String, Long> = mutableMapOf()
 
         fun record(classification: ExpertClassification) {
             scanned++
-            classifiedByType[classification.type.name] = (classifiedByType[classification.type.name] ?: 0L) + 1
-            if (classification.sendable) sendable++ else notSendable++
+            byType.merge(classification.type.name, 1L) { a, b -> a + b }
             classification.negativeEvidence.forEach { code ->
                 reasonCounts[code] = (reasonCounts[code] ?: 0L) + 1
             }
@@ -288,13 +281,11 @@ class ExpertClassificationBackfillService(
             "mode" to requireNotNull(request.mode).name,
             "policyVersion" to ExpertClassificationService.VERSION,
             "scanned" to scanned,
-            "sendable" to sendable,
-            "notSendable" to notSendable,
+            "byType" to LinkedHashMap(byType),
             "writeSuccess" to writeSuccess,
             "writeNoop" to writeNoop,
             "writeFailure" to writeFailure,
             "skippedMissingDocId" to skippedMissingDocId,
-            "classifiedByType" to classifiedByType,
             "reasonCounts" to reasonCounts
         )
 
@@ -309,9 +300,7 @@ class ExpertClassificationBackfillService(
                 mode = requireNotNull(request.mode),
                 policyVersion = ExpertClassificationService.VERSION,
                 scanned = scanned,
-                classifiedByType = classifiedByType,
-                sendable = sendable,
-                notSendable = notSendable,
+                byType = byType,
                 writeSuccess = writeSuccess,
                 writeNoop = writeNoop,
                 writeFailure = writeFailure,

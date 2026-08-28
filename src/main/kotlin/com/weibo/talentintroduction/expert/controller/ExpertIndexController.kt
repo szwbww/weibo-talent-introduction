@@ -401,7 +401,6 @@ data class ExpertIndexResponse(
     val worksCount: Int? = null,
     val enrichedAt: String? = null,
     val expertType: String? = null,
-    val expertSendable: Boolean? = null,
     val expertProductionScore: Int? = null,
     val expertResearchScore: Int? = null
 ) {
@@ -451,7 +450,6 @@ data class ExpertIndexResponse(
                 worksCount = expert.worksCount,
                 enrichedAt = expert.enrichedAt,
                 expertType = expert.expertClassification?.type?.name,
-                expertSendable = expert.expertClassification?.sendable,
                 expertProductionScore = expert.expertClassification?.productionScore,
                 expertResearchScore = expert.expertClassification?.researchScore
             )

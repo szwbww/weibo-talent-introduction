@@ -768,7 +768,7 @@ class ExpertIndexWriterServiceTest {
         assertTrue(dataNode.path("doc").has("expertClassification"))
         val cls = dataNode.path("doc").path("expertClassification")
         assertEquals("PRODUCTION_RND", cls.path("type").asText())
-        assertEquals(true, cls.path("sendable").asBoolean())
+        assertFalse(cls.has("sendable"), "serialized classification must not contain sendable")
         assertEquals(60, cls.path("productionScore").asInt())
         assertEquals(40, cls.path("researchScore").asInt())
         assertEquals("RESEARCH_RECENT_PUBLICATION", cls.path("positiveEvidence").get(0).asText())
@@ -776,16 +776,16 @@ class ExpertIndexWriterServiceTest {
         assertEquals("rnd-v1-2026", cls.path("version").asText())
         assertEquals("a".repeat(64), cls.path("sourceFingerprint").asText())
         assertEquals("2026-01-15 10:30:00", cls.path("classifiedAt").asText(), "classifiedAt 必须 yyyy-MM-dd HH:mm:ss 以匹配 mapping")
-        assertEquals(9, cls.size())
+        assertEquals(8, cls.size())
     }
 
     @Test
     fun `classificationNode output matches backfill node shape (I3-4)`() {
         // 子计划 03：晋升写入路径的序列化必须与回填路径（bulkUpdateExpertClassifications）逐字一致。
         val node = service.classificationNode(classification(ExpertType.PRODUCTION_RND))
-        assertEquals(9, node.size())
+        assertEquals(8, node.size())
         assertEquals("PRODUCTION_RND", node.path("type").asText())
-        assertEquals(true, node.path("sendable").asBoolean())
+        assertFalse(node.has("sendable"), "classificationNode must not contain sendable")
         assertEquals(60, node.path("productionScore").asInt())
         assertEquals(40, node.path("researchScore").asInt())
         assertEquals("RESEARCH_RECENT_PUBLICATION", node.path("positiveEvidence").get(0).asText())

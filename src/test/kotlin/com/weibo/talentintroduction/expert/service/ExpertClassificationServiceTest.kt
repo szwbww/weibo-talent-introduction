@@ -61,39 +61,31 @@ class ExpertClassificationServiceTest {
             classifiedAt = LocalDateTime.of(2026, 1, 15, 10, 30)
         )
 
-    // ---- I1-1: 类型与可发信派生关系唯一 ----
+    // ---- I1-1: 类型与序列化 ----
 
     @ParameterizedTest
     @CsvSource(
-        "PRODUCTION_RND,true",
-        "ACADEMIC_RND,true",
-        "HYBRID_RND,true",
-        "SERVICE_ONLY,false",
-        "OUT_OF_SCOPE,false",
-        "UNKNOWN,false"
+        "PRODUCTION_RND",
+        "ACADEMIC_RND",
+        "HYBRID_RND",
+        "SERVICE_ONLY",
+        "OUT_OF_SCOPE",
+        "UNKNOWN"
     )
-    fun `sendable is true only for the first three types (I1-1)`(typeName: String, sendable: String) {
+    fun `classification retains the given type (I1-1)`(typeName: String) {
         val type = ExpertType.valueOf(typeName)
-        assertEquals(sendable.toBoolean(), classification(type).sendable)
+        assertEquals(type, classification(type).type)
     }
 
     @Test
-    fun `constructor exposes no caller-supplied sendable parameter (I1-1)`() {
-        val hasSendableParameter = ExpertClassification::class.constructors.any { constructor ->
-            constructor.parameters.any { it.name == "sendable" }
-        }
-        assertFalse(hasSendableParameter, "ExpertClassification constructor must not accept sendable")
-    }
-
-    @Test
-    fun `json serialization still emits derived sendable (I1-1)`() {
+    fun `json serialization emits type and no sendable key (I1-1)`() {
         val mapper = ObjectMapper().registerModule(JavaTimeModule())
         val json = mapper.writeValueAsString(classification(ExpertType.PRODUCTION_RND))
-        assertTrue(json.contains("\"sendable\":true"), "serialized JSON must contain sendable: $json")
+        assertTrue(json.contains("\"type\":\"PRODUCTION_RND\""), "serialized JSON must contain type: $json")
+        assertFalse(json.contains("sendable"), "serialized JSON must not contain sendable: $json")
 
         val node = mapper.readTree(json)
         assertEquals("PRODUCTION_RND", node.path("type").asText())
-        assertTrue(node.path("sendable").asBoolean())
     }
 
     // ---- I1-2: 临床职业最高优先级 ----
@@ -112,7 +104,6 @@ class ExpertClassificationServiceTest {
             )
         )
         assertEquals(ExpertType.SERVICE_ONLY, result.type)
-        assertFalse(result.sendable)
         assertTrue(result.negativeEvidence.contains("CLINICAL_ROLE"))
     }
 
@@ -129,7 +120,6 @@ class ExpertClassificationServiceTest {
             )
         )
         assertNotEquals(ExpertType.SERVICE_ONLY, result.type)
-        assertTrue(result.sendable)
         assertFalse(result.negativeEvidence.contains("CLINICAL_ROLE"))
     }
 
@@ -147,7 +137,6 @@ class ExpertClassificationServiceTest {
             )
         )
         assertEquals(ExpertType.OUT_OF_SCOPE, result.type)
-        assertFalse(result.sendable)
         assertTrue(result.negativeEvidence.contains("MEDICAL_DOMAIN_NO_WHITELIST"))
     }
 
@@ -169,7 +158,6 @@ class ExpertClassificationServiceTest {
             )
 
             assertEquals(ExpertType.OUT_OF_SCOPE, result.type, affiliation)
-            assertFalse(result.sendable, affiliation)
             assertTrue(result.negativeEvidence.contains("MEDICAL_DOMAIN_NO_WHITELIST"), affiliation)
         }
     }
@@ -187,11 +175,9 @@ class ExpertClassificationServiceTest {
 
         val drug = base.copy(employment = "drug discovery researcher")
         assertEquals(ExpertType.ACADEMIC_RND, service.classify(drug).type)
-        assertTrue(service.classify(drug).sendable)
 
         val device = base.copy(researchFields = "medical device")
         assertEquals(ExpertType.ACADEMIC_RND, service.classify(device).type)
-        assertTrue(service.classify(device).sendable)
     }
 
     // ---- A1-1 人工验收样本 ----
@@ -208,7 +194,6 @@ class ExpertClassificationServiceTest {
             )
         )
         assertEquals(ExpertType.SERVICE_ONLY, surgeon.type)
-        assertFalse(surgeon.sendable)
 
         // ② 药物研发科研人员：大学实验室、近期论文、专利外的学术信号
         val academic = service.classify(
@@ -222,7 +207,6 @@ class ExpertClassificationServiceTest {
             )
         )
         assertEquals(ExpertType.ACADEMIC_RND, academic.type)
-        assertTrue(academic.sendable)
 
         // ③ 医疗科技公司研发工程师，医疗器械主题 + 专利
         val production = service.classify(
@@ -233,7 +217,6 @@ class ExpertClassificationServiceTest {
             )
         )
         assertEquals(ExpertType.PRODUCTION_RND, production.type)
-        assertTrue(production.sendable)
 
         // ④ 非医学领域的科研人员
         val systems = service.classify(
@@ -245,12 +228,10 @@ class ExpertClassificationServiceTest {
             )
         )
         assertEquals(ExpertType.ACADEMIC_RND, systems.type)
-        assertTrue(systems.sendable)
 
         // ⑤ 除 ORCID 外所有分类输入为空
         val unknown = service.classify(profile())
         assertEquals(ExpertType.UNKNOWN, unknown.type)
-        assertFalse(unknown.sendable)
     }
 
     // ---- I1-4: 阈值、封顶、确定性与指纹 ----
@@ -266,7 +247,6 @@ class ExpertClassificationServiceTest {
         val at = service.classify(profile(employment = "R&D Engineer", researchFields = "drug development"))
         assertEquals(50, at.productionScore)
         assertEquals(ExpertType.PRODUCTION_RND, at.type)
-        assertTrue(at.sendable)
     }
 
     @Test
@@ -388,7 +368,6 @@ class ExpertClassificationServiceTest {
     fun `chinese clinical and medical domain terms match`() {
         val clinician = service.classify(profile(employment = "外科医生"))
         assertEquals(ExpertType.SERVICE_ONLY, clinician.type)
-        assertFalse(clinician.sendable)
 
         val medicalOnly = service.classify(
             profile(
@@ -412,13 +391,11 @@ class ExpertClassificationServiceTest {
             )
         )
         assertEquals(ExpertType.ACADEMIC_RND, drug.type)
-        assertTrue(drug.sendable)
 
         val device = service.classify(
             profile(employment = "生物医学工程", patentTitles = listOf("一种医疗器械"))
         )
         assertEquals(ExpertType.PRODUCTION_RND, device.type)
-        assertTrue(device.sendable)
     }
 
     // ---- 证据与其余优先级 ----
@@ -462,14 +439,12 @@ class ExpertClassificationServiceTest {
         )
         // production: 岗位 35 + 白名单 15 + 专利 45 = 95；research: 35+25+15+20 = 95
         assertEquals(ExpertType.HYBRID_RND, result.type)
-        assertTrue(result.sendable)
     }
 
     @Test
     fun `service position with insufficient scores is SERVICE_ONLY`() {
         val result = service.classify(profile(employment = "Customer Service Representative"))
         assertEquals(ExpertType.SERVICE_ONLY, result.type)
-        assertFalse(result.sendable)
         assertEquals(listOf("SERVICE_ROLE"), result.negativeEvidence)
     }
 

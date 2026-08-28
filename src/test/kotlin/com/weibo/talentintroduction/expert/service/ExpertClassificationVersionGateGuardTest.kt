@@ -14,10 +14,9 @@ import java.nio.file.Paths
  * 与 `ACCEPTED_CLASSIFICATION_VERSIONS` 后，发信判定不再做版本比较 —— 白名单恒为空集。
  *
  * 用例 2（I4-1 / 主计划 M-1 机器判据）：`expertClassification.sendable` /
- * `classification.sendable` 的读取位置必须恰好等于 [ALLOWED_SENDABLE_SITES] 四个文件
- * （派生属性定义 / 序列化 / 回填统计 / API DTO，均为子计划 05 的非过滤用途）。
- * `ExpertSearchService.kt` / `BatchExecutionModels.kt` / `ManualInitialOutreachService.kt`
- * 出现在命中集合里即失败 —— 说明有第二个隐式门禁被重新引入。
+ * `classification.sendable` 的读取位置必须恰好等于 [ALLOWED_SENDABLE_SITES]。
+ * 子计划 05 已删除全部四处读取（派生属性定义 / 序列化 / 回填统计 / API DTO），
+ * 白名单恒为空集 —— 任何文件命中即失败，说明 sendable 读取被重新引入。
  *
  * 不扫描回填/管理面对 `request.version` 或 `term` map 的目标版本比较（I5a2-11）：
  * 那些语义是「还没到新版本」，必须钉死 `VERSION`。
@@ -33,23 +32,18 @@ class ExpertClassificationVersionGateGuardTest {
 
     /**
      * 白名单：允许读取 `expertClassification.sendable` / `classification.sendable`（含派生属性
-     * 定义）的文件集合。04 之后 sendable 不再参与任何发信判定，只剩四个非过滤用途
-     * （主计划 M-1 的机器判据）；子计划 05 收尾后白名单应为空集。
+     * 定义）的文件集合。子计划 05 已清理全部四处读取（派生属性 / 序列化 / 回填统计 / API DTO），
+     * 白名单恒为空集（主计划 M-1 的机器判据）。
      */
-    private val ALLOWED_SENDABLE_SITES: Set<String> = setOf(
-        "ExpertClassification.kt", // 派生属性自身的定义（type ∈ SENDABLE_TYPES）
-        "ExpertIndexWriterService.kt", // 序列化（子计划 05 才删）
-        "ExpertClassificationBackfillService.kt", // 统计计数（子计划 05 才改）
-        "ExpertIndexController.kt" // API DTO（子计划 05 才删）
-    )
+    private val ALLOWED_SENDABLE_SITES: Set<String> = emptySet()
 
     private val sourceRoot = Paths.get("src/main/kotlin")
 
     private val COMPARISON_OPERATOR = Regex("""(==|!=|!in|\bin\b|<=|>=|>|<)""")
 
     /** 匹配「读取 classification 对象上的 sendable」的位置：`expertClassification.sendable` /
-     *  `expertClassification?.sendable` / `classification.sendable`，以及 ExpertClassification.kt
-     *  内派生属性的声明（`sendable: Boolean`）。 */
+     *  `expertClassification?.sendable` / `classification.sendable`，以及已删除的派生属性
+     *  声明（`sendable: Boolean`）。 */
     private val SENDABLE_READ = Regex("""[Cc]lassification(\?)?\.sendable|sendable\s*:\s*Boolean""")
 
     private data class Hit(val path: String, val lineNumber: Int, val text: String)
@@ -120,8 +114,8 @@ class ExpertClassificationVersionGateGuardTest {
             appendLine("src/main/kotlin 下读取 expertClassification.sendable / classification.sendable 的位置必须恰好等于白名单。")
             appendLine("期望白名单：$ALLOWED_SENDABLE_SITES")
             appendLine("实际命中文件：$hitFiles")
-            appendLine("整改指引：发信判定已统一到研发类型集合；sendable 读取只允许出现在子计划 05 的")
-            appendLine("  四个非过滤位置（派生属性定义 / 序列化 / 回填统计 / API DTO）。")
+            appendLine("整改指引：发信判定已统一到研发类型集合；子计划 05 已删除全部 sendable 读取，")
+            appendLine("  白名单恒为空集。")
         }
         assertEquals(ALLOWED_SENDABLE_SITES, hitFiles, message)
     }

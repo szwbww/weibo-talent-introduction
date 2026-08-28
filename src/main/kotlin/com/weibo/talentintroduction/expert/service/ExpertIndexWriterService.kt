@@ -352,7 +352,6 @@ class ExpertIndexWriterService(
     fun classificationNode(classification: ExpertClassification): JsonNode =
         objectMapper.createObjectNode().apply {
             put("type", classification.type.name)
-            put("sendable", classification.sendable)
             put("productionScore", classification.productionScore)
             put("researchScore", classification.researchScore)
             putArray("positiveEvidence").apply { classification.positiveEvidence.forEach { add(it) } }

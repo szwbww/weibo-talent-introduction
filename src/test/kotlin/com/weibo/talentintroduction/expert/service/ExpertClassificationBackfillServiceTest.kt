@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -162,14 +163,12 @@ class ExpertClassificationBackfillServiceTest {
 
         Mockito.verify(indexWriter, Mockito.never()).bulkUpdateExpertClassifications(anyValue(ExpertIndexLevel.CANDIDATE), anyList())
         assertEquals(3L, result.scanned)
-        assertEquals(1L, result.classifiedByType[ExpertType.PRODUCTION_RND.name])
-        assertEquals(1L, result.classifiedByType[ExpertType.ACADEMIC_RND.name])
-        assertEquals(0L, result.classifiedByType[ExpertType.HYBRID_RND.name])
-        assertEquals(0L, result.classifiedByType[ExpertType.SERVICE_ONLY.name])
-        assertEquals(0L, result.classifiedByType[ExpertType.OUT_OF_SCOPE.name])
-        assertEquals(1L, result.classifiedByType[ExpertType.UNKNOWN.name])
-        assertEquals(2L, result.sendable)
-        assertEquals(1L, result.notSendable)
+        assertEquals(1L, result.byType[ExpertType.PRODUCTION_RND.name])
+        assertEquals(1L, result.byType[ExpertType.ACADEMIC_RND.name])
+        assertNull(result.byType[ExpertType.HYBRID_RND.name])
+        assertNull(result.byType[ExpertType.SERVICE_ONLY.name])
+        assertNull(result.byType[ExpertType.OUT_OF_SCOPE.name])
+        assertEquals(1L, result.byType[ExpertType.UNKNOWN.name])
         assertEquals(0L, result.writeSuccess)
         assertEquals(0L, result.writeNoop)
         assertEquals(0L, result.writeFailure)
@@ -178,14 +177,8 @@ class ExpertClassificationBackfillServiceTest {
         assertEquals(3, result.taskSuccessCount)
         assertEquals(0, result.taskFailureCount)
 
-        // I2-6 恒等式：六类之和 == scanned；sendable == 前三类之和
-        assertEquals(result.scanned, result.classifiedByType.values.sum())
-        assertEquals(
-            result.sendable,
-            result.classifiedByType[ExpertType.PRODUCTION_RND.name]!! +
-                result.classifiedByType[ExpertType.ACADEMIC_RND.name]!! +
-                result.classifiedByType[ExpertType.HYBRID_RND.name]!!
-        )
+        // I2-6 恒等式：各类型计数之和 == scanned
+        assertEquals(result.scanned, result.byType.values.sum())
 
         // 每批 + 终态进度都以真实 executionId 写
         val progressCaptor = ArgumentCaptor.forClass(TaskProgress::class.java)
@@ -253,7 +246,8 @@ class ExpertClassificationBackfillServiceTest {
         assertTrue(result.wasCancelled)
         assertEquals("CANCELLED", result.taskFinalStatus)
         assertEquals(2L, result.scanned)
-        assertEquals(2L, result.sendable)
+        assertEquals(1L, result.byType[ExpertType.PRODUCTION_RND.name])
+        assertEquals(1L, result.byType[ExpertType.ACADEMIC_RND.name])
     }
 
     @Test
@@ -414,8 +408,8 @@ class ExpertClassificationBackfillServiceTest {
 
         assertEquals(1L, result.reasonCounts["INSUFFICIENT_EVIDENCE"])
         assertEquals(1L, result.reasonCounts["CLINICAL_ROLE"])
-        assertEquals(1L, result.classifiedByType[ExpertType.UNKNOWN.name])
-        assertEquals(1L, result.classifiedByType[ExpertType.SERVICE_ONLY.name])
+        assertEquals(1L, result.byType[ExpertType.UNKNOWN.name])
+        assertEquals(1L, result.byType[ExpertType.SERVICE_ONLY.name])
     }
 
     @Test

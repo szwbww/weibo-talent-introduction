@@ -4301,10 +4301,10 @@ class ManualInitialOutreachServiceTest {
     private fun classification(type: ExpertType): ExpertClassification =
         ExpertClassification(
             type = type,
-            productionScore = if (type in ExpertClassification.SENDABLE_TYPES) 60 else 0,
-            researchScore = if (type in ExpertClassification.SENDABLE_TYPES) 60 else 0,
+            productionScore = if (type in setOf(ExpertType.PRODUCTION_RND, ExpertType.ACADEMIC_RND, ExpertType.HYBRID_RND)) 60 else 0,
+            researchScore = if (type in setOf(ExpertType.PRODUCTION_RND, ExpertType.ACADEMIC_RND, ExpertType.HYBRID_RND)) 60 else 0,
             positiveEvidence = listOf("EVIDENCE"),
-            negativeEvidence = if (type in ExpertClassification.SENDABLE_TYPES) emptyList() else listOf("NOT_SENDABLE"),
+            negativeEvidence = if (type in setOf(ExpertType.PRODUCTION_RND, ExpertType.ACADEMIC_RND, ExpertType.HYBRID_RND)) emptyList() else listOf("NOT_SENDABLE"),
             version = ExpertClassificationService.VERSION,
             sourceFingerprint = "fp-$type",
             classifiedAt = LocalDateTime.of(2026, 8, 1, 12, 0)
