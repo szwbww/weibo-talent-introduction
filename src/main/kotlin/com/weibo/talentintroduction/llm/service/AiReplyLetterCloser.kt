@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.llm.service
 
+import com.weibo.talentintroduction.qa.service.QaCoverageKeyCatalog
 import org.slf4j.LoggerFactory
 
 /**
@@ -14,13 +15,18 @@ import org.slf4j.LoggerFactory
  *   1. 展开为 canonical order 的 claim 单元（跳过 OMIT；claims 为空的
  *      verbatim / operator / pending 答案作为独立单元保留）——I-1。
  *   2. `sourceRuleIds` 集合相等即同一事实，保留首次出现；空集合不参与去重——I-2。
- *   3. 主题归并：`intentKey.substringBefore('.')` 分组，主题顺序 = 该主题首个存活
- *      claim 的 canonical 位置，组内保持 canonical order；同组 text 单空格连接——I-3。
+ *   3. 主题归并（13 / c4）：先构造 `paragraphPlan` / 事实清单（T-1，id 用 `f<ruleId>`
+ *      或 `x<n>`、受控组经 `QaCoverageKeyCatalog.groupIdOf` 求值、frozen = {1,3,21,24}
+ *      或含占位符 / verbatim 正文、单主题事实数 > 4 拆 `<topic>` / `<topic>.2`、缺口挂
+ *      `gapCondition`），再试一次编排 LLM 调用（`AiReplyLetterOrchestrator`，六道校验）；
+ *      编排返回 null（LLM 不可用 / 超时 / 校验重试穷尽）时退回原确定性主题归并
+ *      （I-8），assemble 不失败。
  *   4. CTA 收口：复用 `AiReplyActionPolicy.detectActions`（不另写动作正则），保留
  *      全信最后一个动作句，其余动作句从文本移除；保留的动作必须在该次 assemble 的
  *      授权集合内，否则整体移除并记 warning——I-4。冻结事实正文（qa_rule id ∈
  *      {1,3,21,24}，G-1）、含 `${...}` 占位符的文本、verbatim 受审正文（I-5 / G-3）
- *      一律不切分、不删改；按 I-4 本应删除时放弃删除并记 warning 交人工。
+ *      一律不切分、不删改；按 I-4 本应删除时放弃删除并记 warning 交人工。编排路径
+ *      下本步同样执行，作为最后一道网。
  *   5. 逃生舱：全部存活条目为非 AI 生成（运营手写 / 安全模板）时直接返回原
  *      orderedAnswers，逐字不变——I-6。
  *
@@ -34,6 +40,9 @@ object AiReplyLetterCloser {
     private val FROZEN_RULE_IDS: Set<Long> = setOf(1L, 3L, 21L, 24L)
 
     private const val PLACEHOLDER_PREFIX = "\${"
+
+    /** T-1：单主题事实数超过该值时拆为 `<topic>` / `<topic>.2` 两个 plan 条目。 */
+    private const val MAX_FACTS_PER_PLAN_TOPIC = 4
 
     private data class Unit(
         val text: String,
@@ -51,10 +60,15 @@ object AiReplyLetterCloser {
     /**
      * 整封收口。`allowedActions` 传 null 表示本次 assemble 取不到授权集合：
      * 按 T-3 降级为「保留最后一处动作、不校验授权」，并记 warning。
+     *
+     * `orchestration` 为编排尝试的可测接缝（T-4 / I-8）：null 时走
+     * `AiReplyLetterOrchestrator.instance`（Spring 装配的生产编排器）；编排返回 null
+     * 则退回 12 的确定性主题归并并记 warning，assemble 永不因编排失败而失败。
      */
     fun close(
         versions: List<TrustReplyItemVersion>,
-        allowedActions: Set<AiReplyAction>? = null
+        allowedActions: Set<AiReplyAction>? = null,
+        orchestration: OrchestrationAttempt? = null
     ): List<String> {
         // Step 5 (I-6): 逃生舱 —— 全部存活条目非 AI 生成（运营手写 / 安全模板）时，
         // 跳过收口，逐字返回原 orderedAnswers（composeLockedItems 既有语义：
@@ -67,12 +81,152 @@ object AiReplyLetterCloser {
         val units = expandUnits(versions)
         // Step 2 (I-2): 按 sourceRuleIds 集合去重，保留首次出现。
         val deduped = dedupBySourceRuleIds(units)
-        // Step 3 (I-3): 主题归并（c4 将只替换本步为一次编排 LLM 调用）。
-        val groups = groupByTopic(deduped)
-        // Step 4 (I-4 / I-5): CTA 收口。
+        // Step 3 (13 / c4): 构造 paragraphPlan → 一次编排 LLM 调用；失败退回确定性归并（I-8）。
+        val groups = orchestratedGroupsOrFallback(deduped, versions, allowedActions, orchestration)
+        // Step 4 (I-4 / I-5): CTA 收口（对确定性 / 编排两条路径同样执行）。
         val closedGroups = reconcileCta(groups, allowedActions)
         // 输出段落：同主题 text 单空格连接。
         return closedGroups.map { group -> group.joinToString(" ") { it.text } }
+    }
+
+    /**
+     * T-1 / T-4：从去重后的存活单元构造 `paragraphPlan` 并尝试一次编排；编排返回 null
+     * 或不可用时退回 12 的确定性主题归并（I-8）。
+     */
+    private fun orchestratedGroupsOrFallback(
+        deduped: List<Unit>,
+        versions: List<TrustReplyItemVersion>,
+        allowedActions: Set<AiReplyAction>?,
+        orchestration: OrchestrationAttempt?
+    ): List<List<Unit>> {
+        val (facts, plan, topicOrder) = buildPlan(deduped, versions)
+        if (plan.isEmpty()) {
+            return groupByTopic(deduped)
+        }
+        val attempt = orchestration ?: AiReplyLetterOrchestrator.instance?.let { instance ->
+            OrchestrationAttempt { f, p, t, a -> instance.orchestrate(f, p, t, a) }
+        }
+        if (attempt == null) {
+            // 无编排器可用（如无 Spring 上下文的纯单元测试）：纯确定性路径，不记 warning。
+            return groupByTopic(deduped)
+        }
+        val letter = attempt.attempt(facts, plan, topicOrder, allowedActions)
+        if (letter == null) {
+            log.warn(
+                "13-letter-orchestrator: orchestration returned null; using the deterministic closure (I-8)"
+            )
+            return groupByTopic(deduped)
+        }
+        return orchestratedGroups(letter, facts)
+    }
+
+    /**
+     * T-1：构造 PlanFact / ParagraphPlanEntry / topicOrder。
+     * - `id`：`f<ruleId>`（多规则按升序用 `+` 连接，编码整个去重身份集合）；无依据 /
+     *   运营自撰（sourceRuleIds 为空）用 `x<n>`（n = 存活单元序号）。
+     * - `controlled`：`QaCoverageKeyCatalog.groupIdOf(intentKey)` 求值（G1..G4 / null）。
+     * - `frozen`：沿用展开时的冻结判定（id ∈ {1,3,21,24} / 占位符 / verbatim）。
+     * - `required`：12 去重后存活的每条事实都必须恰好出现一次（I-3），恒为 true。
+     * - 单主题事实数 > 4 时按二级分类（intentKey 的 '.' 后段）拆为 `<topic>` / `<topic>.2`。
+     * - 缺口（非 OMIT 且展开后无任何存活单元的 request）以 `gapCondition` 挂在其主题
+     *   条目上，不独立成段（I-6）。当前锁定链保证非 OMIT 恒有正文，此处为协议完备性。
+     */
+    private fun buildPlan(
+        deduped: List<Unit>,
+        versions: List<TrustReplyItemVersion>
+    ): Triple<List<PlanFact>, List<ParagraphPlanEntry>, List<String>> {
+        val facts = deduped.mapIndexed { index, unit ->
+            PlanFact(
+                id = factIdOf(index, unit),
+                topic = unit.intentKey.substringBefore('.'),
+                body = unit.text,
+                controlled = QaCoverageKeyCatalog.groupIdOf(unit.intentKey),
+                frozen = unit.frozen,
+                required = true
+            )
+        }
+        val byTopic = linkedMapOf<String, MutableList<Pair<Int, Unit>>>()
+        deduped.forEachIndexed { index, unit ->
+            byTopic.getOrPut(unit.intentKey.substringBefore('.')) { mutableListOf() } += index to unit
+        }
+        val plan = mutableListOf<ParagraphPlanEntry>()
+        val topicOrder = mutableListOf<String>()
+        byTopic.forEach { (topic, entries) ->
+            val splits = if (entries.size > MAX_FACTS_PER_PLAN_TOPIC) {
+                splitTopic(topic, entries)
+            } else {
+                listOf(topic to entries)
+            }
+            splits.forEach { (planTopic, group) ->
+                topicOrder += planTopic
+                plan += ParagraphPlanEntry(
+                    topic = planTopic,
+                    factIds = group.map { (index, _) -> factIdOf(index, deduped[index]) }
+                )
+            }
+        }
+        versions.forEach { version ->
+            if (version.handling != TrustReplyItemHandling.OMIT &&
+                version.claims.isEmpty() &&
+                version.answerText.isBlank() &&
+                version.requestText.isNotBlank()
+            ) {
+                val gapTopic = "unanswered.request.${version.requestIndex}"
+                topicOrder += gapTopic
+                plan += ParagraphPlanEntry(gapTopic, emptyList(), version.requestText.trim())
+            }
+        }
+        return Triple(facts, plan, topicOrder)
+    }
+
+    private fun factIdOf(index: Int, unit: Unit): String =
+        if (unit.sourceRuleIds.isEmpty()) "x$index"
+        else "f" + unit.sourceRuleIds.sorted().joinToString("+")
+
+    /** T-1：单主题事实数 > 4 时按二级分类切分，同子主题的事实不跨段。 */
+    private fun splitTopic(
+        topic: String,
+        entries: List<Pair<Int, Unit>>
+    ): List<Pair<String, List<Pair<Int, Unit>>>> {
+        val cut = (MAX_FACTS_PER_PLAN_TOPIC until entries.size).firstOrNull { i ->
+            secondaryKey(entries[i].second) != secondaryKey(entries[i - 1].second)
+        } ?: MAX_FACTS_PER_PLAN_TOPIC
+        return listOf(topic to entries.take(cut), "$topic.2" to entries.drop(cut))
+    }
+
+    private fun secondaryKey(unit: Unit): String = unit.intentKey.substringAfter('.', "")
+
+    /**
+     * 把编排结果转回收口器第 4 步的单元组形态：每段一个单元；actionText（非空时）
+     * 追加到末段（同 `composeFromPlan` 约定），随后仍过一遍 CTA 收口作为最后一道网。
+     */
+    private fun orchestratedGroups(
+        letter: OrchestratedLetter,
+        facts: List<PlanFact>
+    ): List<List<Unit>> {
+        val factsById = facts.associateBy { it.id }
+        val paragraphs = letter.paragraphs.toMutableList()
+        if (!letter.actionText.isNullOrBlank() && paragraphs.isNotEmpty()) {
+            val last = paragraphs.size - 1
+            paragraphs[last] = paragraphs[last].copy(text = paragraphs[last].text + " " + letter.actionText.trim())
+        }
+        return paragraphs.map { paragraph ->
+            listOf(
+                Unit(
+                    text = paragraph.text,
+                    intentKey = paragraph.topic,
+                    sourceRuleIds = paragraph.factIds.flatMap { ruleIdsOf(it) }.distinct(),
+                    frozen = paragraph.factIds.any { factsById[it]?.frozen == true }
+                )
+            )
+        }
+    }
+
+    private fun ruleIdsOf(factId: String): List<Long> {
+        if (factId.startsWith("f")) {
+            return factId.removePrefix("f").split("+").mapNotNull { it.toLongOrNull() }
+        }
+        return emptyList()
     }
 
     private fun expandUnits(versions: List<TrustReplyItemVersion>): List<Unit> {

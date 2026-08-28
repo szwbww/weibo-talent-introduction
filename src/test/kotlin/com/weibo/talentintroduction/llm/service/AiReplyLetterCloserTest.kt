@@ -1,7 +1,13 @@
 package com.weibo.talentintroduction.llm.service
 
+import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 
 /**
  * 12-letter-closer 单测（T-4.1 ~ T-4.7）。
@@ -189,5 +195,80 @@ class AiReplyLetterCloserTest {
             listOf("Operator handwritten answer one.", "Operator handwritten answer two."),
             result
         )
+    }
+
+    // ── T-5.4 (I-8): 编排返回 null → 退回确定性收口，assemble 成功并记 warning ──
+
+    private fun captureCloserLogs(block: () -> Unit): List<String> {
+        val logger = LoggerFactory.getLogger(AiReplyLetterCloser::class.java) as Logger
+        val appender = ListAppender<ILoggingEvent>().apply {
+            context = logger.loggerContext
+            start()
+        }
+        logger.addAppender(appender)
+        val previousLevel = logger.level
+        logger.level = Level.WARN
+        try {
+            block()
+        } finally {
+            logger.level = previousLevel
+            logger.detachAppender(appender)
+            appender.stop()
+        }
+        return appender.list.map { it.formattedMessage }
+    }
+
+    private fun failingOrchestration() = OrchestrationAttempt { _, _, _, _ -> null }
+
+    @Test
+    fun `orchestration null falls back to deterministic closure with warning`() {
+        val step = version(
+            "Application steps text.",
+            listOf(AiReplyItemClaim("application.steps", "Application steps text.", listOf(1L)))
+        )
+        val commitment = version(
+            "Work commitment text.",
+            listOf(AiReplyItemClaim("work.time_commitment", "Work commitment text.", listOf(2L)))
+        )
+        val versions = listOf(step, commitment)
+        // 纯确定性路径（无编排尝试）。
+        val deterministic = AiReplyLetterCloser.close(versions, emptySet())
+
+        val logs = captureCloserLogs {
+            val result = AiReplyLetterCloser.close(versions, emptySet(), failingOrchestration())
+            // I-8：编排返回 null 时输出必须等于纯确定性结果，assemble 不失败。
+            assertEquals(deterministic, result)
+        }
+        // 编排未生效 → 一条 warning。
+        assertTrue(
+            logs.any { it.contains("13-letter-orchestrator") && it.contains("deterministic closure") },
+            logs.toString()
+        )
+    }
+
+    @Test
+    fun `successful orchestration supplies the paragraphs`() {
+        val step = version(
+            "Application steps text.",
+            listOf(AiReplyItemClaim("application.steps", "Application steps text.", listOf(1L)))
+        )
+        val commitment = version(
+            "Work commitment text.",
+            listOf(AiReplyItemClaim("work.time_commitment", "Work commitment text.", listOf(2L)))
+        )
+        val orchestrated = OrchestrationAttempt { _, _, _, _ ->
+            OrchestratedLetter(
+                paragraphs = listOf(
+                    OrchestratedParagraph("application", listOf("f1"), "Application steps text."),
+                    OrchestratedParagraph("work", listOf("f2"), "Work commitment text.")
+                ),
+                actionText = null
+            )
+        }
+
+        val result = AiReplyLetterCloser.close(listOf(step, commitment), emptySet(), orchestrated)
+
+        // T-4：编排成功 → 取其 paragraphs[].text（step 4 的 CTA 收口仍走一遍）。
+        assertEquals(listOf("Application steps text.", "Work commitment text."), result)
     }
 }
