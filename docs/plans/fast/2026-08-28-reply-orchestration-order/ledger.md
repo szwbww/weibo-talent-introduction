@@ -2,7 +2,7 @@
 
 - Status: RUNNING
 - Master plan: docs/plans/2026-08-28/10-reply-orchestration-order.md (commit 5a90e3e53e5fe8b40059b3090f086d6b36a09a01)
-- Amendments: N/A
+- Amendments: A1
 - Master base: de228e17cc0134a7c11dea7cbf82054e8d249f99
 - Branch: fast/2026-08-28-reply-orchestration-order
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-28T12:40:52Z
 - Current child: c2
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: c2 PLAN_CONFLICT — plan-12 mandated closer changes break 5 pre-existing tests in TrustReplyWorkbenchItemFlowTest.kt (not in the authorized 4-file list) that assert pre-12 raw text (per-item paragraphs, no dedup): `assemble accepts identical normalized answers across requests` :1341, `assemble accepts the same source rule bound to two requests` :1329, `assemble keeps similar answers from different claims in canonical order` :1351, `similar answers across items assemble despite paragraph and space variance` :1475, `multi claim item answerText keeps each claim as its own paragraph` :1392. Amendment A1 (widen c2 authorized files to include that test file) pending human approval. Implementer left the 4 authorized c2 files uncommitted in the worktree (execution.md documents this).
-- Resume from: c2 epoch 1 uncommitted implementation at worktree (A1 approval → commit amended plan, resume epoch 2)
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Baseline
 
@@ -30,7 +30,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | c1 | docs/plans/2026-08-28/11-fact-supply.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | none | 1 | LIGHT_PASS_WITH_NOTES | de228e17cc0134a7c11dea7cbf82054e8d249f99 | 97e414658b1fe9196271f607cf763853c04d5098 | 0 | — | 97e414658b1fe9196271f607cf763853c04d5098 | 4677f7784ac08fc0317fa09ccd1a848e28b6fad9 | RECORD_ONLY O-1 (verify-log): parity test had 5 pre-existing tests at base, not 3 — no deviation |
-| c2 | docs/plans/2026-08-28/12-letter-closer.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c1 | 1 | PENDING | — | — | 0 | — | — | — | 确定性收口，零新增 LLM 调用 |
+| c2 | docs/plans/2026-08-28/12-letter-closer.md | commit:53b5efc43cf59fc89b46cfa6393485e11584cbe2 | c1 | 2 | PENDING | 97e414658b1fe9196271f607cf763853c04d5098 | — | 0 | — | — | — | A1 amendment; epoch 1 PLAN_CONFLICT, implementation left uncommitted in worktree |
 | c3 | docs/plans/2026-08-28/14-workbench-concurrency.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | none | 1 | PENDING | — | — | 0 | — | — | — | 与 12 无依赖；串行排后 |
 | c4 | docs/plans/2026-08-28/13-letter-orchestrator.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c2 | 1 | PENDING | — | — | 0 | — | — | — | 一次编排 LLM 调用 + 六道校验 |
 | c5 | docs/plans/2026-08-28/15-workbench-three-step.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c3,c4 | 1 | PENDING | — | — | 0 | — | — | — | 三步界面 + 运营事实 |
@@ -40,3 +40,4 @@
 
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-08-28/12-letter-closer.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | commit:53b5efc43cf59fc89b46cfa6393485e11584cbe2 | 12 验证命令（全量 mvn test 门禁）+ I-2/I-3（去重/主题归并改变 raw 文本） | 5 条既有测试（TrustReplyWorkbenchItemFlowTest.kt）断言改造前原文形态，计划自身要求的改动必然打破它们；修复由计划唯一确定，纯测试文件授权，无产品改动 | HUMAN:批准 A1（把 TrustReplyWorkbenchItemFlowTest.kt 加入 c2 授权文件清单）2026-08-28T14:32:17Z |
