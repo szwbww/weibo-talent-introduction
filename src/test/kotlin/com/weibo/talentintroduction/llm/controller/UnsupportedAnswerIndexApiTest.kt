@@ -245,7 +245,7 @@ class UnsupportedAnswerIndexApiTest {
     }
 
     @Test
-    fun `live archive writes ACTIVE LIVE_SEND qualification from outbound mail record`() {
+    fun `live archive writes CANDIDATE LIVE_SEND qualification from outbound mail record`() {
         val service = service()
         val source = ResolvedTrustReplySource(
             source = TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, 55L),
@@ -285,7 +285,7 @@ class UnsupportedAnswerIndexApiTest {
         val expectedId = sha256("LIVE_INBOUND|55|live-request-0|live-version-1")
         server.expect(requestTo("$indexUrl/_create/$expectedId"))
             .andExpect(method(HttpMethod.PUT))
-            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.status").value("CANDIDATE"))
             .andExpect(jsonPath("$.sourceMode").value("LIVE"))
             .andExpect(jsonPath("$.sourceType").value("LIVE_INBOUND"))
             .andExpect(jsonPath("$.sourceId").value(55))

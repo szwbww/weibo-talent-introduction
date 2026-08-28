@@ -681,7 +681,11 @@ class UnsupportedAnswerIndexService(
     ): UnsupportedAnswerIndexDocument = baseDocument(
         source = source,
         version = version,
-        status = UnsupportedAnswerIndexStatus.ACTIVE,
+        // F-1 (I-5)：ACTIVE = 已由运营转化为 QA 事实（通道 B 完成）。新建的线上条目
+        // 尚未转化，必须以 CANDIDATE 入库——唯一 ACTIVE 写入方是通道 B 的
+        // activatePendingTopic()。否则线上历史回答会从通道 A 样例与通道 B 待转队列
+        // （均 CANDIDATE-only）中消失，且 UI 将其误标为「已转化」。
+        status = UnsupportedAnswerIndexStatus.CANDIDATE,
         sourceMode = UnsupportedAnswerIndexSourceMode.LIVE,
         sourceType = UnsupportedAnswerIndexSourceType.LIVE_INBOUND,
         qualificationType = UnsupportedAnswerIndexQualificationType.LIVE_SEND,

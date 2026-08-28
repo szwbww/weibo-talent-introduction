@@ -60,13 +60,15 @@ class UnsupportedAnswerIndexServiceTest {
         operatorInstruction: String = "Please say we will follow up next week.",
         status: UnsupportedAnswerIndexStatus = UnsupportedAnswerIndexStatus.CANDIDATE,
         sourceMode: UnsupportedAnswerIndexSourceMode = UnsupportedAnswerIndexSourceMode.TRAINING,
+        sourceType: UnsupportedAnswerIndexSourceType = UnsupportedAnswerIndexSourceType.TRAINING_MAIL,
+        qualificationType: UnsupportedAnswerIndexQualificationType = UnsupportedAnswerIndexQualificationType.TRAINING_EVALUATION,
         topic: String = "followup",
         finalParagraphText: String = "We will follow up next week.",
         editedByOperator: Boolean = false
     ) = UnsupportedAnswerIndexDocument(
         status = status,
         sourceMode = sourceMode,
-        sourceType = UnsupportedAnswerIndexSourceType.TRAINING_MAIL,
+        sourceType = sourceType,
         sourceId = 101L,
         sourceVersion = "training-101-v1",
         expertContactId = 202L,
@@ -82,7 +84,7 @@ class UnsupportedAnswerIndexServiceTest {
         answerHash = sha256("We will follow up next week."),
         model = "DEEPSEEK_V4_FLASH",
         generationKind = generationKind,
-        qualificationType = UnsupportedAnswerIndexQualificationType.TRAINING_EVALUATION,
+        qualificationType = qualificationType,
         qualificationId = "evaluation-1",
         approvedBy = "operator-1",
         createdAt = Instant.parse("2026-07-29T10:00:00Z"),
@@ -264,6 +266,30 @@ class UnsupportedAnswerIndexServiceTest {
         )
         assertEquals(UnsupportedAnswerArchiveStatus.SAVED, trainingResult.status)
         trainingServer.verify()
+    }
+
+    // F-2 (I-5 验收): TRAINING + ACTIVE 与 LIVE + CANDIDATE 均为合法
+    // status × sourceMode 组合——status 按「是否已转化」区分（CANDIDATE = 未转化，
+    // ACTIVE = 通道 B 转化完成），来源由 sourceMode 表达，两者不再绑死。
+    @Test
+    fun `create accepts TRAINING plus ACTIVE and LIVE plus CANDIDATE`() {
+        val service = service()
+        val server = mockServer(service)
+        val trainingActive = document(
+            status = UnsupportedAnswerIndexStatus.ACTIVE,
+            sourceMode = UnsupportedAnswerIndexSourceMode.TRAINING
+        )
+        val liveCandidate = document(
+            status = UnsupportedAnswerIndexStatus.CANDIDATE,
+            sourceMode = UnsupportedAnswerIndexSourceMode.LIVE,
+            sourceType = UnsupportedAnswerIndexSourceType.LIVE_INBOUND,
+            qualificationType = UnsupportedAnswerIndexQualificationType.LIVE_SEND
+        )
+        listOf(trainingActive, liveCandidate).forEach { expectCreated(server, it) }
+        listOf(trainingActive, liveCandidate).forEach { doc ->
+            assertEquals(UnsupportedAnswerIndexCreateOutcome.CREATED, service.create(doc).outcome)
+        }
+        server.verify()
     }
 
     // T-6.6: bootstrapIndex() 在 HEAD 成功时发出一次 PUT _mapping（方案 A）；
