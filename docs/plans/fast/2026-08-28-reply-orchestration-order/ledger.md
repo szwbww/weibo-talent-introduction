@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-28T12:40:52Z
-- Current child: c5
-- Waiting role: IMPLEMENTER
+- Current child: c6
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: c6 PLAN_CONFLICT (implementation committed e9e035e, 8/10 authorized files, ALL required commands pass 3004/0/0/5, node 765) — two seam conflicts: (1) T-4 channel-A injection site: plan assigns AiReplyDraftService.kt but the orchestration prompt is built in c4's AiReplyLetterOrchestrator.kt:457 buildPrompt (private); AiReplyDraftService.kt builds per-item prompts only and plan 13 forbids touching it for orchestration; (2) T-1 mandated es/trust_reply_unsupported_answer_v1.json change breaks unauthorized test UnsupportedAnswerIndexApiTest.kt:94 (`mapping is strict with only V1 fields and non-searchable bodies`) asserting exactly the 23 V1 fields. Amendment A3 (correct T-4 file to AiReplyLetterOrchestrator.kt + authorize wiring touch to AiReplyLetterCloser.kt if needed; authorize UnsupportedAnswerIndexApiTest.kt for the 23→26 field-set update) pending human approval.
+- Resume from: c6 epoch 1 committed e9e035e; A3 approval → epoch 2 (fix_round=0), complete T-4 at correct seam + mapping JSON + API test, second implementation commit
 
 ## Baseline
 
@@ -33,7 +33,7 @@
 | c2 | docs/plans/2026-08-28/12-letter-closer.md | commit:53b5efc43cf59fc89b46cfa6393485e11584cbe2 | c1 | 2 | LIGHT_PASS | 97e414658b1fe9196271f607cf763853c04d5098 | e3217e5079616839e514fe54d45b42a073035219 | 0 | — | e3217e5079616839e514fe54d45b42a073035219 | 4aacd7e6196dfe0a13e293fac256015c6a1e7e9f | A1 amendment; epoch 1 PLAN_CONFLICT (5 pre-existing ItemFlow tests asserted pre-12 raw text), A1 approved 2026-08-28T14:32:17Z; O-1 (verify-log) |
 | c3 | docs/plans/2026-08-28/14-workbench-concurrency.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | none | 1 | LIGHT_PASS_WITH_NOTES | e3217e5079616839e514fe54d45b42a073035219 | 41aae5af28e81e31e0469937c96bd532f13dc784 | 0 | — | 41aae5af28e81e31e0469937c96bd532f13dc784 | 764d1a214c5b7cc5dbdb84af812350561a12f9de | RECORD_ONLY O-1..O-3 (verify-log): O-1 pre-existing 1-Hz flake unrelated; O-2 plan says 4 hasRequestMutationPending refs, base had 3 (canStartAssembly per-item guard), c3 unchanged; O-3 toggleResolve/persistDecisionUnlock full-PUT pre-existing |
 | c4 | docs/plans/2026-08-28/13-letter-orchestrator.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c2 | 1 | LIGHT_PASS_WITH_NOTES | 41aae5af28e81e31e0469937c96bd532f13dc784 | 889210e339c3c5dd2533777d35076bdfc5c65793 | 0 | — | 889210e339c3c5dd2533777d35076bdfc5c65793 | 53252a6905bf0b0ed7f12b714569dd087a7a0883 | RECORD_ONLY O-1 (verify-log): truncated G2-canonical prefix in a negative test fixture; plan grep gate passes |
-| c5 | docs/plans/2026-08-28/15-workbench-three-step.md | commit:4ecbff4613bc05dbffd3b9fcfefaa79ca810f40b | c3,c4 | 2 | PENDING | 889210e339c3c5dd2533777d35076bdfc5c65793 | — | 0 | — | — | — | A2 amendment; epoch 1 PLAN_CONFLICT preflight (no implementation); A2 approved 2026-08-28T17:01:32Z |
+| c5 | docs/plans/2026-08-28/15-workbench-three-step.md | commit:4ecbff4613bc05dbffd3b9fcfefaa79ca810f40b | c3,c4 | 2 | LIGHT_PASS_WITH_NOTES | 889210e339c3c5dd2533777d35076bdfc5c65793 | 0a2a8f58acf93da9b2b903082af938be92d2783e | 0 | — | 0a2a8f58acf93da9b2b903082af938be92d2783e | b3f30dfa6fc59e508ad68c7291244d14d077e306 | A2 amendment; epoch 1 PLAN_CONFLICT preflight; RECORD_ONLY O-1/O-2 (verify-log) |
 | c6 | docs/plans/2026-08-28/16-unsupported-index.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c4,c5 | 1 | PENDING | — | — | 0 | — | — | — | 索引入库放宽 + topic 检索 + 双通道 |
 
 ## Amendments
