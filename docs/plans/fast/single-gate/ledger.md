@@ -1,20 +1,20 @@
 # Fast-P Ledger — master: docs/plans/2026-08-28/00-single-gate-master.md
 
-- Status: PAUSED_FOR_HUMAN
+- Status: RUNNING
 - Master plan: docs/plans/2026-08-28/00-single-gate-master.md (commit 1f5a916489933fc9b2e8e469037fc912d55edd5d)
-- Amendments: A1
+- Amendments: A1, A2
 - Master base: de228e17cc0134a7c11dea7cbf82054e8d249f99
 - Branch: fast/single-gate
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-single-gate
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-28T15:30:17+0800
-- Current child: 04
-- Waiting role: N/A
+- Current child: 05
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: 子计划 04 实施提交 742d1a2（8 个授权文件，机器判据全过）触发两个未授权测试文件的既有用例失效：① ExpertClassificationServiceTest.kt:505 I5a2-10 用例断言被 I4-6 删除的 ACCEPTED_CLASSIFICATION_VERSIONS（编译失败）；② OperatorStatusWriteSeamGuardTest.kt:67 NoiseSite 行钉 :545 因 Task 1 删除偏移至 :498（陈旧排除自检失败）。两处修复唯一确定（删用例 / 更新行号），需人工批准 A2 授权后恢复。
-- Resume from: 04 epoch 1, base bc8a93762cca39c2542d79d1f3801589b6e4e155, implementation 742d1a27261d47c0aec00775a7da2f2dae92b7ee retained, next action A2 批准后验证
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Baseline
 
@@ -39,7 +39,8 @@ Execution order: 01, 02, 03 (independent) → 04 (depends 02,03) → 05 (depends
 | 01 | docs/plans/2026-08-28/01-lastpublicationyear-recovery.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | none | 1 | LIGHT_PASS_WITH_NOTES | 1f5a916489933fc9b2e8e469037fc912d55edd5d | cec6ce15ba3b41a6bf76e70eae503cdc5a925560 | 0 | — | cec6ce15ba3b41a6bf76e70eae503cdc5a925560 | 427222f | impl Impl01YearBackfill; verify Verify01Light; RECORD_ONLY O-1 (ExpertDiscoveryControllerTest helper local rename, functionally equivalent) |
 | 02 | docs/plans/2026-08-28/02-legacy-outreach-explicit-types.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | none | 1 | LIGHT_PASS_WITH_NOTES | cec6ce15ba3b41a6bf76e70eae503cdc5a925560 | 658b60c25370bd8dd974e6a98d6eacc48315943b | 0 | — | 658b60c25370bd8dd974e6a98d6eacc48315943b | — | impl Impl02LegacyTypes; verify Verify02Light; RECORD_ONLY O-1..O-3 (boundary harness docs, execution deviations, bookkeeping) |
 | 03 | docs/plans/2026-08-28/03-expert-types-required.md | commit:9058d028e9dcfe160d0bf74d45462c2f581af08f | none | 2 | LIGHT_PASS_WITH_NOTES | 658b60c25370bd8dd974e6a98d6eacc48315943b | bc8a93762cca39c2542d79d1f3801589b6e4e155 | 0 | — | bc8a93762cca39c2542d79d1f3801589b6e4e155 | — | impl Impl03TypesRequired; verify Verify03Light (epoch 2, A1 authorized 5 fixture files); RECORD_ONLY O-1 (boundary spans 02 evidence commit) |
-| 04 | docs/plans/2026-08-28/04-single-gate-remove-sendable.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | 02,03 | 1 | PAUSED_FOR_HUMAN | bc8a93762cca39c2542d79d1f3801589b6e4e155 | 742d1a27261d47c0aec00775a7da2f2dae92b7ee | 0 | — | 742d1a27261d47c0aec00775a7da2f2dae92b7ee | — | impl Impl04RemoveGates; 机器判据全过；2 个未授权测试文件待 A2 批准；隔离全量 2943 Kotlin 1 failure |
+| 04 | docs/plans/2026-08-28/04-single-gate-remove-sendable.md | commit:44c3d656cbab10d9f279f11d90725e9864198222 | 02,03 | 2 | LIGHT_PASS_WITH_NOTES | bc8a93762cca39c2542d79d1f3801589b6e4e155 | 742d1a27261d47c0aec00775a7da2f2dae92b7ee | 1 | 960fbe48e0b1ad7edd3f2ca68eccd29adafa654b | 960fbe48e0b1ad7edd3f2ca68eccd29adafa654b | — | impl Impl04RemoveGates; fix Impl04Fix2 round 1 FIXED; verify Verify04Light; epoch 1 PLAN_CONFLICT resolved by A2; machine criteria pass; RECORD_ONLY O-1..O-3 (grep criterion precision, bookkeeping docs, test-entry migration) |
+| 05 | docs/plans/2026-08-28/05-sendable-vocabulary-cleanup.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | 04 | 1 | PENDING | 960fbe48e0b1ad7edd3f2ca68eccd29adafa654b | — | 0 | — | — | — | 删 sendable 概念/序列化/统计/DTO；10 文件 |
 | 05 | docs/plans/2026-08-28/05-sendable-vocabulary-cleanup.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | 04 | 1 | PENDING | — | — | 0 | — | — | — | 删 sendable 概念/序列化/统计/DTO；10 文件 |
 
 ## Amendments
@@ -47,3 +48,4 @@ Execution order: 01, 02, 03 (independent) → 04 (depends 02,03) → 05 (depends
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
 | A1 | docs/plans/2026-08-28/03-expert-types-required.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | commit:9058d028e9dcfe160d0bf74d45462c2f581af08f | 子计划 03「验证命令」全量回归门禁（mvn test / node --test 退出码 0）+ I3-1/I3-2（INTRODUCTION 研发类型必填） | I3-1/I3-2 校验使 10 Kotlin + 5 JS 既有空集合用例失效，授权文件集内无法同时满足行为变更与全量绿；修复由计划唯一确定（fixture 补三类默认值，机械、不改断言语义） | HUMAN:批准 A1 2026-08-28T16:47:41+0800 |
+| A2 | docs/plans/2026-08-28/04-single-gate-remove-sendable.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | commit:44c3d656cbab10d9f279f11d90725e9864198222 | 子计划 04 I4-6（删 ACCEPTED_CLASSIFICATION_VERSIONS）+「验证命令」全量回归门禁（mvn test 退出码 0） | I4-6 删除常量使既有 I5a2-10 用例编译失败（断言被删常量）；Task 1 删除致 OperatorStatusWriteSeamGuardTest 的 NoiseSite 行钉 545 过期；两处修复唯一确定（删用例 / 行号 545→498，同 05A-2 先例） | HUMAN:批准 A2 2026-08-28T17:35:54+0800 |
