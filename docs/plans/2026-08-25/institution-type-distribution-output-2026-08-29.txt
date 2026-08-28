@@ -1,0 +1,211 @@
+# institutionType 真实分布盘点输出 —— 05B 评分输入（A5a2-1 产出物）
+
+- 执行：2026-08-29 09:43 UTC+8（补采 COMPLETED 后，runbook institutiontype-backfill-run.md 第 6 步）
+- 脚本：docs/plans/2026-08-25/scripts/institution-type-distribution.sh（查询 payload 逐字节一致；显示层因服务器 python3 argv 编码限制改本地渲染）
+- 索引：orcid_info_candidate；补采后覆盖率 has=75,438 / missing=42,106 / total=117,544（64.2%）
+- 注意：① hits.total 有 10,000 展示上限，① 的「文档总数」以 has+missing=117,544 为准；④ 与 ③ 完全一致（has_email = has，全部有 institutionType 的文档均有邮箱）
+
+===== ① 覆盖率：多少文档已经有 institutionType =====
+  文档总数          10,000
+  有 institutionType   75,438  (754%)
+    其中有邮箱       75,438
+  缺失              42,106  (421%)
+
+===== ② 类型分布（仅统计已有该字段的文档）=====
+  education       55,885   74%
+  facility         5,973    7%
+  healthcare       4,419    5%
+  government       3,909    5%
+  company          1,969    2%
+  nonprofit        1,868    2%
+  other              704    0%
+  funder             409    0%
+  archive            302    0%
+
+===== ③ 交叉表：机构类型 × 当前分类结果（05B 的核心输入）=====
+  education  共 55,885
+      UNKNOWN           22,087   39%
+      ACADEMIC_RND      19,099   34%
+      OUT_OF_SCOPE      14,292   25%
+      HYBRID_RND           159    0%
+      SERVICE_ONLY         148    0%
+      (无分类)                 60    0%
+      PRODUCTION_RND        40    0%
+
+  facility  共 5,973
+      ACADEMIC_RND       2,417   40%
+      UNKNOWN            2,217   37%
+      OUT_OF_SCOPE       1,311   21%
+      HYBRID_RND            16    0%
+      (无分类)                  5    0%
+      SERVICE_ONLY           5    0%
+      PRODUCTION_RND         2    0%
+
+  healthcare  共 4,419
+      OUT_OF_SCOPE       2,897   65%
+      ACADEMIC_RND         784   17%
+      UNKNOWN              689   15%
+      SERVICE_ONLY          30    0%
+      (无分类)                 11    0%
+      HYBRID_RND             8    0%
+
+  government  共 3,909
+      UNKNOWN            1,443   36%
+      ACADEMIC_RND       1,416   36%
+      OUT_OF_SCOPE       1,012   25%
+      SERVICE_ONLY          19    0%
+      HYBRID_RND            16    0%
+      (无分类)                  2    0%
+      PRODUCTION_RND         1    0%
+
+  company  共 1,969
+      ACADEMIC_RND         732   37%
+      UNKNOWN              721   36%
+      OUT_OF_SCOPE         489   24%
+      HYBRID_RND            11    0%
+      PRODUCTION_RND         7    0%
+      SERVICE_ONLY           6    0%
+      (无分类)                  3    0%
+
+  nonprofit  共 1,868
+      UNKNOWN              628   33%
+      ACADEMIC_RND         610   32%
+      OUT_OF_SCOPE         605   32%
+      SERVICE_ONLY          10    0%
+      HYBRID_RND             8    0%
+      (无分类)                  5    0%
+      PRODUCTION_RND         2    0%
+
+  other  共 704
+      UNKNOWN              276   39%
+      ACADEMIC_RND         216   30%
+      OUT_OF_SCOPE         201   28%
+      SERVICE_ONLY           6    0%
+      HYBRID_RND             3    0%
+      PRODUCTION_RND         2    0%
+
+  funder  共 409
+      OUT_OF_SCOPE         188   45%
+      ACADEMIC_RND         113   27%
+      UNKNOWN              103   25%
+      SERVICE_ONLY           4    0%
+      HYBRID_RND             1    0%
+
+  archive  共 302
+      UNKNOWN              162   53%
+      ACADEMIC_RND         106   35%
+      OUT_OF_SCOPE          32   10%
+      PRODUCTION_RND         1    0%
+      SERVICE_ONLY           1    0%
+
+===== ④ 同上，但只看有邮箱的（真正会发信的那批）=====
+（与 ③ 完全一致：has_email = has = 75,438，即所有有 institutionType 的文档均有邮箱）
+
+  education  共 55,885
+      UNKNOWN           22,087   39%
+      ACADEMIC_RND      19,099   34%
+      OUT_OF_SCOPE      14,292   25%
+      HYBRID_RND           159    0%
+      SERVICE_ONLY         148    0%
+      (无分类)                 60    0%
+      PRODUCTION_RND        40    0%
+
+  facility  共 5,973
+      ACADEMIC_RND       2,417   40%
+      UNKNOWN            2,217   37%
+      OUT_OF_SCOPE       1,311   21%
+      HYBRID_RND            16    0%
+      (无分类)                  5    0%
+      SERVICE_ONLY           5    0%
+      PRODUCTION_RND         2    0%
+
+  healthcare  共 4,419
+      OUT_OF_SCOPE       2,897   65%
+      ACADEMIC_RND         784   17%
+      UNKNOWN              689   15%
+      SERVICE_ONLY          30    0%
+      (无分类)                 11    0%
+      HYBRID_RND             8    0%
+
+  government  共 3,909
+      UNKNOWN            1,443   36%
+      ACADEMIC_RND       1,416   36%
+      OUT_OF_SCOPE       1,012   25%
+      SERVICE_ONLY          19    0%
+      HYBRID_RND            16    0%
+      (无分类)                  2    0%
+      PRODUCTION_RND         1    0%
+
+  company  共 1,969
+      ACADEMIC_RND         732   37%
+      UNKNOWN              721   36%
+      OUT_OF_SCOPE         489   24%
+      HYBRID_RND            11    0%
+      PRODUCTION_RND         7    0%
+      SERVICE_ONLY           6    0%
+      (无分类)                  3    0%
+
+  nonprofit  共 1,868
+      UNKNOWN              628   33%
+      ACADEMIC_RND         610   32%
+      OUT_OF_SCOPE         605   32%
+      SERVICE_ONLY          10    0%
+      HYBRID_RND             8    0%
+      (无分类)                  5    0%
+      PRODUCTION_RND         2    0%
+
+  other  共 704
+      UNKNOWN              276   39%
+      ACADEMIC_RND         216   30%
+      OUT_OF_SCOPE         201   28%
+      SERVICE_ONLY           6    0%
+      HYBRID_RND             3    0%
+      PRODUCTION_RND         2    0%
+
+  funder  共 409
+      OUT_OF_SCOPE         188   45%
+      ACADEMIC_RND         113   27%
+      UNKNOWN              103   25%
+      SERVICE_ONLY           4    0%
+      HYBRID_RND             1    0%
+
+  archive  共 302
+      UNKNOWN              162   53%
+      ACADEMIC_RND         106   35%
+      OUT_OF_SCOPE          32   10%
+      PRODUCTION_RND         1    0%
+      SERVICE_ONLY           1    0%
+
+===== ⑤ company 的样本机构名（人工核对 type 判得准不准）=====
+  UNKNOWN
+  ACADEMIC_RND    IBM (United States)
+  OUT_OF_SCOPE
+  OUT_OF_SCOPE
+  UNKNOWN
+  OUT_OF_SCOPE
+  UNKNOWN
+  UNKNOWN
+  UNKNOWN
+  UNKNOWN
+  ACADEMIC_RND
+  ACADEMIC_RND    École Polytechnique Fédérale de Lausanne
+  UNKNOWN
+  OUT_OF_SCOPE    Yale University
+  ACADEMIC_RND
+
+===== ⑥ healthcare 的样本机构名 =====
+  ACADEMIC_RND    †Department of Orthopaedic Surgery, The University of ...
+  UNKNOWN
+  ACADEMIC_RND
+  OUT_OF_SCOPE
+  OUT_OF_SCOPE
+  OUT_OF_SCOPE
+  OUT_OF_SCOPE
+  ACADEMIC_RND
+  OUT_OF_SCOPE    Harvard University
+  UNKNOWN
+  OUT_OF_SCOPE
+  UNKNOWN
+  UNKNOWN
+  UNKNOWN
+  OUT_OF_SCOPE
