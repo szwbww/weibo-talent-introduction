@@ -3787,6 +3787,7 @@ function mountAiTrainingTrustReply(mail) {
         mode: "SIMULATION",
         source: { sourceType: "TRAINING_MAIL", sourceId: Number(mail.mailRecordId) },
         contextPath,
+        autoBootstrap: false,
         onUnauthorized: trustReplyUnauthorized,
         onChange: () => {
             if (aiTrainingEvaluationContext?.token !== token) return;
@@ -9964,6 +9965,7 @@ function mountLiveTrustReply(recordId) {
         mode: "LIVE",
         source: { sourceType: "LIVE_INBOUND", sourceId: Number(recordId) },
         contextPath,
+        autoBootstrap: false,
         onUnauthorized: trustReplyUnauthorized,
         onComplete: async (assembly) => {
             if (liveTrustReplyInstance && liveTrustReplyToken === token) adoptTrustReplyAssembly(recordId, assembly);

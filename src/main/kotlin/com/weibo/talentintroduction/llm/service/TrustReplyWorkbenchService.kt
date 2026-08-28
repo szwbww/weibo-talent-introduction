@@ -245,6 +245,16 @@ data class TrustReplySaveStateRequest(
     val frameSnapshot: TrustReplyFrameSnapshot? = null
 )
 
+data class TrustReplySaveStateItemRequest(
+    val source: TrustReplySourceRef,
+    val expectedStateVersion: Long,
+    val schemaVersion: String? = null,
+    val sourceVersion: String,
+    val evidenceSetVersion: String,
+    val requestKey: String,
+    val lockedItem: TrustReplyLockedItemRequest
+)
+
 data class TrustReplyRuleMetadata(
     val ruleId: Long,
     val displayName: String,
@@ -770,6 +780,135 @@ class TrustReplyWorkbenchService(
             requestFactSelections = payload.requestFactSelections,
             frameSnapshot = frameSnapshot
         )
+    }
+
+    /**
+     * 计划 14 (T-1, I-2/I-4): 条目级持久化。读现有状态行，只替换 requestKey
+     * 匹配的那一项（不在行内则追加），写回并返回新的 stateVersion；其余
+     * lockedItems 逐字保留。乐观锁经 stateStore.save 冲突时返回既有的
+     * 409 TRUST_REPLY_STATE_CONFLICT——并发下由前端按 I-4 对该条重试，
+     * 不得整封失败、也不得跳过校验直接覆盖。
+     */
+    fun saveStateItem(request: TrustReplySaveStateItemRequest): TrustReplySavedState {
+        val resolved = resolveSource(request.source)
+        requireCurrentSourceVersion(request.sourceVersion, resolved.sourceVersion)
+        if (request.schemaVersion != null &&
+            request.schemaVersion !in TrustReplyWorkbenchStateStore.ACCEPTED_REQUEST_SCHEMA_VERSIONS
+        ) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_STATE_INVALID")
+        }
+        val sourceType = resolved.source.sourceType.name
+        val sourceId = resolved.source.sourceId
+        // bootstrap 同款：行内已存 v4 矩阵时按其解析，否则用当前默认矩阵——
+        // 保证 evidenceSetVersion 与前端最后一次 bootstrap 的值一致。
+        val stored = stateStore.load(sourceType, sourceId)
+        val storedPayload = stored?.payloadJson?.let { stateStore.decodePayload(it) }
+        val storedMatrix = storedPayload
+            ?.takeIf { it.schemaVersion == TrustReplyWorkbenchStateStore.SCHEMA_VERSION }
+            ?.requestFactSelections
+        val resolvedSelection = resolveCanonicalSelection(
+            resolved,
+            requestFactSelections = storedMatrix,
+            requestedFactIds = null,
+            useLocalEvidence = false
+        )
+        requireCurrentEvidenceVersion(request.evidenceSetVersion, resolvedSelection.evidenceSetVersion)
+        val validated = validateSingleLockedItem(
+            resolved = resolved,
+            selection = resolvedSelection.selection,
+            requestEvidenceVersions = resolvedSelection.requestEvidenceVersions,
+            locked = request.lockedItem
+        )
+        val now = LocalDateTime.now()
+        // I-2: 合并——只替换 requestKey 匹配的那一项，其余 lockedItems 逐字保留。
+        val mergedLocked = (storedPayload?.lockedItems ?: emptyList()).toMutableList()
+        val existingIndex = mergedLocked.indexOfFirst { it.requestKey == request.requestKey }
+        if (existingIndex >= 0) {
+            mergedLocked[existingIndex] = validated
+        } else {
+            mergedLocked += validated
+        }
+        val payload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = resolved.sourceVersion,
+            evidenceSetVersion = resolvedSelection.evidenceSetVersion,
+            requestedFactIds = storedPayload?.requestedFactIds ?: resolvedSelection.selection.sendQaRuleIds,
+            selectedModel = storedPayload?.selectedModel?.takeIf { it.isNotBlank() }
+                ?: AiReplyModel.DEEPSEEK_V4_FLASH.name,
+            lockedItems = mergedLocked,
+            requestFactSelections = storedPayload?.requestFactSelections ?: resolvedSelection.requestFactSelections,
+            frameSnapshot = storedPayload?.frameSnapshot ?: resolveFrameSnapshot(null)
+        )
+        val json = stateStore.encodePayload(payload)
+        val newVersion = stateStore.save(sourceType, sourceId, request.expectedStateVersion, json, now)
+        stateStore.pruneExpired(now)
+        return TrustReplySavedState(
+            status = "SAVED",
+            stateVersion = newVersion,
+            selectedModel = payload.selectedModel,
+            requestedFactIds = payload.requestedFactIds,
+            lockedItems = payload.lockedItems,
+            requestFactSelections = payload.requestFactSelections,
+            frameSnapshot = payload.frameSnapshot
+        )
+    }
+
+    /**
+     * 计划 14 (T-1): 单条 locked item 校验——镜像 validateLockedSubset 的
+     * 单条目部分：未知/伪造 key 422、evidence 漂移 409、版本重算不匹配 422、
+     * grounded 信任边界失败 422。失败即 fail closed，不写库。
+     */
+    private fun validateSingleLockedItem(
+        resolved: ResolvedTrustReplySource,
+        selection: ResolvedQaRules,
+        requestEvidenceVersions: Map<String, String>,
+        locked: TrustReplyLockedItemRequest
+    ): TrustReplyLockedItemRequest {
+        val canonicalItems = selection.requestFacts.sortedBy { it.index }
+        val item = canonicalItems.firstOrNull { requestKey(resolved.sourceVersion, it) == locked.requestKey }
+            ?: throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_REQUEST_KEY_INVALID")
+        val perRequestEvidence = requestEvidenceVersions.getValue(locked.requestKey)
+        if (locked.evidenceSetVersion != perRequestEvidence) {
+            throw TrustReplyWorkbenchException(HttpStatus.CONFLICT, "TRUST_REPLY_EVIDENCE_STALE")
+        }
+        validateLockedItem(
+            item = item,
+            locked = locked,
+            sourceVersion = resolved.sourceVersion,
+            evidenceSetVersion = perRequestEvidence,
+            inboundText = resolved.inboundText
+        )
+        val version = materializeVersion(
+            item = item,
+            requestKey = locked.requestKey,
+            handling = locked.handling,
+            answerText = locked.answerText,
+            claims = locked.claims,
+            model = locked.model,
+            generationKind = locked.generationKind,
+            evidenceSetVersion = perRequestEvidence,
+            sourceVersion = resolved.sourceVersion,
+            operatorInstruction = locked.operatorInstruction,
+            operatorInstructionHash = locked.operatorInstructionHash,
+            contextVersion = resolved.contextVersion
+        )
+        if (version.versionId != locked.versionId) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_ITEM_VERSION_INVALID")
+        }
+        if (locked.handling == TrustReplyItemHandling.ANSWER_WITH_EVIDENCE ||
+            locked.handling == TrustReplyItemHandling.ANSWER_SUPPORTED_PART
+        ) {
+            validateGroundedTrustBoundary(
+                selection.requestFacts,
+                listOf(
+                    ValidatedSection(
+                        item.index,
+                        version.claims.map { claim -> IntentAnswer(claim.intentKey, claim.text, claim.sourceRuleIds) }
+                    )
+                )
+            )
+        }
+        return locked
     }
 
     // I-4: reset only drops the workbench state row for this source and lets a

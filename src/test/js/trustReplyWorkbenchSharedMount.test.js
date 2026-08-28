@@ -438,6 +438,70 @@ describe("shared trust reply workbench mount contract", () => {
         }), /模式无效|模式/i);
     });
 
+    // I-5 (T-5.2): autoBootstrap:false 时 mount 不调 bootstrap，渲染未分析
+    // 占位态（S-2）与「开始分析」工具栏（S-1）；缺省行为保持自动分析。
+    it("mounts without bootstrapping when autoBootstrap is false and renders the unanalyzed state", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 520;
+        const current = bootstrapWithCoverage(sourceType, sourceId, [
+            coverageItem(sourceType, sourceId, 0, "GROUNDED")
+        ]);
+        let bootstrapCalls = 0;
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) {
+                bootstrapCalls += 1;
+                return Promise.resolve(jsonResponse(current));
+            }
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {},
+            autoBootstrap: false
+        });
+        await settle();
+        assert.strictEqual(bootstrapCalls, 0, "autoBootstrap:false must suppress the mount bootstrap");
+        assert.match(host.innerHTML, /尚未分析这封来信/);
+        assert.match(host.innerHTML, /data-action="start-analysis"/);
+        assert.doesNotMatch(host.innerHTML, new RegExp('data-action="start-analysis"[^>]*disabled'));
+        assert.match(host.innerHTML, /data-action="auto-run"[^>]*disabled/);
+        assert.match(host.innerHTML, /data-action="auto-reset"[^>]*disabled/);
+
+        // 缺省（不传 autoBootstrap）保持既有宿主行为：mount 即自动分析。
+        const autoHost = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(autoHost, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        assert.strictEqual(bootstrapCalls, 1, "the default mount must keep auto analysis");
+    });
+
+    it("rejects a non-boolean autoBootstrap option before any bootstrap", () => {
+        const { window } = createSandbox(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}) }));
+        const host = new FakeElement(window.document);
+        assert.throws(() => window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 1 },
+            contextPath: "",
+            onComplete: async () => {},
+            autoBootstrap: "yes"
+        }), /autoBootstrap/);
+        assert.throws(() => window.TrustReplyWorkbench.mount(new FakeElement(window.document), {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 1 },
+            contextPath: "",
+            onComplete: async () => {},
+            autoBootstrap: 1
+        }), /autoBootstrap/);
+    });
+
     it("keeps the generation id canonical when randomUUID is unavailable", async () => {
         const current = bootstrap("TRAINING_MAIL", 301);
         const calls = [];
@@ -2769,11 +2833,26 @@ describe("shared trust reply workbench mount contract", () => {
         });
         const statePayloads = payloads.filter((payload) => payload.schemaVersion);
         assert.ok(statePayloads.length >= 2);
-        statePayloads.forEach((payload) => {
+        // I-2: 整封快照（PUT /state）仍携带全量矩阵与框架快照。
+        const snapshotPayloads = statePayloads.filter((payload) => !payload.lockedItem);
+        assert.ok(snapshotPayloads.length >= 1, "the integration snapshot save must still carry the full matrix");
+        snapshotPayloads.forEach((payload) => {
             assert.strictEqual(payload.schemaVersion, "trust-reply-workbench-state-v3");
             assert.deepStrictEqual(payload.requestFactSelections, expectedMatrix);
             assert.deepStrictEqual(payload.frameSnapshot.selection, current.frameSnapshot.selection);
         });
+        // I-2/I-4: 单条落库走条目级 PATCH /state/item，只带该条 locked item + 乐观锁。
+        const itemPayloads = statePayloads.filter((payload) => payload.lockedItem);
+        assert.ok(itemPayloads.length >= 1, "per-item saves must hit the item endpoint");
+        itemPayloads.forEach((payload) => {
+            assert.strictEqual(payload.schemaVersion, "trust-reply-workbench-state-v3");
+            assert.deepStrictEqual(payload.source, current.source);
+            assert.strictEqual(payload.lockedItem.requestKey, payload.requestKey);
+            assert.ok(Number.isInteger(payload.expectedStateVersion));
+        });
+        const itemEndpointCalls = calls.filter((call) => call.url.includes("/state/item"));
+        assert.ok(itemEndpointCalls.length >= 1, "per-item saves must use /state/item");
+        itemEndpointCalls.forEach((call) => assert.strictEqual(call.options.method, "PATCH"));
         const streamPayloads = payloads.filter((payload) => payload.operation === "ADJUST_ITEM");
         assert.strictEqual(streamPayloads.length, 2);
         streamPayloads.forEach((payload) => {

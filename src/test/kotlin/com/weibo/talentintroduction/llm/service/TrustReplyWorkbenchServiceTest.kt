@@ -650,6 +650,163 @@ class TrustReplyWorkbenchServiceTest {
         Mockito.verify(stateStore).pruneExpired(Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now())
     }
 
+    // 计划 14 (T-5.3, I-2/I-4): 条目级 PATCH 只替换 requestKey 匹配的那一项，
+    // 其余 lockedItems 逐字保留；整封快照语义（矩阵/选中模型/框架）不受单条合并影响。
+    @Test
+    fun `saveStateItem replaces only the target locked item and keeps the rest verbatim`() {
+        // 两问正文：canonicalRequests（真实 extractor）恰好产出 key1/key2，
+        // 与行内矩阵一致；selection 按该矩阵 stub（同「same fact union」夹具）。
+        val exact = mail(id = 11L, body = "What?\nWhen?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+        val selected = selection(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "When?", listOf(10L), RequestGroundingStatus.GROUNDED)
+        )
+        Mockito.`when`(factSelection.selectForWorkbench("What?\nWhen?", listOf(listOf(9L), listOf(10L)), null, true))
+            .thenReturn(selected)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L, 10L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(10L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        val version = sourceVersion()
+        val key1 = canonicalKey(version)
+        val key2 = canonicalKey(version, 2, "When?")
+        val currentEvidence = evidenceWithMapping(
+            "evidence-v1",
+            key1 to listOf(9L),
+            key2 to listOf(10L)
+        )
+        val perRequest1 = perRequestEvidence("evidence-v1", key1, listOf(9L))
+        val perRequest2 = perRequestEvidence("evidence-v1", key2, listOf(10L))
+        val stored1 = lockedAnswer(version, perRequest1, 1, "What?", answerText = "answer-one")
+        val stored2 = lockedAnswer(version, perRequest2, 2, "When?", answerText = "answer-two", ruleId = 10L)
+        val storedPayload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = version,
+            evidenceSetVersion = currentEvidence,
+            requestedFactIds = listOf(9L, 10L),
+            selectedModel = "DEEPSEEK_V4_PRO",
+            lockedItems = listOf(stored1, stored2),
+            requestFactSelections = listOf(
+                TrustReplyRequestFactSelection(key1, listOf(9L)),
+                TrustReplyRequestFactSelection(key2, listOf(10L))
+            ),
+            frameSnapshot = TrustReplyFrameSnapshot(
+                selection = TrustReplyFrameSelection(salutationSnippetId = 7L),
+                version = "saved-frame-v1"
+            )
+        )
+        Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(3L, LocalDateTime.now().plusDays(1), "{}")
+        )
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(storedPayload)
+        // 行内已存 v4 矩阵 → saveStateItem 按其解析（与 bootstrap 同款）。
+        var capturedPayload: TrustReplySavedStatePayload? = null
+        Mockito.doAnswer { invocation ->
+            capturedPayload = invocation.arguments[0] as TrustReplySavedStatePayload
+            "{}"
+        }.`when`(stateStore).encodePayload(
+            Mockito.any(TrustReplySavedStatePayload::class.java) ?: TrustReplySavedStatePayload(
+                schemaVersion = "",
+                sourceVersion = "",
+                evidenceSetVersion = "",
+                requestedFactIds = emptyList(),
+                selectedModel = "",
+                lockedItems = emptyList()
+            )
+        )
+        Mockito.`when`(stateStore.save(Mockito.anyString() ?: "TRAINING_MAIL", Mockito.anyLong() ?: 11L, Mockito.anyLong() ?: 3L, Mockito.anyString() ?: "", Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now())).thenReturn(4L)
+
+        val updated1 = lockedAnswer(version, perRequest1, 1, "What?", answerText = "answer-one-updated")
+        val response = service.saveStateItem(TrustReplySaveStateItemRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            expectedStateVersion = 3,
+            sourceVersion = version,
+            evidenceSetVersion = currentEvidence,
+            requestKey = key1,
+            lockedItem = updated1
+        ))
+
+        assertEquals("SAVED", response.status)
+        assertEquals(4L, response.stateVersion)
+        assertEquals(listOf(key1, key2), response.lockedItems.map { it.requestKey })
+        assertEquals("answer-one-updated", response.lockedItems[0].answerText)
+        assertEquals(stored2, response.lockedItems[1])
+        // 其余整封字段逐字保留（不因单条合并而重写）。
+        assertEquals("DEEPSEEK_V4_PRO", response.selectedModel)
+        assertEquals(listOf(9L, 10L), response.requestedFactIds)
+        assertEquals("saved-frame-v1", response.frameSnapshot?.version)
+        assertEquals(storedPayload.requestFactSelections, response.requestFactSelections)
+        Mockito.verify(stateStore).save(
+            Mockito.anyString() ?: "TRAINING_MAIL",
+            Mockito.anyLong() ?: 11L,
+            Mockito.anyLong() ?: 3L,
+            Mockito.anyString() ?: "",
+            Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+        )
+        assertEquals(updated1, requireNotNull(capturedPayload).lockedItems[0])
+        assertEquals(stored2, requireNotNull(capturedPayload).lockedItems[1])
+    }
+
+    // 计划 14 (T-5.3, I-4): 乐观锁冲突返回既有的 stale 码，绝不停靠校验直接覆盖。
+    @Test
+    fun `saveStateItem propagates optimistic state conflicts as the existing stale code`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val key = canonicalKey(version)
+        val currentEvidence = evidenceWithMapping("evidence-v1", key to listOf(9L))
+        val perRequest = perRequestEvidence("evidence-v1", key, listOf(9L))
+        val stored1 = lockedAnswer(version, perRequest, 1, "What?", answerText = "answer-one")
+        val storedPayload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = version,
+            evidenceSetVersion = currentEvidence,
+            requestedFactIds = listOf(9L),
+            selectedModel = "DEEPSEEK_V4_FLASH",
+            lockedItems = listOf(stored1),
+            requestFactSelections = canonicalMatrix(version)
+        )
+        Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(9L, LocalDateTime.now().plusDays(1), "{}")
+        )
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(storedPayload)
+        Mockito.`when`(stateStore.encodePayload(Mockito.any(TrustReplySavedStatePayload::class.java) ?: TrustReplySavedStatePayload(
+            schemaVersion = "",
+            sourceVersion = "",
+            evidenceSetVersion = "",
+            requestedFactIds = emptyList(),
+            selectedModel = "",
+            lockedItems = emptyList()
+        ))).thenReturn("{}")
+        Mockito.`when`(stateStore.save(Mockito.anyString() ?: "TRAINING_MAIL", Mockito.anyLong() ?: 11L, Mockito.anyLong() ?: 9L, Mockito.anyString() ?: "", Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()))
+            .thenThrow(TrustReplyWorkbenchException(HttpStatus.CONFLICT, "TRUST_REPLY_STATE_CONFLICT"))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.saveStateItem(TrustReplySaveStateItemRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedStateVersion = 9,
+                sourceVersion = version,
+                evidenceSetVersion = currentEvidence,
+                requestKey = key,
+                lockedItem = stored1
+            ))
+        }
+        assertEquals("TRUST_REPLY_STATE_CONFLICT", ex.code)
+        Mockito.verify(stateStore).save(
+            Mockito.anyString() ?: "TRAINING_MAIL",
+            Mockito.anyLong() ?: 11L,
+            Mockito.anyLong() ?: 9L,
+            Mockito.anyString() ?: "",
+            Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+        )
+    }
+
     // V-1: a time-commitment display name using a Chinese numeral (三天后答复)
     // is neither a decimal digit nor a listed phrase; it must be omitted while
     // safe neighboring names stay eligible.

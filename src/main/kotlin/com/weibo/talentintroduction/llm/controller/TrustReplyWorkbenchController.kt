@@ -13,6 +13,7 @@ import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleResponse
 import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
 import com.weibo.talentintroduction.llm.service.TrustReplyLockedItemRequest
+import com.weibo.talentintroduction.llm.service.TrustReplySaveStateItemRequest
 import com.weibo.talentintroduction.llm.service.TrustReplySaveStateRequest
 import com.weibo.talentintroduction.llm.service.TrustReplySavedState
 import com.weibo.talentintroduction.llm.service.TrustReplyRequestFactSelection
@@ -24,6 +25,7 @@ import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.ExceptionHandler
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -106,6 +108,13 @@ class TrustReplyWorkbenchController(
     @PutMapping("/state")
     fun saveState(@RequestBody request: TrustReplySaveStateHttpRequest): TrustReplySavedState =
         workbenchService.saveState(request.toDomain())
+
+    // 计划 14 (T-1, I-2/I-4): 条目级持久化——请求体只含该条的 requestKey +
+    // 该条 locked item + 乐观锁 expectedStateVersion；服务端在既有状态行内
+    // 合并该条，返回新的 stateVersion。
+    @PatchMapping("/state/item")
+    fun saveStateItem(@RequestBody request: TrustReplySaveStateItemHttpRequest): TrustReplySavedState =
+        workbenchService.saveStateItem(request.toDomain())
 
     @DeleteMapping("/state")
     fun deleteState(@RequestBody request: TrustReplyDeleteStateHttpRequest): TrustReplySavedState =
@@ -226,6 +235,32 @@ class TrustReplyWorkbenchController(
         }
     )
 
+    private fun TrustReplySaveStateItemHttpRequest.toDomain() = TrustReplySaveStateItemRequest(
+        source = source.toDomain(),
+        expectedStateVersion = expectedStateVersion,
+        schemaVersion = schemaVersion,
+        sourceVersion = sourceVersion,
+        evidenceSetVersion = evidenceSetVersion,
+        requestKey = requestKey,
+        lockedItem = TrustReplyLockedItemRequest(
+            requestKey = lockedItem.requestKey,
+            versionId = lockedItem.versionId,
+            handling = lockedItem.handling.toHandling(),
+            answerText = lockedItem.answerText,
+            claims = lockedItem.claims,
+            model = lockedItem.model,
+            generationKind = runCatching {
+                com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind.valueOf(lockedItem.generationKind)
+            }.getOrElse {
+                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_GENERATION_KIND_INVALID")
+            },
+            evidenceSetVersion = lockedItem.evidenceSetVersion,
+            sourceVersion = lockedItem.sourceVersion,
+            operatorInstructionHash = lockedItem.operatorInstructionHash,
+            operatorInstruction = lockedItem.operatorInstruction
+        )
+    )
+
     private fun String.toHandling(): TrustReplyItemHandling = runCatching {
         TrustReplyItemHandling.valueOf(trim().uppercase())
     }.getOrElse {
@@ -333,6 +368,16 @@ data class TrustReplySaveStateHttpRequest(
     val lockedItems: List<TrustReplyLockedItemHttpRequest>,
     val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null,
     val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null
+)
+
+data class TrustReplySaveStateItemHttpRequest(
+    val source: TrustReplySourceHttpRequest,
+    val expectedStateVersion: Long,
+    val schemaVersion: String? = null,
+    val sourceVersion: String,
+    val evidenceSetVersion: String,
+    val requestKey: String,
+    val lockedItem: TrustReplyLockedItemHttpRequest
 )
 
 data class TrustReplyCancelHttpRequest(

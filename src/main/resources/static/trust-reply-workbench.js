@@ -213,7 +213,12 @@
     function mount(host, options) {
         validateMount(host, options);
         const instance = createInstance(host, options);
-        instance.bootstrap();
+        // 方案 A（默认取舍，非疏漏）：只读模式保持自动分析——它不写工作台状态、
+        // 不消耗生成成本，自动跑无副作用；仅非只读宿主可用 autoBootstrap: false
+        // 把分析变成显式动作（I-5）。
+        if (options.autoBootstrap !== false || options.mode === MODES.AUTO_PREVIEW) {
+            instance.bootstrap();
+        }
         return { unmount: instance.unmount };
     }
 
@@ -236,6 +241,11 @@
         // remaining modes keep it mandatory (I-2).
         if (typeof options.contextPath !== "string" || (options.mode !== MODES.AUTO_PREVIEW && typeof options.onComplete !== "function")) {
             return rejectMount(host, "工作台宿主参数不完整");
+        }
+        // I-5: autoBootstrap is an optional boolean mount option; a non-boolean
+        // value is a host bug and must not silently flip analysis behavior.
+        if (options.autoBootstrap !== undefined && typeof options.autoBootstrap !== "boolean") {
+            return rejectMount(host, "autoBootstrap 必须为布尔值");
         }
     }
 
@@ -291,6 +301,8 @@
             completePending: false,
             savedStateVersion: 0,
             stateSavePending: false,
+            // I-5: 未分析态是合法稳定态；bootstrap 成功后才置 true（S-1/S-2）。
+            analyzed: false,
             sequenceCancelled: false,
             // I-3: grip keyboard moves re-render via bootstrap(); the next
             // render() restores focus to this fact's grip (consumed once).
@@ -721,6 +733,9 @@
                     requestFactSelections: state.requests.length ? serializeRequestFactSelections() : null,
                     frameSnapshot: state.frameSnapshot
                 });
+                // I-5: bootstrap 成功即分析完成——mount 自动分析与「开始分析」
+                // 点击两条路径共用同一状态翻转（S-1/S-2）。
+                state.analyzed = true;
                 applyBootstrap(data, seq);
                 if (preserveVersions) reconcilePreservedVersions(preserved, seq);
             } catch (error) {
@@ -831,6 +846,28 @@
                 frameSnapshot: state.frameSnapshot,
                 lockedItems
             }, null, "PUT");
+            if (response && Number.isInteger(response.stateVersion)) {
+                state.savedStateVersion = response.stateVersion;
+            }
+            return response;
+        }
+
+        // 计划 14 (T-2, I-2/I-4): 单条摘要落库——请求体只含该条的 requestKey +
+        // 该条 locked item + 乐观锁 expectedStateVersion；服务端在既有状态行内
+        // 合并该条，不重写其余条目。乐观锁冲突时服务端返回既有 stale 码，
+        // 调用方按 I-4 处理该条（不整封失败、不静默覆盖）。
+        async function persistResolvedItem(request) {
+            const lockedItem = serializeResolvedVersion(request);
+            if (!lockedItem) return null;
+            const response = await requestJson("/api/trust-reply/workbench/state/item", {
+                source,
+                expectedStateVersion: state.savedStateVersion,
+                schemaVersion: STATE_SCHEMA_VERSION,
+                sourceVersion: state.sourceVersion,
+                evidenceSetVersion: state.evidenceSetVersion,
+                requestKey: request.requestKey,
+                lockedItem
+            }, null, "PATCH");
             if (response && Number.isInteger(response.stateVersion)) {
                 state.savedStateVersion = response.stateVersion;
             }
@@ -951,18 +988,21 @@
                 request.expanded = false;
                 request.error = null;
                 if (persistEach) {
-                    state.stateSavePending = true;
+                    // I-1: 单条保存只出该条局部遮罩——置条目级 stateSavePending，
+                    // 绝不置全局 state.stateSavePending（I-3）。
+                    request.stateSavePending = true;
                     render();
                     try {
-                        await persistResolvedSnapshot();
+                        // I-2: 单条落库走条目级 PATCH，整封快照只在整合路径使用。
+                        await persistResolvedItem(request);
                     } catch (error) {
                         if (isFrameStaleError(error)) {
-                            state.stateSavePending = false;
+                            request.stateSavePending = false;
                             handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
                             return false;
                         }
                         if (isStaleError(error)) {
-                            state.stateSavePending = false;
+                            request.stateSavePending = false;
                             handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
                             return false;
                         }
@@ -970,7 +1010,7 @@
                         request.resolvedVersionId = null;
                         request.expanded = true;
                         request.error = error.message || "保存失败，请重试";
-                        state.stateSavePending = false;
+                        request.stateSavePending = false;
                         state.generation.pending = false;
                         state.generation.controller = null;
                         state.generation.stage = "ERROR";
@@ -978,7 +1018,7 @@
                         render();
                         return false;
                     }
-                    state.stateSavePending = false;
+                    request.stateSavePending = false;
                 }
                 state.generation.controller = null;
                 if (!isLive(seq)) return false;
@@ -1353,6 +1393,18 @@
                 previewKind: preview.previewKind || "",
                 reason: preview.reason || null
             };
+        }
+
+        // I-5: 「开始分析」（分析后即「重新分析」）复用既有 bootstrap()，
+        // 不新造分析路径；成功后置 state.analyzed = true 并重渲染（S-1 按钮态 /
+        // S-2 占位区随之切换）。只读宿主不渲染该按钮，这里仅作第二道防线。
+        async function startAnalysis() {
+            if (state.readOnly) return;
+            await bootstrap();
+            if (!state.destroyed && isLive()) {
+                state.analyzed = true;
+                render();
+            }
         }
 
         // I-1: one-click orchestration. Unresolved manual items (PARTIAL /
@@ -2025,10 +2077,19 @@
 
         function renderMarkup() {
             const modeNote = state.mode === MODES.SIMULATION ? "模拟 · 不外发" : "正式回复";
-            const itemMarkup = state.requests.map(renderRequest).join("") || `<div class="compose-panel"><p class="muted">暂无可处理请求</p></div>`;
+            // I-5 (S-2): 未分析时以占位区替代摘要列表与框架页；只读模式按
+            // 方案 A 永远自动分析，不会走到这里。
+            const unanalyzed = !state.analyzed && !state.readOnly;
+            const preanalysisZone = `<div class="trust-reply-preanalysis" role="status"><strong>尚未分析这封来信</strong><span>点「开始分析」拆分来信、匹配已审核事实并生成覆盖矩阵。分析会在服务端建立本信的工作台状态。</span></div>`;
+            const itemMarkup = unanalyzed
+                ? preanalysisZone
+                : (state.requests.map(renderRequest).join("") || `<div class="compose-panel"><p class="muted">暂无可处理请求</p></div>`);
+            const frameMarkup = unanalyzed
+                ? preanalysisZone
+                : `<div class="trust-reply-frame-panel compose-panel"><div class="trust-reply-frame-grid">${renderFrameSelects()}</div><div class="trust-reply-frame-preview">${renderPreviewState()}<div class="trust-reply-summary" data-role="summary">${renderSummary()}</div></div></div>`;
             return `<details class="detail-section reply-workflow-detail trust-reply-workbench" open>
                 <summary class="reply-workflow-summary"><span class="reply-workflow-icon" aria-hidden="true">⌘</span><span class="reply-workflow-title"><strong>可信回复工作台</strong><small>${modeNote}</small></span><span class="reply-workflow-status" data-role="mode-note">${modeNote}</span><span class="reply-workflow-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="reply-workflow-content"${busyOverlayState() ? ' aria-busy="true"' : ''}>${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar">${renderToolbar()}</div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${renderStatus()}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>摘要与事实</h3><small>按原邮件顺序展示摘要卡片，每张卡片绑定对应事实；可添加或删除事实。</small></div><div class="trust-reply-item-list" data-role="items">${itemMarkup}</div><div class="trust-reply-page-actions">${renderPageActions("facts")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}"${state.activePage === "frame" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>回复框架与整合</h3><small>选择尊语、开场白、致谢语与结束语；只有服务端整合完成的结果才能完成本页。</small></div><div class="trust-reply-frame-panel compose-panel"><div class="trust-reply-frame-grid">${renderFrameSelects()}</div><div class="trust-reply-frame-preview">${renderPreviewState()}<div class="trust-reply-summary" data-role="summary">${renderSummary()}</div></div></div><div class="trust-reply-page-actions">${renderPageActions("frame")}</div></section>${renderBusyOverlay()}</div>
+                <div class="reply-workflow-content"${busyOverlayState() ? ' aria-busy="true"' : ''}>${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar">${renderToolbar()}</div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${renderStatus()}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>摘要与事实</h3><small>按原邮件顺序展示摘要卡片，每张卡片绑定对应事实；可添加或删除事实。</small></div><div class="trust-reply-item-list" data-role="items">${itemMarkup}</div><div class="trust-reply-page-actions">${renderPageActions("facts")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}"${state.activePage === "frame" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>回复框架与整合</h3><small>选择尊语、开场白、致谢语与结束语；只有服务端整合完成的结果才能完成本页。</small></div>${frameMarkup}<div class="trust-reply-page-actions">${renderPageActions("frame")}</div></section>${renderBusyOverlay()}</div>
             </details>`;
         }
 
@@ -2094,8 +2155,16 @@
                 : "";
             const modelOptions = state.availableModels.map((model) => `<option value="${escapeText(model)}"${model === state.selectedModel ? " selected" : ""}>${escapeText(MODEL_LABELS[model] || model)}</option>`).join("");
             // S-1: the one-click orchestration bar (T4-3: never rendered on the
-            // read-only AUTO_PREVIEW host).
-            const autoRunBar = state.readOnly ? "" : `<div class="trust-reply-autorun"><button type="button" class="button primary" data-action="auto-run">一键预判</button><button type="button" class="button secondary" data-action="auto-reset">重置</button><span class="trust-reply-autorun-hint">有据项自动生成，无据项由系统代填回答说明；汇总后仍可逐项调整。不发送、不写外发记录。</span></div>`;
+            // read-only AUTO_PREVIEW host). 未分析时「开始分析」为主按钮且
+            // 一键预判/重置置灰；分析完成后按钮文案改「重新分析」并降为次级，
+            // 一键预判/重置恢复可点。
+            const startAnalysisButton = `<button type="button" class="button ${state.analyzed ? "secondary" : "primary"}" data-action="start-analysis">${state.analyzed ? "重新分析" : "开始分析"}</button>`;
+            const autoRunDisabled = state.analyzed ? "" : " disabled";
+            const autoResetDisabled = state.analyzed ? "" : " disabled";
+            const autoRunHint = state.analyzed
+                ? "有据项自动生成，无据项由系统代填回答说明；汇总后仍可逐项调整。不发送、不写外发记录。"
+                : "先点「开始分析」拆分来信并匹配事实；分析完成后再用一键预判生成回答。不发送、不写外发记录。";
+            const autoRunBar = state.readOnly ? "" : `<div class="trust-reply-autorun">${startAnalysisButton}<button type="button" class="button primary" data-action="auto-run"${autoRunDisabled}>一键预判</button><button type="button" class="button secondary" data-action="auto-reset"${autoResetDisabled}>重置</button><span class="trust-reply-autorun-hint">${autoRunHint}</span></div>`;
             return `<p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p>${autoRunBar}<div class="ai-reply-model-row ai-reply-generation-controls"><label>生成模型<select data-role="model" class="ai-reply-model-select"${state.llmEnabled ? "" : " disabled"}>${modelOptions}</select></label><label>单次 TTL<select data-role="attempt-timeout" class="ai-reply-model-select">${timeoutOptions(state.attemptTimeout, false)}</select></label>${customTimeout(state.attemptTimeout, "attempt")}<label>总 TTL<select data-role="total-timeout" class="ai-reply-model-select">${timeoutOptions(state.totalTimeout, true)}</select></label>${customTimeout(state.totalTimeout, "total")}${cancelButton}</div>`;
         }
 
@@ -2205,7 +2274,7 @@
         function renderItemActions(request) {
             const action = requestAction(request);
             const label = request.pending || request.factChangePending || request.stateSavePending ? "处理中…" : action.label;
-            const disabled = action.disabled || request.factChangePending || request.stateSavePending || state.stateSavePending;
+            const disabled = action.disabled || request.factChangePending || request.stateSavePending;
             return `<button type="button" class="button ${action.resolved ? "secondary" : "primary"}" aria-pressed="${action.locked}" data-action="${action.action}" data-request-key="${escapeText(request.requestKey)}"${disabled ? " disabled" : ""}>${label}</button>`;
         }
 
@@ -2421,6 +2490,7 @@
             }
             if (action === "assemble") void assemble();
             if (action === "complete") void complete();
+            if (action === "start-analysis") void startAnalysis();
             if (action === "auto-run") void autoRun();
             if (action === "set-preview-tab") {
                 state.previewTab = button.dataset.previewTab;
@@ -2593,7 +2663,13 @@
             listen("drop", onDrop);
             listen("dragend", onDragEnd);
         }
-        renderShell("正在加载工作台…");
+        // I-5: autoBootstrap:false 且非只读时 mount 不跑 bootstrap，直接渲染
+        // 未分析占位态（S-2）；其余路径仍先渲染加载壳。
+        if (options.autoBootstrap !== false || state.readOnly) {
+            renderShell("正在加载工作台…");
+        } else {
+            render();
+        }
         return { state, bootstrap, unmount };
     }
 

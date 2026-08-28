@@ -87,6 +87,13 @@ function settle() {
     return new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
 }
 
+function deferred() {
+    let resolve;
+    let reject;
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+}
+
 function click(host, action, requestKey) {
     host.dispatchEvent("click", {
         dataset: { action, requestKey },
@@ -868,5 +875,134 @@ describe("one-click orchestration (auto-run / auto-reset)", () => {
         assert.doesNotMatch(host.innerHTML, /data-action="auto-run"/);
         assert.doesNotMatch(host.innerHTML, /data-action="auto-reset"/);
         assert.match(host.innerHTML, /只读预览/);
+    });
+
+    // I-1 (T-5.1): 单条 stateSavePending 只出该条局部遮罩——busyOverlayState()
+    // 返回 null、itemBusyState(该条) 非 null、itemBusyState(其他条) 为 null；
+    // 三个真·全局操作（generation/frame/complete）仍出全局遮罩。
+    it("masks only the pending item when a single-item save is pending", () => {
+        const workbenchSource = fs.readFileSync(componentPath, "utf-8");
+        const busyStart = workbenchSource.indexOf("function busyOverlayState()");
+        const busyEnd = workbenchSource.indexOf("function itemBusyState(request)");
+        const itemEnd = workbenchSource.indexOf("function renderItemBusyOverlay(request)");
+        assert.ok(busyStart >= 0 && busyEnd > busyStart && itemEnd > busyEnd, "mask functions must be sliceable");
+        const evalMasks = new Function("state", "request", `
+            ${workbenchSource.slice(busyStart, busyEnd)}
+            ${workbenchSource.slice(busyEnd, itemEnd)}
+            return { global: busyOverlayState(), item: itemBusyState(request) };
+        `);
+        const idleState = {
+            stateSavePending: false,
+            generation: { pending: false },
+            frameSavePending: false,
+            completePending: false
+        };
+        const pendingRequest = { pending: false, factChangePending: false, stateSavePending: true };
+        const idleRequest = { pending: false, factChangePending: false, stateSavePending: false };
+        const masked = evalMasks(idleState, pendingRequest);
+        assert.strictEqual(masked.global, null, "a single-item save must not raise the global mask");
+        assert.deepStrictEqual(masked.item, { text: "正在保存本条摘要…", hint: "其他摘要仍可继续操作。" });
+        assert.strictEqual(evalMasks(idleState, idleRequest).item, null, "an untouched item must stay unmasked");
+        // What must NOT change: 全量重跑/框架保存/整合仍出全局遮罩。
+        const generationState = { stateSavePending: false, generation: { pending: true }, frameSavePending: false, completePending: false };
+        assert.strictEqual(evalMasks(generationState, pendingRequest).item, null, "a true global operation keeps owning the mask");
+        assert.ok(evalMasks(generationState, pendingRequest).global !== null, "generation.pending must keep the global mask");
+        const frameState = { stateSavePending: false, generation: { pending: false }, frameSavePending: true, completePending: false };
+        assert.strictEqual(evalMasks(frameState, pendingRequest).global.text, "正在保存回复框架…");
+        const completeState = { stateSavePending: false, generation: { pending: false }, frameSavePending: false, completePending: true };
+        assert.strictEqual(evalMasks(completeState, pendingRequest).global.text, "正在整合整封回复…");
+    });
+
+    // I-1 (T-5.1, A-2): 单条采用保存期间，只有该条卡片出现局部遮罩，
+    // 整个工作台没有全局遮罩，其余摘要保持可操作。
+    it("keeps the global mask hidden while a single-item durable save is pending", async () => {
+        const sourceType = "LIVE_INBOUND";
+        const sourceId = 705;
+        const g0 = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const g1 = coverageItem(sourceType, sourceId, 1, "GROUNDED");
+        const current = bootstrap(sourceType, sourceId, [g0, g1]);
+        const saveGate = deferred();
+        const { window } = createSandbox((url, options) => {
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(current));
+            if (url.includes("/generations/stream")) {
+                const payload = JSON.parse(options.body);
+                return Promise.resolve(sseResponse("result", {
+                    source: current.source,
+                    sourceVersion: current.sourceVersion,
+                    evidenceSetVersion: current.evidenceSetVersion,
+                    version: itemVersion(payload.requestKey, current, payload.handling)
+                }));
+            }
+            if (url.includes("/state")) return saveGate.promise.then(() => Promise.resolve(stateResponse(1)));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "LIVE",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        click(host, "adjust-item", g0.requestKey);
+        await settle();
+        click(host, "resolve-item", g0.requestKey);
+        await settle();
+        // 保存悬而未决：只有 g0 卡片局部遮罩，无全局遮罩，g1 的按钮可点。
+        assert.match(host.innerHTML, /正在保存本条摘要…/);
+        assert.doesNotMatch(host.innerHTML, /正在保存工作台状态…/);
+        assert.doesNotMatch(host.innerHTML, /class="trust-reply-busy-overlay"/);
+        const g0Idx = host.innerHTML.indexOf(`data-role="item" data-request-key="${g0.requestKey}"`);
+        const g1Idx = host.innerHTML.indexOf(`data-role="item" data-request-key="${g1.requestKey}"`);
+        const busyIdx = host.innerHTML.indexOf("trust-reply-item-busy-overlay");
+        assert.ok(g0Idx >= 0 && g1Idx > g0Idx && busyIdx > g0Idx && busyIdx < g1Idx,
+            "the local mask must live inside the pending item's card only");
+        assert.match(host.innerHTML, new RegExp(`data-action="resolve-item" data-request-key="${g0.requestKey}"[^>]*disabled`));
+        assert.doesNotMatch(host.innerHTML, new RegExp(`data-action="adjust-item" data-request-key="${g1.requestKey}"[^>]*disabled`));
+        saveGate.resolve();
+        await settle();
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${g0.requestKey}"[\\s\\S]*?data-locked="true"`));
+    });
+
+    // I-5 (T-5.4): data-action="start-analysis" 委托点击后 bootstrap 被调用
+    // 恰好一次（DOM stub 盲区之外的行为断言），成功后按钮态切换。
+    it("runs bootstrap exactly once when start-analysis is clicked", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 706;
+        const grounded = coverageItem(sourceType, sourceId, 0, "GROUNDED");
+        const current = bootstrap(sourceType, sourceId, [grounded]);
+        let bootstrapCalls = 0;
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) {
+                bootstrapCalls += 1;
+                return Promise.resolve(jsonResponse(current));
+            }
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {},
+            autoBootstrap: false
+        });
+        await settle();
+        assert.strictEqual(bootstrapCalls, 0);
+        assert.match(host.innerHTML, /尚未分析这封来信/);
+        assert.doesNotMatch(host.innerHTML, new RegExp('data-action="start-analysis"[^>]*disabled'));
+        assert.match(host.innerHTML, /data-action="auto-run"[^>]*disabled/);
+
+        click(host, "start-analysis");
+        await settle();
+        await settle();
+        assert.strictEqual(bootstrapCalls, 1, "clicking start-analysis must fire exactly one bootstrap");
+        assert.doesNotMatch(host.innerHTML, /尚未分析这封来信/);
+        assert.match(host.innerHTML, /class="button secondary" data-action="start-analysis">重新分析</);
+        assert.doesNotMatch(host.innerHTML, new RegExp('data-action="auto-run"[^>]*disabled'));
+        assert.doesNotMatch(host.innerHTML, new RegExp('data-action="auto-reset"[^>]*disabled'));
+        assert.match(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"`));
     });
 });

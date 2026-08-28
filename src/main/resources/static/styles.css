@@ -5402,6 +5402,27 @@ tr td {
     line-height: 1.5;
 }
 
+.trust-reply-preanalysis {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 18px 16px;
+    margin: 0;
+    border: 1px dashed var(--panel-border);
+    border-radius: var(--radius-sm);
+    background: var(--panel-bg);
+    color: var(--text-muted);
+    font-size: 12px;
+    line-height: 1.6;
+    text-align: center;
+}
+
+.trust-reply-preanalysis strong {
+    color: var(--text-main);
+    font-size: 13px;
+    font-weight: 600;
+}
+
 .trust-reply-autofilled {
     display: inline-flex;
     align-items: center;
