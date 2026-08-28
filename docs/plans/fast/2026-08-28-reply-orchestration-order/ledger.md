@@ -2,7 +2,7 @@
 
 - Status: RUNNING
 - Master plan: docs/plans/2026-08-28/10-reply-orchestration-order.md (commit 5a90e3e53e5fe8b40059b3090f086d6b36a09a01)
-- Amendments: A1
+- Amendments: A1, A2
 - Master base: de228e17cc0134a7c11dea7cbf82054e8d249f99
 - Branch: fast/2026-08-28-reply-orchestration-order
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-28T12:40:52Z
 - Current child: c5
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: c5 PLAN_CONFLICT (preflight, no implementation) — plan 15 S-1/T-1 three-tab change (data-page-panel facts/factset/compose) breaks hard two-tab assertions in src/test/js/trustReplyWorkbenchSharedMount.test.js (NOT in the authorized 8): :2302 exactly 2 role=tab buttons, :2307/:2313-2317 frame-panel semantics, :2348/:2356/:2392/:2402 keyboard-nav + setActivePage selector, :2757/:2965/:3004 frame-active-after-stale. Counterfactual verified by implementer: keeping the third page key `frame` still breaks :2302/:2313-2317 — no within-plan implementation keeps `node --test src/test/js/*.test.js` green. Amendment A2 (widen c5 authorized files to include that test file, test-only) pending human approval.
-- Resume from: c5 preflight conflict; no product changes in worktree; A2 approval → resume epoch 1 (fix_round=0)
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Baseline
 
@@ -33,7 +33,7 @@
 | c2 | docs/plans/2026-08-28/12-letter-closer.md | commit:53b5efc43cf59fc89b46cfa6393485e11584cbe2 | c1 | 2 | LIGHT_PASS | 97e414658b1fe9196271f607cf763853c04d5098 | e3217e5079616839e514fe54d45b42a073035219 | 0 | — | e3217e5079616839e514fe54d45b42a073035219 | 4aacd7e6196dfe0a13e293fac256015c6a1e7e9f | A1 amendment; epoch 1 PLAN_CONFLICT (5 pre-existing ItemFlow tests asserted pre-12 raw text), A1 approved 2026-08-28T14:32:17Z; O-1 (verify-log) |
 | c3 | docs/plans/2026-08-28/14-workbench-concurrency.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | none | 1 | LIGHT_PASS_WITH_NOTES | e3217e5079616839e514fe54d45b42a073035219 | 41aae5af28e81e31e0469937c96bd532f13dc784 | 0 | — | 41aae5af28e81e31e0469937c96bd532f13dc784 | 764d1a214c5b7cc5dbdb84af812350561a12f9de | RECORD_ONLY O-1..O-3 (verify-log): O-1 pre-existing 1-Hz flake unrelated; O-2 plan says 4 hasRequestMutationPending refs, base had 3 (canStartAssembly per-item guard), c3 unchanged; O-3 toggleResolve/persistDecisionUnlock full-PUT pre-existing |
 | c4 | docs/plans/2026-08-28/13-letter-orchestrator.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c2 | 1 | LIGHT_PASS_WITH_NOTES | 41aae5af28e81e31e0469937c96bd532f13dc784 | 889210e339c3c5dd2533777d35076bdfc5c65793 | 0 | — | 889210e339c3c5dd2533777d35076bdfc5c65793 | 53252a6905bf0b0ed7f12b714569dd087a7a0883 | RECORD_ONLY O-1 (verify-log): truncated G2-canonical prefix in a negative test fixture; plan grep gate passes |
-| c5 | docs/plans/2026-08-28/15-workbench-three-step.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c3,c4 | 1 | PENDING | — | — | 0 | — | — | — | 三步界面 + 运营事实 |
+| c5 | docs/plans/2026-08-28/15-workbench-three-step.md | commit:4ecbff4613bc05dbffd3b9fcfefaa79ca810f40b | c3,c4 | 2 | PENDING | 889210e339c3c5dd2533777d35076bdfc5c65793 | — | 0 | — | — | — | A2 amendment; epoch 1 PLAN_CONFLICT preflight (no implementation); A2 approved 2026-08-28T17:01:32Z |
 | c6 | docs/plans/2026-08-28/16-unsupported-index.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c4,c5 | 1 | PENDING | — | — | 0 | — | — | — | 索引入库放宽 + topic 检索 + 双通道 |
 
 ## Amendments
@@ -41,3 +41,4 @@
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
 | A1 | docs/plans/2026-08-28/12-letter-closer.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | commit:53b5efc43cf59fc89b46cfa6393485e11584cbe2 | 12 验证命令（全量 mvn test 门禁）+ I-2/I-3（去重/主题归并改变 raw 文本） | 5 条既有测试（TrustReplyWorkbenchItemFlowTest.kt）断言改造前原文形态，计划自身要求的改动必然打破它们；修复由计划唯一确定，纯测试文件授权，无产品改动 | HUMAN:批准 A1（把 TrustReplyWorkbenchItemFlowTest.kt 加入 c2 授权文件清单）2026-08-28T14:32:17Z |
+| A2 | docs/plans/2026-08-28/15-workbench-three-step.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | commit:4ecbff4613bc05dbffd3b9fcfefaa79ca810f40b | 15 S-1/T-1（三步页签 data-page-panel facts/factset/compose）+ 验证命令（全量 node --test JS 门禁） | 既有 trustReplyWorkbenchSharedMount.test.js 硬编码两页断言，三步页签改动必然打破（即使用 frame 作第三页键仍会破）；修复由 S-1 唯一确定，纯测试文件授权，无产品改动 | HUMAN:批准 A2（把 trustReplyWorkbenchSharedMount.test.js 加入 c5 授权文件清单）2026-08-28T17:01:32Z |
