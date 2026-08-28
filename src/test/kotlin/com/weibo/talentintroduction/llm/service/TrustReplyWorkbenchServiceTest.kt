@@ -2034,6 +2034,58 @@ class TrustReplyWorkbenchServiceTest {
         assertEquals(matrix, assembled.requestFactSelections)
     }
 
+    // ── 12-letter-closer (T-4.8 / I-7 / IP-2) ─────────────────────────────────
+
+    @Test
+    fun `letter closing keeps canonical fact ids identical to the selection`() {
+        // 两条 request 命中同一条事实（sourceRuleIds 相同）→ 收口把正文去重为首次
+        // 出现的措辞；canonicalFactIds 仍来自 selection.sendQaRuleIds，与收口前
+        // 完全相同（I-7 / IP-2：审计规则集来自选择，不随文本形态变化而丢失）。
+        val item1 = item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)
+        val item2 = item(2, "How?", listOf(9L), RequestGroundingStatus.GROUNDED)
+        stubCanonicalSource(listOf(item1, item2))
+        val version = sourceVersion()
+        val expectedFactIds = (item1.factRuleIds + item2.factRuleIds).distinct()
+        val evidenceVersion = evidenceWithMapping(
+            "evidence-v1",
+            canonicalKey(version) to listOf(9L),
+            canonicalKey(version, 2, "How?") to listOf(9L)
+        )
+        val locked = listOf(
+            lockedAnswer(
+                version,
+                perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+                1,
+                "What?",
+                answerText = "First wording of the shared fact."
+            ),
+            lockedAnswer(
+                version,
+                perRequestEvidence("evidence-v1", canonicalKey(version, 2, "How?"), listOf(9L)),
+                2,
+                "How?",
+                answerText = "Second wording of the shared fact."
+            )
+        )
+        // 收口后 composeLockedItems 只收到首次出现的措辞（I-2 去重已生效）。
+        Mockito.`when`(pointByPointComposer.composeLockedItems(listOf("First wording of the shared fact."), defaultFrame))
+            .thenReturn("First wording of the shared fact.")
+        Mockito.`when`(previewService.preview("First wording of the shared fact.", contact(), null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
+
+        val assembled = service.assemble(TrustReplyAssembleRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            expectedSourceVersion = version,
+            expectedEvidenceSetVersion = evidenceVersion,
+            lockedItems = locked,
+            requestedFactIds = listOf(9L)
+        ))
+
+        // 正文被收口（同事实只出现一次），而审计规则集一字未变。
+        assertEquals("First wording of the shared fact.", assembled.rawDraftText)
+        assertEquals(expectedFactIds, assembled.canonicalFactIds)
+    }
+
     // ── 02 selectable frame: bootstrap options, strict resolve, state persistence ──
 
     @Test

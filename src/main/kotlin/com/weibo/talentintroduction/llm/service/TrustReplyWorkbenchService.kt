@@ -1463,9 +1463,14 @@ class TrustReplyWorkbenchService(
         // request；单 item 内 claim set / source ids / answer-claim 一致性仍由
         // canonicalizeClaims 保证。
 
-        val orderedAnswers = versions.mapNotNull { version ->
-            version.answerText.takeIf { version.handling != TrustReplyItemHandling.OMIT }
-        }
+        // 12-letter-closer: 确定性收口（sourceRuleIds 去重 / 主题归并 / 单 CTA）。
+        // 授权集合 = 来信推导 + 运营说明授权（同发送期 I-5 口径）；输出仍是有序答案
+        // 列表，composeLockedItems 契约不变（I-1/I-7）。逃生舱（I-6）在收口器内部。
+        val orderedAnswers = AiReplyLetterCloser.close(
+            versions = versions,
+            allowedActions = AiReplyActionPolicy.deriveAllowed(resolved.inboundText, null, emptyList()) +
+                operatorAuthorizedActions(request.lockedItems)
+        )
         // I-1/I-3/I-5: resolve the frame only after every locked item, claim and
         // version has passed validation; stale expected versions fail closed here.
         val resolvedFrame = resolveFrameForAssemble(request.frameSnapshot)
