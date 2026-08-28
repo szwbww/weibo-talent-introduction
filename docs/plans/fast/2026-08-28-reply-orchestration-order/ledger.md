@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-08-28T12:40:52Z
-- Current child: c2
-- Waiting role: IMPLEMENTER
+- Current child: c5
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: c5 PLAN_CONFLICT (preflight, no implementation) — plan 15 S-1/T-1 three-tab change (data-page-panel facts/factset/compose) breaks hard two-tab assertions in src/test/js/trustReplyWorkbenchSharedMount.test.js (NOT in the authorized 8): :2302 exactly 2 role=tab buttons, :2307/:2313-2317 frame-panel semantics, :2348/:2356/:2392/:2402 keyboard-nav + setActivePage selector, :2757/:2965/:3004 frame-active-after-stale. Counterfactual verified by implementer: keeping the third page key `frame` still breaks :2302/:2313-2317 — no within-plan implementation keeps `node --test src/test/js/*.test.js` green. Amendment A2 (widen c5 authorized files to include that test file, test-only) pending human approval.
+- Resume from: c5 preflight conflict; no product changes in worktree; A2 approval → resume epoch 1 (fix_round=0)
 
 ## Baseline
 
@@ -30,9 +30,9 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | c1 | docs/plans/2026-08-28/11-fact-supply.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | none | 1 | LIGHT_PASS_WITH_NOTES | de228e17cc0134a7c11dea7cbf82054e8d249f99 | 97e414658b1fe9196271f607cf763853c04d5098 | 0 | — | 97e414658b1fe9196271f607cf763853c04d5098 | 4677f7784ac08fc0317fa09ccd1a848e28b6fad9 | RECORD_ONLY O-1 (verify-log): parity test had 5 pre-existing tests at base, not 3 — no deviation |
-| c2 | docs/plans/2026-08-28/12-letter-closer.md | commit:53b5efc43cf59fc89b46cfa6393485e11584cbe2 | c1 | 2 | PENDING | 97e414658b1fe9196271f607cf763853c04d5098 | — | 0 | — | — | — | A1 amendment; epoch 1 PLAN_CONFLICT, implementation left uncommitted in worktree |
-| c3 | docs/plans/2026-08-28/14-workbench-concurrency.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | none | 1 | PENDING | — | — | 0 | — | — | — | 与 12 无依赖；串行排后 |
-| c4 | docs/plans/2026-08-28/13-letter-orchestrator.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c2 | 1 | PENDING | — | — | 0 | — | — | — | 一次编排 LLM 调用 + 六道校验 |
+| c2 | docs/plans/2026-08-28/12-letter-closer.md | commit:53b5efc43cf59fc89b46cfa6393485e11584cbe2 | c1 | 2 | LIGHT_PASS | 97e414658b1fe9196271f607cf763853c04d5098 | e3217e5079616839e514fe54d45b42a073035219 | 0 | — | e3217e5079616839e514fe54d45b42a073035219 | 4aacd7e6196dfe0a13e293fac256015c6a1e7e9f | A1 amendment; epoch 1 PLAN_CONFLICT (5 pre-existing ItemFlow tests asserted pre-12 raw text), A1 approved 2026-08-28T14:32:17Z; O-1 (verify-log) |
+| c3 | docs/plans/2026-08-28/14-workbench-concurrency.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | none | 1 | LIGHT_PASS_WITH_NOTES | e3217e5079616839e514fe54d45b42a073035219 | 41aae5af28e81e31e0469937c96bd532f13dc784 | 0 | — | 41aae5af28e81e31e0469937c96bd532f13dc784 | 764d1a214c5b7cc5dbdb84af812350561a12f9de | RECORD_ONLY O-1..O-3 (verify-log): O-1 pre-existing 1-Hz flake unrelated; O-2 plan says 4 hasRequestMutationPending refs, base had 3 (canStartAssembly per-item guard), c3 unchanged; O-3 toggleResolve/persistDecisionUnlock full-PUT pre-existing |
+| c4 | docs/plans/2026-08-28/13-letter-orchestrator.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c2 | 1 | LIGHT_PASS_WITH_NOTES | 41aae5af28e81e31e0469937c96bd532f13dc784 | 889210e339c3c5dd2533777d35076bdfc5c65793 | 0 | — | 889210e339c3c5dd2533777d35076bdfc5c65793 | 53252a6905bf0b0ed7f12b714569dd087a7a0883 | RECORD_ONLY O-1 (verify-log): truncated G2-canonical prefix in a negative test fixture; plan grep gate passes |
 | c5 | docs/plans/2026-08-28/15-workbench-three-step.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c3,c4 | 1 | PENDING | — | — | 0 | — | — | — | 三步界面 + 运营事实 |
 | c6 | docs/plans/2026-08-28/16-unsupported-index.md | commit:5a90e3e53e5fe8b40059b3090f086d6b36a09a01 | c4,c5 | 1 | PENDING | — | — | 0 | — | — | — | 索引入库放宽 + topic 检索 + 双通道 |
 
