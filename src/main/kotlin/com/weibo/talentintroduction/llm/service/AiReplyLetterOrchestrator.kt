@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.LlmProperties
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 
 /**
@@ -87,7 +88,21 @@ private sealed class OrchestrationParseResult {
 class AiReplyLetterOrchestrator(
     private val properties: LlmProperties,
     private val llmDraftClientProvider: ObjectProvider<LlmDraftClient>,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    // c6 (16-unsupported-index T-4 通道 A / I-1 / IP-3)：措辞样例源 + 默认关闭开关。
+    // - 样例仅供句式、语气与过渡方式参考——索引内容永远不作为事实来源进入生成链路
+    //   （I-1 三条理由，供后人不要"优化"掉）：
+    //     1) 破坏可追溯——审计链是 claim → sourceIds → qa_rule，历史回复没有 rule id；
+    //     2) 复活旧口径——发出时正确的信可能含已废弃表述（如 labor contract、"约 10%
+    //        成功率"、"PhD team"），索引不带时效；
+    //     3) 自我强化漂移——AI 生成 → 被采纳 → 入索引 → 被引用 → 再入索引，无外部
+    //        真值锚定。
+    // - 通道 A 的安全性完全依赖 13 的 G1 来源封闭（样例命题无合法 factId，G1 会把整段
+    //   打回重试），13 未上线的环境必须保持开关关闭（IP-3）。
+    // - 两个参数都有默认值：既有直接构造（测试）不传参也能编译，行为不变。
+    private val unsupportedAnswerIndexService: UnsupportedAnswerIndexService? = null,
+    @Value("\${talent-introduction.llm.style-sample-injection-enabled:false}")
+    private val styleSampleInjectionEnabled: Boolean = false
 ) {
     private val log = LoggerFactory.getLogger(AiReplyLetterOrchestrator::class.java)
 
@@ -114,7 +129,8 @@ class AiReplyLetterOrchestrator(
             log.warn("13-letter-orchestrator: LLM client unavailable or disabled; orchestration skipped (I-8)")
             return null
         }
-        val messages = buildPrompt(facts, plan, topicOrder, allowedActions)
+        val samples = styleSamples(topicOrder)
+        val messages = buildPrompt(facts, plan, topicOrder, allowedActions, samples)
         val first = executeCall(client, messages)
         if (first.failureType != LlmChatFailureType.SUCCESS || first.content == null) {
             log.warn(
@@ -454,11 +470,23 @@ class AiReplyLetterOrchestrator(
 
     // ── 提示词与修复消息 ────────────────────────────────────────────────────────
 
+    /**
+     * c6 (T-4 通道 A / IP-3)：获取措辞样例。开关默认关闭（13 的来源封闭未上线的环境
+     * 必须保持关闭）；开启时才访问索引，任何失败都不阻断编排（样例是提示词增强，
+     * 不是门禁——I-8 的兜底行为不变）。
+     */
+    private fun styleSamples(topicOrder: List<String>): Map<String, List<String>> {
+        if (!styleSampleInjectionEnabled) return emptyMap()
+        val service = unsupportedAnswerIndexService ?: return emptyMap()
+        return service.recentCandidateSamples(topicOrder, STYLE_SAMPLE_LIMIT_PER_TOPIC)
+    }
+
     private fun buildPrompt(
         facts: List<PlanFact>,
         plan: List<ParagraphPlanEntry>,
         topicOrder: List<String>,
-        allowedActions: Set<AiReplyAction>?
+        allowedActions: Set<AiReplyAction>?,
+        styleSamples: Map<String, List<String>>
     ): List<LlmChatMessage> {
         val content = buildString {
             appendLine("You are composing the body of a reply letter to an academic expert from server-approved facts.")
@@ -476,6 +504,18 @@ class AiReplyLetterOrchestrator(
             appendLine()
             appendLine("## Topic order")
             appendLine(topicOrder.joinToString(", "))
+            if (styleSamples.isNotEmpty()) {
+                appendLine()
+                appendLine("## Style samples (wording, tone and transitions ONLY — never a fact source)")
+                // c6 (T-4 / I-1)：逐字提示——样例只供风格参考，不得引用其中任何事实。
+                // 请勿"优化"掉本句（I-1 三条理由见构造器注释）。
+                appendLine("以下段落仅供参考句式、语气与过渡方式，**不得引用其中任何事实或数字**；每个段落的 factIds 必须来自本次提供的事实清单。")
+                styleSamples.forEach { (topic, texts) ->
+                    texts.forEach { text ->
+                        appendLine("- topic=\"$topic\": $text")
+                    }
+                }
+            }
             appendLine()
             appendLine("## Facts (bodies are authoritative; [CONTROLLED Gx] and [FROZEN] bodies must appear VERBATIM)")
             facts.forEach { fact ->
@@ -566,6 +606,9 @@ class AiReplyLetterOrchestrator(
     companion object {
         private const val PLACEHOLDER_SAMPLE = "\${...}"
         private val WHITESPACE_RUN = Regex("\\s+")
+
+        // c6 (T-4 / I-1)：每主题取最近 N=2 条 CANDIDATE 样例（措辞参考，非事实源）。
+        private const val STYLE_SAMPLE_LIMIT_PER_TOPIC = 2
 
         /** Spring 装配实例；`AiReplyLetterCloser`（object）经此拿到生产编排器（I-8）。 */
         @Volatile

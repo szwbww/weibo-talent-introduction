@@ -430,6 +430,70 @@ class UnsupportedAnswerIndexService(
         }
     }
 
+    /**
+     * c6 (T-4 通道 A / I-1 / IP-3)：按 topicOrder 的主题各取最近 N 条
+     * `status = CANDIDATE` 的 `finalParagraphText` 作为**措辞样例**——仅供句式、语气与
+     * 过渡方式参考，索引内容永远不作为事实来源进入生成链路（I-1）。
+     *
+     * 尽力而为：任何失败（ES 不可用、超时、解析异常）都返回空 map 并只记 warn——
+     * 样例获取不得阻断编排主流程（与「归档失败不阻断主流程」同一原则，What must
+     * NOT change 第 2 项）。
+     */
+    fun recentCandidateSamples(topics: List<String>, limitPerTopic: Int): Map<String, List<String>> {
+        if (topics.isEmpty() || limitPerTopic <= 0) return emptyMap()
+        val query = objectMapper.createObjectNode().apply {
+            put("size", Math.min(limitPerTopic * topics.size, MAX_STYLE_SAMPLE_FETCH))
+            put("track_total_hits", false)
+            set<ArrayNode>("_source", objectMapper.createArrayNode().apply {
+                add("topic")
+                add("finalParagraphText")
+            })
+            set<ArrayNode>("sort", objectMapper.createArrayNode().apply {
+                add(objectMapper.createObjectNode().set<ObjectNode>(
+                    "createdAt",
+                    objectMapper.createObjectNode().put("order", "desc")
+                ))
+            })
+            set<ObjectNode>(
+                "query",
+                objectMapper.createObjectNode().set<ObjectNode>(
+                    "bool",
+                    objectMapper.createObjectNode().set<ArrayNode>(
+                        "filter",
+                        objectMapper.createArrayNode().apply {
+                            add(termNode("status", UnsupportedAnswerIndexStatus.CANDIDATE.name))
+                            add(termsNode("topic", topics))
+                        }
+                    )
+                )
+            )
+        }
+        return try {
+            val response = restTemplate.exchange(
+                "${indexUrl()}/_search",
+                HttpMethod.POST,
+                HttpEntity(query, headers()),
+                JsonNode::class.java
+            ).body ?: return emptyMap()
+            val hits = response.path("hits").path("hits")
+            if (hits.isMissingNode) return emptyMap()
+            val samples = linkedMapOf<String, MutableList<String>>()
+            hits.forEach { hit ->
+                val source = hit.path("_source")
+                val topic = source.path("topic").asText("").trim()
+                val text = source.path("finalParagraphText").asText("").trim()
+                if (topic.isNotEmpty() && text.isNotEmpty()) {
+                    val bucket = samples.getOrPut(topic) { mutableListOf() }
+                    if (bucket.size < limitPerTopic) bucket += text
+                }
+            }
+            samples.mapValues { it.value.toList() }
+        } catch (error: Exception) {
+            log.warn("Unsupported answer index style sample fetch failed: {}", error.javaClass.simpleName)
+            emptyMap()
+        }
+    }
+
     fun documentId(document: UnsupportedAnswerIndexDocument): String =
         sha256("${document.sourceType}|${document.sourceId}|${document.requestKey}|${document.versionId}")
 
@@ -521,6 +585,16 @@ class UnsupportedAnswerIndexService(
 
     private fun termNode(field: String, value: String): ObjectNode =
         objectMapper.createObjectNode().set<ObjectNode>("term", objectMapper.createObjectNode().put(field, value))
+
+    /** c6 (T-4)：多值 keyword 精确过滤（I-3：只对 topic / sourceMode / status 做 term）。 */
+    private fun termsNode(field: String, values: List<String>): ObjectNode =
+        objectMapper.createObjectNode().set<ObjectNode>(
+            "terms",
+            objectMapper.createObjectNode().set<ArrayNode>(
+                field,
+                objectMapper.createArrayNode().apply { values.forEach(::add) }
+            )
+        )
 
     private fun parseListItem(hit: JsonNode): UnsupportedAnswerIndexListItem? {
         val source = hit.path("_source")
@@ -729,6 +803,9 @@ class UnsupportedAnswerIndexService(
         // c6 (I-6 / T-3)：不参与空值丢弃的字段——operatorInstruction 已降为可选，
         // topic / editedByOperator 为新增字段、存量文档可能缺失。
         private val OPTIONAL_LIST_FIELDS = setOf("operatorInstruction", "topic", "editedByOperator")
+
+        // c6 (T-4)：单次样例拉取上限（N=2 × 主题数，封顶防大请求）。
+        private const val MAX_STYLE_SAMPLE_FETCH = 200
 
         private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
             .digest(value.toByteArray(StandardCharsets.UTF_8))

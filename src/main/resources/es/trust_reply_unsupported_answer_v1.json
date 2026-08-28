@@ -28,7 +28,10 @@
       "qualificationType": { "type": "keyword" },
       "qualificationId": { "type": "keyword" },
       "approvedBy": { "type": "keyword" },
-      "createdAt": { "type": "date" }
+      "createdAt": { "type": "date" },
+      "topic": { "type": "keyword" },
+      "finalParagraphText": { "type": "text", "index": false },
+      "editedByOperator": { "type": "boolean" }
     }
   }
 }

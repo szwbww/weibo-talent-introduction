@@ -99,7 +99,10 @@ class UnsupportedAnswerIndexApiTest {
             "schemaVersion", "status", "sourceMode", "sourceType", "sourceId", "sourceVersion",
             "expertContactId", "campaignId", "requestKey", "requestIndex", "requestText", "handling",
             "operatorInstruction", "operatorInstructionHash", "versionId", "answerText", "answerHash",
-            "model", "generationKind", "qualificationType", "qualificationId", "approvedBy", "createdAt"
+            "model", "generationKind", "qualificationType", "qualificationId", "approvedBy", "createdAt",
+            // c6 (T-1 / A3)：归档接缝三字段（topic keyword / finalParagraphText 不可检索
+            // / editedByOperator），字段集 23 → 26。
+            "topic", "finalParagraphText", "editedByOperator"
         )
         assertEquals(expected, fields.fieldNames().asSequence().toSet())
         listOf("requestText", "operatorInstruction", "answerText").forEach { field ->
