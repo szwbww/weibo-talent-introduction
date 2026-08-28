@@ -2228,128 +2228,16 @@ class ExpertSearchServiceTest {
         assertTrue(raw.has("expertClassification"))
     }
 
-    // ──── I3: INTRODUCTION sendable gate (child 03) ──────────────────────────
+    // ──── I4: INTRODUCTION type gate (child 04) ─────────────────────────────
 
     @Test
-    fun `expertSendableFilter requires sendable and accepted policy version (I3-2 I5a2-9)`() {
+    fun `MATCH_NONE_FILTER is a never-matching must_not match_all bool (I4-2)`() {
         assertEquals(
             mapOf(
-                "bool" to mapOf(
-                    "filter" to listOf(
-                        mapOf("term" to mapOf("expertClassification.sendable" to true)),
-                        mapOf("terms" to mapOf(
-                            "expertClassification.version" to ExpertClassificationService.ACCEPTED_CLASSIFICATION_VERSIONS
-                        ))
-                    )
-                )
+                "bool" to mapOf("must_not" to listOf(mapOf("match_all" to emptyMap<String, Any>())))
             ),
-            ExpertSearchService.expertSendableFilter()
+            ExpertSearchService.MATCH_NONE_FILTER
         )
-    }
-
-    @Test
-    fun `searchSendableExpertsWithEmail sends exists email AND sendable term on CANDIDATE (I3-1 I3-2)`() {
-        val body = mapper.readTree(
-            """
-            {
-              "hits": {
-                "total": {"value": 1},
-                "hits": [
-                  {
-                    "_source": {
-                      "orcidId": "0001",
-                      "email": "a@example.com",
-                      "givenNames": "Ada",
-                      "familyNames": "Lovelace",
-                      "expertClassification": {
-                        "type": "PRODUCTION_RND",
-                        "sendable": true,
-                        "productionScore": 80,
-                        "researchScore": 20,
-                        "positiveEvidence": ["RND_PRODUCTION"],
-                        "negativeEvidence": [],
-                        "version": "rnd-v1-2026",
-                        "sourceFingerprint": "fp",
-                        "classifiedAt": "2026-08-01 12:00:00"
-                      }
-                    }
-                  }
-                ]
-              }
-            }
-            """.trimIndent()
-        )
-        val entityCaptor = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
-        Mockito.`when`(
-            restTemplate.exchange(
-                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
-                eq(HttpMethod.POST),
-                any(),
-                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
-            )
-        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
-
-        val result = service.searchSendableExpertsWithEmail(1)
-
-        Mockito.verify(restTemplate).exchange(
-            eq("https://es.example.com:9200/orcid_info_candidate/_search"),
-            eq(HttpMethod.POST),
-            entityCaptor.capture(),
-            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
-        )
-        val request = entityCaptor.value.body as Map<*, *>
-        val query = request["query"] as Map<*, *>
-        val bool = query["bool"] as Map<*, *>
-        val filter = bool["filter"] as List<*>
-        assertEquals(2, filter.size, "sendable query must carry exactly exists email + current-policy sendable gate")
-        assertTrue(filter.toString().contains("exists") && filter.toString().contains("email"))
-        assertEquals(
-            ExpertSearchService.expertSendableFilter(),
-            filter.firstOrNull { item -> item == ExpertSearchService.expertSendableFilter() }
-        )
-        // I3-2: 查询仍按现有层级排序 —— CANDIDATE 使用 candidateValidatedAt。
-        val sort = request["sort"] as List<*>
-        assertTrue(sort.toString().contains("candidateValidatedAt"), "CANDIDATE sort must be candidateValidatedAt: $sort")
-
-        // 结果映射仍完整（含分类对象）。
-        assertEquals(1, result.experts.size)
-        assertEquals("0001", result.experts.single().orcidId)
-        assertEquals(ExpertType.PRODUCTION_RND, result.experts.single().expertClassification?.type)
-        assertTrue(result.experts.single().expertClassification?.sendable == true)
-        assertEquals(1L, result.totalHits)
-    }
-
-    @Test
-    fun `searchSendableExpertsWithEmail honors explicit level and its sort (I3-2)`() {
-        val body = mapper.readTree("""{"hits":{"total":{"value":0},"hits":[]}}""")
-        val entityCaptor = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
-        Mockito.`when`(
-            restTemplate.exchange(
-                eq("https://es.example.com:9200/orcid_info_application/_search"),
-                eq(HttpMethod.POST),
-                any(),
-                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
-            )
-        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
-
-        val result = service.searchSendableExpertsWithEmail(5, ExpertIndexLevel.APPLICATION)
-
-        assertEquals(0, result.experts.size)
-        assertEquals(0L, result.totalHits)
-        Mockito.verify(restTemplate).exchange(
-            eq("https://es.example.com:9200/orcid_info_application/_search"),
-            eq(HttpMethod.POST),
-            entityCaptor.capture(),
-            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
-        )
-        val request = entityCaptor.value.body as Map<*, *>
-        val filter = ((request["query"] as Map<*, *>)["bool"] as Map<*, *>)["filter"] as List<*>
-        assertEquals(
-            ExpertSearchService.expertSendableFilter(),
-            filter.firstOrNull { item -> item == ExpertSearchService.expertSendableFilter() }
-        )
-        val sort = request["sort"] as List<*>
-        assertTrue(sort.toString().contains("applicationPromotedAt"), "APPLICATION sort must be applicationPromotedAt: $sort")
     }
 
     @Test

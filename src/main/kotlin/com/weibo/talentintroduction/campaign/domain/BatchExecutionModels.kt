@@ -3,7 +3,7 @@ package com.weibo.talentintroduction.campaign.domain
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.service.BatchSendType
-import com.weibo.talentintroduction.expert.service.ExpertClassificationService
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import java.time.LocalDateTime
 
 /** Immutable launch snapshot consumed once per execution (I-1). */
@@ -57,20 +57,12 @@ data class RecipientScope(
     val emailDomains: List<String>,
     val discipline: String?,
     val operatorStatuses: List<String> = emptyList(),
-    /** I2-1: 研发类型收窄（INTRODUCTION 专属，空集合 = 不限）。 */
+    /** I4-2: 研发类型收窄（INTRODUCTION 专属；空集合 = 发给零个人，fail-closed，见 [matchesExpertType]）。 */
     val expertTypes: List<String> = emptyList(),
     /** I4a-4: 已解析的门禁 ES 字段（ALLOWED_HAS_FIELDS 交集）；解析只发生在 resolveScope。 */
     val gateEsFields: List<String> = emptyList()
 ) {
     fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
-        // I3-1/I3-2：INTRODUCTION 内存门禁 —— null/false/旧策略版本都拒绝（fail closed），
-        // 与 ES 的 expertSendableFilter() 同口径；仅在 mailType=INTRODUCTION 应用，
-        // MATERIAL_REMINDER 零影响（I3-5）。
-        val classification = profile.expertClassification
-        if (mailType == BatchSendType.INTRODUCTION.name &&
-            (classification?.sendable != true ||
-                classification.version !in ExpertClassificationService.ACCEPTED_CLASSIFICATION_VERSIONS)
-        ) return false
         // I3a-5：与 ES 的 operatorStatusesFilter 同口径 —— 多状态取 OR；
         // NOT_CONTACTED = ES 文档无该字段（I3a-1）；空集合不判定（I3a-3）。
         if (operatorStatuses.isNotEmpty()) {
@@ -80,15 +72,8 @@ data class RecipientScope(
             }
             if (!matched) return false
         }
-        // I2-1/I2-6: 类型筛选是硬门禁之内的可选收窄，只在 INTRODUCTION 下判定；
-        // 空集合不判定（I2-3）。硬门禁（:65-69）不得被本段替代。
-        if (mailType == BatchSendType.INTRODUCTION.name && expertTypes.isNotEmpty()) {
-            val typeName = profile.expertClassification?.type?.name
-            val matched = expertTypes.any {
-                if (it == "UNCLASSIFIED") typeName == null else typeName == it
-            }
-            if (!matched) return false
-        }
+        // I4-1: INTRODUCTION 的唯一收口点；MATERIAL_REMINDER 不判定（零影响）。
+        if (mailType == BatchSendType.INTRODUCTION.name && !matchesExpertType(profile)) return false
         if (!discipline.isNullOrBlank()) {
             val matched = if (discipline == "UNCLASSIFIED") {
                 profile.disciplineCategory.isNullOrBlank()
@@ -133,6 +118,17 @@ data class RecipientScope(
         return true
     }
 
+    /**
+     * I4-4: 研发类型判定的**唯一** Kotlin 实现，由 [matchesExpert] 与
+     * ManualInitialOutreachService 的发送前门禁共同调用，禁止再复刻第二份。
+     * I4-5: 与 ES 的 expertTypePredicate 同口径 —— `UNCLASSIFIED` = 类型为 null。
+     * I4-2: 空集合返回 false（fail-closed）。
+     */
+    fun matchesExpertType(profile: ExpertProfile): Boolean {
+        val typeName = profile.expertClassification?.type?.name
+        return expertTypes.any { if (it == "UNCLASSIFIED") typeName == null else typeName == it }
+    }
+
     companion object {
         fun fromSnapshot(snapshot: BatchExecutionSnapshot): RecipientScope {
             val levels = when (snapshot.funnelLevel?.trim()?.takeIf { it.isNotEmpty() }) {
@@ -151,7 +147,7 @@ data class RecipientScope(
                 discipline = snapshot.discipline?.trim()?.takeIf { it.isNotEmpty() },
                 // I3a-3：trim、丢空、去重保序；空集合 = 不限。
                 operatorStatuses = snapshot.operatorStatuses.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
-                // I2-3：trim、丢空、去重保序；空集合 = 不限。
+                // I4-2：trim、丢空、去重保序；空集合在发信判定中 fail-closed（发给零个人）。
                 expertTypes = snapshot.expertTypes.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
             )
         }
@@ -180,7 +176,7 @@ object BatchOutcomeReasonCodes {
         DAILY_CAP_EXCEEDED to "超日限额",
         CANCELLED to "被取消",
         PERSONALIZATION_INCOMPLETE to "个性化字段缺失",
-        EXPERT_NOT_SENDABLE to "专家非生产/科研可发类型"
+        EXPERT_NOT_SENDABLE to "研发类型不在本次选择范围内"
     )
 
     fun label(code: String): String = LABELS[code] ?: code

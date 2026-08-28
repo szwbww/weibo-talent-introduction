@@ -15,7 +15,6 @@ import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepositor
 import com.weibo.talentintroduction.config.ManualOutreachProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
-import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
@@ -602,22 +601,18 @@ class ManualInitialOutreachService(
                 val (existingContact, expert) = targetIterator.next()
                 val normOrcid = normalizeOrcid(expert.orcidId)
 
-                // I3-4：INTRODUCTION 最后门禁 —— 取回 profile 后、邮箱/账号/contact 处理前再次检查。
-                // 查询/缓存/未来重构错误可绕过硬门禁；null/false/旧策略版本均拒绝，记录 EXPERT_NOT_SENDABLE，
-                // 不创建 contact、不选账号、不渲染、不投递（I3-1）。
-                val classification = expert.expertClassification
-                if (classification?.sendable != true ||
-                    classification.version !in ExpertClassificationService.ACCEPTED_CLASSIFICATION_VERSIONS
-                ) {
+                // I4-1/I4-4: 发送前最后门禁 —— 与 ES 查询、内存重试过滤共用同一份类型判定。
+                // 查询/缓存/未来重构错误可能绕过 ES 侧，创建 contact 前再判一次。
+                if (!scope.matchesExpertType(expert)) {
                     accumulator.recordSkipped(
                         BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE,
-                        "专家非生产/科研可发类型：${expert.orcidId}"
+                        "研发类型不在本次选择范围内：${expert.orcidId}"
                     )
                     processedTotal++
                     roundProcessed++
                     roundRejected++
                     updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
-                        "RUNNING", "专家非生产/科研可发类型：${expert.orcidId}", errors, mode, roundNumber, config, runAccountStats,
+                        "RUNNING", "研发类型不在本次选择范围内：${expert.orcidId}", errors, mode, roundNumber, config, runAccountStats,
                         roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                     continue
                 }
@@ -1319,13 +1314,13 @@ class ManualInitialOutreachService(
         // I4a-2: 门禁字段之间 AND —— 平铺进 filter 数组，不用 should。
         // I4a-1: 空集合时 fieldPresenceFilters 返回空列表，不追加任何项。
         filters.addAll(ExpertSearchService.fieldPresenceFilters(scope.gateEsFields))
-        // I3-2/I3-5: INTRODUCTION 的所有 funnel level 在 filters 末尾追加共享 sendable term
-        // （预估 countEsTargets / fetchEsPage / buildMaterialReminderSnapshot 复用同一 seam）；
-        // MATERIAL_REMINDER 不追加，零影响（I3-5）。
+        // I4-1: INTRODUCTION 的唯一收口点 —— 只按研发类型集合判定，无第二个门禁。
+        // I4-2: 空集合 = 发给零个人（fail-closed），不是"不限"。
         if (scope.mailType == BatchSendType.INTRODUCTION.name) {
-            // I2-1/I2-6: 类型筛选是硬门禁之内的可选收窄（空集合返回 null，不追加，I2-3）。
-            ExpertSearchService.expertTypesFilter(scope.expertTypes)?.let { filters.add(it) }
-            filters.add(ExpertSearchService.expertSendableFilter())
+            filters.add(
+                ExpertSearchService.expertTypesFilter(scope.expertTypes)
+                    ?: ExpertSearchService.MATCH_NONE_FILTER
+            )
         }
         return filters
     }

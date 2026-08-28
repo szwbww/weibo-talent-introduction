@@ -268,6 +268,33 @@ class BatchSendTaskRuntimeIntegrationTest {
         assertEquals(5, invokeCountEsTargets(outreach.service, scope))
     }
 
+    @Test
+    fun `matchesExpertType agrees with expertTypesFilter predicate semantics per profile (I4-5)`() {
+        // I4-5: 内存 matchesExpertType 与 ES expertTypesFilter（expertTypePredicate）同口径 ——
+        // UNCLASSIFIED ↔ expertClassification.type 字段不存在 / null。
+        val types = listOf("PRODUCTION_RND", "UNCLASSIFIED")
+        val scope = RecipientScope(
+            mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+            tags = emptyList(), regions = emptyList(),
+            emailDomains = emptyList(), discipline = null,
+            expertTypes = types
+        )
+        val profiles = listOf(
+            expert("0001", "a@b.com"), // fixture ACADEMIC_RND → 未命中
+            expert("0002", "b@b.com").copy(expertClassification = classification(ExpertType.PRODUCTION_RND)),
+            expert("0003", "c@b.com").copy(expertClassification = null), // UNCLASSIFIED → 命中
+            expert("0004", "d@b.com").copy(expertClassification = classification(ExpertType.OUT_OF_SCOPE))
+        )
+        profiles.forEach { profile ->
+            val esMatches = esTypeFilterMatches(types, profile)
+            assertEquals(
+                esMatches,
+                scope.matchesExpertType(profile),
+                "ES/memory parity mismatch for ${profile.orcidId}"
+            )
+        }
+    }
+
     // ─── I-4: template gate ────────────────────────────────────────────────────
 
     @Test
@@ -709,6 +736,38 @@ class BatchSendTaskRuntimeIntegrationTest {
         val method = ManualInitialOutreachService::class.java.getDeclaredMethod("countEsTargets", RecipientScope::class.java)
         method.isAccessible = true
         return method.invoke(service, scope) as Int
+    }
+
+    private fun classification(type: ExpertType): ExpertClassification =
+        ExpertClassification(
+            type = type,
+            productionScore = 0,
+            researchScore = 55,
+            positiveEvidence = listOf("RESEARCH_PUBLICATION"),
+            negativeEvidence = emptyList(),
+            version = "rnd-v2-2026",
+            sourceFingerprint = "fixture",
+            classifiedAt = LocalDateTime.of(2026, 1, 1, 0, 0)
+        )
+
+    /** 按 expertTypesFilter 产出的 ES bool.should 结构逐 profile 求值（term / must_not exists）。 */
+    private fun esTypeFilterMatches(types: List<String>, profile: ExpertProfile): Boolean {
+        val filter = ExpertSearchService.expertTypesFilter(types)!!
+        val node = objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(filter)
+        val should = node["bool"]["should"]
+        return should.any { clause ->
+            val term = clause["term"]
+            val mustNot = clause["bool"]?.get("must_not")
+            when {
+                term != null -> {
+                    val entry = term.fields().asSequence().single()
+                    require(entry.key == "expertClassification.type") { "unexpected term field ${entry.key}" }
+                    profile.expertClassification?.type?.name == entry.value.asText()
+                }
+                mustNot != null -> profile.expertClassification?.type == null
+                else -> error("unexpected expertTypesFilter clause: $clause")
+            }
+        }
     }
 
     private fun expert(orcidId: String, email: String, tags: List<String> = emptyList(), discipline: String? = null) =
