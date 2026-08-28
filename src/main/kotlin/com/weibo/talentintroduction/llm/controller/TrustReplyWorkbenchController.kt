@@ -11,6 +11,11 @@ import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchException
 import com.weibo.talentintroduction.llm.service.AiReplyTurn
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleResponse
+import com.weibo.talentintroduction.llm.service.TrustReplyRearrangeRequest
+import com.weibo.talentintroduction.llm.service.TrustReplyRearrangeResponse
+import com.weibo.talentintroduction.llm.service.TrustReplyPinnedParagraphRequest
+import com.weibo.talentintroduction.llm.service.ParagraphPlanEntry
+import com.weibo.talentintroduction.llm.service.PlanFact
 import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
 import com.weibo.talentintroduction.llm.service.TrustReplyLockedItemRequest
 import com.weibo.talentintroduction.llm.service.TrustReplySaveStateItemRequest
@@ -104,6 +109,13 @@ class TrustReplyWorkbenchController(
     @PostMapping("/assemble")
     fun assemble(@RequestBody request: TrustReplyAssembleHttpRequest): TrustReplyAssembleResponse =
         workbenchService.assemble(request.toDomain())
+
+    // c5 / 15-workbench-three-step（T-5）: 重排端点——运营编辑后的 paragraphPlanDraft +
+    // pinned 段落 + op* 运营事实 → 一次 13 编排调用，返回新 paragraphs 与六道校验结果。
+    // 不落库（I-4）——落库仍走整合（assemble）。
+    @PostMapping("/rearrange")
+    fun rearrange(@RequestBody request: TrustReplyRearrangeHttpRequest): TrustReplyRearrangeResponse =
+        workbenchService.rearrange(request.toDomain())
 
     @PutMapping("/state")
     fun saveState(@RequestBody request: TrustReplySaveStateHttpRequest): TrustReplySavedState =
@@ -202,6 +214,40 @@ class TrustReplyWorkbenchController(
                 operatorInstruction = locked.operatorInstruction
             )
         }
+    )
+
+    // c5 / 15-workbench-three-step（T-5）: 重排请求转换。op* 事实按 I-2 强制逐字插槽
+    // （frozen=true、required=true），id 为 op<n>，绝不进入任何哈希（I-1 / G-7）。
+    private fun TrustReplyRearrangeHttpRequest.toDomain() = TrustReplyRearrangeRequest(
+        source = source.toDomain(),
+        expectedSourceVersion = expectedSourceVersion,
+        paragraphPlanDraft = paragraphPlanDraft.map { entry ->
+            ParagraphPlanEntry(
+                topic = entry.topic,
+                factIds = entry.factIds,
+                gapCondition = entry.gapCondition
+            )
+        },
+        pinnedParagraphs = pinnedParagraphs.map { pinned ->
+            TrustReplyPinnedParagraphRequest(
+                topic = pinned.topic,
+                factIds = pinned.factIds,
+                text = pinned.text,
+                evidenceSetVersion = pinned.evidenceSetVersion
+            )
+        },
+        operatorFacts = operatorFacts.map { fact ->
+            PlanFact(
+                id = fact.id,
+                topic = fact.topic,
+                body = fact.body,
+                controlled = fact.controlled,
+                frozen = fact.frozen,
+                required = fact.required
+            )
+        },
+        requestedFactIds = requestedFactIds,
+        requestFactSelections = requestFactSelections?.map { it.toDomain() }
     )
 
     private fun TrustReplySaveStateHttpRequest.toDomain() = TrustReplySaveStateRequest(
@@ -346,6 +392,41 @@ data class TrustReplyAssembleHttpRequest(
     val requestedFactIds: List<Long>? = null,
     val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null,
     val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null
+)
+
+// c5 / 15-workbench-three-step（T-5）: 重排请求 DTO。paragraphPlanDraft 复用 13 的
+// ParagraphPlanEntry 形状（topic + factIds + 可选 gapCondition）；pinned 段落携带条目级
+// evidenceSetVersion（I-3）；operatorFacts 为 op<n> 逐字插槽（I-1/I-2）。
+data class TrustReplyParagraphPlanEntryHttpRequest(
+    val topic: String,
+    val factIds: List<String>,
+    val gapCondition: String? = null
+)
+
+data class TrustReplyPinnedParagraphHttpRequest(
+    val topic: String,
+    val factIds: List<String>,
+    val text: String,
+    val evidenceSetVersion: String
+)
+
+data class TrustReplyOperatorFactHttpRequest(
+    val id: String,
+    val topic: String,
+    val body: String,
+    val controlled: String? = null,
+    val frozen: Boolean = true,
+    val required: Boolean = true
+)
+
+data class TrustReplyRearrangeHttpRequest(
+    val source: TrustReplySourceHttpRequest,
+    val expectedSourceVersion: String,
+    val paragraphPlanDraft: List<TrustReplyParagraphPlanEntryHttpRequest>,
+    val pinnedParagraphs: List<TrustReplyPinnedParagraphHttpRequest> = emptyList(),
+    val operatorFacts: List<TrustReplyOperatorFactHttpRequest> = emptyList(),
+    val requestedFactIds: List<Long>? = null,
+    val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null
 )
 
 data class TrustReplyDeleteStateHttpRequest(

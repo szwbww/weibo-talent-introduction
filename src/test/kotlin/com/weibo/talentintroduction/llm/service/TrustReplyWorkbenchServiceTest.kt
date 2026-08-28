@@ -14,9 +14,11 @@ import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.reply.service.ReplyFrameSelection
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import com.weibo.talentintroduction.reply.service.ResolvedReplyFrame
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -2629,6 +2631,228 @@ class TrustReplyWorkbenchServiceTest {
         assertEquals("DELETED", response.status)
         Mockito.verify(stateStore).delete("TRAINING_MAIL", 11L, 5L)
         Mockito.verify(stateStore, Mockito.never()).deleteBySource(Mockito.anyString(), Mockito.anyLong())
+    }
+
+    // ── c5 / 15-workbench-three-step（T-6.4 / T-6.5）─────────────────────────────
+
+    private fun stubTwoRequestSource() {
+        val exact = mail(id = 11L, body = "What?\nWhen?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+        val selected = selection(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "When?", listOf(10L), RequestGroundingStatus.GROUNDED)
+        )
+        Mockito.`when`(factSelection.selectForWorkbench("What?\nWhen?", listOf(listOf(9L), listOf(10L)), null, true))
+            .thenReturn(selected)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L, 10L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(10L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(qaRules.findAllEnabledOrdered()).thenReturn(listOf(
+            QaRule(id = 9L, categoryId = 3L, keywords = "what", replySubject = null, replyBody = "", answerBody = "answer", displayName = "What"),
+            QaRule(id = 10L, categoryId = 3L, keywords = "when", replySubject = null, replyBody = "", answerBody = "second", displayName = "When")
+        ))
+    }
+
+    // T-6.4: 重排端点对 pinned 段落原样回填（携带条目级 evidenceSetVersion）；
+    // 未锁定段落重新编排；pinned 段落不进编排计划。
+    @Test
+    fun `rearrange fills pinned paragraphs verbatim and re-orchestrates the rest`() {
+        stubTwoRequestSource()
+        val version = sourceVersion()
+        val key1 = canonicalKey(version)
+        val key2 = canonicalKey(version, 2, "When?")
+        val perRequest1 = perRequestEvidence("evidence-v1", key1, listOf(9L))
+        val perRequest2 = perRequestEvidence("evidence-v1", key2, listOf(10L))
+        val source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+
+        val request = TrustReplyRearrangeRequest(
+            source = source,
+            expectedSourceVersion = version,
+            requestFactSelections = listOf(
+                TrustReplyRequestFactSelection(key1, listOf(9L)),
+                TrustReplyRequestFactSelection(key2, listOf(10L))
+            ),
+            paragraphPlanDraft = listOf(
+                ParagraphPlanEntry("enterprise", listOf("f9")),
+                ParagraphPlanEntry("review", listOf("f10"))
+            ),
+            // I-3: pinned 段落携带条目级 evidenceSetVersion（主属 key2），非全信标量。
+            pinnedParagraphs = listOf(
+                TrustReplyPinnedParagraphRequest("review", listOf("f10"), "LOCKED REVIEW TEXT", perRequest2)
+            )
+        )
+        var orchestratedFacts: List<PlanFact>? = null
+        var orchestratedPlan: List<ParagraphPlanEntry>? = null
+        val attempt = OrchestrationAttempt { facts, plan, _, _ ->
+            orchestratedFacts = facts
+            orchestratedPlan = plan
+            OrchestratedLetter(
+                paragraphs = listOf(OrchestratedParagraph("enterprise", listOf("f9"), "fresh enterprise text")),
+                actionText = null
+            )
+        }
+
+        val response = service.rearrangeInternal(request, attempt)
+
+        // 未锁定段重新编排；pinned 段原样回填。
+        assertEquals(
+            listOf(
+                OrchestratedParagraph("enterprise", listOf("f9"), "fresh enterprise text"),
+                OrchestratedParagraph("review", listOf("f10"), "LOCKED REVIEW TEXT")
+            ),
+            response.paragraphs
+        )
+        // pinned 段落不进编排计划与事实集。
+        assertEquals(listOf(ParagraphPlanEntry("enterprise", listOf("f9"))), orchestratedPlan)
+        assertEquals(listOf("f9"), orchestratedFacts?.map { it.id })
+        // 响应带服务端规范化协议 + 六道校验全过（空码）。
+        assertEquals(listOf("enterprise", "review"), response.topicOrder)
+        assertEquals(2, response.paragraphPlan.size)
+        assertTrue(response.validationCodes.isEmpty())
+        // 事实列表含 f9/f10 及其 QA 正文（I-5：前端不拼装正文）。
+        val factsById = response.facts.associateBy { it.id }
+        assertEquals("answer", factsById["f9"]?.body)
+        assertEquals("second", factsById["f10"]?.body)
+    }
+
+    // T-6.5: 运营事实 op* 注入后走 13 的第 3 道校验（逐字）——改一个字即校验失败。
+    // 分两段断言：服务端重排响应的六道校验结果（重排路径的逐字再验证），以及
+    // 真实编排器（AiReplyLetterOrchestrator）对同一 op 事实的 G3 逐字拒绝。
+    @Test
+    fun `rearrange applies op fact verbatim validation - one word change fails`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        Mockito.`when`(qaRules.findAllEnabledOrdered()).thenReturn(listOf(
+            QaRule(id = 9L, categoryId = 3L, keywords = "what", replySubject = null, replyBody = "", answerBody = "answer", displayName = "What")
+        ))
+        val version = sourceVersion()
+        val source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+
+        val opFact = PlanFact(
+            id = "op1",
+            topic = "enterprise",
+            body = "operator fixed text",
+            controlled = null,
+            frozen = true,
+            required = true
+        )
+        val request = TrustReplyRearrangeRequest(
+            source = source,
+            expectedSourceVersion = version,
+            requestFactSelections = canonicalMatrix(version),
+            paragraphPlanDraft = listOf(
+                ParagraphPlanEntry("enterprise", listOf("f9", "op1"))
+            ),
+            operatorFacts = listOf(opFact)
+        )
+
+        // Part A: 桩编排返回改了一个字的 op 正文 → 重排响应的六道校验结果必须命中
+        // ORCH_VERBATIM_BODY_MISSING（I-2：与受控事实同一逐字校验）。
+        var capturedFacts: List<PlanFact>? = null
+        var capturedPlan: List<ParagraphPlanEntry>? = null
+        val stubAttempt = OrchestrationAttempt { facts, plan, _, _ ->
+            capturedFacts = facts
+            capturedPlan = plan
+            OrchestratedLetter(
+                paragraphs = listOf(
+                    OrchestratedParagraph("enterprise", listOf("f9", "op1"), "answer operator fixed wording")
+                ),
+                actionText = null
+            )
+        }
+        val response = service.rearrangeInternal(request, stubAttempt)
+        assertTrue(
+            response.validationCodes.contains(AiReplyValidationCodes.ORCH_VERBATIM_BODY_MISSING),
+            "one-word change of the op fact body must fail the verbatim check"
+        )
+        // op 事实以逐字插槽进入编排输入（frozen + required，I-2）。
+        val opInFacts = requireNotNull(capturedFacts).first { it.id == "op1" }
+        assertTrue(opInFacts.frozen)
+        assertTrue(opInFacts.required)
+        assertEquals("operator fixed text", opInFacts.body)
+
+        // Part B: 真实 13 编排器对同一 op 事实的 G3 逐字拒绝——改一个字 → orchestrate
+        // 返回 null（初始 + 修复两轮均未通过）。
+        val badResponse = ObjectMapper().writeValueAsString(
+            mapOf(
+                "paragraphs" to listOf(
+                    mapOf(
+                        "topic" to "enterprise",
+                        "factIds" to listOf("f9", "op1"),
+                        "text" to "answer operator fixed wording"
+                    )
+                ),
+                "actionText" to null
+            )
+        )
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String,
+                timeoutMillis: Long,
+                jsonOutput: Boolean,
+                cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult = LlmChatResult(badResponse)
+        }
+        val providerMock = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<LlmDraftClient>
+        Mockito.`when`(providerMock.getIfAvailable()).thenReturn(client)
+        val orchestrator = AiReplyLetterOrchestrator(
+            properties = LlmProperties(enabled = true, apiUrl = "http://llm.test", temperature = 0.3),
+            llmDraftClientProvider = providerMock,
+            objectMapper = ObjectMapper()
+        )
+        val letter = orchestrator.orchestrate(
+            facts = requireNotNull(capturedFacts),
+            plan = requireNotNull(capturedPlan),
+            topicOrder = requireNotNull(capturedPlan).map { it.topic },
+            allowedActions = emptySet()
+        )
+        assertNull(letter, "13's G3 must reject the one-word-changed op fact")
+
+        // 逐字未改时 13 的 G3 放行。
+        val validResponse = ObjectMapper().writeValueAsString(
+            mapOf(
+                "paragraphs" to listOf(
+                    mapOf(
+                        "topic" to "enterprise",
+                        "factIds" to listOf("f9", "op1"),
+                        "text" to "answer operator fixed text"
+                    )
+                ),
+                "actionText" to null
+            )
+        )
+        val validClient = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String,
+                timeoutMillis: Long,
+                jsonOutput: Boolean,
+                cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult = LlmChatResult(validResponse)
+        }
+        Mockito.`when`(providerMock.getIfAvailable()).thenReturn(validClient)
+        val passing = orchestrator.orchestrate(
+            facts = requireNotNull(capturedFacts),
+            plan = requireNotNull(capturedPlan),
+            topicOrder = requireNotNull(capturedPlan).map { it.topic },
+            allowedActions = emptySet()
+        )
+        assertNotNull(passing)
     }
 
     private fun contact() = ExpertContact(

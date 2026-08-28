@@ -27,6 +27,17 @@ data class GroundedContentPlan(
     val requiresReview: Boolean
 )
 
+/**
+ * c5 / 15-workbench-three-step（T-5）：重排端点的编排输入——运营编辑后的
+ * `paragraphPlanDraft` + `op*` 运营事实构造出的服务端规范化 facts / plan / topicOrder。
+ * facts 的 id 即下游协议 id（`f<ruleId>` / `op<n>`），plan 与 topicOrder 保持草稿顺序。
+ */
+data class RearrangedPlanInput(
+    val facts: List<PlanFact>,
+    val plan: List<ParagraphPlanEntry>,
+    val topicOrder: List<String>
+)
+
 @Service
 class AiReplyGroundedContentPlanner {
 
@@ -155,6 +166,130 @@ class AiReplyGroundedContentPlanner {
             }
         }
     }
+
+    // ── c5 / 15-workbench-three-step（T-5）：重排计划构造与六道校验再验证 ────────
+
+    /**
+     * T-5：从运营编辑后的 `paragraphPlanDraft` 与 `op*` 运营事实构造编排输入
+     * （facts / plan / topicOrder）。
+     * - `f<ruleId>` 事实的 body / controlled / frozen 由 [resolveQaFact] 解析（服务端
+     *   权威 QA 库），id 归一为草稿中的引用形式，topic 取首次引用它的草稿条目主题。
+     * - `op<n>` 事实来自 [operatorFacts]（I-1/I-2：运营逐字插槽，原样携带
+     *   body / controlled / frozen / required），绝不进入任何哈希（I-1 / G-7）。
+     * - 无法解析的 id（既非已知 QA 规则也非 op 事实）不出现在 facts 中，由编排器的
+     *   G1 来源封闭校验拦截。
+     */
+    fun buildRearrangePlan(
+        draft: List<ParagraphPlanEntry>,
+        operatorFacts: List<PlanFact>,
+        resolveQaFact: (ruleId: Long) -> PlanFact?
+    ): RearrangedPlanInput {
+        val factsById = linkedMapOf<String, PlanFact>()
+        val operatorById = operatorFacts.associateBy { it.id }
+        draft.forEach { entry ->
+            entry.factIds.forEach { factId ->
+                if (factsById.containsKey(factId)) return@forEach
+                val resolved = when {
+                    factId.startsWith("f") -> {
+                        val ruleId = factId.removePrefix("f").split("+").firstOrNull()?.toLongOrNull()
+                        ruleId?.let(resolveQaFact)?.copy(id = factId, topic = entry.topic)
+                    }
+                    else -> operatorById[factId]
+                }
+                if (resolved != null) {
+                    factsById[factId] = resolved
+                }
+            }
+        }
+        return RearrangedPlanInput(
+            facts = factsById.values.toList(),
+            plan = draft,
+            topicOrder = draft.map { it.topic }
+        )
+    }
+
+    /**
+     * T-5：对重排输出段落重跑 13 的六道校验（语义与 `AiReplyLetterOrchestrator` 的
+     * G1..G6 一致；逐字期望串取自 `PlanFact.body`，不另抄任何字面量——IP-2）。
+     * 返回命中的校验码（`AiReplyValidationCodes` 的 ORCH_* / ACTION_*），空列表 = 全过。
+     * 供重排响应暴露「六道校验结果」，也用于 `op*` 逐字插槽的回归断言（T-6.5 / I-2）。
+     */
+    fun validateRearrangement(
+        paragraphs: List<OrchestratedParagraph>,
+        facts: List<PlanFact>,
+        plan: List<ParagraphPlanEntry>,
+        topicOrder: List<String>,
+        allowedActions: Set<AiReplyAction>?
+    ): List<String> {
+        val issues = mutableListOf<String>()
+        if (paragraphs.size != plan.size) {
+            issues += AiReplyValidationCodes.ORCH_PLAN_MISMATCH
+        } else {
+            paragraphs.forEachIndexed { i, paragraph ->
+                if (paragraph.topic != topicOrder.getOrNull(i) ||
+                    paragraph.factIds.toSet() != plan[i].factIds.toSet()
+                ) {
+                    issues += AiReplyValidationCodes.ORCH_PLAN_MISMATCH
+                }
+            }
+        }
+        val factsById = facts.associateBy { it.id }
+        val allowedIds = plan.flatMap { it.factIds }.toSet()
+        val knownIds = facts.map { it.id }.toSet()
+        paragraphs.forEach { paragraph ->
+            paragraph.factIds.forEach { id ->
+                if (id !in allowedIds || id !in knownIds) {
+                    issues += AiReplyValidationCodes.ORCH_FACT_ID_UNKNOWN
+                }
+            }
+        }
+        val counts = linkedMapOf<String, Int>()
+        paragraphs.forEach { paragraph ->
+            paragraph.factIds.forEach { id -> counts[id] = (counts[id] ?: 0) + 1 }
+        }
+        facts.filter { it.required }.forEach { fact ->
+            if (counts[fact.id] != 1) {
+                issues += AiReplyValidationCodes.ORCH_REQUIRED_FACT_COUNT_INVALID
+            }
+        }
+        paragraphs.forEach { paragraph ->
+            val normalizedText = normalizeWhitespace(paragraph.text)
+            paragraph.factIds.distinct().forEach { id ->
+                val fact = factsById[id] ?: return@forEach
+                if (fact.controlled != null || fact.frozen) {
+                    if (!normalizedText.contains(normalizeWhitespace(fact.body))) {
+                        issues += AiReplyValidationCodes.ORCH_VERBATIM_BODY_MISSING
+                    }
+                }
+            }
+        }
+        paragraphs.forEach { paragraph ->
+            val actions = AiReplyActionPolicy.detectActions(paragraph.text)
+            if (actions.isEmpty()) return@forEach
+            val frozenBuiltIn = paragraph.factIds.mapNotNull { factsById[it] }
+                .filter { it.frozen }
+                .flatMap { AiReplyActionPolicy.detectActions(it.body) }
+                .toSet()
+            if ((actions - frozenBuiltIn).isNotEmpty()) {
+                issues += AiReplyValidationCodes.ORCH_ACTION_IN_PARAGRAPH
+            }
+        }
+        val exemptActions = paragraphs.flatMap { paragraph ->
+            paragraph.factIds.mapNotNull { factsById[it] }
+                .filter { it.frozen }
+                .flatMap { AiReplyActionPolicy.detectActions(it.body) }
+        }.toSet()
+        val finalBody = paragraphs.joinToString("\n\n") { it.text }
+        val bodyActions = if (finalBody.isBlank()) emptySet() else AiReplyActionPolicy.detectActions(finalBody)
+        if (bodyActions != exemptActions) {
+            issues += AiReplyValidationCodes.ACTION_BODY_MISMATCH
+        }
+        return issues.distinct()
+    }
+
+    private fun normalizeWhitespace(text: String): String = text.trim().replace(WHITESPACE_RUN, " ")
+
+    private val WHITESPACE_RUN = Regex("\\s+")
 
     private fun buildParagraphs(
         requestClaimKeys: LinkedHashMap<Int, MutableList<String>>

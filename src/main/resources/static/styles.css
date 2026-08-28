@@ -7408,6 +7408,53 @@ tr td {
 @keyframes trustReplyPulse { 50% { opacity: .35; } }
 
 /* 布局：双页 tab panel（S-1）替代原单页 trust-reply-layout 横条 */
+.trust-reply-factset {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.trust-reply-factset th {
+  padding: 0 8px 7px;
+  border-bottom: 1px solid var(--panel-border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.trust-reply-factset td {
+  padding: 8px;
+  border-bottom: 1px solid var(--panel-border);
+  color: var(--text-main);
+  vertical-align: middle;
+}
+
+.trust-reply-factset tr[data-origin="OPERATOR"] td {
+  background: var(--primary-light);
+}
+
+.trust-reply-factset tr[data-adopted="false"] td {
+  opacity: 0.5;
+}
+
+.trust-reply-factset-source {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.trust-reply-factset-source[data-origin="OPERATOR"] {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.trust-reply-factset-usage {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .trust-reply-item-list {
   display: flex;
   flex-direction: column;
@@ -7425,6 +7472,38 @@ tr td {
   background: var(--panel-bg);
   box-shadow: var(--shadow-sm);
   transition: box-shadow .18s ease, transform .18s ease, border-color .18s ease;
+}
+
+.trust-reply-item[data-pinned="true"] {
+  --item-accent: var(--primary);
+  background: var(--primary-light);
+}
+
+.trust-reply-paragraph-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 6px;
+}
+
+.trust-reply-paragraph-ctl {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.trust-reply-rerun-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 9px 12px;
+  border: 1px dashed var(--primary);
+  border-radius: var(--radius-sm);
+  color: var(--primary);
+  font-size: 11.5px;
+  line-height: 1.5;
 }
 
 /* 单条摘要操作只遮罩当前卡片；跨摘要生成/整合仍使用工作台级遮罩。 */

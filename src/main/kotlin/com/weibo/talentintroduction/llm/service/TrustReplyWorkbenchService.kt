@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.qa.service.QaCoverageKeyCatalog
 import com.weibo.talentintroduction.qa.service.QaRequestExtractor
 import com.weibo.talentintroduction.reply.service.ReplyFrameSelection
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
@@ -205,7 +206,12 @@ data class TrustReplyBootstrapResponse(
     val savedState: TrustReplySavedState? = null,
     val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList(),
     val frameOptions: List<TrustReplyFrameOption> = emptyList(),
-    val frameSnapshot: TrustReplyFrameSnapshot? = null
+    val frameSnapshot: TrustReplyFrameSnapshot? = null,
+    // c5 (I-5): 服务端权威的 13 协议（plan.facts / plan.paragraphPlan / topicOrder），
+    // 步骤 02/03 的唯一事实与分段来源；前端不得自行拼装第二份事实清单。
+    val paragraphPlan: List<ParagraphPlanEntry> = emptyList(),
+    val facts: List<PlanFact> = emptyList(),
+    val topicOrder: List<String> = emptyList()
 )
 
 data class TrustReplySavedStatePayload(
@@ -358,12 +364,59 @@ data class TrustReplyAssembleRequest(
     val frameSnapshot: TrustReplyFrameSnapshot? = null
 )
 
+/**
+ * c5 / 15-workbench-three-step（T-5）：重排请求——运营编辑后的 `paragraphPlanDraft`
+ * （13 的 `ParagraphPlanEntry` 协议）+ pinned 段落 + `op*` 运营事实。
+ * - pinned 段落携带**条目级** `evidenceSetVersion`（该段主属 request 的 per-request
+ *   证据版本，03a 接缝），绝不携带全信标量（I-3）；服务端与当前版本比对，失配即视为
+ *   未锁定、重新编排。
+ * - `operatorFacts` 为逐字插槽 `PlanFact(id="op<n>", ..., frozen=true, required=true)`
+ *   （I-1/I-2）；id 绝不进入任何哈希（G-7）。
+ * - 本端点**不落库**（I-4）：落库仍走整合（assemble）。
+ */
+data class TrustReplyRearrangeRequest(
+    val source: TrustReplySourceRef,
+    val expectedSourceVersion: String,
+    val paragraphPlanDraft: List<ParagraphPlanEntry>,
+    val pinnedParagraphs: List<TrustReplyPinnedParagraphRequest> = emptyList(),
+    val operatorFacts: List<PlanFact> = emptyList(),
+    val requestedFactIds: List<Long>? = null,
+    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null
+)
+
+data class TrustReplyPinnedParagraphRequest(
+    val topic: String,
+    val factIds: List<String>,
+    val text: String,
+    val evidenceSetVersion: String
+)
+
+/**
+ * c5（T-5）：重排响应——服务端规范化后的 13 协议（paragraphPlan / facts / topicOrder）
+ * + 新的 `paragraphs`（pinned 段落原样回填，未锁定段落重新编排）+ 六道校验结果。
+ */
+data class TrustReplyRearrangeResponse(
+    val source: TrustReplySourceRef,
+    val sourceVersion: String,
+    val evidenceSetVersion: String,
+    val paragraphPlan: List<ParagraphPlanEntry>,
+    val facts: List<PlanFact>,
+    val topicOrder: List<String>,
+    val paragraphs: List<OrchestratedParagraph>,
+    val actionText: String?,
+    val validationCodes: List<String>
+)
+
 // 04 (I-4): 有界诊断上限 —— 最多 50 个 request snapshot、每条最多 20 个 intent key、
 // 50 个 fact id；requestKey/status/handling 等字符串最多 200 字符。
 private const val MAX_DIAGNOSTIC_REQUEST_SNAPSHOTS = 50
 private const val MAX_DIAGNOSTIC_INTENT_KEYS = 20
 private const val MAX_DIAGNOSTIC_FACT_IDS = 50
 private const val MAX_DIAGNOSTIC_STRING_LENGTH = 200
+
+// G-1 冻结事实：qa_rule id ∈ {1, 3, 21, 24}（需求方 2026-08-28 手调，与 12 的
+// AiReplyLetterCloser.FROZEN_RULE_IDS 同源；c5 的 f<ruleId> 事实构造沿用同一判定）。
+private val FROZEN_RULE_IDS: Set<Long> = setOf(1L, 3L, 21L, 24L)
 
 /**
  * 04 (I-5): 稳定诊断 flag 口径。flag 只描述、不阻断：绝不参与 status、factRuleIds、
@@ -686,6 +739,10 @@ class TrustReplyWorkbenchService(
                 kind = extractorKinds(resolved.inboundText)
             )
         )
+        // c5 (I-5): 初始 13 协议（plan.facts / paragraphPlan / topicOrder）——由当前
+        // 矩阵 + QA 库派生，步骤 02/03 的唯一事实来源；前端基于它维护本地草稿。
+        val factMetadata = availableFactMetadata()
+        val initialPlan = initialLetterPlan(selection, factMetadata)
         return TrustReplyBootstrapResponse(
             source = resolved.source,
             sourceVersion = resolved.sourceVersion,
@@ -698,7 +755,7 @@ class TrustReplyWorkbenchService(
             defaultModel = AiReplyModel.DEEPSEEK_V4_FLASH.name,
             suggestedFactIds = selection.sendQaRuleIds,
             canonicalFactIds = selection.sendQaRuleIds,
-            rulesByCategory = availableFactMetadata(),
+            rulesByCategory = factMetadata,
             requestCoverage = selection.requestFacts.toCoverage(
                 resolved.sourceVersion,
                 resolvedSelection.requestEvidenceVersions
@@ -710,7 +767,10 @@ class TrustReplyWorkbenchService(
             savedState = restoreResult.savedState,
             requestFactSelections = resolvedSelection.requestFactSelections,
             frameOptions = frameOptions,
-            frameSnapshot = restoreResult.canonicalFrame
+            frameSnapshot = restoreResult.canonicalFrame,
+            paragraphPlan = initialPlan.second,
+            facts = initialPlan.first,
+            topicOrder = initialPlan.third
         )
     }
 
@@ -1527,6 +1587,148 @@ class TrustReplyWorkbenchService(
         verifyAssembly(request).response
 
     /**
+     * c5 / 15-workbench-three-step（T-5）：重排——接受运营编辑后的
+     * `paragraphPlanDraft` + pinned 段落 + `op*` 运营事实，调用 13 的编排链路
+     * （`AiReplyLetterOrchestrator`，六道校验），返回新的 `paragraphs` 与六道校验结果。
+     * - pinned 段落原样回填（I-3：其条目级 evidenceSetVersion 与当前版本失配即视为
+     *   未锁定，重新编排）；未锁定段落重新编排。
+     * - `op*` 事实以逐字插槽进入编排（I-2），绝不进入任何哈希（I-1 / G-7）。
+     * - **不落库**（I-4）——落库仍走整合（assemble）。
+     * [orchestration] 为测试接缝（同 `AiReplyLetterCloser.close`）：null 时走
+     * `AiReplyLetterOrchestrator.instance`；编排返回 null（校验未过 / LLM 不可用 /
+     * 超时）时退回确定性分段（同 12 的主题归并兜底，I-8），并把六道校验的命中码
+     * 放进响应的 `validationCodes`。
+     */
+    fun rearrange(request: TrustReplyRearrangeRequest): TrustReplyRearrangeResponse =
+        rearrangeInternal(request, null)
+
+    internal fun rearrangeInternal(
+        request: TrustReplyRearrangeRequest,
+        orchestration: OrchestrationAttempt?
+    ): TrustReplyRearrangeResponse {
+        val resolved = resolveSource(request.source)
+        requireCurrentSourceVersion(request.expectedSourceVersion, resolved.sourceVersion)
+        val resolvedSelection = resolveCanonicalSelection(
+            resolved,
+            request.requestFactSelections,
+            request.requestedFactIds,
+            useLocalEvidence = false
+        )
+        val selection = resolvedSelection.selection
+        val requestEvidenceVersions = resolvedSelection.requestEvidenceVersions
+        val factMetadata = availableFactMetadata().associateBy { it.ruleId }
+
+        fun resolveQaFact(ruleId: Long): PlanFact? {
+            val metadata = factMetadata[ruleId] ?: return null
+            val body = metadata.answerBody?.trim().orEmpty()
+            if (body.isBlank()) return null
+            return PlanFact(
+                id = "f$ruleId",
+                topic = "",
+                body = body,
+                controlled = controlledGroupFor(ruleId, selection),
+                frozen = ruleId in FROZEN_RULE_IDS || body.contains("\${"),
+                required = true
+            )
+        }
+
+        val planner = AiReplyGroundedContentPlanner()
+        val input = planner.buildRearrangePlan(
+            draft = request.paragraphPlanDraft,
+            operatorFacts = request.operatorFacts,
+            resolveQaFact = ::resolveQaFact
+        )
+        val factsById = input.facts.associateBy { it.id }
+
+        // I-3: pinned 有效性——该段主属 request（最低 index、factRuleIds 与其规则 id
+        // 相交者）的条目级 evidenceSetVersion 与当前一致才视为锁定；失配/无主属
+        // request 一律重新编排。
+        fun pinnedSignature(topic: String, factIds: List<String>): String =
+            "$topic\u0000${factIds.joinToString(",")}"
+        val pinnedBySignature = request.pinnedParagraphs.associate {
+            pinnedSignature(it.topic, it.factIds) to it
+        }
+        val validPinnedSignatures = request.pinnedParagraphs.mapNotNull { pinned ->
+            val ruleIds = pinned.factIds.flatMap { id -> ruleIdsOf(id) }.toSet()
+            val primaryOwner = selection.requestFacts
+                .filter { item -> item.factRuleIds.any { it in ruleIds } }
+                .minByOrNull { it.index }
+            val currentVersion = primaryOwner?.let {
+                requestEvidenceVersions[requestKey(resolved.sourceVersion, it)]
+            }
+            if (primaryOwner != null && currentVersion != pinned.evidenceSetVersion) {
+                null
+            } else {
+                pinnedSignature(pinned.topic, pinned.factIds)
+            }
+        }.toSet()
+
+        val unpinnedEntries = input.plan.filterIndexed { index, entry ->
+            pinnedSignature(entry.topic, entry.factIds) !in validPinnedSignatures
+        }
+        val unpinnedTopics = unpinnedEntries.map { it.topic }
+        val unpinnedFactIds = unpinnedEntries.flatMap { it.factIds }.toSet()
+        val orchestrationFacts = input.facts.filter { it.id in unpinnedFactIds }
+        val allowedActions = AiReplyActionPolicy.deriveAllowed(resolved.inboundText, null, emptyList())
+
+        val letter = (orchestration ?: AiReplyLetterOrchestrator.instance?.let { instance ->
+            OrchestrationAttempt { f, p, t, a -> instance.orchestrate(f, p, t, a) }
+        })?.attempt(orchestrationFacts, unpinnedEntries, unpinnedTopics, allowedActions)
+
+        val unpinnedTexts = when {
+            letter != null -> letter.paragraphs.map { it.text }
+            else -> unpinnedEntries.map { entry ->
+                if (entry.factIds.isEmpty()) {
+                    entry.gapCondition?.trim().orEmpty()
+                } else {
+                    entry.factIds.mapNotNull { factsById[it]?.body }.joinToString(" ")
+                }
+            }
+        }
+
+        val paragraphs = mutableListOf<OrchestratedParagraph>()
+        var unpinnedCursor = 0
+        input.plan.forEach { entry ->
+            val signature = pinnedSignature(entry.topic, entry.factIds)
+            if (signature in validPinnedSignatures) {
+                paragraphs += OrchestratedParagraph(
+                    topic = entry.topic,
+                    factIds = entry.factIds,
+                    text = pinnedBySignature.getValue(signature).text
+                )
+            } else {
+                paragraphs += OrchestratedParagraph(
+                    topic = entry.topic,
+                    factIds = entry.factIds,
+                    text = unpinnedTexts.getOrElse(unpinnedCursor) { "" }
+                )
+                unpinnedCursor++
+            }
+        }
+
+        val validationCodes = planner.validateRearrangement(
+            paragraphs = paragraphs.filterIndexed { index, _ ->
+                pinnedSignature(input.plan[index].topic, input.plan[index].factIds) !in validPinnedSignatures
+            },
+            facts = orchestrationFacts,
+            plan = unpinnedEntries,
+            topicOrder = unpinnedTopics,
+            allowedActions = allowedActions
+        )
+        return TrustReplyRearrangeResponse(
+            source = resolved.source,
+            sourceVersion = resolved.sourceVersion,
+            evidenceSetVersion = resolvedSelection.evidenceSetVersion,
+            paragraphPlan = input.plan,
+            facts = input.facts,
+            topicOrder = input.topicOrder,
+            paragraphs = paragraphs,
+            actionText = letter?.actionText,
+            validationCodes = validationCodes
+        )
+    }
+
+    /**
      * 03 (I-1): 权威重算验证。公开 assemble 复用本方法 —— response 与 selection
      * 由同一次执行产生，禁止调用方「先 assemble 再另行 resolve selection」。
      * internal：返回类型 VerifiedTrustReplyAssembly 仅 JVM 模块内使用（发送服务、
@@ -2239,6 +2441,68 @@ class TrustReplyWorkbenchService(
                 }
             }
             .toList()
+
+    /**
+     * c5 (I-5)：bootstrap 时的初始 13 协议（plan.facts / paragraphPlan / topicOrder）。
+     * 由当前矩阵（selection.requestFacts）+ QA 库派生，与 12/13 的主题归并口径一致：
+     * 每 request 一个 plan 条目（topic = 该问首个意图的主题），事实 id 为 `f<ruleId>`，
+     * body 取自 QA 库、frozen 判定沿用 G-1（{1,3,21,24} / `${...}` 占位符）。
+     * 仅作步骤 02/03 的初始事实来源；重排后由 `rearrange` 返回的规范化协议取代。
+     */
+    private fun initialLetterPlan(
+        selection: ResolvedQaRules,
+        factMetadata: List<TrustReplyRuleMetadata>
+    ): Triple<List<PlanFact>, List<ParagraphPlanEntry>, List<String>> {
+        val metadataById = factMetadata.associateBy { it.ruleId }
+        val factsById = linkedMapOf<String, PlanFact>()
+        val plan = mutableListOf<ParagraphPlanEntry>()
+        val topicOrder = mutableListOf<String>()
+        selection.requestFacts.sortedBy { it.index }.forEach { item ->
+            val topic = item.intents.firstOrNull { it.intentKey.isNotBlank() }
+                ?.intentKey?.substringBefore('.') ?: "general"
+            val factIds = item.factRuleIds.mapNotNull { ruleId ->
+                val id = "f$ruleId"
+                if (factsById.containsKey(id)) {
+                    id
+                } else {
+                    val metadata = metadataById[ruleId] ?: return@mapNotNull null
+                    val body = metadata.answerBody?.trim().orEmpty()
+                    if (body.isBlank()) return@mapNotNull null
+                    val intent = item.intents.firstOrNull { ruleId in it.evidenceRuleIds }
+                    factsById[id] = PlanFact(
+                        id = id,
+                        topic = topic,
+                        body = body,
+                        controlled = intent?.let { QaCoverageKeyCatalog.groupIdOf(it.intentKey) },
+                        frozen = ruleId in FROZEN_RULE_IDS || body.contains("\${"),
+                        required = true
+                    )
+                    id
+                }
+            }
+            if (factIds.isNotEmpty()) {
+                topicOrder += topic
+                plan += ParagraphPlanEntry(topic, factIds)
+            }
+        }
+        return Triple(factsById.values.toList(), plan, topicOrder)
+    }
+
+    /** c5（T-5）：`f<ruleId>` 事实的受控组——取首个以该规则为证据的意图求值（G1..G4 / null）。 */
+    private fun controlledGroupFor(ruleId: Long, selection: ResolvedQaRules): String? {
+        selection.requestFacts.sortedBy { it.index }.forEach { item ->
+            item.intents.firstOrNull { ruleId in it.evidenceRuleIds }?.let { intent ->
+                return QaCoverageKeyCatalog.groupIdOf(intent.intentKey)
+            }
+        }
+        return null
+    }
+
+    /** c5（T-5）：`f<ruleId>` id → 规则 id 列表（`+` 连接的多规则身份；非 `f` 前缀返回空）。 */
+    private fun ruleIdsOf(factId: String): List<Long> {
+        if (!factId.startsWith("f")) return emptyList()
+        return factId.removePrefix("f").split("+").mapNotNull { it.toLongOrNull() }
+    }
 
     private fun mergeWarnings(first: List<String>, second: List<String>): List<String> {
         val seen = linkedSetOf<String>()
