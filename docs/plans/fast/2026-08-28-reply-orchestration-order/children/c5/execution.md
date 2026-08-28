@@ -1,73 +1,79 @@
-## Execution Result: PLAN_CONFLICT
+## Execution Result: READY_FOR_VERIFICATION
 
 Plan: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/2026-08-28/15-workbench-three-step.md
-Plan SHA-256: 5c31d9174bb524c8a8e9a4f36fb25accd59545c0cd6d76c47be552ecb3eeea78
-Execution ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/2026-08-28/15-workbench-three-step.md@5c31d9174bb524c8a8e9a4f36fb25accd59545c0cd6d76c47be552ecb3eeea78
-Execution epoch: NEW
-Approval basis: current invocation (c5 child brief + plan 15, both read in full from disk this invocation)
-Executor: C5Impl
+Plan SHA-256: 03967d14608ac297da2448776543b8ce814b18b497d6c1b291b3c5f22a07e45e
+Execution ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/2026-08-28/15-workbench-three-step.md@03967d14608ac297da2448776543b8ce814b18b497d6c1b291b3c5f22a07e45e
+Execution epoch: NEW — 执行纪元 2（epoch 1 为 preflight PLAN_CONFLICT、零实现；A2 修订后计划哈希由 5c31d917… 变为 03967d14…，按 execute-p「Same Path, New Content」重置为新纪元）
+Approval basis: current invocation（c5 child brief + plan 15 全量重读；A2 为 HUMAN 批准 2026-08-28T17:01:32Z，授权文件清单扩至 9 个）
+Executor: C5ImplE2
 Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order
 Target branch: fast/2026-08-28-reply-orchestration-order
 Worktree ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order@fast/2026-08-28-reply-orchestration-order@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order
-Pre-execution code SHA: 889210e339c3c5dd2533777d35076bdfc5c65793 (c4 terminal code head; branch HEAD at dispatch 7bea6e3 = c4 evidence commit)
-Post-execution code SHA: N/A (no implementation commit — execution stopped at preflight conflict)
-Evidence HEAD: N/A (no commit made; controller commits evidence separately)
-Implementation boundary: none — no file outside the pre-existing working-tree state was touched
+Pre-execution code SHA: 147899c942cdd51030a82979c4b06a852efa7392（dispatch 时 branch HEAD；c4 终端代码 e669b37 + A2 文档提交）
+Post-execution code SHA: 见本次实现提交（下方 Implementation commit）
+Evidence HEAD: N/A — 按 brief，证据由控制器另行提交；本次只做一个产品实现提交
+Implementation boundary: 9739c4c..实现提交（9 个授权文件；不含 docs/plans/fast/**）
 
 ### Task Status
 
 | Requirement | Status | Files | Evidence |
 |---|---|---|---|
-| T-1 三步页签（S-1 / I-6） | CONFLICT | trust-reply-workbench.js | Plan S-1 mandates three tabs with `data-page-panel` values `facts` / `factset` / `compose`（原 `frame` 页改作第三页签）。Any faithful implementation renders 3 `role="tab"` buttons and drops the `frame` panel key — see Remaining Blocker for the exact conflicting assertions in the unauthorized test file |
-| T-2 事实集视图（S-2 / I-5） | CONFLICT | trust-reply-workbench.js, TrustReplyWorkbenchService.kt | Depends on T-1's three-panel markup; blocked by the same conflict |
-| T-3 运营事实 op*（I-1 / I-2 / IP-1） | CONFLICT | trust-reply-workbench.js | Depends on T-1/T-2 surfaces; blocked by the same conflict |
-| T-4 段落编辑与 pinned（S-3 / I-3 / I-4） | CONFLICT | trust-reply-workbench.js | Depends on T-1's step-03 panel; blocked by the same conflict |
-| T-5 重排端点 | CONFLICT | TrustReplyWorkbenchController.kt, TrustReplyWorkbenchService.kt, AiReplyGroundedContentPlanner.kt | Implementation design is clear and within authorized files, but the endpoint is consumed by the frontend flow that T-1's tab contract gates; committing a half-child (backend without frontend) is not a valid plan unit |
-| T-6 测试（T-6.1..T-6.5） | CONFLICT | TrustReplyWorkbenchServiceTest.kt, trustReplyWorkbenchThreeStep.test.js (new), trustReplyWorkbench.test.js | T-6.3 hard-requires three switchable tabs; the full-JS gate that must stay green (baseline 760 pass) contains the conflicting two-tab assertions — see Remaining Blocker |
+| T-1 三步页签（S-1 / I-6） | IMPLEMENTED | trust-reply-workbench.js, trustReplyWorkbench.test.js, trustReplyWorkbenchSharedMount.test.js | `renderPageTabs` 三页（facts/factset/compose，01/02/03）；`setActivePage` 门禁三键；renderMarkup/renderShell 三个 `<section role="tabpanel">`；`handleFrameStale`/FRAME_STALE 恢复改开 compose 页；trustReplyWorkbench.test.js 33/33（新增 T-6.3 三页签切换 + 步骤 01 回归）；shared-mount 60/60（A2 三页契约） |
+| T-2 事实集视图（S-2 / I-5） | IMPLEMENTED | trust-reply-workbench.js, styles.css, trustReplyWorkbenchThreeStep.test.js | `renderFactSet`（S-2 表格：采用/事实/触发来问/来源/主题/用量）；行 = plan.facts ∪ op 事实去重（`factSetRows`）；触发来问由 requestFacts 矩阵反查；S-2 CSS 块逐字（脚本比对 True）；T-6.1 通过（去重行 + R1 · R3） |
+| T-3 运营事实 op*（I-1 / I-2 / IP-1） | IMPLEMENTED | trust-reply-workbench.js, TrustReplyWorkbenchService.kt, AiReplyGroundedContentPlanner.kt, TrustReplyWorkbenchController.kt | `addOperatorFact`（按回答说明生成成功后 op<n> 递增入本地草稿并挂同名主题段落）；请求 `operatorFacts` 以 frozen=true/required=true 逐字插槽提交；服务端 `buildRearrangePlan` 并入 facts；不进入任何哈希（G-7 测试断言 op id 形如 op\d+） |
+| T-4 段落编辑与 pinned（S-3 / I-3 / I-4） | IMPLEMENTED | trust-reply-workbench.js, styles.css, trustReplyWorkbenchThreeStep.test.js | `renderParagraphCards`（S-3 卡片复用 .trust-reply-item + data-pinned 修饰）；编辑/锁定/并入上段/上下移全部本地草稿；pinned 携带 `pinnedEvidenceVersion`（条目级 per-request，非全信标量）；T-6.2 通过（五类交互各 0 请求） |
+| T-5 重排端点 | IMPLEMENTED | TrustReplyWorkbenchController.kt, TrustReplyWorkbenchService.kt, AiReplyGroundedContentPlanner.kt, trust-reply-workbench.js | `POST /api/trust-reply/workbench/rearrange`：接受 paragraphPlanDraft + pinnedParagraphs + operatorFacts，调用 13 编排链路（OrchestrationAttempt 接缝，生产走 AiReplyLetterOrchestrator.instance），pinned 原样回填 / 未锁定重编，响应带 paragraphPlan/facts/topicOrder/paragraphs/actionText/validationCodes；不落库（I-4） |
+| T-6 测试（T-6.1..T-6.5） | IMPLEMENTED | trustReplyWorkbenchThreeStep.test.js（新）, trustReplyWorkbench.test.js, TrustReplyWorkbenchServiceTest.kt | T-6.1/T-6.2 新文件 3/3；T-6.3 trustReplyWorkbench.test.js 33/33；T-6.4/T-6.5 服务端 68/0/0/0；全量 node 764 pass、mvn 2993/0/0/5 |
+| A2 测试文件更新 | IMPLEMENTED | trustReplyWorkbenchSharedMount.test.js | :2302 三 tab、:2307/:2313-2317 factset/compose 面板语义、:2348/:2356/:2392/:2402 键盘导航与 setActivePage `(facts|factset|compose)` 选择器、:2757/:2965/:3004 frame-stale 激活 compose 页；60/60 通过 |
 
 ### Commands
 
 | Command | Result | Evidence |
 |---|---|---|
-| `node --test src/test/js/*.test.js`（baseline gate，preflight 证据） | PASS | exit 0, `tests 760, pass 760, fail 0, suites 120` — establishes the current repo state the conflict was checked against (the shared-mount suite runs and is green today) |
-
-No other required command was run: there is no final implementation state to verify (execution stopped at the preflight conflict, per execute-p scope rules). The remaining required commands (backend tests, per-file JS gates, `mvn test`, `mvn clean package`, `git diff --check`) would be run fresh after a human resolution.
+| `JAVA_HOME=…/zulu-11.jdk/Contents/Home mvn test -Dtest=TrustReplyWorkbenchServiceTest,AiReplyGroundedContentPlannerTest` | PASS | exit 0；TrustReplyWorkbenchServiceTest `Tests run: 68, Failures: 0, Errors: 0, Skipped: 0`（surefire；AiReplyGroundedContentPlannerTest 类不存在但 surefire 不报错，与基线行为一致）；node 764 pass 随 exec 绑定一并输出 |
+| `node --test src/test/js/trustReplyWorkbench.test.js` | PASS | exit 0；tests 33, pass 33, fail 0 |
+| `node --test src/test/js/trustReplyWorkbenchThreeStep.test.js` | PASS | exit 0；tests 3, pass 3, fail 0 |
+| `node --test src/test/js/*.test.js` | PASS | exit 0；tests 764, suites 121, pass 764, fail 0（基线 760 + 新增 4） |
+| `JAVA_HOME=…/zulu-11.jdk/Contents/Home mvn test` | PASS | exit 0；`Tests run: 2993, Failures: 0, Errors: 0, Skipped: 5`（基线 2991 + 2 新增）；node 764 pass |
+| `JAVA_HOME=…/zulu-11.jdk/Contents/Home mvn clean package` | PASS | exit 0；BUILD SUCCESS |
+| `git diff --check` | PASS | exit 0 |
 
 ### Changed Files
 
-- None. The working tree contains only the controller's pre-existing modification (`docs/plans/fast/2026-08-28-reply-orchestration-order/ledger.md`, preserved untouched) plus this report.
+- `src/main/resources/static/trust-reply-workbench.js` — T-1..T-4：三步页签、事实集表格、段落卡片、op* 本地草稿、重排交互（本地草稿零请求）；步骤 01 面板内容未动（I-6）
+- `src/main/resources/static/styles.css` — S-2 事实集表格块 + S-3 段落卡片块（逐字复制，脚本比对 True）；未触碰 `.trust-reply-page-*` / `.trust-reply-item` / `.trust-reply-item-list` / `.button` / `.compose-panel` 既有规则块；全文无新增 `style="`
+- `src/main/kotlin/com/weibo/talentintroduction/llm/controller/TrustReplyWorkbenchController.kt` — `POST /rearrange` 端点 + DTO（paragraphPlanDraft / pinnedParagraphs / operatorFacts）+ toDomain 转换
+- `src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt` — `rearrange`/`rearrangeInternal`（编排 + pinned 条目级证据校验 + 确定性兜底 + 六道校验结果）；bootstrap 响应携带 13 协议（paragraphPlan/facts/topicOrder，I-5）；`initialLetterPlan`/`controlledGroupFor`/`ruleIdsOf`/FROZEN_RULE_IDS
+- `src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyGroundedContentPlanner.kt` — `buildRearrangePlan`（接受 operatorFacts + paragraphPlanDraft 覆盖值）+ `validateRearrangement`（六道校验再验证）
+- `src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt` — T-6.4（pinned 原样回填 + 未锁定重编）、T-6.5（op* 逐字校验：改一字即 ORCH_VERBATIM_BODY_MISSING；真实 13 编排器 G3 拒绝 + 逐字放行）
+- `src/test/js/trustReplyWorkbenchThreeStep.test.js` — 新增（T-6.1 去重行与多问触发；T-6.2 五类交互零请求；I-3 重排请求携带条目级证据版本 + op* 逐字插槽）
+- `src/test/js/trustReplyWorkbench.test.js` — 三页契约源断言 + T-6.3（mount 后三页签切换、步骤 01 摘要卡片与覆盖徽标回归）
+- `src/test/js/trustReplyWorkbenchSharedMount.test.js` — A2：硬编码两页断言改按 S-1 三步契约（facts/factset/compose）
 
 ### Deviations
 
-- None. Per execute-p: "If completion requires an unlisted file or a new behavioral decision, stop with PLAN_CONFLICT" — the conflict is deterministic and was verified by reading both the plan bytes and the test bytes; no improvisation was attempted.
+- 无产品偏差。两处实现口径说明（均按计划文本内可推出的唯一解）：
+  1. 步骤 03 编排预览面板保留既有整合摘要预览区（`renderSummary`：整合按钮/预览页签/完成按钮），在其下方新增段落卡片区——原因是未授权测试 `autoRunOrchestration.test.js` / `trustReplyWorkbenchSharedMount.test.js` 硬断言整合预览 DOM（rendered/local/raw-preview、set-preview-tab、local-preview 正文），且全量 JS 门禁必须保持 fail 0；「框架选择器保留在步骤 03 顶部」按 T-1 落实，段落区为新增表面。
+  2. `mvn test -Dtest=TrustReplyWorkbenchServiceTest,AiReplyGroundedContentPlannerTest` 中 `AiReplyGroundedContentPlannerTest` 类在仓库中不存在（无该测试文件），surefire 仅运行存在的类且 exit 0（与基线行为一致，已在命令表中注明）。T-6.4/T-6.5 落在计划指定的 `TrustReplyWorkbenchServiceTest.kt`。
+- pinned 段落证据判据：携带主属 request（最低 index、factRuleIds 与段落规则 id 相交者）的条目级 `evidenceSetVersion`，服务端与当前值比对，失配即重新编排（I-3 的条目级语义，非全信标量）。
 
 ### Freshness
 
-- Plan identity rechecked: YES (sha256 5c31d917… via `scripts/plan_identity.py`)
-- Worktree identity rechecked: YES (root/branch/git-dir/HEAD 7bea6e3 via `scripts/worktree_identity.py`)
-- Reported commits reachable from target branch: N/A (no commit)
-- Required commands run this invocation: NO — none are runnable without an implementation state; the single baseline JS gate above was run as preflight evidence
-- Historical evidence used only as baseline: YES
+- Plan identity rechecked: YES（03967d14608ac297da2448776543b8ce814b18b497d6c1b291b3c5f22a07e45e，执行前后一致）
+- Worktree identity rechecked: YES（root/branch/git-dir/HEAD 9739c4c 一致，`--expect-*` 校验通过）
+- Reported commits reachable from target branch: 见下方 Implementation commit（提交后验证为 HEAD 且可达）
+- Required commands run this invocation: YES（全部 7 条在本纪元最终状态下新鲜执行）
+- Historical evidence used only as baseline: YES（epoch 1 报告仅作历史证据；基线 2991/0/0/5 与 node 760 仅作对照）
+
+### Implementation commit
+
+- Subject: `feat(fast-p): implement c5`（单次本地实现提交，仅含上述 9 个授权文件；不含 docs/plans/fast/** 与证据）
+- 提交后 HEAD/可达性已复核（见提交输出）。
 
 ### Remaining Blocker
 
-**Plan vs. unauthorized-test conflict — T-1/S-1 (three tabs, `data-page-panel` values `facts` / `factset` / `compose`) cannot be implemented without editing a file outside the 8-file authorized list.**
-
-The plan (S-1, observable outcome 1, T-1, T-6.3) requires expanding the two workbench tabs to three (`01 逐问处理 → 02 事实集 → 03 编排预览`) and changing the page keys from `facts`/`frame` to `facts`/`factset`/`compose`.
-
-`src/test/js/trustReplyWorkbenchSharedMount.test.js` — NOT in the plan's `## 变更文件清单` (only `trustReplyWorkbench.test.js` is authorized for JS-test changes) but executed by the required gate `node --test src/test/js/*.test.js` (must be fail 0, baseline 760 pass) — hard-asserts the two-tab/`frame` contract:
-
-- `:2302` `assert.strictEqual((host.innerHTML.match(/role="tab"[^>]*data-page="/g) || []).length, 2)` — exactly two tab buttons. Three tabs → 3 ≠ 2 → FAIL.
-- `:2307` asserts `data-page-panel="frame"` exists; `:2313`/`:2315` assert next-page opens the `frame` panel (`doesNotMatch .../data-page-panel="frame"[^>]* hidden/`) — the renamed/third-tab flow makes the `frame` panel absent or hidden → FAIL.
-- `:2348` keyboard-navigation stub returns exactly `[factsTab, frameTab]`; `:2392`/`:2402` assert `setActivePage` builds the selector `^\[role="tab"\]\[data-page="(facts|frame)"\]$` — the `frame` key is part of the selector contract.
-- `:2757`/`:2965`/`:3004` assert the `frame` page is active after a frame-stale restore (`handleFrameStale` sets `activePage`).
-
-Verified counterfactual: even the minimal deviation of keeping the third page key as `frame` still breaks `:2302` (tab count) and `:2313`-`:2317` (next-page flow). Therefore no within-plan implementation can keep the required full-JS gate green without editing the unauthorized file.
-
-Prior fast-p children that changed this file's contract (c2/c3) had it listed in their own authorized file lists (e.g. c3: `src/test/js/trustReplyWorkbenchSharedMount.test.js`), confirming the convention; c5's list omits it while the plan changes the exact contract the file pins.
+- None.
 
 ### Next Action
 
-- PLAN_CONFLICT → human decision required, one of:
-  1. Amend the c5 authorized file list to add `src/test/js/trustReplyWorkbenchSharedMount.test.js` (its two-tab/`frame` assertions must be updated to the three-tab `facts`/`factset`/`compose` contract), then re-dispatch c5; or
-  2. Amend plan 15 S-1 to keep the `frame` page key / two-tab rendering (then the observable-outcome contract must be re-scoped), then re-dispatch c5.
+- READY_FOR_VERIFICATION → run `verify-p`
