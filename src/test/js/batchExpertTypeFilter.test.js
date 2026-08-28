@@ -149,6 +149,53 @@ describe("Batch ExpertType Filter (child 02)", () => {
         assert.deepStrictEqual(captured.expertTypes, ["PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"]);
     });
 
+    it("editor save allows empty expertTypes for MATERIAL_REMINDER (R1)", async () => {
+        let apiCalls = [];
+        const statuses = [];
+        const sb = createSandbox({
+            api: async (url, opts) => {
+                apiCalls.push({ url, body: opts && opts.body ? JSON.parse(opts.body) : null });
+                return {};
+            },
+            // R1: MATERIAL_REMINDER 保留历史空集合行为 —— 类型判定经 resolveBatchTemplateMailType 收口到 INTRODUCTION。
+            resolveBatchTemplateMailType: () => "MATERIAL_REMINDER",
+            readBatchMultiPickerValue: () => [],
+            showStatus: (msg, kind) => statuses.push({ msg, kind })
+        });
+        sb.batchTaskState = { editorAutoEnabled: false, editorMode: "create", editorId: null };
+        sb.__store.el("batchConfigEditorName").value = "材料提醒任务";
+        sb.__store.el("batchConfigEditorTemplateId").value = "7";
+        vm.runInContext(extractFn("saveBatchConfigEditor"), sb);
+        await vm.runInContext("saveBatchConfigEditor()", sb);
+        assert.strictEqual(apiCalls.length, 1, "MATERIAL_REMINDER empty types must reach the API route");
+        assert.ok(apiCalls[0].url.startsWith("/api/mail/batch-send/configs"), "create/update route must be the same");
+        assert.deepStrictEqual(apiCalls[0].body.expertTypes, [], "payload must carry empty expertTypes");
+        assert.ok(
+            !statuses.some((s) => s.msg === "请至少选择一个研发类型"),
+            "no INTRODUCTION-only error may be emitted for MATERIAL_REMINDER"
+        );
+    });
+
+    it("editor save still blocks empty expertTypes for INTRODUCTION with exact error (R1)", async () => {
+        let apiCalls = 0;
+        const statuses = [];
+        const sb = createSandbox({
+            api: async () => { apiCalls++; return {}; },
+            // default resolveBatchTemplateMailType -> INTRODUCTION
+            readBatchMultiPickerValue: () => [],
+            showStatus: (msg, kind) => statuses.push({ msg, kind })
+        });
+        sb.batchTaskState = { editorAutoEnabled: false, editorMode: "create", editorId: null };
+        sb.__store.el("batchConfigEditorName").value = "任务Y";
+        vm.runInContext(extractFn("saveBatchConfigEditor"), sb);
+        await vm.runInContext("saveBatchConfigEditor()", sb);
+        assert.strictEqual(apiCalls, 0, "INTRODUCTION empty types must not reach the API");
+        assert.ok(
+            statuses.some((s) => s.msg === "请至少选择一个研发类型" && s.kind === "error"),
+            "INTRODUCTION empty types must emit the exact error text"
+        );
+    });
+
     it("manual form values payload includes expertTypes key", () => {
         const sb = createSandbox();
         vm.runInContext(extractFn("readManualFormValues"), sb);

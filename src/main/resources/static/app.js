@@ -15030,7 +15030,10 @@ async function saveBatchConfigEditor() {
     if (payload.perMailIntervalMs < 0) { showStatus("每封间隔需 ≥ 0", "error"); return; }
     if (payload.perRoundIntervalMs < 0) { showStatus("每轮间隔需 ≥ 0", "error"); return; }
     if (payload.selfCheckTtlMinutes < 1) { showStatus("自检 TTL 需 ≥ 1", "error"); return; }
-    if (readBatchMultiPickerValue("batchConfigEditorExpertTypes").length === 0) {
+    // I3-1/R1: 研发类型必填只对 INTRODUCTION 生效 —— MATERIAL_REMINDER 保留空集合（历史行为，后端同口径）。
+    // 先判空集合（短路），仅在需要时才解析模板邮件类型 —— 非空集合的保存路径不引入新的依赖。
+    if (readBatchMultiPickerValue("batchConfigEditorExpertTypes").length === 0
+        && resolveBatchTemplateMailType(templateId) === "INTRODUCTION") {
         showStatus("请至少选择一个研发类型", "error"); return;
     }
 
