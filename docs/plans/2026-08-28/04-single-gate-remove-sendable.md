@@ -293,8 +293,10 @@ classification.version !in ...` 的判定整体替换为：
 | 6 | `src/test/kotlin/.../campaign/service/ManualInitialOutreachServiceTest.kt` | Task 5 第 4~8 条 |
 | 7 | `src/test/kotlin/.../expert/service/ExpertClassificationVersionGateGuardTest.kt` | Task 5 第 9 条（扩展守卫） |
 | 8 | `src/test/kotlin/.../campaign/service/BatchSendTaskRuntimeIntegrationTest.kt` | Task 5 第 10 条 |
+| 9 | `src/test/kotlin/.../expert/service/ExpertClassificationServiceTest.kt` | A2 授权：删除 I5a2-10 用例（断言被 I4-6 删除的 `ACCEPTED_CLASSIFICATION_VERSIONS`，机械删除） |
+| 10 | `src/test/kotlin/.../campaign/OperatorStatusWriteSeamGuardTest.kt` | A2 授权：`NoiseSite` 行钉 `545` → `498`（Task 1 删除致行偏移，机械更新；同 05A-2 先例） |
 
-合计 8 个文件；子系统 2 个（expert / campaign）。**零前端文件，故无 `## 样式契约`。**
+合计 10 个文件（A2 授权 2 个既有测试文件，见 Amendments 表）；子系统 2 个（expert / campaign）。**零前端文件，故无 `## 样式契约`。**
 
 ---
 
