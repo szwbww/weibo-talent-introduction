@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-08-28/00-single-gate-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-08-28/00-single-gate-master.md (commit 1f5a916489933fc9b2e8e469037fc912d55edd5d)
 - Amendments: N/A
 - Master base: de228e17cc0134a7c11dea7cbf82054e8d249f99
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-08-28T15:30:17+0800
 - Current child: 03
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: 子计划 03 实施提交 bc8a937 含 5 个未授权测试 fixture 文件（BatchSendTaskRuntimeIntegrationTest.kt、ManualInitialOutreachServiceTest.kt、BatchSendConfigControllerTest.kt、batchExpertTypeFilter.test.js、batchSendTaskConsoleInteraction.test.js）：I3-1/I3-2 校验使 10 Kotlin + 5 JS 既有空集合用例失效，计划的「验证命令」全量回归无法在不改这些 fixture 的情况下通过；修复由计划唯一确定（补三类默认值，机械、不改断言语义）。需人工批准 A1 授权该 5 文件后恢复。
+- Resume from: 03 epoch 1, base 658b60c25370bd8dd974e6a98d6eacc48315943b, implementation bc8a93762cca39c2542d79d1f3801589b6e4e155 retained, next action A1 批准后验证
 
 ## Baseline
 
@@ -38,7 +38,7 @@ Execution order: 01, 02, 03 (independent) → 04 (depends 02,03) → 05 (depends
 |---|---|---|---|---:|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-08-28/01-lastpublicationyear-recovery.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | none | 1 | LIGHT_PASS_WITH_NOTES | 1f5a916489933fc9b2e8e469037fc912d55edd5d | cec6ce15ba3b41a6bf76e70eae503cdc5a925560 | 0 | — | cec6ce15ba3b41a6bf76e70eae503cdc5a925560 | 427222f | impl Impl01YearBackfill; verify Verify01Light; RECORD_ONLY O-1 (ExpertDiscoveryControllerTest helper local rename, functionally equivalent) |
 | 02 | docs/plans/2026-08-28/02-legacy-outreach-explicit-types.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | none | 1 | LIGHT_PASS_WITH_NOTES | cec6ce15ba3b41a6bf76e70eae503cdc5a925560 | 658b60c25370bd8dd974e6a98d6eacc48315943b | 0 | — | 658b60c25370bd8dd974e6a98d6eacc48315943b | — | impl Impl02LegacyTypes; verify Verify02Light; RECORD_ONLY O-1..O-3 (boundary harness docs, execution deviations, bookkeeping) |
-| 03 | docs/plans/2026-08-28/03-expert-types-required.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | none | 1 | PENDING | — | — | 0 | — | — | — | 类型必填非空 + V109 迁移；7 文件 |
+| 03 | docs/plans/2026-08-28/03-expert-types-required.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | none | 1 | PAUSED_FOR_HUMAN | 658b60c25370bd8dd974e6a98d6eacc48315943b | bc8a93762cca39c2542d79d1f3801589b6e4e155 | 0 | — | bc8a93762cca39c2542d79d1f3801589b6e4e155 | — | impl Impl03TypesRequired; epoch 1 PLAN_CONFLICT — 5 个未授权 fixture 文件待 A1 批准；全量 2974 Kotlin + 755 JS 绿 |
 | 04 | docs/plans/2026-08-28/04-single-gate-remove-sendable.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | 02,03 | 1 | PENDING | — | — | 0 | — | — | — | 删 sendable/版本门禁，类型成唯一收口点；8 文件 |
 | 05 | docs/plans/2026-08-28/05-sendable-vocabulary-cleanup.md | commit:1f5a916489933fc9b2e8e469037fc912d55edd5d | 04 | 1 | PENDING | — | — | 0 | — | — | — | 删 sendable 概念/序列化/统计/DTO；10 文件 |
 
