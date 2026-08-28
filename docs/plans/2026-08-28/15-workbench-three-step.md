@@ -272,8 +272,11 @@
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt` | 修改（T-6.4、T-6.5） |
 | 7 | `src/test/js/trustReplyWorkbenchThreeStep.test.js` | 新增（T-6.1、T-6.2：事实集去重行、四类交互零请求） |
 | 8 | `src/test/js/trustReplyWorkbench.test.js` | 修改（T-6.3：三页签切换 + 步骤 01 渲染回归） |
+| 9 | `src/test/js/trustReplyWorkbenchSharedMount.test.js` | 修改（A2：硬编码两页断言改按三步契约） |
 
-合计 8 个文件，2 个子系统（静态前端 / 工作台后端）。
+合计 9 个文件，2 个子系统（静态前端 / 工作台后端）。
+
+> **修订 A2（2026-08-28 需求方批准）**：`trustReplyWorkbenchSharedMount.test.js` 有硬编码两页断言（:2302 恰 2 个 `role="tab"` 按钮、:2307/:2313-2317 的 frame 面板语义、:2348/:2356/:2392/:2402 键盘导航与 `setActivePage` 的 `[data-page="(facts|frame)"]` 选择器、:2757/:2965/:3004 的 frame-stale 后激活断言），本计划 S-1/T-1 的三步页签改动必然打破它们（即使用 `frame` 作第三页键仍会破 :2302/:2313-2317）。修复由 S-1 唯一确定（改为 facts/factset/compose 三页契约），属纯测试文件授权，无产品改动。违反后果：全量 `node --test src/test/js/*.test.js` 门禁无法通过。
 
 测试落点的依据（实测）：`trustReplyWorkbench.test.js`（975 行，17 处 `mount(`、21 处 `bootstrap`）是工作台渲染契约的现有归属地，三页签与步骤 01 回归写在这里；事实集与段落交互是全新表面，新建 `trustReplyWorkbenchThreeStep.test.js` 承载，避免把 975 行的既有文件撑成两千行。
 
