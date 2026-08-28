@@ -86,6 +86,9 @@
   `ExpertClassification.SENDABLE_TYPES`（大写常量名，小写 grep 漏检），Task 1 删除常量即编译失败；
   已授权为变更文件清单第 12 项做机械修复。其余排除项命中均为注释/helper 名，
   不读 `expertClassification.sendable` 属性、不触发守卫正则、不破坏编译。
+  **A5 修正**：`OperatorStatusWriteSeamGuardTest.kt` **不再属于排除项** —— Task 4 删 `expertSendable`
+  2 行使 `ExpertIndexController.kt` 的 operatorStatus 写点 :436 上移一行，守卫 NoiseSite 行钉失配
+  （全量回归唯一失败）；已授权为变更文件清单第 13 项做一行机械修正（同子计划 04 A2 先例）。
 - Applies to: 本计划全部任务。
 - Violation consequence: 本计划文件数已贴近上限（11），任何扩张都会让验证进入多轮返工。
 - 来源: create-p 的硬上限规则；A3 修订（基线审计未覆盖上述 6 个文件的注释/helper 命中）
@@ -208,8 +211,9 @@
 | 10 | `src/test/kotlin/.../expert/service/ExpertClassificationVersionGateGuardTest.kt` | Task 5-5 |
 | 11 | `src/test/kotlin/.../expert/service/ExpertSearchServiceTest.kt` | A3 授权：删除两个 I1-5 派生用例（`parses expertClassification with type-derived sendable…` ~:1874、`ES sendable=true cannot override OUT_OF_SCOPE…` ~:1929，断言被删的 `c.sendable` 属性，编译阻塞；语义已被其余 type 断言覆盖） |
 | 12 | `src/test/kotlin/.../campaign/service/ManualInitialOutreachServiceTest.kt` | A4 授权：`classification(type)` fixture helper 的 3 处 `ExpertClassification.SENDABLE_TYPES` 成员判定（:4304/:4305/:4307）改为 fixture 局部集合 `setOf(ExpertType.PRODUCTION_RND, ExpertType.ACADEMIC_RND, ExpertType.HYBRID_RND)`（原常量前三值，行为逐字不变） |
+| 13 | `src/test/kotlin/.../campaign/OperatorStatusWriteSeamGuardTest.kt` | A5 授权：`NoiseSite` 行钉 `436` → `435`（Task 4 删 `expertSendable` 2 行致 `ExpertIndexController.kt` 的 operatorStatus 写点上移一行；机械更新，同子计划 04 A2 先例） |
 
-合计 12 个文件（A3 + A4 授权，见 Amendments 表）；子系统 2 个（expert / campaign 测试）。**零前端文件，故无 `## 样式契约`。**
+合计 13 个文件（A3 + A4 + A5 授权，见 Amendments 表）；子系统 2 个（expert / campaign 测试）。**零前端文件，故无 `## 样式契约`。**
 
 ---
 
