@@ -151,7 +151,7 @@ class UnmatchedInboundMailService(
             source = "MANUAL_BIND"
         )
 
-        var currentContact = contact
+        var currentContact = contact.copy(needsManualAttention = true)
         if (promoteToApplication && !contact.applicationIndexed) {
             val now = record.receivedAt
             val firstReplyAt = contact.firstReplyAt ?: now
@@ -170,20 +170,16 @@ class UnmatchedInboundMailService(
             }
         }
 
-        val remaining = inboundMailProcessingRepository.countByExpertContactIdAndProcessStatus(contactId, "MANUAL_REVIEW")
-        if (remaining == 0L && currentContact.needsManualAttention) {
-            currentContact = currentContact.copy(needsManualAttention = false)
-        }
         expertContactRepository.save(currentContact)
 
         val now = LocalDateTime.now()
         val saved = inboundMailProcessingRepository.save(
             record.copy(
                 expertContactId = contactId,
-                processStatus = "PROCESSED",
+                processStatus = "MANUAL_REVIEW",
                 processReason = "MANUAL_BOUND",
-                resolvedBy = resolvedBy,
-                resolvedAt = now,
+                resolvedBy = null,
+                resolvedAt = null,
                 updatedAt = now
             )
         )

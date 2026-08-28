@@ -13,7 +13,6 @@ import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.repository.ReasonTypeCount
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -88,7 +87,7 @@ class UnmatchedInboundMailServiceTest {
         val recordId = 1L
         val contactId = 10L
         val record = processing(id = recordId, email = "alias@example.com")
-        val c = contact(contactId, "main@example.com")
+        val c = contact(contactId, "main@example.com").copy(needsManualAttention = true)
 
         Mockito.`when`(inboundMailProcessingRepository.findById(recordId)).thenReturn(Optional.of(record))
         Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(c))
@@ -101,10 +100,11 @@ class UnmatchedInboundMailServiceTest {
 
         val result = service.bindToContact(recordId, contactId, "operator1")
         assertEquals(contactId, result.expertContactId)
-        assertEquals("PROCESSED", result.processStatus)
+        assertEquals("MANUAL_REVIEW", result.processStatus)
         assertEquals("MANUAL_BOUND", result.processReason)
-        assertEquals("operator1", result.resolvedBy)
-        assertNotNull(result.resolvedAt)
+        assertEquals(null, result.resolvedBy)
+        assertEquals(null, result.resolvedAt)
+        Mockito.verify(expertContactRepository).save(Mockito.argThat<ExpertContact> { it.needsManualAttention })
     }
 
     @Test
@@ -209,7 +209,7 @@ class UnmatchedInboundMailServiceTest {
             .thenAnswer { it.getArgument<InboundMailProcessing>(0) }
 
         val result = service.bindToContact(recordId, contactId, "operator1")
-        assertEquals("PROCESSED", result.processStatus)
+        assertEquals("MANUAL_REVIEW", result.processStatus)
         assertEquals("MANUAL_BOUND", result.processReason)
 
         Mockito.verify(expertEmailAliasService).bindAlias(contactId, "old@example.com", "MANUAL_BIND")
