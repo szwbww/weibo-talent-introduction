@@ -163,8 +163,11 @@
 | 2 | `src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt` | 修改（T-2，仅 `:1466-1468` 一段） |
 | 3 | `src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyLetterCloserTest.kt` | 新增（T-4.1～T-4.7） |
 | 4 | `src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt` | 修改（T-4.8） |
+| 5 | `src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchItemFlowTest.kt` | 修改（A1：5 条过时断言改按本计划契约） |
 
-合计 4 个文件，1 个子系统（llm 编排层）。
+合计 5 个文件，1 个子系统（llm 编排层）。
+
+> **修订 A1（2026-08-28 需求方批准）**：`TrustReplyWorkbenchItemFlowTest.kt` 有 5 条既有测试断言本计划改造前的原文形态（逐条分段、不去重、`raw Claim A|Claim B`）：`assemble accepts identical normalized answers across requests`、`assemble accepts the same source rule bound to two requests`、`assemble keeps similar answers from different claims in canonical order`、`similar answers across items assemble despite paragraph and space variance`、`multi claim item answerText keeps each claim as its own paragraph`。本计划自身要求的改动必然打破它们；修复由本计划唯一确定（改为断言收口后的去重/按主题归并/单 CTA 输出），属纯测试文件授权，无产品改动。违反后果：全量 `mvn test` 门禁无法通过。
 **`AiReplyDraftService.kt` / `AiReplyGroundedContentPlanner.kt` / `AiReplyGroundedDraftMaterializer.kt` 均不在清单内**——它们服务于 `AiReplyDraftService.generate()` 的单条产出，与一键预判的最终正文无关（见「前提更正」）。
 
 ## 验证命令
