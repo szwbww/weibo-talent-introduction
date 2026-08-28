@@ -294,6 +294,12 @@ class OpenAlexDataSource(
         val worksUrl = node.path("works_api_url").asText(null)
         val recentWorkTitles = if (fetchWorksAndPatents && worksUrl != null) fetchRecentWorks(worksUrl, limit = 3) else null
         val patentTitles = if (fetchWorksAndPatents && worksUrl != null) fetchPatents(worksUrl, limit = 3) else null
+        // I1-1/I1-2：取 works_count > 0 的最大 year；数组顺序不可依赖（CP-1 实测为升序）。
+        // I1-3：无该键、空数组、或全部 works_count = 0 时为 null。
+        val lastPublicationYear = node.path("counts_by_year")
+            .filter { it.path("works_count").asInt(0) > 0 }
+            .mapNotNull { it.path("year").let { y -> if (y.isInt) y.asInt() else null } }
+            .maxOrNull()
         return AuthorEnrichment(
             hIndex = node.path("summary_stats").path("h_index").let { if (it.isInt) it.asInt() else null },
             citationCount = node.path("cited_by_count").let { if (it.isInt) it.asInt() else null },
@@ -302,7 +308,8 @@ class OpenAlexDataSource(
             recentWorkTitles = recentWorkTitles,
             patentTitles = patentTitles,
             disciplineCategory = disciplineCategory,
-            institutionType = institutionType
+            institutionType = institutionType,
+            lastPublicationYear = lastPublicationYear
         )
     }
 
@@ -336,5 +343,6 @@ data class AuthorEnrichment(
     val recentWorkTitles: List<String>? = null,
     val patentTitles: List<String>? = null,
     val disciplineCategory: String? = null,
-    val institutionType: String? = null
+    val institutionType: String? = null,
+    val lastPublicationYear: Int? = null
 )

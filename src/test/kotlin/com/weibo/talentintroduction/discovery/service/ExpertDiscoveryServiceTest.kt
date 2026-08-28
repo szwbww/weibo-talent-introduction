@@ -1145,6 +1145,33 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `enrichExistingExperts LAST_PUBLICATION_YEAR_BACKFILL scope uses backfill filter excluding EMAIL- (I1-5)`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 0L, 0L)
+        ScrollExpertsMockHelper.stubSearchAfterExpertsFiltered(expertSearchService, emptyList())
+
+        val result = svc.enrichExistingExperts(EnrichmentScope.LAST_PUBLICATION_YEAR_BACKFILL)
+
+        assertEquals(0, result.enriched)
+        assertEquals(0, result.failed)
+        val filters = ScrollExpertsMockHelper.captureNonEmptyCountExpertsFilters(expertSearchService)
+        @Suppress("UNCHECKED_CAST")
+        val bool = filters[0]["bool"] as Map<String, Any>
+        @Suppress("UNCHECKED_CAST")
+        val must = bool["must"] as List<Map<String, Any>>
+        @Suppress("UNCHECKED_CAST")
+        val mustNot = bool["must_not"] as List<Map<String, Any>>
+        fun existsField(clause: Map<String, Any>): String? =
+            (clause["exists"] as? Map<*, *>)?.get("field") as? String
+        assertTrue(must.any { existsField(it) == "enrichedAt" }, "backfill must must include exists enrichedAt")
+        assertTrue(mustNot.any { existsField(it) == "lastPublicationYear" }, "backfill must_not must include exists lastPublicationYear")
+        assertTrue(filters.toString().contains("EMAIL-"), "backfill filter must exclude EMAIL- prefix")
+    }
+
+    @Test
     fun `getEnrichmentStats reports institutionTypePending backfill count (A5-1)`() {
         val svc = createService()
         ScrollExpertsMockHelper.stubEnrichmentStatsCounts(expertSearchService, 10L, 3L, 6L)
@@ -1155,6 +1182,8 @@ class ExpertDiscoveryServiceTest {
         assertEquals(6L, stats.enrichedLast30d)
         assertEquals(10L, stats.total)
         assertEquals(3L, stats.institutionTypePending)
+        // I1-5 口径与 institutionType 补采同款（无 gte 的 exists 过滤器），同样落到 pending 桩值。
+        assertEquals(3L, stats.lastPublicationYearPending)
     }
 
     @Test
@@ -1350,6 +1379,100 @@ class ExpertDiscoveryServiceTest {
         @Suppress("UNCHECKED_CAST")
         val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
         assertEquals("company", doc["institutionType"])
+    }
+
+    @Test
+    fun `enrichExistingExperts writes lastPublicationYear unconditionally overwriting prior value (I1-4)`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val expert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-YEAR", email = "year@example.com",
+            givenNames = "Test", familyNames = "Year",
+            country = "US", keyword = null, employment = null,
+            lastPublicationYear = 2015
+        )
+        // I1-4: 文档已有 lastPublicationYear=2015（发现时由 paper.pubYear 写入），
+        // enrichment 返回 2026 → _update + doc 局部覆盖为 2026。
+        // 单元层断言：doc 体无条件携带 lastPublicationYear=2026（无「已有值则跳过」保护），覆盖由 ES _update 语义完成。
+        val enrichment = AuthorEnrichment(
+            hIndex = 10, citationCount = 100, worksCount = 5,
+            disciplineCategory = "STEM", lastPublicationYear = 2026
+        )
+
+        ScrollExpertsMockHelper.stubSearchAfterExpertsFiltered(expertSearchService, listOf(listOf(expert)))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 1L, 1L)
+        Mockito.doReturn(mapOf("0000-YEAR" to EnrichmentOutcome.Success(enrichment)))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(),
+                Mockito.eq(HttpMethod.POST),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        svc.enrichExistingExperts()
+
+        @Suppress("UNCHECKED_CAST")
+        val entityCaptor = ArgumentCaptor.forClass(HttpEntity::class.java) as ArgumentCaptor<HttpEntity<*>>
+        Mockito.verify(restTemplate, Mockito.atLeastOnce()).exchange(
+            Mockito.contains("/_update/"),
+            Mockito.eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
+        assertEquals(2026, doc["lastPublicationYear"])
+    }
+
+    @Test
+    fun `enrichExistingExperts omits lastPublicationYear key when null (I1-3)`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val expert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-NOYEAR", email = "noyear@example.com",
+            givenNames = "Test", familyNames = "NoYear",
+            country = "US", keyword = null, employment = null,
+            lastPublicationYear = 2015
+        )
+        // I1-3: 派生值为 null（无 counts_by_year）时 doc 不写入该键，避免覆盖发现时的真实值。
+        val enrichment = AuthorEnrichment(
+            hIndex = 10, citationCount = 100, worksCount = 5,
+            disciplineCategory = "STEM", lastPublicationYear = null
+        )
+
+        ScrollExpertsMockHelper.stubSearchAfterExpertsFiltered(expertSearchService, listOf(listOf(expert)))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 1L, 1L)
+        Mockito.doReturn(mapOf("0000-NOYEAR" to EnrichmentOutcome.Success(enrichment)))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(),
+                Mockito.eq(HttpMethod.POST),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        svc.enrichExistingExperts()
+
+        @Suppress("UNCHECKED_CAST")
+        val entityCaptor = ArgumentCaptor.forClass(HttpEntity::class.java) as ArgumentCaptor<HttpEntity<*>>
+        Mockito.verify(restTemplate, Mockito.atLeastOnce()).exchange(
+            Mockito.contains("/_update/"),
+            Mockito.eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
+        assertFalse(doc.containsKey("lastPublicationYear"))
     }
 
     @Test

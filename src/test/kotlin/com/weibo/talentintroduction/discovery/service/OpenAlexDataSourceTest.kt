@@ -86,6 +86,51 @@ class OpenAlexDataSourceTest {
         assertEquals(1200, result.citationCount)
         assertEquals(45, result.worksCount)
         assertEquals("nonprofit", result.institutionType)
+        // I1-1/I1-2：最大有产出 year = 2010；2022 的 works_count = 0 不算发表年，不得选它。
+        assertEquals(2010, result.lastPublicationYear)
+    }
+
+    @Test
+    fun `enrichAuthor lastPublicationYear is max works_count year regardless of array order (I1-1)`() {
+        // 数组为降序：2022 在前、2018 在后，且含一个 works_count = 0 的更大年份 2025。
+        // I1-1：取所有 works_count > 0 的 year 最大值（=2022），不得取数组首项。
+        // I1-2：2025 的 works_count = 0 不算发表年。
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[],
+               "counts_by_year":[
+                 {"year":2022,"works_count":2,"oa_works_count":0,"cited_by_count":10},
+                 {"year":2018,"works_count":5,"oa_works_count":4,"cited_by_count":50},
+                 {"year":2025,"works_count":0,"oa_works_count":0,"cited_by_count":99}
+               ]}"""
+        )
+        assertEquals(2022, dataSource.enrichAuthor("A1")!!.lastPublicationYear)
+    }
+
+    @Test
+    fun `enrichAuthor lastPublicationYear null when counts_by_year missing (I1-3)`() {
+        stubAuthorEnrichment("""{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[]}""")
+        assertNull(dataSource.enrichAuthor("A1")!!.lastPublicationYear)
+    }
+
+    @Test
+    fun `enrichAuthor lastPublicationYear null when counts_by_year empty (I1-3)`() {
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[],
+               "counts_by_year":[]}"""
+        )
+        assertNull(dataSource.enrichAuthor("A1")!!.lastPublicationYear)
+    }
+
+    @Test
+    fun `enrichAuthor lastPublicationYear null when all works_count zero (I1-3)`() {
+        stubAuthorEnrichment(
+            """{"works_count":1,"cited_by_count":1,"summary_stats":{"h_index":1},"topics":[],
+               "counts_by_year":[
+                 {"year":2018,"works_count":0,"oa_works_count":0,"cited_by_count":5},
+                 {"year":2022,"works_count":0,"oa_works_count":0,"cited_by_count":8}
+               ]}"""
+        )
+        assertNull(dataSource.enrichAuthor("A1")!!.lastPublicationYear)
     }
 
     @Test
@@ -239,6 +284,11 @@ class OpenAlexDataSourceTest {
                   "summary_stats": {"h_index": 5},
                   "topics": [{"display_name": "AI", "count": 3}],
                   "last_known_institutions": [{"display_name": "Big Corp", "type": "company"}],
+                  "counts_by_year": [
+                    {"year": 2015, "works_count": 1, "oa_works_count": 1, "cited_by_count": 20},
+                    {"year": 2020, "works_count": 3, "oa_works_count": 2, "cited_by_count": 60},
+                    {"year": 2023, "works_count": 0, "oa_works_count": 0, "cited_by_count": 5}
+                  ],
                   "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"
                 },
                 {
@@ -279,6 +329,8 @@ class OpenAlexDataSourceTest {
         assertNull(first.data.recentWorkTitles)
         assertNull(first.data.patentTitles)
         assertEquals("company", first.data.institutionType)
+        // 批量路径共用 parseAuthorEnrichmentFromNode：同样解析 counts_by_year（I1-1/I1-2）。
+        assertEquals(2020, first.data.lastPublicationYear)
     }
 
     @Test

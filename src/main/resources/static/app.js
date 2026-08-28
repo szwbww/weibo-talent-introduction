@@ -5806,6 +5806,8 @@ async function handleDiscoverOption(mode) {
         await handleEnrichExperts();
     } else if (mode === 'enrichBackfill') {
         await handleEnrichExperts("INSTITUTION_TYPE_BACKFILL");
+    } else if (mode === 'enrichYearBackfill') {
+        await handleEnrichExperts("LAST_PUBLICATION_YEAR_BACKFILL");
     } else {
         await handleDiscover();
     }

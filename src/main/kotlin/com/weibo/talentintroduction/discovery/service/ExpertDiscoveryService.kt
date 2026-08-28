@@ -807,7 +807,10 @@ class ExpertDiscoveryService(
         val institutionTypePending = expertSearchService.countExperts(
             ExpertIndexLevel.CANDIDATE, buildInstitutionTypeBackfillFilters()
         )
-        return EnrichmentStats(pending, enrichedRecently, total, institutionTypePending)
+        val lastPublicationYearPending = expertSearchService.countExperts(
+            ExpertIndexLevel.CANDIDATE, buildLastPublicationYearBackfillFilters()
+        )
+        return EnrichmentStats(pending, enrichedRecently, total, institutionTypePending, lastPublicationYearPending)
     }
 
     private fun buildEnrichmentFilters(cutoff: String): List<Map<String, Any>> {
@@ -849,6 +852,17 @@ class ExpertDiscoveryService(
         ))
     )
 
+    /** I1-5：只针对 OpenAlex 认得（有 enrichedAt）且尚无发表年份的人。 */
+    private fun buildLastPublicationYearBackfillFilters(): List<Map<String, Any>> = listOf(
+        mapOf("bool" to mapOf(
+            "must" to listOf(mapOf("exists" to mapOf("field" to "enrichedAt"))),
+            "must_not" to listOf(
+                mapOf("exists" to mapOf("field" to "lastPublicationYear")),
+                mapOf("prefix" to mapOf("orcidId" to "EMAIL-"))
+            )
+        ))
+    )
+
     private fun sleepInterruptible(taskType: String, ms: Long): Boolean {
         if (ms <= 0) return progressStore.isCancelled(taskType)
         var remaining = ms
@@ -873,6 +887,7 @@ class ExpertDiscoveryService(
         val filters = when (scope) {
             EnrichmentScope.DEFAULT -> buildEnrichmentFilters(cutoff)
             EnrichmentScope.INSTITUTION_TYPE_BACKFILL -> buildInstitutionTypeBackfillFilters()
+            EnrichmentScope.LAST_PUBLICATION_YEAR_BACKFILL -> buildLastPublicationYearBackfillFilters()
         }
         val pendingCount = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, filters)
         val rateLimitMode = openAlexProperties.enrichmentRateLimitMode.uppercase(Locale.ROOT)
@@ -1123,6 +1138,8 @@ class ExpertDiscoveryService(
         enrichment.disciplineCategory?.let { doc["disciplineCategory"] = it }
         // I5a-3: null 时不写入该键，避免覆盖存量值；I5a-8: 无条件 ?.let，enrichment 值覆盖发现时的值。
         enrichment.institutionType?.let { doc["institutionType"] = it }
+        // I1-3: null 时不写入该键，避免覆盖发现时的真实值；I1-4: 非 null 时无条件覆盖。
+        enrichment.lastPublicationYear?.let { doc["lastPublicationYear"] = it }
         val updateBody = mapOf("doc" to doc)
         for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
             if (!documentExistsInIndex(level, orcidId)) continue
@@ -1316,9 +1333,15 @@ class ExpertDiscoveryService(
     }
 }
 
-enum class EnrichmentScope { DEFAULT, INSTITUTION_TYPE_BACKFILL }
+enum class EnrichmentScope { DEFAULT, INSTITUTION_TYPE_BACKFILL, LAST_PUBLICATION_YEAR_BACKFILL }
 
-data class EnrichmentStats(val pending: Long, val enrichedLast30d: Long, val total: Long, val institutionTypePending: Long)
+data class EnrichmentStats(
+    val pending: Long,
+    val enrichedLast30d: Long,
+    val total: Long,
+    val institutionTypePending: Long,
+    val lastPublicationYearPending: Long
+)
 
 data class EnrichmentResult(
     val enriched: Int,

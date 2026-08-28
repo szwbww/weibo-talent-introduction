@@ -245,7 +245,10 @@ class ExpertDiscoveryControllerTest {
 
     @Test
     fun `getEnrichmentStats returns stats from service`() {
-        Mockito.doReturn(EnrichmentStats(pending = 10, enrichedLast30d = 90, total = 100, institutionTypePending = 5))
+        Mockito.doReturn(EnrichmentStats(
+            pending = 10, enrichedLast30d = 90, total = 100,
+            institutionTypePending = 5, lastPublicationYearPending = 7
+        ))
             .`when`(discoveryService).getEnrichmentStats()
 
         val stats = controller.getEnrichmentStats()
@@ -254,6 +257,7 @@ class ExpertDiscoveryControllerTest {
         assertEquals(90, stats.enrichedLast30d)
         assertEquals(100, stats.total)
         assertEquals(5, stats.institutionTypePending)
+        assertEquals(7, stats.lastPublicationYearPending)
     }
 
     @Test
@@ -290,8 +294,8 @@ class ExpertDiscoveryControllerTest {
             .thenReturn(startedToken())
         Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
             .thenAnswer { invocation ->
-                val execution = invocation.arguments[0] as TaskExecution
-                execution.copy(id = execution.id ?: 1L)
+                val taskExecution = invocation.arguments[0] as TaskExecution
+                taskExecution.copy(id = 1L)
             }
         Mockito.doReturn(EnrichmentResult(enriched = 1, failed = 0))
             .`when`(discoveryService).enrichExistingExperts(EnrichmentScope.INSTITUTION_TYPE_BACKFILL)
@@ -299,6 +303,23 @@ class ExpertDiscoveryControllerTest {
         val result = controller.enrichExperts(EnrichmentScope.INSTITUTION_TYPE_BACKFILL)
         assertEquals(HttpStatus.ACCEPTED, result.statusCode)
         Mockito.verify(discoveryService).enrichExistingExperts(EnrichmentScope.INSTITUTION_TYPE_BACKFILL)
+    }
+
+    @Test
+    fun `enrichExperts forwards LAST_PUBLICATION_YEAR_BACKFILL scope to service`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val taskExecution = invocation.arguments[0] as TaskExecution
+                taskExecution.copy(id = 1L)
+            }
+        Mockito.doReturn(EnrichmentResult(enriched = 1, failed = 0))
+            .`when`(discoveryService).enrichExistingExperts(EnrichmentScope.LAST_PUBLICATION_YEAR_BACKFILL)
+
+        val result = controller.enrichExperts(EnrichmentScope.LAST_PUBLICATION_YEAR_BACKFILL)
+        assertEquals(HttpStatus.ACCEPTED, result.statusCode)
+        Mockito.verify(discoveryService).enrichExistingExperts(EnrichmentScope.LAST_PUBLICATION_YEAR_BACKFILL)
     }
 
     @Test
