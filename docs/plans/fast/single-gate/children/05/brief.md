@@ -3,6 +3,21 @@
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-single-gate (branch `fast/single-gate`)
 - Child base SHA: 960fbe48e0b1ad7edd3f2ca68eccd29adafa654b
 - Execution report: docs/plans/fast/single-gate/children/05/execution.md
+- NOTE (amendment A4, HUMAN-approved 2026-08-28T20:55:48+0800, supersedes prior NOTE): authorized list is now 12 files — the 10 original plan files PLUS
+  `src/test/kotlin/.../expert/service/ExpertSearchServiceTest.kt` (delete the two obsolete I1-5 derivation tests
+  `parses expertClassification with type-derived sendable ignoring untrusted ES sendable (I1-5)` ~:1874 and
+  `ES sendable=true cannot override OUT_OF_SCOPE derived sendable (I1-5)` ~:1929 — they read the deleted `c.sendable`
+  property and break compilation) PLUS
+  `src/test/kotlin/.../campaign/service/ManualInitialOutreachServiceTest.kt` (replace the 3 `ExpertClassification.SENDABLE_TYPES`
+  membership checks in the `classification(type)` fixture helper ~:4304/:4305/:4307 with a fixture-local set
+  `setOf(ExpertType.PRODUCTION_RND, ExpertType.ACADEMIC_RND, ExpertType.HYBRID_RND)` — the former constant's exact values,
+  behavior unchanged).
+  I5-5 gate fixed exclusions (see amended plan): ManualInitialOutreachService.kt, InitialOutreachServiceTest.kt,
+  V109ExpertTypesMigrationTest.kt, BatchSendTaskRuntimeIntegrationTest.kt, ExpertClassificationService.kt,
+  ExpertSearchService.kt — their `sendable` hits are account semantics / comments / constructors, NOT property reads;
+  do NOT modify them.
+  IMPORTANT: 11 of the 12 authorized files are ALREADY EDITED in the working tree (uncommitted) by a crashed implementer.
+  Verify each edit before proceeding; do not redo them wholesale.
 
 ## Approved Contract
 
