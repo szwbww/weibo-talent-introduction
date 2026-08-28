@@ -76,12 +76,15 @@
   `grep -rln "sendable" src/main/kotlin src/test/kotlin`，
   若命中文件多于本计划「变更文件清单」所列（扣除下述固定排除项），**停止执行并回到 create-p 重新拆分**，
   不得就地扩大范围。
-  **固定排除项（2026-08-28 实测，A3 授权修订）**：`ManualInitialOutreachService.kt` /
-  `ManualInitialOutreachServiceTest.kt` / `InitialOutreachServiceTest.kt`（发件账号语义与
-  `sendableClassification()` 构造 helper，不读 `sendable` 属性）、`V109ExpertTypesMigrationTest.kt`
-  （用例名与 I3-3 注释引用，文本断言不受影响）、`BatchSendTaskRuntimeIntegrationTest.kt`
-  （:777 既有注释）、`ExpertClassificationService.kt`（M-3 零改动规约下的 KDoc）、
-  `ExpertSearchService.kt`（I5-4 零改动规约下的 KDoc）。上述文件的命中均为注释/helper 名，
+  **固定排除项（2026-08-28 实测，A3 修订、A4 再修订）**：`ManualInitialOutreachService.kt` /
+  `InitialOutreachServiceTest.kt`（发件账号语义与 `sendableClassification()` 构造 helper，不读
+  `sendable` 属性）、`V109ExpertTypesMigrationTest.kt`（用例名与 I3-3 注释引用，文本断言不受影响）、
+  `BatchSendTaskRuntimeIntegrationTest.kt`（:777 既有注释）、`ExpertClassificationService.kt`
+  （M-3 零改动规约下的 KDoc）、`ExpertSearchService.kt`（I5-4 零改动规约下的 KDoc）。
+  **A4 修正**：`ManualInitialOutreachServiceTest.kt` **不再属于排除项** —— 其
+  `classification(type)` fixture helper（:4304/:4305/:4307）有 3 处真实代码引用
+  `ExpertClassification.SENDABLE_TYPES`（大写常量名，小写 grep 漏检），Task 1 删除常量即编译失败；
+  已授权为变更文件清单第 12 项做机械修复。其余排除项命中均为注释/helper 名，
   不读 `expertClassification.sendable` 属性、不触发守卫正则、不破坏编译。
 - Applies to: 本计划全部任务。
 - Violation consequence: 本计划文件数已贴近上限（11），任何扩张都会让验证进入多轮返工。
@@ -204,8 +207,9 @@
 | 9 | `src/test/kotlin/.../expert/service/ExpertClassificationSchedulerTest.kt` | Task 5-4 |
 | 10 | `src/test/kotlin/.../expert/service/ExpertClassificationVersionGateGuardTest.kt` | Task 5-5 |
 | 11 | `src/test/kotlin/.../expert/service/ExpertSearchServiceTest.kt` | A3 授权：删除两个 I1-5 派生用例（`parses expertClassification with type-derived sendable…` ~:1874、`ES sendable=true cannot override OUT_OF_SCOPE…` ~:1929，断言被删的 `c.sendable` 属性，编译阻塞；语义已被其余 type 断言覆盖） |
+| 12 | `src/test/kotlin/.../campaign/service/ManualInitialOutreachServiceTest.kt` | A4 授权：`classification(type)` fixture helper 的 3 处 `ExpertClassification.SENDABLE_TYPES` 成员判定（:4304/:4305/:4307）改为 fixture 局部集合 `setOf(ExpertType.PRODUCTION_RND, ExpertType.ACADEMIC_RND, ExpertType.HYBRID_RND)`（原常量前三值，行为逐字不变） |
 
-合计 11 个文件（A3 授权 1 个，见 Amendments 表）；子系统 1 个（expert）。**零前端文件，故无 `## 样式契约`。**
+合计 12 个文件（A3 + A4 授权，见 Amendments 表）；子系统 2 个（expert / campaign 测试）。**零前端文件，故无 `## 样式契约`。**
 
 ---
 
