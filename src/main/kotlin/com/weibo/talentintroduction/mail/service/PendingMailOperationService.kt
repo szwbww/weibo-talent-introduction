@@ -668,18 +668,20 @@ class PendingMailOperationService(
             it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
         }
         return try {
-            val rawTemplate = templateTextBody?.takeIf { it.isNotBlank() }
-                ?: return UnsupportedAnswerIndexArchiveResult()
-            // 03 (阶段 4): 仅当实际发送正文仍等于 assembly 产物时才归档 operator-directed
-            // 样本；运营编辑正文可正常发送但不归档。
-            if (assembled.rawDraftText != rawTemplate || assembled.renderedDraftText != finalTextBody) {
-                return failedArchive(operatorDirectedCount)
+            if (templateTextBody.isNullOrBlank()) {
+                return UnsupportedAnswerIndexArchiveResult()
             }
+            // c6 (T-2 / I-4): 去掉「正文一字未改才归档」门槛——运营编辑过正文的样本
+            // 同样照常归档（由 service 在文档上置 editedByOperator = true，A-2）。
             val eligibleVersions = assembled.itemVersions.filter(::isArchiveEligibleOperatorDirectedVersion)
             if (eligibleVersions.isEmpty()) {
                 return UnsupportedAnswerIndexArchiveResult()
             }
-            val resolved = trustReplyWorkbenchService.resolveSource(assembled.source)
+            // 归档失败不得阻断主流程：source 解析异常（含 null 返回）按归档失败处理，
+            // 绝不把异常抛出到发送主流程（A-7 回归语义）。
+            val resolved = requireNotNull(trustReplyWorkbenchService.resolveSource(assembled.source)) {
+                "Unsupported answer archive source could not be resolved for inbound $inboundProcessingId"
+            }
             unsupportedAnswerIndexService.archiveLiveCanonicalVersions(
                 source = resolved,
                 versions = eligibleVersions,

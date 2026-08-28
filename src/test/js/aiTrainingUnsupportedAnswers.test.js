@@ -54,7 +54,7 @@ describe("AI training unsupported answer index", () => {
             { id: "aiTabUnsupportedAnswers", classList: { toggle: () => {} } }
         ];
         const sandbox = {
-            state: { aiTraining: { activeTab: "simulate", unsupportedAnswers: [], unsupportedAnswersTotal: 0, unsupportedAnswersPage: 0, unsupportedAnswersSize: 20, unsupportedAnswersSourceMode: "", unsupportedAnswersLoaded: false, unsupportedAnswersLoading: false, unsupportedAnswersError: "", unsupportedAnswersRequestToken: 0 } },
+            state: { aiTraining: { activeTab: "simulate", unsupportedAnswers: [], unsupportedAnswersTotal: 0, unsupportedAnswersPage: 0, unsupportedAnswersSize: 20, unsupportedAnswersSourceMode: "", unsupportedAnswersTopic: "", unsupportedAnswersLoaded: false, unsupportedAnswersLoading: false, unsupportedAnswersError: "", unsupportedAnswersRequestToken: 0 } },
             document: {
                 querySelectorAll: (selector) => selector.includes("ai-tab-content") ? panels : [{ dataset: { tab: "unsupportedAnswers" }, classList: { toggle: () => {} } }]
             },
@@ -72,8 +72,10 @@ describe("AI training unsupported answer index", () => {
         assert.match(calls[0], /\/api\/ai-training\/unsupported-answers\?page=0&size=20/);
         sandbox.state.aiTraining.unsupportedAnswersSourceMode = "TRAINING";
         sandbox.state.aiTraining.unsupportedAnswersPage = 1;
+        // c6 (T-3 / I-3): topic keyword 精确过滤随参数发送。
+        sandbox.state.aiTraining.unsupportedAnswersTopic = "company.followup";
         await sandbox.loadAiTrainingUnsupportedAnswers(true);
-        assert.match(calls[1], /page=1&size=20&sourceMode=TRAINING/);
+        assert.match(calls[1], /page=1&size=20&sourceMode=TRAINING&topic=company\.followup/);
         sandbox.api = async () => { throw new Error("UNSUPPORTED_ANSWER_INDEX_UNAVAILABLE"); };
         await sandbox.loadAiTrainingUnsupportedAnswers(true);
         assert.strictEqual(sandbox.state.aiTraining.unsupportedAnswersError, "UNSUPPORTED_ANSWER_INDEX_UNAVAILABLE");
@@ -128,12 +130,30 @@ describe("AI training unsupported answer index", () => {
     it("escapes content, delegates translation per cell, and exposes no mutation actions", () => {
         const renderer = extractFunction("renderAiTrainingUnsupportedAnswers");
         assert.match(renderer, /translatableBody\(item\.requestText/);
-        assert.match(renderer, /escapeHtml\(item\.operatorInstruction/);
+        // c6 (I-6 / T-3): 空 operatorInstruction 渲染为 —（不再整行丢弃）。
+        assert.match(renderer, /escapeHtml\(item\.operatorInstruction \|\| "—"\)/);
         assert.match(renderer, /translatableBody\(item\.answerText/);
         assert.match(renderer, /暂无已确认的无依据回答/);
-        assert.doesNotMatch(renderer, /data-action|采用|复用|推荐|相似|编辑|删除|晋升/);
+        // c6 (I-5 / A-2): 状态列按 status × sourceMode 实际值渲染，带「运营已编辑」标记；
+        // 列表仍只读——无 data-action 或任何操作按钮。「编辑」仅出现在标记文案中，
+        // 故从禁用词中去掉，其余禁用词（采用/复用/推荐/相似/删除/晋升）保留。
+        assert.match(renderer, /item\.status === "CANDIDATE" \? "CANDIDATE \/ 待转事实" : "ACTIVE \/ 已转化"/);
+        assert.match(renderer, /运营已编辑/);
+        assert.doesNotMatch(renderer, /data-action|采用|复用|推荐|相似|删除|晋升/);
         assert.match(app, /reloadAiTrainingUnsupportedAnswersBtn/);
         assert.match(app, /aiTrainingUnsupportedAnswerSourceFilter/);
+    });
+
+    // c6 (T-3 / T-5): topic 下拉与「待转事实」视图由 app.js 运行时注入（index.html
+    // 不在本计划变更清单），发送 topic 过滤参数并维护待转事实激活链。
+    it("wires the topic filter and pending-topics view without new CSS", () => {
+        assert.match(app, /aiTrainingUnsupportedAnswerTopicFilter/);
+        assert.match(app, /unsupportedAnswersTopic/);
+        assert.match(app, /ensureAiTrainingPendingTopicsSection/);
+        assert.match(app, /pending-topics\?threshold=3/);
+        assert.match(app, /pending-topics\/\$\{encodeURIComponent\(topic\)\}\/activate/);
+        assert.match(app, /pendingActivationTopic/);
+        assert.doesNotMatch(css, /unsupported-answer|unsupportedAnswers/);
     });
 
     it("keeps evaluation saved while showing independent archive status", async () => {

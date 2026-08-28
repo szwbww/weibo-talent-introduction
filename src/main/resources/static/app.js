@@ -106,10 +106,17 @@ const state = {
         unsupportedAnswersPage: 0,
         unsupportedAnswersSize: 20,
         unsupportedAnswersSourceMode: "",
+        unsupportedAnswersTopic: "",
         unsupportedAnswersLoaded: false,
         unsupportedAnswersLoading: false,
         unsupportedAnswersError: "",
         unsupportedAnswersRequestToken: 0,
+        // c6 (T-5 通道 B): 待转事实队列（按 topic 聚合 CANDIDATE 条目）。
+        pendingTopics: [],
+        pendingTopicsLoaded: false,
+        pendingTopicsLoading: false,
+        pendingTopicsError: "",
+        pendingActivationTopic: null,
         dialogueItems: [],
         promptConfig: null,
         promptIsCustom: false,
@@ -3212,9 +3219,23 @@ async function saveQaRule(event) {
     };
     const path = state.selectedRuleId ? `/api/qa/rules/${state.selectedRuleId}` : "/api/qa/rules";
     await api(path, { method: state.selectedRuleId ? "PUT" : "POST", body: JSON.stringify(payload) });
-    showStatus("QA 事实已保存");
-    hideQaRuleEditor();
-    await loadQa();
+    // c6 (T-5 通道 B): 从「待转事实」进入时，规则保存成功后把该主题 CANDIDATE 条目
+    // 置为 ACTIVE（I-5）。不自动创建规则——必须先经运营保存。
+    if (state.aiTraining?.pendingActivationTopic) {
+        const topic = state.aiTraining.pendingActivationTopic;
+        state.aiTraining.pendingActivationTopic = null;
+        await api(`/api/ai-training/unsupported-answers/pending-topics/${encodeURIComponent(topic)}/activate`, { method: "POST" });
+        showStatus("QA 事实已保存 · 待转事实已转为已转化");
+        hideQaRuleEditor();
+        await loadQa();
+        await loadAiTrainingPendingTopics(true);
+        state.aiTraining.unsupportedAnswersLoaded = false;
+        await loadAiTrainingUnsupportedAnswers(true);
+    } else {
+        showStatus("QA 事实已保存");
+        hideQaRuleEditor();
+        await loadQa();
+    }
 }
 
 async function handleQaAction(button) {
@@ -3274,8 +3295,14 @@ function switchAiTrainingTab(tab) {
             || (tab === "unsupportedAnswers" && panelId === "aiTabUnsupportedAnswers");
         panel.classList.toggle("active", active);
     });
-    if (tab === "unsupportedAnswers" && !state.aiTraining.unsupportedAnswersLoaded && !state.aiTraining.unsupportedAnswersLoading) {
-        void loadAiTrainingUnsupportedAnswers();
+    if (tab === "unsupportedAnswers") {
+        if (!state.aiTraining.unsupportedAnswersLoaded && !state.aiTraining.unsupportedAnswersLoading) {
+            void loadAiTrainingUnsupportedAnswers();
+        }
+        // c6 (T-5 通道 B): 待转事实队列随 Tab 激活惰性加载。
+        if (!state.aiTraining.pendingTopicsLoaded && !state.aiTraining.pendingTopicsLoading) {
+            void loadAiTrainingPendingTopics();
+        }
     }
 }
 
@@ -3437,18 +3464,22 @@ function renderAiTrainingUnsupportedAnswers() {
         status.textContent = "";
     }
     const rows = training.unsupportedAnswers.map((item) => {
-        const isTraining = item.sourceMode === "TRAINING";
-        const statusText = isTraining ? "CANDIDATE / 训练" : "ACTIVE / 正式发送";
+        // c6 (I-5): status 与 sourceMode 解绑——按文档实际值渲染；editedByOperator
+        // 标记「运营已编辑」（A-2）。
+        const origin = item.sourceMode === "TRAINING" ? "训练" : "正式发送";
+        const statusText = item.status === "CANDIDATE" ? "CANDIDATE / 待转事实" : "ACTIVE / 已转化";
+        const editedMark = item.editedByOperator ? " · 运营已编辑" : "";
         return `<tr>
-            <td>${badge(statusText, isTraining ? "warn" : "ok")}</td>
+            <td>${badge(`${statusText} / ${origin}${editedMark}`, item.status === "CANDIDATE" ? "warn" : "ok")}</td>
             <td>${translatableBody(item.requestText || "", { emptyLabel: "-" })}</td>
-            <td class="muted-cell"><div class="pre">${escapeHtml(item.operatorInstruction || "-")}</div></td>
+            <td class="muted-cell"><div class="pre">${escapeHtml(item.operatorInstruction || "—")}</div></td>
             <td>${translatableBody(item.answerText || "", { emptyLabel: "-" })}</td>
             <td class="muted-cell">${escapeHtml(item.model || "-")}</td>
             <td class="muted-cell">${escapeHtml(item.createdAt || "-")}</td>
         </tr>`;
     }).join("");
     table.innerHTML = rows || `<tr><td colspan="6" class="muted-cell">暂无已确认的无依据回答</td></tr>`;
+    refreshAiTrainingUnsupportedAnswerTopicOptions();
     renderAiTrainingUnsupportedAnswersPager();
 }
 
@@ -3464,6 +3495,8 @@ async function loadAiTrainingUnsupportedAnswers(force = false) {
     params.set("page", String(training.unsupportedAnswersPage));
     params.set("size", String(training.unsupportedAnswersSize));
     if (training.unsupportedAnswersSourceMode) params.set("sourceMode", training.unsupportedAnswersSourceMode);
+    // c6 (T-3 / I-3): topic keyword 精确过滤。
+    if (training.unsupportedAnswersTopic) params.set("topic", training.unsupportedAnswersTopic);
     try {
         const data = await api(`/api/ai-training/unsupported-answers?${params}`);
         if (requestToken !== training.unsupportedAnswersRequestToken) return;
@@ -3479,6 +3512,128 @@ async function loadAiTrainingUnsupportedAnswers(force = false) {
             renderAiTrainingUnsupportedAnswers();
         }
     }
+}
+
+// c6 (T-3): topic 下拉与 sourceMode 过滤器并排，复用既有 select 骨架与样式
+// （index.html 不在本计划变更清单，故由 app.js 在运行时注入，不新增任何 class）。
+function ensureAiTrainingUnsupportedAnswerTopicFilter() {
+    const toolbar = document.querySelector("#aiTabUnsupportedAnswers .toolbar-inline");
+    if (!toolbar || document.getElementById("aiTrainingUnsupportedAnswerTopicFilter")) return;
+    const select = document.createElement("select");
+    select.id = "aiTrainingUnsupportedAnswerTopicFilter";
+    select.setAttribute("aria-label", "按主题过滤");
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = "全部主题";
+    select.appendChild(all);
+    toolbar.insertBefore(select, toolbar.firstChild);
+}
+
+// 从已加载页面的条目收集 topic 并去重进下拉（分页浏览时逐渐补齐；仅 keyword 精确过滤）。
+function refreshAiTrainingUnsupportedAnswerTopicOptions() {
+    const select = $("#aiTrainingUnsupportedAnswerTopicFilter");
+    if (!select) return;
+    const current = select.value;
+    const known = new Set(Array.from(select.options).map((option) => option.value));
+    const topics = [...new Set(
+        (state.aiTraining.unsupportedAnswers || [])
+            .map((item) => item.topic)
+            .filter((topic) => topic && !known.has(topic))
+    )].sort();
+    topics.forEach((topic) => {
+        const option = document.createElement("option");
+        option.value = topic;
+        option.textContent = topic;
+        select.appendChild(option);
+    });
+    select.value = known.has(current) ? current : "";
+}
+
+// c6 (T-5 通道 B): 「待转事实」视图 —— 注入到无依据回答索引面板内
+// （index.html 不在本计划变更清单，故由 app.js 运行时注入，复用既有 class）。
+function ensureAiTrainingPendingTopicsSection() {
+    const panel = document.querySelector("#aiTabUnsupportedAnswers .panel");
+    if (!panel || document.getElementById("aiTrainingPendingTopicsSection")) return;
+    const section = document.createElement("div");
+    section.id = "aiTrainingPendingTopicsSection";
+    section.innerHTML = `
+        <div class="panel-head">
+            <h3>待转事实队列</h3>
+            <div class="toolbar-inline">
+                <button type="button" class="button" id="reloadAiTrainingPendingTopicsBtn">刷新</button>
+            </div>
+        </div>
+        <div class="ai-reply-feedback" id="aiTrainingPendingTopicsStatus" role="status" aria-live="polite"></div>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                <tr><th>主题</th><th>累计命中</th><th>QA 事实草稿（最近一条正文）</th><th>操作</th></tr>
+                </thead>
+                <tbody id="aiTrainingPendingTopicsTable"><tr><td colspan="4" class="muted-cell">暂无待转事实主题</td></tr></tbody>
+            </table>
+        </div>`;
+    panel.appendChild(section);
+}
+
+function renderAiTrainingPendingTopics() {
+    const table = $("#aiTrainingPendingTopicsTable");
+    const status = $("#aiTrainingPendingTopicsStatus");
+    if (!table || !status) return;
+    const training = state.aiTraining;
+    if (training.pendingTopicsLoading) {
+        status.hidden = false;
+        status.className = "ai-reply-feedback";
+        status.textContent = "正在加载待转事实…";
+    } else if (training.pendingTopicsError) {
+        status.hidden = false;
+        status.className = "ai-reply-feedback ai-reply-error";
+        status.textContent = training.pendingTopicsError;
+    } else {
+        status.hidden = true;
+        status.className = "ai-reply-feedback";
+        status.textContent = "";
+    }
+    const rows = (training.pendingTopics || []).map((topic) => `<tr>
+        <td>${escapeHtml(topic.topic)}</td>
+        <td>${badge(`${topic.count} 次`, "warn")}</td>
+        <td><div class="pre">${escapeHtml(topic.draftBody || "—")}</div></td>
+        <td><button type="button" class="button small" data-pending-topic="${escapeHtml(topic.topic)}">生成 QA 事实草稿</button></td>
+    </tr>`).join("");
+    table.innerHTML = rows || `<tr><td colspan="4" class="muted-cell">暂无待转事实主题</td></tr>`;
+}
+
+async function loadAiTrainingPendingTopics(force = false) {
+    const training = state.aiTraining;
+    if (training.pendingTopicsLoading) return;
+    if (!force && training.pendingTopicsLoaded) return;
+    training.pendingTopicsLoading = true;
+    training.pendingTopicsError = "";
+    renderAiTrainingPendingTopics();
+    try {
+        const data = await api("/api/ai-training/unsupported-answers/pending-topics?threshold=3");
+        training.pendingTopics = Array.isArray(data) ? data : [];
+        training.pendingTopicsLoaded = true;
+    } catch (error) {
+        training.pendingTopicsError = error?.message || "无依据回答索引暂不可用";
+    } finally {
+        training.pendingTopicsLoading = false;
+        renderAiTrainingPendingTopics();
+    }
+}
+
+// c6 (T-5 通道 B): 「生成 QA 事实草稿」——打开 QA 规则新建表单并预填正文与建议
+// coverage key；保存前不产生任何 QA 规则（规则创建仍走既有 saveQaRule）。
+function openPendingTopicRuleDraft(button) {
+    const topic = button.dataset.pendingTopic;
+    const entry = (state.aiTraining.pendingTopics || []).find((item) => item.topic === topic);
+    if (!entry) return;
+    state.aiTraining.pendingActivationTopic = topic;
+    fillQaRuleForm(null);
+    const form = $("#qaRuleForm");
+    if (form) form.answerBody.value = entry.draftBody || "";
+    // 建议 coverage key：主题前缀匹配（尽力而为，运营可改）。
+    const suggested = (state.qaCoverageKeys || []).find((key) => key.key === topic || key.key.startsWith(topic + "."));
+    if (suggested) renderQaCoverageKeyOptions([suggested.key]);
 }
 
 function fillAiTrainingPromptForm(config) {
@@ -11700,6 +11855,22 @@ function bindEvents() {
         state.aiTraining.unsupportedAnswersSourceMode = event.target.value;
         state.aiTraining.unsupportedAnswersPage = 0;
         loadAiTrainingUnsupportedAnswers(true);
+    });
+    // c6 (T-3 / T-5): 运行时注入 topic 下拉与「待转事实」视图并绑定事件
+    // （index.html 不在本计划变更清单；复用既有 select/table 骨架与样式）。
+    ensureAiTrainingUnsupportedAnswerTopicFilter();
+    ensureAiTrainingPendingTopicsSection();
+    $("#aiTrainingUnsupportedAnswerTopicFilter")?.addEventListener("change", (event) => {
+        state.aiTraining.unsupportedAnswersTopic = event.target.value;
+        state.aiTraining.unsupportedAnswersPage = 0;
+        loadAiTrainingUnsupportedAnswers(true);
+    });
+    $("#reloadAiTrainingPendingTopicsBtn")?.addEventListener("click", () => {
+        loadAiTrainingPendingTopics(true);
+    });
+    $("#aiTrainingPendingTopicsTable")?.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-pending-topic]");
+        if (button) openPendingTopicRuleDraft(button);
     });
     $("#aiTrainingUnsupportedAnswerPrevPage")?.addEventListener("click", () => {
         if (state.aiTraining.unsupportedAnswersPage <= 0) return;

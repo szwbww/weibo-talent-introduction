@@ -87,10 +87,12 @@ class AiTrainingEvaluationService(
         val evaluationId = requireNotNull(evaluationLog.id) { "Persisted evaluation must have an id" }
         val eligibleVersions = if (rating == AiTrainingEvaluationRating.MEETS_EXPECTATION) {
             assembled.itemVersions.filter { item ->
-                item.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT &&
-                    item.generationKind == TrustReplyItemGenerationKind.AI_GENERATED &&
+                // c6 (T-2 / I-4)：放宽样本形态——不再要求 handling == ANSWER_FROM_OPERATOR_INPUT，
+                // 不再要求 operatorInstruction 非空（允许集合与可选长度校验由
+                // UnsupportedAnswerIndexService.validate() 把关）；保留
+                // rating == MEETS_EXPECTATION 与 answerText 非空（「已被人认可」前提）。
+                item.generationKind == TrustReplyItemGenerationKind.AI_GENERATED &&
                     item.requestText.isNotBlank() &&
-                    item.operatorInstruction.isNotBlank() &&
                     item.answerText.isNotBlank()
             }
         } else {
