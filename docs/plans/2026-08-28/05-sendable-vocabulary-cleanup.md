@@ -74,11 +74,18 @@
 ### Invariant I5-5: 改动面若超出清单即停止并拆分
 - Rule: 执行前必须先跑
   `grep -rln "sendable" src/main/kotlin src/test/kotlin`，
-  若命中文件多于本计划「变更文件清单」所列，**停止执行并回到 create-p 重新拆分**，
+  若命中文件多于本计划「变更文件清单」所列（扣除下述固定排除项），**停止执行并回到 create-p 重新拆分**，
   不得就地扩大范围。
+  **固定排除项（2026-08-28 实测，A3 授权修订）**：`ManualInitialOutreachService.kt` /
+  `ManualInitialOutreachServiceTest.kt` / `InitialOutreachServiceTest.kt`（发件账号语义与
+  `sendableClassification()` 构造 helper，不读 `sendable` 属性）、`V109ExpertTypesMigrationTest.kt`
+  （用例名与 I3-3 注释引用，文本断言不受影响）、`BatchSendTaskRuntimeIntegrationTest.kt`
+  （:777 既有注释）、`ExpertClassificationService.kt`（M-3 零改动规约下的 KDoc）、
+  `ExpertSearchService.kt`（I5-4 零改动规约下的 KDoc）。上述文件的命中均为注释/helper 名，
+  不读 `expertClassification.sendable` 属性、不触发守卫正则、不破坏编译。
 - Applies to: 本计划全部任务。
-- Violation consequence: 本计划文件数已贴近上限（10），任何扩张都会让验证进入多轮返工。
-- 来源: create-p 的硬上限规则
+- Violation consequence: 本计划文件数已贴近上限（11），任何扩张都会让验证进入多轮返工。
+- 来源: create-p 的硬上限规则；A3 修订（基线审计未覆盖上述 6 个文件的注释/helper 命中）
 
 ---
 
@@ -114,7 +121,9 @@
 `grep -rln "sendable" src/test/kotlin` 命中 10 个文件，其中：
 
 - **04 之后不再引用**：`InitialOutreachServiceTest`（02 改）、`ManualInitialOutreachServiceTest`、
-  `BatchSendTaskRuntimeIntegrationTest`、`ExpertSearchServiceTest`（均在 02/04 中处理）。
+  `BatchSendTaskRuntimeIntegrationTest`（均在 02/04 中处理；残留命中为发件账号语义与注释，
+  见 I5-5 固定排除项）。`ExpertSearchServiceTest` 例外：两个 I1-5 派生用例（~:1874/:1929）仍读
+  `c.sendable` 属性，由 **A3 授权删除**（新增文件清单第 11 项）。
 - **本计划需要改**：`ExpertClassificationServiceTest`（断言 `classification.sendable`）、
   `ExpertIndexWriterServiceTest`（断言写入的 `sendable` 键）、
   `ExpertClassificationBackfillServiceTest`（断言统计字段）、
@@ -194,8 +203,9 @@
 | 8 | `src/test/kotlin/.../expert/controller/ExpertClassificationAdminControllerTest.kt` | Task 5-4 |
 | 9 | `src/test/kotlin/.../expert/service/ExpertClassificationSchedulerTest.kt` | Task 5-4 |
 | 10 | `src/test/kotlin/.../expert/service/ExpertClassificationVersionGateGuardTest.kt` | Task 5-5 |
+| 11 | `src/test/kotlin/.../expert/service/ExpertSearchServiceTest.kt` | A3 授权：删除两个 I1-5 派生用例（`parses expertClassification with type-derived sendable…` ~:1874、`ES sendable=true cannot override OUT_OF_SCOPE…` ~:1929，断言被删的 `c.sendable` 属性，编译阻塞；语义已被其余 type 断言覆盖） |
 
-合计 10 个文件（**已达上限**，见 I5-5）；子系统 1 个（expert）。**零前端文件，故无 `## 样式契约`。**
+合计 11 个文件（A3 授权 1 个，见 Amendments 表）；子系统 1 个（expert）。**零前端文件，故无 `## 样式契约`。**
 
 ---
 
@@ -236,7 +246,8 @@ git diff --check
   `grep -rn "sendable" src/main/resources/es/*.json` 仍命中三处（孤儿字段保留）。
 - **I5-4**：`git diff src/main/kotlin/.../ExpertSearchService.kt` 为空。
 - **I5-5**：执行前的范围闸门命令输出与变更文件清单一致
-  （`gateTemplateFilter.test.js` 与 `ManualInitialOutreachService.kt` 的发件账号语义命中不计）。
+  （`gateTemplateFilter.test.js`、`ManualInitialOutreachService.kt` 的发件账号语义命中不计，
+  以及 I5-5 固定排除项中列出的 6 个文件不计；A3 修订）。
 - **M-1 终局判据**：`ExpertClassificationVersionGateGuardTest` 的 `sendable` 守卫白名单为**空集**
   且用例通过 —— 全仓库不再有任何一处读取 `expertClassification.sendable`。
 - 回归：执行「验证命令」节的全量测试命令与构建命令通过。
