@@ -1,7 +1,7 @@
 # Child 03 Brief — 研发类型改为必填非空（写侧先行）
 
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-single-gate (branch `fast/single-gate`)
-- Child base SHA: <set by controller at dispatch — prior terminal code head>
+- Child base SHA: 658b60c25370bd8dd974e6a98d6eacc48315943b
 - Execution report: docs/plans/fast/single-gate/children/03/execution.md
 
 ## Approved Contract

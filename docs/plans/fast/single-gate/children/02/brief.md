@@ -1,7 +1,7 @@
 # Child 02 Brief — 旧首发链路改为显式配置研发类型
 
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-single-gate (branch `fast/single-gate`)
-- Child base SHA: <set by controller at dispatch — prior terminal code head>
+- Child base SHA: cec6ce15ba3b41a6bf76e70eae503cdc5a925560
 - Execution report: docs/plans/fast/single-gate/children/02/execution.md
 
 ## Approved Contract
