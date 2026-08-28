@@ -140,13 +140,18 @@
 | 3 | `src/main/kotlin/com/weibo/talentintroduction/llm/service/AiTrainingEvaluationService.kt` | 修改（T-2 过滤条件） |
 | 4 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt` | 修改（T-2 去掉逐字相等门槛） |
 | 5 | `src/main/resources/es/trust_reply_unsupported_answer_v1.json` | 修改（T-1 新增三个 properties） |
-| 6 | `src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt` | 修改（T-4 样例注入，带默认关闭开关） |
+| 6 | `src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyLetterOrchestrator.kt` | 修改（T-4 样例注入；A3：原清单误标 AiReplyDraftService.kt，编排提示词构造点为 c4 实现的 `buildPrompt`，见修订说明） |
 | 7 | `src/main/resources/static/app.js` | 修改（T-3 topic 过滤器、T-5 待转事实视图） |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/llm/service/UnsupportedAnswerIndexServiceTest.kt` | 新增或修改（T-6.1～T-6.4、T-6.6） |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt` | 修改（T-6.5） |
 | 10 | `src/test/js/aiTrainingUnsupportedAnswers.test.js` | 修改（topic 过滤器与空 `operatorInstruction` 渲染为 `—`） |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/llm/controller/UnsupportedAnswerIndexApiTest.kt` | 修改（A3：`mapping is strict with only V1 fields and non-searchable bodies` 的字段集断言从 23 更新为 26） |
 
-合计 10 个文件（**正好在上限**），2 个子系统（索引服务链路 / 静态前端）。
+合计 11 个文件（**超过原上限，A3 修订后豁免**），2 个子系统（索引服务链路 / 静态前端）。
+
+> **修订 A3（2026-08-28 需求方批准）**：
+> 1. **T-4 落点修正**：通道 A 的样例注入点是 13 计划的编排提示词构造 `AiReplyLetterOrchestrator.buildPrompt`（c4 实现，`:457`，private），不是 `AiReplyDraftService.kt`（它只构造逐条提示词，且计划 13 明令不得因编排改动它）。清单 #6 相应替换。若接线需要（编排器新增样例源与默认关闭开关的构造参数），允许同步改动 `AiReplyLetterCloser.kt`——仅限构造器传参与调用点，不得改变兜底行为。
+> 2. **mapping 测试授权**：T-1 要求 `es/trust_reply_unsupported_answer_v1.json` 新增三个 properties，会打破既有测试 `UnsupportedAnswerIndexApiTest.kt:94`（`mapping is strict with only V1 fields and non-searchable bodies`，断言恰 23 个 V1 字段）。该测试字段集断言须更新为 26 个字段，属纯测试授权。
 
 测试落点的依据（实测）：`src/test/js/aiTrainingUnsupportedAnswers.test.js`（197 行，2 处 `unsupported-answers`）是索引页的现有归属地。
 
