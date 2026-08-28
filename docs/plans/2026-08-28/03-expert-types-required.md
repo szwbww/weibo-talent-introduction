@@ -256,8 +256,13 @@ WHERE expert_types_json IS NULL
 | 5 | `src/test/kotlin/.../campaign/service/BatchSendTaskConfigServiceTest.kt` | Task 5 第 1~3 条 |
 | 6 | `src/test/kotlin/.../campaign/service/BatchSendControlServiceTest.kt` | Task 5 第 4~5 条（无则新建） |
 | 7 | `src/test/kotlin/.../campaign/repository/V109ExpertTypesMigrationTest.kt` | Task 5 第 6 条（新建） |
+| 8 | `src/test/kotlin/.../campaign/service/BatchSendTaskRuntimeIntegrationTest.kt` | A1 授权：I3-2 快照必填，fixture 补 expertTypesJson / expertTypes（机械对齐） |
+| 9 | `src/test/kotlin/.../campaign/service/ManualInitialOutreachServiceTest.kt` | A1 授权：配置 fixture 补 expertTypesJson（机械对齐） |
+| 10 | `src/test/kotlin/.../mail/controller/BatchSendConfigControllerTest.kt` | A1 授权：配置 fixture 补 expertTypesJson（机械对齐） |
+| 11 | `src/test/js/batchExpertTypeFilter.test.js` | A1 授权：picker stub 默认三类（I3-6 对齐） |
+| 12 | `src/test/js/batchSendTaskConsoleInteraction.test.js` | A1 授权：picker stub 默认三类（I3-6 对齐） |
 
-合计 7 个文件；子系统 2 个（campaign 后端 / 前端静态资源）。
+合计 12 个文件（A1 授权 5 个纯测试 fixture 对齐文件，见 Amendments 表）；子系统 2 个（campaign 后端 / 前端静态资源）。
 
 ---
 
