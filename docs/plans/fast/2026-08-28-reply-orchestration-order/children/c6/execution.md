@@ -116,3 +116,74 @@ Implementation boundary: f3eea5f..e9e035e（工作区另有两处未提交：led
 
 - PLAN_CONFLICT → 由 controller/人工裁决上述两项后，可对剩余工作续跑（T-4 注入 +
   JSON 三字段 + 对应测试）；其余任务已实现并通过全部门禁，裁决后无需重做。
+
+---
+
+## Epoch 2 Execution Result: READY_FOR_VERIFICATION
+
+Plan: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/2026-08-28/16-unsupported-index.md
+Plan SHA-256: 9a3b5c4015102f67571e42ec66084d59c0464f0fee04c41d1fe9dbfe2bce5bf9
+Execution ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/2026-08-28/16-unsupported-index.md@9a3b5c4015102f67571e42ec66084d59c0464f0fee04c41d1fe9dbfe2bce5bf9
+Execution epoch: RESUME（epoch 1 = e9e035e，PLAN_CONFLICT 后经修订 A3 扩大授权）
+Approval basis: current invocation（child brief c6 更新版，含 A3 修订）
+Executor: C6ImplE2
+Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order
+Target branch: fast/2026-08-28-reply-orchestration-order
+Worktree ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order@fast/2026-08-28-reply-orchestration-order@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order
+Pre-execution code SHA: 7636090369493740be5de2e941a71f81c02714c8
+Post-execution code SHA: 82410c6（实现提交）
+Evidence HEAD: N/A（单实现提交；fast-p 报告/证据由 controller 单独提交）
+Implementation boundary: d722984..82410c6（4 个授权文件；brief.md 的 A3 修订为既有未提交用户改动，未纳入提交）
+
+### Task Status
+
+| Requirement | Status | Files | Evidence |
+|---|---|---|---|
+| T-4 通道 A 措辞样例注入（I-1 / IP-3） | IMPLEMENTED | AiReplyLetterOrchestrator.kt, UnsupportedAnswerIndexService.kt | 开关默认 OFF；buildPrompt 独立 Style samples 小节 + 逐字禁引提示；N=2/主题；样例获取失败不阻断编排 |
+| T-1 mapping 资源文件三字段（I-2） | IMPLEMENTED | es/trust_reply_unsupported_answer_v1.json | 26 字段（+topic keyword / finalParagraphText text index:false / editedByOperator boolean），dynamic 仍 strict；方案 A（补丁步骤 epoch 1 已实现） |
+| 测试授权更新（A3 第 2 项） | IMPLEMENTED | UnsupportedAnswerIndexApiTest.kt | 字段集断言 23→26；strict + 不可检索正文的测试意图不变 |
+
+### Commands
+
+全部在最终状态后以 JDK 11（zulu-11）fresh 重跑：
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=…/zulu-11.jdk/Contents/Home mvn test -Dtest=UnsupportedAnswerIndexServiceTest,PendingMailOperationServiceTest` | PASS | exit 0；UnsupportedAnswerIndexServiceTest 9/0/0 + PendingMailOperationServiceTest 2/0/0（合计 11） |
+| `node --test src/test/js/aiTrainingUnsupportedAnswers.test.js` | PASS | exit 0；tests 7, pass 7, fail 0 |
+| `node --test src/test/js/*.test.js` | PASS | exit 0；tests 765, pass 765, fail 0 |
+| `JAVA_HOME=…/zulu-11.jdk/Contents/Home mvn test` | PASS | exit 0；Tests run: 3004, Failures: 0, Errors: 0, Skipped: 5；BUILD SUCCESS |
+| `JAVA_HOME=…/zulu-11.jdk/Contents/Home mvn clean package` | PASS | exit 0；BUILD SUCCESS（3004/0/0/5） |
+| `git diff --check` | PASS | exit 0 |
+
+### Changed Files（提交 82410c6，4 个文件，全部在授权清单内）
+
+- `src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyLetterOrchestrator.kt` — T-4：构造器新增样例源 `unsupportedAnswerIndexService: UnsupportedAnswerIndexService? = null` 与默认关闭开关 `@Value("${talent-introduction.llm.style-sample-injection-enabled:false}")`（IP-3：13 来源封闭未上线的环境必须保持关闭；I-1 三条理由写入构造器注释）；`orchestrate` 经 `styleSamples(topicOrder)` 取样例后传给 `buildPrompt`，在「## Topic order」之后注入独立「## Style samples」小节，带逐字禁引提示（「以下段落仅供参考句式、语气与过渡方式，**不得引用其中任何事实或数字**；每个段落的 factIds 必须来自本次提供的事实清单。」）；`STYLE_SAMPLE_LIMIT_PER_TOPIC = 2`。两个新参数均带默认值——既有直接构造（AiReplyLetterOrchestratorTest / TrustReplyWorkbenchServiceTest，不在授权清单）不传参编译与行为不变；开关关闭时提示词与 epoch 1 逐字一致。
+- `src/main/kotlin/com/weibo/talentintroduction/llm/service/UnsupportedAnswerIndexService.kt` — T-4 样例源：`recentCandidateSamples(topics, limitPerTopic)` 按 topicOrder 主题各取最近 N=2 条 `status = CANDIDATE` 的 `finalParagraphText`（`bool.filter` = status term + topic terms，keyword 精确过滤，I-3；sort createdAt desc；`_source` 仅 topic + finalParagraphText）；任何失败（ES 不可用/超时/解析异常）返回空 map 只记 warn——样例获取绝不阻断编排主流程；新增 `termsNode` 辅助与 `MAX_STYLE_SAMPLE_FETCH = 200` 上限。
+- `src/main/resources/es/trust_reply_unsupported_answer_v1.json` — 新增 `topic`（keyword）/ `finalParagraphText`（text, index:false）/ `editedByOperator`（boolean）三个 properties，`dynamic` 仍为 `strict`（26 字段，供新环境首建；存量索引由 epoch 1 的 mapping 补丁步骤覆盖）。
+- `src/test/kotlin/com/weibo/talentintroduction/llm/controller/UnsupportedAnswerIndexApiTest.kt` — `mapping is strict with only V1 fields and non-searchable bodies` 字段集断言 23→26（A3 授权）；strict 与 requestText/operatorInstruction/answerText 不可检索断言不变。
+
+未改动：`AiReplyLetterCloser.kt`（A3 的接线条款为条件性「若接线需要」——生产路径经 `AiReplyLetterOrchestrator.instance` 调用且 `orchestrate` 签名未变，无需改动，兜底行为不变）。What must NOT change 全部保持：`documentId` 四输入未动（T-6.4 幂等键）；写入触发点仍仅训练评估与线上发送两处；归档失败仅 warn 不阻断主流程。
+
+### Deviations
+
+1. 开关以构造器 `@Value` 注入（默认 false）而非扩展 `LlmProperties`：`LlmProperties.kt` 不在授权清单内，`@Value` 使开关自包含于授权文件，仍可通过 application.yml / 环境变量 `talent-introduction.llm.style-sample-injection-enabled` 覆盖为 true。
+2. 样例小节仅在开关开启且拉到样例时出现（默认关闭 → 提示词与 epoch 1 逐字一致，既有编排测试零影响）。
+3. `AiReplyLetterCloser.kt` 未改动（A3 条件未触发，见 Changed Files）。
+4. 方案 A 保持（epoch 1 已选并实现 mapping 补丁步骤，理由写入代码注释）。
+
+### Freshness
+
+- Plan identity rechecked: YES（9a3b5c40…，执行前后一致）
+- Worktree identity rechecked: YES（branch/HEAD/git-dir 一致；提交前以 --expect-root/--expect-branch/--expect-git-dir 复核）
+- Reported commits reachable from target branch: YES（82410c6 为分支 HEAD，父提交 d722984）
+- Required commands run this invocation: YES（全部在最终状态后 fresh 重跑）
+- Historical evidence used only as baseline: YES（epoch 1 结果与 3004/0/0/5、node 765 仅作基线参照）
+
+### Remaining Blocker
+
+- None
+
+### Next Action
+
+- READY_FOR_VERIFICATION → 运行 `verify-p`
