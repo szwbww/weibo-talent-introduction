@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-08-28/10-reply-orchestration-order.md
+
+- Status: MACHINE_BLOCKED
+- Review epoch: 1
+- Master plan: docs/plans/2026-08-28/10-reply-orchestration-order.md (sha256 31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be)
+- Governing master identity: sha256 31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be; recorded commit 5a90e3e53e5fe8b40059b3090f086d6b36a09a01
+- Invoked master identity: sha256 31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be (SAME)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: A1, A2, A3 recorded in docs/plans/fast/2026-08-28-reply-orchestration-order/ledger.md
+- Fast-p ledger: docs/plans/fast/2026-08-28-reply-orchestration-order/ledger.md (sha256 6cad0f4bfb192c1d0ada99df649334d14cdc1c43d14a8a21eb999244eaf92dee)
+- Fast-p handoff: docs/plans/fast/2026-08-28-reply-orchestration-order/human-review-handoff.md (sha256 3af316b8e39104e641e11639f6c0caa2dcd6094af3940b9003dbdcfd950bce56)
+- Master base: de228e17cc0134a7c11dea7cbf82054e8d249f99
+- Final code head: 7f8b28d2f09c0df7551703d8037c2b521b189152
+- Evidence parent before next commit: 30d03bea82744ce878f6e945bb3e01d567a335ef
+- Previous evidence commit: N/A
+- Branch: fast/2026-08-28-reply-orchestration-order
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED by /Users/lukai/.agents/skills/review-fast-p/scripts/discover_fast_p.py; six terminal children, READY_FOR_HUMAN_REVIEW ledger/handoff, and de228e17cc0134a7c11dea7cbf82054e8d249f99..7f8b28d2f09c0df7551703d8037c2b521b189152 ancestry validated.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer (fresh aggregate reviewer, dispatched after final code head)
+- Reviewer attempt: 1
+- Machine result: BLOCKED
+- Machine report epoch: docs/plans/review/2026-08-28-reply-orchestration-order/machine-verification.md#epoch-1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Docker is unavailable for mandatory FlywayMigrationIntegrationTest; start Docker and resume a fresh aggregate review. V-1 through V-3 are recorded for the next eligible FAIL/repair-p route.
