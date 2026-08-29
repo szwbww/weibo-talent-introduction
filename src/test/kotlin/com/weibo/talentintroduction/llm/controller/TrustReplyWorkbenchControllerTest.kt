@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.llm.service.TrustReplySourceType
 import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchService
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleResponse
+import com.weibo.talentintroduction.llm.service.OrchestratedParagraph
 import com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind
 import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
 import com.weibo.talentintroduction.llm.service.TrustReplyItemVersion
@@ -707,6 +708,58 @@ class TrustReplyWorkbenchControllerTest {
 
         assertEquals(5L, requireNotNull(captured).frameSnapshot?.selection?.ackSnippetId)
         assertEquals("v2", requireNotNull(captured).frameSnapshot?.version)
+    }
+
+    // Repair R-1 (V-1): assemble HTTP/domain 接缝逐字保留步骤 03 权威段落与 op* 插槽。
+    @Test
+    fun `assemble round trips final paragraphs and operator facts`() {
+        var captured: TrustReplyAssembleRequest? = null
+        val response = TrustReplyAssembleResponse(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            sourceVersion = "s1",
+            evidenceSetVersion = "e1",
+            rawDraftText = "closed paragraph",
+            renderedDraftText = "closed paragraph",
+            draftHash = "hash",
+            canonicalFactIds = emptyList(),
+            itemVersions = emptyList(),
+            finalParagraphs = listOf(
+                OrchestratedParagraph("general", listOf("f9"), "closed paragraph")
+            ),
+            finalParagraphByRequestKey = mapOf("request-0" to "closed paragraph")
+        )
+        Mockito.doAnswer { invocation ->
+            captured = invocation.arguments[0] as TrustReplyAssembleRequest
+            response
+        }.`when`(service).assemble(Mockito.any(TrustReplyAssembleRequest::class.java) ?: TrustReplyAssembleRequest(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 123L),
+            expectedSourceVersion = "s1",
+            expectedEvidenceSetVersion = "e1",
+            lockedItems = emptyList()
+        ))
+
+        mockMvc.perform(
+            post("/api/trust-reply/workbench/assemble")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"source":{"sourceType":"TRAINING_MAIL","sourceId":123},"expectedSourceVersion":"s1","expectedEvidenceSetVersion":"e1","lockedItems":[],"finalParagraphs":[{"topic":"general","factIds":["f9"],"text":"closed paragraph"}],"operatorFacts":[{"id":"op1","topic":"general","body":"Operator written sentence."}]}
+                    """.trimIndent()
+                )
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.finalParagraphs[0].topic").value("general"))
+            .andExpect(jsonPath("$.finalParagraphs[0].factIds[0]").value("f9"))
+            .andExpect(jsonPath("$.finalParagraphByRequestKey['request-0']").value("closed paragraph"))
+
+        val request = requireNotNull(captured)
+        assertEquals(1, request.finalParagraphs.size)
+        assertEquals("general", request.finalParagraphs.single().topic)
+        assertEquals(listOf("f9"), request.finalParagraphs.single().factIds)
+        assertEquals("closed paragraph", request.finalParagraphs.single().text)
+        assertEquals(1, request.operatorFacts.size)
+        assertEquals("op1", request.operatorFacts.single().id)
+        assertEquals("Operator written sentence.", request.operatorFacts.single().body)
     }
 
     @Test

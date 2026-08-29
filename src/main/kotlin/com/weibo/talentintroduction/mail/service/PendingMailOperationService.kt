@@ -673,7 +673,11 @@ class PendingMailOperationService(
             }
             // c6 (T-2 / I-4): 去掉「正文一字未改才归档」门槛——运营编辑过正文的样本
             // 同样照常归档（由 service 在文档上置 editedByOperator = true，A-2）。
-            val eligibleVersions = assembled.itemVersions.filter(::isArchiveEligibleOperatorDirectedVersion)
+            // Repair R-2 (V-2)：资格判定统一走 service 的权威 isArchiveEligible
+            // （四种 handling × 两种 generationKind，operatorInstruction 可选）。
+            val eligibleVersions = assembled.itemVersions.filter { version ->
+                unsupportedAnswerIndexService.isArchiveEligible(version)
+            }
             if (eligibleVersions.isEmpty()) {
                 return UnsupportedAnswerIndexArchiveResult()
             }
@@ -687,7 +691,9 @@ class PendingMailOperationService(
                 versions = eligibleVersions,
                 qualificationId = outboundMailRecordId.toString(),
                 approvedBy = normalizeArchiveOperatorName(operatorName),
-                createdAt = Instant.now()
+                createdAt = Instant.now(),
+                // Repair R-1 (V-3)：逐条确定性映射 → finalParagraphText（步骤 03 权威段落）。
+                finalParagraphs = assembled.finalParagraphByRequestKey
             )
         } catch (error: TrustReplyWorkbenchException) {
             log.warn(
@@ -712,17 +718,18 @@ class PendingMailOperationService(
             failedCount = failedCount.coerceAtLeast(1)
         )
 
+    // Repair R-2 (V-2)：失败归档计数对齐权威资格判定（旧口径只数
+    // ANSWER_FROM_OPERATOR_INPUT，与放宽后的允许集合不一致）。
     private fun eligibleFailureCount(verifiedAssembly: VerifiedTrustReplyAssembly): Int =
-        verifiedAssembly.response.itemVersions.count {
-            it.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
+        verifiedAssembly.response.itemVersions.count { version ->
+            unsupportedAnswerIndexService.isArchiveEligible(version)
         }.coerceAtLeast(1)
 
+    // Repair R-2 (V-2)：线上侧资格判定统一委托 service 的权威 isArchiveEligible
+    // （四种 handling × 两种 generationKind，operatorInstruction 可选）；旧窄化过滤
+    // （仅 ANSWER_FROM_OPERATOR_INPUT × AI_GENERATED + 必填说明）已废弃。
     private fun isArchiveEligibleOperatorDirectedVersion(version: TrustReplyItemVersion): Boolean =
-        version.handling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT &&
-            version.generationKind == TrustReplyItemGenerationKind.AI_GENERATED &&
-            version.requestText.isNotBlank() &&
-            version.operatorInstruction.isNotBlank() &&
-            version.answerText.isNotBlank()
+        unsupportedAnswerIndexService.isArchiveEligible(version)
 
     private fun normalizeArchiveOperatorName(value: String?): String {
         val normalized = value?.trim().orEmpty()

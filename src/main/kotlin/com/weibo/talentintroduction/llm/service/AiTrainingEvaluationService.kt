@@ -86,15 +86,10 @@ class AiTrainingEvaluationService(
 
         val evaluationId = requireNotNull(evaluationLog.id) { "Persisted evaluation must have an id" }
         val eligibleVersions = if (rating == AiTrainingEvaluationRating.MEETS_EXPECTATION) {
-            assembled.itemVersions.filter { item ->
-                // c6 (T-2 / I-4)：放宽样本形态——不再要求 handling == ANSWER_FROM_OPERATOR_INPUT，
-                // 不再要求 operatorInstruction 非空（允许集合与可选长度校验由
-                // UnsupportedAnswerIndexService.validate() 把关）；保留
-                // rating == MEETS_EXPECTATION 与 answerText 非空（「已被人认可」前提）。
-                item.generationKind == TrustReplyItemGenerationKind.AI_GENERATED &&
-                    item.requestText.isNotBlank() &&
-                    item.answerText.isNotBlank()
-            }
+            // Repair R-2 (V-2)：入库资格统一走 UnsupportedAnswerIndexService 的权威
+            // 判定（四种 handling × 两种 generationKind，operatorInstruction 可选）；
+            // 本侧只保留 rating == MEETS_EXPECTATION 的「已被人认可」闸门。
+            assembled.itemVersions.filter { item -> unsupportedAnswerIndexService.isArchiveEligible(item) }
         } else {
             emptyList()
         }
@@ -110,7 +105,9 @@ class AiTrainingEvaluationService(
                     createdAt = evaluationLog.createdAt
                         ?.atZone(ZoneId.systemDefault())
                         ?.toInstant()
-                        ?: Instant.now()
+                        ?: Instant.now(),
+                    // Repair R-1 (V-3)：逐条确定性映射 → finalParagraphText（步骤 03 权威段落）。
+                    finalParagraphs = assembled.finalParagraphByRequestKey
                 )
             } catch (error: Exception) {
                 log.warn("Unsupported answer archive failed after evaluation {}: {}", evaluationId, error.javaClass.simpleName)

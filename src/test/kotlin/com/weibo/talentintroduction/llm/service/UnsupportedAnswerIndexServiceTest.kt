@@ -239,13 +239,17 @@ class UnsupportedAnswerIndexServiceTest {
             .andExpect(method(HttpMethod.PUT))
             .andExpect(jsonPath("$.editedByOperator").value(true))
             .andExpect(jsonPath("$.topic").value("company"))
+            // Repair R-1 (V-3): finalParagraphText 取步骤 03 权威段落（映射），
+            // 与 item answerText 分开存放。
+            .andExpect(jsonPath("$.finalParagraphText").value("The closed follow-up paragraph."))
             .andRespond(withStatus(HttpStatus.CREATED))
         val liveResult = service.archiveLiveCanonicalVersions(
             source = source,
             versions = listOf(version),
             qualificationId = "9001",
             approvedBy = "operator-live",
-            createdAt = Instant.parse("2026-07-30T03:00:00Z")
+            createdAt = Instant.parse("2026-07-30T03:00:00Z"),
+            finalParagraphs = mapOf("live-request-0" to "The closed follow-up paragraph.")
         )
         assertEquals(UnsupportedAnswerArchiveStatus.SAVED, liveResult.status)
         server.verify()
@@ -256,16 +260,72 @@ class UnsupportedAnswerIndexServiceTest {
         trainingServer.expect(requestTo("$indexUrl/_create/$trainingId"))
             .andExpect(method(HttpMethod.PUT))
             .andExpect(jsonPath("$.editedByOperator").value(false))
+            .andExpect(jsonPath("$.answerText").value("We will follow up next week."))
+            .andExpect(jsonPath("$.finalParagraphText").value("The closed follow-up paragraph."))
             .andRespond(withStatus(HttpStatus.CREATED))
         val trainingResult = service.archiveCanonicalVersions(
             source = source,
             versions = listOf(version),
             qualificationId = "training-55",
             approvedBy = "operator-training",
-            createdAt = Instant.parse("2026-07-30T03:00:00Z")
+            createdAt = Instant.parse("2026-07-30T03:00:00Z"),
+            finalParagraphs = mapOf("live-request-0" to "The closed follow-up paragraph.")
         )
         assertEquals(UnsupportedAnswerArchiveStatus.SAVED, trainingResult.status)
         trainingServer.verify()
+    }
+
+    // Repair R-1 (V-3): 资格内文档映射缺失/歧义 → fail closed（绝不回退为 answerText）。
+    @Test
+    fun `eligible archive without a final paragraph mapping is rejected`() {
+        val service = service()
+        val server = mockServer(service)
+        val source = ResolvedTrustReplySource(
+            source = TrustReplySourceRef(TrustReplySourceType.TRAINING_MAIL, 55L),
+            contact = ExpertContact(
+                id = 202L,
+                campaignId = 303L,
+                orcidId = "0000-0001",
+                expertEmail = "expert@example.com",
+                expertName = "Dr. Test"
+            ),
+            inboundText = "When will you follow up?",
+            subject = "Subject",
+            messageId = "message-55",
+            senderAccountCode = "sender-1",
+            profileText = "profile",
+            mailHistory = "history",
+            contextWarnings = emptyList(),
+            researchProfileSufficient = true,
+            sourceVersion = "training-55-v1"
+        )
+        val version = TrustReplyItemVersion(
+            versionId = "version-1",
+            requestKey = "request-0",
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            answerText = "We will follow up next week.",
+            claims = emptyList(),
+            model = "DEEPSEEK_V4_FLASH",
+            generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+            evidenceSetVersion = "evidence-v1",
+            sourceVersion = "training-55-v1",
+            operatorInstructionHash = sha256(""),
+            requestIndex = 0,
+            requestText = "When will you follow up?",
+            operatorInstruction = ""
+        )
+        // 无 finalParagraphs（或该 requestKey 映射缺失）→ 文档校验失败 → 全量 FAILED。
+        val result = service.archiveCanonicalVersions(
+            source = source,
+            versions = listOf(version),
+            qualificationId = "training-55",
+            approvedBy = "operator-training",
+            createdAt = Instant.parse("2026-07-30T03:00:00Z"),
+            finalParagraphs = emptyMap()
+        )
+        assertEquals(UnsupportedAnswerArchiveStatus.FAILED, result.status)
+        assertEquals(1, result.failedCount)
+        server.verify()
     }
 
     // F-2 (I-5 验收): TRAINING + ACTIVE 与 LIVE + CANDIDATE 均为合法

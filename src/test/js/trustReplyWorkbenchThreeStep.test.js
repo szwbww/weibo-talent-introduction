@@ -406,4 +406,153 @@ describe("trust reply workbench three-step (c5)", () => {
         assert.strictEqual(op1.body, "operator fixed text");
         assert.ok(rearrangeBody.operatorFacts.every((fact) => /^op\d+$/.test(fact.id)), "op ids must use the op<n> space, never hashes (I-1)");
     });
+
+    // Repair R-1 (V-1): 步骤 03 权威段落经最终 assemble 提交——未编排（全空文本）时
+    // finalParagraphs = []（走既有逐条收口路径）；编排并编辑/移动/锁定后，请求携带
+    // 当前草稿的逐字文本与顺序（服务端校验后逐字成文）。
+    it("sends the authoritative step-03 paragraphs through final assemble (Repair R-1 / V-1)", async () => {
+        const payload = threeStepPayload();
+        // 两条来问都允许「按回答说明生成」，使生成/锁定可走通（对齐既有 op1 用例）。
+        payload.requestCoverage.forEach((coverage) => {
+            coverage.allowedHandlings = ["ANSWER_WITH_EVIDENCE", "ANSWER_FROM_OPERATOR_INPUT", "OMIT"];
+            coverage.recommendedHandling = "ANSWER_FROM_OPERATOR_INPUT";
+        });
+        const assembleBodies = [];
+        const allCalls = [];
+        const { window } = createSandbox((url, options) => {
+            allCalls.push(String(url));
+            if (url.includes("/bootstrap")) return Promise.resolve(jsonResponse(payload));
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            if (url.includes("/state")) return Promise.resolve(jsonResponse({ status: "CURRENT", stateVersion: 1 }));
+            if (url.includes("/generations/stream")) {
+                const body = JSON.parse(options.body);
+                const isR1 = body.requestKey === "TRAINING_MAIL-601-r1";
+                const version = {
+                    versionId: isR1 ? "v-r1" : "v-r3",
+                    requestKey: body.requestKey,
+                    handling: "ANSWER_FROM_OPERATOR_INPUT",
+                    answerText: "locked answer for " + body.requestKey,
+                    claims: [],
+                    model: "DEEPSEEK_V4_FLASH",
+                    generationKind: "AI_GENERATED",
+                    evidenceSetVersion: isR1 ? "per-r1-e1" : "per-r3-e1",
+                    sourceVersion: "TRAINING_MAIL-601-v1",
+                    operatorInstructionHash: "",
+                    operatorInstruction: "回答说明"
+                };
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    body: {
+                        getReader: () => {
+                            let consumed = false;
+                            return {
+                                async read() {
+                                    if (consumed) return { done: true, value: undefined };
+                                    consumed = true;
+                                    const frame = `event: result\ndata: ${JSON.stringify({
+                                        source: { sourceType: "TRAINING_MAIL", sourceId: 601 },
+                                        sourceVersion: "TRAINING_MAIL-601-v1",
+                                        evidenceSetVersion: "letter-e1",
+                                        version
+                                    })}\n\n`;
+                                    return { done: false, value: new TextEncoder().encode(frame) };
+                                },
+                                async cancel() {}
+                            };
+                        }
+                    }
+                });
+            }
+            if (url.includes("/rearrange")) {
+                return Promise.resolve(jsonResponse(rearrangeResponse(
+                    [
+                        { topic: "enterprise", factIds: ["f7", "f9"], gapCondition: null },
+                        { topic: "application", factIds: ["f9"], gapCondition: null },
+                        { topic: "review", factIds: ["f10"], gapCondition: null }
+                    ],
+                    [
+                        { id: "f7", topic: "enterprise", body: "seven body", controlled: null, frozen: false, required: true },
+                        { id: "f9", topic: "application", body: "nine body", controlled: null, frozen: false, required: true },
+                        { id: "f10", topic: "review", body: "ten body", controlled: null, frozen: false, required: true }
+                    ],
+                    [
+                        { topic: "enterprise", factIds: ["f7", "f9"], text: "seven nine" },
+                        { topic: "application", factIds: ["f9"], text: "nine body" },
+                        { topic: "review", factIds: ["f10"], text: "ten body" }
+                    ]
+                )));
+            }
+            if (url.includes("/assemble")) {
+                assembleBodies.push(JSON.parse(options.body));
+                return Promise.resolve(jsonResponse({
+                    source: { sourceType: "TRAINING_MAIL", sourceId: 601 },
+                    sourceVersion: "TRAINING_MAIL-601-v1",
+                    evidenceSetVersion: "letter-e1",
+                    rawDraftText: "closed letter",
+                    renderedDraftText: "closed letter",
+                    draftHash: "hash",
+                    canonicalFactIds: [7, 9, 10],
+                    itemVersions: []
+                }));
+            }
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 601 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        // 生成并锁定两条 request，使整合可点。
+        for (const requestKey of ["TRAINING_MAIL-601-r1", "TRAINING_MAIL-601-r3"]) {
+            input(host, "instruction", requestKey, "回答说明");
+            click(host, "adjust-item", { requestKey });
+            await settle();
+            await settle();
+            click(host, "resolve-item", { requestKey });
+            await settle();
+        }
+
+        // ① 尚未编排（草稿全空文本）→ finalParagraphs = []（走既有逐条收口路径）。
+        click(host, "assemble");
+        await settle();
+        await settle();
+        assert.strictEqual(assembleBodies.length, 1, "first assemble must hit the server");
+        assert.deepStrictEqual(assembleBodies[0].finalParagraphs, [], "blank draft must not submit final paragraphs");
+
+        // ② 重排后编辑/移动/锁定 → 请求携带权威草稿的逐字文本与顺序。
+        click(host, "rearrange");
+        await settle();
+        await settle();
+        host.dispatchEvent("input", {
+            dataset: { role: "paragraph-text", topic: "application" },
+            value: "nine body EDITED"
+        });
+        click(host, "paragraph-move-up", { topic: "review" });
+        click(host, "paragraph-pin", { topic: "enterprise" });
+        assert.deepStrictEqual(paragraphTopics(host), ["enterprise", "review", "application"], "draft order after move");
+
+        click(host, "assemble");
+        await settle();
+        await settle();
+        assert.strictEqual(assembleBodies.length, 2, "second assemble must hit the server");
+        const finalParagraphs = assembleBodies[1].finalParagraphs;
+        assert.deepStrictEqual(
+            finalParagraphs.map((paragraph) => paragraph.topic),
+            ["enterprise", "review", "application"],
+            "final paragraph order must follow the authoritative draft after move"
+        );
+        assert.deepStrictEqual(
+            finalParagraphs.map((paragraph) => paragraph.text),
+            ["seven nine", "ten body", "nine body EDITED"],
+            "final paragraph text must be the exact authoritative draft text"
+        );
+        const enterprise = finalParagraphs.find((paragraph) => paragraph.topic === "enterprise");
+        assert.deepStrictEqual(enterprise.factIds, ["f7", "f9"], "fact ids must ride along with the paragraph");
+    });
 });

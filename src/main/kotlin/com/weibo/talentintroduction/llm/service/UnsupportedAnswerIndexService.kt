@@ -57,10 +57,9 @@ data class UnsupportedAnswerIndexDocument(
     val createdAt: Instant,
     // c6 (16-unsupported-index T-2): 归档接缝字段（I-2/IP-4）。
     // - topic：keyword 精确过滤键（I-3），写入侧从版本 claims 的 intentKey 主段派生；
-    // - finalParagraphText：收口后段落文本槽位。当前 assemble 响应不暴露逐主题收口
-    //   段落（c2/c4 未留接缝），写缝可用数据只有逐条版本正文；此处先取版本正文，
-    //   与 answerText 分开存放（plan 12 IP-4「两者须分开存放」），待收口段落接缝落地后
-    //   成为其归档槽位；
+    // - finalParagraphText：步骤 03 权威最终段落文本（Repair R-1：来自 assemble 响应
+    //   finalParagraphByRequestKey 的逐条确定性映射），与 item answerText 分开存放
+    //   （plan 12 IP-4），绝不回退为 answerText；映射缺失/歧义时该条 fail closed；
     // - editedByOperator：线上侧「照常归档并置 editedByOperator = true」（I-4 / T-2）。
     val topic: String = "",
     val finalParagraphText: String = "",
@@ -161,6 +160,17 @@ class UnsupportedAnswerIndexService(
         }
     }
 
+    /**
+     * Repair R-2 (V-2)：唯一权威入库资格判定——与 document validate() 的允许集合
+     * 完全一致（四种 handling × 两种 generationKind，operatorInstruction 可选）。
+     * 训练/线上两个触发点在各自审核/发送闸门之后调用本函数，取代各自的窄化旧过滤器。
+     */
+    fun isArchiveEligible(version: TrustReplyItemVersion): Boolean =
+        version.handling.name in ALLOWED_HANDLINGS &&
+            version.generationKind.name in ALLOWED_GENERATION_KINDS &&
+            version.requestText.isNotBlank() &&
+            version.answerText.isNotBlank()
+
     fun create(document: UnsupportedAnswerIndexDocument): UnsupportedAnswerIndexCreateResult {
         val validation = validate(document)
         if (validation != null) {
@@ -197,10 +207,15 @@ class UnsupportedAnswerIndexService(
         versions: List<TrustReplyItemVersion>,
         qualificationId: String,
         approvedBy: String,
-        createdAt: Instant
+        createdAt: Instant,
+        // Repair R-1 (V-3): requestKey -> 最终段落文本（assemble 响应的
+        // finalParagraphByRequestKey）。映射缺失/歧义时该条 fail closed。
+        finalParagraphs: Map<String, String> = emptyMap()
     ): UnsupportedAnswerIndexArchiveResult = archiveVersions(
         versions = versions,
-        documentFactory = { version -> trainingDocument(source, version, qualificationId, approvedBy, createdAt) }
+        documentFactory = { version ->
+            trainingDocument(source, version, qualificationId, approvedBy, createdAt, finalParagraphs[version.requestKey])
+        }
     )
 
     fun archiveLiveCanonicalVersions(
@@ -208,10 +223,13 @@ class UnsupportedAnswerIndexService(
         versions: List<TrustReplyItemVersion>,
         qualificationId: String,
         approvedBy: String,
-        createdAt: Instant
+        createdAt: Instant,
+        finalParagraphs: Map<String, String> = emptyMap()
     ): UnsupportedAnswerIndexArchiveResult = archiveVersions(
         versions = versions,
-        documentFactory = { version -> liveDocument(source, version, qualificationId, approvedBy, createdAt) }
+        documentFactory = { version ->
+            liveDocument(source, version, qualificationId, approvedBy, createdAt, finalParagraphs[version.requestKey])
+        }
     )
 
     private fun archiveVersions(
@@ -658,7 +676,8 @@ class UnsupportedAnswerIndexService(
         version: TrustReplyItemVersion,
         qualificationId: String,
         approvedBy: String,
-        createdAt: Instant
+        createdAt: Instant,
+        finalParagraph: String?
     ): UnsupportedAnswerIndexDocument = baseDocument(
         source = source,
         version = version,
@@ -669,7 +688,8 @@ class UnsupportedAnswerIndexService(
         qualificationId = qualificationId,
         approvedBy = approvedBy,
         createdAt = createdAt,
-        editedByOperator = false
+        editedByOperator = false,
+        finalParagraph = finalParagraph
     )
 
     private fun liveDocument(
@@ -677,7 +697,8 @@ class UnsupportedAnswerIndexService(
         version: TrustReplyItemVersion,
         qualificationId: String,
         approvedBy: String,
-        createdAt: Instant
+        createdAt: Instant,
+        finalParagraph: String?
     ): UnsupportedAnswerIndexDocument = baseDocument(
         source = source,
         version = version,
@@ -693,7 +714,8 @@ class UnsupportedAnswerIndexService(
         approvedBy = approvedBy,
         createdAt = createdAt,
         // c6 (T-2 / I-4)：线上侧照常归档并置 editedByOperator = true（A-2「运营已编辑」）。
-        editedByOperator = true
+        editedByOperator = true,
+        finalParagraph = finalParagraph
     )
 
     private fun baseDocument(
@@ -706,7 +728,10 @@ class UnsupportedAnswerIndexService(
         qualificationId: String,
         approvedBy: String,
         createdAt: Instant,
-        editedByOperator: Boolean
+        editedByOperator: Boolean,
+        // Repair R-1 (V-3)：该条所属的最终闭合段落文本（步骤 03 权威段落，来自
+        // assemble 响应的 finalParagraphByRequestKey）；绝不回退为 item answerText。
+        finalParagraph: String?
     ): UnsupportedAnswerIndexDocument = UnsupportedAnswerIndexDocument(
         status = status,
         sourceMode = sourceMode,
@@ -733,7 +758,7 @@ class UnsupportedAnswerIndexService(
         // c6 (T-2)：topic 取版本 claims 的 intentKey 主段（与 12/13 的 topicOrder 同源）；
         // 无 claims 时沿用收口器的 gap 主题约定。finalParagraphText 见数据类注释。
         topic = versionTopic(version),
-        finalParagraphText = version.answerText,
+        finalParagraphText = finalParagraph.orEmpty(),
         editedByOperator = editedByOperator
     )
 
@@ -750,6 +775,12 @@ class UnsupportedAnswerIndexService(
         // 样本形态，「已被人认可」前提不变（训练侧 rating == MEETS_EXPECTATION、
         // 线上侧真实发送成功仍在调用方把关）。
         if (document.handling !in ALLOWED_HANDLINGS || document.generationKind !in ALLOWED_GENERATION_KINDS) {
+            return "UNSUPPORTED_ANSWER_INDEX_DOCUMENT_INVALID"
+        }
+        // Repair R-1 (V-3): 资格内文档必须携带非空 finalParagraphText——步骤 03 最终
+        // 段落（assemble 的确定性映射）；映射缺失/歧义即 fail closed（「reject missing
+        // or ambiguous mappings」），绝不回退为 item answerText。
+        if (document.finalParagraphText.isBlank()) {
             return "UNSUPPORTED_ANSWER_INDEX_DOCUMENT_INVALID"
         }
         if (document.operatorInstructionHash != sha256(document.operatorInstruction)

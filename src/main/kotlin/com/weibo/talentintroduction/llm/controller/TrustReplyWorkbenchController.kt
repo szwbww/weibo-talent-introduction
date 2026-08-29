@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchException
 import com.weibo.talentintroduction.llm.service.AiReplyTurn
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleResponse
+import com.weibo.talentintroduction.llm.service.TrustReplyFinalParagraphRequest
 import com.weibo.talentintroduction.llm.service.TrustReplyRearrangeRequest
 import com.weibo.talentintroduction.llm.service.TrustReplyRearrangeResponse
 import com.weibo.talentintroduction.llm.service.TrustReplyPinnedParagraphRequest
@@ -195,6 +196,23 @@ class TrustReplyWorkbenchController(
         requestedFactIds = requestedFactIds,
         requestFactSelections = requestFactSelections?.map { it.toDomain() },
         frameSnapshot = frameSnapshot?.toDomain(),
+        finalParagraphs = finalParagraphs?.map { paragraph ->
+            TrustReplyFinalParagraphRequest(
+                topic = paragraph.topic,
+                factIds = paragraph.factIds,
+                text = paragraph.text
+            )
+        }.orEmpty(),
+        operatorFacts = operatorFacts?.map { fact ->
+            PlanFact(
+                id = fact.id,
+                topic = fact.topic,
+                body = fact.body,
+                controlled = fact.controlled,
+                frozen = fact.frozen,
+                required = fact.required
+            )
+        }.orEmpty(),
         lockedItems = lockedItems.map { locked ->
             TrustReplyLockedItemRequest(
                 requestKey = locked.requestKey,
@@ -391,7 +409,18 @@ data class TrustReplyAssembleHttpRequest(
     val lockedItems: List<TrustReplyLockedItemHttpRequest>,
     val requestedFactIds: List<Long>? = null,
     val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null,
-    val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null
+    val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null,
+    // Repair R-1 (V-1/V-3): 步骤 03 权威段落（topic + factIds + text）与 op* 逐字插槽。
+    val finalParagraphs: List<TrustReplyFinalParagraphHttpRequest>? = null,
+    val operatorFacts: List<TrustReplyOperatorFactHttpRequest>? = null
+)
+
+// Repair R-1 (V-1/V-3): 步骤 03 权威段落 HTTP 形状——topic / factIds（13 协议 id）/
+// text。服务端重新校验后逐字成文。
+data class TrustReplyFinalParagraphHttpRequest(
+    val topic: String,
+    val factIds: List<String>,
+    val text: String
 )
 
 // c5 / 15-workbench-three-step（T-5）: 重排请求 DTO。paragraphPlanDraft 复用 13 的

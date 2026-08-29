@@ -1335,6 +1335,13 @@
             state.generation.message = "正在请求服务端整合…";
             render();
             try {
+                // Repair R-1 (V-1): 步骤 03 权威段落——仅当全部段落已落字（重排/人工
+                // 编辑后）才提交 finalParagraphs，服务端重新校验后逐字成文；尚未生成
+                // 段落（全部空文本）时保持 []，走既有逐条收口路径（行为不变）。
+                const draft = state.paragraphDraft || [];
+                const hasAuthoritativeParagraphs =
+                    draft.length > 0 && draft.every((entry) => String(entry.text || "").trim() !== "");
+                const draftFactIds = new Set(draft.flatMap((entry) => entry.factIds || []));
                 const response = await requestJson("/api/trust-reply/workbench/assemble", {
                     source,
                     expectedSourceVersion: state.sourceVersion,
@@ -1346,7 +1353,19 @@
                     expectedEvidenceSetVersion: state.evidenceSetVersion,
                     requestFactSelections: serializeRequestFactSelections(),
                     frameSnapshot: state.frameSnapshot,
-                    lockedItems
+                    lockedItems,
+                    finalParagraphs: hasAuthoritativeParagraphs
+                        ? draft.map((entry) => ({
+                            topic: entry.topic,
+                            factIds: [...(entry.factIds || [])],
+                            text: String(entry.text || "")
+                        }))
+                        : [],
+                    operatorFacts: hasAuthoritativeParagraphs
+                        ? state.operatorFacts
+                            .filter((fact) => draftFactIds.has(fact.id))
+                            .map((fact) => ({ id: fact.id, topic: fact.topic, body: fact.body }))
+                        : []
                 });
                 if (!isLive(seq)) return;
                 if (response.sourceVersion !== state.sourceVersion || response.evidenceSetVersion !== state.evidenceSetVersion) {

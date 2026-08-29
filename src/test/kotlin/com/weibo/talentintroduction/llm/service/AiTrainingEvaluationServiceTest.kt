@@ -69,13 +69,16 @@ class AiTrainingEvaluationServiceTest {
         )
         Mockito.`when`(workbenchService.assemble(assembly)).thenReturn(assembled)
         Mockito.`when`(workbenchService.resolveSource(source)).thenReturn(resolved)
+        Mockito.lenient().`when`(unsupportedAnswerIndexService.isArchiveEligible(Mockito.any(TrustReplyItemVersion::class.java) ?: item("")))
+            .thenReturn(true)
         Mockito.lenient().`when`(
             unsupportedAnswerIndexService.archiveCanonicalVersions(
                 Mockito.any(ResolvedTrustReplySource::class.java) ?: resolved,
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenReturn(UnsupportedAnswerIndexArchiveResult())
         var nextId = 100L
@@ -115,13 +118,21 @@ class AiTrainingEvaluationServiceTest {
         )
         assembled = assembled.copy(itemVersions = listOf(grounded, acknowledgement, omitted, eligible))
         Mockito.`when`(workbenchService.assemble(assembly)).thenReturn(assembled)
+        // Repair R-2 (V-2): 资格判定委托 service 的权威 isArchiveEligible——允许集合内
+        // 的 handling（含 ACKNOWLEDGE_PENDING / ANSWER_FROM_OPERATOR_INPUT）放行，
+        // 集合外（ANSWER_WITH_EVIDENCE / OMIT）拒绝；调用方只透传其判定。
+        Mockito.`when`(unsupportedAnswerIndexService.isArchiveEligible(Mockito.any(TrustReplyItemVersion::class.java) ?: item("")))
+            .thenReturn(false)
+        Mockito.`when`(unsupportedAnswerIndexService.isArchiveEligible(acknowledgement)).thenReturn(true)
+        Mockito.`when`(unsupportedAnswerIndexService.isArchiveEligible(eligible)).thenReturn(true)
         Mockito.`when`(
             unsupportedAnswerIndexService.archiveCanonicalVersions(
                 Mockito.any(ResolvedTrustReplySource::class.java) ?: resolved,
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
 
@@ -135,7 +146,7 @@ class AiTrainingEvaluationServiceTest {
         val invocation = Mockito.mockingDetails(unsupportedAnswerIndexService).invocations
             .single { it.method.name == "archiveCanonicalVersions" }
         val archivedItems = invocation.arguments[1] as List<*>
-        assertEquals(listOf(eligible), archivedItems)
+        assertEquals(listOf(acknowledgement, eligible), archivedItems)
         assertEquals("100", invocation.arguments[2])
         assertEquals("operator-a", invocation.arguments[3])
         val order = Mockito.inOrder(operatorActionLogRepository, unsupportedAnswerIndexService)
@@ -145,7 +156,8 @@ class AiTrainingEvaluationServiceTest {
             Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
             Mockito.anyString(),
             Mockito.anyString(),
-            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
         )
     }
 
@@ -172,17 +184,21 @@ class AiTrainingEvaluationServiceTest {
         Mockito.verify(unsupportedAnswerIndexService, Mockito.never()).archiveCanonicalVersions(
             Mockito.any(ResolvedTrustReplySource::class.java) ?: resolved,
             Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
-            Mockito.anyString(), Mockito.anyString(), Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            Mockito.anyString(), Mockito.anyString(), Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
         )
 
         Mockito.reset(unsupportedAnswerIndexService)
+        Mockito.`when`(unsupportedAnswerIndexService.isArchiveEligible(Mockito.any(TrustReplyItemVersion::class.java) ?: item("")))
+            .thenReturn(true)
         Mockito.`when`(
             unsupportedAnswerIndexService.archiveCanonicalVersions(
                 Mockito.any(ResolvedTrustReplySource::class.java) ?: resolved,
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenThrow(IllegalStateException("es unavailable"))
         val meetsExpectation = service.save(

@@ -125,6 +125,9 @@ class PendingMailOperationServiceTest {
     @BeforeEach
     fun setUp() {
         Mockito.`when`(inboundMailProcessingRepository.findById(100L)).thenReturn(Optional.of(inbound()))
+        // Repair R-2 (V-2): 权威资格判定默认放行（用例用非资格版本显式断言的另设 stub）。
+        Mockito.lenient().`when`(unsupportedAnswerIndexService.isArchiveEligible(Mockito.any(TrustReplyItemVersion::class.java) ?: operatorDirectedVersion()))
+            .thenReturn(true)
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
         Mockito.`when`(aiReplyContextService.build(contact, emptyList(), "Can I work remotely?", ""))
@@ -187,7 +190,8 @@ class PendingMailOperationServiceTest {
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
 
@@ -211,7 +215,8 @@ class PendingMailOperationServiceTest {
             eqValue(listOf(eligible)),
             eqValue("500"),
             eqValue("operator-a"),
-            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
         )
     }
 
@@ -229,7 +234,8 @@ class PendingMailOperationServiceTest {
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
 
@@ -251,7 +257,8 @@ class PendingMailOperationServiceTest {
             eqValue(listOf(eligible)),
             eqValue("500"),
             eqValue("op"),
-            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
         )
     }
 
