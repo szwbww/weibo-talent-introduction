@@ -281,3 +281,89 @@ Impact: plan 12 IP-4 and plan 16 T-4 fail; the index stores per-item answer word
 - Evidence commit subject: `docs(review-fast-p): record repair execution`.
 
 The reviewer made no product/test/review-evidence changes, staged nothing, and committed nothing.
+
+## Epoch 3 — 2026-08-29T11:29:34Z
+
+- Master plan: docs/plans/2026-08-28/10-reply-orchestration-order.md (sha256 31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be)
+- Governing master identity: sha256 31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be; recorded commit 5a90e3e53e5fe8b40059b3090f086d6b36a09a01
+- Master identity state: CONSISTENT
+- Boundary: original de228e17cc0134a7c11dea7cbf82054e8d249f99..7f8b28d2f09c0df7551703d8037c2b521b189152; post-repair 7f8b28d2f09c0df7551703d8037c2b521b189152..6793ff948515e541969f76388e0af5bde1fd2f3a
+- Reviewer: /root/aggregate_reviewer_epoch3
+- Result: FAIL
+- Convergence: PROGRESSING
+- Repair artifact/result: docs/plans/fix/10-reply-orchestration-order/repair.md — DRAFT_READY (sha256 436406ef90623635bd3342b4ac809a6050af8ad75e84fc2a4ecdf64c1ea9a522)
+
+### Identity and repair lineage
+
+| Item | Result | Evidence |
+|---|---|---|
+| Branch/worktree | PASS | Exact selected fast-p worktree |
+| Master/recorded identity | PASS | Governing SHA above; commit `5a90e3e...`; invoked identity SAME |
+| Ancestry | PASS | Base → original candidate → `6793ff9` repair candidate → evidence HEAD |
+| Amendments | PASS | A1/A2/A3 recorded; A4 test authority in durable repair handoff |
+| Repair scope | PASS | Six authorized product files, six planned tests, and two A4 tests only |
+| Worktree/index | PASS_WITH_NOTE | Only controller ledger and repair-p's exact repair artifact modified; no product/test dirt |
+
+### Fresh command evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test` | PASS | exit 0; BUILD SUCCESS; 3014 tests, 0 failures, 0 errors, 5 skipped; embedded JS 766/766 |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package` | PASS | exit 0; BUILD SUCCESS; WAR built; 02:56; embedded JS 766/766 |
+| `node --test src/test/js/*.test.js` | PASS | 766 tests, 766 pass, 0 fail; 121 suites |
+| `git diff --check` | PASS | exit 0; no output, including after repair artifact update |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` | BLOCKED | exit 1; 1 test, 1 error; Docker socket unavailable; `/var/run/docker.sock` absent; `Docker is required for Flyway migration tests` |
+
+No previous Flyway skip was treated as a re-review waiver. Confirmed P1 defects route this review as FAIL / PROGRESSING; Flyway evidence remains unavailable.
+
+### Contract matrix
+
+| Contract | Result | Evidence |
+|---|---|---|
+| G-1 / G-2 / G-4 / G-5 / G-6 / G-7 | PASS | Frozen/migration scope untouched; controlled, parity, append-only, and hash contracts hold |
+| G-3 and c1 runtime migration | BLOCKED | Static guards unchanged; Docker migration evidence unavailable |
+| c1 I-1..I-6 | PASS | V109 unchanged; parity/static coverage remains green |
+| c2 I-1..I-7 | PASS | Closer path, dedupe/order/CTA/frozen/all-locked/order contracts pass |
+| c3 I-1..I-5, S-1..S-3 | PASS (I-3 PASS_WITH_NOTE) | Scoped persistence/guard and JS/DOM contracts pass |
+| c4 I-1 / I-2 / I-4..I-8 | PASS | Grouping/source closure/verbatim/action/gap/six checks/fallback pass |
+| c4 I-3 exactly once | FAIL for `op<n>` final assembly | V-1; `f*`/`x*` pass |
+| c5 I-1 / I-3..I-6 / S-1..S-3 | PASS | Hash isolation, version evidence, local UI, fact and coverage contracts pass |
+| c5 I-2 and final assemble semantics | FAIL | V-1 |
+| c6 I-1..I-6 and T-5 | PASS | V-2 resolved; mapping/filter/status/display/queue contracts pass |
+| c6 T-4 | FAIL | V-3 |
+| c1-c6 manual acceptance | PENDING | Human UI/real ES evidence unavailable |
+
+### Finding lineage
+
+| Finding | Epoch 1 | Epoch 2 | Epoch 3 | Result |
+|---|---|---|---|---|
+| V-1 | NEW | PERSISTENT | PERSISTENT | `op<n>` authoritative draft fails identity closure before composition |
+| V-2 | NEW | PERSISTENT | RESOLVED | Both callers delegate to canonical four-handling × two-generation predicate |
+| V-3 | NEW | PERSISTENT | PERSISTENT | Operator-directed final paragraph cannot reach mapping/archive because V-1 fails first |
+
+#### V-1 — P1 — PERSISTENT
+
+`trust-reply-workbench.js:1357-1368` submits authoritative `op<n>` paragraph IDs and matching `operatorFacts`. `TrustReplyWorkbenchService.kt:1949-1957` reconstructs required IDs only from locked versions (`f*`/`x*`) and compares before operator facts are included at `:1968`. A claims-empty operator-directed version becomes `x<n>`, while the canonical step-03 draft uses `op<n>`; valid operator-fact drafts therefore return `TRUST_REPLY_FINAL_PARAGRAPHS_INVALID` before composition.
+
+#### V-3 — P1 — PERSISTENT
+
+Operator facts are mapped only after V-1's failing closure check (`TrustReplyWorkbenchService.kt:1986`). `UnsupportedAnswerIndexService.kt:780-784` correctly fails closed on missing mapping, so plan-required final wording cannot be archived for the primary operator-directed path.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Result | Evidence |
+|---|---|---|
+| c1 parity baseline count; c2 evidence-only state; c3 flake/reference/full-PUT notes; c4 negative fixture; c5 absent focused planner/no standalone hash test | RECORD_ONLY | No mandatory violation; fresh full suites and existing contract evidence support prior routing |
+| Baseline JS authority note; c6 F-1/F-2 | RESOLVED | Standalone JS gate 766/766 and prior closure remains valid |
+| Flyway runtime | BLOCKED | Mandatory Docker evidence unavailable; not product repair scope |
+
+### Repair planning
+
+- review-p result: FAIL / PROGRESSING; repair-p result: DRAFT_READY.
+- Included: V-1 and V-3 only. V-2 is resolved; Flyway and RECORD_ONLY entries are excluded.
+- Root cause: operator-fact `op<n>` IDs are excluded from exact-once closure until after the equality comparison.
+- Authorized files: `TrustReplyWorkbenchService.kt`, `TrustReplyWorkbenchServiceTest.kt`, and `trustReplyWorkbenchThreeStep.test.js`.
+- Product commit subject: `fix(reply-orchestration): preserve operator facts in final assembly`.
+- Evidence commit subject: `docs(review-fast-p): record repair execution`.
+
+The reviewer made no product/test/report changes, staged nothing, and committed nothing. `repair-p` updated only the exact repair artifact to include the required fully resolved Review-Fast-P execution handoff.
