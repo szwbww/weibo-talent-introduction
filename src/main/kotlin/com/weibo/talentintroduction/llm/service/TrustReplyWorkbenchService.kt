@@ -1957,8 +1957,13 @@ class TrustReplyWorkbenchService(
         }
         val opFactsById = linkedMapOf<String, PlanFact>()
         request.operatorFacts.forEach { op ->
-            if (op.id.isBlank() || op.body.isBlank() || opFactsById.put(op.id, op) != null) {
-                // 重复 op id / 空 id / 空 body：外来或歧义 → fail closed。
+            // Repair R-1 (epoch 4 / V-4): 运营事实只在规范 op<n> 身份空间
+            // （op + 正十进制序列，无前导零）被接受——任意非空白 id 不得以
+            // 正文绑定绕过命名空间进入 required 集与已知事实表。
+            if (op.id.isBlank() || !CANONICAL_OPERATOR_FACT_ID.matches(op.id) ||
+                op.body.isBlank() || opFactsById.put(op.id, op) != null
+            ) {
+                // 非规范 id / 重复 op id / 空 id / 空 body：外来或歧义 → fail closed。
                 throw TrustReplyWorkbenchException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
                     "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID"
@@ -2120,6 +2125,9 @@ class TrustReplyWorkbenchService(
     private fun normalizeWhitespace(text: String): String = text.trim().replace(WHITESPACE_RUN, " ")
 
     private val WHITESPACE_RUN = Regex("\\s+")
+
+    /** Repair R-1 (epoch 4 / V-4): 运营事实唯一合法身份空间——`op` + 正十进制序列（无前导零）。 */
+    private val CANONICAL_OPERATOR_FACT_ID = Regex("op[1-9][0-9]*")
 
     private fun validateLockedItem(
         item: RequestFactItem,

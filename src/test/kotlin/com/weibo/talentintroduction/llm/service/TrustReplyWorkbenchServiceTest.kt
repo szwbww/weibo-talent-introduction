@@ -2281,6 +2281,39 @@ class TrustReplyWorkbenchServiceTest {
         )
     }
 
+    @Test
+    fun `assemble final paragraphs reject non canonical operator fact ids before composition`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val operatorText = "Operator sentence."
+        val locked = finalParagraphOperatorLocked(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            canonicalKey(version),
+            answerText = operatorText
+        )
+        // 非规范 id（external-1）即使正文可绑定到归属版本也必须被拒（V-4）：
+        // 运营事实只在 op<n> 身份空间存在，任意客户端自定义 id 不得绕过命名空间。
+        for (badId in listOf("external-1", "op0", "op01", "OP1")) {
+            val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+                service.assemble(TrustReplyAssembleRequest(
+                    source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                    expectedSourceVersion = version,
+                    expectedEvidenceSetVersion = evidenceVersion,
+                    lockedItems = listOf(locked),
+                    requestedFactIds = listOf(9L),
+                    finalParagraphs = listOf(
+                        TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf(badId), text = operatorText)
+                    ),
+                    operatorFacts = listOf(opFact(badId, operatorText))
+                ))
+            }
+            assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code, "id $badId must be rejected")
+        }
+        Mockito.verifyNoInteractions(pointByPointComposer)
+    }
+
     // Repair R-1 (epoch 3 / V-1): 「按回答说明生成」的锁定版本（claims 恒空）——
     // 步骤 03 草稿以 op<n> 表示其内容。
     private fun finalParagraphOperatorLocked(
