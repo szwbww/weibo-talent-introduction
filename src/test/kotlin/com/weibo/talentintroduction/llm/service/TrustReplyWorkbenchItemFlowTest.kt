@@ -1324,33 +1324,53 @@ class TrustReplyWorkbenchItemFlowTest {
     fun `assemble accepts the same source rule bound to two requests`() {
         // 计划 02 (I-6): 同一事实可合法绑定多个 request——不再抛
         // TRUST_REPLY_FACT_ALREADY_ASSIGNED；canonical ids 为有序 union 去重。
+        // 12-letter-closer (I-2): 两条 claim 的 sourceRuleIds 集合相等（都是 {9}）
+        // 视为同一事实，整封正文只保留首次出现的措辞 "Claim A"。
         val fixture = duplicateFixture(item2Source = 9L, item2Text = "Claim B")
+        Mockito.`when`(fixture.composer.composeLockedItems(listOf("Claim A"), fixture.defaultFrame))
+            .thenReturn("raw Claim A")
+        Mockito.`when`(fixture.previewService.preview("raw Claim A", fixture.contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
 
         val response = fixture.service.assemble(fixture.request)
 
         assertEquals(2, response.itemVersions.size)
         assertEquals(listOf(9L), response.canonicalFactIds)
-        assertEquals("raw Claim A|Claim B", response.rawDraftText)
+        assertEquals("raw Claim A", response.rawDraftText)
     }
 
     @Test
     fun `assemble accepts identical normalized answers across requests`() {
         // 计划 02 (I-6): 跨 item 重复正文不再 422 TRUST_REPLY_DUPLICATE_CLAIM。
+        // 12-letter-closer (I-2/I-3): 两条 claim 绑定不同事实集（{9} 与 {10}），
+        // 不参与去重；同主题 "general" 归并为一段，段内正文空白原样保留。
         val fixture = duplicateFixture(item1Text = "Same  claim", item2Text = "Same CLAIM")
+        val closed = "Same  claim Same CLAIM"
+        Mockito.`when`(fixture.composer.composeLockedItems(listOf(closed), fixture.defaultFrame))
+            .thenReturn("raw $closed")
+        Mockito.`when`(fixture.previewService.preview("raw $closed", fixture.contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
 
         val response = fixture.service.assemble(fixture.request)
 
         assertEquals(2, response.itemVersions.size)
-        assertEquals("raw Same  claim|Same CLAIM", response.rawDraftText)
+        assertEquals("raw $closed", response.rawDraftText)
     }
 
     @Test
     fun `assemble keeps similar answers from different claims in canonical order`() {
+        // 12-letter-closer (I-2/I-3): 不同事实集 {9} 与 {10} 不去重；同主题
+        // "general" 归并为一段，段内保持 canonical order（Claim A 先于 Claim B）。
         val fixture = duplicateFixture()
+        val closed = "Claim A Claim B"
+        Mockito.`when`(fixture.composer.composeLockedItems(listOf(closed), fixture.defaultFrame))
+            .thenReturn("raw $closed")
+        Mockito.`when`(fixture.previewService.preview("raw $closed", fixture.contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
 
         val response = fixture.service.assemble(fixture.request)
 
-        assertEquals("raw Claim A|Claim B", response.rawDraftText)
+        assertEquals("raw $closed", response.rawDraftText)
         assertEquals(listOf(9L, 10L), response.canonicalFactIds)
         assertEquals(listOf("Claim A", "Claim B"), response.itemVersions.map { it.answerText })
     }
@@ -1360,6 +1380,9 @@ class TrustReplyWorkbenchItemFlowTest {
 
     @Test
     fun `multi claim item answerText keeps each claim as its own paragraph`() {
+        // 12-letter-closer: 逐条 itemVersions 保持未收口原文（IP-4），两条 claim 在
+        // 版本身份里各自分段；整封正文按 sourceRuleIds 收口——两条 claim 同绑事实集
+        // {9}（I-2 视为同一事实），只保留首次出现的 "Claim A"。
         val paragraphAnswer = "Claim A" + "\n\n" + "Claim B"
         val fixture = assembleFixture(
             answerText = paragraphAnswer,
@@ -1388,11 +1411,16 @@ class TrustReplyWorkbenchItemFlowTest {
                 )
             )
         )
+        Mockito.`when`(fixture.composer.composeLockedItems(listOf("Claim A"), fixture.defaultFrame))
+            .thenReturn("raw Claim A")
+        Mockito.`when`(fixture.previewService.preview("raw Claim A", fixture.contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
 
         val response = fixture.service.assemble(fixture.request)
 
         assertEquals("Claim A\n\nClaim B", response.itemVersions.single().answerText)
         assertEquals(listOf("Claim A", "Claim B"), response.itemVersions.single().claims.map { it.text })
+        assertEquals("raw Claim A", response.rawDraftText)
     }
 
     @Test
@@ -1469,13 +1497,20 @@ class TrustReplyWorkbenchItemFlowTest {
     @Test
     fun `similar answers across items assemble despite paragraph and space variance`() {
         // 计划 02 (I-6): 跨 item 归一化正文查重已删除——段落/空格差异不再触发
-        // TRUST_REPLY_DUPLICATE_CLAIM。
+        // TRUST_REPLY_DUPLICATE_CLAIM。12-letter-closer (I-2/I-3): 事实集 {9} 与
+        // {10} 不同故不去重；同主题归并为一段，段内正文空白原样保留。
         val fixture = duplicateFixture(item1Text = "Same\n\nclaim", item2Text = "Same  claim")
+        val closed = "Same\n\nclaim Same  claim"
+        Mockito.`when`(fixture.composer.composeLockedItems(listOf(closed), fixture.defaultFrame))
+            .thenReturn("raw $closed")
+        Mockito.`when`(fixture.previewService.preview("raw $closed", fixture.contact, null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
 
         val response = fixture.service.assemble(fixture.request)
 
         assertEquals(2, response.itemVersions.size)
         assertEquals(listOf(9L, 10L), response.canonicalFactIds)
+        assertEquals("raw $closed", response.rawDraftText)
     }
 
 
@@ -1612,8 +1647,10 @@ class TrustReplyWorkbenchItemFlowTest {
     private data class DuplicateFixture(
         val service: TrustReplyWorkbenchService,
         val request: TrustReplyAssembleRequest,
+        val contact: ExpertContact,
         val composer: AiReplyPointByPointComposer,
-        val previewService: AiReplyDraftPreviewService
+        val previewService: AiReplyDraftPreviewService,
+        val defaultFrame: ResolvedReplyFrame
     )
 
     private fun duplicateFixture(
@@ -1789,8 +1826,10 @@ class TrustReplyWorkbenchItemFlowTest {
         return DuplicateFixture(
             service = service,
             request = TrustReplyAssembleRequest(source, sourceVersion, aggregateEvidence, lockedItems),
+            contact = contact,
             composer = composer,
-            previewService = previewService
+            previewService = previewService,
+            defaultFrame = defaultFrame
         )
     }
 

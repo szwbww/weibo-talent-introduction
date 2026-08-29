@@ -11,8 +11,15 @@ import com.weibo.talentintroduction.llm.service.TrustReplyWorkbenchException
 import com.weibo.talentintroduction.llm.service.AiReplyTurn
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleRequest
 import com.weibo.talentintroduction.llm.service.TrustReplyAssembleResponse
+import com.weibo.talentintroduction.llm.service.TrustReplyFinalParagraphRequest
+import com.weibo.talentintroduction.llm.service.TrustReplyRearrangeRequest
+import com.weibo.talentintroduction.llm.service.TrustReplyRearrangeResponse
+import com.weibo.talentintroduction.llm.service.TrustReplyPinnedParagraphRequest
+import com.weibo.talentintroduction.llm.service.ParagraphPlanEntry
+import com.weibo.talentintroduction.llm.service.PlanFact
 import com.weibo.talentintroduction.llm.service.TrustReplyItemHandling
 import com.weibo.talentintroduction.llm.service.TrustReplyLockedItemRequest
+import com.weibo.talentintroduction.llm.service.TrustReplySaveStateItemRequest
 import com.weibo.talentintroduction.llm.service.TrustReplySaveStateRequest
 import com.weibo.talentintroduction.llm.service.TrustReplySavedState
 import com.weibo.talentintroduction.llm.service.TrustReplyRequestFactSelection
@@ -24,6 +31,7 @@ import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.ExceptionHandler
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -103,9 +111,23 @@ class TrustReplyWorkbenchController(
     fun assemble(@RequestBody request: TrustReplyAssembleHttpRequest): TrustReplyAssembleResponse =
         workbenchService.assemble(request.toDomain())
 
+    // c5 / 15-workbench-three-step（T-5）: 重排端点——运营编辑后的 paragraphPlanDraft +
+    // pinned 段落 + op* 运营事实 → 一次 13 编排调用，返回新 paragraphs 与六道校验结果。
+    // 不落库（I-4）——落库仍走整合（assemble）。
+    @PostMapping("/rearrange")
+    fun rearrange(@RequestBody request: TrustReplyRearrangeHttpRequest): TrustReplyRearrangeResponse =
+        workbenchService.rearrange(request.toDomain())
+
     @PutMapping("/state")
     fun saveState(@RequestBody request: TrustReplySaveStateHttpRequest): TrustReplySavedState =
         workbenchService.saveState(request.toDomain())
+
+    // 计划 14 (T-1, I-2/I-4): 条目级持久化——请求体只含该条的 requestKey +
+    // 该条 locked item + 乐观锁 expectedStateVersion；服务端在既有状态行内
+    // 合并该条，返回新的 stateVersion。
+    @PatchMapping("/state/item")
+    fun saveStateItem(@RequestBody request: TrustReplySaveStateItemHttpRequest): TrustReplySavedState =
+        workbenchService.saveStateItem(request.toDomain())
 
     @DeleteMapping("/state")
     fun deleteState(@RequestBody request: TrustReplyDeleteStateHttpRequest): TrustReplySavedState =
@@ -174,6 +196,23 @@ class TrustReplyWorkbenchController(
         requestedFactIds = requestedFactIds,
         requestFactSelections = requestFactSelections?.map { it.toDomain() },
         frameSnapshot = frameSnapshot?.toDomain(),
+        finalParagraphs = finalParagraphs?.map { paragraph ->
+            TrustReplyFinalParagraphRequest(
+                topic = paragraph.topic,
+                factIds = paragraph.factIds,
+                text = paragraph.text
+            )
+        }.orEmpty(),
+        operatorFacts = operatorFacts?.map { fact ->
+            PlanFact(
+                id = fact.id,
+                topic = fact.topic,
+                body = fact.body,
+                controlled = fact.controlled,
+                frozen = fact.frozen,
+                required = fact.required
+            )
+        }.orEmpty(),
         lockedItems = lockedItems.map { locked ->
             TrustReplyLockedItemRequest(
                 requestKey = locked.requestKey,
@@ -193,6 +232,40 @@ class TrustReplyWorkbenchController(
                 operatorInstruction = locked.operatorInstruction
             )
         }
+    )
+
+    // c5 / 15-workbench-three-step（T-5）: 重排请求转换。op* 事实按 I-2 强制逐字插槽
+    // （frozen=true、required=true），id 为 op<n>，绝不进入任何哈希（I-1 / G-7）。
+    private fun TrustReplyRearrangeHttpRequest.toDomain() = TrustReplyRearrangeRequest(
+        source = source.toDomain(),
+        expectedSourceVersion = expectedSourceVersion,
+        paragraphPlanDraft = paragraphPlanDraft.map { entry ->
+            ParagraphPlanEntry(
+                topic = entry.topic,
+                factIds = entry.factIds,
+                gapCondition = entry.gapCondition
+            )
+        },
+        pinnedParagraphs = pinnedParagraphs.map { pinned ->
+            TrustReplyPinnedParagraphRequest(
+                topic = pinned.topic,
+                factIds = pinned.factIds,
+                text = pinned.text,
+                evidenceSetVersion = pinned.evidenceSetVersion
+            )
+        },
+        operatorFacts = operatorFacts.map { fact ->
+            PlanFact(
+                id = fact.id,
+                topic = fact.topic,
+                body = fact.body,
+                controlled = fact.controlled,
+                frozen = fact.frozen,
+                required = fact.required
+            )
+        },
+        requestedFactIds = requestedFactIds,
+        requestFactSelections = requestFactSelections?.map { it.toDomain() }
     )
 
     private fun TrustReplySaveStateHttpRequest.toDomain() = TrustReplySaveStateRequest(
@@ -224,6 +297,32 @@ class TrustReplyWorkbenchController(
                 operatorInstruction = locked.operatorInstruction
             )
         }
+    )
+
+    private fun TrustReplySaveStateItemHttpRequest.toDomain() = TrustReplySaveStateItemRequest(
+        source = source.toDomain(),
+        expectedStateVersion = expectedStateVersion,
+        schemaVersion = schemaVersion,
+        sourceVersion = sourceVersion,
+        evidenceSetVersion = evidenceSetVersion,
+        requestKey = requestKey,
+        lockedItem = TrustReplyLockedItemRequest(
+            requestKey = lockedItem.requestKey,
+            versionId = lockedItem.versionId,
+            handling = lockedItem.handling.toHandling(),
+            answerText = lockedItem.answerText,
+            claims = lockedItem.claims,
+            model = lockedItem.model,
+            generationKind = runCatching {
+                com.weibo.talentintroduction.llm.service.TrustReplyItemGenerationKind.valueOf(lockedItem.generationKind)
+            }.getOrElse {
+                throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_GENERATION_KIND_INVALID")
+            },
+            evidenceSetVersion = lockedItem.evidenceSetVersion,
+            sourceVersion = lockedItem.sourceVersion,
+            operatorInstructionHash = lockedItem.operatorInstructionHash,
+            operatorInstruction = lockedItem.operatorInstruction
+        )
     )
 
     private fun String.toHandling(): TrustReplyItemHandling = runCatching {
@@ -310,7 +409,53 @@ data class TrustReplyAssembleHttpRequest(
     val lockedItems: List<TrustReplyLockedItemHttpRequest>,
     val requestedFactIds: List<Long>? = null,
     val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null,
-    val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null
+    val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null,
+    // Repair R-1 (V-1/V-3): 步骤 03 权威段落（topic + factIds + text）与 op* 逐字插槽。
+    val finalParagraphs: List<TrustReplyFinalParagraphHttpRequest>? = null,
+    val operatorFacts: List<TrustReplyOperatorFactHttpRequest>? = null
+)
+
+// Repair R-1 (V-1/V-3): 步骤 03 权威段落 HTTP 形状——topic / factIds（13 协议 id）/
+// text。服务端重新校验后逐字成文。
+data class TrustReplyFinalParagraphHttpRequest(
+    val topic: String,
+    val factIds: List<String>,
+    val text: String
+)
+
+// c5 / 15-workbench-three-step（T-5）: 重排请求 DTO。paragraphPlanDraft 复用 13 的
+// ParagraphPlanEntry 形状（topic + factIds + 可选 gapCondition）；pinned 段落携带条目级
+// evidenceSetVersion（I-3）；operatorFacts 为 op<n> 逐字插槽（I-1/I-2）。
+data class TrustReplyParagraphPlanEntryHttpRequest(
+    val topic: String,
+    val factIds: List<String>,
+    val gapCondition: String? = null
+)
+
+data class TrustReplyPinnedParagraphHttpRequest(
+    val topic: String,
+    val factIds: List<String>,
+    val text: String,
+    val evidenceSetVersion: String
+)
+
+data class TrustReplyOperatorFactHttpRequest(
+    val id: String,
+    val topic: String,
+    val body: String,
+    val controlled: String? = null,
+    val frozen: Boolean = true,
+    val required: Boolean = true
+)
+
+data class TrustReplyRearrangeHttpRequest(
+    val source: TrustReplySourceHttpRequest,
+    val expectedSourceVersion: String,
+    val paragraphPlanDraft: List<TrustReplyParagraphPlanEntryHttpRequest>,
+    val pinnedParagraphs: List<TrustReplyPinnedParagraphHttpRequest> = emptyList(),
+    val operatorFacts: List<TrustReplyOperatorFactHttpRequest> = emptyList(),
+    val requestedFactIds: List<Long>? = null,
+    val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null
 )
 
 data class TrustReplyDeleteStateHttpRequest(
@@ -333,6 +478,16 @@ data class TrustReplySaveStateHttpRequest(
     val lockedItems: List<TrustReplyLockedItemHttpRequest>,
     val requestFactSelections: List<TrustReplyRequestFactSelectionHttpRequest>? = null,
     val frameSnapshot: TrustReplyFrameSnapshotHttpRequest? = null
+)
+
+data class TrustReplySaveStateItemHttpRequest(
+    val source: TrustReplySourceHttpRequest,
+    val expectedStateVersion: Long,
+    val schemaVersion: String? = null,
+    val sourceVersion: String,
+    val evidenceSetVersion: String,
+    val requestKey: String,
+    val lockedItem: TrustReplyLockedItemHttpRequest
 )
 
 data class TrustReplyCancelHttpRequest(

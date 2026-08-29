@@ -213,7 +213,12 @@
     function mount(host, options) {
         validateMount(host, options);
         const instance = createInstance(host, options);
-        instance.bootstrap();
+        // 方案 A（默认取舍，非疏漏）：只读模式保持自动分析——它不写工作台状态、
+        // 不消耗生成成本，自动跑无副作用；仅非只读宿主可用 autoBootstrap: false
+        // 把分析变成显式动作（I-5）。
+        if (options.autoBootstrap !== false || options.mode === MODES.AUTO_PREVIEW) {
+            instance.bootstrap();
+        }
         return { unmount: instance.unmount };
     }
 
@@ -236,6 +241,11 @@
         // remaining modes keep it mandatory (I-2).
         if (typeof options.contextPath !== "string" || (options.mode !== MODES.AUTO_PREVIEW && typeof options.onComplete !== "function")) {
             return rejectMount(host, "工作台宿主参数不完整");
+        }
+        // I-5: autoBootstrap is an optional boolean mount option; a non-boolean
+        // value is a host bug and must not silently flip analysis behavior.
+        if (options.autoBootstrap !== undefined && typeof options.autoBootstrap !== "boolean") {
+            return rejectMount(host, "autoBootstrap 必须为布尔值");
         }
     }
 
@@ -283,6 +293,13 @@
             itemControllers: new Map(),
             translationControllers: new Set(),
             assembly: null,
+            // c5 (T-1..T-4): 13 协议（plan.facts / paragraphPlan / topicOrder，I-5）+
+            // 本地草稿（改主题/采用/锁定/并入/移动全部只改这里，I-4）+ op* 运营事实。
+            plan: null,
+            paragraphDraft: null,
+            operatorFacts: [],
+            operatorFactSeq: 0,
+            rearrangePending: false,
             // R-2: retained auto-reply preview evidence (decision + hard gates)
             // for the conclusion area; null = no evidence fetched yet.
             previewEvidence: null,
@@ -291,6 +308,8 @@
             completePending: false,
             savedStateVersion: 0,
             stateSavePending: false,
+            // I-5: 未分析态是合法稳定态；bootstrap 成功后才置 true（S-1/S-2）。
+            analyzed: false,
             sequenceCancelled: false,
             // I-3: grip keyboard moves re-render via bootstrap(); the next
             // render() restores focus to this fact's grip (consumed once).
@@ -465,7 +484,7 @@
             state.assembly = null;
             state.assemblyStale = true;
             setStatus(message || "框架配置已变化，请重新选择后整合", "FRAME_STALE");
-            state.activePage = "frame";
+            state.activePage = "compose";
             render();
         }
 
@@ -504,6 +523,8 @@
                 index: item.index == null ? index : item.index,
                 coverage: item.status || "",
                 factRuleIds: [...(item.factRuleIds || [])],
+                // c5 (T-3): 该问的意图（topic 求值用）——只读，绝不进入任何请求载荷。
+                intents: [...(item.intents || [])],
                 // 计划 02 (I-2): 服务端诊断字段——仅供提示，不参与任何请求载荷。
                 intentMatchedFactRuleIds: [...(item.intentMatchedFactRuleIds || [])],
                 intentMismatchFactRuleIds: [...(item.intentMismatchFactRuleIds || [])],
@@ -606,6 +627,16 @@
             state.requests = requestFromCoverage(data.requestCoverage, data.evidenceSetVersion);
             state.frameOptions = Array.isArray(data.frameOptions) ? data.frameOptions : [];
             state.frameSnapshot = snapshotFrame(data.frameSnapshot);
+            // c5 (I-5): 服务端权威的 13 协议是步骤 02/03 的唯一事实与分段来源；本地
+            // 草稿与 op* 运营事实在其上派生（T-2/T-3）。
+            state.plan = {
+                facts: Array.isArray(data.facts) ? data.facts : [],
+                plan: Array.isArray(data.paragraphPlan) ? data.paragraphPlan : [],
+                topicOrder: Array.isArray(data.topicOrder) ? data.topicOrder : []
+            };
+            state.operatorFacts = [];
+            state.operatorFactSeq = 0;
+            seedParagraphDraft();
             // Fail closed when the server canonical matrix disagrees with the
             // per-request coverage instead of silently re-deriving a flat pool.
             if (Array.isArray(data.requestFactSelections) && data.requestFactSelections.length > 0) {
@@ -665,7 +696,7 @@
                 });
                 if (savedState.status === "FRAME_STALE") {
                     setStatus(`FRAME_STALE：框架配置已变化，已保留 ${restoredCount} 项锁定回答，请刷新框架选项`, "FRAME_STALE");
-                    state.activePage = "frame";
+                    state.activePage = "compose";
                 } else if (savedState.status === "PARTIALLY_RESTORED") {
                     // 03a (I-4): per-request evidence drift dropped the stale
                     // items only; the kept locks are restored above.
@@ -721,6 +752,9 @@
                     requestFactSelections: state.requests.length ? serializeRequestFactSelections() : null,
                     frameSnapshot: state.frameSnapshot
                 });
+                // I-5: bootstrap 成功即分析完成——mount 自动分析与「开始分析」
+                // 点击两条路径共用同一状态翻转（S-1/S-2）。
+                state.analyzed = true;
                 applyBootstrap(data, seq);
                 if (preserveVersions) reconcilePreservedVersions(preserved, seq);
             } catch (error) {
@@ -831,6 +865,28 @@
                 frameSnapshot: state.frameSnapshot,
                 lockedItems
             }, null, "PUT");
+            if (response && Number.isInteger(response.stateVersion)) {
+                state.savedStateVersion = response.stateVersion;
+            }
+            return response;
+        }
+
+        // 计划 14 (T-2, I-2/I-4): 单条摘要落库——请求体只含该条的 requestKey +
+        // 该条 locked item + 乐观锁 expectedStateVersion；服务端在既有状态行内
+        // 合并该条，不重写其余条目。乐观锁冲突时服务端返回既有 stale 码，
+        // 调用方按 I-4 处理该条（不整封失败、不静默覆盖）。
+        async function persistResolvedItem(request) {
+            const lockedItem = serializeResolvedVersion(request);
+            if (!lockedItem) return null;
+            const response = await requestJson("/api/trust-reply/workbench/state/item", {
+                source,
+                expectedStateVersion: state.savedStateVersion,
+                schemaVersion: STATE_SCHEMA_VERSION,
+                sourceVersion: state.sourceVersion,
+                evidenceSetVersion: state.evidenceSetVersion,
+                requestKey: request.requestKey,
+                lockedItem
+            }, null, "PATCH");
             if (response && Number.isInteger(response.stateVersion)) {
                 state.savedStateVersion = response.stateVersion;
             }
@@ -951,18 +1007,21 @@
                 request.expanded = false;
                 request.error = null;
                 if (persistEach) {
-                    state.stateSavePending = true;
+                    // I-1: 单条保存只出该条局部遮罩——置条目级 stateSavePending，
+                    // 绝不置全局 state.stateSavePending（I-3）。
+                    request.stateSavePending = true;
                     render();
                     try {
-                        await persistResolvedSnapshot();
+                        // I-2: 单条落库走条目级 PATCH，整封快照只在整合路径使用。
+                        await persistResolvedItem(request);
                     } catch (error) {
                         if (isFrameStaleError(error)) {
-                            state.stateSavePending = false;
+                            request.stateSavePending = false;
                             handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
                             return false;
                         }
                         if (isStaleError(error)) {
-                            state.stateSavePending = false;
+                            request.stateSavePending = false;
                             handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
                             return false;
                         }
@@ -970,7 +1029,7 @@
                         request.resolvedVersionId = null;
                         request.expanded = true;
                         request.error = error.message || "保存失败，请重试";
-                        state.stateSavePending = false;
+                        request.stateSavePending = false;
                         state.generation.pending = false;
                         state.generation.controller = null;
                         state.generation.stage = "ERROR";
@@ -978,7 +1037,7 @@
                         render();
                         return false;
                     }
-                    state.stateSavePending = false;
+                    request.stateSavePending = false;
                 }
                 state.generation.controller = null;
                 if (!isLive(seq)) return false;
@@ -1044,6 +1103,11 @@
                 }
                 request.versions = [...request.versions, version];
                 request.activeVersionId = version.versionId;
+                // c5 (T-3 / I-1 / I-2): 「按回答说明生成」的产出成为逐字运营事实
+                // op<n>，加入本地事实集草稿（重排时随 paragraphPlan 一并提交）。
+                if (version.handling === "ANSWER_FROM_OPERATOR_INPUT" && String(version.answerText || "").trim()) {
+                    addOperatorFact(request, version.answerText);
+                }
                 // 03a (S-1): a fresh version carries the current per-request
                 // evidence, so the stale hint goes away.
                 request.evidenceStale = false;
@@ -1271,6 +1335,13 @@
             state.generation.message = "正在请求服务端整合…";
             render();
             try {
+                // Repair R-1 (V-1): 步骤 03 权威段落——仅当全部段落已落字（重排/人工
+                // 编辑后）才提交 finalParagraphs，服务端重新校验后逐字成文；尚未生成
+                // 段落（全部空文本）时保持 []，走既有逐条收口路径（行为不变）。
+                const draft = state.paragraphDraft || [];
+                const hasAuthoritativeParagraphs =
+                    draft.length > 0 && draft.every((entry) => String(entry.text || "").trim() !== "");
+                const draftFactIds = new Set(draft.flatMap((entry) => entry.factIds || []));
                 const response = await requestJson("/api/trust-reply/workbench/assemble", {
                     source,
                     expectedSourceVersion: state.sourceVersion,
@@ -1282,7 +1353,19 @@
                     expectedEvidenceSetVersion: state.evidenceSetVersion,
                     requestFactSelections: serializeRequestFactSelections(),
                     frameSnapshot: state.frameSnapshot,
-                    lockedItems
+                    lockedItems,
+                    finalParagraphs: hasAuthoritativeParagraphs
+                        ? draft.map((entry) => ({
+                            topic: entry.topic,
+                            factIds: [...(entry.factIds || [])],
+                            text: String(entry.text || "")
+                        }))
+                        : [],
+                    operatorFacts: hasAuthoritativeParagraphs
+                        ? state.operatorFacts
+                            .filter((fact) => draftFactIds.has(fact.id))
+                            .map((fact) => ({ id: fact.id, topic: fact.topic, body: fact.body }))
+                        : []
                 });
                 if (!isLive(seq)) return;
                 if (response.sourceVersion !== state.sourceVersion || response.evidenceSetVersion !== state.evidenceSetVersion) {
@@ -1321,6 +1404,216 @@
             return computeReadiness().canStartAssembly;
         }
 
+        // ── c5 (T-2/T-3/T-4)：本地草稿交互（全部只改内存，I-4）与重排（唯一新端点）──
+
+        /** T-3 (I-1/I-2): 步骤 01「按回答说明生成」成功后，把该条 answerText 包装为
+         * 逐字运营事实 `op<n>`（本信内递增）加入本地事实集草稿，并挂到同名主题段落。 */
+        function addOperatorFact(request, text) {
+            const existing = state.operatorFacts.find((fact) => fact.requestKey === request.requestKey);
+            if (existing) {
+                existing.body = text;
+                return;
+            }
+            const topic = request.intents && request.intents[0] && request.intents[0].intentKey
+                ? request.intents[0].intentKey.split(".")[0]
+                : "general";
+            const id = `op${++state.operatorFactSeq}`;
+            state.operatorFacts.push({ id, topic, body: text, requestKey: request.requestKey });
+            let entry = findDraftEntry(topic);
+            if (!entry) {
+                entry = { topic, factIds: [], gapCondition: null, text: "", pinned: false, pinnedEvidenceVersion: "", editing: false };
+                state.paragraphDraft.push(entry);
+            }
+            if (!entry.factIds.includes(id)) {
+                entry.factIds.push(id);
+                // I-3: 该段自身事实集变化 → 原锁定失效。
+                entry.pinned = false;
+                entry.pinnedEvidenceVersion = paragraphEvidenceVersion(entry.topic, entry.factIds);
+            }
+        }
+
+        /** I-4: 采用/取消采用只改本地草稿（事实从所有段落移除/加回）；被影响段落的
+         * 锁定按 I-3 失效（自身 factIds 变化）。 */
+        function setFactAdopted(factId, adopted) {
+            const draft = state.paragraphDraft || [];
+            if (adopted) {
+                const fact = factSetRows().find((row) => row.id === factId);
+                if (!fact) return;
+                let entry = findDraftEntry(fact.topic);
+                if (!entry) {
+                    entry = { topic: fact.topic, factIds: [], gapCondition: null, text: "", pinned: false, pinnedEvidenceVersion: "", editing: false };
+                    draft.push(entry);
+                }
+                if (!entry.factIds.includes(factId)) {
+                    entry.factIds.push(factId);
+                    entry.pinned = false;
+                    entry.pinnedEvidenceVersion = paragraphEvidenceVersion(entry.topic, entry.factIds);
+                }
+            } else {
+                let changed = false;
+                draft.forEach((entry) => {
+                    if (entry.factIds.includes(factId)) {
+                        entry.factIds = entry.factIds.filter((id) => id !== factId);
+                        entry.pinned = false;
+                        entry.pinnedEvidenceVersion = paragraphEvidenceVersion(entry.topic, entry.factIds);
+                        changed = true;
+                    }
+                });
+                if (!changed) return;
+                state.paragraphDraft = draft.filter((entry) => entry.factIds.length > 0 || String(entry.text || "").trim() !== "");
+            }
+            render();
+        }
+
+        /** I-4 / IP-2: 改主题只改本地草稿——事实移入目标主题段落（无则新建），源段落
+         * 空则移除；涉及段落的锁定按 I-3 失效。 */
+        function setFactTopic(factId, topic) {
+            const draft = state.paragraphDraft || [];
+            let changed = false;
+            draft.forEach((entry) => {
+                if (entry.factIds.includes(factId)) {
+                    entry.factIds = entry.factIds.filter((id) => id !== factId);
+                    entry.pinned = false;
+                    entry.pinnedEvidenceVersion = paragraphEvidenceVersion(entry.topic, entry.factIds);
+                    changed = true;
+                }
+            });
+            if (!changed) return;
+            let target = findDraftEntry(topic);
+            if (!target) {
+                target = { topic, factIds: [], gapCondition: null, text: "", pinned: false, pinnedEvidenceVersion: "", editing: false };
+                draft.push(target);
+            }
+            if (!target.factIds.includes(factId)) {
+                target.factIds.push(factId);
+                target.pinned = false;
+                target.pinnedEvidenceVersion = paragraphEvidenceVersion(target.topic, target.factIds);
+            }
+            state.paragraphDraft = draft.filter((entry) => entry.factIds.length > 0 || String(entry.text || "").trim() !== "");
+            render();
+        }
+
+        function toggleParagraphPin(topic) {
+            const entry = findDraftEntry(topic);
+            if (!entry) return;
+            entry.pinned = !entry.pinned;
+            // I-3: 锁定时记录当前条目级证据版本（重排请求携带；服务端比对）。
+            entry.pinnedEvidenceVersion = paragraphEvidenceVersion(entry.topic, entry.factIds);
+            render();
+        }
+
+        function toggleParagraphEdit(topic) {
+            const entry = findDraftEntry(topic);
+            if (!entry) return;
+            entry.editing = !entry.editing;
+            render();
+        }
+
+        function mergeParagraphUp(topic) {
+            const draft = state.paragraphDraft || [];
+            const index = draft.findIndex((entry) => entry.topic === topic);
+            if (index <= 0) return;
+            const current = draft[index];
+            const previous = draft[index - 1];
+            const mergedFactIds = [...previous.factIds];
+            current.factIds.forEach((id) => {
+                if (!mergedFactIds.includes(id)) mergedFactIds.push(id);
+            });
+            previous.factIds = mergedFactIds;
+            previous.text = [previous.text, current.text].filter((text) => text && String(text).trim()).join("\n\n");
+            // I-3: 双方都锁定才保持锁定（文本与事实集均变化 → 重算证据版本）。
+            previous.pinned = previous.pinned && current.pinned;
+            previous.pinnedEvidenceVersion = paragraphEvidenceVersion(previous.topic, previous.factIds);
+            draft.splice(index, 1);
+            render();
+        }
+
+        function moveParagraph(topic, direction) {
+            const draft = state.paragraphDraft || [];
+            const index = draft.findIndex((entry) => entry.topic === topic);
+            const target = direction === "up" ? index - 1 : index + 1;
+            if (index < 0 || target < 0 || target >= draft.length) return;
+            [draft[index], draft[target]] = [draft[target], draft[index]];
+            render();
+        }
+
+        /**
+         * c5 (T-5)：重排——把本地草稿（paragraphPlanDraft）+ pinned 段落（携带条目级
+         * evidenceSetVersion，I-3）+ op* 运营事实（I-1/I-2）交给服务端编排一次，
+         * 用返回的 13 协议与段落文本刷新本地草稿。I-4：只有本端点与整合访问服务端。
+         */
+        async function rearrange() {
+            if (state.rearrangePending) return;
+            const draft = state.paragraphDraft || [];
+            if (draft.length === 0) return;
+            const seq = state.bootSeq;
+            state.rearrangePending = true;
+            render();
+            try {
+                const draftFactIds = new Set(draft.flatMap((entry) => entry.factIds));
+                const response = await requestJson("/api/trust-reply/workbench/rearrange", {
+                    source,
+                    expectedSourceVersion: state.sourceVersion,
+                    paragraphPlanDraft: draft.map((entry) => ({
+                        topic: entry.topic,
+                        factIds: [...entry.factIds],
+                        gapCondition: entry.gapCondition || null
+                    })),
+                    pinnedParagraphs: draft
+                        .filter((entry) => entry.pinned)
+                        .map((entry) => ({
+                            topic: entry.topic,
+                            factIds: [...entry.factIds],
+                            text: String(entry.text || ""),
+                            evidenceSetVersion: entry.pinnedEvidenceVersion || ""
+                        })),
+                    operatorFacts: state.operatorFacts
+                        .filter((fact) => draftFactIds.has(fact.id))
+                        .map((fact) => ({ id: fact.id, topic: fact.topic, body: fact.body })),
+                    requestFactSelections: serializeRequestFactSelections()
+                });
+                if (!isLive(seq)) return;
+                applyRearrange(response);
+            } catch (error) {
+                if (!isLive(seq) || isAbort(error)) return;
+                setStatus(error.message || "重排失败，请重试", "ERROR");
+            } finally {
+                if (!state.destroyed) {
+                    state.rearrangePending = false;
+                    render();
+                }
+            }
+        }
+
+        function applyRearrange(response) {
+            if (!isLive(state.bootSeq) || !response) return;
+            const previousPinnedTexts = new Map((state.paragraphDraft || []).map((entry) => [entry.topic, entry.pinned ? String(entry.text || "") : null]));
+            state.plan = {
+                facts: Array.isArray(response.facts) ? response.facts : [],
+                plan: Array.isArray(response.paragraphPlan) ? response.paragraphPlan : [],
+                topicOrder: Array.isArray(response.topicOrder) ? response.topicOrder : []
+            };
+            // 未采用的本地 op 事实随重排消失（服务端 facts 不含它）。
+            const planFactIds = new Set((response.paragraphPlan || []).flatMap((entry) => entry.factIds || []));
+            state.operatorFacts = state.operatorFacts.filter((fact) => planFactIds.has(fact.id));
+            seedParagraphDraft();
+            const textsByTopic = new Map((response.paragraphs || []).map((paragraph) => [paragraph.topic, paragraph.text]));
+            state.paragraphDraft.forEach((entry) => {
+                const returned = textsByTopic.get(entry.topic);
+                if (returned != null) entry.text = returned;
+                const pinnedText = previousPinnedTexts.get(entry.topic);
+                // I-3: 服务端未按锁定回填（证据失配 → 已重新编排）→ 本地同步解锁。
+                if (entry.pinned && pinnedText !== null && pinnedText !== entry.text) {
+                    entry.pinned = false;
+                }
+            });
+            if (Array.isArray(response.validationCodes) && response.validationCodes.length > 0) {
+                setStatus(`重排完成，但六道校验未全过（${response.validationCodes.join("、")}）`, "ERROR");
+            } else {
+                setStatus("重排完成", "READY");
+            }
+        }
+
         // R-2: read-only reuse of the existing auto-reply preview endpoint (the
         // page-2 preview). Fetching never mutates state and never sends; any
         // failure simply leaves the verdict in the explicit pending state.
@@ -1353,6 +1646,18 @@
                 previewKind: preview.previewKind || "",
                 reason: preview.reason || null
             };
+        }
+
+        // I-5: 「开始分析」（分析后即「重新分析」）复用既有 bootstrap()，
+        // 不新造分析路径；成功后置 state.analyzed = true 并重渲染（S-1 按钮态 /
+        // S-2 占位区随之切换）。只读宿主不渲染该按钮，这里仅作第二道防线。
+        async function startAnalysis() {
+            if (state.readOnly) return;
+            await bootstrap();
+            if (!state.destroyed && isLive()) {
+                state.analyzed = true;
+                render();
+            }
         }
 
         // I-1: one-click orchestration. Unresolved manual items (PARTIAL /
@@ -1772,7 +2077,7 @@
         // I-1/I-7: switching pages only toggles DOM visibility; business state
         // (requests, matrix, frame, versions, locks, assembly) is shared.
         function setActivePage(page, focusTarget) {
-            if (page !== "facts" && page !== "frame") return;
+            if (!["facts", "factset", "compose"].includes(page)) return;
             state.activePage = page;
             render();
             if (!focusTarget || state.destroyed) return;
@@ -1820,9 +2125,12 @@
         }
 
         function renderPageTabs() {
+            // c5 (S-1): 三步页签——01 逐问处理 / 02 事实集 / 03 编排预览（纯复用
+            // 既有页签组件，零新增 CSS）。
             const pages = [
-                { key: "facts", step: "1", label: "摘要与事实" },
-                { key: "frame", step: "2", label: "回复框架与整合" }
+                { key: "facts", step: "01", label: "逐问处理" },
+                { key: "factset", step: "02", label: "事实集" },
+                { key: "compose", step: "03", label: "编排预览" }
             ];
             return pages.map((page) => {
                 const selected = state.activePage === page.key;
@@ -1832,9 +2140,171 @@
 
         function renderPageActions(page) {
             if (page === "facts") {
-                return `<button type="button" class="button primary" data-action="next-page" data-page="frame">下一页：回复框架与整合</button>`;
+                return `<button type="button" class="button primary" data-action="next-page" data-page="factset">下一页：事实集</button>`;
             }
-            return `<button type="button" class="button secondary" data-action="prev-page" data-page="facts">上一页：摘要与事实</button>`;
+            if (page === "factset") {
+                return `<button type="button" class="button secondary" data-action="prev-page" data-page="facts">上一页：逐问处理</button><button type="button" class="button primary" data-action="next-page" data-page="compose">下一页：编排预览</button>`;
+            }
+            const canRearrange = (state.paragraphDraft && state.paragraphDraft.length > 0) && !state.rearrangePending;
+            return `<button type="button" class="button secondary" data-action="prev-page" data-page="factset">上一页：事实集</button><button type="button" class="button primary" data-action="rearrange"${canRearrange ? "" : " disabled"}>${state.rearrangePending ? "重排中…" : "重排"}</button>`;
+        }
+
+        // ── c5 (T-2/T-3/T-4)：事实集与段落草稿 ────────────────────────────────────
+
+        /** I-5: 步骤 02/03 的唯一事实来源 = 服务端 13 协议（plan.facts / plan）+
+         * 本地 op* 运营事实；草稿在其上派生。 */
+        function seedParagraphDraft() {
+            const plan = state.plan;
+            const previous = new Map((state.paragraphDraft || []).map((entry) => [entry.topic, entry]));
+            state.paragraphDraft = (plan && Array.isArray(plan.plan) ? plan.plan : []).map((entry) => {
+                const old = previous.get(entry.topic);
+                return {
+                    topic: entry.topic,
+                    factIds: [...(entry.factIds || [])],
+                    gapCondition: entry.gapCondition || null,
+                    text: old ? old.text : "",
+                    pinned: old ? old.pinned : false,
+                    // I-3: pinned 有效性由该段自身 factIds 对应的条目级证据版本决定，
+                    // 每次（重新）播种时按当前请求版本重算，绝不使用全信标量。
+                    pinnedEvidenceVersion: paragraphEvidenceVersion(entry.topic, entry.factIds),
+                    editing: false
+                };
+            });
+        }
+
+        function findDraftEntry(topic) {
+            return (state.paragraphDraft || []).find((entry) => entry.topic === topic) || null;
+        }
+
+        function factIdToRuleId(factId) {
+            if (typeof factId !== "string" || !factId.startsWith("f")) return null;
+            const first = factId.slice(1).split("+")[0];
+            const number = Number(first);
+            return Number.isInteger(number) ? number : null;
+        }
+
+        /** I-3: 段落主属 request（最低 index、factRuleIds 与其规则 id 相交者）的条目级
+         * evidenceSetVersion；无规则事实的段落返回 ""（纯运营段落，逐字锁定）。 */
+        function paragraphEvidenceVersion(topic, factIds) {
+            const ruleIds = (factIds || []).map(factIdToRuleId).filter((id) => id != null);
+            const owner = [...state.requests]
+                .filter((request) => ruleIds.some((id) => request.factRuleIds.includes(id)))
+                .sort((a, b) => (a.index - b.index))[0];
+            return owner ? owner.evidenceSetVersion || "" : "";
+        }
+
+        /** 去重后的事实集行：plan.facts ∪ 本地 op 事实；采用/用量/主题来自本地草稿，
+         * 触发来问由 requestFacts 矩阵反查（I-5）。 */
+        function factSetRows() {
+            const factsById = new Map();
+            (state.plan && Array.isArray(state.plan.facts) ? state.plan.facts : []).forEach((fact) => {
+                factsById.set(fact.id, fact);
+            });
+            state.operatorFacts.forEach((fact) => {
+                if (!factsById.has(fact.id)) {
+                    factsById.set(fact.id, {
+                        id: fact.id,
+                        topic: fact.topic,
+                        body: fact.body,
+                        controlled: null,
+                        frozen: true,
+                        required: true
+                    });
+                }
+            });
+            const draft = state.paragraphDraft || [];
+            const usageById = new Map();
+            const adoptedById = new Map();
+            const topicById = new Map();
+            draft.forEach((entry) => {
+                entry.factIds.forEach((id) => {
+                    usageById.set(id, (usageById.get(id) || 0) + 1);
+                    adoptedById.set(id, true);
+                    if (!topicById.has(id)) topicById.set(id, entry.topic);
+                });
+            });
+            return [...factsById.values()].map((fact) => {
+                const id = fact.id;
+                const ruleId = factIdToRuleId(id);
+                const localOp = state.operatorFacts.find((item) => item.id === id);
+                const request = localOp && localOp.requestKey ? findRequest(localOp.requestKey) : null;
+                const triggers = request
+                    ? [request.index]
+                    : ruleId != null
+                        ? state.requests.filter((item) => item.factRuleIds.includes(ruleId)).map((item) => item.index)
+                        : [];
+                return {
+                    id,
+                    topic: topicById.get(id) || fact.topic || "",
+                    body: fact.body || "",
+                    controlled: fact.controlled || null,
+                    ruleId,
+                    adopted: adoptedById.has(id),
+                    usage: usageById.get(id) || 0,
+                    triggers
+                };
+            });
+        }
+
+        /** S-2: 事实集表格（新增规则块逐字见 styles.css；列 = 采用/事实/触发来问/来源/主题/用量）。 */
+        function renderFactSet() {
+            const rows = factSetRows();
+            if (rows.length === 0) {
+                return `<div class="compose-panel"><p class="muted">暂无可展示事实</p></div>`;
+            }
+            const topics = [...new Set((state.paragraphDraft || []).map((entry) => entry.topic))];
+            const body = rows.map((fact) => {
+                const origin = fact.id.startsWith("op") ? "OPERATOR" : "QA";
+                const controlled = fact.controlled ? ` data-controlled="${escapeText(fact.controlled)}"` : "";
+                const triggers = fact.triggers.map((index) => `R${index}`).join(" · ");
+                const source = origin === "OPERATOR" ? "运营 · 逐字" : `QA 规则 ${fact.ruleId}`;
+                const topicOptions = topics.map((topic) => `<option${topic === fact.topic ? " selected" : ""}>${escapeText(topic)}</option>`).join("");
+                return `<tr data-origin="${origin}" data-adopted="${fact.adopted ? "true" : "false"}" data-fact-id="${escapeText(fact.id)}"${controlled}>
+                    <td><input type="checkbox" data-action="factset-adopt" data-fact-id="${escapeText(fact.id)}"${fact.adopted ? " checked" : ""}></td>
+                    <td>${escapeText(fact.body)}</td>
+                    <td>${escapeText(triggers)}</td>
+                    <td class="trust-reply-factset-source" data-origin="${origin}">${escapeText(source)}</td>
+                    <td><select data-action="factset-topic" data-fact-id="${escapeText(fact.id)}">${topicOptions}</select></td>
+                    <td class="trust-reply-factset-usage">${fact.usage}×</td>
+                </tr>`;
+            }).join("");
+            return `<table class="trust-reply-factset"><thead><tr><th>采用</th><th>事实</th><th>触发来问</th><th>来源</th><th>主题</th><th>用量</th></tr></thead><tbody>${body}</tbody></table>`;
+        }
+
+        /** S-3: 段落卡片（复用 .trust-reply-item + data-pinned 修饰；控件复用
+         * .button.small.secondary；正文复用 .pre）。 */
+        function renderParagraphCards() {
+            const draft = state.paragraphDraft || [];
+            if (draft.length === 0) {
+                return `<div class="compose-panel"><p class="muted">尚未生成段落；完成逐问处理后点「重排」编排正文。</p></div>`;
+            }
+            const pinnedCount = draft.filter((entry) => entry.pinned).length;
+            const cards = draft.map((entry, index) => {
+                const pinned = entry.pinned ? ` data-pinned="true"` : "";
+                const pinLabel = entry.pinned ? "已锁定" : "锁定";
+                const editLabel = entry.editing ? "完成" : "编辑";
+                const text = entry.editing
+                    ? `<textarea class="pre" data-role="paragraph-text" data-topic="${escapeText(entry.topic)}" rows="4">${escapeText(entry.text || "")}</textarea>`
+                    : `<p class="pre" data-role="paragraph-text" data-topic="${escapeText(entry.topic)}">${escapeText(entry.text || "")}</p>`;
+                const mergeDisabled = index === 0 ? " disabled" : "";
+                const moveUpDisabled = index === 0 ? " disabled" : "";
+                const moveDownDisabled = index === draft.length - 1 ? " disabled" : "";
+                return `<article class="trust-reply-item"${pinned} data-role="paragraph" data-topic="${escapeText(entry.topic)}">
+                    <div class="trust-reply-paragraph-head">
+                        <span class="trust-reply-page-step">${escapeText(entry.topic)}</span>
+                        <span class="trust-reply-paragraph-ctl">
+                            <button type="button" class="button small secondary" data-action="paragraph-edit" data-topic="${escapeText(entry.topic)}">${editLabel}</button>
+                            <button type="button" class="button small secondary" data-action="paragraph-pin" data-topic="${escapeText(entry.topic)}">${pinLabel}</button>
+                            <button type="button" class="button small secondary" data-action="paragraph-merge-up" data-topic="${escapeText(entry.topic)}"${mergeDisabled}>并入上段</button>
+                            <button type="button" class="button small secondary" data-action="paragraph-move-up" data-topic="${escapeText(entry.topic)}"${moveUpDisabled}>↑</button>
+                            <button type="button" class="button small secondary" data-action="paragraph-move-down" data-topic="${escapeText(entry.topic)}"${moveDownDisabled}>↓</button>
+                        </span>
+                    </div>
+                    ${text}
+                </article>`;
+            }).join("");
+            const hint = `<div class="trust-reply-rerun-hint" role="status">重排时仅重写未锁定段落 ${draft.length - pinnedCount} / ${draft.length}</div>`;
+            return cards + hint;
         }
 
         // I-2: per-card fact chips and picker. Owners, pending saves and server
@@ -2003,7 +2473,7 @@
             const recoveryZone = allowRecovery && !state.readOnly ? `<div class="trust-reply-item-actions" data-role="shell-recovery"><button type="button" class="button secondary" data-action="reset-workbench-state">重置本封信的工作台状态</button></div>` : "";
             host.innerHTML = `<details class="detail-section reply-workflow-detail trust-reply-workbench" open>
                 <summary class="reply-workflow-summary"><span class="reply-workflow-icon" aria-hidden="true">⌘</span><span class="reply-workflow-title"><strong>可信回复工作台</strong><small>${modeNote}</small></span><span class="reply-workflow-status" data-role="mode-note">${modeNote}</span><span class="reply-workflow-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="reply-workflow-content">${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar"><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p></div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${escapeText(message || "")}</div>${recoveryZone}<section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-item-list" data-role="items"></div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}" hidden></section></div>
+                <div class="reply-workflow-content">${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar"><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p></div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${escapeText(message || "")}</div>${recoveryZone}<section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-item-list" data-role="items"></div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="factset" id="${panelId("factset")}" aria-labelledby="${tabId("factset")}"${state.activePage === "factset" ? "" : " hidden"}></section><section class="trust-reply-page" role="tabpanel" data-page-panel="compose" id="${panelId("compose")}" aria-labelledby="${tabId("compose")}"${state.activePage === "compose" ? "" : " hidden"}></section></div>
             </details>`;
         }
 
@@ -2025,10 +2495,24 @@
 
         function renderMarkup() {
             const modeNote = state.mode === MODES.SIMULATION ? "模拟 · 不外发" : "正式回复";
-            const itemMarkup = state.requests.map(renderRequest).join("") || `<div class="compose-panel"><p class="muted">暂无可处理请求</p></div>`;
+            // I-5 (S-2): 未分析时以占位区替代摘要列表与框架页；只读模式按
+            // 方案 A 永远自动分析，不会走到这里。
+            const unanalyzed = !state.analyzed && !state.readOnly;
+            const preanalysisZone = `<div class="trust-reply-preanalysis" role="status"><strong>尚未分析这封来信</strong><span>点「开始分析」拆分来信、匹配已审核事实并生成覆盖矩阵。分析会在服务端建立本信的工作台状态。</span></div>`;
+            const itemMarkup = unanalyzed
+                ? preanalysisZone
+                : (state.requests.map(renderRequest).join("") || `<div class="compose-panel"><p class="muted">暂无可处理请求</p></div>`);
+            // c5 (T-1/T-2/T-4): 步骤 02 事实集表格（S-2）；步骤 03 编排预览 =
+            // 框架选择器（顶部）+ 整合摘要预览（保留）+ 段落卡片（S-3）。
+            const factSetMarkup = unanalyzed
+                ? preanalysisZone
+                : `<div data-role="factset">${renderFactSet()}</div>`;
+            const composeMarkup = unanalyzed
+                ? preanalysisZone
+                : `<div class="trust-reply-frame-panel compose-panel"><div class="trust-reply-frame-grid">${renderFrameSelects()}</div><div class="trust-reply-frame-preview">${renderPreviewState()}<div class="trust-reply-summary" data-role="summary">${renderSummary()}</div></div><div data-role="paragraph-area">${renderParagraphCards()}</div></div>`;
             return `<details class="detail-section reply-workflow-detail trust-reply-workbench" open>
                 <summary class="reply-workflow-summary"><span class="reply-workflow-icon" aria-hidden="true">⌘</span><span class="reply-workflow-title"><strong>可信回复工作台</strong><small>${modeNote}</small></span><span class="reply-workflow-status" data-role="mode-note">${modeNote}</span><span class="reply-workflow-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="reply-workflow-content"${busyOverlayState() ? ' aria-busy="true"' : ''}>${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar">${renderToolbar()}</div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${renderStatus()}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>摘要与事实</h3><small>按原邮件顺序展示摘要卡片，每张卡片绑定对应事实；可添加或删除事实。</small></div><div class="trust-reply-item-list" data-role="items">${itemMarkup}</div><div class="trust-reply-page-actions">${renderPageActions("facts")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="frame" id="${panelId("frame")}" aria-labelledby="${tabId("frame")}"${state.activePage === "frame" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>回复框架与整合</h3><small>选择尊语、开场白、致谢语与结束语；只有服务端整合完成的结果才能完成本页。</small></div><div class="trust-reply-frame-panel compose-panel"><div class="trust-reply-frame-grid">${renderFrameSelects()}</div><div class="trust-reply-frame-preview">${renderPreviewState()}<div class="trust-reply-summary" data-role="summary">${renderSummary()}</div></div></div><div class="trust-reply-page-actions">${renderPageActions("frame")}</div></section>${renderBusyOverlay()}</div>
+                <div class="reply-workflow-content"${busyOverlayState() ? ' aria-busy="true"' : ''}>${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar">${renderToolbar()}</div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${renderStatus()}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>逐问处理</h3><small>按原邮件顺序展示摘要卡片，每张卡片绑定对应事实；可添加或删除事实。</small></div><div class="trust-reply-item-list" data-role="items">${itemMarkup}</div><div class="trust-reply-page-actions">${renderPageActions("facts")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="factset" id="${panelId("factset")}" aria-labelledby="${tabId("factset")}"${state.activePage === "factset" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>事实集</h3><small>全信去重后的事实清单：标出触发来问、用量、受控与运营事实；改动只影响本地草稿，点「重排」后生效。</small></div>${factSetMarkup}<div class="trust-reply-page-actions">${renderPageActions("factset")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="compose" id="${panelId("compose")}" aria-labelledby="${tabId("compose")}"${state.activePage === "compose" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>编排预览</h3><small>选择尊语、开场白、致谢语与结束语；段落可编辑、锁定、并入上段与上下移，重排后仅重写未锁定段落。</small></div>${composeMarkup}<div class="trust-reply-page-actions">${renderPageActions("compose")}</div></section>${renderBusyOverlay()}</div>
             </details>`;
         }
 
@@ -2094,8 +2578,16 @@
                 : "";
             const modelOptions = state.availableModels.map((model) => `<option value="${escapeText(model)}"${model === state.selectedModel ? " selected" : ""}>${escapeText(MODEL_LABELS[model] || model)}</option>`).join("");
             // S-1: the one-click orchestration bar (T4-3: never rendered on the
-            // read-only AUTO_PREVIEW host).
-            const autoRunBar = state.readOnly ? "" : `<div class="trust-reply-autorun"><button type="button" class="button primary" data-action="auto-run">一键预判</button><button type="button" class="button secondary" data-action="auto-reset">重置</button><span class="trust-reply-autorun-hint">有据项自动生成，无据项由系统代填回答说明；汇总后仍可逐项调整。不发送、不写外发记录。</span></div>`;
+            // read-only AUTO_PREVIEW host). 未分析时「开始分析」为主按钮且
+            // 一键预判/重置置灰；分析完成后按钮文案改「重新分析」并降为次级，
+            // 一键预判/重置恢复可点。
+            const startAnalysisButton = `<button type="button" class="button ${state.analyzed ? "secondary" : "primary"}" data-action="start-analysis">${state.analyzed ? "重新分析" : "开始分析"}</button>`;
+            const autoRunDisabled = state.analyzed ? "" : " disabled";
+            const autoResetDisabled = state.analyzed ? "" : " disabled";
+            const autoRunHint = state.analyzed
+                ? "有据项自动生成，无据项由系统代填回答说明；汇总后仍可逐项调整。不发送、不写外发记录。"
+                : "先点「开始分析」拆分来信并匹配事实；分析完成后再用一键预判生成回答。不发送、不写外发记录。";
+            const autoRunBar = state.readOnly ? "" : `<div class="trust-reply-autorun">${startAnalysisButton}<button type="button" class="button primary" data-action="auto-run"${autoRunDisabled}>一键预判</button><button type="button" class="button secondary" data-action="auto-reset"${autoResetDisabled}>重置</button><span class="trust-reply-autorun-hint">${autoRunHint}</span></div>`;
             return `<p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p>${autoRunBar}<div class="ai-reply-model-row ai-reply-generation-controls"><label>生成模型<select data-role="model" class="ai-reply-model-select"${state.llmEnabled ? "" : " disabled"}>${modelOptions}</select></label><label>单次 TTL<select data-role="attempt-timeout" class="ai-reply-model-select">${timeoutOptions(state.attemptTimeout, false)}</select></label>${customTimeout(state.attemptTimeout, "attempt")}<label>总 TTL<select data-role="total-timeout" class="ai-reply-model-select">${timeoutOptions(state.totalTimeout, true)}</select></label>${customTimeout(state.totalTimeout, "total")}${cancelButton}</div>`;
         }
 
@@ -2205,7 +2697,7 @@
         function renderItemActions(request) {
             const action = requestAction(request);
             const label = request.pending || request.factChangePending || request.stateSavePending ? "处理中…" : action.label;
-            const disabled = action.disabled || request.factChangePending || request.stateSavePending || state.stateSavePending;
+            const disabled = action.disabled || request.factChangePending || request.stateSavePending;
             return `<button type="button" class="button ${action.resolved ? "secondary" : "primary"}" aria-pressed="${action.locked}" data-action="${action.action}" data-request-key="${escapeText(request.requestKey)}"${disabled ? " disabled" : ""}>${label}</button>`;
         }
 
@@ -2409,8 +2901,15 @@
             if (action === "add-fact") void addFact(button.dataset.requestKey, button.dataset.factId);
             if (action === "remove-fact") void removeFact(button.dataset.requestKey, button.dataset.factId);
             if (action === "set-page") setActivePage(button.dataset.page, "tab");
-            if (action === "next-page") setActivePage(button.dataset.page || "frame", "tab");
+            if (action === "next-page") setActivePage(button.dataset.page || "factset", "tab");
             if (action === "prev-page") setActivePage(button.dataset.page || "facts", "tab");
+            // c5 (T-4): 段落编辑/锁定/并入上段/上下移 —— 只改本地草稿（I-4）。
+            if (action === "paragraph-edit") toggleParagraphEdit(button.dataset.topic);
+            if (action === "paragraph-pin") toggleParagraphPin(button.dataset.topic);
+            if (action === "paragraph-merge-up") mergeParagraphUp(button.dataset.topic);
+            if (action === "paragraph-move-up") moveParagraph(button.dataset.topic, "up");
+            if (action === "paragraph-move-down") moveParagraph(button.dataset.topic, "down");
+            if (action === "rearrange") void rearrange();
             if (action === "translate-question") {
                 const request = findRequest(button.dataset.requestKey);
                 if (request) void toggleTranslation(request, null);
@@ -2421,6 +2920,7 @@
             }
             if (action === "assemble") void assemble();
             if (action === "complete") void complete();
+            if (action === "start-analysis") void startAnalysis();
             if (action === "auto-run") void autoRun();
             if (action === "set-preview-tab") {
                 state.previewTab = button.dataset.previewTab;
@@ -2435,6 +2935,15 @@
 
         function onChange(event) {
             const target = event.target;
+            // c5 (T-2 / I-4): 事实集采用勾选与主题下拉 —— 只改本地草稿，零请求。
+            if (target.dataset?.action === "factset-adopt" && target.dataset.factId) {
+                setFactAdopted(target.dataset.factId, !!target.checked);
+                return;
+            }
+            if (target.dataset?.action === "factset-topic" && target.dataset.factId) {
+                setFactTopic(target.dataset.factId, target.value);
+                return;
+            }
             if (target.dataset?.role === "model") {
                 state.selectedModel = target.value;
                 return;
@@ -2476,6 +2985,12 @@
 
         function onInput(event) {
             const target = event.target;
+            // c5 (T-4 / I-4): 段落编辑 —— 只改本地草稿文本。
+            if (target.dataset?.role === "paragraph-text" && target.dataset.topic) {
+                const entry = findDraftEntry(target.dataset.topic);
+                if (entry) entry.text = target.value;
+                return;
+            }
             const request = target.dataset?.requestKey ? findRequest(target.dataset.requestKey) : null;
             if (target.dataset?.role === "instruction" && request) {
                 const instruction = target.value.slice(0, 500);
@@ -2593,7 +3108,13 @@
             listen("drop", onDrop);
             listen("dragend", onDragEnd);
         }
-        renderShell("正在加载工作台…");
+        // I-5: autoBootstrap:false 且非只读时 mount 不跑 bootstrap，直接渲染
+        // 未分析占位态（S-2）；其余路径仍先渲染加载壳。
+        if (options.autoBootstrap !== false || state.readOnly) {
+            renderShell("正在加载工作台…");
+        } else {
+            render();
+        }
         return { state, bootstrap, unmount };
     }
 

@@ -25,11 +25,12 @@ describe("shared trust reply workbench", () => {
         assert.doesNotMatch(app, /composedReplyState|renderComposedReplyWorkbenchHtml|trust-generate-draft/);
     });
 
-    it("renders two tab panels with shared state and fixed completion labels", () => {
+    it("renders three tab panels with shared state and fixed completion labels", () => {
         assert.match(workbench, /role="tablist"/);
         assert.match(workbench, /data-action="set-page"/);
         assert.match(workbench, /data-page-panel="facts"/);
-        assert.match(workbench, /data-page-panel="frame"/);
+        assert.match(workbench, /data-page-panel="factset"/);
+        assert.match(workbench, /data-page-panel="compose"/);
         assert.match(workbench, /function setActivePage\(/);
         assert.match(workbench, /aria-selected/);
         assert.match(workbench, /data-role="handling"/);
@@ -176,6 +177,63 @@ describe("shared trust reply workbench", () => {
         assert.match(app, /function buildTrustReplyAssemblySnapshot\(/);
         assert.doesNotMatch(app, /aiTrainingSimulateBtn|aiTrainingSimulateMessages|aiTrainingReplyModel/);
     });
+
+    // c5 (T-6.3 / S-1 / I-6): mount 后三个页签均可切换；步骤 01 的摘要卡片与覆盖徽标
+    // 渲染不变（I-6 回归）；页签切换零请求。
+    it("switches all three tabs and keeps the step-01 summary cards and coverage badges unchanged", async () => {
+        const calls = [];
+        const { window, document } = createSandbox((url, options) => {
+            calls.push(String(url));
+            if (url.includes("/bootstrap")) {
+                return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload("TRAINING_MAIL", 101, [1, 2]) });
+            }
+            if (url.includes("/api/translate")) return Promise.resolve({ ok: true, status: 200, json: async () => ({ ok: true, translatedText: "译文" }) });
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        await settle();
+
+        // S-1: 三个页签（01 逐问处理 / 02 事实集 / 03 编排预览），恰好一个选中。
+        const tabs = host.innerHTML.match(/role="tab"[^>]*data-page="([^"]+)"/g) || [];
+        assert.strictEqual(tabs.length, 3);
+        assert.match(host.innerHTML, /data-page="facts"[^>]*aria-selected="true"/);
+        assert.match(host.innerHTML, />01<\/span><span>逐问处理<\/span>/);
+        assert.match(host.innerHTML, />02<\/span><span>事实集<\/span>/);
+        assert.match(host.innerHTML, />03<\/span><span>编排预览<\/span>/);
+        assert.strictEqual((host.innerHTML.match(/data-page="[^"]*"[^>]*aria-selected="true"/g) || []).length, 1);
+
+        // I-6: 步骤 01 的摘要卡片与覆盖徽标与改造前一致。
+        assert.match(host.innerHTML, /data-role="items"/);
+        assert.match(host.innerHTML, /data-request-key="TRAINING_MAIL-101-request"/);
+        assert.match(host.innerHTML, /GROUNDED · 依据充分/);
+        assert.match(host.innerHTML, /data-role="handling"/);
+
+        // 三个页签都可切换且零额外请求。
+        const bootstrapCalls = calls.filter((url) => url.includes("/bootstrap")).length;
+        click(host, "set-page", undefined, undefined, undefined, "factset");
+        await settle();
+        assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="factset"[^>]* hidden/);
+        assert.match(host.innerHTML, /data-page-panel="compose"[^>]* hidden/);
+        click(host, "set-page", undefined, undefined, undefined, "compose");
+        await settle();
+        assert.match(host.innerHTML, /data-page-panel="factset"[^>]* hidden/);
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="compose"[^>]* hidden/);
+        click(host, "set-page", undefined, undefined, undefined, "facts");
+        await settle();
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
+        assert.strictEqual(calls.filter((url) => url.includes("/bootstrap")).length, bootstrapCalls, "tab switching must never re-bootstrap");
+        // 步骤 01 回归：切回后摘要卡片仍在。
+        assert.match(host.innerHTML, /data-request-key="TRAINING_MAIL-101-request"/);
+        assert.match(host.innerHTML, /GROUNDED · 依据充分/);
+    });
 });
 
 // ---- P3: fact chip horizontal drag reorder + keyboard equivalent ----
@@ -224,6 +282,15 @@ class FakeDocument {
 
 function settle() {
     return new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
+}
+
+function click(host, action, requestKey, versionId, factId, page) {
+    host.dispatchEvent("click", {
+        target: {
+            dataset: { action, requestKey, versionId, factId, page },
+            closest: () => ({ dataset: { action, requestKey, versionId, factId, page } })
+        }
+    });
 }
 
 function createSandbox(fetchImpl, confirmImpl) {

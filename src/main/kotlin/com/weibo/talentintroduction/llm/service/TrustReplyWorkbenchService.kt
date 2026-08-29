@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.qa.service.QaCoverageKeyCatalog
 import com.weibo.talentintroduction.qa.service.QaRequestExtractor
 import com.weibo.talentintroduction.reply.service.ReplyFrameSelection
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
@@ -205,7 +206,12 @@ data class TrustReplyBootstrapResponse(
     val savedState: TrustReplySavedState? = null,
     val requestFactSelections: List<TrustReplyRequestFactSelection> = emptyList(),
     val frameOptions: List<TrustReplyFrameOption> = emptyList(),
-    val frameSnapshot: TrustReplyFrameSnapshot? = null
+    val frameSnapshot: TrustReplyFrameSnapshot? = null,
+    // c5 (I-5): 服务端权威的 13 协议（plan.facts / plan.paragraphPlan / topicOrder），
+    // 步骤 02/03 的唯一事实与分段来源；前端不得自行拼装第二份事实清单。
+    val paragraphPlan: List<ParagraphPlanEntry> = emptyList(),
+    val facts: List<PlanFact> = emptyList(),
+    val topicOrder: List<String> = emptyList()
 )
 
 data class TrustReplySavedStatePayload(
@@ -243,6 +249,16 @@ data class TrustReplySaveStateRequest(
     val lockedItems: List<TrustReplyLockedItemRequest>,
     val requestFactSelections: List<TrustReplyRequestFactSelection>? = null,
     val frameSnapshot: TrustReplyFrameSnapshot? = null
+)
+
+data class TrustReplySaveStateItemRequest(
+    val source: TrustReplySourceRef,
+    val expectedStateVersion: Long,
+    val schemaVersion: String? = null,
+    val sourceVersion: String,
+    val evidenceSetVersion: String,
+    val requestKey: String,
+    val lockedItem: TrustReplyLockedItemRequest
 )
 
 data class TrustReplyRuleMetadata(
@@ -345,7 +361,66 @@ data class TrustReplyAssembleRequest(
     val lockedItems: List<TrustReplyLockedItemRequest>,
     val requestedFactIds: List<Long>? = null,
     val requestFactSelections: List<TrustReplyRequestFactSelection>? = null,
-    val frameSnapshot: TrustReplyFrameSnapshot? = null
+    val frameSnapshot: TrustReplyFrameSnapshot? = null,
+    // Repair R-1 (V-1/V-3): 步骤 03 的权威段落状态。非空时服务端对其重新校验
+    // （来源封闭 / required 恰好一次 / 受控冻结与 op* 逐字 / 单动作），并逐字成文；
+    // 空列表 = 既有逐条收口路径（AiReplyLetterCloser）不变。
+    val finalParagraphs: List<TrustReplyFinalParagraphRequest> = emptyList(),
+    // Repair R-1: op<n> 逐字插槽（同 rearrange 协议，I-1/I-2），绝不进入任何哈希（G-7）。
+    val operatorFacts: List<PlanFact> = emptyList()
+)
+
+/**
+ * Repair R-1 (V-1/V-3): 步骤 03 权威段落状态——逐段提交当前 topic / factIds / text。
+ * factIds 沿用 13 协议（f<ruleId> / f<r1+r2> / x<n> / op<n>）；服务端校验后逐字成文。
+ */
+data class TrustReplyFinalParagraphRequest(
+    val topic: String,
+    val factIds: List<String>,
+    val text: String
+)
+
+/**
+ * c5 / 15-workbench-three-step（T-5）：重排请求——运营编辑后的 `paragraphPlanDraft`
+ * （13 的 `ParagraphPlanEntry` 协议）+ pinned 段落 + `op*` 运营事实。
+ * - pinned 段落携带**条目级** `evidenceSetVersion`（该段主属 request 的 per-request
+ *   证据版本，03a 接缝），绝不携带全信标量（I-3）；服务端与当前版本比对，失配即视为
+ *   未锁定、重新编排。
+ * - `operatorFacts` 为逐字插槽 `PlanFact(id="op<n>", ..., frozen=true, required=true)`
+ *   （I-1/I-2）；id 绝不进入任何哈希（G-7）。
+ * - 本端点**不落库**（I-4）：落库仍走整合（assemble）。
+ */
+data class TrustReplyRearrangeRequest(
+    val source: TrustReplySourceRef,
+    val expectedSourceVersion: String,
+    val paragraphPlanDraft: List<ParagraphPlanEntry>,
+    val pinnedParagraphs: List<TrustReplyPinnedParagraphRequest> = emptyList(),
+    val operatorFacts: List<PlanFact> = emptyList(),
+    val requestedFactIds: List<Long>? = null,
+    val requestFactSelections: List<TrustReplyRequestFactSelection>? = null
+)
+
+data class TrustReplyPinnedParagraphRequest(
+    val topic: String,
+    val factIds: List<String>,
+    val text: String,
+    val evidenceSetVersion: String
+)
+
+/**
+ * c5（T-5）：重排响应——服务端规范化后的 13 协议（paragraphPlan / facts / topicOrder）
+ * + 新的 `paragraphs`（pinned 段落原样回填，未锁定段落重新编排）+ 六道校验结果。
+ */
+data class TrustReplyRearrangeResponse(
+    val source: TrustReplySourceRef,
+    val sourceVersion: String,
+    val evidenceSetVersion: String,
+    val paragraphPlan: List<ParagraphPlanEntry>,
+    val facts: List<PlanFact>,
+    val topicOrder: List<String>,
+    val paragraphs: List<OrchestratedParagraph>,
+    val actionText: String?,
+    val validationCodes: List<String>
 )
 
 // 04 (I-4): 有界诊断上限 —— 最多 50 个 request snapshot、每条最多 20 个 intent key、
@@ -354,6 +429,10 @@ private const val MAX_DIAGNOSTIC_REQUEST_SNAPSHOTS = 50
 private const val MAX_DIAGNOSTIC_INTENT_KEYS = 20
 private const val MAX_DIAGNOSTIC_FACT_IDS = 50
 private const val MAX_DIAGNOSTIC_STRING_LENGTH = 200
+
+// G-1 冻结事实：qa_rule id ∈ {1, 3, 21, 24}（需求方 2026-08-28 手调，与 12 的
+// AiReplyLetterCloser.FROZEN_RULE_IDS 同源；c5 的 f<ruleId> 事实构造沿用同一判定）。
+private val FROZEN_RULE_IDS: Set<Long> = setOf(1L, 3L, 21L, 24L)
 
 /**
  * 04 (I-5): 稳定诊断 flag 口径。flag 只描述、不阻断：绝不参与 status、factRuleIds、
@@ -494,7 +573,11 @@ data class TrustReplyAssembleResponse(
     // 04 (I-2/I-3): 服务端权威有界诊断快照。只读描述，绝不参与 draftHash、
     // evidenceSetVersion、versionId、status、factRuleIds、handling、safety、SMTP
     // 或归档资格；默认 null 保持既有构造点源码兼容。
-    val diagnostics: TrustReplyDiagnostics? = null
+    val diagnostics: TrustReplyDiagnostics? = null,
+    // Repair R-1 (V-1/V-3): 校验后的最终段落（按提交顺序逐字成文）与逐条确定性映射
+    // （requestKey -> 所属最终段落文本）。归档侧据此写 finalParagraphText。
+    val finalParagraphs: List<OrchestratedParagraph> = emptyList(),
+    val finalParagraphByRequestKey: Map<String, String> = emptyMap()
 )
 
 /**
@@ -509,8 +592,9 @@ internal data class VerifiedTrustReplyAssembly(
 
 open class TrustReplyWorkbenchException(
     val status: HttpStatus,
-    val code: String
-) : RuntimeException(code)
+    val code: String,
+    details: List<String>? = null
+) : RuntimeException(if (details.isNullOrEmpty()) code else "$code: ${details.joinToString(",")}")
 
 @Service
 class TrustReplyWorkbenchService(
@@ -676,6 +760,10 @@ class TrustReplyWorkbenchService(
                 kind = extractorKinds(resolved.inboundText)
             )
         )
+        // c5 (I-5): 初始 13 协议（plan.facts / paragraphPlan / topicOrder）——由当前
+        // 矩阵 + QA 库派生，步骤 02/03 的唯一事实来源；前端基于它维护本地草稿。
+        val factMetadata = availableFactMetadata()
+        val initialPlan = initialLetterPlan(selection, factMetadata)
         return TrustReplyBootstrapResponse(
             source = resolved.source,
             sourceVersion = resolved.sourceVersion,
@@ -688,7 +776,7 @@ class TrustReplyWorkbenchService(
             defaultModel = AiReplyModel.DEEPSEEK_V4_FLASH.name,
             suggestedFactIds = selection.sendQaRuleIds,
             canonicalFactIds = selection.sendQaRuleIds,
-            rulesByCategory = availableFactMetadata(),
+            rulesByCategory = factMetadata,
             requestCoverage = selection.requestFacts.toCoverage(
                 resolved.sourceVersion,
                 resolvedSelection.requestEvidenceVersions
@@ -700,7 +788,10 @@ class TrustReplyWorkbenchService(
             savedState = restoreResult.savedState,
             requestFactSelections = resolvedSelection.requestFactSelections,
             frameOptions = frameOptions,
-            frameSnapshot = restoreResult.canonicalFrame
+            frameSnapshot = restoreResult.canonicalFrame,
+            paragraphPlan = initialPlan.second,
+            facts = initialPlan.first,
+            topicOrder = initialPlan.third
         )
     }
 
@@ -770,6 +861,135 @@ class TrustReplyWorkbenchService(
             requestFactSelections = payload.requestFactSelections,
             frameSnapshot = frameSnapshot
         )
+    }
+
+    /**
+     * 计划 14 (T-1, I-2/I-4): 条目级持久化。读现有状态行，只替换 requestKey
+     * 匹配的那一项（不在行内则追加），写回并返回新的 stateVersion；其余
+     * lockedItems 逐字保留。乐观锁经 stateStore.save 冲突时返回既有的
+     * 409 TRUST_REPLY_STATE_CONFLICT——并发下由前端按 I-4 对该条重试，
+     * 不得整封失败、也不得跳过校验直接覆盖。
+     */
+    fun saveStateItem(request: TrustReplySaveStateItemRequest): TrustReplySavedState {
+        val resolved = resolveSource(request.source)
+        requireCurrentSourceVersion(request.sourceVersion, resolved.sourceVersion)
+        if (request.schemaVersion != null &&
+            request.schemaVersion !in TrustReplyWorkbenchStateStore.ACCEPTED_REQUEST_SCHEMA_VERSIONS
+        ) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_STATE_INVALID")
+        }
+        val sourceType = resolved.source.sourceType.name
+        val sourceId = resolved.source.sourceId
+        // bootstrap 同款：行内已存 v4 矩阵时按其解析，否则用当前默认矩阵——
+        // 保证 evidenceSetVersion 与前端最后一次 bootstrap 的值一致。
+        val stored = stateStore.load(sourceType, sourceId)
+        val storedPayload = stored?.payloadJson?.let { stateStore.decodePayload(it) }
+        val storedMatrix = storedPayload
+            ?.takeIf { it.schemaVersion == TrustReplyWorkbenchStateStore.SCHEMA_VERSION }
+            ?.requestFactSelections
+        val resolvedSelection = resolveCanonicalSelection(
+            resolved,
+            requestFactSelections = storedMatrix,
+            requestedFactIds = null,
+            useLocalEvidence = false
+        )
+        requireCurrentEvidenceVersion(request.evidenceSetVersion, resolvedSelection.evidenceSetVersion)
+        val validated = validateSingleLockedItem(
+            resolved = resolved,
+            selection = resolvedSelection.selection,
+            requestEvidenceVersions = resolvedSelection.requestEvidenceVersions,
+            locked = request.lockedItem
+        )
+        val now = LocalDateTime.now()
+        // I-2: 合并——只替换 requestKey 匹配的那一项，其余 lockedItems 逐字保留。
+        val mergedLocked = (storedPayload?.lockedItems ?: emptyList()).toMutableList()
+        val existingIndex = mergedLocked.indexOfFirst { it.requestKey == request.requestKey }
+        if (existingIndex >= 0) {
+            mergedLocked[existingIndex] = validated
+        } else {
+            mergedLocked += validated
+        }
+        val payload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = resolved.sourceVersion,
+            evidenceSetVersion = resolvedSelection.evidenceSetVersion,
+            requestedFactIds = storedPayload?.requestedFactIds ?: resolvedSelection.selection.sendQaRuleIds,
+            selectedModel = storedPayload?.selectedModel?.takeIf { it.isNotBlank() }
+                ?: AiReplyModel.DEEPSEEK_V4_FLASH.name,
+            lockedItems = mergedLocked,
+            requestFactSelections = storedPayload?.requestFactSelections ?: resolvedSelection.requestFactSelections,
+            frameSnapshot = storedPayload?.frameSnapshot ?: resolveFrameSnapshot(null)
+        )
+        val json = stateStore.encodePayload(payload)
+        val newVersion = stateStore.save(sourceType, sourceId, request.expectedStateVersion, json, now)
+        stateStore.pruneExpired(now)
+        return TrustReplySavedState(
+            status = "SAVED",
+            stateVersion = newVersion,
+            selectedModel = payload.selectedModel,
+            requestedFactIds = payload.requestedFactIds,
+            lockedItems = payload.lockedItems,
+            requestFactSelections = payload.requestFactSelections,
+            frameSnapshot = payload.frameSnapshot
+        )
+    }
+
+    /**
+     * 计划 14 (T-1): 单条 locked item 校验——镜像 validateLockedSubset 的
+     * 单条目部分：未知/伪造 key 422、evidence 漂移 409、版本重算不匹配 422、
+     * grounded 信任边界失败 422。失败即 fail closed，不写库。
+     */
+    private fun validateSingleLockedItem(
+        resolved: ResolvedTrustReplySource,
+        selection: ResolvedQaRules,
+        requestEvidenceVersions: Map<String, String>,
+        locked: TrustReplyLockedItemRequest
+    ): TrustReplyLockedItemRequest {
+        val canonicalItems = selection.requestFacts.sortedBy { it.index }
+        val item = canonicalItems.firstOrNull { requestKey(resolved.sourceVersion, it) == locked.requestKey }
+            ?: throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_REQUEST_KEY_INVALID")
+        val perRequestEvidence = requestEvidenceVersions.getValue(locked.requestKey)
+        if (locked.evidenceSetVersion != perRequestEvidence) {
+            throw TrustReplyWorkbenchException(HttpStatus.CONFLICT, "TRUST_REPLY_EVIDENCE_STALE")
+        }
+        validateLockedItem(
+            item = item,
+            locked = locked,
+            sourceVersion = resolved.sourceVersion,
+            evidenceSetVersion = perRequestEvidence,
+            inboundText = resolved.inboundText
+        )
+        val version = materializeVersion(
+            item = item,
+            requestKey = locked.requestKey,
+            handling = locked.handling,
+            answerText = locked.answerText,
+            claims = locked.claims,
+            model = locked.model,
+            generationKind = locked.generationKind,
+            evidenceSetVersion = perRequestEvidence,
+            sourceVersion = resolved.sourceVersion,
+            operatorInstruction = locked.operatorInstruction,
+            operatorInstructionHash = locked.operatorInstructionHash,
+            contextVersion = resolved.contextVersion
+        )
+        if (version.versionId != locked.versionId) {
+            throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_ITEM_VERSION_INVALID")
+        }
+        if (locked.handling == TrustReplyItemHandling.ANSWER_WITH_EVIDENCE ||
+            locked.handling == TrustReplyItemHandling.ANSWER_SUPPORTED_PART
+        ) {
+            validateGroundedTrustBoundary(
+                selection.requestFacts,
+                listOf(
+                    ValidatedSection(
+                        item.index,
+                        version.claims.map { claim -> IntentAnswer(claim.intentKey, claim.text, claim.sourceRuleIds) }
+                    )
+                )
+            )
+        }
+        return locked
     }
 
     // I-4: reset only drops the workbench state row for this source and lets a
@@ -1388,6 +1608,148 @@ class TrustReplyWorkbenchService(
         verifyAssembly(request).response
 
     /**
+     * c5 / 15-workbench-three-step（T-5）：重排——接受运营编辑后的
+     * `paragraphPlanDraft` + pinned 段落 + `op*` 运营事实，调用 13 的编排链路
+     * （`AiReplyLetterOrchestrator`，六道校验），返回新的 `paragraphs` 与六道校验结果。
+     * - pinned 段落原样回填（I-3：其条目级 evidenceSetVersion 与当前版本失配即视为
+     *   未锁定，重新编排）；未锁定段落重新编排。
+     * - `op*` 事实以逐字插槽进入编排（I-2），绝不进入任何哈希（I-1 / G-7）。
+     * - **不落库**（I-4）——落库仍走整合（assemble）。
+     * [orchestration] 为测试接缝（同 `AiReplyLetterCloser.close`）：null 时走
+     * `AiReplyLetterOrchestrator.instance`；编排返回 null（校验未过 / LLM 不可用 /
+     * 超时）时退回确定性分段（同 12 的主题归并兜底，I-8），并把六道校验的命中码
+     * 放进响应的 `validationCodes`。
+     */
+    fun rearrange(request: TrustReplyRearrangeRequest): TrustReplyRearrangeResponse =
+        rearrangeInternal(request, null)
+
+    internal fun rearrangeInternal(
+        request: TrustReplyRearrangeRequest,
+        orchestration: OrchestrationAttempt?
+    ): TrustReplyRearrangeResponse {
+        val resolved = resolveSource(request.source)
+        requireCurrentSourceVersion(request.expectedSourceVersion, resolved.sourceVersion)
+        val resolvedSelection = resolveCanonicalSelection(
+            resolved,
+            request.requestFactSelections,
+            request.requestedFactIds,
+            useLocalEvidence = false
+        )
+        val selection = resolvedSelection.selection
+        val requestEvidenceVersions = resolvedSelection.requestEvidenceVersions
+        val factMetadata = availableFactMetadata().associateBy { it.ruleId }
+
+        fun resolveQaFact(ruleId: Long): PlanFact? {
+            val metadata = factMetadata[ruleId] ?: return null
+            val body = metadata.answerBody?.trim().orEmpty()
+            if (body.isBlank()) return null
+            return PlanFact(
+                id = "f$ruleId",
+                topic = "",
+                body = body,
+                controlled = controlledGroupFor(ruleId, selection),
+                frozen = ruleId in FROZEN_RULE_IDS || body.contains("\${"),
+                required = true
+            )
+        }
+
+        val planner = AiReplyGroundedContentPlanner()
+        val input = planner.buildRearrangePlan(
+            draft = request.paragraphPlanDraft,
+            operatorFacts = request.operatorFacts,
+            resolveQaFact = ::resolveQaFact
+        )
+        val factsById = input.facts.associateBy { it.id }
+
+        // I-3: pinned 有效性——该段主属 request（最低 index、factRuleIds 与其规则 id
+        // 相交者）的条目级 evidenceSetVersion 与当前一致才视为锁定；失配/无主属
+        // request 一律重新编排。
+        fun pinnedSignature(topic: String, factIds: List<String>): String =
+            "$topic\u0000${factIds.joinToString(",")}"
+        val pinnedBySignature = request.pinnedParagraphs.associate {
+            pinnedSignature(it.topic, it.factIds) to it
+        }
+        val validPinnedSignatures = request.pinnedParagraphs.mapNotNull { pinned ->
+            val ruleIds = pinned.factIds.flatMap { id -> ruleIdsOf(id) }.toSet()
+            val primaryOwner = selection.requestFacts
+                .filter { item -> item.factRuleIds.any { it in ruleIds } }
+                .minByOrNull { it.index }
+            val currentVersion = primaryOwner?.let {
+                requestEvidenceVersions[requestKey(resolved.sourceVersion, it)]
+            }
+            if (primaryOwner != null && currentVersion != pinned.evidenceSetVersion) {
+                null
+            } else {
+                pinnedSignature(pinned.topic, pinned.factIds)
+            }
+        }.toSet()
+
+        val unpinnedEntries = input.plan.filterIndexed { index, entry ->
+            pinnedSignature(entry.topic, entry.factIds) !in validPinnedSignatures
+        }
+        val unpinnedTopics = unpinnedEntries.map { it.topic }
+        val unpinnedFactIds = unpinnedEntries.flatMap { it.factIds }.toSet()
+        val orchestrationFacts = input.facts.filter { it.id in unpinnedFactIds }
+        val allowedActions = AiReplyActionPolicy.deriveAllowed(resolved.inboundText, null, emptyList())
+
+        val letter = (orchestration ?: AiReplyLetterOrchestrator.instance?.let { instance ->
+            OrchestrationAttempt { f, p, t, a -> instance.orchestrate(f, p, t, a) }
+        })?.attempt(orchestrationFacts, unpinnedEntries, unpinnedTopics, allowedActions)
+
+        val unpinnedTexts = when {
+            letter != null -> letter.paragraphs.map { it.text }
+            else -> unpinnedEntries.map { entry ->
+                if (entry.factIds.isEmpty()) {
+                    entry.gapCondition?.trim().orEmpty()
+                } else {
+                    entry.factIds.mapNotNull { factsById[it]?.body }.joinToString(" ")
+                }
+            }
+        }
+
+        val paragraphs = mutableListOf<OrchestratedParagraph>()
+        var unpinnedCursor = 0
+        input.plan.forEach { entry ->
+            val signature = pinnedSignature(entry.topic, entry.factIds)
+            if (signature in validPinnedSignatures) {
+                paragraphs += OrchestratedParagraph(
+                    topic = entry.topic,
+                    factIds = entry.factIds,
+                    text = pinnedBySignature.getValue(signature).text
+                )
+            } else {
+                paragraphs += OrchestratedParagraph(
+                    topic = entry.topic,
+                    factIds = entry.factIds,
+                    text = unpinnedTexts.getOrElse(unpinnedCursor) { "" }
+                )
+                unpinnedCursor++
+            }
+        }
+
+        val validationCodes = planner.validateRearrangement(
+            paragraphs = paragraphs.filterIndexed { index, _ ->
+                pinnedSignature(input.plan[index].topic, input.plan[index].factIds) !in validPinnedSignatures
+            },
+            facts = orchestrationFacts,
+            plan = unpinnedEntries,
+            topicOrder = unpinnedTopics,
+            allowedActions = allowedActions
+        )
+        return TrustReplyRearrangeResponse(
+            source = resolved.source,
+            sourceVersion = resolved.sourceVersion,
+            evidenceSetVersion = resolvedSelection.evidenceSetVersion,
+            paragraphPlan = input.plan,
+            facts = input.facts,
+            topicOrder = input.topicOrder,
+            paragraphs = paragraphs,
+            actionText = letter?.actionText,
+            validationCodes = validationCodes
+        )
+    }
+
+    /**
      * 03 (I-1): 权威重算验证。公开 assemble 复用本方法 —— response 与 selection
      * 由同一次执行产生，禁止调用方「先 assemble 再另行 resolve selection」。
      * internal：返回类型 VerifiedTrustReplyAssembly 仅 JVM 模块内使用（发送服务、
@@ -1463,9 +1825,16 @@ class TrustReplyWorkbenchService(
         // request；单 item 内 claim set / source ids / answer-claim 一致性仍由
         // canonicalizeClaims 保证。
 
-        val orderedAnswers = versions.mapNotNull { version ->
-            version.answerText.takeIf { version.handling != TrustReplyItemHandling.OMIT }
-        }
+        // 授权集合 = 来信推导 + 运营说明授权（同发送期 I-5 口径）。
+        val allowedActions = AiReplyActionPolicy.deriveAllowed(resolved.inboundText, null, emptyList()) +
+            operatorAuthorizedActions(request.lockedItems)
+
+        // Repair R-1 (V-1): 步骤 03 权威段落非空时，服务端重新校验（来源封闭 /
+        // required 恰好一次 / 受控冻结与 op* 逐字 / 单动作）并按提交顺序逐字成文，
+        // 不重跑收口器；空列表 = 既有 12/13 收口路径（行为不变，I-8 兜底保留）。
+        val finalState = validateFinalParagraphState(request, versions, allowedActions)
+        val orderedAnswers = finalState?.paragraphs?.map { it.text }
+            ?: AiReplyLetterCloser.close(versions = versions, allowedActions = allowedActions)
         // I-1/I-3/I-5: resolve the frame only after every locked item, claim and
         // version has passed validation; stale expected versions fail closed here.
         val resolvedFrame = resolveFrameForAssemble(request.frameSnapshot)
@@ -1496,7 +1865,12 @@ class TrustReplyWorkbenchService(
                 ),
                 // 04 (I-2): 诊断只由本函数同一次执行的服务端 selection + materialized
                 // versions 计算；不参与 draftHash/evidenceSetVersion/versionId（I-3）。
-                diagnostics = buildTrustReplyDiagnostics(selection.requestFacts, versions)
+                diagnostics = buildTrustReplyDiagnostics(selection.requestFacts, versions),
+                // Repair R-1 (V-3): 校验后的最终段落（提交顺序）与逐条确定性映射
+                // （requestKey -> 所属最终段落文本）。归档侧据此写 finalParagraphText，
+                // 绝不回退为 item answerText。
+                finalParagraphs = finalState?.paragraphs ?: emptyList(),
+                finalParagraphByRequestKey = finalState?.byRequestKey ?: emptyMap()
             ),
             selection = selection
         )
@@ -1528,6 +1902,232 @@ class TrustReplyWorkbenchService(
             throw TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_CLAIM_INVALID")
         }
     }
+
+    // ── Repair R-1 (V-1/V-3): 步骤 03 权威段落校验、逐字成文与逐条映射 ──────────
+
+    private data class FinalParagraphState(
+        val paragraphs: List<OrchestratedParagraph>,
+        val byRequestKey: Map<String, String>
+    )
+
+    private data class FinalParagraphUnit(
+        val factId: String,
+        val topic: String,
+        val text: String,
+        val controlled: String?,
+        val frozen: Boolean,
+        val requestKey: String,
+        // Repair R-1 (epoch 3 / V-1): 该单元是否代表「按回答说明生成」的运营答案
+        // （claims 为空的 ANSWER_FROM_OPERATOR_INPUT 版本）。步骤 03 草稿以 op<n>
+        // 表示它，校验时必须用 op 身份替换其合成 x<n> 身份（二选一，不并存）。
+        val operatorOwned: Boolean
+    )
+
+    private data class RawFinalParagraphUnit(
+        val text: String,
+        val intentKey: String,
+        val sourceRuleIds: List<Long>,
+        val requestKey: String,
+        val standaloneHandling: TrustReplyItemHandling?
+    )
+
+    /**
+     * 校验步骤 03 提交的最终段落（request.finalParagraphs 非空时）。事实身份空间镜像
+     * `AiReplyLetterCloser` 的 T-1 协议（expandUnits -> dedupBySourceRuleIds ->
+     * factIdOf：空 sourceRuleIds 用 `x<存活序号>`，非空用 `f<升序+连接>`），保证与
+     * 步骤 02/03 前端持有的 id 逐字一致。任何失败路径 422（fail closed）：
+     * 多余/外来 id、缺失/重复 required 事实、受控/冻结/op* 非逐字、段落内动作句。
+     *
+     * Repair R-1 (epoch 3 / V-1)：运营事实 `op<n>` 与「按回答说明生成」版本为同一
+     * 内容的两种身份——步骤 03 草稿用 op<n>（c5 协议），版本侧合成的是 x<n>。校验时
+     * 把每个 op 绑定到恰好一个 operatorOwned 单元（归一化正文相等），被绑定单元不再
+     * 要求 x<n>；op 无主 / 多主 / 正文失配 / 重复 id 一律 fail closed。
+     */
+    private fun validateFinalParagraphState(
+        request: TrustReplyAssembleRequest,
+        versions: List<TrustReplyItemVersion>,
+        allowedActions: Set<AiReplyAction>?
+    ): FinalParagraphState? {
+        if (request.finalParagraphs.isEmpty()) return null
+        if (request.finalParagraphs.any { it.text.isBlank() }) {
+            throw TrustReplyWorkbenchException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID"
+            )
+        }
+        val opFactsById = linkedMapOf<String, PlanFact>()
+        request.operatorFacts.forEach { op ->
+            // Repair R-1 (epoch 4 / V-4): 运营事实只在规范 op<n> 身份空间
+            // （op + 正十进制序列，无前导零）被接受——任意非空白 id 不得以
+            // 正文绑定绕过命名空间进入 required 集与已知事实表。
+            if (op.id.isBlank() || !CANONICAL_OPERATOR_FACT_ID.matches(op.id) ||
+                op.body.isBlank() || opFactsById.put(op.id, op) != null
+            ) {
+                // 非规范 id / 重复 op id / 空 id / 空 body：外来或歧义 → fail closed。
+                throw TrustReplyWorkbenchException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID"
+                )
+            }
+        }
+        val units = buildFinalParagraphUnits(versions)
+        // op<n> 归属绑定：op body（归一化）必须恰好匹配一个 operatorOwned 单元；
+        // 每个 operatorOwned 单元至多被一个 op 绑定（多主/重复 → fail closed）。
+        val boundByOp = linkedMapOf<String, FinalParagraphUnit>()
+        val opOwnedUnits = units.filter { it.operatorOwned }
+        opFactsById.forEach { (opId, op) ->
+            val matches = opOwnedUnits.filter { normalizeWhitespace(it.text) == normalizeWhitespace(op.body) }
+            if (matches.size != 1) {
+                throw TrustReplyWorkbenchException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID"
+                )
+            }
+            if (boundByOp.values.any { it === matches.single() }) {
+                throw TrustReplyWorkbenchException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID"
+                )
+            }
+            boundByOp[opId] = matches.single()
+        }
+        val retainedUnits = units.filter { unit -> boundByOp.values.none { it === unit } }
+        val requiredIds = retainedUnits.map { it.factId }.toSet() + opFactsById.keys
+        val submittedIds = request.finalParagraphs.flatMap { it.factIds }
+        val submittedSet = submittedIds.toSet()
+        if (submittedIds.size != submittedSet.size || submittedSet != requiredIds) {
+            throw TrustReplyWorkbenchException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID"
+            )
+        }
+        val facts = retainedUnits.map { unit ->
+            PlanFact(
+                id = unit.factId,
+                topic = unit.topic,
+                body = unit.text,
+                controlled = unit.controlled,
+                frozen = unit.frozen,
+                required = true
+            )
+        } + request.operatorFacts
+        val paragraphs = request.finalParagraphs.map { OrchestratedParagraph(it.topic, it.factIds, it.text) }
+        val plan = request.finalParagraphs.map { ParagraphPlanEntry(it.topic, it.factIds) }
+        val topicOrder = request.finalParagraphs.map { it.topic }
+        val codes = AiReplyGroundedContentPlanner().validateRearrangement(
+            paragraphs = paragraphs,
+            facts = facts,
+            plan = plan,
+            topicOrder = topicOrder,
+            allowedActions = allowedActions
+        )
+        if (codes.isNotEmpty()) {
+            throw TrustReplyWorkbenchException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID",
+                codes
+            )
+        }
+        val byRequestKey = mapFinalParagraphsByRequestKey(retainedUnits, boundByOp, paragraphs)
+        return FinalParagraphState(paragraphs, byRequestKey)
+    }
+
+    /**
+     * 镜像 `AiReplyLetterCloser.expandUnits` + `dedupBySourceRuleIds` + `factIdOf`
+     * （T-1 协议；收口器为方案权威，本函数只做等价的确定性复刻用于 assemble 校验）。
+     * OMIT 版本跳过；claims 为空的版本其非空 answerText 作为独立单元（`x<n>`，
+     * 不参与去重）；claim 文本非空才展开。frozen 与受控组求值口径与收口器一致。
+     */
+    private fun buildFinalParagraphUnits(versions: List<TrustReplyItemVersion>): List<FinalParagraphUnit> {
+        val raw = mutableListOf<RawFinalParagraphUnit>()
+        versions.forEach { version ->
+            if (version.handling == TrustReplyItemHandling.OMIT) return@forEach
+            if (version.claims.isEmpty()) {
+                val text = version.answerText.trim()
+                if (text.isNotEmpty()) {
+                    raw += RawFinalParagraphUnit(
+                        text = text,
+                        intentKey = "__standalone${raw.size}",
+                        sourceRuleIds = emptyList(),
+                        requestKey = version.requestKey,
+                        standaloneHandling = version.handling
+                    )
+                }
+            } else {
+                version.claims.forEach { claim ->
+                    val text = claim.text.trim()
+                    if (text.isNotEmpty()) {
+                        raw += RawFinalParagraphUnit(
+                            text = text,
+                            intentKey = claim.intentKey,
+                            sourceRuleIds = claim.sourceRuleIds,
+                            requestKey = version.requestKey,
+                            standaloneHandling = null
+                        )
+                    }
+                }
+            }
+        }
+        val seen = linkedSetOf<Set<Long>>()
+        val deduped = raw.filter { unit ->
+            val ids = unit.sourceRuleIds.toSet()
+            ids.isEmpty() || seen.add(ids)
+        }
+        return deduped.mapIndexed { index, unit ->
+            val ids = unit.sourceRuleIds.toSet()
+            val frozen = if (unit.standaloneHandling != null) {
+                unit.standaloneHandling == TrustReplyItemHandling.ANSWER_FACTS_VERBATIM
+            } else {
+                unit.text.contains("\${") || unit.sourceRuleIds.any { it in FROZEN_RULE_IDS }
+            }
+            FinalParagraphUnit(
+                factId = if (ids.isEmpty()) "x$index" else "f" + ids.sorted().joinToString("+"),
+                topic = unit.intentKey.substringBefore('.'),
+                text = unit.text,
+                controlled = QaCoverageKeyCatalog.groupIdOf(unit.intentKey),
+                frozen = frozen,
+                requestKey = unit.requestKey,
+                operatorOwned = unit.standaloneHandling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
+            )
+        }
+    }
+
+    /**
+     * 逐条确定性映射（V-3）：request -> 唯一包含其事实 id 的最终段落文本。
+     * - f/x 单元按 provenance（requestKey）聚合；op<n> 绑定单元按其归属的
+     *   operatorOwned 版本 requestKey 聚合（段落按 op id 查找）。
+     * - 一个 request 落到多个段落（同 claim 的事实被拆到不同主题段）＝歧义 → 不映射，
+     *   归档侧对其 fail closed（「reject missing or ambiguous mappings」）。
+     */
+    private fun mapFinalParagraphsByRequestKey(
+        retainedUnits: List<FinalParagraphUnit>,
+        boundByOp: Map<String, FinalParagraphUnit>,
+        paragraphs: List<OrchestratedParagraph>
+    ): Map<String, String> {
+        fun paragraphOf(factId: String): String? {
+            val hits = paragraphs.filter { factId in it.factIds }
+            return if (hits.size == 1) hits.single().text else null
+        }
+        val perRequest = linkedMapOf<String, MutableSet<String>>()
+        retainedUnits.forEach { unit ->
+            val paragraph = paragraphOf(unit.factId) ?: return@forEach
+            perRequest.getOrPut(unit.requestKey) { linkedSetOf() } += paragraph
+        }
+        boundByOp.forEach { (opId, unit) ->
+            val paragraph = paragraphOf(opId) ?: return@forEach
+            perRequest.getOrPut(unit.requestKey) { linkedSetOf() } += paragraph
+        }
+        return perRequest.mapNotNull { (requestKey, paragraphsOf) ->
+            if (paragraphsOf.size == 1) requestKey to paragraphsOf.single() else null
+        }.toMap()
+    }
+
+    private fun normalizeWhitespace(text: String): String = text.trim().replace(WHITESPACE_RUN, " ")
+
+    private val WHITESPACE_RUN = Regex("\\s+")
+
+    /** Repair R-1 (epoch 4 / V-4): 运营事实唯一合法身份空间——`op` + 正十进制序列（无前导零）。 */
+    private val CANONICAL_OPERATOR_FACT_ID = Regex("op[1-9][0-9]*")
 
     private fun validateLockedItem(
         item: RequestFactItem,
@@ -2095,6 +2695,68 @@ class TrustReplyWorkbenchService(
                 }
             }
             .toList()
+
+    /**
+     * c5 (I-5)：bootstrap 时的初始 13 协议（plan.facts / paragraphPlan / topicOrder）。
+     * 由当前矩阵（selection.requestFacts）+ QA 库派生，与 12/13 的主题归并口径一致：
+     * 每 request 一个 plan 条目（topic = 该问首个意图的主题），事实 id 为 `f<ruleId>`，
+     * body 取自 QA 库、frozen 判定沿用 G-1（{1,3,21,24} / `${...}` 占位符）。
+     * 仅作步骤 02/03 的初始事实来源；重排后由 `rearrange` 返回的规范化协议取代。
+     */
+    private fun initialLetterPlan(
+        selection: ResolvedQaRules,
+        factMetadata: List<TrustReplyRuleMetadata>
+    ): Triple<List<PlanFact>, List<ParagraphPlanEntry>, List<String>> {
+        val metadataById = factMetadata.associateBy { it.ruleId }
+        val factsById = linkedMapOf<String, PlanFact>()
+        val plan = mutableListOf<ParagraphPlanEntry>()
+        val topicOrder = mutableListOf<String>()
+        selection.requestFacts.sortedBy { it.index }.forEach { item ->
+            val topic = item.intents.firstOrNull { it.intentKey.isNotBlank() }
+                ?.intentKey?.substringBefore('.') ?: "general"
+            val factIds = item.factRuleIds.mapNotNull { ruleId ->
+                val id = "f$ruleId"
+                if (factsById.containsKey(id)) {
+                    id
+                } else {
+                    val metadata = metadataById[ruleId] ?: return@mapNotNull null
+                    val body = metadata.answerBody?.trim().orEmpty()
+                    if (body.isBlank()) return@mapNotNull null
+                    val intent = item.intents.firstOrNull { ruleId in it.evidenceRuleIds }
+                    factsById[id] = PlanFact(
+                        id = id,
+                        topic = topic,
+                        body = body,
+                        controlled = intent?.let { QaCoverageKeyCatalog.groupIdOf(it.intentKey) },
+                        frozen = ruleId in FROZEN_RULE_IDS || body.contains("\${"),
+                        required = true
+                    )
+                    id
+                }
+            }
+            if (factIds.isNotEmpty()) {
+                topicOrder += topic
+                plan += ParagraphPlanEntry(topic, factIds)
+            }
+        }
+        return Triple(factsById.values.toList(), plan, topicOrder)
+    }
+
+    /** c5（T-5）：`f<ruleId>` 事实的受控组——取首个以该规则为证据的意图求值（G1..G4 / null）。 */
+    private fun controlledGroupFor(ruleId: Long, selection: ResolvedQaRules): String? {
+        selection.requestFacts.sortedBy { it.index }.forEach { item ->
+            item.intents.firstOrNull { ruleId in it.evidenceRuleIds }?.let { intent ->
+                return QaCoverageKeyCatalog.groupIdOf(intent.intentKey)
+            }
+        }
+        return null
+    }
+
+    /** c5（T-5）：`f<ruleId>` id → 规则 id 列表（`+` 连接的多规则身份；非 `f` 前缀返回空）。 */
+    private fun ruleIdsOf(factId: String): List<Long> {
+        if (!factId.startsWith("f")) return emptyList()
+        return factId.removePrefix("f").split("+").mapNotNull { it.toLongOrNull() }
+    }
 
     private fun mergeWarnings(first: List<String>, second: List<String>): List<String> {
         val seen = linkedSetOf<String>()

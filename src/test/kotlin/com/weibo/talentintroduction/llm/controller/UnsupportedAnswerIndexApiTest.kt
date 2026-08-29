@@ -64,7 +64,9 @@ class UnsupportedAnswerIndexApiTest {
 
     private fun document(
         operatorInstruction: String = "Please say we will follow up next week.",
-        answerText: String = "We will follow up next week."
+        answerText: String = "We will follow up next week.",
+        // Repair R-1 (V-3 / A4): 资格内文档必须携带最终段落文本。
+        finalParagraphText: String = "We will follow up next week."
     ) = UnsupportedAnswerIndexDocument(
         status = UnsupportedAnswerIndexStatus.CANDIDATE,
         sourceMode = UnsupportedAnswerIndexSourceMode.TRAINING,
@@ -87,7 +89,8 @@ class UnsupportedAnswerIndexApiTest {
         qualificationType = UnsupportedAnswerIndexQualificationType.TRAINING_EVALUATION,
         qualificationId = "evaluation-1",
         approvedBy = "operator-1",
-        createdAt = Instant.parse("2026-07-29T10:00:00Z")
+        createdAt = Instant.parse("2026-07-29T10:00:00Z"),
+        finalParagraphText = finalParagraphText
     )
 
     @Test
@@ -99,7 +102,10 @@ class UnsupportedAnswerIndexApiTest {
             "schemaVersion", "status", "sourceMode", "sourceType", "sourceId", "sourceVersion",
             "expertContactId", "campaignId", "requestKey", "requestIndex", "requestText", "handling",
             "operatorInstruction", "operatorInstructionHash", "versionId", "answerText", "answerHash",
-            "model", "generationKind", "qualificationType", "qualificationId", "approvedBy", "createdAt"
+            "model", "generationKind", "qualificationType", "qualificationId", "approvedBy", "createdAt",
+            // c6 (T-1 / A3)：归档接缝三字段（topic keyword / finalParagraphText 不可检索
+            // / editedByOperator），字段集 23 → 26。
+            "topic", "finalParagraphText", "editedByOperator"
         )
         assertEquals(expected, fields.fieldNames().asSequence().toSet())
         listOf("requestText", "operatorInstruction", "answerText").forEach { field ->
@@ -232,7 +238,12 @@ class UnsupportedAnswerIndexApiTest {
             versions = listOf(first, second),
             qualificationId = "evaluation-55",
             approvedBy = "operator-1",
-            createdAt = Instant.parse("2026-07-30T02:00:00Z")
+            createdAt = Instant.parse("2026-07-30T02:00:00Z"),
+            // Repair R-1 (V-3 / A4): 资格内归档必须携带步骤 03 最终段落映射。
+            finalParagraphs = mapOf(
+                "training-request-0" to "We will follow up next week.",
+                "training-request-1" to "We will follow up tomorrow."
+            )
         )
 
         assertEquals(com.weibo.talentintroduction.llm.service.UnsupportedAnswerArchiveStatus.PARTIAL, result.status)
@@ -242,7 +253,7 @@ class UnsupportedAnswerIndexApiTest {
     }
 
     @Test
-    fun `live archive writes ACTIVE LIVE_SEND qualification from outbound mail record`() {
+    fun `live archive writes CANDIDATE LIVE_SEND qualification from outbound mail record`() {
         val service = service()
         val source = ResolvedTrustReplySource(
             source = TrustReplySourceRef(TrustReplySourceType.LIVE_INBOUND, 55L),
@@ -282,7 +293,7 @@ class UnsupportedAnswerIndexApiTest {
         val expectedId = sha256("LIVE_INBOUND|55|live-request-0|live-version-1")
         server.expect(requestTo("$indexUrl/_create/$expectedId"))
             .andExpect(method(HttpMethod.PUT))
-            .andExpect(jsonPath("$.status").value("ACTIVE"))
+            .andExpect(jsonPath("$.status").value("CANDIDATE"))
             .andExpect(jsonPath("$.sourceMode").value("LIVE"))
             .andExpect(jsonPath("$.sourceType").value("LIVE_INBOUND"))
             .andExpect(jsonPath("$.sourceId").value(55))
@@ -298,7 +309,9 @@ class UnsupportedAnswerIndexApiTest {
             versions = listOf(version),
             qualificationId = "9001",
             approvedBy = "operator-live",
-            createdAt = Instant.parse("2026-07-30T03:00:00Z")
+            createdAt = Instant.parse("2026-07-30T03:00:00Z"),
+            // Repair R-1 (V-3 / A4): 资格内归档必须携带步骤 03 最终段落映射。
+            finalParagraphs = mapOf("live-request-0" to "We will follow up next week.")
         )
 
         assertEquals(com.weibo.talentintroduction.llm.service.UnsupportedAnswerArchiveStatus.SAVED, result.status)

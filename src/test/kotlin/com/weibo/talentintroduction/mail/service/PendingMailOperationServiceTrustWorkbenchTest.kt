@@ -149,6 +149,9 @@ class PendingMailOperationServiceTrustWorkbenchTest {
     @BeforeEach
     fun setUp() {
         Mockito.`when`(inboundMailProcessingRepository.findById(100L)).thenReturn(Optional.of(inbound()))
+        // Repair R-2 (V-2): 权威资格判定默认放行（用例用非资格版本显式断言的另设 stub）。
+        Mockito.lenient().`when`(unsupportedAnswerIndexService.isArchiveEligible(Mockito.any(TrustReplyItemVersion::class.java) ?: operatorDirectedVersion()))
+            .thenReturn(true)
         Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
         Mockito.`when`(aiReplyContextService.build(contact, emptyList(), "Can I work remotely?", ""))
@@ -1153,7 +1156,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
         stubSuccessfulSend()
@@ -1188,7 +1192,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             eqValue(listOf(eligible)),
             eqValue("500"),
             eqValue("operator-a"),
-            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
         )
     }
 
@@ -1208,7 +1213,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
         stubSuccessfulSend()
@@ -1232,7 +1238,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             eqValue(listOf(eligible)),
             eqValue("500"),
             eqValue("op"),
-            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
         )
     }
 
@@ -1258,7 +1265,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
         stubSuccessfulSend()
@@ -1282,7 +1290,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             eqValue(listOf(eligible)),
             eqValue("500"),
             eqValue("op"),
-            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
         )
     }
 
@@ -1298,7 +1307,17 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         )
         assertEquals("SENT", result.sendStatus)
         assertEquals(UnsupportedAnswerArchiveStatus.NOT_APPLICABLE, result.unsupportedAnswerArchiveStatus)
-        Mockito.verifyNoInteractions(trustReplyWorkbenchService, unsupportedAnswerIndexService)
+        Mockito.verifyNoInteractions(trustReplyWorkbenchService)
+        // Repair R-2 (V-2): 资格判定（isArchiveEligible）是 mock 上的新调用点，
+        // 断言收窄为「归档方法绝不被调用」。
+        Mockito.verify(unsupportedAnswerIndexService, Mockito.never()).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
+        )
     }
 
     @Test
@@ -1322,7 +1341,16 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         assertEquals("SENT", result.sendStatus)
         assertEquals(UnsupportedAnswerArchiveStatus.FAILED, result.unsupportedAnswerArchiveStatus)
         Mockito.verify(trustReplyWorkbenchService).verifyAssembly(assembly)
-        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
+        // Repair R-2 (V-2): 资格判定（isArchiveEligible）是 mock 上的新调用点，
+        // 断言收窄为「归档方法绝不被调用」。
+        Mockito.verify(unsupportedAnswerIndexService, Mockito.never()).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
+        )
     }
 
     @Test
@@ -1337,7 +1365,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenThrow(IllegalStateException("es unavailable"))
         stubSuccessfulSend()
@@ -1378,7 +1407,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
         val claim = ManualReplySendAttemptService.ClaimedAttempt(
@@ -1422,7 +1452,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             eqValue(listOf(eligible)),
             eqValue("700"),
             eqValue("op"),
-            Mockito.any(Instant::class.java) ?: Instant.EPOCH
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
         )
     }
 
@@ -1462,7 +1493,16 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             )
         }
         Mockito.verify(trustReplyWorkbenchService).operatorAuthorizedActionsFromVerifiedVersions(assembled.itemVersions)
-        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
+        // Repair R-2 (V-2): 资格判定（isArchiveEligible）是 mock 上的新调用点，
+        // 断言收窄为「归档方法绝不被调用」。
+        Mockito.verify(unsupportedAnswerIndexService, Mockito.never()).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
+        )
     }
 
     // 03 (I-1): assembly source 与本次来信不符时，在 claim 前稳定 422 拒绝（不再
@@ -1548,17 +1588,30 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         assertEquals("SENT", result.sendStatus)
         assertEquals(UnsupportedAnswerArchiveStatus.FAILED, result.unsupportedAnswerArchiveStatus)
         Mockito.verify(trustReplyWorkbenchService).verifyAssembly(assembly)
-        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
+        // Repair R-2 (V-2): 资格判定（isArchiveEligible）是 mock 上的新调用点，
+        // 断言收窄为「归档方法绝不被调用」。
+        Mockito.verify(unsupportedAnswerIndexService, Mockito.never()).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
+        )
     }
 
     @Test
     fun `sendManualRichReply returns SENT with not applicable when no eligible operator directed versions`() {
         val assembly = liveAssembly()
-        val acknowledgement = operatorDirectedVersion().copy(
-            handling = TrustReplyItemHandling.ACKNOWLEDGE_PENDING,
-            answerText = "We will check and follow up."
+        // Repair R-2 (V-2): ACKNOWLEDGE_PENDING 已进入允许集合（plan 16 I-4），不再是
+        // 「无资格」样本；改用 OMIT（集合外）验证 NOT_APPLICABLE 语义。
+        val omitted = operatorDirectedVersion().copy(
+            handling = TrustReplyItemHandling.OMIT,
+            generationKind = TrustReplyItemGenerationKind.OMITTED,
+            answerText = ""
         )
-        val assembled = assembledResponse(acknowledgement)
+        Mockito.`when`(unsupportedAnswerIndexService.isArchiveEligible(omitted)).thenReturn(false)
+        val assembled = assembledResponse(omitted)
         Mockito.`when`(trustReplyWorkbenchService.verifyAssembly(assembly)).thenReturn(verified(assembled))
         stubSuccessfulSend()
 
@@ -1576,7 +1629,16 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         assertEquals("SENT", result.sendStatus)
         assertEquals(UnsupportedAnswerArchiveStatus.NOT_APPLICABLE, result.unsupportedAnswerArchiveStatus)
         Mockito.verify(trustReplyWorkbenchService).verifyAssembly(assembly)
-        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
+        // Repair R-2 (V-2): 资格判定（isArchiveEligible）是 mock 上的新调用点，
+        // 断言收窄为「归档方法绝不被调用」。
+        Mockito.verify(unsupportedAnswerIndexService, Mockito.never()).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
+        )
     }
 
     @Test
@@ -1599,7 +1661,17 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             )
         }
         Mockito.verify(trustReplyWorkbenchService).operatorAuthorizedActionsFromVerifiedVersions(assembled.itemVersions)
-        Mockito.verifyNoInteractions(unsupportedAnswerIndexService, mailDeliveryService)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+        // Repair R-2 (V-2): 资格判定（isArchiveEligible）是 mock 上的新调用点，
+        // 断言收窄为「归档方法绝不被调用」。
+        Mockito.verify(unsupportedAnswerIndexService, Mockito.never()).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
+        )
     }
 
     @Test
@@ -1622,7 +1694,17 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             )
         }
         Mockito.verify(trustReplyWorkbenchService).operatorAuthorizedActionsFromVerifiedVersions(assembled.itemVersions)
-        Mockito.verifyNoInteractions(unsupportedAnswerIndexService, mailDeliveryService)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+        // Repair R-2 (V-2): 资格判定（isArchiveEligible）是 mock 上的新调用点，
+        // 断言收窄为「归档方法绝不被调用」。
+        Mockito.verify(unsupportedAnswerIndexService, Mockito.never()).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
+        )
     }
 
     @Test
@@ -1645,7 +1727,17 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             )
         }
         Mockito.verify(trustReplyWorkbenchService).operatorAuthorizedActionsFromVerifiedVersions(assembled.itemVersions)
-        Mockito.verifyNoInteractions(unsupportedAnswerIndexService, mailDeliveryService)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+        // Repair R-2 (V-2): 资格判定（isArchiveEligible）是 mock 上的新调用点，
+        // 断言收窄为「归档方法绝不被调用」。
+        Mockito.verify(unsupportedAnswerIndexService, Mockito.never()).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
+        )
     }
 
     @Test
@@ -1685,7 +1777,16 @@ class PendingMailOperationServiceTrustWorkbenchTest {
             )
         }
         Mockito.verify(trustReplyWorkbenchService).operatorAuthorizedActionsFromVerifiedVersions(assembled.itemVersions)
-        Mockito.verifyNoInteractions(unsupportedAnswerIndexService)
+        // Repair R-2 (V-2): 资格判定（isArchiveEligible）是 mock 上的新调用点，
+        // 断言收窄为「归档方法绝不被调用」。
+        Mockito.verify(unsupportedAnswerIndexService, Mockito.never()).archiveLiveCanonicalVersions(
+            Mockito.any(ResolvedTrustReplySource::class.java) ?: liveResolvedSource(),
+            Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
+            Mockito.anyString(),
+            Mockito.anyString(),
+            Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+            Mockito.anyMap()
+        )
     }
 
     // 03 (I-2/I-4/I-6): 工作台 matrix 含 intent mismatch 事实（20L）时，发送入口
@@ -1725,7 +1826,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenReturn(UnsupportedAnswerIndexArchiveResult(UnsupportedAnswerArchiveStatus.SAVED, 1, 0))
 
@@ -1975,7 +2077,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenReturn(UnsupportedAnswerIndexArchiveResult())
 
@@ -2018,7 +2121,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
                 Mockito.anyList<TrustReplyItemVersion>() ?: emptyList(),
                 Mockito.anyString(),
                 Mockito.anyString(),
-                Mockito.any(Instant::class.java) ?: Instant.EPOCH
+                Mockito.any(Instant::class.java) ?: Instant.EPOCH,
+                Mockito.anyMap()
             )
         ).thenReturn(UnsupportedAnswerIndexArchiveResult())
 

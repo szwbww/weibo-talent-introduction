@@ -438,6 +438,70 @@ describe("shared trust reply workbench mount contract", () => {
         }), /模式无效|模式/i);
     });
 
+    // I-5 (T-5.2): autoBootstrap:false 时 mount 不调 bootstrap，渲染未分析
+    // 占位态（S-2）与「开始分析」工具栏（S-1）；缺省行为保持自动分析。
+    it("mounts without bootstrapping when autoBootstrap is false and renders the unanalyzed state", async () => {
+        const sourceType = "TRAINING_MAIL";
+        const sourceId = 520;
+        const current = bootstrapWithCoverage(sourceType, sourceId, [
+            coverageItem(sourceType, sourceId, 0, "GROUNDED")
+        ]);
+        let bootstrapCalls = 0;
+        const { window } = createSandbox((url) => {
+            if (url.includes("/bootstrap")) {
+                bootstrapCalls += 1;
+                return Promise.resolve(jsonResponse(current));
+            }
+            if (url.includes("/api/translate")) return Promise.resolve(jsonResponse({ ok: true, translatedText: "译文" }));
+            throw new Error(`unexpected request: ${url}`);
+        });
+        const host = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {},
+            autoBootstrap: false
+        });
+        await settle();
+        assert.strictEqual(bootstrapCalls, 0, "autoBootstrap:false must suppress the mount bootstrap");
+        assert.match(host.innerHTML, /尚未分析这封来信/);
+        assert.match(host.innerHTML, /data-action="start-analysis"/);
+        assert.doesNotMatch(host.innerHTML, new RegExp('data-action="start-analysis"[^>]*disabled'));
+        assert.match(host.innerHTML, /data-action="auto-run"[^>]*disabled/);
+        assert.match(host.innerHTML, /data-action="auto-reset"[^>]*disabled/);
+
+        // 缺省（不传 autoBootstrap）保持既有宿主行为：mount 即自动分析。
+        const autoHost = new FakeElement(window.document);
+        window.TrustReplyWorkbench.mount(autoHost, {
+            mode: "SIMULATION",
+            source: current.source,
+            contextPath: "",
+            onComplete: async () => {}
+        });
+        await settle();
+        assert.strictEqual(bootstrapCalls, 1, "the default mount must keep auto analysis");
+    });
+
+    it("rejects a non-boolean autoBootstrap option before any bootstrap", () => {
+        const { window } = createSandbox(() => Promise.resolve({ ok: true, status: 200, json: async () => ({}) }));
+        const host = new FakeElement(window.document);
+        assert.throws(() => window.TrustReplyWorkbench.mount(host, {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 1 },
+            contextPath: "",
+            onComplete: async () => {},
+            autoBootstrap: "yes"
+        }), /autoBootstrap/);
+        assert.throws(() => window.TrustReplyWorkbench.mount(new FakeElement(window.document), {
+            mode: "SIMULATION",
+            source: { sourceType: "TRAINING_MAIL", sourceId: 1 },
+            contextPath: "",
+            onComplete: async () => {},
+            autoBootstrap: 1
+        }), /autoBootstrap/);
+    });
+
     it("keeps the generation id canonical when randomUUID is unavailable", async () => {
         const current = bootstrap("TRAINING_MAIL", 301);
         const calls = [];
@@ -2213,7 +2277,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.doesNotMatch(host.innerHTML, /g1-v1/);
     });
 
-    it("renders two equal tabs with unique panel ids and switches pages without re-bootstrap", async () => {
+    it("renders three equal tabs with unique panel ids and switches pages without re-bootstrap", async () => {
         const sourceType = "TRAINING_MAIL";
         const sourceId = 500;
         const current = bootstrap(sourceType, sourceId);
@@ -2235,24 +2299,33 @@ describe("shared trust reply workbench mount contract", () => {
         await settle();
         const bootstrapCalls = calls.filter((call) => call.url.includes("/bootstrap")).length;
         assert.match(host.innerHTML, /role="tablist"/);
-        assert.strictEqual((host.innerHTML.match(/role="tab"[^>]*data-page="/g) || []).length, 2);
+        assert.strictEqual((host.innerHTML.match(/role="tab"[^>]*data-page="/g) || []).length, 3);
         assert.match(host.innerHTML, /data-page-panel="facts"/);
-        assert.match(host.innerHTML, /data-page-panel="frame"[^>]* hidden/);
+        assert.match(host.innerHTML, /data-page-panel="factset"[^>]* hidden/);
+        assert.match(host.innerHTML, /data-page-panel="compose"[^>]* hidden/);
         assert.strictEqual((host.innerHTML.match(/data-page="[^"]*"[^>]*aria-selected="true"/g) || []).length, 1);
         const factsPanelId = host.innerHTML.match(/data-page-panel="facts" id="([^"]+)"/)?.[1];
-        const framePanelId = host.innerHTML.match(/data-page-panel="frame" id="([^"]+)"/)?.[1];
-        assert.ok(factsPanelId && framePanelId && factsPanelId !== framePanelId, "panel ids must be instance-unique");
-        assert.ok(host.innerHTML.includes(`aria-controls="${framePanelId}"`));
+        const factsetPanelId = host.innerHTML.match(/data-page-panel="factset" id="([^"]+)"/)?.[1];
+        const composePanelId = host.innerHTML.match(/data-page-panel="compose" id="([^"]+)"/)?.[1];
+        assert.ok(
+            factsPanelId && factsetPanelId && composePanelId &&
+            new Set([factsPanelId, factsetPanelId, composePanelId]).size === 3,
+            "panel ids must be instance-unique"
+        );
+        assert.ok(host.innerHTML.includes(`aria-controls="${factsetPanelId}"`));
+        assert.ok(host.innerHTML.includes(`aria-controls="${composePanelId}"`));
 
         click(host, "next-page");
         assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
-        assert.doesNotMatch(host.innerHTML, /data-page-panel="frame"[^>]* hidden/);
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="factset"[^>]* hidden/);
+        assert.match(host.innerHTML, /data-page-panel="compose"[^>]* hidden/);
         assert.match(host.innerHTML, /data-action="prev-page"/);
         click(host, "prev-page");
         assert.doesNotMatch(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
-        assert.match(host.innerHTML, /data-page-panel="frame"[^>]* hidden/);
-        click(host, "set-page", undefined, undefined, undefined, "frame");
+        assert.match(host.innerHTML, /data-page-panel="factset"[^>]* hidden/);
+        click(host, "set-page", undefined, undefined, undefined, "compose");
         assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="compose"[^>]* hidden/);
         assert.strictEqual(
             calls.filter((call) => call.url.includes("/bootstrap")).length,
             bootstrapCalls,
@@ -2260,7 +2333,7 @@ describe("shared trust reply workbench mount contract", () => {
         );
     });
 
-    it("navigates the two tabs with arrow and home/end keys", async () => {
+    it("navigates the three tabs with arrow and home/end keys", async () => {
         const sourceType = "TRAINING_MAIL";
         const sourceId = 501;
         const current = bootstrap(sourceType, sourceId);
@@ -2280,8 +2353,9 @@ describe("shared trust reply workbench mount contract", () => {
         await settle();
 
         const factsTab = { dataset: { page: "facts" } };
-        const frameTab = { dataset: { page: "frame" } };
-        host.querySelectorAll = (selector) => (selector === '[role="tab"]' ? [factsTab, frameTab] : []);
+        const factsetTab = { dataset: { page: "factset" } };
+        const composeTab = { dataset: { page: "compose" } };
+        host.querySelectorAll = (selector) => (selector === '[role="tab"]' ? [factsTab, factsetTab, composeTab] : []);
         const dispatchKey = (key, tab) => host.dispatchEvent("keydown", {
             key,
             closest: () => tab,
@@ -2289,12 +2363,18 @@ describe("shared trust reply workbench mount contract", () => {
         });
 
         dispatchKey("ArrowRight", factsTab);
-        assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/, "ArrowRight must open the frame page");
-        dispatchKey("ArrowLeft", frameTab);
+        assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/, "ArrowRight must open the factset page");
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="factset"[^>]* hidden/);
+        dispatchKey("ArrowRight", factsetTab);
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="compose"[^>]* hidden/, "ArrowRight must open the compose page");
+        dispatchKey("ArrowLeft", composeTab);
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="factset"[^>]* hidden/, "ArrowLeft must open the factset page");
+        dispatchKey("ArrowLeft", factsetTab);
         assert.doesNotMatch(host.innerHTML, /data-page-panel="facts"[^>]* hidden/, "ArrowLeft must open the facts page");
         dispatchKey("End", factsTab);
         assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/, "End must open the last page");
-        dispatchKey("Home", frameTab);
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="compose"[^>]* hidden/, "End must open the last page");
+        dispatchKey("Home", composeTab);
         assert.doesNotMatch(host.innerHTML, /data-page-panel="facts"[^>]* hidden/, "Home must open the first page");
     });
 
@@ -2325,17 +2405,17 @@ describe("shared trust reply workbench mount contract", () => {
         const focusable = { focus: () => { focusCalls += 1; } };
         host.querySelector = (selector) => {
             selectors.push(selector);
-            return /^\[role="tab"\]\[data-page="(facts|frame)"\]$/.test(selector) ? focusable : null;
+            return /^\[role="tab"\]\[data-page="(facts|factset|compose)"\]$/.test(selector) ? focusable : null;
         };
 
-        click(host, "set-page", undefined, undefined, undefined, "frame");
+        click(host, "set-page", undefined, undefined, undefined, "compose");
         await settle();
 
         assert.ok(selectors.length > 0, "setActivePage must call host.querySelector");
         const tabSelector = selectors.find((s) => s.includes("data-page"));
         assert.ok(tabSelector, "a tab selector must be built");
         assert.ok(!tabSelector.startsWith("#"), "selector must not be a bare instanceId id selector");
-        assert.match(tabSelector, /^\[role="tab"\]\[data-page="(facts|frame)"\]$/, "selector must be unique to the tab button");
+        assert.match(tabSelector, /^\[role="tab"\]\[data-page="(facts|factset|compose)"\]$/, "selector must be unique to the tab button");
         assert.strictEqual(focusCalls, 1, "focus must land on the target tab exactly once");
 
         // I-1 source-text guard: the component must never build bare
@@ -2690,7 +2770,7 @@ describe("shared trust reply workbench mount contract", () => {
         await settle();
         assert.match(host.innerHTML, /TRUST_REPLY_FRAME_STALE|框架配置已变化/);
         assert.match(host.innerHTML, new RegExp(`data-request-key="${requestKey}"[\\s\\S]*?data-locked="true"`), "locks must survive frame stale");
-        assert.doesNotMatch(host.innerHTML, /data-page-panel="frame"[^>]* hidden/, "frame page must be active after frame stale");
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="compose"[^>]* hidden/, "compose page must be active after frame stale");
         assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
     });
 
@@ -2769,11 +2849,26 @@ describe("shared trust reply workbench mount contract", () => {
         });
         const statePayloads = payloads.filter((payload) => payload.schemaVersion);
         assert.ok(statePayloads.length >= 2);
-        statePayloads.forEach((payload) => {
+        // I-2: 整封快照（PUT /state）仍携带全量矩阵与框架快照。
+        const snapshotPayloads = statePayloads.filter((payload) => !payload.lockedItem);
+        assert.ok(snapshotPayloads.length >= 1, "the integration snapshot save must still carry the full matrix");
+        snapshotPayloads.forEach((payload) => {
             assert.strictEqual(payload.schemaVersion, "trust-reply-workbench-state-v3");
             assert.deepStrictEqual(payload.requestFactSelections, expectedMatrix);
             assert.deepStrictEqual(payload.frameSnapshot.selection, current.frameSnapshot.selection);
         });
+        // I-2/I-4: 单条落库走条目级 PATCH /state/item，只带该条 locked item + 乐观锁。
+        const itemPayloads = statePayloads.filter((payload) => payload.lockedItem);
+        assert.ok(itemPayloads.length >= 1, "per-item saves must hit the item endpoint");
+        itemPayloads.forEach((payload) => {
+            assert.strictEqual(payload.schemaVersion, "trust-reply-workbench-state-v3");
+            assert.deepStrictEqual(payload.source, current.source);
+            assert.strictEqual(payload.lockedItem.requestKey, payload.requestKey);
+            assert.ok(Number.isInteger(payload.expectedStateVersion));
+        });
+        const itemEndpointCalls = calls.filter((call) => call.url.includes("/state/item"));
+        assert.ok(itemEndpointCalls.length >= 1, "per-item saves must use /state/item");
+        itemEndpointCalls.forEach((call) => assert.strictEqual(call.options.method, "PATCH"));
         const streamPayloads = payloads.filter((payload) => payload.operation === "ADJUST_ITEM");
         assert.strictEqual(streamPayloads.length, 2);
         streamPayloads.forEach((payload) => {
@@ -2883,7 +2978,7 @@ describe("shared trust reply workbench mount contract", () => {
         click(trainingHost, "next-page");
         assert.match(trainingHost.innerHTML, /data-page-panel="facts"[^>]* hidden/);
         assert.doesNotMatch(liveHost.innerHTML, /data-page-panel="facts"[^>]* hidden/, "live mount must keep its own page");
-        assert.match(liveHost.innerHTML, /data-page-panel="frame"[^>]* hidden/);
+        assert.match(liveHost.innerHTML, /data-page-panel="compose"[^>]* hidden/);
 
         training.unmount();
         live.unmount();
@@ -2922,7 +3017,7 @@ describe("shared trust reply workbench mount contract", () => {
         assert.strictEqual(calls.filter((call) => call.url.includes("/generations/stream")).length, 0);
         assert.match(host.innerHTML, /FRAME_STALE：框架配置已变化/);
         assert.match(host.innerHTML, new RegExp(`data-request-key="${grounded.requestKey}"[\\s\\S]*?data-locked="true"`));
-        assert.doesNotMatch(host.innerHTML, /data-page-panel="frame"[^>]* hidden/, "frame page must open for a frame-stale restore");
+        assert.doesNotMatch(host.innerHTML, /data-page-panel="compose"[^>]* hidden/, "compose page must open for a frame-stale restore");
         assert.match(host.innerHTML, /data-page-panel="facts"[^>]* hidden/);
     });
 

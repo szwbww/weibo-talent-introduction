@@ -14,9 +14,11 @@ import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.reply.service.ReplyFrameSelection
 import com.weibo.talentintroduction.reply.service.ReplySnippetService
 import com.weibo.talentintroduction.reply.service.ResolvedReplyFrame
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -648,6 +650,163 @@ class TrustReplyWorkbenchServiceTest {
             Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
         )
         Mockito.verify(stateStore).pruneExpired(Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now())
+    }
+
+    // 计划 14 (T-5.3, I-2/I-4): 条目级 PATCH 只替换 requestKey 匹配的那一项，
+    // 其余 lockedItems 逐字保留；整封快照语义（矩阵/选中模型/框架）不受单条合并影响。
+    @Test
+    fun `saveStateItem replaces only the target locked item and keeps the rest verbatim`() {
+        // 两问正文：canonicalRequests（真实 extractor）恰好产出 key1/key2，
+        // 与行内矩阵一致；selection 按该矩阵 stub（同「same fact union」夹具）。
+        val exact = mail(id = 11L, body = "What?\nWhen?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+        val selected = selection(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "When?", listOf(10L), RequestGroundingStatus.GROUNDED)
+        )
+        Mockito.`when`(factSelection.selectForWorkbench("What?\nWhen?", listOf(listOf(9L), listOf(10L)), null, true))
+            .thenReturn(selected)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L, 10L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(10L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        val version = sourceVersion()
+        val key1 = canonicalKey(version)
+        val key2 = canonicalKey(version, 2, "When?")
+        val currentEvidence = evidenceWithMapping(
+            "evidence-v1",
+            key1 to listOf(9L),
+            key2 to listOf(10L)
+        )
+        val perRequest1 = perRequestEvidence("evidence-v1", key1, listOf(9L))
+        val perRequest2 = perRequestEvidence("evidence-v1", key2, listOf(10L))
+        val stored1 = lockedAnswer(version, perRequest1, 1, "What?", answerText = "answer-one")
+        val stored2 = lockedAnswer(version, perRequest2, 2, "When?", answerText = "answer-two", ruleId = 10L)
+        val storedPayload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = version,
+            evidenceSetVersion = currentEvidence,
+            requestedFactIds = listOf(9L, 10L),
+            selectedModel = "DEEPSEEK_V4_PRO",
+            lockedItems = listOf(stored1, stored2),
+            requestFactSelections = listOf(
+                TrustReplyRequestFactSelection(key1, listOf(9L)),
+                TrustReplyRequestFactSelection(key2, listOf(10L))
+            ),
+            frameSnapshot = TrustReplyFrameSnapshot(
+                selection = TrustReplyFrameSelection(salutationSnippetId = 7L),
+                version = "saved-frame-v1"
+            )
+        )
+        Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(3L, LocalDateTime.now().plusDays(1), "{}")
+        )
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(storedPayload)
+        // 行内已存 v4 矩阵 → saveStateItem 按其解析（与 bootstrap 同款）。
+        var capturedPayload: TrustReplySavedStatePayload? = null
+        Mockito.doAnswer { invocation ->
+            capturedPayload = invocation.arguments[0] as TrustReplySavedStatePayload
+            "{}"
+        }.`when`(stateStore).encodePayload(
+            Mockito.any(TrustReplySavedStatePayload::class.java) ?: TrustReplySavedStatePayload(
+                schemaVersion = "",
+                sourceVersion = "",
+                evidenceSetVersion = "",
+                requestedFactIds = emptyList(),
+                selectedModel = "",
+                lockedItems = emptyList()
+            )
+        )
+        Mockito.`when`(stateStore.save(Mockito.anyString() ?: "TRAINING_MAIL", Mockito.anyLong() ?: 11L, Mockito.anyLong() ?: 3L, Mockito.anyString() ?: "", Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now())).thenReturn(4L)
+
+        val updated1 = lockedAnswer(version, perRequest1, 1, "What?", answerText = "answer-one-updated")
+        val response = service.saveStateItem(TrustReplySaveStateItemRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            expectedStateVersion = 3,
+            sourceVersion = version,
+            evidenceSetVersion = currentEvidence,
+            requestKey = key1,
+            lockedItem = updated1
+        ))
+
+        assertEquals("SAVED", response.status)
+        assertEquals(4L, response.stateVersion)
+        assertEquals(listOf(key1, key2), response.lockedItems.map { it.requestKey })
+        assertEquals("answer-one-updated", response.lockedItems[0].answerText)
+        assertEquals(stored2, response.lockedItems[1])
+        // 其余整封字段逐字保留（不因单条合并而重写）。
+        assertEquals("DEEPSEEK_V4_PRO", response.selectedModel)
+        assertEquals(listOf(9L, 10L), response.requestedFactIds)
+        assertEquals("saved-frame-v1", response.frameSnapshot?.version)
+        assertEquals(storedPayload.requestFactSelections, response.requestFactSelections)
+        Mockito.verify(stateStore).save(
+            Mockito.anyString() ?: "TRAINING_MAIL",
+            Mockito.anyLong() ?: 11L,
+            Mockito.anyLong() ?: 3L,
+            Mockito.anyString() ?: "",
+            Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+        )
+        assertEquals(updated1, requireNotNull(capturedPayload).lockedItems[0])
+        assertEquals(stored2, requireNotNull(capturedPayload).lockedItems[1])
+    }
+
+    // 计划 14 (T-5.3, I-4): 乐观锁冲突返回既有的 stale 码，绝不停靠校验直接覆盖。
+    @Test
+    fun `saveStateItem propagates optimistic state conflicts as the existing stale code`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val key = canonicalKey(version)
+        val currentEvidence = evidenceWithMapping("evidence-v1", key to listOf(9L))
+        val perRequest = perRequestEvidence("evidence-v1", key, listOf(9L))
+        val stored1 = lockedAnswer(version, perRequest, 1, "What?", answerText = "answer-one")
+        val storedPayload = TrustReplySavedStatePayload(
+            schemaVersion = TrustReplyWorkbenchStateStore.SCHEMA_VERSION,
+            sourceVersion = version,
+            evidenceSetVersion = currentEvidence,
+            requestedFactIds = listOf(9L),
+            selectedModel = "DEEPSEEK_V4_FLASH",
+            lockedItems = listOf(stored1),
+            requestFactSelections = canonicalMatrix(version)
+        )
+        Mockito.`when`(stateStore.load("TRAINING_MAIL", 11L)).thenReturn(
+            TrustReplyWorkbenchStateStore.TrustReplyStoredState(9L, LocalDateTime.now().plusDays(1), "{}")
+        )
+        Mockito.`when`(stateStore.decodePayload("{}")).thenReturn(storedPayload)
+        Mockito.`when`(stateStore.encodePayload(Mockito.any(TrustReplySavedStatePayload::class.java) ?: TrustReplySavedStatePayload(
+            schemaVersion = "",
+            sourceVersion = "",
+            evidenceSetVersion = "",
+            requestedFactIds = emptyList(),
+            selectedModel = "",
+            lockedItems = emptyList()
+        ))).thenReturn("{}")
+        Mockito.`when`(stateStore.save(Mockito.anyString() ?: "TRAINING_MAIL", Mockito.anyLong() ?: 11L, Mockito.anyLong() ?: 9L, Mockito.anyString() ?: "", Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()))
+            .thenThrow(TrustReplyWorkbenchException(HttpStatus.CONFLICT, "TRUST_REPLY_STATE_CONFLICT"))
+
+        val ex = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.saveStateItem(TrustReplySaveStateItemRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedStateVersion = 9,
+                sourceVersion = version,
+                evidenceSetVersion = currentEvidence,
+                requestKey = key,
+                lockedItem = stored1
+            ))
+        }
+        assertEquals("TRUST_REPLY_STATE_CONFLICT", ex.code)
+        Mockito.verify(stateStore).save(
+            Mockito.anyString() ?: "TRAINING_MAIL",
+            Mockito.anyLong() ?: 11L,
+            Mockito.anyLong() ?: 9L,
+            Mockito.anyString() ?: "",
+            Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+        )
     }
 
     // V-1: a time-commitment display name using a Chinese numeral (三天后答复)
@@ -2034,6 +2193,725 @@ class TrustReplyWorkbenchServiceTest {
         assertEquals(matrix, assembled.requestFactSelections)
     }
 
+    // ── 12-letter-closer (T-4.8 / I-7 / IP-2) ─────────────────────────────────
+
+    @Test
+    fun `letter closing keeps canonical fact ids identical to the selection`() {
+        // 两条 request 命中同一条事实（sourceRuleIds 相同）→ 收口把正文去重为首次
+        // 出现的措辞；canonicalFactIds 仍来自 selection.sendQaRuleIds，与收口前
+        // 完全相同（I-7 / IP-2：审计规则集来自选择，不随文本形态变化而丢失）。
+        val item1 = item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)
+        val item2 = item(2, "How?", listOf(9L), RequestGroundingStatus.GROUNDED)
+        stubCanonicalSource(listOf(item1, item2))
+        val version = sourceVersion()
+        val expectedFactIds = (item1.factRuleIds + item2.factRuleIds).distinct()
+        val evidenceVersion = evidenceWithMapping(
+            "evidence-v1",
+            canonicalKey(version) to listOf(9L),
+            canonicalKey(version, 2, "How?") to listOf(9L)
+        )
+        val locked = listOf(
+            lockedAnswer(
+                version,
+                perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+                1,
+                "What?",
+                answerText = "First wording of the shared fact."
+            ),
+            lockedAnswer(
+                version,
+                perRequestEvidence("evidence-v1", canonicalKey(version, 2, "How?"), listOf(9L)),
+                2,
+                "How?",
+                answerText = "Second wording of the shared fact."
+            )
+        )
+        // 收口后 composeLockedItems 只收到首次出现的措辞（I-2 去重已生效）。
+        Mockito.`when`(pointByPointComposer.composeLockedItems(listOf("First wording of the shared fact."), defaultFrame))
+            .thenReturn("First wording of the shared fact.")
+        Mockito.`when`(previewService.preview("First wording of the shared fact.", contact(), null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
+
+        val assembled = service.assemble(TrustReplyAssembleRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            expectedSourceVersion = version,
+            expectedEvidenceSetVersion = evidenceVersion,
+            lockedItems = locked,
+            requestedFactIds = listOf(9L)
+        ))
+
+        // 正文被收口（同事实只出现一次），而审计规则集一字未变。
+        assertEquals("First wording of the shared fact.", assembled.rawDraftText)
+        assertEquals(expectedFactIds, assembled.canonicalFactIds)
+        // Repair R-1 (V-3): 未提交步骤 03 段落时，响应不暴露最终段落接缝（空列表/空映射）。
+        assertTrue(assembled.finalParagraphs.isEmpty())
+        assertTrue(assembled.finalParagraphByRequestKey.isEmpty())
+    }
+
+    // ── Repair R-1 (V-1/V-3): 步骤 03 权威段落经 assemble 逐字成文 ────────────
+
+    private fun finalParagraphLocked(
+        version: String,
+        evidenceSetVersion: String,
+        requestKey: String,
+        answerText: String,
+        claims: List<AiReplyItemClaim>
+    ): TrustReplyLockedItemRequest {
+        val versionId = TrustReplyWorkbenchService.versionId(
+            requestKey = requestKey,
+            handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+            answerText = answerText,
+            claims = claims,
+            model = "DEEPSEEK_V4_FLASH",
+            generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+            evidenceSetVersion = evidenceSetVersion,
+            sourceVersion = version,
+            operatorInstructionHash = AiReplyDraftService.sha256Hex("")
+        )
+        return TrustReplyLockedItemRequest(
+            requestKey = requestKey,
+            versionId = versionId,
+            handling = TrustReplyItemHandling.ANSWER_WITH_EVIDENCE,
+            answerText = answerText,
+            claims = claims,
+            model = "DEEPSEEK_V4_FLASH",
+            generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+            evidenceSetVersion = evidenceSetVersion,
+            sourceVersion = version
+        )
+    }
+
+    @Test
+    fun `assemble final paragraphs reject non canonical operator fact ids before composition`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val operatorText = "Operator sentence."
+        val locked = finalParagraphOperatorLocked(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            canonicalKey(version),
+            answerText = operatorText
+        )
+        // 非规范 id（external-1）即使正文可绑定到归属版本也必须被拒（V-4）：
+        // 运营事实只在 op<n> 身份空间存在，任意客户端自定义 id 不得绕过命名空间。
+        for (badId in listOf("external-1", "op0", "op01", "OP1")) {
+            val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+                service.assemble(TrustReplyAssembleRequest(
+                    source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                    expectedSourceVersion = version,
+                    expectedEvidenceSetVersion = evidenceVersion,
+                    lockedItems = listOf(locked),
+                    requestedFactIds = listOf(9L),
+                    finalParagraphs = listOf(
+                        TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf(badId), text = operatorText)
+                    ),
+                    operatorFacts = listOf(opFact(badId, operatorText))
+                ))
+            }
+            assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code, "id $badId must be rejected")
+        }
+        Mockito.verifyNoInteractions(pointByPointComposer)
+    }
+
+    // Repair R-1 (epoch 3 / V-1): 「按回答说明生成」的锁定版本（claims 恒空）——
+    // 步骤 03 草稿以 op<n> 表示其内容。
+    private fun finalParagraphOperatorLocked(
+        version: String,
+        evidenceSetVersion: String,
+        requestKey: String,
+        answerText: String,
+        instruction: String = "Use the operator-provided basis."
+    ): TrustReplyLockedItemRequest {
+        val versionId = TrustReplyWorkbenchService.versionId(
+            requestKey = requestKey,
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            answerText = answerText,
+            claims = emptyList(),
+            model = "DEEPSEEK_V4_FLASH",
+            generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+            evidenceSetVersion = evidenceSetVersion,
+            sourceVersion = version,
+            operatorInstructionHash = AiReplyDraftService.sha256Hex(instruction)
+        )
+        return TrustReplyLockedItemRequest(
+            requestKey = requestKey,
+            versionId = versionId,
+            handling = TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT,
+            answerText = answerText,
+            claims = emptyList(),
+            model = "DEEPSEEK_V4_FLASH",
+            generationKind = TrustReplyItemGenerationKind.AI_GENERATED,
+            evidenceSetVersion = evidenceSetVersion,
+            sourceVersion = version,
+            operatorInstruction = instruction,
+            operatorInstructionHash = AiReplyDraftService.sha256Hex(instruction)
+        )
+    }
+
+    private fun opFact(id: String, body: String): PlanFact =
+        PlanFact(id = id, topic = "general", body = body, controlled = null, frozen = true, required = true)
+
+    @Test
+    fun `assemble with authoritative final paragraphs composes operator fact slots verbatim and maps the owner`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val operatorText = "We only proceed after a written agreement."
+        val locked = finalParagraphOperatorLocked(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            canonicalKey(version),
+            answerText = operatorText
+        )
+        val paragraphText = "The operator states that $operatorText"
+        Mockito.`when`(pointByPointComposer.composeLockedItems(listOf(paragraphText), defaultFrame))
+            .thenReturn("raw $paragraphText")
+        Mockito.`when`(previewService.preview("raw $paragraphText", contact(), null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
+
+        val assembled = service.assemble(TrustReplyAssembleRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            expectedSourceVersion = version,
+            expectedEvidenceSetVersion = evidenceVersion,
+            lockedItems = listOf(locked),
+            requestedFactIds = listOf(9L),
+            finalParagraphs = listOf(
+                TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf("op1"), text = paragraphText)
+            ),
+            operatorFacts = listOf(opFact("op1", operatorText))
+        ))
+
+        // V-1: op<n> 槽位通过校验并逐字成文；V-3: 归属版本确定性映射到该段落。
+        assertEquals("raw $paragraphText", assembled.rawDraftText)
+        assertEquals(listOf(OrchestratedParagraph("general", listOf("op1"), paragraphText)), assembled.finalParagraphs)
+        assertEquals(mapOf(canonicalKey(version) to paragraphText), assembled.finalParagraphByRequestKey)
+    }
+
+    @Test
+    fun `assemble with authoritative final paragraphs mixes evidence facts and operator slots`() {
+        val evidenceItem = item(2, "How?", listOf(10L), RequestGroundingStatus.GROUNDED)
+        val operatorItem = item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)
+        stubSourceWith(listOf(operatorItem, evidenceItem))
+        val version = sourceVersion()
+        val key1 = canonicalKey(version)
+        val key2 = canonicalKey(version, 2, "How?")
+        val evidenceVersion = evidenceWithMapping(
+            "evidence-v1",
+            key1 to listOf(9L),
+            key2 to listOf(10L)
+        )
+        val operatorText = "Operator sentence."
+        val operatorLocked = finalParagraphOperatorLocked(
+            version,
+            perRequestEvidence("evidence-v1", key1, listOf(9L)),
+            key1,
+            answerText = operatorText
+        )
+        val evidenceLocked = finalParagraphLocked(
+            version,
+            perRequestEvidence("evidence-v1", key2, listOf(10L)),
+            key2,
+            answerText = "Evidence sentence.",
+            claims = listOf(AiReplyItemClaim("general.answer", "Evidence sentence.", listOf(10L)))
+        )
+        val opParagraph = "Operator paragraph with $operatorText"
+        val evidenceParagraph = "Evidence paragraph with the supported answer."
+        Mockito.`when`(pointByPointComposer.composeLockedItems(listOf(opParagraph, evidenceParagraph), defaultFrame))
+            .thenReturn("raw A\n\nraw B")
+        Mockito.`when`(previewService.preview("raw A\n\nraw B", contact(), null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
+
+        val assembled = service.assemble(TrustReplyAssembleRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            expectedSourceVersion = version,
+            expectedEvidenceSetVersion = evidenceVersion,
+            lockedItems = listOf(operatorLocked, evidenceLocked),
+            requestedFactIds = listOf(9L, 10L),
+            finalParagraphs = listOf(
+                TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf("op1"), text = opParagraph),
+                TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf("f10"), text = evidenceParagraph)
+            ),
+            operatorFacts = listOf(opFact("op1", operatorText))
+        ))
+
+        assertEquals("raw A\n\nraw B", assembled.rawDraftText)
+        assertEquals(mapOf(key1 to opParagraph, key2 to evidenceParagraph), assembled.finalParagraphByRequestKey)
+    }
+
+    @Test
+    fun `assemble final paragraphs fail closed when an operator slot is missing from the draft`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val operatorText = "Operator sentence."
+        val locked = finalParagraphOperatorLocked(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            canonicalKey(version),
+            answerText = operatorText
+        )
+        // 草稿段落存在但未覆盖 op1（也未覆盖任何替换身份）→ 分区失配。
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.assemble(TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedSourceVersion = version,
+                expectedEvidenceSetVersion = evidenceVersion,
+                lockedItems = listOf(locked),
+                requestedFactIds = listOf(9L),
+                finalParagraphs = listOf(
+                    TrustReplyFinalParagraphRequest(topic = "general", factIds = emptyList(), text = "No slot")
+                ),
+                operatorFacts = listOf(opFact("op1", operatorText))
+            ))
+        }
+        assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code)
+    }
+
+    @Test
+    fun `assemble final paragraphs fail closed on foreign operator fact ids`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val operatorText = "Operator sentence."
+        val locked = finalParagraphOperatorLocked(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            canonicalKey(version),
+            answerText = operatorText
+        )
+        // 草稿引用 op2，但 operatorFacts 只提交了 op1 → op2 无主 → fail closed。
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.assemble(TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedSourceVersion = version,
+                expectedEvidenceSetVersion = evidenceVersion,
+                lockedItems = listOf(locked),
+                requestedFactIds = listOf(9L),
+                finalParagraphs = listOf(
+                    TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf("op2"), text = "Foreign")
+                ),
+                operatorFacts = listOf(opFact("op1", operatorText))
+            ))
+        }
+        assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code)
+        Mockito.verifyNoInteractions(pointByPointComposer)
+    }
+
+    @Test
+    fun `assemble final paragraphs fail closed on duplicate operator fact ids`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = finalParagraphOperatorLocked(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            canonicalKey(version),
+            answerText = "Operator sentence."
+        )
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.assemble(TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedSourceVersion = version,
+                expectedEvidenceSetVersion = evidenceVersion,
+                lockedItems = listOf(locked),
+                requestedFactIds = listOf(9L),
+                finalParagraphs = listOf(
+                    TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf("op1"), text = "Operator sentence.")
+                ),
+                operatorFacts = listOf(opFact("op1", "Operator sentence."), opFact("op1", "Operator sentence."))
+            ))
+        }
+        assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code)
+    }
+
+    @Test
+    fun `assemble final paragraphs fail closed on non verbatim operator slot`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val operatorText = "Operator sentence."
+        val locked = finalParagraphOperatorLocked(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            canonicalKey(version),
+            answerText = operatorText
+        )
+        // op 为逐字插槽（frozen）：正文改写 → 逐字校验失败。
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.assemble(TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedSourceVersion = version,
+                expectedEvidenceSetVersion = evidenceVersion,
+                lockedItems = listOf(locked),
+                requestedFactIds = listOf(9L),
+                finalParagraphs = listOf(
+                    TrustReplyFinalParagraphRequest(
+                        topic = "general",
+                        factIds = listOf("op1"),
+                        text = "Operator sentence, rewritten to change the wording"
+                    )
+                ),
+                operatorFacts = listOf(opFact("op1", operatorText))
+            ))
+        }
+        assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code)
+        Mockito.verifyNoInteractions(pointByPointComposer)
+    }
+
+    @Test
+    fun `assemble final paragraphs fail closed on ambiguously owned operator fact`() {
+        val first = item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)
+        val second = item(2, "How?", listOf(10L), RequestGroundingStatus.GROUNDED)
+        stubSourceWith(listOf(first, second))
+        val version = sourceVersion()
+        val key1 = canonicalKey(version)
+        val key2 = canonicalKey(version, 2, "How?")
+        val evidenceVersion = evidenceWithMapping(
+            "evidence-v1",
+            key1 to listOf(9L),
+            key2 to listOf(10L)
+        )
+        val sharedText = "The exact same operator sentence."
+        // 两个「按回答说明生成」版本正文完全相同 → 一个 op 匹配两个 operatorOwned 单元 → 歧义。
+        val locked1 = finalParagraphOperatorLocked(
+            version,
+            perRequestEvidence("evidence-v1", key1, listOf(9L)),
+            key1,
+            answerText = sharedText
+        )
+        val locked2 = finalParagraphOperatorLocked(
+            version,
+            perRequestEvidence("evidence-v1", key2, listOf(10L)),
+            key2,
+            answerText = sharedText
+        )
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.assemble(TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedSourceVersion = version,
+                expectedEvidenceSetVersion = evidenceVersion,
+                lockedItems = listOf(locked1, locked2),
+                requestedFactIds = listOf(9L, 10L),
+                finalParagraphs = listOf(
+                    TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf("op1"), text = sharedText)
+                ),
+                operatorFacts = listOf(opFact("op1", sharedText))
+            ))
+        }
+        assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code)
+        Mockito.verifyNoInteractions(pointByPointComposer)
+    }
+
+    @Test
+    fun `assemble final paragraphs fail closed on operator body mismatch`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = finalParagraphOperatorLocked(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            canonicalKey(version),
+            answerText = "Locked operator answer."
+        )
+        // op body 与归属版本 answerText 归一化不等 → 无主 → fail closed。
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.assemble(TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedSourceVersion = version,
+                expectedEvidenceSetVersion = evidenceVersion,
+                lockedItems = listOf(locked),
+                requestedFactIds = listOf(9L),
+                finalParagraphs = listOf(
+                    TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf("op1"), text = "TAMPERED operator body")
+                ),
+                operatorFacts = listOf(opFact("op1", "TAMPERED operator body"))
+            ))
+        }
+        assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code)
+        Mockito.verifyNoInteractions(pointByPointComposer)
+    }
+
+    private fun stubSourceWith(items: List<RequestFactItem>) {
+        val exact = mail(id = 11L, body = "What?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+        val selected = selection(*items.toTypedArray())
+        val factIds = items.flatMap { it.factRuleIds }.distinct()
+        Mockito.`when`(factSelection.selectForWorkbench("What?", null, factIds, true)).thenReturn(selected)
+        Mockito.`when`(factSelection.selectForWorkbench("What?", null, null, true)).thenReturn(selected)
+        Mockito.`when`(factSelection.selectForWorkbench("What?", listOf(factIds), null, true)).thenReturn(selected)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(factIds))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        factIds.forEach { id ->
+            Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(id)))
+                .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        }
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+    }
+
+    private fun intent(key: String, evidenceRuleIds: List<Long>): RequestIntentCoverage =
+        RequestIntentCoverage(
+            intentKey = key,
+            title = key,
+            requiredCoverageKeys = emptyList(),
+            evidenceRuleIds = evidenceRuleIds,
+            status = "SUPPORTED",
+            missingEvidenceKeys = emptyList(),
+            requiresResearchContext = false
+        )
+
+    @Test
+    fun `assemble with authoritative final paragraphs composes their exact text in order and maps items`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = lockedAnswer(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            1,
+            "What?",
+            answerText = "Salary info"
+        )
+        val paragraphText = "The salary support is decided per project, and we will confirm the exact figure together."
+        Mockito.`when`(pointByPointComposer.composeLockedItems(listOf(paragraphText), defaultFrame))
+            .thenReturn("raw $paragraphText")
+        Mockito.`when`(previewService.preview("raw $paragraphText", contact(), null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
+
+        val assembled = service.assemble(TrustReplyAssembleRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            expectedSourceVersion = version,
+            expectedEvidenceSetVersion = evidenceVersion,
+            lockedItems = listOf(locked),
+            requestedFactIds = listOf(9L),
+            finalParagraphs = listOf(
+                TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf("f9"), text = paragraphText)
+            )
+        ))
+
+        // V-1: 步骤 03 段落逐字成文（不重跑收口器）；V-3: 响应暴露校验后段落与映射。
+        assertEquals("raw $paragraphText", assembled.rawDraftText)
+        assertEquals(listOf(OrchestratedParagraph("general", listOf("f9"), paragraphText)), assembled.finalParagraphs)
+        assertEquals(mapOf(canonicalKey(version) to paragraphText), assembled.finalParagraphByRequestKey)
+    }
+
+    @Test
+    fun `assemble final paragraphs fail closed on foreign fact ids`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = lockedAnswer(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            1,
+            "What?",
+            answerText = "Salary info"
+        )
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.assemble(TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedSourceVersion = version,
+                expectedEvidenceSetVersion = evidenceVersion,
+                lockedItems = listOf(locked),
+                requestedFactIds = listOf(9L),
+                finalParagraphs = listOf(
+                    TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf("f99"), text = "Foreign")
+                )
+            ))
+        }
+        assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code)
+        Mockito.verifyNoInteractions(pointByPointComposer)
+    }
+
+    @Test
+    fun `assemble final paragraphs fail closed when a required fact is not covered`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = lockedAnswer(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            1,
+            "What?",
+            answerText = "Salary info"
+        )
+        // 段落存在但未覆盖 required 事实 f9 → 分区失配 → fail closed。
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.assemble(TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedSourceVersion = version,
+                expectedEvidenceSetVersion = evidenceVersion,
+                lockedItems = listOf(locked),
+                requestedFactIds = listOf(9L),
+                finalParagraphs = listOf(
+                    TrustReplyFinalParagraphRequest(topic = "general", factIds = emptyList(), text = "No fact covered")
+                )
+            ))
+        }
+        assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code)
+    }
+
+    @Test
+    fun `assemble final paragraphs fail closed on non verbatim controlled body`() {
+        val controlledItem = item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)
+            .copy(intents = listOf(intent("confidentiality.materials", listOf(9L))))
+        stubSourceWith(listOf(controlledItem))
+        val version = sourceVersion()
+        val key = TrustReplyWorkbenchService.requestKey(
+            version, 1, "What?", listOf("confidentiality.materials")
+        )
+        val evidenceVersion = evidenceWithMapping("evidence-v1", key to listOf(9L))
+        val controlledBody = "Your materials are kept strictly confidential and used only for application purposes. " +
+            "Technical details you prefer not to disclose can be handled with appropriate redaction."
+        val locked = finalParagraphLocked(
+            version,
+            perRequestEvidence("evidence-v1", key, listOf(9L)),
+            key,
+            answerText = controlledBody,
+            claims = listOf(AiReplyItemClaim("confidentiality.materials", controlledBody, listOf(9L)))
+        )
+        // G1 受控事实的正文被改写 → 逐字校验失败（fail closed）。
+        val rewritten = controlledBody.replace("used only for application purposes", "used for any purpose")
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.assemble(TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedSourceVersion = version,
+                expectedEvidenceSetVersion = evidenceVersion,
+                lockedItems = listOf(locked),
+                requestedFactIds = listOf(9L),
+                finalParagraphs = listOf(
+                    TrustReplyFinalParagraphRequest(topic = "confidentiality", factIds = listOf("f9"), text = rewritten)
+                )
+            ))
+        }
+        assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code)
+        Mockito.verifyNoInteractions(pointByPointComposer)
+    }
+
+    @Test
+    fun `assemble final paragraphs fail closed on paragraph action injection`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        val version = sourceVersion()
+        val evidenceVersion = evidenceWithMapping("evidence-v1", canonicalKey(version) to listOf(9L))
+        val locked = lockedAnswer(
+            version,
+            perRequestEvidence("evidence-v1", canonicalKey(version), listOf(9L)),
+            1,
+            "What?",
+            answerText = "Salary info"
+        )
+        // 段落内注入动作句（非冻结事实自带）→ 单动作通道被破坏 → fail closed。
+        val error = assertThrows(TrustReplyWorkbenchException::class.java) {
+            service.assemble(TrustReplyAssembleRequest(
+                source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+                expectedSourceVersion = version,
+                expectedEvidenceSetVersion = evidenceVersion,
+                lockedItems = listOf(locked),
+                requestedFactIds = listOf(9L),
+                finalParagraphs = listOf(
+                    TrustReplyFinalParagraphRequest(
+                        topic = "general",
+                        factIds = listOf("f9"),
+                        text = "Salary info. Please send your CV."
+                    )
+                )
+            ))
+        }
+        assertEquals("TRUST_REPLY_FINAL_PARAGRAPHS_INVALID", error.code)
+        Mockito.verifyNoInteractions(pointByPointComposer)
+    }
+
+    @Test
+    fun `assemble final paragraphs map a merged paragraph deterministically to its contributing item`() {
+        val twoFactItem = item(1, "What?", listOf(9L, 10L), RequestGroundingStatus.GROUNDED).copy(
+            intents = listOf(intent("policy.eligibility", listOf(9L)), intent("compensation.details", listOf(10L)))
+        )
+        stubSourceWith(listOf(twoFactItem))
+        val version = sourceVersion()
+        val key = TrustReplyWorkbenchService.requestKey(
+            version, 1, "What?", listOf("policy.eligibility", "compensation.details")
+        )
+        val evidenceVersion = evidenceWithMapping("evidence-v1", key to listOf(9L, 10L))
+        val claims = listOf(
+            AiReplyItemClaim("policy.eligibility", "Claim A", listOf(9L)),
+            AiReplyItemClaim("compensation.details", "Claim B", listOf(10L))
+        )
+        val locked = finalParagraphLocked(
+            version,
+            perRequestEvidence("evidence-v1", key, listOf(9L, 10L)),
+            key,
+            answerText = "Claim A\n\nClaim B",
+            claims = claims
+        )
+        val merged = "Claim A and Claim B are both handled by the same team."
+        Mockito.`when`(pointByPointComposer.composeLockedItems(listOf(merged), defaultFrame))
+            .thenReturn("raw $merged")
+        Mockito.`when`(previewService.preview("raw $merged", contact(), null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
+
+        val assembled = service.assemble(TrustReplyAssembleRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            expectedSourceVersion = version,
+            expectedEvidenceSetVersion = evidenceVersion,
+            lockedItems = listOf(locked),
+            requestedFactIds = listOf(9L, 10L),
+            finalParagraphs = listOf(
+                TrustReplyFinalParagraphRequest(topic = "general", factIds = listOf("f9", "f10"), text = merged)
+            )
+        ))
+
+        // 合并段落：两条事实同段，该 request 的两条贡献单元都确定性映射到同一段落。
+        assertEquals("raw $merged", assembled.rawDraftText)
+        assertEquals(mapOf(key to merged), assembled.finalParagraphByRequestKey)
+    }
+
+    @Test
+    fun `assemble final paragraphs leave ambiguous mappings unmapped`() {
+        val twoFactItem = item(1, "What?", listOf(9L, 10L), RequestGroundingStatus.GROUNDED).copy(
+            intents = listOf(intent("policy.eligibility", listOf(9L)), intent("compensation.details", listOf(10L)))
+        )
+        stubSourceWith(listOf(twoFactItem))
+        val version = sourceVersion()
+        val key = TrustReplyWorkbenchService.requestKey(
+            version, 1, "What?", listOf("policy.eligibility", "compensation.details")
+        )
+        val evidenceVersion = evidenceWithMapping("evidence-v1", key to listOf(9L, 10L))
+        val claims = listOf(
+            AiReplyItemClaim("policy.eligibility", "Claim A", listOf(9L)),
+            AiReplyItemClaim("compensation.details", "Claim B", listOf(10L))
+        )
+        val locked = finalParagraphLocked(
+            version,
+            perRequestEvidence("evidence-v1", key, listOf(9L, 10L)),
+            key,
+            answerText = "Claim A\n\nClaim B",
+            claims = claims
+        )
+        // 同一 request 的两条事实被拆到两个不同主题段 → 映射歧义 → 不映射（归档侧 fail closed）。
+        Mockito.`when`(pointByPointComposer.composeLockedItems(listOf("Paragraph A", "Paragraph B"), defaultFrame))
+            .thenReturn("raw A\n\nraw B")
+        Mockito.`when`(previewService.preview("raw A\n\nraw B", contact(), null))
+            .thenReturn(AiReplyDraftPreviewService.PreviewResult("rendered", emptyList()))
+
+        val assembled = service.assemble(TrustReplyAssembleRequest(
+            source = TrustReplySourceRef(TRAINING_MAIL, 11L),
+            expectedSourceVersion = version,
+            expectedEvidenceSetVersion = evidenceVersion,
+            lockedItems = listOf(locked),
+            requestedFactIds = listOf(9L, 10L),
+            finalParagraphs = listOf(
+                TrustReplyFinalParagraphRequest(topic = "topic-a", factIds = listOf("f9"), text = "Paragraph A"),
+                TrustReplyFinalParagraphRequest(topic = "topic-b", factIds = listOf("f10"), text = "Paragraph B")
+            )
+        ))
+
+        assertEquals("raw A\n\nraw B", assembled.rawDraftText)
+        assertTrue(assembled.finalParagraphByRequestKey.isEmpty())
+    }
+
     // ── 02 selectable frame: bootstrap options, strict resolve, state persistence ──
 
     @Test
@@ -2420,6 +3298,228 @@ class TrustReplyWorkbenchServiceTest {
         assertEquals("DELETED", response.status)
         Mockito.verify(stateStore).delete("TRAINING_MAIL", 11L, 5L)
         Mockito.verify(stateStore, Mockito.never()).deleteBySource(Mockito.anyString(), Mockito.anyLong())
+    }
+
+    // ── c5 / 15-workbench-three-step（T-6.4 / T-6.5）─────────────────────────────
+
+    private fun stubTwoRequestSource() {
+        val exact = mail(id = 11L, body = "What?\nWhen?")
+        Mockito.`when`(mailRecords.findById(11L)).thenReturn(Optional.of(exact))
+        Mockito.`when`(contacts.findById(7L)).thenReturn(Optional.of(contact()))
+        Mockito.`when`(mailRecords.findAllByExpertContactIdOrderByCreatedAtAsc(7L)).thenReturn(listOf(exact))
+        val selected = selection(
+            item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED),
+            item(2, "When?", listOf(10L), RequestGroundingStatus.GROUNDED)
+        )
+        Mockito.`when`(factSelection.selectForWorkbench("What?\nWhen?", listOf(listOf(9L), listOf(10L)), null, true))
+            .thenReturn(selected)
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L, 10L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(9L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(listOf(10L)))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(draftService.buildEvidenceSnapshotForSelection(emptyList()))
+            .thenReturn(Triple("evidence-v1", emptyList(), emptyList()))
+        Mockito.`when`(qaRules.findAllEnabledOrdered()).thenReturn(listOf(
+            QaRule(id = 9L, categoryId = 3L, keywords = "what", replySubject = null, replyBody = "", answerBody = "answer", displayName = "What"),
+            QaRule(id = 10L, categoryId = 3L, keywords = "when", replySubject = null, replyBody = "", answerBody = "second", displayName = "When")
+        ))
+    }
+
+    // T-6.4: 重排端点对 pinned 段落原样回填（携带条目级 evidenceSetVersion）；
+    // 未锁定段落重新编排；pinned 段落不进编排计划。
+    @Test
+    fun `rearrange fills pinned paragraphs verbatim and re-orchestrates the rest`() {
+        stubTwoRequestSource()
+        val version = sourceVersion()
+        val key1 = canonicalKey(version)
+        val key2 = canonicalKey(version, 2, "When?")
+        val perRequest1 = perRequestEvidence("evidence-v1", key1, listOf(9L))
+        val perRequest2 = perRequestEvidence("evidence-v1", key2, listOf(10L))
+        val source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+
+        val request = TrustReplyRearrangeRequest(
+            source = source,
+            expectedSourceVersion = version,
+            requestFactSelections = listOf(
+                TrustReplyRequestFactSelection(key1, listOf(9L)),
+                TrustReplyRequestFactSelection(key2, listOf(10L))
+            ),
+            paragraphPlanDraft = listOf(
+                ParagraphPlanEntry("enterprise", listOf("f9")),
+                ParagraphPlanEntry("review", listOf("f10"))
+            ),
+            // I-3: pinned 段落携带条目级 evidenceSetVersion（主属 key2），非全信标量。
+            pinnedParagraphs = listOf(
+                TrustReplyPinnedParagraphRequest("review", listOf("f10"), "LOCKED REVIEW TEXT", perRequest2)
+            )
+        )
+        var orchestratedFacts: List<PlanFact>? = null
+        var orchestratedPlan: List<ParagraphPlanEntry>? = null
+        val attempt = OrchestrationAttempt { facts, plan, _, _ ->
+            orchestratedFacts = facts
+            orchestratedPlan = plan
+            OrchestratedLetter(
+                paragraphs = listOf(OrchestratedParagraph("enterprise", listOf("f9"), "fresh enterprise text")),
+                actionText = null
+            )
+        }
+
+        val response = service.rearrangeInternal(request, attempt)
+
+        // 未锁定段重新编排；pinned 段原样回填。
+        assertEquals(
+            listOf(
+                OrchestratedParagraph("enterprise", listOf("f9"), "fresh enterprise text"),
+                OrchestratedParagraph("review", listOf("f10"), "LOCKED REVIEW TEXT")
+            ),
+            response.paragraphs
+        )
+        // pinned 段落不进编排计划与事实集。
+        assertEquals(listOf(ParagraphPlanEntry("enterprise", listOf("f9"))), orchestratedPlan)
+        assertEquals(listOf("f9"), orchestratedFacts?.map { it.id })
+        // 响应带服务端规范化协议 + 六道校验全过（空码）。
+        assertEquals(listOf("enterprise", "review"), response.topicOrder)
+        assertEquals(2, response.paragraphPlan.size)
+        assertTrue(response.validationCodes.isEmpty())
+        // 事实列表含 f9/f10 及其 QA 正文（I-5：前端不拼装正文）。
+        val factsById = response.facts.associateBy { it.id }
+        assertEquals("answer", factsById["f9"]?.body)
+        assertEquals("second", factsById["f10"]?.body)
+    }
+
+    // T-6.5: 运营事实 op* 注入后走 13 的第 3 道校验（逐字）——改一个字即校验失败。
+    // 分两段断言：服务端重排响应的六道校验结果（重排路径的逐字再验证），以及
+    // 真实编排器（AiReplyLetterOrchestrator）对同一 op 事实的 G3 逐字拒绝。
+    @Test
+    fun `rearrange applies op fact verbatim validation - one word change fails`() {
+        stubCanonicalSource(listOf(item(1, "What?", listOf(9L), RequestGroundingStatus.GROUNDED)))
+        Mockito.`when`(qaRules.findAllEnabledOrdered()).thenReturn(listOf(
+            QaRule(id = 9L, categoryId = 3L, keywords = "what", replySubject = null, replyBody = "", answerBody = "answer", displayName = "What")
+        ))
+        val version = sourceVersion()
+        val source = TrustReplySourceRef(TRAINING_MAIL, 11L)
+
+        val opFact = PlanFact(
+            id = "op1",
+            topic = "enterprise",
+            body = "operator fixed text",
+            controlled = null,
+            frozen = true,
+            required = true
+        )
+        val request = TrustReplyRearrangeRequest(
+            source = source,
+            expectedSourceVersion = version,
+            requestFactSelections = canonicalMatrix(version),
+            paragraphPlanDraft = listOf(
+                ParagraphPlanEntry("enterprise", listOf("f9", "op1"))
+            ),
+            operatorFacts = listOf(opFact)
+        )
+
+        // Part A: 桩编排返回改了一个字的 op 正文 → 重排响应的六道校验结果必须命中
+        // ORCH_VERBATIM_BODY_MISSING（I-2：与受控事实同一逐字校验）。
+        var capturedFacts: List<PlanFact>? = null
+        var capturedPlan: List<ParagraphPlanEntry>? = null
+        val stubAttempt = OrchestrationAttempt { facts, plan, _, _ ->
+            capturedFacts = facts
+            capturedPlan = plan
+            OrchestratedLetter(
+                paragraphs = listOf(
+                    OrchestratedParagraph("enterprise", listOf("f9", "op1"), "answer operator fixed wording")
+                ),
+                actionText = null
+            )
+        }
+        val response = service.rearrangeInternal(request, stubAttempt)
+        assertTrue(
+            response.validationCodes.contains(AiReplyValidationCodes.ORCH_VERBATIM_BODY_MISSING),
+            "one-word change of the op fact body must fail the verbatim check"
+        )
+        // op 事实以逐字插槽进入编排输入（frozen + required，I-2）。
+        val opInFacts = requireNotNull(capturedFacts).first { it.id == "op1" }
+        assertTrue(opInFacts.frozen)
+        assertTrue(opInFacts.required)
+        assertEquals("operator fixed text", opInFacts.body)
+
+        // Part B: 真实 13 编排器对同一 op 事实的 G3 逐字拒绝——改一个字 → orchestrate
+        // 返回 null（初始 + 修复两轮均未通过）。
+        val badResponse = ObjectMapper().writeValueAsString(
+            mapOf(
+                "paragraphs" to listOf(
+                    mapOf(
+                        "topic" to "enterprise",
+                        "factIds" to listOf("f9", "op1"),
+                        "text" to "answer operator fixed wording"
+                    )
+                ),
+                "actionText" to null
+            )
+        )
+        val client = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String,
+                timeoutMillis: Long,
+                jsonOutput: Boolean,
+                cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult = LlmChatResult(badResponse)
+        }
+        val providerMock = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<LlmDraftClient>
+        Mockito.`when`(providerMock.getIfAvailable()).thenReturn(client)
+        val orchestrator = AiReplyLetterOrchestrator(
+            properties = LlmProperties(enabled = true, apiUrl = "http://llm.test", temperature = 0.3),
+            llmDraftClientProvider = providerMock,
+            objectMapper = ObjectMapper()
+        )
+        val letter = orchestrator.orchestrate(
+            facts = requireNotNull(capturedFacts),
+            plan = requireNotNull(capturedPlan),
+            topicOrder = requireNotNull(capturedPlan).map { it.topic },
+            allowedActions = emptySet()
+        )
+        assertNull(letter, "13's G3 must reject the one-word-changed op fact")
+
+        // 逐字未改时 13 的 G3 放行。
+        val validResponse = ObjectMapper().writeValueAsString(
+            mapOf(
+                "paragraphs" to listOf(
+                    mapOf(
+                        "topic" to "enterprise",
+                        "factIds" to listOf("f9", "op1"),
+                        "text" to "answer operator fixed text"
+                    )
+                ),
+                "actionText" to null
+            )
+        )
+        val validClient = object : LlmDraftClient {
+            override fun stitchDraft(inboundQuestion: String, ruleSegments: String, freeText: String): String? = null
+            override fun chat(messages: List<LlmChatMessage>, temperature: Double?): String? = null
+            override fun chatWithModelObservedStream(
+                messages: List<LlmChatMessage>,
+                temperature: Double?,
+                providerModel: String,
+                timeoutMillis: Long,
+                jsonOutput: Boolean,
+                cancellationToken: AiReplyCancellationToken,
+                progressSink: LlmStreamProgressSink
+            ): LlmChatResult = LlmChatResult(validResponse)
+        }
+        Mockito.`when`(providerMock.getIfAvailable()).thenReturn(validClient)
+        val passing = orchestrator.orchestrate(
+            facts = requireNotNull(capturedFacts),
+            plan = requireNotNull(capturedPlan),
+            topicOrder = requireNotNull(capturedPlan).map { it.topic },
+            allowedActions = emptySet()
+        )
+        assertNotNull(passing)
     }
 
     private fun contact() = ExpertContact(
