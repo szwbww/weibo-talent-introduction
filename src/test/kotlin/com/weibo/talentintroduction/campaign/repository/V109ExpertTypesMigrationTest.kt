@@ -46,7 +46,7 @@ class V109ExpertTypesMigrationTest {
     }
 
     private fun readV109(): String {
-        val sqlPath = Path.of("src/main/resources/db/migration/V109__require_expert_types_on_batch_send_task_config.sql")
+        val sqlPath = Path.of("src/main/resources/db/migration/V110__require_expert_types_on_batch_send_task_config.sql")
         return Files.readString(sqlPath)
     }
 }
