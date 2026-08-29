@@ -367,3 +367,61 @@ Operator facts are mapped only after V-1's failing closure check (`TrustReplyWor
 - Evidence commit subject: `docs(review-fast-p): record repair execution`.
 
 The reviewer made no product/test/report changes, staged nothing, and committed nothing. `repair-p` updated only the exact repair artifact to include the required fully resolved Review-Fast-P execution handoff.
+
+## Epoch 4 — 2026-08-29T12:12:24Z
+
+- Master plan: `docs/plans/2026-08-28/10-reply-orchestration-order.md` (sha256 `31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be`)
+- Governing identity: recorded commit `5a90e3e53e5fe8b40059b3090f086d6b36a09a01`; invoked identity SAME; `CONSISTENT`.
+- Boundary: `de228e17cc0134a7c11dea7cbf82054e8d249f99..0d45505d68261c14f3866e3f440b2ea08195f1de`.
+- Reviewer: `01a04d62-0fd8-7000-b4da-0f186741d8c2`.
+- Result: FAIL. Convergence: PROGRESSING. Manual acceptance: PENDING.
+- Repair artifact/result: `docs/plans/fix/10-reply-orchestration-order/repair.md` — DRAFT_READY (sha256 `a511b739a3a7e983787a29ac819f7a11530baf5b8b7eaefe706df3eb6ac634c8`).
+
+### Fresh command evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test` | PASS | 3022 tests, 0 failures, 0 errors, 5 skipped |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package` | PASS | BUILD SUCCESS |
+| `node --test src/test/js/*.test.js` | PASS | 766 pass, 0 fail |
+| `git diff --check` | PASS | exit 0, no output |
+| Flyway migration IT | HUMAN_EXCEPTION / NOT_RUN | Current user explicitly instructed: ignore Flyway IT; non-blocking for epoch 4 only |
+
+### Master contract matrix
+
+| Requirement | Verdict | Evidence |
+|---|---|---|
+| G-1..G-7 | PASS | Frozen migration guards, controlled-fact safety, parity, append-only catalog, and four-input request hash retain their contracts |
+| c1 I-1..I-6 | PASS | V109/guard/parity evidence remains green |
+| c2 I-1..I-7 | PASS | Closer, dedupe/order/CTA, frozen fixtures, and locked fallback pass |
+| c3 I-1..I-5; S-1..S-3 | PASS | Scoped persistence/guards and JS/DOM regression gates pass |
+| c4 I-1..I-8 | PASS | Source closure, verbatim slots, exact-once, validations, and fallback pass |
+| c5 I-1 | FAIL | V-4: server accepts noncanonical operator-fact IDs |
+| c5 I-2..I-6; S-1..S-3 | PASS | Valid `op<n>` path, final assemble flow, UI and non-persistent rearrangement pass |
+| c6 I-1..I-6; T-4/T-5 | PASS | Final-paragraph mapping and archive eligibility contracts remain closed |
+| A1/A2/A3 | PASS | Final cumulative diff stays within approved amendment scope |
+
+### Finding lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | Valid `op<n>` facts bind, compose, and map to final paragraphs |
+| V-2 | RESOLVED | Archive callers use canonical eligibility |
+| V-3 | RESOLVED | Archive takes validated final paragraph, not `answerText` fallback |
+| V-4 | NEW P1 | `TrustReplyWorkbenchService.kt:1960` rejects only blank/duplicate IDs; arbitrary `external-1` can enter required facts at `:1990` and pass generic rearrangement validation at `:2008` when its body matches an operator-owned version |
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Result | Evidence |
+|---|---|---|
+| c1 parity count; c2 evidence state; c3 flake/reference/full-PUT; c4 negative fixture; c5 hash-test note; JS gate baseline | RECORD_ONLY | None proves a current mandatory violation |
+| V-4 | P1 | New server-side source-closure defect; not a waiver/observation |
+
+### Repair planning
+
+- `review-p`: FAIL / PROGRESSING. `repair-p`: DRAFT_READY.
+- V-4 only. Authorized files: `TrustReplyWorkbenchService.kt`, `TrustReplyWorkbenchServiceTest.kt`.
+- Required repair: reject every `operatorFacts[].id` other than positive-decimal `op<n>` before identity closure; add malformed-ID regression and retain valid `op1` coverage.
+- Handoff requires one product commit `fix(reply-orchestration): enforce operator fact IDs` and one evidence commit `docs(review-fast-p): record repair execution`.
+
+No product code was modified by this reviewer.

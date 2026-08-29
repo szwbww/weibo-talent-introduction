@@ -1,83 +1,76 @@
 # Repair Plan: 10-reply-orchestration-order
 
 Status: DRAFT — HUMAN APPROVAL REQUIRED
-Baseline plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/2026-08-28/10-reply-orchestration-order.md` (sha256 `31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be`)
-Verification report: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/review/2026-08-28-reply-orchestration-order/machine-verification.md`, epoch 3 (`FAIL`, `PROGRESSING`; controller-owned report destination)
-Implementation boundary: `7f8b28d2f09c0df7551703d8037c2b521b189152..6793ff948515e541969f76388e0af5bde1fd2f3a`
+Baseline plan: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/2026-08-28/10-reply-orchestration-order.md
+Verification report: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/review/2026-08-28-reply-orchestration-order/machine-verification.md (epoch 4, independent aggregate re-review)
+Implementation boundary: de228e17cc0134a7c11dea7cbf82054e8d249f99..0d45505d68261c14f3866e3f440b2ea08195f1de
 
 ## Objective
 
-Allow final assembly to accept, validate, compose, and archive authoritative step-03 paragraphs containing `op<n>` operator-fact slots, without weakening source closure or changing non-operator paragraph behavior.
+Final assembly accepts an operator fact only in the canonical `op<n>` identity space, while preserving the existing exact-once, source, verbatim, action, request-key, and final-paragraph mapping behavior.
 
 ## Findings in Scope
 
 | Finding | Severity | Requirement | Root Cause |
 |---|---|---|---|
-| V-1 | P1 | Plan 15 I-2 and final-assemble semantics: the step-03 draft, including operator-fact slots, must enter the final letter verbatim and in sequence. | `TrustReplyWorkbenchService.validateFinalParagraphState` rebuilds required IDs only from locked versions (`f*`/`x*`), but the canonical step-03 draft uses submitted `op<n>` IDs for operator facts. Because `submittedSet` is compared to the version-only set before operator facts are added to validation, every authoritative paragraph containing `op<n>` is rejected with `TRUST_REPLY_FINAL_PARAGRAPHS_INVALID`. |
-| V-3 | P1 | Plan 12 IP-4 and plan 16 T-4: archive the final closed paragraph separately from per-item `answerText`. | The repaired mapping for operator facts runs only after the same invalid version-only ID equality check. Therefore the primary operator-directed path cannot produce `finalParagraphByRequestKey` or an archiveable `finalParagraphText`. |
+| V-4 | P1 | Plan 15 I-1/I-2 and G-7: operator facts use the isolated `op<n>` protocol, never a second client-controlled identity space or request-key input. | `validateFinalParagraphState` accepts every nonblank `operatorFacts[].id`, then adds it to `requiredIds` and passes it as a known fact to `validateRearrangement`; neither layer requires the `op<n>` form. A caller can therefore submit an arbitrary ID with a body matching one locked operator-owned version and have it composed/mapped. |
 
 ## Findings Excluded
 
 | Finding | Reason |
 |---|---|
-| V-2 | RESOLVED in epoch 3: both callers delegate to `UnsupportedAnswerIndexService.isArchiveEligible`, whose four-handling × two-generation allow-list matches document validation and keeps the training/live approval gates. |
-| Flyway runtime integration gate | BLOCKED evidence, not a product finding: Docker is unavailable (`DOCKER_HOST` socket not listening; `/var/run/docker.sock` absent). No prior skip is inferred as a waiver. |
-| Fast-P `RECORD_ONLY` observations | Reassessed without a mandatory violation; no repair authority. |
+| V-1 | RESOLVED in epoch 4: valid canonical `op<n>` facts bind to exactly one operator-owned unit, replace its synthetic `x<n>` identity in exact-once closure, compose verbatim, and map the owning request. |
+| V-2 | RESOLVED in epoch 3: training and live archive callers delegate to the canonical plan-16 allow-list. |
+| V-3 | RESOLVED in epoch 4: final archive mapping uses the validated unique final paragraph and fails closed when absent or ambiguous. |
+| Flyway runtime integration gate | HUMAN_EXCEPTION / NOT_RUN for epoch 4 by the explicit instruction to ignore Flyway IT; not a repair finding. |
+| Fast-P RECORD_ONLY observations | Re-evaluated: none proves a current mandatory violation or changes this root cause. |
 
 ## Unchanged Contract
 
-- G-1..G-7 and approved amendments A1/A2/A3/A4 remain unchanged; operator IDs never enter request/version/evidence hashes.
-- Server-side assembly must still reject stale/foreign versions, facts, frames, duplicate or missing required facts, paragraph actions, and non-verbatim controlled/frozen/operator facts.
-- The step-03 fact-ID universe remains the canonical `f*`/`x*`/`op<n>` protocol already returned by rearrange; do not create a second identity space.
-- Non-operator evidence facts, standalone non-operator facts, all-locked closer fallback, per-item persistence, and the single authorized CTA channel remain unchanged.
-- `answerText` remains the canonical per-item answer. `finalParagraphText` remains a separate final closed-paragraph sample and must fail closed on missing or ambiguous mapping.
-- Training `MEETS_EXPECTATION`, successful live-send/replay gates, archive failure isolation, and the exact plan-16 eligibility set remain unchanged.
-- No schema migration, endpoint addition, UI redesign, retry/outbox/re-send behavior, cache-buster change, or archive eligibility change is authorized.
+- `requestKey` remains exactly the existing four-input hash; no operator ID or operator body enters it.
+- Valid `op<n>` facts remain frozen, required, verbatim slots and bind by normalized body to exactly one `ANSWER_FROM_OPERATOR_INPUT` unit.
+- Existing `f*` evidence identities, genuine `x*` identities, source/version/frame validation, exact-once coverage, action policy, fallback closer behavior, final paragraph order, and fail-closed mapping remain unchanged.
+- No route, DTO shape, schema, index/archive eligibility, LLM call, or frontend behavior is changed.
 
 ## Authorized Files
 
 | File | Purpose |
 |---|---|
-| `src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt` | Reconcile canonical `op<n>` slots with their owning locked operator-directed versions during exact-once closure and deterministic final-paragraph mapping. |
-| `src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt` | Add the discriminating server regression for authoritative operator-fact final assembly, composition, mapping, and fail-closed variants. |
-| `src/test/js/trustReplyWorkbenchThreeStep.test.js` | Make the final-assemble browser regression carry the real `op<n>` paragraph/operatorFacts shape instead of a fixture that drops operator facts before assemble. |
+| `src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt` | Reject noncanonical operator-fact identities before they can enter final-paragraph identity closure. |
+| `src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt` | Add the discriminating malformed-ID regression without weakening valid operator-fact coverage. |
 
 ## Repair Tasks
 
-### R-1: Use one canonical identity closure for operator facts at final assemble
+### R-1: Enforce the canonical operator-fact ID namespace at final assembly
 
-- Resolves: V-1, V-3.
-- Root cause: final assembly compares submitted paragraph IDs with a required set reconstructed as `f*`/`x*` from versions before considering submitted canonical `op<n>` facts. A locked `ANSWER_FROM_OPERATOR_INPUT` version represented by `op1` in the step-03 draft is reconstructed as `x<n>`, so the equality gate rejects the valid draft and prevents mapping/archive.
-- Files: the three Authorized Files above.
-- Change: Validate the submitted `op<n>` facts as part of the same canonical exact-once identity closure used by the step-03 draft. Bind each operator fact to exactly one compatible locked version using existing operator-fact semantics; do not simultaneously require the replaced synthetic `x<n>` identity. Then reuse the existing six-check rearrangement validator, compose submitted paragraphs verbatim/in order, and map the owning request key to its unique containing final paragraph. Reject foreign, duplicate, missing, body-mismatched, or ambiguously owned operator facts.
-- Regression test: Submit a locked operator-directed version plus `operatorFacts=[op1]` and `finalParagraphs.factIds=[op1]`; assert exact composition and `requestKey -> final paragraph` mapping. Add mixed `f* + op<n>` coverage and fail-closed cases for missing/foreign/duplicate/non-verbatim/ambiguous operator facts. Update the browser test so its rearrange response retains `op<n>` and assert the final `/assemble` payload carries matching paragraph IDs and operator facts.
-- Existing verification: rerun the focused workbench service and three-step browser suites, then all Verification Commands.
-- Must not change: evidence-only `f*` behavior, genuine non-operator `x*` behavior, request-key hashing, stale/source/frame validation, action policy, final-paragraph ordering, mapping fail-closed behavior, or archive eligibility.
-- Prohibited: trusting arbitrary client IDs/bodies, matching operator facts by ID alone, falling back to `answerText` for `finalParagraphText`, weakening required exactly-once checks, adding LLM calls, changing routes/DTOs/index schema, or touching files outside Authorized Files.
+- Resolves: V-4.
+- Root cause: final assembly treats a submitted operator fact's arbitrary nonblank ID as authoritative once its body can be bound to an operator-owned unit.
+- Files: the two Authorized Files above.
+- Change: before constructing the final required-ID set, reject every operator fact whose ID is not exactly `op` followed by a positive decimal sequence. Keep the existing duplicate, foreign, body-mismatch, multiple-owner, verbatim, and exact-once rejections intact.
+- Regression test: submit an otherwise valid authoritative final paragraph and matching operator fact with a noncanonical ID such as `external-1`; assert `TRUST_REPLY_FINAL_PARAGRAPHS_INVALID` and that composition is not invoked. Retain a valid `op1` case proving the accepted path.
+- Existing verification: rerun the focused workbench-service suite, then all aggregate verification commands.
+- Must not change: `op<n>` facts remain independent from the hash; body-based ownership binding, legitimate `f*`/`x*` behavior, mapping, and archive eligibility retain their current semantics.
+- Prohibited: accepting another operator-ID format, renumbering client IDs, deriving an ID from request/version hashes, trusting ID alone without the existing body-owner check, changing routes/DTOs/schema/index/archive logic, adding LLM calls, or touching files outside Authorized Files.
 
 ## Verification Commands
 
 1. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -q -Dtest=TrustReplyWorkbenchServiceTest test`
-2. `node --test src/test/js/trustReplyWorkbenchThreeStep.test.js`
-3. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test`
-4. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package`
-5. `node --test src/test/js/*.test.js`
-6. `git diff --check`
-7. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true`
-
-Command 7 remains mandatory for post-repair verification. If Docker remains unavailable, record exact evidence and obtain a new human decision; prior execution-specific skips do not waive it.
+2. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test`
+3. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package`
+4. `node --test src/test/js/*.test.js`
+5. `git diff --check`
+6. `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` — HUMAN_EXCEPTION / NOT_RUN for this approval epoch only.
 
 ## Completion Criteria
 
-- A valid authoritative final draft containing `op<n>` passes exact-once/source/verbatim validation and is composed byte-for-byte in submitted paragraph order.
-- The owning operator-directed request maps deterministically to its unique final paragraph, and archive receives that paragraph separately from `answerText`.
-- Mixed evidence/operator paragraphs work; missing, foreign, duplicate, body-mismatched, or ambiguous operator facts fail closed.
-- Existing evidence-only `f*`, non-operator `x*`, fallback, action, source/version/frame, eligibility, and archive-isolation tests remain green.
+- A non-`op<n>` operator fact is rejected before composition or final-paragraph mapping.
+- A valid `op<n>` operator fact still passes the existing exact-once/source/verbatim/action checks, composes in submitted order, and maps its owner deterministically.
+- Existing evidence-only `f*`, non-operator `x*`, fallback, action, source/version/frame, final-paragraph mapping, eligibility, and archive-isolation regressions remain green.
 - Changed files remain exactly inside the Authorized Files list.
 
 ## Human Approval
 
-Execution is prohibited until the human explicitly approves this current plan.
+Execution is prohibited until the human explicitly approves this plan.
 
 To approve and execute this repair, send:
 
@@ -90,18 +83,16 @@ An explicit human-originated `$execute-p /Users/lukai/IdeaProjects/weibo-talent-
 1. Changes only to these Authorized Files:
    - `src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt`
    - `src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt`
-   - `src/test/js/trustReplyWorkbenchThreeStep.test.js`
 2. Running all required verification commands:
    - `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -q -Dtest=TrustReplyWorkbenchServiceTest test`
-   - `node --test src/test/js/trustReplyWorkbenchThreeStep.test.js`
    - `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test`
    - `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package`
    - `node --test src/test/js/*.test.js`
    - `git diff --check`
-   - `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true`
-3. After all repair tasks and required commands pass, exactly one local product commit before emitting `READY_FOR_VERIFICATION`, staging only the Authorized Files, with commit subject `fix(reply-orchestration): preserve operator facts in final assembly`.
+   - `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` — HUMAN_EXCEPTION / NOT_RUN only when the human explicitly re-approves that exception for this new approval epoch.
+3. After all repair tasks and non-excepted required commands pass, exactly one local product commit before emitting `READY_FOR_VERIFICATION`, staging only the two Authorized Files, with commit subject `fix(reply-orchestration): enforce operator fact IDs`.
 4. Appending `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/review/2026-08-28-reply-orchestration-order/repair-execution.md` with the exact approval source, repair identity, pre/post code SHAs, changed files, commands, deviations, executor identity when exposed, and clean-state evidence.
 5. Exactly one docs-only evidence commit containing only that execution handoff, with commit subject `docs(review-fast-p): record repair execution`.
-6. Returning to the already authorized `review-fast-p` aggregate re-review in the same task when the user's invocation requests it, using `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/fast/2026-08-28-reply-orchestration-order/human-review-handoff.md` and the committed `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/review/2026-08-28-reply-orchestration-order/repair-execution.md`. Do not ask the human to relay executor metadata.
+6. Returning to the already authorized `review-fast-p` aggregate re-review in the same task when the human invocation requests it, using `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/fast/2026-08-28-reply-orchestration-order/human-review-handoff.md` and the committed `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/review/2026-08-28-reply-orchestration-order/repair-execution.md`. Do not ask the human to relay executor metadata.
 
-This authorizes no extra files, amend, history rewrite, push, merge, deployment, or product repair beyond this plan.
+This authorizes no extra files, amendment, history rewrite, push, merge, deployment, or product repair beyond this plan.

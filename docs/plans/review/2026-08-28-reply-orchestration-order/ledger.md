@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-08-28/10-reply-orchestration-order.md
 
 - Status: REPAIR_PLAN_READY
-- Review epoch: 3
+- Review epoch: 4
 - Master plan: docs/plans/2026-08-28/10-reply-orchestration-order.md (sha256 31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be)
 - Governing master identity: sha256 31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be; recorded commit 5a90e3e53e5fe8b40059b3090f086d6b36a09a01
 - Invoked master identity: sha256 31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be (SAME)
@@ -11,23 +11,23 @@
 - Fast-p ledger: docs/plans/fast/2026-08-28-reply-orchestration-order/ledger.md (sha256 6cad0f4bfb192c1d0ada99df649334d14cdc1c43d14a8a21eb999244eaf92dee)
 - Fast-p handoff: docs/plans/fast/2026-08-28-reply-orchestration-order/human-review-handoff.md (sha256 3af316b8e39104e641e11639f6c0caa2dcd6094af3940b9003dbdcfd950bce56)
 - Master base: de228e17cc0134a7c11dea7cbf82054e8d249f99
-- Final code head: 6793ff948515e541969f76388e0af5bde1fd2f3a
-- Evidence parent before next commit: 10744acd4b2d57174a018a36ca338f537d6da61a
-- Previous evidence commit: 10744acd4b2d57174a018a36ca338f537d6da61a
+- Final code head: 0d45505d68261c14f3866e3f440b2ea08195f1de
+- Evidence parent before next commit: d2e3f605d937605e3f5a7a7286376d118a75fd20
+- Previous evidence commit: d2e3f605d937605e3f5a7a7286376d118a75fd20
 - Branch: fast/2026-08-28-reply-orchestration-order
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
 - Discovery evidence: SELECTED by /Users/lukai/.agents/skills/review-fast-p/scripts/discover_fast_p.py; six terminal children, READY_FOR_HUMAN_REVIEW ledger/handoff, and de228e17cc0134a7c11dea7cbf82054e8d249f99..7f8b28d2f09c0df7551703d8037c2b521b189152 ancestry validated.
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_reviewer_epoch3 (fresh reviewer created after repair code commit)
+- Reviewer: 01a04d62-0fd8-7000-b4da-0f186741d8c2 (fresh aggregate reviewer created after code commit 0d45505d68261c14f3866e3f440b2ea08195f1de)
 - Reviewer attempt: 1
 - Machine result: FAIL
-- Machine report epoch: docs/plans/review/2026-08-28-reply-orchestration-order/machine-verification.md#epoch-3
-- Repair artifact: docs/plans/fix/10-reply-orchestration-order/repair.md (sha256 436406ef90623635bd3342b4ac809a6050af8ad75e84fc2a4ecdf64c1ea9a522)
+- Machine report epoch: docs/plans/review/2026-08-28-reply-orchestration-order/machine-verification.md#epoch-4
+- Repair artifact: docs/plans/fix/10-reply-orchestration-order/repair.md (sha256 a511b739a3a7e983787a29ac819f7a11530baf5b8b7eaefe706df3eb6ac634c8)
 - Repair evidence mode: DURABLE_HANDOFF
 - Repair approval source: HUMAN `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/fix/10-reply-orchestration-order/repair.md`; A4 approval and command-7 skip recorded in repair-execution.md
 - Repair executor: main session agent (exact identity unavailable)
-- Repair code head: 6793ff948515e541969f76388e0af5bde1fd2f3a
+- Repair code head: 0d45505d68261c14f3866e3f440b2ea08195f1de
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: repair plan DRAFT_READY for persistent V-1/V-3; await explicit `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/fix/10-reply-orchestration-order/repair.md` approval.
+- Blocker/next action: repair plan DRAFT_READY for V-4; await explicit `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-08-28-reply-orchestration-order/docs/plans/fix/10-reply-orchestration-order/repair.md` approval. Flyway IT is explicitly skipped only for epoch 4.
