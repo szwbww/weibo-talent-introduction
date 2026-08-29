@@ -47,3 +47,47 @@ Post-docs-commit worktree clean (`git status --porcelain` empty). Plan identity 
 ## Next Action
 
 READY_FOR_VERIFICATION → the already authorized `review-fast-p` aggregate re-review consumes this file and `docs/plans/fast/2026-08-28-reply-orchestration-order/human-review-handoff.md`.
+
+---
+
+# Repair Execution — Epoch 3 (operator-fact slots)
+
+- Approval source: HUMAN `$execute-p <repair.md>` re-invocation (2026-08-29); plan hash changed to `436406ef90623635bd3342b4ac809a6050af8ad75e84fc2a4ecdf64c1ea9a522` → NEW execution epoch. Verification command 7 approved skipped (`批准跳过命令 7`, fresh decision for epoch 3).
+- Repair identity: EXECUTION_ID `docs/plans/fix/10-reply-orchestration-order/repair.md@436406ef…`.
+- Executor: main-session execute-p executor; same worktree identity as epoch 1.
+- Pre-execution code SHA: `6793ff948515e541969f76388e0af5bde1fd2f3a` (epoch-1 product head); pre-execution HEAD `452698921bde20adf15ed8b361243615f9705acf`.
+- Post-execution code SHA: `0d45505d68261c14f3866e3f440b2ea08195f1de` (single product commit, subject `fix(reply-orchestration): preserve operator facts in final assembly`, 3 authorized files only).
+- Evidence HEAD: the docs-only commit `docs(review-fast-p): record repair execution` (this appended record).
+- Implementation boundary: `6793ff948515e541969f76388e0af5bde1fd2f3a..0d45505d68261c14f3866e3f440b2ea08195f1de`.
+
+## Changed Files (3 authorized)
+
+| File | Change |
+|---|---|
+| src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt | R-1 (V-1/V-3): `FinalParagraphUnit.operatorOwned` marks standalone units from `ANSWER_FROM_OPERATOR_INPUT` versions; `validateFinalParagraphState` binds each submitted `op<n>` to exactly one operator-owned unit by normalized body equality (duplicate/foreign/body-mismatched/ambiguous ownership → 422), replaces the bound unit's synthetic `x<n>` identity with the op id in the exact-once closure, validates via the existing six-check rearrangement validator, and maps the owning requestKey deterministically. |
+| src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt | +8 regression tests: op slot composes + maps owner; mixed `f* + op<n>`; fail-closed missing/foreign/duplicate/non-verbatim/ambiguously-owned/body-mismatched. |
+| src/test/js/trustReplyWorkbenchThreeStep.test.js | Final-assemble browser test now carries the real `op<n>` paragraph/operatorFacts shape (rearrange retains op slots; assemble payload asserts matching paragraph ids, order/text, and operator facts). |
+
+## Commands
+
+| Command | Result | Evidence |
+|---|---|---|
+| `mvn -q -Dtest=TrustReplyWorkbenchServiceTest test` | PASS | 83/0/0/0 |
+| `node --test src/test/js/trustReplyWorkbenchThreeStep.test.js` | PASS | 4 pass / 0 fail |
+| `mvn test` | PASS | `Tests run: 3022, Failures: 0, Errors: 0, Skipped: 5`, BUILD SUCCESS |
+| `mvn clean package` | PASS | BUILD SUCCESS, 3022/0/0/5 |
+| `node --test src/test/js/*.test.js` | PASS | 766 pass / 0 fail |
+| `git diff --check` | PASS | exit 0 |
+| `mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` | BLOCKED (environment) | Docker daemon unavailable: `docker ps` → `failed to connect to the docker API at unix:///Users/lukai/.orbstack/run/docker.sock … no such file or directory`; `/var/run/docker.sock` absent; `DOCKER_HOST` unset. HUMAN-approved skip `批准跳过命令 7` (fresh epoch-3 decision). |
+
+## Deviations
+
+- None beyond the approved command-7 environment exception (recorded above) and the epoch change itself (plan hash `e0704ff0…` → `436406ef…`).
+
+## Clean State
+
+Post-docs-commit worktree clean (`git status --porcelain` empty). Plan identity rechecked (`436406ef…` unchanged during execution); worktree identity rechecked (branch/HEAD unchanged until the two authorized commits).
+
+## Next Action
+
+READY_FOR_VERIFICATION → the authorized `review-fast-p` aggregate re-review consumes this record + the fast-p handoff.
