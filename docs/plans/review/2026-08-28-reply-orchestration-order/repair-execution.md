@@ -91,3 +91,45 @@ Post-docs-commit worktree clean (`git status --porcelain` empty). Plan identity 
 ## Next Action
 
 READY_FOR_VERIFICATION → the authorized `review-fast-p` aggregate re-review consumes this record + the fast-p handoff.
+
+---
+
+# Repair Execution — Epoch 4 (operator fact ID namespace)
+
+- Approval source: HUMAN `$execute-p <repair.md>` re-invocation (2026-08-29); plan hash changed to `a511b739a3a7e983787a29ac819f7a11530baf5b8b7eaefe706df3eb6ac634c8` → NEW execution epoch. Verification command 6 approved skipped (`批准跳过命令 6`, fresh HUMAN_EXCEPTION / NOT_RUN for epoch 4).
+- Repair identity: EXECUTION_ID `docs/plans/fix/10-reply-orchestration-order/repair.md@a511b739…`.
+- Executor: main-session execute-p executor; same worktree identity as prior epochs.
+- Pre-execution code SHA: `0d45505d68261c14f3866e3f440b2ea08195f1de` (epoch-3 product head); pre-execution HEAD `fd2a55262dbfa771701739f5c669728cc36cd70d`.
+- Post-execution code SHA: `8fa4f6ca1fde33c471662acb49f53838386177a0` (single product commit, subject `fix(reply-orchestration): enforce operator fact IDs`, 2 authorized files only).
+- Evidence HEAD: the docs-only commit `docs(review-fast-p): record repair execution` (this appended record).
+- Implementation boundary: `0d45505d68261c14f3866e3f440b2ea08195f1de..8fa4f6ca1fde33c471662acb49f53838386177a0`.
+
+## Changed Files (2 authorized)
+
+| File | Change |
+|---|---|
+| src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt | R-1 (V-4): operator facts are accepted only in the canonical `op<n>` namespace — `CANONICAL_OPERATOR_FACT_ID = Regex("op[1-9][0-9]*")` (op + positive decimal sequence, no leading zero) enforced before the required-ID closure; duplicate/blank/body checks unchanged. |
+| src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt | +1 regression: `external-1`, `op0`, `op01`, `OP1` all rejected with `TRUST_REPLY_FINAL_PARAGRAPHS_INVALID` and no composer interaction; valid `op1` accepted path retained by existing epoch-3 tests. |
+
+## Commands
+
+| Command | Result | Evidence |
+|---|---|---|
+| `mvn -q -Dtest=TrustReplyWorkbenchServiceTest test` | PASS | 84/0/0/0 |
+| `mvn test` | PASS | `Tests run: 3023, Failures: 0, Errors: 0, Skipped: 5`, BUILD SUCCESS |
+| `mvn clean package` | PASS | BUILD SUCCESS, 3023/0/0/5 |
+| `node --test src/test/js/*.test.js` | PASS | 766 pass / 0 fail |
+| `git diff --check` | PASS | exit 0 |
+| `mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` | HUMAN_EXCEPTION / NOT_RUN | Docker daemon unavailable: `docker ps` → `failed to connect to the docker API at unix:///Users/lukai/.orbstack/run/docker.sock … no such file or directory`; `/var/run/docker.sock` absent. HUMAN-approved skip `批准跳过命令 6` (fresh epoch-4 exception). |
+
+## Deviations
+
+- None beyond the approved epoch-4 command-6 exception (recorded above) and the epoch change itself (plan hash `436406ef…` → `a511b739…`).
+
+## Clean State
+
+Post-docs-commit worktree clean (`git status --porcelain` empty). Plan identity rechecked (`a511b739…` unchanged during execution); worktree identity rechecked (branch/HEAD unchanged until the two authorized commits).
+
+## Next Action
+
+READY_FOR_VERIFICATION → the authorized `review-fast-p` aggregate re-review consumes this record + the fast-p handoff.
