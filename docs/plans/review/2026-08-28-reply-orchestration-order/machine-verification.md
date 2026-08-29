@@ -171,3 +171,113 @@ Impact: if default-off channel A is enabled, it samples per-item answers rather 
 - Reason: Docker/Flyway mandatory evidence is unavailable; this BLOCKED route must not create a repair artifact.
 
 No product code, tests, plans, or review evidence were modified by the reviewer. Nothing was staged or committed by the reviewer.
+
+## Epoch 2 — 2026-08-29T03:04:29Z
+
+- Master plan: docs/plans/2026-08-28/10-reply-orchestration-order.md (sha256 31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be)
+- Governing master identity: sha256 31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be; recorded commit 5a90e3e53e5fe8b40059b3090f086d6b36a09a01
+- Master identity state: CONSISTENT
+- Boundary: de228e17cc0134a7c11dea7cbf82054e8d249f99..7f8b28d2f09c0df7551703d8037c2b521b189152
+- Reviewer: /root/aggregate_reviewer_epoch2
+- Result: FAIL
+- Convergence: PROGRESSING
+- Repair artifact/result: docs/plans/fix/10-reply-orchestration-order/repair.md — DRAFT_READY
+
+### Human exception
+
+The user authorized this epoch only: `忽略 Flyway IT 继续` (2026-08-29). Therefore `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` was `HUMAN_EXCEPTION / NOT_RUN`; it is non-blocking only for epoch 2 and does not waive repair execution verification.
+
+### Fresh command evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test` | PASS | exit 0; BUILD SUCCESS; 3005 tests; 0 failures; 0 errors; 5 skipped; 03:08 |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package` | PASS | exit 0; BUILD SUCCESS; WAR created; embedded JS 765/765; 02:59 |
+| `node --test src/test/js/*.test.js` | PASS | 765 tests; 765 pass; 0 fail; 121 suites |
+| `git diff --check` | PASS | exit 0; no output |
+| Flyway migration IT | HUMAN_EXCEPTION / NOT_RUN | exact user authority above |
+
+### Finding lineage
+
+| ID | Severity | Epoch 1 | Epoch 2 | Evidence |
+|---|---:|---|---|---|
+| V-1 | P1 | NEW | PERSISTENT | Final `/assemble` payload/DTO omits authoritative step-03 paragraphs; service re-closes item versions. |
+| V-2 | P1 | NEW | PERSISTENT | Training/live callers still pre-filter validator-approved archive shapes. |
+| V-3 | P1 | NEW | PERSISTENT | `finalParagraphText` remains `version.answerText`, not final closed paragraph text. |
+
+#### V-1 — P1 — PERSISTENT
+
+- `trust-reply-workbench.js:1338-1350`: assemble payload omits paragraph draft, pins, and operator facts.
+- `trust-reply-workbench.js:1535-1555`: those fields enter `/rearrange` only.
+- `TrustReplyWorkbenchController.kt:191-217`: assemble conversion has no paragraph seam.
+- `TrustReplyWorkbenchService.kt:1810-1818`: final assembly re-closes/re-composes from versions.
+
+Impact: edited/merged/moved/rearranged/pinned/operator-fact preview is discarded by final assembly; plan 15 I-2 and final-assemble semantics fail.
+
+#### V-2 — P1 — PERSISTENT
+
+- `UnsupportedAnswerIndexService.kt:746-775` accepts four handling values × two generation kinds, with optional instruction.
+- `AiTrainingEvaluationService.kt:88-97` still excludes `SAFE_TEMPLATE`.
+- `PendingMailOperationService.kt:720-725` still restricts handling, generation kind, and requires non-empty instruction.
+
+Impact: plan 16 I-4 allow-listed shapes cannot reach canonical validation.
+
+#### V-3 — P1 — PERSISTENT
+
+- `UnsupportedAnswerIndexService.kt:58-63` notes the final-paragraph seam is missing.
+- `UnsupportedAnswerIndexService.kt:733-737` assigns `finalParagraphText = version.answerText`.
+
+Impact: plan 12 IP-4 and plan 16 T-4 fail; the index stores per-item answer wording rather than closed paragraph wording/transitions.
+
+### Master contract matrix
+
+| Contract | Result | Evidence/notes |
+|---|---|---|
+| G-1 frozen rules immutable | PASS | Frozen ID/body guards and fixtures retained |
+| G-2 id↔reply_subject boundary | PASS | V109/tests retain canonical boundary |
+| G-3 migration preserves runtime changes | HUMAN_EXCEPTION / NOT_RUN | Static guards pass; Flyway exception is epoch-specific |
+| G-4 controlled-fact exact set | PASS | Groups/migration guards pass |
+| G-5 coverage key and intent paired | PASS | Parity tests pass |
+| G-6 catalog append only | PASS | Diff/tests pass |
+| G-7 requestKey excludes op ID | PASS | Four-input hash unchanged |
+| c1 I-1..I-6 | PASS except runtime migration | V109 guards, parity, category parsing, and body scope pass; runtime IT is HUMAN_EXCEPTION / NOT_RUN |
+| c2 I-1..I-7 | PASS | Claims, dedupe, ordering, CTA, frozen fixtures, locked escape hatch, and assembly ordering pass |
+| c3 I-1..I-5; S-1..S-3 | PASS (I-3 PASS_WITH_NOTE) | Scoped PATCH/guard behavior and JS contracts pass; equivalent assembly guard accounts for noted ref count |
+| c4 I-1..I-8 | PASS | Paragraph order/source closure/exact-once/verbatim/action/gap/validation/fallback pass |
+| c5 I-1 | PASS | op ID excluded from requestKey |
+| c5 I-2 | FAIL | V-1 |
+| c5 I-3..I-6; S-1..S-3 | PASS | Evidence-version, local interactions, derived fact view, coverage view, and three-step UI contracts pass |
+| c5 final assemble semantics | FAIL | V-1 |
+| c6 I-1..I-3 | PASS | Phrasing-only closure, strict mapping, exact topic query pass |
+| c6 I-4 | FAIL | V-2 |
+| c6 I-5..I-6; T-5 | PASS | Conversion status, empty instruction display, pending-fact queue pass |
+| c6 T-4 | FAIL | V-3 |
+| c1-c6 manual acceptance | PENDING | No human UI/real ES evidence supplied |
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Result | Evidence |
+|---|---|---|
+| c1 O-1 parity baseline had five tests | RECORD_ONLY | Pre-existing count; no deviation |
+| c2 O-1 evidence-only dirty state | RECORD_ONLY | Only controller ledger plus permitted repair artifact; no product/test dirt |
+| c3 O-1 1-Hz flake | RECORD_ONLY | Fresh full suite did not reproduce |
+| c3 O-2 mutation-pending reference count | RECORD_ONLY | Equivalent assembly guard exists |
+| c3 O-3 full-PUT snapshot paths | RECORD_ONLY | Outside scoped PATCH requirement |
+| c4 O-1 truncated G2 negative fixture | RECORD_ONLY | Assertion uses catalog constant |
+| c5 O-1 absent GroundedContentPlannerTest | RECORD_ONLY | Focused fallback remains factual |
+| c5 O-2 no standalone op/requestKey test | RECORD_ONLY | Hash unchanged; separate JS evidence exists |
+| baseline JS note | RESOLVED | Fresh standalone gate 765/765 |
+| c6 F-1/F-2 | RESOLVED | Prior closure independently confirmed |
+| Flyway runtime gate | HUMAN_EXCEPTION / NOT_RUN | Explicit epoch-2 authority; not permanent waiver |
+
+### Repair planning
+
+- Verification result: FAIL / PROGRESSING
+- repair-p result: DRAFT_READY
+- Repair artifact: docs/plans/fix/10-reply-orchestration-order/repair.md (sha256 e0704ff0b89546a557531cad63d8dc0b032582958930fdc9e2f59e09c1ed753b)
+- Included: V-1, V-2, V-3. Excluded: Flyway exception and RECORD_ONLY entries.
+- Tasks: R-1 carries authoritative step-03 paragraphs through assemble/archive and resolves V-1/V-3. R-2 aligns both archive callers with the exact approved eligibility set and resolves V-2.
+- Product commit subject: `fix(reply-orchestration): preserve final paragraphs and archive eligibility`.
+- Evidence commit subject: `docs(review-fast-p): record repair execution`.
+
+The reviewer made no product/test/review-evidence changes, staged nothing, and committed nothing.
