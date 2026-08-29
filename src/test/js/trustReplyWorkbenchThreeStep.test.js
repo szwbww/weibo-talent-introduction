@@ -465,21 +465,20 @@ describe("trust reply workbench three-step (c5)", () => {
                 });
             }
             if (url.includes("/rearrange")) {
+                // Repair R-1 (epoch 3 / V-1): 两条来问都是「按回答说明生成」→ 重排结果
+                // 保留 op<n> 槽位（不退回 f*/x*），最终 assemble 必须原样携带。
                 return Promise.resolve(jsonResponse(rearrangeResponse(
                     [
-                        { topic: "enterprise", factIds: ["f7", "f9"], gapCondition: null },
-                        { topic: "application", factIds: ["f9"], gapCondition: null },
-                        { topic: "review", factIds: ["f10"], gapCondition: null }
+                        { topic: "enterprise", factIds: ["op1"], gapCondition: null },
+                        { topic: "application", factIds: ["op2"], gapCondition: null }
                     ],
                     [
-                        { id: "f7", topic: "enterprise", body: "seven body", controlled: null, frozen: false, required: true },
-                        { id: "f9", topic: "application", body: "nine body", controlled: null, frozen: false, required: true },
-                        { id: "f10", topic: "review", body: "ten body", controlled: null, frozen: false, required: true }
+                        { id: "op1", topic: "enterprise", body: "locked answer for TRAINING_MAIL-601-r1", controlled: null, frozen: true, required: true },
+                        { id: "op2", topic: "application", body: "locked answer for TRAINING_MAIL-601-r3", controlled: null, frozen: true, required: true }
                     ],
                     [
-                        { topic: "enterprise", factIds: ["f7", "f9"], text: "seven nine" },
-                        { topic: "application", factIds: ["f9"], text: "nine body" },
-                        { topic: "review", factIds: ["f10"], text: "ten body" }
+                        { topic: "enterprise", factIds: ["op1"], text: "enterprise operator paragraph" },
+                        { topic: "application", factIds: ["op2"], text: "application operator paragraph" }
                     ]
                 )));
             }
@@ -525,17 +524,17 @@ describe("trust reply workbench three-step (c5)", () => {
         assert.strictEqual(assembleBodies.length, 1, "first assemble must hit the server");
         assert.deepStrictEqual(assembleBodies[0].finalParagraphs, [], "blank draft must not submit final paragraphs");
 
-        // ② 重排后编辑/移动/锁定 → 请求携带权威草稿的逐字文本与顺序。
+        // ② 重排后编辑/移动/锁定 → 请求携带权威草稿的逐字文本、顺序与 op<n> 槽位。
         click(host, "rearrange");
         await settle();
         await settle();
         host.dispatchEvent("input", {
             dataset: { role: "paragraph-text", topic: "application" },
-            value: "nine body EDITED"
+            value: "application operator paragraph EDITED"
         });
-        click(host, "paragraph-move-up", { topic: "review" });
+        click(host, "paragraph-move-up", { topic: "application" });
         click(host, "paragraph-pin", { topic: "enterprise" });
-        assert.deepStrictEqual(paragraphTopics(host), ["enterprise", "review", "application"], "draft order after move");
+        assert.deepStrictEqual(paragraphTopics(host), ["application", "enterprise"], "draft order after move");
 
         click(host, "assemble");
         await settle();
@@ -544,15 +543,24 @@ describe("trust reply workbench three-step (c5)", () => {
         const finalParagraphs = assembleBodies[1].finalParagraphs;
         assert.deepStrictEqual(
             finalParagraphs.map((paragraph) => paragraph.topic),
-            ["enterprise", "review", "application"],
+            ["application", "enterprise"],
             "final paragraph order must follow the authoritative draft after move"
         );
         assert.deepStrictEqual(
             finalParagraphs.map((paragraph) => paragraph.text),
-            ["seven nine", "ten body", "nine body EDITED"],
+            ["application operator paragraph EDITED", "enterprise operator paragraph"],
             "final paragraph text must be the exact authoritative draft text"
         );
+        const application = finalParagraphs.find((paragraph) => paragraph.topic === "application");
+        assert.deepStrictEqual(application.factIds, ["op2"], "operator slot id must ride along with the paragraph");
         const enterprise = finalParagraphs.find((paragraph) => paragraph.topic === "enterprise");
-        assert.deepStrictEqual(enterprise.factIds, ["f7", "f9"], "fact ids must ride along with the paragraph");
+        assert.deepStrictEqual(enterprise.factIds, ["op1"], "operator slot id must ride along with the paragraph");
+        // V-1: operatorFacts 随 assemble 提交（op<n> 逐字插槽，绝不进任何哈希）。
+        const opFacts = assembleBodies[1].operatorFacts || [];
+        assert.strictEqual(opFacts.length, 2, "both operator facts must be submitted");
+        const op1 = opFacts.find((fact) => fact.id === "op1");
+        assert.ok(op1, "op1 must be submitted");
+        assert.strictEqual(op1.body, "locked answer for TRAINING_MAIL-601-r1");
+        assert.ok(opFacts.every((fact) => /^op\d+$/.test(fact.id)), "op ids must use the op<n> space, never hashes (I-1)");
     });
 });

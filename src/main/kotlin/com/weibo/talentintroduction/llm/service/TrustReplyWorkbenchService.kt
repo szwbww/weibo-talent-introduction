@@ -1916,7 +1916,11 @@ class TrustReplyWorkbenchService(
         val text: String,
         val controlled: String?,
         val frozen: Boolean,
-        val requestKey: String
+        val requestKey: String,
+        // Repair R-1 (epoch 3 / V-1): 该单元是否代表「按回答说明生成」的运营答案
+        // （claims 为空的 ANSWER_FROM_OPERATOR_INPUT 版本）。步骤 03 草稿以 op<n>
+        // 表示它，校验时必须用 op 身份替换其合成 x<n> 身份（二选一，不并存）。
+        val operatorOwned: Boolean
     )
 
     private data class RawFinalParagraphUnit(
@@ -1933,6 +1937,11 @@ class TrustReplyWorkbenchService(
      * factIdOf：空 sourceRuleIds 用 `x<存活序号>`，非空用 `f<升序+连接>`），保证与
      * 步骤 02/03 前端持有的 id 逐字一致。任何失败路径 422（fail closed）：
      * 多余/外来 id、缺失/重复 required 事实、受控/冻结/op* 非逐字、段落内动作句。
+     *
+     * Repair R-1 (epoch 3 / V-1)：运营事实 `op<n>` 与「按回答说明生成」版本为同一
+     * 内容的两种身份——步骤 03 草稿用 op<n>（c5 协议），版本侧合成的是 x<n>。校验时
+     * 把每个 op 绑定到恰好一个 operatorOwned 单元（归一化正文相等），被绑定单元不再
+     * 要求 x<n>；op 无主 / 多主 / 正文失配 / 重复 id 一律 fail closed。
      */
     private fun validateFinalParagraphState(
         request: TrustReplyAssembleRequest,
@@ -1946,8 +1955,39 @@ class TrustReplyWorkbenchService(
                 "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID"
             )
         }
+        val opFactsById = linkedMapOf<String, PlanFact>()
+        request.operatorFacts.forEach { op ->
+            if (op.id.isBlank() || op.body.isBlank() || opFactsById.put(op.id, op) != null) {
+                // 重复 op id / 空 id / 空 body：外来或歧义 → fail closed。
+                throw TrustReplyWorkbenchException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID"
+                )
+            }
+        }
         val units = buildFinalParagraphUnits(versions)
-        val requiredIds = units.map { it.factId }.toSet()
+        // op<n> 归属绑定：op body（归一化）必须恰好匹配一个 operatorOwned 单元；
+        // 每个 operatorOwned 单元至多被一个 op 绑定（多主/重复 → fail closed）。
+        val boundByOp = linkedMapOf<String, FinalParagraphUnit>()
+        val opOwnedUnits = units.filter { it.operatorOwned }
+        opFactsById.forEach { (opId, op) ->
+            val matches = opOwnedUnits.filter { normalizeWhitespace(it.text) == normalizeWhitespace(op.body) }
+            if (matches.size != 1) {
+                throw TrustReplyWorkbenchException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID"
+                )
+            }
+            if (boundByOp.values.any { it === matches.single() }) {
+                throw TrustReplyWorkbenchException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID"
+                )
+            }
+            boundByOp[opId] = matches.single()
+        }
+        val retainedUnits = units.filter { unit -> boundByOp.values.none { it === unit } }
+        val requiredIds = retainedUnits.map { it.factId }.toSet() + opFactsById.keys
         val submittedIds = request.finalParagraphs.flatMap { it.factIds }
         val submittedSet = submittedIds.toSet()
         if (submittedIds.size != submittedSet.size || submittedSet != requiredIds) {
@@ -1956,7 +1996,7 @@ class TrustReplyWorkbenchService(
                 "TRUST_REPLY_FINAL_PARAGRAPHS_INVALID"
             )
         }
-        val facts = units.map { unit ->
+        val facts = retainedUnits.map { unit ->
             PlanFact(
                 id = unit.factId,
                 topic = unit.topic,
@@ -1983,7 +2023,7 @@ class TrustReplyWorkbenchService(
                 codes
             )
         }
-        val byRequestKey = mapFinalParagraphsByRequestKey(units, paragraphs, request.operatorFacts, versions)
+        val byRequestKey = mapFinalParagraphsByRequestKey(retainedUnits, boundByOp, paragraphs)
         return FinalParagraphState(paragraphs, byRequestKey)
     }
 
@@ -2041,38 +2081,36 @@ class TrustReplyWorkbenchService(
                 text = unit.text,
                 controlled = QaCoverageKeyCatalog.groupIdOf(unit.intentKey),
                 frozen = frozen,
-                requestKey = unit.requestKey
+                requestKey = unit.requestKey,
+                operatorOwned = unit.standaloneHandling == TrustReplyItemHandling.ANSWER_FROM_OPERATOR_INPUT
             )
         }
     }
 
     /**
      * 逐条确定性映射（V-3）：request -> 唯一包含其事实 id 的最终段落文本。
-     * - f/x 单元按 provenance（requestKey）聚合；op<n> 按逐字 body 匹配拥有它的版本
-     *   （answerText 归一化相等，同 c6 的 op 事实语义）。
+     * - f/x 单元按 provenance（requestKey）聚合；op<n> 绑定单元按其归属的
+     *   operatorOwned 版本 requestKey 聚合（段落按 op id 查找）。
      * - 一个 request 落到多个段落（同 claim 的事实被拆到不同主题段）＝歧义 → 不映射，
      *   归档侧对其 fail closed（「reject missing or ambiguous mappings」）。
      */
     private fun mapFinalParagraphsByRequestKey(
-        units: List<FinalParagraphUnit>,
-        paragraphs: List<OrchestratedParagraph>,
-        operatorFacts: List<PlanFact>,
-        versions: List<TrustReplyItemVersion>
+        retainedUnits: List<FinalParagraphUnit>,
+        boundByOp: Map<String, FinalParagraphUnit>,
+        paragraphs: List<OrchestratedParagraph>
     ): Map<String, String> {
         fun paragraphOf(factId: String): String? {
             val hits = paragraphs.filter { factId in it.factIds }
             return if (hits.size == 1) hits.single().text else null
         }
         val perRequest = linkedMapOf<String, MutableSet<String>>()
-        units.forEach { unit ->
+        retainedUnits.forEach { unit ->
             val paragraph = paragraphOf(unit.factId) ?: return@forEach
             perRequest.getOrPut(unit.requestKey) { linkedSetOf() } += paragraph
         }
-        operatorFacts.forEach { op ->
-            val paragraph = paragraphOf(op.id) ?: return@forEach
-            versions
-                .filter { normalizeWhitespace(it.answerText) == normalizeWhitespace(op.body) }
-                .forEach { version -> perRequest.getOrPut(version.requestKey) { linkedSetOf() } += paragraph }
+        boundByOp.forEach { (opId, unit) ->
+            val paragraph = paragraphOf(opId) ?: return@forEach
+            perRequest.getOrPut(unit.requestKey) { linkedSetOf() } += paragraph
         }
         return perRequest.mapNotNull { (requestKey, paragraphsOf) ->
             if (paragraphsOf.size == 1) requestKey to paragraphsOf.single() else null
