@@ -425,3 +425,55 @@ The reviewer made no product/test/report changes, staged nothing, and committed 
 - Handoff requires one product commit `fix(reply-orchestration): enforce operator fact IDs` and one evidence commit `docs(review-fast-p): record repair execution`.
 
 No product code was modified by this reviewer.
+
+## Epoch 5 — 2026-08-29T12:46:10Z
+
+- Master plan: `docs/plans/2026-08-28/10-reply-orchestration-order.md` (sha256 `31d991f1dfaf75912153df79a3b738a9cb3b89ceafbe8e962783f34d9bb525be`)
+- Governing master identity: recorded commit `5a90e3e53e5fe8b40059b3090f086d6b36a09a01`; invoked identity SAME; `CONSISTENT`.
+- Boundary: `de228e17cc0134a7c11dea7cbf82054e8d249f99..8fa4f6ca1fde33c471662acb49f53838386177a0`.
+- Reviewer: `/root/aggregate_reviewer_epoch5` (fresh after the reviewed code commit; no inherited implementation or light-verification context).
+- Result: PASS. Convergence: PROGRESSING. Manual acceptance: PENDING.
+- Repair lineage: `docs/plans/fix/10-reply-orchestration-order/repair.md` sha256 `a511b739a3a7e983787a29ac819f7a11530baf5b8b7eaefe706df3eb6ac634c8`; durable handoff `repair-execution.md`, `0d45505d68261c14f3866e3f440b2ea08195f1de..8fa4f6ca1fde33c471662acb49f53838386177a0`; repair commit changes exactly its two authorized product/test files.
+
+### Fresh command evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -q -Dtest=TrustReplyWorkbenchServiceTest test` | PASS | 84 tests; 0 failures/errors |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test` | PASS | 3023 tests; 0 failures; 0 errors; 5 skipped |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package` | PASS | exit 0; WAR built |
+| `node --test src/test/js/*.test.js` | PASS | 766 pass; 0 fail; 121 suites |
+| `git diff --check` | PASS | exit 0; no output |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` | HUMAN_EXCEPTION / NOT_RUN | User's current explicit `忽略Flyway IT`; non-blocking only for epoch 5 |
+
+### Master contract matrix
+
+| Requirement | Verdict | Evidence |
+|---|---|---|
+| G-1..G-7 | PASS | Frozen/migration guards, controlled facts, coverage parity, append-only catalog, and four-input request hash retained |
+| c1 I-1..I-6 | PASS | V109/static guards and parity tests green; runtime Flyway IT excepted only as above |
+| c2 I-1..I-7 | PASS | Closer dedupe/order/CTA/frozen fixtures/all-locked fallback covered |
+| c3 I-1..I-5; S-1..S-3 | PASS | Scoped persistence/guards and JS DOM gates green |
+| c4 I-1..I-8 | PASS | Source closure, exact-once, verbatim, action, gap, validation, fallback covered |
+| c5 I-1..I-6; S-1..S-3 | PASS | Valid `op<n>` final assembly, ID/hash isolation, UI/local-state contracts hold |
+| c6 I-1..I-6; T-4/T-5 | PASS | Final-paragraph archive mapping and eligibility closure hold |
+| A1/A2/A3 | PASS | Cumulative diff stays inside recorded approved scopes |
+
+### Finding lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | Valid `op<n>` facts bind, compose, and map final paragraphs |
+| V-2 | RESOLVED | Both archive callers use canonical eligibility |
+| V-3 | RESOLVED | Archive uses validated final paragraph, not per-item fallback |
+| V-4 | RESOLVED | Noncanonical IDs rejected before closure; regression covers `external-1`, `op0`, `op01`, `OP1` |
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| c1 O-1; c2 O-1; c3 O-1..O-3; c4 O-1; c5 O-1..O-2 | Respective child invariants | RECORD_ONLY | Fresh whole-boundary gates and matrix show no mandatory violation |
+| c6 F-1/F-2; baseline JS authority note | c6 I-5; master regression gate | RESOLVED | Current JS suite 766/766; prior closure retained |
+| Flyway runtime gate | G-3/c1 migration runtime evidence | HUMAN_EXCEPTION / NOT_RUN | Explicit current-user exception; not a permanent waiver |
+
+No product code, tests, plans, or review evidence were modified by the reviewer. Nothing was staged or committed by the reviewer.
