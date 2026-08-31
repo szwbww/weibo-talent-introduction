@@ -22,6 +22,7 @@ function createMailboxSandbox(options = {}) {
     const store = new Map();
     const viewMode = options.viewMode || "MAIL";
     const mailScope = options.mailScope || "ALL";
+    const radios = { EXPERT: false, ALL: false };
 
     function el(id) {
         if (!store.has(id)) {
@@ -44,6 +45,12 @@ function createMailboxSandbox(options = {}) {
         $: (sel) => el(sel.replace(/^#/, "")),
         document: {
             querySelector: (selector) => {
+                if (selector === 'input[name="mailboxViewMode"][value="EXPERT"]') {
+                    return { set checked(v) { radios.EXPERT = v; } };
+                }
+                if (selector === 'input[name="mailboxMailScope"][value="ALL"]') {
+                    return { set checked(v) { radios.ALL = v; } };
+                }
                 if (selector === 'input[name="mailboxViewMode"]:checked') {
                     return { value: viewMode };
                 }
@@ -55,6 +62,7 @@ function createMailboxSandbox(options = {}) {
             querySelectorAll: () => []
         },
         URLSearchParams,
+        setView: (view) => { sandbox.view = view; },
         state: {
             mailbox: {
                 items: [],
@@ -66,7 +74,11 @@ function createMailboxSandbox(options = {}) {
                 accountsLoaded: true,
                 dateDefaultsApplied: false,
                 onlyPending: false,
-                tagFilter: ""
+                tagFilter: "",
+                taskExecutionId: null,
+                taskExecutionLabel: null,
+                focusExpertContactId: null,
+                focusExpertEmail: null
             }
         },
         operatorStatusLabels: { REPLIED: "已回复" },
@@ -212,5 +224,163 @@ describe("mailbox expert grouping", () => {
 
         sb.renderMailboxPagination();
         assert.match(sb.$("#mailboxPagination").innerHTML, /共 2 位专家/);
+    });
+
+    it("openExpertMailbox sets focus, EXPERT+ALL, clears filters and dates, then enters mailbox", () => {
+        const sb = createMailboxSandbox();
+        vm.runInContext(extractFn("openExpertMailbox"), sb);
+        sb.$("#mailboxFilterAccountCode").value = "acc1";
+        sb.$("#mailboxFilterDirection").value = "INBOUND";
+        sb.$("#mailboxFilterTag").value = "收件";
+        sb.$("#mailboxFilterRecipient").value = "old@example.com";
+        sb.$("#mailboxFilterKeyword").value = "旧关键词";
+        sb.$("#mailboxFilterStartDate").value = "2026-07-01";
+        sb.$("#mailboxFilterEndDate").value = "2026-07-18";
+
+        sb.openExpertMailbox(77, "expert-a@example.com");
+
+        assert.strictEqual(sb.state.mailbox.focusExpertContactId, 77);
+        assert.strictEqual(sb.state.mailbox.focusExpertEmail, "expert-a@example.com");
+        assert.strictEqual(sb.state.mailbox.page, 0);
+        assert.strictEqual(sb.state.mailbox.taskExecutionId, null);
+        assert.strictEqual(sb.state.mailbox.viewMode, "EXPERT");
+        assert.strictEqual(sb.state.mailbox.dateDefaultsApplied, true);
+        assert.strictEqual(sb.$("#mailboxFilterAccountCode").value, "");
+        assert.strictEqual(sb.$("#mailboxFilterDirection").value, "");
+        assert.strictEqual(sb.$("#mailboxFilterTag").value, "");
+        assert.strictEqual(sb.$("#mailboxFilterKeyword").value, "");
+        assert.strictEqual(sb.$("#mailboxFilterRecipient").value, "expert-a@example.com");
+        assert.strictEqual(sb.$("#mailboxFilterStartDate").value, "");
+        assert.strictEqual(sb.$("#mailboxFilterEndDate").value, "");
+        assert.strictEqual(sb.view, "mailbox");
+    });
+
+    it("loadMailbox sends the exact expertContactId and no dates when focused", async () => {
+        const sb = createMailboxSandbox({ viewMode: "EXPERT" });
+        let requestUrl = "";
+        sb.api = async (url) => {
+            requestUrl = url;
+            return { groups: [], totalCount: 0 };
+        };
+        sb.state.mailbox.focusExpertContactId = 77;
+        sb.state.mailbox.focusExpertEmail = "expert-a@example.com";
+        sb.state.mailbox.dateDefaultsApplied = true;
+        sb.state.mailbox.page = 0;
+
+        await sb.loadMailbox();
+
+        assert.ok(requestUrl.startsWith("/api/mail/mailbox/by-expert?"));
+        const query = new URLSearchParams(requestUrl.split("?")[1] || "");
+        assert.strictEqual(query.get("expertContactId"), "77");
+        assert.strictEqual(query.get("startDate"), null);
+        assert.strictEqual(query.get("endDate"), null);
+        assert.strictEqual(query.get("page"), "0");
+        assert.strictEqual(sb.state.mailbox.viewMode, "EXPERT");
+    });
+
+    it("loadMailbox omits expertContactId when no focus is set", async () => {
+        const sb = createMailboxSandbox({ viewMode: "EXPERT" });
+        let requestUrl = "";
+        sb.api = async (url) => {
+            requestUrl = url;
+            return { groups: [], totalCount: 0 };
+        };
+        sb.$("#mailboxFilterStartDate").value = "2026-07-01";
+        sb.$("#mailboxFilterEndDate").value = "2026-07-18";
+
+        await sb.loadMailbox();
+
+        const query = new URLSearchParams(requestUrl.split("?")[1] || "");
+        assert.strictEqual(query.get("expertContactId"), null);
+    });
+
+    it("renderMailboxExpertGroups opens only the focused group and tags it with the contact id", () => {
+        const sb = createMailboxSandbox();
+        sb.state.mailbox.focusExpertContactId = 100;
+        sb.state.mailbox.groups = [
+            {
+                expertContactId: 100,
+                expertName: "张三",
+                expertEmail: "zhang@example.com",
+                expertOrcidId: "0000-0001-0002-0003",
+                operatorStatus: "REPLIED",
+                expertIndexLevel: "APPLICATION",
+                mailCount: 3,
+                pendingCount: 1,
+                mails: []
+            },
+            {
+                expertContactId: 200,
+                expertName: "李四",
+                expertEmail: "li@example.com",
+                expertOrcidId: "0000-0001-0002-0004",
+                operatorStatus: "REPLIED",
+                expertIndexLevel: "APPLICATION",
+                mailCount: 2,
+                pendingCount: 0,
+                mails: []
+            }
+        ];
+
+        sb.renderMailboxExpertGroups();
+        const html = sb.$("#mailboxList").innerHTML;
+
+        assert.match(html, /<details class="inbound-expert-group" data-expert-contact-id="100" open>/);
+        assert.doesNotMatch(html, /data-expert-contact-id="200" open/);
+        assert.match(html, /data-expert-contact-id="200"/);
+    });
+
+    it("clearMailboxExpertFocus resets the focus fields", () => {
+        const sb = createMailboxSandbox();
+        vm.runInContext(extractFn("clearMailboxExpertFocus"), sb);
+        sb.state.mailbox.focusExpertContactId = 77;
+        sb.state.mailbox.focusExpertEmail = "expert-a@example.com";
+
+        sb.clearMailboxExpertFocus();
+
+        assert.strictEqual(sb.state.mailbox.focusExpertContactId, null);
+        assert.strictEqual(sb.state.mailbox.focusExpertEmail, null);
+    });
+
+    it("contact detail summary renders given counts and the open-mailbox button", () => {
+        const fnStart = appJsSource.indexOf("async function loadContactDetail(");
+        const fnEnd = appJsSource.indexOf("\n}\n", fnStart);
+        const fnBody = appJsSource.slice(fnStart, fnEnd);
+        const blockStart = fnBody.indexOf("const mailSummaryGroup = mailSummary?.groups?.[0] || null;");
+        const blockEnd = fnBody.indexOf("    contactDetail.innerHTML = `");
+        assert.ok(blockStart >= 0 && blockEnd > blockStart, "summary block must exist in loadContactDetail");
+        const block = fnBody.slice(blockStart, blockEnd);
+
+        const runSummary = (mailSummary) => {
+            const s = {
+                mailSummary,
+                contact: { id: 77, expertEmail: "expert-a@example.com" },
+                escapeHtml: (v) => String(v == null ? "" : v),
+                result: ""
+            };
+            vm.createContext(s);
+            s.result = vm.runInContext(`(() => {
+${block}
+return mailSummaryHtml;
+})()`, s);
+            return s.result;
+        };
+
+        const okHtml = runSummary({ groups: [{ receivedCount: 2, sentCount: 3, failedCount: 1 }] });
+        assert.match(okHtml, /收到 2 封/);
+        assert.match(okHtml, /｜成功发出 3 封/);
+        assert.match(okHtml, /｜发送失败 1 封/);
+        assert.match(okHtml, /data-action="open-contact-mailbox" data-id="77" data-email="expert-a@example.com"/);
+        assert.match(okHtml, /查看收发邮件/);
+
+        const emptyHtml = runSummary({ groups: [] });
+        assert.match(emptyHtml, /收到 0 封/);
+        assert.match(emptyHtml, /成功发出 0 封/);
+        assert.match(emptyHtml, /发送失败 0 封/);
+
+        const failHtml = runSummary(null);
+        assert.match(failHtml, /邮件统计加载失败/);
+        assert.doesNotMatch(failHtml, /收到 0 封/);
+        assert.match(failHtml, /data-action="open-contact-mailbox" data-id="77"/);
     });
 });

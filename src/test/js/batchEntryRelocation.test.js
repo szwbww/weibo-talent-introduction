@@ -33,10 +33,17 @@ describe("batch entry relocation (a3)", () => {
             `<div class="panel-head">\\s*<h2>${PANEL_HEADER}</h2>\\s*` +
             `<div class="panel-head-actions">\\s*` +
             `<button class="button" id="checkRepliesBtn" onclick="handleCheckReplies\\(\\)">检查回复</button>\\s*` +
-            `${BUTTON_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*` +
-            `</div>`
+            `${BUTTON_TAG.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`
         );
         assert.match(html, headPattern, "panel-head must wrap both buttons in .panel-head-actions with 检查回复 first");
+    });
+
+    it("I3-2: 自动回复 sits immediately after 批量发送 inside the same actions container", () => {
+        const bulkIdx = html.indexOf('id="bulkOutreachBtn"');
+        const autoIdx = html.indexOf('id="bulkAutoReplyBtn"');
+        assert.ok(bulkIdx >= 0 && autoIdx > bulkIdx, "bulkOutreachBtn must stay to the left of bulkAutoReplyBtn");
+        assert.ok(html.slice(bulkIdx, autoIdx).includes('>批量发送</button>'),
+            "no other button may sit between 批量发送 and 自动回复");
     });
 
     it("I3-2: button tag keeps class, onclick, and label verbatim", () => {

@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260831-expert-material-tags">
+    <link rel="stylesheet" href="styles.css?v=20260831-expert-list-mailbox-ui">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -463,18 +463,9 @@
                     <label class="toolbar-label">
                         漏斗层级:
                         <select id="expertIndexLevel">
-                            <option value="RAW">RAW - 原始数据层</option>
-                            <option value="CANDIDATE" selected>CANDIDATE - 待筛选层</option>
-                            <option value="APPLICATION">APPLICATION - 已回复意向层</option>
-                        </select>
-                    </label>
-                    <label class="toolbar-label">
-                        显示行数:
-                        <select id="expertIndexSize">
-                            <option value="10">10 条/页</option>
-                            <option value="20">20 条/页</option>
-                            <option value="50" selected>50 条/页</option>
-                            <option value="100">100 条/页</option>
+                            <option value="RAW">原始</option>
+                            <option value="CANDIDATE" selected>筛选</option>
+                            <option value="APPLICATION">有效</option>
                         </select>
                     </label>
                     <label class="toolbar-label">
@@ -532,9 +523,9 @@
                             <option value="UNCLASSIFIED">未分类</option>
                         </select>
                     </label>
-                    <span class="toolbar-label">
-                        研发类型:
-                        <span class="tag-select" id="expertTypeTagSelect">
+                    <div class="toolbar-chip-row">
+                    <span class="toolbar-label">研发类型:</span>
+                    <span class="tag-select" id="expertTypeTagSelect">
                             <button type="button" class="tag-chip" data-value="PRODUCTION_RND">生产研发</button>
                             <button type="button" class="tag-chip" data-value="ACADEMIC_RND">学术科研</button>
                             <button type="button" class="tag-chip" data-value="HYBRID_RND">混合研发</button>
@@ -543,7 +534,7 @@
                             <button type="button" class="tag-chip" data-value="UNKNOWN">未知</button>
                             <button type="button" class="tag-chip" data-value="UNCLASSIFIED">未分类</button>
                         </span>
-                    </span>
+                    </div>
                     <label class="toolbar-label">
                         H-Index ≥:
                         <input type="number" id="expertHIndexMinFilter" min="0" step="1" placeholder="不限" style="width: 70px;">
@@ -561,9 +552,9 @@
                             <option value="10">近 10 年</option>
                         </select>
                     </label>
-                    <span class="toolbar-label">
-                        数据完整度:
-                        <span class="tag-select" id="hasFieldTagSelect">
+                    <div class="toolbar-chip-row">
+                    <span class="toolbar-label">数据完整度:</span>
+                    <span class="tag-select" id="hasFieldTagSelect">
                             <button type="button" class="tag-chip" data-value="employment">有职位</button>
                             <button type="button" class="tag-chip" data-value="degree">有学历</button>
                             <button type="button" class="tag-chip" data-value="institution">有机构</button>
@@ -571,7 +562,7 @@
                             <button type="button" class="tag-chip" data-value="recentWorkTitles">有近期论文</button>
                             <button type="button" class="tag-chip" data-value="patentTitles">有专利</button>
                         </span>
-                    </span>
+                    </div>
                     <span class="toolbar-label">
                         按模板门禁:
                         <select id="expertGateTemplateFilter">
@@ -602,7 +593,6 @@
                             <button class="dropdown-item" onclick="handleDiscoverOption('revalidate')">重新验证候选人</button>
                         </div>
                     </div>
-                    <button class="button" id="bulkAutoReplyBtn">自动回复：加载中...</button>
                     <button class="button secondary" id="backfillOperatorStatusBtn" onclick="handleBackfillOperatorStatus()">回刷 ES</button>
                 </div>
             </div>
@@ -667,7 +657,16 @@
                     </div>
                     <div id="contactCountInfo" class="contact-count-info text-muted"></div>
                     <div id="contactList" class="list"></div>
-                    <div id="contactPager" class="list-pager" hidden>
+                    <div id="contactPager" class="list-pager">
+                        <label class="toolbar-label">
+                            显示行数:
+                            <select id="expertIndexSize">
+                                <option value="10">10 条/页</option>
+                                <option value="20">20 条/页</option>
+                                <option value="50" selected>50 条/页</option>
+                                <option value="100">100 条/页</option>
+                            </select>
+                        </label>
                         <button class="button small" id="contactPrevPage">上一页</button>
                         <span id="contactPageInfo" class="list-pager-info"></span>
                         <button class="button small" id="contactNextPage">下一页</button>
@@ -683,7 +682,7 @@
                 <section class="panel contact-detail-panel">
                     <div class="panel-head contact-detail-head">
                         <div style="display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 8px;">
-                            <h2 style="flex: 1; margin: 0;">引进状态演进与往来邮件时间线</h2>
+                            <h2 style="flex: 1; margin: 0;">专家引进状态与联系详情</h2>
                         </div>
                         <div class="contact-head-actions" id="contactHeadActions" hidden></div>
                     </div>
@@ -750,6 +749,7 @@
                     <div class="panel-head-actions">
                         <button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>
                         <button class="button primary" id="bulkOutreachBtn" onclick="handleBulkOutreach()">批量发送</button>
+                        <button class="button" id="bulkAutoReplyBtn">自动回复：加载中...</button>
                     </div>
                 </div>
                 <div class="mailbox-list" id="mailboxList"></div>
@@ -2095,7 +2095,7 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260831-expert-material-tags"></script>
-<script src="app.js?v=20260831-expert-material-tags"></script>
+<script src="trust-reply-workbench.js?v=20260831-expert-list-mailbox-ui"></script>
+<script src="app.js?v=20260831-expert-list-mailbox-ui"></script>
 </body>
 </html>

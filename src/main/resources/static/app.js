@@ -67,7 +67,9 @@ const state = {
         tagFilter: "",
         detailContext: null,
         taskExecutionId: null,
-        taskExecutionLabel: null
+        taskExecutionLabel: null,
+        focusExpertContactId: null,
+        focusExpertEmail: null
     },
     inboundSummary: {
         from: "",
@@ -1685,7 +1687,10 @@ async function refreshCurrentView() {
         if (state.view === "mail-templates") await loadMailTemplatesView();
         if (state.view === "suppressions") await loadSuppressions();
         if (state.view === "contacts") await loadContacts();
-        if (state.view === "mailbox") await loadMailbox();
+        if (state.view === "mailbox") await Promise.all([
+            loadMailbox(),
+            refreshAutoReplySummary().catch(() => {})
+        ]);
         if (state.view === "inbound-summary") await loadInboundSummary();
         if (state.view === "ai-training") await loadAiTraining();
         if (state.view === "tasks") await loadTasks();
@@ -4325,7 +4330,11 @@ function renderContactListSkeleton() {
             <div class="skeleton-line" style="width: 40%;"></div>
         </div>
     `).join("");
-    $("#contactPager").hidden = true;
+    const pager = $("#contactPager");
+    pager.hidden = false;
+    $("#contactPageInfo").textContent = "第 1 / 1 页";
+    $("#contactPrevPage").disabled = true;
+    $("#contactNextPage").disabled = true;
 }
 
 function renderContactPager(size) {
@@ -4336,11 +4345,6 @@ function renderContactPager(size) {
     const maxPages = Math.floor(10000 / size);
     const capped = totalPages > maxPages;
     if (capped) totalPages = maxPages;
-    if (totalHits <= size) {
-        pager.hidden = true;
-        return;
-    }
-    pager.hidden = false;
     $("#contactPageInfo").textContent =
         `第 ${state.contactsPage + 1} / ${totalPages} 页${capped ? "（仅可翻前 1 万条）" : ""}`;
     $("#contactPrevPage").disabled = state.contactsPage <= 0;
@@ -5223,7 +5227,11 @@ async function loadContacts() {
     }
     } catch (e) {
         state.contacts = [];
-        $("#contactPager").hidden = true;
+        const pager = $("#contactPager");
+        pager.hidden = false;
+        $("#contactPageInfo").textContent = "第 1 / 1 页";
+        $("#contactPrevPage").disabled = true;
+        $("#contactNextPage").disabled = true;
         $("#contactList").innerHTML = `
             <div class="list-empty">
                 <span class="list-empty-title">加载失败</span>
@@ -5250,7 +5258,6 @@ async function loadContacts() {
     loadOperatorStatusSyncTooltip();
 
     renderContactListItems();
-    refreshAutoReplySummary().catch(() => {});
 }
 
 function renderContactListItems() {
@@ -7615,13 +7622,17 @@ async function saveExpertMaterialStatus(button) {
 }
 
 async function loadContactDetail(contactId) {
-    const [detail, options, documents, logs, materials] = await Promise.all([
+    const [detail, options, documents, logs, materials, mailSummary] = await Promise.all([
         api(`/api/expert-contacts/${contactId}`),
         loadMailSendOptions(),
         api(`/api/expert-contacts/${contactId}/documents`).catch(() => []),
         api(`/api/operator-action-logs?expertContactId=${contactId}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] })),
         api(`/api/expert-contacts/${contactId}/materials`).catch((error) => {
             showStatus("材料状态加载失败: " + error.message, "error");
+            return null;
+        }),
+        api(`/api/mail/mailbox/by-expert?expertContactId=${contactId}&page=0&size=1`).catch((error) => {
+            showStatus("邮件统计加载失败: " + error.message, "error");
             return null;
         })
     ]);
@@ -7707,6 +7718,34 @@ async function loadContactDetail(contactId) {
     }
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
+    const mailSummaryGroup = mailSummary?.groups?.[0] || null;
+    const mailStatReceived = Number(mailSummaryGroup?.receivedCount) || 0;
+    const mailStatSent = Number(mailSummaryGroup?.sentCount) || 0;
+    const mailStatFailed = Number(mailSummaryGroup?.failedCount) || 0;
+    const contactEmail = contact.expertEmail || "";
+    const openMailboxBtn =
+        `<button type="button" class="button small" data-action="open-contact-mailbox" data-id="${contact.id}" data-email="${escapeHtml(contactEmail)}">查看收发邮件</button>`;
+    const mailSummaryHtml = mailSummary === null
+        ? `<div class="metadata-grid">
+            <div class="metadata-card span-all">
+                <div class="metadata-card-header"><span>邮件往来</span></div>
+                <div class="metadata-card-value">
+                    <span>邮件统计加载失败</span>
+                    ${openMailboxBtn}
+                </div>
+            </div>
+        </div>`
+        : `<div class="metadata-grid">
+            <div class="metadata-card span-all">
+                <div class="metadata-card-header"><span>邮件往来</span></div>
+                <div class="metadata-card-value">
+                    <span>收到 ${mailStatReceived} 封</span>
+                    <span>｜成功发出 ${mailStatSent} 封</span>
+                    <span>｜发送失败 ${mailStatFailed} 封</span>
+                    ${openMailboxBtn}
+                </div>
+            </div>
+        </div>`;
     contactDetail.innerHTML = `
         ${backToListBtnHtml()}
         ${banner}
@@ -7728,9 +7767,7 @@ async function loadContactDetail(contactId) {
                 ${renderAcademicProfilePanel(expert)}
             </div>
             <div class="detail-tab-panel" data-panel="contact">
-            <div class="mail-timeline">
-                ${detail.mails.slice().reverse().map(renderMailItem).join("") || "<p>暂无邮件记录。</p>"}
-            </div>
+            ${mailSummaryHtml}
 
             ${renderMeetingSchedule(detail)}
 
@@ -9193,6 +9230,37 @@ function handleComposeTemplateBlockTypeChange(event) {
     schedulePreviewDrawerRefresh();
 }
 
+function clearMailboxExpertFocus() {
+    state.mailbox.focusExpertContactId = null;
+    state.mailbox.focusExpertEmail = null;
+}
+
+function openExpertMailbox(contactId, email) {
+    state.mailbox.focusExpertContactId = Number(contactId);
+    state.mailbox.focusExpertEmail = email || "";
+    state.mailbox.page = 0;
+    state.mailbox.taskExecutionId = null;
+    state.mailbox.taskExecutionLabel = null;
+    state.mailbox.onlyPending = false;
+    state.mailbox.tagFilter = "";
+    const expertRadio = document.querySelector('input[name="mailboxViewMode"][value="EXPERT"]');
+    if (expertRadio) expertRadio.checked = true;
+    const scopeAllRadio = document.querySelector('input[name="mailboxMailScope"][value="ALL"]');
+    if (scopeAllRadio) scopeAllRadio.checked = true;
+    state.mailbox.viewMode = "EXPERT";
+    $("#mailboxFilterAccountCode").value = "";
+    $("#mailboxFilterDirection").value = "";
+    $("#mailboxFilterTag").value = "";
+    $("#mailboxFilterRecipient").value = email || "";
+    $("#mailboxFilterKeyword").value = "";
+    const startInput = $("#mailboxFilterStartDate");
+    const endInput = $("#mailboxFilterEndDate");
+    if (startInput) startInput.value = "";
+    if (endInput) endInput.value = "";
+    state.mailbox.dateDefaultsApplied = true;
+    setView("mailbox");
+}
+
 async function handleContactAction(element) {
     const id = element.dataset.id;
     const action = element.dataset.action;
@@ -9220,6 +9288,10 @@ async function handleContactAction(element) {
     }
     if (action === "select-contact") {
         await loadContactDetail(id);
+        return;
+    }
+    if (action === "open-contact-mailbox") {
+        openExpertMailbox(id, element.dataset.email);
         return;
     }
     if (action === "send-manual-mail") {
@@ -9634,6 +9706,7 @@ function handleTaskDrilldownMail(element) {
     const label = (state.taskTypeOptions || []).find((option) => option.code === taskType)?.label || null;
     state.mailbox.taskExecutionId = Number(element.dataset.executionId);
     state.mailbox.taskExecutionLabel = label;
+    if (typeof clearMailboxExpertFocus === "function") clearMailboxExpertFocus();
     setView("mailbox");
     state.mailbox.page = 0;
     loadMailbox().catch((e) => showStatus(e.message, "error"));
@@ -11510,7 +11583,10 @@ function bindMonitoringEvents() {
 
 function bindEvents() {
     ensureTranslateClickHandler();
-    $$(".nav-tab").forEach((tab) => tab.addEventListener("click", () => setView(tab.dataset.view)));
+    $$(".nav-tab").forEach((tab) => tab.addEventListener("click", () => {
+        if (tab.dataset.view === "mailbox") clearMailboxExpertFocus();
+        setView(tab.dataset.view);
+    }));
     $("#refreshBtn").addEventListener("click", refreshCurrentView);
     bindMonitoringEvents();
     $("#reloadAccountsBtn").addEventListener("click", loadAccounts);
@@ -12162,7 +12238,6 @@ function bindEvents() {
         const active = [
             $("#expertSortBy").value !== "",
             $("#expertIndexLevel").value !== "CANDIDATE",
-            $("#expertIndexSize").value !== "50",
             $("#contactStatusFilter").value !== "",
             $("#contactNeedsAttentionFilter").value !== "",
             $("#contactReplyModeFilter").value !== "",
@@ -12772,6 +12847,7 @@ function initBulkAutoReply() {
     bindInboundSummaryEvents();
     $("#mailboxSearchBtn").addEventListener("click", () => {
         state.mailbox.page = 0;
+        clearMailboxExpertFocus();
         loadMailbox().catch((e) => showStatus(e.message, "error"));
     });
     // B4（T2b-5）：清除按执行的批次过滤 → 提示条随 loadMailbox 隐藏，列表恢复全部邮件。
@@ -12793,6 +12869,7 @@ function initBulkAutoReply() {
         if (event.key === "Enter") {
             event.preventDefault();
             state.mailbox.page = 0;
+            clearMailboxExpertFocus();
             loadMailbox().catch((e) => showStatus(e.message, "error"));
         }
     });
@@ -12800,15 +12877,18 @@ function initBulkAutoReply() {
         if (event.key === "Enter") {
             event.preventDefault();
             state.mailbox.page = 0;
+            clearMailboxExpertFocus();
             loadMailbox().catch((e) => showStatus(e.message, "error"));
         }
     });
     $("#mailboxFilterAccountCode").addEventListener("change", () => {
         state.mailbox.page = 0;
+        clearMailboxExpertFocus();
         loadMailbox().catch((e) => showStatus(e.message, "error"));
     });
     $("#mailboxFilterDirection").addEventListener("change", () => {
         state.mailbox.page = 0;
+        clearMailboxExpertFocus();
         loadMailbox().catch((e) => showStatus(e.message, "error"));
     });
     $("#mailboxFilterTag").addEventListener("change", (event) => {
@@ -12817,11 +12897,13 @@ function initBulkAutoReply() {
         if (value === "待处理") {
             setMailboxPendingOnly(true);
             state.mailbox.page = 0;
+            clearMailboxExpertFocus();
             loadMailbox().catch((e) => showStatus(e.message, "error"));
             return;
         }
         if (mailboxViewMode() === "EXPERT") {
             state.mailbox.page = 0;
+            clearMailboxExpertFocus();
             loadMailbox().catch((e) => showStatus(e.message, "error"));
             return;
         }
@@ -12835,6 +12917,7 @@ function initBulkAutoReply() {
                 state.mailbox.tagFilter = "";
                 $("#mailboxFilterTag").value = "";
             }
+            clearMailboxExpertFocus();
             loadMailbox().catch((e) => showStatus(e.message, "error"));
         });
     });
@@ -12842,6 +12925,7 @@ function initBulkAutoReply() {
         input.addEventListener("change", () => {
             state.mailbox.page = 0;
             syncMailboxViewModeControls();
+            clearMailboxExpertFocus();
             loadMailbox().catch((e) => showStatus(e.message, "error"));
         });
     });
@@ -13180,6 +13264,9 @@ function setMailboxPendingOnly(pending) {
     // （view-unmatched / open-pending、goto-manual-queue、标签「待处理」三条路径全覆盖）。
     state.mailbox.taskExecutionId = null;
     state.mailbox.taskExecutionLabel = null;
+    // I-4：待处理模式是用户导航，清掉联系详情跳转设置的精确专家焦点；
+    // typeof 兜底 —— vm 沙箱单测以函数为单位抽取源码，未注册本函数时跳过。
+    if (typeof clearMailboxExpertFocus === "function") clearMailboxExpertFocus();
 }
 
 function syncMailboxViewModeControls() {
@@ -13276,6 +13363,9 @@ async function loadMailbox() {
     try {
         // 按执行过滤时强制走平铺列表端点（by-expert 端点不支持 taskExecutionId）。
         if (expertMode && state.mailbox.taskExecutionId == null) {
+            if (state.mailbox.focusExpertContactId != null) {
+                params.set("expertContactId", String(state.mailbox.focusExpertContactId));
+            }
             const data = await api(`/api/mail/mailbox/by-expert?${params}`);
             state.mailbox.groups = data.groups || [];
             state.mailbox.items = [];
@@ -13367,9 +13457,11 @@ function renderMailboxExpertGroups() {
         const countText = state.mailbox.onlyPending
             ? `${group.pendingCount} 封待处理`
             : `共 ${group.mailCount} 封${group.pendingCount > 0 ? ` · 待处理 ${group.pendingCount} 封` : ""}`;
+        const focused = state.mailbox.focusExpertContactId != null
+            && String(group.expertContactId) === String(state.mailbox.focusExpertContactId);
 
         return `
-            <details class="inbound-expert-group">
+            <details class="inbound-expert-group" data-expert-contact-id="${escapeHtml(group.expertContactId)}"${focused ? " open" : ""}>
                 <summary class="inbound-expert-group-header">
                     <span class="inbound-expert-group-name">${nameLink} ${statusBadge} ${levelBadge}</span>
                     <span class="inbound-expert-group-email">${emailLine}</span>

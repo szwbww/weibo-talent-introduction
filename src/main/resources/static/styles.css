@@ -611,6 +611,23 @@ p {
     color: #fff;
     box-shadow: 0 1px 3px rgba(var(--primary-rgb), 0.3);
 }
+.toolbar-chip-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    flex: 1 0 100%;
+    min-width: 0;
+}
+
+.toolbar-chip-row > .toolbar-label {
+    flex: 0 0 72px;
+    padding-top: 7px;
+}
+
+.toolbar-chip-row > .tag-select {
+    flex: 1 1 auto;
+    min-width: 0;
+}
 
 .gate-filter-summary {
     display: inline-flex;
