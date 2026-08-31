@@ -147,6 +147,7 @@ describe("contact head layout C (P2 S-8)", () => {
             const renderMailSendOptionGroups = () => "";
             const optionsFromArray = () => "";
             const boundSenderAccountCode = ${derivationMatch[1]};
+            const materials = null;
             var html = \`${headerTemplate}\`;
         `, sandbox);
 
@@ -306,5 +307,398 @@ describe("contact head layout C (P2 S-8)", () => {
         const loadFn = extractFn("loadContactDetail");
         assert.ok(loadFn.includes('id="senderBindingSelect"'), "loadContactDetail must generate #senderBindingSelect");
         assert.ok(loadFn.includes("updateSenderBindingDirtyState();"), "loadContactDetail must initialize the dirty gate after fill");
+    });
+});
+
+// ── plan 02: expert material tags (I2-1..I2-8, S2-1..S2-4) ──
+
+const MATERIAL_ITEMS = [
+    { code: "CV", label: "简历", status: "PROVIDED" },
+    { code: "PASSPORT", label: "护照", status: "PENDING" },
+    { code: "DEGREE", label: "学位", status: "DECLINED" },
+    { code: "EMPLOYMENT", label: "工作", status: "PENDING" },
+    { code: "PUBLICATIONS", label: "出版", status: "PROVIDED" },
+    { code: "PATENTS", label: "专利", status: "PENDING" },
+    { code: "RESEARCH", label: "研究", status: "DECLINED" }
+];
+
+function extractMaterialStateMap() {
+    const match = appJsSource.match(/const EXPERT_MATERIAL_STATE_MAP = \{[\s\S]*?\n\};/);
+    if (!match) throw new Error("Could not find EXPERT_MATERIAL_STATE_MAP in app.js");
+    return match[0];
+}
+
+describe("expert material tags (plan 02)", () => {
+    it("loadContactDetail fetches materials with isolated catch and renders the row after contactHeadMoreRow (I2-1/I2-5/S2-1)", () => {
+        const fnSource = extractFn("loadContactDetail");
+        const headerStart = fnSource.indexOf('$("#contactHeadActions").innerHTML');
+        const headerEnd = fnSource.indexOf("const banner = renderManualAttentionBanner(contact);");
+        const headerTemplate = fnSource.slice(headerStart, headerEnd);
+
+        const materialsFetch = fnSource.indexOf("/api/expert-contacts/${contactId}/materials");
+        assert.ok(materialsFetch !== -1, "loadContactDetail must request the materials endpoint");
+        assert.ok(fnSource.indexOf("showStatus(\"材料状态加载失败: \" + error.message, \"error\")") > materialsFetch,
+            "materials fetch must carry its own catch that shows one load-failure status");
+        assert.ok(fnSource.includes("renderExpertMaterialRow(materials, contact.id)"),
+            "loadContactDetail must render the material row from the fetched array");
+        assert.ok(fnSource.includes('Array.isArray(materials) ? renderExpertMaterialRow(materials, contact.id) : ""'),
+            "material row must be guarded by Array.isArray so failures render nothing");
+        assert.ok(headerTemplate.indexOf('id="contactHeadMoreRow"') !== -1, "header template must keep contactHeadMoreRow");
+        assert.ok(headerTemplate.indexOf("renderExpertMaterialRow(materials, contact.id)") > headerTemplate.indexOf('id="contactHeadMoreRow"'),
+            "material row must be placed after contactHeadMoreRow");
+    });
+
+    it("materials GET rejection is isolated: siblings resolve, one error status, materials null (I2-5)", async () => {
+        const fnSource = extractFn("loadContactDetail");
+        const paStart = fnSource.indexOf("Promise.all([");
+        assert.ok(paStart !== -1, "loadContactDetail must use Promise.all");
+        const paEnd = fnSource.indexOf("]);", paStart) + 3;
+        const promiseAllExpr = fnSource.slice(paStart, paEnd);
+        assert.ok(promiseAllExpr.includes("/api/expert-contacts/${contactId}/materials"),
+            "materials must be part of the parallel load");
+
+        const calls = [];
+        const sandbox = {
+            contactId: 7,
+            api: async (url) => {
+                calls.push(url);
+                if (url.endsWith("/materials")) throw new Error("materials down");
+                if (url.includes("/documents")) return [];
+                if (url.includes("/operator-action-logs")) return { records: [] };
+                return { contact: { id: 7, expertName: "X" } };
+            },
+            loadMailSendOptions: async () => [],
+            showStatus: (message, type) => { calls.push("status:" + message + ":" + type); }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext("var result = " + promiseAllExpr + ";", sandbox);
+        const [detail, options, documents, logs, materials] = await sandbox.result;
+
+        assert.strictEqual(detail.contact.id, 7, "detail must still resolve when materials fails");
+        assert.strictEqual(materials, null, "failed materials must resolve to null");
+        assert.ok(calls.includes("/api/expert-contacts/7/materials"), "materials endpoint must be called");
+        assert.ok(calls.includes("status:材料状态加载失败: materials down:error"), "one load-failure status must be shown");
+        const statusCalls = calls.filter((c) => typeof c === "string" && c.startsWith("status:"));
+        assert.strictEqual(statusCalls.length, 1, "exactly one error status for the materials failure");
+    });
+
+    it("renderExpertMaterialRow renders exactly 7 ordered Chinese tags with tri-state visuals (I2-1/I2-4/S2-1/S2-2/S2-3)", () => {
+        const sandbox = {
+            escapeHtml: (v) => String(v == null ? "" : v)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractMaterialStateMap() + "\n" + extractFn("renderExpertMaterialRow"), sandbox);
+
+        const html = sandbox.renderExpertMaterialRow(MATERIAL_ITEMS, 42);
+
+        // I2-1: exactly 7 tags, no 8th, no English request body
+        assert.strictEqual((html.match(/class="expert-material-tag is-/g) || []).length, 7, "exactly 7 material tags");
+        assert.ok(!html.includes("Your latest English"), "English request text must not be rendered");
+        assert.ok(!html.includes("requestText"), "request text key must not be rendered");
+        assert.ok(!html.includes("编辑材料"), "no edit-materials button allowed");
+        assert.ok(!html.includes("保存材料"), "no save-materials button allowed");
+
+        // order follows the API array: 简历 护照 学位 工作 出版 专利 研究
+        const order = ["简历", "护照", "学位", "工作", "出版", "专利", "研究"];
+        const positions = order.map((label) => html.indexOf(">" + label + "<"));
+        for (let i = 0; i < positions.length; i++) {
+            assert.ok(positions[i] !== -1, order[i] + " tag must exist");
+            if (i > 0) assert.ok(positions[i] > positions[i - 1], order[i] + " must follow " + order[i - 1]);
+        }
+
+        // S2-1 skeleton: row carries data-contact-id and label precedes the tag container
+        assert.ok(html.includes('<div class="contact-head-status-row" id="expertMaterialRow" data-contact-id="42">'),
+            "material row must carry contact id");
+        assert.ok(html.indexOf('<span class="contact-head-label">材料</span>') < html.indexOf('class="expert-material-tags"'),
+            "材料 label must precede the tag container");
+        assert.ok(html.includes('class="expert-material-tags" aria-label="专家材料状态"'), "tag container must carry the aria label");
+
+        // I2-4 tri-state visuals, one per state
+        const cvIdx = html.indexOf('data-material-code="CV"');
+        const cvTag = html.slice(cvIdx - 220, cvIdx + 320);
+        assert.ok(cvTag.includes('class="expert-material-tag is-provided"'), "PROVIDED must render is-provided");
+        assert.ok(cvTag.includes('expert-material-tag-mark" aria-hidden="true">✓</span>'), "PROVIDED must render the ✓ mark");
+        assert.ok(cvTag.includes('aria-label="简历：已提供，点击修改"'), "aria-label must carry Chinese material and status");
+
+        const passportIdx = html.indexOf('data-material-code="PASSPORT"');
+        const passportTag = html.slice(passportIdx - 220, passportIdx + 320);
+        assert.ok(passportTag.includes('class="expert-material-tag is-pending"'), "PENDING must render is-pending");
+        assert.ok(!passportTag.includes("expert-material-tag-mark"), "PENDING must not render a mark");
+        assert.ok(passportTag.includes('aria-label="护照：待提供，点击修改"'), "PENDING aria-label must be 待提供");
+
+        const degreeIdx = html.indexOf('data-material-code="DEGREE"');
+        const degreeTag = html.slice(degreeIdx - 220, degreeIdx + 320);
+        assert.ok(degreeTag.includes('class="expert-material-tag is-declined"'), "DECLINED must render is-declined");
+        assert.ok(degreeTag.includes('expert-material-tag-mark" aria-hidden="true">⊘</span>'), "DECLINED must render the ⊘ mark");
+        assert.ok(degreeTag.includes('aria-label="学位：暂不愿提供，点击修改"'), "DECLINED aria-label must be 暂不愿提供");
+
+        // S2-3: each tag has exactly the three fixed menu items
+        assert.strictEqual((html.match(/data-material-action="set-status"/g) || []).length, 21, "7 tags x 3 status items");
+        assert.strictEqual((html.match(/>待提供</g) || []).length, 7, "待提供 menu item in every tag");
+        assert.strictEqual((html.match(/>✓ 已提供</g) || []).length, 7, "✓ 已提供 menu item in every tag");
+        assert.strictEqual((html.match(/>⊘ 暂不愿提供</g) || []).length, 7, "⊘ 暂不愿提供 menu item in every tag");
+
+        // I2-6/S2-1: material DOM uses data-material-action only, no inline styles
+        assert.ok(!html.includes("data-action="), "material DOM must never use the generic data-action attribute");
+        assert.ok(!html.includes("style="), "material DOM must not carry inline styles");
+    });
+
+    it("saveExpertMaterialStatus PUTs once and replaces the row silently on success (I2-2/I2-3)", async () => {
+        const sandbox = {
+            escapeHtml: (v) => String(v == null ? "" : v)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractMaterialStateMap() + "\n" + extractFn("renderExpertMaterialRow") + "\n" + extractFn("saveExpertMaterialStatus"), sandbox);
+
+        const items = [
+            { disabled: false, isConnected: true },
+            { disabled: false, isConnected: true },
+            { disabled: false, isConnected: true }
+        ];
+        const tag = { dataset: { materialCode: "CV" } };
+        const row = { dataset: { contactId: "7" }, outerHTML: "old-row" };
+        const wrapper = {
+            querySelector: (sel) => (sel === ".expert-material-tag" ? tag : null),
+            querySelectorAll: (sel) => (sel === ".dropdown-item" ? items : [])
+        };
+        const button = {
+            closest: (sel) => (sel === "#expertMaterialRow" ? row : sel === ".dropdown" ? wrapper : null),
+            dataset: { materialStatus: "PROVIDED" }
+        };
+
+        let captured = null;
+        let resolveApi;
+        const apiPromise = new Promise((resolve) => { resolveApi = resolve; });
+        let statusCalls = 0;
+        sandbox.api = (url, options) => { captured = { url, options }; return apiPromise; };
+        sandbox.showStatus = () => { statusCalls++; };
+
+        const pending = sandbox.saveExpertMaterialStatus(button);
+        await Promise.resolve();
+        assert.ok(items.every((i) => i.disabled === true), "menu items must be disabled during the request");
+        resolveApi(MATERIAL_ITEMS);
+        await pending;
+
+        assert.strictEqual(captured.url, "/api/expert-contacts/7/materials/CV", "PUT URL must be exact");
+        assert.strictEqual(captured.options.method, "PUT", "method must be PUT");
+        assert.deepStrictEqual(JSON.parse(captured.options.body), { status: "PROVIDED" }, "body must be the raw status");
+        assert.ok(row.outerHTML.includes('id="expertMaterialRow"'), "success must replace the row with the full render");
+        assert.strictEqual((row.outerHTML.match(/class="expert-material-tag is-/g) || []).length, 7,
+            "replaced row must re-render all 7 tags from the PUT response");
+        assert.strictEqual(statusCalls, 0, "success must never call showStatus");
+
+        const saveSource = extractFn("saveExpertMaterialStatus");
+        assert.ok(!saveSource.includes("showStatus"), "saveExpertMaterialStatus itself must not show success status");
+    });
+
+    it("saveExpertMaterialStatus keeps old DOM and restores buttons on failure (I2-3)", async () => {
+        const sandbox = {
+            escapeHtml: (v) => String(v == null ? "" : v)
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractMaterialStateMap() + "\n" + extractFn("renderExpertMaterialRow") + "\n" + extractFn("saveExpertMaterialStatus"), sandbox);
+
+        const items = [
+            { disabled: false, isConnected: true },
+            { disabled: false, isConnected: true },
+            { disabled: false, isConnected: true }
+        ];
+        const tag = { dataset: { materialCode: "CV" } };
+        const row = { dataset: { contactId: "7" }, outerHTML: "old-row" };
+        const wrapper = {
+            querySelector: (sel) => (sel === ".expert-material-tag" ? tag : null),
+            querySelectorAll: (sel) => (sel === ".dropdown-item" ? items : [])
+        };
+        const button = {
+            closest: (sel) => (sel === "#expertMaterialRow" ? row : sel === ".dropdown" ? wrapper : null),
+            dataset: { materialStatus: "PROVIDED" }
+        };
+        sandbox.api = async () => { throw new Error("网络错误"); };
+        sandbox.showStatus = () => {};
+
+        await assert.rejects(() => sandbox.saveExpertMaterialStatus(button), /网络错误/);
+        assert.strictEqual(row.outerHTML, "old-row", "failed PUT must keep the old row untouched");
+        assert.ok(items.every((i) => i.disabled === false), "failed PUT must restore the menu buttons");
+    });
+
+    it("toggleExpertMaterialMenu opens one menu and closes others; outside click and Escape close all (I2-6)", () => {
+        const tagA = makeEl();
+        tagA.setAttribute = (name, value) => { tagA[name] = value; };
+        const menuA = makeEl({ hidden: true, previousElementSibling: tagA });
+        const tagB = makeEl();
+        tagB.setAttribute = (name, value) => { tagB[name] = value; };
+        const menuB = makeEl({ hidden: true, previousElementSibling: tagB });
+        const row = { querySelectorAll: (sel) => (sel === ".dropdown-menu" ? [menuA, menuB] : []) };
+        const wrapperA = { querySelector: (sel) => (sel === ".dropdown-menu" ? menuA : null) };
+        const buttonA = { closest: (sel) => (sel === ".dropdown" ? wrapperA : null) };
+        buttonA.setAttribute = (name, value) => { buttonA[name] = value; };
+        const els = { expertMaterialRow: row };
+        const sandbox = { $: (sel) => els[sel.replace(/^#/, "")] || null };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("closeExpertMaterialMenus") + "\n" + extractFn("toggleExpertMaterialMenu"), sandbox);
+
+        sandbox.toggleExpertMaterialMenu(buttonA);
+        assert.strictEqual(menuA.hidden, false, "toggle must open the target menu");
+        assert.strictEqual(buttonA["aria-expanded"], "true", "target button must report aria-expanded=true");
+        assert.strictEqual(menuB.hidden, true, "other menus must stay closed");
+        assert.strictEqual(tagB["aria-expanded"], "false", "closed sibling tag must report aria-expanded=false");
+
+        sandbox.toggleExpertMaterialMenu(buttonA);
+        assert.strictEqual(menuA.hidden, true, "second toggle must close the menu");
+        assert.strictEqual(buttonA["aria-expanded"], "false", "closed button must report aria-expanded=false");
+        assert.strictEqual(tagA["aria-expanded"], "false", "closed tag must report aria-expanded=false");
+
+        // outside click / Escape wiring lives in bindEvents next to the sender-binding logic
+        assert.ok(appJsSource.includes(`document.addEventListener("click", () => {
+        const pop = $("#senderBindingPop");
+        if (pop && !pop.hidden) {
+            pop.hidden = true;
+            $("#senderBindingToggle")?.setAttribute("aria-expanded", "false");
+        }
+        closeExpertMaterialMenus();
+    });`), "document click must close material menus without touching sender-binding logic");
+
+        assert.ok(appJsSource.includes(`document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape") return;
+        const pop = $("#senderBindingPop");
+        if (pop && !pop.hidden) {
+            pop.hidden = true;
+            $("#senderBindingToggle")?.setAttribute("aria-expanded", "false");
+        }
+        closeExpertMaterialMenus();
+    });`), "Escape must close material menus without touching sender-binding logic");
+    });
+
+    it("material branch precedes generic action in the contact-head click handler (I2-6/I2-3)", () => {
+        const firstStart = appJsSource.indexOf('$("#contactHeadActions").addEventListener("click", async (event) => {');
+        assert.ok(firstStart !== -1, "first contact-head click listener must exist");
+        const secondStart = appJsSource.indexOf('$("#contactHeadActions").addEventListener("click", (event) => {', firstStart + 1);
+        assert.ok(secondStart !== -1, "sender-binding click listener must still exist");
+        const firstListener = appJsSource.slice(firstStart, secondStart);
+
+        const materialIdx = firstListener.indexOf('closest("button[data-material-action]")');
+        const genericIdx = firstListener.indexOf('closest("button[data-action]")');
+        assert.ok(materialIdx !== -1, "material branch must exist");
+        assert.ok(genericIdx !== -1, "generic action branch must exist");
+        assert.ok(materialIdx < genericIdx, "material branch must be checked before the generic action branch");
+        assert.ok(firstListener.includes("event.stopPropagation();"), "material clicks must stopPropagation");
+        assert.ok(firstListener.includes("saveExpertMaterialStatus(materialButton).catch((error) => {"),
+            "set-status must go through saveExpertMaterialStatus");
+        assert.ok(firstListener.includes('showStatus("材料状态保存失败: " + error.message, "error")'),
+            "failure must produce exactly one error status");
+        assert.ok(firstListener.includes('toggleExpertMaterialMenu(materialButton)'), "toggle must open the menu");
+    });
+
+    it("styles.css appends the S2-2 rules verbatim and leaves shared rules intact (S2-1/S2-2/S2-3)", () => {
+        const s22Block = `.expert-material-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.expert-material-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-main);
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.expert-material-tag:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.expert-material-tag:focus-visible {
+    border-color: var(--primary);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.18);
+}
+
+.expert-material-tag.is-provided {
+    border-color: var(--success-border);
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.expert-material-tag.is-declined {
+    border-color: rgba(148, 163, 184, 0.35);
+    background: rgba(148, 163, 184, 0.12);
+    color: var(--text-muted);
+    text-decoration: line-through;
+    opacity: 0.72;
+}
+
+.expert-material-tag-mark {
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.expert-material-tag.is-pending .expert-material-tag-mark {
+    display: none;
+}
+
+.expert-material-tag-caret {
+    color: currentColor;
+    font-size: 9px;
+    opacity: 0.7;
+}`;
+        assert.ok(stylesCssSource.includes(s22Block), "S2-2 rules must be appended verbatim");
+
+        assert.ok(stylesCssSource.includes(`.contact-head-status-row,
+.contact-head-mail-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    flex-wrap: wrap;
+}`), "shared contact-head-status-row rule must be unchanged");
+
+        assert.ok(stylesCssSource.includes(`.contact-head-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    width: 85px;
+    min-width: 85px;
+    white-space: nowrap;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}`), "shared contact-head-label rule must be unchanged");
+
+        assert.ok(stylesCssSource.includes(`.dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    min-width: 180px;
+    background: var(--panel-bg);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    padding: 4px;
+    z-index: var(--z-overlay);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}`), "shared dropdown-menu rule must be unchanged");
+    });
+
+    it("showExpertDetail hides and clears head actions without fetching materials (I2-8)", () => {
+        const fnSource = extractFn("showExpertDetail");
+        assert.ok(fnSource.includes('$("#contactHeadActions").hidden = true;'), "showExpertDetail must hide #contactHeadActions");
+        assert.ok(fnSource.includes('$("#contactHeadActions").innerHTML = "";'), "showExpertDetail must clear #contactHeadActions");
+        assert.ok(!fnSource.includes("/materials"), "showExpertDetail must never request materials");
     });
 });

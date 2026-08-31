@@ -7529,12 +7529,101 @@ function renderIndexLevelButtons(contact) {
     }
 }
 
+const EXPERT_MATERIAL_STATE_MAP = {
+    PENDING: { className: "is-pending", mark: "", label: "待提供" },
+    PROVIDED: { className: "is-provided", mark: "✓", label: "已提供" },
+    DECLINED: { className: "is-declined", mark: "⊘", label: "暂不愿提供" }
+};
+
+function renderExpertMaterialRow(materials, contactId) {
+    const tags = materials.map((item) => {
+        const state = EXPERT_MATERIAL_STATE_MAP[item.status];
+        if (!state) throw new Error("未知材料状态: " + item.status);
+        const code = escapeHtml(item.code);
+        const label = escapeHtml(item.label);
+        const statusLabel = escapeHtml(state.label);
+        return `
+            <span class="dropdown">
+                <button type="button" class="expert-material-tag ${state.className}"
+                        data-material-action="toggle" data-material-code="${code}"
+                        aria-haspopup="true" aria-expanded="false" aria-label="${label}：${statusLabel}，点击修改">
+                    ${state.mark ? `<span class="expert-material-tag-mark" aria-hidden="true">${state.mark}</span>` : ""}
+                    <span>${label}</span>
+                    <span class="expert-material-tag-caret" aria-hidden="true">▾</span>
+                </button>
+                <div class="dropdown-menu" hidden>
+                    <button type="button" class="dropdown-item" data-material-action="set-status" data-material-status="PENDING">待提供</button>
+                    <button type="button" class="dropdown-item" data-material-action="set-status" data-material-status="PROVIDED">✓ 已提供</button>
+                    <button type="button" class="dropdown-item" data-material-action="set-status" data-material-status="DECLINED">⊘ 暂不愿提供</button>
+                </div>
+            </span>
+        `;
+    }).join("");
+    return `
+        <div class="contact-head-status-row" id="expertMaterialRow" data-contact-id="${escapeHtml(contactId)}">
+            <span class="contact-head-label">材料</span>
+            <div class="expert-material-tags" aria-label="专家材料状态">
+                ${tags}
+            </div>
+        </div>
+    `;
+}
+
+function closeExpertMaterialMenus(exceptMenu = null) {
+    const row = $("#expertMaterialRow");
+    if (!row) return;
+    row.querySelectorAll(".dropdown-menu").forEach((menu) => {
+        if (menu === exceptMenu) return;
+        menu.hidden = true;
+        const tag = menu.previousElementSibling;
+        if (tag) tag.setAttribute("aria-expanded", "false");
+    });
+}
+
+function toggleExpertMaterialMenu(button) {
+    const wrapper = button.closest(".dropdown");
+    if (!wrapper) return;
+    const menu = wrapper.querySelector(".dropdown-menu");
+    if (!menu) return;
+    const shouldOpen = menu.hidden;
+    closeExpertMaterialMenus(shouldOpen ? menu : null);
+    menu.hidden = !shouldOpen;
+    button.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+}
+
+async function saveExpertMaterialStatus(button) {
+    const row = button.closest("#expertMaterialRow");
+    const wrapper = button.closest(".dropdown");
+    if (!row || !wrapper) return;
+    const contactId = row.dataset.contactId;
+    const materialCode = wrapper.querySelector(".expert-material-tag")?.dataset.materialCode;
+    const status = button.dataset.materialStatus;
+    if (!contactId || !materialCode || !status) return;
+    const items = wrapper.querySelectorAll(".dropdown-item");
+    items.forEach((item) => { item.disabled = true; });
+    try {
+        const materials = await api(`/api/expert-contacts/${contactId}/materials/${materialCode}`, {
+            method: "PUT",
+            body: JSON.stringify({ status })
+        });
+        row.outerHTML = renderExpertMaterialRow(materials, contactId);
+    } finally {
+        items.forEach((item) => {
+            if (item.isConnected) item.disabled = false;
+        });
+    }
+}
+
 async function loadContactDetail(contactId) {
-    const [detail, options, documents, logs] = await Promise.all([
+    const [detail, options, documents, logs, materials] = await Promise.all([
         api(`/api/expert-contacts/${contactId}`),
         loadMailSendOptions(),
         api(`/api/expert-contacts/${contactId}/documents`).catch(() => []),
-        api(`/api/operator-action-logs?expertContactId=${contactId}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] }))
+        api(`/api/operator-action-logs?expertContactId=${contactId}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] })),
+        api(`/api/expert-contacts/${contactId}/materials`).catch((error) => {
+            showStatus("材料状态加载失败: " + error.message, "error");
+            return null;
+        })
     ]);
     const contact = detail.contact;
     const expert = state.contacts.find(item => item.orcidId === state.selectedExpertOrcid) || {};
@@ -7588,6 +7677,7 @@ async function loadContactDetail(contactId) {
                 保存变更
             </button>
         </div>
+        ${Array.isArray(materials) ? renderExpertMaterialRow(materials, contact.id) : ""}
     `;
     const sel = $("#senderBindingSelect");
     if (sel) {
@@ -11737,6 +11827,18 @@ function bindEvents() {
         saveAiAnalysisField(fieldId, input.value);
     });
     $("#contactHeadActions").addEventListener("click", async (event) => {
+        const materialButton = event.target.closest("button[data-material-action]");
+        if (materialButton) {
+            event.stopPropagation();
+            if (materialButton.dataset.materialAction === "toggle") {
+                toggleExpertMaterialMenu(materialButton);
+            } else if (materialButton.dataset.materialAction === "set-status") {
+                saveExpertMaterialStatus(materialButton).catch((error) => {
+                    showStatus("材料状态保存失败: " + error.message, "error");
+                });
+            }
+            return;
+        }
         const button = event.target.closest("button[data-action]");
         if (button) {
             handleContactAction(button).catch((error) => showStatus(error.message, "error"));
@@ -11828,6 +11930,7 @@ function bindEvents() {
             pop.hidden = true;
             $("#senderBindingToggle")?.setAttribute("aria-expanded", "false");
         }
+        closeExpertMaterialMenus();
     });
     document.addEventListener("keydown", (event) => {
         if (event.key !== "Escape") return;
@@ -11836,6 +11939,7 @@ function bindEvents() {
             pop.hidden = true;
             $("#senderBindingToggle")?.setAttribute("aria-expanded", "false");
         }
+        closeExpertMaterialMenus();
     });
     $("#contactHeadActions").addEventListener("change", (event) => {
         const select = event.target.closest("select");

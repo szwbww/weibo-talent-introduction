@@ -12,7 +12,7 @@ const styles = fs.readFileSync(stylesPath, "utf-8");
 const workbench = fs.readFileSync(workbenchPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260827-v3-inbound-cancel-resolved";
+const CACHE_KEY = "20260831-expert-material-tags";
 
 // Source-text helpers (whitespace-normalized for the verbatim contract checks).
 function stripWs(text) {

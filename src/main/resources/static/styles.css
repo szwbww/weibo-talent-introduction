@@ -10407,3 +10407,70 @@ body.preview-available:not(.preview-docked) .preview-rail {
     color: var(--error-strong);
     text-align: right;
 }
+
+.expert-material-tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.expert-material-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--bg-main);
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.expert-material-tag:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.expert-material-tag:focus-visible {
+    border-color: var(--primary);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.18);
+}
+
+.expert-material-tag.is-provided {
+    border-color: var(--success-border);
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.expert-material-tag.is-declined {
+    border-color: rgba(148, 163, 184, 0.35);
+    background: rgba(148, 163, 184, 0.12);
+    color: var(--text-muted);
+    text-decoration: line-through;
+    opacity: 0.72;
+}
+
+.expert-material-tag-mark {
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.expert-material-tag.is-pending .expert-material-tag-mark {
+    display: none;
+}
+
+.expert-material-tag-caret {
+    color: currentColor;
+    font-size: 9px;
+    opacity: 0.7;
+}
