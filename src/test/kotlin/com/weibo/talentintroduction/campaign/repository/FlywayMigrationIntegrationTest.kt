@@ -56,10 +56,10 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh database migrates through V28`() {
+    fun `fresh database migrates through V111`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("28", flyway.migrate().targetSchemaVersion)
+        assertEquals("111", flyway.migrate().targetSchemaVersion)
     }
 
     @Test
@@ -97,14 +97,36 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V23 upgrades to V28 without repair`() {
+    fun `V111 creates expert_material_status with constraints and zero rows`() {
+        val flyway = flyway()
+        flyway.clean()
+        flyway.migrate()
+        connection().use { connection ->
+            assertTrue(connection.tableExists("expert_material_status"))
+            listOf("id", "expert_contact_id", "material_code", "material_status", "created_at", "updated_at")
+                .forEach { column ->
+                    assertTrue(
+                        connection.columnExists("expert_material_status", column),
+                        "missing column $column"
+                    )
+                }
+            assertEquals(0L, connection.queryLong("SELECT COUNT(*) FROM expert_material_status"))
+            assertTrue(connection.indexExists("expert_material_status", "uk_expert_material_contact_code"))
+            assertTrue(connection.checkConstraintExists("expert_material_status", "chk_expert_material_code"))
+            assertTrue(connection.checkConstraintExists("expert_material_status", "chk_expert_material_status"))
+            assertTrue(connection.foreignKeyExists("expert_material_status", "fk_expert_material_contact"))
+        }
+    }
+
+    @Test
+    fun `database at original V23 upgrades to V111 without repair`() {
         val v23Flyway = flyway(MigrationVersion.fromVersion("23"))
         v23Flyway.clean()
         assertEquals("23", v23Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("28", flyway().migrate().targetSchemaVersion)
+        assertEquals("111", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -113,14 +135,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V24 upgrades to V28 without repair`() {
+    fun `database at original V24 upgrades to V111 without repair`() {
         val v24Flyway = flyway(MigrationVersion.fromVersion("24"))
         v24Flyway.clean()
         assertEquals("24", v24Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("28", flyway().migrate().targetSchemaVersion)
+        assertEquals("111", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -155,7 +177,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("28", flyway().migrate().targetSchemaVersion)
+        assertEquals("111", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
@@ -202,7 +224,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("28", flyway().migrate().targetSchemaVersion)
+        assertEquals("111", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }
@@ -329,6 +351,59 @@ class FlywayMigrationIntegrationTest {
             """.trimIndent()
         ).use { statement ->
             statement.setString(1, table)
+            statement.executeQuery().use { result ->
+                result.next()
+                result.getInt(1) == 1
+            }
+        }
+
+    private fun Connection.indexExists(table: String, index: String): Boolean =
+        prepareStatement(
+            """
+            SELECT COUNT(*)
+              FROM information_schema.statistics
+             WHERE table_schema = DATABASE()
+               AND table_name = ?
+               AND index_name = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, table)
+            statement.setString(2, index)
+            statement.executeQuery().use { result ->
+                result.next()
+                result.getInt(1) >= 1
+            }
+        }
+
+    private fun Connection.checkConstraintExists(table: String, constraint: String): Boolean =
+        prepareStatement(
+            """
+            SELECT COUNT(*)
+              FROM information_schema.check_constraints
+             WHERE constraint_schema = DATABASE()
+               AND constraint_name = ?
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, constraint)
+            statement.executeQuery().use { result ->
+                result.next()
+                result.getInt(1) == 1
+            }
+        }
+
+    private fun Connection.foreignKeyExists(table: String, constraint: String): Boolean =
+        prepareStatement(
+            """
+            SELECT COUNT(*)
+              FROM information_schema.table_constraints
+             WHERE constraint_schema = DATABASE()
+               AND table_name = ?
+               AND constraint_name = ?
+               AND constraint_type = 'FOREIGN KEY'
+            """.trimIndent()
+        ).use { statement ->
+            statement.setString(1, table)
+            statement.setString(2, constraint)
             statement.executeQuery().use { result ->
                 result.next()
                 result.getInt(1) == 1

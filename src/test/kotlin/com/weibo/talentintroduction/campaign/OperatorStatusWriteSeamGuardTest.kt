@@ -53,7 +53,8 @@ class OperatorStatusWriteSeamGuardTest {
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 165, "operatorStatus = summary.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO
-        NoiseSite("com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt", 549, "operatorStatus = operatorStatus"),
+        // （plan 01 新增 materials GET/PUT 端点与 UpdateExpertMaterialStatusRequest DTO 使 :549 偏移至 :564）
+        NoiseSite("com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt", 564, "operatorStatus = operatorStatus"),
         // ES 专家列表响应 DTO 构造：contact/ES 文档字段合并到响应 DTO
         NoiseSite("com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt", 91, "operatorStatus = contact?.operatorStatus"),
         // ES 专家详情响应 DTO 构造：同上

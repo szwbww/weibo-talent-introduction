@@ -3,6 +3,8 @@ package com.weibo.talentintroduction.campaign.controller
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.service.BulkAutoReplyResult
 import com.weibo.talentintroduction.campaign.service.ExpertContactManagementService
+import com.weibo.talentintroduction.campaign.service.ExpertMaterialItem
+import com.weibo.talentintroduction.campaign.service.ExpertMaterialService
 import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -15,14 +17,53 @@ import java.util.Optional
 
 class ExpertContactManagementControllerTest {
     private val service = Mockito.mock(ExpertContactManagementService::class.java)
+    private val expertMaterialService = Mockito.mock(ExpertMaterialService::class.java)
     private val controller = ExpertContactManagementController(
         service = service,
         manualExpertMailService = Mockito.mock(com.weibo.talentintroduction.mail.service.ManualExpertMailService::class.java),
         meetingScheduleService = Mockito.mock(com.weibo.talentintroduction.campaign.service.MeetingScheduleService::class.java),
         expertOperatorStatusService = Mockito.mock(com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService::class.java),
         expertIndexLevelOperationService = Mockito.mock(com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService::class.java),
-        senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java)
+        senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java),
+        expertMaterialService = expertMaterialService
     )
+
+    @Test
+    fun `listMaterials delegates contactId to service and returns catalog items`() {
+        val items = listOf(
+            ExpertMaterialItem(code = "CV", label = "简历", status = "PENDING"),
+            ExpertMaterialItem(code = "PASSPORT", label = "护照", status = "PENDING"),
+            ExpertMaterialItem(code = "DEGREE", label = "学位", status = "PENDING"),
+            ExpertMaterialItem(code = "EMPLOYMENT", label = "工作", status = "PENDING"),
+            ExpertMaterialItem(code = "PUBLICATIONS", label = "出版", status = "PENDING"),
+            ExpertMaterialItem(code = "PATENTS", label = "专利", status = "PENDING"),
+            ExpertMaterialItem(code = "RESEARCH", label = "研究", status = "PENDING")
+        )
+        Mockito.`when`(expertMaterialService.listMaterials(1L)).thenReturn(items)
+
+        val result = controller.listMaterials(1L)
+
+        assertEquals(items, result)
+        assertEquals(7, result.size)
+        Mockito.verify(expertMaterialService).listMaterials(1L)
+    }
+
+    @Test
+    fun `updateMaterialStatus delegates contactId code and status and returns full list`() {
+        val items = listOf(
+            ExpertMaterialItem(code = "CV", label = "简历", status = "PROVIDED")
+        )
+        Mockito.`when`(expertMaterialService.updateStatus(1L, "CV", "PROVIDED")).thenReturn(items)
+
+        val result = controller.updateMaterialStatus(
+            1L,
+            "CV",
+            UpdateExpertMaterialStatusRequest(status = "PROVIDED")
+        )
+
+        assertEquals(items, result)
+        Mockito.verify(expertMaterialService).updateStatus(1L, "CV", "PROVIDED")
+    }
 
     @Test
     fun `bulk auto reply rejects missing operator name`() {

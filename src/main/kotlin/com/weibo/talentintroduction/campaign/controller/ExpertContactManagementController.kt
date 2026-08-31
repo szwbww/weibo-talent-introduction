@@ -14,6 +14,8 @@ import com.weibo.talentintroduction.campaign.service.MeetingScheduleService
 import com.weibo.talentintroduction.campaign.service.CreateMeetingCommand
 import com.weibo.talentintroduction.campaign.service.UpdateMeetingCommand
 import com.weibo.talentintroduction.campaign.service.ConfirmMeetingCommand
+import com.weibo.talentintroduction.campaign.service.ExpertMaterialItem
+import com.weibo.talentintroduction.campaign.service.ExpertMaterialService
 import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
 import com.weibo.talentintroduction.mail.domain.MailAttachment
@@ -47,7 +49,8 @@ class ExpertContactManagementController(
     private val meetingScheduleService: MeetingScheduleService,
     private val expertOperatorStatusService: ExpertOperatorStatusService,
     private val expertIndexLevelOperationService: ExpertIndexLevelOperationService,
-    private val senderAccountBindingService: SenderAccountBindingService
+    private val senderAccountBindingService: SenderAccountBindingService,
+    private val expertMaterialService: ExpertMaterialService
 ) {
     @GetMapping
     fun listContacts(
@@ -237,6 +240,18 @@ class ExpertContactManagementController(
         @PathVariable scheduleId: Long
     ): MeetingScheduleResponse =
         meetingScheduleService.cancelMeeting(contactId, scheduleId).toResponse()
+
+    @GetMapping("/{contactId}/materials")
+    fun listMaterials(@PathVariable contactId: Long): List<ExpertMaterialItem> =
+        expertMaterialService.listMaterials(contactId)
+
+    @PutMapping("/{contactId}/materials/{materialCode}")
+    fun updateMaterialStatus(
+        @PathVariable contactId: Long,
+        @PathVariable materialCode: String,
+        @RequestBody request: UpdateExpertMaterialStatusRequest
+    ): List<ExpertMaterialItem> =
+        expertMaterialService.updateStatus(contactId, materialCode, request.status)
 }
 
 data class ManualHandoffCreateRequest(
@@ -630,4 +645,8 @@ private fun ExpertContactStatusHistory.toResponse(): ExpertContactStatusHistoryR
 data class BulkAutoReplyRequest(
     val enabled: Boolean,
     val operatorName: String? = null
+)
+
+data class UpdateExpertMaterialStatusRequest(
+    val status: String
 )

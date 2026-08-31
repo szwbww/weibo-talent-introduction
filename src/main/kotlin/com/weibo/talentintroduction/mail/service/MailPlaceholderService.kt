@@ -135,6 +135,7 @@ class MailPlaceholderService {
             "recentWorkTitle" to "近期论文标题",
             "patentTitle" to "专利标题",
             "primaryResearchField" to "主要研究方向",
+            "pendingExpertMaterials" to "待专家提供材料",
             "unsubscribeUrl" to "退订链接"
         )
 
@@ -158,6 +159,7 @@ class MailPlaceholderService {
             "recentWorkTitle" to "recentWorkTitles",
             "patentTitle" to "patentTitles",
             "primaryResearchField" to "researchFields",
+            "pendingExpertMaterials" to null,
             "unsubscribeUrl" to null
         )
 
@@ -181,6 +183,7 @@ class MailPlaceholderService {
             "recentWorkTitle" to "A Study on Neural Networks",
             "patentTitle" to "Method for Data Processing",
             "primaryResearchField" to "Machine Learning and Data Classification",
+            "pendingExpertMaterials" to "1. Your latest English CV, including education, employment, publications, patents, projects, awards, and honors.\n2. A copy of the personal information page of your valid passport.",
             "unsubscribeUrl" to "https://example.com/u/unsubscribe?token=preview"
         )
 

@@ -21,6 +21,15 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import com.weibo.talentintroduction.campaign.domain.ExpertMaterialStatusRecord
+import com.weibo.talentintroduction.campaign.repository.ExpertMaterialStatusRepository
+import com.weibo.talentintroduction.campaign.service.ExpertMaterialCode
+import com.weibo.talentintroduction.campaign.service.ExpertMaterialService
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.mockito.ArgumentCaptor
+import java.time.LocalDateTime
+import java.util.Optional
+import java.util.NoSuchElementException
 
 class MailVariableServiceTest {
     private val expertSearchService = Mockito.mock(ExpertSearchService::class.java)
@@ -273,7 +282,7 @@ class MailVariableServiceTest {
     }
 
     @Test
-    fun `variableMetadata maps twelve filterable es fields and seven null keys`() {
+    fun `variableMetadata maps twelve filterable es fields and eight null keys`() {
         val metadata = service.variableMetadata().associateBy { it.key }
         val filterableKeys = listOf(
             "expertFamilyName",
@@ -300,6 +309,7 @@ class MailVariableServiceTest {
             "teamName",
             "countryName",
             "expertName",
+            "pendingExpertMaterials",
             "unsubscribeUrl"
         ).forEach { key ->
             assertNull(metadata[key]?.esField, "expected null esField for $key")
@@ -609,5 +619,247 @@ class MailVariableServiceTest {
         val rendered = serviceWithDisabledUnsubscribe.renderForContact(unsubscribeLine, account, contact)
 
         assertFalse(rendered.contains("\${unsubscribeUrl}"), "placeholder must not survive rendering")
+    }
+
+    // ── ExpertMaterialService semantics (plan 01 I1-1..I1-6) ──
+
+    private val materialStatusRepository = Mockito.mock(ExpertMaterialStatusRepository::class.java)
+    private val materialContactRepository = Mockito.mock(ExpertContactRepository::class.java)
+    private val materialService = ExpertMaterialService(materialStatusRepository, materialContactRepository)
+
+    private fun statusRow(id: Long, code: String, status: String) = ExpertMaterialStatusRecord(
+        id = id,
+        expertContactId = 1L,
+        materialCode = code,
+        materialStatus = status,
+        createdAt = LocalDateTime.of(2026, 8, 31, 10, 0),
+        updatedAt = LocalDateTime.of(2026, 8, 31, 10, 0)
+    )
+
+    @Test
+    fun `listMaterials returns exactly 7 fixed catalog items all PENDING when no rows`() {
+        Mockito.`when`(materialContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(materialStatusRepository.findAllByExpertContactId(1L)).thenReturn(emptyList())
+
+        val items = materialService.listMaterials(1L)
+
+        assertEquals(
+            listOf("CV", "PASSPORT", "DEGREE", "EMPLOYMENT", "PUBLICATIONS", "PATENTS", "RESEARCH"),
+            items.map { it.code }
+        )
+        assertEquals(listOf("简历", "护照", "学位", "工作", "出版", "专利", "研究"), items.map { it.label })
+        assertEquals(
+            listOf("PENDING", "PENDING", "PENDING", "PENDING", "PENDING", "PENDING", "PENDING"),
+            items.map { it.status }
+        )
+    }
+
+    @Test
+    fun `listMaterials resolves stored rows and treats missing rows as PENDING`() {
+        Mockito.`when`(materialContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(materialStatusRepository.findAllByExpertContactId(1L)).thenReturn(
+            listOf(statusRow(1, "CV", "PROVIDED"), statusRow(2, "EMPLOYMENT", "DECLINED"))
+        )
+
+        val byCode = materialService.listMaterials(1L).associateBy { it.code }
+
+        assertEquals("PROVIDED", byCode["CV"]!!.status)
+        assertEquals("DECLINED", byCode["EMPLOYMENT"]!!.status)
+        assertEquals("PENDING", byCode["PASSPORT"]!!.status)
+    }
+
+    @Test
+    fun `updateStatus PROVIDED inserts new row without id`() {
+        Mockito.`when`(materialContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(materialStatusRepository.findByExpertContactIdAndMaterialCode(1L, "CV")).thenReturn(null)
+        Mockito.`when`(materialStatusRepository.findAllByExpertContactId(1L)).thenReturn(
+            listOf(statusRow(9, "CV", "PROVIDED"))
+        )
+
+        materialService.updateStatus(1L, "CV", "PROVIDED")
+
+        val captured = ArgumentCaptor.forClass(ExpertMaterialStatusRecord::class.java)
+        Mockito.verify(materialStatusRepository).save(captured.capture())
+        assertEquals(null, captured.value.id)
+        assertEquals("CV", captured.value.materialCode)
+        assertEquals("PROVIDED", captured.value.materialStatus)
+    }
+
+    @Test
+    fun `updateStatus on existing row preserves id and updates status`() {
+        val existing = statusRow(7, "CV", "PROVIDED")
+        Mockito.`when`(materialContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(materialStatusRepository.findByExpertContactIdAndMaterialCode(1L, "CV"))
+            .thenReturn(existing)
+        Mockito.`when`(materialStatusRepository.findAllByExpertContactId(1L)).thenReturn(
+            listOf(existing.copy(materialStatus = "DECLINED"))
+        )
+
+        materialService.updateStatus(1L, "CV", "DECLINED")
+
+        val captured = ArgumentCaptor.forClass(ExpertMaterialStatusRecord::class.java)
+        Mockito.verify(materialStatusRepository).save(captured.capture())
+        assertEquals(7L, captured.value.id)
+        assertEquals("DECLINED", captured.value.materialStatus)
+    }
+
+    @Test
+    fun `updateStatus PENDING deletes existing row and never saves`() {
+        Mockito.`when`(materialContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(materialStatusRepository.findByExpertContactIdAndMaterialCode(1L, "CV"))
+            .thenReturn(statusRow(7, "CV", "PROVIDED"))
+        Mockito.`when`(materialStatusRepository.findAllByExpertContactId(1L)).thenReturn(emptyList())
+
+        val items = materialService.updateStatus(1L, "CV", "PENDING")
+
+        Mockito.verify(materialStatusRepository).deleteById(7L)
+        Mockito.verify(materialStatusRepository, Mockito.never()).save(Mockito.any())
+        assertTrue(items.all { it.status == "PENDING" })
+    }
+
+    @Test
+    fun `updateStatus rejects unknown code and status before any repository write`() {
+        Mockito.`when`(materialContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            materialService.updateStatus(1L, "UNKNOWN", "PROVIDED")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            materialService.updateStatus(1L, "CV", "DONE")
+        }
+
+        Mockito.verifyNoInteractions(materialStatusRepository)
+    }
+
+    @Test
+    fun `updateStatus rejects missing contact with NoSuchElementException`() {
+        Mockito.`when`(materialContactRepository.findById(99L)).thenReturn(Optional.empty())
+
+        assertThrows(NoSuchElementException::class.java) {
+            materialService.listMaterials(99L)
+        }
+    }
+
+    private val expectedAllPending = listOf(
+        "1. Your latest English CV, including education, employment, publications, patents, projects, awards, and honors.",
+        "2. A copy of the personal information page of your valid passport.",
+        "3. Your PhD degree certificate. Master’s and bachelor’s degree certificates may also be required.",
+        "4. Proof of your current position and recent employment, such as employment letters, contracts, appointment letters, or official institutional documents.",
+        "5. A list of your recent publications, patents, projects, awards, and other professional achievements.",
+        "6. Supporting certificates for important patents, awards, qualifications, or editorial/reviewer roles, if available.",
+        "7. A brief description of your recent research achievements and proposed research topic."
+    ).joinToString("\n")
+
+    @Test
+    fun `renderPendingMaterials with all pending returns 7 numbered lines verbatim`() {
+        Mockito.`when`(materialStatusRepository.findAllByExpertContactId(1L)).thenReturn(emptyList())
+
+        assertEquals(expectedAllPending, materialService.renderPendingMaterials(1L))
+    }
+
+    @Test
+    fun `renderPendingMaterials filters PROVIDED and DECLINED and renumbers from 1`() {
+        Mockito.`when`(materialStatusRepository.findAllByExpertContactId(1L)).thenReturn(
+            listOf(
+                statusRow(1, "CV", "PROVIDED"),
+                statusRow(2, "PASSPORT", "PROVIDED"),
+                statusRow(3, "EMPLOYMENT", "DECLINED")
+            )
+        )
+
+        val rendered = materialService.renderPendingMaterials(1L)
+
+        assertEquals(
+            "1. Your PhD degree certificate. Master’s and bachelor’s degree certificates may also be required.\n" +
+                "2. A list of your recent publications, patents, projects, awards, and other professional achievements.\n" +
+                "3. Supporting certificates for important patents, awards, qualifications, or editorial/reviewer roles, if available.\n" +
+                "4. A brief description of your recent research achievements and proposed research topic.",
+            rendered
+        )
+    }
+
+    @Test
+    fun `renderPendingMaterials returns empty when every item is provided or declined`() {
+        Mockito.`when`(materialStatusRepository.findAllByExpertContactId(1L)).thenReturn(
+            ExpertMaterialCode.entries.mapIndexed { index, code ->
+                statusRow(index + 1L, code.name, if (index % 2 == 0) "PROVIDED" else "DECLINED")
+            }
+        )
+
+        assertEquals("", materialService.renderPendingMaterials(1L))
+    }
+
+    // ── pendingExpertMaterials variable (plan 01 I1-5..I1-8) ──
+
+    private val materialServiceForVars = Mockito.mock(ExpertMaterialService::class.java)
+    private val serviceWithMaterials = MailVariableService(
+        expertSearchService,
+        mailComposeTemplateService,
+        null,
+        MailPlaceholderService(),
+        materialServiceForVars
+    )
+
+    @Test
+    fun `buildVariables always contains pendingExpertMaterials and is empty without contact or service`() {
+        val withoutContact = service.buildVariables(account, expert)
+        assertTrue(withoutContact.containsKey("pendingExpertMaterials"))
+        assertEquals("", withoutContact["pendingExpertMaterials"])
+
+        val withContactNoService = service.buildVariables(account, expert, contact = contact)
+        assertEquals("", withContactNoService["pendingExpertMaterials"])
+    }
+
+    @Test
+    fun `renderForContact replaces pendingExpertMaterials for real contact without residue`() {
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(expert)
+        Mockito.`when`(materialServiceForVars.renderPendingMaterials(1L))
+            .thenReturn("1. Your PhD degree certificate. Master’s and bachelor’s degree certificates may also be required.")
+
+        val rendered = serviceWithMaterials.renderForContact(
+            "Materials:\n\${pendingExpertMaterials}",
+            account,
+            contact
+        )
+
+        assertTrue(rendered.contains("1. Your PhD degree certificate."))
+        assertFalse(rendered.contains("\${pendingExpertMaterials}"))
+    }
+
+    @Test
+    fun `renderHtmlForContact and renderPreview replace pendingExpertMaterials without residue`() {
+        Mockito.`when`(expertSearchService.findByOrcidId("0000-0001", ExpertIndexLevel.CANDIDATE))
+            .thenReturn(expert)
+        Mockito.`when`(materialServiceForVars.renderPendingMaterials(1L))
+            .thenReturn("1. Your PhD degree certificate.\n2. A list of your recent publications.")
+
+        val html = serviceWithMaterials.renderHtmlForContact(
+            "Materials:\n\${pendingExpertMaterials}",
+            account,
+            contact
+        )
+        val preview = serviceWithMaterials.renderPreview(
+            "Materials:\n\${pendingExpertMaterials}",
+            account,
+            contact
+        )
+
+        assertTrue(html.contains("1. Your PhD degree certificate."))
+        assertFalse(html.contains("\${pendingExpertMaterials}"))
+        assertTrue(preview.rendered.contains("1. Your PhD degree certificate."))
+        assertFalse(preview.rendered.contains("\${pendingExpertMaterials}"))
+    }
+
+    @Test
+    fun `pendingExpertMaterials metadata is non nullable with fixed label and null esField`() {
+        val meta = service.variableMetadata().associateBy { it.key }
+        val m = meta["pendingExpertMaterials"]!!
+        assertEquals("待专家提供材料", m.label)
+        assertFalse(m.nullable)
+        assertNull(m.esField)
+        assertTrue(m.example.isNotBlank())
+
+        assertEquals(emptyList<String>(), service.validatePlaceholders("\${pendingExpertMaterials}"))
     }
 }

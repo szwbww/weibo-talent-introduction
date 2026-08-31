@@ -66,6 +66,7 @@ class IntroductionMailComposerTest {
             ?.firstOrNull()
             ?.trim())
             .orEmpty(),
+        "pendingExpertMaterials" to "",
         "unsubscribeUrl" to ""
     )
 

@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.service.ExpertMaterialService
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
@@ -110,7 +111,8 @@ class MailVariableService(
     private val expertSearchService: ExpertSearchService,
     private val mailComposeTemplateService: MailComposeTemplateService,
     private val unsubscribeTokenService: UnsubscribeTokenService? = null,
-    private val mailPlaceholderService: MailPlaceholderService = MailPlaceholderService()
+    private val mailPlaceholderService: MailPlaceholderService = MailPlaceholderService(),
+    private val expertMaterialService: ExpertMaterialService? = null
 ) {
     private val log = LoggerFactory.getLogger(MailVariableService::class.java)
 
@@ -150,12 +152,15 @@ class MailVariableService(
                     .orEmpty()
             )
         } else {
-            EXPERT_KEYS.associateWith { "" }
+            PROFILE_KEYS.associateWith { "" }
         }
+        val materialVars = mapOf(
+            "pendingExpertMaterials" to renderPendingMaterials(contact)
+        )
         val unsubscribeVars = mapOf(
             "unsubscribeUrl" to unsubscribeUrl(unsubscribeEmail, previewFallbacks)
         )
-        return senderVars + expertVars + unsubscribeVars
+        return senderVars + expertVars + materialVars + unsubscribeVars
     }
 
     fun variableMetadata(): List<VariableMeta> =
@@ -262,6 +267,16 @@ class MailVariableService(
     private fun previewUnsubscribeUrl(previewFallbacks: Boolean): String =
         if (previewFallbacks) PREVIEW_UNSUBSCRIBE_URL else ""
 
+    /**
+     * I1-7：key 永远存在。真实 contact 且材料服务可用时输出 I1-5 过滤编号正文；
+     * 无 contact、contact.id 为 null 或未注入服务时为空字符串，绝不泄漏占位符。
+     */
+    private fun renderPendingMaterials(contact: ExpertContact?): String {
+        val service = expertMaterialService ?: return ""
+        val contactId = contact?.id ?: return ""
+        return service.renderPendingMaterials(contactId)
+    }
+
     fun resolveExpertProfileFor(contact: ExpertContact): ExpertProfile? {
         val orcidId = contact.orcidId.takeIf { it.isNotBlank() } ?: return null
         return try {
@@ -289,7 +304,8 @@ class MailVariableService(
     }
 
     companion object {
-        val EXPERT_KEYS: Set<String> = MailPlaceholderService.EXPERT_KEYS
+        private val PROFILE_KEYS: Set<String> = MailPlaceholderService.EXPERT_KEYS
+        val EXPERT_KEYS: Set<String> = PROFILE_KEYS + "pendingExpertMaterials"
         val VARIABLE_LABELS: Map<String, String> = MailPlaceholderService.VARIABLE_LABELS
         val ES_FIELD_BY_KEY: Map<String, String?> = MailPlaceholderService.ES_FIELD_BY_KEY
         private const val PREVIEW_UNSUBSCRIBE_URL = "https://example.com/u/unsubscribe?token=preview"
