@@ -46,6 +46,9 @@ data class MailboxExpertGroupResponse(
     val expertIndexLevel: String,
     val mailCount: Long,
     val pendingCount: Long,
+    val receivedCount: Long = 0,
+    val sentCount: Long = 0,
+    val failedCount: Long = 0,
     val mails: List<MailboxItemResponse>
 )
 
@@ -126,7 +129,8 @@ class MailboxController(private val mailboxService: MailboxService) {
         @RequestParam(defaultValue = "false") pending: Boolean,
         @RequestParam(required = false) tag: String?,
         @RequestParam(defaultValue = "0") page: Int,
-        @RequestParam(defaultValue = "20") size: Int
+        @RequestParam(defaultValue = "20") size: Int,
+        @RequestParam(required = false) expertContactId: Long?
     ): MailboxExpertGroupListResponse = mailboxService.listByExpert(
         direction = direction,
         accountCode = accountCode,
@@ -137,7 +141,8 @@ class MailboxController(private val mailboxService: MailboxService) {
         pending = pending,
         tag = tag,
         page = page,
-        size = size.coerceIn(1, 100)
+        size = size.coerceIn(1, 100),
+        expertContactId = expertContactId
     )
 
     @GetMapping("/{source}/{id}")

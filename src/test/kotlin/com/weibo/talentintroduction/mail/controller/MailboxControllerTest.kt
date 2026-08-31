@@ -194,6 +194,71 @@ class MailboxControllerTest {
     }
 
     @Test
+    fun `list by expert passes expertContactId and returns split counts`() {
+        val testResponse = MailboxExpertGroupListResponse(
+            groups = listOf(
+                MailboxExpertGroupResponse(
+                    expertContactId = 100L,
+                    expertName = "张三",
+                    expertEmail = "zhang@example.com",
+                    expertOrcidId = "0000-0001-0002-0003",
+                    operatorStatus = "REPLIED",
+                    expertIndexLevel = "APPLICATION",
+                    mailCount = 5L,
+                    pendingCount = 0L,
+                    receivedCount = 2L,
+                    sentCount = 2L,
+                    failedCount = 1L,
+                    mails = emptyList()
+                )
+            ),
+            totalCount = 1L
+        )
+
+        Mockito.`when`(
+            mailboxService.listByExpert(
+                direction = null,
+                accountCode = null,
+                keyword = null,
+                recipientEmail = null,
+                startTime = null,
+                endTime = null,
+                pending = false,
+                tag = null,
+                page = 0,
+                size = 20,
+                expertContactId = 100L
+            )
+        ).thenReturn(testResponse)
+
+        mockMvc.perform(
+            get("/api/mail/mailbox/by-expert")
+                .param("expertContactId", "100")
+        )
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.totalCount").value(1))
+            .andExpect(jsonPath("$.groups[0].expertContactId").value(100))
+            .andExpect(jsonPath("$.groups[0].mailCount").value(5))
+            .andExpect(jsonPath("$.groups[0].receivedCount").value(2))
+            .andExpect(jsonPath("$.groups[0].sentCount").value(2))
+            .andExpect(jsonPath("$.groups[0].failedCount").value(1))
+
+        Mockito.verify(mailboxService).listByExpert(
+            direction = null,
+            accountCode = null,
+            keyword = null,
+            recipientEmail = null,
+            startTime = null,
+            endTime = null,
+            pending = false,
+            tag = null,
+            page = 0,
+            size = 20,
+            expertContactId = 100L
+        )
+    }
+
+    @Test
     fun `list by expert coerces size to max 100`() {
         Mockito.`when`(
             mailboxService.listByExpert(

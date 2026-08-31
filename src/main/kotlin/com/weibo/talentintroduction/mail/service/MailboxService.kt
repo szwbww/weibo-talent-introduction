@@ -91,7 +91,8 @@ class MailboxService(
         pending: Boolean,
         tag: String?,
         page: Int,
-        size: Int
+        size: Int,
+        expertContactId: Long? = null
     ): MailboxExpertGroupListResponse {
         val activeAccounts = senderAccountRepository.findAllByAccountCodeNot(
             MailSenderAccountService.SIMULATOR_ACCOUNT_CODE
@@ -114,7 +115,8 @@ class MailboxService(
             startTime = startTime,
             endTime = endTime,
             onlyPending = onlyPending,
-            tag = tag
+            tag = tag,
+            expertContactId = expertContactId
         )
         if (total == 0L) {
             return MailboxExpertGroupListResponse(emptyList(), 0)
@@ -131,7 +133,8 @@ class MailboxService(
             onlyPending = onlyPending,
             tag = tag,
             limit = size,
-            offset = offset
+            offset = offset,
+            expertContactId = expertContactId
         )
         if (summaries.isEmpty()) {
             return MailboxExpertGroupListResponse(emptyList(), total)
@@ -166,6 +169,9 @@ class MailboxService(
                 expertIndexLevel = summary.currentIndexLevel,
                 mailCount = summary.mailCount,
                 pendingCount = summary.pendingCount,
+                receivedCount = summary.receivedCount,
+                sentCount = summary.sentCount,
+                failedCount = summary.failedCount,
                 mails = mailsByExpert[summary.expertContactId] ?: emptyList()
             )
         }

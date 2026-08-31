@@ -386,6 +386,103 @@ class MailRecordRepositoryMonitoringIT {
         assertEquals(2, mails.size)
         assertTrue(mails.all { it.subject?.contains("材料") == true })
     }
+    @Test
+    fun `expert filter counts only authoritative sources and keeps other expert out`() {
+        seedBaseContact()
+        seedSecondExpertContact()
+        val base = LocalDate.now(shanghaiZone).atStartOfDay().plusHours(8)
+
+        jdbcTemplate.update(
+            """
+            INSERT INTO inbound_mail_processing
+                (sender_account_code, imap_uid, message_id, from_email, subject, body,
+                 received_at, process_status, process_reason, expert_contact_id)
+            VALUES
+                ('sender', 4001, 'in-a1', 'one@example.com', 'inbound one', 'body', ?, 'PROCESSED', 'MANUAL_BOUND', 1),
+                ('sender', 4002, 'in-a2', 'one@example.com', 'inbound two', 'body', ?, 'PROCESSED', 'MANUAL_BOUND', 1)
+            """.trimIndent(),
+            base.minusHours(6), base.minusHours(5)
+        )
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, triggered_by,
+                 message_id, send_status, sent_at, created_at)
+            VALUES
+                (1, 'OUTBOUND', 'INTRODUCTION', 'sender', 'MANUAL', 'msg-s1', 'SENT', ?, ?),
+                (1, 'OUTBOUND', 'QA_REPLY', 'sender', 'SYSTEM', 'msg-s2', 'SENT', ?, ?),
+                (1, 'OUTBOUND', 'QA_REPLY', 'sender', 'SYSTEM', 'msg-f1', 'FAILED', ?, ?),
+                (1, 'INBOUND', 'REPLY', 'sender', NULL, 'msg-in-copy', NULL, NULL, ?),
+                (2, 'OUTBOUND', 'INTRODUCTION', 'sender', 'MANUAL', 'msg-b1', 'SENT', ?, ?)
+            """.trimIndent(),
+            base.minusHours(4), base.minusHours(4),
+            base.minusHours(3), base.minusHours(3),
+            base.minusHours(2), base.minusHours(2),
+            base.minusHours(1),
+            base, base
+        )
+
+        assertEquals(1L, mailRecordRepository.countMailboxExperts(
+            accountCodes = listOf("sender"), direction = null, accountCode = null, keyword = null,
+            recipientEmail = null, startTime = null, endTime = null, onlyPending = 0, tag = null,
+            expertContactId = 1L
+        ))
+
+        val expertSummary = mailRecordRepository.listMailboxExpertSummaries(
+            accountCodes = listOf("sender"), direction = null, accountCode = null, keyword = null,
+            recipientEmail = null, startTime = null, endTime = null, onlyPending = 0, tag = null,
+            limit = 10, offset = 0L, expertContactId = 1L
+        ).single()
+        assertEquals(1L, expertSummary.expertContactId)
+        assertEquals(5L, expertSummary.mailCount)
+        assertEquals(0L, expertSummary.pendingCount)
+        assertEquals(2L, expertSummary.receivedCount)
+        assertEquals(2L, expertSummary.sentCount)
+        assertEquals(1L, expertSummary.failedCount)
+
+        val mails = mailRecordRepository.listMailboxByExpertContactIds(
+            expertContactIds = listOf(1L), accountCodes = listOf("sender"), direction = null,
+            accountCode = null, keyword = null, recipientEmail = null, startTime = null, endTime = null,
+            onlyPending = 0, tag = null
+        )
+        assertEquals(5, mails.size)
+        assertTrue(mails.all { it.expertContactId == 1L })
+        assertEquals(2, mails.count { it.source == "INBOUND_PROCESSING" })
+        assertEquals(2, mails.count { it.direction == "OUTBOUND" && it.sendStatus == "SENT" })
+        assertEquals(1, mails.count { it.direction == "OUTBOUND" && it.sendStatus == "FAILED" })
+
+        assertEquals(1L, mailRecordRepository.countMailboxExperts(
+            accountCodes = listOf("sender"), direction = null, accountCode = null, keyword = null,
+            recipientEmail = null, startTime = null, endTime = null, onlyPending = 0, tag = null,
+            expertContactId = 2L
+        ))
+        val otherSummary = mailRecordRepository.listMailboxExpertSummaries(
+            accountCodes = listOf("sender"), direction = null, accountCode = null, keyword = null,
+            recipientEmail = null, startTime = null, endTime = null, onlyPending = 0, tag = null,
+            limit = 10, offset = 0L, expertContactId = 2L
+        ).single()
+        assertEquals(2L, otherSummary.expertContactId)
+        assertEquals(1L, otherSummary.mailCount)
+        assertEquals(0L, otherSummary.receivedCount)
+        assertEquals(1L, otherSummary.sentCount)
+        assertEquals(0L, otherSummary.failedCount)
+
+        assertEquals(2L, mailRecordRepository.countMailboxExperts(
+            accountCodes = listOf("sender"), direction = null, accountCode = null, keyword = null,
+            recipientEmail = null, startTime = null, endTime = null, onlyPending = 0, tag = null
+        ))
+        val allSummaries = mailRecordRepository.listMailboxExpertSummaries(
+            accountCodes = listOf("sender"), direction = null, accountCode = null, keyword = null,
+            recipientEmail = null, startTime = null, endTime = null, onlyPending = 0, tag = null,
+            limit = 10, offset = 0L
+        )
+        assertEquals(2, allSummaries.size)
+        val contactOne = allSummaries.first { it.expertContactId == 1L }
+        assertEquals(5L, contactOne.mailCount)
+        assertEquals(2L, contactOne.receivedCount)
+        assertEquals(2L, contactOne.sentCount)
+        assertEquals(1L, contactOne.failedCount)
+    }
 
     private fun seedSecondExpertContact() {
         jdbcTemplate.update(

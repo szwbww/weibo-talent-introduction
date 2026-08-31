@@ -51,7 +51,7 @@ class OperatorStatusWriteSeamGuardTest {
         //   2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :1099 偏移至 :1116）
         NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1116, "operatorStatus = operatorStatus"),
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
-        NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 165, "operatorStatus = summary.operatorStatus"),
+        NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO
         // （plan 01 新增 materials GET/PUT 端点与 UpdateExpertMaterialStatusRequest DTO 使 :549 偏移至 :564）
         NoiseSite("com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt", 564, "operatorStatus = operatorStatus"),
@@ -76,7 +76,7 @@ class OperatorStatusWriteSeamGuardTest {
         // SELECT 列投影：读取列值供响应 DTO 使用
         NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 537, "ec.operator_status AS operator_status"),
         // SELECT GROUP BY 列引用：只读聚合
-        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 585, "ec.operator_status, ec.current_index_level")
+        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 594, "ec.operator_status, ec.current_index_level")
     )
 
     /**

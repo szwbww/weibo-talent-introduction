@@ -538,14 +538,21 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
                ec.current_index_level AS current_index_level,
                COUNT(*) AS mail_count,
                SUM(u.pending_flag) AS pending_count,
+               SUM(u.received_flag) AS received_count,
+               SUM(u.sent_flag) AS sent_count,
+               SUM(u.failed_flag) AS failed_count,
                MAX(u.event_at) AS latest_event_at
           FROM (
               SELECT mr.expert_contact_id, COALESCE(mr.sent_at, mr.created_at) AS event_at,
-                     0 AS pending_flag
+                     0 AS pending_flag,
+                     0 AS received_flag,
+                     CASE WHEN mr.send_status = 'SENT' THEN 1 ELSE 0 END AS sent_flag,
+                     CASE WHEN mr.send_status = 'FAILED' THEN 1 ELSE 0 END AS failed_flag
                 FROM mail_record mr
                 JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
                WHERE mr.direction = 'OUTBOUND'
                  AND mr.expert_contact_id IS NOT NULL
+                 AND (:expertContactId IS NULL OR mr.expert_contact_id = :expertContactId)
                  AND mr.sender_account_code IN (:accountCodes)
                  AND (:direction IS NULL OR :direction = 'OUTBOUND')
                  AND (:onlyPending = 0)
@@ -564,10 +571,12 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
                       OR (:tag = '首发' AND mr.mail_type = 'INTRODUCTION'))
               UNION ALL
               SELECT imp.expert_contact_id, imp.received_at AS event_at,
-                     CASE WHEN imp.process_status = 'MANUAL_REVIEW' THEN 1 ELSE 0 END AS pending_flag
+                     CASE WHEN imp.process_status = 'MANUAL_REVIEW' THEN 1 ELSE 0 END AS pending_flag,
+                     1 AS received_flag, 0 AS sent_flag, 0 AS failed_flag
                 FROM inbound_mail_processing imp
                 JOIN expert_contact ec2 ON ec2.id = imp.expert_contact_id
                WHERE imp.expert_contact_id IS NOT NULL
+                 AND (:expertContactId IS NULL OR imp.expert_contact_id = :expertContactId)
                  AND imp.sender_account_code IN (:accountCodes)
                  AND (:direction IS NULL OR :direction = 'INBOUND')
                  AND (:onlyPending = 0 OR imp.process_status = 'MANUAL_REVIEW')
@@ -598,7 +607,8 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         onlyPending: Int,
         tag: String?,
         limit: Int,
-        offset: Long
+        offset: Long,
+        expertContactId: Long? = null
     ): List<MailboxExpertSummaryRow>
 
     @Query(
@@ -610,6 +620,7 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
                 JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
                WHERE mr.direction = 'OUTBOUND'
                  AND mr.expert_contact_id IS NOT NULL
+                 AND (:expertContactId IS NULL OR mr.expert_contact_id = :expertContactId)
                  AND mr.sender_account_code IN (:accountCodes)
                  AND (:direction IS NULL OR :direction = 'OUTBOUND')
                  AND (:onlyPending = 0)
@@ -631,6 +642,7 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
                 FROM inbound_mail_processing imp
                 JOIN expert_contact ec2 ON ec2.id = imp.expert_contact_id
                WHERE imp.expert_contact_id IS NOT NULL
+                 AND (:expertContactId IS NULL OR imp.expert_contact_id = :expertContactId)
                  AND imp.sender_account_code IN (:accountCodes)
                  AND (:direction IS NULL OR :direction = 'INBOUND')
                  AND (:onlyPending = 0 OR imp.process_status = 'MANUAL_REVIEW')
@@ -654,7 +666,8 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         startTime: LocalDateTime?,
         endTime: LocalDateTime?,
         onlyPending: Int,
-        tag: String?
+        tag: String?,
+        expertContactId: Long? = null
     ): Long
 
     @Query(
@@ -770,6 +783,9 @@ data class MailboxExpertSummaryRow(
     val currentIndexLevel: String,
     val mailCount: Long,
     val pendingCount: Long,
+    val receivedCount: Long = 0,
+    val sentCount: Long = 0,
+    val failedCount: Long = 0,
     val latestEventAt: LocalDateTime
 )
 
