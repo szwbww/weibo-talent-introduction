@@ -453,6 +453,7 @@
                     <span class="filter-count-badge" id="filterActiveCount" hidden></span>
                 </button>
                 <div class="toolbar-group toolbar-filters" id="contactsFilterGroup">
+                    <div class="expert-filter-row expert-filter-row-primary">
                     <label class="toolbar-label">
                         排序:
                         <select id="expertSortBy">
@@ -523,7 +524,10 @@
                             <option value="UNCLASSIFIED">未分类</option>
                         </select>
                     </label>
+                    </div>
+                    <div class="expert-filter-row expert-filter-row-tags">
                     <div class="toolbar-chip-row">
+                    <div class="expert-filter-tag-group">
                     <span class="toolbar-label">研发类型:</span>
                     <span class="tag-select" id="expertTypeTagSelect">
                             <button type="button" class="tag-chip" data-value="PRODUCTION_RND">生产研发</button>
@@ -535,6 +539,22 @@
                             <button type="button" class="tag-chip" data-value="UNCLASSIFIED">未分类</button>
                         </span>
                     </div>
+                    </div>
+                    <div class="toolbar-chip-row">
+                    <div class="expert-filter-tag-group">
+                    <span class="toolbar-label">数据完整度:</span>
+                    <span class="tag-select" id="hasFieldTagSelect">
+                            <button type="button" class="tag-chip" data-value="employment">有职位</button>
+                            <button type="button" class="tag-chip" data-value="degree">有学历</button>
+                            <button type="button" class="tag-chip" data-value="institution">有机构</button>
+                            <button type="button" class="tag-chip" data-value="researchFields">有研究方向</button>
+                            <button type="button" class="tag-chip" data-value="recentWorkTitles">有近期论文</button>
+                            <button type="button" class="tag-chip" data-value="patentTitles">有专利</button>
+                        </span>
+                    </div>
+                    </div>
+                    </div>
+                    <div class="expert-filter-row expert-filter-row-metrics">
                     <label class="toolbar-label">
                         H-Index ≥:
                         <input type="number" id="expertHIndexMinFilter" min="0" step="1" placeholder="不限" style="width: 70px;">
@@ -552,17 +572,6 @@
                             <option value="10">近 10 年</option>
                         </select>
                     </label>
-                    <div class="toolbar-chip-row">
-                    <span class="toolbar-label">数据完整度:</span>
-                    <span class="tag-select" id="hasFieldTagSelect">
-                            <button type="button" class="tag-chip" data-value="employment">有职位</button>
-                            <button type="button" class="tag-chip" data-value="degree">有学历</button>
-                            <button type="button" class="tag-chip" data-value="institution">有机构</button>
-                            <button type="button" class="tag-chip" data-value="researchFields">有研究方向</button>
-                            <button type="button" class="tag-chip" data-value="recentWorkTitles">有近期论文</button>
-                            <button type="button" class="tag-chip" data-value="patentTitles">有专利</button>
-                        </span>
-                    </div>
                     <span class="toolbar-label">
                         按模板门禁:
                         <select id="expertGateTemplateFilter">
@@ -572,6 +581,7 @@
                             符合 <span class="gate-filter-match" id="expertGateMatchCount">0</span> / <span id="expertGateTotalCount">0</span>
                         </span>
                     </span>
+                    </div>
                 </div>
                 <div class="toolbar-group toolbar-actions">
                     <button class="button" id="loadContactsBtn" title="筛选条件修改后会自动刷新，此按钮用于手动重新加载">
@@ -587,8 +597,8 @@
                             <button class="dropdown-item" id="promoteRawBtn" onclick="handleDiscoverOption('quick')">快速晋升（扫描 RAW）</button>
                             <button class="dropdown-item" id="discoverDeepBtn" onclick="handleDiscoverOption('deep')">深度发现（外部数据源）</button>
                             <button class="dropdown-item" onclick="handleDiscoverOption('enrich')">补充学术数据（OpenAlex）</button>
-                            <button class="dropdown-item" id="enrichBackfillBtn" onclick="handleDiscoverOption('enrichBackfill')">补采机构类型（一次性）</button>
-                            <button class="dropdown-item" id="enrichYearBackfillBtn" onclick="handleDiscoverOption('enrichYearBackfill')">补采发表年份（一次性）</button>
+                            <button class="dropdown-item" id="enrichBackfillBtn" hidden onclick="handleDiscoverOption('enrichBackfill')">补采机构类型（一次性）</button>
+                            <button class="dropdown-item" id="enrichYearBackfillBtn" hidden onclick="handleDiscoverOption('enrichYearBackfill')">补采发表年份（一次性）</button>
                             <hr class="dropdown-divider">
                             <button class="dropdown-item" onclick="handleDiscoverOption('revalidate')">重新验证候选人</button>
                         </div>
@@ -658,15 +668,12 @@
                     <div id="contactCountInfo" class="contact-count-info text-muted"></div>
                     <div id="contactList" class="list"></div>
                     <div id="contactPager" class="list-pager">
-                        <label class="toolbar-label">
-                            显示行数:
-                            <select id="expertIndexSize">
-                                <option value="10">10 条/页</option>
-                                <option value="20">20 条/页</option>
-                                <option value="50" selected>50 条/页</option>
-                                <option value="100">100 条/页</option>
-                            </select>
-                        </label>
+                        <select id="expertIndexSize" aria-label="每页行数">
+                            <option value="10">10 条/页</option>
+                            <option value="20">20 条/页</option>
+                            <option value="50" selected>50 条/页</option>
+                            <option value="100">100 条/页</option>
+                        </select>
                         <button class="button small" id="contactPrevPage">上一页</button>
                         <span id="contactPageInfo" class="list-pager-info"></span>
                         <button class="button small" id="contactNextPage">下一页</button>

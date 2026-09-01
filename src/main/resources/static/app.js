@@ -4376,7 +4376,7 @@ async function loadEmailProviders(level, { filters = {}, refreshConfigDropdown =
             domains.forEach(d => {
                 const opt = document.createElement("option");
                 opt.value = d.domain;
-                opt.textContent = `${d.domain} (${d.count})`;
+                opt.textContent = d.domain;
                 filterDropdown.appendChild(opt);
             });
             filterDropdown.value = currentFilterVal;
@@ -4418,7 +4418,7 @@ async function loadRegions(level, { filters = {} } = {}) {
             regions.forEach(d => {
                 const opt = document.createElement("option");
                 opt.value = d.region;
-                opt.textContent = `${regionLabel(d.region)} (${d.count})`;
+                opt.textContent = regionLabel(d.region);
                 filterDropdown.appendChild(opt);
             });
             filterDropdown.value = currentFilterVal;
