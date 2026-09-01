@@ -32,6 +32,10 @@ describe("expert filter layout", () => {
             .forEach((id) => assert.ok(row.includes(`id="${id}"`), `${id} must be in metrics row`));
     });
 
+    it("uses five primary columns before the narrow three-column breakpoint", () => {
+        assert.match(css, /@media \(max-width: 1500px\) \{[\s\S]*?\.expert-filter-row-primary\s*\{\s*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\);/);
+    });
+
     it("hides the one-time discovery actions while keeping their ids available", () => {
         assert.match(html, /id="enrichBackfillBtn"[^>]*hidden/);
         assert.match(html, /id="enrichYearBackfillBtn"[^>]*hidden/);

@@ -639,6 +639,12 @@ p {
     min-width: 0 !important;
 }
 
+@media (max-width: 1500px) {
+    .expert-filter-row-primary {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+}
+
 @media (max-width: 1180px) {
     .expert-filter-row-primary {
         grid-template-columns: repeat(3, minmax(0, 1fr));
