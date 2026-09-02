@@ -229,6 +229,9 @@ function createSandbox() {
     vm.runInContext(extractFn("stopAllWatchers"), sandbox);
     vm.runInContext(extractFn("checkAuth"), sandbox);
     vm.runInContext(extractFn("scheduleMonitoringAutoRefresh"), sandbox);
+    vm.runInContext(extractFn("monitoringToday"), sandbox);
+    vm.runInContext(extractFn("shiftMonitoringDate"), sandbox);
+    vm.runInContext(extractFn("monitoringWindowParams"), sandbox);
     return sandbox;
 }
 

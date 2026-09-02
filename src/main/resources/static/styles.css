@@ -10605,3 +10605,11 @@ body.preview-available:not(.preview-docked) .preview-rail {
     font-size: 9px;
     opacity: 0.7;
 }
+.monitoring-region-child > td {
+    background: rgba(15, 23, 42, 0.018);
+    color: var(--text-secondary);
+}
+
+.monitoring-region-child > td:first-child {
+    padding-left: 34px;
+}

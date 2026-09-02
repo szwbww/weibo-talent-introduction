@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.monitoring.repository
 
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.monitoring.service.MailMonitoringService
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -482,6 +483,190 @@ class MailRecordRepositoryMonitoringIT {
         assertEquals(2L, contactOne.receivedCount)
         assertEquals(2L, contactOne.sentCount)
         assertEquals(1L, contactOne.failedCount)
+    }
+
+    @Test
+    fun `intro cohort dedupes repeated introductions per expert`() {
+        seedBaseContact()
+        seedSecondExpertContact()
+        jdbcTemplate.update("UPDATE expert_contact SET country = 'Germany' WHERE id = 1")
+        jdbcTemplate.update("UPDATE expert_contact SET country = 'US' WHERE id = 2")
+        val from = LocalDateTime.now().minusDays(30)
+        val to = LocalDateTime.now().plusDays(1)
+        val sentAt = LocalDateTime.now().minusDays(10)
+
+        // 专家 1 两条 INTRODUCTION（同 expert_contact_id）→ 队列人数去重为 1；专家 2 一条 → 1。
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 send_status, sent_at, created_at)
+            VALUES
+                (1, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-intro-1', 'SENT', ?, ?),
+                (1, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-intro-1b', 'SENT', ?, ?),
+                (2, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-intro-2', 'SENT', ?, ?)
+            """.trimIndent(),
+            sentAt, sentAt,
+            sentAt.plusMinutes(5), sentAt.plusMinutes(5),
+            sentAt.plusHours(1), sentAt.plusHours(1)
+        )
+
+        val rows = mailRecordRepository.aggregateIntroCohortByCountry(
+            from, to, LocalDateTime.now().minusDays(MailMonitoringService.MATURITY_DAYS)
+        ).associateBy { it.country }
+
+        assertEquals(2, rows.size)
+        assertEquals(1L, rows.getValue("Germany").cohortCount)
+        assertEquals(1L, rows.getValue("US").cohortCount)
+    }
+
+    @Test
+    fun `intro cohort counts reply only when inbound is after the introduction`() {
+        seedBaseContact()
+        seedSecondExpertContact()
+        jdbcTemplate.update("UPDATE expert_contact SET country = 'Germany' WHERE id = 1")
+        jdbcTemplate.update("UPDATE expert_contact SET country = 'US' WHERE id = 2")
+        val from = LocalDateTime.now().minusDays(30)
+        val to = LocalDateTime.now().plusDays(1)
+        val introAt = LocalDateTime.now().minusDays(10)
+
+        // A（专家 1 / Germany）：首发后 1 天有 INBOUND，first_reply_at 保持 NULL → 计入回复。
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 send_status, sent_at, created_at)
+            VALUES (1, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-a-intro', 'SENT', ?, ?)
+            """.trimIndent(),
+            introAt, introAt
+        )
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 received_at, created_at)
+            VALUES (1, 'INBOUND', 'REPLY', 'sender', 'msg-a-reply', ?, ?)
+            """.trimIndent(),
+            introAt.plusDays(1), introAt.plusDays(1)
+        )
+        // B（专家 2 / US）：无任何 INBOUND，但晋级路径把 expert_contact.first_reply_at 写成了非空 → 不得计入。
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 send_status, sent_at, created_at)
+            VALUES (2, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-b-intro', 'SENT', ?, ?)
+            """.trimIndent(),
+            introAt, introAt
+        )
+        jdbcTemplate.update("UPDATE expert_contact SET first_reply_at = ? WHERE id = 2", introAt.plusDays(2))
+
+        val rows = mailRecordRepository.aggregateIntroCohortByCountry(
+            from, to, LocalDateTime.now().minusDays(MailMonitoringService.MATURITY_DAYS)
+        ).associateBy { it.country }
+
+        assertEquals(1L, rows.getValue("Germany").repliedCount)
+        assertEquals(0L, rows.getValue("US").repliedCount)
+    }
+
+    @Test
+    fun `mature cohort excludes introductions newer than seven days`() {
+        seedBaseContact()
+        seedSecondExpertContact()
+        jdbcTemplate.update("UPDATE expert_contact SET country = 'Germany' WHERE id = 1")
+        jdbcTemplate.update("UPDATE expert_contact SET country = 'US' WHERE id = 2")
+        val from = LocalDateTime.now().minusDays(30)
+        val to = LocalDateTime.now().plusDays(1)
+        val matureBefore = LocalDateTime.now().minusDays(MailMonitoringService.MATURITY_DAYS)
+
+        // 专家 1：首发仅 2 天前 → 未满 7 天，不进成熟子集。
+        val freshSentAt = LocalDateTime.now().minusDays(2)
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 send_status, sent_at, created_at)
+            VALUES (1, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-fresh-intro', 'SENT', ?, ?)
+            """.trimIndent(),
+            freshSentAt, freshSentAt
+        )
+        // 专家 2：首发 10 天前、3 天后首回（7 日窗口内）→ 成熟队列 1 人、成熟回复 1 人。
+        val oldSentAt = LocalDateTime.now().minusDays(10)
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 send_status, sent_at, created_at)
+            VALUES (2, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-old-intro', 'SENT', ?, ?)
+            """.trimIndent(),
+            oldSentAt, oldSentAt
+        )
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 received_at, created_at)
+            VALUES (2, 'INBOUND', 'REPLY', 'sender', 'msg-old-reply', ?, ?)
+            """.trimIndent(),
+            oldSentAt.plusDays(3), oldSentAt.plusDays(3)
+        )
+
+        val rows = mailRecordRepository.aggregateIntroCohortByCountry(
+            from, to, matureBefore
+        ).associateBy { it.country }
+
+        assertEquals(1L, rows.getValue("Germany").cohortCount)
+        assertEquals(0L, rows.getValue("Germany").matureCohortCount)
+        assertEquals(0L, rows.getValue("Germany").matureRepliedCount)
+        assertEquals(1L, rows.getValue("US").cohortCount)
+        assertEquals(1L, rows.getValue("US").matureCohortCount)
+        assertEquals(1L, rows.getValue("US").matureRepliedCount)
+    }
+
+    @Test
+    fun `intro cohort counts first inbound at or after introduction even when an earlier inbound exists`() {
+        seedBaseContact()
+        jdbcTemplate.update("UPDATE expert_contact SET country = 'Germany' WHERE id = 1")
+        val from = LocalDateTime.now().minusDays(30)
+        val to = LocalDateTime.now().plusDays(1)
+        val matureBefore = LocalDateTime.now().minusDays(MailMonitoringService.MATURITY_DAYS)
+        val introAt = LocalDateTime.now().minusDays(10)
+
+        // 首发 10 天前；窗口内先有一条早于首发的 INBOUND（now-12d），再有一条晚于首发的 INBOUND（now-9d）。
+        // 修复前：MIN(received_at) = 早于首发的那条 → join 谓词 first_reply_at >= first_sent_at 失败 → 该专家被漏计。
+        // 修复后：只取 received_at >= 首发 的 INBOUND 求 MIN → 计为已回复，且成熟口径用这条合格首回。
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 send_status, sent_at, created_at)
+            VALUES (1, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-pre-intro', 'SENT', ?, ?)
+            """.trimIndent(),
+            introAt, introAt
+        )
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 received_at, created_at)
+            VALUES
+                (1, 'INBOUND', 'REPLY', 'sender', 'msg-early-reply', ?, ?),
+                (1, 'INBOUND', 'REPLY', 'sender', 'msg-qualifying-reply', ?, ?)
+            """.trimIndent(),
+            introAt.minusDays(2), introAt.minusDays(2),
+            introAt.plusDays(1), introAt.plusDays(1)
+        )
+
+        val byCountry = mailRecordRepository.aggregateIntroCohortByCountry(from, to, matureBefore)
+            .associateBy { it.country }
+        val byDomain = mailRecordRepository.aggregateIntroCohortByDomain(from, to, matureBefore)
+            .associateBy { it.domain }
+
+        assertEquals(1L, byCountry.getValue("Germany").cohortCount)
+        assertEquals(1L, byCountry.getValue("Germany").repliedCount)
+        assertEquals(1L, byCountry.getValue("Germany").matureCohortCount)
+        assertEquals(1L, byCountry.getValue("Germany").matureRepliedCount)
+        assertEquals(1L, byDomain.getValue("example.com").repliedCount)
     }
 
     private fun seedSecondExpertContact() {

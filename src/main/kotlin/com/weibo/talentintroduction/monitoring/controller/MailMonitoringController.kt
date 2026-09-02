@@ -37,8 +37,11 @@ class MailMonitoringController(
     private val log = LoggerFactory.getLogger(MailMonitoringController::class.java)
 
     @GetMapping("/summary")
-    fun summary(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?): MailMonitoringService.DailySummary =
-        mailMonitoringService.summary(date)
+    fun summary(
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?
+    ): MailMonitoringService.DailySummary =
+        mailMonitoringService.summary(from, to)
 
     @GetMapping("/introductions")
     fun introductions(
@@ -103,15 +106,17 @@ class MailMonitoringController(
 
     @GetMapping("/provider-distribution")
     fun providerDistribution(
-        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?
     ): List<ProviderStatRow> =
-        mailMonitoringService.providerDistribution(date)
+        mailMonitoringService.providerDistribution(from, to)
 
     @GetMapping("/region-distribution")
     fun regionDistribution(
-        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) date: LocalDate?
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?
     ): List<RegionStatRow> =
-        mailMonitoringService.regionDistribution(date)
+        mailMonitoringService.regionDistribution(from, to)
 
     @GetMapping("/reputation-history")
     fun reputationHistory(

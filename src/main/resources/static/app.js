@@ -38,6 +38,7 @@ const state = {
     unmatchedFiltered: [],
     monitoring: {
         date: monitoringToday(),
+        rangeDays: 7,
         summary: null,
         subTab: "introductions",
         page: 0,
@@ -51,6 +52,7 @@ const state = {
         reputationDomains: [],
         reputationDomain: "",
         reputationDays: 30,
+        expandedRegions: {},
         lastRefreshedAt: null,
         autoRefreshTimer: null
     },
@@ -11114,18 +11116,20 @@ async function loadMonitoring() {
     if (dateInput) {
         dateInput.value = state.monitoring.date || monitoringToday();
     }
+    const windowParams = monitoringWindowParams();
     const dateParams = new URLSearchParams();
     if (state.monitoring.date) dateParams.set("date", state.monitoring.date);
     const [summary, senderHealth, providerDistribution, regionDistribution] = await Promise.all([
-        api(`/api/mail-monitoring/summary?${dateParams}`),
+        api(`/api/mail-monitoring/summary?${windowParams}`),
         api(`/api/mail-monitoring/sender-accounts?${dateParams}`),
-        api(`/api/mail-monitoring/provider-distribution?${dateParams}`).catch(() => []),
-        api(`/api/mail-monitoring/region-distribution?${dateParams}`).catch(() => [])
+        api(`/api/mail-monitoring/provider-distribution?${windowParams}`).catch(() => []),
+        api(`/api/mail-monitoring/region-distribution?${windowParams}`).catch(() => [])
     ]);
     state.monitoring.summary = summary;
     state.monitoring.senderHealth = senderHealth || [];
     state.monitoring.providerDistribution = providerDistribution || [];
     state.monitoring.regionDistribution = regionDistribution || [];
+    syncMonitoringRangeTabs();
     renderMonitoringCards();
     renderMonitoringProviderDistribution();
     renderMonitoringRegionDistribution();
@@ -11138,11 +11142,36 @@ async function loadMonitoring() {
     scheduleMonitoringAutoRefresh();
 }
 
-function monitoringRangeParams() {
+function monitoringWindowParams() {
     const params = new URLSearchParams();
-    const date = state.monitoring.date || monitoringToday();
-    params.set("from", date);
-    params.set("to", date);
+    const anchorDate = state.monitoring.date || monitoringToday();
+    const rangeDays = Math.max(1, Number(state.monitoring.rangeDays) || 1);
+    params.set("from", shiftMonitoringDate(anchorDate, -(rangeDays - 1)));
+    params.set("to", anchorDate);
+    return params;
+}
+
+// 纯日历平移：Date.UTC 解析 + UTC 取值格式化，避免本地时区把锚点日偏移一天。
+function shiftMonitoringDate(dateStr, deltaDays) {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const shifted = new Date(Date.UTC(y, m - 1, d + deltaDays));
+    return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+}
+
+function monitoringRangeLabel() {
+    const days = Number(state.monitoring.rangeDays) || 1;
+    return days === 1 ? "今日" : `近 ${days} 天`;
+}
+
+function syncMonitoringRangeTabs() {
+    const activeDays = Number(state.monitoring.rangeDays) || 7;
+    $$("#monitoringRangeTabs .tab").forEach((tab) => {
+        tab.classList.toggle("active", Number(tab.dataset.range) === activeDays);
+    });
+}
+
+function monitoringRangeParams() {
+    const params = monitoringWindowParams();
     params.set("pageSize", state.monitoring.pageSize);
     params.set("pageOffset", state.monitoring.page * state.monitoring.pageSize);
     const sender = $("#monitoringSenderAccount")?.value;
@@ -11156,6 +11185,18 @@ function renderMonitoringCards() {
     const s = state.monitoring.summary || {};
     const providers = state.monitoring.providerDistribution || [];
     const regions = state.monitoring.regionDistribution || [];
+    const prefix = monitoringRangeLabel();
+    const regionSums = regions.reduce((acc, row) => {
+        acc.cohort += row.sentCount || 0;
+        acc.replied += row.repliedCount || 0;
+        acc.matureCohort += row.matureCohortCount || 0;
+        acc.matureReplied += row.matureRepliedCount || 0;
+        return acc;
+    }, { cohort: 0, replied: 0, matureCohort: 0, matureReplied: 0 });
+    const windowReplyRate = regionSums.cohort > 0 ? formatPercent(regionSums.replied / regionSums.cohort) : "-";
+    const matureReplyRate = Number(state.monitoring.rangeDays) === 1 || regionSums.matureCohort === 0
+        ? "—"
+        : formatPercent(regionSums.matureReplied / regionSums.matureCohort);
     const activeProviderCount = providers.filter((row) => (row.sentCount || 0) > 0).length;
     const activeRegionCount = regions.filter((row) => (row.sentCount || 0) > 0).length;
     const worstBounceProvider = providers
@@ -11166,18 +11207,20 @@ function renderMonitoringCards() {
         }))
         .sort((a, b) => b.rate - a.rate)[0];
     const cards = [
-        ["今日介绍邮件", s.introductions, null],
-        ["今日收到回复", s.inboundReplies, null],
-        ["今日回复专家数", s.repliedExperts, null],
-        ["今日自动回复", s.autoReplies, "会议邀约为自动回复的子项，细分统计不可相加"],
-        ["今日人工外发", s.operatorOutbound, null],
-        ["今日会议邀约", s.meetingInvitations, "属于自动回复子项，细分统计不可相加"],
-        ["今日人工待办新增", s.manualReviewInbound, "未匹配来信为人工待办子项，细分统计不可相加"],
-        ["今日未匹配来信", s.unmatchedInbound, "属于人工待办子项，细分统计不可相加"],
-        ["今日发送失败", s.failedOutbound, null],
-        ["今日 APPLICATION 晋级", s.applicationPromotions, null],
-        ["覆盖地区数", activeRegionCount, "当日有首发邮件的大区数"],
-        ["覆盖服务商数", activeProviderCount, "当日有首发邮件的服务商桶数"],
+        [`${prefix}介绍邮件`, s.introductions, null],
+        [`${prefix}收到回复`, s.inboundReplies, null],
+        [`${prefix}回复专家数`, s.repliedExperts, null],
+        [`${prefix}自动回复`, s.autoReplies, "会议邀约为自动回复的子项，细分统计不可相加"],
+        [`${prefix}人工外发`, s.operatorOutbound, null],
+        [`${prefix}会议邀约`, s.meetingInvitations, "属于自动回复子项，细分统计不可相加"],
+        [`${prefix}人工待办新增`, s.manualReviewInbound, "未匹配来信为人工待办子项，细分统计不可相加"],
+        [`${prefix}未匹配来信`, s.unmatchedInbound, "属于人工待办子项，细分统计不可相加"],
+        [`${prefix}发送失败`, s.failedOutbound, null],
+        [`${prefix} APPLICATION 晋级`, s.applicationPromotions, null],
+        ["窗口内回复率", windowReplyRate, "该窗口队列中已回复人数 / 队列人数（队列 = 窗口内首发 INTRODUCTION 的去重专家）"],
+        ["7 日成熟回复率", matureReplyRate, "首发满 7 天成员中 7 日内首回人数 / 满 7 天成员数"],
+        ["覆盖地区数", activeRegionCount, `${prefix}有首发邮件的大区数`],
+        ["覆盖服务商数", activeProviderCount, `${prefix}有首发邮件的服务商桶数`],
         ["最高退信服务商", worstBounceProvider
             ? `${worstBounceProvider.provider} (${formatPercent(worstBounceProvider.rate)})`
             : "-", "按硬退率（硬退数/发送量）"]
@@ -11188,6 +11231,8 @@ function renderMonitoringCards() {
             <div class="metric-value">${escapeHtml(value ?? 0)}</div>
         </div>
     `).join("");
+    const title = $("#monitoringOverviewTitle");
+    if (title) title.textContent = `${prefix}全链路指标概览`;
 }
 
 function formatPercent(value) {
@@ -11202,6 +11247,17 @@ function monitoringDistributionBar(value, maxValue) {
     </div>`;
 }
 
+// 队列口径回复率单元格：队列量 < 30 灰显并挂「样本不足」；队列量 = 0 显示 -。
+function monitoringReplyRateCell(repliedCount, cohortCount) {
+    const cohort = cohortCount || 0;
+    if (cohort === 0) return '<span class="text-muted">-</span>';
+    const pct = formatPercent(repliedCount / cohort);
+    if (cohort < 30) {
+        return `<span class="text-muted">${pct}</span> <span class="badge warn">样本不足</span>`;
+    }
+    return pct;
+}
+
 function renderMonitoringProviderDistribution() {
     const table = $("#monitoringProviderDistributionTable");
     if (!table) return;
@@ -11209,20 +11265,26 @@ function renderMonitoringProviderDistribution() {
     const maxSent = Math.max(0, ...rows.map((row) => row.sentCount || 0));
     table.querySelector("thead").innerHTML = `
         <tr>
-            <th>服务商</th><th>发送量</th><th>发送</th><th>回复率</th><th>硬退率</th><th>软退</th>
+            <th>服务商</th><th>分布</th><th>队列(人)</th><th>已回复(人)</th><th>窗口内回复率</th><th>7日成熟回复率</th><th>硬退率</th><th>软退</th>
         </tr>
     `;
     table.querySelector("tbody").innerHTML = rows.map((row) => {
-        const hardRate = row.sentCount > 0 ? (row.hardBounceCount || 0) / row.sentCount : 0;
+        const cohort = row.sentCount || 0;
+        const hardRate = cohort > 0 ? (row.hardBounceCount || 0) / cohort : 0;
+        const matureRate = (row.matureCohortCount || 0) === 0
+            ? '<span class="text-muted">—</span>'
+            : formatPercent(row.matureRepliedCount / row.matureCohortCount);
         return `<tr>
             <td><strong>${escapeHtml(row.provider)}</strong></td>
-            <td>${monitoringDistributionBar(row.sentCount || 0, maxSent)}</td>
-            <td>${escapeHtml(row.sentCount ?? 0)}</td>
-            <td>${escapeHtml(formatPercent(row.replyRate))}</td>
+            <td>${monitoringDistributionBar(cohort, maxSent)}</td>
+            <td>${escapeHtml(cohort)}</td>
+            <td>${escapeHtml(row.repliedCount ?? 0)}</td>
+            <td>${monitoringReplyRateCell(row.repliedCount, cohort)}</td>
+            <td>${matureRate}</td>
             <td>${escapeHtml(formatPercent(hardRate))}</td>
             <td>${escapeHtml(row.softBounceCount ?? 0)}</td>
         </tr>`;
-    }).join("") || `<tr><td colspan="6" class="text-muted" style="text-align:center;">暂无数据</td></tr>`;
+    }).join("") || `<tr><td colspan="8" class="text-muted" style="text-align:center;">暂无数据</td></tr>`;
 }
 
 function renderMonitoringRegionDistribution() {
@@ -11230,20 +11292,53 @@ function renderMonitoringRegionDistribution() {
     if (!table) return;
     const rows = state.monitoring.regionDistribution || [];
     const maxSent = Math.max(0, ...rows.map((row) => row.sentCount || 0));
+    const expandedRegions = state.monitoring.expandedRegions || {};
     table.querySelector("thead").innerHTML = `
         <tr>
-            <th>地区</th><th>发送量</th><th>发送</th><th>回复率</th><th>晋级</th>
+            <th>地区</th><th>分布</th><th>队列(人)</th><th>已回复(人)</th><th>窗口内回复率</th><th>7日成熟回复率</th><th>晋级</th>
         </tr>
     `;
-    table.querySelector("tbody").innerHTML = rows.map((row) => `
-        <tr>
-            <td><strong>${escapeHtml(regionLabel(row.region))}</strong></td>
-            <td>${monitoringDistributionBar(row.sentCount || 0, maxSent)}</td>
-            <td>${escapeHtml(row.sentCount ?? 0)}</td>
-            <td>${escapeHtml(formatPercent(row.replyRate))}</td>
+    const tbodyHtml = rows.map((row) => {
+        const cohort = row.sentCount || 0;
+        const children = row.countries || [];
+        const matureRate = (row.matureCohortCount || 0) === 0
+            ? '<span class="text-muted">—</span>'
+            : formatPercent(row.matureRepliedCount / row.matureCohortCount);
+        const expanded = !!expandedRegions[row.region];
+        const toggle = children.length > 0
+            ? `<button class="button small" data-action="toggle-region" data-region="${escapeHtml(row.region)}">${expanded ? "▾" : "▸"}</button> `
+            : "";
+        const lines = [];
+        lines.push(`<tr>
+            <td>${toggle}<strong>${escapeHtml(regionLabel(row.region))}</strong></td>
+            <td>${monitoringDistributionBar(cohort, maxSent)}</td>
+            <td>${escapeHtml(cohort)}</td>
+            <td>${escapeHtml(row.repliedCount ?? 0)}</td>
+            <td>${monitoringReplyRateCell(row.repliedCount, cohort)}</td>
+            <td>${matureRate}</td>
             <td>${escapeHtml(row.promotionCount ?? 0)}</td>
-        </tr>
-    `).join("") || `<tr><td colspan="5" class="text-muted" style="text-align:center;">暂无数据</td></tr>`;
+        </tr>`);
+        if (expanded) {
+            children.forEach((child) => {
+                const childCohort = child.sentCount || 0;
+                const childMature = (child.matureCohortCount || 0) === 0
+                    ? '<span class="text-muted">—</span>'
+                    : formatPercent(child.matureRepliedCount / child.matureCohortCount);
+                lines.push(`<tr class="monitoring-region-child">
+                    <td>${escapeHtml(child.country)}</td>
+                    <td></td>
+                    <td>${escapeHtml(childCohort)}</td>
+                    <td>${escapeHtml(child.repliedCount ?? 0)}</td>
+                    <td>${monitoringReplyRateCell(child.repliedCount, childCohort)}</td>
+                    <td>${childMature}</td>
+                    <td></td>
+                </tr>`);
+            });
+        }
+        return lines.join("");
+    }).join("");
+    table.querySelector("tbody").innerHTML = tbodyHtml
+        || `<tr><td colspan="7" class="text-muted" style="text-align:center;">暂无数据</td></tr>`;
 }
 
 async function loadMonitoringReputation() {
@@ -11492,11 +11587,12 @@ function scheduleMonitoringAutoRefresh() {
     if (state.view !== "monitoring") return;
     state.monitoring.autoRefreshTimer = setTimeout(async () => {
         try {
-            const params = new URLSearchParams();
-            if (state.monitoring.date) params.set("date", state.monitoring.date);
+            const windowParams = monitoringWindowParams();
+            const dateParams = new URLSearchParams();
+            if (state.monitoring.date) dateParams.set("date", state.monitoring.date);
             const [summary, senderHealth] = await Promise.all([
-                api(`/api/mail-monitoring/summary?${params}`),
-                api(`/api/mail-monitoring/sender-accounts?${params}`)
+                api(`/api/mail-monitoring/summary?${windowParams}`),
+                api(`/api/mail-monitoring/sender-accounts?${dateParams}`)
             ]);
             state.monitoring.summary = summary;
             state.monitoring.senderHealth = senderHealth || [];
@@ -11520,6 +11616,21 @@ function bindMonitoringEvents() {
         state.monitoring.date = event.target.value || null;
         state.monitoring.page = 0;
         loadMonitoring().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#monitoringRangeTabs").addEventListener("click", (event) => {
+        const tab = event.target.closest("[data-range]");
+        if (!tab) return;
+        state.monitoring.rangeDays = Number(tab.dataset.range);
+        state.monitoring.page = 0;
+        syncMonitoringRangeTabs();
+        loadMonitoring().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#monitoringRegionDistributionTable").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-action='toggle-region']");
+        if (!button) return;
+        const region = button.dataset.region;
+        state.monitoring.expandedRegions[region] = !state.monitoring.expandedRegions[region];
+        renderMonitoringRegionDistribution();
     });
     $("#monitoringSenderAccount").addEventListener("change", () => {
         state.monitoring.page = 0;

@@ -10,6 +10,7 @@ import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.BounceRecordRepository
+import com.weibo.talentintroduction.mail.repository.CountryCohortStat
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
@@ -25,13 +26,14 @@ import com.weibo.talentintroduction.monitoring.controller.OutboundReplyRow
 import com.weibo.talentintroduction.monitoring.controller.PromotionListResponse
 import com.weibo.talentintroduction.monitoring.controller.PromotionRow
 import com.weibo.talentintroduction.monitoring.controller.ProviderStatRow
+import com.weibo.talentintroduction.monitoring.controller.RegionCountryRow
 import com.weibo.talentintroduction.monitoring.controller.RegionStatRow
 import com.weibo.talentintroduction.monitoring.controller.SenderAccountHealthRow
 import com.weibo.talentintroduction.monitoring.controller.SourceInboundSummary
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import org.springframework.stereotype.Service
 import java.time.LocalDate
-
+import java.time.LocalDateTime
 @Service
 class MailMonitoringService(
     private val mailRecordRepository: MailRecordRepository,
@@ -47,6 +49,8 @@ class MailMonitoringService(
 ) {
     data class DailySummary(
         val date: String,
+        val from: String,
+        val to: String,
         val introductions: Long,
         val inboundReplies: Long,
         val repliedExperts: Long,
@@ -59,20 +63,23 @@ class MailMonitoringService(
         val applicationPromotions: Long
     )
 
-    fun summary(date: LocalDate?): DailySummary {
-        val (from, to) = dateRangeResolver.resolveDay(date)
+    fun summary(fromDate: LocalDate?, toDate: LocalDate?): DailySummary {
+        val (start, end) = dateRangeResolver.resolveRange(fromDate, toDate)
+        val anchorDate = toDate ?: fromDate ?: dateRangeResolver.todayString()
         return DailySummary(
-            date = date?.toString() ?: dateRangeResolver.todayString(),
-            introductions = mailRecordRepository.countOutboundByMailTypeBetween("INTRODUCTION", from, to),
-            inboundReplies = mailRecordRepository.countInboundBetween(from, to),
-            repliedExperts = mailRecordRepository.countDistinctRepliedExpertsBetween(from, to),
-            autoReplies = mailRecordRepository.countAutoRepliesBetween(from, to),
-            operatorOutbound = mailRecordRepository.countOperatorOutboundBetween(from, to),
-            meetingInvitations = mailRecordRepository.countOutboundByMailTypeBetween("MEETING_INVITATION", from, to),
-            manualReviewInbound = inboundMailProcessingRepository.countManualReviewBetween(from, to),
-            unmatchedInbound = inboundMailProcessingRepository.countUnmatchedBetween(from, to),
-            failedOutbound = mailRecordRepository.countFailedOutboundBetween(from, to),
-            applicationPromotions = promotionRepository.countByStatusAndCreatedAtBetween("SUCCESS", from, to)
+            date = anchorDate.toString(),
+            from = start.toLocalDate().toString(),
+            to = anchorDate.toString(),
+            introductions = mailRecordRepository.countOutboundByMailTypeBetween("INTRODUCTION", start, end),
+            inboundReplies = mailRecordRepository.countInboundBetween(start, end),
+            repliedExperts = mailRecordRepository.countDistinctRepliedExpertsBetween(start, end),
+            autoReplies = mailRecordRepository.countAutoRepliesBetween(start, end),
+            operatorOutbound = mailRecordRepository.countOperatorOutboundBetween(start, end),
+            meetingInvitations = mailRecordRepository.countOutboundByMailTypeBetween("MEETING_INVITATION", start, end),
+            manualReviewInbound = inboundMailProcessingRepository.countManualReviewBetween(start, end),
+            unmatchedInbound = inboundMailProcessingRepository.countUnmatchedBetween(start, end),
+            failedOutbound = mailRecordRepository.countFailedOutboundBetween(start, end),
+            applicationPromotions = promotionRepository.countByStatusAndCreatedAtBetween("SUCCESS", start, end)
         )
     }
 
@@ -273,19 +280,20 @@ class MailMonitoringService(
         )
     }
 
-    fun providerDistribution(date: LocalDate?): List<ProviderStatRow> {
-        val (from, to) = dateRangeResolver.resolveDay(date)
+    fun providerDistribution(fromDate: LocalDate?, toDate: LocalDate?): List<ProviderStatRow> {
+        val (start, end) = dateRangeResolver.resolveRange(fromDate, toDate)
+        val matureBefore = LocalDateTime.now().minusDays(MATURITY_DAYS)
         val stats = PROVIDER_ORDER.associateWith { MutableProviderStats() }.toMutableMap()
 
-        mailRecordRepository.aggregateIntroSentByDomain(from, to).forEach { row ->
+        mailRecordRepository.aggregateIntroCohortByDomain(start, end, matureBefore).forEach { row ->
             val provider = resolveProviderFromDomain(row.domain)
-            stats.getOrPut(provider) { MutableProviderStats() }.sent += row.count
+            val bucket = stats.getOrPut(provider) { MutableProviderStats() }
+            bucket.sent += row.cohortCount
+            bucket.replied += row.repliedCount
+            bucket.matureCohort += row.matureCohortCount
+            bucket.matureReplied += row.matureRepliedCount
         }
-        mailRecordRepository.aggregateInboundByDomain(from, to).forEach { row ->
-            val provider = resolveProviderFromDomain(row.domain)
-            stats.getOrPut(provider) { MutableProviderStats() }.replied += row.count
-        }
-        bounceRecordRepository.aggregateBouncesByDomain(from, to).forEach { row ->
+        bounceRecordRepository.aggregateBouncesByDomain(start, end).forEach { row ->
             val provider = resolveProviderFromDomain(row.domain)
             val bucket = stats.getOrPut(provider) { MutableProviderStats() }
             bucket.hardBounce += row.hardCount
@@ -299,39 +307,57 @@ class MailMonitoringService(
                 sentCount = bucket.sent,
                 repliedCount = bucket.replied,
                 replyRate = ratio(bucket.replied, bucket.sent),
+                matureCohortCount = bucket.matureCohort,
+                matureRepliedCount = bucket.matureReplied,
+                matureReplyRate = ratio(bucket.matureReplied, bucket.matureCohort),
                 hardBounceCount = bucket.hardBounce,
                 softBounceCount = bucket.softBounce
             )
         }
     }
 
-    fun regionDistribution(date: LocalDate?): List<RegionStatRow> {
-        val (from, to) = dateRangeResolver.resolveDay(date)
-        val stats = CountryContinentMapping.allRegions().associateWith { MutableRegionStats() }.toMutableMap()
-
-        mailRecordRepository.aggregateIntroSentByCountry(from, to).forEach { row ->
-            val region = CountryContinentMapping.toRegion(row.country)
-            stats.getOrPut(region) { MutableRegionStats() }.sent += row.count
-        }
-        mailRecordRepository.aggregateInboundByCountry(from, to).forEach { row ->
-            val region = CountryContinentMapping.toRegion(row.country)
-            stats.getOrPut(region) { MutableRegionStats() }.replied += row.count
-        }
-        promotionRepository.aggregateSuccessByCountry(from, to).forEach { row ->
-            val region = CountryContinentMapping.toRegion(row.country)
-            stats.getOrPut(region) { MutableRegionStats() }.promotion += row.count
-        }
+    fun regionDistribution(fromDate: LocalDate?, toDate: LocalDate?): List<RegionStatRow> {
+        val (start, end) = dateRangeResolver.resolveRange(fromDate, toDate)
+        val matureBefore = LocalDateTime.now().minusDays(MATURITY_DAYS)
+        val countryRows = mailRecordRepository.aggregateIntroCohortByCountry(start, end, matureBefore)
+            .map { row -> row.toRegionCountryRow() }
+        val promotionByRegion = promotionRepository.aggregateSuccessByCountry(start, end)
+            .groupBy { CountryContinentMapping.toRegion(it.country) }
+            .mapValues { (_, rows) -> rows.sumOf { it.count } }
+        val countriesByRegion = countryRows.groupBy { CountryContinentMapping.toRegion(it.country) }
 
         return CountryContinentMapping.allRegions().map { region ->
-            val bucket = stats.getValue(region)
+            val countries = countriesByRegion[region].orEmpty().sortedByDescending { it.sentCount }
+            val sent = countries.sumOf { it.sentCount }
+            val replied = countries.sumOf { it.repliedCount }
+            val matureCohort = countries.sumOf { it.matureCohortCount }
+            val matureReplied = countries.sumOf { it.matureRepliedCount }
             RegionStatRow(
                 region = region,
-                sentCount = bucket.sent,
-                repliedCount = bucket.replied,
-                replyRate = ratio(bucket.replied, bucket.sent),
-                promotionCount = bucket.promotion
+                sentCount = sent,
+                repliedCount = replied,
+                replyRate = ratio(replied, sent),
+                matureCohortCount = matureCohort,
+                matureRepliedCount = matureReplied,
+                matureReplyRate = ratio(matureReplied, matureCohort),
+                promotionCount = promotionByRegion[region] ?: 0,
+                countries = countries
             )
         }
+    }
+
+    // 队列成员的国家展示行：country 为空/空白时显示「未知」；计数即该国家的队列口径四元组。
+    private fun CountryCohortStat.toRegionCountryRow(): RegionCountryRow {
+        val displayCountry = country?.trim()?.takeIf { it.isNotBlank() } ?: "未知"
+        return RegionCountryRow(
+            country = displayCountry,
+            sentCount = cohortCount,
+            repliedCount = repliedCount,
+            replyRate = ratio(repliedCount, cohortCount),
+            matureCohortCount = matureCohortCount,
+            matureRepliedCount = matureRepliedCount,
+            matureReplyRate = ratio(matureRepliedCount, matureCohortCount)
+        )
     }
 
     private fun resolveProviderFromDomain(domain: String?): String =
@@ -345,18 +371,17 @@ class MailMonitoringService(
     private data class MutableProviderStats(
         var sent: Long = 0,
         var replied: Long = 0,
+        var matureCohort: Long = 0,
+        var matureReplied: Long = 0,
         var hardBounce: Long = 0,
         var softBounce: Long = 0
     )
 
-    private data class MutableRegionStats(
-        var sent: Long = 0,
-        var replied: Long = 0,
-        var promotion: Long = 0
-    )
-
     companion object {
         private val PROVIDER_ORDER = listOf("gmail", "outlook", "yahoo", "edu", "tencent", "netease", "other")
+
+        // 7 日成熟口径天数：与 MailRecordRepository 两条队列 SQL 的 INTERVAL 7 DAY 是同一常量（I-4）。
+        const val MATURITY_DAYS = 7L
     }
 
     private fun List<MailRecord>.contactsById(): Map<Long?, ExpertContact> =

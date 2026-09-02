@@ -119,13 +119,28 @@ data class BounceStatsResponse(
     val bounceRate: Double
 )
 
+// sentCount 语义为「队列人数」= 窗口内首发 INTRODUCTION 的去重专家数（I-1），字段名沿用以免破坏既有前端读取。
 data class ProviderStatRow(
     val provider: String,
     val sentCount: Long,
     val repliedCount: Long,
     val replyRate: Double,
+    val matureCohortCount: Long,
+    val matureRepliedCount: Long,
+    val matureReplyRate: Double,
     val hardBounceCount: Long,
     val softBounceCount: Long
+)
+
+// sentCount 语义为「队列人数」= 窗口内首发 INTRODUCTION 的去重专家数（I-1），字段名沿用以免破坏既有前端读取。
+data class RegionCountryRow(
+    val country: String,
+    val sentCount: Long,
+    val repliedCount: Long,
+    val replyRate: Double,
+    val matureCohortCount: Long,
+    val matureRepliedCount: Long,
+    val matureReplyRate: Double
 )
 
 data class RegionStatRow(
@@ -133,7 +148,11 @@ data class RegionStatRow(
     val sentCount: Long,
     val repliedCount: Long,
     val replyRate: Double,
-    val promotionCount: Long
+    val matureCohortCount: Long,
+    val matureRepliedCount: Long,
+    val matureReplyRate: Double,
+    val promotionCount: Long,
+    val countries: List<RegionCountryRow>
 )
 
 data class ReputationHistoryResponse(

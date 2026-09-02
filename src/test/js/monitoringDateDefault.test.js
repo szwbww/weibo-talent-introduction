@@ -18,7 +18,13 @@ function shanghaiTodayString() {
     return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
 }
 
-function createMonitoringSandbox(initialDate) {
+function shiftDays(dateStr, deltaDays) {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const shifted = new Date(Date.UTC(y, m - 1, d + deltaDays));
+    return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+}
+
+function createMonitoringSandbox(initialDate, rangeDays = 7) {
     const store = new Map();
     function el(id) {
         if (!store.has(id)) {
@@ -39,6 +45,7 @@ function createMonitoringSandbox(initialDate) {
         state: {
             monitoring: {
                 date: initialDate,
+                rangeDays,
                 page: 0,
                 pageSize: 20,
                 subTab: "introductions"
@@ -51,16 +58,23 @@ function createMonitoringSandbox(initialDate) {
 
     vm.createContext(sandbox);
     vm.runInContext(extractFn("monitoringToday"), sandbox);
+    vm.runInContext(extractFn("shiftMonitoringDate"), sandbox);
+    vm.runInContext(extractFn("monitoringWindowParams"), sandbox);
     vm.runInContext(extractFn("monitoringRangeParams"), sandbox);
     return sandbox;
 }
 
 describe("monitoring date default", () => {
-    it("initializes monitoring state date to Asia/Shanghai today", () => {
+    it("initializes monitoring state date and range window", () => {
         assert.match(
             appJsSource,
             /monitoring:\s*\{\s*date:\s*monitoringToday\(\)/,
             "state.monitoring.date should use monitoringToday()"
+        );
+        assert.match(
+            appJsSource,
+            /monitoring:\s*\{\s*date:\s*monitoringToday\(\),\s*rangeDays:\s*7/,
+            "state.monitoring should default rangeDays to 7"
         );
         assert.doesNotMatch(
             appJsSource,
@@ -78,15 +92,36 @@ describe("monitoring date default", () => {
         const sandbox = createMonitoringSandbox(null);
         const params = sandbox.monitoringRangeParams();
         const today = shanghaiTodayString();
-        assert.equal(params.get("from"), today);
+        assert.equal(params.get("from"), shiftDays(today, -6));
         assert.equal(params.get("to"), today);
     });
 
-    it("monitoringRangeParams keeps explicit monitoring date", () => {
+    it("monitoringRangeParams keeps explicit monitoring date and derives 7-day window", () => {
         const sandbox = createMonitoringSandbox("2026-06-21");
+        const params = sandbox.monitoringRangeParams();
+        assert.equal(params.get("to"), "2026-06-21");
+        assert.equal(params.get("from"), "2026-06-15");
+    });
+
+    it("monitoringRangeParams collapses window to the anchor day for rangeDays 1", () => {
+        const sandbox = createMonitoringSandbox("2026-06-21", 1);
         const params = sandbox.monitoringRangeParams();
         assert.equal(params.get("from"), "2026-06-21");
         assert.equal(params.get("to"), "2026-06-21");
+    });
+
+    it("monitoringRangeParams spans 29 days for rangeDays 30", () => {
+        const sandbox = createMonitoringSandbox("2026-06-21", 30);
+        const params = sandbox.monitoringRangeParams();
+        assert.equal(params.get("to"), "2026-06-21");
+        assert.equal(params.get("from"), "2026-05-23");
+    });
+
+    it("monitoringRangeParams crosses month boundaries with pure calendar math", () => {
+        const sandbox = createMonitoringSandbox("2026-03-02", 7);
+        const params = sandbox.monitoringRangeParams();
+        assert.equal(params.get("from"), "2026-02-24");
+        assert.equal(params.get("to"), "2026-03-02");
     });
 
     it("loadMonitoring syncs monitoringDate input from state", () => {

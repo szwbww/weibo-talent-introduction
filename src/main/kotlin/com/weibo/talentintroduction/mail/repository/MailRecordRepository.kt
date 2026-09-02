@@ -18,9 +18,20 @@ data class CountryCount(
     val count: Long
 )
 
-data class DomainCount(
+data class CountryCohortStat(
+    val country: String?,
+    val cohortCount: Long,
+    val repliedCount: Long,
+    val matureCohortCount: Long,
+    val matureRepliedCount: Long
+)
+
+data class DomainCohortStat(
     val domain: String?,
-    val count: Long
+    val cohortCount: Long,
+    val repliedCount: Long,
+    val matureCohortCount: Long,
+    val matureRepliedCount: Long
 )
 
 interface MailRecordRepository : CrudRepository<MailRecord, Long> {
@@ -321,56 +332,91 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
     )
     fun aggregateSenderAccountStats(from: LocalDateTime, to: LocalDateTime): List<SenderAccountDailyStats>
 
+    // 队列口径：分母 = 窗口内首发 INTRODUCTION 按 expert_contact_id 去重的人数。
+    // 每位专家至多一封 INTRODUCTION（mail_send_attempt 的 uq_orcid_mail_type (orcid_id, mail_type)
+    // + ManualInitialOutreachService 发信前的 findByOrcidIdAndMailType 存在性判定），故 MIN(sent_at)
+    // 即其唯一首发时间；该前提保证内层 INBOUND 子查询不必按每封 INTRODUCTION 分别归因。
+    // 分子 = 队列成员中，存在 received_at >= 其首发时间的 INBOUND 的人数（first_reply_at 仅作子查询别名，
+    // 不读取 expert_contact.first_reply_at）。发送失败的 INTRODUCTION sent_at 为 null，天然不进队列，
+    // 无需 send_status 过滤。sent_at 非空即已发出。
+    // 7 日成熟口径：:matureBefore = 查询时刻 - 7 天，天数与 MailMonitoringService.MATURITY_DAYS 是同一常量。
     @Query(
         """
-        SELECT ec.country AS country, COUNT(*) AS count
-          FROM mail_record mr
-          JOIN expert_contact ec ON mr.expert_contact_id = ec.id
-         WHERE mr.direction = 'OUTBOUND'
-           AND mr.mail_type = 'INTRODUCTION'
-           AND mr.sent_at >= :from AND mr.sent_at < :to
+        SELECT ec.country AS country,
+               COUNT(*) AS cohort_count,
+               SUM(CASE WHEN r.first_reply_at IS NOT NULL THEN 1 ELSE 0 END) AS replied_count,
+               SUM(CASE WHEN s.first_sent_at < :matureBefore THEN 1 ELSE 0 END) AS mature_cohort_count,
+               SUM(CASE WHEN s.first_sent_at < :matureBefore
+                         AND r.first_reply_at IS NOT NULL
+                         AND r.first_reply_at < DATE_ADD(s.first_sent_at, INTERVAL 7 DAY)
+                        THEN 1 ELSE 0 END) AS mature_replied_count
+          FROM (SELECT expert_contact_id, MIN(sent_at) AS first_sent_at
+                  FROM mail_record
+                 WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+                   AND sent_at >= :from AND sent_at < :to
+                 GROUP BY expert_contact_id) s
+          JOIN expert_contact ec ON ec.id = s.expert_contact_id
+          LEFT JOIN (SELECT inb.expert_contact_id, MIN(inb.received_at) AS first_reply_at
+                       FROM mail_record inb
+                       JOIN (SELECT expert_contact_id, MIN(sent_at) AS first_sent_at
+                               FROM mail_record
+                              WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+                                AND sent_at >= :from AND sent_at < :to
+                              GROUP BY expert_contact_id) c
+                         ON c.expert_contact_id = inb.expert_contact_id
+                        AND inb.received_at >= c.first_sent_at
+                      WHERE inb.direction = 'INBOUND' AND inb.received_at IS NOT NULL
+                        AND inb.received_at >= :from
+                      GROUP BY inb.expert_contact_id) r
+            ON r.expert_contact_id = s.expert_contact_id
          GROUP BY ec.country
         """
     )
-    fun aggregateIntroSentByCountry(from: LocalDateTime, to: LocalDateTime): List<CountryCount>
+    fun aggregateIntroCohortByCountry(
+        from: LocalDateTime,
+        to: LocalDateTime,
+        matureBefore: LocalDateTime
+    ): List<CountryCohortStat>
 
-    @Query(
-        """
-        SELECT ec.country AS country, COUNT(DISTINCT mr.expert_contact_id) AS count
-          FROM mail_record mr
-          JOIN expert_contact ec ON mr.expert_contact_id = ec.id
-         WHERE mr.direction = 'INBOUND'
-           AND mr.received_at >= :from AND mr.received_at < :to
-         GROUP BY ec.country
-        """
-    )
-    fun aggregateInboundByCountry(from: LocalDateTime, to: LocalDateTime): List<CountryCount>
-
-    @Query(
-        """
-        SELECT SUBSTRING_INDEX(ec.expert_email, '@', -1) AS domain, COUNT(*) AS count
-          FROM mail_record mr
-          JOIN expert_contact ec ON mr.expert_contact_id = ec.id
-         WHERE mr.direction = 'OUTBOUND'
-           AND mr.mail_type = 'INTRODUCTION'
-           AND mr.sent_at >= :from AND mr.sent_at < :to
-         GROUP BY SUBSTRING_INDEX(ec.expert_email, '@', -1)
-        """
-    )
-    fun aggregateIntroSentByDomain(from: LocalDateTime, to: LocalDateTime): List<DomainCount>
-
+    // 与 aggregateIntroCohortByCountry 同一语义，仅按专家邮箱域名分组
+    // （SUBSTRING_INDEX(ec.expert_email, '@', -1)）；队列口径与成熟度口径逐字一致。
     @Query(
         """
         SELECT SUBSTRING_INDEX(ec.expert_email, '@', -1) AS domain,
-               COUNT(DISTINCT mr.expert_contact_id) AS count
-          FROM mail_record mr
-          JOIN expert_contact ec ON mr.expert_contact_id = ec.id
-         WHERE mr.direction = 'INBOUND'
-           AND mr.received_at >= :from AND mr.received_at < :to
+               COUNT(*) AS cohort_count,
+               SUM(CASE WHEN r.first_reply_at IS NOT NULL THEN 1 ELSE 0 END) AS replied_count,
+               SUM(CASE WHEN s.first_sent_at < :matureBefore THEN 1 ELSE 0 END) AS mature_cohort_count,
+               SUM(CASE WHEN s.first_sent_at < :matureBefore
+                         AND r.first_reply_at IS NOT NULL
+                         AND r.first_reply_at < DATE_ADD(s.first_sent_at, INTERVAL 7 DAY)
+                        THEN 1 ELSE 0 END) AS mature_replied_count
+          FROM (SELECT expert_contact_id, MIN(sent_at) AS first_sent_at
+                  FROM mail_record
+                 WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+                   AND sent_at >= :from AND sent_at < :to
+                 GROUP BY expert_contact_id) s
+          JOIN expert_contact ec ON ec.id = s.expert_contact_id
+          LEFT JOIN (SELECT inb.expert_contact_id, MIN(inb.received_at) AS first_reply_at
+                       FROM mail_record inb
+                       JOIN (SELECT expert_contact_id, MIN(sent_at) AS first_sent_at
+                               FROM mail_record
+                              WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+                                AND sent_at >= :from AND sent_at < :to
+                              GROUP BY expert_contact_id) c
+                         ON c.expert_contact_id = inb.expert_contact_id
+                        AND inb.received_at >= c.first_sent_at
+                      WHERE inb.direction = 'INBOUND' AND inb.received_at IS NOT NULL
+                        AND inb.received_at >= :from
+                      GROUP BY inb.expert_contact_id) r
+            ON r.expert_contact_id = s.expert_contact_id
          GROUP BY SUBSTRING_INDEX(ec.expert_email, '@', -1)
         """
     )
-    fun aggregateInboundByDomain(from: LocalDateTime, to: LocalDateTime): List<DomainCount>
+    fun aggregateIntroCohortByDomain(
+        from: LocalDateTime,
+        to: LocalDateTime,
+        matureBefore: LocalDateTime
+    ): List<DomainCohortStat>
 
     @Query(
         """
