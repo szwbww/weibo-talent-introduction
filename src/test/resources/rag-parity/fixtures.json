@@ -1,0 +1,1721 @@
+{
+  "generatedBy": "scripts/dump_rag_parity_fixtures.py",
+  "note": "Parity corpus for plan 02 (RagPrefilterParityTest). Expected outputs are the spike's deterministic functions with the D-3 COMPENSATION mandatory rule applied; requested keys are computed in DB load order (execution report O-note: spike private-constant order is not representable in the DB rows; identical key set, ordered-list corner only for IP+CONFIDENTIALITY co-hits). Deterministic: rerunning this script must not change this file.",
+  "corpus": {
+    "fingerprint": "e62421a42c432cf3",
+    "facts": [
+      {
+        "factCode": "KB-AGCY-010",
+        "area": "AGCY",
+        "seq": 10,
+        "title": "我方服务范围",
+        "category": "Trust and compliance",
+        "questionVariants": "your role|mediator|middleman|what do you provide|why work with you",
+        "keywords": "your role|mediator|middleman|what do you provide|why work with you",
+        "answer": "Our team supports initial review, enterprise matching, application preparation, submission coordination and subsequent administrative assistance. Experts are not charged for these services.",
+        "coverageKeys": "agency.service_scope",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-10,QA_DIGEST:application-process,VIDEO_QA_INDEX:SVID_20251217_160358@05:30",
+        "legacyRuleId": 11,
+        "enabled": true,
+        "sortOrder": 1
+      },
+      {
+        "factCode": "KB-AGCY-046",
+        "area": "AGCY",
+        "seq": 46,
+        "title": "多代理及材料保护",
+        "category": "Trust and compliance",
+        "questionVariants": "other agency|duplicate agency|protect my rights|material misuse",
+        "keywords": "other agency|duplicate agency|protect my rights|material misuse",
+        "answer": "Duplicate applications should be avoided. Where authorisation verification is required, the expert should be informed of its exact purpose before providing it. No guarantee of selection or subsidy payment should be made.",
+        "coverageKeys": "application.multi_agency_protection",
+        "replyPolicy": "REVIEW",
+        "status": "REVIEW",
+        "riskLevel": "HIGH",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-46,QA_DIGEST:2143-Q1-Q2,VIDEO_QA_INDEX:SVID_20251226_161329@11:36",
+        "legacyRuleId": 19,
+        "enabled": true,
+        "sortOrder": 2
+      },
+      {
+        "factCode": "KB-APP-016",
+        "area": "APP",
+        "seq": 16,
+        "title": "个人或团队申报",
+        "category": "Program and eligibility",
+        "questionVariants": "apply individually|apply jointly|as a team|with my team|research partner",
+        "keywords": "apply individually|apply jointly|as a team|with my team|research partner",
+        "answer": "Candidates may apply individually or jointly and may participate with relevant research or entrepreneurial partners.",
+        "coverageKeys": "application.format",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-16,QA_DIGEST:1095-track-description,VIDEO_QA_INDEX:SVID_20251110_160339@09:30",
+        "legacyRuleId": 2,
+        "enabled": true,
+        "sortOrder": 3
+      },
+      {
+        "factCode": "KB-APP-017",
+        "area": "APP",
+        "seq": 17,
+        "title": "申报条件与材料（停用）",
+        "category": "Program and eligibility",
+        "questionVariants": "criteria|qualification|eligible|requirements",
+        "keywords": "criteria|qualification|eligible|requirements",
+        "answer": "Applicants should hold the title of associate professor or above, have outstanding research achievements and be able to contribute to industrial services and scientific and technological innovation.",
+        "coverageKeys": "researcher.selection",
+        "replyPolicy": "AUTO",
+        "status": "DISABLED",
+        "riskLevel": "HIGH",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-17,QA_DIGEST:eligibility-conflict,VIDEO_QA_INDEX:eligibility-needs-manual-review",
+        "legacyRuleId": 3,
+        "enabled": false,
+        "sortOrder": 4
+      },
+      {
+        "factCode": "KB-APP-018",
+        "area": "APP",
+        "seq": 18,
+        "title": "初审材料",
+        "category": "Program and eligibility",
+        "questionVariants": "send CV|initial materials|what should I provide|documents needed|provide my CV",
+        "keywords": "send CV|initial materials|what should I provide|documents needed|provide my CV",
+        "answer": "At the initial stage, a CV is sufficient for eligibility review and enterprise matching. Additional supporting materials may be requested later if the application proceeds.",
+        "coverageKeys": "application.required_materials",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-18,QA_DIGEST:staged-material-rule,VIDEO_QA_INDEX:SVID_20251215_100710@01:36",
+        "legacyRuleId": 33,
+        "enabled": true,
+        "sortOrder": 5
+      },
+      {
+        "factCode": "KB-APP-019",
+        "area": "APP",
+        "seq": 19,
+        "title": "后续支持材料",
+        "category": "Program and eligibility",
+        "questionVariants": "patent certificate|publication list|supporting documents|additional materials",
+        "keywords": "patent certificate|publication list|supporting documents|additional materials",
+        "answer": "Patent information, publication lists, education records and other supporting evidence may be requested later according to application requirements. Original identity documents are not required for initial review.",
+        "coverageKeys": "application.supporting_materials",
+        "replyPolicy": "REVIEW",
+        "status": "REVIEW",
+        "riskLevel": "HIGH",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-19,QA_DIGEST:1095-Q4,VIDEO_QA_INDEX:SVID_20251222_150048@08:48",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 6
+      },
+      {
+        "factCode": "KB-APP-020",
+        "area": "APP",
+        "seq": 20,
+        "title": "申请步骤",
+        "category": "Funding and timeline",
+        "questionVariants": "application process|next steps|procedure|what happens next",
+        "keywords": "application process|next steps|procedure|what happens next",
+        "answer": "After initial materials are received, the team conducts an eligibility review, begins enterprise matching, prepares application documents with the matched enterprise and submits the completed materials for review.",
+        "coverageKeys": "application.steps",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-20,QA_DIGEST:1095-Q6,VIDEO_QA_INDEX:SVID_20251217_160358@05:30",
+        "legacyRuleId": 9,
+        "enabled": true,
+        "sortOrder": 7
+      },
+      {
+        "factCode": "KB-APP-021",
+        "area": "APP",
+        "seq": 21,
+        "title": "完整申请周期",
+        "category": "Funding and timeline",
+        "questionVariants": "full cycle|application timeline|how long does the process take",
+        "keywords": "full cycle|application timeline|how long does the process take",
+        "answer": "The complete matching, application-preparation, submission and review process generally takes approximately six months or longer.",
+        "coverageKeys": "application.timeline",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-21,QA_DIGEST:2061-Q3",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 8
+      },
+      {
+        "factCode": "KB-APP-022",
+        "area": "APP",
+        "seq": 22,
+        "title": "申报及公布窗口",
+        "category": "Funding and timeline",
+        "questionVariants": "deadline|when to apply|submission deadline|submission window|when results",
+        "keywords": "deadline|when to apply|submission deadline|submission window|when results",
+        "answer": "Materials are usually submitted around March-May, with results announced in November-December.\n\nThe exact submission deadline should be confirmed according to the latest project notice before application.",
+        "coverageKeys": "application.submission_window",
+        "replyPolicy": "AUTO",
+        "status": "REVIEW",
+        "riskLevel": "HIGH",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-22,ONLINE_QA:rule-10,QA_DIGEST:2077-Q4,VIDEO_QA_INDEX:SVID_20251222_083119@07:06",
+        "legacyRuleId": 10,
+        "enabled": true,
+        "sortOrder": 9
+      },
+      {
+        "factCode": "KB-APP-023",
+        "area": "APP",
+        "seq": 23,
+        "title": "成功率及再次申报",
+        "category": "Funding and timeline",
+        "questionVariants": "success rate|chance|probability|not selected|apply again",
+        "keywords": "success rate|chance|probability|not selected|apply again",
+        "answer": "This is a national-level project with an approximate success rate of about 10%. Competition is strong. If you are not selected in the first year, you may apply again in a subsequent cycle.",
+        "coverageKeys": "application.success_rate",
+        "replyPolicy": "REVIEW",
+        "status": "REVIEW",
+        "riskLevel": "HIGH",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-23,ONLINE_QA:rule-16,QA_DIGEST:1095-Q2",
+        "legacyRuleId": 16,
+        "enabled": true,
+        "sortOrder": 10
+      },
+      {
+        "factCode": "KB-APP-025",
+        "area": "APP",
+        "seq": 25,
+        "title": "确认视频",
+        "category": "Process actions",
+        "questionVariants": "confirmation video|VCR|passport video|record a video|identity verification",
+        "keywords": "confirmation video|VCR|passport video|record a video|identity verification",
+        "answer": "Any identity-verification requirement, including a confirmation video, is handled by an operator only after clear interest and before formal submission. The exact requirement and safeguards must be explained before materials are requested.",
+        "coverageKeys": "application.identity_verification",
+        "replyPolicy": "REVIEW",
+        "status": "REVIEW",
+        "riskLevel": "HIGH",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-25,QA_DIGEST:1095-Q11,VIDEO_QA_INDEX:video-requirement-needs-manual-review",
+        "legacyRuleId": 13,
+        "enabled": true,
+        "sortOrder": 11
+      },
+      {
+        "factCode": "KB-APP-026",
+        "area": "APP",
+        "seq": 26,
+        "title": "入选后流程",
+        "category": "Process actions",
+        "questionVariants": "after selection|what happens after selected|onboarding|finalise project scope",
+        "keywords": "after selection|what happens after selected|onboarding|finalise project scope",
+        "answer": "After selection, the researcher and matched enterprise finalise the project scope and written agreement. Visits, onboarding and administrative support are then arranged according to the agreed collaboration.",
+        "coverageKeys": "application.after_selection",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-26,QA_DIGEST:2061-Q4,VIDEO_QA_INDEX:SVID_20251105_150344@04:42",
+        "legacyRuleId": 15,
+        "enabled": true,
+        "sortOrder": 12
+      },
+      {
+        "factCode": "KB-APP-043",
+        "area": "APP",
+        "seq": 43,
+        "title": "护照及敏感证件顾虑",
+        "category": "Process actions",
+        "questionVariants": "share passport|passport privacy|identity document|sensitive documents",
+        "keywords": "share passport|passport privacy|identity document|sensitive documents",
+        "answer": "No passport or original identity document is required for initial review. If identity verification becomes necessary later, an operator must explain the requirement, safeguards and permitted redactions before requesting anything.",
+        "coverageKeys": "application.sensitive_documents",
+        "replyPolicy": "REVIEW",
+        "status": "REVIEW",
+        "riskLevel": "HIGH",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-43,QA_DIGEST:staged-material-rule,VIDEO_QA_INDEX:passport-video-needs-manual-review",
+        "legacyRuleId": 32,
+        "enabled": true,
+        "sortOrder": 13
+      },
+      {
+        "factCode": "KB-COMM-044",
+        "area": "COMM",
+        "seq": 44,
+        "title": "会议安排",
+        "category": "Communication and other",
+        "questionVariants": "meeting|Zoom|Teams|Webex|schedule a call|time zone",
+        "keywords": "meeting|Zoom|Teams|Webex|schedule a call|time zone",
+        "answer": "Zoom, Teams or Webex may be used. A typical introductory call lasts approximately 15–20 minutes and is arranged according to the expert's time zone.",
+        "coverageKeys": "communication.meeting",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-44,QA_DIGEST:2094-Q2",
+        "legacyRuleId": 21,
+        "enabled": true,
+        "sortOrder": 14
+      },
+      {
+        "factCode": "KB-COMM-045",
+        "area": "COMM",
+        "seq": 45,
+        "title": "仅邮件联系",
+        "category": "Communication and other",
+        "questionVariants": "email only|not on LinkedIn|no social media|contact me by email",
+        "keywords": "email only|not on LinkedIn|no social media|contact me by email",
+        "answer": "Understood. Communication may continue by email only.",
+        "coverageKeys": "communication.email_only",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-45,QA_DIGEST:1095-Q8",
+        "legacyRuleId": 22,
+        "enabled": true,
+        "sortOrder": 15
+      },
+      {
+        "factCode": "KB-COMM-047",
+        "area": "COMM",
+        "seq": 47,
+        "title": "项目敏感性",
+        "category": "Trust and compliance",
+        "questionVariants": "sensitive programme|legitimacy|security concern|trust",
+        "keywords": "sensitive programme|legitimacy|security concern|trust",
+        "answer": "Caution is understandable. Communication may continue by email, and available company-registration and talent-office documentation may be provided for independent verification before the expert proceeds.",
+        "coverageKeys": "",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "MEDIUM",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-47,QA_DIGEST:2285-Q1-Q2,VIDEO_QA_INDEX:SVID_20251222_083119@02:36",
+        "legacyRuleId": 20,
+        "enabled": true,
+        "sortOrder": 16
+      },
+      {
+        "factCode": "KB-COMM-048",
+        "area": "COMM",
+        "seq": 48,
+        "title": "退休专家答复",
+        "category": "Communication and other",
+        "questionVariants": "retired|I am retired|no longer working",
+        "keywords": "retired|I am retired|no longer working",
+        "answer": "Thank you for letting us know. We will not continue discussing participation. A referral may be requested only where appropriate and without pressure.",
+        "coverageKeys": "communication.retired",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-48",
+        "legacyRuleId": 12,
+        "enabled": true,
+        "sortOrder": 17
+      },
+      {
+        "factCode": "KB-COMP-005",
+        "area": "COMP",
+        "seq": 5,
+        "title": "公司法定身份",
+        "category": "Trust and compliance",
+        "questionVariants": "company name|legal name|registered location|registered address",
+        "keywords": "company name|legal name|registered location|registered address",
+        "answer": "Our registered company name is Jiangsu Qingfei Talent Technology Co., Ltd. (江苏清飞人才科技有限公司), registered in Nanjing, China.",
+        "coverageKeys": "company.legal_name,company.registered_location",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "MEDIUM",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-05",
+        "legacyRuleId": 35,
+        "enabled": true,
+        "sortOrder": 18
+      },
+      {
+        "factCode": "KB-COMP-006",
+        "area": "COMP",
+        "seq": 6,
+        "title": "公司官方网站",
+        "category": "Trust and compliance",
+        "questionVariants": "company website|your website|official company website|company site",
+        "keywords": "company website|your website|official company website|company site",
+        "answer": "Our official company website is https://www.qingfeitalent.com.",
+        "coverageKeys": "company.official_website",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "MEDIUM",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-06",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 19
+      },
+      {
+        "factCode": "KB-COMP-007",
+        "area": "COMP",
+        "seq": 7,
+        "title": "清飞与政府人才办合作证明",
+        "category": "Trust and compliance",
+        "questionVariants": "verify|proof|registration information|certificate|government cooperation|talent summit|policy documents",
+        "keywords": "verify|proof|registration information|certificate|government cooperation|talent summit|policy documents",
+        "answer": "Qingfei cooperates with local government talent offices in multiple regions. We can provide supporting evidence of these working relationships, including company registration information; supporting documents, policy materials and relevant certificates from local talent offices; records of official talent activities; and materials relating to government talent summits.",
+        "coverageKeys": "company.verification_evidence,company.government_cooperation",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "MEDIUM",
+        "renderMode": "VERBATIM",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-07,QA_DIGEST:2143-Q3,QA_DIGEST:talent-office-certificates-and-summits,VIDEO_QA_INDEX:official-talent-activity-records",
+        "legacyRuleId": 18,
+        "enabled": true,
+        "sortOrder": 20
+      },
+      {
+        "factCode": "KB-CONF-036",
+        "area": "CONF",
+        "seq": 36,
+        "title": "线上申请材料保密",
+        "category": "Trust and compliance",
+        "questionVariants": "materials confidential|keep my documents|redaction|application privacy|confidentiality",
+        "keywords": "materials confidential|keep my documents|redaction|application privacy|confidentiality",
+        "answer": "Your materials are kept strictly confidential and used only for application purposes. Technical details you prefer not to disclose can be handled with appropriate redaction.",
+        "coverageKeys": "confidentiality.materials",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "MEDIUM",
+        "renderMode": "VERBATIM",
+        "sourceRefs": "ONLINE_QA:rule-36",
+        "legacyRuleId": 36,
+        "enabled": true,
+        "sortOrder": 21
+      },
+      {
+        "factCode": "KB-CONT-037",
+        "area": "CONT",
+        "seq": 37,
+        "title": "合同及签约主体",
+        "category": "Funding and timeline",
+        "questionVariants": "contract terms|contractual relationship|written agreement|formal agreement|who signs|contracting party|partner company",
+        "keywords": "contract terms|contractual relationship|written agreement|formal agreement|who signs|contracting party|partner company",
+        "answer": "After selection, the expected arrangement is a written agreement directly between the expert and the matched enterprise, not Qingfei Tech Talent Team. The exact legal relationship, contract type and full terms must be confirmed for the specific project and reviewed before any commitment.",
+        "coverageKeys": "contract.party,contract.terms",
+        "replyPolicy": "REVIEW",
+        "status": "REVIEW",
+        "riskLevel": "HIGH",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-37,QA_DIGEST:2061-Q4,VIDEO_QA_INDEX:SVID_20251215_160308@08:18-CONFLICT",
+        "legacyRuleId": 38,
+        "enabled": true,
+        "sortOrder": 22
+      },
+      {
+        "factCode": "KB-ENT-011",
+        "area": "ENT",
+        "seq": 11,
+        "title": "企业匹配原则",
+        "category": "Communication and other",
+        "questionVariants": "matching process|how do you match|matched enterprise|research matching",
+        "keywords": "matching process|how do you match|matched enterprise|research matching",
+        "answer": "Enterprise matching is based on the expert's research background and the specific technical needs of potential Chinese partners; experts are not assigned to generic vacancies.",
+        "coverageKeys": "enterprise.matching",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-11,QA_DIGEST:2061-Q1,VIDEO_QA_INDEX:SVID_20251105_150344@02:00",
+        "legacyRuleId": 23,
+        "enabled": true,
+        "sortOrder": 23
+      },
+      {
+        "factCode": "KB-ENT-012",
+        "area": "ENT",
+        "seq": 12,
+        "title": "合作企业类型",
+        "category": "Communication and other",
+        "questionVariants": "types of companies|companies typically work with|enterprise types|industries|partner types",
+        "keywords": "types of companies|companies typically work with|enterprise types|industries|partner types",
+        "answer": "There is no fixed public list of companies. The relevant company type and industry depend on the expert's research direction and the availability of a genuinely suitable partner.",
+        "coverageKeys": "enterprise.project_types",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-12,QA_DIGEST:enterprise-matching",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 24
+      },
+      {
+        "factCode": "KB-ENT-013",
+        "area": "ENT",
+        "seq": 13,
+        "title": "常见研发需求",
+        "category": "Communication and other",
+        "questionVariants": "R&D gaps|research gaps|technical needs|common problems|product development",
+        "keywords": "R&D gaps|research gaps|technical needs|common problems|product development",
+        "answer": "Potential enterprise needs may involve technical problem-solving, product development, research guidance or technology commercialisation. The specific need cannot be confirmed before an enterprise and project are identified.",
+        "coverageKeys": "enterprise.rnd_needs",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-13,QA_DIGEST:enterprise-matching",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 25
+      },
+      {
+        "factCode": "KB-ENT-014",
+        "area": "ENT",
+        "seq": 14,
+        "title": "匹配后的企业披露",
+        "category": "Communication and other",
+        "questionVariants": "company profile|company address|matched company details|proposed technical work",
+        "keywords": "company profile|company address|matched company details|proposed technical work",
+        "answer": "Once a potential match is identified, the company profile, website, address and proposed technical work should be provided for the expert's review.",
+        "coverageKeys": "enterprise.partner_disclosure",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-14,QA_DIGEST:2109-Q2",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 26
+      },
+      {
+        "factCode": "KB-ENT-015",
+        "area": "ENT",
+        "seq": 15,
+        "title": "企业匹配期限",
+        "category": "Funding and timeline",
+        "questionVariants": "timeline for matching|matching deadline|how long to match|matching time",
+        "keywords": "timeline for matching|matching deadline|how long to match|matching time",
+        "answer": "There is no fixed enterprise-matching deadline. Timing depends on the expert's research direction and the availability of a genuinely suitable enterprise.",
+        "coverageKeys": "enterprise.matching_timeline",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-15,QA_DIGEST:2061-Q3,VIDEO_QA_INDEX:SVID_20251126_210104@05:18",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 27
+      },
+      {
+        "factCode": "KB-FEE-042",
+        "area": "FEE",
+        "seq": 42,
+        "title": "专家费用政策",
+        "category": "Trust and compliance",
+        "questionVariants": "fee|fees|charge|charges|cost|costs|money transfer",
+        "keywords": "fee|fees|charge|charges|cost|costs|money transfer",
+        "answer": "We never charge experts any fees throughout the process.",
+        "coverageKeys": "fees.policy",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-42,QA_DIGEST:1095-Q5",
+        "legacyRuleId": 37,
+        "enabled": true,
+        "sortOrder": 28
+      },
+      {
+        "factCode": "KB-FUND-033",
+        "area": "FUND",
+        "seq": 33,
+        "title": "薪资待遇与政府科研经费",
+        "category": "Funding and timeline",
+        "questionVariants": "government funding|research funding|3 million|12 million|project funding|salary support|housing allowance",
+        "keywords": "government funding|research funding|3 million|12 million|project funding|salary support|housing allowance",
+        "answer": "After a successful application, selected candidates may receive government research funding in the range of 3-12 million RMB, with enterprises providing personal salary support separately; full-time roles may also include additional housing allowance.",
+        "coverageKeys": "finance.government_funding,finance.enterprise_compensation,finance.additional_support",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "MEDIUM",
+        "renderMode": "VERBATIM",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-33,ONLINE_QA:rule-8,QA_DIGEST:rule-8-salary,VIDEO_QA_INDEX:salary-funding-and-housing",
+        "legacyRuleId": 8,
+        "enabled": true,
+        "sortOrder": 29
+      },
+      {
+        "factCode": "KB-FUND-034",
+        "area": "FUND",
+        "seq": 34,
+        "title": "企业个人报酬",
+        "category": "Funding and timeline",
+        "questionVariants": "salary|compensation|remuneration|advisory compensation|paid role|personal compensation",
+        "keywords": "salary|compensation|remuneration|advisory compensation|paid role|personal compensation",
+        "answer": "Personal compensation is provided separately by the matched enterprise under the agreed collaboration arrangement.",
+        "coverageKeys": "finance.enterprise_compensation",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "MEDIUM",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-34,QA_DIGEST:1095-Q3,VIDEO_QA_INDEX:SVID_20251117_085959@10:06",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 30
+      },
+      {
+        "factCode": "KB-FUND-035",
+        "area": "FUND",
+        "seq": 35,
+        "title": "报酬结构",
+        "category": "Funding and timeline",
+        "questionVariants": "compensation structure|retainer|hourly|project-based|payment method|payment schedule",
+        "keywords": "compensation structure|retainer|hourly|project-based|payment method|payment schedule",
+        "answer": "There is no universal compensation model. The exact amount, payment method, deliverables and payment schedule are negotiated and included in the written agreement before any commitment is made.",
+        "coverageKeys": "finance.compensation_structure",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "MEDIUM",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-35,QA_DIGEST:compensation-separation",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 31
+      },
+      {
+        "factCode": "KB-FUND-036",
+        "area": "FUND",
+        "seq": 36,
+        "title": "其他可能支持",
+        "category": "Funding and timeline",
+        "questionVariants": "housing allowance|startup capital|additional funding|entrepreneurial support",
+        "keywords": "housing allowance|startup capital|additional funding|entrepreneurial support",
+        "answer": "Full-time arrangements may include housing support. Entrepreneurial projects may be considered for start-up capital or subsequent project funding, subject to the applicable programme and review.",
+        "coverageKeys": "finance.additional_support",
+        "replyPolicy": "REVIEW",
+        "status": "REVIEW",
+        "riskLevel": "HIGH",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-36,QA_DIGEST:2077-Q1",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 32
+      },
+      {
+        "factCode": "KB-GOV-004",
+        "area": "GOV",
+        "seq": 4,
+        "title": "项目组织层级",
+        "category": "Trust and compliance",
+        "questionVariants": "responsible government organization|government body|sponsoring institution|talent office|government agency|ministry of science and technology",
+        "keywords": "responsible government organization|government body|sponsoring institution|talent office|government agency|ministry of science and technology",
+        "answer": "The programme is led at the national level by China's Ministry of Science and Technology and implemented locally by local government talent offices.",
+        "coverageKeys": "governance.sponsor_level,governance.responsible_organization,governance.national_lead,governance.local_implementation",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "MEDIUM",
+        "renderMode": "VERBATIM",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-04,QA_DIGEST:government-level,VIDEO_QA_INDEX:local-talent-office-implementation",
+        "legacyRuleId": 42,
+        "enabled": true,
+        "sortOrder": 33
+      },
+      {
+        "factCode": "KB-IP-039",
+        "area": "IP",
+        "seq": 39,
+        "title": "线上知识产权边界",
+        "category": "Funding and timeline",
+        "questionVariants": "intellectual property|IP rights|who owns IP|IP ownership|IP arising|publication rights",
+        "keywords": "intellectual property|IP rights|who owns IP|IP ownership|IP arising|publication rights",
+        "answer": "Until a contract is signed, nothing you share with us transfers any rights; any final intellectual-property arrangements will be set out in the future written agreement.",
+        "coverageKeys": "ip.arrangements",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "HIGH",
+        "renderMode": "VERBATIM",
+        "sourceRefs": "ONLINE_QA:rule-39",
+        "legacyRuleId": 39,
+        "enabled": true,
+        "sortOrder": 34
+      },
+      {
+        "factCode": "KB-OUTR-009",
+        "area": "OUTR",
+        "seq": 9,
+        "title": "联系信息来源",
+        "category": "Communication and other",
+        "questionVariants": "how did you find me|where did you get my email|contact source",
+        "keywords": "how did you find me|where did you get my email|contact source",
+        "answer": "Potential candidates are identified through publicly available academic sources such as ORCID, research publications and university researcher profiles.",
+        "coverageKeys": "outreach.public_source",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-09",
+        "legacyRuleId": 29,
+        "enabled": true,
+        "sortOrder": 35
+      },
+      {
+        "factCode": "KB-PROG-001",
+        "area": "PROG",
+        "seq": 1,
+        "title": "项目内容介绍",
+        "category": "Program and eligibility",
+        "questionVariants": "what is this project|what is the program|about the programme|which programme",
+        "keywords": "what is this project|what is the program|about the programme|which programme",
+        "answer": "This is a government-backed programme connecting experienced international experts with Chinese enterprises for research and technology collaboration. At the introductory stage, no relocation or commitment is required.",
+        "coverageKeys": "programme.purpose,programme.tracks",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-01,QA_DIGEST:overview,VIDEO_QA_INDEX:SVID_20251113_175509@04:30",
+        "legacyRuleId": 1,
+        "enabled": true,
+        "sortOrder": 36
+      },
+      {
+        "factCode": "KB-PROG-002",
+        "area": "PROG",
+        "seq": 2,
+        "title": "项目总览",
+        "category": "Program overview",
+        "questionVariants": "learn more|programme structure|programme tracks|typical duration|advisory project",
+        "keywords": "learn more|programme structure|programme tracks|typical duration|advisory project",
+        "answer": "Two tracks:\n\nInnovative Talent Scheme -- for senior researchers (PhD + notable institutional experience) to serve as a research consultant to a matched Chinese enterprise. You would guide the company's R&D for 2-3 years, without leaving your current position. Most participants work remotely and visit China 1-2 times per year; all travel expenses are covered by us.\n\nEntrepreneurial Talent Scheme -- for experts who wish to commercialize their research by establishing a venture in China. Remote involvement is possible, with 1-2 annual visits.",
+        "coverageKeys": "programme.structure,programme.tracks,programme.scope",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "VERBATIM",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-02,ONLINE_QA:rule-24,QA_DIGEST:1095-Q1,VIDEO_QA_INDEX:SVID_20251117_085959@03:06",
+        "legacyRuleId": 24,
+        "enabled": true,
+        "sortOrder": 37
+      },
+      {
+        "factCode": "KB-PROG-003",
+        "area": "PROG",
+        "seq": 3,
+        "title": "项目公开状态",
+        "category": "Program overview",
+        "questionVariants": "official programme name|programme website|publicly listed|official notice|project name|public website|confidential programme",
+        "keywords": "official programme name|programme website|publicly listed|official notice|project name|public website|confidential programme",
+        "answer": "The programme is confidential and therefore has no publicly disclosed official name and no public-facing official website.",
+        "coverageKeys": "programme.official_name,programme.public_visibility",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "MEDIUM",
+        "renderMode": "VERBATIM",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-03,QA_DIGEST:programme-confidentiality,VIDEO_QA_INDEX:programme-public-status",
+        "legacyRuleId": 41,
+        "enabled": true,
+        "sortOrder": 38
+      },
+      {
+        "factCode": "KB-PROG-008",
+        "area": "PROG",
+        "seq": 8,
+        "title": "顾问名单公开政策",
+        "category": "Trust and compliance",
+        "questionVariants": "advisor list|adviser list|current advisors|participant list",
+        "keywords": "advisor list|adviser list|current advisors|participant list",
+        "answer": "For privacy and confidentiality reasons, a current adviser list is not published.",
+        "coverageKeys": "programme.adviser_list_policy",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-08,QA_DIGEST:privacy-principle",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 39
+      },
+      {
+        "factCode": "KB-ROLE-027",
+        "area": "ROLE",
+        "seq": 27,
+        "title": "合作角色",
+        "category": "Role and work style",
+        "questionVariants": "my role|position|consultant|adviser|co-entrepreneur",
+        "keywords": "my role|position|consultant|adviser|co-entrepreneur",
+        "answer": "Depending on the agreed project, the expert may serve as a research or technical adviser to the matched enterprise, or participate as a co-entrepreneur in a technology venture.",
+        "coverageKeys": "role.type",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-27,QA_DIGEST:2077-Q1",
+        "legacyRuleId": 4,
+        "enabled": true,
+        "sortOrder": 40
+      },
+      {
+        "factCode": "KB-ROLE-028",
+        "area": "ROLE",
+        "seq": 28,
+        "title": "主要职责",
+        "category": "Role and work style",
+        "questionVariants": "responsibilities|duties|what would I do|my responsibilities|technical advisor",
+        "keywords": "responsibilities|duties|what would I do|my responsibilities|technical advisor",
+        "answer": "Responsibilities depend on the project and may include technical guidance, research advice, problem-solving, product-development support or commercialisation guidance.",
+        "coverageKeys": "role.responsibilities",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-28,QA_DIGEST:role-summary,VIDEO_QA_INDEX:advisory-role-candidates",
+        "legacyRuleId": 5,
+        "enabled": true,
+        "sortOrder": 41
+      },
+      {
+        "factCode": "KB-ROLE-029",
+        "area": "ROLE",
+        "seq": 29,
+        "title": "交付物",
+        "category": "Role and work style",
+        "questionVariants": "deliverables|outputs|milestones|reports|expected work",
+        "keywords": "deliverables|outputs|milestones|reports|expected work",
+        "answer": "There is no universal deliverables list. Expected outputs, milestones, reports and other deliverables are negotiated with the matched enterprise and recorded in the written agreement.",
+        "coverageKeys": "role.deliverables",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-29",
+        "legacyRuleId": null,
+        "enabled": true,
+        "sortOrder": 42
+      },
+      {
+        "factCode": "KB-WORK-030",
+        "area": "WORK",
+        "seq": 30,
+        "title": "全职、兼职及远程",
+        "category": "Role and work style",
+        "questionVariants": "full time|part time|remote|form of collaboration|technical consultant",
+        "keywords": "full time|part time|remote|form of collaboration|technical consultant",
+        "answer": "Full-time, part-time and remote advisory arrangements may be possible. The applicable form depends on the enterprise, project scope and agreed workload.",
+        "coverageKeys": "work.remote_arrangement",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "LOW",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-30,QA_DIGEST:2077-Q1,VIDEO_QA_INDEX:SVID_20251226_161329@07:00",
+        "legacyRuleId": 6,
+        "enabled": true,
+        "sortOrder": 43
+      },
+      {
+        "factCode": "KB-WORK-031",
+        "area": "WORK",
+        "seq": 31,
+        "title": "现有单位、搬迁及赴华安排",
+        "category": "Role and work style",
+        "questionVariants": "current affiliation|university affiliation|remain employed|relocate|move to China|visits|travel expenses|work location",
+        "keywords": "current affiliation|university affiliation|remain employed|relocate|move to China|visits|travel expenses|work location",
+        "answer": "A typical remote advisory arrangement does not require relocation or a change to the expert's current institutional affiliation. Short visits to China may be arranged where the project requires them, with travel support determined by the project arrangement.",
+        "coverageKeys": "work.affiliation,work.relocation,work.travel_arrangement",
+        "replyPolicy": "AUTO",
+        "status": "APPROVED",
+        "riskLevel": "MEDIUM",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-31,QA_DIGEST:2077-Q1,VIDEO_QA_INDEX:SVID_20251202_145933@03:12",
+        "legacyRuleId": 7,
+        "enabled": true,
+        "sortOrder": 44
+      },
+      {
+        "factCode": "KB-WORK-032",
+        "area": "WORK",
+        "seq": 32,
+        "title": "合作期限及投入时间",
+        "category": "Role and work style",
+        "questionVariants": "project duration|time commitment|weekly hours|monthly hours|how involved|duration for technical advisers",
+        "keywords": "project duration|time commitment|weekly hours|monthly hours|how involved|duration for technical advisers",
+        "answer": "A research advisory project commonly runs for approximately two to three years. Exact weekly or monthly workload is flexible and must be agreed with the matched enterprise.",
+        "coverageKeys": "work.advisory_duration,work.time_commitment",
+        "replyPolicy": "REVIEW",
+        "status": "REVIEW",
+        "riskLevel": "MEDIUM",
+        "renderMode": "COMPOSE",
+        "sourceRefs": "QA_FACT_PROPOSAL:fact-32,QA_DIGEST:1095-Q1,VIDEO_QA_INDEX:SVID_20251215_160308@07:42",
+        "legacyRuleId": 40,
+        "enabled": true,
+        "sortOrder": 45
+      }
+    ],
+    "phraseGroups": [
+      {
+        "groupCode": "AFFILIATION",
+        "phrase": "affiliation",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "AFFILIATION",
+        "phrase": "currently employed",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "AFFILIATION",
+        "phrase": "current university",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "AFFILIATION",
+        "phrase": "institutional requirements",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "COMPENSATION",
+        "phrase": "compensation",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "COMPENSATION",
+        "phrase": "remuneration",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "COMPENSATION",
+        "phrase": "salary",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "COMPENSATION",
+        "phrase": "paid",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "COMPENSATION_MENTION",
+        "phrase": "compensation",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "COMPENSATION_STRUCTURE",
+        "phrase": "compensation structure",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "COMPENSATION_STRUCTURE",
+        "phrase": "payment method",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "COMPENSATION_STRUCTURE",
+        "phrase": "payment schedule",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "COMPENSATION_STRUCTURE",
+        "phrase": "hourly rate",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "COMPENSATION_STRUCTURE",
+        "phrase": "retainer",
+        "sortOrder": 5
+      },
+      {
+        "groupCode": "COMPENSATION_STRUCTURE",
+        "phrase": "project based payment",
+        "sortOrder": 6
+      },
+      {
+        "groupCode": "CONFIDENTIALITY",
+        "phrase": "confidentiality",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "CONFIDENTIALITY",
+        "phrase": "confidential",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "CONFIDENTIALITY",
+        "phrase": "nda",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "CONTRACT_PARTY",
+        "phrase": "contractual relationship",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "CONTRACT_PARTY",
+        "phrase": "contracting party",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "CONTRACT_PARTY",
+        "phrase": "contractual party",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "CONTRACT_PARTY",
+        "phrase": "contract party",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "CONTRACT_PARTY",
+        "phrase": "who signs",
+        "sortOrder": 5
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "nature of the offer",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "details about the offer",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "more details from you",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "more details",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "further details",
+        "sortOrder": 5
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "further information",
+        "sortOrder": 6
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "additional information",
+        "sortOrder": 7
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "interested in the offer",
+        "sortOrder": 8
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "learn more about the offer",
+        "sortOrder": 9
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "learning more about this opportunity",
+        "sortOrder": 10
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "specific programme",
+        "sortOrder": 11
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "specific program",
+        "sortOrder": 12
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "specific plan",
+        "sortOrder": 13
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "programme overview",
+        "sortOrder": 14
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "program overview",
+        "sortOrder": 15
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "tell me more",
+        "sortOrder": 16
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "how does the programme work",
+        "sortOrder": 17
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "phrase": "how does the program work",
+        "sortOrder": 18
+      },
+      {
+        "groupCode": "DURATION",
+        "phrase": "duration",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "DURATION",
+        "phrase": "how long",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "DURATION",
+        "phrase": "cooperation period",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "GOVERNMENT_FUNDING_MENTION",
+        "phrase": "government funding",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "GOVERNMENT_ORGANIZATION",
+        "phrase": "government organization",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "GOVERNMENT_ORGANIZATION",
+        "phrase": "government organisation",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "GOVERNMENT_ORGANIZATION",
+        "phrase": "government body",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "GOVERNMENT_ORGANIZATION",
+        "phrase": "responsible organization",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "GOVERNMENT_ORGANIZATION",
+        "phrase": "responsible organisation",
+        "sortOrder": 5
+      },
+      {
+        "groupCode": "IP",
+        "phrase": "intellectual property",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "IP",
+        "phrase": "ip rights",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "IP",
+        "phrase": "ip ownership",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "IP",
+        "phrase": "publication rights",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "NEXT_STEP",
+        "phrase": "next step",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "NEXT_STEP",
+        "phrase": "next steps",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "NEXT_STEP",
+        "phrase": "what should i do",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "NEXT_STEP",
+        "phrase": "what do you need from me",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "NEXT_STEP",
+        "phrase": "what is required from me",
+        "sortOrder": 5
+      },
+      {
+        "groupCode": "NEXT_STEP",
+        "phrase": "how can we proceed",
+        "sortOrder": 6
+      },
+      {
+        "groupCode": "NEXT_STEP",
+        "phrase": "how should we proceed",
+        "sortOrder": 7
+      },
+      {
+        "groupCode": "NEXT_STEP",
+        "phrase": "how would we cooperate",
+        "sortOrder": 8
+      },
+      {
+        "groupCode": "NEXT_STEP",
+        "phrase": "how can we cooperate",
+        "sortOrder": 9
+      },
+      {
+        "groupCode": "NEXT_STEP",
+        "phrase": "cooperation requirements",
+        "sortOrder": 10
+      },
+      {
+        "groupCode": "POSITIVE_INTENT",
+        "phrase": "i am interested",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "POSITIVE_INTENT",
+        "phrase": "i remain interested",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "POSITIVE_INTENT",
+        "phrase": "willing to continue",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "POSITIVE_INTENT",
+        "phrase": "would like to continue",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "POSITIVE_INTENT",
+        "phrase": "happy to continue",
+        "sortOrder": 5
+      },
+      {
+        "groupCode": "POSITIVE_INTENT",
+        "phrase": "ready to proceed",
+        "sortOrder": 6
+      },
+      {
+        "groupCode": "POSITIVE_INTENT",
+        "phrase": "would like to proceed",
+        "sortOrder": 7
+      },
+      {
+        "groupCode": "PROGRAMME_NAME",
+        "phrase": "official name",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "PROGRAMME_NAME",
+        "phrase": "name of the national",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "PROGRAMME_NAME",
+        "phrase": "programme name",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "PROGRAMME_NAME",
+        "phrase": "program name",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "PROGRAMME_NAME",
+        "phrase": "programme website",
+        "sortOrder": 5
+      },
+      {
+        "groupCode": "PROGRAMME_NAME",
+        "phrase": "program website",
+        "sortOrder": 6
+      },
+      {
+        "groupCode": "RESPONSIBILITY",
+        "phrase": "responsibilities",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "RESPONSIBILITY",
+        "phrase": "responsibility",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "RESPONSIBILITY",
+        "phrase": "duties",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "RESPONSIBILITY",
+        "phrase": "technical advisor",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "VERIFICATION",
+        "phrase": "proof of qingfei",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "VERIFICATION",
+        "phrase": "government cooperation",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "VERIFICATION",
+        "phrase": "supporting evidence",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "VERIFICATION",
+        "phrase": "independent verification",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "VERIFICATION",
+        "phrase": "talent office certificate",
+        "sortOrder": 5
+      },
+      {
+        "groupCode": "VERIFICATION",
+        "phrase": "talent summit",
+        "sortOrder": 6
+      }
+    ],
+    "intentCoverage": [
+      {
+        "groupCode": "AFFILIATION",
+        "coverageKey": "work.affiliation",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "COMPENSATION",
+        "coverageKey": "finance.enterprise_compensation",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "COMPENSATION_STRUCTURE",
+        "coverageKey": "finance.compensation_structure",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "CONFIDENTIALITY",
+        "coverageKey": "confidentiality.materials",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "CONTRACT_PARTY",
+        "coverageKey": "contract.party",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "coverageKey": "programme.purpose",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "coverageKey": "programme.structure",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "coverageKey": "enterprise.matching",
+        "sortOrder": 3
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "coverageKey": "role.type",
+        "sortOrder": 4
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "coverageKey": "role.responsibilities",
+        "sortOrder": 5
+      },
+      {
+        "groupCode": "DETAIL_INQUIRY",
+        "coverageKey": "finance.government_funding",
+        "sortOrder": 6
+      },
+      {
+        "groupCode": "DURATION",
+        "coverageKey": "work.advisory_duration",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "GOVERNMENT_ORGANIZATION",
+        "coverageKey": "governance.responsible_organization",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "GOVERNMENT_ORGANIZATION",
+        "coverageKey": "governance.sponsor_level",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "IP",
+        "coverageKey": "ip.arrangements",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "IP",
+        "coverageKey": "confidentiality.materials",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "PROGRAMME_NAME",
+        "coverageKey": "programme.official_name",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "PROGRAMME_NAME",
+        "coverageKey": "programme.public_visibility",
+        "sortOrder": 2
+      },
+      {
+        "groupCode": "RESPONSIBILITY",
+        "coverageKey": "role.responsibilities",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "VERIFICATION",
+        "coverageKey": "company.verification_evidence",
+        "sortOrder": 1
+      },
+      {
+        "groupCode": "VERIFICATION",
+        "coverageKey": "company.government_cooperation",
+        "sortOrder": 2
+      }
+    ],
+    "mandatoryRules": [
+      {
+        "ruleCode": "DETAIL_INQUIRY",
+        "matchGroups": "DETAIL_INQUIRY",
+        "factCodes": "KB-PROG-002,KB-FUND-033",
+        "sortOrder": 10
+      },
+      {
+        "ruleCode": "COMPENSATION",
+        "matchGroups": "COMPENSATION",
+        "factCodes": "KB-FUND-033",
+        "sortOrder": 15
+      },
+      {
+        "ruleCode": "PROGRAMME_NAME",
+        "matchGroups": "PROGRAMME_NAME",
+        "factCodes": "KB-PROG-003",
+        "sortOrder": 20
+      },
+      {
+        "ruleCode": "GOVERNMENT_ORG",
+        "matchGroups": "GOVERNMENT_ORG",
+        "factCodes": "KB-GOV-004",
+        "sortOrder": 30
+      },
+      {
+        "ruleCode": "PROGRAMME_NAME,GOVERNMENT_ORG",
+        "matchGroups": "PROGRAMME_NAME,GOVERNMENT_ORG",
+        "factCodes": "KB-COMP-007",
+        "sortOrder": 40
+      },
+      {
+        "ruleCode": "IP",
+        "matchGroups": "IP",
+        "factCodes": "KB-IP-039,KB-CONF-036",
+        "sortOrder": 50
+      }
+    ],
+    "exclusions": [
+      {
+        "ruleCode": "COMPENSATION_MENTION",
+        "whenGroups": "COMPENSATION_MENTION",
+        "unlessGroups": "GOVERNMENT_FUNDING_MENTION",
+        "targetType": "COVERAGE_KEY",
+        "targetValue": "finance.additional_support"
+      },
+      {
+        "ruleCode": "COMPENSATION_MENTION",
+        "whenGroups": "COMPENSATION_MENTION",
+        "unlessGroups": "GOVERNMENT_FUNDING_MENTION",
+        "targetType": "COVERAGE_KEY",
+        "targetValue": "finance.government_funding"
+      },
+      {
+        "ruleCode": "DETAIL_INQUIRY",
+        "whenGroups": "DETAIL_INQUIRY",
+        "unlessGroups": "",
+        "targetType": "FACT_CODE",
+        "targetValue": "KB-FUND-034"
+      },
+      {
+        "ruleCode": "DETAIL_INQUIRY",
+        "whenGroups": "DETAIL_INQUIRY",
+        "unlessGroups": "COMPENSATION_STRUCTURE",
+        "targetType": "FACT_CODE",
+        "targetValue": "KB-FUND-035"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "real-spike-sample",
+      "kind": "real",
+      "label": "spike SAMPLE_INBOUND_EMAIL —— 真实日本植物学教授来信（brief：计入 real 池）",
+      "email": "Dear LiLei,\n\n                          Thank you for reaching out and for your interest in my research background.\n\n                          I am open to exploring this collaboration and would be interested in discussing the opportunity further. Before proceeding, I would appreciate receiving more specific details regarding:\n\n                          1. Remote Advisory Work: How is the remote advisory structured in practice (e.g., expected workload, frequency of consultations, reporting format)?\n\n                          2. Financial Terms & Payment: What is the compensation structure for this position, and how are payments remitted?\n\n                          3. China Trips: If travel to China is required, what is the expected duration of each stay?\n\n                          Current Research Focus & Expertise:\n\n                          To help you identify relevant industry matches, here is an overview of my current research areas:\n\n                           Abiotic Stress Tolerance:\n\n                           Heat tolerance in wheat\n\n                           Drought tolerance in rice\n\n                           Salinity tolerance in rice\n\n                           Biotic Stress Resistance:\n\n                           Yellow rust resistance in wheat\n\n                           Bakanae disease resistance in rice\n\n                           Blast disease resistance in rice\n\n                           Fusarium wilt resistance in tomato\n\n                           Cotton leafworm (Spodoptera littoralis) resistance in soybean\n\n                          Current Methodology & Approach:\n\n                          My ongoing studies focus on utilizing plant growth-promoting bacteria and fungi (PGPR/PGPF) to enhance plant resilience against both biotic and abiotic stresses. Additionally, I work on formulating eco-friendly biopesticides derived from plant extracts and bio-wastes that boost plant immunity and growth.\n\n                          My research investigates these responses at both the physiological and molecular levels. Furthermore, I maintain full flexibility to address other environmental and biological stresses affecting crop production based on target company requirements.\n\n                          I look forward to hearing from you with more details.",
+      "expected": {
+        "mandatory": [
+          "KB-PROG-002",
+          "KB-FUND-033"
+        ],
+        "requested": [
+          "finance.enterprise_compensation",
+          "finance.compensation_structure",
+          "programme.purpose",
+          "programme.structure",
+          "enterprise.matching",
+          "role.type",
+          "role.responsibilities",
+          "finance.government_funding",
+          "work.advisory_duration"
+        ],
+        "prefilter": [
+          "KB-PROG-002",
+          "KB-FUND-033",
+          "KB-FUND-035",
+          "KB-ROLE-027",
+          "KB-ENT-011",
+          "KB-WORK-032",
+          "KB-PROG-001",
+          "KB-ROLE-028"
+        ]
+      }
+    },
+    {
+      "id": "real-mockup-compensation-only",
+      "kind": "real",
+      "label": "mockup rag-knowledge-base.html 样例 A · 只问报酬（真实来信改写）",
+      "email": "Could you tell me the compensation for this advisory role?",
+      "expected": {
+        "mandatory": [
+          "KB-FUND-033"
+        ],
+        "requested": [
+          "finance.enterprise_compensation"
+        ],
+        "prefilter": [
+          "KB-FUND-033",
+          "KB-FUND-034"
+        ]
+      }
+    },
+    {
+      "id": "real-mockup-japanese-professor-full",
+      "kind": "real",
+      "label": "mockup rag-knowledge-base.html 样例 B · 日本教授问全套细节（脱敏；即实测基线 row 8 的来信文本，机器校验与计划表逐字一致）",
+      "email": "Dear Colleague,\n\nThank you for reaching out and for your interest in my research.\n\nI may be interested in learning more about this opportunity. Before\ndiscussing my current research in detail, could you please provide some\nadditional information about the programme, including:\n\n- The official name of the national-level talent programme\n- The government organization responsible for the programme\n- The expected contractual relationship (with the organizing team, the\n  partner company, or another organization)\n- Typical responsibilities, duration, and compensation for technical\n  advisors\n- Any requirements regarding affiliation, intellectual property,\n  confidentiality, or registration under the programme\n\nAs I am currently employed by a Japanese national university and involved\nin several publicly funded and industry-collaborative research projects, I\nwould first need to confirm the relevant institutional requirements.\n\nThank you, and I look forward to hearing from you.",
+      "expected": {
+        "mandatory": [
+          "KB-PROG-002",
+          "KB-FUND-033",
+          "KB-PROG-003",
+          "KB-GOV-004",
+          "KB-COMP-007",
+          "KB-IP-039",
+          "KB-CONF-036"
+        ],
+        "requested": [
+          "work.affiliation",
+          "finance.enterprise_compensation",
+          "confidentiality.materials",
+          "contract.party",
+          "programme.purpose",
+          "programme.structure",
+          "enterprise.matching",
+          "role.type",
+          "role.responsibilities",
+          "finance.government_funding",
+          "work.advisory_duration",
+          "governance.responsible_organization",
+          "governance.sponsor_level",
+          "ip.arrangements",
+          "programme.official_name",
+          "programme.public_visibility"
+        ],
+        "prefilter": [
+          "KB-PROG-002",
+          "KB-FUND-033",
+          "KB-PROG-003",
+          "KB-GOV-004",
+          "KB-COMP-007",
+          "KB-IP-039",
+          "KB-CONF-036",
+          "KB-CONT-037",
+          "KB-PROG-001",
+          "KB-ROLE-028",
+          "KB-WORK-031",
+          "KB-WORK-032",
+          "KB-ROLE-027",
+          "KB-ENT-011"
+        ]
+      }
+    },
+    {
+      "id": "scenario-1-compensation",
+      "kind": "constructed",
+      "label": "实测基线 row1: the compensation for this advisory role",
+      "email": "the compensation for this advisory role",
+      "expected": {
+        "mandatory": [
+          "KB-FUND-033"
+        ],
+        "requested": [
+          "finance.enterprise_compensation"
+        ],
+        "prefilter": [
+          "KB-FUND-033",
+          "KB-FUND-034"
+        ]
+      }
+    },
+    {
+      "id": "scenario-2-salary",
+      "kind": "constructed",
+      "label": "实测基线 row2: the salary for this advisory role",
+      "email": "the salary for this advisory role",
+      "expected": {
+        "mandatory": [
+          "KB-FUND-033"
+        ],
+        "requested": [
+          "finance.enterprise_compensation"
+        ],
+        "prefilter": [
+          "KB-FUND-033",
+          "KB-FUND-034"
+        ]
+      }
+    },
+    {
+      "id": "scenario-3-remuneration",
+      "kind": "constructed",
+      "label": "实测基线 row3: What remuneration is offered",
+      "email": "What remuneration is offered",
+      "expected": {
+        "mandatory": [
+          "KB-FUND-033"
+        ],
+        "requested": [
+          "finance.enterprise_compensation"
+        ],
+        "prefilter": [
+          "KB-FUND-033",
+          "KB-FUND-034"
+        ]
+      }
+    },
+    {
+      "id": "scenario-4-detail-compensation",
+      "kind": "constructed",
+      "label": "实测基线 row4: more details from you, including the compensation",
+      "email": "more details from you, including the compensation",
+      "expected": {
+        "mandatory": [
+          "KB-PROG-002",
+          "KB-FUND-033"
+        ],
+        "requested": [
+          "finance.enterprise_compensation",
+          "programme.purpose",
+          "programme.structure",
+          "enterprise.matching",
+          "role.type",
+          "role.responsibilities",
+          "finance.government_funding"
+        ],
+        "prefilter": [
+          "KB-PROG-002",
+          "KB-FUND-033",
+          "KB-ENT-011",
+          "KB-PROG-001",
+          "KB-ROLE-027",
+          "KB-ROLE-028"
+        ]
+      }
+    },
+    {
+      "id": "scenario-5-compensation-government-funding",
+      "kind": "constructed",
+      "label": "实测基线 row5: compensation + government funding",
+      "email": "What is the compensation, and is there any government funding",
+      "expected": {
+        "mandatory": [
+          "KB-FUND-033"
+        ],
+        "requested": [
+          "finance.enterprise_compensation"
+        ],
+        "prefilter": [
+          "KB-FUND-033",
+          "KB-FUND-034"
+        ]
+      }
+    },
+    {
+      "id": "scenario-6-compensation-structure",
+      "kind": "constructed",
+      "label": "实测基线 row6: the compensation structure and payment schedule",
+      "email": "the compensation structure and payment schedule",
+      "expected": {
+        "mandatory": [
+          "KB-FUND-033"
+        ],
+        "requested": [
+          "finance.enterprise_compensation",
+          "finance.compensation_structure"
+        ],
+        "prefilter": [
+          "KB-FUND-033",
+          "KB-FUND-035",
+          "KB-FUND-034"
+        ]
+      }
+    },
+    {
+      "id": "scenario-7-official-name",
+      "kind": "constructed",
+      "label": "实测基线 row7: the official name of the programme (完全不问钱)",
+      "email": "the official name of the programme",
+      "expected": {
+        "mandatory": [
+          "KB-PROG-003",
+          "KB-COMP-007"
+        ],
+        "requested": [
+          "programme.official_name",
+          "programme.public_visibility"
+        ],
+        "prefilter": [
+          "KB-PROG-003",
+          "KB-COMP-007"
+        ]
+      }
+    }
+  ]
+}
