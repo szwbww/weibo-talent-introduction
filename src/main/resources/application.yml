@@ -127,7 +127,17 @@ talent-introduction:
       enabled: ${LLM_FACT_RETRIEVER_ENABLED:false}
       enabled-for-auto-reply: ${LLM_FACT_RETRIEVER_AUTO_REPLY_ENABLED:false}
       max-facts-per-request: ${LLM_FACT_RETRIEVER_MAX_FACTS:3}
-      max-rules-in-prompt: ${LLM_FACT_RETRIEVER_MAX_RULES:60}
+  rag:
+    prefilter-limit: ${RAG_PREFILTER_LIMIT:18}
+    retrieval-limit: ${RAG_RETRIEVAL_LIMIT:14}
+    min-lexical-score: ${RAG_MIN_LEXICAL_SCORE:2}
+    coverage-weight: ${RAG_COVERAGE_WEIGHT:100.0}
+    phrase-weight: ${RAG_PHRASE_WEIGHT:12.0}
+    overlap-weight: ${RAG_OVERLAP_WEIGHT:1.0}
+    retrieval-temperature: ${RAG_RETRIEVAL_TEMPERATURE:0.0}
+    generation-temperature: ${RAG_GENERATION_TEMPERATURE:0.2}
+    retrieval-max-tokens: ${RAG_RETRIEVAL_MAX_TOKENS:900}
+    generation-max-tokens: ${RAG_GENERATION_MAX_TOKENS:2600}
   translation:
     enabled: ${TRANSLATION_ENABLED:false}
     base-url: ${TRANSLATION_BASE_URL:http://127.0.0.1:5000}
