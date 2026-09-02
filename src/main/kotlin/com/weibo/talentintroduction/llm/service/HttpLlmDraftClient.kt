@@ -69,9 +69,21 @@ enum class LlmChatFailureType {
     TOTAL_TIMEOUT
 }
 
+/**
+ * 计划 03 (T0): DeepSeek 式 `usage` 响应块（prompt/completion/total tokens）。
+ * 仅非流式 executeChatObserved 路径解析填充；流式（SSE）路径不解析 usage，
+ * 字段恒为 null。响应缺 usage 时保持 null，不影响 content/failureType 语义。
+ */
+data class LlmTokenUsage(
+    val promptTokens: Int? = null,
+    val completionTokens: Int? = null,
+    val totalTokens: Int? = null
+)
+
 data class LlmChatResult(
     val content: String?,
-    val failureType: LlmChatFailureType = LlmChatFailureType.SUCCESS
+    val failureType: LlmChatFailureType = LlmChatFailureType.SUCCESS,
+    val usage: LlmTokenUsage? = null
 )
 
 enum class LlmStreamActivity { WAITING, REASONING, WRITING }
@@ -117,6 +129,20 @@ interface LlmDraftClient {
         temperature: Double? = null,
         providerModel: String
     ): LlmChatResult = chatWithModelObserved(messages, temperature, providerModel)
+
+    /**
+     * 计划 03 (T0 / I-45): RAG 链路的 `max_tokens` 只经这个带默认实现的四参重载
+     * 进入请求体。默认实现忽略 [maxTokens] 并委托三参方法 —— 22 个测试桩零改动
+     * （`chatWithModelObserved` / `chat` / `chatWithModel` 的签名一律不动）。
+     * 唯一覆写者是 [HttpLlmDraftClient]：非流式 executeChatObserved 请求体在
+     * maxTokens 非空时追加 `"max_tokens"`；三参路径不追加，行为逐字不变。
+     */
+    fun chatWithModelObservedJson(
+        messages: List<LlmChatMessage>,
+        temperature: Double? = null,
+        providerModel: String,
+        maxTokens: Int?
+    ): LlmChatResult = chatWithModelObservedJson(messages, temperature, providerModel)
 
     fun chatWithModelObservedStream(
         messages: List<LlmChatMessage>,
@@ -193,6 +219,15 @@ class HttpLlmDraftClient(
         temperature: Double?,
         providerModel: String
     ): LlmChatResult = executeChatObserved(messages, temperature, providerModel, jsonOutput = true)
+
+    override fun chatWithModelObservedJson(
+        messages: List<LlmChatMessage>,
+        temperature: Double?,
+        providerModel: String,
+        maxTokens: Int?
+    ): LlmChatResult = executeChatObserved(
+        messages, temperature, providerModel, jsonOutput = true, maxTokens = maxTokens
+    )
 
     override fun chatWithModelObservedStream(
         messages: List<LlmChatMessage>,
@@ -388,11 +423,25 @@ class HttpLlmDraftClient(
         }
     }
 
+    /** 计划 03 (T0): 从非流式响应体解析 DeepSeek `usage` 块；缺失/非对象时返回 null。 */
+    private fun usageOf(responseBody: JsonNode?): LlmTokenUsage? {
+        val usage = responseBody?.path("usage")
+        if (usage == null || usage.isMissingNode || usage.isNull || !usage.isObject) {
+            return null
+        }
+        return LlmTokenUsage(
+            promptTokens = usage.path("prompt_tokens").takeIf { it.isIntegralNumber }?.asInt(),
+            completionTokens = usage.path("completion_tokens").takeIf { it.isIntegralNumber }?.asInt(),
+            totalTokens = usage.path("total_tokens").takeIf { it.isIntegralNumber }?.asInt()
+        )
+    }
+
     private fun executeChatObserved(
         messages: List<LlmChatMessage>,
         temperature: Double?,
         model: String,
-        jsonOutput: Boolean = false
+        jsonOutput: Boolean = false,
+        maxTokens: Int? = null
     ): LlmChatResult {
         if (properties.apiUrl.isBlank()) {
             return LlmChatResult(null, LlmChatFailureType.CLIENT_UNAVAILABLE)
@@ -411,6 +460,11 @@ class HttpLlmDraftClient(
         if (jsonOutput) {
             body["response_format"] = mapOf("type" to "json_object")
         }
+        // 计划 03 (T0 / I-45): max_tokens 只由四参重载传入；null（三参路径）时
+        // 不追加该键，请求体与改动前逐字一致。
+        if (maxTokens != null) {
+            body["max_tokens"] = maxTokens
+        }
         val startMs = System.currentTimeMillis()
         return try {
             val response = restTemplate.postForEntity(
@@ -428,7 +482,7 @@ class HttpLlmDraftClient(
             } else {
                 log.info("LLM chat success model={} messageCount={} contentChars={} elapsedMs={}",
                     model, messages.size, content.length, elapsedMs)
-                LlmChatResult(content)
+                LlmChatResult(content, LlmChatFailureType.SUCCESS, usageOf(responseBody))
             }
         } catch (ex: ResourceAccessException) {
             val elapsedMs = System.currentTimeMillis() - startMs
