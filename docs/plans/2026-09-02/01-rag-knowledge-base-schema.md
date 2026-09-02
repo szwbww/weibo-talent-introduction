@@ -123,7 +123,8 @@
 - `question_variants` 合计 222 条，`source_refs` 合计 114 条。
 - `legacy_rule_id` 非空 33 条，值为
   `1,2,3,4,5,6,7,8,9,10,11,12,13,15,16,18,19,20,21,22,23,24,29,32,33,35,36,37,38,39,40,41,42`。
-- 语料指纹（45 行按 fact_code 排序后 SHA-256 前 16 位）：`2b29a2152f2671df`。
+- 语料指纹（45 行按 fact_code 升序、V112 数据列 `|` 连接、行间 `\n`、SHA-256 前 16 位；算法见 G-2/A1，
+  双实现 Kotlin `RagKnowledgeBase` 与 Python `export_rag_kb_sql.py` 等价）：`e62421a42c432cf3`。
 
 ### Flyway 现状
 - `CLAUDE.md:59` —「Schema 变更必须是新的 `V<n>__*.sql`，绝不编辑已应用的迁移」。
@@ -255,7 +256,7 @@ DETAIL_INQUIRY       / COMPENSATION_STRUCTURE      / FACT_CODE    / KB-FUND-035
 
 ### T6 — 测试
 新建 `src/test/kotlin/com/weibo/talentintroduction/rag/RagKnowledgeBaseTest.kt`：
-- 45 行、指纹 `2b29a2152f2671df`（I-3、G-2）
+- 45 行、指纹 `e62421a42c432cf3`（I-3、G-2）
 - `fact_code` 唯一且与 `area`/`seq` 自洽（I-1）
 - `VERBATIM` 恰好 7 条、`enabled=false` 恰好 1 条且 `effectiveStatus()=="DISABLED"`（I-2）
 - `retrievalText` 对 `KB-GOV-004` 的逐字期望值（I-5）
@@ -276,8 +277,9 @@ DETAIL_INQUIRY       / COMPENSATION_STRUCTURE      / FACT_CODE    / KB-FUND-035
 | 8 | `src/main/kotlin/com/weibo/talentintroduction/rag/config/RagProperties.kt` | 新增 |
 | 9 | `src/main/resources/application.yml` | 修改（新增 `rag:` 块） |
 | 10 | `src/test/kotlin/com/weibo/talentintroduction/rag/RagKnowledgeBaseTest.kt` | 新增 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` | 修改（A2 授权：V111→V112 `targetSchemaVersion` 钉值 + `rag_*` 表/数据断言；K-flyway-latest-version-test-pin P1） |
 
-文件数 10，子系统 1（后端数据层）。无前端改动，故无 `## 样式契约`。
+文件数 11（10 新增/修改 + 1 处 A2 授权的既有测试修改），子系统 1（后端数据层）。无前端改动，故无 `## 样式契约`。
 
 ## 验证命令
 
@@ -305,7 +307,7 @@ git diff --check
 ```
 
 通过判据：`mvn test` 退出码 0 且 `Tests run: N, Failures: 0, Errors: 0`；
-`export_rag_kb_sql.py` 打印的指纹等于 `2b29a2152f2671df`；`git diff --check` 无输出。
+`export_rag_kb_sql.py` 打印的指纹等于 `e62421a42c432cf3`；`git diff --check` 无输出。
 来源：`CLAUDE.md:10-27` Commands 章节。
 
 ## 验收标准
@@ -314,7 +316,7 @@ git diff --check
   `fact_code == "KB-" + area + "-" + String.format("%03d", seq)`。
 - **I-2**：断言 `enabled=false` 的事实恰好 1 条（`KB-APP-017`），其 `effectiveStatus()=="DISABLED"`；
   `enabledFacts()` 返回 44 条且不含 `KB-APP-017`。
-- **I-3 / G-2**：断言 `verifyAndPublish()` 后 `fingerprint == "2b29a2152f2671df"`；
+- **I-3 / G-2**：断言 `verifyAndPublish()` 后 `fingerprint == "e62421a42c432cf3"`；
   另加一条用例：绕过 `republish` 直接改库中某条 `answer` 一个字符，再调 `verifyAndPublish()`，
   断言抛 `IllegalStateException` 且异常消息同时含期望值与实际值。
   **另加一条关键用例**：调 `republish { 改一条 answer }`，断言
@@ -343,7 +345,7 @@ git diff --check
   3. 执行 `SELECT fingerprint, fact_count FROM rag_kb_meta;`
   4. 执行 `SELECT COUNT(*) FROM rag_phrase_group; SELECT COUNT(*) FROM rag_intent_coverage;
      SELECT COUNT(*) FROM rag_mandatory_rule; SELECT COUNT(*) FROM rag_prefilter_exclusion;`
-- 预期结果: 第 2 步返回 `45`；第 3 步返回 `2b29a2152f2671df` 与 `45`；
+- 预期结果: 第 2 步返回 `45`；第 3 步返回 `e62421a42c432cf3` 与 `45`；
   第 4 步依次返回约 `120`、`21`、`6`、`4`。
 - 覆盖: 需求 observable outcome 1；I-1；G-2
 
@@ -355,7 +357,7 @@ git diff --check
   3. 查看启动日志。
   4. 执行 `UPDATE rag_fact SET answer = TRIM(TRAILING ' X' FROM answer) WHERE fact_code='KB-FUND-033';`
      后再次启动。
-- 预期结果: 第 2 步应用**启动失败**；第 3 步日志中出现期望指纹 `2b29a2152f2671df` 与实际指纹两个值；
+- 预期结果: 第 2 步应用**启动失败**；第 3 步日志中出现期望指纹 `e62421a42c432cf3` 与实际指纹两个值；
   第 4 步启动成功。
 - 覆盖: 需求 observable outcome 2；I-3
 

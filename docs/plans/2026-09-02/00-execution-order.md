@@ -67,8 +67,11 @@
 - 来源: original
 
 ### G-2: 语料指纹是启动门禁
-- Rule: 语料指纹 = 45 行 `rag_fact` 按 `fact_code` 升序、字段有序序列化后的 SHA-256 前 16 位。
-  当前值 `2b29a2152f2671df`（由 `scripts/spike_deepseek_reply.py --dump-kb` 实测）。
+- Rule: 语料指纹 = 45 行 `rag_fact` 按 `fact_code` 升序；每行取 V112 建表列序的数据列以 `|` 连接
+  （`legacy_rule_id` 为 NULL 记空串，`enabled` 记 1/0，`seq` 记整数，字符串不加引号）；行间以 `\n`
+  连接；整体 SHA-256 取前 16 位。当前值 `e62421a42c432cf3`（A1 修订：原 `2b29a2152f2671df` 无法按
+  任何文档化序列化从当前语料复现；Kotlin `RagKnowledgeBase` 与 Python `export_rag_kb_sql.py` 双实现
+  等价，由测试交叉验证。见 ledger ## Amendments A1）。
   迁移写入常量，应用启动时重算比对，不一致直接启动失败。
 - Applies to: 01 的迁移与快照、03 的检索缓存键、04 的保存后刷新。
 - Violation consequence: 库里的事实与脚本漂移而无人察觉，逐字出信的正文与预期不符。
