@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.monitoring.repository
 
+import com.weibo.talentintroduction.mail.repository.BounceRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.monitoring.service.MailMonitoringService
 import org.junit.jupiter.api.AfterAll
@@ -71,10 +72,16 @@ class MailRecordRepositoryMonitoringIT {
     private lateinit var mailRecordRepository: MailRecordRepository
 
     @Autowired
+    private lateinit var bounceRecordRepository: BounceRecordRepository
+
+    @Autowired
     private lateinit var jdbcTemplate: JdbcTemplate
 
     @BeforeEach
     fun cleanMailRecords() {
+        // C-2a：bounce_record 不在既有清理列表内，而 seedBaseContact() 每次以固定 id=1 重建 expert_contact；
+        // 不删本表会让上个用例残留的退信被重新关联到新专家 1 上，undeliveredCount 静默多算（无外键，DELETE 不报错）。
+        jdbcTemplate.execute("DELETE FROM bounce_record")
         jdbcTemplate.execute("DELETE FROM inbound_mail_processing")
         jdbcTemplate.execute("DELETE FROM mail_record")
     }
@@ -667,6 +674,119 @@ class MailRecordRepositoryMonitoringIT {
         assertEquals(1L, byCountry.getValue("Germany").matureCohortCount)
         assertEquals(1L, byCountry.getValue("Germany").matureRepliedCount)
         assertEquals(1L, byDomain.getValue("example.com").repliedCount)
+    }
+
+    @Test
+    fun `undelivered dedupes a contact that both failed and bounced`() {
+        // I-1：同一专家 1 条 FAILED + 2 条退信，未送达只能计 1 人
+        seedBaseContact()
+        val todayStart = LocalDate.now(shanghaiZone).atStartOfDay()
+        val todayEnd = todayStart.plusDays(1)
+        val at = todayStart.plusHours(10)
+
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 send_status, sent_at, created_at)
+            VALUES (1, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-undelivered-failed', 'FAILED', NULL, ?)
+            """.trimIndent(),
+            at
+        )
+        jdbcTemplate.update(
+            """
+            INSERT INTO bounce_record
+                (sender_account_code, bounce_message_id, original_expert_contact_id,
+                 bounce_type, received_at, created_at)
+            VALUES
+                ('sender', 'bounce-dedupe-1', 1, 'HARD', ?, ?),
+                ('sender', 'bounce-dedupe-2', 1, 'SOFT', ?, ?)
+            """.trimIndent(),
+            at, at, at.plusMinutes(1), at.plusMinutes(1)
+        )
+
+        val byDomain = mailRecordRepository.aggregateUndeliveredByDomain(todayStart, todayEnd)
+            .associateBy { it.domain }
+
+        assertEquals(1L, byDomain.getValue("example.com").undeliveredCount)
+    }
+
+    @Test
+    fun `undelivered counts failed sends by created_at because sent_at is null`() {
+        // I-2：FAILED 行 sent_at 恒为 NULL，窗口过滤必须走 created_at
+        seedBaseContact()
+        seedSecondExpertContact()
+        val todayStart = LocalDate.now(shanghaiZone).atStartOfDay()
+        val todayEnd = todayStart.plusDays(1)
+        val inWindow = todayStart.plusHours(9)
+        val beforeWindow = todayStart.minusDays(2).plusHours(9)
+
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (expert_contact_id, direction, mail_type, sender_account_code, message_id,
+                 send_status, sent_at, created_at)
+            VALUES
+                (1, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-in-window', 'FAILED', NULL, ?),
+                (2, 'OUTBOUND', 'INTRODUCTION', 'sender', 'msg-out-window', 'FAILED', NULL, ?)
+            """.trimIndent(),
+            inWindow, beforeWindow
+        )
+
+        val byDomain = mailRecordRepository.aggregateUndeliveredByDomain(todayStart, todayEnd)
+            .associateBy { it.domain }
+
+        assertEquals(1L, byDomain.getValue("example.com").undeliveredCount)
+    }
+
+    @Test
+    fun `undelivered excludes bounces with null contact and counts them as unattributed`() {
+        // I-3 + I-4a：failed_recipient 有值但不参与分桶；original_expert_contact_id 为空的退信单列计数
+        seedBaseContact()
+        val todayStart = LocalDate.now(shanghaiZone).atStartOfDay()
+        val todayEnd = todayStart.plusDays(1)
+        val at = todayStart.plusHours(10)
+
+        jdbcTemplate.update(
+            """
+            INSERT INTO bounce_record
+                (sender_account_code, bounce_message_id, original_expert_contact_id,
+                 failed_recipient, bounce_type, received_at, created_at)
+            VALUES ('sender', 'bounce-null-contact', NULL, 'someone@gmail.com', 'HARD', ?, ?)
+            """.trimIndent(),
+            at, at
+        )
+
+        val byDomain = mailRecordRepository.aggregateUndeliveredByDomain(todayStart, todayEnd)
+            .associateBy { it.domain }
+
+        assertTrue(byDomain.isEmpty(), "null-contact bounce must not land in any domain bucket, got $byDomain")
+        assertEquals(1L, bounceRecordRepository.countUnattributedBouncesBetween(todayStart, todayEnd))
+    }
+
+    @Test
+    fun `undelivered counts orphaned contact reference as unattributed`() {
+        // I-4b：original_expert_contact_id 指向不存在的专家（bounce_record 无外键），NOT EXISTS 分支必须接住
+        seedBaseContact()
+        val todayStart = LocalDate.now(shanghaiZone).atStartOfDay()
+        val todayEnd = todayStart.plusDays(1)
+        val at = todayStart.plusHours(10)
+
+        jdbcTemplate.update(
+            """
+            INSERT INTO bounce_record
+                (sender_account_code, bounce_message_id, original_expert_contact_id,
+                 failed_recipient, bounce_type, received_at, created_at)
+            VALUES ('sender', 'bounce-orphan', 999999, 'orphan@gmail.com', 'HARD', ?, ?)
+            """.trimIndent(),
+            at, at
+        )
+
+        val byDomain = mailRecordRepository.aggregateUndeliveredByDomain(todayStart, todayEnd)
+            .associateBy { it.domain }
+
+        assertTrue(byDomain.isEmpty(), "orphan bounce must not land in any domain bucket, got $byDomain")
+        assertEquals(1L, bounceRecordRepository.countUnattributedBouncesBetween(todayStart, todayEnd))
     }
 
     private fun seedSecondExpertContact() {

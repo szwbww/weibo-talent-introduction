@@ -7,8 +7,8 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.mail.repository.BounceRecordRepository
 import com.weibo.talentintroduction.mail.repository.CountryCohortStat
 import com.weibo.talentintroduction.mail.repository.CountryCount
-import com.weibo.talentintroduction.mail.repository.DomainBounceCount
 import com.weibo.talentintroduction.mail.repository.DomainCohortStat
+import com.weibo.talentintroduction.mail.repository.DomainUndeliveredCount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
@@ -77,14 +77,14 @@ class MailMonitoringServiceTest {
                 cohortDomain("unknown.xx", 1, replied = 0, matureCohort = 1, matureReplied = 0)
             )
         )
-        Mockito.`when`(bounceRecordRepository.aggregateBouncesByDomain(from, to)).thenReturn(
+        Mockito.`when`(mailRecordRepository.aggregateUndeliveredByDomain(from, to)).thenReturn(
             listOf(
-                DomainBounceCount("gmail.com", hardCount = 2, softCount = 1),
-                DomainBounceCount(null, hardCount = 1, softCount = 0)
+                DomainUndeliveredCount("gmail.com", 3),
+                DomainUndeliveredCount(null, 1)
             )
         )
 
-        val rows = service.providerDistribution(date, date).associateBy { it.provider }
+        val rows = service.providerDistribution(date, date).rows.associateBy { it.provider }
 
         assertEquals(10, rows.getValue("gmail").sentCount)
         assertEquals(4, rows.getValue("gmail").repliedCount)
@@ -92,14 +92,14 @@ class MailMonitoringServiceTest {
         assertEquals(8, rows.getValue("gmail").matureCohortCount)
         assertEquals(3, rows.getValue("gmail").matureRepliedCount)
         assertEquals(0.375, rows.getValue("gmail").matureReplyRate)
-        assertEquals(2, rows.getValue("gmail").hardBounceCount)
-        assertEquals(1, rows.getValue("gmail").softBounceCount)
+        assertEquals(3, rows.getValue("gmail").undeliveredCount)
         assertEquals(5, rows.getValue("outlook").sentCount)
         assertEquals(1, rows.getValue("outlook").repliedCount)
         assertEquals(3, rows.getValue("edu").sentCount)
         assertEquals(2, rows.getValue("tencent").sentCount)
         assertEquals(1, rows.getValue("other").sentCount)
-        assertEquals(1, rows.getValue("other").hardBounceCount)
+        assertEquals(1, rows.getValue("other").undeliveredCount)
+
         assertEquals(listOf("gmail", "outlook", "yahoo", "edu", "tencent", "netease", "other"), rows.keys.toList())
     }
 
@@ -212,9 +212,9 @@ class MailMonitoringServiceTest {
                 cohortDomain("mit.edu", 8, replied = 1, matureCohort = 2, matureReplied = 1)
             )
         )
-        Mockito.`when`(bounceRecordRepository.aggregateBouncesByDomain(from, to)).thenReturn(emptyList())
+        Mockito.`when`(mailRecordRepository.aggregateUndeliveredByDomain(from, to)).thenReturn(emptyList())
 
-        val rows = service.providerDistribution(date, date).associateBy { it.provider }
+        val rows = service.providerDistribution(date, date).rows.associateBy { it.provider }
 
         assertEquals(0.0, rows.getValue("gmail").matureReplyRate)
         assertEquals(0.4, rows.getValue("gmail").replyRate)
@@ -225,24 +225,56 @@ class MailMonitoringServiceTest {
     }
 
     @Test
-    fun `providerDistribution separates hard and soft bounces by domain bucket`() {
+    fun `providerDistribution folds undelivered counts by domain bucket`() {
         Mockito.`when`(mailRecordRepository.aggregateIntroCohortByDomain(
             Mockito.eq(from) ?: from, Mockito.eq(to) ?: to, Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
-        )).thenReturn(
-            listOf(cohortDomain("yahoo.com", 4))
-        )
-        Mockito.`when`(bounceRecordRepository.aggregateBouncesByDomain(from, to)).thenReturn(
+        )).thenReturn(emptyList())
+        Mockito.`when`(mailRecordRepository.aggregateUndeliveredByDomain(from, to)).thenReturn(
             listOf(
-                DomainBounceCount("yahoo.com", hardCount = 1, softCount = 2),
-                DomainBounceCount("gmail.com", hardCount = 0, softCount = 5)
+                DomainUndeliveredCount("gmail.com", 3),
+                DomainUndeliveredCount("yahoo.com", 1),
+                DomainUndeliveredCount(null, 2)
             )
         )
 
-        val rows = service.providerDistribution(date, date).associateBy { it.provider }
+        val rows = service.providerDistribution(date, date).rows.associateBy { it.provider }
 
-        assertEquals(1, rows.getValue("yahoo").hardBounceCount)
-        assertEquals(2, rows.getValue("yahoo").softBounceCount)
-        assertEquals(0, rows.getValue("gmail").hardBounceCount)
-        assertEquals(5, rows.getValue("gmail").softBounceCount)
+        assertEquals(3, rows.getValue("gmail").undeliveredCount)
+        assertEquals(1, rows.getValue("yahoo").undeliveredCount)
+        // I-3：null 域名（无法解析）折叠进 other 桶，而不是被丢弃
+        assertEquals(2, rows.getValue("other").undeliveredCount)
+    }
+
+    @Test
+    fun `providerDistribution reports unattributed bounce count separately`() {
+        Mockito.`when`(mailRecordRepository.aggregateIntroCohortByDomain(
+            Mockito.eq(from) ?: from, Mockito.eq(to) ?: to, Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+        )).thenReturn(
+            listOf(cohortDomain("gmail.com", 4))
+        )
+        Mockito.`when`(mailRecordRepository.aggregateUndeliveredByDomain(from, to)).thenReturn(emptyList())
+        Mockito.`when`(bounceRecordRepository.countUnattributedBouncesBetween(from, to)).thenReturn(5L)
+
+        val response = service.providerDistribution(date, date)
+
+        // I-4：未归因退信单独计数，不混入任何 rows 元素
+        assertEquals(5L, response.unattributedBounceCount)
+        assertEquals(0L, response.rows.sumOf { it.undeliveredCount })
+    }
+
+    @Test
+    fun `providerDistribution keeps undelivered count when cohort is zero`() {
+        // I-9：队列 = 0（本窗口无首发）但窗口内有退信时，undeliveredCount 必须原样保留
+        Mockito.`when`(mailRecordRepository.aggregateIntroCohortByDomain(
+            Mockito.eq(from) ?: from, Mockito.eq(to) ?: to, Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+        )).thenReturn(emptyList())
+        Mockito.`when`(mailRecordRepository.aggregateUndeliveredByDomain(from, to)).thenReturn(
+            listOf(DomainUndeliveredCount("gmail.com", 4))
+        )
+
+        val rows = service.providerDistribution(date, date).rows.associateBy { it.provider }
+
+        assertEquals(0L, rows.getValue("gmail").sentCount)
+        assertEquals(4L, rows.getValue("gmail").undeliveredCount)
     }
 }

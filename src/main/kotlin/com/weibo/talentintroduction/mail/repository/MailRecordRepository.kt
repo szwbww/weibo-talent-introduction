@@ -34,6 +34,11 @@ data class DomainCohortStat(
     val matureRepliedCount: Long
 )
 
+data class DomainUndeliveredCount(
+    val domain: String?,
+    val undeliveredCount: Long
+)
+
 interface MailRecordRepository : CrudRepository<MailRecord, Long> {
     fun findByMailSendAttemptId(mailSendAttemptId: Long): MailRecord?
     fun findAllByExpertContactIdOrderByCreatedAtAsc(expertContactId: Long): List<MailRecord>
@@ -417,6 +422,30 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
         to: LocalDateTime,
         matureBefore: LocalDateTime
     ): List<DomainCohortStat>
+
+    // I-2: FAILED 行 sent_at 恒为 NULL（写入点均写 null），来源 (a) 必须按 created_at 过滤；
+    // 来源 (b) 退信按事件时间 received_at 落窗口。UNION 去重后按专家邮箱域名分桶（I-3）。
+    @Query(
+        """
+        SELECT SUBSTRING_INDEX(ec.expert_email, '@', -1) AS domain,
+               COUNT(DISTINCT u.expert_contact_id) AS undelivered_count
+          FROM (
+                SELECT expert_contact_id
+                  FROM mail_record
+                 WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+                   AND send_status = 'FAILED'
+                   AND created_at >= :from AND created_at < :to
+                UNION
+                SELECT original_expert_contact_id AS expert_contact_id
+                  FROM bounce_record
+                 WHERE original_expert_contact_id IS NOT NULL
+                   AND received_at >= :from AND received_at < :to
+               ) u
+          JOIN expert_contact ec ON ec.id = u.expert_contact_id
+         GROUP BY SUBSTRING_INDEX(ec.expert_email, '@', -1)
+        """
+    )
+    fun aggregateUndeliveredByDomain(from: LocalDateTime, to: LocalDateTime): List<DomainUndeliveredCount>
 
     @Query(
         """

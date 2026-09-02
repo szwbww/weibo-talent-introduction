@@ -47,6 +47,7 @@ const state = {
         totalCount: 0,
         senderHealth: [],
         providerDistribution: [],
+        unattributedBounceCount: 0,
         regionDistribution: [],
         reputationHistory: [],
         reputationDomains: [],
@@ -11122,12 +11123,13 @@ async function loadMonitoring() {
     const [summary, senderHealth, providerDistribution, regionDistribution] = await Promise.all([
         api(`/api/mail-monitoring/summary?${windowParams}`),
         api(`/api/mail-monitoring/sender-accounts?${dateParams}`),
-        api(`/api/mail-monitoring/provider-distribution?${windowParams}`).catch(() => []),
+        api(`/api/mail-monitoring/provider-distribution?${windowParams}`).catch(() => ({ rows: [], unattributedBounceCount: 0 })),
         api(`/api/mail-monitoring/region-distribution?${windowParams}`).catch(() => [])
     ]);
     state.monitoring.summary = summary;
     state.monitoring.senderHealth = senderHealth || [];
-    state.monitoring.providerDistribution = providerDistribution || [];
+    state.monitoring.providerDistribution = providerDistribution?.rows || [];
+    state.monitoring.unattributedBounceCount = providerDistribution?.unattributedBounceCount || 0;
     state.monitoring.regionDistribution = regionDistribution || [];
     syncMonitoringRangeTabs();
     renderMonitoringCards();
@@ -11199,13 +11201,14 @@ function renderMonitoringCards() {
         : formatPercent(regionSums.matureReplied / regionSums.matureCohort);
     const activeProviderCount = providers.filter((row) => (row.sentCount || 0) > 0).length;
     const activeRegionCount = regions.filter((row) => (row.sentCount || 0) > 0).length;
-    const worstBounceProvider = providers
-        .filter((row) => (row.sentCount || 0) > 0)
+    const worstUndeliveredProvider = providers
+        .filter((row) => (row.undeliveredCount || 0) > 0)
         .map((row) => ({
             provider: row.provider,
-            rate: (row.hardBounceCount || 0) / row.sentCount
+            undelivered: row.undeliveredCount || 0,
+            cohort: row.sentCount || 0
         }))
-        .sort((a, b) => b.rate - a.rate)[0];
+        .sort((a, b) => b.undelivered - a.undelivered)[0];
     const cards = [
         [`${prefix}介绍邮件`, s.introductions, null],
         [`${prefix}收到回复`, s.inboundReplies, null],
@@ -11221,9 +11224,9 @@ function renderMonitoringCards() {
         ["7 日成熟回复率", matureReplyRate, "首发满 7 天成员中 7 日内首回人数 / 满 7 天成员数"],
         ["覆盖地区数", activeRegionCount, `${prefix}有首发邮件的大区数`],
         ["覆盖服务商数", activeProviderCount, `${prefix}有首发邮件的服务商桶数`],
-        ["最高退信服务商", worstBounceProvider
-            ? `${worstBounceProvider.provider} (${formatPercent(worstBounceProvider.rate)})`
-            : "-", "按硬退率（硬退数/发送量）"]
+        ["最高未送达服务商", worstUndeliveredProvider
+            ? `${worstUndeliveredProvider.provider} (${worstUndeliveredProvider.undelivered}/${worstUndeliveredProvider.cohort})`
+            : "-", "未送达最多的服务商。未送达 = 发送失败 + 被退回（不分硬退软退），按事件时间落窗口；括号内为 未送达人数 / 同窗口队列人数，两者不是同一批人，故不换算成比率"]
     ];
     $("#monitoringCards").innerHTML = cards.map(([label, value, hint]) => `
         <div class="metric-card"${hint ? ` title="${escapeHtml(hint)}"` : ""}>
@@ -11265,12 +11268,12 @@ function renderMonitoringProviderDistribution() {
     const maxSent = Math.max(0, ...rows.map((row) => row.sentCount || 0));
     table.querySelector("thead").innerHTML = `
         <tr>
-            <th>服务商</th><th>分布</th><th>队列(人)</th><th>已回复(人)</th><th>窗口内回复率</th><th>7日成熟回复率</th><th>硬退率</th><th>软退</th>
+            <th>服务商</th><th>分布</th><th>队列(人)</th><th>已回复(人)</th><th>窗口内回复率</th><th>7日成熟回复率</th><th>未送达(人)</th>
         </tr>
     `;
-    table.querySelector("tbody").innerHTML = rows.map((row) => {
+    const unattributedCount = state.monitoring.unattributedBounceCount || 0;
+    const dataRows = rows.map((row) => {
         const cohort = row.sentCount || 0;
-        const hardRate = cohort > 0 ? (row.hardBounceCount || 0) / cohort : 0;
         const matureRate = (row.matureCohortCount || 0) === 0
             ? '<span class="text-muted">—</span>'
             : formatPercent(row.matureRepliedCount / row.matureCohortCount);
@@ -11281,10 +11284,15 @@ function renderMonitoringProviderDistribution() {
             <td>${escapeHtml(row.repliedCount ?? 0)}</td>
             <td>${monitoringReplyRateCell(row.repliedCount, cohort)}</td>
             <td>${matureRate}</td>
-            <td>${escapeHtml(formatPercent(hardRate))}</td>
-            <td>${escapeHtml(row.softBounceCount ?? 0)}</td>
+            <td>${escapeHtml(row.undeliveredCount ?? 0)}</td>
         </tr>`;
-    }).join("") || `<tr><td colspan="8" class="text-muted" style="text-align:center;">暂无数据</td></tr>`;
+    }).join("");
+    const footerRow = unattributedCount > 0
+        ? `<tr><td colspan="7" class="text-muted" style="text-align:center;">另有 ${escapeHtml(unattributedCount)} 封退信未能关联到专家（关联为空或专家已不存在），未计入上表任何一行。</td></tr>`
+        : "";
+    const emptyRow = `<tr><td colspan="7" class="text-muted" style="text-align:center;">暂无数据</td></tr>`;
+    // V-1 修复：|| 会把 footerRow 短路丢弃，须先选出主体行再拼接表尾
+    table.querySelector("tbody").innerHTML = (dataRows || emptyRow) + footerRow;
 }
 
 function renderMonitoringRegionDistribution() {

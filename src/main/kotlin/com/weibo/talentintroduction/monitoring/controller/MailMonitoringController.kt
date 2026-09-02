@@ -108,7 +108,7 @@ class MailMonitoringController(
     fun providerDistribution(
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) from: LocalDate?,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) to: LocalDate?
-    ): List<ProviderStatRow> =
+    ): ProviderDistributionResponse =
         mailMonitoringService.providerDistribution(from, to)
 
     @GetMapping("/region-distribution")

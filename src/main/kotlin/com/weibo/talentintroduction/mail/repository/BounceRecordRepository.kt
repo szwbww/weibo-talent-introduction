@@ -55,21 +55,17 @@ interface BounceRecordRepository : CrudRepository<BounceRecord, Long> {
     )
     fun countPaged(accountCode: String?, bounceType: String?): Long
 
+    // I-4: bounce_record 无任何外键（V29__create_bounce_record.sql），original_expert_contact_id
+    // 可能指向已不存在的 expert_contact（孤儿引用）；主查询的 JOIN expert_contact 会丢弃这类行，
+    // 故本计数必须用 NOT EXISTS 分支接住，否则 UI 上凭空消失。
+    // mail_record.expert_contact_id 有 FK（V1__create_business_tables.sql），发送失败那一支无孤儿问题。
     @Query(
         """
-        SELECT SUBSTRING_INDEX(failed_recipient, '@', -1) AS domain,
-               SUM(CASE WHEN bounce_type = 'HARD' THEN 1 ELSE 0 END) AS hard_count,
-               SUM(CASE WHEN bounce_type = 'SOFT' THEN 1 ELSE 0 END) AS soft_count
-          FROM bounce_record
-         WHERE received_at >= :from AND received_at < :to
-         GROUP BY SUBSTRING_INDEX(failed_recipient, '@', -1)
+        SELECT COUNT(*) FROM bounce_record br
+         WHERE br.received_at >= :from AND br.received_at < :to
+           AND (br.original_expert_contact_id IS NULL
+                OR NOT EXISTS (SELECT 1 FROM expert_contact ec WHERE ec.id = br.original_expert_contact_id))
         """
     )
-    fun aggregateBouncesByDomain(from: LocalDateTime, to: LocalDateTime): List<DomainBounceCount>
+    fun countUnattributedBouncesBetween(from: LocalDateTime, to: LocalDateTime): Long
 }
-
-data class DomainBounceCount(
-    val domain: String?,
-    val hardCount: Long,
-    val softCount: Long
-)

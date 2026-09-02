@@ -25,6 +25,7 @@ import com.weibo.talentintroduction.monitoring.controller.OutboundReplyListRespo
 import com.weibo.talentintroduction.monitoring.controller.OutboundReplyRow
 import com.weibo.talentintroduction.monitoring.controller.PromotionListResponse
 import com.weibo.talentintroduction.monitoring.controller.PromotionRow
+import com.weibo.talentintroduction.monitoring.controller.ProviderDistributionResponse
 import com.weibo.talentintroduction.monitoring.controller.ProviderStatRow
 import com.weibo.talentintroduction.monitoring.controller.RegionCountryRow
 import com.weibo.talentintroduction.monitoring.controller.RegionStatRow
@@ -280,7 +281,7 @@ class MailMonitoringService(
         )
     }
 
-    fun providerDistribution(fromDate: LocalDate?, toDate: LocalDate?): List<ProviderStatRow> {
+    fun providerDistribution(fromDate: LocalDate?, toDate: LocalDate?): ProviderDistributionResponse {
         val (start, end) = dateRangeResolver.resolveRange(fromDate, toDate)
         val matureBefore = LocalDateTime.now().minusDays(MATURITY_DAYS)
         val stats = PROVIDER_ORDER.associateWith { MutableProviderStats() }.toMutableMap()
@@ -293,27 +294,30 @@ class MailMonitoringService(
             bucket.matureCohort += row.matureCohortCount
             bucket.matureReplied += row.matureRepliedCount
         }
-        bounceRecordRepository.aggregateBouncesByDomain(start, end).forEach { row ->
+        // 未送达 = 发送失败 ∪ 被退回，按专家去重（UNION），分桶键是专家邮箱域名（I-1、I-3）
+        mailRecordRepository.aggregateUndeliveredByDomain(start, end).forEach { row ->
             val provider = resolveProviderFromDomain(row.domain)
             val bucket = stats.getOrPut(provider) { MutableProviderStats() }
-            bucket.hardBounce += row.hardCount
-            bucket.softBounce += row.softCount
+            bucket.undelivered += row.undeliveredCount
         }
+        val unattributedBounceCount = bounceRecordRepository.countUnattributedBouncesBetween(start, end)
 
-        return PROVIDER_ORDER.map { provider ->
-            val bucket = stats.getValue(provider)
-            ProviderStatRow(
-                provider = provider,
-                sentCount = bucket.sent,
-                repliedCount = bucket.replied,
-                replyRate = ratio(bucket.replied, bucket.sent),
-                matureCohortCount = bucket.matureCohort,
-                matureRepliedCount = bucket.matureReplied,
-                matureReplyRate = ratio(bucket.matureReplied, bucket.matureCohort),
-                hardBounceCount = bucket.hardBounce,
-                softBounceCount = bucket.softBounce
-            )
-        }
+        return ProviderDistributionResponse(
+            rows = PROVIDER_ORDER.map { provider ->
+                val bucket = stats.getValue(provider)
+                ProviderStatRow(
+                    provider = provider,
+                    sentCount = bucket.sent,
+                    repliedCount = bucket.replied,
+                    replyRate = ratio(bucket.replied, bucket.sent),
+                    matureCohortCount = bucket.matureCohort,
+                    matureRepliedCount = bucket.matureReplied,
+                    matureReplyRate = ratio(bucket.matureReplied, bucket.matureCohort),
+                    undeliveredCount = bucket.undelivered
+                )
+            },
+            unattributedBounceCount = unattributedBounceCount
+        )
     }
 
     fun regionDistribution(fromDate: LocalDate?, toDate: LocalDate?): List<RegionStatRow> {
@@ -373,8 +377,7 @@ class MailMonitoringService(
         var replied: Long = 0,
         var matureCohort: Long = 0,
         var matureReplied: Long = 0,
-        var hardBounce: Long = 0,
-        var softBounce: Long = 0
+        var undelivered: Long = 0
     )
 
     companion object {

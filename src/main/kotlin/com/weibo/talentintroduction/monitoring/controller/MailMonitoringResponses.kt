@@ -128,8 +128,13 @@ data class ProviderStatRow(
     val matureCohortCount: Long,
     val matureRepliedCount: Long,
     val matureReplyRate: Double,
-    val hardBounceCount: Long,
-    val softBounceCount: Long
+    val undeliveredCount: Long
+)
+
+data class ProviderDistributionResponse(
+    val rows: List<ProviderStatRow>,
+    // I-4：归因不到专家的退信条数（original_expert_contact_id IS NULL 或指向不存在的专家），不计入任何 rows 元素
+    val unattributedBounceCount: Long
 )
 
 // sentCount 语义为「队列人数」= 窗口内首发 INTRODUCTION 的去重专家数（I-1），字段名沿用以免破坏既有前端读取。

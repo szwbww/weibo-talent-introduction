@@ -12,7 +12,7 @@ const styles = fs.readFileSync(stylesPath, "utf-8");
 const workbench = fs.readFileSync(workbenchPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260902-monitoring-window";
+const CACHE_KEY = "20260902-undelivered";
 
 // Source-text helpers (whitespace-normalized for the verbatim contract checks).
 function stripWs(text) {

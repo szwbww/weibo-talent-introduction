@@ -74,9 +74,12 @@ class OperatorStatusWriteSeamGuardTest {
         // SELECT @Query 的 WHERE 比较（读过滤条件），不是对列的赋值
         NoiseSite("com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt", 47, "operator_status = :operatorStatus"),
         // SELECT 列投影：读取列值供响应 DTO 使用
-        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 583, "ec.operator_status AS operator_status"),
+        // （2026-09-02 provider-undelivered 计划：MailRecordRepository 新增 DomainUndeliveredCount 投影
+        //   与 aggregateUndeliveredByDomain 查询，:583 偏移至 :612，本计划授权行号修正）
+        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 612, "ec.operator_status AS operator_status"),
         // SELECT GROUP BY 列引用：只读聚合
-        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 640, "ec.operator_status, ec.current_index_level")
+        // （同上计划：:640 偏移至 :669，本计划授权行号修正）
+        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 669, "ec.operator_status, ec.current_index_level")
     )
 
     /**

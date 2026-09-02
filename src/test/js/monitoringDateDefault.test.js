@@ -64,6 +64,73 @@ function createMonitoringSandbox(initialDate, rangeDays = 7) {
     return sandbox;
 }
 
+function createProviderDistributionSandbox({ rows, unattributedBounceCount }) {
+    // DOM-level stub：renderMonitoringProviderDistribution 只写 thead/tbody 的 innerHTML
+    const parts = { thead: { innerHTML: "" }, tbody: { innerHTML: "" } };
+    const sandbox = {
+        $: () => ({ querySelector: (sel) => parts[sel.replace(/^#/, "")] }),
+        state: {
+            monitoring: {
+                providerDistribution: rows,
+                unattributedBounceCount
+            }
+        },
+        escapeHtml: (v) => String(v == null ? "" : v)
+            .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;").replaceAll("'", "&#39;"),
+        formatPercent: (v) => (v == null || Number.isNaN(v) ? "0%" : `${(v * 100).toFixed(1)}%`),
+        monitoringDistributionBar: () => '<div class="bar-stub"></div>',
+        monitoringReplyRateCell: () => '<span class="text-muted">-</span>'
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(extractFn("renderMonitoringProviderDistribution"), sandbox);
+    return { sandbox, parts };
+}
+
+const UNDELIVERED_FOOTER = "另有 3 封退信未能关联到专家（关联为空或专家已不存在），未计入上表任何一行。";
+
+function providerRow(overrides = {}) {
+    return Object.assign({
+        provider: "gmail",
+        sentCount: 10,
+        repliedCount: 4,
+        replyRate: 0.4,
+        matureCohortCount: 8,
+        matureRepliedCount: 3,
+        matureReplyRate: 0.375,
+        undeliveredCount: 2
+    }, overrides);
+}
+
+describe("provider distribution unattributed footer", () => {
+    it("renders the footer after present data rows when unattributed count is positive", () => {
+        const { sandbox, parts } = createProviderDistributionSandbox({
+            rows: [providerRow()],
+            unattributedBounceCount: 3
+        });
+        sandbox.renderMonitoringProviderDistribution();
+        const body = parts.tbody.innerHTML;
+        assert.ok(body.includes("<strong>gmail</strong>"), "data row must render");
+        assert.ok(body.includes(UNDELIVERED_FOOTER), "footer must render after data rows");
+        assert.ok(
+            body.indexOf(UNDELIVERED_FOOTER) > body.indexOf("gmail"),
+            "footer must come after the data row"
+        );
+        assert.ok(!body.includes("暂无数据"), "no empty-state row when data rows exist");
+    });
+
+    it("omits the footer when unattributed count is zero", () => {
+        const { sandbox, parts } = createProviderDistributionSandbox({
+            rows: [providerRow()],
+            unattributedBounceCount: 0
+        });
+        sandbox.renderMonitoringProviderDistribution();
+        const body = parts.tbody.innerHTML;
+        assert.ok(body.includes("<strong>gmail</strong>"), "data row must render");
+        assert.ok(!body.includes("未能关联到专家"), "footer must be absent when count is 0");
+    });
+});
+
 describe("monitoring date default", () => {
     it("initializes monitoring state date and range window", () => {
         assert.match(
