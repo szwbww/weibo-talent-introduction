@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG 知识库 · 管理页设计</title>
+<style>
+:root{
+  --primary:#1e40af; --primary-light:rgba(30,64,175,.07);
+  --bg-main:#f5f7fb; --panel:#fff;
+  --line:rgba(15,23,42,.055); --border:rgba(15,23,42,.11); --border-strong:#cbd5e1;
+  --surface:rgba(15,23,42,.022);
+  --ink:#1e293b; --text-secondary:#475569; --text-muted:#94a3b8; --text-strong:#334155;
+  --success:#059669; --success-bg:rgba(5,150,105,.07); --success-border:rgba(5,150,105,.22);
+  --warning:#d97706; --warning-bg:rgba(217,119,6,.07); --warning-border:rgba(217,119,6,.22);
+  --error:#e11d48; --error-bg:rgba(225,29,72,.06); --error-border:rgba(225,29,72,.20);
+  --violet:#7c3aed; --violet-bg:rgba(124,58,237,.07); --violet-border:rgba(124,58,237,.22);
+  --radius:10px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-main);color:var(--ink);
+  font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+.wrap{max-width:1440px;margin:0 auto;padding:22px 20px 60px}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px}
+.muted{color:var(--text-muted)} .small{font-size:12px} .sec{color:var(--text-secondary)}
+
+/* header */
+.hd{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:16px}
+h1{font-size:20px;margin:0 0 4px;letter-spacing:-.01em}
+.sub{color:var(--text-secondary);font-size:12.5px;margin:0}
+.stats{display:flex;gap:8px;flex-wrap:wrap}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:6px 11px;font-size:12px;
+  display:flex;align-items:center;gap:7px}
+.stat b{font-size:15px;font-weight:600;letter-spacing:-.01em}
+
+/* tabs */
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:18px}
+.tab{padding:9px 16px;font-size:13px;cursor:pointer;border:1px solid transparent;border-bottom:none;
+  border-radius:8px 8px 0 0;color:var(--text-secondary);margin-bottom:-1px;background:none}
+.tab.on{background:var(--panel);border-color:var(--border);border-bottom-color:var(--panel);color:var(--primary);font-weight:500}
+.tab .n{color:var(--text-muted);font-size:11.5px;margin-left:5px}
+.page{display:none} .page.on{display:block}
+
+/* badges */
+.b{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:999px;border:1px solid;line-height:1.6;white-space:nowrap}
+.b.verb{color:var(--violet);background:var(--violet-bg);border-color:var(--violet-border);font-weight:600}
+.b.comp{color:var(--text-muted);background:var(--surface);border-color:var(--border)}
+.b.high{color:var(--error);background:var(--error-bg);border-color:var(--error-border)}
+.b.medium{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-border)}
+.b.low{color:var(--success);background:var(--success-bg);border-color:var(--success-border)}
+.b.review{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-border)}
+.b.approved{color:var(--success);background:var(--success-bg);border-color:var(--success-border)}
+.b.disabled{color:var(--text-muted);background:var(--surface);border-color:var(--border)}
+.b.new{color:var(--primary);background:var(--primary-light);border-color:rgba(30,64,175,.22);font-weight:600}
+
+/* fact tab layout */
+.grid{display:grid;grid-template-columns:186px minmax(0,1fr) 400px;gap:14px;align-items:start}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius)}
+.card h2{font-size:12px;margin:0;padding:11px 14px;border-bottom:1px solid var(--line);
+  color:var(--text-strong);font-weight:600;display:flex;justify-content:space-between;align-items:center}
+
+/* filters */
+.fgroup{padding:8px 0}
+.flabel{font-size:10.5px;letter-spacing:.06em;color:var(--text-muted);padding:6px 14px 4px}
+.fitem{display:flex;justify-content:space-between;align-items:center;padding:5px 14px;font-size:12.3px;cursor:pointer;
+  color:var(--text-secondary);border-left:2px solid transparent}
+.fitem:hover{background:var(--surface)}
+.fitem.on{background:var(--primary-light);border-left-color:var(--primary);color:var(--primary);font-weight:500}
+.fitem .c{font-size:11px;color:var(--text-muted)}
+.fitem.on .c{color:var(--primary)}
+
+/* list */
+.searchbar{padding:9px 12px;border-bottom:1px solid var(--line)}
+.searchbar input{width:100%;border:1px solid var(--border);border-radius:7px;padding:6px 10px;font-size:12.5px;
+  font-family:inherit;outline:none;background:var(--surface)}
+.searchbar input:focus{border-color:var(--primary);background:#fff}
+.list{max-height:640px;overflow:auto}
+.row{padding:9px 14px;border-bottom:1px solid var(--line);cursor:pointer;display:grid;
+  grid-template-columns:1fr auto;gap:4px 10px}
+.row:hover{background:var(--surface)}
+.row.on{background:var(--primary-light);box-shadow:inset 2px 0 0 var(--primary)}
+.row.off{opacity:.45}
+.r1{display:flex;align-items:center;gap:8px;min-width:0}
+.r1 .code{color:var(--primary);font-weight:600}
+.r1 .t{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.r2{grid-column:1/2;font-size:11.5px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rb{display:flex;gap:4px;align-items:center;grid-row:1/2;grid-column:2/3}
+
+/* detail */
+.d{padding:14px}
+.dsec{margin-bottom:15px}
+.dlab{font-size:10.5px;letter-spacing:.06em;color:var(--text-muted);margin-bottom:5px;display:flex;
+  justify-content:space-between;align-items:center}
+.answer{border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.75;
+  background:var(--surface);white-space:pre-wrap}
+.answer.verb{border-color:var(--violet-border);background:var(--violet-bg)}
+.warnbar{display:flex;gap:8px;align-items:flex-start;background:var(--violet-bg);border:1px solid var(--violet-border);
+  border-radius:8px;padding:8px 11px;font-size:11.5px;color:var(--violet);margin-bottom:7px;line-height:1.6}
+.warnbar b{font-weight:600}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-size:11px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:2px 7px;
+  color:var(--text-secondary)}
+.chip.k{color:var(--primary);background:var(--primary-light);border-color:rgba(30,64,175,.18)}
+.selrow{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.field label{font-size:10.5px;color:var(--text-muted);display:block;margin-bottom:3px}
+.field select,.field .ro{width:100%;border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px;
+  background:#fff;font-family:inherit;color:var(--ink)}
+.field .ro{background:var(--surface);color:var(--text-muted)}
+.dfoot{border-top:1px solid var(--line);padding:11px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.btn{border:1px solid var(--primary);background:var(--primary);color:#fff;border-radius:7px;padding:6px 14px;
+  font-size:12.5px;cursor:pointer;font-family:inherit}
+.btn.ghost{background:#fff;color:var(--text-secondary);border-color:var(--border)}
+.hint{font-size:11px;color:var(--text-muted);line-height:1.5}
+
+/* rule tables */
+table{width:100%;border-collapse:collapse;font-size:12.3px}
+th{text-align:left;font-weight:600;color:var(--text-muted);font-size:10.5px;letter-spacing:.05em;
+  padding:8px 14px;border-bottom:1px solid var(--line);background:var(--surface)}
+td{padding:9px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+.note{background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:8px;padding:9px 12px;
+  font-size:12px;color:var(--warning);margin:0 14px 14px;line-height:1.65}
+.arrow{color:var(--text-muted);margin:0 5px}
+.stack{display:grid;gap:14px}
+
+/* trial */
+.tgrid{display:grid;grid-template-columns:minmax(0,420px) minmax(0,1fr);gap:14px;align-items:start}
+.mail{padding:12px 14px;font-size:12.3px;line-height:1.7;white-space:pre-wrap;color:var(--text-secondary);
+  max-height:380px;overflow:auto}
+.picks{display:flex;gap:6px;padding:10px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.pick{font-size:12px;padding:4px 11px;border-radius:999px;border:1px solid var(--border);background:#fff;
+  cursor:pointer;color:var(--text-secondary);font-family:inherit}
+.pick.on{background:var(--primary);border-color:var(--primary);color:#fff}
+.step{padding:11px 14px;border-bottom:1px solid var(--line)}
+.step:last-child{border-bottom:none}
+.stitle{font-size:11px;color:var(--text-muted);margin-bottom:6px;display:flex;align-items:center;gap:7px}
+.stitle .no{width:16px;height:16px;border-radius:50%;background:var(--primary-light);color:var(--primary);
+  font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:600}
+.mlist{display:flex;flex-direction:column;gap:4px}
+.mrow{display:flex;align-items:center;gap:8px;font-size:12px;background:var(--surface);border:1px solid var(--line);
+  border-radius:6px;padding:4px 9px}
+.mrow .o{font-size:10px;color:var(--text-muted);width:14px}
+.ok{color:var(--success);font-size:11.5px}
+@media(max-width:1200px){.grid{grid-template-columns:1fr}.tgrid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hd">
+    <div>
+      <h1>RAG 知识库</h1>
+      <p class="sub">45 条事实 · 库指纹 <code id="fp"></code> · 取代旧「QA 问答自动路由配置」页；旧页降级为只读历史</p>
+    </div>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab on" data-p="facts">事实库<span class="n">45</span></button>
+    <button class="tab" data-p="rules">检索规则<span class="n">4 张表</span></button>
+    <button class="tab" data-p="trial">试跑</button>
+  </div>
+
+  <div class="page on" id="p-facts">
+    <div class="grid">
+      <div class="card">
+        <h2>筛选</h2>
+        <div class="fgroup" id="filters"></div>
+      </div>
+      <div class="card">
+        <h2>事实列表 <span class="muted" id="listCount"></span></h2>
+        <div class="searchbar"><input id="q" placeholder="搜索 fact_code / 名称 / 问法 / 正文…"></div>
+        <div class="list" id="list"></div>
+      </div>
+      <div class="card" id="detail"></div>
+    </div>
+  </div>
+
+  <div class="page" id="p-rules"><div class="stack" id="rules"></div></div>
+
+  <div class="page" id="p-trial">
+    <div class="tgrid">
+      <div class="card">
+        <h2>来信</h2>
+        <div class="picks" id="picks"></div>
+        <div class="mail" id="mail"></div>
+      </div>
+      <div class="card">
+        <h2>检索过程 <span class="muted small">不调用模型，纯确定性层</span></h2>
+        <div id="trace"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const DATA = {"facts": [{"code": "KB-PROG-001", "area": "PROG", "title": "项目内容介绍", "category": "Program and eligibility", "variants": ["what is this project", "what is the program", "about the programme", "which programme"], "answer": "This is a government-backed programme connecting experienced international experts with Chinese enterprises for research and technology collaboration. At the introductory stage, no relocation or commitment is required.", "coverage": ["programme.purpose", "programme.tracks"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-01", "QA_DIGEST:overview", "VIDEO_QA_INDEX:SVID_20251113_175509@04:30"], "legacy": 1, "enabled": true}, {"code": "KB-PROG-002", "area": "PROG", "title": "项目总览", "category": "Program overview", "variants": ["learn more", "programme structure", "programme tracks", "typical duration", "advisory project"], "answer": "Two tracks:\n\nInnovative Talent Scheme -- for senior researchers (PhD + notable institutional experience) to serve as a research consultant to a matched Chinese enterprise. You would guide the company's R&D for 2-3 years, without leaving your current position. Most participants work remotely and visit China 1-2 times per year; all travel expenses are covered by us.\n\nEntrepreneurial Talent Scheme -- for experts who wish to commercialize their research by establishing a venture in China. Remote involvement is possible, with 1-2 annual visits.", "coverage": ["programme.structure", "programme.tracks", "programme.scope"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "VERBATIM", "sources": ["QA_FACT_PROPOSAL:fact-02", "ONLINE_QA:rule-24", "QA_DIGEST:1095-Q1", "VIDEO_QA_INDEX:SVID_20251117_085959@03:06"], "legacy": 24, "enabled": true}, {"code": "KB-PROG-003", "area": "PROG", "title": "项目公开状态", "category": "Program overview", "variants": ["official programme name", "programme website", "publicly listed", "official notice", "project name", "public website", "confidential programme"], "answer": "The programme is confidential and therefore has no publicly disclosed official name and no public-facing official website.", "coverage": ["programme.official_name", "programme.public_visibility"], "policy": "AUTO", "status": "APPROVED", "risk": "MEDIUM", "render": "VERBATIM", "sources": ["QA_FACT_PROPOSAL:fact-03", "QA_DIGEST:programme-confidentiality", "VIDEO_QA_INDEX:programme-public-status"], "legacy": 41, "enabled": true}, {"code": "KB-GOV-004", "area": "GOV", "title": "项目组织层级", "category": "Trust and compliance", "variants": ["responsible government organization", "government body", "sponsoring institution", "talent office", "government agency", "ministry of science and technology"], "answer": "The programme is led at the national level by China's Ministry of Science and Technology and implemented locally by local government talent offices.", "coverage": ["governance.sponsor_level", "governance.responsible_organization", "governance.national_lead", "governance.local_implementation"], "policy": "AUTO", "status": "APPROVED", "risk": "MEDIUM", "render": "VERBATIM", "sources": ["QA_FACT_PROPOSAL:fact-04", "QA_DIGEST:government-level", "VIDEO_QA_INDEX:local-talent-office-implementation"], "legacy": 42, "enabled": true}, {"code": "KB-COMP-005", "area": "COMP", "title": "公司法定身份", "category": "Trust and compliance", "variants": ["company name", "legal name", "registered location", "registered address"], "answer": "Our registered company name is Jiangsu Qingfei Talent Technology Co., Ltd. (江苏清飞人才科技有限公司), registered in Nanjing, China.", "coverage": ["company.legal_name", "company.registered_location"], "policy": "AUTO", "status": "APPROVED", "risk": "MEDIUM", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-05"], "legacy": 35, "enabled": true}, {"code": "KB-COMP-006", "area": "COMP", "title": "公司官方网站", "category": "Trust and compliance", "variants": ["company website", "your website", "official company website", "company site"], "answer": "Our official company website is https://www.qingfeitalent.com.", "coverage": ["company.official_website"], "policy": "AUTO", "status": "APPROVED", "risk": "MEDIUM", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-06"], "legacy": null, "enabled": true}, {"code": "KB-COMP-007", "area": "COMP", "title": "清飞与政府人才办合作证明", "category": "Trust and compliance", "variants": ["verify", "proof", "registration information", "certificate", "government cooperation", "talent summit", "policy documents"], "answer": "Qingfei cooperates with local government talent offices in multiple regions. We can provide supporting evidence of these working relationships, including company registration information; supporting documents, policy materials and relevant certificates from local talent offices; records of official talent activities; and materials relating to government talent summits.", "coverage": ["company.verification_evidence", "company.government_cooperation"], "policy": "AUTO", "status": "APPROVED", "risk": "MEDIUM", "render": "VERBATIM", "sources": ["QA_FACT_PROPOSAL:fact-07", "QA_DIGEST:2143-Q3", "QA_DIGEST:talent-office-certificates-and-summits", "VIDEO_QA_INDEX:official-talent-activity-records"], "legacy": 18, "enabled": true}, {"code": "KB-PROG-008", "area": "PROG", "title": "顾问名单公开政策", "category": "Trust and compliance", "variants": ["advisor list", "adviser list", "current advisors", "participant list"], "answer": "For privacy and confidentiality reasons, a current adviser list is not published.", "coverage": ["programme.adviser_list_policy"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-08", "QA_DIGEST:privacy-principle"], "legacy": null, "enabled": true}, {"code": "KB-OUTR-009", "area": "OUTR", "title": "联系信息来源", "category": "Communication and other", "variants": ["how did you find me", "where did you get my email", "contact source"], "answer": "Potential candidates are identified through publicly available academic sources such as ORCID, research publications and university researcher profiles.", "coverage": ["outreach.public_source"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-09"], "legacy": 29, "enabled": true}, {"code": "KB-AGCY-010", "area": "AGCY", "title": "我方服务范围", "category": "Trust and compliance", "variants": ["your role", "mediator", "middleman", "what do you provide", "why work with you"], "answer": "Our team supports initial review, enterprise matching, application preparation, submission coordination and subsequent administrative assistance. Experts are not charged for these services.", "coverage": ["agency.service_scope"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-10", "QA_DIGEST:application-process", "VIDEO_QA_INDEX:SVID_20251217_160358@05:30"], "legacy": 11, "enabled": true}, {"code": "KB-ENT-011", "area": "ENT", "title": "企业匹配原则", "category": "Communication and other", "variants": ["matching process", "how do you match", "matched enterprise", "research matching"], "answer": "Enterprise matching is based on the expert's research background and the specific technical needs of potential Chinese partners; experts are not assigned to generic vacancies.", "coverage": ["enterprise.matching"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-11", "QA_DIGEST:2061-Q1", "VIDEO_QA_INDEX:SVID_20251105_150344@02:00"], "legacy": 23, "enabled": true}, {"code": "KB-ENT-012", "area": "ENT", "title": "合作企业类型", "category": "Communication and other", "variants": ["types of companies", "companies typically work with", "enterprise types", "industries", "partner types"], "answer": "There is no fixed public list of companies. The relevant company type and industry depend on the expert's research direction and the availability of a genuinely suitable partner.", "coverage": ["enterprise.project_types"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-12", "QA_DIGEST:enterprise-matching"], "legacy": null, "enabled": true}, {"code": "KB-ENT-013", "area": "ENT", "title": "常见研发需求", "category": "Communication and other", "variants": ["R&D gaps", "research gaps", "technical needs", "common problems", "product development"], "answer": "Potential enterprise needs may involve technical problem-solving, product development, research guidance or technology commercialisation. The specific need cannot be confirmed before an enterprise and project are identified.", "coverage": ["enterprise.rnd_needs"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-13", "QA_DIGEST:enterprise-matching"], "legacy": null, "enabled": true}, {"code": "KB-ENT-014", "area": "ENT", "title": "匹配后的企业披露", "category": "Communication and other", "variants": ["company profile", "company address", "matched company details", "proposed technical work"], "answer": "Once a potential match is identified, the company profile, website, address and proposed technical work should be provided for the expert's review.", "coverage": ["enterprise.partner_disclosure"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-14", "QA_DIGEST:2109-Q2"], "legacy": null, "enabled": true}, {"code": "KB-ENT-015", "area": "ENT", "title": "企业匹配期限", "category": "Funding and timeline", "variants": ["timeline for matching", "matching deadline", "how long to match", "matching time"], "answer": "There is no fixed enterprise-matching deadline. Timing depends on the expert's research direction and the availability of a genuinely suitable enterprise.", "coverage": ["enterprise.matching_timeline"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-15", "QA_DIGEST:2061-Q3", "VIDEO_QA_INDEX:SVID_20251126_210104@05:18"], "legacy": null, "enabled": true}, {"code": "KB-APP-016", "area": "APP", "title": "个人或团队申报", "category": "Program and eligibility", "variants": ["apply individually", "apply jointly", "as a team", "with my team", "research partner"], "answer": "Candidates may apply individually or jointly and may participate with relevant research or entrepreneurial partners.", "coverage": ["application.format"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-16", "QA_DIGEST:1095-track-description", "VIDEO_QA_INDEX:SVID_20251110_160339@09:30"], "legacy": 2, "enabled": true}, {"code": "KB-APP-017", "area": "APP", "title": "申报条件与材料（停用）", "category": "Program and eligibility", "variants": ["criteria", "qualification", "eligible", "requirements"], "answer": "Applicants should hold the title of associate professor or above, have outstanding research achievements and be able to contribute to industrial services and scientific and technological innovation.", "coverage": ["researcher.selection"], "policy": "AUTO", "status": "DISABLED", "risk": "HIGH", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-17", "QA_DIGEST:eligibility-conflict", "VIDEO_QA_INDEX:eligibility-needs-manual-review"], "legacy": 3, "enabled": false}, {"code": "KB-APP-018", "area": "APP", "title": "初审材料", "category": "Program and eligibility", "variants": ["send CV", "initial materials", "what should I provide", "documents needed", "provide my CV"], "answer": "At the initial stage, a CV is sufficient for eligibility review and enterprise matching. Additional supporting materials may be requested later if the application proceeds.", "coverage": ["application.required_materials"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-18", "QA_DIGEST:staged-material-rule", "VIDEO_QA_INDEX:SVID_20251215_100710@01:36"], "legacy": 33, "enabled": true}, {"code": "KB-APP-019", "area": "APP", "title": "后续支持材料", "category": "Program and eligibility", "variants": ["patent certificate", "publication list", "supporting documents", "additional materials"], "answer": "Patent information, publication lists, education records and other supporting evidence may be requested later according to application requirements. Original identity documents are not required for initial review.", "coverage": ["application.supporting_materials"], "policy": "REVIEW", "status": "REVIEW", "risk": "HIGH", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-19", "QA_DIGEST:1095-Q4", "VIDEO_QA_INDEX:SVID_20251222_150048@08:48"], "legacy": null, "enabled": true}, {"code": "KB-APP-020", "area": "APP", "title": "申请步骤", "category": "Funding and timeline", "variants": ["application process", "next steps", "procedure", "what happens next"], "answer": "After initial materials are received, the team conducts an eligibility review, begins enterprise matching, prepares application documents with the matched enterprise and submits the completed materials for review.", "coverage": ["application.steps"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-20", "QA_DIGEST:1095-Q6", "VIDEO_QA_INDEX:SVID_20251217_160358@05:30"], "legacy": 9, "enabled": true}, {"code": "KB-APP-021", "area": "APP", "title": "完整申请周期", "category": "Funding and timeline", "variants": ["full cycle", "application timeline", "how long does the process take"], "answer": "The complete matching, application-preparation, submission and review process generally takes approximately six months or longer.", "coverage": ["application.timeline"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-21", "QA_DIGEST:2061-Q3"], "legacy": null, "enabled": true}, {"code": "KB-APP-022", "area": "APP", "title": "申报及公布窗口", "category": "Funding and timeline", "variants": ["deadline", "when to apply", "submission deadline", "submission window", "when results"], "answer": "Materials are usually submitted around March-May, with results announced in November-December.\n\nThe exact submission deadline should be confirmed according to the latest project notice before application.", "coverage": ["application.submission_window"], "policy": "AUTO", "status": "REVIEW", "risk": "HIGH", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-22", "ONLINE_QA:rule-10", "QA_DIGEST:2077-Q4", "VIDEO_QA_INDEX:SVID_20251222_083119@07:06"], "legacy": 10, "enabled": true}, {"code": "KB-APP-023", "area": "APP", "title": "成功率及再次申报", "category": "Funding and timeline", "variants": ["success rate", "chance", "probability", "not selected", "apply again"], "answer": "This is a national-level project with an approximate success rate of about 10%. Competition is strong. If you are not selected in the first year, you may apply again in a subsequent cycle.", "coverage": ["application.success_rate"], "policy": "REVIEW", "status": "REVIEW", "risk": "HIGH", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-23", "ONLINE_QA:rule-16", "QA_DIGEST:1095-Q2"], "legacy": 16, "enabled": true}, {"code": "KB-APP-025", "area": "APP", "title": "确认视频", "category": "Process actions", "variants": ["confirmation video", "VCR", "passport video", "record a video", "identity verification"], "answer": "Any identity-verification requirement, including a confirmation video, is handled by an operator only after clear interest and before formal submission. The exact requirement and safeguards must be explained before materials are requested.", "coverage": ["application.identity_verification"], "policy": "REVIEW", "status": "REVIEW", "risk": "HIGH", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-25", "QA_DIGEST:1095-Q11", "VIDEO_QA_INDEX:video-requirement-needs-manual-review"], "legacy": 13, "enabled": true}, {"code": "KB-APP-026", "area": "APP", "title": "入选后流程", "category": "Process actions", "variants": ["after selection", "what happens after selected", "onboarding", "finalise project scope"], "answer": "After selection, the researcher and matched enterprise finalise the project scope and written agreement. Visits, onboarding and administrative support are then arranged according to the agreed collaboration.", "coverage": ["application.after_selection"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-26", "QA_DIGEST:2061-Q4", "VIDEO_QA_INDEX:SVID_20251105_150344@04:42"], "legacy": 15, "enabled": true}, {"code": "KB-ROLE-027", "area": "ROLE", "title": "合作角色", "category": "Role and work style", "variants": ["my role", "position", "consultant", "adviser", "co-entrepreneur"], "answer": "Depending on the agreed project, the expert may serve as a research or technical adviser to the matched enterprise, or participate as a co-entrepreneur in a technology venture.", "coverage": ["role.type"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-27", "QA_DIGEST:2077-Q1"], "legacy": 4, "enabled": true}, {"code": "KB-ROLE-028", "area": "ROLE", "title": "主要职责", "category": "Role and work style", "variants": ["responsibilities", "duties", "what would I do", "my responsibilities", "technical advisor"], "answer": "Responsibilities depend on the project and may include technical guidance, research advice, problem-solving, product-development support or commercialisation guidance.", "coverage": ["role.responsibilities"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-28", "QA_DIGEST:role-summary", "VIDEO_QA_INDEX:advisory-role-candidates"], "legacy": 5, "enabled": true}, {"code": "KB-ROLE-029", "area": "ROLE", "title": "交付物", "category": "Role and work style", "variants": ["deliverables", "outputs", "milestones", "reports", "expected work"], "answer": "There is no universal deliverables list. Expected outputs, milestones, reports and other deliverables are negotiated with the matched enterprise and recorded in the written agreement.", "coverage": ["role.deliverables"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-29"], "legacy": null, "enabled": true}, {"code": "KB-WORK-030", "area": "WORK", "title": "全职、兼职及远程", "category": "Role and work style", "variants": ["full time", "part time", "remote", "form of collaboration", "technical consultant"], "answer": "Full-time, part-time and remote advisory arrangements may be possible. The applicable form depends on the enterprise, project scope and agreed workload.", "coverage": ["work.remote_arrangement"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-30", "QA_DIGEST:2077-Q1", "VIDEO_QA_INDEX:SVID_20251226_161329@07:00"], "legacy": 6, "enabled": true}, {"code": "KB-WORK-031", "area": "WORK", "title": "现有单位、搬迁及赴华安排", "category": "Role and work style", "variants": ["current affiliation", "university affiliation", "remain employed", "relocate", "move to China", "visits", "travel expenses", "work location"], "answer": "A typical remote advisory arrangement does not require relocation or a change to the expert's current institutional affiliation. Short visits to China may be arranged where the project requires them, with travel support determined by the project arrangement.", "coverage": ["work.affiliation", "work.relocation", "work.travel_arrangement"], "policy": "AUTO", "status": "APPROVED", "risk": "MEDIUM", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-31", "QA_DIGEST:2077-Q1", "VIDEO_QA_INDEX:SVID_20251202_145933@03:12"], "legacy": 7, "enabled": true}, {"code": "KB-WORK-032", "area": "WORK", "title": "合作期限及投入时间", "category": "Role and work style", "variants": ["project duration", "time commitment", "weekly hours", "monthly hours", "how involved", "duration for technical advisers"], "answer": "A research advisory project commonly runs for approximately two to three years. Exact weekly or monthly workload is flexible and must be agreed with the matched enterprise.", "coverage": ["work.advisory_duration", "work.time_commitment"], "policy": "REVIEW", "status": "REVIEW", "risk": "MEDIUM", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-32", "QA_DIGEST:1095-Q1", "VIDEO_QA_INDEX:SVID_20251215_160308@07:42"], "legacy": 40, "enabled": true}, {"code": "KB-FUND-033", "area": "FUND", "title": "薪资待遇与政府科研经费", "category": "Funding and timeline", "variants": ["government funding", "research funding", "3 million", "12 million", "project funding", "salary support", "housing allowance"], "answer": "After a successful application, selected candidates may receive government research funding in the range of 3-12 million RMB, with enterprises providing personal salary support separately; full-time roles may also include additional housing allowance.", "coverage": ["finance.government_funding", "finance.enterprise_compensation", "finance.additional_support"], "policy": "AUTO", "status": "APPROVED", "risk": "MEDIUM", "render": "VERBATIM", "sources": ["QA_FACT_PROPOSAL:fact-33", "ONLINE_QA:rule-8", "QA_DIGEST:rule-8-salary", "VIDEO_QA_INDEX:salary-funding-and-housing"], "legacy": 8, "enabled": true}, {"code": "KB-FUND-034", "area": "FUND", "title": "企业个人报酬", "category": "Funding and timeline", "variants": ["salary", "compensation", "remuneration", "advisory compensation", "paid role", "personal compensation"], "answer": "Personal compensation is provided separately by the matched enterprise under the agreed collaboration arrangement.", "coverage": ["finance.enterprise_compensation"], "policy": "AUTO", "status": "APPROVED", "risk": "MEDIUM", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-34", "QA_DIGEST:1095-Q3", "VIDEO_QA_INDEX:SVID_20251117_085959@10:06"], "legacy": null, "enabled": true}, {"code": "KB-FUND-035", "area": "FUND", "title": "报酬结构", "category": "Funding and timeline", "variants": ["compensation structure", "retainer", "hourly", "project-based", "payment method", "payment schedule"], "answer": "There is no universal compensation model. The exact amount, payment method, deliverables and payment schedule are negotiated and included in the written agreement before any commitment is made.", "coverage": ["finance.compensation_structure"], "policy": "AUTO", "status": "APPROVED", "risk": "MEDIUM", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-35", "QA_DIGEST:compensation-separation"], "legacy": null, "enabled": true}, {"code": "KB-FUND-036", "area": "FUND", "title": "其他可能支持", "category": "Funding and timeline", "variants": ["housing allowance", "startup capital", "additional funding", "entrepreneurial support"], "answer": "Full-time arrangements may include housing support. Entrepreneurial projects may be considered for start-up capital or subsequent project funding, subject to the applicable programme and review.", "coverage": ["finance.additional_support"], "policy": "REVIEW", "status": "REVIEW", "risk": "HIGH", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-36", "QA_DIGEST:2077-Q1"], "legacy": null, "enabled": true}, {"code": "KB-CONT-037", "area": "CONT", "title": "合同及签约主体", "category": "Funding and timeline", "variants": ["contract terms", "contractual relationship", "written agreement", "formal agreement", "who signs", "contracting party", "partner company"], "answer": "After selection, the expected arrangement is a written agreement directly between the expert and the matched enterprise, not Qingfei Tech Talent Team. The exact legal relationship, contract type and full terms must be confirmed for the specific project and reviewed before any commitment.", "coverage": ["contract.party", "contract.terms"], "policy": "REVIEW", "status": "REVIEW", "risk": "HIGH", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-37", "QA_DIGEST:2061-Q4", "VIDEO_QA_INDEX:SVID_20251215_160308@08:18-CONFLICT"], "legacy": 38, "enabled": true}, {"code": "KB-IP-039", "area": "IP", "title": "线上知识产权边界", "category": "Funding and timeline", "variants": ["intellectual property", "IP rights", "who owns IP", "IP ownership", "IP arising", "publication rights"], "answer": "Until a contract is signed, nothing you share with us transfers any rights; any final intellectual-property arrangements will be set out in the future written agreement.", "coverage": ["ip.arrangements"], "policy": "AUTO", "status": "APPROVED", "risk": "HIGH", "render": "VERBATIM", "sources": ["ONLINE_QA:rule-39"], "legacy": 39, "enabled": true}, {"code": "KB-CONF-036", "area": "CONF", "title": "线上申请材料保密", "category": "Trust and compliance", "variants": ["materials confidential", "keep my documents", "redaction", "application privacy", "confidentiality"], "answer": "Your materials are kept strictly confidential and used only for application purposes. Technical details you prefer not to disclose can be handled with appropriate redaction.", "coverage": ["confidentiality.materials"], "policy": "AUTO", "status": "APPROVED", "risk": "MEDIUM", "render": "VERBATIM", "sources": ["ONLINE_QA:rule-36"], "legacy": 36, "enabled": true}, {"code": "KB-FEE-042", "area": "FEE", "title": "专家费用政策", "category": "Trust and compliance", "variants": ["fee", "fees", "charge", "charges", "cost", "costs", "money transfer"], "answer": "We never charge experts any fees throughout the process.", "coverage": ["fees.policy"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-42", "QA_DIGEST:1095-Q5"], "legacy": 37, "enabled": true}, {"code": "KB-APP-043", "area": "APP", "title": "护照及敏感证件顾虑", "category": "Process actions", "variants": ["share passport", "passport privacy", "identity document", "sensitive documents"], "answer": "No passport or original identity document is required for initial review. If identity verification becomes necessary later, an operator must explain the requirement, safeguards and permitted redactions before requesting anything.", "coverage": ["application.sensitive_documents"], "policy": "REVIEW", "status": "REVIEW", "risk": "HIGH", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-43", "QA_DIGEST:staged-material-rule", "VIDEO_QA_INDEX:passport-video-needs-manual-review"], "legacy": 32, "enabled": true}, {"code": "KB-COMM-044", "area": "COMM", "title": "会议安排", "category": "Communication and other", "variants": ["meeting", "Zoom", "Teams", "Webex", "schedule a call", "time zone"], "answer": "Zoom, Teams or Webex may be used. A typical introductory call lasts approximately 15–20 minutes and is arranged according to the expert's time zone.", "coverage": ["communication.meeting"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-44", "QA_DIGEST:2094-Q2"], "legacy": 21, "enabled": true}, {"code": "KB-COMM-045", "area": "COMM", "title": "仅邮件联系", "category": "Communication and other", "variants": ["email only", "not on LinkedIn", "no social media", "contact me by email"], "answer": "Understood. Communication may continue by email only.", "coverage": ["communication.email_only"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-45", "QA_DIGEST:1095-Q8"], "legacy": 22, "enabled": true}, {"code": "KB-AGCY-046", "area": "AGCY", "title": "多代理及材料保护", "category": "Trust and compliance", "variants": ["other agency", "duplicate agency", "protect my rights", "material misuse"], "answer": "Duplicate applications should be avoided. Where authorisation verification is required, the expert should be informed of its exact purpose before providing it. No guarantee of selection or subsidy payment should be made.", "coverage": ["application.multi_agency_protection"], "policy": "REVIEW", "status": "REVIEW", "risk": "HIGH", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-46", "QA_DIGEST:2143-Q1-Q2", "VIDEO_QA_INDEX:SVID_20251226_161329@11:36"], "legacy": 19, "enabled": true}, {"code": "KB-COMM-047", "area": "COMM", "title": "项目敏感性", "category": "Trust and compliance", "variants": ["sensitive programme", "legitimacy", "security concern", "trust"], "answer": "Caution is understandable. Communication may continue by email, and available company-registration and talent-office documentation may be provided for independent verification before the expert proceeds.", "coverage": [], "policy": "AUTO", "status": "APPROVED", "risk": "MEDIUM", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-47", "QA_DIGEST:2285-Q1-Q2", "VIDEO_QA_INDEX:SVID_20251222_083119@02:36"], "legacy": 20, "enabled": true}, {"code": "KB-COMM-048", "area": "COMM", "title": "退休专家答复", "category": "Communication and other", "variants": ["retired", "I am retired", "no longer working"], "answer": "Thank you for letting us know. We will not continue discussing participation. A referral may be requested only where appropriate and without pressure.", "coverage": ["communication.retired"], "policy": "AUTO", "status": "APPROVED", "risk": "LOW", "render": "COMPOSE", "sources": ["QA_FACT_PROPOSAL:fact-48"], "legacy": 12, "enabled": true}], "fingerprint": "2b29a2152f2671df", "groups": [{"code": "AFFILIATION", "phrases": ["affiliation", "currently employed", "current university", "institutional requirements"]}, {"code": "COMPENSATION", "phrases": ["compensation", "remuneration", "salary", "paid"]}, {"code": "COMPENSATION_STRUCTURE", "phrases": ["compensation structure", "payment method", "payment schedule", "hourly rate", "retainer", "project based payment"]}, {"code": "CONFIDENTIALITY", "phrases": ["confidentiality", "confidential", "nda"]}, {"code": "CONTRACT_PARTY", "phrases": ["contractual relationship", "contracting party", "contractual party", "contract party", "who signs"]}, {"code": "DETAIL_INQUIRY", "phrases": ["nature of the offer", "details about the offer", "more details from you", "more details", "further details", "further information", "additional information", "interested in the offer", "learn more about the offer", "learning more about this opportunity", "specific programme", "specific program", "specific plan", "programme overview", "program overview", "tell me more", "how does the programme work", "how does the program work"]}, {"code": "DURATION", "phrases": ["duration", "how long", "cooperation period"]}, {"code": "GOVERNMENT_ORG", "phrases": ["government organization", "government organisation", "government body", "responsible organization", "responsible organisation"]}, {"code": "IP", "phrases": ["intellectual property", "ip rights", "ip ownership", "publication rights"]}, {"code": "NEXT_STEP", "phrases": ["next step", "next steps", "what should i do", "what do you need from me", "what is required from me", "how can we proceed", "how should we proceed", "how would we cooperate", "how can we cooperate", "cooperation requirements"]}, {"code": "POSITIVE_INTENT", "phrases": ["i am interested", "i remain interested", "willing to continue", "would like to continue", "happy to continue", "ready to proceed", "would like to proceed"]}, {"code": "PROGRAMME_NAME", "phrases": ["official name", "name of the national", "programme name", "program name", "programme website", "program website"]}, {"code": "RESPONSIBILITY", "phrases": ["responsibilities", "responsibility", "duties", "technical advisor"]}, {"code": "VERIFICATION", "phrases": ["proof of qingfei", "government cooperation", "supporting evidence", "independent verification", "talent office certificate", "talent summit"]}], "intentCoverage": [{"group": "DETAIL_INQUIRY", "phrases": ["nature of the offer", "details about the offer", "more details from you", "more details", "further details", "further information", "additional information", "interested in the offer", "learn more about the offer", "learning more about this opportunity", "specific programme", "specific program", "specific plan", "programme overview", "program overview", "tell me more", "how does the programme work", "how does the program work"], "keys": ["programme.purpose", "programme.structure", "enterprise.matching", "role.type", "role.responsibilities", "finance.government_funding"]}, {"group": "PROGRAMME_NAME", "phrases": ["official name", "name of the national", "programme name", "program name", "programme website", "program website"], "keys": ["programme.official_name", "programme.public_visibility"]}, {"group": "GOVERNMENT_ORG", "phrases": ["government organization", "government organisation", "government body", "responsible organization", "responsible organisation"], "keys": ["governance.responsible_organization", "governance.sponsor_level"]}, {"group": "VERIFICATION", "phrases": ["proof of qingfei", "government cooperation", "supporting evidence", "independent verification", "talent office certificate", "talent summit"], "keys": ["company.verification_evidence", "company.government_cooperation"]}, {"group": "CONTRACT_PARTY", "phrases": ["contractual relationship", "contracting party", "contractual party", "contract party", "who signs"], "keys": ["contract.party"]}, {"group": "RESPONSIBILITY", "phrases": ["responsibilities", "responsibility", "duties", "technical advisor"], "keys": ["role.responsibilities"]}, {"group": "DURATION", "phrases": ["duration", "how long", "cooperation period"], "keys": ["work.advisory_duration"]}, {"group": "COMPENSATION", "phrases": ["compensation", "remuneration", "salary", "paid"], "keys": ["finance.enterprise_compensation"]}, {"group": "COMPENSATION_STRUCTURE", "phrases": ["compensation structure", "payment method", "payment schedule", "hourly rate", "retainer", "project based payment"], "keys": ["finance.compensation_structure"]}, {"group": "AFFILIATION", "phrases": ["affiliation", "currently employed", "current university", "institutional requirements"], "keys": ["work.affiliation"]}, {"group": "IP", "phrases": ["intellectual property", "ip rights", "ip ownership", "publication rights"], "keys": ["ip.arrangements", "confidentiality.materials"]}, {"group": "CONFIDENTIALITY", "phrases": ["confidentiality", "confidential", "nda"], "keys": ["confidentiality.materials"]}], "mandatory": [{"order": 10, "trigger": ["DETAIL_INQUIRY"], "facts": ["KB-PROG-002", "KB-FUND-033"], "note": ""}, {"order": 15, "trigger": ["COMPENSATION"], "facts": ["KB-FUND-033"], "note": "新增：问报酬必出 033 原文"}, {"order": 20, "trigger": ["PROGRAMME_NAME"], "facts": ["KB-PROG-003"], "note": ""}, {"order": 30, "trigger": ["GOVERNMENT_ORG"], "facts": ["KB-GOV-004"], "note": ""}, {"order": 40, "trigger": ["PROGRAMME_NAME", "GOVERNMENT_ORG"], "facts": ["KB-COMP-007"], "note": "任一命中即生效"}, {"order": 50, "trigger": ["IP"], "facts": ["KB-IP-039", "KB-CONF-036"], "note": ""}], "exclusions": [{"when": ["COMPENSATION_MENTION"], "unless": ["GOVERNMENT_FUNDING_MENTION"], "kind": "覆盖键", "target": "finance.government_funding, finance.additional_support", "note": "只问报酬时不推送资助/补贴。033 仍会被强制规则加回"}, {"when": ["DETAIL_INQUIRY"], "unless": [], "kind": "事实", "target": "KB-FUND-034", "note": "被 033 取代"}, {"when": ["DETAIL_INQUIRY"], "unless": ["COMPENSATION_STRUCTURE"], "kind": "事实", "target": "KB-FUND-035", "note": "未问结构就不展开"}], "samples": [{"name": "样例 A · 只问报酬", "trace": {"email": "Could you tell me the compensation for this advisory role?", "groups": ["COMPENSATION"], "keys": ["finance.enterprise_compensation"], "mandatory": ["KB-FUND-033"], "prefilter": ["KB-FUND-034"], "missing": []}}, {"name": "样例 B · 日本教授问全套细节", "trace": {"email": "Dear WuWei,\n\nThank you for reaching out and for your interest in my research.\n\nI may be interested in learning more about this opportunity. Before\ndiscussing my current research in detail, could you please provide some\nadditional information about the programme, including:\n\n- The official name of the national-level talent programme\n- The government organization responsible for the programme\n- The expected contractual relationship (with Qingfei Tech Talent Team, the\n  partner company, or another organization)\n- Typical responsibilities, duration, and compensation for technical\n  advisors\n- Any requirements regarding affiliation, intellectual property,\n  confidentiality, or registration under the programme\n\nAs I am currently employed by a Japanese national university and involved\nin several publicly funded and industry-collaborative research projects, I\nwould first need to confirm the relevant institutional requirements.\n\nThank you, and I look forward to hearing from you.", "groups": ["DETAIL_INQUIRY", "PROGRAMME_NAME", "GOVERNMENT_ORG", "IP", "COMPENSATION", "CONTRACT_PARTY", "RESPONSIBILITY", "DURATION", "AFFILIATION", "CONFIDENTIALITY"], "keys": ["programme.purpose", "programme.structure", "enterprise.matching", "role.type", "role.responsibilities", "finance.government_funding", "programme.official_name", "programme.public_visibility", "governance.responsible_organization", "governance.sponsor_level", "contract.party", "work.advisory_duration", "finance.enterprise_compensation", "work.affiliation", "ip.arrangements", "confidentiality.materials"], "mandatory": ["KB-PROG-002", "KB-FUND-033", "KB-PROG-003", "KB-GOV-004", "KB-COMP-007", "KB-IP-039", "KB-CONF-036"], "prefilter": ["KB-PROG-002", "KB-FUND-033", "KB-PROG-003", "KB-GOV-004", "KB-COMP-007", "KB-IP-039", "KB-CONF-036", "KB-CONT-037", "KB-PROG-001", "KB-ROLE-028", "KB-WORK-031", "KB-WORK-032", "KB-ROLE-027", "KB-ENT-011"], "missing": []}}]};
+const esc = v => String(v).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const byCode = Object.fromEntries(DATA.facts.map(f => [f.code, f]));
+let filter = {kind:'all', val:''}, q = '', sel = 'KB-FUND-033';
+
+document.getElementById('fp').textContent = DATA.fingerprint;
+const S = DATA.facts;
+document.getElementById('stats').innerHTML = [
+  ['事实', S.length, ''], ['逐字出信', S.filter(f=>f.render==='VERBATIM').length, 'verb'],
+  ['高风险', S.filter(f=>f.risk==='HIGH').length, 'high'],
+  ['待复核', S.filter(f=>f.status==='REVIEW').length, 'review'],
+  ['已停用', S.filter(f=>!f.enabled).length, 'disabled'],
+].map(([l,n,c]) => `<div class="stat"><span class="sec">${l}</span><b>${n}</b>${c?`<span class="b ${c}">&nbsp;</span>`:''}</div>`).join('');
+
+function renderFilters(){
+  const cats = {}; S.forEach(f => cats[f.category] = (cats[f.category]||0)+1);
+  let h = `<div class="flabel">全部</div>
+    <div class="fitem ${filter.kind==='all'?'on':''}" data-k="all" data-v=""><span>全部事实</span><span class="c">${S.length}</span></div>
+    <div class="flabel">按分类</div>` +
+    Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,n]) =>
+      `<div class="fitem ${filter.kind==='category'&&filter.val===c?'on':''}" data-k="category" data-v="${esc(c)}"><span>${esc(c)}</span><span class="c">${n}</span></div>`).join('') +
+    `<div class="flabel">按属性</div>` +
+    [['render','VERBATIM','逐字出信'],['risk','HIGH','高风险'],['status','REVIEW','待复核'],['enabled','off','已停用']]
+      .map(([k,v,l]) => {
+        const n = k==='enabled' ? S.filter(f=>!f.enabled).length : S.filter(f=>f[k]===v).length;
+        return `<div class="fitem ${filter.kind===k&&filter.val===v?'on':''}" data-k="${k}" data-v="${v}"><span>${l}</span><span class="c">${n}</span></div>`;
+      }).join('');
+  document.getElementById('filters').innerHTML = h;
+  document.querySelectorAll('#filters .fitem').forEach(el => el.onclick = () => {
+    filter = {kind: el.dataset.k, val: el.dataset.v}; renderFilters(); renderList();
+  });
+}
+function match(f){
+  if(filter.kind==='category' && f.category!==filter.val) return false;
+  if(filter.kind==='render' && f.render!==filter.val) return false;
+  if(filter.kind==='risk' && f.risk!==filter.val) return false;
+  if(filter.kind==='status' && f.status!==filter.val) return false;
+  if(filter.kind==='enabled' && f.enabled) return false;
+  if(q){ const hay=(f.code+f.title+f.answer+f.variants.join(' ')+f.coverage.join(' ')).toLowerCase();
+    if(!hay.includes(q.toLowerCase())) return false; }
+  return true;
+}
+function renderList(){
+  const rows = S.filter(match);
+  document.getElementById('listCount').textContent = `${rows.length} / ${S.length}`;
+  document.getElementById('list').innerHTML = rows.map(f => `
+    <div class="row ${f.code===sel?'on':''} ${f.enabled?'':'off'}" data-c="${f.code}">
+      <div class="r1"><span class="mono code">${f.code}</span><span class="t">${esc(f.title)}</span></div>
+      <div class="rb">
+        ${f.render==='VERBATIM'?'<span class="b verb">逐字</span>':''}
+        <span class="b ${f.risk.toLowerCase()}">${f.risk}</span>
+        <span class="b ${f.enabled?f.status.toLowerCase():'disabled'}">${f.enabled?f.status:'DISABLED'}</span>
+      </div>
+      <div class="r2">${esc(f.category)} · ${f.coverage.length} 个覆盖键 · ${f.variants.length} 种问法${f.legacy?` · 旧规则 #${f.legacy}`:' · 新增'}</div>
+    </div>`).join('') || '<div class="d muted small">没有匹配的事实</div>';
+  document.querySelectorAll('.row').forEach(el => el.onclick = () => { sel = el.dataset.c; renderList(); renderDetail(); });
+}
+function renderDetail(){
+  const f = byCode[sel]; if(!f) return;
+  const opt = (cur, arr) => arr.map(v => `<option ${v===cur?'selected':''}>${v}</option>`).join('');
+  document.getElementById('detail').innerHTML = `
+    <h2><span>${f.code}</span><span class="muted small">${f.enabled?'启用中':'已停用'}</span></h2>
+    <div class="d">
+      <div class="dsec">
+        <div class="dlab">事实名称（内部）</div>
+        <div class="field"><input class="ro" style="width:100%;border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12.5px;font-family:inherit" value="${esc(f.title)}"></div>
+      </div>
+      <div class="dsec">
+        <div class="dlab"><span>出信正文 answer</span><span class="mono muted">${f.answer.length} 字符</span></div>
+        ${f.render==='VERBATIM' ? `<div class="warnbar"><span>⬤</span><span><b>逐字出信。</b>这段文字会原封不动出现在发给专家的邮件里，模型只拿到占位符、无权改写。改这里 = 改对外话术。</span></div>` : ''}
+        <div class="answer ${f.render==='VERBATIM'?'verb':''}" contenteditable="false">${esc(f.answer)}</div>
+      </div>
+      <div class="dsec">
+        <div class="dlab"><span>问法 question_variants</span><span class="muted">${f.variants.length}</span></div>
+        <div class="chips">${f.variants.map(v=>`<span class="chip">${esc(v)}</span>`).join('')}<span class="chip" style="color:var(--primary);border-style:dashed">+ 添加</span></div>
+      </div>
+      <div class="dsec">
+        <div class="dlab"><span>覆盖键 coverage_keys</span><span class="muted">${f.coverage.length}</span></div>
+        <div class="chips">${f.coverage.map(v=>`<span class="chip k mono">${esc(v)}</span>`).join('') || '<span class="chip muted">无</span>'}</div>
+      </div>
+      <div class="dsec selrow">
+        <div class="field"><label>render_mode 出信方式</label><select>${opt(f.render,['COMPOSE','VERBATIM'])}</select></div>
+        <div class="field"><label>risk_level 风险等级</label><select>${opt(f.risk,['LOW','MEDIUM','HIGH'])}</select></div>
+        <div class="field"><label>status 状态</label><select>${opt(f.status,['APPROVED','REVIEW','DISABLED'])}</select></div>
+        <div class="field"><label>reply_policy（仅展示标签）</label><select>${opt(f.policy,['AUTO','REVIEW','NEVER'])}</select></div>
+      </div>
+      <div class="dsec">
+        <div class="dlab">来源 source_refs</div>
+        <div class="chips">${f.sources.map(v=>`<span class="chip mono">${esc(v)}</span>`).join('')}</div>
+      </div>
+      <div class="dsec selrow">
+        <div class="field"><label>旧 QA 规则映射（只读）</label><div class="ro mono">${f.legacy? '#'+f.legacy : '无 · 新增事实'}</div></div>
+        <div class="field"><label>分类 category</label><div class="ro">${esc(f.category)}</div></div>
+      </div>
+    </div>
+    <div class="dfoot">
+      <span class="hint">保存会写审计并刷新库指纹${f.render==='VERBATIM'?'；逐字事实需二次确认':''}</span>
+      <span style="display:flex;gap:7px"><button class="btn ghost">取消</button><button class="btn">保存</button></span>
+    </div>`;
+}
+function renderRules(){
+  const g = DATA.groups.map(x => `<tr><td class="mono" style="color:var(--primary);font-weight:600;white-space:nowrap">${x.code}</td>
+    <td class="muted" style="white-space:nowrap">${x.phrases.length} 条</td>
+    <td><div class="chips">${x.phrases.map(p=>`<span class="chip">${esc(p)}</span>`).join('')}</div></td></tr>`).join('');
+  const ic = DATA.intentCoverage.map(x => `<tr><td class="mono" style="color:var(--primary);font-weight:600;white-space:nowrap">${x.group}</td>
+    <td><div class="chips">${x.keys.map(k=>`<span class="chip k mono">${esc(k)}</span>`).join('')}</div></td></tr>`).join('');
+  const md = DATA.mandatory.map(x => `<tr><td class="mono muted">${x.order}</td>
+    <td class="mono" style="color:var(--primary);font-weight:600">${x.trigger.join(' <span class="arrow">或</span> ')}</td>
+    <td><div class="chips">${x.facts.map((c,i)=>`<span class="chip mono">${i+1}. ${c}${byCode[c]&&byCode[c].render==='VERBATIM'?' 逐字':''}</span>`).join('')}</div></td>
+    <td class="small ${x.note.startsWith('新增')?'':'muted'}">${x.note?(x.note.startsWith('新增')?`<span class="b new">新增</span> ${esc(x.note.slice(3))}`:esc(x.note)):'—'}</td></tr>`).join('');
+  const ex = DATA.exclusions.map(x => `<tr><td class="mono" style="white-space:nowrap">${x.when.join(', ')}</td>
+    <td class="mono muted" style="white-space:nowrap">${x.unless.join(', ')||'—'}</td>
+    <td class="muted" style="white-space:nowrap">${x.kind}</td>
+    <td class="mono">${esc(x.target)}</td><td class="small muted">${esc(x.note)}</td></tr>`).join('');
+  document.getElementById('rules').innerHTML = `
+    <div class="card"><h2>① 短语组 rag_phrase_group<span class="muted small">判断来信问没问某类问题</span></h2>
+      <table><thead><tr><th>组代码</th><th></th><th>短语</th></tr></thead><tbody>${g}</tbody></table></div>
+    <div class="card"><h2>② 话题覆盖 rag_intent_coverage<span class="muted small">命中该组 → 这封回信必须覆盖的话题；也是「漏答了什么」的分母</span></h2>
+      <table><thead><tr><th>组代码</th><th>必须覆盖的 coverage_key</th></tr></thead><tbody>${ic}</tbody></table></div>
+    <div class="card"><h2>③ 强制事实 rag_mandatory_rule<span class="muted small">必须用这一条、按这个顺序</span></h2>
+      <table><thead><tr><th>顺序</th><th>触发组</th><th>强制事实（有序）</th><th>备注</th></tr></thead><tbody>${md}</tbody></table>
+      <div class="note"><b>执行顺序不变量：</b>按分数排序 → 应用反向剔除 → 强制事实前置合并（<b>绕过剔除</b>）→ 截断 18 条。顺序写反行为就变了。重复出现的事实保留首次位置。</div></div>
+    <div class="card"><h2>④ 反向剔除 rag_prefilter_exclusion<span class="muted small">防止过度推销</span></h2>
+      <table><thead><tr><th>当命中</th><th>除非命中</th><th>剔除类型</th><th>目标</th><th>说明</th></tr></thead><tbody>${ex}</tbody></table></div>`;
+}
+let sample = 0;
+function renderTrial(){
+  document.getElementById('picks').innerHTML = DATA.samples.map((s,i) =>
+    `<button class="pick ${i===sample?'on':''}" data-i="${i}">${esc(s.name)}</button>`).join('') +
+    `<button class="pick" style="border-style:dashed">粘贴一封新的…</button>`;
+  document.querySelectorAll('.pick[data-i]').forEach(el => el.onclick = () => { sample = +el.dataset.i; renderTrial(); });
+  const t = DATA.samples[sample].trace;
+  document.getElementById('mail').textContent = t.email;
+  const fchip = c => { const f = byCode[c]; return `<span class="chip mono">${c}${f&&f.render==='VERBATIM'?' <span style="color:var(--violet)">逐字</span>':''}</span>`; };
+  document.getElementById('trace').innerHTML = `
+    <div class="step"><div class="stitle"><span class="no">1</span>命中的短语组</div>
+      <div class="chips">${t.groups.map(g=>`<span class="chip mono" style="color:var(--primary)">${g}</span>`).join('')}</div></div>
+    <div class="step"><div class="stitle"><span class="no">2</span>这封信必须覆盖的话题 <span class="muted">${t.keys.length} 个</span></div>
+      <div class="chips">${t.keys.map(k=>`<span class="chip k mono">${k}</span>`).join('')}</div></div>
+    <div class="step"><div class="stitle"><span class="no">3</span>强制事实（有序，绕过剔除）</div>
+      <div class="mlist">${t.mandatory.map((c,i)=>{const f=byCode[c];return `<div class="mrow"><span class="o">${i+1}</span><span class="mono" style="color:var(--primary);font-weight:600">${c}</span><span>${esc(f.title)}</span>${f.render==='VERBATIM'?'<span class="b verb" style="margin-left:auto">逐字出信</span>':''}</div>`;}).join('') || '<span class="muted small">无</span>'}</div></div>
+    <div class="step"><div class="stitle"><span class="no">4</span>预筛候选 <span class="muted">${t.prefilter.length} 条 → 交给检索模型选 ≤14 条</span></div>
+      <div class="chips">${t.prefilter.map(fchip).join('')}</div></div>
+    <div class="step"><div class="stitle"><span class="no">5</span>覆盖缺口</div>
+      ${t.missing.length ? `<div class="chips">${t.missing.map(k=>`<span class="chip" style="color:var(--error);background:var(--error-bg);border-color:var(--error-border)">${k}</span>`).join('')}</div>`
+        : '<div class="ok">✓ 所有应覆盖话题都有事实支撑</div>'}</div>`;
+}
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('.page').forEach(x=>x.classList.remove('on'));
+  t.classList.add('on'); document.getElementById('p-'+t.dataset.p).classList.add('on');
+});
+document.getElementById('q').oninput = e => { q = e.target.value; renderList(); };
+renderFilters(); renderList(); renderDetail(); renderRules(); renderTrial();
+</script>
+</body>
+</html>

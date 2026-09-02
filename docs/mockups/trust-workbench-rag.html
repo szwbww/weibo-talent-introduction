@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>可信工作台 · 整封式 RAG</title>
+<style>
+:root{--primary:#1e40af;--primary-light:rgba(30,64,175,.07);--bg-main:#f5f7fb;--panel:#fff;
+--line:rgba(15,23,42,.055);--border:rgba(15,23,42,.11);--surface:rgba(15,23,42,.022);
+--ink:#1e293b;--text-secondary:#475569;--text-muted:#94a3b8;--text-strong:#334155;
+--success:#059669;--success-bg:rgba(5,150,105,.07);--success-border:rgba(5,150,105,.22);
+--warning:#d97706;--warning-bg:rgba(217,119,6,.07);--warning-border:rgba(217,119,6,.22);
+--error:#e11d48;--error-bg:rgba(225,29,72,.06);--error-border:rgba(225,29,72,.2);
+--violet:#7c3aed;--violet-bg:rgba(124,58,237,.06);--violet-border:rgba(124,58,237,.24);--radius:10px}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg-main);color:var(--ink);
+font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1320px;margin:0 auto;padding:18px 18px 30px}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
+.muted{color:var(--text-muted)}.small{font-size:12px}.sec{color:var(--text-secondary)}
+.hd{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+h1{font-size:18px;margin:0}
+h1 span{font-size:13px;font-weight:400;color:var(--text-muted)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:13px;align-items:start}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.card+.card{margin-top:13px}
+.card h2{font-size:12px;margin:0;padding:10px 13px;border-bottom:1px solid var(--line);color:var(--text-strong);
+font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.card h2 .r{font-weight:400;color:var(--text-muted);font-size:11px}
+.b{display:inline-block;font-size:10px;padding:1px 6px;border-radius:999px;border:1px solid;line-height:1.6;white-space:nowrap}
+.b.verb{color:var(--violet);background:var(--violet-bg);border-color:var(--violet-border);font-weight:600}
+.b.force{color:var(--primary);background:var(--primary-light);border-color:rgba(30,64,175,.2);font-weight:600}
+.b.pick{color:var(--text-muted);background:var(--surface);border-color:var(--border)}
+.b.high{color:var(--error);background:var(--error-bg);border-color:var(--error-border)}
+.b.review{color:var(--warning);background:var(--warning-bg);border-color:var(--warning-border)}
+/* frame bar */
+.frame{display:flex;gap:8px;align-items:center;padding:9px 13px;border-bottom:1px solid var(--line);
+background:var(--surface);flex-wrap:wrap;font-size:11.5px}
+.frame .lb{color:var(--text-muted)}
+.frame select{border:1px solid var(--border);border-radius:6px;padding:3px 7px;font-size:11.5px;font-family:inherit;background:#fff;max-width:190px}
+.tb{display:flex;align-items:center;gap:8px;padding:9px 13px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.btn{border:1px solid var(--primary);background:var(--primary);color:#fff;border-radius:7px;padding:6px 13px;
+font-size:12.5px;cursor:pointer;font-family:inherit}
+.btn.ghost{background:#fff;color:var(--text-secondary);border-color:var(--border)}
+select.sm{border:1px solid var(--border);border-radius:7px;padding:5px 8px;font-size:12px;font-family:inherit;background:#fff}
+/* doc */
+.doc{padding:16px 18px;max-height:620px;overflow:auto}
+.para{position:relative;padding:7px 11px 7px 12px;border-radius:6px;font-size:13px;line-height:1.8;
+white-space:pre-wrap;margin-bottom:9px}
+.para.v{border-left:3px solid var(--violet);background:var(--violet-bg)}
+.para.c{border-left:3px solid var(--border)}
+.para.f{border-left:3px dashed var(--border);color:var(--text-muted);background:var(--surface)}
+.tag{position:absolute;right:9px;top:5px;font-size:9.5px;opacity:0;transition:.12s}
+.para:hover .tag{opacity:1}
+.para.v .tag{color:var(--violet)}.para.c .tag,.para.f .tag{color:var(--text-muted)}
+.docfoot{border-top:1px solid var(--line);padding:9px 13px;display:flex;justify-content:space-between;align-items:center;font-size:12px}
+/* right */
+.bb{padding:10px 13px}
+.fact{display:flex;align-items:flex-start;gap:7px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:12px}
+.fact:last-child{border-bottom:none}
+.fact .o{color:var(--text-muted);font-size:10.5px;width:15px;flex:none;padding-top:2px}
+.fact .m{min-width:0;flex:1}
+.fact .c{color:var(--primary);font-weight:600}
+.fact .x{color:var(--text-muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 3px;flex:none}
+.fact .x:hover{color:var(--error)}
+.addbox{margin-top:9px;display:flex;gap:6px}
+.addbox input{flex:1;border:1px solid var(--border);border-radius:7px;padding:5px 9px;font-size:12px;font-family:inherit;background:var(--surface)}
+.unm{background:var(--warning-bg);border:1px solid var(--warning-border);border-radius:7px;padding:9px 11px;
+font-size:11.5px;color:var(--warning);line-height:1.65}
+.unm q{font-weight:600;font-style:normal}
+.unm .why{color:var(--text-muted);font-size:10.5px;display:block;margin-top:3px}
+.note{background:var(--primary-light);border:1px solid rgba(30,64,175,.18);border-radius:8px;padding:10px 13px;
+font-size:11.5px;color:var(--primary);line-height:1.7;margin:12px 0 0}
+.send{position:sticky;bottom:0;background:var(--panel);border:1px solid var(--border);border-top-width:2px;
+border-radius:var(--radius);padding:11px 13px;margin-top:13px;display:flex;align-items:center;gap:10px}
+@media(max-width:1100px){.grid{grid-template-columns:1fr}}
+</style></head><body><div class="wrap">
+<div class="hd">
+  <h1>可信工作台 <span>· Prof. Hiroshi Tanaka · Re: Research collaboration</span></h1>
+  <div style="display:flex;gap:8px;align-items:center">
+    <span class="muted small">检索 1.2s · 生成 6.8s · 9.4K token</span>
+    <button class="btn ghost">重新生成</button>
+    <button class="btn">发送…</button>
+  </div>
+</div>
+<div class="grid">
+  <div class="card">
+    <div class="frame">
+      <span class="lb">回复框架</span>
+      <select><option>尊语 · Dear Professor,</option><option>Dear Prof. {last},</option></select>
+      <select><option>开场白 · Thank you for your reply…</option></select>
+      <select><option>致谢语 · Please let me know…</option></select>
+      <select><option>结束语 · Kind regards / Wu Wei…</option></select>
+      <span class="muted" style="margin-left:auto">落款随发件账号</span>
+    </div>
+    <div class="tb">
+      <select class="sm"><option>deepseek-v4-flash</option><option>deepseek-v4</option></select>
+      <span class="muted small">14 条事实 · <span style="color:var(--violet)">7 段逐字出信</span> · 库指纹 <code>2b29a215</code></span>
+      <span style="margin-left:auto;display:flex;gap:7px">
+        <button class="btn ghost">编辑正文</button><button class="btn ghost">复制</button></span>
+    </div>
+    <div class="doc" id="doc"></div>
+    <div class="docfoot"><span class="muted">1 486 字符 · 14 段</span>
+      <span class="muted">虚线段落来自回复框架，不经模型</span></div>
+  </div>
+
+  <div>
+    <div class="card"><h2>用到了哪些事实 <span class="r" id="factn"></span></h2>
+      <div class="bb"><div id="facts"></div>
+        <div class="addbox"><input placeholder="搜索并添加事实"><button class="btn ghost">添加</button></div></div></div>
+    <div class="card"><h2>未识别的提问 <span class="r" id="unmn"></span></h2>
+      <div class="bb"><div id="unm"></div>
+        <p class="muted" style="font-size:10.5px;margin:9px 0 0;line-height:1.6">
+        由生成调用的第 22 条约束产出：模型逐条检查来信里的每个明确请求，凡因没有事实支撑而未在正文回答的，
+        用<b>来信逐字片段</b>列在这里。服务端校验片段必须是来信的子串，不是就丢弃——编不出来。</p></div></div>
+  </div>
+</div>
+<div class="send">
+  <span class="sec">收件 <span class="mono">h.tanaka@***.ac.jp</span></span>
+  <span class="muted small">· 未识别提问 1 项</span>
+  <span style="margin-left:auto;display:flex;gap:8px">
+    <button class="btn ghost">存草稿</button><button class="btn">发送…</button></span>
+</div>
+<p class="note"><b>逐字段落（紫色左边框）不是模型写的。</b>模型只拿到 <code>{{FACT:KB-FUND-033}}</code> 占位符，正文由代码逐字替换；替换后原文若不在正文里，整次生成直接失败并提示重试。运营手改这些段落不阻断，但会标红「已脱离事实原文」。</p>
+</div>
+<script>
+const D={"email": "Dear WuWei,\n\nThank you for reaching out and for your interest in my research.\n\nI may be interested in learning more about this opportunity. Before\ndiscussing my current research in detail, could you please provide some\nadditional information about the programme, including:\n\n- The official name of the national-level talent programme\n- The government organization responsible for the programme\n- The expected contractual relationship (with Qingfei Tech Talent Team, the\n  partner company, or another organization)\n- Typical responsibilities, duration, and compensation for technical\n  advisors\n- Any requirements regarding affiliation, intellectual property,\n  confidentiality, or registration under the programme\n\nAs I am currently employed by a Japanese national university and involved\nin several publicly funded and industry-collaborative research projects, I\nwould first need to confirm the relevant institutional requirements.\n\nThank you, and I look forward to hearing from you.", "keys": ["programme.purpose", "programme.structure", "enterprise.matching", "role.type", "role.responsibilities", "finance.government_funding", "programme.official_name", "programme.public_visibility", "governance.responsible_organization", "governance.sponsor_level", "contract.party", "work.advisory_duration", "finance.enterprise_compensation", "work.affiliation", "ip.arrangements", "confidentiality.materials"], "mandatory": ["KB-PROG-002", "KB-FUND-033", "KB-PROG-003", "KB-GOV-004", "KB-COMP-007", "KB-IP-039", "KB-CONF-036"], "prefilter": ["KB-PROG-002", "KB-FUND-033", "KB-PROG-003", "KB-GOV-004", "KB-COMP-007", "KB-IP-039", "KB-CONF-036", "KB-CONT-037", "KB-PROG-001", "KB-ROLE-028", "KB-WORK-031", "KB-WORK-032", "KB-ROLE-027", "KB-ENT-011"], "used": [{"code": "KB-PROG-002", "title": "项目总览", "render": "VERBATIM", "risk": "LOW", "status": "APPROVED", "answer": "Two tracks:\n\nInnovative Talent Scheme -- for senior researchers (PhD + notable institutional experience) to serve as a research consultant to a matched Chinese enterprise. You would guide the company's R&D for 2-3 years, without leaving your current position. Most participants work remotely and visit China 1-2 times per year; all travel expenses are covered by us.\n\nEntrepreneurial Talent Scheme -- for experts who wish to commercialize their research by establishing a venture in China. Remote involvement is possible, with 1-2 annual visits.", "origin": "强制", "coverage": ["programme.structure", "programme.tracks", "programme.scope"]}, {"code": "KB-FUND-033", "title": "薪资待遇与政府科研经费", "render": "VERBATIM", "risk": "MEDIUM", "status": "APPROVED", "answer": "After a successful application, selected candidates may receive government research funding in the range of 3-12 million RMB, with enterprises providing personal salary support separately; full-time roles may also include additional housing allowance.", "origin": "强制", "coverage": ["finance.government_funding", "finance.enterprise_compensation", "finance.additional_support"]}, {"code": "KB-PROG-003", "title": "项目公开状态", "render": "VERBATIM", "risk": "MEDIUM", "status": "APPROVED", "answer": "The programme is confidential and therefore has no publicly disclosed official name and no public-facing official website.", "origin": "强制", "coverage": ["programme.official_name", "programme.public_visibility"]}, {"code": "KB-GOV-004", "title": "项目组织层级", "render": "VERBATIM", "risk": "MEDIUM", "status": "APPROVED", "answer": "The programme is led at the national level by China's Ministry of Science and Technology and implemented locally by local government talent offices.", "origin": "强制", "coverage": ["governance.sponsor_level", "governance.responsible_organization", "governance.national_lead", "governance.local_implementation"]}, {"code": "KB-COMP-007", "title": "清飞与政府人才办合作证明", "render": "VERBATIM", "risk": "MEDIUM", "status": "APPROVED", "answer": "Qingfei cooperates with local government talent offices in multiple regions. We can provide supporting evidence of these working relationships, including company registration information; supporting documents, policy materials and relevant certificates from local talent offices; records of official talent activities; and materials relating to government talent summits.", "origin": "强制", "coverage": ["company.verification_evidence", "company.government_cooperation"]}, {"code": "KB-IP-039", "title": "线上知识产权边界", "render": "VERBATIM", "risk": "HIGH", "status": "APPROVED", "answer": "Until a contract is signed, nothing you share with us transfers any rights; any final intellectual-property arrangements will be set out in the future written agreement.", "origin": "强制", "coverage": ["ip.arrangements"]}, {"code": "KB-CONF-036", "title": "线上申请材料保密", "render": "VERBATIM", "risk": "MEDIUM", "status": "APPROVED", "answer": "Your materials are kept strictly confidential and used only for application purposes. Technical details you prefer not to disclose can be handled with appropriate redaction.", "origin": "强制", "coverage": ["confidentiality.materials"]}, {"code": "KB-CONT-037", "title": "合同及签约主体", "render": "COMPOSE", "risk": "HIGH", "status": "REVIEW", "answer": "After selection, the expected arrangement is a written agreement directly between the expert and the matched enterprise, not Qingfei Tech Talent Team. The exact legal relationship, contract type and full terms must be confirmed for the specific project and reviewed before any commitment.", "origin": "模型选中", "coverage": ["contract.party", "contract.terms"]}, {"code": "KB-PROG-001", "title": "项目内容介绍", "render": "COMPOSE", "risk": "LOW", "status": "APPROVED", "answer": "This is a government-backed programme connecting experienced international experts with Chinese enterprises for research and technology collaboration. At the introductory stage, no relocation or commitment is required.", "origin": "模型选中", "coverage": ["programme.purpose", "programme.tracks"]}, {"code": "KB-ROLE-028", "title": "主要职责", "render": "COMPOSE", "risk": "LOW", "status": "APPROVED", "answer": "Responsibilities depend on the project and may include technical guidance, research advice, problem-solving, product-development support or commercialisation guidance.", "origin": "模型选中", "coverage": ["role.responsibilities"]}, {"code": "KB-WORK-031", "title": "现有单位、搬迁及赴华安排", "render": "COMPOSE", "risk": "MEDIUM", "status": "APPROVED", "answer": "A typical remote advisory arrangement does not require relocation or a change to the expert's current institutional affiliation. Short visits to China may be arranged where the project requires them, with travel support determined by the project arrangement.", "origin": "模型选中", "coverage": ["work.affiliation", "work.relocation", "work.travel_arrangement"]}, {"code": "KB-WORK-032", "title": "合作期限及投入时间", "render": "COMPOSE", "risk": "MEDIUM", "status": "REVIEW", "answer": "A research advisory project commonly runs for approximately two to three years. Exact weekly or monthly workload is flexible and must be agreed with the matched enterprise.", "origin": "模型选中", "coverage": ["work.advisory_duration", "work.time_commitment"]}, {"code": "KB-ROLE-027", "title": "合作角色", "render": "COMPOSE", "risk": "LOW", "status": "APPROVED", "answer": "Depending on the agreed project, the expert may serve as a research or technical adviser to the matched enterprise, or participate as a co-entrepreneur in a technology venture.", "origin": "模型选中", "coverage": ["role.type"]}, {"code": "KB-ENT-011", "title": "企业匹配原则", "render": "COMPOSE", "risk": "LOW", "status": "APPROVED", "answer": "Enterprise matching is based on the expert's research background and the specific technical needs of potential Chinese partners; experts are not assigned to generic vacancies.", "origin": "模型选中", "coverage": ["enterprise.matching"]}], "coverage": [{"key": "programme.purpose", "facts": ["KB-PROG-001"], "ok": true}, {"key": "programme.structure", "facts": ["KB-PROG-002"], "ok": true}, {"key": "enterprise.matching", "facts": ["KB-ENT-011"], "ok": true}, {"key": "role.type", "facts": ["KB-ROLE-027"], "ok": true}, {"key": "role.responsibilities", "facts": ["KB-ROLE-028"], "ok": true}, {"key": "finance.government_funding", "facts": ["KB-FUND-033"], "ok": true}, {"key": "programme.official_name", "facts": ["KB-PROG-003"], "ok": true}, {"key": "programme.public_visibility", "facts": ["KB-PROG-003"], "ok": true}, {"key": "governance.responsible_organization", "facts": ["KB-GOV-004"], "ok": true}, {"key": "governance.sponsor_level", "facts": ["KB-GOV-004"], "ok": true}, {"key": "contract.party", "facts": ["KB-CONT-037"], "ok": true}, {"key": "work.advisory_duration", "facts": ["KB-WORK-032"], "ok": true}, {"key": "finance.enterprise_compensation", "facts": ["KB-FUND-033"], "ok": true}, {"key": "work.affiliation", "facts": ["KB-WORK-031"], "ok": true}, {"key": "ip.arrangements", "facts": ["KB-IP-039"], "ok": true}, {"key": "confidentiality.materials", "facts": ["KB-CONF-036"], "ok": true}], "draft": [{"k": "v", "c": "KB-PROG-002", "t": "Two tracks:\n\nInnovative Talent Scheme -- for senior researchers (PhD + notable institutional experience) to serve as a research consultant to a matched Chinese enterprise. You would guide the company's R&D for 2-3 years, without leaving your current position. Most participants work remotely and visit China 1-2 times per year; all travel expenses are covered by us.\n\nEntrepreneurial Talent Scheme -- for experts who wish to commercialize their research by establishing a venture in China. Remote involvement is possible, with 1-2 annual visits."}, {"k": "v", "c": "KB-PROG-003", "t": "The programme is confidential and therefore has no publicly disclosed official name and no public-facing official website."}, {"k": "v", "c": "KB-GOV-004", "t": "The programme is led at the national level by China's Ministry of Science and Technology and implemented locally by local government talent offices."}, {"k": "v", "c": "KB-COMP-007", "t": "Qingfei cooperates with local government talent offices in multiple regions. We can provide supporting evidence of these working relationships, including company registration information; supporting documents, policy materials and relevant certificates from local talent offices; records of official talent activities; and materials relating to government talent summits."}, {"k": "v", "c": "KB-FUND-033", "t": "After a successful application, selected candidates may receive government research funding in the range of 3-12 million RMB, with enterprises providing personal salary support separately; full-time roles may also include additional housing allowance."}, {"k": "c", "c": "KB-CONT-037", "t": "On the contractual relationship: after selection, the expected arrangement is a written agreement directly between you and the matched enterprise rather than with Qingfei Tech Talent Team. The exact legal relationship and full terms would need to be confirmed for the specific project and reviewed before any commitment."}, {"k": "c", "c": "KB-ROLE-028 / KB-WORK-032", "t": "Responsibilities depend on the project and may include technical guidance, research advice, problem-solving or product-development support. A research advisory project commonly runs for approximately two to three years, and the exact weekly or monthly workload is flexible and agreed with the matched enterprise."}, {"k": "c", "c": "KB-WORK-031", "t": "A typical remote advisory arrangement does not require relocation or any change to your current institutional affiliation. Short visits to China may be arranged where the project requires them."}, {"k": "v", "c": "KB-IP-039", "t": "Until a contract is signed, nothing you share with us transfers any rights; any final intellectual-property arrangements will be set out in the future written agreement."}, {"k": "v", "c": "KB-CONF-036", "t": "Your materials are kept strictly confidential and used only for application purposes. Technical details you prefer not to disclose can be handled with appropriate redaction."}], "frame": {"salutation": "Dear Professor,", "greeting": "Thank you for your reply and for the questions below.", "ack": "Please let me know if any point needs further clarification.", "closing": "Kind regards,\nWu Wei\nCustomer Care Officer\nQingfei Tech Talent Team, China"}, "unaddressed": [{"quote": "registration under the programme", "reason": "no supporting fact in the retrieved chunks"}]};
+const esc=v=>String(v).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const F=D.frame;
+const parts=[{k:'f',c:'回复框架 · 尊语',t:F.salutation},{k:'f',c:'回复框架 · 开场白',t:F.greeting}]
+ .concat(D.draft)
+ .concat([{k:'f',c:'回复框架 · 致谢语',t:F.ack},{k:'f',c:'回复框架 · 结束语（随发件账号）',t:F.closing}]);
+document.getElementById('doc').innerHTML=parts.map(p=>
+ `<div class="para ${p.k}"><span class="tag mono">${p.k==='v'?'逐字 · ':''}${esc(p.c||'')}</span>${esc(p.t)}</div>`).join('');
+document.getElementById('factn').textContent=`${D.used.length} 条 · ${D.used.filter(f=>f.origin==='强制').length} 条强制`;
+document.getElementById('facts').innerHTML=D.used.map((f,i)=>`
+ <div class="fact"><span class="o">${i+1}</span><span class="m">
+  <div><span class="mono c">${f.code}</span> ${esc(f.title)}</div>
+  <div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap">
+    ${f.render==='VERBATIM'?'<span class="b verb">逐字</span>':''}
+    <span class="b ${f.origin==='强制'?'force':'pick'}">${f.origin}</span>
+    ${f.status==='REVIEW'?'<span class="b review">REVIEW</span>':''}
+    ${f.risk==='HIGH'?'<span class="b high">HIGH</span>':''}
+  </div></span><span class="x" title="移除并重新生成">×</span></div>`).join('');
+document.getElementById('unmn').textContent=D.unaddressed.length+' 项';
+document.getElementById('unm').innerHTML=D.unaddressed.map(u=>
+ `<div class="unm">来信问了 <q>${esc(u.quote)}</q>，本封未作答。<span class="why">${esc(u.reason)}</span></div>`).join('');
+</script></body></html>
