@@ -15807,6 +15807,7 @@ function buildManualExecutionSnapshot() {
         emailDomains: values.emailDomains,
         discipline: values.discipline,
         operatorStatuses: values.operatorStatuses,
+        expertTypes: values.expertTypes,
         gateFilterEnabled: values.gateFilterEnabled,
         templateId: values.templateId
     };

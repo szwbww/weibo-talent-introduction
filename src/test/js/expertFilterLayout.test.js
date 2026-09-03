@@ -32,8 +32,11 @@ describe("expert filter layout", () => {
             .forEach((id) => assert.ok(row.includes(`id="${id}"`), `${id} must be in metrics row`));
     });
 
-    it("uses five primary columns before the narrow three-column breakpoint", () => {
-        assert.match(css, /@media \(max-width: 1500px\) \{[\s\S]*?\.expert-filter-row-primary\s*\{\s*grid-template-columns:\s*repeat\(5, minmax\(0, 1fr\)\);/);
+    it("uses a complete three-column grid at medium desktop widths", () => {
+        assert.match(css, /@media \(min-width: 1181px\) and \(max-width: 1500px\) \{[\s\S]*?\.expert-filter-row-primary\s*\{\s*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/);
+        assert.match(css, /\.expert-filter-row-primary > \.toolbar-label\s*\{\s*min-width:\s*0;\s*flex-direction:\s*column;\s*align-items:\s*stretch;\s*gap:\s*4px;/);
+        assert.match(css, /\.expert-filter-row-primary > \.toolbar-label select\s*\{\s*width:\s*100%;\s*min-width:\s*0;/);
+        assert.match(css, /@media \(max-width: 1180px\) \{[\s\S]*?\.expert-filter-row-primary\s*\{\s*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\);/);
     });
 
     it("hides the one-time discovery actions while keeping their ids available", () => {

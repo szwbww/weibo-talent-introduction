@@ -1120,6 +1120,7 @@ describe("batch send task console interactions", () => {
             emailDomains: ["university.edu"],
             discipline: "STEM",
             operatorStatuses: ["NOT_CONTACTED"],
+            expertTypes: ["PRODUCTION_RND"],
             templateId: 7
         };
         const sandbox = { readManualFormValues: () => values, Number };

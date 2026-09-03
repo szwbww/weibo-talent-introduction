@@ -643,9 +643,21 @@ p {
     min-width: 0 !important;
 }
 
-@media (max-width: 1500px) {
+@media (min-width: 1181px) and (max-width: 1500px) {
     .expert-filter-row-primary {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .expert-filter-row-primary > .toolbar-label {
+        min-width: 0;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+    }
+
+    .expert-filter-row-primary > .toolbar-label select {
+        width: 100%;
+        min-width: 0;
     }
 }
 
