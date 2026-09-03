@@ -17,7 +17,7 @@ const workbenchSource = fs.readFileSync(workbenchPath, "utf-8");
 const styles = fs.readFileSync(stylesPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260902-rag-workbench";
+const CACHE_KEY = "20260902-rag-prompt-console";
 
 // —— S-2..S-4 契约栅格（与计划文件代码栅格逐字节一致，追加在 styles.css EOF）——
 const CSS_S2 = `.trust-reply-layout {

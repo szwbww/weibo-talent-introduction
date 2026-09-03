@@ -133,6 +133,12 @@ const state = {
         dialogueItems: [],
         promptConfig: null,
         promptIsCustom: false,
+        // plan 06: RAG 提示词约束清单状态（检索/生成可编辑约束 + 派生三条 + 未保存改动计数）。
+        ragPromptIsCustom: false,
+        ragPromptRetrieval: [],
+        ragPromptGenerationBase: [],
+        ragPromptGenerationDerived: [],
+        ragPromptDeleted: 0,
         expertTagOptions: [],
         inboundTagOptions: [],
         selectedExpertTag: "",
@@ -4290,13 +4296,207 @@ async function saveAiTrainingPromptConfig(event) {
     showStatus("提示词配置已保存", "ok");
 }
 
+// ---------------------------------------------------------------------------
+// plan 06: AI 提示词与约束 —— RAG 约束清单（检索调用 5 条 / 生成调用 22 条）。
+// I-30/I-31: 服务端 effective() 给全量视图；生成段派生三条（第 18/19/21 条）
+// 只读（derived=true），可编辑约束保存在 state 的 base 数组，渲染/保存时按
+// 服务端同款固定槽位（总长 >= 21 时第 18/19/21 位，否则末尾三位）合并 ——
+// 编号是渲染产物（I-32），派生行的编号恒定、可编辑行删除后自动前移。
+// ---------------------------------------------------------------------------
+
+function ragPromptRows(call) {
+    const training = state.aiTraining;
+    return call === "retrieval" ? training.ragPromptRetrieval : training.ragPromptGenerationBase;
+}
+
+function ragPromptBaseIndexOf(row, rows) {
+    for (let index = 0; index < rows.length; index += 1) {
+        if (rows[index] === row) return index;
+    }
+    return -1;
+}
+
+function ragPromptRowList(call) {
+    const base = ragPromptRows(call);
+    if (call === "retrieval") return base;
+    const derived = state.aiTraining.ragPromptGenerationDerived;
+    const total = base.length + derived.length;
+    const slots = total >= 21 ? [17, 18, 20] : [total - 3, total - 2, total - 1];
+    const merged = [];
+    let baseCursor = 0;
+    let derivedCursor = 0;
+    for (let slot = 0; slot < total; slot += 1) {
+        merged.push(slots.includes(slot) ? derived[derivedCursor++] : base[baseCursor++]);
+    }
+    return merged;
+}
+
+function ragPromptDirtyCount() {
+    const training = state.aiTraining;
+    let count = training.ragPromptDeleted;
+    const scan = (rows) => {
+        rows.forEach((row) => {
+            if (row.isNew || row.text !== row.base) count += 1;
+        });
+    };
+    scan(training.ragPromptRetrieval);
+    scan(training.ragPromptGenerationBase);
+    return count;
+}
+
+function ragPromptRowHtml(row, number, call) {
+    const baseRows = ragPromptRows(call);
+    const baseIndex = row.derived ? -1 : ragPromptBaseIndexOf(row, baseRows);
+    const dirty = !row.isNew && row.text !== row.base;
+    const badges = [];
+    if (row.derived) {
+        badges.push('<span class="rag-badge readonly">派生 · 只读</span>');
+    } else {
+        if (row.isNew) {
+            badges.push('<span class="rag-badge dirty">已添加</span>');
+        } else if (dirty) {
+            badges.push('<span class="rag-badge dirty">已改</span>');
+        }
+        if (!dirty && !row.isNew && row.changed) {
+            badges.push('<span class="rag-badge changed">本次改动</span>');
+        }
+        if (!dirty && !row.isNew && row.added) {
+            badges.push('<span class="rag-badge added">新增</span>');
+        }
+    }
+    const badgesHtml = badges.length
+        ? `<div style="margin-top: 2px;">${badges.join("")}</div>`
+        : "";
+    const actionsHtml = row.derived
+        ? ""
+        : '<span class="rag-prompt-rule-actions">'
+            + (dirty || row.isNew ? '<button type="button" class="undo" data-rag-prompt-act="undo">撤销</button>' : "")
+            + '<button type="button" data-rag-prompt-act="del">删除</button>'
+            + "</span>";
+    const callAttr = ` data-rag-prompt-call="${call}"`;
+    return `<div class="rag-prompt-rule${row.derived ? " readonly" : ""}"${callAttr} data-rag-prompt-base="${baseIndex}">
+        <span class="rag-prompt-rule-no">${number}.</span>
+        <div>
+            <div class="rag-prompt-rule-text"${row.derived ? "" : ' contenteditable="true"'}${callAttr} data-rag-prompt-base="${baseIndex}">${escapeHtml(row.text)}</div>
+            ${badgesHtml}
+        </div>
+        ${actionsHtml}
+    </div>`;
+}
+
+function renderRagPromptRules(call) {
+    const body = call === "retrieval" ? $("#ragPromptRetrievalRules") : $("#ragPromptGenerationRules");
+    const countEl = call === "retrieval" ? $("#ragPromptRetrievalCount") : $("#ragPromptGenerationCount");
+    if (!body) return;
+    const rows = ragPromptRowList(call);
+    body.innerHTML = rows.map((row, index) => ragPromptRowHtml(row, index + 1, call)).join("");
+    if (countEl) countEl.textContent = `${rows.length} 条`;
+}
+
+function markRagPromptDirty() {
+    const count = ragPromptDirtyCount();
+    const dirty = count > 0;
+    const statusEl = $("#ragPromptSaveBarStatus");
+    if (statusEl) {
+        statusEl.textContent = dirty ? `已修改 ${count} 处 · 未保存` : "未修改";
+        statusEl.classList.toggle("dirty", dirty);
+    }
+    const saveBtn = $("#ragPromptSaveBtn");
+    if (saveBtn) saveBtn.disabled = !dirty;
+}
+
+function ragPromptUndoRow(call, baseIndex) {
+    const row = ragPromptRows(call)[baseIndex];
+    if (!row || row.derived) return;
+    row.text = row.base;
+    renderRagPromptRules(call);
+    markRagPromptDirty();
+}
+
+function ragPromptDeleteRow(call, baseIndex) {
+    const rows = ragPromptRows(call);
+    const row = rows[baseIndex];
+    if (!row || row.derived) return;
+    rows.splice(baseIndex, 1);
+    if (!row.isNew) state.aiTraining.ragPromptDeleted += 1;
+    renderRagPromptRules(call);
+    markRagPromptDirty();
+}
+
+function ragPromptAddRow(call) {
+    const rows = ragPromptRows(call);
+    rows.push({ text: "", base: "", derived: false, changed: false, added: false, isNew: true });
+    renderRagPromptRules(call);
+    markRagPromptDirty();
+    const body = call === "retrieval" ? $("#ragPromptRetrievalRules") : $("#ragPromptGenerationRules");
+    if (!body) return;
+    const texts = body.querySelectorAll(".rag-prompt-rule-text");
+    const last = texts[texts.length - 1];
+    if (last) last.focus();
+}
+
+async function loadRagPromptConfig() {
+    const data = await api("/api/rag/prompt-config");
+    const training = state.aiTraining;
+    const toRow = (entry) => ({
+        text: entry.text || "",
+        base: entry.text || "",
+        derived: Boolean(entry.derived),
+        changed: Boolean(entry.changed),
+        added: Boolean(entry.added),
+        isNew: false
+    });
+    const retrieval = (data.retrieval || []).map(toRow);
+    const generation = (data.generation || []).map(toRow);
+    training.ragPromptIsCustom = Boolean(data.isCustom);
+    training.ragPromptRetrieval = retrieval;
+    training.ragPromptGenerationBase = generation.filter((row) => !row.derived);
+    training.ragPromptGenerationDerived = generation.filter((row) => row.derived);
+    training.ragPromptDeleted = 0;
+    renderRagPromptRules("retrieval");
+    renderRagPromptRules("generation");
+    markRagPromptDirty();
+}
+
+function ragPromptOperator() {
+    return window.localStorage.getItem("operatorName") || "console";
+}
+
+async function saveRagPromptConfig() {
+    const training = state.aiTraining;
+    const payload = {
+        retrieval: training.ragPromptRetrieval.map((row) => ({ text: row.text, derived: false })),
+        generation: ragPromptRowList("generation").map((row) => ({
+            text: row.text,
+            derived: Boolean(row.derived)
+        })),
+        operator: ragPromptOperator()
+    };
+    await api("/api/rag/prompt-config", {
+        method: "PUT",
+        body: JSON.stringify(payload)
+    });
+    await loadRagPromptConfig();
+    showStatus("RAG 约束已保存生效", "ok");
+}
+
+async function resetRagPromptConfig() {
+    await api("/api/rag/prompt-config/reset", {
+        method: "POST",
+        body: JSON.stringify({ operator: ragPromptOperator() })
+    });
+    await loadRagPromptConfig();
+    showStatus("已恢复 RAG 默认约束", "ok");
+}
+
 async function loadAiTraining() {
     await Promise.all([
         loadRagKb(),
         loadAiTrainingDialogues(),
         loadAiTrainingPromptConfig(),
         loadAiTrainingTagOptions(),
-        loadAiTrainingSimulateMails()
+        loadAiTrainingSimulateMails(),
+        loadRagPromptConfig()
     ]);
 }
 
@@ -12529,6 +12729,50 @@ function bindEvents() {
     });
     $("#aiTrainingRestoreDefaultBtn")?.addEventListener("click", () => {
         restoreAiTrainingPromptDefault().catch((error) => showStatus(error.message, "error"));
+    });
+
+    // plan 06: RAG 提示词约束清单交互（I-31 只读派生行无编辑/删除入口）。
+    const ragPromptRuleBindings = [
+        ["ragPromptRetrievalRules", "retrieval"],
+        ["ragPromptGenerationRules", "generation"]
+    ];
+    ragPromptRuleBindings.forEach(([containerId, call]) => {
+        const container = $(`#${containerId}`);
+        if (!container) return;
+        container.addEventListener("input", (event) => {
+            const textEl = event.target.closest?.(".rag-prompt-rule-text");
+            if (!textEl || textEl.dataset.ragPromptCall !== call) return;
+            const row = ragPromptRows(call)[Number(textEl.dataset.ragPromptBase)];
+            if (!row || row.derived) return;
+            row.text = textEl.textContent;
+            markRagPromptDirty();
+        });
+        container.addEventListener("focusout", (event) => {
+            const textEl = event.target.closest?.(".rag-prompt-rule-text");
+            if (!textEl || textEl.dataset.ragPromptCall !== call) return;
+            renderRagPromptRules(call);
+        });
+        container.addEventListener("click", (event) => {
+            const action = event.target.closest?.("[data-rag-prompt-act]");
+            if (!action) return;
+            const baseIndex = Number(action.dataset.ragPromptBase);
+            if (action.dataset.ragPromptAct === "undo") {
+                ragPromptUndoRow(call, baseIndex);
+            } else if (action.dataset.ragPromptAct === "del") {
+                ragPromptDeleteRow(call, baseIndex);
+            }
+        });
+    });
+    document.querySelectorAll("[data-rag-prompt-add]").forEach((button) => {
+        button.addEventListener("click", () => {
+            ragPromptAddRow(button.dataset.ragPromptAdd);
+        });
+    });
+    $("#ragPromptSaveBtn")?.addEventListener("click", () => {
+        saveRagPromptConfig().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#ragPromptResetBtn")?.addEventListener("click", () => {
+        resetRagPromptConfig().catch((error) => showStatus(error.message, "error"));
     });
     document.querySelectorAll("#view-ai-training .ai-tab").forEach((button) => {
         button.addEventListener("click", () => switchAiTrainingTab(button.dataset.tab));

@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260902-rag-workbench">
+    <link rel="stylesheet" href="styles.css?v=20260902-rag-prompt-console">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -867,11 +867,46 @@
             </div>
 
             <div class="ai-tab-content" id="aiTabPrompts">
+                <!-- plan 06: RAG 链路约束清单（检索调用 5 条 / 生成调用 22 条）。 -->
+                <section class="panel ai-training-panel rag-prompt-card" id="ragPromptRetrieval">
+                    <div class="panel-head rag-prompt-card-head">
+                        <span class="rag-prompt-callno">1</span>
+                        <h2 style="margin: 0;">检索调用 · 从候选事实里选</h2>
+                        <span class="rag-prompt-count" id="ragPromptRetrievalCount"></span>
+                    </div>
+                    <div class="rag-prompt-body" id="ragPromptRetrievalRules"></div>
+                    <div class="rag-prompt-add">
+                        <button type="button" data-rag-prompt-add="retrieval">+ 添加一条约束</button>
+                    </div>
+                </section>
+
+                <section class="panel ai-training-panel rag-prompt-card" id="ragPromptGeneration">
+                    <div class="panel-head rag-prompt-card-head">
+                        <span class="rag-prompt-callno">2</span>
+                        <h2 style="margin: 0;">生成调用 · 写整封回信</h2>
+                        <span class="rag-prompt-count" id="ragPromptGenerationCount"></span>
+                    </div>
+                    <div class="rag-prompt-body" id="ragPromptGenerationRules"></div>
+                    <div class="rag-prompt-add">
+                        <button type="button" data-rag-prompt-add="generation">+ 添加一条约束</button>
+                    </div>
+                    <div class="rag-prompt-foot">第 18、19、21 条由「强制事实规则」自动生成，要改去规则表改。</div>
+                </section>
+
+                <div class="rag-prompt-savebar" id="ragPromptSaveBar">
+                    <span id="ragPromptSaveBarStatus" class="rag-prompt-savebar-status">未修改</span>
+                    <span style="margin-left: auto; display: flex; gap: 8px;">
+                        <button type="button" class="button" id="ragPromptResetBtn">全部恢复默认</button>
+                        <button type="button" class="button primary" id="ragPromptSaveBtn" disabled>保存并生效</button>
+                    </span>
+                </div>
+
                 <section class="panel ai-training-panel">
                     <div class="panel-head">
-                        <h2>AI 提示词与约束</h2>
+                        <h2>自由回复提示词（旧链路 · 兜底路径）</h2>
                         <span id="aiTrainingPromptStatus" class="muted ai-training-prompt-status"></span>
                     </div>
+                    <p class="muted" style="margin: 0 16px 12px;">本节只作用于未走 RAG 的兜底回复；RAG 链路的约束见上方两张清单</p>
                     <p id="aiTrainingPromptInfo" class="ai-training-prompt-info muted">当前显示系统生效提示词</p>
                     <form id="aiTrainingPromptForm" class="ai-training-prompt-form ai-training-prompt-grid">
                         <label class="field">
@@ -2090,7 +2125,7 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260902-rag-workbench"></script>
-<script src="app.js?v=20260902-rag-workbench"></script>
+<script src="trust-reply-workbench.js?v=20260902-rag-prompt-console"></script>
+<script src="app.js?v=20260902-rag-prompt-console"></script>
 </body>
 </html>

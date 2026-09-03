@@ -7,7 +7,7 @@ import com.weibo.talentintroduction.rag.domain.RagMandatoryRule
 import org.springframework.stereotype.Service
 
 /**
- * 计划 03 (T2): 两次 LLM 调用的 user 提示词构建 + 派生规则现算 —— 与
+ * 计划 03 (T2): 两次 LLM 调用的 user 提示词构建 —— 与
  * `scripts/spike_deepseek_reply.py` 的 `build_retrieval_prompt()` /
  * `build_generation_prompt()` / `retrieval_record()` / `generation_record()` /
  * `fact_render_token()` 逐字等价（D-2）。
@@ -18,42 +18,46 @@ import org.springframework.stereotype.Service
  * - G-3: `title` 只出现在检索记录（脚本 `retrieval_record()` 同款），
  *   生成记录**不含** `title` 也不含 `retrieval_text`。
  * - G-1: 记录里的 `fact_id` 的值就是 `fact_code`（自增 id 绝不进提示词）。
- * - 第 18/19/21 条生成规则（下标 17/18/20）按当前 `rag_mandatory_rule` 行
- *   现算成自然语言（[renderDerivedRules]），插入规则列表对应位置；
- *   缺失对应规则行时该条留空并从拼好的系统提示词里剔除。
+ * - I-34（计划 06）: 系统提示词（头部 + 编号规则列表）每次构建都从
+ *   [RagPromptConfigService.effective()] 取当前值（保存后立即生效，无需重启）；
+ *   两段约束的默认值与第 18/19/21 条派生规则（下标 17/18/20）的现算逻辑
+ *   收敛在服务端 [RagPromptConfigService]；无服务实例的测试/降级路径回落
+ *   [RagPromptConfigService.defaultEffective] 的默认视图。
  */
 @Service
 class RagPromptBuilder(
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val configService: RagPromptConfigService? = null
 ) {
 
-    /** 检索系统提示词 = 头部 + 5 条带序号规则（重现脚本原文）。 */
-    fun retrievalSystemPrompt(): String =
-        RagPromptConstraints.RETRIEVAL_SYSTEM_HEAD + "\n" +
-            numbered(RagPromptConstraints.RETRIEVAL_RULES)
+    /** I-34: 每次构建取当前生效视图；无服务实例时回落默认视图。 */
+    private fun current(): RagPromptConfigEffective =
+        configService?.effective() ?: RagPromptConfigService.defaultEffective()
 
-    /** 生成系统提示词（派生三条用常量占位文本 —— 仅测试/降级路径使用）。 */
-    fun generationSystemPrompt(): String =
-        RagPromptConstraints.GENERATION_SYSTEM_HEAD + "\n" +
-            numbered(RagPromptConstraints.GENERATION_RULES)
+    /** 检索系统提示词 = 头部 + 当前生效的检索约束（带序号）。 */
+    fun retrievalSystemPrompt(): String {
+        val effective = current()
+        return effective.retrievalSystemHead + "\n" +
+            numbered(effective.retrieval.map { it.text }.filter { it.isNotBlank() })
+    }
+
+    /** 生成系统提示词 = 头部 + 当前生效的生成约束（含派生三条的现算文本）。 */
+    fun generationSystemPrompt(): String {
+        val effective = current()
+        return effective.generationSystemHead + "\n" +
+            numbered(effective.generation.map { it.text }.filter { it.isNotBlank() })
+    }
 
     /**
-     * 生成系统提示词（生产路径）：第 18/19/21 条（下标 17/18/20）被
-     * [renderDerivedRules] 的现算文本替换；派生结果为空串的条目被剔除
-     * （对应强制规则行已被删除时，不再给出悬空指令）。
+     * 生成系统提示词（生产路径）。[mandatoryRules] 参数仅为兼容 03 的调用签名
+     * （RagLetterComposer 传入语料快照的规则行）；派生三条的现算已在服务端
+     * `effective()` 内按同一语料快照完成（I-31/I-34），本方法不再重复计算。
      */
     fun generationSystemPrompt(mandatoryRules: List<RagMandatoryRule>): String {
-        val derived = renderDerivedRules(mandatoryRules)
-        val lines = RagPromptConstraints.GENERATION_RULES.mapIndexed { index, text ->
-            when (index) {
-                17 -> derived[0]
-                18 -> derived[1]
-                20 -> derived[2]
-                else -> text
-            }
-        }
-        return RagPromptConstraints.GENERATION_SYSTEM_HEAD + "\n" +
-            numbered(lines.filter { it.isNotBlank() })
+        val effective = configService?.effective()
+            ?: RagPromptConfigService.defaultEffective(mandatoryRules)
+        return effective.generationSystemHead + "\n" +
+            numbered(effective.generation.map { it.text }.filter { it.isNotBlank() })
     }
 
     /**
@@ -139,73 +143,6 @@ class RagPromptBuilder(
         }
     }
 
-    /**
-     * 把第 18/19/21 条（下标 17/18/20）按当前 `rag_mandatory_rule` 行现算成
-     * 自然语言（数据驱动，06 的「派生 · 只读」与 A-3 的规则行联动依赖它）。
-     *
-     * 行选择按命中短语组的**全集**精确匹配（`GOVERNMENT_ORG` 归一为
-     * `GOVERNMENT_ORGANIZATION`，与 [RagMandatoryResolver] 同款补偿），行内
-     * fact_codes 保持表内顺序：
-     * - 下标 17（第 18 条）：`DETAIL_INQUIRY` 行 —— 总览 + 薪资/政府经费令牌；
-     * - 下标 18（第 19 条）：`PROGRAMME_NAME` 行 + `GOVERNMENT_ORGANIZATION` 行 +
-     *   `{PROGRAMME_NAME, GOVERNMENT_ORGANIZATION}`（合作证明证据）行，按名 → 机构 →
-     *   证据的顺序；
-     * - 下标 20（第 21 条）：`IP` 行 —— IP 边界令牌 + 材料保密令牌。
-     *
-     * 对应行缺失时返回空串（调用方从提示词剔除该条）。返回列表长度恒为 3，
-     * 顺序与 [RagPromptConstraints.DERIVED_GENERATION_RULE_INDICES] 对齐。
-     */
-    fun renderDerivedRules(mandatoryRules: List<RagMandatoryRule>): List<String> {
-        val rows = mandatoryRules.sortedBy { it.sortOrder }
-        fun codesOf(vararg matchGroups: String): List<String> {
-            val signature = matchGroups.map { normalizeGroupCode(it) }.toSet()
-            return rows
-                .filter { row -> row.matchGroups.map { normalizeGroupCode(it) }.toSet() == signature }
-                .flatMap { it.factCodes }
-                .distinct()
-        }
-
-        val detailCodes = codesOf("DETAIL_INQUIRY")
-        val programmeCodes = codesOf("PROGRAMME_NAME")
-        val organisationCodes = codesOf("GOVERNMENT_ORGANIZATION")
-        val evidenceCodes = codesOf("PROGRAMME_NAME", "GOVERNMENT_ORGANIZATION")
-        val ipCodes = codesOf("IP")
-
-        val slot18 = if (detailCodes.isEmpty()) {
-            ""
-        } else {
-            "For a request about programme details, a specific plan, further information, " +
-                "or the nature of the offer, include the VERBATIM tokens " +
-                "${tokenList(detailCodes)} in the order listed, each as its own separate " +
-                "paragraph."
-        }
-
-        val slot19Tokens = programmeCodes + organisationCodes + evidenceCodes
-        val slot19 = when {
-            slot19Tokens.isEmpty() -> ""
-            evidenceCodes.isEmpty() -> {
-                "If the expert asks for the programme name or the responsible government " +
-                    "organization, include the VERBATIM tokens ${tokenList(slot19Tokens)} in " +
-                    "the order listed, each as its own separate paragraph."
-            }
-            else -> {
-                "If the expert asks for the programme name or the responsible government " +
-                    "organization, include the VERBATIM tokens ${tokenList(slot19Tokens)} in " +
-                    "the order listed and as separate paragraphs, so that the supporting " +
-                    "evidence directly follows the name and organization it evidences."
-            }
-        }
-
-        val slot21 = if (ipCodes.isEmpty()) {
-            ""
-        } else {
-            "For any intellectual-property question, include the VERBATIM tokens " +
-                "${tokenList(ipCodes)} in the order listed as separate paragraphs, and do not " +
-                "add any other IP or confidentiality claim."
-        }
-        return listOf(slot18, slot19, slot21)
-    }
-
     /** 脚本 `retrieval_record()`：字段与顺序一致；`fact_id` 的值即 fact_code（G-1）。 */
     private fun retrievalRecord(fact: RagFact): ObjectNode = objectMapper.createObjectNode().apply {
         put("fact_id", fact.factCode)
@@ -265,15 +202,5 @@ class RagPromptBuilder(
     private fun numbered(rules: List<String>): String =
         rules.mapIndexed { index, rule -> "${index + 1}. $rule" }.joinToString("\n")
 
-    private fun tokenList(codes: List<String>): String = when (codes.size) {
-        0 -> ""
-        1 -> token(codes[0])
-        2 -> "${token(codes[0])} and ${token(codes[1])}"
-        else -> codes.dropLast(1).joinToString(", ") { token(it) } + ", and " + token(codes.last())
-    }
-
     private fun token(code: String): String = "{{FACT:$code}}"
-
-    private fun normalizeGroupCode(code: String): String =
-        if (code == "GOVERNMENT_ORG") "GOVERNMENT_ORGANIZATION" else code
 }

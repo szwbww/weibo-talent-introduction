@@ -2,7 +2,7 @@
 
 // 计划 05（c6）改写 —— 只保留三组断言（G-7）：
 // 1) I-24 挂载契约（window.TrustReplyWorkbench.mount / instance.unmount / options 键集合不变）；
-// 2) G-5 缓存键三联同值（20260902-rag-workbench）；
+// 2) G-5 缓存键三联同值（20260902-rag-prompt-console）；
 // 3) I-25 unmount 语义：abort 全部在途请求、解绑全部监听器、late response 不写宿主。
 
 const fs = require("fs");
@@ -19,7 +19,7 @@ const source = fs.readFileSync(workbenchPath, "utf-8");
 const appSource = fs.readFileSync(appPath, "utf-8");
 const indexSource = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260902-rag-workbench";
+const CACHE_KEY = "20260902-rag-prompt-console";
 // I-24：options 键集合（顺序无关）—— 两个宿主与运行时都不得改名/改必填性。
 const OPTION_KEYS = ["mode", "source", "contextPath", "autoBootstrap", "onUnauthorized", "onChange", "onComplete"];
 
@@ -172,7 +172,7 @@ describe("shared trust reply workbench mount contract (计划 05 改写)", () =>
         assert.ok(!/src="\/trust-reply-workbench\.js/.test(indexSource), "script include must stay context-relative");
     });
 
-    it("G-5: the cache-key triad is one value (20260902-rag-workbench)", () => {
+    it("G-5: the cache-key triad is one value (20260902-rag-prompt-console)", () => {
         const keys = [...indexSource.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
         assert.strictEqual(keys.length, 3, "index.html must carry exactly three cache-busted asset URLs");
         assert.strictEqual(new Set(keys).size, 1, "all three keys must share one value");
