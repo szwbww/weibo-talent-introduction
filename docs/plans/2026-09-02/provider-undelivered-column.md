@@ -106,9 +106,12 @@
 ### Invariant I-6: `hardBounceCount` / `softBounceCount` 字段被删除后，其全部消费点必须同步
 
 - Rule：`ProviderStatRow` 删除 `hardBounceCount`、`softBounceCount` 两个字段后，前端两处消费点必须一并改：`renderMonitoringProviderDistribution`（`app.js:11273/11285`）与 `renderMonitoringCards` 的 `worstBounceProvider`（`app.js:11202-11207/11224-11226`）。
-- Applies to：`MailMonitoringResponses.kt`、`app.js`。
+- Applies to：`MailMonitoringResponses.kt` 的 **`ProviderStatRow`**、`MailMonitoringService.providerDistribution` 及其 `MutableProviderStats`、`app.js`。
+- **范围限定（必读）**：本条**只约束服务商分布链路**。`BounceStatsResponse`（`MailMonitoringResponses.kt:116-117`）与
+  `MailMonitoringService.getBounceStats`（`:277-278`）**必须保留**这两个字段——它们服务于 `/bounce-stats` 端点，
+  受 N-4 保护。因此**禁止**把验收写成「全仓零命中」，那与 N-4 直接冲突且不可满足。
 - Violation consequence：JS 读不存在的字段得 `undefined`，`(undefined || 0) / cohort` 恒为 0——**不会报错**，「最高未送达服务商」会静默显示第一个非零队列的服务商且比率恒为 0%。这是无声失败，必须靠验收断言兜住。
-- 来源：original
+- 来源：original（范围限定为 2026-09-02 第三轮评审修正，P0）
 
 ### Invariant I-7: 接口返回形状由数组变为对象，前端的错误兜底必须同步
 
@@ -120,9 +123,14 @@
 ### Invariant I-8: 静态资源缓存键三元组同值同时 bump
 
 - Rule：`index.html` 的 `styles.css?v=`、`trust-reply-workbench.js?v=`、`app.js?v=` 三处必须同值，本次一起由 `20260902-monitoring-window` 改为 `20260902-undelivered`。
-- Applies to：`index.html:11 / :2110 / :2111`；`src/test/js/batchSendTaskConsoleVisualFix.test.js:49-51`。
-- Violation consequence：只 bump 部分键 → `node --test` 断言失败，`mvn test` 在 test 阶段中止。
-- 来源：K-frontend-cache-key-triad（2026-09-02 已复核：固定字符串的测试文件只有 `batchSendTaskConsoleVisualFix.test.js` 一个，另三个已改为提取后比相等）
+- Applies to：`index.html:11 / :2110 / :2111`；**4 个**固化该字符串的测试文件——
+  `batchSendTaskConsoleVisualFix.test.js:49-51`（`assert.ok(html.includes('<res>?v=<literal>'))`）、
+  `checkRepliesRelocation.test.js:11`、`manualReplySubjectPrefill.test.js:13`、
+  `overlayAndDialogContrast.test.js:15`（后三者为 `const CACHE_KEY = "<literal>";`）。
+- Violation consequence：只 bump 部分键或漏改任一测试 → `node --test` 断言失败，`mvn test` 在 test 阶段中止。
+- 来源：K-frontend-cache-key-triad（**该条曾两次记错**：原记 4 个文件固定字符串；2026-09-02 第二轮据
+  `grep 'styles.css?v='` 订正为「只剩 1 个」——**该订正本身是错的**，漏掉了 `const CACHE_KEY` 这种拼写。
+  第三轮实测确认为 4 个，并把「按当前键值反查」的健壮命令写进条目，见变更文件清单下方。）
 
 ---
 
@@ -357,7 +365,8 @@ SELECT COUNT(*) FROM bounce_record br
 ```kotlin
 data class ProviderDistributionResponse(
     val rows: List<ProviderStatRow>,
-    // I-4：归因不到专家的退信条数（bounce_record.original_expert_contact_id IS NULL），不计入任何 rows 元素
+    // I-4：未能关联到专家的退信条数，两类并集——(a) original_expert_contact_id IS NULL；
+    //      (b) 该 id 在 expert_contact 中不存在（孤儿引用，bounce_record 无外键）。均不计入任何 rows 元素。
     val unattributedBounceCount: Long
 )
 ```
@@ -450,8 +459,35 @@ data class ProviderDistributionResponse(
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringServiceTest.kt` | 重写退信相关用例 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/monitoring/repository/MailRecordRepositoryMonitoringIT.kt` | `cleanMailRecords()` 补 `DELETE FROM bounce_record`；新增 4 个 SQL 语义用例 |
 | 10 | `src/test/js/batchSendTaskConsoleVisualFix.test.js` | 缓存键字符串同步 |
+| 11 | `src/test/js/checkRepliesRelocation.test.js` | 缓存键字符串同步（`const CACHE_KEY`） |
+| 12 | `src/test/js/manualReplySubjectPrefill.test.js` | 缓存键字符串同步（`const CACHE_KEY`） |
+| 13 | `src/test/js/overlayAndDialogContrast.test.js` | 缓存键字符串同步（`const CACHE_KEY`） |
+| 14 | `src/test/js/monitoringDateDefault.test.js` | 受 `renderMonitoringCards` 改动波及的断言同步 |
+| 15 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 行号守卫：`MailRecordRepository` 新增行使 `NoiseSite` 的 `:583 → :612`、`:640 → :669` |
+| 16 | `src/test/js/providerUndeliveredColumn.test.js` | **新建**：I-4 / I-5 / I-7 / I-9 与 S-2 的前端行为测试（21 例） |
 
-**文件数：10（= 上限）。子系统数：2**（后端 monitoring/mail 模块 / 前端静态资源）。
+> **文件数 16，远超 create-p 的 10 文件硬上限。这是本计划最严重的结构性问题，如实记录如下。**
+>
+> 计划最初列 10 项，属**审计不完整**，不是执行越界。漏掉的两类都是机械连带、无法通过拆分计划回避：
+>
+> 1. **缓存键扇出（第 11-13 项）**：仓库有 **4 个** JS 测试固化缓存键，其中 3 个用
+>    `const CACHE_KEY = "20260902-undelivered";` 的写法（`checkRepliesRelocation:11`、
+>    `manualReplySubjectPrefill:13`、`overlayAndDialogContrast:15`），只有
+>    `batchSendTaskConsoleVisualFix:49-51` 用 `assert.ok(html.includes('...?v=...'))`。
+>    原计划只审到后一种拼写，是因为 grep 用了 `styles.css?v=` 这一种模式。
+>    **正确的审计命令**（bump 前必跑，两种拼写都覆盖）：
+>    ```bash
+>    KEY=$(grep -o 'v=[0-9a-z-]*' src/main/resources/static/index.html | sort -u | head -1 | cut -d= -f2)
+>    grep -rln "$KEY" src/test/
+>    ```
+> 2. **行号守卫（第 15 项）**：`OperatorStatusWriteSeamGuardTest` 用 `NoiseSite(文件, 行号, 片段)`
+>    钉死 `MailRecordRepository.kt` 的两处行号。本计划往该文件加了投影与查询，把 `:583` 顶到 `:612`、
+>    `:640` 顶到 `:669`。**任何往 `MailRecordRepository.kt` 增删行的计划都会撞上它**，这与改动内容无关。
+>
+> 两者都必须与主改动同一次提交落地，否则构建立即红。拆成独立计划只会制造"实现已合、守卫未同步"的破窗。
+> 故本计划以 16 文件执行完毕，并把这两条审计遗漏写进知识库（见 Phase 6），供后续计划在 Phase 1b 阶段直接继承。
+
+**子系统数：2**（后端 monitoring/mail 模块 / 前端静态资源）。
 **新增 CSS 行数：0。新增 DDL / 迁移：0。新增数据列：0。写路径：0（本计划纯读 + 前端）。**
 
 ---
@@ -471,6 +507,7 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=MailRecordRepositoryMonitoringIT -DmigrationIt=true
 
 # 4) 本计划相关前端用例（单跑）
+node --test src/test/js/providerUndeliveredColumn.test.js
 node --test src/test/js/batchSendTaskConsoleVisualFix.test.js
 node --test src/test/js/monitoringDateDefault.test.js
 
@@ -489,9 +526,22 @@ git diff --check
 
 **通过判据**
 
-- 命令 1 / 2 / 3 / 7：退出码 0，输出含 `Tests run: N, Failures: 0, Errors: 0`；命令 1 的输出中出现 `node --test` 执行记录。
+- 命令 2 / 3：退出码 0，输出含 `Tests run: N, Failures: 0, Errors: 0`。
+- 命令 1（`mvn test`）与 **命令 7（`mvn clean package`）**：两者都经过 `test` 阶段并执行全量 `node --test`
+  （`exec-maven-plugin` 的 `node-test` execution 绑在 `test` 阶段，`pom.xml:186-203`，无 `failOnError` / `successCodes`，
+  非零退出即失败），因此**同样受下方既有红用例影响，适用同一条豁免**：判据为
+  「Kotlin 侧 `Tests run: N, Failures: 0, Errors: 0`，且 node 侧除 `expertTagBatchFix.test.js` 外 `# fail` 为 0」。
+  若需要一个能真正退出码 0 的构建，用 `-DskipNodeTests=true` 跳过 Node 测试，
+  **但必须同时单独执行命令 4 与命令 5 作为前端门禁**——该参数会把全部 JS 测试一起跳过。
 - 命令 3：若输出 `Tests run: 0` 或用例被 skip，说明 `-DmigrationIt=true` 未生效或 Docker 不可用 —— 视为**未验证**，不得据此判定通过。
-- 命令 4 / 5：退出码 0，输出含 `# fail 0`。
+- 命令 4：退出码 0，输出含 `# fail 0`（`providerUndeliveredColumn.test.js` 应为 `# tests 21 / # pass 21`）。
+- 命令 5（前端全量）：**当前存在一个与本计划无关的既有红用例** —— `src/test/js/expertTagBatchFix.test.js` 的
+  `log execution identity (I-2)` 套件报 `test did not finish before its parent and was cancelled`
+  （`:568-569` 的 async `it` 未结束）。2026-09-02 实测：连跑 5 次全部 exit=1，确定性失败；
+  该文件自 `bb07586 feat(fast-p): implement a2` 起未被改动，把本计划新增的测试文件移开后仍是
+  `# pass 28 / # fail 1`。**故命令 5 与命令 1（含 node-test 阶段）的通过判据暂为
+  「除 `expertTagBatchFix.test.js` 的该套件外，`# fail` 计数为 0」**；该红用例需另案修复，
+  不得在本计划内顺手改（属无关改动）。
 - 命令 6 / 8：退出码 0，无输出。
 
 **来源**：命令 1/2/3/7 取自 `CLAUDE.md`「Commands」章节（`CLAUDE.md:11/14/17/24`）与项目元信息 `test_command` / `build_command`（`CLAUDE.md:144/146`）；命令 4/5/6 取自 K-js-tests-run-via-exec-plugin（`pom.xml:186-232` 实测）。
@@ -508,7 +558,12 @@ git diff --check
 - **I-4**：`grep -rn "aggregateBouncesByDomain\|DomainBounceCount" src/` 全仓**零命中**（含测试）。`grep -n "NOT EXISTS" src/main/kotlin/.../BounceRecordRepository.kt` 命中 1 处（孤儿分支）。命令 2 的 `providerDistribution reports unattributed bounce count separately` 断言 `unattributedBounceCount == 5L` 且未混入 `rows`。命令 3 的 `undelivered excludes bounces with null contact and counts them as unattributed` 与 `undelivered counts orphaned contact reference as unattributed` 两条均通过。`grep -n "收件人与关联专家均缺失" src/main/resources/static/app.js` **零命中**；`grep -n "未能关联到专家（关联为空或专家已不存在）"` 命中 1 处。
 - **I-9**：`renderMonitoringProviderDistribution` 函数体内，未送达 `<td>` 所在行 `grep` **不得**出现 `cohort`；`grep -n "sentCount || 0) > 0" src/main/resources/static/app.js` 在 `renderMonitoringCards` 的 `worstUndeliveredProvider` 链上**零命中**（应为 `undeliveredCount`）；该链上无 `/` 除法运算符。命令 2 新增用例 `providerDistribution keeps undelivered count when cohort is zero` 断言：喂 `aggregateIntroCohortByDomain` 空结果 + `aggregateUndeliveredByDomain` 返回 `DomainUndeliveredCount("gmail.com", 4)` 时，`rows` 中 gmail 行 `sentCount == 0L` 且 `undeliveredCount == 4L`。
 - **I-5**：`grep -n 'colspan="8"' src/main/resources/static/app.js` 在 `renderMonitoringProviderDistribution` 函数体内**零命中**；`grep -c 'colspan="7"'` 在该函数体内为 2（空状态行 + 表尾行）。
-- **I-6**：`grep -rn "hardBounceCount\|softBounceCount" src/main/ src/test/` 全仓**零命中**。命令 2 全部通过。
+- **I-6**：`grep -n "hardBounceCount\|softBounceCount" src/main/resources/static/app.js` **零命中**；
+  `MailMonitoringResponses.kt` 中 `data class ProviderStatRow` 的字段列表内**零命中**；
+  `MailMonitoringService.providerDistribution` 函数体与 `MutableProviderStats` 内**零命中**。
+  **反向断言（防止误删）**：`grep -n "hardBounceCount" src/main/kotlin/.../MailMonitoringResponses.kt` 仍在
+  `BounceStatsResponse` 中命中 1 处（`:116`），`MailMonitoringService.getBounceStats` 内仍命中 1 处（`:277`）——
+  这两处**必须存在**，删掉即违反 N-4。命令 2 全部通过。
 - **I-7**：`grep -n 'unattributedBounceCount: 0' src/main/resources/static/app.js` 命中 ≥ 2 处（state 初值 + catch 兜底）；`grep -n "providerDistribution?.rows" src/main/resources/static/app.js` 命中 1 处；`renderMonitoringCards` 中对 `state.monitoring.providerDistribution` 的 `.filter` 调用保持不变（该行在 diff 中未被修改）。
 - **I-8**：`grep -c "v=20260902-undelivered" src/main/resources/static/index.html` 为 3；命令 4 的 `batchSendTaskConsoleVisualFix.test.js` 通过。
 
@@ -607,7 +662,16 @@ git diff --check
 
 ### A-5: 表尾行在无未归因退信时不出现（覆盖 S-2）
 
-- 前置条件：把顶部窗口切到一个 `bounce_record` 中无 `original_expert_contact_id IS NULL` 记录的区间（例如「今日」，且当天没有此类退信）。
+- 前置条件：把顶部窗口切到一个**两类未归因退信都没有**的区间。两类缺一不可（I-4）：
+  (a) `original_expert_contact_id IS NULL`；(b) 该 id 在 `expert_contact` 中不存在（孤儿引用）。
+  可用这条 SQL 确认该区间返回 0，再开始验收：
+  ```sql
+  SELECT COUNT(*) FROM bounce_record br
+   WHERE br.received_at >= '<窗口起>' AND br.received_at < '<窗口止>'
+     AND (br.original_expert_contact_id IS NULL
+          OR NOT EXISTS (SELECT 1 FROM expert_contact ec WHERE ec.id = br.original_expert_contact_id));
+  ```
+  **只排除 (a) 而不排除 (b) 会导致正确实现被误判为失败**（孤儿引用同样会让表尾出现）。
 - 操作步骤：切到「今日」，看服务商表最下方。
 - 预期结果：**没有**「另有 N 封退信…」这一行（不是显示「另有 0 封」）。
 - 覆盖：S-2
@@ -619,12 +683,15 @@ git diff --check
   1. 看概览区最后一张卡片的标题。
   2. 看它的值。
   3. 鼠标悬停在卡片上。
-  4. 对照服务商表，人工算出每行「未送达(人)÷队列(人)」，找出最大的那个服务商。
+  4. 对照服务商表，找出「未送达(人)」**数值最大**的那一行（不要算比率）。若有并列，取 `PROVIDER_ORDER` 中靠前者（顺序为 `gmail, outlook, yahoo, edu, tencent, netease, other`）。
 - 预期结果：
   - 步骤 1：标题为「最高未送达服务商」，**不是**「最高退信服务商」。
   - 步骤 2：值形如 `yahoo (7/120)` —— 服务商名 + 空格 + 括号内「未送达人数/队列人数」，**不是**百分比。
   - 步骤 3：提示文案为「未送达 = 发送失败 + 被退回（不分硬退软退）；括号内为 未送达人数 / 队列人数」。
-  - 步骤 4：卡片显示的服务商与你手算出来的最大比率那一行**一致**。若卡片显示的是队列最大的那个服务商而括号内比率看着像 0，说明前端读了已删除的 `hardBounceCount` 字段（无声失败）。
+  - 步骤 4：卡片显示的服务商与你找出的「未送达人数最大」那一行**一致**（I-9 规定按纯计数降序，**不是**按比率）。
+    并列时取 `PROVIDER_ORDER` 靠前者——这一行为由两件事共同保证：后端按 `PROVIDER_ORDER.map` 顺序返回，
+    且 JS `Array.prototype.sort` 自 ES2019 起保证稳定排序。
+    若卡片显示的是队列最大的那个服务商而括号内数字看着像 0，说明前端读了已删除的 `hardBounceCount` 字段（无声失败）。
 - 覆盖：O-3、S-4、I-6
 
 ### A-7: 接口异常时页面不白屏（覆盖 I-7、IP-3）
@@ -697,20 +764,43 @@ git diff --check
 
 评审同时确认无误、未改动的部分：主查询的 `UNION` 去重、`created_at` / `received_at` 时间字段选择、前端对象解包与 `.catch` 兜底方案（I-7）。
 
+**2026-09-02，第二轮人工评审（实现已提交 `bbf0828` 之后）**：
+
+| # | 级别 | 问题 | 处理 |
+|---|---|---|---|
+| 5 | P1（评审提出） | C-2 要断言 `countUnattributedBouncesBetween`，但 IT 未注入 `BounceRecordRepository`，照计划实现会无法编译 | **已由实现消解，无需改计划**。核对 `bbf0828` 后的文件：`import ...BounceRecordRepository`（`:3`）、`@Autowired private lateinit var bounceRecordRepository`（`:75`）、`DELETE FROM bounce_record`（`:84`，带 C-2a 注释）三处均已就位。计划 C-2 的描述未显式点出注入，属表述不完整而非缺陷；本行即为补记。 |
+| 6 | P1（评审提出） | 前端 API 由数组改对象，但 I-5 / I-7 / I-9 与 S-2 无行为测试，只靠人工 grep | **已补**：新建 `src/test/js/providerUndeliveredColumn.test.js`，21 例，覆盖表头 7 列 / colspan / 队列为 0 仍显示未送达 / 卡片按计数降序且能选中零队列桶 / 表尾文案逐字 / 表尾与数据行并存 / catch 兜底形状 / 旧字段已删净。变更文件清单增至 11 项（含超限说明）。 |
+
+补做的验证（2026-09-02 实测，非推断）：对新测试做了 **7 项变异测试**，逐一确认用例非空转——
+队列为 0 回退成 `-`（捕获 2 例失败）、表尾改回旧文案（3）、卡片改按 `sentCount` 过滤（3）、
+排序改回除法（1）、`colspan` 留 8（1）、表尾被 `||` 短路吞掉（1）、`catch` 兜底改回数组（1）；
+未变异对照为 `# pass 21 / # fail 0`。变异在 `$HOME` 的临时副本上进行，未触碰仓库文件。
+
+**2026-09-02，第三轮人工评审**：
+
+| # | 级别 | 问题 | 修正 |
+|---|---|---|---|
+| 7 | P0 | I-6 验收要求 `hardBounceCount\|softBounceCount` 在 `src/main/ src/test/` 全仓零命中，与 N-4「`/bounce-stats`、`getBounceStats` 不变」直接冲突——`BounceStatsResponse`（`Responses.kt:116-117`）和 `getBounceStats`（`Service.kt:277-278`）必然保留这两个字段，判据不可满足 | I-6 加「范围限定」段，只约束 `ProviderStatRow` + `providerDistribution` 链路 + `app.js`；验收改为分三处定点 grep，并补**反向断言**：`BounceStatsResponse` 与 `getBounceStats` 中这两处**必须仍在**，删掉即违反 N-4 |
+| 8 | P0 | A-6 步骤 4 让验收人「算出每行未送达÷队列，找最大比率」，与 I-9「按未送达人数纯计数降序、不做除法」冲突，正确实现会被误判失败 | 改为「找未送达人数最大那行，并列取 `PROVIDER_ORDER` 靠前者」，并说明该并列行为由「后端按 `PROVIDER_ORDER.map` 返回 + JS `sort` 自 ES2019 保证稳定」共同成立 |
+| 9 | P1 | 缓存键影响面审计漏 3 个文件，另有行号守卫测试被连带；变更清单从 11 项实际膨胀到 16 项，远超 10 文件硬限 | 清单按实际重写为 16 项，并在其下如实记录超限、两类遗漏的成因与**正确的审计命令**（按当前键值反查，覆盖两种拼写）；I-8 的 Applies-to 补齐 4 个文件 |
+| 10 | P1 | 命令 7 `mvn clean package` 同样经过 `test` 阶段跑全量 `node --test`，却未获得命令 1/5 那条既有红用例的豁免，判据不可达 | 通过判据重写：命令 1 与 7 适用同一条豁免；并给出 `-DskipNodeTests=true` 的替代路径及其代价（必须单独补跑命令 4、5） |
+| 11 | P1 | A-5 前置条件只排除 `original_expert_contact_id IS NULL`，漏了 I-4 规定同样会触发表尾的孤儿引用，正确实现会被误判失败 | 前置条件改为两类并排除，并给出可直接执行的确认 SQL |
+| 12 | 小 | `ProviderDistributionResponse.unattributedBounceCount` 的 DTO 注释只写 NULL，漏孤儿引用 | 注释补齐 (a)(b) 两类 |
+
 ## Phase 4 自查
 
 - [x] `关键不变量` 9 条（含评审后新增的 I-9）；新增的唯一语义（未送达的定义、时间口径、分桶键、未归因处理、零队列显示）均有对应不变量
-- [x] `现状审计` 列出 3 个 store 的全部相关写路径与读路径，均由 grep 取得并附 `file:line`
+- [ ] `现状审计` 列出 3 个 store 的全部相关写路径与读路径——**数据侧完整，但"改动波及面"审计不完整**：漏了缓存键的第二种拼写（3 个文件）与 `MailRecordRepository.kt` 的行号守卫（1 个文件），见修正记录第 9 项
 - [x] 无任务引入未被不变量覆盖的写路径（本计划**零写路径**，纯读 + 前端）
 - [x] 含前端改动 → `样式契约` 4 条；每个新增/修改 DOM 元素映射到 S-1 ~ S-4
 - [x] 无「样式与现有一致 / 参考 XX」类表述；全部为 `file:line`、token 实值或逐字代码块
 - [x] **新增 CSS 为 0 行**，故无「新增 class 需全文逐字」项待办；被修改的既有 class 为 0 个
 - [x] `验证命令` 存在且排在 `验收标准` 之前，8 条命令均含 `JAVA_HOME` 前缀或已实测无需前缀，注明来源与通过判据
-- [x] 新增/改动的测试类（`MailMonitoringServiceTest`、`MailRecordRepositoryMonitoringIT`、两个 JS 文件）均有单跑命令行及确切过滤语法
+- [x] 新增/改动的测试类（`MailMonitoringServiceTest`、`MailRecordRepositoryMonitoringIT`、三个 JS 文件）均有单跑命令行及确切过滤语法
 - [x] `验收标准` 与 `人工验收清单` 中所有回归项均引用 `验证命令` 节，全文无裸 `mvn test`
 - [x] `人工验收清单` 12 条（含评审后新增的 A-11 / A-12）；O-1/O-2/O-3 各有覆盖；N-1/N-4/N-5/N-6 有回归条目；IP-1/IP-2/IP-3 有跨路径场景；S-1/S-2/S-4 有 UI 目测条目；I-9 与 I-4b 各有专属黑盒用例
 - [x] 每条 A-n 可黑盒执行，前置条件给出可复制的 SQL 构造方式，预期结果为实值
-- [x] File count = 10（未超限）
+- [ ] **File count = 16 > 10** —— 审计不完整导致（缓存键扇出 + 行号守卫），已在「变更文件清单」下方如实记录成因、正确审计命令与不可拆分的理由；相关经验已写回知识库
 - [x] 子系统数 2
 - [x] 每个任务按编号引用其不变量与样式契约
 - [x] `验收标准` 对每条 I-n、S-n 均有检查
