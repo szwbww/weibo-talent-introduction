@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260902-undelivered">
+    <link rel="stylesheet" href="styles.css?v=20260902-rag-knowledge-base">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -820,47 +820,30 @@
         <!-- View: AI Training -->
         <section class="view" id="view-ai-training">
             <div class="ai-training-tabs">
-                <button type="button" class="ai-tab" data-tab="qa">QA 知识库</button>
+                <button type="button" class="ai-tab" data-tab="ragKb">RAG 知识库</button>
                 <button type="button" class="ai-tab" data-tab="dialogues">对话范例</button>
                 <button type="button" class="ai-tab" data-tab="prompts">AI 提示词与约束</button>
                 <button type="button" class="ai-tab active" data-tab="simulate">历史邮件模拟回复</button>
                 <button type="button" class="ai-tab" data-tab="unsupportedAnswers">无依据回答索引</button>
             </div>
 
-            <div class="ai-tab-content" id="aiTabQa">
-                <section class="panel ai-training-panel">
-                    <div class="panel-head">
-                        <h2>提炼 QA 知识库</h2>
-                        <div class="toolbar-inline">
-                            <select id="aiTrainingSourceFilter">
-                                <option value="">全部来源</option>
-                                <option value="MANUAL_IMPORT">人工导入</option>
-                                <option value="AUTO_EXTRACTED">自动提炼</option>
-                            </select>
-                            <button type="button" class="button primary" id="aiTrainingAddQaBtn">添加条目</button>
-                            <button class="button" id="reloadAiTrainingQaBtn">刷新</button>
+            <div class="ai-tab-content" id="aiTabRagKb">
+                <div class="rag-kb-layout">
+                    <section class="panel ai-training-panel">
+                        <div class="panel-head"><h2>筛选</h2></div>
+                        <div id="ragKbFilters" class="rag-kb-filters"></div>
+                    </section>
+                    <section class="panel ai-training-panel">
+                        <div class="panel-head">
+                            <h2>事实列表</h2>
+                            <span id="ragKbFingerprint" class="muted"></span>
+                            <span id="ragKbListCount" class="muted"></span>
                         </div>
-                    </div>
-                    <div class="table-wrap">
-                        <table>
-                            <thead>
-                            <tr>
-                                <th>主题</th>
-                                <th>来源</th>
-                                <th>关键词</th>
-                                <th>标准回复要点</th>
-                                <th class="u-text-right">操作</th>
-                            </tr>
-                            </thead>
-                            <tbody id="aiTrainingQaTable"></tbody>
-                        </table>
-                    </div>
-                    <div id="aiTrainingQaPager" class="list-pager" hidden>
-                        <button class="button small" id="aiTrainingQaPrevPage">上一页</button>
-                        <span id="aiTrainingQaPageInfo" class="list-pager-info"></span>
-                        <button class="button small" id="aiTrainingQaNextPage">下一页</button>
-                    </div>
-                </section>
+                        <div class="rag-kb-search"><input id="ragKbSearch" placeholder="搜索 fact_code / 名称 / 问法 / 正文…"></div>
+                        <div id="ragKbList" class="rag-kb-list"></div>
+                    </section>
+                    <section class="panel ai-training-panel" id="ragKbDetail"></section>
+                </div>
             </div>
 
             <div class="ai-tab-content" id="aiTabDialogues">
@@ -2107,7 +2090,7 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260902-undelivered"></script>
-<script src="app.js?v=20260902-undelivered"></script>
+<script src="trust-reply-workbench.js?v=20260902-rag-knowledge-base"></script>
+<script src="app.js?v=20260902-rag-knowledge-base"></script>
 </body>
 </html>
