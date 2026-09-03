@@ -100,12 +100,6 @@ const state = {
     selectedReplySnippetId: null,
     aiTraining: {
         activeTab: "simulate",
-        qaPage: 0,
-        qaSize: 20,
-        qaTotal: 0,
-        qaSource: "",
-        qaItems: [],
-        editingQaId: null,
         // plan 04: RAG 知识库子 Tab 状态（替换旧 QA 子 Tab 的展示）。
         ragKbFacts: [],
         ragKbFingerprint: "",
@@ -3298,11 +3292,6 @@ async function loadReplySnippets() {
     renderReplySnippetsPanels();
 }
 
-const aiTrainingSourceLabels = {
-    MANUAL_IMPORT: "人工导入",
-    AUTO_EXTRACTED: "自动提炼"
-};
-
 function switchAiTrainingTab(tab) {
     state.aiTraining.activeTab = tab;
     document.querySelectorAll("#view-ai-training .ai-tab").forEach((button) => {
@@ -3328,42 +3317,6 @@ function switchAiTrainingTab(tab) {
     }
 }
 
-function renderAiTrainingQaPager() {
-    const pager = $("#aiTrainingQaPager");
-    const size = state.aiTraining.qaSize;
-    const total = state.aiTraining.qaTotal;
-    const totalPages = Math.max(1, Math.ceil(total / size));
-    if (total <= size) {
-        pager.hidden = true;
-        return;
-    }
-    pager.hidden = false;
-    $("#aiTrainingQaPageInfo").textContent = `第 ${state.aiTraining.qaPage + 1} / ${totalPages} 页（共 ${total} 条）`;
-    $("#aiTrainingQaPrevPage").disabled = state.aiTraining.qaPage <= 0;
-    $("#aiTrainingQaNextPage").disabled = state.aiTraining.qaPage >= totalPages - 1;
-}
-
-function renderAiTrainingQaTable() {
-    const rows = state.aiTraining.qaItems.map((item) => {
-        const sourceLabel = aiTrainingSourceLabels[item.source] || item.source;
-        const sourceBadgeClass = item.source === "AUTO_EXTRACTED" ? "ok" : "primary";
-        return `
-        <tr>
-            <td><strong>${escapeHtml(item.topic)}</strong></td>
-            <td>${badge(sourceLabel, sourceBadgeClass)}</td>
-            <td class="muted-cell">${escapeHtml(item.keywords || "-")}</td>
-            <td class="muted-cell">${escapeHtml((item.answer || "").slice(0, 240))}${(item.answer || "").length > 240 ? "…" : ""}</td>
-            <td style="text-align: right; white-space: nowrap;">
-                <button type="button" class="button small" data-action="edit-ai-training-qa" data-qa-id="${item.id}">编辑</button>
-                <button type="button" class="button small" data-action="delete-ai-training-qa" data-qa-id="${item.id}">删除</button>
-            </td>
-        </tr>`;
-    }).join("");
-    $("#aiTrainingQaTable").innerHTML = rows
-        || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">暂无知识库记录</td></tr>`;
-    renderAiTrainingQaPager();
-}
-
 function renderAiTrainingDialogueTable() {
     const rows = (state.aiTraining.dialogueItems || []).map((item) => `
         <tr>
@@ -3382,84 +3335,6 @@ async function loadAiTrainingDialogues() {
     state.aiTraining.dialogueItems = Array.isArray(items) ? items : [];
     renderAiTrainingDialogueTable();
 }
-
-function showAiTrainingQaModal() {
-    $("#aiTrainingQaModal").hidden = false;
-    document.body.classList.add("modal-open");
-}
-
-function hideAiTrainingQaModal() {
-    const form = $("#aiTrainingQaForm");
-    form?.reset();
-    $("#aiTrainingQaModal").hidden = true;
-    document.body.classList.remove("modal-open");
-    state.aiTraining.editingQaId = null;
-}
-
-function showQaEditModal(qaItem) {
-    const form = $("#aiTrainingQaForm");
-    if (!form) return;
-    state.aiTraining.editingQaId = qaItem?.id || null;
-    $("#aiTrainingQaEditorTitle").textContent = qaItem ? "编辑 QA 条目" : "添加 QA 条目";
-    form.topic.value = qaItem?.topic || "";
-    form.question.value = qaItem?.question || "";
-    form.answer.value = qaItem?.answer || "";
-    form.keywords.value = qaItem?.keywords || "";
-    showAiTrainingQaModal();
-}
-
-async function saveAiTrainingQaItem(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const values = formValues(form);
-    const payload = {
-        topic: values.topic,
-        question: values.question || null,
-        answer: values.answer,
-        keywords: values.keywords || null
-    };
-    if (state.aiTraining.editingQaId) {
-        await api(`/api/ai-training/qa/${state.aiTraining.editingQaId}`, {
-            method: "PUT",
-            body: JSON.stringify(payload)
-        });
-    } else {
-        await api("/api/ai-training/qa", {
-            method: "POST",
-            body: JSON.stringify(payload)
-        });
-    }
-    hideAiTrainingQaModal();
-    await loadAiTrainingQa();
-    showStatus("QA 条目已保存", "ok");
-}
-
-async function deleteQaItem(id) {
-    if (!confirm("确认删除该 QA 条目？")) return;
-    await api(`/api/ai-training/qa/${id}`, { method: "DELETE" });
-    await loadAiTrainingQa();
-    showStatus("QA 条目已删除", "ok");
-}
-
-async function loadAiTrainingQa() {
-    const params = new URLSearchParams();
-    params.set("page", String(state.aiTraining.qaPage));
-    params.set("size", String(state.aiTraining.qaSize));
-    if (state.aiTraining.qaSource) {
-        params.set("source", state.aiTraining.qaSource);
-    }
-    const data = await api(`/api/ai-training/qa?${params}`);
-    state.aiTraining.qaItems = data.items || [];
-    state.aiTraining.qaTotal = data.total ?? state.aiTraining.qaItems.length;
-    renderAiTrainingQaTable();
-}
-
-// =====================================================================
-// plan 04: RAG 知识库子 Tab（G-6 三点同步：index.html 按钮 data-tab="ragKb" /
-// 面板 aiTabRagKb / switchAiTrainingTab 白名单链；loadAiTraining 在此加载）。
-// 旧 QA 渲染函数 renderAiTrainingQaPager/Table/loadAiTrainingQa 保留不删，
-// 由 07 统一清理（G-7）。
-// =====================================================================
 
 function ragKbEffectiveStatus(fact) {
     return fact.enabled ? fact.status : "DISABLED";
@@ -12648,9 +12523,6 @@ function bindEvents() {
             updateSenderBindingDirtyState();
         }
     });
-    $("#reloadAiTrainingQaBtn")?.addEventListener("click", () => {
-        loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
-    });
     $("#reloadAiTrainingUnsupportedAnswersBtn")?.addEventListener("click", () => {
         loadAiTrainingUnsupportedAnswers(true);
     });
@@ -12688,41 +12560,6 @@ function bindEvents() {
     });
     $("#reloadAiTrainingDialoguesBtn")?.addEventListener("click", () => {
         loadAiTrainingDialogues().catch((error) => showStatus(error.message, "error"));
-    });
-    $("#aiTrainingAddQaBtn")?.addEventListener("click", () => showQaEditModal());
-    $("#aiTrainingQaForm")?.addEventListener("submit", (event) => {
-        saveAiTrainingQaItem(event).catch((error) => showStatus(error.message, "error"));
-    });
-    $("#aiTrainingQaCancelBtn")?.addEventListener("click", hideAiTrainingQaModal);
-    $("#aiTrainingQaModalCloseBtn")?.addEventListener("click", hideAiTrainingQaModal);
-    $("#aiTrainingQaModalBackdrop")?.addEventListener("click", hideAiTrainingQaModal);
-    $("#aiTrainingQaTable")?.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-action]");
-        if (!button) return;
-        const qaId = Number(button.dataset.qaId);
-        const item = state.aiTraining.qaItems.find((row) => row.id === qaId);
-        if (button.dataset.action === "edit-ai-training-qa" && item) {
-            showQaEditModal(item);
-            return;
-        }
-        if (button.dataset.action === "delete-ai-training-qa" && qaId) {
-            deleteQaItem(qaId).catch((error) => showStatus(error.message, "error"));
-        }
-    });
-    $("#aiTrainingSourceFilter")?.addEventListener("change", (event) => {
-        state.aiTraining.qaSource = event.target.value;
-        state.aiTraining.qaPage = 0;
-        loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
-    });
-    $("#aiTrainingQaPrevPage")?.addEventListener("click", () => {
-        if (state.aiTraining.qaPage > 0) {
-            state.aiTraining.qaPage -= 1;
-            loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
-        }
-    });
-    $("#aiTrainingQaNextPage")?.addEventListener("click", () => {
-        state.aiTraining.qaPage += 1;
-        loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
     });
     $("#aiTrainingPromptForm")?.addEventListener("submit", (event) => {
         saveAiTrainingPromptConfig(event).catch((error) => showStatus(error.message, "error"));

@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController
 
 /**
  * 计划 03 (T6): RAG 整封草稿端点，新命名空间 `/api/rag-reply`（与旧
- * `/api/trust-reply/workbench` 零重叠，可并行灰度）。
+ * 可信工作台端点命名空间零重叠，可并行灰度；旧命名空间已随 07 摘除）。
  *
  * - `POST /api/rag-reply/compose`：给定一封来信（训练邮件或线上来信）返回整封
  *   草稿的框架分段 + 模型正文分段 + 用到的有序事实 + 未识别提问。

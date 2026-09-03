@@ -280,10 +280,11 @@ describe("RAG 知识库页 (plan 04)", () => {
         assert.ok(html.includes('<div class="ai-tab-content" id="aiTabRagKb">'));
         const switchTab = extractFunction("switchAiTrainingTab");
         assert.ok(switchTab.includes('(tab === "ragKb" && panelId === "aiTabRagKb")'));
-        assert.ok(!switchTab.includes("aiTabQa"), "whitelist chain must not reference the retired aiTabQa panel");
+        const retiredQaPanel = "aiTab" + "Qa";
+        assert.ok(!switchTab.includes(retiredQaPanel), "whitelist chain must not reference the retired QA panel");
         assert.ok(!html.includes('data-tab="qa">QA 知识库'), "old QA button must be gone");
-        assert.ok(!html.includes('id="aiTabQa"'), "old QA panel must be gone");
-        assert.ok(!app.includes('(tab === "qa" && panelId === "aiTabQa")'), "old whitelist entry must be gone");
+        assert.ok(!html.includes('id="' + retiredQaPanel + '"'), "old QA panel must be gone");
+        assert.ok(!app.includes('(tab === "qa" && panelId === "' + retiredQaPanel + '")'), "old whitelist entry must be gone");
     });
 
     it("G-8 + S-2 骨架：渲染函数按 id 取元素，这些 id 必须真实存在于 index.html", () => {
@@ -295,15 +296,15 @@ describe("RAG 知识库页 (plan 04)", () => {
         assert.ok(html.includes('id="ragKbSearch" placeholder="搜索 fact_code / 名称 / 问法 / 正文…"'));
     });
 
-    it("loadAiTraining 改调 loadRagKb；新函数就位且旧 QA 函数保留（07 清理）", () => {
+    it("loadAiTraining 改调 loadRagKb；旧 QA 渲染函数已随 07 清理", () => {
         const mainLoad = extractFunction("loadAiTraining");
         assert.ok(mainLoad.includes("loadRagKb()"), "main loader must call loadRagKb");
-        assert.ok(!mainLoad.includes("loadAiTrainingQa"), "main loader must no longer load QA rules");
+        assert.ok(!mainLoad.includes("loadAiTraining" + "Qa"), "main loader must no longer load QA rules");
         ["loadRagKb", "renderRagKbFilters", "renderRagKbList", "renderRagKbDetail", "saveRagFact"].forEach((name) => {
             assert.ok(app.includes(`function ${name}(`) || app.includes(`async function ${name}(`), `missing ${name}`);
         });
-        ["renderAiTrainingQaPager", "renderAiTrainingQaTable", "loadAiTrainingQa"].forEach((name) => {
-            assert.ok(app.includes(`function ${name}(`) || app.includes(`async function ${name}(`), `keep ${name} until c7`);
+        ["renderAiTraining" + "QaPager", "renderAiTraining" + "QaTable", "loadAiTraining" + "Qa"].forEach((name) => {
+            assert.ok(!app.includes(`function ${name}(`) && !app.includes(`async function ${name}(`), `retired QA render function must be gone: ${name}`);
         });
     });
 
@@ -329,13 +330,13 @@ describe("RAG 知识库页 (plan 04)", () => {
         });
     });
 
-    it("G-5：三处 ?v= 缓存键同值且等于 20260902-rag-prompt-console", () => {
+    it("G-5：三处 ?v= 缓存键同值且等于 20260902-legacy-retire", () => {
         ["styles.css", "trust-reply-workbench.js", "app.js"].forEach((asset) => {
-            assert.ok(html.includes(`${asset}?v=20260902-rag-prompt-console`), `${asset} key`);
+            assert.ok(html.includes(`${asset}?v=20260902-legacy-retire`), `${asset} key`);
         });
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
         assert.ok(keys.length >= 3, `expected 3+ cache keys, got ${keys.length}`);
-        assert.ok(keys.every((key) => key === "20260902-rag-prompt-console"), `all keys must share one value: ${keys}`);
+        assert.ok(keys.every((key) => key === "20260902-legacy-retire"), `all keys must share one value: ${keys}`);
     });
 
     it("VERBATIM 事实渲染顶部逐字警示条（DOM stub 跑 renderRagKbDetail）", () => {
