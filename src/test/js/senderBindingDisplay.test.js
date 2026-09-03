@@ -193,4 +193,72 @@ describe("senderBindingDisplay accounts table", () => {
         assert.ok(html.includes("<td>12</td>"));
         assert.ok(html.includes("<td>0</td>"));
     });
+
+    it("renders 硬退率过高 warn badge without resume action when only warning", async () => {
+        const store = new Map();
+        const sandbox = {
+            $: createElStub(store),
+            state: { accounts: [] },
+            badge: (v, t) => `<span class="badge ${t || ""}">${v}</span>`,
+            api: async () => []
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("escapeHtml"), sandbox);
+        vm.runInContext(extractFn("loadAccounts"), sandbox);
+        sandbox.api = async () => [
+            {
+                accountCode: "WARN_ONLY",
+                senderEmail: "warn@example.com",
+                strategyWeight: 100,
+                todaySentCount: 1,
+                effectiveDailyLimit: 100,
+                dailySendLimit: 100,
+                enabled: true,
+                autoSendPaused: false,
+                hardBounceRateHigh: true,
+                boundExpertCount: 12
+            }
+        ];
+        await sandbox.loadAccounts();
+        const html = sandbox.$("#accountsTable").innerHTML;
+        assert.ok(html.includes("启用"));
+        assert.ok(html.includes("badge warn"));
+        assert.ok(html.includes("硬退率过高"));
+        assert.ok(html.includes('title="近7天硬退率超过5%（已发至少20封）；仅提示，不影响自动发送"'));
+        assert.ok(!html.includes('data-action="resume-auto-send"'));
+    });
+
+    it("keeps 自动暂停 and resume action orthogonal to 硬退率过高 warning", async () => {
+        const store = new Map();
+        const sandbox = {
+            $: createElStub(store),
+            state: { accounts: [] },
+            badge: (v, t) => `<span class="badge ${t || ""}">${v}</span>`,
+            api: async () => []
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("escapeHtml"), sandbox);
+        vm.runInContext(extractFn("loadAccounts"), sandbox);
+        sandbox.api = async () => [
+            {
+                accountCode: "FAULT",
+                senderEmail: "fault@example.com",
+                strategyWeight: 100,
+                todaySentCount: 1,
+                effectiveDailyLimit: 100,
+                dailySendLimit: 100,
+                enabled: true,
+                autoSendPaused: true,
+                autoSendPausedReason: "SELF_CHECK_FAILED:timeout",
+                hardBounceRateHigh: true,
+                boundExpertCount: 12
+            }
+        ];
+        await sandbox.loadAccounts();
+        const html = sandbox.$("#accountsTable").innerHTML;
+        assert.ok(html.includes("自动暂停"));
+        assert.ok(html.includes("SELF_CHECK_FAILED:timeout"));
+        assert.ok(html.includes("硬退率过高"));
+        assert.ok(html.includes('data-action="resume-auto-send"'));
+    });
 });

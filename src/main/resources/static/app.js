@@ -1715,9 +1715,13 @@ async function loadAccounts() {
     state.accounts = await api("/api/mail/sender-accounts");
     $("#accountsTable").innerHTML = state.accounts.map((account) => {
         const autoPaused = account.autoSendPaused === true;
+        const hardBounceRateHigh = account.hardBounceRateHigh === true;
         const statusCell = badge(account.enabled ? "启用" : "禁用", account.enabled ? "ok" : "error")
             + (autoPaused
                 ? ` <span class="badge warn" title="${escapeHtml(account.autoSendPausedReason || "自动暂停")}">自动暂停</span>`
+                : "")
+            + (hardBounceRateHigh
+                ? ` <span class="badge warn" title="近7天硬退率超过5%（已发至少20封）；仅提示，不影响自动发送">硬退率过高</span>`
                 : "");
         const actions = [
             `<button class="button" data-action="view-account" data-code="${escapeHtml(account.accountCode)}">查看</button>`,

@@ -330,13 +330,13 @@ describe("RAG 知识库页 (plan 04)", () => {
         });
     });
 
-    it("G-5：三处 ?v= 缓存键同值且等于 20260902-legacy-retire", () => {
+    it("G-5：三处 ?v= 缓存键同值且等于 20260903-bounce-warning", () => {
         ["styles.css", "trust-reply-workbench.js", "app.js"].forEach((asset) => {
-            assert.ok(html.includes(`${asset}?v=20260902-legacy-retire`), `${asset} key`);
+            assert.ok(html.includes(`${asset}?v=20260903-bounce-warning`), `${asset} key`);
         });
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
         assert.ok(keys.length >= 3, `expected 3+ cache keys, got ${keys.length}`);
-        assert.ok(keys.every((key) => key === "20260902-legacy-retire"), `all keys must share one value: ${keys}`);
+        assert.ok(keys.every((key) => key === "20260903-bounce-warning"), `all keys must share one value: ${keys}`);
     });
 
     it("VERBATIM 事实渲染顶部逐字警示条（DOM stub 跑 renderRagKbDetail）", () => {
