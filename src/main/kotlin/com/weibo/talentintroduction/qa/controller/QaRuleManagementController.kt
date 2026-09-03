@@ -17,6 +17,9 @@ import com.weibo.talentintroduction.qa.service.QaRuleDetail
 import com.weibo.talentintroduction.qa.service.QaRuleManagementService
 import com.weibo.talentintroduction.qa.service.QaRuleUpdateCommand
 import com.weibo.talentintroduction.qa.service.QaRuleWithCategory
+import com.weibo.talentintroduction.common.controller.ApiErrorResponse
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
@@ -25,6 +28,12 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
+
+/** 只读守卫：qa_rule / qa_category 已停写（I-35/D-9）。路由保留以返回明确 403。 */
+private fun readOnly(): Nothing =
+    throw ResponseStatusException(HttpStatus.FORBIDDEN, "QA_RULE_READ_ONLY")
 
 @RestController
 @RequestMapping("/api/qa")
@@ -95,15 +104,15 @@ class QaRuleManagementController(
 
     @PostMapping("/categories")
     fun createCategory(@RequestBody request: QaCategoryCreateRequest): QaCategoryResponse =
-        service.createCategory(request.toCommand()).toResponse()
+        readOnly()
 
     @PostMapping("/categories/{categoryCode}/enable")
     fun enableCategory(@PathVariable categoryCode: String): QaCategoryResponse =
-        service.setCategoryEnabled(categoryCode, true).toResponse()
+        readOnly()
 
     @PostMapping("/categories/{categoryCode}/disable")
     fun disableCategory(@PathVariable categoryCode: String): QaCategoryResponse =
-        service.setCategoryEnabled(categoryCode, false).toResponse()
+        readOnly()
 
     @GetMapping("/rules")
     fun listRules(@RequestParam(required = false) categoryId: Long?): List<QaRuleResponse> =
@@ -111,22 +120,35 @@ class QaRuleManagementController(
 
     @PostMapping("/rules")
     fun createRule(@RequestBody request: QaRuleCreateRequest): QaRuleResponse =
-        service.createRule(request.toCommand()).toResponse(category = null)
+        readOnly()
 
     @PutMapping("/rules/{ruleId}")
     fun updateRule(
         @PathVariable ruleId: Long,
         @RequestBody request: QaRuleUpdateRequest
     ): QaRuleResponse =
-        service.updateRule(ruleId, request.toCommand()).toResponse(category = null)
+        readOnly()
 
     @PostMapping("/rules/{ruleId}/enable")
     fun enableRule(@PathVariable ruleId: Long): QaRuleResponse =
-        service.setRuleEnabled(ruleId, true).toResponse(category = null)
+        readOnly()
 
     @PostMapping("/rules/{ruleId}/disable")
     fun disableRule(@PathVariable ruleId: Long): QaRuleResponse =
-        service.setRuleEnabled(ruleId, false).toResponse(category = null)
+        readOnly()
+    /**
+     * 本控制器停写守卫的响应出口。仓内 GlobalExceptionHandler 的兜底
+     * `@ExceptionHandler(Exception)` 会把 ResponseStatusException 变成 500
+     * INTERNAL_ERROR（实测），故按 TrustReplyWorkbenchController /
+     * RagReplyController 先例在控制器本地把守卫异常还原为它的状态码 +
+     * ApiErrorResponse(code = reason)（403 QA_RULE_READ_ONLY，不是 404/500）。
+     */
+    @ExceptionHandler(ResponseStatusException::class)
+    fun handleReadOnlyGuard(ex: ResponseStatusException): ResponseEntity<ApiErrorResponse> {
+        val code = ex.reason ?: ex.status.reasonPhrase
+        return ResponseEntity.status(ex.status)
+            .body(ApiErrorResponse(code = code, message = code, detail = null))
+    }
 
     @GetMapping("/coverage-keys")
     fun listCoverageKeys(): List<CoverageKeyMetadataResponse> {
