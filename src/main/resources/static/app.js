@@ -10250,8 +10250,15 @@ function buildTrustReplyAssemblySnapshot(assembly) {
 
 function adoptTrustReplyAssembly(recordId, assembly) {
     const editor = $("#manualRichReplyEditor");
-    const rendered = assembly.renderedDraftText || assembly.rawDraftText || "";
+    const rendered = assembly.renderedDraftText || assembly.rawDraftText || assembly.text || "";
     if (editor) editor.innerText = rendered;
+    // 03b (I-39/I-44): 按 assembly 形态分流 —— 05 的 RAG 载荷含 usedFactCodes
+    // （字符串 fact_code 列表 + ragCorpusFingerprint），旧可信工作台载荷含
+    // canonicalFactIds（Long ids）。RAG 形态下证据进 ragFactCodes/ragCorpusFingerprint
+    // 且不跑 preflight（I-44：preflight 的 factRuleIds: List<Long> 与
+    // expectedEvidenceSetVersion 在 RAG 下无对应物；其职责由发送侧 I-41 指纹门禁 +
+    // D-1「零强制门禁」覆盖）。
+    const ragShape = Array.isArray(assembly.usedFactCodes);
     aiReplyState.adoptContext = {
         rawTemplate: assembly.rawDraftText || "",
         renderedBaseline: editor ? editor.innerText : rendered,
@@ -10261,20 +10268,35 @@ function adoptTrustReplyAssembly(recordId, assembly) {
         needsGroundingReview: false,
         reviewItems: [],
         draftReadiness: "READY",
-        requestCount: (assembly.itemVersions || []).length,
-        mode: "TRUST_REPLY_WORKBENCH",
+        requestCount: ragShape ? (assembly.usedFactCodes || []).length : (assembly.itemVersions || []).length,
+        mode: ragShape ? "RAG_REPLY_COMPOSER" : "TRUST_REPLY_WORKBENCH",
         qaRuleIds: [...(assembly.canonicalFactIds || [])],
         evidenceSetVersion: assembly.evidenceSetVersion,
         draftHash: assembly.draftHash,
-        trustReplyAssembly: buildTrustReplyAssemblySnapshot(assembly)
+        // RAG 形态绝不携带 trustReplyAssembly：空快照对象也是 truthy，会让发送请求
+        // 误带旧 assembly 撞上服务端校验 / I-39 冲突；旧形态行为逐字不变。
+        trustReplyAssembly: ragShape ? null : buildTrustReplyAssemblySnapshot(assembly)
     };
-    manualReplyQaContext = {
-        qaRuleIds: [...(assembly.canonicalFactIds || [])],
-        baselineText: rendered
-    };
+    if (ragShape) {
+        manualReplyQaContext = {
+            ragFactCodes: [...assembly.usedFactCodes],
+            ragCorpusFingerprint: assembly.ragCorpusFingerprint,
+            baselineText: rendered
+        };
+    } else {
+        manualReplyQaContext = {
+            qaRuleIds: [...(assembly.canonicalFactIds || [])],
+            baselineText: rendered
+        };
+    }
     showStatus("草稿已采用到人工回复区，请确认后发送", "ok");
     editor?.closest(".detail-section")?.scrollIntoView({ behavior: "smooth" });
-    schedulePreflightCheck();
+    if (ragShape) {
+        // I-44: RAG 形态不调度 preflight；同时清掉任何遗留的防抖定时器与旧面板。
+        resetPreflightState();
+    } else {
+        schedulePreflightCheck();
+    }
 }
 
 function mountLiveTrustReply(recordId) {
@@ -11036,6 +11058,14 @@ async function handleUnmatchedAction(element) {
             if (adopt.trustReplyAssembly) {
                 requestBody.trustReplyAssembly = adopt.trustReplyAssembly;
             }
+        }
+        // 03b (I-39): 发送载荷按 manualReplyQaContext 形态选择证据字段 —— RAG 形态带
+        // ragFactCodes（字符串 fact_code）+ ragCorpusFingerprint；旧形态带 qaRuleIds
+        // （Long）。两形态互斥（采用路径只写其一），上下文均缺省时是纯人工正文发送。
+        if (manualReplyQaContext?.ragFactCodes !== undefined) {
+            requestBody.ragFactCodes = manualReplyQaContext.ragFactCodes;
+            requestBody.ragCorpusFingerprint = manualReplyQaContext.ragCorpusFingerprint;
+            requestBody.edited = editor.innerText.trim() !== (manualReplyQaContext.baselineText || "").trim();
         }
         if (manualReplyQaContext?.qaRuleIds?.length) {
             requestBody.qaRuleIds = manualReplyQaContext.qaRuleIds;
