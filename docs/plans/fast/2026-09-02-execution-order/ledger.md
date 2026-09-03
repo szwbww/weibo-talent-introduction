@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-02T14:20:00Z
-- Current child: c5
+- Current child: c6
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
@@ -34,7 +34,7 @@
 | c2 | docs/plans/2026-09-02/02-rag-deterministic-retrieval.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c1 | 1 | LIGHT_PASS_WITH_NOTES | acb88c1e77d172a7f252690b1da1203f08c01817 | af8fb5fad2bb28ebf18324242e2959d11d297aad | 0 | — | af8fb5fad2bb28ebf18324242e2959d11d297aad | — | corpus env-block human-approved (O-1); O-2..O-6 (verify-log); GOVERNMENT_ORG/ORGANIZATION alias preserves script parity |
 | c3 | docs/plans/2026-09-02/03-rag-letter-composer.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c2 | 1 | LIGHT_PASS_WITH_NOTES | af8fb5fad2bb28ebf18324242e2959d11d297aad | 10a38bb6457280f7104a333faa46fad6f7cb078f | 0 | — | 10a38bb6457280f7104a333faa46fad6f7cb078f | — | T0 4-arg overload verified (22 overrides intact); O-1..O-5 (verify-log) |
 | c4 | docs/plans/2026-09-02/03b-rag-send-bridge.md | commit:f63153a1e7bc03fa0455b94453787990c6c09a23 | c3 | 2 | LIGHT_PASS_WITH_NOTES | 10a38bb6457280f7104a333faa46fad6f7cb078f | ae755c417d2be4cecda52c5adf20a7f52227a072 | 0 | — | ae755c417d2be4cecda52c5adf20a7f52227a072 | — | A3+A4 amendments (epoch 2); Flyway IT env-blocked (docker API 1.32 vs OrbStack 1.40, base-reproduced); V113 scratch-chain verified; O-1..O-3 (verify-log) |
-| c5 | docs/plans/2026-09-02/04-rag-knowledge-base-page.md | commit:92b0519a18a3a46989f8733259af4649f7748a72 | c1 | 1 | PENDING | — | — | — | — | — | — | V114 KB page + audit; plan identity = amended commit (A1 constant) |
+| c5 | docs/plans/2026-09-02/04-rag-knowledge-base-page.md | commit:92b0519a18a3a46989f8733259af4649f7748a72 | c1 | 1 | LIGHT_PASS_WITH_NOTES | ae755c417d2be4cecda52c5adf20a7f52227a072 | db89054f32a51f79f4cc86f5b21a9871a8dac729 | 0 | — | db89054f32a51f79f4cc86f5b21a9871a8dac729 | — | G-5 master-rule sync of 3 extra pin test files (12 files total); RagFactAdminServiceTest 10/10 scratch chain; Flyway IT env-blocked; O-1..O-4 (verify-log) |
 | c6 | docs/plans/2026-09-02/05-workbench-frontend-replace.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c4 | 1 | PENDING | — | — | — | — | — | — | workbench frontend replace |
 | c7 | docs/plans/2026-09-02/06-prompt-console.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c3 | 1 | PENDING | — | — | — | — | — | — | V115 prompt console |
 | c8 | docs/plans/2026-09-02/07-legacy-entry-retire.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c5,c6,c7 | 1 | PENDING | — | — | — | — | — | — | legacy retire, must be last |
