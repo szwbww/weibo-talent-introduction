@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-02T14:20:00Z
-- Current child: c7
+- Current child: c8
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
@@ -36,7 +36,7 @@
 | c4 | docs/plans/2026-09-02/03b-rag-send-bridge.md | commit:f63153a1e7bc03fa0455b94453787990c6c09a23 | c3 | 2 | LIGHT_PASS_WITH_NOTES | 10a38bb6457280f7104a333faa46fad6f7cb078f | ae755c417d2be4cecda52c5adf20a7f52227a072 | 0 | — | ae755c417d2be4cecda52c5adf20a7f52227a072 | — | A3+A4 amendments (epoch 2); Flyway IT env-blocked (docker API 1.32 vs OrbStack 1.40, base-reproduced); V113 scratch-chain verified; O-1..O-3 (verify-log) |
 | c5 | docs/plans/2026-09-02/04-rag-knowledge-base-page.md | commit:92b0519a18a3a46989f8733259af4649f7748a72 | c1 | 1 | LIGHT_PASS_WITH_NOTES | ae755c417d2be4cecda52c5adf20a7f52227a072 | db89054f32a51f79f4cc86f5b21a9871a8dac729 | 0 | — | db89054f32a51f79f4cc86f5b21a9871a8dac729 | — | G-5 master-rule sync of 3 extra pin test files (12 files total); RagFactAdminServiceTest 10/10 scratch chain; Flyway IT env-blocked; O-1..O-4 (verify-log) |
 | c6 | docs/plans/2026-09-02/05-workbench-frontend-replace.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c4 | 1 | LIGHT_PASS | db89054f32a51f79f4cc86f5b21a9871a8dac729 | 60efcbaaa14e919ff8b4cfa9539cca41fd6a6d62 | 0 | — | 60efcbaaa14e919ff8b4cfa9539cca41fd6a6d62 | — | master G-5/G-7 retirements (2 deletes + 1 rewrite) + 5-file pin sync; workbench 3122→579 lines; clean LIGHT_PASS |
-| c7 | docs/plans/2026-09-02/06-prompt-console.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c3 | 1 | PENDING | — | — | — | — | — | — | V115 prompt console |
+| c7 | docs/plans/2026-09-02/06-prompt-console.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c3 | 1 | LIGHT_PASS | 60efcbaaa14e919ff8b4cfa9539cca41fd6a6d62 | e76b5a9f49c866afffbccdffcae78443cb16cab3 | 0 | — | e76b5a9f49c866afffbccdffcae78443cb16cab3 | — | master-G-5 +6 pin syncs (16 files); audit via operator_action_log; RagPromptBuilder reads effective(); clean LIGHT_PASS |
 | c8 | docs/plans/2026-09-02/07-legacy-entry-retire.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c5,c6,c7 | 1 | PENDING | — | — | — | — | — | — | legacy retire, must be last |
 
 ## Amendments
