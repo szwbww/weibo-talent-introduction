@@ -1154,16 +1154,18 @@ class QaRuleManagementServiceTest {
         val v82 = Files.readString(
             Paths.get("src/main/resources/db/migration/V82__split_trust_reply_atomic_facts.sql")
         )
+        assertTrue(v82.contains("enabled = 1"), "baseline pins enabled state")
         assertTrue(v82.contains("'Document confidentiality and no fees'"), "old confidentiality subject targeted")
         assertTrue(v82.contains("'Contract and IP arrangements'"), "old contract/IP subject targeted")
-        assertTrue(v82.contains("SHA2(answer_body, 256)"), "answer hash baseline gate present")
-        assertTrue(v82.contains("'2026-06-26 22:14:06'"), "confidentiality updatedAt baseline present")
-        assertTrue(v82.contains("'2026-07-16 18:03:00'"), "contract updatedAt baseline present")
         assertTrue(v82.contains("'04027e0b2046f72f4bcc736a7436299f7880bdef74e321744c61bafebcbb0a37'"), "confidentiality answer SHA-256 baseline")
         assertTrue(v82.contains("'3f142b13e0274db4d5b218f522ffe7071de7a501f6b5ab6324ccade424448f16'"), "contract answer SHA-256 baseline")
-        assertTrue(v82.contains("id = 17") && v82.contains("id = 34"), "both audited ids present")
-        assertTrue(v82.contains(v82DocKeywords), "id 17 keyword baseline present")
-        assertTrue(v82.contains(v82ContractKeywords), "id 34 keyword baseline present")
+        assertTrue(v82.contains(v82DocKeywords), "confidentiality keyword baseline present")
+        assertTrue(v82.contains(v82ContractKeywords), "contract keyword baseline present")
+        assertFalse(v82.contains("id = 17") || v82.contains("id = 34"), "no production-only id pins (gate must pass on fresh DBs)")
+        assertFalse(
+            v82.contains("'2026-06-26 22:14:06'") || v82.contains("'2026-07-16 18:03:00'"),
+            "no literal updated_at baselines (gate must pass on fresh DBs)"
+        )
     }
 
     @Test
@@ -1178,22 +1180,29 @@ class QaRuleManagementServiceTest {
         assertTrue(createGateIdx in 1..callGateIdx, "gate created before it runs")
         assertTrue(callGateIdx in 1..firstInsertIdx, "gate runs before any INSERT")
         assertTrue(callGateIdx in 1..firstUpdateIdx, "gate runs before any UPDATE")
-
         val gateBody = v82.substring(createGateIdx, v82.indexOf("DELIMITER ;", createGateIdx))
         assertTrue(gateBody.contains("SIGNAL SQLSTATE '45000'"), "migration aborts via SIGNAL on baseline drift")
-        assertTrue(gateBody.contains("id = 17") && gateBody.contains("id = 34"), "gate checks both audited ids")
+        assertTrue(
+            gateBody.contains("reply_subject = 'Document confidentiality and no fees'") &&
+                gateBody.contains("reply_subject = 'Contract and IP arrangements'"),
+            "gate checks both audited rules by reply_subject"
+        )
         assertTrue(
             gateBody.contains(v82DocKeywords) && gateBody.contains(v82ContractKeywords),
             "gate checks exact baseline keywords"
         )
         assertTrue(
-            gateBody.contains("'2026-06-26 22:14:06'") && gateBody.contains("'2026-07-16 18:03:00'"),
-            "gate validates both baseline records"
+            gateBody.contains("enabled = 1"),
+            "gate validates baseline enabled state"
         )
         assertTrue(
             gateBody.contains("'04027e0b2046f72f4bcc736a7436299f7880bdef74e321744c61bafebcbb0a37'") &&
                 gateBody.contains("'3f142b13e0274db4d5b218f522ffe7071de7a501f6b5ab6324ccade424448f16'"),
             "gate validates both audited answer hashes"
+        )
+        assertFalse(
+            gateBody.contains("id = 17") || gateBody.contains("id = 34") || gateBody.contains("updated_at"),
+            "gate matches content signature, not production ids or timestamps"
         )
         assertTrue(v82.contains("DROP PROCEDURE v82_trust_reply_baseline_gate"), "gate procedure is cleaned up")
     }
@@ -1204,30 +1213,41 @@ class QaRuleManagementServiceTest {
             Paths.get("src/main/resources/db/migration/V82__split_trust_reply_atomic_facts.sql")
         )
         assertTrue(
-            v82.indexOf("id = 17") != v82.lastIndexOf("id = 17"),
-            "id 17 guarded in both gate and disable predicate"
+            v82.indexOf("'Document confidentiality and no fees'") != v82.lastIndexOf("'Document confidentiality and no fees'"),
+            "confidentiality rule guarded in both gate and disable predicate"
         )
         assertTrue(
-            v82.indexOf("id = 34") != v82.lastIndexOf("id = 34"),
-            "id 34 guarded in both gate and disable predicate"
+            v82.indexOf("'Contract and IP arrangements'") != v82.lastIndexOf("'Contract and IP arrangements'"),
+            "contract rule guarded in both gate and disable predicate"
         )
         assertTrue(
             v82.indexOf(v82DocKeywords) != v82.lastIndexOf(v82DocKeywords),
-            "id 17 exact keywords guarded in both gate and disable predicate"
+            "confidentiality exact keywords guarded in both gate and disable predicate"
         )
         assertTrue(
             v82.indexOf(v82ContractKeywords) != v82.lastIndexOf(v82ContractKeywords),
-            "id 34 exact keywords guarded in both gate and disable predicate"
+            "contract exact keywords guarded in both gate and disable predicate"
         )
         assertTrue(
-            v82.contains("(SELECT category_id FROM qa_rule WHERE id = 17)"),
-            "material/fee rules derive category from validated id 17"
+            v82.indexOf("'04027e0b2046f72f4bcc736a7436299f7880bdef74e321744c61bafebcbb0a37'") !=
+                v82.lastIndexOf("'04027e0b2046f72f4bcc736a7436299f7880bdef74e321744c61bafebcbb0a37'"),
+            "confidentiality answer hash guarded in both gate and disable predicate"
         )
         assertTrue(
-            v82.contains("(SELECT category_id FROM qa_rule WHERE id = 34)"),
-            "contract/IP rules derive category from validated id 34"
+            v82.indexOf("'3f142b13e0274db4d5b218f522ffe7071de7a501f6b5ab6324ccade424448f16'") !=
+                v82.lastIndexOf("'3f142b13e0274db4d5b218f522ffe7071de7a501f6b5ab6324ccade424448f16'"),
+            "contract answer hash guarded in both gate and disable predicate"
         )
-        assertFalse(v82.contains("ORDER BY id LIMIT 1"), "no subject-based fallback derivation remains")
+        assertTrue(
+            v82.contains("(SELECT category_id FROM qa_rule WHERE reply_subject = 'Document confidentiality and no fees')"),
+            "material/fee rules derive category from validated confidentiality rule"
+        )
+        assertTrue(
+            v82.contains("(SELECT category_id FROM qa_rule WHERE reply_subject = 'Contract and IP arrangements')"),
+            "contract/IP rules derive category from validated contract rule"
+        )
+        assertFalse(v82.contains("ORDER BY id LIMIT 1"), "no fallback row derivation remains")
+        assertFalse(v82.contains("id = 17") || v82.contains("id = 34"), "identity is content signature, not production ids")
     }
 
     @Test
