@@ -50,7 +50,7 @@ describe("AI training unsupported answer index", () => {
     it("loads only after activation and sends bounded filter and page parameters", async () => {
         const calls = [];
         const panels = [
-            { id: "aiTabQa", classList: { toggle: () => {} } },
+            { id: "aiTabSimulate", classList: { toggle: () => {} } },
             { id: "aiTabUnsupportedAnswers", classList: { toggle: () => {} } }
         ];
         const sandbox = {

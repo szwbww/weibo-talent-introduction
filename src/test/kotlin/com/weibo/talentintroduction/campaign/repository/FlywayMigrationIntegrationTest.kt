@@ -56,10 +56,10 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh database migrates through V111`() {
+    fun `fresh database migrates through V112`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("111", flyway.migrate().targetSchemaVersion)
+        assertEquals("112", flyway.migrate().targetSchemaVersion)
     }
 
     @Test
@@ -97,6 +97,58 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    fun `V112 creates rag knowledge base with seeded corpus and fingerprint`() {
+        val flyway = flyway()
+        flyway.clean()
+        flyway.migrate()
+        connection().use { connection ->
+            listOf(
+                "rag_fact", "rag_phrase_group", "rag_intent_coverage",
+                "rag_mandatory_rule", "rag_prefilter_exclusion", "rag_kb_meta"
+            ).forEach { table ->
+                assertTrue(connection.tableExists(table), "missing table $table")
+            }
+            listOf(
+                "fact_code", "area", "seq", "title", "category", "question_variants",
+                "keywords", "answer", "coverage_keys", "reply_policy", "status",
+                "risk_level", "render_mode", "source_refs", "legacy_rule_id",
+                "enabled", "sort_order"
+            ).forEach { column ->
+                assertTrue(connection.columnExists("rag_fact", column), "missing rag_fact column $column")
+            }
+            assertTrue(connection.indexExists("rag_fact", "uk_rag_fact_code"))
+            assertTrue(connection.checkConstraintExists("rag_kb_meta", "chk_rag_kb_meta_singleton"))
+
+            // 45 条语料种子，fact_code 全唯一。
+            assertEquals(45L, connection.queryLong("SELECT COUNT(*) FROM rag_fact"))
+            assertEquals(45L, connection.queryLong("SELECT COUNT(DISTINCT fact_code) FROM rag_fact"))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM rag_fact WHERE enabled = 0"
+            ))
+            assertEquals(7L, connection.queryLong(
+                "SELECT COUNT(*) FROM rag_fact WHERE render_mode = 'VERBATIM'"
+            ))
+
+            // rag_kb_meta 单行：G-2 指纹 + fact_count（与 export 脚本输出一致）。
+            assertEquals(1L, connection.queryLong("SELECT COUNT(*) FROM rag_kb_meta"))
+            assertEquals("e62421a42c432cf3", connection.queryString(
+                "SELECT fingerprint FROM rag_kb_meta"
+            ))
+            assertEquals(45L, connection.queryLong("SELECT fact_count FROM rag_kb_meta"))
+
+            // 规则表行数 + D-3 强制行。
+            assertEquals(87L, connection.queryLong("SELECT COUNT(*) FROM rag_phrase_group"))
+            assertEquals(21L, connection.queryLong("SELECT COUNT(*) FROM rag_intent_coverage"))
+            assertEquals(6L, connection.queryLong("SELECT COUNT(*) FROM rag_mandatory_rule"))
+            assertEquals(4L, connection.queryLong("SELECT COUNT(*) FROM rag_prefilter_exclusion"))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM rag_mandatory_rule " +
+                    "WHERE sort_order = 15 AND rule_code = 'COMPENSATION' AND fact_codes = 'KB-FUND-033'"
+            ))
+        }
+    }
+
+    @Test
     fun `V111 creates expert_material_status with constraints and zero rows`() {
         val flyway = flyway()
         flyway.clean()
@@ -119,14 +171,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V23 upgrades to V111 without repair`() {
+    fun `database at original V23 upgrades to V112 without repair`() {
         val v23Flyway = flyway(MigrationVersion.fromVersion("23"))
         v23Flyway.clean()
         assertEquals("23", v23Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("111", flyway().migrate().targetSchemaVersion)
+        assertEquals("112", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -135,14 +187,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V24 upgrades to V111 without repair`() {
+    fun `database at original V24 upgrades to V112 without repair`() {
         val v24Flyway = flyway(MigrationVersion.fromVersion("24"))
         v24Flyway.clean()
         assertEquals("24", v24Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("111", flyway().migrate().targetSchemaVersion)
+        assertEquals("112", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -177,8 +229,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("111", flyway().migrate().targetSchemaVersion)
-
+        assertEquals("112", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
                 "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
@@ -224,7 +275,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("111", flyway().migrate().targetSchemaVersion)
+        assertEquals("112", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }
@@ -320,6 +371,14 @@ class FlywayMigrationIntegrationTest {
             statement.executeQuery(sql).use { result ->
                 check(result.next())
                 result.getLong(1)
+            }
+        }
+
+    private fun Connection.queryString(sql: String): String =
+        createStatement().use { statement ->
+            statement.executeQuery(sql).use { result ->
+                check(result.next())
+                result.getString(1)
             }
         }
 

@@ -49,7 +49,9 @@ class OperatorStatusWriteSeamGuardTest {
         // 响应 DTO 构造：把当前值原样回显到出参 DTO
         // （守卫误报修正：行号登记 1098 → 实际 1099，2026-08-20 人工回复透传新增一行导致偏移；
         //   2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :1099 偏移至 :1116）
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1116, "operatorStatus = operatorStatus"),
+        // 03b (A3-adjacent, 行号钉随授权改动平移 +2): c4 在 sendManualRichReply 转发处新增
+        // ragFactCodes/ragCorpusFingerprint 两行（controller :267-268），使本噪声行 1116 → 1118。
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1118, "operatorStatus = operatorStatus"),
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO

@@ -9,10 +9,12 @@ import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationSe
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
+import com.weibo.talentintroduction.mail.domain.MailRecordRagFact
 import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
+import com.weibo.talentintroduction.mail.repository.MailRecordRagFactRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.llm.controller.IntentCoverageResponse
 import com.weibo.talentintroduction.llm.controller.RequestCoverageItem
@@ -45,6 +47,7 @@ import com.weibo.talentintroduction.qa.service.CategoryRulesGroup
 import com.weibo.talentintroduction.qa.service.CompositionSuggestResult
 import com.weibo.talentintroduction.qa.service.GapItem
 import com.weibo.talentintroduction.qa.service.SuggestQaRule
+import com.weibo.talentintroduction.rag.service.RagKnowledgeBase
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -76,7 +79,12 @@ class PendingMailOperationService(
     private val manualReplySendAttemptService: ManualReplySendAttemptService,
     private val trustReplyWorkbenchService: TrustReplyWorkbenchService,
     private val unsupportedAnswerIndexService: UnsupportedAnswerIndexService,
-    private val emailSuppressionService: EmailSuppressionService
+    private val emailSuppressionService: EmailSuppressionService,
+    // 03b (I-40/I-41/I-43): RAG 发送路径的协作件。可空默认 null 仅为让既有的直接
+    // 构造单元测试（不触碰 RAG 分支）保持零改动；Spring 运行时按主构造器完整注入，
+    // RAG 分支入口 requireNotNull 防御性校验。
+    private val mailRecordRagFactRepository: MailRecordRagFactRepository? = null,
+    private val ragKnowledgeBase: RagKnowledgeBase? = null
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(PendingMailOperationService::class.java)
@@ -149,7 +157,11 @@ class PendingMailOperationService(
         templateHtmlBody: String? = null,
         trustReplyAssembly: TrustReplyAssembleRequest? = null,
         safetyWarningConfirmed: Boolean = false,
-        strongConfirmationText: String? = null
+        strongConfirmationText: String? = null,
+        // 03b (I-39~I-43): RAG 证据 —— fact_code 字符串列表 + 生成草稿时下发的语料指纹。
+        // 追加在参数末尾，既有调用点零改动；与 trustReplyAssembly 互斥（I-39）。
+        ragFactCodes: List<String>? = null,
+        ragCorpusFingerprint: String? = null
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -165,6 +177,41 @@ class PendingMailOperationService(
 
         val inboundText = inboundMessageBody(record)
         val researchProfileSufficient = resolveResearchProfileSufficient(contact, inboundText)
+
+        // 03b (I-39): 三条发送路径互斥 —— 旧工作台 assembly 与 RAG fact_code 证据同时出现
+        // → 400 SEND_EVIDENCE_SOURCE_CONFLICT，绝不任选其一（否则 mail_record_qa_rule 与
+        // mail_record_rag_fact 各写一份、互相矛盾）。判定先于下方 assembly 服务端重算。
+        val ragMode = ragFactCodes != null
+        if (trustReplyAssembly != null && ragMode) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "SEND_EVIDENCE_SOURCE_CONFLICT")
+        }
+        // 03b (I-41/I-40): RAG 发送门禁 —— 指纹缺失 → 400 RAG_FINGERPRINT_REQUIRED；
+        // 与当前语料指纹不符 → 409 RAG_CORPUS_STALE（不自动重新生成、不静默放行）；
+        // 每个 fact_code 必须存在且 enabled → 否则 422 RAG_FACT_CODE_UNKNOWN。
+        // 校验只对 RagKnowledgeBase 快照进行（I-40/G-4），绝不读 qa_rule / legacy_rule_id。
+        val ragFingerprintAtSend: String? = if (ragMode) {
+            val ragKb = requireNotNull(ragKnowledgeBase) {
+                "RagKnowledgeBase is not wired for RAG send"
+            }
+            val supplied = ragCorpusFingerprint?.takeIf { it.isNotBlank() }
+                ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "RAG_FINGERPRINT_REQUIRED")
+            if (supplied != ragKb.fingerprint()) {
+                throw ResponseStatusException(HttpStatus.CONFLICT, "RAG_CORPUS_STALE")
+            }
+            val enabledFactCodes = ragKb.snapshot().facts
+                .asSequence()
+                .filter { it.enabled }
+                .map { it.factCode }
+                .toHashSet()
+            for (factCode in ragFactCodes.orEmpty()) {
+                if (factCode !in enabledFactCodes) {
+                    throw ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "RAG_FACT_CODE_UNKNOWN")
+                }
+            }
+            supplied
+        } else {
+            null
+        }
 
         // 03 (I-1): 可信 workbench assembly 必须在任何发送副作用（suppression /
         // prepareAndClaim / SMTP / DB 成功落库）之前完成服务端重算验证；source 必须
@@ -195,27 +242,39 @@ class PendingMailOperationService(
             )
         }
         // 03 (阶段 2.3): carriesQa —— assembly 路径按 verified canonical 是否非空；
-        // 无 assembly 的 legacy 路径保留「客户端提交过 qaRuleIds」的既有判据。
+        // 无 assembly 的 legacy 路径保留「客户端提交过 qaRuleIds」的既有判据；
+        // 03b (I-47 ①): RAG 路径按是否携带 fact_code 判定（审计据此区分动作类型），
+        // 但 safety 调用点显式传 false —— RAG 不携带 QA 证据。
         val carriesQa = if (verifiedAssembly != null) {
             verifiedAssembly.response.canonicalFactIds.isNotEmpty()
+        } else if (ragMode) {
+            ragFactCodes.orEmpty().isNotEmpty()
         } else {
             !qaRuleIds.isNullOrEmpty()
         }
         val factResolution = if (verifiedAssembly != null) {
             // 03 (I-2/I-6): 无 degraded codes，canonical ids 原样进入 safety 与 SendPayload。
             CanonicalFactResolution(verifiedAssembly.response.canonicalFactIds, emptyList())
+        } else if (ragMode) {
+            // 03b (I-40): RAG 证据是 fact_code 字符串，不产生 Long ids；绝不调用
+            // canonicalizeFactRuleIds / 读取 qa_rule（G-4）。
+            CanonicalFactResolution(emptyList(), emptyList())
         } else if (carriesQa) {
             canonicalizeFactRuleIds(inboundText, qaRuleIds!!, researchProfileSufficient)
         } else {
             CanonicalFactResolution(emptyList(), emptyList())
         }
         val canonicalFactIds = factResolution.canonicalFactIds
-        val serverSuggestedFactIds = if (carriesQa) {
+        val serverSuggestedFactIds = if (ragMode) {
+            // 03b (I-40): 不调用 qaFactSelectionService.select()。
+            emptyList()
+        } else if (carriesQa) {
             qaFactSelectionService.select(inboundText, null, researchProfileSufficient).sendQaRuleIds
         } else {
             emptyList()
         }
-        val primaryRuleId = canonicalFactIds.firstOrNull()
+        // 03b (I-43): RAG 路径 matched_qa_rule_id 恒 null，绝不用 legacy_rule_id 兜底。
+        val primaryRuleId = if (ragMode) null else canonicalFactIds.firstOrNull()
 
         val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
 
@@ -263,7 +322,9 @@ class PendingMailOperationService(
 
         val findings = collectSafetyFindings(
             verificationText = finalValidationText,
-            carriesQa = carriesQa,
+            // 03b (I-47 ①): RAG 路径 carriesQa 显式传 false（RAG 不携带 QA 证据），
+            // 自动落入纯文本检查分支，不产生 QA_FACTS_ALL_INVALID。
+            carriesQa = if (ragMode) false else carriesQa,
             canonicalFactIds = canonicalFactIds,
             contact = contact,
             inboundText = inboundText,
@@ -272,7 +333,9 @@ class PendingMailOperationService(
             degradedFactCodes = factResolution.degradedCodes,
             // 03 (I-4): 可信 assembly 路径复用服务端已验证 selection 作为事实选择数据源，
             // 禁止再次调用 qaFactSelectionService.select() 做语义重筛。
-            verifiedSelection = verifiedAssembly?.selection
+            verifiedSelection = verifiedAssembly?.selection,
+            // 03b (I-47): RAG 发送整段绕开 QA selection/trust-gap/intent 链。
+            ragSend = ragMode
         )
         val requiresStrong = findings.any { it.severity == SafetySeverity.STRONG }
         if (findings.isNotEmpty() && !safetyWarningConfirmed) {
@@ -371,6 +434,27 @@ class PendingMailOperationService(
                                     }
                                 }
                             )
+                            // 03b (I-42): 发送成功后按请求中 ragFactCodes 的原始顺序写入
+                            // mail_record_rag_fact 存证 —— 不排序、不去重；RAG 路径的
+                            // canonicalFactIds 恒为空，绝不会写 mail_record_qa_rule。
+                            if (ragFactCodes != null) {
+                                val ragEvidenceRepo = requireNotNull(mailRecordRagFactRepository) {
+                                    "MailRecordRagFactRepository is not wired for RAG send"
+                                }
+                                val fingerprintAtSend = requireNotNull(ragFingerprintAtSend) {
+                                    "RAG fingerprint must be present after gate validation"
+                                }
+                                ragEvidenceRepo.saveAll(
+                                    ragFactCodes.mapIndexed { ordinal, factCode ->
+                                        MailRecordRagFact(
+                                            mailRecordId = id,
+                                            factCode = factCode,
+                                            ordinal = ordinal,
+                                            corpusFingerprint = fingerprintAtSend
+                                        )
+                                    }
+                                )
+                            }
                             id
                         } catch (finalizeEx: Exception) {
                             log.warn("finalizeSuccess failed for attempt {}: {}", claim.attemptId, finalizeEx.message)
@@ -811,7 +895,10 @@ class PendingMailOperationService(
         // 03 (I-4): 可信 assembly 路径复用服务端已验证 selection（非 null 时禁止再次
         // 调用 qaFactSelectionService.select()）；legacy 路径保持 null 与既有 strict
         // select 行为逐字一致。
-        verifiedSelection: ResolvedQaRules? = null
+        verifiedSelection: ResolvedQaRules? = null,
+        // 03b (I-47): RAG 发送时整段绕开 QA selection/trust-gap/intent 链（见方法体
+        // 守卫处注释）。既有两条路径不传（默认 false），逻辑逐字不变。
+        ragSend: Boolean = false
     ): List<SafetyFinding> {
         val findings = mutableListOf<SafetyFinding>()
         fun add(code: String, sentence: String? = null) {
@@ -854,6 +941,16 @@ class PendingMailOperationService(
 
         if (aiReplyHighRiskClaimValidator.containsTrustRhetoric(verificationText)) {
             add(AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC)
+        }
+
+        // 03b (I-47): RAG 发送整段短路 —— 下面的 selection 求值、
+        // hasBlockingTrustGapForSelection、intent 遍历与 AiReplyActionPolicy 门禁
+        // 全部依赖 qa_rule（I-40/G-4），RAG 路径不适用（D-15）。上面的纯文本检查
+        // （hallucinated number/url、unbacked high-risk、trust rhetoric）已执行完毕
+        // 并保留 —— 它们不读 qa_rule，且是二次确认弹窗（safetyWarningConfirmed /
+        // strongConfirmationText）的触发源（D-1：人是唯一的门）。
+        if (ragSend) {
+            return findings
         }
 
         val selection = verifiedSelection ?: if (canonicalFactIds.isNotEmpty()) {
@@ -1237,6 +1334,10 @@ data class PendingManualRichReplyRequest(
     val templateTextBody: String? = null,
     val templateHtmlBody: String? = null,
     val trustReplyAssembly: TrustReplyAssembleRequest? = null,
+    // 03b (I-39~I-43): RAG 证据字段 —— 与 trustReplyAssembly 互斥（服务端 400
+    // SEND_EVIDENCE_SOURCE_CONFLICT）；既有 qaRuleIds 字段与类型不动。
+    val ragFactCodes: List<String>? = null,
+    val ragCorpusFingerprint: String? = null,
     val safetyWarningConfirmed: Boolean = false,
     val strongConfirmationText: String? = null
 )

@@ -1,3122 +1,587 @@
 (function (global) {
     "use strict";
 
+    // 可信回复工作台（整封式 RAG）—— 计划 05 重写版。
+    // 单一流程：compose() → 渲染三块（正文 / 用到了哪些事实 / 未识别的提问）
+    // → 四个操作（重新生成 / 加事实 / 去事实 / 直接编辑正文）。
+    // 所有生成请求指向 /api/rag-reply/compose（03）；旧版按条目工作台的端点
+    // 一律不再调用。契约：I-24 ~ I-29、G-1..G-8（05-workbench-frontend-replace.md）。
+    // 样式契约 S-1..S-5 见 styles.css；本文件不使用本契约之外的 class，不写 inline style。
+
     if (global.TrustReplyWorkbench) return;
 
+    const COMPOSE_PATH = "/api/rag-reply/compose";
+    const SNIPPET_PATH = "/api/reply-snippets";
     const MODES = Object.freeze({ SIMULATION: "SIMULATION", LIVE: "LIVE", AUTO_PREVIEW: "AUTO_PREVIEW" });
-    const SOURCES = Object.freeze({ TRAINING_MAIL: "TRAINING_MAIL", LIVE_INBOUND: "LIVE_INBOUND" });
-    // I-1: explicit mode -> source pairing table; AUTO_PREVIEW mirrors the LIVE
-    // source (same inbound record) but is rendered read-only.
-    const MODE_SOURCE = Object.freeze({
-        SIMULATION: SOURCES.TRAINING_MAIL,
-        LIVE: SOURCES.LIVE_INBOUND,
-        AUTO_PREVIEW: SOURCES.LIVE_INBOUND
-    });
     const MODEL_LABELS = Object.freeze({
         DEEPSEEK_V4_FLASH: "DeepSeek V4 Flash",
         DEEPSEEK_V4_PRO: "DeepSeek V4 Pro"
     });
-    const HANDLING_LABELS = Object.freeze({
-        ANSWER_WITH_EVIDENCE: "依据完整回答",
-        ANSWER_SUPPORTED_PART: "回答有依据部分",
-        // 计划 03 (S-1): 按事实原文回答——插在 ANSWER_SUPPORTED_PART 之后、
-        // ANSWER_EVIDENCE_WITH_OPERATOR_INPUT 之前，与 allowedHandlings 排列一致。
-        ANSWER_FACTS_VERBATIM: "按事实原文回答",
-        ANSWER_EVIDENCE_WITH_OPERATOR_INPUT: "依据+说明混合",
-        ANSWER_FROM_OPERATOR_INPUT: "按回答说明生成",
-        ACKNOWLEDGE_PENDING: "确认待补充",
-        OMIT: "省略此项"
-    });
-    const GENERATION_KIND_LABELS = Object.freeze({
-        AI_GENERATED: "AI 生成",
-        SAFE_TEMPLATE: "安全模板",
-        OMITTED: "已省略"
-    });
-    // 计划 02 (S-2): 需要非空回答说明的处理方式集合——「按回答说明生成」与
-    // 「依据+说明混合」；生成前置校验与说明框标签共用同一份常量。
-    const OPERATOR_INSTRUCTION_HANDLINGS = Object.freeze([
-        "ANSWER_FROM_OPERATOR_INPUT",
-        "ANSWER_EVIDENCE_WITH_OPERATOR_INPUT"
-    ]);
-    const COVERAGE_LABELS = Object.freeze({
-        GROUNDED: "GROUNDED · 依据充分",
-        PARTIAL: "PARTIAL · 部分有据",
-        UNSUPPORTED: "UNSUPPORTED · 无依据"
-    });
-    // P0 (I-3): SSE / HTTP 错误码 → 运营可读中文。查不到时退回 error.message。
-    const WORKBENCH_ERROR_TEXT = Object.freeze({
-        TRUST_REPLY_SOURCE_STALE: "来信内容已变化，请刷新工作台后重试。",
-        TRUST_REPLY_EVIDENCE_STALE: "本条的事实已变化，请刷新工作台后重试。",
-        TRUST_REPLY_EVIDENCE_VERSION_REQUIRED: "缺少事实版本，请刷新工作台后重试。",
-        TRUST_REPLY_REQUEST_KEY_INVALID: "摘要标识与来信对不上，请刷新工作台后重试。",
-        TRUST_REPLY_FACT_SELECTION_INVALID: "事实选择与来信摘要对不上，请刷新工作台后重试。",
-        TRUST_REPLY_FACT_SELECTION_AMBIGUOUS: "事实选择参数冲突，请刷新工作台后重试。",
-        TRUST_REPLY_FACT_ALREADY_ASSIGNED: "同一条事实被多个摘要绑定，请先解除其中一处。",
-        // 计划 02 (I-4): 四种事实模式在空事实时于生成/锁定阶段返回该 code；
-        // 前端固定文案「请先添加事实」，handling 下拉保留当前选择。
-        TRUST_REPLY_FACT_REQUIRED: "请先添加事实",
-        TRUST_REPLY_HANDLING_INVALID: "该处理方式不适用于本条摘要的当前状态。",
-        TRUST_REPLY_OPERATOR_INSTRUCTION_INVALID: "回答说明为空或超过 500 字。",
-        TRUST_REPLY_ITEM_GENERATION_FAILED: "AI 未能产出可用的回答，请重试或换一种处理方式。",
-        TRUST_REPLY_CLAIM_INVALID: "生成的内容未通过内容安全校验。",
-        TRUST_REPLY_ACKNOWLEDGEMENT_INVALID: "致意内容未通过内容安全校验。",
-        TRUST_REPLY_LOCKED_ITEM_INVALID: "已锁定的回答与当前状态不一致，请重新生成本条。",
-        TRUST_REPLY_DUPLICATE_CLAIM: "多条摘要引用了完全相同的事实，正文会重复。请把其中一条改为「省略此项」或调整事实绑定。",
-        TRUST_REPLY_ITEM_VERSION_INVALID: "版本身份校验未通过，请重新生成本条。",
-        TRUST_REPLY_STATE_CONFLICT: "该封信的工作台状态已被其他页面修改，请刷新后重试。",
-        AI_REPLY_GENERATION_FAILED: "AI 生成失败，请重试。"
-    });
-    const STATE_SCHEMA_VERSION = "trust-reply-workbench-state-v3";
+    // 回复框架四个槽位：首两段（尊语/开场白）与尾两段（致谢语/结束语）的正文
+    // 由 compose 结果 frame 提供；请求侧 frameSelection 键与槽位一一对应。
     const FRAME_SLOTS = Object.freeze([
         { key: "salutationSnippetId", snippetType: "SALUTATION", label: "尊语" },
         { key: "greetingSnippetId", snippetType: "GREETING", label: "开场白" },
         { key: "ackSnippetId", snippetType: "ACK", label: "致谢语" },
         { key: "closingSnippetId", snippetType: "CLOSING", label: "结束语" }
     ]);
-    const PREVIEW_STATE_LABELS = Object.freeze({
-        LOCAL: "配置预览 · 尚未服务端整合",
-        CURRENT: "服务端整合完成",
-        STALE: "配置已变化 · 请重新整合"
+    const HEAD_SLOT_KEYS = Object.freeze(["salutationSnippetId", "greetingSnippetId"]);
+    // I-29 / D-1：零强制门禁 —— 未识别提问数量、事实数量、REVIEW 事实都不禁用发送。
+    const COMPOSE_ERROR_TEXT = Object.freeze({
+        RAG_VERBATIM_MISSING: "生成结果缺少逐字原文，整次生成按失败处理，请重新生成。",
+        RAG_LLM_UNAVAILABLE: "模型服务暂不可用，请稍后重试。",
+        RAG_FACT_CODE_INVALID: "添加的事实不存在或已停用，请核对 fact_code 后重试。",
+        RAG_REPLY_SOURCE_NOT_FOUND: "来信不存在，请刷新页面后重试。",
+        RAG_REPLY_SOURCE_NOT_INBOUND: "所选邮件不是来信，请重新选择。",
+        RAG_REPLY_SOURCE_CONTACT_REQUIRED: "来信未绑定联系人，无法生成，请先补全联系人。",
+        RAG_REPLY_SOURCE_INVALID: "生成来源无效，请刷新页面后重试。"
     });
 
     function escapeText(value) {
         return String(value == null ? "" : value)
-            .replaceAll("&", "&amp;")
-            .replaceAll("<", "&lt;")
-            .replaceAll(">", "&gt;")
-            .replaceAll('"', "&quot;")
-            .replaceAll("'", "&#039;");
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 
-    function makeId() {
-        if (global.crypto && typeof global.crypto.randomUUID === "function") {
-            return global.crypto.randomUUID();
+    function contextPathBase(contextPath) {
+        return String(contextPath || "").replace(/\/+$/, "");
+    }
+
+    function contentFirstLine(content) {
+        const first = String(content || "").split("\n").map((line) => line.trim()).find((line) => line.length > 0);
+        const line = first == null ? "" : first;
+        return line.length > 42 ? `${line.slice(0, 42)}…` : line;
+    }
+
+    function errorTextFor(code, message, status) {
+        if (code && COMPOSE_ERROR_TEXT[code]) return COMPOSE_ERROR_TEXT[code];
+        if (code && message) return `${code}：${message}`;
+        return status ? `生成失败（HTTP ${status}），请重试。` : "生成失败，请重试。";
+    }
+
+    // —— 渲染：正文段落（I-26：逐字样式只来自 renderMode，绝不做正文文本比对）——
+
+    function renderParagraph(paragraph) {
+        const classes = ["trust-reply-para"];
+        if (paragraph.kind === "frame") {
+            classes.push("frame");
+        } else if (paragraph.renderMode === "VERBATIM") {
+            classes.push("verbatim");
         }
-        const bytes = new Uint8Array(16);
-        if (global.crypto && typeof global.crypto.getRandomValues === "function") {
-            global.crypto.getRandomValues(bytes);
+        if (paragraph.edited) classes.push("edited");
+        let tagText = "";
+        if (paragraph.kind === "frame") {
+            tagText = `回复框架 · ${paragraph.slotLabel || ""}`;
+        } else if (paragraph.renderMode === "VERBATIM") {
+            tagText = paragraph.edited ? "逐字 · 已脱离事实原文" : "逐字";
+        }
+        const tag = tagText ? `<span class="trust-reply-para-tag">${escapeText(tagText)}</span>` : "";
+        const indexAttr = paragraph.index == null ? "" : ` data-para-index="${paragraph.index}"`;
+        const editableAttr = paragraph.editable === true ? ' contenteditable="true"' : "";
+        return `<div class="${classes.join(" ")}"${indexAttr}${editableAttr}>${escapeText(paragraph.text)}${tag}</div>`;
+    }
+
+    function renderDraft(state) {
+        const parts = [];
+        if (state.error) {
+            parts.push(`<div class="ai-reply-error" role="alert">${escapeText(state.error)}</div>`);
+        }
+        const head = state.frameParagraphs.filter((frame) => HEAD_SLOT_KEYS.indexOf(frame.slotKey) >= 0 && frame.text);
+        const tail = state.frameParagraphs.filter((frame) => HEAD_SLOT_KEYS.indexOf(frame.slotKey) < 0 && frame.text);
+        const items = [].concat(head, state.paragraphs, tail);
+        if (items.length === 0) {
+            parts.push('<span class="muted">点击「重新生成」生成整封草稿。</span>');
         } else {
-            for (let index = 0; index < bytes.length; index += 1) {
-                bytes[index] = Math.floor(Math.random() * 256);
-            }
+            items.forEach((paragraph) => {
+                const editable = state.editMode && paragraph.kind === "body";
+                const copy = { ...paragraph, editable };
+                parts.push(renderParagraph(copy));
+            });
         }
-        bytes[6] = (bytes[6] & 0x0f) | 0x40;
-        bytes[8] = (bytes[8] & 0x3f) | 0x80;
-        const hex = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
-        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+        return parts.join("");
     }
 
-    function apiUrl(contextPath, path) {
-        const prefix = String(contextPath || "").replace(/\/$/, "");
-        return `${prefix}${path}`;
-    }
-
-    function errorFromResponse(response, body) {
-        const code = body && body.code ? body.code : `HTTP_${response.status}`;
-        const error = new Error(code);
-        error.code = code;
-        error.status = response.status;
-        return error;
-    }
-
-    function errorFromStream(data, fallback) {
-        const code = data && typeof data === "object" ? (data.code || data.errorCode) : null;
-        const message = data && typeof data === "object" ? data.message : data;
-        const error = new Error(message || code || fallback);
-        if (code) error.code = code;
-        return error;
-    }
-
-    // P0 (I-3): 渲染层按 code 查中文表；查不到退回 error.message；再查不到用兜底串。
-    function errorText(error, fallback) {
-        const code = error && error.code ? String(error.code) : "";
-        if (WORKBENCH_ERROR_TEXT[code]) return WORKBENCH_ERROR_TEXT[code];
-        const message = error && error.message ? String(error.message) : "";
-        return message || fallback || "请求失败，请重试";
-    }
-
-    function parseSseChunk(buffer, flush) {
-        const events = [];
-        let remainder = buffer;
-        let boundary;
-        while ((boundary = remainder.search(/\r?\n\r?\n/)) >= 0) {
-            const raw = remainder.slice(0, boundary);
-            remainder = remainder.slice(boundary).replace(/^\r?\n\r?\n/, "");
-            const eventName = (raw.match(/^event:\s*(.+)$/m) || [null, "message"])[1].trim();
-            const data = raw.split(/\r?\n/)
-                .filter((line) => line.startsWith("data:"))
-                .map((line) => line.slice(5).replace(/^ /, ""))
-                .join("\n");
-            if (!data) continue;
-            let parsed = data;
-            try { parsed = JSON.parse(data); } catch (_) { /* server error text remains readable */ }
-            events.push({ event: eventName, data: parsed });
+    function renderFactsList(state) {
+        if (state.usedFacts.length === 0) {
+            return '<span class="muted">尚未生成。</span>';
         }
-        if (flush && remainder.trim()) {
-            const parsed = parseSseChunk(`${remainder}\n\n`, false);
-            events.push(...parsed.events);
-            remainder = "";
-        }
-        return { events, remainder };
+        return state.usedFacts.map((fact, index) => {
+            const badges = [];
+            if (fact.renderMode === "VERBATIM") badges.push('<span class="rag-badge verbatim">逐字</span>');
+            if (fact.origin === "MANDATORY") badges.push('<span class="rag-badge">强制</span>');
+            if (fact.status === "REVIEW") badges.push('<span class="rag-badge status-review">REVIEW</span>');
+            if (fact.riskLevel === "HIGH") badges.push('<span class="rag-badge risk-high">HIGH</span>');
+            const badgeLine = badges.length > 0 ? `<div>${badges.join(" ")}</div>` : "";
+            const remove = fact.origin === "MANDATORY"
+                ? ""
+                : `<button type="button" class="trust-reply-fact-remove" data-action="remove-fact" data-code="${escapeText(fact.factCode)}" title="移除并重新生成"${state.busy ? " disabled" : ""}>×</button>`;
+            return `<div class="trust-reply-fact"><span class="trust-reply-fact-index">${index + 1}</span><span class="trust-reply-fact-main"><div><span class="trust-reply-fact-code">${escapeText(fact.factCode)}</span> <span class="muted">${escapeText(fact.title)}</span></div>${badgeLine}</span>${remove}</div>`;
+        }).join("");
     }
 
-    // I-2: pure array reorder shared by drag (drop target) and keyboard
-    // (ArrowLeft/ArrowRight). `toIndex` is the insertion position in the array
-    // AFTER removing `fromId`, clamped to [0, ids.length - 1]; the result keeps
-    // the same length as the input (asserted below).
-    function reorderFactIds(ids, fromId, toIndex) {
-        const source = ids || [];
-        const numericFrom = Number(fromId);
-        const fromIndex = source.map(Number).indexOf(numericFrom);
-        if (fromIndex < 0) return [...source];
-        let target = Number(toIndex);
-        if (!Number.isInteger(target)) target = fromIndex;
-        target = Math.max(0, Math.min(source.length - 1, target));
-        const next = [...source];
-        const [moved] = next.splice(fromIndex, 1);
-        next.splice(target, 0, moved);
-        if (next.length !== source.length) {
-            throw new Error("reorderFactIds: result length must equal input length");
-        }
-        return next;
+    function renderUnaddressedList(state) {
+        return state.unaddressed.map((item) =>
+            `<div class="trust-reply-unaddressed-item">来信问了<q>${escapeText(item.quote)}</q>，本封未作答。<span class="trust-reply-unaddressed-why">${escapeText(item.reason)}</span></div>`
+        ).join("");
     }
 
-    function resolveFactDrop(ids, fromId, targetId, before) {
-        const source = ids || [];
-        const fromIndex = source.map(Number).indexOf(Number(fromId));
-        const targetIndex = source.map(Number).indexOf(Number(targetId));
-        if (fromIndex < 0 || targetIndex < 0 || fromIndex === targetIndex) return [...source];
-        const targetRemainderIndex = targetIndex - (fromIndex < targetIndex ? 1 : 0);
-        const toIndex = before ? targetRemainderIndex : targetRemainderIndex + 1;
-        return reorderFactIds(source, fromId, toIndex);
+    function renderFrameSelects(state) {
+        const selection = state.frameSelection || {};
+        return FRAME_SLOTS.map((slot) => {
+            const options = state.frameOptions
+                .filter((option) => option.snippetType === slot.snippetType)
+                .sort((a, b) => (Number(a.displayOrder) - Number(b.displayOrder)) || (Number(a.id) - Number(b.id)))
+                .map((option) => `<option value="${escapeText(option.id)}"${Number(selection[slot.key]) === Number(option.id) ? " selected" : ""}>${escapeText(contentFirstLine(option.content))}</option>`)
+                .join("");
+            return `<span class="muted">${escapeText(slot.label)}</span><select data-frame-slot="${slot.key}"${state.busy ? " disabled" : ""}><option value="">不使用</option>${options}</select>`;
+        }).join("");
     }
 
-    function factActionBlockReason(flags) {
-        if (flags && flags.requestPending) return "本摘要正在生成，完成后可调整事实";
-        if (flags && flags.factChangePending) return "正在更新事实，完成后可继续调整";
-        if (flags && flags.stateSavePending) return "正在保存工作台状态，完成后可调整事实";
-        if (flags && flags.generationPending) return "正在生成回复，完成后可调整事实";
-        if (flags && flags.frameSavePending) return "正在保存回复框架，完成后可调整事实";
-        return "";
+    function renderModelOptions(state) {
+        return Object.keys(MODEL_LABELS).map((key) =>
+            `<option value="${key}"${state.model === key ? " selected" : ""}>${MODEL_LABELS[key]}</option>`
+        ).join("");
     }
 
-    function factActionReasonFor(request, state) {
-        return factActionBlockReason({
-            requestPending: request.pending,
-            factChangePending: request.factChangePending,
-            stateSavePending: request.stateSavePending || state.stateSavePending,
-            generationPending: state.generation.pending,
-            frameSavePending: state.frameSavePending
-        });
+    function renderSendBar(state) {
+        const hasDraft = state.assemblyReady || state.paragraphs.length > 0 || hasAnyFrame(state);
+        const completeDisabled = !hasDraft || state.busy;
+        const completeLabel = state.mode === MODES.SIMULATION ? "完成模拟并评估" : "采用到人工回复";
+        const note = state.unaddressed.length > 0
+            ? `<span class="muted" data-role="unaddressed-note">未识别提问 ${state.unaddressed.length} 项</span>`
+            : "";
+        const flag = state.dirty
+            ? '<span class="muted" data-role="dirty-flag">已手工编辑</span>'
+            : "";
+        return `<div class="trust-reply-send" data-workbench-control>${note}${flag}<button type="button" class="button primary" data-action="complete"${completeDisabled ? " disabled" : ""}>${completeLabel}</button></div>`;
     }
 
-    function mount(host, options) {
-        validateMount(host, options);
-        const instance = createInstance(host, options);
-        // 方案 A（默认取舍，非疏漏）：只读模式保持自动分析——它不写工作台状态、
-        // 不消耗生成成本，自动跑无副作用；仅非只读宿主可用 autoBootstrap: false
-        // 把分析变成显式动作（I-5）。
-        if (options.autoBootstrap !== false || options.mode === MODES.AUTO_PREVIEW) {
-            instance.bootstrap();
-        }
-        return { unmount: instance.unmount };
+    function renderShell(state) {
+        const modeNote = state.mode === MODES.SIMULATION ? "模拟 · 不外发" : "正式回复";
+        const toolbar = `<div class="trust-reply-toolbar" data-workbench-control><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p><div><span class="muted">模型</span> <select data-role="model-select"${state.busy ? " disabled" : ""}>${renderModelOptions(state)}</select> <button type="button" class="button primary" data-action="regenerate"${state.busy ? " disabled" : ""}>重新生成</button> <button type="button" class="button" data-action="edit-body">${state.editMode ? "完成编辑" : "编辑正文"}</button> <button type="button" class="button" data-action="copy-draft">复制</button></div></div>`;
+        const frameBar = `<div class="trust-reply-frame-bar" data-workbench-control><span class="muted">回复框架</span>${renderFrameSelects(state)}</div>`;
+        const layout = `<div class="trust-reply-layout"><section class="panel"><div class="trust-reply-doc" data-role="draft">${renderDraft(state)}</div></section><div><section class="panel"><div class="panel-head"><h2>用到了哪些事实</h2><span class="muted" data-role="fact-count">${state.usedFacts.length} 条${state.forcedFactCount > 0 ? ` · ${state.forcedFactCount} 条强制` : ""}</span></div><div class="trust-reply-facts" data-role="facts">${renderFactsList(state)}<div class="trust-reply-fact-add"><input data-role="add-fact-input" placeholder="输入 fact_code 后点添加，如 KB-COMM-044"><button type="button" class="button" data-action="add-fact"${state.busy ? " disabled" : ""}>添加</button></div></div></section><section class="panel"><div class="panel-head"><h2>未识别的提问</h2><span class="muted" data-role="unaddressed-count">${state.unaddressed.length} 项</span></div><div class="trust-reply-unaddressed" data-role="unaddressed">${renderUnaddressedList(state)}</div></section></div></div>`;
+        const busyOverlay = state.busy
+            ? '<div class="trust-reply-busy-overlay" data-role="busy-overlay"><div class="trust-reply-busy-card"><div class="trust-reply-busy-text">正在生成回复…</div><div class="trust-reply-busy-hint">生成完成后会更新正文与事实列表。</div></div></div>'
+            : "";
+        return `<div class="trust-reply-workbench">${frameBar}${toolbar}${layout}${renderSendBar(state)}${busyOverlay}</div>`;
     }
 
-    function validateMount(host, options) {
-        if (!host || typeof host !== "object" || typeof host.innerHTML !== "string") {
-            throw new TypeError("TrustReplyWorkbench.mount requires a host element");
-        }
-        if (!options || !Object.values(MODES).includes(options.mode)) {
-            return rejectMount(host, "工作台模式无效");
-        }
+    // —— 状态与请求（I-28：加/去事实只改请求参数并重新 compose）——
+
+    function createState(options) {
         const source = options.source || {};
-        const expectedSource = MODE_SOURCE[options.mode];
-        if (!expectedSource) {
-            return rejectMount(host, "工作台模式无效");
-        }
-        if (source.sourceType !== expectedSource || !Number.isInteger(Number(source.sourceId)) || Number(source.sourceId) <= 0) {
-            return rejectMount(host, "工作台来源与页面模式不匹配");
-        }
-        // AUTO_PREVIEW never completes, so onComplete is optional there; the
-        // remaining modes keep it mandatory (I-2).
-        if (typeof options.contextPath !== "string" || (options.mode !== MODES.AUTO_PREVIEW && typeof options.onComplete !== "function")) {
-            return rejectMount(host, "工作台宿主参数不完整");
-        }
-        // I-5: autoBootstrap is an optional boolean mount option; a non-boolean
-        // value is a host bug and must not silently flip analysis behavior.
-        if (options.autoBootstrap !== undefined && typeof options.autoBootstrap !== "boolean") {
-            return rejectMount(host, "autoBootstrap 必须为布尔值");
+        return {
+            mode: options.mode || MODES.LIVE,
+            source: {
+                sourceType: String(source.sourceType || ""),
+                sourceId: source.sourceId == null ? null : Number(source.sourceId)
+            },
+            model: "DEEPSEEK_V4_FLASH",
+            forcedFactCodes: [],
+            excludedFactCodes: [],
+            frameSelection: { salutationSnippetId: null, greetingSnippetId: null, ackSnippetId: null, closingSnippetId: null },
+            frameOptions: [],
+            frameParagraphs: FRAME_SLOTS.map((slot) => ({ kind: "frame", slotKey: slot.key, slotLabel: slot.label, text: null })),
+            paragraphs: [],
+            usedFacts: [],
+            usedFactCodes: [],
+            unaddressed: [],
+            corpusFingerprint: "",
+            forcedFactCount: 0,
+            busy: false,
+            dirty: false,
+            editMode: false,
+            error: "",
+            assemblyReady: false
+        };
+    }
+
+    function hasAnyFrame(state) {
+        return state.frameParagraphs.some((frame) => !!frame.text);
+    }
+
+    // I-28：去事实 —— 追加 excludedFactCodes 并从 forcedFactCodes 中移除；
+    // 绝不本地拼接/删除正文段落。
+    function applyRemoveFact(state, factCode) {
+        const code = String(factCode || "").trim();
+        if (!code) return;
+        state.excludedFactCodes = state.excludedFactCodes.filter((item) => item !== code);
+        state.excludedFactCodes.push(code);
+        state.forcedFactCodes = state.forcedFactCodes.filter((item) => item !== code);
+    }
+
+    // I-28：加事实 —— 追加 forcedFactCodes 并移出 excludedFactCodes（强制优先）。
+    function applyAddFact(state, factCode) {
+        const code = String(factCode || "").trim().toUpperCase();
+        if (!code) return;
+        state.forcedFactCodes = state.forcedFactCodes.filter((item) => item !== code);
+        state.forcedFactCodes.push(code);
+        state.excludedFactCodes = state.excludedFactCodes.filter((item) => item !== code);
+    }
+
+    function applyFrameSelect(state, slotKey, snippetId) {
+        const slot = FRAME_SLOTS.find((item) => item.key === slotKey);
+        if (!slot) return;
+        const next = snippetId ? Number(snippetId) : null;
+        state.frameSelection[slot.key] = next;
+        const frame = state.frameParagraphs.find((item) => item.slotKey === slot.key);
+        if (frame) {
+            const chosen = next == null ? null : state.frameOptions.find((option) => Number(option.id) === next);
+            frame.text = chosen ? String(chosen.content) : null;
         }
     }
 
-    function rejectMount(host, message) {
-        host.innerHTML = `<div class="ai-reply-error" role="alert">${escapeText(message)}</div>`;
-        throw new TypeError(message);
+    function buildComposeRequest(state) {
+        return {
+            sourceType: state.source.sourceType,
+            sourceId: state.source.sourceId,
+            model: state.model,
+            forcedFactCodes: state.forcedFactCodes.slice(),
+            excludedFactCodes: state.excludedFactCodes.slice(),
+            frameSelection: {
+                salutationSnippetId: state.frameSelection.salutationSnippetId,
+                greetingSnippetId: state.frameSelection.greetingSnippetId,
+                ackSnippetId: state.frameSelection.ackSnippetId,
+                closingSnippetId: state.frameSelection.closingSnippetId
+            }
+        };
     }
+
+    function documentText(state) {
+        const parts = [];
+        state.frameParagraphs.forEach((frame) => {
+            if (frame.text) parts.push(frame.text);
+        });
+        state.paragraphs.forEach((paragraph) => {
+            if (paragraph.text) parts.push(paragraph.text);
+        });
+        return parts.join("\n\n");
+    }
+
+    function buildAssembly(state) {
+        return {
+            text: documentText(state),
+            usedFactCodes: state.usedFactCodes.slice(),
+            ragCorpusFingerprint: state.corpusFingerprint,
+            unaddressed: state.unaddressed.map((item) => ({ quote: item.quote, reason: item.reason }))
+        };
+    }
+
+    function applyComposeResult(state, result) {
+        const frame = result.frame || {};
+        const selection = frame.selection || {};
+        FRAME_SLOTS.forEach((slot) => {
+            const value = selection[slot.key];
+            state.frameSelection[slot.key] = value == null ? null : Number(value);
+        });
+        const frameTexts = {
+            salutationSnippetId: frame.salutation || "",
+            greetingSnippetId: frame.greeting || "",
+            ackSnippetId: frame.acknowledgement || "",
+            closingSnippetId: frame.closing || ""
+        };
+        state.frameParagraphs = FRAME_SLOTS.map((slot) => ({
+            kind: "frame",
+            slotKey: slot.key,
+            slotLabel: slot.label,
+            text: frameTexts[slot.key] ? frameTexts[slot.key] : null
+        }));
+        state.paragraphs = (result.bodyParagraphs || []).map((paragraph, index) => ({
+            kind: "body",
+            index,
+            text: paragraph.text,
+            originalText: paragraph.text,
+            renderMode: paragraph.renderMode,
+            edited: false
+        }));
+        state.usedFacts = (result.usedFacts || []).map((fact) => ({
+            factCode: fact.factCode,
+            title: fact.title || "",
+            renderMode: fact.renderMode || "",
+            riskLevel: fact.riskLevel || "",
+            status: fact.status || "",
+            origin: fact.origin || "MODEL"
+        }));
+        state.usedFactCodes = state.usedFacts.map((fact) => fact.factCode);
+        state.forcedFactCount = state.usedFacts.filter((fact) => fact.origin === "MANDATORY").length;
+        state.unaddressed = (result.unaddressed || []).map((item) => ({ quote: item.quote, reason: item.reason }));
+        state.corpusFingerprint = result.corpusFingerprint || "";
+        state.error = "";
+        state.busy = false;
+        state.dirty = false;
+        state.assemblyReady = true;
+    }
+
+    // —— 实例（I-25：每个实例独立 requestSeq + AbortController 集合）——
 
     function createInstance(host, options) {
-        const source = {
-            sourceType: options.source.sourceType,
-            sourceId: Number(options.source.sourceId)
-        };
-        const state = {
-            instanceId: makeId(),
-            mode: options.mode,
-            readOnly: options.mode === MODES.AUTO_PREVIEW,
-            source,
-            contextPath: options.contextPath,
-            onUnauthorized: typeof options.onUnauthorized === "function" ? options.onUnauthorized : null,
-            onComplete: options.onComplete,
-            onChange: typeof options.onChange === "function" ? options.onChange : null,
-            sourceVersion: null,
-            evidenceSetVersion: null,
-            // 03b (T6/I-4): the context fingerprint (training knowledge + mail
-            // history) of the last bootstrap; per-item comparison against each
-            // version's contextVersion drives the context-stale prompt.
-            contextVersion: null,
-            activePage: "facts",
-            frameOptions: [],
-            frameSnapshot: null,
-            frameSavePending: false,
-            assemblyStale: false,
-            // 计划 03 (I-6/I-7): 整合摘要预览区的内部页签——"rendered" | "local" | "raw"。
-            // 切换只走 state + 全量 render()，绝不 host.querySelector（I-7）。
-            previewTab: "rendered",
-            selectedModel: "DEEPSEEK_V4_FLASH",
-            availableModels: ["DEEPSEEK_V4_FLASH"],
-            llmEnabled: true,
-            attemptTimeout: { mode: "30", seconds: 30, customSeconds: 30 },
-            totalTimeout: { mode: "auto", seconds: 300, customSeconds: 300 },
-            requests: [],
-            rules: [],
-            generation: { pending: false, stage: "", message: "", generationId: null, controller: null },
-            itemControllers: new Map(),
-            translationControllers: new Set(),
-            assembly: null,
-            // c5 (T-1..T-4): 13 协议（plan.facts / paragraphPlan / topicOrder，I-5）+
-            // 本地草稿（改主题/采用/锁定/并入/移动全部只改这里，I-4）+ op* 运营事实。
-            plan: null,
-            paragraphDraft: null,
-            operatorFacts: [],
-            operatorFactSeq: 0,
-            rearrangePending: false,
-            // R-2: retained auto-reply preview evidence (decision + hard gates)
-            // for the conclusion area; null = no evidence fetched yet.
-            previewEvidence: null,
-            bootSeq: 0,
-            destroyed: false,
-            completePending: false,
-            savedStateVersion: 0,
-            stateSavePending: false,
-            // I-5: 未分析态是合法稳定态；bootstrap 成功后才置 true（S-1/S-2）。
-            analyzed: false,
-            sequenceCancelled: false,
-            // I-3: grip keyboard moves re-render via bootstrap(); the next
-            // render() restores focus to this fact's grip (consumed once).
-            pendingFocusFactId: null
-        };
+        const state = createState(options);
+        const requestSeq = { value: 0 };
+        const controllers = new Set();
+        const disposed = { value: false };
+        const contextPath = contextPathBase(options.contextPath);
         const listeners = [];
-
-        if (state.readOnly) {
-            if (typeof host.classList?.add === "function") {
-                host.classList.add("trust-reply-readonly");
-            } else {
-                const existing = typeof host.getAttribute === "function" ? host.getAttribute("class") || "" : "";
-                host.setAttribute("class", `${existing ? `${existing} ` : ""}trust-reply-readonly`);
-            }
-        }
-
-        function isLive(seq) {
-            return !state.destroyed && (seq == null || seq === state.bootSeq);
-        }
 
         function listen(type, handler) {
             host.addEventListener(type, handler);
             listeners.push([type, handler]);
         }
 
-        function trackController(controller, key) {
-            if (key === "full") state.generation.controller = controller;
-            else state.itemControllers.set(key, controller);
-            return controller;
+        function render() {
+            if (disposed.value) return;
+            host.innerHTML = renderShell(state);
         }
 
-        function untrackController(controller, key) {
-            if (key === "full" && state.generation.controller === controller) state.generation.controller = null;
-            if (key !== "full" && state.itemControllers.get(key) === controller) state.itemControllers.delete(key);
+        function notifyChange() {
+            if (disposed.value) return;
+            if (typeof options.onChange === "function") options.onChange();
         }
 
-        async function requestJson(path, payload, controller, method) {
-            // I-2: fail-closed write gate — the read-only AUTO_PREVIEW host may
-            // only call /bootstrap; every other path throws before any fetch.
-            if (state.readOnly && path !== "/api/trust-reply/workbench/bootstrap") {
-                throw new Error("AUTO_PREVIEW 模式禁止写操作");
-            }
-            const response = await global.fetch(apiUrl(state.contextPath, path), {
-                method: method || "POST",
-                headers: { "Content-Type": "application/json", Accept: "application/json" },
-                body: JSON.stringify(payload),
-                signal: controller && controller.signal
-            });
-            let body = null;
-            try { body = await response.json(); } catch (_) { body = null; }
-            if (response.status === 401 || response.status === 403) {
-                state.onUnauthorized && state.onUnauthorized(response);
-            }
-            if (!response.ok) throw errorFromResponse(response, body);
-            return body;
-        }
-
-        async function requestSse(path, payload, key, onEvent) {
-            const controller = new AbortController();
-            let reader = null;
-            trackController(controller, key);
-            try {
-                const response = await global.fetch(apiUrl(state.contextPath, path), {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json", Accept: "text/event-stream, application/json" },
-                    body: JSON.stringify(payload),
-                    signal: controller.signal
-                });
-                if (response.status === 401 || response.status === 403) {
-                    state.onUnauthorized && state.onUnauthorized(response);
-                }
-                if (!response.ok) {
-                    let body = null;
-                    try { body = await response.json(); } catch (_) { body = null; }
-                    throw errorFromResponse(response, body);
-                }
-                if (!response.body || typeof response.body.getReader !== "function") {
-                    const body = await response.json();
-                    onEvent("result", body);
-                    return;
-                }
-                reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = "";
-                while (true) {
-                    const chunk = await reader.read();
-                    if (chunk.done) {
-                        const parsed = parseSseChunk(buffer, true);
-                        parsed.events.forEach((event) => onEvent(event.event, event.data));
-                        break;
+        function compose() {
+            if (disposed.value || state.busy) return;
+            state.editMode = false;
+            // I-25：新请求使旧请求失效；旧请求的 late response 一律不落地。
+            requestSeq.value += 1;
+            const mySeq = requestSeq.value;
+            controllers.forEach((controller) => controller.abort());
+            controllers.clear();
+            const controller = new global.AbortController();
+            controllers.add(controller);
+            state.busy = true;
+            state.error = "";
+            render();
+            const url = `${contextPath}${COMPOSE_PATH}`;
+            const body = JSON.stringify(buildComposeRequest(state));
+            global.fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                body,
+                signal: controller.signal
+            }).then((response) => {
+                if (response.ok) return response.json();
+                return response.json().catch(() => ({})).then((payload) => {
+                    if (response.status === 401 || response.status === 403) {
+                        if (typeof options.onUnauthorized === "function") options.onUnauthorized(response);
                     }
-                    buffer += decoder.decode(chunk.value, { stream: true });
-                    const parsed = parseSseChunk(buffer, false);
-                    buffer = parsed.remainder;
-                    parsed.events.forEach((event) => onEvent(event.event, event.data));
-                }
-            } finally {
-                if (reader && typeof reader.cancel === "function") {
-                    try { await reader.cancel(); } catch (_) { /* stream already closed */ }
-                }
-                untrackController(controller, key);
-            }
-        }
-
-        function cancelController(controller) {
-            if (controller && typeof controller.abort === "function") controller.abort();
-        }
-
-        function invalidateAssembly() {
-            const hadAssembly = !!state.assembly;
-            state.assembly = null;
-            if (hadAssembly) state.onChange && state.onChange();
-            return hadAssembly;
-        }
-
-        function sameSource(candidate) {
-            return candidate
-                && candidate.sourceType === source.sourceType
-                && Number(candidate.sourceId) === source.sourceId;
-        }
-
-        function hasGenerationIdentity(result) {
-            return !!result
-                && sameSource(result.source)
-                && typeof result.sourceVersion === "string"
-                && result.sourceVersion === state.sourceVersion
-                && typeof result.evidenceSetVersion === "string"
-                && result.evidenceSetVersion === state.evidenceSetVersion;
-        }
-
-        function hasVersionIdentity(version, requestKey) {
-            // 03a (I-1): a generated version is only acceptable when its
-            // evidence version matches THIS request's per-request value; the
-            // whole-draft aggregate says nothing about a single item.
-            const request = findRequest(requestKey);
-            return !!version
-                && version.requestKey === requestKey
-                && typeof version.sourceVersion === "string"
-                && version.sourceVersion === state.sourceVersion
-                && !!request
-                && typeof version.evidenceSetVersion === "string"
-                && version.evidenceSetVersion === request.evidenceSetVersion;
-        }
-
-        function isStaleError(error) {
-            const code = error && (error.code || error.message);
-            return ["TRUST_REPLY_SOURCE_STALE", "TRUST_REPLY_EVIDENCE_STALE"].some((item) => String(code || "").includes(item));
-        }
-
-        function isFrameStaleError(error) {
-            const code = error && (error.code || error.message);
-            return String(code || "").includes("TRUST_REPLY_FRAME_STALE");
-        }
-
-        function handleStaleGeneration(seq, message) {
-            if (!isLive(seq)) return;
-            resetVersions();
-            state.generation.generationId = null;
-            setStatus(message || "来源或事实已变化，请确认后刷新工作台", "STALE");
-            render();
-            if (typeof global.confirm === "function" && global.confirm("来源或事实已变化，确认刷新工作台并重新生成？")) {
-                void bootstrap();
-            }
-        }
-
-        // Frame-only staleness (I-3): keep the locked answers, drop the stale
-        // assembly, surface the frame page and ask the operator to refresh the
-        // frame options before re-integrating. Unlike SOURCE/EVIDENCE stale it
-        // must never reset versions.
-        function handleFrameStale(seq, message) {
-            if (!isLive(seq)) return;
-            state.assembly = null;
-            state.assemblyStale = true;
-            setStatus(message || "框架配置已变化，请重新选择后整合", "FRAME_STALE");
-            state.activePage = "compose";
-            render();
-        }
-
-        function setStatus(message, type) {
-            state.generation.message = message || "";
-            state.generation.stage = type || state.generation.stage || "";
-        }
-
-        function resetVersions() {
-            state.requests.forEach((request) => {
-                request.versions = [];
-                request.activeVersionId = null;
-                request.resolvedVersionId = null;
-                request.pending = false;
-                request.error = null;
-                request.expanded = request.coverage !== "GROUNDED";
-                request.factPickerOpen = false;
-                request.questionTranslation = { state: "idle", text: "" };
-                request.answerTranslationsByVersionId = {};
-                request.requestSeq += 1;
-            });
-            state.itemControllers.forEach((controller) => cancelController(controller));
-            state.itemControllers.clear();
-            cancelController(state.generation.controller);
-            state.generation.controller = null;
-            state.translationControllers.forEach((controller) => cancelController(controller));
-            state.translationControllers.clear();
-            state.generation.pending = false;
-            invalidateAssembly();
-        }
-
-        function requestFromCoverage(coverage, fallbackEvidence) {
-            return (coverage || []).map((item, index) => ({
-                requestKey: item.requestKey,
-                requestText: item.requestText || "",
-                index: item.index == null ? index : item.index,
-                coverage: item.status || "",
-                factRuleIds: [...(item.factRuleIds || [])],
-                // c5 (T-3): 该问的意图（topic 求值用）——只读，绝不进入任何请求载荷。
-                intents: [...(item.intents || [])],
-                // 计划 02 (I-2): 服务端诊断字段——仅供提示，不参与任何请求载荷。
-                intentMatchedFactRuleIds: [...(item.intentMatchedFactRuleIds || [])],
-                intentMismatchFactRuleIds: [...(item.intentMismatchFactRuleIds || [])],
-                // 03a (I-1): per-request evidence version from the server
-                // coverage; the authority for this item's version identity.
-                // The aggregate fallback only covers pre-03a servers whose
-                // coverage lacks the per-request field; the current server
-                // always fills it (T3), so the fallback never fires there.
-                evidenceSetVersion: item.evidenceSetVersion || fallbackEvidence || "",
-                // 03a (I-5/S-1): set when this item's facts changed and its
-                // generated answer must be regenerated; renders the stale hint.
-                evidenceStale: false,
-                // 03b (T6/I-4): set when this item's locked version was
-                // generated under a different context fingerprint (old
-                // training knowledge / mail history); renders the per-item
-                // hint and participates in the one-click rerun.
-                contextStale: false,
-                factPickerOpen: false,
-                availableHandlings: [...(item.allowedHandlings || [])],
-                recommendedHandling: item.recommendedHandling || item.allowedHandlings?.[0] || "OMIT",
-                draftHandling: item.recommendedHandling || item.allowedHandlings?.[0] || "OMIT",
-                instruction: "",
-                suggestedInstruction: item.suggestedInstruction || "",
-                autoFilled: false,
-                instructionEditedByOperator: false,
-                versions: [],
-                activeVersionId: null,
-                resolvedVersionId: null,
-                expanded: item.status !== "GROUNDED",
-                questionTranslation: { state: "idle", text: "" },
-                answerTranslationsByVersionId: {},
-                requestSeq: 0,
-                pending: false,
-                factChangePending: false,
-                stateSavePending: false,
-                error: null
-            }));
-        }
-
-        // I-1/G-1 canonical matrix: every canonical request in order, including
-        // empty fact lists. This is the only fact payload sent to the server.
-        function serializeRequestFactSelections() {
-            return state.requests.map((request) => ({
-                requestKey: request.requestKey,
-                factRuleIds: [...(request.factRuleIds || [])]
-            }));
-        }
-
-        function snapshotFrame(frame) {
-            if (!frame) return null;
-            return {
-                selection: {
-                    salutationSnippetId: frame.selection?.salutationSnippetId ?? null,
-                    greetingSnippetId: frame.selection?.greetingSnippetId ?? null,
-                    ackSnippetId: frame.selection?.ackSnippetId ?? null,
-                    closingSnippetId: frame.selection?.closingSnippetId ?? null
-                },
-                version: frame.version || ""
-            };
-        }
-
-        function sameFrameSnapshot(a, b) {
-            if (!a && !b) return true;
-            if (!a || !b) return false;
-            const selA = a.selection || {};
-            const selB = b.selection || {};
-            return (a.version || "") === (b.version || "")
-                && (selA.salutationSnippetId ?? null) === (selB.salutationSnippetId ?? null)
-                && (selA.greetingSnippetId ?? null) === (selB.greetingSnippetId ?? null)
-                && (selA.ackSnippetId ?? null) === (selB.ackSnippetId ?? null)
-                && (selA.closingSnippetId ?? null) === (selB.closingSnippetId ?? null);
-        }
-
-        // I-6: preview/state/assemble read only the resolved versions.
-        function currentResolvedVersions() {
-            const versions = {};
-            state.requests.forEach((request) => {
-                if (request.resolvedVersionId) versions[request.requestKey] = request.resolvedVersionId;
-            });
-            return versions;
-        }
-
-        function factRuleById(factId) {
-            const numeric = Number(factId);
-            return state.rules.find((rule) => Number(rule.ruleId ?? rule.id) === numeric) || null;
-        }
-
-        function applyBootstrap(data, seq) {
-            if (!isLive(seq)) return;
-            if (!data || data.source?.sourceType !== source.sourceType || Number(data.source?.sourceId) !== source.sourceId) {
-                throw new Error("TRUST_REPLY_SOURCE_MISMATCH");
-            }
-            state.sourceVersion = data.sourceVersion;
-            state.evidenceSetVersion = data.evidenceSetVersion;
-            state.contextVersion = data.contextVersion || "";
-            state.rules = data.rulesByCategory || [];
-            state.availableModels = data.availableModels?.length ? [...data.availableModels] : [data.defaultModel || "DEEPSEEK_V4_FLASH"];
-            state.selectedModel = state.availableModels.includes(data.defaultModel) ? data.defaultModel : state.availableModels[0];
-            state.llmEnabled = data.llmEnabled !== false;
-            state.requests = requestFromCoverage(data.requestCoverage, data.evidenceSetVersion);
-            state.frameOptions = Array.isArray(data.frameOptions) ? data.frameOptions : [];
-            state.frameSnapshot = snapshotFrame(data.frameSnapshot);
-            // c5 (I-5): 服务端权威的 13 协议是步骤 02/03 的唯一事实与分段来源；本地
-            // 草稿与 op* 运营事实在其上派生（T-2/T-3）。
-            state.plan = {
-                facts: Array.isArray(data.facts) ? data.facts : [],
-                plan: Array.isArray(data.paragraphPlan) ? data.paragraphPlan : [],
-                topicOrder: Array.isArray(data.topicOrder) ? data.topicOrder : []
-            };
-            state.operatorFacts = [];
-            state.operatorFactSeq = 0;
-            seedParagraphDraft();
-            // Fail closed when the server canonical matrix disagrees with the
-            // per-request coverage instead of silently re-deriving a flat pool.
-            if (Array.isArray(data.requestFactSelections) && data.requestFactSelections.length > 0) {
-                const selectionsByKey = new Map(data.requestFactSelections.map((selection) => [selection.requestKey, selection.factRuleIds || []]));
-                const inconsistent = state.requests.find((request) => {
-                    const canonical = selectionsByKey.get(request.requestKey);
-                    if (!canonical) return false;
-                    return JSON.stringify([...canonical]) !== JSON.stringify([...(request.factRuleIds || [])]);
+                    const error = new Error(payload.code || `HTTP_${response.status}`);
+                    error.code = payload.code || "";
+                    error.status = response.status;
+                    error.message = payload.message || "";
+                    throw error;
                 });
-                if (inconsistent) {
-                    throw new Error("TRUST_REPLY_FACT_SELECTION_INVALID");
-                }
-            }
-            state.generation.pending = false;
-            state.sequenceCancelled = false;
-            applySavedState(data.savedState || null);
-            render();
-            state.requests
-                .filter((request) => request.coverage === "UNSUPPORTED")
-                .forEach((request) => { void requestTranslation(request, null); });
-        }
-
-        function restoreLockedItem(locked) {
-            const request = findRequest(locked.requestKey);
-            if (!request) return false;
-            const version = lockedToVersion(locked);
-            if (!isVersionSerializable(version, request)) return false;
-            request.versions = [...request.versions, version];
-            request.activeVersionId = version.versionId;
-            request.resolvedVersionId = version.versionId;
-            request.draftHandling = version.handling;
-            request.instruction = version.operatorInstruction || "";
-            // V-3: machine-fill provenance is browser-local only; a
-            // restored saved item is always unmarked.
-            request.autoFilled = false;
-            request.instructionEditedByOperator = false;
-            request.expanded = false;
-            request.error = null;
-            request.evidenceStale = false;
-            // 03b (T6/I-4): a restored lock generated under a different
-            // context fingerprint is flagged for the per-item hint; it is
-            // never dropped here (context changes never clear locks).
-            request.contextStale = (locked.contextVersion || "") !== (state.contextVersion || "");
-            return true;
-        }
-
-        function applySavedState(savedState) {
-            state.savedStateVersion = savedState && Number.isInteger(savedState.stateVersion) ? savedState.stateVersion : 0;
-            if (!savedState) {
-                setStatus("", "READY");
-                return;
-            }
-            if (savedState.status === "RESTORED" || savedState.status === "FRAME_STALE" || savedState.status === "PARTIALLY_RESTORED") {
-                let restoredCount = 0;
-                (Array.isArray(savedState.lockedItems) ? savedState.lockedItems : []).forEach((locked) => {
-                    if (restoreLockedItem(locked)) restoredCount += 1;
-                });
-                if (savedState.status === "FRAME_STALE") {
-                    setStatus(`FRAME_STALE：框架配置已变化，已保留 ${restoredCount} 项锁定回答，请刷新框架选项`, "FRAME_STALE");
-                    state.activePage = "compose";
-                } else if (savedState.status === "PARTIALLY_RESTORED") {
-                    // 03a (I-4): per-request evidence drift dropped the stale
-                    // items only; the kept locks are restored above.
-                    const dropped = Number.isInteger(savedState.droppedItemCount) ? savedState.droppedItemCount : 0;
-                    setStatus(`PARTIALLY_RESTORED：恢复了 ${restoredCount} 项锁定回答，丢弃 ${dropped} 项（事实已变化）`, "PARTIALLY_RESTORED");
-                } else {
-                    setStatus(`READY：已恢复 ${restoredCount} 项已锁定回答`, "READY");
-                }
-            } else if (savedState.status === "STALE") {
-                setStatus("STALE：来源或依据已变化，旧锁定回答未恢复", "STALE");
-            } else if (savedState.status === "INVALID") {
-                setStatus("INVALID：旧锁定状态无效，未恢复", "INVALID");
-            } else if (savedState.status === "EXPIRED") {
-                setStatus("EXPIRED：旧锁定状态已过期，未恢复", "EXPIRED");
-            } else {
-                setStatus("", "READY");
-            }
-        }
-
-        function lockedToVersion(locked) {
-            return {
-                versionId: locked.versionId,
-                requestKey: locked.requestKey,
-                handling: locked.handling,
-                answerText: locked.answerText || "",
-                claims: Array.isArray(locked.claims) ? locked.claims : [],
-                model: locked.model || "",
-                generationKind: locked.generationKind,
-                evidenceSetVersion: locked.evidenceSetVersion,
-                sourceVersion: locked.sourceVersion,
-                operatorInstructionHash: locked.operatorInstructionHash || "",
-                operatorInstruction: locked.operatorInstruction || "",
-                contextVersion: locked.contextVersion || ""
-            };
-        }
-
-        // 03a (I-5): when preserveVersions is true the per-request version
-        // state is carried across the bootstrap so only items whose
-        // per-request evidence version drifted are reset; the full-screen
-        // loading skeleton is skipped so the fact change never looks like a
-        // fresh workbench load.
-        async function bootstrap({ preserveVersions = false } = {}) {
-            const seq = ++state.bootSeq;
-            if (state.destroyed) return;
-            const preserved = preserveVersions ? captureVersionState() : null;
-            if (!preserveVersions) {
-                resetVersions();
-                renderShell("正在加载工作台…");
-            }
-            try {
-                const data = await requestJson("/api/trust-reply/workbench/bootstrap", {
-                    source,
-                    requestFactSelections: state.requests.length ? serializeRequestFactSelections() : null,
-                    frameSnapshot: state.frameSnapshot
-                });
-                // I-5: bootstrap 成功即分析完成——mount 自动分析与「开始分析」
-                // 点击两条路径共用同一状态翻转（S-1/S-2）。
-                state.analyzed = true;
-                applyBootstrap(data, seq);
-                if (preserveVersions) reconcilePreservedVersions(preserved, seq);
-            } catch (error) {
-                if (!isLive(seq) || isAbort(error)) return;
-                state.generation.pending = false;
-                setStatus(error.message || "工作台加载失败", "ERROR");
-                renderShell(error.message || "工作台加载失败", true);
-            }
-        }
-
-        // 03a (I-5): snapshots the version/decision state of every request so
-        // a preserveVersions bootstrap can re-attach the untouched ones.
-        function captureVersionState() {
-            const snapshot = new Map();
-            state.requests.forEach((request) => {
-                snapshot.set(request.requestKey, {
-                    versions: request.versions,
-                    activeVersionId: request.activeVersionId,
-                    resolvedVersionId: request.resolvedVersionId,
-                    draftHandling: request.draftHandling,
-                    instruction: request.instruction,
-                    autoFilled: request.autoFilled,
-                    instructionEditedByOperator: request.instructionEditedByOperator,
-                    expanded: request.expanded,
-                    factPickerOpen: request.factPickerOpen,
-                    questionTranslation: request.questionTranslation,
-                    answerTranslationsByVersionId: request.answerTranslationsByVersionId,
-                    requestSeq: request.requestSeq,
-                    pending: request.pending,
-                    error: request.error
-                });
-            });
-            return snapshot;
-        }
-
-        // 03a (I-5): after applyBootstrap rebuilt the request objects, keep
-        // every request whose existing version still carries the fresh
-        // per-request evidence version and clear only the drifted items.
-        function reconcilePreservedVersions(snapshot, seq) {
-            if (!isLive(seq)) return;
-            state.requests.forEach((request) => {
-                const old = snapshot && snapshot.get(request.requestKey);
-                if (!old) return;
-                const retained = old.versions.find((version) =>
-                    version.versionId === (old.resolvedVersionId || old.activeVersionId)
-                ) || old.versions[0];
-                if (retained && retained.evidenceSetVersion === request.evidenceSetVersion) {
-                    request.versions = old.versions;
-                    request.activeVersionId = old.activeVersionId;
-                    request.resolvedVersionId = old.resolvedVersionId;
-                    request.draftHandling = old.draftHandling;
-                    request.instruction = old.instruction;
-                    request.autoFilled = old.autoFilled;
-                    request.instructionEditedByOperator = old.instructionEditedByOperator;
-                    request.expanded = old.expanded;
-                    request.factPickerOpen = old.factPickerOpen;
-                    request.questionTranslation = old.questionTranslation;
-                    request.answerTranslationsByVersionId = old.answerTranslationsByVersionId;
-                    request.requestSeq = old.requestSeq;
-                    request.pending = old.pending;
-                    request.error = old.error;
-                    // 03b (T6/I-4): the evidence identity is still fresh, but
-                    // the retained version may have been generated under a
-                    // different context fingerprint — flag it, keep the lock.
-                    request.contextStale = (retained.contextVersion || "") !== (state.contextVersion || "");
-                } else if (old.versions.length > 0 || old.resolvedVersionId) {
-                    // 03a (I-5): only this item lost its per-request evidence
-                    // identity; the fresh request object already has no
-                    // versions, so just mark it for the stale hint.
-                    request.evidenceStale = true;
-                    request.expanded = request.coverage !== "GROUNDED";
-                }
-            });
-            // applyBootstrap already rendered the fresh (empty) requests; the
-            // preserved versions were attached afterwards, so render again.
-            render();
-        }
-
-        function makeGenerationPayload(requestKey, handling, instruction, generationId) {
-            return {
-                source,
-                expectedSourceVersion: state.sourceVersion,
-                // 03a (I-3): item generation is gated on THIS request's
-                // per-request evidence version, not the whole-draft aggregate.
-                expectedEvidenceSetVersion: findRequest(requestKey)?.evidenceSetVersion || "",
-                requestFactSelections: serializeRequestFactSelections(),
-                requestKey: requestKey || null,
-                handling: handling || null,
-                operatorInstruction: instruction || null,
-                model: state.selectedModel,
-                generationId,
-                operation: "ADJUST_ITEM",
-                llmAttemptTimeoutSeconds: timeoutSeconds(state.attemptTimeout, 10, 600),
-                llmTotalTimeoutSeconds: timeoutSeconds(state.totalTimeout, 10, 7200)
-            };
-        }
-
-        async function persistResolvedSnapshot() {
-            const lockedItems = state.requests.map(serializeResolvedVersion).filter(Boolean);
-            const response = await requestJson("/api/trust-reply/workbench/state", {
-                source,
-                expectedStateVersion: state.savedStateVersion,
-                schemaVersion: STATE_SCHEMA_VERSION,
-                sourceVersion: state.sourceVersion,
-                evidenceSetVersion: state.evidenceSetVersion,
-                requestFactSelections: serializeRequestFactSelections(),
-                selectedModel: state.selectedModel,
-                frameSnapshot: state.frameSnapshot,
-                lockedItems
-            }, null, "PUT");
-            if (response && Number.isInteger(response.stateVersion)) {
-                state.savedStateVersion = response.stateVersion;
-            }
-            return response;
-        }
-
-        // 计划 14 (T-2, I-2/I-4): 单条摘要落库——请求体只含该条的 requestKey +
-        // 该条 locked item + 乐观锁 expectedStateVersion；服务端在既有状态行内
-        // 合并该条，不重写其余条目。乐观锁冲突时服务端返回既有 stale 码，
-        // 调用方按 I-4 处理该条（不整封失败、不静默覆盖）。
-        async function persistResolvedItem(request) {
-            const lockedItem = serializeResolvedVersion(request);
-            if (!lockedItem) return null;
-            const response = await requestJson("/api/trust-reply/workbench/state/item", {
-                source,
-                expectedStateVersion: state.savedStateVersion,
-                schemaVersion: STATE_SCHEMA_VERSION,
-                sourceVersion: state.sourceVersion,
-                evidenceSetVersion: state.evidenceSetVersion,
-                requestKey: request.requestKey,
-                lockedItem
-            }, null, "PATCH");
-            if (response && Number.isInteger(response.stateVersion)) {
-                state.savedStateVersion = response.stateVersion;
-            }
-            return response;
-        }
-
-        async function deleteSavedState() {
-            if (state.savedStateVersion <= 0) return true;
-            try {
-                await requestJson("/api/trust-reply/workbench/state", {
-                    source,
-                    expectedStateVersion: state.savedStateVersion,
-                    schemaVersion: STATE_SCHEMA_VERSION,
-                    sourceVersion: state.sourceVersion,
-                    evidenceSetVersion: state.evidenceSetVersion,
-                    requestFactSelections: serializeRequestFactSelections(),
-                    selectedModel: state.selectedModel,
-                    frameSnapshot: state.frameSnapshot,
-                    lockedItems: []
-                }, null, "PUT");
-                state.savedStateVersion = 0;
-                return true;
-            } catch (_) {
-                return false;
-            }
-        }
-
-        // P0 (I-4b/I-6): 破坏性操作，必须二次确认；重置后走一次干净的 bootstrap，
-        // 绝不复用失败前的 state.requests——那份内存矩阵正是把 bootstrap 打挂的输入。
-        async function resetWorkbenchState() {
-            if (state.readOnly) return;
-            if (typeof global.confirm === "function" &&
-                !global.confirm("重置会清空本封信已锁定的全部回答，且不可撤销。确认继续？")) {
-                return;
-            }
-            try {
-                await requestJson("/api/trust-reply/workbench/state/reset", { source });
-                state.savedStateVersion = 0;
-                state.requests = [];
-                await bootstrap();
-            } catch (error) {
-                setStatus(errorText(error) || "重置失败，请刷新页面后重试", "ERROR");
-                renderShell(errorText(error) || "重置失败，请刷新页面后重试", true);
-            }
-        }
-
-        async function generateMissingGrounded(allowlist, seq) {
-            return runItemSequence(allowlist, seq, {
-                labelPrefix: "正在生成有据回答",
-                doneMessage: "有据回答生成完成",
-                handlingFor: () => "ANSWER_WITH_EVIDENCE"
-            });
-        }
-
-        // Shared sequential per-item generation skeleton (cancel / stale /
-        // failure branches). generateMissingGrounded and the one-click
-        // autoRun() both drive this loop; the caller supplies the progress
-        // wording and the per-item handling override, and mutates each request
-        // (draftHandling / instruction) before the loop if the payload builder
-        // must see it.
-        async function runItemSequence(keys, seq, options) {
-            const handlingFor = options.handlingFor || ((request) => request.draftHandling);
-            const labelPrefix = options.labelPrefix || "正在生成";
-            const doneMessage = options.doneMessage || "生成完成";
-            // V-1: one-click runs pass persistEach:false so generated locks stay
-            // in memory until the whole run succeeds; the default keeps the
-            // established per-item durable save for ordinary paths.
-            const persistEach = options.persistEach !== false;
-            // 03b (T6/I-4): the context-stale rerun passes skipResolved:false
-            // so already-locked items are regenerated instead of skipped.
-            const skipResolved = options.skipResolved !== false;
-            if (!keys.length || state.generation.pending || !state.sourceVersion) return false;
-            const frozenKeys = [...keys];
-            const total = frozenKeys.length;
-            state.sequenceCancelled = false;
-            state.generation = { pending: true, stage: "GENERATING", message: `${labelPrefix} 1/${total}`, generationId: null, controller: null };
-            render();
-            let index = 0;
-            for (const requestKey of frozenKeys) {
-                if (!isLive(seq) || state.sequenceCancelled) return false;
-                const request = findRequest(requestKey);
-                if (!request) return false;
-                if (skipResolved && request.resolvedVersionId) continue;
-                index += 1;
-                state.generation.stage = "GENERATING";
-                state.generation.message = `${labelPrefix} ${index}/${total}`;
-                state.generation.generationId = makeId();
-                state.generation.controller = null;
-                render();
-                const outcome = await requestItemVersion(request, seq, state.generation.generationId, "full", handlingFor(request));
-                if (!isLive(seq) || state.sequenceCancelled) return false;
-                if (outcome && outcome.stale) {
-                    state.generation.pending = false;
-                    state.generation.controller = null;
-                    render();
-                    return false;
-                }
-                if (outcome && outcome.cancelled) {
-                    state.sequenceCancelled = true;
-                    state.generation.pending = false;
-                    state.generation.controller = null;
-                    state.generation.stage = "CANCELLED";
-                    state.generation.message = "已取消生成，可重试";
-                    request.expanded = true;
-                    render();
-                    return false;
-                }
-                if (!outcome || !outcome.version) {
-                    state.generation.pending = false;
-                    state.generation.controller = null;
-                    state.generation.stage = "ERROR";
-                    state.generation.message = request.error || "生成失败，可重试";
-                    request.expanded = true;
-                    render();
-                    return false;
-                }
-                request.resolvedVersionId = outcome.version.versionId;
-                request.expanded = false;
-                request.error = null;
-                if (persistEach) {
-                    // I-1: 单条保存只出该条局部遮罩——置条目级 stateSavePending，
-                    // 绝不置全局 state.stateSavePending（I-3）。
-                    request.stateSavePending = true;
-                    render();
-                    try {
-                        // I-2: 单条落库走条目级 PATCH，整封快照只在整合路径使用。
-                        await persistResolvedItem(request);
-                    } catch (error) {
-                        if (isFrameStaleError(error)) {
-                            request.stateSavePending = false;
-                            handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
-                            return false;
-                        }
-                        if (isStaleError(error)) {
-                            request.stateSavePending = false;
-                            handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                            return false;
-                        }
-                        if (!isLive(seq)) return false;
-                        request.resolvedVersionId = null;
-                        request.expanded = true;
-                        request.error = error.message || "保存失败，请重试";
-                        request.stateSavePending = false;
-                        state.generation.pending = false;
-                        state.generation.controller = null;
-                        state.generation.stage = "ERROR";
-                        state.generation.message = request.error;
-                        render();
-                        return false;
-                    }
-                    request.stateSavePending = false;
-                }
-                state.generation.controller = null;
-                if (!isLive(seq)) return false;
-                if (state.sequenceCancelled) {
-                    state.generation.pending = false;
-                    state.generation.stage = "CANCELLED";
-                    state.generation.message = "已取消生成，可重试";
-                    render();
-                    return false;
-                }
-                render();
-            }
-            state.generation.pending = false;
-            state.generation.controller = null;
-            state.generation.stage = "READY";
-            state.generation.message = doneMessage;
-            render();
-            return true;
-        }
-
-        async function requestItemVersion(request, seq, generationId, controllerKey, handlingOverride) {
-            const requestSeq = ++request.requestSeq;
-            request.pending = true;
-            request.error = null;
-            invalidateAssembly();
-            render();
-            let result = null;
-            let cancelled = false;
-            try {
-                await requestSse("/api/trust-reply/workbench/generations/stream", makeGenerationPayload(request.requestKey, handlingOverride || request.draftHandling, request.instruction, generationId), controllerKey || request.requestKey, (event, data) => {
-                    if (!isLive(seq) || request.requestSeq !== requestSeq) return;
-                    if (event === "progress" || event === "ready" || event === "heartbeat") {
-                        setStatus((data.progress || data).message || (data.progress || data).phase || event, (data.progress || data).phase || event.toUpperCase());
-                        renderStatusOnly();
-                    } else if (event === "result") {
-                        result = data;
-                    } else if (event === "cancelled") {
-                        cancelled = true;
-                    } else if (event === "error") {
-                        throw errorFromStream(data, "单项生成失败");
-                    }
-                });
-                if (!isLive(seq) || request.requestSeq !== requestSeq) return null;
-                if (cancelled) {
-                    request.pending = false;
-                    return { cancelled: true };
-                }
-                if (!hasGenerationIdentity(result)) {
-                    return failItemVersion(request, seq, "来源或事实已变化，请确认后刷新工作台");
-                }
-                const candidates = [result.version, ...(Array.isArray(result.itemVersions) ? result.itemVersions : [])].filter(Boolean);
-                const matching = candidates.filter((item) => item.requestKey === request.requestKey && hasVersionIdentity(item, request.requestKey));
-                if (candidates.some((item) => item.requestKey === request.requestKey && !hasVersionIdentity(item, request.requestKey))) {
-                    return failItemVersion(request, seq, "生成版本身份无效，请确认刷新工作台");
-                }
-                const version = matching[0];
-                if (!version) throw new Error("单项生成未返回版本");
-                if (matching.some((item) => item.versionId !== version.versionId)) {
-                    return failItemVersion(request, seq, "完整生成返回重复版本");
-                }
-                if (!isVersionSerializable(version, request)) {
-                    return failItemVersion(request, seq, "生成版本处理方式无效");
-                }
-                request.versions = [...request.versions, version];
-                request.activeVersionId = version.versionId;
-                // c5 (T-3 / I-1 / I-2): 「按回答说明生成」的产出成为逐字运营事实
-                // op<n>，加入本地事实集草稿（重排时随 paragraphPlan 一并提交）。
-                if (version.handling === "ANSWER_FROM_OPERATOR_INPUT" && String(version.answerText || "").trim()) {
-                    addOperatorFact(request, version.answerText);
-                }
-                // 03a (S-1): a fresh version carries the current per-request
-                // evidence, so the stale hint goes away.
-                request.evidenceStale = false;
-                // 03b (T6/I-4): a fresh version also carries the current
-                // context fingerprint, so the context-stale hint goes away.
-                request.contextStale = false;
-                if (version.handling === "OMIT") {
-                    request.resolvedVersionId = version.versionId;
-                    request.expanded = false;
-                }
-                request.pending = false;
-                render();
-                return { version };
-            } catch (error) {
-                if (isFrameStaleError(error)) {
-                    request.pending = false;
-                    handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
-                    return { stale: true };
-                }
-                if (isStaleError(error)) {
-                    handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                    return { stale: true };
-                }
-                if (!isLive(seq) || request.requestSeq !== requestSeq) return null;
-                if (isAbort(error)) {
-                    request.pending = false;
-                    return { cancelled: true };
-                }
-                request.pending = false;
-                request.error = errorText(error, "单项生成失败，可重试");
-                render();
-                return null;
-            }
-        }
-
-        function failItemVersion(request, seq, message) {
-            if (!isLive(seq)) return null;
-            request.pending = false;
-            request.error = message;
-            render();
-            return { failed: true };
-        }
-
-        async function adjustItem(request) {
-            if (state.generation.pending) {
-                request.error = "正在生成其他回复，请稍后";
-                request.expanded = true;
-                render();
-                return;
-            }
-            if (request.pending) return;
-            if (OPERATOR_INSTRUCTION_HANDLINGS.includes(request.draftHandling) && !request.instruction.trim()) {
-                request.error = "请先填写回答说明";
-                request.expanded = true;
-                render();
-                return;
-            }            const sourceSeq = state.bootSeq;
-            const generationId = makeId();
-            const outcome = await requestItemVersion(request, sourceSeq, generationId, request.requestKey);
-            if (!outcome || !outcome.version) return null;
-            return outcome.version;
-        }
-
-        // 03b (T6/I-4): one-click rerun of every context-stale item. All
-        // affected items run through the shared sequential generation loop
-        // (reused, not a new pipeline); untouched items are never regenerated,
-        // resetVersions()/handleStaleGeneration are never invoked, and no
-        // re-bootstrap happens. After the whole run succeeds, one complete
-        // snapshot persists the fresh context fingerprints durably.
-        async function regenerateContextStale() {
-            if (state.generation.pending || state.stateSavePending || state.frameSavePending || hasRequestMutationPending()) return;
-            const seq = state.bootSeq;
-            const keys = state.requests
-                .filter((request) => request.contextStale === true)
-                .map((request) => request.requestKey);
-            if (!keys.length || !state.sourceVersion) return;
-            const completed = await runItemSequence(keys, seq, {
-                labelPrefix: "正在重新生成受影响条目",
-                doneMessage: "受影响条目已重新生成",
-                skipResolved: false,
-                persistEach: false
-            });
-            if (!completed || !isLive(seq)) return;
-            try {
-                await persistResolvedSnapshot();
-            } catch (error) {
-                if (isFrameStaleError(error)) {
-                    handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
-                    return;
-                }
-                if (isStaleError(error)) {
-                    handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                    return;
-                }
-                if (!isLive(seq)) return;
-                setStatus(error.message || "保存失败，请重试", "ERROR");
-                render();
-                return;
-            }
-        }
-
-        function isVersionSerializable(version, request) {
-            return !!version
-                && !!request
-                && version.requestKey === request.requestKey
-                && version.versionId
-                && version.handling
-                && version.generationKind
-                && version.sourceVersion
-                && version.evidenceSetVersion
-                && Array.isArray(version.claims)
-                && request.availableHandlings.includes(version.handling);
-        }
-
-        function isAdoptableActiveVersion(request) {
-            return isVersionSerializable(activeVersion(request), request);
-        }
-
-        function computeReadiness() {
-            const total = state.requests.length;
-            const resolvedCount = state.requests.filter((request) => !!request.resolvedVersionId).length;
-            const missingGroundedKeys = [];
-            const adoptableGrounded = [];
-            const unresolvedManualKeys = [];
-            state.requests.forEach((request) => {
-                if (request.coverage === "GROUNDED") {
-                    if (request.resolvedVersionId) return;
-                    if (isAdoptableActiveVersion(request)) adoptableGrounded.push(request);
-                    else missingGroundedKeys.push(request.requestKey);
-                } else if (request.coverage === "PARTIAL" || request.coverage === "UNSUPPORTED") {
-                    if (!serializeResolvedVersion(request)) unresolvedManualKeys.push(request.requestKey);
-                }
-            });
-            const pendingGeneration = missingGroundedKeys.length;
-            const unresolvedManual = unresolvedManualKeys.length;
-            const canStartAssembly = !state.generation.pending
-                && !state.stateSavePending
-                && !state.frameSavePending
-                && total > 0
-                && unresolvedManual === 0
-                && !state.requests.some((request) => request.pending || request.factChangePending || request.stateSavePending);
-            return {
-                resolvedCount,
-                total,
-                pendingGeneration,
-                unresolvedManual,
-                missingGroundedKeys,
-                adoptableGrounded,
-                unresolvedManualKeys,
-                autoFillableKeys: unresolvedManualKeys,
-                canStartAssembly
-            };
-        }
-
-        function hasRequestMutationPending() {
-            return state.requests.some((request) => request.pending || request.factChangePending || request.stateSavePending);
-        }
-
-        function assemblyIdentityMatches(assembly) {
-            return !!assembly
-                && sameSource(assembly.source)
-                && assembly.sourceVersion === state.sourceVersion
-                && assembly.evidenceSetVersion === state.evidenceSetVersion
-                && sameFrameSnapshot(assembly.frameSnapshot, state.frameSnapshot);
-        }
-
-        function previewState() {
-            if (state.assembly && assemblyIdentityMatches(state.assembly)) return "CURRENT";
-            if (state.assemblyStale) return "STALE";
-            return "LOCAL";
-        }
-
-        async function assemble() {
-            const readiness = computeReadiness();
-            if (!readiness.canStartAssembly) return;
-            const seq = state.bootSeq;
-            const adoptable = [...readiness.adoptableGrounded];
-            adoptable.forEach((request) => {
-                request.resolvedVersionId = request.activeVersionId;
-                request.expanded = false;
-            });
-            if (adoptable.length > 0) {
-                state.stateSavePending = true;
-                render();
-                try {
-                    await persistResolvedSnapshot();
-                } catch (error) {
-                    if (isFrameStaleError(error)) {
-                        state.stateSavePending = false;
-                        handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
-                        return;
-                    }
-                    if (isStaleError(error)) {
-                        state.stateSavePending = false;
-                        handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                        return;
-                    }
-                    if (!isLive(seq)) return;
-                    adoptable.forEach((request) => {
-                        request.resolvedVersionId = null;
-                        request.expanded = request.coverage !== "GROUNDED";
-                    });
-                    state.stateSavePending = false;
-                    setStatus(error.message || "保存失败，请重试", "ERROR");
-                    render();
-                    return;
-                }
-                state.stateSavePending = false;
-            }
-            const missingKeys = computeReadiness().missingGroundedKeys;
-            if (missingKeys.length > 0) {
-                const generated = await generateMissingGrounded(missingKeys, seq);
-                if (!generated || !isLive(seq)) return;
-            }
-            const lockedItems = state.requests.map(serializeResolvedVersion);
-            const invalidRequest = state.requests.find((request, index) => !lockedItems[index]);
-            if (invalidRequest) {
-                invalidRequest.error = "已采用版本无效，请重新生成并采用";
-                invalidRequest.expanded = true;
-                render();
-                return;
-            }
-            state.generation.pending = true;
-            state.generation.stage = "ASSEMBLING";
-            state.generation.message = "正在请求服务端整合…";
-            render();
-            try {
-                // Repair R-1 (V-1): 步骤 03 权威段落——仅当全部段落已落字（重排/人工
-                // 编辑后）才提交 finalParagraphs，服务端重新校验后逐字成文；尚未生成
-                // 段落（全部空文本）时保持 []，走既有逐条收口路径（行为不变）。
-                const draft = state.paragraphDraft || [];
-                const hasAuthoritativeParagraphs =
-                    draft.length > 0 && draft.every((entry) => String(entry.text || "").trim() !== "");
-                const draftFactIds = new Set(draft.flatMap((entry) => entry.factIds || []));
-                const response = await requestJson("/api/trust-reply/workbench/assemble", {
-                    source,
-                    expectedSourceVersion: state.sourceVersion,
-                    // 03a (I-3): the server no longer pre-checks this
-                    // whole-draft value (the :1051 gate is gone); each locked
-                    // item is validated against its own per-request evidence
-                    // version. The field is kept on the wire because the
-                    // controller DTO (unchanged, C-4) requires it.
-                    expectedEvidenceSetVersion: state.evidenceSetVersion,
-                    requestFactSelections: serializeRequestFactSelections(),
-                    frameSnapshot: state.frameSnapshot,
-                    lockedItems,
-                    finalParagraphs: hasAuthoritativeParagraphs
-                        ? draft.map((entry) => ({
-                            topic: entry.topic,
-                            factIds: [...(entry.factIds || [])],
-                            text: String(entry.text || "")
-                        }))
-                        : [],
-                    operatorFacts: hasAuthoritativeParagraphs
-                        ? state.operatorFacts
-                            .filter((fact) => draftFactIds.has(fact.id))
-                            .map((fact) => ({ id: fact.id, topic: fact.topic, body: fact.body }))
-                        : []
-                });
-                if (!isLive(seq)) return;
-                if (response.sourceVersion !== state.sourceVersion || response.evidenceSetVersion !== state.evidenceSetVersion) {
-                    throw new Error("TRUST_REPLY_ASSEMBLY_STALE");
-                }
-                if (response.frameSnapshot) {
-                    state.frameSnapshot = snapshotFrame(response.frameSnapshot);
-                }
-                state.assembly = {
-                    ...response,
-                    requestFactSelections: Array.isArray(response.requestFactSelections)
-                        ? response.requestFactSelections.map((selection) => ({ requestKey: selection.requestKey, factRuleIds: [...(selection.factRuleIds || [])] }))
-                        : [],
-                    frameSnapshot: snapshotFrame(response.frameSnapshot)
-                };
-                state.assemblyStale = false;
-                state.generation.pending = false;
-                state.generation.message = "服务端整合完成";
-                state.generation.stage = "READY";
-                render();
-            } catch (error) {
-                if (!isLive(seq) || isAbort(error)) return;
-                if (isFrameStaleError(error)) {
-                    state.generation.pending = false;
-                    handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
-                    return;
-                }
-                state.generation.pending = false;
-                state.generation.stage = "ERROR";
-                state.generation.message = error.message || "整合失败，可重试";
-                render();
-            }
-        }
-
-        function canAssemble() {
-            return computeReadiness().canStartAssembly;
-        }
-
-        // ── c5 (T-2/T-3/T-4)：本地草稿交互（全部只改内存，I-4）与重排（唯一新端点）──
-
-        /** T-3 (I-1/I-2): 步骤 01「按回答说明生成」成功后，把该条 answerText 包装为
-         * 逐字运营事实 `op<n>`（本信内递增）加入本地事实集草稿，并挂到同名主题段落。 */
-        function addOperatorFact(request, text) {
-            const existing = state.operatorFacts.find((fact) => fact.requestKey === request.requestKey);
-            if (existing) {
-                existing.body = text;
-                return;
-            }
-            const topic = request.intents && request.intents[0] && request.intents[0].intentKey
-                ? request.intents[0].intentKey.split(".")[0]
-                : "general";
-            const id = `op${++state.operatorFactSeq}`;
-            state.operatorFacts.push({ id, topic, body: text, requestKey: request.requestKey });
-            let entry = findDraftEntry(topic);
-            if (!entry) {
-                entry = { topic, factIds: [], gapCondition: null, text: "", pinned: false, pinnedEvidenceVersion: "", editing: false };
-                state.paragraphDraft.push(entry);
-            }
-            if (!entry.factIds.includes(id)) {
-                entry.factIds.push(id);
-                // I-3: 该段自身事实集变化 → 原锁定失效。
-                entry.pinned = false;
-                entry.pinnedEvidenceVersion = paragraphEvidenceVersion(entry.topic, entry.factIds);
-            }
-        }
-
-        /** I-4: 采用/取消采用只改本地草稿（事实从所有段落移除/加回）；被影响段落的
-         * 锁定按 I-3 失效（自身 factIds 变化）。 */
-        function setFactAdopted(factId, adopted) {
-            const draft = state.paragraphDraft || [];
-            if (adopted) {
-                const fact = factSetRows().find((row) => row.id === factId);
-                if (!fact) return;
-                let entry = findDraftEntry(fact.topic);
-                if (!entry) {
-                    entry = { topic: fact.topic, factIds: [], gapCondition: null, text: "", pinned: false, pinnedEvidenceVersion: "", editing: false };
-                    draft.push(entry);
-                }
-                if (!entry.factIds.includes(factId)) {
-                    entry.factIds.push(factId);
-                    entry.pinned = false;
-                    entry.pinnedEvidenceVersion = paragraphEvidenceVersion(entry.topic, entry.factIds);
-                }
-            } else {
-                let changed = false;
-                draft.forEach((entry) => {
-                    if (entry.factIds.includes(factId)) {
-                        entry.factIds = entry.factIds.filter((id) => id !== factId);
-                        entry.pinned = false;
-                        entry.pinnedEvidenceVersion = paragraphEvidenceVersion(entry.topic, entry.factIds);
-                        changed = true;
-                    }
-                });
-                if (!changed) return;
-                state.paragraphDraft = draft.filter((entry) => entry.factIds.length > 0 || String(entry.text || "").trim() !== "");
-            }
-            render();
-        }
-
-        /** I-4 / IP-2: 改主题只改本地草稿——事实移入目标主题段落（无则新建），源段落
-         * 空则移除；涉及段落的锁定按 I-3 失效。 */
-        function setFactTopic(factId, topic) {
-            const draft = state.paragraphDraft || [];
-            let changed = false;
-            draft.forEach((entry) => {
-                if (entry.factIds.includes(factId)) {
-                    entry.factIds = entry.factIds.filter((id) => id !== factId);
-                    entry.pinned = false;
-                    entry.pinnedEvidenceVersion = paragraphEvidenceVersion(entry.topic, entry.factIds);
-                    changed = true;
-                }
-            });
-            if (!changed) return;
-            let target = findDraftEntry(topic);
-            if (!target) {
-                target = { topic, factIds: [], gapCondition: null, text: "", pinned: false, pinnedEvidenceVersion: "", editing: false };
-                draft.push(target);
-            }
-            if (!target.factIds.includes(factId)) {
-                target.factIds.push(factId);
-                target.pinned = false;
-                target.pinnedEvidenceVersion = paragraphEvidenceVersion(target.topic, target.factIds);
-            }
-            state.paragraphDraft = draft.filter((entry) => entry.factIds.length > 0 || String(entry.text || "").trim() !== "");
-            render();
-        }
-
-        function toggleParagraphPin(topic) {
-            const entry = findDraftEntry(topic);
-            if (!entry) return;
-            entry.pinned = !entry.pinned;
-            // I-3: 锁定时记录当前条目级证据版本（重排请求携带；服务端比对）。
-            entry.pinnedEvidenceVersion = paragraphEvidenceVersion(entry.topic, entry.factIds);
-            render();
-        }
-
-        function toggleParagraphEdit(topic) {
-            const entry = findDraftEntry(topic);
-            if (!entry) return;
-            entry.editing = !entry.editing;
-            render();
-        }
-
-        function mergeParagraphUp(topic) {
-            const draft = state.paragraphDraft || [];
-            const index = draft.findIndex((entry) => entry.topic === topic);
-            if (index <= 0) return;
-            const current = draft[index];
-            const previous = draft[index - 1];
-            const mergedFactIds = [...previous.factIds];
-            current.factIds.forEach((id) => {
-                if (!mergedFactIds.includes(id)) mergedFactIds.push(id);
-            });
-            previous.factIds = mergedFactIds;
-            previous.text = [previous.text, current.text].filter((text) => text && String(text).trim()).join("\n\n");
-            // I-3: 双方都锁定才保持锁定（文本与事实集均变化 → 重算证据版本）。
-            previous.pinned = previous.pinned && current.pinned;
-            previous.pinnedEvidenceVersion = paragraphEvidenceVersion(previous.topic, previous.factIds);
-            draft.splice(index, 1);
-            render();
-        }
-
-        function moveParagraph(topic, direction) {
-            const draft = state.paragraphDraft || [];
-            const index = draft.findIndex((entry) => entry.topic === topic);
-            const target = direction === "up" ? index - 1 : index + 1;
-            if (index < 0 || target < 0 || target >= draft.length) return;
-            [draft[index], draft[target]] = [draft[target], draft[index]];
-            render();
-        }
-
-        /**
-         * c5 (T-5)：重排——把本地草稿（paragraphPlanDraft）+ pinned 段落（携带条目级
-         * evidenceSetVersion，I-3）+ op* 运营事实（I-1/I-2）交给服务端编排一次，
-         * 用返回的 13 协议与段落文本刷新本地草稿。I-4：只有本端点与整合访问服务端。
-         */
-        async function rearrange() {
-            if (state.rearrangePending) return;
-            const draft = state.paragraphDraft || [];
-            if (draft.length === 0) return;
-            const seq = state.bootSeq;
-            state.rearrangePending = true;
-            render();
-            try {
-                const draftFactIds = new Set(draft.flatMap((entry) => entry.factIds));
-                const response = await requestJson("/api/trust-reply/workbench/rearrange", {
-                    source,
-                    expectedSourceVersion: state.sourceVersion,
-                    paragraphPlanDraft: draft.map((entry) => ({
-                        topic: entry.topic,
-                        factIds: [...entry.factIds],
-                        gapCondition: entry.gapCondition || null
-                    })),
-                    pinnedParagraphs: draft
-                        .filter((entry) => entry.pinned)
-                        .map((entry) => ({
-                            topic: entry.topic,
-                            factIds: [...entry.factIds],
-                            text: String(entry.text || ""),
-                            evidenceSetVersion: entry.pinnedEvidenceVersion || ""
-                        })),
-                    operatorFacts: state.operatorFacts
-                        .filter((fact) => draftFactIds.has(fact.id))
-                        .map((fact) => ({ id: fact.id, topic: fact.topic, body: fact.body })),
-                    requestFactSelections: serializeRequestFactSelections()
-                });
-                if (!isLive(seq)) return;
-                applyRearrange(response);
-            } catch (error) {
-                if (!isLive(seq) || isAbort(error)) return;
-                setStatus(error.message || "重排失败，请重试", "ERROR");
-            } finally {
-                if (!state.destroyed) {
-                    state.rearrangePending = false;
-                    render();
-                }
-            }
-        }
-
-        function applyRearrange(response) {
-            if (!isLive(state.bootSeq) || !response) return;
-            const previousPinnedTexts = new Map((state.paragraphDraft || []).map((entry) => [entry.topic, entry.pinned ? String(entry.text || "") : null]));
-            state.plan = {
-                facts: Array.isArray(response.facts) ? response.facts : [],
-                plan: Array.isArray(response.paragraphPlan) ? response.paragraphPlan : [],
-                topicOrder: Array.isArray(response.topicOrder) ? response.topicOrder : []
-            };
-            // 未采用的本地 op 事实随重排消失（服务端 facts 不含它）。
-            const planFactIds = new Set((response.paragraphPlan || []).flatMap((entry) => entry.factIds || []));
-            state.operatorFacts = state.operatorFacts.filter((fact) => planFactIds.has(fact.id));
-            seedParagraphDraft();
-            const textsByTopic = new Map((response.paragraphs || []).map((paragraph) => [paragraph.topic, paragraph.text]));
-            state.paragraphDraft.forEach((entry) => {
-                const returned = textsByTopic.get(entry.topic);
-                if (returned != null) entry.text = returned;
-                const pinnedText = previousPinnedTexts.get(entry.topic);
-                // I-3: 服务端未按锁定回填（证据失配 → 已重新编排）→ 本地同步解锁。
-                if (entry.pinned && pinnedText !== null && pinnedText !== entry.text) {
-                    entry.pinned = false;
-                }
-            });
-            if (Array.isArray(response.validationCodes) && response.validationCodes.length > 0) {
-                setStatus(`重排完成，但六道校验未全过（${response.validationCodes.join("、")}）`, "ERROR");
-            } else {
-                setStatus("重排完成", "READY");
-            }
-        }
-
-        // R-2: read-only reuse of the existing auto-reply preview endpoint (the
-        // page-2 preview). Fetching never mutates state and never sends; any
-        // failure simply leaves the verdict in the explicit pending state.
-        async function fetchAutoReplyPreview() {
-            try {
-                const response = await global.fetch(apiUrl(state.contextPath, `/api/mail/unmatched-inbound/${Number(state.source.sourceId)}/auto-reply-preview`), {
-                    method: "GET",
-                    headers: { Accept: "application/json" }
-                });
-                if (!response.ok) return null;
-                const body = await response.json();
-                return body && typeof body === "object" ? body : null;
-            } catch (_) {
-                return null;
-            }
-        }
-
-        // R-2: the displayed decision comes only from the existing preview
-        // result and its hard-gate evidence — never from the assembly. Gates
-        // take precedence; an authoritative QA_AUTO_REPLIED preview without
-        // gates is the only eligible decision.
-        function derivePreviewEvidence(preview) {
-            const gates = Array.isArray(preview.wouldBeBlockedBy) ? preview.wouldBeBlockedBy : [];
-            const decision = gates.length === 0 && preview.previewKind === "QA_AUTO_REPLIED"
-                ? "AUTO_SEND"
-                : "MANUAL_HANDOFF";
-            return {
-                decision,
-                gates,
-                previewKind: preview.previewKind || "",
-                reason: preview.reason || null
-            };
-        }
-
-        // I-5: 「开始分析」（分析后即「重新分析」）复用既有 bootstrap()，
-        // 不新造分析路径；成功后置 state.analyzed = true 并重渲染（S-1 按钮态 /
-        // S-2 占位区随之切换）。只读宿主不渲染该按钮，这里仅作第二道防线。
-        async function startAnalysis() {
-            if (state.readOnly) return;
-            await bootstrap();
-            if (!state.destroyed && isLive()) {
-                state.analyzed = true;
-                render();
-            }
-        }
-
-        // I-1: one-click orchestration. Unresolved manual items (PARTIAL /
-        // UNSUPPORTED) are filled by the machine first — same ADJUST_ITEM path
-        // an operator would use, with the server-suggested handling and
-        // instruction — then the existing assemble() orchestration runs
-        // unchanged. Nothing is sent and no external mail record is written.
-        async function autoRun() {
-            if (state.generation.pending || state.stateSavePending || state.frameSavePending || hasRequestMutationPending()) return;
-            const seq = state.bootSeq;
-            const readiness = computeReadiness();
-            const manualKeys = readiness.autoFillableKeys;
-            if (manualKeys.length > 0) {
-                manualKeys.forEach((requestKey) => {
-                    const request = findRequest(requestKey);
-                    if (!request) return;
-                    request.draftHandling = request.availableHandlings.includes(request.recommendedHandling)
-                        ? request.recommendedHandling
-                        : request.availableHandlings[0] || "OMIT";
-                    request.instruction = request.suggestedInstruction || "";
-                    request.autoFilled = true;
-                    request.instructionEditedByOperator = false;
-                });
-                const filled = await runItemSequence(manualKeys, seq, {
-                    labelPrefix: "正在生成",
-                    doneMessage: "编排生成完成",
-                    handlingFor: (request) => request.draftHandling,
-                    persistEach: false
-                });
-                if (!filled || !isLive(seq)) return;
-            }
-            // V-1: all-or-nothing durable persistence, wholly inside the
-            // one-click path. Manual items are generated above and grounded
-            // items are generated/adopted here — both without per-item durable
-            // writes — so the protected assemble() orchestration performs no
-            // mid-run persistence and issues only the server assembly. Exactly
-            // one complete snapshot is saved after everything succeeded; any
-            // failure, cancellation or stale state before that leaves nothing
-            // newly persisted.
-            computeReadiness().adoptableGrounded.forEach((request) => {
-                request.resolvedVersionId = request.activeVersionId;
-                request.expanded = false;
-            });
-            const missingGrounded = computeReadiness().missingGroundedKeys;
-            if (missingGrounded.length > 0) {
-                const generated = await runItemSequence(missingGrounded, seq, {
-                    labelPrefix: "正在生成有据回答",
-                    doneMessage: "有据回答生成完成",
-                    handlingFor: () => "ANSWER_WITH_EVIDENCE",
-                    persistEach: false
-                });
-                if (!generated || !isLive(seq)) return;
-            }
-            await assemble();
-            if (!isLive(seq)) return;
-            if (previewState() === "CURRENT") {
-                try {
-                    await persistResolvedSnapshot();
-                } catch (error) {
-                    if (isFrameStaleError(error)) {
-                        handleFrameStale(seq, error.message || "框架配置已变化，请重新选择后整合");
-                        return;
-                    }
-                    if (isStaleError(error)) {
-                        handleStaleGeneration(seq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                        return;
-                    }
-                    if (!isLive(seq)) return;
-                    setStatus(error.message || "保存失败，请重试", "ERROR");
-                    render();
-                    return;
-                }
-                if (!isLive(seq)) return;
-            }
-            // R-2: after a completed LIVE one-click assembly, reuse the existing
-            // auto-reply preview evidence for the conclusion. Simulation and
-            // unavailable previews keep the explicit pending state; assembly
-            // itself never decides send clearance.
-            if (previewState() === "CURRENT" && state.mode === MODES.LIVE) {
-                const preview = await fetchAutoReplyPreview();
-                if (!isLive(seq)) return;
-                state.previewEvidence = preview ? derivePreviewEvidence(preview) : null;
-                render();
-            }
-        }
-
-        // I-4: reset returns to the bootstrap default state. It deletes only the
-        // workbench state row for this source; QA rules, snippets, mail records
-        // and ES documents are untouched. After the DELETE the component
-        // re-bootstraps, which rebuilds the request list from the server.
-        async function autoReset() {
-            if (state.generation.pending || state.stateSavePending || state.frameSavePending || hasRequestMutationPending()) return;
-            if (typeof global.confirm === "function"
-                && !global.confirm("重置将清空本次编排产生的所有采用与说明，回到初始状态。QA 规则与历史记录不受影响，继续？")) {
-                render();
-                return;
-            }
-            if (state.savedStateVersion > 0) {
-                try {
-                    await requestJson("/api/trust-reply/workbench/state", {
-                        source,
-                        expectedStateVersion: state.savedStateVersion
-                    }, null, "DELETE");
-                    state.savedStateVersion = 0;
-                } catch (error) {
-                    if (!isLive() || isAbort(error)) return;
-                    setStatus(error.message || "重置失败，请重试", "ERROR");
-                    render();
-                    return;
-                }
-            }
-            state.requests.forEach((request) => {
-                request.versions = [];
-                request.activeVersionId = null;
-                request.resolvedVersionId = null;
-                request.instruction = "";
-                request.autoFilled = false;
-                request.instructionEditedByOperator = false;
-                request.pending = false;
-                request.error = null;
-                request.expanded = request.coverage !== "GROUNDED";
-                request.questionTranslation = { state: "idle", text: "" };
-                request.answerTranslationsByVersionId = {};
-            });
-            state.assembly = null;
-            state.assemblyStale = false;
-            state.previewEvidence = null;
-            setStatus("正在重置工作台…", "RESETTING");
-            render();
-            await bootstrap();
-        }
-
-        async function cancelGeneration(generationId, controller) {
-            cancelController(controller);
-            if (!state.destroyed && state.generation.generationId === generationId) {
-                state.sequenceCancelled = true;
-                state.generation.pending = false;
-                state.generation.controller = null;
-                state.generation.stage = "CANCELLED";
-                state.generation.message = "已取消生成，可重试";
-                render();
-            }
-            if (!generationId || state.destroyed) return;
-            try {
-                await requestJson(`/api/trust-reply/workbench/generations/${encodeURIComponent(generationId)}/cancel`, { source });
-            } catch (_) { /* cancellation is best effort */ }
-        }
-
-        function activeVersion(request) {
-            return request.versions.find((version) => version.versionId === request.activeVersionId) || null;
-        }
-
-        function resolvedVersion(request) {
-            return request.versions.find((version) => version.versionId === request.resolvedVersionId) || null;
-        }
-
-        function invalidateDecision(request) {
-            const hadResolved = !!request.resolvedVersionId;
-            if (hadResolved) request.resolvedVersionId = null;
-            const hadAssembly = invalidateAssembly();
-            return hadResolved || hadAssembly;
-        }
-
-        function captureDecision(request) {
-            return {
-                resolvedVersionId: request.resolvedVersionId,
-                activeVersionId: request.activeVersionId,
-                draftHandling: request.draftHandling,
-                instruction: request.instruction,
-                expanded: request.expanded
-            };
-        }
-
-        function restoreDecision(request, previous) {
-            request.resolvedVersionId = previous.resolvedVersionId;
-            request.activeVersionId = previous.activeVersionId;
-            request.draftHandling = previous.draftHandling;
-            request.instruction = previous.instruction;
-            request.expanded = previous.expanded;
-        }
-
-        async function persistDecisionUnlock(request, previous) {
-            if (!previous.resolvedVersionId || state.destroyed) return;
-            request.stateSavePending = true;
-            syncInstructionUi(request);
-            try {
-                await persistResolvedSnapshot();
-            } catch (error) {
-                if (!isLive()) return;
-                request.stateSavePending = false;
-                if (isFrameStaleError(error)) {
-                    handleFrameStale(state.bootSeq, error.message || "框架配置已变化，请重新选择后整合");
-                    return;
-                }
-                if (isStaleError(error)) {
-                    handleStaleGeneration(state.bootSeq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                    return;
-                }
-                restoreDecision(request, previous);
-                request.error = error.message || "保存失败，请重试";
-                render();
-                return;
-            }
-            if (!state.destroyed) {
-                request.stateSavePending = false;
-                syncInstructionUi(request);
-            }
-        }
-
-        function serializeResolvedVersion(request) {
-            const version = resolvedVersion(request);
-            if (!isVersionSerializable(version, request)) return null;
-            return {
-                requestKey: version.requestKey,
-                versionId: version.versionId,
-                handling: version.handling,
-                answerText: version.answerText || "",
-                claims: version.claims,
-                model: version.model || "",
-                generationKind: version.generationKind,
-                evidenceSetVersion: version.evidenceSetVersion,
-                sourceVersion: version.sourceVersion,
-                operatorInstructionHash: version.operatorInstructionHash || "",
-                operatorInstruction: version.operatorInstruction || "",
-                contextVersion: version.contextVersion || ""
-            };
-        }
-
-        // I-3/03a (I-5): fact add/remove invalidates the affected item only
-        // (durable state, its versions, locks, assembly) and re-bootstraps the
-        // canonical matrix with preserveVersions so untouched items keep their
-        // answers; frame changes only clear the assembly (onFrameChange).
-        async function changeRequestFacts(request, nextFactRuleIds) {
-            // 03a (T7): the confirmation only asks when THIS item actually has
-            // a generated or locked answer — other items' answers survive.
-            const targetHasGeneratedState = request.versions.length > 0 || !!request.resolvedVersionId;
-            if (targetHasGeneratedState && typeof global.confirm === "function" && !global.confirm("该摘要的事实变化会清空本条已生成回答，其余摘要保留，继续？")) {
-                render();
-                return;
-            }
-            request.factChangePending = true;
-            render();
-            try {
-                if (state.savedStateVersion > 0) {
-                    const deleted = await deleteSavedState();
-                    if (!deleted) {
-                        setStatus("旧锁定状态删除失败，未切换事实，请刷新后重试", "ERROR");
-                        return;
-                    }
-                }
-                request.factRuleIds = nextFactRuleIds;
-                await bootstrap({ preserveVersions: true });
-            } finally {
-                request.factChangePending = false;
-                if (!state.destroyed) {
-                    render();
-                }
-            }
-        }
-
-        async function addFact(requestKey, factId) {
-            const request = findRequest(requestKey);
-            if (!request) return;
-            const id = Number(factId);
-            const blockReason = factActionReasonFor(request, state);
-            if (blockReason) {
-                setStatus(blockReason, "BUSY");
-                render();
-                return;
-            }
-            // 计划 02 (I-6): 同一事实可绑定多个摘要——不再因其他 request 已选而
-            // 拒绝添加；本 request 已选仍短路。
-            if ((request.factRuleIds || []).map(Number).includes(id)) return;
-            await changeRequestFacts(request, [...(request.factRuleIds || []), id]);
-        }
-
-        async function removeFact(requestKey, factId) {
-            const request = findRequest(requestKey);
-            if (!request) return;
-            const blockReason = factActionReasonFor(request, state);
-            if (blockReason) {
-                setStatus(blockReason, "BUSY");
-                render();
-                return;
-            }
-            const id = Number(factId);
-            await changeRequestFacts(request, (request.factRuleIds || []).filter((item) => Number(item) !== id));
-        }
-
-        // I-1/I-2: reorder goes through the exact same canonical path as add /
-        // remove (changeRequestFacts -> confirm -> saved-state delete -> reset
-        // versions -> bootstrap); an unchanged order short-circuits so the
-        // confirmation dialog and state deletion never fire for a no-op.
-        function commitFactOrder(request, next) {
-            const blockReason = factActionReasonFor(request, state);
-            if (blockReason) {
-                setStatus(blockReason, "BUSY");
-                render();
-                return;
-            }
-            if (JSON.stringify(next) === JSON.stringify(request.factRuleIds)) return;
-            void changeRequestFacts(request, next);
-        }
-
-        async function moveFact(requestKey, factId, toIndex) {
-            const request = findRequest(requestKey);
-            if (!request) return;
-            const blockReason = factActionReasonFor(request, state);
-            if (blockReason) {
-                setStatus(blockReason, "BUSY");
-                render();
-                return;
-            }
-            const next = reorderFactIds(request.factRuleIds, factId, toIndex);
-            commitFactOrder(request, next);
-        }
-
-        // I-3: keyboard reorder (ArrowLeft/ArrowRight on a focused grip). The
-        // re-render triggered by changeRequestFacts would drop focus, so the
-        // target fact is remembered and render() restores it.
-        function onGripArrowKey(grip, key) {
-            if (grip.getAttribute && grip.getAttribute("aria-disabled") === "true") return;
-            const chip = grip.closest && grip.closest(".trust-reply-fact-chip");
-            if (!chip || !chip.dataset) return;
-            const request = findRequest(chip.dataset.requestKey);
-            if (!request) return;
-            const ids = request.factRuleIds || [];
-            const currentIndex = ids.map(Number).indexOf(Number(chip.dataset.factId));
-            if (currentIndex < 0) return;
-            const toIndex = key === "ArrowLeft" ? currentIndex - 1 : currentIndex + 1;
-            state.pendingFocusFactId = Number(chip.dataset.factId);
-            void moveFact(chip.dataset.requestKey, chip.dataset.factId, toIndex);
-        }
-
-        // B-3: delegated drag handling on the chip list. Drop marks use the
-        // chip's horizontal midline; box-shadow indicators keep chip size
-        // stable so flex-wrap does not reflow while hovering.
-        function clearDropMarks(list) {
-            if (!list || typeof list.querySelectorAll !== "function") return;
-            list.querySelectorAll('[data-dragging="true"], [data-drop-before="true"], [data-drop-after="true"]').forEach((element) => {
-                delete element.dataset.dragging;
-                delete element.dataset.dropBefore;
-                delete element.dataset.dropAfter;
-            });
-        }
-
-        function onDragStart(event) {
-            const grip = event.target && event.target.closest && event.target.closest('[data-role="fact-grip"]');
-            if (!grip || !grip.dataset || grip.dataset.role !== "fact-grip" || !host.contains(grip)) return;
-            if (grip.getAttribute && grip.getAttribute("aria-disabled") === "true") return;
-            const chip = grip.closest && grip.closest(".trust-reply-fact-chip");
-            if (!chip || !chip.dataset) return;
-            if (event.dataTransfer) {
-                event.dataTransfer.setData("text/plain", String(chip.dataset.factId));
-                event.dataTransfer.effectAllowed = "move";
-            }
-            chip.dataset.dragging = "true";
-        }
-
-        function onDragOver(event) {
-            const list = event.target && event.target.closest && event.target.closest('[data-role="fact-chip-list"]');
-            if (!list || !host.contains(list)) return;
-            event.preventDefault && event.preventDefault();
-            clearDropMarks(list);
-            const chip = event.target.closest && event.target.closest(".trust-reply-fact-chip");
-            if (!chip || !chip.dataset || typeof chip.getBoundingClientRect !== "function" || typeof event.clientX !== "number") return;
-            const rect = chip.getBoundingClientRect();
-            if (rect.width <= 0) return;
-            if (event.clientX < rect.left + rect.width / 2) {
-                chip.dataset.dropBefore = "true";
-                delete chip.dataset.dropAfter;
-            } else {
-                chip.dataset.dropAfter = "true";
-                delete chip.dataset.dropBefore;
-            }
-        }
-
-        function onDrop(event) {
-            const list = event.target && event.target.closest && event.target.closest('[data-role="fact-chip-list"]');
-            if (!list || !host.contains(list)) return;
-            // IP-3: a drop released over the remove button must reorder, never
-            // fall through to the button's click handler.
-            event.preventDefault && event.preventDefault();
-            event.stopPropagation && event.stopPropagation();
-            const chip = event.target.closest && event.target.closest(".trust-reply-fact-chip");
-            const before = chip && chip.dataset && chip.dataset.dropBefore === "true";
-            clearDropMarks(list);
-            const factId = event.dataTransfer && event.dataTransfer.getData ? event.dataTransfer.getData("text/plain") : null;
-            if (!chip || !chip.dataset || factId == null) return;
-            const request = findRequest(chip.dataset.requestKey);
-            if (!request) return;
-            const next = resolveFactDrop(request.factRuleIds, factId, chip.dataset.factId, before);
-            commitFactOrder(request, next);
-        }
-
-        function onDragEnd(event) {
-            const list = event.target && event.target.closest && event.target.closest('[data-role="fact-chip-list"]');
-            if (!list || !host.contains(list)) return;
-            clearDropMarks(list);
-        }
-
-        function toggleFactPicker(requestKey) {
-            const request = findRequest(requestKey);
-            if (!request) return;
-            request.factPickerOpen = !request.factPickerOpen;
-            render();
-        }
-
-        function tabId(page) {
-            return `${state.instanceId}-tab-${page}`;
-        }
-
-        function panelId(page) {
-            return `${state.instanceId}-panel-${page}`;
-        }
-
-        // I-1/I-7: switching pages only toggles DOM visibility; business state
-        // (requests, matrix, frame, versions, locks, assembly) is shared.
-        function setActivePage(page, focusTarget) {
-            if (!["facts", "factset", "compose"].includes(page)) return;
-            state.activePage = page;
-            render();
-            if (!focusTarget || state.destroyed) return;
-            // I-1: state.instanceId is a UUID v4 — 62.5% of mounts start with a
-            // digit, and a CSS identifier may not start with a digit, so
-            // `#${tabId(page)}` throws SyntaxError. Query by the stable
-            // role/data attributes instead; the id attributes stay on the
-            // elements for aria-controls / aria-labelledby (I-2).
-            const selector = focusTarget === "tab"
-                ? `[role="tab"][data-page="${page}"]`
-                : focusTarget === "panel"
-                    ? `[data-page-panel="${page}"]`
-                    : null;
-            if (!selector) return;
-            const element = host.querySelector ? host.querySelector(selector) : null;
-            if (element && typeof element.focus === "function") element.focus();
-        }
-
-        function onKeydown(event) {
-            const key = event.key || (event.target && event.target.key);
-            if (key === "ArrowLeft" || key === "ArrowRight") {
-                const grip = event.target && event.target.closest && event.target.closest('[data-role="fact-grip"]');
-                if (grip && grip.dataset && grip.dataset.role === "fact-grip" && host.contains(grip)) {
-                    event.preventDefault && event.preventDefault();
-                    onGripArrowKey(grip, key);
-                    return;
-                }
-            }
-            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return;
-            const tab = event.target && event.target.closest && event.target.closest('[role="tab"]');
-            if (!tab || !host.contains(tab)) return;
-            event.preventDefault && event.preventDefault();
-            const tabs = host.querySelectorAll ? [...host.querySelectorAll('[role="tab"]')] : [];
-            const index = tabs.indexOf(tab);
-            if (index < 0) return;
-            const next = key === "ArrowRight"
-                ? Math.min(tabs.length - 1, index + 1)
-                : key === "ArrowLeft"
-                    ? Math.max(0, index - 1)
-                    : key === "Home"
-                        ? 0
-                        : tabs.length - 1;
-            const page = tabs[next] && tabs[next].dataset && tabs[next].dataset.page;
-            if (page) setActivePage(page, "tab");
-        }
-
-        function renderPageTabs() {
-            // c5 (S-1): 三步页签——01 逐问处理 / 02 事实集 / 03 编排预览（纯复用
-            // 既有页签组件，零新增 CSS）。
-            const pages = [
-                { key: "facts", step: "01", label: "逐问处理" },
-                { key: "factset", step: "02", label: "事实集" },
-                { key: "compose", step: "03", label: "编排预览" }
-            ];
-            return pages.map((page) => {
-                const selected = state.activePage === page.key;
-                return `<button type="button" class="trust-reply-page-tab" role="tab" data-action="set-page" data-page="${page.key}" id="${tabId(page.key)}" aria-controls="${panelId(page.key)}" aria-selected="${selected ? "true" : "false"}" tabindex="${selected ? "0" : "-1"}"><span class="trust-reply-page-step">${page.step}</span><span>${escapeText(page.label)}</span></button>`;
-            }).join("");
-        }
-
-        function renderPageActions(page) {
-            if (page === "facts") {
-                return `<button type="button" class="button primary" data-action="next-page" data-page="factset">下一页：事实集</button>`;
-            }
-            if (page === "factset") {
-                return `<button type="button" class="button secondary" data-action="prev-page" data-page="facts">上一页：逐问处理</button><button type="button" class="button primary" data-action="next-page" data-page="compose">下一页：编排预览</button>`;
-            }
-            const canRearrange = (state.paragraphDraft && state.paragraphDraft.length > 0) && !state.rearrangePending;
-            return `<button type="button" class="button secondary" data-action="prev-page" data-page="factset">上一页：事实集</button><button type="button" class="button primary" data-action="rearrange"${canRearrange ? "" : " disabled"}>${state.rearrangePending ? "重排中…" : "重排"}</button>`;
-        }
-
-        // ── c5 (T-2/T-3/T-4)：事实集与段落草稿 ────────────────────────────────────
-
-        /** I-5: 步骤 02/03 的唯一事实来源 = 服务端 13 协议（plan.facts / plan）+
-         * 本地 op* 运营事实；草稿在其上派生。 */
-        function seedParagraphDraft() {
-            const plan = state.plan;
-            const previous = new Map((state.paragraphDraft || []).map((entry) => [entry.topic, entry]));
-            state.paragraphDraft = (plan && Array.isArray(plan.plan) ? plan.plan : []).map((entry) => {
-                const old = previous.get(entry.topic);
-                return {
-                    topic: entry.topic,
-                    factIds: [...(entry.factIds || [])],
-                    gapCondition: entry.gapCondition || null,
-                    text: old ? old.text : "",
-                    pinned: old ? old.pinned : false,
-                    // I-3: pinned 有效性由该段自身 factIds 对应的条目级证据版本决定，
-                    // 每次（重新）播种时按当前请求版本重算，绝不使用全信标量。
-                    pinnedEvidenceVersion: paragraphEvidenceVersion(entry.topic, entry.factIds),
-                    editing: false
-                };
-            });
-        }
-
-        function findDraftEntry(topic) {
-            return (state.paragraphDraft || []).find((entry) => entry.topic === topic) || null;
-        }
-
-        function factIdToRuleId(factId) {
-            if (typeof factId !== "string" || !factId.startsWith("f")) return null;
-            const first = factId.slice(1).split("+")[0];
-            const number = Number(first);
-            return Number.isInteger(number) ? number : null;
-        }
-
-        /** I-3: 段落主属 request（最低 index、factRuleIds 与其规则 id 相交者）的条目级
-         * evidenceSetVersion；无规则事实的段落返回 ""（纯运营段落，逐字锁定）。 */
-        function paragraphEvidenceVersion(topic, factIds) {
-            const ruleIds = (factIds || []).map(factIdToRuleId).filter((id) => id != null);
-            const owner = [...state.requests]
-                .filter((request) => ruleIds.some((id) => request.factRuleIds.includes(id)))
-                .sort((a, b) => (a.index - b.index))[0];
-            return owner ? owner.evidenceSetVersion || "" : "";
-        }
-
-        /** 去重后的事实集行：plan.facts ∪ 本地 op 事实；采用/用量/主题来自本地草稿，
-         * 触发来问由 requestFacts 矩阵反查（I-5）。 */
-        function factSetRows() {
-            const factsById = new Map();
-            (state.plan && Array.isArray(state.plan.facts) ? state.plan.facts : []).forEach((fact) => {
-                factsById.set(fact.id, fact);
-            });
-            state.operatorFacts.forEach((fact) => {
-                if (!factsById.has(fact.id)) {
-                    factsById.set(fact.id, {
-                        id: fact.id,
-                        topic: fact.topic,
-                        body: fact.body,
-                        controlled: null,
-                        frozen: true,
-                        required: true
-                    });
-                }
-            });
-            const draft = state.paragraphDraft || [];
-            const usageById = new Map();
-            const adoptedById = new Map();
-            const topicById = new Map();
-            draft.forEach((entry) => {
-                entry.factIds.forEach((id) => {
-                    usageById.set(id, (usageById.get(id) || 0) + 1);
-                    adoptedById.set(id, true);
-                    if (!topicById.has(id)) topicById.set(id, entry.topic);
-                });
-            });
-            return [...factsById.values()].map((fact) => {
-                const id = fact.id;
-                const ruleId = factIdToRuleId(id);
-                const localOp = state.operatorFacts.find((item) => item.id === id);
-                const request = localOp && localOp.requestKey ? findRequest(localOp.requestKey) : null;
-                const triggers = request
-                    ? [request.index]
-                    : ruleId != null
-                        ? state.requests.filter((item) => item.factRuleIds.includes(ruleId)).map((item) => item.index)
-                        : [];
-                return {
-                    id,
-                    topic: topicById.get(id) || fact.topic || "",
-                    body: fact.body || "",
-                    controlled: fact.controlled || null,
-                    ruleId,
-                    adopted: adoptedById.has(id),
-                    usage: usageById.get(id) || 0,
-                    triggers
-                };
-            });
-        }
-
-        /** S-2: 事实集表格（新增规则块逐字见 styles.css；列 = 采用/事实/触发来问/来源/主题/用量）。 */
-        function renderFactSet() {
-            const rows = factSetRows();
-            if (rows.length === 0) {
-                return `<div class="compose-panel"><p class="muted">暂无可展示事实</p></div>`;
-            }
-            const topics = [...new Set((state.paragraphDraft || []).map((entry) => entry.topic))];
-            const body = rows.map((fact) => {
-                const origin = fact.id.startsWith("op") ? "OPERATOR" : "QA";
-                const controlled = fact.controlled ? ` data-controlled="${escapeText(fact.controlled)}"` : "";
-                const triggers = fact.triggers.map((index) => `R${index}`).join(" · ");
-                const source = origin === "OPERATOR" ? "运营 · 逐字" : `QA 规则 ${fact.ruleId}`;
-                const topicOptions = topics.map((topic) => `<option${topic === fact.topic ? " selected" : ""}>${escapeText(topic)}</option>`).join("");
-                return `<tr data-origin="${origin}" data-adopted="${fact.adopted ? "true" : "false"}" data-fact-id="${escapeText(fact.id)}"${controlled}>
-                    <td><input type="checkbox" data-action="factset-adopt" data-fact-id="${escapeText(fact.id)}"${fact.adopted ? " checked" : ""}></td>
-                    <td>${escapeText(fact.body)}</td>
-                    <td>${escapeText(triggers)}</td>
-                    <td class="trust-reply-factset-source" data-origin="${origin}">${escapeText(source)}</td>
-                    <td><select data-action="factset-topic" data-fact-id="${escapeText(fact.id)}">${topicOptions}</select></td>
-                    <td class="trust-reply-factset-usage">${fact.usage}×</td>
-                </tr>`;
-            }).join("");
-            return `<table class="trust-reply-factset"><thead><tr><th>采用</th><th>事实</th><th>触发来问</th><th>来源</th><th>主题</th><th>用量</th></tr></thead><tbody>${body}</tbody></table>`;
-        }
-
-        /** S-3: 段落卡片（复用 .trust-reply-item + data-pinned 修饰；控件复用
-         * .button.small.secondary；正文复用 .pre）。 */
-        function renderParagraphCards() {
-            const draft = state.paragraphDraft || [];
-            if (draft.length === 0) {
-                return `<div class="compose-panel"><p class="muted">尚未生成段落；完成逐问处理后点「重排」编排正文。</p></div>`;
-            }
-            const pinnedCount = draft.filter((entry) => entry.pinned).length;
-            const cards = draft.map((entry, index) => {
-                const pinned = entry.pinned ? ` data-pinned="true"` : "";
-                const pinLabel = entry.pinned ? "已锁定" : "锁定";
-                const editLabel = entry.editing ? "完成" : "编辑";
-                const text = entry.editing
-                    ? `<textarea class="pre" data-role="paragraph-text" data-topic="${escapeText(entry.topic)}" rows="4">${escapeText(entry.text || "")}</textarea>`
-                    : `<p class="pre" data-role="paragraph-text" data-topic="${escapeText(entry.topic)}">${escapeText(entry.text || "")}</p>`;
-                const mergeDisabled = index === 0 ? " disabled" : "";
-                const moveUpDisabled = index === 0 ? " disabled" : "";
-                const moveDownDisabled = index === draft.length - 1 ? " disabled" : "";
-                return `<article class="trust-reply-item"${pinned} data-role="paragraph" data-topic="${escapeText(entry.topic)}">
-                    <div class="trust-reply-paragraph-head">
-                        <span class="trust-reply-page-step">${escapeText(entry.topic)}</span>
-                        <span class="trust-reply-paragraph-ctl">
-                            <button type="button" class="button small secondary" data-action="paragraph-edit" data-topic="${escapeText(entry.topic)}">${editLabel}</button>
-                            <button type="button" class="button small secondary" data-action="paragraph-pin" data-topic="${escapeText(entry.topic)}">${pinLabel}</button>
-                            <button type="button" class="button small secondary" data-action="paragraph-merge-up" data-topic="${escapeText(entry.topic)}"${mergeDisabled}>并入上段</button>
-                            <button type="button" class="button small secondary" data-action="paragraph-move-up" data-topic="${escapeText(entry.topic)}"${moveUpDisabled}>↑</button>
-                            <button type="button" class="button small secondary" data-action="paragraph-move-down" data-topic="${escapeText(entry.topic)}"${moveDownDisabled}>↓</button>
-                        </span>
-                    </div>
-                    ${text}
-                </article>`;
-            }).join("");
-            const hint = `<div class="trust-reply-rerun-hint" role="status">重排时仅重写未锁定段落 ${draft.length - pinnedCount} / ${draft.length}</div>`;
-            return cards + hint;
-        }
-
-        // I-2: per-card fact chips and picker. Owners, pending saves and server
-        // re-validation keep the matrix canonical; disabled states are UX only.
-        function renderFactSection(request) {
-            const factActionReason = factActionReasonFor(request, state);
-            const factActionsDisabled = !!factActionReason;
-            // S-3: hint id derived from the request key (unique per summary,
-            // instance-scoped so multiple workbenches on one page never clash).
-            const gripHintId = `${state.instanceId}-fact-grip-hint-${request.requestKey}`;
-            const chips = (request.factRuleIds || []).map((factId) => {
-                const id = Number(factId);
-                const rule = factRuleById(id);
-                const label = rule ? rule.displayName || `事实 ${id}` : `事实 ${id}`;
-                const body = rule && rule.answerBody ? String(rule.answerBody) : "";
-                const title = body ? ` title="${escapeText(body)}"` : "";
-                // S-1: draggable lives on the grip only (not the chip), so the
-                // remove button never participates in the drag (IP-3).
-                const gripDraggable = factActionsDisabled ? "" : ` draggable="true"`;
-                const gripDisabled = factActionsDisabled ? ` aria-disabled="true"` : "";
-                return `<span class="trust-reply-fact-chip" data-fact-id="${id}" data-request-key="${escapeText(request.requestKey)}"${title}><span class="trust-reply-fact-grip" data-role="fact-grip"${gripDraggable} tabindex="0" role="button" aria-label="拖动或用左右方向键调整「${escapeText(label)}」的顺序" aria-describedby="${gripHintId}"${gripDisabled}>⋮⋮</span><span>${escapeText(label)}</span><button type="button" data-action="remove-fact" data-request-key="${escapeText(request.requestKey)}" data-fact-id="${id}" aria-label="移除事实 ${escapeText(label)}"${factActionsDisabled ? " disabled" : ""}>×</button></span>`;
-            }).join("");
-            const pickerOptions = state.rules.map((rule) => {
-                const id = Number(rule.ruleId ?? rule.id);
-                const selected = (request.factRuleIds || []).map(Number).includes(id);
-                // 计划 02 (I-6): 其他摘要已选的事实仍显示「可添加」（跨摘要复用
-                // 合法）；本 request 已选与保存中仍 disabled。不再产出 used 状态。
-                let optionState = "available";
-                let label = "可添加";
-                let disabled = false;
-                if (selected) {
-                    optionState = "selected";
-                    label = "已选择";
-                    disabled = true;
-                } else if (factActionsDisabled) {
-                    optionState = "pending";
-                    label = "保存中";
-                    disabled = true;
-                }
-                const searchText = `${rule.displayName || ""} ${rule.answerBody || ""}`.trim().toLowerCase();
-                return `<button type="button" class="trust-reply-fact-picker-option" data-action="add-fact" data-request-key="${escapeText(request.requestKey)}" data-fact-id="${id}" data-state="${optionState}" data-search="${escapeText(searchText)}"${disabled ? " disabled" : ""}><span class="trust-reply-fact-picker-main"><strong>${escapeText(rule.displayName || `事实 ${id}`)}</strong><span>${escapeText(rule.answerBody || "")}</span></span><span class="trust-reply-fact-state" data-state="${optionState}">${escapeText(label)}</span></button>`;
-            }).join("");
-            const factCount = (request.factRuleIds || []).length;
-            const pickerSearch = pickerOptions
-                ? `<div class="trust-reply-fact-picker-search"><input type="text" data-role="fact-search" data-request-key="${escapeText(request.requestKey)}" placeholder="搜索事实标题 / 正文…" aria-label="搜索事实"${factActionsDisabled ? " disabled" : ""}></div>`
-                : "";
-            // 03a (S-1): only when this item's per-request evidence drifted is
-            // the verbatim stale hint appended after the fact section; no new
-            // class, no inline style, no output when the condition is false.
-            // 03b (S-1): the verbatim context-stale hint is appended beside it
-            // (never replacing it) when the item's locked version was
-            // generated under a different context fingerprint.
-            const staleMarkup = (request.evidenceStale === true
-                ? `<span class="muted" data-role="item-evidence-stale">事实已变化，本条回答需重新生成</span>`
-                : "") + (request.contextStale === true
-                ? `<span class="muted" data-role="item-context-stale">本条在旧训练知识/对话历史下生成</span>`
-                : "");
-            // 计划 02 (S-1/I-2): only when this item's manual facts include an
-            // intent mismatch is the fixed muted hint appended after the stale
-            // hints; no new class, no inline style, no output when the
-            // condition is false. 文案固定，不随事实 id/名称变化。
-            const mismatchMarkup = (Array.isArray(request.intentMismatchFactRuleIds) && request.intentMismatchFactRuleIds.length > 0)
-                ? `<span class="muted" data-role="item-facts-dropped">人工选择已生效；系统未匹配到对应意图，已记录供后续优化。</span>`
-                : "";
-            const factActionStatus = factActionReason
-                ? `<span class="trust-reply-fact-action-status" data-role="fact-action-status">${escapeText(factActionReason)}</span>`
-                : "";
-            return `<div class="trust-reply-fact-section" data-role="fact-section" data-request-key="${escapeText(request.requestKey)}"><div class="trust-reply-fact-head"><strong>对应事实</strong><span class="trust-reply-fact-count">${factCount}</span><span class="trust-reply-fact-grip-hint" id="${gripHintId}">拖动 ⋮⋮ 或用 ← → 调整顺序</span>${factActionStatus}<button type="button" class="button small secondary" data-action="toggle-fact-picker" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.factPickerOpen ? "true" : "false"}"${factActionsDisabled ? ` disabled title="${escapeText(factActionReason)}"` : ""}>${request.factPickerOpen ? "收起事实选择" : "+ 添加事实"}</button></div><div class="trust-reply-fact-chip-list" data-role="fact-chip-list">${chips || `<span class="muted">未绑定事实</span>`}</div><div class="trust-reply-fact-picker" data-role="fact-picker" data-request-key="${escapeText(request.requestKey)}"${request.factPickerOpen ? "" : " hidden"}>${pickerSearch}${pickerOptions || `<span class="muted">暂无可添加事实</span>`}</div></div>${staleMarkup}${mismatchMarkup}`;
-        }
-
-        function renderFrameSelects() {
-            const selection = state.frameSnapshot?.selection || {};
-            return FRAME_SLOTS.map((slot) => {
-                const options = state.frameOptions
-                    .filter((option) => option.snippetType === slot.snippetType)
-                    .sort((a, b) => (Number(a.displayOrder) - Number(b.displayOrder)) || (Number(a.id) - Number(b.id)))
-                    .map((option) => `<option value="${escapeText(option.id)}"${Number(selection[slot.key]) === Number(option.id) ? " selected" : ""}>${escapeText(option.content)}</option>`)
-                    .join("");
-                return `<label class="trust-reply-field">${escapeText(slot.label)}<select data-role="frame-select" data-frame-slot="${slot.key}"${state.frameSavePending ? " disabled" : ""}><option value="">不使用</option>${options}</select></label>`;
-            }).join("");
-        }
-
-        // I-3: frame-only invalidation. Locked versions survive; the assembly is
-        // dropped; with locks present the new frame is persisted immediately.
-        function onFrameChange(slotKey, value) {
-            const previous = snapshotFrame(state.frameSnapshot);
-            const selection = { ...(state.frameSnapshot?.selection || {}) };
-            selection[slotKey] = value ? Number(value) : null;
-            state.frameSnapshot = { selection, version: "" };
-            const hadAssembly = invalidateAssembly();
-            if (hadAssembly) state.assemblyStale = true;
-            const hasLocks = state.requests.some((request) => !!request.resolvedVersionId);
-            if (!hasLocks) {
-                state.frameSavePending = false;
-                render();
-                return;
-            }
-            state.frameSavePending = true;
-            render();
-            void persistResolvedSnapshot().then((response) => {
-                if (state.destroyed) return;
-                state.frameSavePending = false;
-                if (response && response.frameSnapshot) state.frameSnapshot = snapshotFrame(response.frameSnapshot);
-                setStatus("回复框架已保存", "READY");
+            }).then((result) => {
+                if (disposed.value || mySeq !== requestSeq.value) return;
+                applyComposeResult(state, result);
                 render();
             }).catch((error) => {
-                if (state.destroyed) return;
-                state.frameSavePending = false;
-                state.frameSnapshot = previous;
-                if (isFrameStaleError(error)) {
-                    handleFrameStale(state.bootSeq, error.message || "框架配置已变化，请重新选择后整合");
-                    return;
-                }
-                setStatus(error.message || "框架保存失败，请重试", "ERROR");
+                if (disposed.value || mySeq !== requestSeq.value) return;
+                if (error && error.name === "AbortError") return;
+                state.busy = false;
+                state.error = errorTextFor(error.code, error.message, error.status);
                 render();
+            }).then(() => {
+                controllers.delete(controller);
             });
         }
 
-        function renderPreviewState() {
-            const stateKey = previewState();
-            return `<span class="trust-reply-preview-state" data-state="${stateKey}">${escapeText(PREVIEW_STATE_LABELS[stateKey])}</span>`;
-        }
-
-        // I-4: display-only preview derived from server frame option content and
-        // resolved answers. Never written into state.assembly or the adopt path.
-        function renderFrameLocalPreview() {
-            const selection = state.frameSnapshot?.selection || {};
-            const frameParts = FRAME_SLOTS.map((slot) => {
-                const id = selection[slot.key];
-                if (id == null) return null;
-                const option = state.frameOptions.find((item) => Number(item.id) === Number(id));
-                return option && String(option.content || "").trim() ? option.content : null;
-            }).filter((text) => text != null);
-            const resolvedAnswers = state.requests.map((request) => resolvedVersion(request)?.answerText)
-                .filter((text) => text && String(text).trim());
-            return [...frameParts, ...resolvedAnswers].join("\n\n");
-        }
-
-        async function complete() {
-            if (!state.assembly || state.completePending) return;
-            if (previewState() !== "CURRENT") return;
-            state.completePending = true;
-            renderStatusOnly();
-            try {
-                await state.onComplete(state.assembly);
-            } finally {
-                if (!state.destroyed) {
-                    state.completePending = false;
-                    render();
+        function regenerate() {
+            if (disposed.value || state.busy) return;
+            // I-27：手改过正文后重新生成必须二次确认；取消则保留手改内容。
+            if (state.dirty) {
+                let confirmed = false;
+                try {
+                    confirmed = global.confirm ? global.confirm("正文有手工修改，重新生成将丢弃这些修改，确定继续吗？") : true;
+                } catch (err) {
+                    confirmed = true;
                 }
+                if (!confirmed) return;
             }
+            state.editMode = false;
+            state.dirty = false;
+            notifyChange();
+            compose();
         }
 
-        // S-2: the read-only AUTO_PREVIEW zone. The banner is static; the gate
-        // list starts empty (:empty hides it) and the host adapter fills it.
-        function renderReadOnlyZone() {
-            if (!state.readOnly) return "";
-            return `<div class="trust-reply-readonly-banner">只读预览：此处不生成、不采用、不发送</div><ul class="trust-reply-gate-list"></ul>`;
+        function removeFact(factCode) {
+            if (disposed.value || state.busy) return;
+            applyRemoveFact(state, factCode);
+            notifyChange();
+            compose();
         }
 
-        // S-5: the former single-pane .trust-reply-layout shell (layout aside +
-        // item list) is retired and replaced by two .trust-reply-page panels.
-        function renderShell(message, allowRecovery) {
-            if (state.destroyed) return;
-            const modeNote = state.mode === MODES.SIMULATION ? "模拟 · 不外发" : "正式回复";
-            const recoveryZone = allowRecovery && !state.readOnly ? `<div class="trust-reply-item-actions" data-role="shell-recovery"><button type="button" class="button secondary" data-action="reset-workbench-state">重置本封信的工作台状态</button></div>` : "";
-            host.innerHTML = `<details class="detail-section reply-workflow-detail trust-reply-workbench" open>
-                <summary class="reply-workflow-summary"><span class="reply-workflow-icon" aria-hidden="true">⌘</span><span class="reply-workflow-title"><strong>可信回复工作台</strong><small>${modeNote}</small></span><span class="reply-workflow-status" data-role="mode-note">${modeNote}</span><span class="reply-workflow-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="reply-workflow-content">${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar"><p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p></div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${escapeText(message || "")}</div>${recoveryZone}<section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-item-list" data-role="items"></div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="factset" id="${panelId("factset")}" aria-labelledby="${tabId("factset")}"${state.activePage === "factset" ? "" : " hidden"}></section><section class="trust-reply-page" role="tabpanel" data-page-panel="compose" id="${panelId("compose")}" aria-labelledby="${tabId("compose")}"${state.activePage === "compose" ? "" : " hidden"}></section></div>
-            </details>`;
+        function addFact(factCode) {
+            if (disposed.value || state.busy) return;
+            const code = String(factCode || "").trim().toUpperCase();
+            if (!code) return;
+            applyAddFact(state, code);
+            notifyChange();
+            compose();
         }
 
-        function render() {
-            if (state.destroyed) return;
-            host.innerHTML = renderMarkup();
-            // I-3: keyboard reorder re-renders via bootstrap(); hand focus back
-            // to the same fact's grip (consumed once, kept until found so an
-            // intermediate loading render cannot drop it).
-            const focusFactId = state.pendingFocusFactId;
-            if (focusFactId != null && typeof host.querySelector === "function") {
-                const grip = host.querySelector(`[data-fact-id="${Number(focusFactId)}"] [data-role="fact-grip"]`);
-                if (grip && typeof grip.focus === "function") {
-                    state.pendingFocusFactId = null;
-                    grip.focus();
-                }
-            }
+        function complete() {
+            if (disposed.value || state.busy) return;
+            if (!state.assemblyReady && state.paragraphs.length === 0 && !hasAnyFrame(state)) return;
+            // 采用时以当前正文为准（含手改），不再触发网络请求。
+            const assembly = buildAssembly(state);
+            if (typeof options.onComplete === "function") options.onComplete(assembly);
         }
 
-        function renderMarkup() {
-            const modeNote = state.mode === MODES.SIMULATION ? "模拟 · 不外发" : "正式回复";
-            // I-5 (S-2): 未分析时以占位区替代摘要列表与框架页；只读模式按
-            // 方案 A 永远自动分析，不会走到这里。
-            const unanalyzed = !state.analyzed && !state.readOnly;
-            const preanalysisZone = `<div class="trust-reply-preanalysis" role="status"><strong>尚未分析这封来信</strong><span>点「开始分析」拆分来信、匹配已审核事实并生成覆盖矩阵。分析会在服务端建立本信的工作台状态。</span></div>`;
-            const itemMarkup = unanalyzed
-                ? preanalysisZone
-                : (state.requests.map(renderRequest).join("") || `<div class="compose-panel"><p class="muted">暂无可处理请求</p></div>`);
-            // c5 (T-1/T-2/T-4): 步骤 02 事实集表格（S-2）；步骤 03 编排预览 =
-            // 框架选择器（顶部）+ 整合摘要预览（保留）+ 段落卡片（S-3）。
-            const factSetMarkup = unanalyzed
-                ? preanalysisZone
-                : `<div data-role="factset">${renderFactSet()}</div>`;
-            const composeMarkup = unanalyzed
-                ? preanalysisZone
-                : `<div class="trust-reply-frame-panel compose-panel"><div class="trust-reply-frame-grid">${renderFrameSelects()}</div><div class="trust-reply-frame-preview">${renderPreviewState()}<div class="trust-reply-summary" data-role="summary">${renderSummary()}</div></div><div data-role="paragraph-area">${renderParagraphCards()}</div></div>`;
-            return `<details class="detail-section reply-workflow-detail trust-reply-workbench" open>
-                <summary class="reply-workflow-summary"><span class="reply-workflow-icon" aria-hidden="true">⌘</span><span class="reply-workflow-title"><strong>可信回复工作台</strong><small>${modeNote}</small></span><span class="reply-workflow-status" data-role="mode-note">${modeNote}</span><span class="reply-workflow-chevron" aria-hidden="true">⌄</span></summary>
-                <div class="reply-workflow-content"${busyOverlayState() ? ' aria-busy="true"' : ''}>${renderReadOnlyZone()}<div class="trust-reply-toolbar" data-role="toolbar">${renderToolbar()}</div><nav class="trust-reply-page-nav" role="tablist" aria-label="工作台页面">${renderPageTabs()}</nav><div class="ai-reply-feedback" data-role="status" role="status" aria-live="polite">${renderStatus()}</div><section class="trust-reply-page" role="tabpanel" data-page-panel="facts" id="${panelId("facts")}" aria-labelledby="${tabId("facts")}"${state.activePage === "facts" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>逐问处理</h3><small>按原邮件顺序展示摘要卡片，每张卡片绑定对应事实；可添加或删除事实。</small></div><div class="trust-reply-item-list" data-role="items">${itemMarkup}</div><div class="trust-reply-page-actions">${renderPageActions("facts")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="factset" id="${panelId("factset")}" aria-labelledby="${tabId("factset")}"${state.activePage === "factset" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>事实集</h3><small>全信去重后的事实清单：标出触发来问、用量、受控与运营事实；改动只影响本地草稿，点「重排」后生效。</small></div>${factSetMarkup}<div class="trust-reply-page-actions">${renderPageActions("factset")}</div></section><section class="trust-reply-page" role="tabpanel" data-page-panel="compose" id="${panelId("compose")}" aria-labelledby="${tabId("compose")}"${state.activePage === "compose" ? "" : " hidden"}><div class="trust-reply-page-head"><h3>编排预览</h3><small>选择尊语、开场白、致谢语与结束语；段落可编辑、锁定、并入上段与上下移，重排后仅重写未锁定段落。</small></div>${composeMarkup}<div class="trust-reply-page-actions">${renderPageActions("compose")}</div></section>${renderBusyOverlay()}</div>
-            </details>`;
-        }
-
-        // Workbench-level busy reasons are limited to operations that affect
-        // multiple summaries or the final assembled reply. Single-summary
-        // operations are rendered by itemBusyState() below.
-        function busyOverlayState() {
-            if (state.stateSavePending) {
-                return { text: "正在保存工作台状态…", hint: "完成后可调整事实与处理方式。", cancellable: false };
-            }
-            if (state.generation.pending) {
-                return { text: state.generation.message || "正在生成回复…", hint: "生成期间不能改动事实与处理方式。", cancellable: true };
-            }
-            if (state.frameSavePending) {
-                return { text: "正在保存回复框架…", hint: "完成后可调整事实与处理方式。", cancellable: false };
-            }
-            if (state.completePending) {
-                return { text: "正在整合整封回复…", hint: "服务端合成中，请勿离开本页。", cancellable: false };
-            }
-            return null;
-        }
-
-        function itemBusyState(request) {
-            // A global operation already owns the workbench mask. Local masks
-            // are reserved for operations that affect only this summary.
-            if (!request || state.generation.pending || state.frameSavePending || state.completePending || state.stateSavePending) {
-                return null;
-            }
-            if (request.pending) {
-                return { text: "本条摘要正在生成…", hint: "完成后可继续调整该条目。" };
-            }
-            if (request.factChangePending) {
-                return { text: "正在更新本条事实…", hint: "其他摘要仍可继续操作。" };
-            }
-            if (request.stateSavePending) {
-                return { text: "正在保存本条摘要…", hint: "其他摘要仍可继续操作。" };
-            }
-            return null;
-        }
-
-        function renderItemBusyOverlay(request) {
-            const busy = itemBusyState(request);
-            if (!busy) return "";
-            return `<div class="trust-reply-item-busy-overlay" role="status" aria-live="polite"><div class="trust-reply-item-busy-card"><span class="ai-reply-loading-spinner" aria-hidden="true"></span><span class="trust-reply-item-busy-text">${escapeText(busy.text)}</span><span class="trust-reply-item-busy-hint">${escapeText(busy.hint)}</span></div></div>`;
-        }
-
-        // P2 (I-1/I-2): the mask is part of renderMarkup() output and lives as
-        // the last child of .reply-workflow-content, so <summary> stays clickable.
-        // I-4: the cancel button reuses the existing delegated action.
-        function renderBusyOverlay() {
-            const busy = busyOverlayState();
-            if (!busy) return "";
-            const cancel = busy.cancellable
-                ? `<button type="button" class="button danger" data-action="cancel-generation">取消生成</button>`
-                : "";
-            return `<div class="trust-reply-busy-overlay" role="status" aria-live="polite"><div class="trust-reply-busy-card"><span class="ai-reply-loading-spinner" aria-hidden="true"></span><span class="trust-reply-busy-text">${escapeText(busy.text)}</span><span class="trust-reply-busy-hint">${escapeText(busy.hint)}</span>${cancel}</div></div>`;
-        }
-
-        function renderToolbar() {
-            const modeNote = state.mode === MODES.SIMULATION ? "模拟 · 不外发" : "正式回复";
-            const cancelButton = state.generation.pending
-                ? `<button type="button" class="button danger" data-action="cancel-generation">取消生成</button>`
-                : "";
-            const modelOptions = state.availableModels.map((model) => `<option value="${escapeText(model)}"${model === state.selectedModel ? " selected" : ""}>${escapeText(MODEL_LABELS[model] || model)}</option>`).join("");
-            // S-1: the one-click orchestration bar (T4-3: never rendered on the
-            // read-only AUTO_PREVIEW host). 未分析时「开始分析」为主按钮且
-            // 一键预判/重置置灰；分析完成后按钮文案改「重新分析」并降为次级，
-            // 一键预判/重置恢复可点。
-            const startAnalysisButton = `<button type="button" class="button ${state.analyzed ? "secondary" : "primary"}" data-action="start-analysis">${state.analyzed ? "重新分析" : "开始分析"}</button>`;
-            const autoRunDisabled = state.analyzed ? "" : " disabled";
-            const autoResetDisabled = state.analyzed ? "" : " disabled";
-            const autoRunHint = state.analyzed
-                ? "有据项自动生成，无据项由系统代填回答说明；汇总后仍可逐项调整。不发送、不写外发记录。"
-                : "先点「开始分析」拆分来信并匹配事实；分析完成后再用一键预判生成回答。不发送、不写外发记录。";
-            const autoRunBar = state.readOnly ? "" : `<div class="trust-reply-autorun">${startAnalysisButton}<button type="button" class="button primary" data-action="auto-run"${autoRunDisabled}>一键预判</button><button type="button" class="button secondary" data-action="auto-reset"${autoResetDisabled}>重置</button><span class="trust-reply-autorun-hint">${autoRunHint}</span></div>`;
-            return `<p class="trust-reply-mode-note" data-role="mode-description">${modeNote}</p>${autoRunBar}<div class="ai-reply-model-row ai-reply-generation-controls"><label>生成模型<select data-role="model" class="ai-reply-model-select"${state.llmEnabled ? "" : " disabled"}>${modelOptions}</select></label><label>单次 TTL<select data-role="attempt-timeout" class="ai-reply-model-select">${timeoutOptions(state.attemptTimeout, false)}</select></label>${customTimeout(state.attemptTimeout, "attempt")}<label>总 TTL<select data-role="total-timeout" class="ai-reply-model-select">${timeoutOptions(state.totalTimeout, true)}</select></label>${customTimeout(state.totalTimeout, "total")}${cancelButton}</div>`;
-        }
-
-        function translationEntry(request, versionId) {
-            if (!versionId) return request.questionTranslation;
-            if (!request.answerTranslationsByVersionId[versionId]) {
-                request.answerTranslationsByVersionId[versionId] = { state: "idle", text: "" };
-            }
-            return request.answerTranslationsByVersionId[versionId];
-        }
-
-        async function requestTranslation(request, versionId) {
-            const version = versionId ? request.versions.find((item) => item.versionId === versionId) : null;
-            const text = versionId ? version?.answerText : request.requestText;
-            const entry = translationEntry(request, versionId);
-            if (!String(text || "").trim() || entry.state === "pending") return;
-            const sourceVersion = state.sourceVersion;
-            const requestKey = request.requestKey;
-            const controller = new AbortController();
-            entry.state = "pending";
-            entry.text = "";
-            state.translationControllers.add(controller);
-            render();
-            try {
-                const response = await requestJson("/api/translate", { text }, controller);
-                if (!isLive() || state.sourceVersion !== sourceVersion || request.requestKey !== requestKey
-                    || (versionId && !request.versions.some((item) => item.versionId === versionId))) return;
-                entry.state = response?.ok && String(response.translatedText || "").trim() ? "expanded" : "error";
-                entry.text = entry.state === "expanded" ? response.translatedText : "";
-            } catch (error) {
-                if (!isLive() || isAbort(error) || state.sourceVersion !== sourceVersion || request.requestKey !== requestKey) return;
-                entry.state = "error";
-                entry.text = "";
-            } finally {
-                state.translationControllers.delete(controller);
-                if (isLive() && state.sourceVersion === sourceVersion && request.requestKey === requestKey) render();
-            }
-        }
-
-        async function toggleTranslation(request, versionId) {
-            const entry = translationEntry(request, versionId);
-            if (entry.state === "expanded") {
-                entry.state = "collapsed";
+        function loadSnippetOptions() {
+            if (disposed.value) return;
+            const controller = new global.AbortController();
+            controllers.add(controller);
+            const url = `${contextPath}${SNIPPET_PATH}`;
+            global.fetch(url, {
+                method: "GET",
+                headers: { "Accept": "application/json" },
+                signal: controller.signal
+            }).then((response) => {
+                if (!response.ok) return [];
+                return response.json();
+            }).then((list) => {
+                if (disposed.value) return;
+                state.frameOptions = (list || []).filter((option) => option && option.snippetType && option.enabled !== false)
+                    .map((option) => ({
+                        id: option.id,
+                        snippetType: option.snippetType,
+                        content: option.content || "",
+                        displayOrder: option.displayOrder == null ? 100 : Number(option.displayOrder)
+                    }));
                 render();
-                return;
-            }
-            if (entry.state === "collapsed" && entry.text) {
-                entry.state = "expanded";
-                render();
-                return;
-            }
-            await requestTranslation(request, versionId);
-        }
-
-        function renderTranslation(request, versionId, entry) {
-            const translation = entry || { state: "idle", text: "" };
-            const action = versionId ? "translate-answer" : "translate-question";
-            const buttonLabel = translation.state === "pending" ? "翻译中…"
-                : translation.state === "expanded" ? "收起译文"
-                    : translation.state === "error" ? "翻译失败，重试" : "🌐 翻译为中文";
-            const source = versionId ? "" : `<div class="pre" data-role="question-text">${escapeText(request.requestText)}</div>`;
-            const text = translation.text && translation.state === "expanded"
-                ? `<div class="translation-text pre" data-role="translation-text">${escapeText(translation.text)}</div>` : "";
-            return `<div class="translatable-body-block" data-role="${versionId ? "answer-translation" : "question-translation"}">${source}<button type="button" class="btn-translate" data-action="${action}" data-request-key="${escapeText(request.requestKey)}"${versionId ? ` data-version-id="${escapeText(versionId)}"` : ""}${translation.state === "pending" ? " disabled" : ""}>${buttonLabel}</button>${text}</div>`;
-        }
-
-        function requestAction(request) {
-            const resolved = resolvedVersion(request);
-            const version = activeVersion(request);
-            const isOmit = request.draftHandling === "OMIT";
-            const needsOperatorInstruction = OPERATOR_INSTRUCTION_HANDLINGS.includes(request.draftHandling);
-            const generateDisabled = request.pending;
-            const resolveDisabled = request.pending || (!resolved && !version && !isOmit);
-            const action = resolved ? "resolve-item" : (version || isOmit ? "resolve-item" : "adjust-item");
-            return {
-                resolved,
-                locked: !!resolved,
-                action,
-                disabled: resolved ? request.pending : (action === "adjust-item" ? generateDisabled : resolveDisabled),
-                label: resolved
-                    ? (resolved.handling === "OMIT" ? "取消省略" : "取消采用")
-                    : isOmit ? "确认省略"
-                        : version ? "采用此版本"
-                            : request.error ? "重试 AI 调整" : "AI 生成回答"
-            };
-        }
-
-        function renderRequestHeader(request) {
-            const action = requestAction(request);
-            const coverage = request.coverage || "";
-            const badge = action.resolved?.handling === "OMIT"
-                ? "已省略"
-                : action.locked
-                    ? "已处理"
-                    : coverage === "GROUNDED"
-                        ? "待生成"
-                        : "待处理";
-            // I-3: machine-filled items stay fully editable; the badge is a
-            // visible marker only and disappears as soon as the operator edits
-            // the handling or the instruction.
-            const autoFilledBadge = request.autoFilled === true && !request.instructionEditedByOperator
-                ? `<span class="trust-reply-autofilled">机器代填</span>`
-                : "";
-            return `<span class="trust-reply-item-index">${Number(request.index) + 1}</span><div class="trust-reply-item-title"><strong>${escapeText(request.requestText)}</strong>${coverage ? `<span class="trust-reply-coverage" data-coverage="${escapeText(coverage)}">${escapeText(COVERAGE_LABELS[coverage] || coverage)}</span>` : ""} <button type="button" class="button small secondary" data-action="toggle-item" data-request-key="${escapeText(request.requestKey)}" aria-expanded="${request.expanded}">${request.expanded ? "收起" : "展开"}</button></div><span class="badge ${action.locked ? "ok" : ""}">${badge}</span>${autoFilledBadge}`;
-        }
-
-        function renderItemActions(request) {
-            const action = requestAction(request);
-            const label = request.pending || request.factChangePending || request.stateSavePending ? "处理中…" : action.label;
-            const disabled = action.disabled || request.factChangePending || request.stateSavePending;
-            return `<button type="button" class="button ${action.resolved ? "secondary" : "primary"}" aria-pressed="${action.locked}" data-action="${action.action}" data-request-key="${escapeText(request.requestKey)}"${disabled ? " disabled" : ""}>${label}</button>`;
-        }
-
-        function renderRequestAnswerContents(request) {
-            const version = activeVersion(request);
-            return version
-                ? `<div class="trust-reply-answer-head"><span>${escapeText(GENERATION_KIND_LABELS[version.generationKind] || "版本正文")}</span></div><div class="trust-reply-answer-body pre">${escapeText(version.answerText || "")}</div>${version.answerText?.trim() ? renderTranslation(request, version.versionId, request.answerTranslationsByVersionId[version.versionId]) : ""}`
-                : `<div class="trust-reply-answer-body muted">尚未生成版本</div>`;
-        }
-
-        function renderRequestAnswer(request) {
-            return `<div class="trust-reply-answer" data-role="answer">${renderRequestAnswerContents(request)}</div>`;
-        }
-
-        function findRenderedElement(container, role, requestKey) {
-            return [...container.querySelectorAll("[data-role]")].find((element) => {
-                return element.dataset?.role === role && (requestKey == null || element.dataset.requestKey === requestKey);
-            }) || null;
-        }
-
-        function syncInstructionUi(request) {
-            const item = findRenderedElement(host, "item", request.requestKey);
-            if (item) {
-                const action = requestAction(request);
-                item.dataset.locked = String(action.locked);
-                const header = findRenderedElement(item, "item-header");
-                const version = findRenderedElement(item, "version", request.requestKey);
-                const answer = findRenderedElement(item, "answer");
-                const actions = findRenderedElement(item, "item-actions");
-                if (header) header.innerHTML = renderRequestHeader(request);
-                if (version) version.value = request.activeVersionId || "";
-                if (answer) answer.innerHTML = renderRequestAnswerContents(request);
-                if (actions) actions.innerHTML = renderItemActions(request);
-            }
-            const summary = findRenderedElement(host, "summary");
-            if (summary) summary.innerHTML = renderSummary();
-        }
-
-        function renderRequest(request) {
-            const action = requestAction(request);
-            const resolved = action.resolved;
-            const locked = action.locked;
-            const needsOperatorInstruction = OPERATOR_INSTRUCTION_HANDLINGS.includes(request.draftHandling);
-            // 计划 03 (S-2): verbatim 不调用 AI——说明框置灰且标签明示不生效。
-            const instructionDisabled = request.pending || request.factChangePending || request.stateSavePending || request.draftHandling === "ANSWER_FACTS_VERBATIM";
-            const instructionLabel = request.draftHandling === "ANSWER_FACTS_VERBATIM"
-                ? "AI 调整要求（本处理方式不调用 AI，此项不生效）"
-                : (needsOperatorInstruction ? "回答说明（AI 将仅据此生成）" : "AI 调整要求（仅调整表达，可留空）");
-            const options = request.availableHandlings.map((handling) => `<option value="${escapeText(handling)}"${handling === request.draftHandling ? " selected" : ""}>${escapeText(HANDLING_LABELS[handling] || handling)}</option>`).join("");
-            const versions = request.versions.map((item, index) => `<option value="${escapeText(item.versionId)}"${item.versionId === request.activeVersionId ? " selected" : ""}>版本 ${index + 1} · ${escapeText(GENERATION_KIND_LABELS[item.generationKind] || item.generationKind || "版本")}</option>`).join("");
-            const error = request.error ? `<div class="ai-reply-error" data-role="item-error" role="alert">${escapeText(request.error)}</div>` : "";
-            const questionTranslation = renderTranslation(request, null, request.questionTranslation);
-            const answer = renderRequestAnswer(request);
-            const itemBusy = itemBusyState(request);
-            return `<article class="compose-panel trust-reply-item" data-role="item" data-request-key="${escapeText(request.requestKey)}" data-coverage="${escapeText(request.coverage || "")}" data-locked="${locked}"${itemBusy ? ' aria-busy="true"' : ""}><div class="trust-reply-item-head" data-role="item-header">${renderRequestHeader(request)}</div>${renderFactSection(request)}<div data-role="item-body"${request.expanded ? "" : " hidden"}>${questionTranslation}<div class="trust-reply-item-controls"><label class="trust-reply-field">处理方式<select data-role="handling" data-request-key="${escapeText(request.requestKey)}"${request.pending || request.factChangePending || request.stateSavePending ? " disabled" : ""}>${options}</select></label><label class="trust-reply-field">版本<select class="trust-reply-version-select" data-role="version" data-request-key="${escapeText(request.requestKey)}"${request.pending || request.factChangePending || request.stateSavePending ? " disabled" : ""}><option value="">请选择版本</option>${versions}</select></label></div><label class="trust-reply-field">${instructionLabel}<textarea data-role="instruction" data-request-key="${escapeText(request.requestKey)}" maxlength="500"${instructionDisabled ? " disabled" : ""}>${escapeText(request.instruction)}</textarea></label>${answer}${error}<div class="trust-reply-item-actions" data-role="item-actions">${renderItemActions(request)}</div></div>${renderItemBusyOverlay(request)}</article>`;
-        }
-
-        // I-5/R-2: a finished assembly is never presented as send clearance.
-        // The verdict renders three independent lines: assembly completion, the
-        // decision, and each failed hard gate. The decision is derived only
-        // from the retained auto-reply preview evidence; without evidence the
-        // verdict stays in the explicit pending state, never blank and never
-        // implying clearance.
-        function renderVerdict() {
-            const assembled = previewState() === "CURRENT" && !!state.assembly;
-            const evidence = state.previewEvidence;
-            const decision = evidence
-                ? (evidence.decision === "AUTO_SEND" && evidence.gates.length === 0 ? "可自动发" : "转人工")
-                : "尚未预判";
-            const gateLine = evidence
-                ? (evidence.gates.length > 0
-                    ? evidence.gates.map((code) => `<li>${escapeText(code)}</li>`).join("")
-                    : `<li class="muted">无未通过硬性闸门</li>`)
-                : `<li class="muted">硬性闸门：尚未预判</li>`;
-            return `<div data-role="verdict"><p class="muted">${escapeText(assembled ? "汇总已完成" : "尚未汇总")}</p><p class="muted">判定：${escapeText(decision)}</p><ul>${gateLine}</ul></div>`;
-        }
-
-        function renderSummary() {
-            const readiness = computeReadiness();
-            const locked = readiness.resolvedCount;
-            const total = readiness.total;
-            const assembly = state.assembly;
-            const percent = total > 0 ? Math.round((locked / total) * 100) : 0;
-            const countParts = [`已处理 ${locked}/${total}`];
-            if (readiness.pendingGeneration > 0) countParts.push(`待生成 ${readiness.pendingGeneration} 项`);
-            if (readiness.unresolvedManual > 0) countParts.push(`待人工处理 ${readiness.unresolvedManual} 项`);
-            const lockHint = countParts.join(" · ");
-            const assembleLabel = state.generation.pending && state.generation.stage === "ASSEMBLING"
-                ? "整合中…"
-                : state.generation.pending && readiness.pendingGeneration > 0
-                    ? "生成并整合中…"
-                    : readiness.unresolvedManual > 0
-                        ? "服务端整合"
-                        : readiness.pendingGeneration > 0
-                            ? "生成有据回答并整合"
-                            : "服务端整合";
-            const assembleHint = readiness.unresolvedManual > 0
-                ? `尚有 ${readiness.unresolvedManual} 项待人工处理`
-                : "";
-            const stateKey = previewState();
-            // 计划 03 (S-1/S-2 + I-6/I-7): 预览区内部三页签（发送正文 / 配置预览 /
-            // 服务端原始正文）。未整合（非 CURRENT）时只渲染 local 一个可用页签，
-            // 其余两个 disabled；整合完成后默认渲染已替换变量的 rendered 正文，
-            // raw 降级为第三页签且不得删除。页签切换只走 state.previewTab +
-            // 全量 render()，绝不 host.querySelector（I-7）。
-            const previewCurrent = stateKey === "CURRENT" && assembly;
-            const previewTabDefs = [
-                { key: "rendered", label: "发送正文" },
-                { key: "local", label: "配置预览" },
-                { key: "raw", label: "服务端原始正文" }
-            ];
-            const activePreviewTab = previewCurrent &&
-                (state.previewTab === "rendered" || state.previewTab === "local" || state.previewTab === "raw")
-                ? state.previewTab
-                : "local";
-            const previewTabBar = `<div class="trust-reply-preview-tabs" role="tablist">${previewTabDefs.map((entry) => {
-                const enabled = previewCurrent || entry.key === "local";
-                const selected = activePreviewTab === entry.key;
-                return `<button type="button" class="trust-reply-preview-tab" role="tab" data-action="set-preview-tab" data-preview-tab="${entry.key}" aria-selected="${selected ? "true" : "false"}"${enabled ? "" : " disabled"}>${entry.label}</button>`;
-            }).join("")}</div>`;
-            const previewBody = previewCurrent
-                ? (activePreviewTab === "rendered"
-                    ? escapeText(assembly.renderedDraftText || assembly.rawDraftText || "")
-                    : activePreviewTab === "raw"
-                        ? escapeText(assembly.rawDraftText || "")
-                        : escapeText(renderFrameLocalPreview()))
-                : escapeText(renderFrameLocalPreview());
-            // S-2: 三个页签共用同一个 <pre class="pre">，仅 data-role 与内容随
-            // 页签变化（字面量角色，保证既有 data-role 断言继续成立）。
-            const previewBlock = `<div class="trust-reply-assembly">${previewTabBar}` + (
-                previewCurrent && activePreviewTab === "rendered"
-                    ? `<pre class="pre" data-role="rendered-preview">${previewBody}</pre>`
-                    : previewCurrent && activePreviewTab === "raw"
-                        ? `<pre class="pre" data-role="raw-preview">${previewBody}</pre>`
-                        : `<pre class="pre" data-role="local-preview">${previewBody}</pre>`
-            ) + `</div>`;
-            const completeDisabled = !assembly || stateKey !== "CURRENT" || state.completePending;
-            return `<h4>整合摘要</h4>${renderVerdict()}<p class="trust-reply-lock-hint">${lockHint}${assembleHint ? ` · ${assembleHint}` : ""}</p><div class="trust-reply-progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>${previewBlock}<div class="trust-reply-final-actions"><button type="button" class="button primary" data-action="assemble"${canAssemble() ? "" : " disabled"}>${assembleLabel}</button><button type="button" class="button secondary" data-action="complete"${completeDisabled ? " disabled" : ""}>${state.mode === MODES.SIMULATION ? "完成模拟并评估" : "采用到人工回复"}</button></div>`;
-        }
-
-        function renderStatus() {
-            const parts = [];
-            if (state.generation.message) {
-                const cls = state.generation.stage === "ERROR" ? "ai-reply-error" : "ai-reply-coverage";
-                parts.push(`<div class="${cls}" role="${state.generation.stage === "ERROR" ? "alert" : "status"}">${escapeText(state.generation.stage ? `${state.generation.stage}：` : "")}${escapeText(state.generation.message)}</div>`);
-            }
-            // 03b (S-2): one-click rerun for every context-stale item,
-            // appended at the end of the status area; verbatim contract DOM,
-            // only when at least one item is context-stale (I-4).
-            const contextStaleCount = state.requests.filter((request) => request.contextStale === true).length;
-            if (contextStaleCount >= 1) {
-                parts.push(`<button type="button" class="button small secondary" data-action="regenerate-context-stale">重新生成受影响条目</button>`);
-            }
-            return parts.join("");
-        }
-
-        function renderStatusOnly() {
-            if (!state.destroyed) host.innerHTML = renderMarkup();
-        }
-
-        function timeoutOptions(timeout, total) {
-            const values = total ? ["auto", "300", "600", "900", "1800", "custom"] : ["30", "60", "90", "180", "custom"];
-            return values.map((value) => {
-                const label = value === "auto" ? "自动（300 秒）" : value === "custom" ? "自定义" : `${value} 秒${value === (total ? "300" : "30") ? "（默认）" : ""}`;
-                return `<option value="${value}"${timeout.mode === value ? " selected" : ""}>${label}</option>`;
-            }).join("");
-        }
-
-        function customTimeout(timeout, name) {
-            const visible = timeout.mode === "custom" ? "" : " hidden";
-            return `<label class="ai-reply-timeout-custom-wrap"${visible}><input data-role="${name}-custom" class="ai-reply-timeout-custom-input" type="number" min="10" max="${name === "attempt" ? 600 : 7200}" step="1" value="${escapeText(timeout.customSeconds)}" aria-label="自定义${name === "attempt" ? "单次" : "总"}生成超时秒数"><span>秒</span></label>`;
-        }
-
-        function timeoutSeconds(timeout, min, max) {
-            if (timeout.mode === "auto") return 300;
-            const number = Number(timeout.mode === "custom" ? timeout.customSeconds : timeout.mode);
-            return Number.isFinite(number) ? Math.min(max, Math.max(min, Math.trunc(number))) : min;
-        }
-
-        function isAbort(error) {
-            return error && (error.name === "AbortError" || error.code === 20);
-        }
-
-        function onClick(event) {
-            const button = event.target.closest && event.target.closest("[data-action]");
-            if (!button || !host.contains(button)) return;
-            const action = button.dataset.action;
-            if (action === "adjust-item") {
-                const request = findRequest(button.dataset.requestKey);
-                if (request) void adjustItem(request);
-            }
-            if (action === "resolve-item") void toggleResolve(button.dataset.requestKey);
-            if (action === "toggle-item") {
-                const request = findRequest(button.dataset.requestKey);
-                if (request) {
-                    request.expanded = !request.expanded;
-                    render();
-                }
-            }
-            if (action === "toggle-fact-picker") toggleFactPicker(button.dataset.requestKey);
-            if (action === "add-fact") void addFact(button.dataset.requestKey, button.dataset.factId);
-            if (action === "remove-fact") void removeFact(button.dataset.requestKey, button.dataset.factId);
-            if (action === "set-page") setActivePage(button.dataset.page, "tab");
-            if (action === "next-page") setActivePage(button.dataset.page || "factset", "tab");
-            if (action === "prev-page") setActivePage(button.dataset.page || "facts", "tab");
-            // c5 (T-4): 段落编辑/锁定/并入上段/上下移 —— 只改本地草稿（I-4）。
-            if (action === "paragraph-edit") toggleParagraphEdit(button.dataset.topic);
-            if (action === "paragraph-pin") toggleParagraphPin(button.dataset.topic);
-            if (action === "paragraph-merge-up") mergeParagraphUp(button.dataset.topic);
-            if (action === "paragraph-move-up") moveParagraph(button.dataset.topic, "up");
-            if (action === "paragraph-move-down") moveParagraph(button.dataset.topic, "down");
-            if (action === "rearrange") void rearrange();
-            if (action === "translate-question") {
-                const request = findRequest(button.dataset.requestKey);
-                if (request) void toggleTranslation(request, null);
-            }
-            if (action === "translate-answer") {
-                const request = findRequest(button.dataset.requestKey);
-                if (request) void toggleTranslation(request, button.dataset.versionId);
-            }
-            if (action === "assemble") void assemble();
-            if (action === "complete") void complete();
-            if (action === "start-analysis") void startAnalysis();
-            if (action === "auto-run") void autoRun();
-            if (action === "set-preview-tab") {
-                state.previewTab = button.dataset.previewTab;
-                render();
-                return;
-            }
-            if (action === "auto-reset") void autoReset();
-            if (action === "reset-workbench-state") void resetWorkbenchState();
-            if (action === "regenerate-context-stale") void regenerateContextStale();
-            if (action === "cancel-generation") void cancelGeneration(state.generation.generationId, state.generation.controller);
-        }
-
-        function onChange(event) {
-            const target = event.target;
-            // c5 (T-2 / I-4): 事实集采用勾选与主题下拉 —— 只改本地草稿，零请求。
-            if (target.dataset?.action === "factset-adopt" && target.dataset.factId) {
-                setFactAdopted(target.dataset.factId, !!target.checked);
-                return;
-            }
-            if (target.dataset?.action === "factset-topic" && target.dataset.factId) {
-                setFactTopic(target.dataset.factId, target.value);
-                return;
-            }
-            if (target.dataset?.role === "model") {
-                state.selectedModel = target.value;
-                return;
-            }
-            if (target.dataset?.role === "attempt-timeout") {
-                state.attemptTimeout.mode = target.value;
-                state.attemptTimeout.seconds = timeoutSeconds(state.attemptTimeout, 10, 600);
-                render();
-                return;
-            }
-            if (target.dataset?.role === "total-timeout") {
-                state.totalTimeout.mode = target.value;
-                state.totalTimeout.seconds = timeoutSeconds(state.totalTimeout, 10, 7200);
-                render();
-                return;
-            }
-            if (target.dataset?.role === "frame-select" && target.dataset.frameSlot) {
-                onFrameChange(target.dataset.frameSlot, target.value);
-                return;
-            }
-            const request = target.dataset?.requestKey ? findRequest(target.dataset.requestKey) : null;
-            if (!request) return;
-            if (target.dataset.role === "handling") {
-                const previous = captureDecision(request);
-                request.draftHandling = target.value;
-                request.autoFilled = false;
-                request.activeVersionId = null;
-                const invalidated = invalidateDecision(request);
-                render();
-                if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
-            } else if (target.dataset.role === "version") {
-                const previous = captureDecision(request);
-                request.activeVersionId = target.value || null;
-                const invalidated = request.activeVersionId !== request.resolvedVersionId && invalidateDecision(request);
-                render();
-                if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
-            }
-        }
-
-        function onInput(event) {
-            const target = event.target;
-            // c5 (T-4 / I-4): 段落编辑 —— 只改本地草稿文本。
-            if (target.dataset?.role === "paragraph-text" && target.dataset.topic) {
-                const entry = findDraftEntry(target.dataset.topic);
-                if (entry) entry.text = target.value;
-                return;
-            }
-            const request = target.dataset?.requestKey ? findRequest(target.dataset.requestKey) : null;
-            if (target.dataset?.role === "instruction" && request) {
-                const instruction = target.value.slice(0, 500);
-                if (instruction !== request.instruction) {
-                    const previous = captureDecision(request);
-                    request.instruction = instruction;
-                    const wasAutoFilled = request.autoFilled;
-                    request.autoFilled = false;
-                    request.instructionEditedByOperator = true;
-                    if (!previous.activeVersionId && !previous.resolvedVersionId && !state.assembly) {
-                        if (wasAutoFilled) syncInstructionUi(request);
-                        return;
-                    }
-                    request.activeVersionId = null;
-                    const invalidated = invalidateDecision(request);
-                    syncInstructionUi(request);
-                    if (previous.resolvedVersionId && invalidated) void persistDecisionUnlock(request, previous);
-                }
-            }
-            if (target.dataset?.role === "attempt-custom") state.attemptTimeout.customSeconds = target.value;
-            if (target.dataset?.role === "total-custom") state.totalTimeout.customSeconds = target.value;
-            if (target.dataset?.role === "fact-search") {
-                const picker = typeof target.closest === "function" ? target.closest('[data-role="fact-picker"]') : null;
-                if (picker && typeof picker.querySelectorAll === "function") {
-                    const query = (target.value || "").trim().toLowerCase();
-                    picker.querySelectorAll(".trust-reply-fact-picker-option").forEach((option) => {
-                        option.hidden = !!query && !(option.dataset?.search || "").includes(query);
-                    });
-                }
-            }
-        }
-
-        function findRequest(requestKey) {
-            return state.requests.find((request) => request.requestKey === requestKey);
-        }
-
-        async function toggleResolve(requestKey) {
-            const request = findRequest(requestKey);
-            if (!request || request.pending || request.stateSavePending || state.stateSavePending) return;
-            const previousResolved = request.resolvedVersionId;
-            const previousExpanded = request.expanded;
-            if (request.resolvedVersionId) {
-                request.resolvedVersionId = null;
-                request.expanded = true;
-            } else {
-                let version = activeVersion(request);
-                if (!version && request.draftHandling === "OMIT") {
-                    version = await adjustItem(request);
-                    if (!version || findRequest(requestKey) !== request) return;
-                }
-                if (!version) {
-                    request.error = "请先生成并选择一个版本";
-                    render();
-                    return;
-                }
-                if (!isVersionSerializable(version, request)) {
-                    request.error = "当前版本无效，请重新生成并采用";
-                    render();
-                    return;
-                }
-                request.resolvedVersionId = version.versionId;
-                request.expanded = false;
-            }
-            invalidateAssembly();
-            request.stateSavePending = true;
-            render();
-            try {
-                await persistResolvedSnapshot();
-            } catch (error) {
-                if (!isLive()) return;
-                request.stateSavePending = false;
-                if (isFrameStaleError(error)) {
-                    handleFrameStale(state.bootSeq, error.message || "框架配置已变化，请重新选择后整合");
-                    return;
-                }
-                if (isStaleError(error)) {
-                    handleStaleGeneration(state.bootSeq, error.message || "来源或事实已变化，请确认后刷新工作台");
-                    return;
-                }
-                request.resolvedVersionId = previousResolved;
-                request.expanded = previousExpanded;
-                request.error = error.message || "保存失败，请重试";
-                render();
-                return;
-            }
-            if (!state.destroyed) {
-                request.stateSavePending = false;
-                render();
-            }
+            }).catch(() => {
+                // 选项加载失败不阻断：compose 仍走服务端默认框架。
+            }).then(() => {
+                controllers.delete(controller);
+            });
         }
 
         function unmount() {
-            if (state.destroyed) return;
-            state.destroyed = true;
-            state.bootSeq += 1;
-            cancelController(state.generation.controller);
-            state.itemControllers.forEach((controller) => cancelController(controller));
-            state.itemControllers.clear();
-            state.translationControllers.forEach((controller) => cancelController(controller));
-            state.translationControllers.clear();
-            listeners.forEach(([type, handler]) => host.removeEventListener(type, handler));
-            host.innerHTML = "";
+            if (disposed.value) return;
+            disposed.value = true;
+            requestSeq.value += 1;
+            controllers.forEach((controller) => controller.abort());
+            controllers.clear();
+            listeners.forEach((pair) => host.removeEventListener(pair[0], pair[1]));
+            listeners.length = 0;
         }
 
-        // I-2: the read-only host registers no interaction listeners at all, so
-        // generate/adopt/lock/integrate actions can never fire (the requestJson
-        // gate above is the second line of defense); onComplete never runs.
-        if (!state.readOnly) {
-            listen("click", onClick);
-            listen("change", onChange);
-            listen("input", onInput);
-            listen("keydown", onKeydown);
-            listen("dragstart", onDragStart);
-            listen("dragover", onDragOver);
-            listen("drop", onDrop);
-            listen("dragend", onDragEnd);
+        function onClick(event) {
+            if (disposed.value) return;
+            const button = event.target && typeof event.target.closest === "function"
+                ? event.target.closest("[data-action]")
+                : null;
+            if (!button) return;
+            const action = button.dataset ? button.dataset.action : "";
+            if (action === "regenerate") {
+                regenerate();
+            } else if (action === "edit-body") {
+                state.editMode = !state.editMode;
+                render();
+            } else if (action === "copy-draft") {
+                const text = documentText(state);
+                if (text && global.navigator && global.navigator.clipboard && global.navigator.clipboard.writeText) {
+                    global.navigator.clipboard.writeText(text).catch(() => {});
+                }
+            } else if (action === "add-fact") {
+                const input = host.querySelector ? host.querySelector('[data-role="add-fact-input"]') : null;
+                const value = input && typeof input.value === "string" ? input.value : "";
+                addFact(value);
+            } else if (action === "remove-fact") {
+                const code = button.dataset ? button.dataset.code : "";
+                removeFact(code);
+            } else if (action === "complete") {
+                complete();
+            }
         }
-        // I-5: autoBootstrap:false 且非只读时 mount 不跑 bootstrap，直接渲染
-        // 未分析占位态（S-2）；其余路径仍先渲染加载壳。
-        if (options.autoBootstrap !== false || state.readOnly) {
-            renderShell("正在加载工作台…");
-        } else {
-            render();
+
+        function onChangeEvent(event) {
+            if (disposed.value) return;
+            const target = event.target;
+            if (!target || typeof target.closest !== "function") return;
+            const modelSelect = target.closest('[data-role="model-select"]');
+            if (modelSelect && modelSelect.value !== undefined && !state.busy) {
+                if (modelSelect.value && MODEL_LABELS[modelSelect.value]) {
+                    state.model = modelSelect.value;
+                    notifyChange();
+                    render();
+                }
+                return;
+            }
+            const frameSelect = target.closest("select[data-frame-slot]");
+            if (frameSelect && frameSelect.dataset && frameSelect.dataset.frameSlot && !state.busy) {
+                applyFrameSelect(state, frameSelect.dataset.frameSlot, frameSelect.value);
+                notifyChange();
+                render();
+            }
         }
-        return { state, bootstrap, unmount };
+
+        function onInputEvent(event) {
+            if (disposed.value || !state.editMode) return;
+            const target = event.target;
+            if (!target || typeof target.closest !== "function") return;
+            const paragraph = target.closest(".trust-reply-para");
+            if (!paragraph || !paragraph.dataset || paragraph.dataset.paraIndex == null) return;
+            const index = Number(paragraph.dataset.paraIndex);
+            const current = state.paragraphs[index];
+            if (!current) return;
+            const text = paragraph.textContent || "";
+            // 实时红框反馈；state 的提交统一在 focusout（避免打字中整段重绘丢光标）。
+            if (text !== current.originalText && paragraph.classList && typeof paragraph.classList.add === "function") {
+                paragraph.classList.add("edited");
+            }
+        }
+
+        function onFocusOutEvent(event) {
+            if (disposed.value || !state.editMode) return;
+            const target = event.target;
+            if (!target || typeof target.closest !== "function") return;
+            const paragraph = target.closest(".trust-reply-para");
+            if (!paragraph || !paragraph.dataset || paragraph.dataset.paraIndex == null) return;
+            const index = Number(paragraph.dataset.paraIndex);
+            const current = state.paragraphs[index];
+            if (!current) return;
+            const text = (paragraph.textContent || "").replace(/\u00a0/g, " ");
+            if (text !== current.text) {
+                current.text = text;
+                if (text !== current.originalText) {
+                    current.edited = current.renderMode === "VERBATIM";
+                    state.dirty = true;
+                }
+                render();
+            }
+        }
+
+        // I-24：宿主事件委托；unmount 时逐对解绑（I-25）。
+        listen("click", onClick);
+        listen("change", onChangeEvent);
+        listen("input", onInputEvent);
+        listen("focusout", onFocusOutEvent);
+
+        render();
+        loadSnippetOptions();
+        if (options.autoBootstrap !== false) {
+            compose();
+        }
+
+        return { unmount };
     }
 
-    global.TrustReplyWorkbench = Object.freeze({ mount, reorderFactIds, resolveFactDrop, factActionBlockReason });
+    function mount(host, options) {
+        return createInstance(host, options || {});
+    }
+
+    global.TrustReplyWorkbench = Object.freeze({
+        mount,
+        // 纯函数只读导出：供前端契约测试直接断言（先例：旧版导出 reorderFactIds）。
+        renderParagraph,
+        buildComposeRequest,
+        applyRemoveFact,
+        applyAddFact,
+        applyFrameSelect,
+        buildAssembly
+    });
 })(typeof window !== "undefined" ? window : globalThis);

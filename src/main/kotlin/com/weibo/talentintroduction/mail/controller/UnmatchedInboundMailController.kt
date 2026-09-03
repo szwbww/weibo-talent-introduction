@@ -264,6 +264,8 @@ class UnmatchedInboundMailController(
             templateTextBody = request.templateTextBody,
             templateHtmlBody = request.templateHtmlBody,
             trustReplyAssembly = request.trustReplyAssembly,
+            ragFactCodes = request.ragFactCodes,
+            ragCorpusFingerprint = request.ragCorpusFingerprint,
             safetyWarningConfirmed = request.safetyWarningConfirmed,
             strongConfirmationText = request.strongConfirmationText
         )

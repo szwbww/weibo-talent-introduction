@@ -100,12 +100,14 @@ const state = {
     selectedReplySnippetId: null,
     aiTraining: {
         activeTab: "simulate",
-        qaPage: 0,
-        qaSize: 20,
-        qaTotal: 0,
-        qaSource: "",
-        qaItems: [],
-        editingQaId: null,
+        // plan 04: RAG 知识库子 Tab 状态（替换旧 QA 子 Tab 的展示）。
+        ragKbFacts: [],
+        ragKbFingerprint: "",
+        ragKbFactCount: 0,
+        ragKbFilterKind: "all",
+        ragKbFilterValue: "",
+        ragKbSearch: "",
+        ragKbSelected: null,
         unsupportedAnswers: [],
         unsupportedAnswersTotal: 0,
         unsupportedAnswersPage: 0,
@@ -125,6 +127,12 @@ const state = {
         dialogueItems: [],
         promptConfig: null,
         promptIsCustom: false,
+        // plan 06: RAG 提示词约束清单状态（检索/生成可编辑约束 + 派生三条 + 未保存改动计数）。
+        ragPromptIsCustom: false,
+        ragPromptRetrieval: [],
+        ragPromptGenerationBase: [],
+        ragPromptGenerationDerived: [],
+        ragPromptDeleted: 0,
         expertTagOptions: [],
         inboundTagOptions: [],
         selectedExpertTag: "",
@@ -3284,11 +3292,6 @@ async function loadReplySnippets() {
     renderReplySnippetsPanels();
 }
 
-const aiTrainingSourceLabels = {
-    MANUAL_IMPORT: "人工导入",
-    AUTO_EXTRACTED: "自动提炼"
-};
-
 function switchAiTrainingTab(tab) {
     state.aiTraining.activeTab = tab;
     document.querySelectorAll("#view-ai-training .ai-tab").forEach((button) => {
@@ -3296,7 +3299,7 @@ function switchAiTrainingTab(tab) {
     });
     document.querySelectorAll("#view-ai-training .ai-tab-content").forEach((panel) => {
         const panelId = panel.id;
-        const active = (tab === "qa" && panelId === "aiTabQa")
+        const active = (tab === "ragKb" && panelId === "aiTabRagKb")
             || (tab === "dialogues" && panelId === "aiTabDialogues")
             || (tab === "prompts" && panelId === "aiTabPrompts")
             || (tab === "simulate" && panelId === "aiTabSimulate")
@@ -3312,42 +3315,6 @@ function switchAiTrainingTab(tab) {
             void loadAiTrainingPendingTopics();
         }
     }
-}
-
-function renderAiTrainingQaPager() {
-    const pager = $("#aiTrainingQaPager");
-    const size = state.aiTraining.qaSize;
-    const total = state.aiTraining.qaTotal;
-    const totalPages = Math.max(1, Math.ceil(total / size));
-    if (total <= size) {
-        pager.hidden = true;
-        return;
-    }
-    pager.hidden = false;
-    $("#aiTrainingQaPageInfo").textContent = `第 ${state.aiTraining.qaPage + 1} / ${totalPages} 页（共 ${total} 条）`;
-    $("#aiTrainingQaPrevPage").disabled = state.aiTraining.qaPage <= 0;
-    $("#aiTrainingQaNextPage").disabled = state.aiTraining.qaPage >= totalPages - 1;
-}
-
-function renderAiTrainingQaTable() {
-    const rows = state.aiTraining.qaItems.map((item) => {
-        const sourceLabel = aiTrainingSourceLabels[item.source] || item.source;
-        const sourceBadgeClass = item.source === "AUTO_EXTRACTED" ? "ok" : "primary";
-        return `
-        <tr>
-            <td><strong>${escapeHtml(item.topic)}</strong></td>
-            <td>${badge(sourceLabel, sourceBadgeClass)}</td>
-            <td class="muted-cell">${escapeHtml(item.keywords || "-")}</td>
-            <td class="muted-cell">${escapeHtml((item.answer || "").slice(0, 240))}${(item.answer || "").length > 240 ? "…" : ""}</td>
-            <td style="text-align: right; white-space: nowrap;">
-                <button type="button" class="button small" data-action="edit-ai-training-qa" data-qa-id="${item.id}">编辑</button>
-                <button type="button" class="button small" data-action="delete-ai-training-qa" data-qa-id="${item.id}">删除</button>
-            </td>
-        </tr>`;
-    }).join("");
-    $("#aiTrainingQaTable").innerHTML = rows
-        || `<tr><td colspan="5" class="muted" style="text-align:center;padding:20px;">暂无知识库记录</td></tr>`;
-    renderAiTrainingQaPager();
 }
 
 function renderAiTrainingDialogueTable() {
@@ -3369,75 +3336,261 @@ async function loadAiTrainingDialogues() {
     renderAiTrainingDialogueTable();
 }
 
-function showAiTrainingQaModal() {
-    $("#aiTrainingQaModal").hidden = false;
-    document.body.classList.add("modal-open");
+function ragKbEffectiveStatus(fact) {
+    return fact.enabled ? fact.status : "DISABLED";
 }
 
-function hideAiTrainingQaModal() {
-    const form = $("#aiTrainingQaForm");
-    form?.reset();
-    $("#aiTrainingQaModal").hidden = true;
-    document.body.classList.remove("modal-open");
-    state.aiTraining.editingQaId = null;
+function ragKbStatusBadgeClass(status) {
+    if (status === "DISABLED") return "status-disabled";
+    if (status === "REVIEW") return "status-review";
+    return "status-approved";
 }
 
-function showQaEditModal(qaItem) {
-    const form = $("#aiTrainingQaForm");
-    if (!form) return;
-    state.aiTraining.editingQaId = qaItem?.id || null;
-    $("#aiTrainingQaEditorTitle").textContent = qaItem ? "编辑 QA 条目" : "添加 QA 条目";
-    form.topic.value = qaItem?.topic || "";
-    form.question.value = qaItem?.question || "";
-    form.answer.value = qaItem?.answer || "";
-    form.keywords.value = qaItem?.keywords || "";
-    showAiTrainingQaModal();
+function ragKbBadgesHtml(fact) {
+    const badges = [];
+    if (fact.renderMode === "VERBATIM") {
+        badges.push('<span class="rag-badge verbatim">逐字</span>');
+    }
+    const risk = String(fact.riskLevel || "").toLowerCase();
+    badges.push(`<span class="rag-badge risk-${risk}">${escapeHtml(fact.riskLevel || "-")}</span>`);
+    const effective = ragKbEffectiveStatus(fact);
+    badges.push(`<span class="rag-badge ${ragKbStatusBadgeClass(effective)}">${escapeHtml(effective)}</span>`);
+    return badges.join("");
 }
 
-async function saveAiTrainingQaItem(event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const values = formValues(form);
+function ragKbCategoryCounts() {
+    const counts = new Map();
+    (state.aiTraining.ragKbFacts || []).forEach((fact) => {
+        const category = fact.category || "未分类";
+        counts.set(category, (counts.get(category) || 0) + 1);
+    });
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+}
+
+function ragKbMatchesFilters(fact) {
+    const training = state.aiTraining;
+    const kind = training.ragKbFilterKind;
+    const value = training.ragKbFilterValue;
+    if (kind === "category" && fact.category !== value) return false;
+    if (kind === "render" && fact.renderMode !== value) return false;
+    if (kind === "risk" && fact.riskLevel !== value) return false;
+    if (kind === "status" && fact.status !== value) return false;
+    if (kind === "enabled" && fact.enabled) return false;
+    const query = (training.ragKbSearch || "").trim().toLowerCase();
+    if (query) {
+        const haystack = [
+            fact.factCode,
+            fact.title,
+            fact.answer,
+            String(fact.questionVariants || "").replace(/\|/g, " "),
+            String(fact.coverageKeys || "").replace(/,/g, " ")
+        ].join(" ").toLowerCase();
+        if (!haystack.includes(query)) return false;
+    }
+    return true;
+}
+
+function renderRagKbFilters() {
+    const container = $("#ragKbFilters");
+    if (!container) return;
+    const facts = state.aiTraining.ragKbFacts || [];
+    const training = state.aiTraining;
+    const isActive = (kind, value) =>
+        training.ragKbFilterKind === kind && training.ragKbFilterValue === value;
+    const countBy = (kind, value) => facts.filter((fact) => {
+        if (kind === "render") return fact.renderMode === value;
+        if (kind === "risk") return fact.riskLevel === value;
+        if (kind === "status") return fact.status === value;
+        if (kind === "enabled") return !fact.enabled;
+        return true;
+    }).length;
+    const item = (kind, value, label, count) => `
+        <div class="rag-kb-filter-item${isActive(kind, value) ? " active" : ""}" data-rag-filter-kind="${kind}" data-rag-filter-value="${escapeHtml(value)}">
+            <span>${escapeHtml(label)}</span><span>${count}</span>
+        </div>`;
+    const categoryHtml = ragKbCategoryCounts()
+        .map(([category, count]) => item("category", category, category, count))
+        .join("");
+    container.innerHTML =
+        `<div class="rag-kb-filter-label">全部</div>` +
+        item("all", "", "全部事实", facts.length) +
+        (categoryHtml ? `<div class="rag-kb-filter-label">按分类</div>${categoryHtml}` : "") +
+        `<div class="rag-kb-filter-label">按属性</div>` +
+        item("render", "VERBATIM", "逐字出信", countBy("render", "VERBATIM")) +
+        item("risk", "HIGH", "高风险", countBy("risk", "HIGH")) +
+        item("status", "REVIEW", "待复核", countBy("status", "REVIEW")) +
+        item("enabled", "off", "已停用", countBy("enabled", "off"));
+}
+
+function renderRagKbList() {
+    const listEl = $("#ragKbList");
+    if (!listEl) return;
+    const facts = state.aiTraining.ragKbFacts || [];
+    const matched = facts.filter(ragKbMatchesFilters);
+    const countEl = $("#ragKbListCount");
+    if (countEl) {
+        countEl.textContent = `${matched.length} / ${facts.length} 条`;
+    }
+    const selected = state.aiTraining.ragKbSelected;
+    const rows = matched.map((fact) => `
+        <div class="rag-kb-row${fact.factCode === selected ? " active" : ""}${fact.enabled ? "" : " disabled"}" data-rag-code="${escapeHtml(fact.factCode)}">
+            <span><span class="rag-kb-row-code">${escapeHtml(fact.factCode)}</span> <span>${escapeHtml(fact.title)}</span></span>
+            <span>${ragKbBadgesHtml(fact)}</span>
+            <span class="rag-kb-row-meta">${escapeHtml(fact.category || "-")} · ${(fact.coverageKeys || "").split(",").filter(Boolean).length} 个覆盖键 · ${(fact.questionVariants || "").split("|").filter(Boolean).length} 种问法${fact.legacyRuleId != null ? ` · 旧规则 #${fact.legacyRuleId}` : " · 新增"}</span>
+        </div>`).join("");
+    listEl.innerHTML = rows
+        || '<div class="rag-kb-row"><span class="rag-kb-row-meta">没有匹配的事实</span></div>';
+}
+
+function renderRagKbDetail() {
+    const panel = $("#ragKbDetail");
+    if (!panel) return;
+    const training = state.aiTraining;
+    const fact = (training.ragKbFacts || []).find((row) => row.factCode === training.ragKbSelected);
+    if (!fact) {
+        panel.innerHTML = '<div class="rag-kb-detail-body"><div class="rag-kb-field"><div class="rag-kb-field-label"><span>事实编辑</span></div><div class="muted">从左侧列表选择一条事实开始编辑。</div></div></div>';
+        return;
+    }
+    const verbatim = fact.renderMode === "VERBATIM";
+    const options = (current, values) => values
+        .map((value) => `<option value="${value}"${value === current ? " selected" : ""}>${value}</option>`)
+        .join("");
+    const multiLines = (raw, separator) => escapeHtml(String(raw || "").split(separator).filter(Boolean).join("\n"));
+    const chips = (raw, separator, coverage) => String(raw || "").split(separator).filter(Boolean)
+        .map((item) => `<span class="rag-kb-chip${coverage ? " coverage" : ""}">${escapeHtml(item)}</span>`)
+        .join("") || '<span class="rag-kb-chip">无</span>';
+    panel.innerHTML = `
+        <div class="panel-head"><h2>${escapeHtml(fact.factCode)}</h2>${ragKbBadgesHtml(fact)}</div>
+        ${verbatim ? '<div class="rag-kb-verbatim-warning"><span>逐字出信。这段文字会原封不动出现在发给专家的邮件里，模型只拿到占位符、无权改写。改这里 = 改对外话术。</span></div>' : ""}
+        <div class="rag-kb-detail-body">
+            <div class="rag-kb-field">
+                <div class="rag-kb-field-label"><span>fact_code · area / seq（只读）</span><span class="muted">${escapeHtml(fact.area)} / ${String(fact.seq).padStart(3, "0")}${fact.legacyRuleId != null ? ` · 旧规则 #${fact.legacyRuleId}` : ""}</span></div>
+                <div class="rag-kb-chips"><span class="rag-kb-chip coverage">${escapeHtml(fact.factCode)}</span></div>
+            </div>
+            <div class="rag-kb-field">
+                <div class="rag-kb-field-label"><span>事实名称（内部）title</span></div>
+                <input class="rag-kb-answer" data-rag-field="title" value="${escapeHtml(fact.title)}">
+            </div>
+            <div class="rag-kb-field">
+                <div class="rag-kb-field-label"><span>出信正文 answer</span><span class="muted">${(fact.answer || "").length} 字符</span></div>
+                <textarea class="rag-kb-answer${verbatim ? " verbatim" : ""}" data-rag-field="answer" rows="7">${escapeHtml(fact.answer)}</textarea>
+            </div>
+            <div class="rag-kb-field">
+                <div class="rag-kb-field-label"><span>问法 question_variants（每行一条）</span></div>
+                <textarea class="rag-kb-answer" data-rag-field="questionVariants" rows="3">${multiLines(fact.questionVariants, "|")}</textarea>
+            </div>
+            <div class="rag-kb-field">
+                <div class="rag-kb-field-label"><span>覆盖键 coverage_keys（每行一个）</span></div>
+                <textarea class="rag-kb-answer" data-rag-field="coverageKeys" rows="3">${multiLines(fact.coverageKeys, ",")}</textarea>
+            </div>
+            <div class="rag-kb-field">
+                <div class="rag-kb-field-label"><span>render_mode 出信方式</span></div>
+                <select class="rag-kb-answer" data-rag-field="renderMode">${options(fact.renderMode, ["COMPOSE", "VERBATIM"])}</select>
+            </div>
+            <div class="rag-kb-field">
+                <div class="rag-kb-field-label"><span>risk_level 风险等级</span></div>
+                <select class="rag-kb-answer" data-rag-field="riskLevel">${options(fact.riskLevel, ["LOW", "MEDIUM", "HIGH"])}</select>
+            </div>
+            <div class="rag-kb-field">
+                <div class="rag-kb-field-label"><span>status 状态</span></div>
+                <select class="rag-kb-answer" data-rag-field="status">${options(fact.status, ["APPROVED", "REVIEW", "DISABLED"])}</select>
+            </div>
+            <div class="rag-kb-field">
+                <div class="rag-kb-field-label"><span>reply_policy（仅展示标签）</span></div>
+                <select class="rag-kb-answer" data-rag-field="replyPolicy">${options(fact.replyPolicy, ["AUTO", "REVIEW", "NEVER"])}</select>
+            </div>
+            <div class="rag-kb-field">
+                <div class="rag-kb-field-label"><span>来源 source_refs（只读）</span></div>
+                <div class="rag-kb-chips">${chips(fact.sourceRefs, ",", false)}</div>
+            </div>
+        </div>
+        <div class="rag-kb-detail-foot">
+            <span class="muted">保存会写审计并刷新库指纹${verbatim ? "；逐字事实请二次确认" : ""}。</span>
+            <span>
+                <button type="button" class="button" data-rag-action="toggle">${fact.enabled ? "停用" : "启用"}</button>
+                <button type="button" class="button primary" data-rag-action="save">保存</button>
+            </span>
+        </div>`;
+}
+
+async function loadRagKb() {
+    const data = await api("/api/rag/facts");
+    const facts = Array.isArray(data.facts) ? data.facts : [];
+    state.aiTraining.ragKbFacts = facts;
+    state.aiTraining.ragKbFingerprint = data.fingerprint || "";
+    state.aiTraining.ragKbFactCount = Number.isFinite(data.factCount) ? data.factCount : facts.length;
+    if (state.aiTraining.ragKbSelected && !facts.some((row) => row.factCode === state.aiTraining.ragKbSelected)) {
+        state.aiTraining.ragKbSelected = null;
+    }
+    const fingerprintEl = $("#ragKbFingerprint");
+    if (fingerprintEl) {
+        fingerprintEl.textContent = `库指纹 ${state.aiTraining.ragKbFingerprint}`;
+    }
+    renderRagKbFilters();
+    renderRagKbList();
+    renderRagKbDetail();
+}
+
+function ragKbDetailFieldValues() {
+    const detail = $("#ragKbDetail");
+    const values = {};
+    if (!detail) return values;
+    detail.querySelectorAll("[data-rag-field]").forEach((element) => {
+        values[element.dataset.ragField] = element.value;
+    });
+    return values;
+}
+
+function linesJoin(value, separator) {
+    return String(value || "")
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .join(separator);
+}
+
+async function saveRagFact() {
+    const training = state.aiTraining;
+    const code = training.ragKbSelected;
+    if (!(training.ragKbFacts || []).some((row) => row.factCode === code)) return;
+    const values = ragKbDetailFieldValues();
     const payload = {
-        topic: values.topic,
-        question: values.question || null,
-        answer: values.answer,
-        keywords: values.keywords || null
+        title: values.title || "",
+        answer: values.answer || "",
+        questionVariants: linesJoin(values.questionVariants, "|"),
+        coverageKeys: linesJoin(values.coverageKeys, ","),
+        renderMode: values.renderMode || null,
+        riskLevel: values.riskLevel || null,
+        status: values.status || null,
+        replyPolicy: values.replyPolicy || null,
+        operator: window.localStorage.getItem("operatorName") || "console"
     };
-    if (state.aiTraining.editingQaId) {
-        await api(`/api/ai-training/qa/${state.aiTraining.editingQaId}`, {
-            method: "PUT",
-            body: JSON.stringify(payload)
-        });
-    } else {
-        await api("/api/ai-training/qa", {
-            method: "POST",
-            body: JSON.stringify(payload)
-        });
-    }
-    hideAiTrainingQaModal();
-    await loadAiTrainingQa();
-    showStatus("QA 条目已保存", "ok");
+    await api(`/api/rag/facts/${encodeURIComponent(code)}`, {
+        method: "PUT",
+        body: JSON.stringify(payload)
+    });
+    showStatus("事实已保存，库指纹已刷新", "ok");
+    await loadRagKb();
+    training.ragKbSelected = code;
+    renderRagKbList();
+    renderRagKbDetail();
 }
 
-async function deleteQaItem(id) {
-    if (!confirm("确认删除该 QA 条目？")) return;
-    await api(`/api/ai-training/qa/${id}`, { method: "DELETE" });
-    await loadAiTrainingQa();
-    showStatus("QA 条目已删除", "ok");
-}
-
-async function loadAiTrainingQa() {
-    const params = new URLSearchParams();
-    params.set("page", String(state.aiTraining.qaPage));
-    params.set("size", String(state.aiTraining.qaSize));
-    if (state.aiTraining.qaSource) {
-        params.set("source", state.aiTraining.qaSource);
-    }
-    const data = await api(`/api/ai-training/qa?${params}`);
-    state.aiTraining.qaItems = data.items || [];
-    state.aiTraining.qaTotal = data.total ?? state.aiTraining.qaItems.length;
-    renderAiTrainingQaTable();
+async function toggleRagFactEnabled() {
+    const training = state.aiTraining;
+    const code = training.ragKbSelected;
+    const fact = (training.ragKbFacts || []).find((row) => row.factCode === code);
+    if (!fact) return;
+    const action = fact.enabled ? "disable" : "enable";
+    await api(`/api/rag/facts/${encodeURIComponent(code)}/${action}`, {
+        method: "POST",
+        body: JSON.stringify({ operator: window.localStorage.getItem("operatorName") || "console" })
+    });
+    showStatus(fact.enabled ? "事实已停用，库指纹已刷新" : "事实已启用，库指纹已刷新", "ok");
+    await loadRagKb();
+    training.ragKbSelected = code;
+    renderRagKbList();
+    renderRagKbDetail();
 }
 
 function renderAiTrainingUnsupportedAnswersPager() {
@@ -4018,13 +4171,207 @@ async function saveAiTrainingPromptConfig(event) {
     showStatus("提示词配置已保存", "ok");
 }
 
+// ---------------------------------------------------------------------------
+// plan 06: AI 提示词与约束 —— RAG 约束清单（检索调用 5 条 / 生成调用 22 条）。
+// I-30/I-31: 服务端 effective() 给全量视图；生成段派生三条（第 18/19/21 条）
+// 只读（derived=true），可编辑约束保存在 state 的 base 数组，渲染/保存时按
+// 服务端同款固定槽位（总长 >= 21 时第 18/19/21 位，否则末尾三位）合并 ——
+// 编号是渲染产物（I-32），派生行的编号恒定、可编辑行删除后自动前移。
+// ---------------------------------------------------------------------------
+
+function ragPromptRows(call) {
+    const training = state.aiTraining;
+    return call === "retrieval" ? training.ragPromptRetrieval : training.ragPromptGenerationBase;
+}
+
+function ragPromptBaseIndexOf(row, rows) {
+    for (let index = 0; index < rows.length; index += 1) {
+        if (rows[index] === row) return index;
+    }
+    return -1;
+}
+
+function ragPromptRowList(call) {
+    const base = ragPromptRows(call);
+    if (call === "retrieval") return base;
+    const derived = state.aiTraining.ragPromptGenerationDerived;
+    const total = base.length + derived.length;
+    const slots = total >= 21 ? [17, 18, 20] : [total - 3, total - 2, total - 1];
+    const merged = [];
+    let baseCursor = 0;
+    let derivedCursor = 0;
+    for (let slot = 0; slot < total; slot += 1) {
+        merged.push(slots.includes(slot) ? derived[derivedCursor++] : base[baseCursor++]);
+    }
+    return merged;
+}
+
+function ragPromptDirtyCount() {
+    const training = state.aiTraining;
+    let count = training.ragPromptDeleted;
+    const scan = (rows) => {
+        rows.forEach((row) => {
+            if (row.isNew || row.text !== row.base) count += 1;
+        });
+    };
+    scan(training.ragPromptRetrieval);
+    scan(training.ragPromptGenerationBase);
+    return count;
+}
+
+function ragPromptRowHtml(row, number, call) {
+    const baseRows = ragPromptRows(call);
+    const baseIndex = row.derived ? -1 : ragPromptBaseIndexOf(row, baseRows);
+    const dirty = !row.isNew && row.text !== row.base;
+    const badges = [];
+    if (row.derived) {
+        badges.push('<span class="rag-badge readonly">派生 · 只读</span>');
+    } else {
+        if (row.isNew) {
+            badges.push('<span class="rag-badge dirty">已添加</span>');
+        } else if (dirty) {
+            badges.push('<span class="rag-badge dirty">已改</span>');
+        }
+        if (!dirty && !row.isNew && row.changed) {
+            badges.push('<span class="rag-badge changed">本次改动</span>');
+        }
+        if (!dirty && !row.isNew && row.added) {
+            badges.push('<span class="rag-badge added">新增</span>');
+        }
+    }
+    const badgesHtml = badges.length
+        ? `<div style="margin-top: 2px;">${badges.join("")}</div>`
+        : "";
+    const actionsHtml = row.derived
+        ? ""
+        : '<span class="rag-prompt-rule-actions">'
+            + (dirty || row.isNew ? '<button type="button" class="undo" data-rag-prompt-act="undo">撤销</button>' : "")
+            + '<button type="button" data-rag-prompt-act="del">删除</button>'
+            + "</span>";
+    const callAttr = ` data-rag-prompt-call="${call}"`;
+    return `<div class="rag-prompt-rule${row.derived ? " readonly" : ""}"${callAttr} data-rag-prompt-base="${baseIndex}">
+        <span class="rag-prompt-rule-no">${number}.</span>
+        <div>
+            <div class="rag-prompt-rule-text"${row.derived ? "" : ' contenteditable="true"'}${callAttr} data-rag-prompt-base="${baseIndex}">${escapeHtml(row.text)}</div>
+            ${badgesHtml}
+        </div>
+        ${actionsHtml}
+    </div>`;
+}
+
+function renderRagPromptRules(call) {
+    const body = call === "retrieval" ? $("#ragPromptRetrievalRules") : $("#ragPromptGenerationRules");
+    const countEl = call === "retrieval" ? $("#ragPromptRetrievalCount") : $("#ragPromptGenerationCount");
+    if (!body) return;
+    const rows = ragPromptRowList(call);
+    body.innerHTML = rows.map((row, index) => ragPromptRowHtml(row, index + 1, call)).join("");
+    if (countEl) countEl.textContent = `${rows.length} 条`;
+}
+
+function markRagPromptDirty() {
+    const count = ragPromptDirtyCount();
+    const dirty = count > 0;
+    const statusEl = $("#ragPromptSaveBarStatus");
+    if (statusEl) {
+        statusEl.textContent = dirty ? `已修改 ${count} 处 · 未保存` : "未修改";
+        statusEl.classList.toggle("dirty", dirty);
+    }
+    const saveBtn = $("#ragPromptSaveBtn");
+    if (saveBtn) saveBtn.disabled = !dirty;
+}
+
+function ragPromptUndoRow(call, baseIndex) {
+    const row = ragPromptRows(call)[baseIndex];
+    if (!row || row.derived) return;
+    row.text = row.base;
+    renderRagPromptRules(call);
+    markRagPromptDirty();
+}
+
+function ragPromptDeleteRow(call, baseIndex) {
+    const rows = ragPromptRows(call);
+    const row = rows[baseIndex];
+    if (!row || row.derived) return;
+    rows.splice(baseIndex, 1);
+    if (!row.isNew) state.aiTraining.ragPromptDeleted += 1;
+    renderRagPromptRules(call);
+    markRagPromptDirty();
+}
+
+function ragPromptAddRow(call) {
+    const rows = ragPromptRows(call);
+    rows.push({ text: "", base: "", derived: false, changed: false, added: false, isNew: true });
+    renderRagPromptRules(call);
+    markRagPromptDirty();
+    const body = call === "retrieval" ? $("#ragPromptRetrievalRules") : $("#ragPromptGenerationRules");
+    if (!body) return;
+    const texts = body.querySelectorAll(".rag-prompt-rule-text");
+    const last = texts[texts.length - 1];
+    if (last) last.focus();
+}
+
+async function loadRagPromptConfig() {
+    const data = await api("/api/rag/prompt-config");
+    const training = state.aiTraining;
+    const toRow = (entry) => ({
+        text: entry.text || "",
+        base: entry.text || "",
+        derived: Boolean(entry.derived),
+        changed: Boolean(entry.changed),
+        added: Boolean(entry.added),
+        isNew: false
+    });
+    const retrieval = (data.retrieval || []).map(toRow);
+    const generation = (data.generation || []).map(toRow);
+    training.ragPromptIsCustom = Boolean(data.isCustom);
+    training.ragPromptRetrieval = retrieval;
+    training.ragPromptGenerationBase = generation.filter((row) => !row.derived);
+    training.ragPromptGenerationDerived = generation.filter((row) => row.derived);
+    training.ragPromptDeleted = 0;
+    renderRagPromptRules("retrieval");
+    renderRagPromptRules("generation");
+    markRagPromptDirty();
+}
+
+function ragPromptOperator() {
+    return window.localStorage.getItem("operatorName") || "console";
+}
+
+async function saveRagPromptConfig() {
+    const training = state.aiTraining;
+    const payload = {
+        retrieval: training.ragPromptRetrieval.map((row) => ({ text: row.text, derived: false })),
+        generation: ragPromptRowList("generation").map((row) => ({
+            text: row.text,
+            derived: Boolean(row.derived)
+        })),
+        operator: ragPromptOperator()
+    };
+    await api("/api/rag/prompt-config", {
+        method: "PUT",
+        body: JSON.stringify(payload)
+    });
+    await loadRagPromptConfig();
+    showStatus("RAG 约束已保存生效", "ok");
+}
+
+async function resetRagPromptConfig() {
+    await api("/api/rag/prompt-config/reset", {
+        method: "POST",
+        body: JSON.stringify({ operator: ragPromptOperator() })
+    });
+    await loadRagPromptConfig();
+    showStatus("已恢复 RAG 默认约束", "ok");
+}
+
 async function loadAiTraining() {
     await Promise.all([
-        loadAiTrainingQa(),
+        loadRagKb(),
         loadAiTrainingDialogues(),
         loadAiTrainingPromptConfig(),
         loadAiTrainingTagOptions(),
-        loadAiTrainingSimulateMails()
+        loadAiTrainingSimulateMails(),
+        loadRagPromptConfig()
     ]);
 }
 
@@ -10250,8 +10597,15 @@ function buildTrustReplyAssemblySnapshot(assembly) {
 
 function adoptTrustReplyAssembly(recordId, assembly) {
     const editor = $("#manualRichReplyEditor");
-    const rendered = assembly.renderedDraftText || assembly.rawDraftText || "";
+    const rendered = assembly.renderedDraftText || assembly.rawDraftText || assembly.text || "";
     if (editor) editor.innerText = rendered;
+    // 03b (I-39/I-44): 按 assembly 形态分流 —— 05 的 RAG 载荷含 usedFactCodes
+    // （字符串 fact_code 列表 + ragCorpusFingerprint），旧可信工作台载荷含
+    // canonicalFactIds（Long ids）。RAG 形态下证据进 ragFactCodes/ragCorpusFingerprint
+    // 且不跑 preflight（I-44：preflight 的 factRuleIds: List<Long> 与
+    // expectedEvidenceSetVersion 在 RAG 下无对应物；其职责由发送侧 I-41 指纹门禁 +
+    // D-1「零强制门禁」覆盖）。
+    const ragShape = Array.isArray(assembly.usedFactCodes);
     aiReplyState.adoptContext = {
         rawTemplate: assembly.rawDraftText || "",
         renderedBaseline: editor ? editor.innerText : rendered,
@@ -10261,20 +10615,35 @@ function adoptTrustReplyAssembly(recordId, assembly) {
         needsGroundingReview: false,
         reviewItems: [],
         draftReadiness: "READY",
-        requestCount: (assembly.itemVersions || []).length,
-        mode: "TRUST_REPLY_WORKBENCH",
+        requestCount: ragShape ? (assembly.usedFactCodes || []).length : (assembly.itemVersions || []).length,
+        mode: ragShape ? "RAG_REPLY_COMPOSER" : "TRUST_REPLY_WORKBENCH",
         qaRuleIds: [...(assembly.canonicalFactIds || [])],
         evidenceSetVersion: assembly.evidenceSetVersion,
         draftHash: assembly.draftHash,
-        trustReplyAssembly: buildTrustReplyAssemblySnapshot(assembly)
+        // RAG 形态绝不携带 trustReplyAssembly：空快照对象也是 truthy，会让发送请求
+        // 误带旧 assembly 撞上服务端校验 / I-39 冲突；旧形态行为逐字不变。
+        trustReplyAssembly: ragShape ? null : buildTrustReplyAssemblySnapshot(assembly)
     };
-    manualReplyQaContext = {
-        qaRuleIds: [...(assembly.canonicalFactIds || [])],
-        baselineText: rendered
-    };
+    if (ragShape) {
+        manualReplyQaContext = {
+            ragFactCodes: [...assembly.usedFactCodes],
+            ragCorpusFingerprint: assembly.ragCorpusFingerprint,
+            baselineText: rendered
+        };
+    } else {
+        manualReplyQaContext = {
+            qaRuleIds: [...(assembly.canonicalFactIds || [])],
+            baselineText: rendered
+        };
+    }
     showStatus("草稿已采用到人工回复区，请确认后发送", "ok");
     editor?.closest(".detail-section")?.scrollIntoView({ behavior: "smooth" });
-    schedulePreflightCheck();
+    if (ragShape) {
+        // I-44: RAG 形态不调度 preflight；同时清掉任何遗留的防抖定时器与旧面板。
+        resetPreflightState();
+    } else {
+        schedulePreflightCheck();
+    }
 }
 
 function mountLiveTrustReply(recordId) {
@@ -11036,6 +11405,14 @@ async function handleUnmatchedAction(element) {
             if (adopt.trustReplyAssembly) {
                 requestBody.trustReplyAssembly = adopt.trustReplyAssembly;
             }
+        }
+        // 03b (I-39): 发送载荷按 manualReplyQaContext 形态选择证据字段 —— RAG 形态带
+        // ragFactCodes（字符串 fact_code）+ ragCorpusFingerprint；旧形态带 qaRuleIds
+        // （Long）。两形态互斥（采用路径只写其一），上下文均缺省时是纯人工正文发送。
+        if (manualReplyQaContext?.ragFactCodes !== undefined) {
+            requestBody.ragFactCodes = manualReplyQaContext.ragFactCodes;
+            requestBody.ragCorpusFingerprint = manualReplyQaContext.ragCorpusFingerprint;
+            requestBody.edited = editor.innerText.trim() !== (manualReplyQaContext.baselineText || "").trim();
         }
         if (manualReplyQaContext?.qaRuleIds?.length) {
             requestBody.qaRuleIds = manualReplyQaContext.qaRuleIds;
@@ -12146,9 +12523,6 @@ function bindEvents() {
             updateSenderBindingDirtyState();
         }
     });
-    $("#reloadAiTrainingQaBtn")?.addEventListener("click", () => {
-        loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
-    });
     $("#reloadAiTrainingUnsupportedAnswersBtn")?.addEventListener("click", () => {
         loadAiTrainingUnsupportedAnswers(true);
     });
@@ -12187,49 +12561,88 @@ function bindEvents() {
     $("#reloadAiTrainingDialoguesBtn")?.addEventListener("click", () => {
         loadAiTrainingDialogues().catch((error) => showStatus(error.message, "error"));
     });
-    $("#aiTrainingAddQaBtn")?.addEventListener("click", () => showQaEditModal());
-    $("#aiTrainingQaForm")?.addEventListener("submit", (event) => {
-        saveAiTrainingQaItem(event).catch((error) => showStatus(error.message, "error"));
-    });
-    $("#aiTrainingQaCancelBtn")?.addEventListener("click", hideAiTrainingQaModal);
-    $("#aiTrainingQaModalCloseBtn")?.addEventListener("click", hideAiTrainingQaModal);
-    $("#aiTrainingQaModalBackdrop")?.addEventListener("click", hideAiTrainingQaModal);
-    $("#aiTrainingQaTable")?.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-action]");
-        if (!button) return;
-        const qaId = Number(button.dataset.qaId);
-        const item = state.aiTraining.qaItems.find((row) => row.id === qaId);
-        if (button.dataset.action === "edit-ai-training-qa" && item) {
-            showQaEditModal(item);
-            return;
-        }
-        if (button.dataset.action === "delete-ai-training-qa" && qaId) {
-            deleteQaItem(qaId).catch((error) => showStatus(error.message, "error"));
-        }
-    });
-    $("#aiTrainingSourceFilter")?.addEventListener("change", (event) => {
-        state.aiTraining.qaSource = event.target.value;
-        state.aiTraining.qaPage = 0;
-        loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
-    });
-    $("#aiTrainingQaPrevPage")?.addEventListener("click", () => {
-        if (state.aiTraining.qaPage > 0) {
-            state.aiTraining.qaPage -= 1;
-            loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
-        }
-    });
-    $("#aiTrainingQaNextPage")?.addEventListener("click", () => {
-        state.aiTraining.qaPage += 1;
-        loadAiTrainingQa().catch((error) => showStatus(error.message, "error"));
-    });
     $("#aiTrainingPromptForm")?.addEventListener("submit", (event) => {
         saveAiTrainingPromptConfig(event).catch((error) => showStatus(error.message, "error"));
     });
     $("#aiTrainingRestoreDefaultBtn")?.addEventListener("click", () => {
         restoreAiTrainingPromptDefault().catch((error) => showStatus(error.message, "error"));
     });
+
+    // plan 06: RAG 提示词约束清单交互（I-31 只读派生行无编辑/删除入口）。
+    const ragPromptRuleBindings = [
+        ["ragPromptRetrievalRules", "retrieval"],
+        ["ragPromptGenerationRules", "generation"]
+    ];
+    ragPromptRuleBindings.forEach(([containerId, call]) => {
+        const container = $(`#${containerId}`);
+        if (!container) return;
+        container.addEventListener("input", (event) => {
+            const textEl = event.target.closest?.(".rag-prompt-rule-text");
+            if (!textEl || textEl.dataset.ragPromptCall !== call) return;
+            const row = ragPromptRows(call)[Number(textEl.dataset.ragPromptBase)];
+            if (!row || row.derived) return;
+            row.text = textEl.textContent;
+            markRagPromptDirty();
+        });
+        container.addEventListener("focusout", (event) => {
+            const textEl = event.target.closest?.(".rag-prompt-rule-text");
+            if (!textEl || textEl.dataset.ragPromptCall !== call) return;
+            renderRagPromptRules(call);
+        });
+        container.addEventListener("click", (event) => {
+            const action = event.target.closest?.("[data-rag-prompt-act]");
+            if (!action) return;
+            const baseIndex = Number(action.dataset.ragPromptBase);
+            if (action.dataset.ragPromptAct === "undo") {
+                ragPromptUndoRow(call, baseIndex);
+            } else if (action.dataset.ragPromptAct === "del") {
+                ragPromptDeleteRow(call, baseIndex);
+            }
+        });
+    });
+    document.querySelectorAll("[data-rag-prompt-add]").forEach((button) => {
+        button.addEventListener("click", () => {
+            ragPromptAddRow(button.dataset.ragPromptAdd);
+        });
+    });
+    $("#ragPromptSaveBtn")?.addEventListener("click", () => {
+        saveRagPromptConfig().catch((error) => showStatus(error.message, "error"));
+    });
+    $("#ragPromptResetBtn")?.addEventListener("click", () => {
+        resetRagPromptConfig().catch((error) => showStatus(error.message, "error"));
+    });
     document.querySelectorAll("#view-ai-training .ai-tab").forEach((button) => {
         button.addEventListener("click", () => switchAiTrainingTab(button.dataset.tab));
+    });
+
+    // plan 04: RAG 知识库子 Tab 交互（G-6 白名单链/面板已在 html 与 switchAiTrainingTab 同步）。
+    $("#ragKbSearch")?.addEventListener("input", (event) => {
+        state.aiTraining.ragKbSearch = event.target.value || "";
+        renderRagKbList();
+    });
+    $("#ragKbFilters")?.addEventListener("click", (event) => {
+        const filterItem = event.target.closest("[data-rag-filter-kind]");
+        if (!filterItem) return;
+        state.aiTraining.ragKbFilterKind = filterItem.dataset.ragFilterKind;
+        state.aiTraining.ragKbFilterValue = filterItem.dataset.ragFilterValue || "";
+        renderRagKbFilters();
+        renderRagKbList();
+    });
+    $("#ragKbList")?.addEventListener("click", (event) => {
+        const row = event.target.closest("[data-rag-code]");
+        if (!row) return;
+        state.aiTraining.ragKbSelected = row.dataset.ragCode;
+        renderRagKbList();
+        renderRagKbDetail();
+    });
+    $("#ragKbDetail")?.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-rag-action]");
+        if (!button) return;
+        if (button.dataset.ragAction === "save") {
+            saveRagFact().catch((error) => showStatus(error.message, "error"));
+        } else if (button.dataset.ragAction === "toggle") {
+            toggleRagFactEnabled().catch((error) => showStatus(error.message, "error"));
+        }
     });
     $("#aiTrainingExpertTagFilters")?.addEventListener("click", (event) => {
         const chip = event.target.closest(".ai-training-tag-chip");

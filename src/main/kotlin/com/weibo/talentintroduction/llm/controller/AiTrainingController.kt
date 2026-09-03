@@ -540,3 +540,46 @@ data class AiTrainingEvaluationHttpRequest(
     val note: String? = null,
     val operatorName: String? = null
 )
+// 07（c8）：旧可信工作台控制器九个端点摘除后其源文件整文件删除；本控制器
+// （/simulate/evaluations 仍在运行）仍消费下列共享 HTTP 请求/响应形状，
+// 故迁入同包本文件（D-10 / X-4 一并处置）。
+
+data class TrustReplySourceHttpRequest(
+    val sourceType: String,
+    val sourceId: Long
+)
+
+data class TrustReplyRequestFactSelectionHttpRequest(
+    val requestKey: String? = null,
+    val factRuleIds: List<Long>? = null
+)
+
+data class TrustReplyFrameSelectionHttpRequest(
+    val salutationSnippetId: Long? = null,
+    val greetingSnippetId: Long? = null,
+    val ackSnippetId: Long? = null,
+    val closingSnippetId: Long? = null
+)
+
+data class TrustReplyFrameSnapshotHttpRequest(
+    val selection: TrustReplyFrameSelectionHttpRequest? = null,
+    val version: String? = null
+)
+
+data class TrustReplyLockedItemHttpRequest(
+    val requestKey: String,
+    val versionId: String,
+    val handling: String,
+    val answerText: String,
+    val claims: List<com.weibo.talentintroduction.llm.service.AiReplyItemClaim> = emptyList(),
+    val model: String,
+    val generationKind: String,
+    val evidenceSetVersion: String,
+    val sourceVersion: String,
+    val operatorInstructionHash: String = "",
+    val operatorInstruction: String = ""
+)
+
+data class TrustReplyErrorResponse(
+    val code: String
+)
