@@ -1,279 +1,39 @@
+"use strict";
+
+// 计划 05（c6）改写 —— 逐条保留仍有效的 CSS 契约（G-7 / controller ruling）：
+// 旧 I-1..I-6（renderMarkup/renderBusyOverlay/busyOverlayState 等旧工作台内部函数切片）
+// 与整段「rendered behavior」随旧版按条目工作台一并退役；本文件只保留：
+// I-7（.action-dialog 与 .trust-reply-busy-* 不透明白底 + dark-mode 配对）、
+// I-8（G-5 缓存键三联）、S-1（.reply-workflow-content 逐字块）、
+// S-2（busy 四规则逐字 + spinner/keyframes 唯一）、S-3（dialog-body 对比度作用域）。
+// 被断言 CSS 块均不在 05 的 S-5 处置表内 → 保持逐字不动。
+
 const fs = require("fs");
 const path = require("path");
 const assert = require("assert");
-const vm = require("vm");
 const { describe, it } = require("node:test");
 
 const root = path.join(__dirname, "..", "..", "main", "resources", "static");
 const stylesPath = path.join(root, "styles.css");
-const workbenchPath = path.join(root, "trust-reply-workbench.js");
 const indexPath = path.join(root, "index.html");
 const styles = fs.readFileSync(stylesPath, "utf-8");
-const workbench = fs.readFileSync(workbenchPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260902-rag-knowledge-base";
+const CACHE_KEY = "20260902-rag-workbench";
 
-// Source-text helpers (whitespace-normalized for the verbatim contract checks).
 function stripWs(text) {
     return text.replace(/\s+/g, " ").trim();
 }
 
 function ruleBlock(css, selector) {
-    const match = css.match(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*\\{[^}]*\\}"));
-    assert.ok(match, `expected a rule block for ${selector}`);
-    return match[0];
-}
-
-function fnSource(source, name, nextName) {
-    const start = source.indexOf(`function ${name}(`);
-    const end = source.indexOf(`function ${nextName}(`);
-    assert.ok(start >= 0 && end > start, `cannot slice function ${name}`);
-    return source.slice(start, end);
-}
-
-function actionButton(action, requestKey) {
-    return {
-        dataset: requestKey ? { action, requestKey } : { action },
-        closest(selector) {
-            if (selector === "[data-action]") return this;
-            return null;
-        }
-    };
-}
-
-function event(target, extra) {
-    return { target, preventDefault() {}, stopPropagation() {}, ...extra };
-}
-
-function bootstrapPayload() {
-    return {
-        source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
-        sourceVersion: "TRAINING_MAIL-101-v1",
-        inboundSubject: "subject",
-        inboundText: "body",
-        expertName: "Expert",
-        expertEmail: "expert@example.com",
-        llmEnabled: true,
-        availableModels: ["DEEPSEEK_V4_FLASH"],
-        defaultModel: "DEEPSEEK_V4_FLASH",
-        suggestedFactIds: [1, 2],
-        canonicalFactIds: [1, 2],
-        rulesByCategory: [1, 2].map((id) => ({ ruleId: id, displayName: `Fact ${id}`, answerBody: `body ${id}` })),
-        requestCoverage: [{
-            index: 0,
-            requestKey: "TRAINING_MAIL-101-request",
-            requestText: "Question",
-            status: "GROUNDED",
-            factRuleIds: [1, 2],
-            droppedFactRuleIds: [],
-            allowedHandlings: ["ANSWER_WITH_EVIDENCE", "OMIT"],
-            recommendedHandling: "ANSWER_WITH_EVIDENCE"
-        }],
-        draftReadiness: "READY",
-        contextWarnings: [],
-        evidenceSetVersion: "TRAINING_MAIL-101-e1"
-    };
-}
-
-function multiRequestBootstrapPayload() {
-    const payload = bootstrapPayload();
-    payload.requestCoverage[0].factRuleIds = [1];
-    payload.requestCoverage = [
-        payload.requestCoverage[0],
-        {
-            index: 1,
-            requestKey: "TRAINING_MAIL-101-request-2",
-            requestText: "Second question",
-            status: "GROUNDED",
-            factRuleIds: [1],
-            droppedFactRuleIds: [],
-            allowedHandlings: ["ANSWER_WITH_EVIDENCE", "OMIT"],
-            recommendedHandling: "ANSWER_WITH_EVIDENCE"
-        }
-    ];
-    return payload;
-}
-
-function multiLockedBootstrapPayload() {
-    const payload = multiRequestBootstrapPayload();
-    const locked = lockedBootstrapPayload();
-    payload.savedState = locked.savedState;
-    return payload;
-}
-
-// A locked bootstrap: the one GROUNDED request arrives already resolved, so
-// assemble() skips item generation and enters the ASSEMBLING pending state.
-function lockedBootstrapPayload() {
-    const payload = bootstrapPayload();
-    payload.savedState = {
-        stateVersion: 7,
-        status: "RESTORED",
-        lockedItems: [{
-            requestKey: "TRAINING_MAIL-101-request",
-            versionId: "v-1",
-            handling: "ANSWER_WITH_EVIDENCE",
-            answerText: "generated answer",
-            operatorInstruction: "",
-            claims: [],
-            model: "DEEPSEEK_V4_FLASH",
-            generationKind: "AI_GENERATED",
-            evidenceSetVersion: "TRAINING_MAIL-101-e1",
-            sourceVersion: "TRAINING_MAIL-101-v1",
-            operatorInstructionHash: "",
-            contextVersion: "ctx-1"
-        }]
-    };
-    return payload;
-}
-
-// A stream that never enqueues and never closes keeps the generation pending:
-// reader.read() stays unresolved, so state.generation.pending stays true and
-// the busy overlay stays rendered (I-1: the mask survives re-renders).
-function neverResolvingStream() {
-    return new ReadableStream({ start() { /* keep open */ } });
-}
-
-// vm + FakeElement harness, same shape as trustReplyWorkbench.test.js.
-class FakeElement {
-    constructor(ownerDocument) {
-        this.ownerDocument = ownerDocument;
-        this._innerHTML = "";
-        this.listeners = new Map();
-        this.dataset = {};
-    }
-    set innerHTML(value) {
-        this._innerHTML = String(value);
-    }
-    get innerHTML() { return this._innerHTML; }
-    addEventListener(type, listener) {
-        const list = this.listeners.get(type) || [];
-        list.push(listener);
-        this.listeners.set(type, list);
-    }
-    removeEventListener(type, listener) {
-        this.listeners.set(type, (this.listeners.get(type) || []).filter((item) => item !== listener));
-    }
-    dispatchEvent(type, event) {
-        for (const listener of this.listeners.get(type) || []) listener(event);
-    }
-    contains() { return true; }
-    querySelector() { return null; }
-}
-
-class FakeDocument {
-    constructor() {
-        this.activeElement = null;
-    }
-    createElement() { return new FakeElement(this); }
-}
-
-function settle() {
-    return new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
-}
-
-// The overlay is the last child of .reply-workflow-content, so everything
-// from its class token up to </details> is the overlay fragment plus the
-// two closing tags — no other component markup.
-function overlayFragment(html) {
-    const start = html.indexOf('class="trust-reply-busy-overlay"');
-    assert.ok(start >= 0, "overlay must be rendered");
-    return html.slice(start, html.indexOf("</details>"));
-}
-
-function createSandbox(fetchImpl) {
-    const document = new FakeDocument();
-    const window = {
-        document,
-        fetch: fetchImpl,
-        confirm: () => true,
-        crypto: { randomUUID: () => "00000000-0000-4000-8000-000000000001" },
-        AbortController,
-        TextDecoder,
-        TextEncoder,
-        setTimeout,
-        clearTimeout
-    };
-    const sandbox = { window, document, console, setTimeout, clearTimeout, AbortController, TextDecoder, TextEncoder };
-    vm.createContext(sandbox);
-    vm.runInContext(workbench, sandbox);
-    return { window, document };
+    const start = css.indexOf(`${selector} {`);
+    assert.ok(start >= 0, `missing rule ${selector}`);
+    const end = css.indexOf("\n}", start);
+    assert.ok(end > start, `unterminated rule ${selector}`);
+    return css.slice(start, end + 2);
 }
 
 describe("P2 overlay + dialog contrast (source contract)", () => {
-    it("I-1: the overlay is a renderMarkup product, not an appendChild side effect", () => {
-        assert.strictEqual((workbench.match(/renderBusyOverlay\(\)/g) || []).length, 2,
-            "renderBusyOverlay must be defined once and interpolated exactly once inside renderMarkup");
-        assert.ok(!workbench.includes("createElement"),
-            "the overlay must not be attached via document.createElement/appendChild");
-        const shell = fnSource(workbench, "renderShell", "render");
-        assert.ok(!shell.includes("renderBusyOverlay"), "renderShell must not carry the overlay");
-    });
-
-    it("I-2: the overlay is the last child of .reply-workflow-content, never above <summary>", () => {
-        const markup = fnSource(workbench, "renderMarkup", "renderToolbar");
-        assert.ok(markup.includes('</section>${renderBusyOverlay()}</div>'),
-            "the overlay interpolation must sit between the frame section close and the .reply-workflow-content close");
-        assert.ok(markup.includes('<div class="reply-workflow-content"${busyOverlayState() ? \' aria-busy="true"\' : \'\'}>'),
-            "aria-busy must be computed on the .reply-workflow-content container");
-        const summaryIdx = markup.indexOf("<summary");
-        assert.ok(summaryIdx >= 0, "renderMarkup must contain <summary>");
-        assert.ok(!markup.slice(0, summaryIdx).includes("trust-reply-busy-overlay"),
-            "no overlay token may precede the <summary> line (summary stays clickable, I-2)");
-    });
-
-    it("I-3: the workbench and each summary card have independent overlay anchors", () => {
-        assert.strictEqual((styles.match(/position:\s*absolute/g) || []).length, 30,
-            "position: absolute count must include the workbench and card-local overlays");
-        const overlay = ruleBlock(styles, ".trust-reply-busy-overlay");
-        assert.ok(stripWs(overlay).includes("position: absolute; inset: 0; z-index: 6;"),
-            "the overlay must be the absolutely positioned child of .reply-workflow-content");
-        const itemOverlay = ruleBlock(styles, ".trust-reply-item-busy-overlay");
-        assert.ok(stripWs(itemOverlay).includes("position: absolute; inset: 0; z-index: 4;"),
-            "the local overlay must be anchored to the summary card");
-    });
-
-    it("I-4: the overlay cancel button reuses the delegated cancel-generation action", () => {
-        assert.strictEqual((workbench.match(/data-action="cancel-generation"/g) || []).length, 2,
-            "exactly two cancel buttons: toolbar + overlay");
-        const onClick = fnSource(workbench, "onClick", "onChange");
-        assert.strictEqual((onClick.match(/if \(action === "cancel-generation"\)/g) || []).length, 1,
-            "the delegated onClick handler must keep its single cancel-generation branch");
-        assert.ok(onClick.includes('event.target.closest("[data-action]")'), "delegation entry must be intact");
-        const overlay = fnSource(workbench, "renderBusyOverlay", "renderToolbar");
-        assert.ok(overlay.includes('data-action="cancel-generation"'), "overlay button must reuse the action");
-    });
-
-    it("I-5: the global mask only represents cross-summary operations", () => {
-        const busy = fnSource(workbench, "busyOverlayState", "itemBusyState");
-        const conditions = [...busy.matchAll(/if\s*\(([\s\S]*?)\)\s*\{/g)].map((m) => stripWs(m[1]));
-        assert.strictEqual(conditions.length, 4, "busyOverlayState must have exactly four if branches");
-        assert.deepStrictEqual(conditions, [
-            "state.stateSavePending",
-            "state.generation.pending",
-            "state.frameSavePending",
-            "state.completePending"
-        ], "branch order must cover only global operation states");
-        const itemBusy = fnSource(workbench, "itemBusyState", "renderItemBusyOverlay");
-        assert.ok(itemBusy.includes("request.pending"), "single-item generation must be handled by the card-local state");
-        assert.ok(itemBusy.includes("request.factChangePending"), "single-item fact updates must be handled by the card-local state");
-        assert.ok(itemBusy.includes("request.stateSavePending"), "single-item saves must be handled by the card-local state");
-        const fact = fnSource(workbench, "factActionBlockReason", "factActionReasonFor");
-        const factConditions = [...fact.matchAll(/if\s*\(([^)]+)\)/g)].map((m) => m[1].replace(/\s+/g, " ").trim());
-        assert.deepStrictEqual(factConditions, [
-            "flags && flags.requestPending",
-            "flags && flags.factChangePending",
-            "flags && flags.stateSavePending",
-            "flags && flags.generationPending",
-            "flags && flags.frameSavePending"
-        ], "factActionBlockReason must keep its five-branch priority table verbatim");
-    });
-
-    it("I-6: the overlay markup carries no inline style", () => {
-        const overlay = fnSource(workbench, "renderBusyOverlay", "renderToolbar");
-        assert.ok(!/style=/.test(overlay), "renderBusyOverlay must not emit style=");
-    });
-
     it("I-7: .action-dialog and the overlay use opaque backgrounds with dark-mode pairs", () => {
         const dialog = ruleBlock(styles, ".action-dialog");
         assert.ok(!stripWs(dialog).includes("var(--panel-bg)"),
@@ -294,7 +54,7 @@ describe("P2 overlay + dialog contrast (source contract)", () => {
         assert.ok(dark.includes("background: rgba(21, 31, 48, 0.97);"), "dark action-dialog override");
     });
 
-    it("I-8: the cache-key triad is the current summary-loading key, three sites, one value", () => {
+    it("I-8: the cache-key triad is one value, three sites", () => {
         const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
         assert.strictEqual(keys.length, 3, "index.html must carry exactly three cache-busted asset URLs");
         assert.strictEqual(new Set(keys).size, 1, "all three keys must share one value");
@@ -347,164 +107,5 @@ describe("P2 overlay + dialog contrast (source contract)", () => {
             ".action-dialog::backdrop must stay untouched");
         const h3 = ruleBlock(styles, ".action-dialog h3");
         assert.ok(stripWs(h3).includes("font-size: 15px;"), ".action-dialog h3 must stay untouched");
-    });
-});
-
-describe("P2 overlay + dialog contrast (rendered behavior)", () => {
-    it("idle workbench renders no overlay and no aria-busy", async () => {
-        const { window, document } = createSandbox(() => Promise.resolve({
-            ok: true,
-            status: 200,
-            json: async () => bootstrapPayload()
-        }));
-        const host = new FakeElement(document);
-        window.TrustReplyWorkbench.mount(host, {
-            mode: "SIMULATION",
-            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
-            contextPath: "",
-            onComplete: async () => {}
-        });
-        await settle();
-        assert.ok(!host.innerHTML.includes("trust-reply-busy-overlay"), "idle state must have no overlay");
-        assert.ok(!host.innerHTML.includes('aria-busy="true"'), "idle state must have no aria-busy");
-    });
-
-    it("generation pending renders the overlay with cancel button, aria-busy and no inline style", async () => {
-        const { window, document } = createSandbox((url) => {
-            if (String(url).endsWith("/generations/stream")) {
-                return Promise.resolve({ ok: true, status: 200, body: neverResolvingStream() });
-            }
-            return Promise.resolve({ ok: true, status: 200, json: async () => bootstrapPayload() });
-        });
-        const host = new FakeElement(document);
-        window.TrustReplyWorkbench.mount(host, {
-            mode: "SIMULATION",
-            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
-            contextPath: "",
-            onComplete: async () => {}
-        });
-        await settle();
-        host.dispatchEvent("click", event(actionButton("auto-run")));
-        await settle();
-
-        assert.ok(host.innerHTML.includes('class="trust-reply-busy-overlay"'), "overlay must render while generating");
-        assert.ok(host.innerHTML.includes('class="trust-reply-busy-card"'), "overlay card must render");
-        assert.ok(host.innerHTML.includes('data-action="cancel-generation"'), "the toolbar cancel button must stay rendered");
-        assert.ok(host.innerHTML.includes('<div class="reply-workflow-content" aria-busy="true">'),
-            "aria-busy must sit on the .reply-workflow-content container");
-        assert.ok(host.innerHTML.includes("正在生成有据回答"), "overlay text must reflect the multi-item sequence");
-        assert.ok(host.innerHTML.includes("生成期间不能改动事实与处理方式。"), "overlay hint must reflect the global branch");
-        assert.ok(host.innerHTML.includes("正在生成有据回答"), "the status bar must still describe the sequence");
-        assert.ok(!/style=/.test(overlayFragment(host.innerHTML)),
-            "the overlay fragment must not contain inline style (I-6)");
-    });
-
-    it("single-item generation renders a card-local mask and leaves the workbench unmasked", async () => {
-        const { window, document } = createSandbox((url) => {
-            if (String(url).endsWith("/generations/stream")) {
-                return Promise.resolve({ ok: true, status: 200, body: neverResolvingStream() });
-            }
-            return Promise.resolve({ ok: true, status: 200, json: async () => multiRequestBootstrapPayload() });
-        });
-        const host = new FakeElement(document);
-        window.TrustReplyWorkbench.mount(host, {
-            mode: "SIMULATION",
-            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
-            contextPath: "",
-            onComplete: async () => {}
-        });
-        await settle();
-        host.dispatchEvent("click", event(actionButton("adjust-item", "TRAINING_MAIL-101-request")));
-        await settle();
-
-        assert.ok(!host.innerHTML.includes('class="trust-reply-busy-overlay"'), "single-item generation must not mask the workbench");
-        assert.ok(host.innerHTML.includes('class="trust-reply-item-busy-overlay"'), "single-item generation must render a card-local mask");
-        assert.ok(host.innerHTML.includes('aria-busy="true"'), "the pending card must expose aria-busy");
-        assert.ok(host.innerHTML.includes("本条摘要正在生成…"), "the local mask must describe the current summary");
-        assert.ok(host.innerHTML.includes("Second question"), "the other summary must remain rendered");
-    });
-
-    it("single-item fact changes render a card-local mask while canonical reload is pending", async () => {
-        let bootstrapCalls = 0;
-        const { window, document } = createSandbox((url) => {
-            if (String(url).endsWith("/bootstrap")) {
-                bootstrapCalls += 1;
-                if (bootstrapCalls > 1) return new Promise(() => {});
-                return Promise.resolve({ ok: true, status: 200, json: async () => multiRequestBootstrapPayload() });
-            }
-            return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
-        });
-        const host = new FakeElement(document);
-        window.TrustReplyWorkbench.mount(host, {
-            mode: "SIMULATION",
-            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
-            contextPath: "",
-            onComplete: async () => {}
-        });
-        await settle();
-        const target = actionButton("add-fact", "TRAINING_MAIL-101-request-2");
-        target.dataset.factId = "2";
-        host.dispatchEvent("click", event(target));
-        await settle();
-
-        assert.ok(!host.innerHTML.includes('class="trust-reply-busy-overlay"'), "single-item fact changes must not mask the workbench");
-        assert.ok(host.innerHTML.includes('class="trust-reply-item-busy-overlay"'), "fact changes must render a card-local mask");
-        assert.ok(host.innerHTML.includes("正在更新本条事实…"), "the local mask must describe the fact update");
-        assert.ok(host.innerHTML.includes("Question"), "the other summary must remain rendered");
-    });
-
-    it("single-item adoption persistence renders a card-local mask", async () => {
-        const { window, document } = createSandbox((url) => {
-            if (String(url).includes("/state")) return new Promise(() => {});
-            return Promise.resolve({ ok: true, status: 200, json: async () => multiLockedBootstrapPayload() });
-        });
-        const host = new FakeElement(document);
-        window.TrustReplyWorkbench.mount(host, {
-            mode: "SIMULATION",
-            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
-            contextPath: "",
-            onComplete: async () => {}
-        });
-        await settle();
-        host.dispatchEvent("click", event(actionButton("resolve-item", "TRAINING_MAIL-101-request")));
-        await settle();
-
-        assert.ok(!host.innerHTML.includes('class="trust-reply-busy-overlay"'), "single-item persistence must not mask the workbench");
-        assert.ok(host.innerHTML.includes('class="trust-reply-item-busy-overlay"'), "single-item persistence must render a card-local mask");
-        assert.ok(host.innerHTML.includes("正在保存本条摘要…"), "the local mask must describe the save");
-        assert.ok(host.innerHTML.includes("Second question"), "the other summary must remain rendered");
-    });
-
-    it("assembly pending renders the cancellable overlay card (I-4 runtime)", async () => {
-        const { window, document } = createSandbox((url) => {
-            if (String(url).endsWith("/assemble")) {
-                // Never settles: assemble() stays in the ASSEMBLING pending state.
-                return new Promise(() => {});
-            }
-            return Promise.resolve({ ok: true, status: 200, json: async () => lockedBootstrapPayload() });
-        });
-        const host = new FakeElement(document);
-        window.TrustReplyWorkbench.mount(host, {
-            mode: "SIMULATION",
-            source: { sourceType: "TRAINING_MAIL", sourceId: 101 },
-            contextPath: "",
-            onComplete: async () => {}
-        });
-        await settle();
-        host.dispatchEvent("click", event(actionButton("assemble")));
-        await settle();
-
-        assert.ok(host.innerHTML.includes('class="trust-reply-busy-overlay"'), "overlay must render while assembling");
-        const cardIdx = host.innerHTML.indexOf('class="trust-reply-busy-card"');
-        assert.ok(cardIdx >= 0, "overlay card must render");
-        const card = host.innerHTML.slice(cardIdx, host.innerHTML.indexOf("</div></div>", cardIdx) + "</div></div>".length);
-        assert.ok(card.includes('data-action="cancel-generation"'), "the overlay card itself must carry the cancel button");
-        assert.ok(card.includes("取消生成"), "the cancel button label must render inside the card");
-        assert.ok(host.innerHTML.includes("正在请求服务端整合…"), "overlay text must describe the assembly");
-        assert.ok(host.innerHTML.includes("生成期间不能改动事实与处理方式。"), "overlay hint must match the contract");
-        assert.ok(host.innerHTML.includes('<div class="reply-workflow-content" aria-busy="true">'),
-            "aria-busy must sit on the .reply-workflow-content container");
-        assert.ok(!/style=/.test(overlayFragment(host.innerHTML)),
-            "the overlay fragment must not contain inline style (I-6)");
     });
 });
