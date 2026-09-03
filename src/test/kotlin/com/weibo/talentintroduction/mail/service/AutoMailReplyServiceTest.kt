@@ -82,7 +82,7 @@ class AutoMailReplyServiceTest {
     private val bounceRateMonitorService = Mockito.mock(
         BounceRateMonitorService::class.java,
         Mockito.withSettings().defaultAnswer { invocation ->
-            if (invocation.method.name == "checkAndPause") {
+            if (invocation.method.name == "checkAndWarn") {
                 -1.0
             } else {
                 Mockito.RETURNS_DEFAULTS.answer(invocation)
@@ -235,7 +235,7 @@ class AutoMailReplyServiceTest {
         )
         inOrder.verify(receiveService).markSeen(account, bounceMail.imapUid)
         inOrder.verify(bounceCollectionService).collectBounces(account)
-        inOrder.verify(bounceRateMonitorService).checkAndPause("sender")
+        inOrder.verify(bounceRateMonitorService).checkAndWarn("sender")
         Mockito.verify(expertEmailAliasService, Mockito.never())
             .findContactByEmailOrAlias("mailer-daemon@example.com")
     }
@@ -283,7 +283,7 @@ class AutoMailReplyServiceTest {
 
         inOrder.verify(receiveService).fetchInboundSince(account, 0L, 5)
         inOrder.verify(bounceCollectionService).collectBounces(account)
-        inOrder.verify(bounceRateMonitorService).checkAndPause("sender")
+        inOrder.verify(bounceRateMonitorService).checkAndWarn("sender")
     }
 
     @Test

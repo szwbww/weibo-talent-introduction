@@ -1,7 +1,7 @@
 package com.weibo.talentintroduction.mail.controller
 
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
-import com.weibo.talentintroduction.mail.service.MailAccountConnectivityResult
+import com.weibo.talentintroduction.mail.service.BounceRateMonitorService
 import com.weibo.talentintroduction.mail.service.MailAccountConnectivityService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.SelfCheckResult
@@ -34,6 +34,9 @@ class MailSenderAccountControllerMvcTest {
     @MockBean
     private lateinit var selfCheckService: SenderAccountSelfCheckService
 
+    @MockBean
+    private lateinit var bounceRateMonitorService: BounceRateMonitorService
+
     @Test
     fun `listAccounts response exposes auto-pause fields`() {
         val accounts = listOf(
@@ -43,6 +46,8 @@ class MailSenderAccountControllerMvcTest {
         Mockito.`when`(service.listAccounts()).thenReturn(accounts)
         Mockito.`when`(service.effectiveDailyLimitFor(accounts[0])).thenReturn(100)
         Mockito.`when`(service.effectiveDailyLimitFor(accounts[1])).thenReturn(80)
+        Mockito.`when`(bounceRateMonitorService.isHardBounceRateHigh("a1")).thenReturn(true)
+        Mockito.`when`(bounceRateMonitorService.isHardBounceRateHigh("a2")).thenReturn(false)
 
         mockMvc.perform(get("/api/mail/sender-accounts"))
             .andExpect(status().isOk)
@@ -50,10 +55,12 @@ class MailSenderAccountControllerMvcTest {
             .andExpect(jsonPath("$[0].autoSendPaused").value(true))
             .andExpect(jsonPath("$[0].autoSendPausedReason").value("SELF_CHECK_FAILED:boom"))
             .andExpect(jsonPath("$[0].effectiveDailyLimit").value(100))
+            .andExpect(jsonPath("$[0].hardBounceRateHigh").value(true))
             .andExpect(jsonPath("$[1].accountCode").value("a2"))
             .andExpect(jsonPath("$[1].autoSendPaused").value(false))
             .andExpect(jsonPath("$[1].autoSendPausedReason").isEmpty)
             .andExpect(jsonPath("$[1].effectiveDailyLimit").value(80))
+            .andExpect(jsonPath("$[1].hardBounceRateHigh").value(false))
     }
 
     @Test

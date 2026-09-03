@@ -9,33 +9,36 @@ import java.time.LocalDateTime
 @Service
 class BounceRateMonitorService(
     private val bounceRecordRepository: BounceRecordRepository,
-    private val mailRecordRepository: MailRecordRepository,
-    private val mailSenderAccountService: MailSenderAccountService
+    private val mailRecordRepository: MailRecordRepository
 ) {
     private val log = LoggerFactory.getLogger(BounceRateMonitorService::class.java)
 
-    fun checkAndPause(
+    fun calculateHardBounceRate(
         accountCode: String,
-        windowDays: Int = DEFAULT_WINDOW_DAYS,
-        threshold: Double = DEFAULT_THRESHOLD
+        windowDays: Int = DEFAULT_WINDOW_DAYS
     ): Double {
         val since = LocalDateTime.now().minusDays(windowDays.toLong())
         val hardBounces = bounceRecordRepository.countHardBouncesSince(accountCode, since)
         val sentCount = mailRecordRepository.countSentByAccountSince(accountCode, since)
-
         if (sentCount < MIN_SAMPLE_SIZE) return -1.0
+        return hardBounces.toDouble() / sentCount
+    }
 
-        val rate = hardBounces.toDouble() / sentCount
+    fun isHardBounceRateHigh(accountCode: String): Boolean =
+        calculateHardBounceRate(accountCode) > DEFAULT_THRESHOLD
+
+    fun checkAndWarn(
+        accountCode: String,
+        windowDays: Int = DEFAULT_WINDOW_DAYS,
+        threshold: Double = DEFAULT_THRESHOLD
+    ): Double {
+        val rate = calculateHardBounceRate(accountCode, windowDays)
         if (rate > threshold) {
             log.warn(
-                "Bounce rate for {} is {:.2f}% (threshold {:.2f}%), pausing account",
+                "Hard bounce rate high for {}: {}% > {}%; warning only, automatic sending continues",
                 accountCode,
-                rate * 100,
-                threshold * 100
-            )
-            mailSenderAccountService.pauseAutoSend(
-                accountCode,
-                "BOUNCE_RATE_HIGH:${String.format("%.2f", rate * 100)}%"
+                String.format("%.2f", rate * 100),
+                String.format("%.2f", threshold * 100)
             )
         }
         return rate

@@ -56,10 +56,10 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh database migrates through V112`() {
+    fun `fresh database migrates through V117`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("112", flyway.migrate().targetSchemaVersion)
+        assertEquals("117", flyway.migrate().targetSchemaVersion)
     }
 
     @Test
@@ -71,12 +71,15 @@ class FlywayMigrationIntegrationTest {
             assertTrue(connection.tableExists("batch_send_setting"))
             assertTrue(connection.columnExists("batch_send_setting", "setting_key"))
             assertTrue(connection.columnExists("batch_send_setting", "setting_value"))
-            assertEquals(10L, connection.queryLong("SELECT COUNT(*) FROM batch_send_setting"))
+            assertEquals(11L, connection.queryLong("SELECT COUNT(*) FROM batch_send_setting"))
             assertEquals(1L, connection.queryLong(
                 "SELECT COUNT(*) FROM batch_send_setting WHERE setting_key = 'batchSend.cron' AND setting_value = '0 0 0 * * ?'"
             ))
             assertEquals(1L, connection.queryLong(
                 "SELECT COUNT(*) FROM batch_send_setting WHERE setting_key = 'batchSend.runtimeStatus' AND setting_value = 'IDLE'"
+            ))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM batch_send_setting WHERE setting_key = 'autoReply.globalEnabled' AND setting_value = 'false'"
             ))
         }
     }
@@ -92,6 +95,87 @@ class FlywayMigrationIntegrationTest {
             assertTrue(connection.columnExists("mail_sender_account", "auto_send_paused_at"))
             assertEquals(0L, connection.queryLong(
                 "SELECT COUNT(*) FROM mail_sender_account WHERE auto_send_paused = 1"
+            ))
+        }
+    }
+
+    @Test
+    fun `V117 clears only BOUNCE_RATE_HIGH pauses and keeps other pause reasons`() {
+        val v116Flyway = flyway(MigrationVersion.fromVersion("116"))
+        v116Flyway.clean()
+        assertEquals("116", v116Flyway.migrate().targetSchemaVersion)
+        connection().use { connection ->
+            connection.execute(
+                """
+                INSERT INTO mail_sender_account
+                    (account_code, sender_email, sender_name, smtp_host, smtp_port,
+                     smtp_username, smtp_password, imap_host, imap_port, imap_username, imap_password,
+                     auto_send_paused, auto_send_paused_reason, auto_send_paused_at)
+                VALUES
+                    ('bounce-paused', 'bounce-paused@example.com', 'Bounce', 'smtp.example.com', 465,
+                     'bounce-paused@example.com', 'pwd', 'imap.example.com', 993,
+                     'bounce-paused@example.com', 'pwd', 1, 'BOUNCE_RATE_HIGH:6.25%', NOW())
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO mail_sender_account
+                    (account_code, sender_email, sender_name, smtp_host, smtp_port,
+                     smtp_username, smtp_password, imap_host, imap_port, imap_username, imap_password,
+                     auto_send_paused, auto_send_paused_reason, auto_send_paused_at)
+                VALUES
+                    ('selfcheck-paused', 'selfcheck-paused@example.com', 'SelfCheck', 'smtp.example.com', 465,
+                     'selfcheck-paused@example.com', 'pwd', 'imap.example.com', 993,
+                     'selfcheck-paused@example.com', 'pwd', 1, 'SELF_CHECK_FAILED:timeout', NOW())
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO mail_sender_account
+                    (account_code, sender_email, sender_name, smtp_host, smtp_port,
+                     smtp_username, smtp_password, imap_host, imap_port, imap_username, imap_password,
+                     auto_send_paused, auto_send_paused_reason, auto_send_paused_at)
+                VALUES
+                    ('reputation-paused', 'reputation-paused@example.com', 'Reputation', 'smtp.example.com', 465,
+                     'reputation-paused@example.com', 'pwd', 'imap.example.com', 993,
+                     'reputation-paused@example.com', 'pwd', 1, 'REPUTATION:spam_rate=0.5%', NOW())
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO mail_sender_account
+                    (account_code, sender_email, sender_name, smtp_host, smtp_port,
+                     smtp_username, smtp_password, imap_host, imap_port, imap_username, imap_password,
+                     auto_send_paused, auto_send_paused_reason, auto_send_paused_at)
+                VALUES
+                    ('normal', 'normal@example.com', 'Normal', 'smtp.example.com', 465,
+                     'normal@example.com', 'pwd', 'imap.example.com', 993,
+                     'normal@example.com', 'pwd', 0, NULL, NULL)
+                """
+            )
+        }
+
+        assertEquals("117", flyway().migrate().targetSchemaVersion)
+        connection().use { connection ->
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_sender_account " +
+                    "WHERE account_code = 'bounce-paused' AND auto_send_paused = 0 " +
+                    "AND auto_send_paused_reason IS NULL AND auto_send_paused_at IS NULL"
+            ))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_sender_account " +
+                    "WHERE account_code = 'selfcheck-paused' AND auto_send_paused = 1 " +
+                    "AND auto_send_paused_reason = 'SELF_CHECK_FAILED:timeout'"
+            ))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_sender_account " +
+                    "WHERE account_code = 'reputation-paused' AND auto_send_paused = 1 " +
+                    "AND auto_send_paused_reason = 'REPUTATION:spam_rate=0.5%'"
+            ))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_sender_account " +
+                    "WHERE account_code = 'normal' AND auto_send_paused = 0 " +
+                    "AND auto_send_paused_reason IS NULL"
             ))
         }
     }
@@ -171,14 +255,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V23 upgrades to V112 without repair`() {
+    fun `database at original V23 upgrades to V117 without repair`() {
         val v23Flyway = flyway(MigrationVersion.fromVersion("23"))
         v23Flyway.clean()
         assertEquals("23", v23Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("112", flyway().migrate().targetSchemaVersion)
+        assertEquals("117", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -187,14 +271,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V24 upgrades to V112 without repair`() {
+    fun `database at original V24 upgrades to V117 without repair`() {
         val v24Flyway = flyway(MigrationVersion.fromVersion("24"))
         v24Flyway.clean()
         assertEquals("24", v24Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("112", flyway().migrate().targetSchemaVersion)
+        assertEquals("117", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -229,7 +313,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("112", flyway().migrate().targetSchemaVersion)
+        assertEquals("117", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
                 "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
@@ -275,7 +359,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("112", flyway().migrate().targetSchemaVersion)
+        assertEquals("117", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }

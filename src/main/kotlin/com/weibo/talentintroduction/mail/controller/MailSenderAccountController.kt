@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.controller
 
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.service.BounceRateMonitorService
 import com.weibo.talentintroduction.mail.service.MailAccountConnectivityResult
 import com.weibo.talentintroduction.mail.service.MailAccountConnectivityService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountCreateCommand
@@ -23,7 +24,8 @@ import org.springframework.http.HttpStatus
 class MailSenderAccountController(
     private val service: MailSenderAccountService,
     private val connectivityService: MailAccountConnectivityService,
-    private val selfCheckService: SenderAccountSelfCheckService
+    private val selfCheckService: SenderAccountSelfCheckService,
+    private val bounceRateMonitorService: BounceRateMonitorService
 ) {
     @GetMapping
     fun listAccounts(): List<MailSenderAccountResponse> {
@@ -117,6 +119,7 @@ class MailSenderAccountController(
             autoSendPaused = account.autoSendPaused,
             autoSendPausedReason = account.autoSendPausedReason,
             autoSendPausedAt = account.autoSendPausedAt?.toString(),
+            hardBounceRateHigh = bounceRateMonitorService.isHardBounceRateHigh(account.accountCode),
             warmupEnabled = account.warmupEnabled,
             warmupStartedAt = account.warmupStartedAt?.toString(),
             warmupStepsJson = account.warmupStepsJson
@@ -240,6 +243,7 @@ data class MailSenderAccountResponse(
     val autoSendPaused: Boolean,
     val autoSendPausedReason: String?,
     val autoSendPausedAt: String?,
+    val hardBounceRateHigh: Boolean,
     val warmupEnabled: Boolean?,
     val warmupStartedAt: String?,
     val warmupStepsJson: String?

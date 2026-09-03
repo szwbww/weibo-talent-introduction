@@ -770,7 +770,7 @@ class AutoMailReplyService(
                 accountCode
             )
         }
-        bounceRateMonitorService.checkAndPause(accountCode)
+        bounceRateMonitorService.checkAndWarn(accountCode)
 
         return AutoMailReplyBatchResult(
             fetched = fetch.mails.size,
