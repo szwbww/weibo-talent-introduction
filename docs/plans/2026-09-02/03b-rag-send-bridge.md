@@ -281,8 +281,9 @@ CREATE TABLE mail_record_rag_fact (
 | 6 | `src/main/resources/static/app.js` | 修改（采用路径分流 + 跳过 preflight） |
 | 7 | `src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt` | 新增 |
 | 8 | `src/test/js/ragAdoptSendBridge.test.js` | 新增 |
+| 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/UnmatchedInboundTrustWorkbenchTest.kt` | 修改（A3 授权：sendManualRichReply 增 2 形参后 4 处 stub 补 `Mockito.any()` 匹配器；先例 a21784e；K-计划必需回归门禁） |
 
-文件数 8，子系统 2（mail 后端发送链 + 前端采用路径）。
+文件数 9（8 新增/修改 + 1 处 A3 授权的既有测试修改），子系统 2（mail 后端发送链 + 前端采用路径）。
 **注意**：本计划改 `app.js` 但不改 `index.html`，故**不 bump 缓存键**——
 `app.js` 的 `?v=` 由紧随其后的 05 统一 bump。若 03b 与 05 分开发布，
 则 03b 必须自行 bump 并把 `index.html` 与 `batchSendTaskConsoleVisualFix.test.js` 加进清单
