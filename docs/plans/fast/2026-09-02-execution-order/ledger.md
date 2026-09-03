@@ -9,8 +9,8 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-02T14:20:00Z
-- Current child: c8
-- Waiting role: IMPLEMENTER
+- Current child: N/A
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -37,7 +37,7 @@
 | c5 | docs/plans/2026-09-02/04-rag-knowledge-base-page.md | commit:92b0519a18a3a46989f8733259af4649f7748a72 | c1 | 1 | LIGHT_PASS_WITH_NOTES | ae755c417d2be4cecda52c5adf20a7f52227a072 | db89054f32a51f79f4cc86f5b21a9871a8dac729 | 0 | — | db89054f32a51f79f4cc86f5b21a9871a8dac729 | — | G-5 master-rule sync of 3 extra pin test files (12 files total); RagFactAdminServiceTest 10/10 scratch chain; Flyway IT env-blocked; O-1..O-4 (verify-log) |
 | c6 | docs/plans/2026-09-02/05-workbench-frontend-replace.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c4 | 1 | LIGHT_PASS | db89054f32a51f79f4cc86f5b21a9871a8dac729 | 60efcbaaa14e919ff8b4cfa9539cca41fd6a6d62 | 0 | — | 60efcbaaa14e919ff8b4cfa9539cca41fd6a6d62 | — | master G-5/G-7 retirements (2 deletes + 1 rewrite) + 5-file pin sync; workbench 3122→579 lines; clean LIGHT_PASS |
 | c7 | docs/plans/2026-09-02/06-prompt-console.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c3 | 1 | LIGHT_PASS | 60efcbaaa14e919ff8b4cfa9539cca41fd6a6d62 | e76b5a9f49c866afffbccdffcae78443cb16cab3 | 0 | — | e76b5a9f49c866afffbccdffcae78443cb16cab3 | — | master-G-5 +6 pin syncs (16 files); audit via operator_action_log; RagPromptBuilder reads effective(); clean LIGHT_PASS |
-| c8 | docs/plans/2026-09-02/07-legacy-entry-retire.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c5,c6,c7 | 1 | PENDING | — | — | — | — | — | — | legacy retire, must be last |
+| c8 | docs/plans/2026-09-02/07-legacy-entry-retire.md | commit:46cc5c46395814b1ef03e52ab8b8bfb5197f372c | c5,c6,c7 | 1 | LIGHT_PASS | e76b5a9f49c866afffbccdffcae78443cb16cab3 | 6d934ca43e6e74c35917ef841fae92056e2d66f4 | 0 | — | 6d934ca43e6e74c35917ef841fae92056e2d66f4 | — | split per plan rule (2 commits: 1706d8be backend, 6d934ca frontend/endpoints); AiTrainingController shared-DTO relocation + RagReplyController comment (plan-gap registrations); O-1..O-7 (verify-log) |
 
 ## Amendments
 
