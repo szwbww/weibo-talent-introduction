@@ -56,10 +56,10 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh database migrates through V118`() {
+    fun `fresh database migrates through V119`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("118", flyway.migrate().targetSchemaVersion)
+        assertEquals("119", flyway.migrate().targetSchemaVersion)
     }
 
     @Test
@@ -155,7 +155,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("118", flyway().migrate().targetSchemaVersion)
+        assertEquals("119", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(1L, connection.queryLong(
                 "SELECT COUNT(*) FROM mail_sender_account " +
@@ -255,14 +255,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V23 upgrades to V118 without repair`() {
+    fun `database at original V23 upgrades to V119 without repair`() {
         val v23Flyway = flyway(MigrationVersion.fromVersion("23"))
         v23Flyway.clean()
         assertEquals("23", v23Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("118", flyway().migrate().targetSchemaVersion)
+        assertEquals("119", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -271,14 +271,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V24 upgrades to V118 without repair`() {
+    fun `database at original V24 upgrades to V119 without repair`() {
         val v24Flyway = flyway(MigrationVersion.fromVersion("24"))
         v24Flyway.clean()
         assertEquals("24", v24Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("118", flyway().migrate().targetSchemaVersion)
+        assertEquals("119", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -313,7 +313,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("118", flyway().migrate().targetSchemaVersion)
+        assertEquals("119", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
                 "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
@@ -359,7 +359,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("118", flyway().migrate().targetSchemaVersion)
+        assertEquals("119", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }
@@ -435,7 +435,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("118", flyway().migrate().targetSchemaVersion)
+        assertEquals("119", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 历史值原样保留（I-2/I-3），document_status 迁移前后不变。
             assertEquals(12345L, connection.queryLong(
@@ -528,6 +528,156 @@ class FlywayMigrationIntegrationTest {
                 "SELECT COUNT(*) FROM mail_attachment WHERE file_name = 'empty.txt' " +
                     "AND file_size = 0 AND storage_path IS NOT NULL"
             ))
+        }
+    }
+
+    @Test
+    fun `V119 creates mail_attachment_transfer with the persistence contract`() {
+        migrateToV23AndSeedBase()
+        connection().use { connection ->
+            connection.execute(
+                """
+                INSERT INTO mail_record
+                    (id, expert_contact_id, direction, mail_type, message_id)
+                VALUES (201, 1, 'INBOUND', 'REPLY', 'msg-with-part')
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO mail_attachment
+                    (id, mail_record_id, file_name, content_type, file_size, storage_path)
+                VALUES (301, 201, 'cv.pdf', 'application/pdf', 12345, '/legacy/301.pdf')
+                """
+            )
+        }
+
+        assertEquals("119", flyway().migrate().targetSchemaVersion)
+        connection().use { connection ->
+            assertTrue(connection.tableExists("mail_attachment_transfer"))
+            listOf(
+                "id", "attachment_id", "purpose", "account_code", "folder",
+                "uid_validity", "imap_uid", "part_path", "message_id", "file_name",
+                "content_type", "encoded_size", "disposition", "inbound_processing_id",
+                "state", "requested_by", "queued_at", "started_at", "lease_until",
+                "worker_token", "bytes_downloaded", "attempt", "error_code",
+                "error_message", "created_at", "updated_at"
+            ).forEach { column ->
+                assertTrue(
+                    connection.columnExists("mail_attachment_transfer", column),
+                    "missing mail_attachment_transfer column $column"
+                )
+            }
+            // 唯一键/队列索引/账号活动索引/processing 索引
+            assertTrue(connection.indexExists("mail_attachment_transfer", "uk_mail_attachment_transfer_source"))
+            assertTrue(connection.indexExists("mail_attachment_transfer", "uk_mail_attachment_transfer_attachment"))
+            assertTrue(connection.indexExists("mail_attachment_transfer", "idx_mail_attachment_transfer_queue"))
+            assertTrue(connection.indexExists("mail_attachment_transfer", "idx_mail_attachment_transfer_account"))
+            assertTrue(connection.indexExists("mail_attachment_transfer", "idx_mail_attachment_transfer_inbound"))
+            // CHECK：purpose/state 枚举与 purpose-attachment 组合
+            assertTrue(connection.checkConstraintExists("mail_attachment_transfer", "chk_mail_attachment_transfer_purpose"))
+            assertTrue(connection.checkConstraintExists("mail_attachment_transfer", "chk_mail_attachment_transfer_state"))
+            assertTrue(connection.checkConstraintExists("mail_attachment_transfer", "chk_mail_attachment_transfer_purpose_attachment"))
+            // 外键：attachment 与 inbound processing 均为真实 FK
+            assertTrue(connection.foreignKeyExists("mail_attachment_transfer", "fk_mail_attachment_transfer_attachment"))
+            assertTrue(connection.foreignKeyExists("mail_attachment_transfer", "fk_mail_attachment_transfer_inbound"))
+            // folder 列级 utf8mb4_bin：同一唯一键下大小写区分（I-1）
+            assertEquals("utf8mb4_bin", connection.queryString(
+                "SELECT COLLATION_NAME FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'mail_attachment_transfer' " +
+                    "AND column_name = 'folder'"
+            ))
+
+            // 合法 MATERIAL 行：默认 METADATA_ONLY、attempt/bytes 归零、无租约。
+            connection.execute(
+                """
+                INSERT INTO mail_attachment_transfer
+                    (attachment_id, purpose, account_code, folder, uid_validity, imap_uid,
+                     part_path, message_id, file_name, content_type)
+                VALUES (301, 'MATERIAL', 'sender', 'INBOX', 5, 42, '2', 'msg-with-part', 'cv.pdf', 'application/pdf')
+                """
+            )
+            assertEquals("METADATA_ONLY", connection.queryString(
+                "SELECT state FROM mail_attachment_transfer WHERE id = 1"
+            ))
+            assertEquals(0L, connection.queryLong(
+                "SELECT attempt FROM mail_attachment_transfer WHERE id = 1"
+            ))
+            assertEquals(0L, connection.queryLong(
+                "SELECT bytes_downloaded FROM mail_attachment_transfer WHERE id = 1"
+            ))
+
+            // 同源重复（account/folder/uid_validity/imap_uid/part_path）被唯一键拒绝；
+            // 仅 folder 大小写不同则允许成两行（区分大小写）。
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    """
+                    INSERT INTO mail_attachment_transfer
+                        (attachment_id, purpose, account_code, folder, uid_validity, imap_uid,
+                         part_path, message_id, file_name, content_type)
+                    VALUES (301, 'MATERIAL', 'sender', 'INBOX', 5, 42, '2', 'msg-with-part', 'cv.pdf', 'application/pdf')
+                    """
+                )
+            }
+            connection.execute(
+                """
+                INSERT INTO mail_attachment_transfer
+                    (purpose, account_code, folder, uid_validity, imap_uid, part_path, file_name)
+                VALUES ('DMARC', 'sender', 'inbox', 5, 43, '2', 'report.xml')
+                """
+            )
+            assertEquals(2L, connection.queryLong("SELECT COUNT(*) FROM mail_attachment_transfer"))
+
+            // 一个附件至多一行（uk_mail_attachment_transfer_attachment）。
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    """
+                    INSERT INTO mail_attachment_transfer
+                        (attachment_id, purpose, account_code, folder, uid_validity, imap_uid,
+                         part_path, file_name)
+                    VALUES (301, 'MATERIAL', 'sender', 'INBOX', 6, 44, '2', 'cv.pdf')
+                    """
+                )
+            }
+
+            // CHECK：MATERIAL 必须 attachment_id，DMARC 必须为空；未知 purpose/state 拒绝。
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    """
+                    INSERT INTO mail_attachment_transfer
+                        (purpose, account_code, folder, uid_validity, imap_uid, part_path, file_name)
+                    VALUES ('MATERIAL', 'sender', 'INBOX', 5, 45, '2', 'cv.pdf')
+                    """
+                )
+            }
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    """
+                    INSERT INTO mail_attachment_transfer
+                        (attachment_id, purpose, account_code, folder, uid_validity, imap_uid,
+                         part_path, file_name)
+                    VALUES (301, 'DMARC', 'sender', 'INBOX', 5, 46, '2', 'report.xml')
+                    """
+                )
+            }
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    """
+                    INSERT INTO mail_attachment_transfer
+                        (purpose, account_code, folder, uid_validity, imap_uid, part_path, file_name)
+                    VALUES ('OTHER', 'sender', 'INBOX', 5, 47, '2', 'x.pdf')
+                    """
+                )
+            }
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    """
+                    INSERT INTO mail_attachment_transfer
+                        (purpose, account_code, folder, uid_validity, imap_uid, part_path,
+                         file_name, state)
+                    VALUES ('DMARC', 'sender', 'INBOX', 5, 48, '2', 'report.xml', 'BOGUS')
+                    """
+                )
+            }
         }
     }
 
