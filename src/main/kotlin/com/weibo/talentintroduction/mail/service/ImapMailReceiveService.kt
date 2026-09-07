@@ -174,7 +174,7 @@ class ImapMailReceiveService(
         val extracted = walkContent(message, context, deadlineNanos)
         return ReceivedMail(
             imapUid = imapUid,
-            from = extractFrom(message),
+            from = extractFromHeader(headers.from) ?: extractFromEnvelope(message),
             subject = headers.subject,
             body = extracted.bodyText,
             messageId = headers.messageId,
@@ -193,6 +193,7 @@ class ImapMailReceiveService(
     /** 仅读头字段（trigger 时 JavaMail 只拉 HEADER.FIELDS，不是全量 MESSAGE 预取）。 */
     private data class EnvelopeHeaders(
         val subject: String?,
+        val from: String?,
         val messageId: String?,
         val inReplyTo: String?
     )
@@ -200,24 +201,23 @@ class ImapMailReceiveService(
     private fun fetchEnvelopeHeaders(message: Message): EnvelopeHeaders =
         EnvelopeHeaders(
             subject = message.getHeader("Subject")?.firstOrNull(),
+            from = message.getHeader("From")?.firstOrNull(),
             messageId = message.getHeader("Message-ID")?.firstOrNull(),
             inReplyTo = message.getHeader("In-Reply-To")?.firstOrNull()
         )
 
-    private fun extractFrom(message: Message): String {
-        // 从 Message/From 头解析发件人（IMAP 下 getHeader 只触发 HEADER.FIELDS 拉取，
-        // 不依赖 ENVELOPE 的地址表——ENVELOPE 地址组解析在部分服务端形态下不稳定）。
-        val header = message.getHeader("From")?.firstOrNull()
-        if (!header.isNullOrBlank()) {
-            return runCatching { InternetAddress.parse(header, false).firstOrNull()?.address }
-                .getOrNull()?.takeIf { !it.isNullOrBlank() } ?: header
-        }
-        return message.from
+    private fun extractFromHeader(header: String?): String? {
+        if (header.isNullOrBlank()) return null
+        return runCatching { InternetAddress.parse(header, false).firstOrNull()?.address }
+            .getOrNull()?.takeIf { !it.isNullOrBlank() } ?: header
+    }
+
+    private fun extractFromEnvelope(message: Message): String =
+        message.from
             ?.filterIsInstance<InternetAddress>()
             ?.firstOrNull()
             ?.address
             ?: error("Received mail has no sender address")
-    }
 
     // ------------------------------------------------------------------
     // MIME 白名单遍历（I-2 / I-3）
@@ -412,6 +412,11 @@ class ImapMailReceiveService(
             } else {
                 stream.use { readBoundedFromStream(it, maxBytes, deadlineNanos) }
             }
+        } catch (e: MetadataTimeoutException) {
+            // 元数据预算到点：明确可重试失败，不能吞成空正文
+            throw e
+        } catch (e: MetadataStructureLimitException) {
+            throw e
         } catch (_: Exception) {
             BoundedText("", false)
         }
@@ -429,6 +434,7 @@ class ImapMailReceiveService(
         while (true) {
             checkDeadline(deadlineNanos)
             val n = stream.read(buffer)
+            checkDeadline(deadlineNanos)
             if (n < 0) break
             if (maxBytes - total < n) {
                 val allowed = (maxBytes - total).coerceAtLeast(0)

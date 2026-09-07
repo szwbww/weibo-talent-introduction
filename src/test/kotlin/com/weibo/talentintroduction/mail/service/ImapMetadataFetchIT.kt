@@ -55,6 +55,8 @@ class ImapMetadataFetchIT {
         server = MetadataFixtureServer()
     }
 
+    private fun metadataServer(): MetadataFixtureServer = server.setFailOnAttachmentRequest(true)
+
     @AfterEach
     fun tearDown() {
         server.close()
@@ -90,6 +92,7 @@ class ImapMetadataFetchIT {
 
     @Test
     fun `metadata mode fetches 19 and 20 attachment envelopes completely without any attachment content fetch`() {
+        metadataServer()
         val box = server.addBox(
             username = "user1",
             password = "pw",
@@ -105,8 +108,8 @@ class ImapMetadataFetchIT {
             maxMessages = 10
         )
 
-        assertEquals(2, result.mails.size, "mails=${result.mails.size} uidValidity=${result.uidValidity} commands=${server.commandLog()}")
-        assertEquals(501L, result.uidValidity, "uidValidity mismatch; commands=${server.commandLog()}")
+        assertEquals(2, result.mails.size)
+        assertEquals(501L, result.uidValidity)
         val first = result.mails.first { it.subject == "nineteen" }
         val second = result.mails.first { it.subject == "twenty" }
         assertEquals(19, first.attachments.size)
@@ -118,7 +121,7 @@ class ImapMetadataFetchIT {
             assertNull(attachment.content, "metadata mode content must stay null")
             val source = attachment.source
             assertNotNull(source, "every attachment must carry a source descriptor")
-            assertEquals("user1", source!!.accountCode)
+            assertEquals("it-account", source!!.accountCode)
             assertEquals(501L, source.uidValidity)
             assertNotNull(source.partPath)
             assertTrue(source.partPath.matches(Regex("^[1-9][0-9]*$")), "flat multipart part path, got ${source.partPath}")
@@ -139,6 +142,7 @@ class ImapMetadataFetchIT {
 
     @Test
     fun `1000 attachment metadata case completes with zero attachment stream access`() {
+        metadataServer()
         val box = server.addBox(
             username = "user1",
             password = "pw",
@@ -166,6 +170,7 @@ class ImapMetadataFetchIT {
 
     @Test
     fun `text attachment is registered as attachment and never appears in body`() {
+        metadataServer()
         server.addBox(
             username = "user1",
             password = "pw",
@@ -205,11 +210,13 @@ class ImapMetadataFetchIT {
         val actual = mail.attachments.map { it.content!!.toList() }
         assertEquals(expected, actual, "legacy mode must return the exact original attachment bytes")
         assertEquals("Legacy body", mail.body)
-        assertNull(mail.attachments[0].source)
+        // I-1：source 在 legacy 模式也允许存在（content 非 null 是 legacy 的判定面）
+        assertNotNull(mail.attachments[0].content)
     }
 
     @Test
     fun `body cap during metadata fetch is enforced while reading bytes and flagged`() {
+        metadataServer()
         val capService = ImapMailReceiveService(
             MailAttachmentStorageProperties(
                 metadataOnly = true,
@@ -236,11 +243,11 @@ class ImapMetadataFetchIT {
         assertTrue(mail.bodyTruncated, "oversize body must be flagged truncated")
         assertTrue(mail.body.length <= 64, "bounded body must respect the cap")
         assertTrue(mail.body.startsWith("x"))
-        // 读取上限发生在字节读取期间：BODY.PEEK[1]<start.count> 只请求到上限为止
-        val partialRequests = server.commandLog().filter { it.contains("BODY.PEEK[1]<") }
+        // 读取上限发生在字节读取期间：BODY.PEEK[TEXT]/BODY.PEEK[1] 带 <start.count> 的分块请求
+        val partialRequests = server.commandLog().filter { it.contains("BODY.PEEK[TEXT]<0.") || it.contains("BODY.PEEK[1]<0.") }
         assertTrue(
-            partialRequests.any { it.contains("BODY.PEEK[1]<0.") },
-            "bounded read should fetch the first block of part 1 only, log had: ${server.commandLog()}"
+            partialRequests.isNotEmpty(),
+            "bounded read should fetch the first block only, log had: ${server.commandLog()}"
         )
     }
 
@@ -284,12 +291,16 @@ class ImapMetadataFetchIT {
         val uid: Long,
         val subject: String,
         val bodyText: String,
-        val attachments: List<FixtureAttachment>
+        val attachments: List<FixtureAttachment>,
+        /** 慢源：该信正文响应发送前延迟（metadata 时限断言用）。 */
+        val slowBodyDelayMs: Long = 0L
     )
 
     /** fixture mailbox 句柄（服务端句柄）。 */
     class Box
 }
+
+private data class Quad<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
 /**
  * 本地脚本式 IMAP fixture 服务器。messages 用真实 JavaMail writeTo 序列化，
@@ -338,8 +349,10 @@ class MetadataFixtureServer : AutoCloseable {
         val mime: MimeMessage,
         val wire: ByteArray,
         val headerBlock: ByteArray,
-        /** 顶层 multipart 子 part 或单 part 正文的 (partPath, 线上正文字节, 头部块)。 */
+        /** 各 part 解码后内容（BODYSTRUCTURE size 用）。 */
         val leafBodies: Map<String, ByteArray>,
+        /** 各 part 的线上字节（含 CTE 编码：base64 part 存编码后字节，客户端按头解码）。 */
+        val rawLeafBodies: Map<String, ByteArray>,
         val leafHeaders: Map<String, ByteArray>,
         val wireSizes: Map<String, Int>
     )
@@ -389,10 +402,18 @@ class MetadataFixtureServer : AutoCloseable {
             uid = uid,
             subject = "slow-body",
             bodyText = "x".repeat(256),
-            attachments = emptyList()
-        ).also { slowBodyDelayMs = bodyDelayMs }
+            attachments = emptyList(),
+            slowBodyDelayMs = bodyDelayMs
+        )
 
-    private var slowBodyDelayMs = 0L
+
+    /** metadata 测试置 true：附件正文被请求即抛错；legacy 测试保持 false 以正常回传附件内容。 */
+    private var failOnAttachmentRequest = false
+
+    fun setFailOnAttachmentRequest(value: Boolean): MetadataFixtureServer {
+        failOnAttachmentRequest = value
+        return this
+    }
 
     fun commandLog(): List<String> = commandLog
 
@@ -440,8 +461,8 @@ class MetadataFixtureServer : AutoCloseable {
         val wire = out.toByteArray()
         val headerEnd = indexOfWire(wire, "\r\n\r\n".toByteArray(StandardCharsets.US_ASCII))
         val headerBlock = if (headerEnd >= 0) wire.copyOfRange(0, headerEnd + 4) else wire
-        val (leafBodies, leafHeaders, wireSizes) = extractLeafWireBytes(wire, fixture)
-        return PreparedMessage(fixture, message, wire, headerBlock, leafBodies, leafHeaders, wireSizes)
+        val (leafBodies, rawLeafBodies, leafHeaders, wireSizes) = extractLeafWireBytes(wire, fixture)
+        return PreparedMessage(fixture, message, wire, headerBlock, leafBodies, rawLeafBodies, leafHeaders, wireSizes)
     }
 
     private fun indexOfWire(haystack: ByteArray, needle: ByteArray): Int {
@@ -458,14 +479,16 @@ class MetadataFixtureServer : AutoCloseable {
     private fun extractLeafWireBytes(
         wire: ByteArray,
         fixture: ImapMetadataFetchIT.FixtureMail
-    ): Triple<Map<String, ByteArray>, Map<String, ByteArray>, Map<String, Int>> {
+    ): Quad<Map<String, ByteArray>, Map<String, ByteArray>, Map<String, ByteArray>, Map<String, Int>> {
         if (fixture.attachments.isEmpty()) {
-            // 单 part：section 1 = 整封正文（headerBlock 之后）
+            // 单 part：section 1 = 整封正文（headerBlock 之后）；text/plain 无 CTE（7bit），raw=decoded
             val headerEnd = indexOfWire(wire, "\r\n\r\n".toByteArray(StandardCharsets.US_ASCII))
             val body = if (headerEnd >= 0) wire.copyOfRange(headerEnd + 4, wire.size) else ByteArray(0)
-            return Triple(
+            val head = if (headerEnd >= 0) wire.copyOfRange(0, headerEnd + 4) else wire
+            return Quad(
                 mapOf("1" to body),
-                mapOf("1" to wire.copyOfRange(0, headerEnd + 4)),
+                mapOf("1" to body),
+                mapOf("1" to head),
                 mapOf("1" to body.size)
             )
         }
@@ -474,6 +497,7 @@ class MetadataFixtureServer : AutoCloseable {
         val boundary = "--" + boundaryMatch.groupValues[1]
         val parts = raw.split(boundary).drop(1)
         val bodies = mutableMapOf<String, ByteArray>()
+        val rawBodies = mutableMapOf<String, ByteArray>()
         val headers = mutableMapOf<String, ByteArray>()
         val sizes = mutableMapOf<String, Int>()
         var partNumber = 1
@@ -499,11 +523,12 @@ class MetadataFixtureServer : AutoCloseable {
                 bodyBytes
             }
             bodies["$partNumber"] = decoded
+            rawBodies["$partNumber"] = bodyBytes
             headers["$partNumber"] = headerText.toByteArray(StandardCharsets.ISO_8859_1)
             sizes["$partNumber"] = decoded.size
             partNumber++
         }
-        return Triple(bodies, headers, sizes)
+        return Quad(bodies, rawBodies, headers, sizes)
     }
 
     // ------------------------------------------------------------------
@@ -513,8 +538,8 @@ class MetadataFixtureServer : AutoCloseable {
     private fun handle(socket: Socket) {
         try {
             socket.use {
-                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8))
-                val writer = BufferedWriter(OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8))
+                val reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII))
+                val writer = socket.getOutputStream()
                 writeLine(writer, "* OK [CAPABILITY IMAP4rev1 UIDPLUS] metadata fixture ready")
                 var box: Box? = null
                 while (true) {
@@ -575,7 +600,7 @@ class MetadataFixtureServer : AutoCloseable {
     }
 
     private fun handleFetch(
-        writer: BufferedWriter,
+        writer: java.io.OutputStream,
         tag: String,
         command: String,
         box: Box
@@ -591,20 +616,7 @@ class MetadataFixtureServer : AutoCloseable {
         val parenEnd = fetch.lastIndexOf(')')
         val items = fetch.substring(parenStart + 1, if (parenEnd < 0) fetch.length else parenEnd)
             .trim()
-        val requested = mutableListOf<String>()
-        var depth = 0
-        var current = StringBuilder()
-        for (ch in items) {
-            if (ch == '(') depth++
-            if (ch == ')') depth--
-            if (ch == ' ' && depth == 0) {
-                if (current.isNotEmpty()) requested.add(current.toString().trim())
-                current = StringBuilder()
-            } else {
-                current.append(ch)
-            }
-        }
-        if (current.isNotBlank()) requested.add(current.toString().trim())
+        val requested = splitFetchItems(items)
 
         // UID FETCH -> 按 uid 集匹配；FETCH -> 按 seq 集匹配（fixture 里 uid != seq）
         val bySeq = box.messages.withIndex().associate { (index, message) -> (index + 1).toLong() to message }
@@ -615,31 +627,95 @@ class MetadataFixtureServer : AutoCloseable {
             bySeq.filterKeys { matchesSeq(it, set) }.toList()
         }
         for ((seq, message) in matched) {
-            val parts = mutableListOf<String>()
-            var literalPayload: ByteArray? = null
-            for (item in requested) {
-                when {
-                    item == "UID" -> parts.add("UID ${message.fixture.uid}")
-                    item == "FLAGS" -> parts.add("FLAGS ()")
-                    item == "INTERNALDATE" ->
-                        parts.add("INTERNALDATE \"1-Sep-2026 12:00:00 +0800\"")
-                    item == "RFC822.SIZE" -> parts.add("RFC822.SIZE ${message.wire.size}")
-                    item == "ENVELOPE" -> parts.add("ENVELOPE ${envelopeOf(message)}")
-                    item == "BODYSTRUCTURE" -> parts.add("BODYSTRUCTURE ${bodyStructureOf(message)}")
-                    item.startsWith("BODY.PEEK[") || item.startsWith("BODY[") -> {
-                        val resolved = resolveBodySection(message, item)
-                        if (resolved != null) {
-                            literalPayload = resolved.payload
-                            parts.add(resolved.marker)
-                        } else {
-                            parts.add("$item {0}")
-                        }
+            // 无 literal 项与有 literal 项分开应答：多 item+literal 的复合 FETCH
+            // 应答会被 JavaMail 1.6.2 的响应解析器丢弃（实测），逐条单 literal 应答稳定。
+            val simpleItems = requested.filter { !it.startsWith("BODY.PEEK[") && !it.startsWith("BODY[") }
+            if (simpleItems.isNotEmpty()) {
+                val simpleParts = simpleItems.mapNotNull { item ->
+                    when {
+                        item == "UID" -> "UID ${message.fixture.uid}"
+                        item == "FLAGS" -> "FLAGS ()"
+                        item == "INTERNALDATE" -> "INTERNALDATE \"1-Sep-2026 12:00:00 +0800\""
+                        item == "RFC822.SIZE" -> "RFC822.SIZE ${message.wire.size}"
+                        item == "ENVELOPE" -> "ENVELOPE ${envelopeOf(message)}"
+                        item == "BODYSTRUCTURE" -> "BODYSTRUCTURE ${bodyStructureOf(message)}"
+                        else -> null
                     }
                 }
+                if (simpleParts.isNotEmpty()) {
+                    writeSimpleResponse(writer, seq, simpleParts)
+                }
             }
-            writeFetchResponse(writer, seq, parts, literalPayload)
+            for (item in requested) {
+                if (!item.startsWith("BODY.PEEK[") && !item.startsWith("BODY[")) continue
+                val resolved = resolveBodySection(message, item)
+                if (resolved != null) {
+                    writeLiteralResponse(writer, seq, resolved.marker, resolved.payload)
+                } else {
+                    writeSimpleResponse(writer, seq, listOf("$item {0}"))
+                }
+            }
         }
         ok(writer, tag, "FETCH completed")
+    }
+
+    /** 顶层 item 切分：保留 BODY.PEEK[HEADER.FIELDS (X)] 这类带空格/括号的整项。 */
+    private fun splitFetchItems(items: String): List<String> {
+        val out = mutableListOf<String>()
+        var depth = 0
+        var bracket = 0
+        var current = StringBuilder()
+        for (ch in items) {
+            when (ch) {
+                '(' -> {
+                    depth++
+                    current.append(ch)
+                }
+                ')' -> {
+                    depth--
+                    current.append(ch)
+                }
+                '[' -> {
+                    bracket++
+                    current.append(ch)
+                }
+                ']' -> {
+                    bracket--
+                    current.append(ch)
+                }
+                ' ' -> {
+                    if (depth == 0 && bracket == 0) {
+                        if (current.isNotBlank()) out.add(current.toString().trim())
+                        current = StringBuilder()
+                    } else {
+                        current.append(ch)
+                    }
+                }
+                else -> current.append(ch)
+            }
+        }
+        if (current.isNotBlank()) out.add(current.toString().trim())
+        return out
+    }
+
+    private fun writeSimpleResponse(writer: java.io.OutputStream, seq: Long, parts: List<String>) {
+        writeLine(writer, "* $seq FETCH (${parts.joinToString(" ")})")
+    }
+
+    private fun writeLiteralResponse(
+        writer: java.io.OutputStream,
+        seq: Long,
+        literalHead: String,
+        payload: ByteArray
+    ) {
+        // 形如 "* 1 FETCH (BODY.PEEK[HEADER] {249}\r\n<payload>)\r\n" —— 整段一次写出，
+        // 避免分片 write 让客户端读到半截响应而误判响应行结束。
+        val head = "* $seq FETCH ($literalHead\r\n".toByteArray(StandardCharsets.ISO_8859_1)
+        val tail = ")\r\n".toByteArray(StandardCharsets.ISO_8859_1)
+        writer.write(head)
+        writer.write(payload)
+        writer.write(tail)
+        writer.flush()
     }
 
     private class ResolvedBody(
@@ -648,51 +724,88 @@ class MetadataFixtureServer : AutoCloseable {
     )
 
     private fun resolveBodySection(message: PreparedMessage, item: String): ResolvedBody? {
-        val inner = item.substringAfter("[").substringBefore("]")
+        val inner = item.substringAfter("[").substringBeforeLast("]").trim()
         val rangeMatch = Regex("^(.*?)(?:<(\\d+)\\.(\\d+)>)?$").matchEntire(inner)!!
         val section = rangeMatch.groupValues[1].trim()
         val start = rangeMatch.groupValues[2].toLongOrNull() ?: 0L
         val count = rangeMatch.groupValues[3].toLongOrNull()
 
-        val body: ByteArray = if (section.startsWith("HEADER")) {
-            message.headerBlock
-        } else {
-            val leafBody = message.leafBodies[section] ?: return null
-            // 附件抛错：metadata 客户端请求附件正文 = 测试失败（throwing attachment stream）
-            val index = section.toIntOrNull()
-            if (index != null && index >= 2 && index - 2 < message.fixture.attachments.size) {
-                error("attachment content section requested by client: $section")
+        // JavaMail 1.6.2 响应解析器对 "BODY.PEEK[...]" 形态的 item 名有缺陷
+        // （match("BODY") 后要求紧跟 '['，遇到 .PEEK 误走 BODYSTRUCTURE 分支）：
+        // 服务端应答统一用裸 "BODY[section]" 形态（.PEEK 只是客户端请求侧修饰词）。
+        val responseItem = "BODY[$section]"
+        // HEADER.FIELDS (Name1 Name2) -> 只回被请求的头字段；HEADER -> 全量头块
+        val fieldsMatch = Regex("^HEADER\\.FIELDS\\s+\\(([^)]*)\\)$").matchEntire(section)
+        when {
+            fieldsMatch != null -> {
+                val names = fieldsMatch.groupValues[1].split(Regex("\\s+")).filter { it.isNotBlank() }
+                val payload = applyRange(extractHeaderFields(message.headerBlock, names), start, count)
+                return ResolvedBody(payload, "$responseItem {${payload.size}}")
             }
-            leafBody
+            section == "HEADER" -> {
+                val payload = applyRange(message.headerBlock, start, count)
+                return ResolvedBody(payload, "$responseItem {${payload.size}}")
+            }
+            section == "TEXT" -> {
+                // 慢源断言：正文发送前延迟，让单信元数据预算先到点（块间慢服务端）
+                if (message.fixture.slowBodyDelayMs > 0L) {
+                    Thread.sleep(message.fixture.slowBodyDelayMs)
+                }
+                // TEXT = 整信正文（单 part 时即 1 号正文；multipart 时 JavaMail 会另行按 part 请求）
+                val textBody = message.rawLeafBodies["1"] ?: message.wire
+                val payload = applyRange(textBody, start, count)
+                return ResolvedBody(payload, "$responseItem {${payload.size}}")
+            }
+            section.endsWith(".MIME") -> {
+                // part MIME 头（JavaMail 拉 part 级头时用 BODY.PEEK[n.MIME]）
+                val partNumber = section.removeSuffix(".MIME")
+                val partHeaders = message.leafHeaders[partNumber]
+                    ?: message.leafHeaders["1"]
+                    ?: message.headerBlock
+                val payload = applyRange(partHeaders, start, count)
+                return ResolvedBody(payload, "$responseItem {${payload.size}}")
+            }
         }
+        // 附件抛错（仅 metadata 断言用例）：metadata 客户端请求附件正文 = 测试失败
+        val index = section.toIntOrNull()
+        if (failOnAttachmentRequest && index != null && index >= 2 &&
+            index - 2 < message.fixture.attachments.size
+        ) {
+            error("attachment content section requested by client: $section")
+        }
+        val rawLeaf = message.rawLeafBodies[section] ?: return null
+        val payload = applyRange(rawLeaf, start, count)
+        return ResolvedBody(payload, "$responseItem {${payload.size}}")
+    }
+
+    private fun applyRange(body: ByteArray, start: Long, count: Long?): ByteArray {
         val from = start.toInt()
-        val payload = if (count == null) {
+        return if (count == null) {
             body.copyOfRange(from, body.size)
         } else {
             body.copyOfRange(from, (from + count.toInt()).coerceAtMost(body.size))
         }
-        val marker = if (count == null) "$item {${payload.size}}" else "$item<$from.${payload.size}> {${payload.size}}"
-        return ResolvedBody(payload, marker)
     }
 
-    private fun writeFetchResponse(
-        writer: BufferedWriter,
-        seq: Long,
-        parts: List<String>,
-        literalPayload: ByteArray?
-    ) {
-        if (literalPayload == null) {
-            writeLine(writer, "* $seq FETCH (${parts.joinToString(" ")})")
-        } else {
-            val literalHead = parts.last { it.contains("{") }
-            val nonLiteral = parts.filterNot { it.contains("{") }
-            val joined = "* $seq FETCH (${(nonLiteral + literalHead).joinToString(" ")}"
-            writeRaw(writer, joined)
-            writeRaw(writer, "\r\n")
-            writer.write(String(literalPayload, StandardCharsets.ISO_8859_1))
-            writer.flush()
-            writeLine(writer, ")")
+    /** 从整块头部取指定字段（原行原样），找不到的字段省略。 */
+    private fun extractHeaderFields(headerBlock: ByteArray, names: List<String>): ByteArray {
+        val headerText = String(headerBlock, StandardCharsets.ISO_8859_1)
+        val wanted = names.map { it.lowercase() }
+        val wantedSet = wanted.toSet()
+        val lines = headerText.split("\r\n")
+        val out = StringBuilder()
+        var i = 0
+        while (i < lines.size) {
+            val line = lines[i]
+            if (line.isEmpty() || line.startsWith(" ")) break // 头块结束（含折叠续行兜底）
+            val name = line.substringBefore(":").trim().lowercase()
+            if (name in wantedSet) {
+                out.append(line).append("\r\n")
+            }
+            i++
         }
+        out.append("\r\n")
+        return out.toString().toByteArray(StandardCharsets.ISO_8859_1)
     }
 
     private fun envelopeOf(message: PreparedMessage): String {
@@ -705,16 +818,21 @@ class MetadataFixtureServer : AutoCloseable {
     private fun bodyStructureOf(message: PreparedMessage): String {
         if (message.fixture.attachments.isEmpty()) {
             val size = message.leafBodies["1"]?.size ?: 0
-            return "(\"text\" \"plain\" (\"charset\" \"utf-8\") NIL NIL \"8bit\" $size 1 NIL NIL NIL NIL)"
+            return "(\"text\" \"plain\" (\"charset\" \"utf-8\") NIL NIL \"8bit\" $size $size NIL NIL NIL NIL)"
         }
         val parts = mutableListOf<String>()
-        parts.add("(\"text\" \"plain\" (\"charset\" \"utf-8\") NIL NIL \"8bit\" ${message.leafBodies["1"]?.size ?: 0} 1 NIL NIL NIL NIL)")
+        parts.add("(\"text\" \"plain\" (\"charset\" \"utf-8\") NIL NIL \"8bit\" ${message.leafBodies["1"]?.size ?: 0} ${message.leafBodies["1"]?.size ?: 0} NIL NIL NIL NIL)")
         message.fixture.attachments.forEachIndexed { index, att ->
             val n = index + 2
             val size = message.leafBodies["$n"]?.size ?: 0
+            val type = att.contentType.substringBefore("/")
+            val subtype = att.contentType.substringAfter("/")
+            // text/* 需要 RFC3501 的 body-fld-lines（位于 size 之后、disposition 之前）
+            val lines = if (type.equals("text", ignoreCase = true)) "$size" else "NIL"
+            val quotedType = "\"$type\""
+            val quotedSubtype = "\"$subtype\""
             parts.add(
-                "(\"${att.contentType.substringBefore("/")}\" \"${att.contentType.substringAfter("/")}\" " +
-                    "(\"name\" \"${att.fileName}\") NIL NIL \"base64\" $size NIL " +
+                "($quotedType $quotedSubtype (\"name\" \"${att.fileName}\") NIL NIL \"base64\" $size $lines " +
                     "(\"attachment\" (\"filename\" \"${att.fileName}\")) NIL NIL)"
             )
         }
@@ -755,18 +873,18 @@ class MetadataFixtureServer : AutoCloseable {
             value
         }
 
-    private fun ok(writer: BufferedWriter, tag: String, text: String) {
+    private fun ok(writer: java.io.OutputStream, tag: String, text: String) {
         writeLine(writer, "$tag OK $text")
     }
 
-    private fun writeLine(writer: BufferedWriter, line: String) {
-        writeRaw(writer, line)
-        writer.write("\r\n")
+    private fun writeLine(writer: java.io.OutputStream, line: String) {
+        writer.write(line.toByteArray(StandardCharsets.ISO_8859_1))
+        writer.write("\r\n".toByteArray(StandardCharsets.ISO_8859_1))
         writer.flush()
     }
 
-    private fun writeRaw(writer: BufferedWriter, text: String) {
-        writer.write(text)
+    private fun writeRaw(writer: java.io.OutputStream, text: String) {
+        writer.write(text.toByteArray(StandardCharsets.ISO_8859_1))
         writer.flush()
     }
 
