@@ -58,6 +58,9 @@ class AutoMailReplyServiceTest {
     private val autoReplyConfidenceLogRepository = Mockito.mock(AutoReplyConfidenceLogRepository::class.java)
     private val manualHandoffRepository = Mockito.mock(ManualHandoffRepository::class.java)
     private val mailAttachmentService = Mockito.mock(MailAttachmentService::class.java)
+    private val attachmentTransferService = Mockito.mock(AttachmentTransferService::class.java)
+    private val transactionManager = Mockito.mock(org.springframework.transaction.PlatformTransactionManager::class.java)
+    private val transactionTemplate = org.springframework.transaction.support.TransactionTemplate(transactionManager)
     private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val groundedAutoReplyDecisionService = Mockito.mock(GroundedAutoReplyDecisionService::class.java)
     private val statusHistoryRepository = Mockito.mock(ExpertContactStatusHistoryRepository::class.java)
@@ -141,7 +144,9 @@ class AutoMailReplyServiceTest {
         autoReplySettingService,
         inboundMailTagService,
         mailVariableService,
-        autoReplyConfidenceLogRepository
+        autoReplyConfidenceLogRepository,
+        attachmentTransferService,
+        transactionTemplate
     )
 
     @org.junit.jupiter.api.BeforeEach
@@ -156,8 +161,11 @@ class AutoMailReplyServiceTest {
                 val record = invocation.getArgument<InboundMailProcessing>(0)
                 record.copy(id = record.id ?: 999L)
             }
-        Mockito.`when`(mailAttachmentService.saveUnmatchedAttachments(Mockito.anyLong(), Mockito.anyList()))
-            .thenReturn(emptyList())
+        Mockito.`when`(mailAttachmentService.saveUnmatchedAttachments(
+            Mockito.anyLong(),
+            Mockito.anyList(),
+            Mockito.nullable(Long::class.java)
+        )).thenReturn(emptyList())
         Mockito.`when`(cursorService.get(Mockito.anyString())).thenReturn(CursorState(null, 0L))
         Mockito.`when`(
             cursorService.resolveStart(
@@ -1634,26 +1642,246 @@ class AutoMailReplyServiceTest {
         val mail = reply(imapUid = uid)
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchByUids(account, listOf(uid))).thenReturn(listOf(mail))
-        Mockito.`when`(inboundMailProcessingRepository.findBySenderAccountCodeAndImapUid("sender", uid))
-            .thenReturn(
-                InboundMailProcessing(
-                    id = 1L,
-                    senderAccountCode = "sender",
-                    imapUid = uid,
-                    messageId = "reply-1",
-                    fromEmail = "expert@example.com",
-                    subject = "Re: Talent Program",
-                    receivedAt = LocalDateTime.now(),
-                    processStatus = "PROCESSED",
-                    processReason = "PROCESSED",
-                    expertContactId = 11L
-                )
+        Mockito.`when`(
+            inboundMailProcessingRepository.findBySenderAccountCodeAndUidValidityAndImapUid(
+                "sender",
+                mail.uidValidity,
+                uid
             )
+        ).thenReturn(
+            InboundMailProcessing(
+                id = 1L,
+                senderAccountCode = "sender",
+                uidValidity = mail.uidValidity,
+                imapUid = uid,
+                messageId = "reply-1",
+                fromEmail = "expert@example.com",
+                subject = "Re: Talent Program",
+                receivedAt = LocalDateTime.now(),
+                processStatus = "PROCESSED",
+                processReason = "PROCESSED",
+                expertContactId = 11L
+            )
+        )
 
         val results = service.processByUids("sender", listOf(uid))
 
         assertEquals(1, results.size)
         assertEquals(SinglePipelineOutcome.DUPLICATE_IMAP_UID, results[0].outcome)
+        Mockito.verify(receiveService).markSeen(account, uid)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .save(Mockito.any(InboundMailProcessing::class.java))
+    }
+
+    @Test
+    fun `same uid under a new uid validity is a new message and both generations register`() {
+        val account = account("sender")
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        val generationOne = reply(imapUid = 101L, uidValidity = 1L)
+        val generationTwo = reply(imapUid = 101L, uidValidity = 2L)
+
+        val first = service.processSingle(account, generationOne, skipImapAck = true)
+        val second = service.processSingle(account, generationTwo, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.UNMATCHED_CONTACT, first.outcome)
+        assertEquals(SinglePipelineOutcome.UNMATCHED_CONTACT, second.outcome)
+        // 判重查询按真实代际身份执行（I-1：绝不按 account+uid 单独判重）
+        Mockito.verify(inboundMailProcessingRepository)
+            .findBySenderAccountCodeAndUidValidityAndImapUid("sender", 1L, 101L)
+        Mockito.verify(inboundMailProcessingRepository)
+            .findBySenderAccountCodeAndUidValidityAndImapUid("sender", 2L, 101L)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.times(2)).save(captor.capture())
+        // 同一 (account, uid) 的两代际各登记一次，互不判重（I-1）
+        assertEquals(listOf(1L, 2L), captor.allValues.map { it.uidValidity })
+        assertEquals(listOf(101L, 101L), captor.allValues.map { it.imapUid })
+    }
+
+    @Test
+    fun `legacy zero validity row with corroborated identity returns duplicate without reprocessing`() {
+        val account = account("sender")
+        val uid = 101L
+        val mail = reply(imapUid = uid)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchByUids(account, listOf(uid))).thenReturn(listOf(mail))
+        // 历史 0 代际行：同 account/uid、Message-ID、from、秒级 receivedAt 全吻合
+        Mockito.`when`(
+            inboundMailProcessingRepository.findBySenderAccountCodeAndImapUid("sender", uid)
+        ).thenReturn(
+            InboundMailProcessing(
+                id = 9L,
+                senderAccountCode = "sender",
+                uidValidity = 0L,
+                imapUid = uid,
+                messageId = "reply-1",
+                fromEmail = "expert@example.com",
+                subject = "Re: Talent Program",
+                receivedAt = mail.receivedAt,
+                processStatus = "PROCESSED",
+                processReason = "QA_AUTO_REPLIED",
+                expertContactId = 11L
+            )
+        )
+
+        val results = service.processByUids("sender", listOf(uid))
+
+        assertEquals(1, results.size)
+        assertEquals(SinglePipelineOutcome.DUPLICATE_IMAP_UID, results[0].outcome)
+        Mockito.verify(receiveService).markSeen(account, uid)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .save(Mockito.any(InboundMailProcessing::class.java))
+        Mockito.verifyNoInteractions(groundedAutoReplyDecisionService, deliveryService)
+    }
+
+    @Test
+    fun `legacy zero validity row with unverifiable identity routes manual LEGACY_UID_UNVERIFIABLE`() {
+        val account = account("sender")
+        val uid = 101L
+        val mail = reply(imapUid = uid)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchByUids(account, listOf(uid))).thenReturn(listOf(mail))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(mail.from)).thenReturn(null)
+        // 历史 0 代际行存在但 Message-ID 不同 → 信息不足核验，绝不盲目吞信/自动回复
+        Mockito.`when`(
+            inboundMailProcessingRepository.findBySenderAccountCodeAndImapUid("sender", uid)
+        ).thenReturn(
+            InboundMailProcessing(
+                id = 9L,
+                senderAccountCode = "sender",
+                uidValidity = 0L,
+                imapUid = uid,
+                messageId = "some-old-message",
+                fromEmail = "expert@example.com",
+                subject = "Old subject",
+                receivedAt = mail.receivedAt.minusDays(1),
+                processStatus = "PROCESSED",
+                processReason = "QA_AUTO_REPLIED",
+                expertContactId = 11L
+            )
+        )
+
+        val results = service.processByUids("sender", listOf(uid))
+
+        assertEquals(1, results.size)
+        assertEquals(SinglePipelineOutcome.LEGACY_UID_UNVERIFIABLE, results[0].outcome)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("MANUAL_REVIEW", captor.value.processStatus)
+        assertEquals("LEGACY_UID_UNVERIFIABLE", captor.value.processReason)
+        assertEquals(1L, captor.value.uidValidity)
+        // 只入人工复核：不自动回复、不盲吞；旧行不被改写（无 copy 保存）
+        Mockito.verifyNoInteractions(groundedAutoReplyDecisionService, deliveryService)
+        Mockito.verify(receiveService).markSeen(account, uid)
+    }
+
+    @Test
+    fun `truncated inbound body routes manual BODY_TRUNCATED and never auto replies`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(body = "partial body only", bodyTruncated = true)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(received)))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(received.from)).thenReturn(contact)
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.manualReview)
+        assertEquals(0, result.replied)
+        assertEquals(1, result.recorded)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("MANUAL_REVIEW", captor.value.processStatus)
+        assertEquals("BODY_TRUNCATED", captor.value.processReason)
+        assertEquals(received.uidValidity, captor.value.uidValidity)
+        assertEquals(11L, captor.value.expertContactId)
+        Mockito.verifyNoInteractions(groundedAutoReplyDecisionService, deliveryService)
+        Mockito.verify(mailAttachmentService).saveUnmatchedAttachments(
+            Mockito.anyLong(),
+            Mockito.anyList(),
+            Mockito.eq(11L)
+        )
+        Mockito.verify(receiveService).markSeen(account, received.imapUid)
+    }
+
+    @Test
+    fun `receipt without positive uid validity fails closed without marking seen`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        val received = reply(uidValidity = 0L)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(received.from)).thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.processSingle(account, received, skipImapAck = false)
+        }
+
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .save(Mockito.any(InboundMailProcessing::class.java))
+        Mockito.verify(receiveService, Mockito.never()).markSeen(account, received.imapUid)
+    }
+
+    @Test
+    fun `attachment registration failure aborts before smtp and leaves uid unconfirmed`() {
+        val account = account("sender")
+        val contact = introSentContact()
+        stubAutoReplyPipeline(account, contact)
+        stubReadyDecision(subject = "Re: Program", body = "Auto reply body", ruleIds = listOf(1L))
+        Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
+        Mockito.doThrow(IllegalStateException("db down on 20th attachment"))
+            .`when`(mailAttachmentService).saveInboundAttachments(
+                Mockito.anyLong(),
+                Mockito.anyLong(),
+                Mockito.anyList()
+            )
+
+        assertThrows(IllegalStateException::class.java) {
+            service.processSingle(account, reply(), skipImapAck = false)
+        }
+
+        // I-2：登记失败发生在可能 SMTP 发送之前；processing 未确认、UID 未 markSeen
+        Mockito.verify(deliveryService, Mockito.never()).send(
+            anyValue(account),
+            anyValue(ComposedMail(to = "stub@example.com", subject = "Stub", body = "Stub"))
+        )
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .save(Mockito.any(InboundMailProcessing::class.java))
+        Mockito.verify(receiveService, Mockito.never()).markSeen(account, 101)
+    }
+
+    @Test
+    fun `no-introduction branch registers processing owner materials for known contact`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.NEW.name
+        )
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(reply())))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(false)
+        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+            .thenAnswer { invocation ->
+                val record = invocation.getArgument<InboundMailProcessing>(0)
+                record.copy(id = 503L)
+            }
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.manualReview)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals(1L, captor.value.uidValidity)
+        Mockito.verify(mailAttachmentService).saveUnmatchedAttachments(503L, emptyList(), 11L)
     }
 
     private fun stubExpertProfile(
@@ -1797,17 +2025,22 @@ class AutoMailReplyServiceTest {
         from: String = "expert@example.com",
         subject: String = "Re: Talent Program",
         attachments: List<ReceivedMailAttachment> = emptyList(),
-        imapUid: Long = 101
+        imapUid: Long = 101,
+        uidValidity: Long = 1L,
+        messageId: String = "reply-1",
+        bodyTruncated: Boolean = false
     ): ReceivedMail =
         ReceivedMail(
             imapUid = imapUid,
             from = from,
             subject = subject,
             body = body,
-            messageId = "reply-1",
+            messageId = messageId,
             inReplyTo = "intro-1",
             receivedAt = LocalDateTime.of(2026, 5, 22, 10, 0),
-            attachments = attachments
+            attachments = attachments,
+            uidValidity = uidValidity,
+            bodyTruncated = bodyTruncated
         )
 
     private fun account(accountCode: String): MailSenderAccount =

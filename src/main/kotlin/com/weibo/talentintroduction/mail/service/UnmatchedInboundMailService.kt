@@ -24,7 +24,9 @@ class UnmatchedInboundMailService(
     private val mailRecordRepository: MailRecordRepository,
     private val senderAccountRepository: MailSenderAccountRepository,
     private val expertIndexWriterService: ExpertIndexWriterService,
-    private val operatorActionLogService: OperatorActionLogService
+    private val operatorActionLogService: OperatorActionLogService,
+    /** 04：绑定后按已有 processing-owner 附件幂等补 ExpertDocument（开关启用时；零文件 I/O）。 */
+    private val mailAttachmentService: MailAttachmentService
 ) {
     fun listManualReviewQueue(
         reasonType: String? = null,
@@ -183,6 +185,11 @@ class UnmatchedInboundMailService(
                 updatedAt = now
             )
         )
+
+        // 04（I-3/I-4）：开关启用时，按已有 processing-owner 附件幂等补 ExpertDocument——
+        // 复用同一 attachmentId、零文件 I/O、不搬迁 owner/路径、不改 review/document
+        // 状态；历史已绑定未建档数据不在此猜测回填（06 显式关联修复入口处理）。
+        mailAttachmentService.ensureDocumentsForProcessingAttachments(recordId, contactId)
 
         operatorActionLogService.record(
             targetType = "INBOUND_MAIL_PROCESSING",

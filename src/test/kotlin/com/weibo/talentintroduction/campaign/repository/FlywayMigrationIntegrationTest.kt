@@ -56,10 +56,10 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh database migrates through V119`() {
+    fun `fresh database migrates through V120`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("119", flyway.migrate().targetSchemaVersion)
+        assertEquals("120", flyway.migrate().targetSchemaVersion)
     }
 
     @Test
@@ -155,7 +155,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("119", flyway().migrate().targetSchemaVersion)
+        assertEquals("120", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(1L, connection.queryLong(
                 "SELECT COUNT(*) FROM mail_sender_account " +
@@ -255,14 +255,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V23 upgrades to V119 without repair`() {
+    fun `database at original V23 upgrades to V120 without repair`() {
         val v23Flyway = flyway(MigrationVersion.fromVersion("23"))
         v23Flyway.clean()
         assertEquals("23", v23Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("119", flyway().migrate().targetSchemaVersion)
+        assertEquals("120", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -271,14 +271,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V24 upgrades to V119 without repair`() {
+    fun `database at original V24 upgrades to V120 without repair`() {
         val v24Flyway = flyway(MigrationVersion.fromVersion("24"))
         v24Flyway.clean()
         assertEquals("24", v24Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("119", flyway().migrate().targetSchemaVersion)
+        assertEquals("120", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -313,7 +313,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("119", flyway().migrate().targetSchemaVersion)
+        assertEquals("120", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
                 "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
@@ -359,7 +359,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("119", flyway().migrate().targetSchemaVersion)
+        assertEquals("120", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }
@@ -435,7 +435,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("119", flyway().migrate().targetSchemaVersion)
+        assertEquals("120", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 历史值原样保留（I-2/I-3），document_status 迁移前后不变。
             assertEquals(12345L, connection.queryLong(
@@ -551,7 +551,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("119", flyway().migrate().targetSchemaVersion)
+        assertEquals("120", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("mail_attachment_transfer"))
             listOf(
@@ -678,6 +678,104 @@ class FlywayMigrationIntegrationTest {
                     """
                 )
             }
+        }
+    }
+
+    @Test
+    fun `V120 scopes inbound uid uniqueness by uid validity without backfilling history`() {
+        migrateToV23AndSeedBase()
+        connection().use { connection ->
+            connection.execute(
+                """
+                INSERT INTO inbound_mail_processing
+                    (sender_account_code, imap_uid, message_id, from_email, subject,
+                     received_at, process_status, process_reason, expert_contact_id)
+                VALUES ('sender', 777, 'historical-msg', 'one@example.com', 'Old',
+                        '2026-06-01 10:00:00', 'PROCESSED', 'QA_AUTO_REPLIED', 1)
+                """
+            )
+        }
+
+        assertEquals("120", flyway().migrate().targetSchemaVersion)
+        connection().use { connection ->
+            // 列契约：uid_validity BIGINT NOT NULL DEFAULT 0
+            assertTrue(connection.columnExists("inbound_mail_processing", "uid_validity"))
+            assertEquals("bigint", connection.queryString(
+                "SELECT DATA_TYPE FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'inbound_mail_processing' " +
+                    "AND column_name = 'uid_validity'"
+            ))
+            assertEquals("NO", connection.queryString(
+                "SELECT IS_NULLABLE FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'inbound_mail_processing' " +
+                    "AND column_name = 'uid_validity'"
+            ))
+            assertEquals("0", connection.queryString(
+                "SELECT COLUMN_DEFAULT FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'inbound_mail_processing' " +
+                    "AND column_name = 'uid_validity'"
+            ))
+
+            // 历史行不被回填：0 = 历史代际未知（I-1）
+            assertEquals(0L, connection.queryLong(
+                "SELECT uid_validity FROM inbound_mail_processing WHERE imap_uid = 777"
+            ))
+
+            // 唯一键替换：旧 (account, uid) 键移除，新 (account, uid_validity, uid) 键生效
+            assertEquals(0, connection.queryLong(
+                "SELECT COUNT(*) FROM information_schema.statistics " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'inbound_mail_processing' " +
+                    "AND index_name = 'uk_inbound_mail_processing_uid'"
+            ))
+            assertTrue(connection.indexExists("inbound_mail_processing", "uk_inbound_mail_processing_uid_validity"))
+
+            // 同 UID 不同代际可以并存；同 (account, uid_validity, uid) 唯一
+            connection.execute(
+                """
+                INSERT INTO inbound_mail_processing
+                    (sender_account_code, uid_validity, imap_uid, message_id, from_email,
+                     received_at, process_status, process_reason)
+                VALUES ('sender', 5, 777, 'new-generation', 'one@example.com',
+                        '2026-09-01 10:00:00', 'MANUAL_REVIEW', 'BODY_TRUNCATED')
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO inbound_mail_processing
+                    (sender_account_code, uid_validity, imap_uid, message_id, from_email,
+                     received_at, process_status, process_reason)
+                VALUES ('sender', 6, 778, 'second-generation', 'one@example.com',
+                        '2026-09-02 10:00:00', 'MANUAL_REVIEW', 'BODY_TRUNCATED')
+                """
+            )
+            assertEquals(2L, connection.queryLong(
+                "SELECT COUNT(*) FROM inbound_mail_processing WHERE imap_uid = 777"
+            ))
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    """
+                    INSERT INTO inbound_mail_processing
+                        (sender_account_code, uid_validity, imap_uid, message_id, from_email,
+                         received_at, process_status, process_reason)
+                    VALUES ('sender', 5, 777, 'duplicate', 'one@example.com',
+                            '2026-09-03 10:00:00', 'MANUAL_REVIEW', 'BODY_TRUNCATED')
+                    """
+                )
+            }
+            // 历史 0 行仍保留原唯一性：0 代际同 UID 再插被拒绝
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    """
+                    INSERT INTO inbound_mail_processing
+                        (sender_account_code, uid_validity, imap_uid, message_id, from_email,
+                         received_at, process_status, process_reason)
+                    VALUES ('sender', 0, 777, 'historical-dup', 'one@example.com',
+                            '2026-06-02 10:00:00', 'MANUAL_REVIEW', 'BODY_TRUNCATED')
+                    """
+                )
+            }
+            // 外键仍生效
+            assertTrue(connection.foreignKeyExists("inbound_mail_processing", "fk_inbound_mail_processing_contact"))
         }
     }
 
