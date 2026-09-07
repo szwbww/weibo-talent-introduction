@@ -1,0 +1,115 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>收发件箱 · 专家会话预览</title><link rel="stylesheet" href="base.css"><link rel="stylesheet" href="preview.css"><link rel="stylesheet" href="production-layout.css?v=5"><link rel="stylesheet" href="materials-preview.css?v=5"><link rel="stylesheet" href="expert-material-preview.css?v=5"></head><body><div class="app-shell">    <header class="topnav">
+        <div class="brand">
+            <div class="brand-mark">
+                <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+            </div>
+            <div>
+                <div class="brand-title">Talent Console</div>
+                <div class="brand-subtitle">专家引进自动化</div>
+            </div>
+        </div>
+        <nav class="nav-tabs" aria-label="Main">
+            <button class="nav-tab" data-view="monitoring">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/>
+                </svg>
+                <span>邮件监控</span>
+            </button>
+            <button class="nav-tab" data-view="accounts">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                </svg>
+                <span>邮箱账号</span>
+            </button>
+            <button class="nav-tab" data-view="mail-templates">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+                <span>邮件模板</span>
+            </button>
+            <button class="nav-tab" data-view="suppressions">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                </svg>
+                <span>退订名单</span>
+            </button>
+            <button class="nav-tab" data-view="contacts">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+                <span>专家列表</span>
+            </button>
+            <button class="nav-tab active" data-view="mailbox">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                    <polyline points="22,6 12,13 2,6"/>
+                </svg>
+                <span>收发件箱</span>
+                <span id="unmatchedBadgeHigh" class="nav-badge nav-badge-high" hidden>0</span>
+                <span id="unmatchedBadgeNormal" class="nav-badge nav-badge-normal" hidden>0</span>
+            </button>
+            <button class="nav-tab" data-view="inbound-summary">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                    <line x1="7" y1="7" x2="7.01" y2="7"/>
+                </svg>
+                <span>来信汇总</span>
+            </button>
+            <button class="nav-tab" data-view="ai-training">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 2a4 4 0 0 1 4 4v2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h2V6a4 4 0 0 1 4-4z"/>
+                    <circle cx="12" cy="13" r="2"/>
+                    <path d="M9 2h6"/>
+                </svg>
+                <span>AI 训练</span>
+            </button>
+            <button class="nav-tab" data-view="tasks">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                <span>任务记录</span>
+            </button>
+        </nav>
+        <div class="topnav-side">
+            <div class="user-info">
+                当前登录: <span id="currentUserDisplay">admin</span>
+            </div>
+            <button class="nav-tab logout-btn" id="showPollLogBtn">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                <span>轮询日志</span>
+            </button>
+            <button class="nav-tab logout-btn" id="logoutBtn">
+                <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                    <polyline points="16 17 21 12 16 7"/>
+                    <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                <span>退出登录</span>
+            </button>
+        </div>
+    </header>
+
+<main class="main preview-main">
+<header class="topbar"><div><div class="page-heading"><h1>收发件箱</h1><span class="preview-label">正式页面重排 · 本地示例</span></div><p>按专家查看收发往来，保留现有来信处理与可信回复流程。</p></div><div class="page-actions"><button class="button secondary" id="filterOpen">筛选条件</button><button class="button secondary" id="refreshPreview">刷新</button><button class="button secondary" id="checkReplies">检查回复</button><button class="button primary" id="bulkOutreachPreview">批量发送</button><button class="button" id="autoReplyPreview">自动回复：全部关闭</button></div></header>
+<section class="chat-workspace" id="workspace" aria-label="专家收发件箱">
+<aside class="expert-pane" aria-label="专家列表"><div class="list-heading"><h2>专家会话</h2><span class="subtle" id="expertCount"></span></div><div class="search-wrap"><svg width="15" height="15" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="1.8"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="expertSearch" type="search" aria-label="搜索专家" placeholder="搜索专家姓名、机构或邮箱"></div><div class="filter-tabs" role="tablist" aria-label="会话筛选"><button class="filter-tab active" data-filter="all" role="tab">全部<span class="tab-count" id="allCount"></span></button><button class="filter-tab" data-filter="followed" role="tab">已关注<span class="tab-count" id="followedCount"></span></button><button class="filter-tab" data-filter="pending" role="tab">待处理<span class="tab-count" id="pendingCount"></span></button></div><div class="list-caption"><span id="listCaption">按最近往来排序</span><span>最近来信 / 发信</span></div><div class="expert-list" id="expertList"></div><div class="list-footer">星标关注专家，快速回到重点会话</div></aside>
+<section class="conversation" id="conversation" aria-label="专家邮件会话"></section></section></main>
+</div><div class="toast-preview" id="previewToast" role="status" hidden></div>
+<dialog class="preview-dialog" id="detailDialog"><div class="dialog-heading"><h2 id="dialogTitle"></h2><button class="button small" id="closeDialog">关闭</button></div><div class="dialog-body" id="dialogBody"></div></dialog>
+<dialog class="preview-dialog" id="filterDialog"><div class="dialog-heading"><h2>筛选专家会话</h2><button class="button small" id="closeFilters">关闭</button></div><div class="filter-fields"><label>邮箱账号<select id="accountFilter"><option value="">全部邮箱账号</option><option value="recruit-01">recruit-01</option><option value="recruit-02">recruit-02</option></select></label><label>专家标签<select id="tagFilter"><option value="">全部标签</option><option>有意向</option><option>材料沟通</option><option>会议沟通</option></select></label></div><div class="filter-footer"><button class="button" id="resetFilters">重置</button><button class="button primary" id="applyFilters">应用筛选</button></div></dialog><script src="preview.js"></script><script src="trust-reply-workbench.js"></script><script src="production-layout.js?v=5"></script><script src="materials-preview.js?v=5"></script><script src="live-material-fixture.js?v=5"></script><script src="expert-material-preview.js?v=5"></script></body></html>
