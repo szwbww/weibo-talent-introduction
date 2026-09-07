@@ -33,9 +33,15 @@ class MailAttachmentService(
         Files.createDirectories(directory)
 
         return attachments.map { received ->
+            // I-1：metadata 模式（content=null）未到消费阶段——04/05 才替换最终消费；
+            // 明确报 metadata-content-unavailable，绝不 ?: byteArrayOf() 当空文件落库。
+            val content = received.content
+                ?: throw MetadataContentUnavailableException(
+                    "attachment content is unavailable in metadata mode (file=${received.fileName})"
+                )
             val safeFileName = received.fileName.toSafeFileName()
             val storagePath = directory.resolve("${UUID.randomUUID()}-$safeFileName")
-            Files.write(storagePath, received.content)
+            Files.write(storagePath, content)
 
             val mailAttachment = mailAttachmentRepository.save(
                 MailAttachment(
@@ -43,7 +49,7 @@ class MailAttachmentService(
                     inboundProcessingId = null,
                     fileName = received.fileName,
                     contentType = received.contentType,
-                    fileSize = received.content.size.toLong(),
+                    fileSize = content.size.toLong(),
                     storagePath = storagePath.toString(),
                     createdAt = now
                 )
@@ -74,9 +80,13 @@ class MailAttachmentService(
         Files.createDirectories(directory)
 
         return attachments.map { received ->
+            val content = received.content
+                ?: throw MetadataContentUnavailableException(
+                    "attachment content is unavailable in metadata mode (file=${received.fileName})"
+                )
             val safeFileName = received.fileName.toSafeFileName()
             val storagePath = directory.resolve("${UUID.randomUUID()}-$safeFileName")
-            Files.write(storagePath, received.content)
+            Files.write(storagePath, content)
 
             mailAttachmentRepository.save(
                 MailAttachment(
@@ -84,7 +94,7 @@ class MailAttachmentService(
                     inboundProcessingId = inboundProcessingId,
                     fileName = received.fileName,
                     contentType = received.contentType,
-                    fileSize = received.content.size.toLong(),
+                    fileSize = content.size.toLong(),
                     storagePath = storagePath.toString(),
                     createdAt = now
                 )

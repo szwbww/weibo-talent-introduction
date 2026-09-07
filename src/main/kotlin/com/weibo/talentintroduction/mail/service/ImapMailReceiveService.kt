@@ -1,10 +1,16 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.config.MailAttachmentStorageProperties
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.Properties
+import java.util.concurrent.TimeUnit
+import javax.mail.FetchProfile
 import javax.mail.Flags
 import javax.mail.Folder
 import javax.mail.Message
@@ -17,7 +23,11 @@ import javax.mail.internet.MimeMessage
 import javax.mail.internet.MimeUtility
 
 @Service
-class ImapMailReceiveService : MailReceiveService {
+class ImapMailReceiveService(
+    private val properties: MailAttachmentStorageProperties = MailAttachmentStorageProperties()
+) : MailReceiveService {
+    private val log = LoggerFactory.getLogger(ImapMailReceiveService::class.java)
+
     override fun fetchInboundSince(
         account: MailSenderAccount,
         afterUid: Long,
@@ -38,7 +48,7 @@ class ImapMailReceiveService : MailReceiveService {
                     ?: error("IMAP INBOX does not support UID lookup")
                 val uidValidity = uidFolder.uidValidity
                 val startUid = if (afterUid == 0L) 1L else afterUid + 1
-                val messages = uidFolder.getMessagesByUID(startUid, UIDFolder.LASTUID)
+                val candidates = uidFolder.getMessagesByUID(startUid, UIDFolder.LASTUID)
                     .asSequence()
                     .mapNotNull { message ->
                         val uid = uidFolder.getUID(message)
@@ -46,8 +56,18 @@ class ImapMailReceiveService : MailReceiveService {
                     }
                     .sortedBy { it.second }
                     .take(maxMessages)
-                    .map { (message, uid) -> message.toReceivedMail(uid) }
                     .toList()
+                // I-2：只预取 ENVELOPE/CONTENT_INFO(BODYSTRUCTURE)/UID 及必要头，不预取 MESSAGE 全内容。
+                if (candidates.isNotEmpty()) {
+                    val profile = FetchProfile()
+                    profile.add(FetchProfile.Item.ENVELOPE)
+                    profile.add(FetchProfile.Item.CONTENT_INFO)
+                    profile.add(UIDFolder.FetchProfileItem.UID)
+                    folder.fetch(candidates.map { it.first }.toTypedArray(), profile)
+                }
+                val messages = candidates.map { (message, uid) ->
+                    convertToReceivedMail(message, account, folder.name, uidValidity, uid)
+                }
                 InboundFetchResult(
                     mails = messages,
                     uidValidity = uidValidity,
@@ -71,15 +91,20 @@ class ImapMailReceiveService : MailReceiveService {
             inbox.use { folder ->
                 val uidFolder = folder as? UIDFolder
                     ?: error("IMAP INBOX does not support UID lookup")
-                uidFolder.getMessagesByUID(uids.toLongArray())
-                    .asSequence()
-                    .mapNotNull { message ->
-                        message?.let { msg ->
-                            msg.toReceivedMail(uidFolder.getUID(msg))
-                        }
-                    }
-                    .sortedBy { it.imapUid }
-                    .toList()
+                val messages = uidFolder.getMessagesByUID(uids.toLongArray())
+                    .filterNotNull()
+                // I-2：只预取 ENVELOPE/CONTENT_INFO(BODYSTRUCTURE)/UID 及必要头，不预取 MESSAGE 全内容。
+                if (messages.isNotEmpty()) {
+                    val profile = FetchProfile()
+                    profile.add(FetchProfile.Item.ENVELOPE)
+                    profile.add(FetchProfile.Item.CONTENT_INFO)
+                    profile.add(UIDFolder.FetchProfileItem.UID)
+                    folder.fetch(messages.toTypedArray(), profile)
+                }
+                val byUid = messages.associateBy { uidFolder.getUID(it) }
+                uids.mapNotNull { byUid[it] }.map { msg ->
+                    convertToReceivedMail(msg, account, folder.name, uidFolder.uidValidity, uidFolder.getUID(msg))
+                }
             }
         }
     }
@@ -125,91 +150,298 @@ class ImapMailReceiveService : MailReceiveService {
         }
     }
 
-    private fun Message.toReceivedMail(imapUid: Long): ReceivedMail =
-        ReceivedMail(
+    // ------------------------------------------------------------------
+    // Message -> ReceivedMail 转换（fetchInboundSince/fetchByUids 共用解析）
+    // ------------------------------------------------------------------
+
+    internal fun convertToReceivedMail(
+        message: Message,
+        account: MailSenderAccount,
+        folder: String,
+        uidValidity: Long,
+        imapUid: Long
+    ): ReceivedMail {
+        val deadlineNanos = System.nanoTime() +
+            TimeUnit.SECONDS.toNanos(properties.metadataTotalTimeoutSeconds)
+        val headers = fetchEnvelopeHeaders(message)
+        val context = MailSourceContext(
+            accountCode = account.accountCode,
+            folder = folder,
+            uidValidity = uidValidity,
+            uid = imapUid,
+            messageId = headers.messageId
+        )
+        val extracted = walkContent(message, context, deadlineNanos)
+        return ReceivedMail(
             imapUid = imapUid,
-            from = extractFrom(),
-            subject = subject,
-            body = extractBody(this),
-            messageId = getHeader("Message-ID")?.firstOrNull(),
-            inReplyTo = getHeader("In-Reply-To")?.firstOrNull(),
-            receivedAt = receivedDate
+            from = extractFrom(message),
+            subject = headers.subject,
+            body = extracted.bodyText,
+            messageId = headers.messageId,
+            inReplyTo = headers.inReplyTo,
+            receivedAt = message.receivedDate
                 ?.toInstant()
                 ?.atZone(ZoneId.systemDefault())
                 ?.toLocalDateTime()
                 ?: LocalDateTime.now(),
-            attachments = extractAttachments(this)
+            attachments = extracted.attachments,
+            uidValidity = uidValidity,
+            bodyTruncated = extracted.bodyTruncated
+        )
+    }
+
+    /** 仅读头字段（trigger 时 JavaMail 只拉 HEADER.FIELDS，不是全量 MESSAGE 预取）。 */
+    private data class EnvelopeHeaders(
+        val subject: String?,
+        val messageId: String?,
+        val inReplyTo: String?
+    )
+
+    private fun fetchEnvelopeHeaders(message: Message): EnvelopeHeaders =
+        EnvelopeHeaders(
+            subject = message.getHeader("Subject")?.firstOrNull(),
+            messageId = message.getHeader("Message-ID")?.firstOrNull(),
+            inReplyTo = message.getHeader("In-Reply-To")?.firstOrNull()
         )
 
-    private fun Message.extractFrom(): String =
-        from
+    private fun extractFrom(message: Message): String {
+        // 从 Message/From 头解析发件人（IMAP 下 getHeader 只触发 HEADER.FIELDS 拉取，
+        // 不依赖 ENVELOPE 的地址表——ENVELOPE 地址组解析在部分服务端形态下不稳定）。
+        val header = message.getHeader("From")?.firstOrNull()
+        if (!header.isNullOrBlank()) {
+            return runCatching { InternetAddress.parse(header, false).firstOrNull()?.address }
+                .getOrNull()?.takeIf { !it.isNullOrBlank() } ?: header
+        }
+        return message.from
             ?.filterIsInstance<InternetAddress>()
             ?.firstOrNull()
             ?.address
             ?: error("Received mail has no sender address")
+    }
 
-    internal fun extractBody(part: Part): String {
-        if (part.isMimeType("text/plain")) {
-            return part.content as? String ?: ""
+    // ------------------------------------------------------------------
+    // MIME 白名单遍历（I-2 / I-3）
+    //
+    // 先按 filename/disposition 排除附件，再按 MIME 类型走 multipart 容器与
+    // 合法正文；附件（含带文件名的 text/*、嵌套 message/rfc822）绝不
+    // getInputStream/getContent——metadataOnly 只登记名称/定位，legacy 才读字节。
+    // ------------------------------------------------------------------
+
+    internal class MailSourceContext(
+        val accountCode: String,
+        val folder: String,
+        val uidValidity: Long,
+        val uid: Long,
+        val messageId: String?
+    )
+
+    internal class WalkResult(
+        val bodyText: String,
+        val bodyTruncated: Boolean,
+        val attachments: List<ReceivedMailAttachment>
+    )
+
+    internal fun walkContent(part: Part, context: MailSourceContext, deadlineNanos: Long): WalkResult {
+        val counter = NodeCounter()
+        val walk = walk(part, context, "", properties.metadataOnly, deadlineNanos, counter)
+        return WalkResult(
+            bodyText = walk.bodyText,
+            bodyTruncated = walk.bodyTruncated,
+            attachments = walk.attachments
+        )
+    }
+
+    private class NodeCounter {
+        var count = 0
+    }
+
+    /** 一个节点的遍历结果：正文文本 / 是否截断 / 已登记附件。 */
+    private class NodeResult(
+        val bodyText: String,
+        val bodyTruncated: Boolean,
+        val attachments: List<ReceivedMailAttachment>
+    )
+
+    private fun checkDeadline(deadlineNanos: Long) {
+        if (System.nanoTime() > deadlineNanos) {
+            throw MetadataTimeoutException("IMAP metadata fetch exceeded the configured total time limit")
         }
-        if (part.isMimeType("text/html")) {
-            return stripHtml(part.content as? String ?: "")
-        }
-        // I-1：DSN 机器段，getContent() 无 handler 时返回 InputStream，走字节流兜底
-        if (part.isMimeType("message/delivery-status")) {
-            return readPartAsText(part)
-        }
-        if (part.content is Multipart) {
-            val multipart = part.content as Multipart
-            val segments = (0 until multipart.count)
-                .map { extractBody(multipart.getBodyPart(it)) }
-                .filter { it.isNotBlank() }
-            // I-2：alternative 各分段是同一内容的多种表现 → 取首个；
-            //      report / mixed 等各分段是不同内容 → 拼接
-            return if (part.isMimeType("multipart/alternative")) {
-                segments.firstOrNull().orEmpty()
-            } else {
-                segments.joinToString("\n")
-            }
-        }
-        return ""
     }
 
     /**
-     * I-1：绕开 DataHandler 读分段文本（与 BounceDetector.readPartAsText 同款，两处各自私有持有）。
-     * message/delivery-status 无 DataContentHandler 时 getContent() 返回 InputStream，
-     * Part.getInputStream() 返回解码后的内容流，不经 mailcap 查表。
+     * 递归白名单遍历：multipart 容器 -> 合法正文叶/DSN 机器段/嵌套消息；
+     * 附件在叶层按 filename/disposition 排除并（视模式）登记。
      */
-    private fun readPartAsText(part: Part): String =
-        try {
-            part.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
-        } catch (_: Exception) {
-            ""
+    private fun walk(
+        part: Part,
+        context: MailSourceContext,
+        pathPrefix: String,
+        metadataOnly: Boolean,
+        deadlineNanos: Long,
+        counter: NodeCounter
+    ): NodeResult {
+        counter.count++
+        if (counter.count > properties.metadataMaxMimeNodes) {
+            throw MetadataStructureLimitException(
+                "MIME structure exceeds the configured node limit of ${properties.metadataMaxMimeNodes}"
+            )
+        }
+        checkDeadline(deadlineNanos)
+
+        val contentType = runCatching { part.contentType }.getOrNull()
+            ?.substringBefore(";")?.trim()?.lowercase() ?: return NodeResult("", false, emptyList())
+        val isMultipart = contentType.startsWith("multipart/")
+
+        if (isMultipart) {
+            val multipart = part.content as? Multipart ?: return NodeResult("", false, emptyList())
+            val joinAll = !part.isMimeType("multipart/alternative")
+            val segmentTexts = ArrayList<String>()
+            var anyTruncated = false
+            val allAttachments = ArrayList<ReceivedMailAttachment>()
+            for (i in 0 until multipart.count) {
+                val child = multipart.getBodyPart(i)
+                val childPath = if (pathPrefix.isEmpty()) (i + 1).toString() else "$pathPrefix.${i + 1}"
+                val childResult = walk(child, context, childPath, metadataOnly, deadlineNanos, counter)
+                if (childResult.bodyText.isNotBlank()) {
+                    segmentTexts.add(childResult.bodyText)
+                }
+                anyTruncated = anyTruncated || childResult.bodyTruncated
+                allAttachments.addAll(childResult.attachments)
+            }
+            // alternative 各分段是同一内容的多种表现 → 取首个非空；
+            // mixed/report/related 等各分段是不同内容 → 按顺序拼接
+            val chosen = if (joinAll) {
+                segmentTexts.joinToString("\n")
+            } else {
+                segmentTexts.firstOrNull().orEmpty()
+            }
+            return NodeResult(chosen, anyTruncated, allAttachments)
         }
 
-    private fun extractAttachments(part: Part): List<ReceivedMailAttachment> {
-        if (part.isMimeType("multipart/*")) {
-            val content = part.content as Multipart
-            return (0 until content.count)
-                .flatMap { extractAttachments(content.getBodyPart(it)) }
+        // 附件叶：metadataOnly 只登记；legacy 读字节（含带文件名的 text/* 附件）。
+        if (isAttachmentLeaf(part, contentType)) {
+            return NodeResult("", false, listOf(registerAttachment(part, context, pathPrefix, metadataOnly)))
         }
 
-        val fileName = part.fileName?.let { MimeUtility.decodeText(it) }
+        val isText = contentType == "text/plain" || contentType == "text/html"
+        val isDeliveryStatus = contentType == "message/delivery-status"
+        if (isText || isDeliveryStatus) {
+            val read = readBoundedText(part, metadataOnly, deadlineNanos)
+            val text = if (contentType == "text/html") stripHtml(read.text) else read.text
+            return NodeResult(text, read.truncated, emptyList())
+        }
+
+        // 其余 message/*（rfc822/global/…）：嵌套消息的内容整体只作为「正文源」
+        // 走有界读（等效旧的 readPartAsText 兜底），从不把内部附件拆出来。
+        return NodeResult(readBoundedText(part, metadataOnly, deadlineNanos).let { it.text }, false, emptyList())
+    }
+
+    /**
+     * 附件判定（I-2）：带文件名即附件（text/plain|text/html 带文件名同样不是正文）；
+     * 无文件名时 disposition=ATTACHMENT 登记为“未命名附件-{partPath}”，
+     * disposition=INLINE 无文件名（内联签名图等）不构成专家材料。
+     */
+    private fun isAttachmentLeaf(part: Part, contentType: String): Boolean {
+        val rawName = part.fileName
+        if (!rawName.isNullOrBlank()) {
+            return true
+        }
+        val isText = contentType == "text/plain" || contentType == "text/html"
+        if (isText) {
+            // 无文件名 text 叶永远不是附件：正文候选或忽略
+            return false
+        }
         val disposition = part.disposition
-        val isAttachment = Part.ATTACHMENT.equals(disposition, ignoreCase = true) ||
-            Part.INLINE.equals(disposition, ignoreCase = true) && !fileName.isNullOrBlank()
-        if (!isAttachment || fileName.isNullOrBlank()) {
-            return emptyList()
-        }
+        return Part.ATTACHMENT.equals(disposition, ignoreCase = true)
+    }
 
-        val bytes = part.inputStream.use { it.readBytes() }
-        return listOf(
-            ReceivedMailAttachment(
-                fileName = fileName,
-                contentType = part.contentType?.substringBefore(";")?.trim(),
-                content = bytes
+    private fun registerAttachment(
+        part: Part,
+        context: MailSourceContext,
+        partPath: String,
+        metadataOnly: Boolean
+    ): ReceivedMailAttachment {
+        val rawName = part.fileName
+        val fileName = if (rawName.isNullOrBlank()) {
+            "未命名附件-$partPath"
+        } else {
+            runCatching { MimeUtility.decodeText(rawName) }.getOrElse { rawName }
+        }
+        val contentType = runCatching { part.contentType }.getOrNull()?.substringBefore(";")?.trim()
+        val disposition = runCatching { part.disposition }.getOrNull()
+        val encodedSize = runCatching { part.size }.getOrNull()?.takeIf { it >= 0 }?.toLong()
+        return ReceivedMailAttachment(
+            fileName = fileName,
+            contentType = contentType,
+            content = if (metadataOnly) {
+                null // I-1：metadata 模式 content 严格为 null
+            } else {
+                runCatching { part.inputStream.use { it.readBytes() } }.getOrElse {
+                    log.warn("Failed to read attachment content for {}", fileName)
+                    ByteArray(0)
+                }
+            },
+            source = ImapAttachmentSource(
+                accountCode = context.accountCode,
+                folder = context.folder,
+                uidValidity = context.uidValidity,
+                uid = context.uid,
+                partPath = partPath,
+                messageId = context.messageId,
+                encodedSize = encodedSize,
+                disposition = disposition
             )
         )
+    }
+
+    /** 有界正文读取结果。 */
+    private class BoundedText(val text: String, val truncated: Boolean)
+
+    /**
+     * 正文读取（I-3）：字节读取期间即按上限截断（metadataOnly 上限
+     * metadataMaxBodyBytes；legacy 无上限）；绝不在 getContent 拿完整
+     * String 后再截断。text/plain、text/html、DSN machine 段共用。
+     */
+    private fun readBoundedText(part: Part, metadataOnly: Boolean, deadlineNanos: Long): BoundedText {
+        checkDeadline(deadlineNanos)
+        val maxBytes = if (metadataOnly) properties.metadataMaxBodyBytes else Int.MAX_VALUE
+        return try {
+            val stream = part.inputStream
+            if (stream == null) {
+                BoundedText("", false)
+            } else {
+                stream.use { readBoundedFromStream(it, maxBytes, deadlineNanos) }
+            }
+        } catch (_: Exception) {
+            BoundedText("", false)
+        }
+    }
+
+    private fun readBoundedFromStream(
+        stream: InputStream,
+        maxBytes: Int,
+        deadlineNanos: Long
+    ): BoundedText {
+        val buffer = ByteArray(8192)
+        val output = ByteArrayOutputStream()
+        var total = 0
+        var truncated = false
+        while (true) {
+            checkDeadline(deadlineNanos)
+            val n = stream.read(buffer)
+            if (n < 0) break
+            if (maxBytes - total < n) {
+                val allowed = (maxBytes - total).coerceAtLeast(0)
+                if (allowed > 0) {
+                    output.write(buffer, 0, allowed)
+                }
+                truncated = true
+                break
+            }
+            output.write(buffer, 0, n)
+            total += n
+        }
+        return BoundedText(output.toString(Charsets.UTF_8), truncated)
     }
 
     private fun stripHtml(html: String): String =
