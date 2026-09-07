@@ -60,7 +60,10 @@ class DocumentTextExtractor(
             "Mail record $mailRecordId does not belong to expert contact $contactId"
         }
 
-        val storagePath = Path.of(attachment.storagePath).toAbsolutePath().normalize()
+        val rawStoragePath = requireNotNull(attachment.storagePath) {
+            "Attachment $attachmentId has no local file (storage_path is null)"
+        }
+        val storagePath = Path.of(rawStoragePath).toAbsolutePath().normalize()
         require(Files.exists(storagePath)) { "File not found: ${attachment.fileName}" }
         require(Files.isRegularFile(storagePath)) { "Not a regular file: ${attachment.fileName}" }
 

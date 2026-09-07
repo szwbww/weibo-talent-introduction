@@ -138,6 +138,60 @@ class DocumentTextExtractorTest {
         assertTrue(ex.message!!.contains("does not belong"))
     }
 
+    @Test
+    fun `extract rejects attachment with no storage path before reading any file`() {
+        val contactId = 10L
+        val attachmentId = 105L
+
+        Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(attachmentId))
+            .thenReturn(
+                ExpertDocument(
+                    id = 1L,
+                    expertContactId = contactId,
+                    mailAttachmentId = attachmentId,
+                    documentType = "CV",
+                    documentStatus = DocumentStatus.PENDING_REVIEW.name
+                )
+            )
+        Mockito.`when`(mailAttachmentRepository.findById(attachmentId))
+            .thenReturn(
+                Optional.of(
+                    MailAttachment(
+                        id = attachmentId,
+                        mailRecordId = 500L,
+                        fileName = "not-landed.pdf",
+                        contentType = "application/pdf",
+                        fileSize = null,
+                        storagePath = null,
+                        createdAt = LocalDateTime.now()
+                    )
+                )
+            )
+        Mockito.`when`(mailRecordRepository.findByIdOrNull(500L))
+            .thenReturn(
+                MailRecord(
+                    id = 500L,
+                    expertContactId = contactId,
+                    direction = "INBOUND",
+                    mailType = "REPLY",
+                    messageId = "msg-500",
+                    inReplyTo = null,
+                    subject = "docs",
+                    body = "body",
+                    matchedQaRuleId = null,
+                    sendStatus = null,
+                    receivedAt = LocalDateTime.now(),
+                    sentAt = null,
+                    createdAt = LocalDateTime.now()
+                )
+            )
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            extractor.extract(contactId, listOf(attachmentId))
+        }
+        assertTrue(ex.message!!.contains("no local file"))
+    }
+
     private fun stubAttachmentOwnership(
         contactId: Long,
         attachmentId: Long,

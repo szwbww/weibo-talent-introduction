@@ -56,10 +56,10 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh database migrates through V117`() {
+    fun `fresh database migrates through V118`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("117", flyway.migrate().targetSchemaVersion)
+        assertEquals("118", flyway.migrate().targetSchemaVersion)
     }
 
     @Test
@@ -155,7 +155,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("117", flyway().migrate().targetSchemaVersion)
+        assertEquals("118", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(1L, connection.queryLong(
                 "SELECT COUNT(*) FROM mail_sender_account " +
@@ -255,14 +255,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V23 upgrades to V117 without repair`() {
+    fun `database at original V23 upgrades to V118 without repair`() {
         val v23Flyway = flyway(MigrationVersion.fromVersion("23"))
         v23Flyway.clean()
         assertEquals("23", v23Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("117", flyway().migrate().targetSchemaVersion)
+        assertEquals("118", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -271,14 +271,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V24 upgrades to V117 without repair`() {
+    fun `database at original V24 upgrades to V118 without repair`() {
         val v24Flyway = flyway(MigrationVersion.fromVersion("24"))
         v24Flyway.clean()
         assertEquals("24", v24Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("117", flyway().migrate().targetSchemaVersion)
+        assertEquals("118", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -313,7 +313,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("117", flyway().migrate().targetSchemaVersion)
+        assertEquals("118", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
                 "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
@@ -359,7 +359,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("117", flyway().migrate().targetSchemaVersion)
+        assertEquals("118", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }
@@ -405,6 +405,129 @@ class FlywayMigrationIntegrationTest {
                     """
                 )
             }
+        }
+    }
+
+    @Test
+    fun `V118 allows metadata-only attachments preserving historical values and owner XOR`() {
+        migrateToV23AndSeedBase()
+        connection().use { connection ->
+            connection.execute(
+                """
+                INSERT INTO mail_record
+                    (id, expert_contact_id, direction, mail_type, message_id, send_status)
+                VALUES (201, 1, 'INBOUND', 'REPLY', 'msg-with-attachment', 'SENT')
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO mail_attachment
+                    (id, mail_record_id, file_name, content_type, file_size, storage_path)
+                VALUES (301, 201, '历史简历.pdf', 'application/pdf', 12345, '/attachments/1/301.pdf')
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO expert_document
+                    (id, expert_contact_id, mail_attachment_id, document_type, document_status)
+                VALUES (401, 1, 301, 'CV', 'PENDING_REVIEW')
+                """
+            )
+        }
+
+        assertEquals("118", flyway().migrate().targetSchemaVersion)
+        connection().use { connection ->
+            // 历史值原样保留（I-2/I-3），document_status 迁移前后不变。
+            assertEquals(12345L, connection.queryLong(
+                "SELECT file_size FROM mail_attachment WHERE id = 301"
+            ))
+            assertEquals("/attachments/1/301.pdf", connection.queryString(
+                "SELECT storage_path FROM mail_attachment WHERE id = 301"
+            ))
+            assertEquals("历史简历.pdf", connection.queryString(
+                "SELECT file_name FROM mail_attachment WHERE id = 301"
+            ))
+            assertEquals("PENDING_REVIEW", connection.queryString(
+                "SELECT document_status FROM expert_document WHERE id = 401"
+            ))
+
+            // V118 列契约：file_size/storage_path 可空，file_name 为 TEXT 且不可空。
+            assertEquals("YES", connection.queryString(
+                "SELECT IS_NULLABLE FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'mail_attachment' " +
+                    "AND column_name = 'file_size'"
+            ))
+            assertEquals("YES", connection.queryString(
+                "SELECT IS_NULLABLE FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'mail_attachment' " +
+                    "AND column_name = 'storage_path'"
+            ))
+            assertEquals("NO", connection.queryString(
+                "SELECT IS_NULLABLE FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'mail_attachment' " +
+                    "AND column_name = 'file_name'"
+            ))
+            assertEquals("text", connection.queryString(
+                "SELECT DATA_TYPE FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'mail_attachment' " +
+                    "AND column_name = 'file_name'"
+            ))
+
+            // V36 owner XOR 与外键在 MODIFY 后仍生效。
+            assertTrue(connection.checkConstraintExists("mail_attachment", "chk_mail_attachment_owner"))
+            assertTrue(connection.foreignKeyExists("mail_attachment", "fk_mail_attachment_record"))
+            assertTrue(connection.foreignKeyExists("mail_attachment", "fk_mail_attachment_inbound"))
+
+            // 元数据登记：仅有名称，size/path 均为 NULL；owner 仍须恰好一个。
+            connection.execute(
+                """
+                INSERT INTO mail_attachment
+                    (mail_record_id, file_name, content_type, file_size, storage_path)
+                VALUES (201, '元数据附件.pdf', 'application/pdf', NULL, NULL)
+                """
+            )
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_attachment WHERE file_name = '元数据附件.pdf' " +
+                    "AND file_size IS NULL AND storage_path IS NULL"
+            ))
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    """
+                    INSERT INTO mail_attachment
+                        (mail_record_id, inbound_processing_id, file_name)
+                    VALUES (NULL, NULL, 'no-owner.pdf')
+                    """
+                )
+            }
+
+            // 长中文文件名（300 字）在 TEXT 下完整往返（I-3）。
+            val longName = "研".repeat(300)
+            connection.execute(
+                """
+                INSERT INTO mail_attachment
+                    (mail_record_id, file_name, content_type, file_size, storage_path)
+                VALUES (201, '$longName', 'application/pdf', NULL, NULL)
+                """
+            )
+            assertEquals(300L, connection.queryLong(
+                "SELECT CHAR_LENGTH(file_name) FROM mail_attachment WHERE file_name = '$longName'"
+            ))
+            assertEquals(longName, connection.queryString(
+                "SELECT file_name FROM mail_attachment WHERE file_name = '$longName'"
+            ))
+
+            // 真实零字节文件：size = 0 且路径存在，是合法数据（I-1）。
+            connection.execute(
+                """
+                INSERT INTO mail_attachment
+                    (mail_record_id, file_name, content_type, file_size, storage_path)
+                VALUES (201, 'empty.txt', 'text/plain', 0, '/attachments/1/empty.txt')
+                """
+            )
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_attachment WHERE file_name = 'empty.txt' " +
+                    "AND file_size = 0 AND storage_path IS NOT NULL"
+            ))
         }
     }
 

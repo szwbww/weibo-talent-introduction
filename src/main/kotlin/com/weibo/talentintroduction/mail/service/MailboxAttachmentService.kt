@@ -11,7 +11,7 @@ data class AttachmentMetaResponse(
     val id: Long,
     val fileName: String,
     val contentType: String?,
-    val fileSize: Long
+    val fileSize: Long?
 )
 
 data class MailboxAttachmentDownload(
@@ -38,12 +38,15 @@ class MailboxAttachmentService(
             fileName = attachment.fileName,
             contentType = resolveContentType(attachment),
             path = resolvedPath,
-            fileSize = attachment.fileSize
+            fileSize = Files.size(resolvedPath)
         )
     }
 
     private fun validateStoragePath(attachment: MailAttachment): Path {
-        val storagePath = Path.of(attachment.storagePath).toAbsolutePath().normalize()
+        val rawStoragePath = requireNotNull(attachment.storagePath) {
+            "Attachment ${attachment.id} has no local file (storage_path is null)"
+        }
+        val storagePath = Path.of(rawStoragePath).toAbsolutePath().normalize()
         require(Files.exists(storagePath)) { "File not found: ${attachment.fileName}" }
         require(Files.isRegularFile(storagePath)) { "Not a regular file: ${attachment.fileName}" }
 

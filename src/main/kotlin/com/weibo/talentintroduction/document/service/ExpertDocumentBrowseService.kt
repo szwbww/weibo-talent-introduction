@@ -17,13 +17,13 @@ data class ExpertDocumentFile(
     val mailRecordId: Long,
     val fileName: String,
     val contentType: String?,
-    val fileSize: Long,
+    val fileSize: Long?,
     val documentType: String,
     val documentStatus: String,
     val createdAt: LocalDateTime?,
     val previewable: Boolean,
-    val downloadUrl: String,
-    val previewUrl: String
+    val downloadUrl: String?,
+    val previewUrl: String?
 )
 
 data class DocumentFileResource(
@@ -57,7 +57,7 @@ class ExpertDocumentBrowseService(
             }
 
             val contentType = resolveContentType(attachment)
-            val previewable = isPreviewable(contentType)
+            val hasLocalFile = attachment.storagePath != null
 
             ExpertDocumentFile(
                 documentId = doc.id ?: error("Document id is required"),
@@ -69,9 +69,17 @@ class ExpertDocumentBrowseService(
                 documentType = doc.documentType,
                 documentStatus = doc.documentStatus,
                 createdAt = doc.createdAt,
-                previewable = previewable,
-                downloadUrl = "/api/expert-contacts/$contactId/attachments/${attachment.id}/download",
-                previewUrl = "/api/expert-contacts/$contactId/attachments/${attachment.id}/preview"
+                previewable = hasLocalFile && isPreviewable(contentType),
+                downloadUrl = if (hasLocalFile) {
+                    "/api/expert-contacts/$contactId/attachments/${attachment.id}/download"
+                } else {
+                    null
+                },
+                previewUrl = if (hasLocalFile) {
+                    "/api/expert-contacts/$contactId/attachments/${attachment.id}/preview"
+                } else {
+                    null
+                }
             )
         }
     }
@@ -82,7 +90,7 @@ class ExpertDocumentBrowseService(
             fileName = validation.attachment.fileName,
             contentType = resolveContentType(validation.attachment),
             path = validation.resolvedPath,
-            fileSize = validation.attachment.fileSize
+            fileSize = Files.size(validation.resolvedPath)
         )
     }
 
@@ -117,7 +125,10 @@ class ExpertDocumentBrowseService(
             "Mail record $mailRecordId does not belong to expert contact $contactId"
         }
 
-        val storagePath = Path.of(attachment.storagePath).toAbsolutePath().normalize()
+        val rawStoragePath = requireNotNull(attachment.storagePath) {
+            "Attachment $attachmentId has no local file (storage_path is null)"
+        }
+        val storagePath = Path.of(rawStoragePath).toAbsolutePath().normalize()
         require(Files.exists(storagePath)) { "File not found: ${attachment.fileName}" }
         require(Files.isRegularFile(storagePath)) { "Not a regular file: ${attachment.fileName}" }
 

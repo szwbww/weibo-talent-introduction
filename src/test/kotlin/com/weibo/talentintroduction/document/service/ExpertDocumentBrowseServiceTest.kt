@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -119,10 +120,8 @@ class ExpertDocumentBrowseServiceTest {
         assertEquals("application/pdf", result[0].contentType)
         assertTrue(result[0].previewable)
         assertEquals("CV", result[0].documentType)
-        assertTrue(result[0].downloadUrl.contains("/api/expert-contacts/$contactId/attachments/1/download"))
-        assertTrue(result[0].previewUrl.contains("/api/expert-contacts/$contactId/attachments/1/preview"))
-        assertTrue(result[0].downloadUrl.contains("/api/expert-contacts/$contactId/attachments/1/download"))
-        assertTrue(result[0].previewUrl.contains("/api/expert-contacts/$contactId/attachments/1/preview"))
+        assertEquals("/api/expert-contacts/$contactId/attachments/1/download", result[0].downloadUrl)
+        assertEquals("/api/expert-contacts/$contactId/attachments/1/preview", result[0].previewUrl)
     }
 
     @Test
@@ -300,5 +299,85 @@ class ExpertDocumentBrowseServiceTest {
             service.listDocuments(contactId)
         }
         assertTrue(ex.message!!.contains("does not belong"))
+    }
+
+    @Test
+    fun `metadata-only attachment lists null size and no urls and is not previewable`() {
+        val contactId = 1L
+        val att = MailAttachment(
+            id = 1L,
+            mailRecordId = 100L,
+            fileName = "cv.pdf",
+            contentType = "application/pdf",
+            fileSize = null,
+            storagePath = null,
+            createdAt = LocalDateTime.now()
+        )
+        val doc = document(1, contactId, 1, "CV")
+
+        Mockito.`when`(expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+            .thenReturn(listOf(doc))
+        Mockito.`when`(mailAttachmentRepository.findById(1L))
+            .thenReturn(Optional.of(att))
+        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L))
+            .thenReturn(mailRecord(100, contactId))
+
+        val result = service.listDocuments(contactId)
+
+        assertEquals(1, result.size)
+        assertNull(result[0].fileSize)
+        assertNull(result[0].downloadUrl)
+        assertNull(result[0].previewUrl)
+        assertFalse(result[0].previewable)
+        assertEquals("cv.pdf", result[0].fileName)
+    }
+
+    @Test
+    fun `resolveForDownload rejects metadata-only attachment without a local file`() {
+        val contactId = 1L
+        val att = MailAttachment(
+            id = 1L,
+            mailRecordId = 100L,
+            fileName = "not-landed.pdf",
+            contentType = "application/pdf",
+            fileSize = null,
+            storagePath = null,
+            createdAt = LocalDateTime.now()
+        )
+        val doc = document(1, contactId, 1)
+
+        Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(doc)
+        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(att))
+        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, contactId))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.resolveForDownload(contactId, 1)
+        }
+        assertTrue(ex.message!!.contains("no local file"))
+    }
+
+    @Test
+    fun `resolveForDownload reports actual size of the verified file not the stored value`() {
+        val contactId = 1L
+        val f = createTestFile("stale-size.pdf", content = "test")
+        val att = MailAttachment(
+            id = 1L,
+            mailRecordId = 100L,
+            fileName = "stale-size.pdf",
+            contentType = "application/pdf",
+            fileSize = 999L,
+            storagePath = f.toString(),
+            createdAt = LocalDateTime.now()
+        )
+        val doc = document(1, contactId, 1)
+
+        Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(doc)
+        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(att))
+        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, contactId))
+
+        val result = service.resolveForDownload(contactId, 1)
+
+        assertEquals(4L, result.fileSize)
+        assertEquals("test", Files.readString(result.path))
     }
 }

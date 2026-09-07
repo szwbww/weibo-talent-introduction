@@ -483,8 +483,8 @@ data class MailAttachmentResponse(
     val mailRecordId: Long,
     val fileName: String,
     val contentType: String?,
-    val fileSize: Long,
-    val storagePath: String,
+    val fileSize: Long?,
+    val storagePath: String?,
     val createdAt: String?
 )
 

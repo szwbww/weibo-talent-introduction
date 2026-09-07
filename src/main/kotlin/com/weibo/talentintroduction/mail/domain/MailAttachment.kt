@@ -12,7 +12,7 @@ data class MailAttachment(
     val inboundProcessingId: Long? = null,
     val fileName: String,
     val contentType: String?,
-    val fileSize: Long,
-    val storagePath: String,
+    val fileSize: Long? = null,
+    val storagePath: String? = null,
     val createdAt: LocalDateTime? = null
 )
