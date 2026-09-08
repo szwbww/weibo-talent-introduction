@@ -7557,6 +7557,10 @@ async function showExpertDetail(expert) {
     const name = expert.displayName || expert.email || expert.orcidId || "?";
     const initial = name.charAt(0).toUpperCase();
     const contactDetail = $("#contactDetail");
+    // 切到 ES 原始专家视图前同样释放上一个联系人的材料组件视图
+    if (typeof unmountExpertMaterialsHosts === "function") {
+        unmountExpertMaterialsHosts(contactDetail);
+    }
     const tagLevel = expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
     let expertTags = { found: false, tags: [] };
     if (expert.orcidId) {
@@ -7570,6 +7574,7 @@ async function showExpertDetail(expert) {
     $("#contactHeadActions").innerHTML = "";
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
+    const noContactMaterialsHtml = typeof renderNoContactMaterialsEmpty === "function" ? renderNoContactMaterialsEmpty() : "";
     contactDetail.innerHTML = `
         ${backToListBtnHtml()}
         <div class="detail">
@@ -7662,6 +7667,7 @@ async function showExpertDetail(expert) {
                     </button>
                 </div>
             ` : ""}
+            ${noContactMaterialsHtml}
             </div>
             <div class="detail-tab-panel" data-panel="template" hidden>
                 <div class="tpl-var-empty">切换到本标签页以加载模板变量预览。</div>
@@ -8060,6 +8066,10 @@ async function loadContactDetail(contactId) {
 
     const banner = renderManualAttentionBanner(contact);
     const contactDetail = $("#contactDetail");
+    // 切专家/刷新详情前先释放上一专家的材料组件视图（轮询、监听、在途读请求）
+    if (typeof unmountExpertMaterialsHosts === "function") {
+        unmountExpertMaterialsHosts(contactDetail);
+    }
     const tagLevel = contact.currentIndexLevel || expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
     const orcidId = contact.orcidId || expert.orcidId || "";
     let expertTags = { found: false, tags: [] };
@@ -8274,6 +8284,10 @@ async function loadContactDetail(contactId) {
             document.querySelector(".contact-detail-panel")?.scrollIntoView({ behavior: "smooth" });
         }
     });
+    // 当前 contact DOM 写入完成后挂载共享材料组件（真实 contactId；组件未加载时为 no-op）
+    if (typeof mountExpertMaterialsInline === "function") {
+        mountExpertMaterialsInline(contact.id, contactDetail);
+    }
     if (contact.id) {
         loadEmailAliases(contact.id, contact);
     }
@@ -8360,7 +8374,66 @@ async function loadEmailAliases(contactId, contact) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// 共享材料组件（子计划 08）宿主适配
+// 渐进式：window.ExpertMaterials 未加载（资源注册前的旧页面）时，下列函数
+// 全部走原路径；组件存在后，专家详情资料卡只输出 data host 并由组件挂载。
+// ─────────────────────────────────────────────────────────────────────────
+
+function expertMaterialsAvailable() {
+    return typeof window !== "undefined" && !!window.ExpertMaterials;
+}
+
+function unmountExpertMaterialsHosts(rootEl) {
+    if (!expertMaterialsAvailable() || !rootEl) return;
+    if (typeof window.ExpertMaterials.unmountHostsIn === "function") {
+        window.ExpertMaterials.unmountHostsIn(rootEl);
+    }
+}
+
+function mountExpertMaterialsInline(contactId, rootEl) {
+    if (!expertMaterialsAvailable() || !rootEl) return null;
+    const id = Number(contactId);
+    if (!Number.isFinite(id) || id <= 0) return null;
+    if (typeof window.ExpertMaterials.configure !== "function" ||
+        typeof window.ExpertMaterials.mount !== "function") {
+        return null;
+    }
+    const host = rootEl.querySelector("[data-expert-materials-host]");
+    if (!host) return null;
+    window.ExpertMaterials.configure({
+        api,
+        contextPath,
+        labels: {
+            documentType: (value) => labelDocumentType(value),
+            documentStatus: (value) => labelDocumentStatus(value),
+            fileSize: (value) => formatFileSize(value)
+        }
+    });
+    return window.ExpertMaterials.mount({ host, contactId: id, mode: "inline" });
+}
+
+// I-4：原始 ES 专家没有 contactId 时不挂载网络材料组件，也不请求
+// undefined/null 的 materials —— 只显示静态空态（组件存在时）。
+function renderNoContactMaterialsEmpty() {
+    if (!expertMaterialsAvailable()) return "";
+    return `
+        <section class="expert-materials" aria-label="专家上传资料" aria-busy="false">
+            <header><h3>专家上传资料 <span>0 份</span></h3></header>
+            <p class="em-empty">尚未建立联系，暂无资料。</p>
+        </section>
+    `;
+}
+
 function renderExpertDocuments(documents, contactId) {
+    // I-4/I-1：组件已加载时旧 document-row 渲染退役，只输出 data host，
+    // 真正的 S-1 面板由 ExpertMaterials.mount 在 loadContactDetail 写入后渲染。
+    if (expertMaterialsAvailable()) {
+        const id = Number(contactId);
+        if (Number.isFinite(id) && id > 0) {
+            return `<div data-expert-materials-host data-contact-id="${id}"></div>`;
+        }
+    }
     const list = Array.isArray(documents) ? documents : (documents?.records || []);
     if (list.length === 0) {
         return `
