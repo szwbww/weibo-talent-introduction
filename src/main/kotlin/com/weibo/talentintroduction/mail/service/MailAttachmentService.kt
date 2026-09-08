@@ -148,9 +148,11 @@ class MailAttachmentService(
     // ------------------------------------------------------------------
 
     /**
-     * confirm 建好 processing 行后调用：把本信（metadata 附件）已登记的 transfer
-     * 行桥接到 processing.id。任一 metadata 附件找不到登记行即抛错使本信确认失败
-     * （I-2 完整性）；重复调用幂等（已桥接的行不再改写）。
+     * confirm 建好 processing 行后调用：把本信已登记的 metadata 附件（content==null）
+     * transfer 行桥接到 processing.id。完整性约束只适用于 metadata 附件——任一
+     * metadata 附件缺登记行即抛错使本信确认失败（I-2）；旧 content 模式附件已由
+     * 旧路径完整落库（文件+attachment+doc，不建 transfer 行），一律跳过、绝不
+     * 要求 transfer 行。重复调用幂等（已桥接的行不再改写）。
      */
     fun bridgeInboundProcessing(
         processingId: Long,
@@ -158,6 +160,8 @@ class MailAttachmentService(
     ) {
         val now = LocalDateTime.now()
         attachments.forEach { received ->
+            // 旧 content 模式附件（child-03 无条件携带 source）：bridge 不适用。
+            if (received.content != null) return@forEach
             val source = received.source ?: return@forEach
             val row = attachmentTransferRepository
                 .findByAccountCodeAndFolderAndUidValidityAndImapUidAndPartPath(

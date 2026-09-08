@@ -405,6 +405,65 @@ class MailAttachmentServiceTest {
     }
 
     @Test
+    fun `bridge skips legacy content attachments with remote source and stays strict for metadata`(@TempDir tempDir: Path) {
+        // A-1 回归：child-03 在两种模式下都无条件填 source；旧 content 模式附件经旧路径
+        // 完整落库（无 transfer 行）。确认点 bridge 必须跳过 content 附件（I-2 完整性
+        // 只约束 metadata 附件），否则默认 metadataOnly=false 下匹配来信带附件即确认回滚。
+        val svc = service(basePath = tempDir.toString())
+        Mockito.`when`(mailAttachmentRepository.save(Mockito.any(MailAttachment::class.java)))
+            .thenAnswer { invocation ->
+                val attachment = invocation.getArgument<MailAttachment>(0)
+                attachment.copy(id = 71)
+            }
+        Mockito.`when`(expertDocumentRepository.save(Mockito.any(ExpertDocument::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertDocument>(0) }
+
+        val contentAttachment = ReceivedMailAttachment(
+            fileName = "cv.pdf",
+            contentType = "application/pdf",
+            content = "cv-content".toByteArray(),
+            source = source(partPath = "2")
+        )
+        val documents = svc.saveInboundAttachments(
+            expertContactId = 11,
+            mailRecordId = 22,
+            attachments = listOf(contentAttachment)
+        )
+        assertEquals(1, documents.size)
+        // 旧 content 路径：真实文件落盘、无 transfer 行
+        val savedAttachment = ArgumentCaptor.forClass(MailAttachment::class.java)
+        Mockito.verify(mailAttachmentRepository).save(savedAttachment.capture())
+        assertTrue(Files.exists(Path.of(savedAttachment.value.storagePath)))
+        assertEquals("cv-content", Files.readString(Path.of(savedAttachment.value.storagePath)))
+        Mockito.verify(attachmentTransferRepository, Mockito.never()).save(Mockito.any(MailAttachmentTransfer::class.java))
+
+        // 确认点 bridge：content 附件 no-op（不查 transfer、不保存、不抛错）
+        Mockito.verify(attachmentTransferRepository, Mockito.never())
+            .findByAccountCodeAndFolderAndUidValidityAndImapUidAndPartPath(
+                Mockito.anyString(), Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong(), Mockito.anyString()
+            )
+        svc.bridgeInboundProcessing(processingId = 777L, attachments = listOf(contentAttachment))
+        Mockito.verify(attachmentTransferRepository, Mockito.never())
+            .findByAccountCodeAndFolderAndUidValidityAndImapUidAndPartPath(
+                Mockito.anyString(), Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong(), Mockito.anyString()
+            )
+        Mockito.verify(attachmentTransferRepository, Mockito.never()).save(Mockito.any(MailAttachmentTransfer::class.java))
+
+        // 同一信内 metadata 附件仍严格（混合防御不变）
+        Mockito.`when`(attachmentTransferRepository
+            .findByAccountCodeAndFolderAndUidValidityAndImapUidAndPartPath(
+                Mockito.anyString(), Mockito.anyString(), Mockito.anyLong(), Mockito.anyLong(), Mockito.anyString()
+            ))
+            .thenReturn(null)
+        assertThrows(IllegalStateException::class.java) {
+            svc.bridgeInboundProcessing(
+                processingId = 777L,
+                attachments = listOf(contentAttachment, metadataAttachment(fileName = "m.pdf", partPath = "2.1"))
+            )
+        }
+    }
+
+    @Test
     fun `processing owner registration links transfer to processing and creates document for known contact`() {
         stubMetadataSaveBehaviours()
         val svc = service()

@@ -1884,6 +1884,77 @@ class AutoMailReplyServiceTest {
         Mockito.verify(mailAttachmentService).saveUnmatchedAttachments(503L, emptyList(), 11L)
     }
 
+    @Test
+    fun `matched content mode message with attachments confirms through the default bridge path`() {
+        // A-1 回归接线：默认 metadataOnly=false 下，带 content 附件（source 亦被 child-03
+        // 填充）的已匹配来信走默认 bridgeMetadata=true 确认；bridge 对 content 附件跳过
+        // transfer 行要求（真实跳过逻辑在 MailAttachmentServiceTest 覆盖），本信正常确认。
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.INTRO_SENT.name,
+            autoReplyEnabled = false,
+            operatorStatus = "CONTACTED"
+        )
+        defaultPromotionStubs(contact)
+        val attachment = ReceivedMailAttachment(
+            fileName = "cv.pdf",
+            contentType = "application/pdf",
+            content = "cv".toByteArray(),
+            source = ImapAttachmentSource(
+                accountCode = "sender",
+                folder = "INBOX",
+                uidValidity = 1L,
+                uid = 101L,
+                partPath = "2",
+                messageId = "reply-1"
+            )
+        )
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(reply(attachments = listOf(attachment))))
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(
+            listOf(
+                com.weibo.talentintroduction.document.domain.ExpertDocument(
+                    expertContactId = 11,
+                    mailAttachmentId = 1,
+                    documentType = "CV",
+                    createdAt = LocalDateTime.now()
+                )
+            )
+        )
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(SinglePipelineOutcome.AUTO_REPLY_DISABLED.name, result.repliedExperts.single().outcome)
+        Mockito.verify(mailAttachmentService).saveInboundAttachments(11L, 100L, listOf(attachment))
+        // 默认确认点仍调用 bridge（content 附件由 MailAttachmentService 内部跳过）
+        Mockito.verify(mailAttachmentService).bridgeInboundProcessing(Mockito.anyLong(), eqValue(listOf(attachment)))
+        Mockito.verify(receiveService).markSeen(account, 101)
+        Mockito.verifyNoInteractions(groundedAutoReplyDecisionService, deliveryService)
+    }
+
     private fun stubExpertProfile(
         orcidId: String,
         familyNames: String? = "Lovelace",

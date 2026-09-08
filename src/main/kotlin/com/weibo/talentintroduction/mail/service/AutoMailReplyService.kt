@@ -1106,9 +1106,11 @@ class AutoMailReplyService(
     /**
      * 确认入口：事务内保存 processing 行（markSeen 不在本方法内——由 processSingle
      * 在事务成功提交后的单一确认点执行）。bridgeMetadata=true（已匹配分支）时在
-     * 同一事务内把本信已登记的 transfer 行桥接 processing.id（I-2：缺任一附件
-     * 登记即抛错，本信不能被确认）；未匹配/无首信/来源存疑分支先 false 建行，
-     * 附件随后以 processing 为 owner 直接登记。
+     * 同一事务内把本信已登记的 metadata 附件 transfer 行桥接 processing.id（I-2：
+     * 缺任一 metadata 附件登记即抛错，本信不能被确认；旧 content 附件由旧路径落库、
+     * 由 MailAttachmentService.bridgeInboundProcessing 跳过，不要求 transfer 行）；
+     * 未匹配/无首信/来源存疑分支先 false 建行，附件随后以 processing 为 owner
+     * 直接登记。
      */
     private fun confirmManualReview(
         account: MailSenderAccount,
