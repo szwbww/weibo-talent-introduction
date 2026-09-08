@@ -219,7 +219,9 @@ class MailboxConversationRepository(
     // summary 追加投影（本页 contact id 集合）
     // ------------------------------------------------------------------
 
-    /** 每位专家的最近一条消息（双来源中 event 最大者；并列按 (source_rank, id) 稳定）。 */
+    /** 每位专家的最近一条消息（双来源中 event 最大者；并列按 (source_rank, id) 稳定）。
+     *  MySQL 5.7 兼容：同一账号范围/来源内 NOT EXISTS 反连接实现 groupwise max，
+     *  禁 ROW_NUMBER/OVER（旧线上服务端解析窗口函数报 1064）。 */
     fun latestMessageByContacts(
         contactIds: List<Long>,
         accountCodes: List<String>,
@@ -227,35 +229,29 @@ class MailboxConversationRepository(
     ): Map<Long, ConversationLatestMessageRow> {
         if (contactIds.isEmpty()) return emptyMap()
         val sql = """
-            SELECT ranked.expert_contact_id AS expert_contact_id,
-                   ranked.source AS source,
-                   ranked.id AS id,
-                   ranked.direction AS direction,
-                   ranked.account_code AS account_code,
-                   ranked.subject AS subject,
-                   ranked.preview AS preview,
-                   ranked.event_at AS event_at,
-                   ranked.send_status AS send_status,
-                   ranked.process_status AS process_status
-              FROM (
-                  SELECT u.expert_contact_id AS expert_contact_id,
-                         u.source AS source,
-                         u.id AS id,
-                         u.direction AS direction,
-                         u.account_code AS account_code,
-                         u.subject AS subject,
-                         u.preview AS preview,
-                         u.event_at AS event_at,
-                         u.send_status AS send_status,
-                         u.process_status AS process_status,
-                         ROW_NUMBER() OVER (
-                             PARTITION BY u.expert_contact_id
-                             ORDER BY u.event_at DESC, u.source_rank DESC, u.id DESC
-                         ) AS rn
-                    FROM (${rangeUnionSql(includeBody = false)}) u
-                   WHERE u.expert_contact_id IN (:contactIds)
-              ) ranked
-             WHERE ranked.rn = 1
+            SELECT u.expert_contact_id AS expert_contact_id,
+                   u.source AS source,
+                   u.id AS id,
+                   u.direction AS direction,
+                   u.account_code AS account_code,
+                   u.subject AS subject,
+                   u.preview AS preview,
+                   u.event_at AS event_at,
+                   u.send_status AS send_status,
+                   u.process_status AS process_status
+              FROM (${rangeUnionSql(includeBody = false)}) u
+             WHERE u.expert_contact_id IN (:contactIds)
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM (${rangeUnionSql(includeBody = false)}) newer
+                    WHERE newer.expert_contact_id = u.expert_contact_id
+                      AND (newer.event_at > u.event_at
+                           OR (newer.event_at = u.event_at
+                               AND newer.source_rank > u.source_rank)
+                           OR (newer.event_at = u.event_at
+                               AND newer.source_rank = u.source_rank
+                               AND newer.id > u.id))
+               )
         """.trimIndent()
         val p = MapSqlParameterSource()
             .addValue("contactIds", contactIds)
@@ -266,7 +262,8 @@ class MailboxConversationRepository(
         }.toMap()
     }
 
-    /** 每位专家最近一封来信（真实 processing.id，绝不从 mail_record 推算）。 */
+    /** 每位专家最近一封来信（真实 processing.id，绝不从 mail_record 推算）。
+     *  MySQL 5.7 兼容：候选与反连接对手都限 INBOUND_PROCESSING，见 [latestMessageByContacts]。 */
     fun latestInboundByContacts(
         contactIds: List<Long>,
         accountCodes: List<String>,
@@ -274,26 +271,26 @@ class MailboxConversationRepository(
     ): Map<Long, ConversationLatestInboundRow> {
         if (contactIds.isEmpty()) return emptyMap()
         val sql = """
-            SELECT ranked.expert_contact_id AS expert_contact_id,
-                   ranked.id AS processing_id,
-                   ranked.account_code AS account_code,
-                   ranked.message_id AS message_id,
-                   ranked.event_at AS received_at
-              FROM (
-                  SELECT u.expert_contact_id AS expert_contact_id,
-                         u.id AS id,
-                         u.account_code AS account_code,
-                         u.message_id AS message_id,
-                         u.event_at AS event_at,
-                         ROW_NUMBER() OVER (
-                             PARTITION BY u.expert_contact_id
-                             ORDER BY u.event_at DESC, u.source_rank DESC, u.id DESC
-                         ) AS rn
-                    FROM (${rangeUnionSql(includeBody = false)}) u
-                   WHERE u.expert_contact_id IN (:contactIds)
-                     AND u.source = 'INBOUND_PROCESSING'
-              ) ranked
-             WHERE ranked.rn = 1
+            SELECT u.expert_contact_id AS expert_contact_id,
+                   u.id AS processing_id,
+                   u.account_code AS account_code,
+                   u.message_id AS message_id,
+                   u.event_at AS received_at
+              FROM (${rangeUnionSql(includeBody = false)}) u
+             WHERE u.expert_contact_id IN (:contactIds)
+               AND u.source = 'INBOUND_PROCESSING'
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM (${rangeUnionSql(includeBody = false)}) newer
+                    WHERE newer.expert_contact_id = u.expert_contact_id
+                      AND newer.source = 'INBOUND_PROCESSING'
+                      AND (newer.event_at > u.event_at
+                           OR (newer.event_at = u.event_at
+                               AND newer.source_rank > u.source_rank)
+                           OR (newer.event_at = u.event_at
+                               AND newer.source_rank = u.source_rank
+                               AND newer.id > u.id))
+               )
         """.trimIndent()
         val p = MapSqlParameterSource()
             .addValue("contactIds", contactIds)

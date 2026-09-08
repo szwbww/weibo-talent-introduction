@@ -16,6 +16,8 @@ import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.TestPropertySource
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import java.nio.file.Files
+import java.nio.file.Path
 import java.sql.Statement
 import java.sql.Timestamp
 import java.time.LocalDateTime
@@ -31,7 +33,11 @@ import java.time.LocalDateTime
  *   waitingReply（仅 SENT 计发、FAILED 单列）+ pendingOnly（MANUAL_REVIEW 谓词）；
  * - 多标签 membership 无重复行；方向/主题/姓名邮箱 q 筛选；
  * - 同 timestamp 分页稳定（跨页无重复/缺失）；EXPLAIN 计划健全性；
- * - latestInbound 携带真实 processing.id。
+ * - latestInbound 携带真实 processing.id；
+ * - I-2 平局证据：同秒跨来源 rank 2 胜出、同来源更大 id 胜出、latestInbound 取真实最大
+ *   processing id；账号收窄口径不越界选取其他账号的更新消息；
+ * - 无窗口函数源码级回归见同文件 [MailboxConversationRepositorySqlCompatTest]（随
+ *   `mvn test` 全量执行，不依赖 mysqlIt 门禁）。
  */
 @EnabledIfSystemProperty(named = "mysqlIt", matches = "true")
 @DataJdbcTest
@@ -426,6 +432,59 @@ class MailboxConversationRepositoryIT {
         assertEquals(plan.size, plan2.size)
     }
 
+    @Test
+    fun `latest groupwise max breaks ties by source rank then id and stays inbound-scoped`() {
+        // I-2：同一专家同一秒存在 OUTBOUND（rank 1）与两封同来源来信（rank 2）。
+        val shared = "2026-09-08 12:00:00"
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "Outbound T", shared)
+        insertProcessing(1, "acc-a", 900, "PROCESSED", "Re low", shared, "msg-tie-low", "alice@example.org")
+        val inboundHigh = insertProcessing(1, "acc-a", 901, "PROCESSED", "Re high", shared,
+            "msg-tie-high", "alice@example.org")
+
+        // 同秒跨来源平局：rank 2（INBOUND_PROCESSING）胜出；同来源同秒：更大 processing id 胜出。
+        val latest = repository.latestMessageByContacts(listOf(1L), allAccounts, null)
+        assertEquals(MailboxConversationRepository.SOURCE_INBOUND_PROCESSING, latest[1L]!!.source)
+        assertEquals(inboundHigh, latest[1L]!!.id)
+        assertEquals("Re high", latest[1L]!!.subject)
+
+        // latestInbound 指向同秒下真实的最大 processing id（绝不取自 mail_record）。
+        val inbound = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+        assertEquals(inboundHigh, inbound[1L]!!.processingId)
+
+        // 更晚的 OUTBOUND 只改 latestMessage；latestInbound 候选恒为 processing，不受其扰动。
+        insertOutbound(1, "acc-a", "QA_REPLY", "SENT", "Later outbound", "2026-09-08 13:00:00")
+        val later = repository.latestMessageByContacts(listOf(1L), allAccounts, null)
+        assertEquals(MailboxConversationRepository.SOURCE_MAIL_RECORD, later[1L]!!.source)
+        assertEquals("Later outbound", later[1L]!!.subject)
+        val inboundAfter = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+        assertEquals(inboundHigh, inboundAfter[1L]!!.processingId)
+
+        // I-4：空 contactIds 短路仍返回空（不执行 IN () 查询）。
+        assertTrue(repository.latestMessageByContacts(emptyList(), allAccounts, null).isEmpty())
+        assertTrue(repository.latestInboundByContacts(emptyList(), allAccounts, null).isEmpty())
+    }
+
+    @Test
+    fun `latest respects accountCode scope despite newer rows on other accounts`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "A acc-a", "2026-09-01 09:00:00")
+        insertOutbound(1, "acc-a", "QA_REPLY", "SENT", "A2 acc-a", "2026-09-02 09:00:00")
+        // 专家在 acc-b 存在更晚的来信：全账号口径胜出，但 acc-a 收窄口径不得越界选取。
+        insertProcessing(1, "acc-b", 951, "PROCESSED", "Re acc-b", "2026-09-08 10:00:00",
+            "msg-acc-b-new", "alice@example.org")
+
+        val narrowed = repository.latestMessageByContacts(listOf(1L), allAccounts, "acc-a")
+        assertEquals(MailboxConversationRepository.SOURCE_MAIL_RECORD, narrowed[1L]!!.source)
+        assertEquals("A2 acc-a", narrowed[1L]!!.subject, "acc-a 口径不得选中 acc-b 的更新消息")
+        val narrowedInbound = repository.latestInboundByContacts(listOf(1L), allAccounts, "acc-a")
+        assertNull(narrowedInbound[1L], "acc-a 无 processing 来信 → latestInbound 为空（不越界）")
+
+        val all = repository.latestMessageByContacts(listOf(1L), allAccounts, null)
+        assertEquals(MailboxConversationRepository.SOURCE_INBOUND_PROCESSING, all[1L]!!.source)
+        assertEquals("Re acc-b", all[1L]!!.subject)
+        val allInbound = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+        assertEquals("msg-acc-b-new", allInbound[1L]!!.messageId)
+    }
+
     // ------------------------------------------------------------------
     // 工具
     // ------------------------------------------------------------------
@@ -600,5 +659,39 @@ class MailboxConversationRepositoryIT {
             keyHolder
         )
         return keyHolder.key!!.toLong()
+    }
+}
+
+/**
+ * 源码级兼容回归（无 DB、不依赖 mysqlIt 门禁）：两条 latest 查询不得再生成
+ * `ROW_NUMBER` / `OVER` 窗口函数——线上旧 MySQL（5.7/旧 MariaDB）解析
+ * `OVER (PARTITION BY ...)` 报 1064，收发信箱刷新整体失败。
+ *
+ * 只断言 SQL 形态，不断言语义；groupwise-max 的平局/范围语义由
+ * [MailboxConversationRepositoryIT] 在真实 MySQL（mysqlIt）上证明。
+ */
+class MailboxConversationRepositorySqlCompatTest {
+
+    private val sourceFile = Path.of(
+        "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt"
+    )
+
+    @Test
+    fun `latest queries must not use ROW_NUMBER or OVER window functions`() {
+        assertTrue(Files.exists(sourceFile),
+            "找不到被测源码（cwd=${Path.of("").toAbsolutePath()}）：${sourceFile.toAbsolutePath()}")
+        val source = Files.readString(sourceFile)
+        for (method in listOf("latestMessageByContacts(", "latestInboundByContacts(")) {
+            val body = methodBody(source, "fun $method")
+            assertFalse(body.contains("ROW_NUMBER"), "$method 不得使用 ROW_NUMBER")
+            assertFalse(Regex("\\bOVER\\s*\\(").containsMatchIn(body), "$method 不得使用 OVER 窗口子句")
+        }
+    }
+
+    private fun methodBody(source: String, funSignature: String): String {
+        val start = source.indexOf(funSignature)
+        check(start >= 0) { "源码中找不到 $funSignature" }
+        val nextMethod = source.indexOf("\n    fun ", start)
+        return source.substring(start, if (nextMethod >= 0) nextMethod else source.length)
     }
 }
