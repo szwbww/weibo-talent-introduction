@@ -25,7 +25,7 @@ import javax.mail.internet.MimeMultipart
  * 全部夹具经 writeTo + 重解析往返，复现真实 IMAP 收到的 InputStream 分段路径。
  */
 class ImapMailReceiveServiceTest {
-    private val service = ImapMailReceiveService()
+    private val service = ImapMailReceiveService(MailAttachmentStorageProperties(metadataOnly = false))
     private val metadataService = ImapMailReceiveService(
         MailAttachmentStorageProperties(metadataOnly = true)
     )

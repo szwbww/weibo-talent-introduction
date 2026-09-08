@@ -8,8 +8,9 @@ import org.springframework.boot.context.properties.ConstructorBinding
 data class MailAttachmentStorageProperties(
     /** 历史附件存储根目录；worker 受控生成路径在其下 basePath/transfer/{id}/。 */
     val basePath: String = "/opt/talent/uploads/mail-attachments",
-    /** 收信元数据模式开关（03 收信读取是否只登记元数据不取附件内容）；默认关闭。 */
-    val metadataOnly: Boolean = false,
+    /** 收信元数据模式开关（03 收信读取是否只登记元数据不取附件内容）；01–10 验证通过后默认开启，
+     *  显式配置 false 仍可作为紧急回退恢复旧收信行为。 */
+    val metadataOnly: Boolean = true,
     /** 单文件实际字节上限（超过流式中断，FAILED/LIMIT_EXCEEDED）。 */
     val transferMaxBytes: Long = 100L * 1024 * 1024,
     /** 单次传输总时限；不能被续租延长，到时强制关闭连接。 */

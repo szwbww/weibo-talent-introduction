@@ -10,7 +10,7 @@ const indexPath = path.join(root, "index.html");
 const appJsSource = fs.readFileSync(appJsPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260903-bounce-warning";
+const CACHE_KEY = "20260907-material-chat";
 
 function extractFn(name) {
     const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");
@@ -85,10 +85,20 @@ describe("manual reply subject prefill (p3)", () => {
         }
     });
 
-    it("I-5: the cache-key triad uses one current value, three sites, one value", () => {
+    it("I-5: all seven cache-busted assets share one current key", () => {
         const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
-        assert.strictEqual(keys.length, 3, "index.html must carry exactly three cache-busted asset URLs");
-        assert.strictEqual(new Set(keys).size, 1, "all three keys must share one value");
+        assert.strictEqual(keys.length, 7, "index.html must carry exactly seven cache-busted asset URLs");
+        assert.strictEqual(new Set(keys).size, 1, "all seven keys must share one value");
         assert.strictEqual(keys[0], CACHE_KEY, "the shared key must be " + CACHE_KEY);
+        const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css",
+            "trust-reply-workbench.js", "expert-materials.js", "mailbox-chat.js", "app.js"];
+        let previous = -1;
+        for (const asset of ordered) {
+            const at = html.indexOf(asset + "?v=" + CACHE_KEY);
+            assert.ok(at > previous, asset + " must be registered in order (CSS then workbench -> materials -> chat -> app)");
+            previous = at;
+        }
+        assert.ok(!html.includes("20260903-bounce-warning"),
+            "the old cache key must have zero hits in index.html");
     });
 });

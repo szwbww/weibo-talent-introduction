@@ -330,13 +330,23 @@ describe("RAG 知识库页 (plan 04)", () => {
         });
     });
 
-    it("G-5：三处 ?v= 缓存键同值且等于 20260903-bounce-warning", () => {
-        ["styles.css", "trust-reply-workbench.js", "app.js"].forEach((asset) => {
-            assert.ok(html.includes(`${asset}?v=20260903-bounce-warning`), `${asset} key`);
+    it("G-5：七处 ?v= 缓存键同值且等于 20260907-material-chat，注册顺序合规", () => {
+        ["styles.css", "trust-reply-workbench.js", "app.js",
+            "expert-materials.js", "expert-materials.css", "mailbox-chat.js", "mailbox-chat.css"].forEach((asset) => {
+            assert.ok(html.includes(`${asset}?v=20260907-material-chat`), `${asset} key`);
         });
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
-        assert.ok(keys.length >= 3, `expected 3+ cache keys, got ${keys.length}`);
-        assert.ok(keys.every((key) => key === "20260903-bounce-warning"), `all keys must share one value: ${keys}`);
+        assert.strictEqual(keys.length, 7, `expected exactly 7 cache keys, got ${keys.length}`);
+        assert.ok(keys.every((key) => key === "20260907-material-chat"), `all keys must share one value: ${keys}`);
+        const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css",
+            "trust-reply-workbench.js", "expert-materials.js", "mailbox-chat.js", "app.js"];
+        let previous = -1;
+        for (const asset of ordered) {
+            const at = html.indexOf(`${asset}?v=20260907-material-chat`);
+            assert.ok(at > previous, `${asset} must be registered in order (CSS then workbench -> materials -> chat -> app)`);
+            previous = at;
+        }
+        assert.ok(!html.includes("20260903-bounce-warning"), "旧缓存键必须 0 命中 index.html");
     });
 
     it("VERBATIM 事实渲染顶部逐字警示条（DOM stub 跑 renderRagKbDetail）", () => {

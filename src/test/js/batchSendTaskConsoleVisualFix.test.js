@@ -46,9 +46,20 @@ describe("batch send task console visual repair", () => {
     });
 
     it("bumps the stylesheet cache key", () => {
-       assert.ok(html.includes('styles.css?v=20260903-bounce-warning'));
-        assert.ok(html.includes('trust-reply-workbench.js?v=20260903-bounce-warning'));
-        assert.ok(html.includes('app.js?v=20260903-bounce-warning'));
+        const assets = ["styles.css", "trust-reply-workbench.js", "app.js",
+            "expert-materials.js", "expert-materials.css", "mailbox-chat.js", "mailbox-chat.css"];
+        for (const asset of assets) {
+            assert.ok(html.includes(`${asset}?v=20260907-material-chat`), `${asset} must carry the unified key`);
+        }
+        const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css",
+            "trust-reply-workbench.js", "expert-materials.js", "mailbox-chat.js", "app.js"];
+        let previous = -1;
+        for (const asset of ordered) {
+            const at = html.indexOf(`${asset}?v=20260907-material-chat`);
+            assert.ok(at > previous, `${asset} must be registered in order (CSS then workbench -> materials -> chat -> app)`);
+            previous = at;
+        }
+        assert.ok(!html.includes("20260903-bounce-warning"), "the old cache key must have zero hits in index.html");
     });
 
     it("uses an opaque surface for every standard modal while preserving its overlay (I-4)", () => {
