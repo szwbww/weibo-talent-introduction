@@ -1,6 +1,6 @@
 # 07 · 专家会话查询与关注持久化
 
-状态：待审阅/未执行。前置：06子计划通过独立验证。 范围：10个文件；不超过2子系统。共同契约见[总计划](00-mailbox-materials-master.md)。
+状态：待审阅/未执行（执行期 Amendment A1 后范围 11 个文件）。前置：06子计划通过独立验证。 范围：11个文件（A1 拓宽，见变更清单）；不超过2子系统。共同契约见[总计划](00-mailbox-materials-master.md)。
 
 ## 需求描述
 
@@ -55,6 +55,8 @@
 
 ## 变更文件清单
 
+执行期修订（Amendment A1，2026-09-08 HUMAN 批准）：child 06 新增的 document/ExpertMaterialController 与既有 campaign ExpertContactManagementController:244 的 `GET /api/expert-contacts/{id}/materials` 映射完全同路径，Spring 启动即 Ambiguous mapping，生产无法启动；audit.md E 表已声明「统一组件改用新材料 API」。本清单追加退役旧 feed 路由的授权文件（不新建文件、不移动旧 URL 之外的端点）；路由回归测试并入已授权 MailboxConversationControllerTest.kt（新增第二个顶层 @WebMvcTest 类同挂两个控制器，证明无歧义映射）。
+
 | # | 精确路径 | 操作 |
 |---|---|---|
 | 1 | `src/main/resources/db/migration/V121__create_expert_follow.sql` | 新增 |
@@ -63,10 +65,11 @@
 | 4 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt` | 新增 |
 | 5 | `src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt` | 新增 |
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt` | 新增 |
-| 7 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt` | 新增 |
+| 7 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt` | 修改（含 A1 双控制器映射回归测试类） |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` | 修改 |
 | 9 | `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt` | 修改 |
 | 10 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt` | 修改 |
+| 11 | `src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt` | 修改（A1：退役 `@GetMapping("/{contactId}/materials")` listMaterials 旧 feed 映射；保留 PUT updateMaterialStatus、detail 与其余端点；仅删除该映射专用的死代码，不搬迁、不改 payload） |
 
 ## 验收标准
 
