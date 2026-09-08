@@ -154,3 +154,81 @@ The first sandboxed MySQL attempt could not write `target/classes`; fresh reruns
 - No product/test code was modified; only controller-owned review evidence is modified.
 
 Repair planning: N/A. Result is FAIL / DIVERGING. V-2 needs human adjudication and explicit repair authority; no repair plan is created automatically.
+
+## Epoch 3 — 2026-09-08
+
+- Master plan: `docs/plans/2026-09-07/00-mailbox-materials-master.md` (sha256 `2bbfc191ad4a905e5a42dcb34b76bb490661abf243b280764452b5483fdc4044`)
+- Governing master identity: worktree sha256 `2bbfc191ad4a905e5a42dcb34b76bb490661abf243b280764452b5483fdc4044`; recorded `commit a61ecb543668532317bebd7864286352dc3359c7`; invoked identity SAME; state CONSISTENT.
+- Boundary: `8a0c5360e25e875e52800d17797a7b1ea4bd452c..9625769f12b48293470ff91f75e6e0bc09f0a162`
+- Reviewer: `/root/aggregate_reviewer_epoch3` (fresh after repair commit; no inherited implementation context)
+- Result: PASS
+- Convergence: PROGRESSING
+- Repair artifact/result: `docs/plans/fix/00-mailbox-materials-master/repair.md`; executed, V-2 resolved.
+
+### Verification Result: PASS
+
+Manual acceptance: PENDING (A-1..A-8). Identity/hash, ancestry, and repair scope PASS. `9625769` is an ancestor of evidence HEAD `69b0311`; the repair delta is exactly `src/main/resources/static/app.js` and `src/test/js/mailboxChatBehavior.test.js`, both authorized. Product worktree and index are clean; the only pending change before this report is controller-owned review evidence.
+
+### Commands
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test` | PASS | Exit 0; BUILD SUCCESS; 03:02; Node 733 pass, 0 fail, 137 suites. |
+| `node --check src/main/resources/static/expert-materials.js` | PASS | Exit 0. |
+| `node --check src/main/resources/static/mailbox-chat.js` | PASS | Exit 0. |
+| `node --check src/main/resources/static/app.js` | PASS | Exit 0. |
+| `node --test src/test/js/*.test.js` | PASS | Exit 0; 733 pass, 0 fail, 137 suites. |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true test` | N/A | Exact A3 human command-only waiver; not run. |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Pmysql-it -Dtest=MailboxConversationRepositoryIT test` | PASS | Exit 0; 12 run, 0 fail/error/skip. |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Pmysql-it -Dtest=ImapMetadataFetchIT,AttachmentTransferWorkerIT test` | PASS | Exit 0; 21 run, 0 fail/error/skip; IMAP 9, transfer 12; schema V121, 120 migrations validated. |
+
+### Master Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| Boundary, amendments A1/A2, authorized repair scope | PASS | Hash/ancestry/diff checks; repair restricted to its two authorized files. |
+| Requirement 1: conversations, outbound-only/waiting/follow | PASS | Fresh repository IT 12/12. |
+| Requirement 2: processing-only action, retained views/editing | PASS | Fresh full Node suite. |
+| Requirement 3: real navigation/settings/workbench/manual reply | PASS | V-2 fixed at `app.js:665-673`; positive selector/POST regression at `mailboxChatBehavior.test.js:1256-1302`. |
+| Requirement 4: metadata-only/no attachment binary fetch | PASS | Fresh IMAP IT 9/9. |
+| Requirement 5: shared materials/explicit retrieval | PASS | Fresh frontend suite. |
+| Requirement 6: paging/filter/retry/source/legacy | PASS | Fresh frontend suite and transfer IT 12/12. |
+| Requirement 7: acquire-then-analyze/no implicit OCR download | PASS | Fresh analysis-flow tests. |
+| G-1 | PASS | Repository IT 12/12. |
+| G-2 | PASS | IMAP 9/9 and transfer 12/12. |
+| G-3 | PASS | Transfer IT 12/12. |
+| G-4 | PASS | Shared frontend component/store checks. |
+| G-5 | PASS | Status/level save uses established endpoints and payloads. |
+| G-6 | PENDING | Machine evidence passes; A-1/A-8 are human-only. |
+| Must-not-change and explicit non-goals | PASS | No repair changes outside catalogs/tests; full regressions green. |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 A3 Flyway environment waiver | PERSISTENT, authorized N/A | Exact command-only waiver remains valid; no code finding. |
+| V-2 status/level catalogs | RESOLVED | `window.operatorStatusOptions` and `window.indexLevelOptions` published; positive and absent-catalog regression tests pass. |
+
+### Findings
+
+#### P1
+- N/A
+
+#### P2
+- N/A
+
+#### Observations
+- A-1..A-8 remain pending human acceptance; A3 remains authorized N/A.
+
+### Evidence Boundaries
+
+- Browser/viewport/real-IMAP/manual-send acceptance remains human work.
+- A3 Flyway command intentionally was not rerun per its exact waiver.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| 01–11 O/R catalog | G-1..G-6 and relevant I-items | PASS / non-blocking | No item newly violates a mandatory contract; child-10 O-1 remains V-2 and is resolved. Remaining entries are wording/count variance, maintenance notes, deliberate limitations, or manual-only checks. |
+
+`git diff --check` reports inherited documentation trailing whitespace and a pre-existing test EOF blank line only; non-mandatory and no behavior impact. Repair planning: N/A; PASS makes `repair-p` ineligible. No product code was modified by the reviewer.
