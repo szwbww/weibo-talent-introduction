@@ -1,6 +1,6 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-09-07/00-mailbox-materials-master.md
 
-- Status: MACHINE_BLOCKED
+- Status: REPAIR_PLAN_READY
 - Review epoch: 2
 - Master plan: docs/plans/2026-09-07/00-mailbox-materials-master.md (commit a61ecb543668532317bebd7864286352dc3359c7; sha256 2bbfc191ad4a905e5a42dcb34b76bb490661abf243b280764452b5483fdc4044)
 - Governing master identity: worktree sha256 2bbfc191ad4a905e5a42dcb34b76bb490661abf243b280764452b5483fdc4044; recorded commit a61ecb543668532317bebd7864286352dc3359c7
@@ -12,8 +12,8 @@
 - Fast-p handoff: docs/plans/fast/mailbox-materials/human-review-handoff.md (sha256 036c119ffd5a1fba315ac133da7d5372919790d9feffbe3bc98e2f42c8d3aa61)
 - Master base: 8a0c5360e25e875e52800d17797a7b1ea4bd452c
 - Final code head: 009d9bab431c75184b00659905f80dcde91e3166
-- Evidence parent before next commit: 51445c108b424127eefbe7ea3dce065129228be5
-- Previous evidence commit: 51445c108b424127eefbe7ea3dce065129228be5
+- Evidence parent before next commit: 54851a455b256c281b5f66c5d21ef0075efbcfe7
+- Previous evidence commit: 54851a455b256c281b5f66c5d21ef0075efbcfe7
 - Branch: fast/mailbox-materials
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mailbox-materials
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
@@ -23,17 +23,23 @@
 - Reviewer attempt: 1
 - Machine result: FAIL
 - Machine report epoch: machine-verification.md, Epoch 2
-- Repair artifact: N/A
+- Repair artifact: docs/plans/fix/00-mailbox-materials-master/repair.md (DRAFT_READY)
 - Repair evidence mode: N/A
 - Repair approval source: N/A
 - Repair executor: N/A
 - Repair code head: N/A
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: V-2 P1. `mailbox-chat.js` reads status/level catalogs as `window` properties though `app.js` declares them as top-level `const`; real-browser controls render empty and save cannot submit. Convergence DIVERGING; human adjudication and explicitly authorized repair scope are required before re-review.
+- Blocker/next action: V-2 repair plan is ready. Await explicit `$execute-p docs/plans/fix/00-mailbox-materials-master/repair.md`; no product change is authorized before that invocation.
 
 ## Epoch 2 Authority
 
 - Human approval source: user message, 2026-09-08, “批准”, approving the immediately preceding scope “忽略flyway 继续”.
 - A3 scope: only the Flyway command stated above is waived for this aggregate review. It waives no product requirement, invariant, migration behavior, manual acceptance item, or remaining test command.
 - Prior finding V-1: resolved as an approved command-evidence waiver only; no finding closure on migration behavior is inferred.
+
+## Epoch 2 Repair Authority
+
+- Human adjudication: user message, 2026-09-08, “好的 就按这个方案修复 你出 repair文件吧”.
+- Approved planning approach: publish the existing status/level option arrays from app.js to the mailbox-chat `window` contract and add the focused selector/POST regression.
+- Execution authority: not granted. The exact repair artifact remains DRAFT pending an explicit `$execute-p` invocation.
