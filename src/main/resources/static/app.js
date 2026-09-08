@@ -1672,6 +1672,11 @@ function numberValue(value, fallback = 0) {
 function setView(view) {
     if (view !== "ai-training") unmountAiTrainingTrustReply();
     if (view !== "mailbox") unmountMailboxTrustReplyHosts();
+    // child 10（I-2）：离开收发件箱即销毁聊天 mount（草稿为内存态、随销毁清空，
+    // 避免跨会话/跨专家残留目标与 QA 上下文）。
+    if (view !== "mailbox" && typeof unmountMailboxChatHosts === "function") {
+        unmountMailboxChatHosts();
+    }
     if (state.monitoring.autoRefreshTimer && view !== "monitoring") {
         clearTimeout(state.monitoring.autoRefreshTimer);
         state.monitoring.autoRefreshTimer = null;
@@ -14311,6 +14316,221 @@ function syncMailboxViewModeControls() {
     state.mailbox.viewMode = expertMode ? "EXPERT" : "MAIL";
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// 收发件箱专家聊天（子计划 10）宿主适配
+// 渐进式：window.MailboxChat 未加载（资源注册前/脚本缺失）时全部走原 table/group
+// 路径；组件存在且无 taskExecutionId（任务钻取）时激活聊天。旧 MAIL/EXPERT 模式
+// 控件与旧外部分页只在聊天激活时隐藏，原筛选读取器映射到 child-07 conversations
+// summary API（q=搜索、accountCode/direction/dates/subject/label + pending）。
+// ─────────────────────────────────────────────────────────────────────────
+
+function mailboxChatAvailable() {
+    return typeof MailboxChat !== "undefined" && !!MailboxChat
+        && typeof MailboxChat.mount === "function"
+        && typeof MailboxChat.unmount === "function";
+}
+
+function mailboxChatEligible() {
+    return mailboxChatAvailable() && state.mailbox.taskExecutionId == null;
+}
+
+function unmountMailboxChatHosts() {
+    if (!mailboxChatAvailable()) return;
+    const list = $("#mailboxList");
+    if (!list) return;
+    try {
+        MailboxChat.unmount(list);
+    } catch (e) {
+        // 组件内部清理失败不阻断原路径
+    }
+}
+
+function syncMailboxChatChrome(chatOn) {
+    const viewControls = document.querySelector(".mailbox-view-controls");
+    if (viewControls) viewControls.hidden = !!chatOn;
+    const pagination = $("#mailboxPagination");
+    if (pagination) pagination.hidden = !!chatOn;
+}
+
+function mailboxChatFilterSnapshot() {
+    const snapshot = {};
+    const accountCode = $("#mailboxFilterAccountCode")?.value || "";
+    if (accountCode) snapshot.accountCode = accountCode;
+    const direction = $("#mailboxFilterDirection")?.value || "";
+    if (direction) snapshot.direction = direction;
+    const keyword = ($("#mailboxFilterKeyword")?.value || "").trim();
+    if (keyword) snapshot.subject = keyword;
+    const tag = $("#mailboxFilterTag")?.value || "";
+    if (tag && tag !== "待处理") snapshot.label = tag;
+    const startDate = $("#mailboxFilterStartDate")?.value || "";
+    const endDate = $("#mailboxFilterEndDate")?.value || "";
+    if (!state.mailbox.onlyPending) {
+        if (startDate) snapshot.startDate = startDate;
+        if (endDate) snapshot.endDate = endDate;
+    }
+    snapshot.pendingOnly = !!state.mailbox.onlyPending;
+    return snapshot;
+}
+
+function refreshMailboxChatList() {
+    const list = $("#mailboxList");
+    if (!list || !mailboxChatAvailable()) return Promise.resolve();
+    const mountOptions = { filters: mailboxChatFilterSnapshot() };
+    if (state.mailbox.focusExpertContactId != null) {
+        mountOptions.focus = {
+            contactId: state.mailbox.focusExpertContactId,
+            email: state.mailbox.focusExpertEmail || ""
+        };
+    }
+    try {
+        MailboxChat.mount(list, mountOptions);
+        return Promise.resolve();
+    } catch (e) {
+        showStatus(e.message || "聊天视图加载失败", "error");
+        return Promise.resolve();
+    }
+}
+
+// I-1/I-5：查看全部附件/材料按钮 —— 打开 child-08 ExpertMaterials 原生 dialog 抽屉
+// （同一 contactId 共享 store；本宿主不复制材料 DOM/逻辑）。
+function mcHostOpenMaterials(contactId) {
+    if (!expertMaterialsAvailable()) return false;
+    const id = Number(contactId);
+    if (!Number.isFinite(id) || id <= 0) return false;
+    if (typeof window.ExpertMaterials.configure !== "function" ||
+        typeof window.ExpertMaterials.mount !== "function") {
+        return false;
+    }
+    const host = $("#mailboxList");
+    if (!host) return false;
+    window.ExpertMaterials.configure({
+        api,
+        contextPath,
+        labels: {
+            documentType: (value) => labelDocumentType(value),
+            documentStatus: (value) => labelDocumentStatus(value),
+            fileSize: (value) => formatFileSize(value)
+        }
+    });
+    window.ExpertMaterials.mount({ host, contactId: id, mode: "drawer" });
+    return true;
+}
+
+// I-5：查看专家详情 → 既有联系人详情流程
+async function mcHostOpenExpertDetail(contactId) {
+    const id = Number(contactId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    await openContactInList(id);
+}
+
+// I-2：聊天内可信回复工作台宿主（LIVE_INBOUND 固定；autoBootstrap=false
+// —— 默认折叠不发生成、展开不自动生成，须显式点「重新生成」）。显式传入
+// host 元素，绝不使用既有 [data-trust-reply-live-host] 的全局 querySelector。
+function mcHostMountWorkbench(hostEl, processingId, callbacks) {
+    if (!hostEl) return null;
+    const runtime = requireTrustReplyWorkbenchRuntime(hostEl);
+    if (!runtime) return null;
+    const instance = runtime.mount(hostEl, {
+        mode: "LIVE",
+        source: { sourceType: "LIVE_INBOUND", sourceId: Number(processingId) },
+        contextPath,
+        autoBootstrap: false,
+        onUnauthorized: trustReplyUnauthorized,
+        onComplete: async (assembly) => {
+            if (callbacks && typeof callbacks.onComplete === "function") {
+                callbacks.onComplete(assembly);
+            }
+        }
+    });
+    return {
+        unmount: () => {
+            try {
+                instance.unmount();
+            } catch (e) {
+                // noop
+            }
+        }
+    };
+}
+
+// I-3/I-4：聊天人工回复发送 —— 沿用 submitManualRichReply 的服务端校验/QA 审计与
+// 安全确认文案；不触碰 #unmatchedDetailPanel / manualReplyQaContext 等原流程状态。
+async function mcHostSendRichReply(processingId, requestBody) {
+    const submitWithConfirmation = async (body) => {
+        try {
+            const result = await api(`/api/mail/unmatched-inbound/${processingId}/manual-rich-reply`, {
+                method: "POST",
+                body: JSON.stringify(body)
+            });
+            const archiveStatus = result?.unsupportedAnswerArchiveStatus || "NOT_APPLICABLE";
+            const archivedCount = Number(result?.unsupportedAnswerArchivedCount) || 0;
+            if (archiveStatus === "SAVED") {
+                const suffix = archivedCount > 0 ? `，已记录 ${archivedCount} 条无依据回答` : "";
+                alert(`人工回复邮件发送成功${suffix}`);
+                showStatus(`人工回复邮件发送成功${suffix}`, "ok");
+            } else if (archiveStatus === "PARTIAL" || archiveStatus === "FAILED") {
+                alert("人工回复邮件发送成功\n无依据回答索引未完整写入，请勿重复发送");
+                showStatus("人工回复邮件发送成功；无依据回答索引未完整写入，请勿重复发送", "warn");
+            } else {
+                alert("人工回复邮件发送成功");
+            }
+            return true;
+        } catch (e) {
+            const canConfirmSafety = !body.safetyWarningConfirmed
+                && e.data?.code === "MANUAL_SEND_SAFETY_BLOCKED"
+                && Array.isArray(e.data.findings)
+                && e.data.findings.length > 0;
+            if (canConfirmSafety) {
+                const findings = e.data.findings;
+                const renderFindings = (list) => list.map((finding) => {
+                    const severityClass = finding.severity === "STRONG" ? "ai-reply-error" : "ai-reply-warning";
+                    const label = AI_REPLY_WARNING_LABELS[finding.code] || "正文包含需人工核对的风险声明";
+                    const coverage = finding.sentence
+                        ? `<div class="ai-reply-coverage">命中原句：${escapeHtml(finding.sentence)}</div>`
+                        : "";
+                    return `<div class="${severityClass}">${escapeHtml(label)}</div>${coverage}`;
+                }).join("");
+                const firstConfirmed = await openActionDialog("confirm", {
+                    message: `<p>本次发送命中 ${findings.length} 项内容安全门禁，请逐条核对后确认：</p><div class="ai-reply-feedback">${renderFindings(findings)}</div><p>确认已人工核对，仍要发送吗？</p>`
+                });
+                if (!firstConfirmed) {
+                    alert("人工回复发送失败: " + e.message);
+                    return false;
+                }
+                let strongConfirmationText = null;
+                if (e.data.requiresStrongConfirmation === true) {
+                    const strongFindings = findings.filter((finding) => finding.severity === "STRONG");
+                    const secondConfirmed = await openActionDialog("confirm-typed", {
+                        message: `<div class="ai-reply-error">高风险：本封邮件正文向专家索取护照 / 身份证 / 在职证明 / 银行流水一类敏感证件材料。此类索取存在合规与信任风险，一经发出不可撤回。</div><div class="ai-reply-feedback">${renderFindings(strongFindings)}</div><p>确认要发送，请在下方输入框中逐字输入「确认发送」四个字。</p>`
+                    });
+                    if (!secondConfirmed) {
+                        alert("人工回复发送失败: " + e.message);
+                        return false;
+                    }
+                    strongConfirmationText = "确认发送";
+                }
+                const retryBody = { ...body, safetyWarningConfirmed: true };
+                if (strongConfirmationText !== null) {
+                    retryBody.strongConfirmationText = strongConfirmationText;
+                }
+                return submitWithConfirmation(retryBody);
+            }
+            alert("人工回复发送失败: " + e.message);
+            return false;
+        }
+    };
+    return submitWithConfirmation(requestBody);
+}
+
+// I-4：无来信专家「选择模板发送跟进邮件」→ 既有专家模板发件流程
+// （ManualMailOptionType 仅 COMPOSE_TEMPLATE；command 无自由 subject/body，
+//  因此绝不在此伪造自由富文本编辑器或 processingId）。
+async function mcHostOpenFollowUp(contactId) {
+    const id = Number(contactId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    await openContactInList(id);
+}
+
 async function loadMailboxAccounts() {
     if (state.mailbox.accountsLoaded) return;
     try {
@@ -14329,6 +14549,20 @@ async function loadMailboxAccounts() {
 async function loadMailbox() {
     await loadMailboxAccounts();
     syncMailboxViewModeControls();
+
+    // child 10（I-5）：聊天视图守卫 —— MailboxChat 组件存在且非任务钻取过滤时激活
+    // 专家聊天（左侧仅专家/20 每页；右侧往来 + 工作台/人工回复/日志）。
+    // 原 table/group 代码保留给任务钻取（taskExecutionId）与脚本未加载兼容分支。
+    if (typeof mailboxChatEligible === "function" && mailboxChatEligible()) {
+        state.mailbox.onlyPending = mailboxPendingOnly();
+        state.mailbox.tagFilter = $("#mailboxFilterTag")?.value || "";
+        syncMailboxChatChrome(true);
+        await refreshMailboxChatList();
+        await refreshUnmatchedBadge();
+        return;
+    }
+    if (typeof unmountMailboxChatHosts === "function") unmountMailboxChatHosts();
+    if (typeof syncMailboxChatChrome === "function") syncMailboxChatChrome(false);
 
     const expertMode = state.mailbox.viewMode === "EXPERT";
     state.mailbox.onlyPending = mailboxPendingOnly();
