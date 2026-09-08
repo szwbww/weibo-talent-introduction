@@ -101,6 +101,102 @@ class ExpertDocumentAnalysisServiceTest {
     }
 
     @Test
+    fun `analyze with readable and empty-text mix rejects whole batch naming the file with reason`() {
+        // I-2/I-3：extract 之后若任一所选空文本（如扫描 PDF 无可读文字），必须整批拒绝：
+        // LLM 调用 0、deleteAll 0、旧结果保留；不能静默过滤后只分析可读部分。
+        Mockito.doNothing().`when`(documentTextExtractor).validateAttachmentBelongsToContact(1L, 10L)
+        Mockito.doNothing().`when`(documentTextExtractor).validateAttachmentBelongsToContact(1L, 11L)
+        Mockito.`when`(documentTextExtractor.extract(1L, listOf(10L, 11L)))
+            .thenReturn(
+                linkedMapOf(
+                    10L to ExtractedText(10L, "cv.pdf", "Alice Chen from MIT", supported = true),
+                    11L to ExtractedText(11L, "scan-copy.pdf", "   ", supported = true)
+                )
+            )
+
+        val ex = assertThrows(AnalysisFailedException::class.java) {
+            service.analyze(1L, listOf(10L, 11L))
+        }
+
+        assertTrue(ex.message!!.contains("scan-copy.pdf"), "message 必须列明空文本文件名")
+        assertTrue(ex.message!!.contains("11"), "message 必须列明 attachmentId")
+        assertTrue(ex.message!!.contains("无可读文字"), "message 必须给出原因 无可读文字")
+        Mockito.verify(llmDraftClientProvider, Mockito.never()).getIfAvailable()
+        Mockito.verify(analysisResultRepository, Mockito.never())
+            .deleteAllByExpertContactId(Mockito.anyLong())
+        Mockito.verify(analysisResultRepository, Mockito.never())
+            .save(Mockito.any(ExpertAnalysisResult::class.java))
+    }
+
+    @Test
+    fun `analyze with unsupported format among selection rejects whole batch naming the file with reason`() {
+        // I-2/I-3：任一所选 unsupported（如 JPEG）→ 整批拒绝并给 不支持格式 原因，
+        // LLM 与 deleteAll 都不执行，历史结果保留。
+        Mockito.doNothing().`when`(documentTextExtractor).validateAttachmentBelongsToContact(1L, 10L)
+        Mockito.doNothing().`when`(documentTextExtractor).validateAttachmentBelongsToContact(1L, 12L)
+        Mockito.`when`(documentTextExtractor.extract(1L, listOf(10L, 12L)))
+            .thenReturn(
+                linkedMapOf(
+                    10L to ExtractedText(10L, "cv.pdf", "Alice Chen from MIT", supported = true),
+                    12L to ExtractedText(
+                        12L,
+                        "portrait.jpg",
+                        "",
+                        supported = false,
+                        unsupportedReason = "不支持的文件类型: image/jpeg"
+                    )
+                )
+            )
+
+        val ex = assertThrows(AnalysisFailedException::class.java) {
+            service.analyze(1L, listOf(10L, 12L))
+        }
+
+        assertTrue(ex.message!!.contains("portrait.jpg"), "message 必须列明不支持格式文件名")
+        assertTrue(ex.message!!.contains("12"), "message 必须列明 attachmentId")
+        assertTrue(ex.message!!.contains("不支持格式"), "message 必须给出原因 不支持格式")
+        Mockito.verify(llmDraftClientProvider, Mockito.never()).getIfAvailable()
+        Mockito.verify(analysisResultRepository, Mockito.never())
+            .deleteAllByExpertContactId(Mockito.anyLong())
+        Mockito.verify(analysisResultRepository, Mockito.never())
+            .save(Mockito.any(ExpertAnalysisResult::class.java))
+    }
+
+    @Test
+    fun `addField keeps display order and clearResults stays a plain delete`() {
+        // 字段编辑/新增/清空接口语义不变（结果 schema/保存 API 不因 09 改造受影响）。
+        val existing = ExpertAnalysisResult(
+            id = 100L,
+            expertContactId = 1L,
+            fieldKey = "name",
+            fieldLabel = "姓名",
+            value = "Alice Chen",
+            sourceAttachmentId = 10L,
+            sourceExcerpt = "Alice Chen",
+            excerptVerified = true,
+            displayOrder = 0
+        )
+        Mockito.`when`(analysisResultRepository.findAllByExpertContactIdOrderByDisplayOrderAsc(1L))
+            .thenReturn(listOf(existing))
+        Mockito.`when`(analysisResultRepository.save(any(ExpertAnalysisResult::class.java)))
+            .thenAnswer { invocation ->
+                invocation.getArgument<ExpertAnalysisResult>(0).copy(id = 200L)
+            }
+
+        val created = service.addField(1L, "custom_note", "补充备注", " 2020 起任职  ")
+        assertEquals(200L, created.id)
+        assertEquals("custom_note", created.fieldKey)
+        assertEquals("补充备注", created.fieldLabel)
+        assertEquals("2020 起任职", created.value)
+        val saveCaptor = ArgumentCaptor.forClass(ExpertAnalysisResult::class.java)
+        Mockito.verify(analysisResultRepository).save(saveCaptor.capture())
+        assertEquals(1, saveCaptor.value.displayOrder, "新字段 displayOrder 接在既有字段之后")
+
+        service.clearResults(1L)
+        Mockito.verify(analysisResultRepository).deleteAllByExpertContactId(1L)
+    }
+
+    @Test
     fun `analyze maps llm timeout to AnalysisFailedException`() {
         Mockito.doNothing().`when`(documentTextExtractor).validateAttachmentBelongsToContact(1L, 10L)
         Mockito.`when`(documentTextExtractor.extract(1L, listOf(10L)))

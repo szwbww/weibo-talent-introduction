@@ -8476,28 +8476,62 @@ const aiAnalysisState = {
     documents: [],
     results: [],
     mode: "select",
-    error: null
+    error: null,
+    // 子计划 09：共享材料组件（selectionOnly）衔接字段
+    materialsMode: false,    // 本会话使用 ExpertMaterials 选件流程
+    pickerHost: null,        // 选件挂载点（.em-analysis [data-material-picker]）
+    pickerView: null,        // ExpertMaterials.mount 返回的视图实例
+    unsubscribe: null,       // 共享 store 订阅退订函数
+    snapshot: null,          // 最新共享 store 快照（live 只读引用）
+    intentToken: 0,          // 会话 token：关闭/换专家即销毁（I-3）
+    selectionApplied: false, // 本次选件入口是否已做 带入/默认勾选 处理
+    defaultOverLimit: false, // 默认候选 >500：明确提示、不悄悄截断勾选（I-1）
+    run: null                // 获取→分析运行（冻结快照 + 状态机）
 };
+
+const AI_ANALYSIS_SELECT_LIMIT = 500;
 
 function isDefaultAiAnalysisDocument(doc) {
     return AI_ANALYSIS_DEFAULT_TYPES.has(doc.documentType);
 }
 
 async function openAiAnalysisModal(contactId) {
+    // 任何先前会话先整体销毁：token/订阅/picker 视图（换专家绝不复用旧 token，I-3）
+    teardownAiAnalysisSession();
     aiAnalysisState.contactId = contactId;
     aiAnalysisState.error = null;
-    aiAnalysisState.documents = await api(`/api/expert-contacts/${contactId}/documents`).catch(() => []);
+    const componentFlow = Number.isFinite(Number(contactId)) && Number(contactId) > 0 && aiAnalysisMaterialsCapable();
+    if (!componentFlow) {
+        // 旧路径（组件未加载/无真实 contactId）：documents + 历史结果 + 原选件
+        aiAnalysisState.materialsMode = false;
+        aiAnalysisState.documents = await api(`/api/expert-contacts/${contactId}/documents`).catch(() => []);
+        const existing = await api(`/api/expert-contacts/${contactId}/ai-analysis`).catch(() => ({ fields: [] }));
+        aiAnalysisState.results = existing.fields || [];
+        aiAnalysisState.mode = aiAnalysisState.results.length > 0 ? "results" : "select";
+        renderAiAnalysisModal();
+        const modal = $("#aiAnalysisModal");
+        if (modal) modal.hidden = false;
+        return;
+    }
+    // I-1：打开只 GET 元数据（材料 store，组件自身发起）与历史结果；零 POST、零文件抓取。
+    aiAnalysisState.materialsMode = true;
     const existing = await api(`/api/expert-contacts/${contactId}/ai-analysis`).catch(() => ({ fields: [] }));
-    aiAnalysisState.results = existing.fields || [];
-    aiAnalysisState.mode = aiAnalysisState.results.length > 0 ? "results" : "select";
-    renderAiAnalysisModal();
+    aiAnalysisState.results = (existing && Array.isArray(existing.fields)) ? existing.fields : [];
     const modal = $("#aiAnalysisModal");
     if (modal) modal.hidden = false;
+    if (aiAnalysisState.results.length > 0) {
+        aiAnalysisState.mode = "results";
+        renderAiAnalysisModal();
+    } else {
+        enterAiAnalysisSelectMode(true);
+    }
 }
 
 function closeAiAnalysisModal() {
     const modal = $("#aiAnalysisModal");
     if (modal) modal.hidden = true;
+    // I-3：销毁 intentToken 与订阅；已请求的下载继续，已发出的服务端分析不宣称取消
+    teardownAiAnalysisSession();
     aiAnalysisState.contactId = null;
     aiAnalysisState.documents = [];
     aiAnalysisState.results = [];
@@ -8560,6 +8594,7 @@ function renderAiAnalysisModal() {
     if (!body || !title || !footer) return;
 
     if (aiAnalysisState.mode === "loading") {
+        teardownAiAnalysisPicker();
         title.textContent = "AI 智能分析";
         body.innerHTML = `
             <div class="ai-analysis-loading">
@@ -8572,6 +8607,7 @@ function renderAiAnalysisModal() {
     }
 
     if (aiAnalysisState.mode === "results") {
+        teardownAiAnalysisPicker();
         title.textContent = "AI 分析结果";
         body.innerHTML = aiAnalysisState.error
             ? `<p class="ai-analysis-error">${escapeHtml(aiAnalysisState.error)}</p>${renderAiAnalysisResults()}`
@@ -8584,6 +8620,11 @@ function renderAiAnalysisModal() {
         return;
     }
 
+    // mode === "select"
+    if (aiAnalysisState.materialsMode) {
+        renderAiAnalysisMaterialsSelect();
+        return;
+    }
     title.textContent = "选择分析文件";
     body.innerHTML = aiAnalysisState.error
         ? `<p class="ai-analysis-error">${escapeHtml(aiAnalysisState.error)}</p>${renderAiAnalysisFileSelect()}`
@@ -8595,32 +8636,79 @@ function renderAiAnalysisModal() {
 }
 
 async function startAiAnalysis() {
-    const contactId = aiAnalysisState.contactId;
-    if (!contactId) return;
-    const checked = Array.from(document.querySelectorAll('input[name="aiAnalysisAttachment"]:checked'))
-        .map(el => Number(el.value))
-        .filter(id => Number.isFinite(id));
-    if (checked.length === 0) {
-        aiAnalysisState.error = "请至少选择一个文件";
+    if (!aiAnalysisState.materialsMode) {
+        // —— 旧路径（组件未注册）：原选件列表直接分析 ——
+        const contactId = aiAnalysisState.contactId;
+        if (!contactId) return;
+        const checked = Array.from(document.querySelectorAll('input[name="aiAnalysisAttachment"]:checked'))
+            .map(el => Number(el.value))
+            .filter(id => Number.isFinite(id));
+        if (checked.length === 0) {
+            aiAnalysisState.error = "请至少选择一个文件";
+            renderAiAnalysisModal();
+            return;
+        }
+        aiAnalysisState.error = null;
+        aiAnalysisState.mode = "loading";
+        renderAiAnalysisModal();
+        try {
+            const result = await api(`/api/expert-contacts/${contactId}/ai-analysis`, {
+                method: "POST",
+                body: JSON.stringify({ attachmentIds: checked })
+            });
+            aiAnalysisState.results = result.fields || [];
+            aiAnalysisState.mode = "results";
+            showStatus("AI 分析完成");
+        } catch (e) {
+            aiAnalysisState.mode = "select";
+            aiAnalysisState.error = e.message || "分析失败，请重试";
+        }
         renderAiAnalysisModal();
         return;
     }
-    aiAnalysisState.error = null;
-    aiAnalysisState.mode = "loading";
-    renderAiAnalysisModal();
-    try {
-        const result = await api(`/api/expert-contacts/${contactId}/ai-analysis`, {
-            method: "POST",
-            body: JSON.stringify({ attachmentIds: checked })
-        });
-        aiAnalysisState.results = result.fields || [];
-        aiAnalysisState.mode = "results";
-        showStatus("AI 分析完成");
-    } catch (e) {
-        aiAnalysisState.mode = "select";
-        aiAnalysisState.error = e.message || "分析失败，请重试";
+
+    // —— 09 衔接（I-1/I-2/S-2）：提交时冻结 contactId+attachmentIds ——
+    if (aiAnalysisState.mode !== "select" || !aiAnalysisState.contactId) return;
+    const run = aiAnalysisState.run;
+    if (run && run.phase === "failed") {
+        // 失败态 CTA = 只重试失败项（仍按原冻结快照全部校验后再分析）
+        await retryAiAnalysisFetch(run);
+        return;
     }
-    renderAiAnalysisModal();
+    if (run) return; // watching/提交中：按钮已 disabled，防重复提交
+    const snapshot = aiAnalysisState.snapshot;
+    if (!snapshot) return;
+    const ids = aiAnalysisSelectionIds(snapshot);
+    if (ids.length === 0) {
+        aiAnalysisState.error = "请至少选择一份可分析文件（PDF 或文本）";
+        updateAiAnalysisSelectChrome();
+        return;
+    }
+    const token = aiAnalysisState.intentToken;
+    const needed = ids.filter((id) => aiAnalysisItemStorageState(snapshot, id) !== "STORED");
+    const frozen = { ids, needed, tokenAtFreeze: token, fired: false, phase: "watching", failedIds: [] };
+    aiAnalysisState.run = frozen;
+    aiAnalysisState.error = null;
+    updateAiAnalysisSelectChrome();
+    if (needed.length === 0) {
+        // M=0：全部已存，直接一次分析
+        await fireAiAnalysis(frozen);
+        return;
+    }
+    // M>0：只请求缺失文件；经共享 store 提交（同一轮询/状态同步，不另造下载状态）
+    const result = await window.ExpertMaterials.requestTransfers(aiAnalysisState.contactId, needed);
+    if (token !== aiAnalysisState.intentToken) return; // 关窗/换专家：服务端下载继续，绝不自动分析
+    if (!result || !result.ok) {
+        const message = (result && result.error) ? result.error : "获取所选文件失败，请重试";
+        frozen.phase = "failed";
+        frozen.failedIds = needed.slice();
+        aiAnalysisState.error = `获取所选文件失败：${message}`;
+        updateAiAnalysisSelectChrome();
+        return;
+    }
+    // 进入等待：订阅事件驱动完成/失败判定（全部 STORED 才调用既有 ai-analysis 一次）
+    stepAiAnalysisRunIfReady();
+    updateAiAnalysisSelectChrome();
 }
 
 async function saveAiAnalysisField(fieldId, value) {
@@ -8657,6 +8745,348 @@ async function addAiAnalysisField() {
         renderAiAnalysisModal();
     } catch (e) {
         showStatus(e.message || "添加字段失败", "error");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 子计划 09：AI 选件衔接共享材料组件（S-2）
+// 渐进式：window.ExpertMaterials 未加载（或旧版组件无 09 API）时上述旧路径保持；
+// 组件就绪后本块函数驱动 selectionOnly 选件 → 冻结快照 → 按需获取 → 一次分析。
+// ─────────────────────────────────────────────────────────────────────────
+
+function aiAnalysisMaterialsCapable() {
+    if (!expertMaterialsAvailable()) return false;
+    const component = window.ExpertMaterials;
+    return typeof component.mount === "function" &&
+        typeof component.subscribe === "function" &&
+        typeof component.getState === "function" &&
+        typeof component.setSelection === "function" &&
+        typeof component.requestTransfers === "function";
+}
+
+function enterAiAnalysisSelectMode(allowDefaults) {
+    aiAnalysisState.run = null;
+    aiAnalysisState.error = null;
+    aiAnalysisState.selectionApplied = !allowDefaults;
+    aiAnalysisState.defaultOverLimit = false;
+    aiAnalysisState.mode = "select";
+    renderAiAnalysisModal();
+}
+
+function teardownAiAnalysisPicker() {
+    if (aiAnalysisState.unsubscribe) {
+        aiAnalysisState.unsubscribe();
+        aiAnalysisState.unsubscribe = null;
+    }
+    if (aiAnalysisState.pickerView && typeof aiAnalysisState.pickerView.unmount === "function") {
+        aiAnalysisState.pickerView.unmount();
+    }
+    aiAnalysisState.pickerView = null;
+    aiAnalysisState.pickerHost = null;
+    aiAnalysisState.snapshot = null;
+}
+
+function teardownAiAnalysisSession() {
+    // I-3：关闭/重开/换专家 → 销毁 intentToken（旧 token 的异步回包一律不再写 UI）
+    aiAnalysisState.intentToken += 1;
+    aiAnalysisState.run = null;
+    teardownAiAnalysisPicker();
+    aiAnalysisState.materialsMode = false;
+    aiAnalysisState.selectionApplied = false;
+    aiAnalysisState.defaultOverLimit = false;
+}
+
+/** S-2 选件内容区（嵌入既有 #aiAnalysisModal；挂载 selectionOnly 组件视图）。 */
+function renderAiAnalysisMaterialsSelect() {
+    const body = $("#aiAnalysisModalBody");
+    const title = $("#aiAnalysisModalTitle");
+    const footer = $("#aiAnalysisModalFooter");
+    if (!body || !title || !footer) return;
+    title.textContent = "选择分析文件";
+    teardownAiAnalysisPicker();
+    body.innerHTML = `
+        <section class="em-analysis">
+            <p class="em-analysis-note">仅分析所选文件。未获取的文件将在确认后下载到服务器；图片暂不支持文字识别。</p>
+            <p class="ai-analysis-error" data-role="ai-analysis-error" hidden></p>
+            <div data-material-picker></div>
+            <div class="em-analysis-actions">
+                <span role="status" data-role="ai-analysis-status">正在加载资料…</span>
+                <button class="button primary" type="button" data-action="start-ai-analysis" data-role="ai-analysis-cta" disabled>开始分析</button>
+            </div>
+        </section>
+    `;
+    footer.innerHTML = `<button type="button" class="button secondary" data-action="close-ai-analysis">取消</button>`;
+    const host = body.querySelector("[data-material-picker]");
+    if (!host) return;
+    aiAnalysisState.pickerHost = host;
+    window.ExpertMaterials.configure({
+        api,
+        contextPath,
+        labels: {
+            documentType: (value) => labelDocumentType(value),
+            documentStatus: (value) => labelDocumentStatus(value),
+            fileSize: (value) => formatFileSize(value)
+        }
+    });
+    aiAnalysisState.pickerView = window.ExpertMaterials.mount({
+        host,
+        contactId: aiAnalysisState.contactId,
+        mode: "selectionOnly"
+    });
+    aiAnalysisState.unsubscribe = window.ExpertMaterials.subscribe(
+        aiAnalysisState.contactId,
+        (snapshot, reason) => handleAiMaterialsSnapshot(snapshot, reason)
+    );
+    updateAiAnalysisSelectChrome();
+}
+
+/** 共享 store 订阅回调：进入 select 时的带入/默认处理 + 获取运行状态机 + 文案刷新。 */
+function handleAiMaterialsSnapshot(snapshot, reason) {
+    if (!aiAnalysisState.materialsMode) return;
+    const contactId = aiAnalysisState.contactId;
+    if (contactId == null || Number(snapshot && snapshot.contactId) !== Number(contactId)) return;
+    aiAnalysisState.snapshot = snapshot;
+    if (aiAnalysisState.mode !== "select") return;
+    applyAiAnalysisEntrySelectionIfNeeded();
+    stepAiAnalysisRunIfReady();
+    updateAiAnalysisSelectChrome();
+}
+
+/**
+ * I-1 带入/默认规则（每次 select 入口只执行一次）：
+ * - 已有共享选择 → 只带入可分析（analysisSupported）部分；不可分析行在 picker 内
+ *   禁用并显示原因（JPEG：当前不支持图片文字识别），不再叠加默认勾选。
+ * - 无选择 → 默认勾选跨完整专家集合的 CV/学位（summary.defaultAnalysisAttachmentIds）；
+ *   默认候选 >500 时明确提示分批选择，绝不悄悄只勾前 500。
+ */
+function applyAiAnalysisEntrySelectionIfNeeded() {
+    if (aiAnalysisState.selectionApplied) return;
+    const snap = aiAnalysisState.snapshot;
+    if (!snap || !snap.loadedOnce || !snap.summary) return; // 等首屏材料数据（仅 GET）
+    aiAnalysisState.selectionApplied = true;
+    aiAnalysisState.defaultOverLimit = false;
+    if (snap.selection.size > 0) return;
+    const defaults = Array.isArray(snap.summary.defaultAnalysisAttachmentIds)
+        ? snap.summary.defaultAnalysisAttachmentIds.map(Number).filter((id) => Number.isFinite(id) && id > 0)
+        : [];
+    if (defaults.length > AI_ANALYSIS_SELECT_LIMIT) {
+        aiAnalysisState.defaultOverLimit = true;
+        return;
+    }
+    if (defaults.length > 0) {
+        window.ExpertMaterials.setSelection(snap.contactId, defaults);
+    }
+}
+
+/** 分析候选 = 共享选择 ∩ 服务端 analysisSupported（行未知时默认候选集视为可分析）。 */
+function aiAnalysisSelectionIds(snapshot) {
+    if (!snapshot || !snapshot.selection || !snapshot.items) return [];
+    const defaultIds = new Set(
+        Array.isArray(snapshot.summary && snapshot.summary.defaultAnalysisAttachmentIds)
+            ? snapshot.summary.defaultAnalysisAttachmentIds.map(Number).filter((id) => Number.isFinite(id))
+            : []
+    );
+    const ids = [];
+    snapshot.selection.forEach((value) => {
+        const id = Number(value);
+        if (!Number.isFinite(id) || id <= 0) return;
+        const item = snapshot.items.get(id);
+        const supported = item ? item.analysisSupported !== false : defaultIds.has(id);
+        if (supported) ids.push(id);
+    });
+    return ids.sort((a, b) => a - b);
+}
+
+function aiAnalysisItemStorageState(snapshot, attachmentId) {
+    if (!snapshot || !snapshot.items) return "";
+    const item = snapshot.items.get(Number(attachmentId));
+    return item ? (item.storageState || "") : "";
+}
+
+function aiAnalysisFailureLines(snapshot, ids) {
+    return ids.map((id) => {
+        const item = snapshot && snapshot.items ? snapshot.items.get(Number(id)) : null;
+        const name = (item && item.fileName) ? item.fileName : `附件 #${id}`;
+        const reason = (item && item.error && (item.error.message || item.error.code))
+            ? (item.error.message || item.error.code)
+            : (item && item.storageState === "SOURCE_UNAVAILABLE")
+                ? "来源不可用"
+                : "获取失败";
+        return `附件 ${id}（${name}）：${reason}`;
+    });
+}
+
+/** S-2 状态/按钮文案的局部刷新（不重建选件 DOM，避免丢失挂载的视图）。 */
+function updateAiAnalysisSelectChrome() {
+    if (aiAnalysisState.mode !== "select") return;
+    const body = $("#aiAnalysisModalBody");
+    if (!body) return;
+    const statusEl = body.querySelector('[data-role="ai-analysis-status"]');
+    const ctaEl = body.querySelector('[data-role="ai-analysis-cta"]');
+    const errorEl = body.querySelector('[data-role="ai-analysis-error"]');
+    const snap = aiAnalysisState.snapshot;
+    const run = aiAnalysisState.run;
+
+    if (errorEl) {
+        if (aiAnalysisState.error) {
+            errorEl.innerHTML = String(aiAnalysisState.error).split("\n").map((line) => escapeHtml(line)).join("<br>");
+            errorEl.hidden = false;
+        } else {
+            errorEl.textContent = "";
+            errorEl.hidden = true;
+        }
+    }
+    if (!statusEl || !ctaEl) return;
+    const setStatus = (value) => { statusEl.textContent = value; };
+    const setCta = (label, disabled) => {
+        ctaEl.textContent = label;
+        ctaEl.disabled = !!disabled;
+    };
+
+    if (!snap || !snap.loadedOnce) {
+        setStatus("正在加载资料…");
+        setCta("开始分析", true);
+        return;
+    }
+    if (snap.submitting) {
+        setStatus("正在提交获取请求…");
+        setCta("开始分析", true);
+        return;
+    }
+    if (run && run.phase === "failed") {
+        const count = (run.failedIds || []).length;
+        setStatus(count === 1 ? "1 份获取失败" : `${count} 份获取失败`);
+        setCta("重试获取失败文件并分析", false);
+        return;
+    }
+    if (run && run.phase === "watching") {
+        const done = run.needed.filter((id) => aiAnalysisItemStorageState(snap, id) === "STORED").length;
+        setStatus(`正在获取所选文件（${done}/${run.needed.length}）`);
+        setCta("正在获取所选文件…", true);
+        return;
+    }
+    const ids = aiAnalysisSelectionIds(snap);
+    if (ids.length === 0) {
+        if (aiAnalysisState.defaultOverLimit) {
+            setStatus("默认材料超过500份，请分批选择");
+            setCta("开始分析", true);
+            return;
+        }
+        if (snap.selection.size > 0) {
+            setStatus("所选文件均不支持分析，请选择 PDF 或文本文件");
+            setCta("开始分析", true);
+            return;
+        }
+        setStatus("已选 0 份，已存 0 份，需获取 0 份");
+        setCta("开始分析", true);
+        return;
+    }
+    let stored = 0;
+    ids.forEach((id) => {
+        if (aiAnalysisItemStorageState(snap, id) === "STORED") stored += 1;
+    });
+    const need = ids.length - stored;
+    setStatus(`已选 ${ids.length} 份，已存 ${stored} 份，需获取 ${need} 份`);
+    setCta(need > 0 ? "获取所选文件并分析" : "开始分析", false);
+}
+
+/**
+ * I-2：订阅驱动的获取运行判定。全部冻结缺失项 STORED → 恰好一次调用既有
+ * ai-analysis；任何 FAILED/SOURCE_UNAVAILABLE → 整批停止（0 次分析）并展示失败项。
+ */
+function stepAiAnalysisRunIfReady() {
+    const run = aiAnalysisState.run;
+    if (!run || run.fired || run.phase !== "watching") return;
+    if (aiAnalysisState.intentToken !== run.tokenAtFreeze) {
+        aiAnalysisState.run = null;
+        return;
+    }
+    const snapshot = aiAnalysisState.snapshot;
+    if (!snapshot || !snapshot.items) return;
+    // 提交进行中（POST /transfers 未返回）：行状态还是旧的 FAILED，此刻判定会把
+    // 正在重试的批次误标为失败。等服务端响应（submit-idle 同步）后再推进状态机。
+    if (snapshot.submitting) return;
+    const failed = [];
+    let ready = true;
+    run.needed.forEach((id) => {
+        const state = aiAnalysisItemStorageState(snapshot, id);
+        if (state === "STORED") return;
+        if (state === "FAILED" || state === "SOURCE_UNAVAILABLE") {
+            failed.push(id);
+            return;
+        }
+        ready = false; // QUEUED/DOWNLOADING/METADATA_ONLY/尚未加载的行：继续等待
+    });
+    if (failed.length > 0) {
+        run.phase = "failed";
+        run.failedIds = failed;
+        aiAnalysisState.error = aiAnalysisFailureLines(snapshot, failed).join("\n");
+        return;
+    }
+    if (ready) {
+        fireAiAnalysis(run);
+    }
+}
+
+/** 失败态 CTA：只重试失败项；重试后仍按原冻结快照全部校验，就绪后分析恰好一次。 */
+async function retryAiAnalysisFetch(run) {
+    const contactId = aiAnalysisState.contactId;
+    if (!contactId || run.phase !== "failed") return;
+    const token = run.tokenAtFreeze;
+    if (token !== aiAnalysisState.intentToken) return;
+    const failedIds = (run.failedIds || []).slice();
+    if (failedIds.length === 0) {
+        run.phase = "watching";
+        aiAnalysisState.error = null;
+        updateAiAnalysisSelectChrome();
+        return;
+    }
+    run.phase = "watching";
+    run.failedIds = [];
+    aiAnalysisState.error = null;
+    updateAiAnalysisSelectChrome();
+    const result = await window.ExpertMaterials.requestTransfers(contactId, failedIds);
+    if (token !== aiAnalysisState.intentToken) return;
+    if (!result || !result.ok) {
+        const message = (result && result.error) ? result.error : "获取所选文件失败，请重试";
+        run.phase = "failed";
+        run.failedIds = failedIds;
+        aiAnalysisState.error = `重试失败：${message}`;
+        updateAiAnalysisSelectChrome();
+        return;
+    }
+    stepAiAnalysisRunIfReady();
+    updateAiAnalysisSelectChrome();
+}
+
+/** 调用既有 POST /ai-analysis 恰好一次（run.fired 守卫）；关窗/换专家后不写 UI。 */
+async function fireAiAnalysis(run) {
+    if (run.fired) return;
+    run.fired = true;
+    const token = run.tokenAtFreeze;
+    const contactId = aiAnalysisState.contactId;
+    if (contactId == null || token !== aiAnalysisState.intentToken) return;
+    aiAnalysisState.run = null;
+    aiAnalysisState.error = null;
+    aiAnalysisState.mode = "loading";
+    renderAiAnalysisModal();
+    try {
+        const result = await api(`/api/expert-contacts/${contactId}/ai-analysis`, {
+            method: "POST",
+            body: JSON.stringify({ attachmentIds: run.ids })
+        });
+        if (token !== aiAnalysisState.intentToken) return; // 已发出请求沿用服务端语义，可经历史接口重读
+        aiAnalysisState.results = (result && Array.isArray(result.fields)) ? result.fields : [];
+        aiAnalysisState.mode = "results";
+        renderAiAnalysisModal();
+        showStatus("AI 分析完成");
+    } catch (e) {
+        if (token !== aiAnalysisState.intentToken) return;
+        // 失败回到选件：展示服务端原因（如某 PDF 无可读文字），旧结果绝不在前端提前清空
+        aiAnalysisState.mode = "select";
+        aiAnalysisState.selectionApplied = true;
+        aiAnalysisState.error = (e && e.message) ? e.message : "分析失败，请重试";
+        renderAiAnalysisModal();
     }
 }
 
@@ -9945,9 +10375,7 @@ async function handleContactAction(element) {
         return;
     }
     if (action === "ai-analysis-reanalyze") {
-        aiAnalysisState.mode = "select";
-        aiAnalysisState.error = null;
-        renderAiAnalysisModal();
+        enterAiAnalysisSelectMode(true);
         return;
     }
     if (action === "ai-analysis-add-field") {

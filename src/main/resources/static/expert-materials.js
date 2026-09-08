@@ -17,6 +17,17 @@
  * - drawer 使用原生 <dialog class="em-drawer">；关闭/Esc 只释放 UI，队列继续。
  * - 只更新受影响的行单元格（状态列/文件信息行），不重建输入框与选择控件。
  *
+ * 子计划 09 扩展（selectionOnly 供 AI 选件复用）：
+ * - selectionOnly 视图下，analysisSupported=false 的行 checkbox 禁用并在状态列
+ *   给出原因（图片行固定文案“当前不支持图片文字识别”），表头“选择本页”也只勾选
+ *   可分析行；行选择本身仍是共享 store，AI 分析候选由宿主取 共享选择∩可分析。
+ * - subscribe(contactId, listener)：共享 store 订阅（listener 收到 live 快照，
+ *   每次同步后调用一次），供 AI 获取流程观察所选文件存储状态；绝不另造一份
+ *   下载状态拷贝。
+ * - requestTransfers(contactId, ids)/setSelection(contactId, ids)：
+ *   程序化走共享 store 的获取提交与选择替换（同 epoch/轮询/视图同步）；
+ *   requestTransfers 复用既有的提交/错误/提交后刷新语义并返回服务端响应。
+ *
  * API 由宿主（app.js）经 ExpertMaterials.configure({ api, contextPath, labels })
  * 注入；URL 保留 /talent 上下文由 contextPath 提供。样式见
  * expert-materials.css（S-1 契约逐字复制）。
@@ -156,6 +167,7 @@
             actionError: null,
             submitting: false,
             views: new Set(),
+            listeners: new Set(),
             pollTimer: null,
             pollScheduled: false,
             searchTimer: null
@@ -379,13 +391,14 @@
             ? attachmentIds.map(Number).filter((id) => Number.isFinite(id) && id > 0)
             : selectedIds(store);
         const distinct = [...new Set(ids)];
-        if (distinct.length === 0) return;
+        if (distinct.length === 0) return { ok: true, response: null };
         if (distinct.length > MAX_TRANSFER_IDS) {
-            store.actionError = `一次最多获取 ${MAX_TRANSFER_IDS} 份，当前已选 ${distinct.length} 份，请分批获取。`;
+            const limitMessage = `一次最多获取 ${MAX_TRANSFER_IDS} 份，当前已选 ${distinct.length} 份，请分批获取。`;
+            store.actionError = limitMessage;
             store.views.forEach((v) => syncView(v, "action-error"));
-            return;
+            return { ok: false, error: limitMessage };
         }
-        if (store.submitting) return;
+        if (store.submitting) return { ok: false, error: "正在提交获取请求，请稍候" };
         store.submitting = true;
         store.actionError = null;
         store.views.forEach((v) => syncView(v, "submitting"));
@@ -394,21 +407,34 @@
                 method: "POST",
                 body: JSON.stringify({ attachmentIds: distinct })
             });
-            if (!stores.has(store.contactId)) return; // 已关闭/切走：服务端任务继续，本客户端不再写 DOM
+            if (!stores.has(store.contactId)) return { ok: true, response }; // 已关闭/切走：服务端任务继续，本客户端不再写 DOM
             store.note = applyTransferResponse(store, distinct, response) || store.note || "";
             store.views.forEach((v) => syncView(v, "submitted"));
             // 提交成功后再确认 QUEUED 并取得最新 summary；失败保留选择与原因。
             fetchPage(store, { page: store.page, silent: true, reason: "after-submit" });
+            return { ok: true, response };
         } catch (err) {
-            if (!stores.has(store.contactId)) return;
-            store.actionError = (err && err.message) ? err.message : "提交失败，请重试";
+            if (!stores.has(store.contactId)) return { ok: false, error: (err && err.message) ? err.message : "提交失败，请重试" };
+            const message = (err && err.message) ? err.message : "提交失败，请重试";
+            store.actionError = message;
             store.views.forEach((v) => syncView(v, "action-error"));
+            return { ok: false, error: message };
         } finally {
             if (stores.has(store.contactId)) {
                 store.submitting = false;
                 store.views.forEach((v) => syncView(v, "submit-idle"));
             }
         }
+    }
+
+    /**
+     * 09：程序化获取请求（AI 选件“获取所选文件并分析”）。走与 footer 完全相同的
+     * 提交路径（共享 store、错误区、提交后刷新），并返回服务端响应供宿主核对。
+     */
+    async function requestTransfers(contactId, attachmentIds) {
+        const store = stores.get(Number(contactId));
+        if (!store) return { ok: false, error: "材料列表尚未加载，请稍后重试" };
+        return submitTransfers(store, null, attachmentIds);
     }
 
     // ------------------------------------------------------------------
@@ -628,6 +654,20 @@
         return "";
     }
 
+    /** selectionOnly（AI 选件）：分析能力来自服务端 analysisSupported，不能按扩展名伪装。 */
+    function rowSelectableForAnalysis(view, item) {
+        return view.mode !== "selectionOnly" || item.analysisSupported !== false;
+    }
+
+    /** 不可分析行的可见原因：图片给 OCR 说明，其它格式给支持范围说明。 */
+    function analysisBlockReason(item) {
+        const contentType = (item && item.contentType) || "";
+        const fileName = ((item && item.fileName) || "").toLowerCase();
+        const isImage = contentType.indexOf("image/") === 0 ||
+            /\.(jpe?g|png|gif|webp|bmp|tiff?|heic)$/.test(fileName);
+        return isImage ? "当前不支持图片文字识别" : "仅支持 PDF/文本格式分析";
+    }
+
     function buildStateCell(store, view, item) {
         const cell = el("div", "em-state", { "data-state": item.storageState });
         const state = item.storageState;
@@ -683,19 +723,27 @@
             text(detail, reason);
             cell.appendChild(detail);
         }
+        // selectionOnly（AI 选件）：不可分析行必须可见解释（S-2：图片禁选说明）。
+        if (view.mode === "selectionOnly" && item.analysisSupported === false) {
+            const block = el("small");
+            text(block, analysisBlockReason(item));
+            cell.appendChild(block);
+        }
         return cell;
     }
 
     function buildRow(store, view, item) {
         const id = Number(item.attachmentId);
         const fileName = item.fileName || "?";
-        const selected = store.selection.has(id);
+        const selectable = rowSelectableForAnalysis(view, item);
+        const selected = selectable && store.selection.has(id);
         const row = el("div", "em-row", {
             "data-selected": selected ? "true" : "false",
             "data-attachment-id": String(id)
         });
         const checkbox = el("input", null, { type: "checkbox", "aria-label": `选择 ${fileName}` });
         checkbox.checked = selected;
+        if (!selectable) checkbox.disabled = true;
         row.appendChild(checkbox);
 
         const file = el("div", "em-file");
@@ -753,15 +801,20 @@
             const fresh = buildStateCell(store, view, item);
             oldState.parentNode.replaceChild(fresh, oldState);
         }
-        syncRowSelection(row, store);
+        syncRowSelection(row, store, view, item);
     }
 
-    function syncRowSelection(row, store) {
+    function syncRowSelection(row, store, view, item) {
         const id = Number(row.dataset.attachmentId);
-        const selected = store.selection.has(id);
+        const current = item || byId(store, id);
+        const selectable = view ? rowSelectableForAnalysis(view, current) : true;
+        const selected = selectable && store.selection.has(id);
         row.dataset.selected = selected ? "true" : "false";
         const checkbox = row.querySelector ? row.querySelector("input[type=checkbox]") : null;
-        if (checkbox) checkbox.checked = selected;
+        if (checkbox) {
+            checkbox.checked = selected;
+            if (!selectable) checkbox.disabled = true;
+        }
     }
 
     function renderRows(store, view) {
@@ -798,12 +851,50 @@
         // 3) 勾选状态每次与 selection store 对齐（第二 host / 第二视图同步）
         (rowsEl.children ? Array.from(rowsEl.children) : []).forEach((rowEl) => {
             if (rowEl.dataset && rowEl.dataset.attachmentId != null) {
-                syncRowSelection(rowEl, store);
+                syncRowSelection(rowEl, store, view);
+            }
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // 视图同步 + 共享 store 订阅（子计划 09：AI 获取状态消费）
+    // ------------------------------------------------------------------
+
+    /** 只读快照（live 引用）：宿主经 subscribe/getState 观察，不另造状态拷贝。 */
+    function snapshotOf(store) {
+        return {
+            contactId: store.contactId,
+            items: store.items,
+            summary: store.summary,
+            selection: store.selection,
+            submitting: store.submitting,
+            actionError: store.actionError,
+            loading: store.loading,
+            loadedOnce: store.loadedOnce,
+            total: store.total,
+            page: store.page
+        };
+    }
+
+    function notifySubscribers(store, reason) {
+        if (!store || store.listeners.size === 0) return;
+        const snapshot = snapshotOf(store);
+        store.listeners.forEach((listener) => {
+            try {
+                listener(snapshot, reason || "");
+            } catch (err) {
+                // 订阅者异常绝不阻断 store 自身的视图同步/轮询。
             }
         });
     }
 
     function syncView(view, reason) {
+        syncViewImpl(view, reason);
+        const store = stores.get(view.contactId);
+        notifySubscribers(store, reason);
+    }
+
+    function syncViewImpl(view, reason) {
         if (view.disposed || !view.elements) return;
         const store = stores.get(view.contactId);
         if (!store) return;
@@ -894,8 +985,12 @@
         elements.prevBtn.disabled = store.page <= 0 || store.submitting;
         elements.nextBtn.disabled = store.page >= totalPages - 1 || store.submitting;
 
-        // 表头勾选框 = 只选本页
-        const pageIds = store.pageOrder.slice();
+        // 表头勾选框 = 只选本页（selectionOnly：只统计/操作可分析行）
+        const pageIds = store.pageOrder.filter((id) => {
+            if (view.mode !== "selectionOnly") return true;
+            const item = byId(store, id);
+            return !item || item.analysisSupported !== false;
+        });
         const selectedOnPage = pageIds.filter((id) => store.selection.has(id)).length;
         if (pageIds.length === 0) {
             elements.pageCheckbox.checked = false;
@@ -999,7 +1094,11 @@
                 return;
             }
             if (target === elements.pageCheckbox) {
-                const pageIds = store.pageOrder.slice();
+                const pageIds = store.pageOrder.filter((id) => {
+                    if (view.mode !== "selectionOnly") return true;
+                    const item = byId(store, id);
+                    return !item || item.analysisSupported !== false;
+                });
                 if (target.checked) {
                     pageIds.forEach((id) => store.selection.add(id));
                 } else {
@@ -1203,11 +1302,52 @@
         return count;
     }
 
+    /**
+     * 09：订阅某联系人的共享 store（AI 获取状态消费）。listener(snapshot, reason)
+     * 在每次视图同步后调用一次；snapshot 为 live 只读引用（items/summary/selection），
+     * 订阅者绝不应另存下载状态副本。返回退订函数；store 不存在（无挂载视图）返回 null。
+     */
+    function subscribe(contactId, listener) {
+        const store = stores.get(Number(contactId));
+        if (!store || typeof listener !== "function") return null;
+        store.listeners.add(listener);
+        listener(snapshotOf(store), "subscribe");
+        return () => {
+            store.listeners.delete(listener);
+        };
+    }
+
+    /** 09：读取当前共享 store 快照（无则 null）；只读用途。 */
+    function getState(contactId) {
+        const store = stores.get(Number(contactId));
+        return store ? snapshotOf(store) : null;
+    }
+
+    /** 09：整体替换某联系人的选择集（AI 默认勾选/带入）；同步全部视图，不发起任何请求。 */
+    function setSelection(contactId, ids) {
+        const store = stores.get(Number(contactId));
+        if (!store) return false;
+        const next = new Set();
+        (Array.isArray(ids) ? ids : []).forEach((id) => {
+            const n = Number(id);
+            if (Number.isFinite(n) && n > 0) next.add(n);
+        });
+        store.selection = next;
+        store.note = "";
+        store.actionError = null;
+        store.views.forEach((v) => syncView(v, "selection"));
+        return true;
+    }
+
     const api = {
         configure,
         mount,
         unmount,
         unmountHostsIn,
+        subscribe,
+        getState,
+        setSelection,
+        requestTransfers,
         version: "1"
     };
 

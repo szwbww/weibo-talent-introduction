@@ -46,10 +46,25 @@ class ExpertDocumentAnalysisService(
         }
 
         val extracted = documentTextExtractor.extract(contactId, attachmentIds)
-        val supported = extracted.values.filter { it.supported && it.text.isNotBlank() }
-        if (supported.isEmpty()) {
-            throw AnalysisFailedException("所选文件均无法提取文本，请选择 PDF 或文本文件")
+
+        // I-2/I-3：extract 之后、构建 prompt/调用 LLM/deleteAll 之前，任一所选项
+        // unsupported 或文本为空都必须整批拒绝——抛原 AnalysisFailedException，
+        // message 列明 attachmentId/文件名与原因（不支持格式/无可读文字）；
+        // 绝不静默过滤后把部分文件分析成功当作全部完成，旧分析结果不被提前删除。
+        attachmentIds.forEach { attachmentId ->
+            val item = extracted[attachmentId] ?: return@forEach
+            if (!item.supported) {
+                throw AnalysisFailedException(
+                    "附件 ${item.fileName}(attachmentId=$attachmentId) 不支持格式，无法分析"
+                )
+            }
+            if (item.text.isBlank()) {
+                throw AnalysisFailedException(
+                    "附件 ${item.fileName}(attachmentId=$attachmentId) 无可读文字，无法分析"
+                )
+            }
         }
+        val supported = extracted.values.toList()
 
         if (!llmProperties.enabled || llmProperties.apiUrl.isBlank()) {
             throw AnalysisFailedException("LLM 服务未启用，无法执行分析")
