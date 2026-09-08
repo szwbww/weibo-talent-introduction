@@ -56,10 +56,10 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh database migrates through V120`() {
+    fun `fresh database migrates through V121`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("120", flyway.migrate().targetSchemaVersion)
+        assertEquals("121", flyway.migrate().targetSchemaVersion)
     }
 
     @Test
@@ -155,7 +155,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("120", flyway().migrate().targetSchemaVersion)
+        assertEquals("121", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(1L, connection.queryLong(
                 "SELECT COUNT(*) FROM mail_sender_account " +
@@ -255,14 +255,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V23 upgrades to V120 without repair`() {
+    fun `database at original V23 upgrades to V121 without repair`() {
         val v23Flyway = flyway(MigrationVersion.fromVersion("23"))
         v23Flyway.clean()
         assertEquals("23", v23Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("120", flyway().migrate().targetSchemaVersion)
+        assertEquals("121", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -271,14 +271,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V24 upgrades to V120 without repair`() {
+    fun `database at original V24 upgrades to V121 without repair`() {
         val v24Flyway = flyway(MigrationVersion.fromVersion("24"))
         v24Flyway.clean()
         assertEquals("24", v24Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("120", flyway().migrate().targetSchemaVersion)
+        assertEquals("121", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -313,7 +313,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("120", flyway().migrate().targetSchemaVersion)
+        assertEquals("121", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
                 "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
@@ -359,7 +359,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("120", flyway().migrate().targetSchemaVersion)
+        assertEquals("121", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }
@@ -435,7 +435,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("120", flyway().migrate().targetSchemaVersion)
+        assertEquals("121", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 历史值原样保留（I-2/I-3），document_status 迁移前后不变。
             assertEquals(12345L, connection.queryLong(
@@ -551,7 +551,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("120", flyway().migrate().targetSchemaVersion)
+        assertEquals("121", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("mail_attachment_transfer"))
             listOf(
@@ -696,7 +696,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("120", flyway().migrate().targetSchemaVersion)
+        assertEquals("121", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：uid_validity BIGINT NOT NULL DEFAULT 0
             assertTrue(connection.columnExists("inbound_mail_processing", "uid_validity"))
@@ -776,6 +776,104 @@ class FlywayMigrationIntegrationTest {
             }
             // 外键仍生效
             assertTrue(connection.foreignKeyExists("inbound_mail_processing", "fk_inbound_mail_processing_contact"))
+        }
+    }
+
+    @Test
+    fun `V121 creates expert_follow with composite ownership key and contact FK`() {
+        migrateToV23AndSeedBase()
+        connection().use { connection ->
+            assertFalse(connection.tableExists("expert_follow"))
+        }
+
+        assertEquals("121", flyway().migrate().targetSchemaVersion)
+        connection().use { connection ->
+            assertTrue(connection.tableExists("expert_follow"))
+            listOf("username", "expert_contact_id", "created_at").forEach { column ->
+                assertTrue(connection.columnExists("expert_follow", column), "missing column $column")
+            }
+            // 列契约：username VARCHAR(64) NOT NULL / expert_contact_id BIGINT NOT NULL /
+            // created_at DATETIME NOT NULL（无默认：首次关注时间由唯一写者显式落库）。
+            assertEquals("varchar", connection.queryString(
+                "SELECT DATA_TYPE FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+                    "AND column_name = 'username'"
+            ))
+            assertEquals("64", connection.queryString(
+                "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+                    "AND column_name = 'username'"
+            ))
+            assertEquals("bigint", connection.queryString(
+                "SELECT DATA_TYPE FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+                    "AND column_name = 'expert_contact_id'"
+            ))
+            listOf("username", "expert_contact_id", "created_at").forEach { column ->
+                assertEquals("NO", connection.queryString(
+                    "SELECT IS_NULLABLE FROM information_schema.columns " +
+                        "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+                        "AND column_name = '$column'"
+                ))
+            }
+
+            // 复合主键列序：(username, expert_contact_id)
+            assertEquals(2L, connection.queryLong(
+                "SELECT COUNT(*) FROM information_schema.statistics " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+                    "AND index_name = 'PRIMARY'"
+            ))
+            assertEquals("username", connection.queryString(
+                "SELECT COLUMN_NAME FROM information_schema.statistics " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+                    "AND index_name = 'PRIMARY' AND SEQ_IN_INDEX = 1"
+            ))
+            assertEquals("expert_contact_id", connection.queryString(
+                "SELECT COLUMN_NAME FROM information_schema.statistics " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'expert_follow' " +
+                    "AND index_name = 'PRIMARY' AND SEQ_IN_INDEX = 2"
+            ))
+
+            // 复合主键 (username, expert_contact_id)：同一用户对同一专家至多一行；
+            // 不同用户可关注同一专家；同一用户可关注不同专家。
+            connection.execute(
+                "INSERT INTO expert_follow (username, expert_contact_id, created_at) " +
+                    "VALUES ('admin', 1, '2026-09-08 10:00:00')"
+            )
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    "INSERT INTO expert_follow (username, expert_contact_id, created_at) " +
+                        "VALUES ('admin', 1, '2026-09-08 10:00:01')"
+                )
+            }
+            connection.execute(
+                "INSERT INTO expert_follow (username, expert_contact_id, created_at) " +
+                    "VALUES ('admin', 2, '2026-09-08 10:00:00')"
+            )
+            connection.execute(
+                "INSERT INTO expert_follow (username, expert_contact_id, created_at) " +
+                    "VALUES ('operator-b', 1, '2026-09-08 10:00:00')"
+            )
+            assertEquals(3L, connection.queryLong("SELECT COUNT(*) FROM expert_follow"))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM expert_follow WHERE username = 'admin' AND expert_contact_id = 1"
+            ))
+
+            // created_at 无默认：省略即拒绝（首次关注时间必须显式写）。
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    "INSERT INTO expert_follow (username, expert_contact_id) VALUES ('admin', 1)"
+                )
+            }
+
+            // 联系人外键仍生效：未知专家拒绝。
+            assertTrue(connection.foreignKeyExists("expert_follow", "fk_expert_follow_contact"))
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    "INSERT INTO expert_follow (username, expert_contact_id, created_at) " +
+                        "VALUES ('admin', 999999, '2026-09-08 10:00:00')"
+                )
+            }
         }
     }
 
