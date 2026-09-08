@@ -592,7 +592,6 @@ class MailboxConversationControllerTest {
 /** 真实 MySQL + Flyway（test application.yml 数据源；迁移到最新含 V121）。 */
 @Configuration
 class MailboxConversationRealJdbcConfig {
-
     @Bean
     fun mailboxConversationDataSource(
         @Value("\${spring.datasource.url}") url: String,
@@ -614,4 +613,65 @@ class MailboxConversationRealJdbcConfig {
     @Bean
     fun mailboxConversationNamedJdbc(dataSource: DataSource): NamedParameterJdbcTemplate =
         NamedParameterJdbcTemplate(dataSource)
+}
+
+// ---------------------------------------------------------------------------
+// A1 双控制器映射回归（Amendment A1, 2026-09-08 HUMAN 批准）：同挂 campaign 旧 feed
+// controller 与 06 新材料 controller，证明不再 Ambiguous mapping（修复前本类 context
+// 启动失败：GET /api/expert-contacts/{contactId}/materials 双重映射）。
+// 本类不需要数据库/登录（全部构造依赖 @MockBean），因此不挂 mysqlIt 门禁，普通
+// mvn test 全量即回归；若未来有人恢复 campaign 侧同模板 GET 映射会立即红。
+// ---------------------------------------------------------------------------
+@WebMvcTest(
+    controllers = [
+        com.weibo.talentintroduction.document.controller.ExpertMaterialController::class,
+        com.weibo.talentintroduction.campaign.controller.ExpertContactManagementController::class
+    ]
+)
+class MailboxMaterialsDualControllerMappingTest {
+
+    @Autowired
+    private lateinit var mockMvc: MockMvc
+
+    @MockBean
+    private lateinit var documentMaterialService: com.weibo.talentintroduction.document.service.ExpertMaterialService
+
+    @MockBean
+    private lateinit var campaignMaterialService: com.weibo.talentintroduction.campaign.service.ExpertMaterialService
+
+    @MockBean
+    private lateinit var contactManagementService: com.weibo.talentintroduction.campaign.service.ExpertContactManagementService
+
+    @MockBean
+    private lateinit var manualExpertMailService: com.weibo.talentintroduction.mail.service.ManualExpertMailService
+
+    @MockBean
+    private lateinit var meetingScheduleService: com.weibo.talentintroduction.campaign.service.MeetingScheduleService
+
+    @MockBean
+    private lateinit var operatorStatusService: com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
+
+    @MockBean
+    private lateinit var indexLevelOperationService: com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
+
+    @MockBean
+    private lateinit var senderAccountBindingService: com.weibo.talentintroduction.mail.service.SenderAccountBindingService
+
+    @Test
+    fun `both materials controllers coexist and the surviving GET feed is the shared material api`() {
+        // 修复前：context 加载即抛 Ambiguous mapping（两个 controller 映射同模板）。
+        // 修复后：GET materials 唯一由 06 新材料 controller 提供（campaign 旧 feed 已退役）。
+        mockMvc.perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
+                "/api/expert-contacts/1/materials"
+            )
+        ).andExpect(status().isOk)
+
+        // 保留端点的占位验证（PUT updateMaterialStatus 仍由 campaign controller 提供）。
+        mockMvc.perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(
+                "/api/expert-contacts/1/materials/CV"
+            ).contentType(MediaType.APPLICATION_JSON).content("""{"status":"PROVIDED"}""")
+        ).andExpect(status().isOk)
+    }
 }

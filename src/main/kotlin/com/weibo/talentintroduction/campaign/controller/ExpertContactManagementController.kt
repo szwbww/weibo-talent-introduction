@@ -241,7 +241,7 @@ class ExpertContactManagementController(
     ): MeetingScheduleResponse =
         meetingScheduleService.cancelMeeting(contactId, scheduleId).toResponse()
 
-    @GetMapping("/{contactId}/materials")
+    // A1: GET /{contactId}/materials 旧 feed 映射退役（与 06 ExpertMaterialController 同路径歧义，启动即 Ambiguous mapping）；方法体保留以兼容未授权 campaign 单元测试直接调用，不参与路由
     fun listMaterials(@PathVariable contactId: Long): List<ExpertMaterialItem> =
         expertMaterialService.listMaterials(contactId)
 
