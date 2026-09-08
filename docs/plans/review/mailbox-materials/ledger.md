@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-07/00-mailbox-materials-master.md
+
+- Status: MACHINE_BLOCKED
+- Review epoch: 1
+- Master plan: docs/plans/2026-09-07/00-mailbox-materials-master.md (commit a61ecb543668532317bebd7864286352dc3359c7; sha256 2bbfc191ad4a905e5a42dcb34b76bb490661abf243b280764452b5483fdc4044)
+- Governing master identity: worktree sha256 2bbfc191ad4a905e5a42dcb34b76bb490661abf243b280764452b5483fdc4044; recorded commit a61ecb543668532317bebd7864286352dc3359c7
+- Invoked master identity: SAME (sha256 2bbfc191ad4a905e5a42dcb34b76bb490661abf243b280764452b5483fdc4044)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: A1 `docs/plans/2026-09-07/07-expert-conversations-follow.md` (recorded and human-approved); A2 `docs/plans/2026-09-07/11-release-and-cache-gate.md` (recorded and human-approved)
+- Fast-p ledger: docs/plans/fast/mailbox-materials/ledger.md (sha256 e0e356c910e1572e10dea1311297336275ceb5fcf9da6e2f6139b6788434d84d)
+- Fast-p handoff: docs/plans/fast/mailbox-materials/human-review-handoff.md (sha256 036c119ffd5a1fba315ac133da7d5372919790d9feffbe3bc98e2f42c8d3aa61)
+- Master base: 8a0c5360e25e875e52800d17797a7b1ea4bd452c
+- Final code head: 009d9bab431c75184b00659905f80dcde91e3166
+- Evidence parent before next commit: 91359402f948be0538c579c74404a5ba0a6209b2
+- Previous evidence commit: N/A
+- Branch: fast/mailbox-materials
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mailbox-materials
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: `discover_fast_p.py` SELECTED exactly one registered worktree; 11 terminal children; matching branch/worktree; READY_FOR_HUMAN_REVIEW ledger/handoff; valid `8a0c5360e25e875e52800d17797a7b1ea4bd452c..009d9bab431c75184b00659905f80dcde91e3166` ancestry; governing identity CONSISTENT.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer (fresh; created after final code commit; no inherited fast-p execution context)
+- Reviewer attempt: 1
+- Machine result: BLOCKED
+- Machine report epoch: machine-verification.md, Epoch 1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: V-1 mandatory Flyway gate blocked: Testcontainers selects Docker API 1.32 while OrbStack requires at least 1.40; provide an environment where the exact master-required command can use Docker API >=1.40, then rerun full aggregate verification.
