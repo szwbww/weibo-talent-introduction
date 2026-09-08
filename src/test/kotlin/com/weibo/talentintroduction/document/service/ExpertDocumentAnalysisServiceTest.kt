@@ -85,6 +85,22 @@ class ExpertDocumentAnalysisServiceTest {
     }
 
     @Test
+    fun `analyze fails with MATERIAL_NOT_READY before any result write when a selected file is not ready`() {
+        // I-3：读取前失败（材料未就绪 → 409）绝不能先删除既有分析结果。
+        Mockito.doThrow(MaterialNotReadyException(9L, "METADATA_ONLY", "Attachment 9 has no local file"))
+            .`when`(documentTextExtractor).validateAttachmentBelongsToContact(1L, 9L)
+
+        val ex = assertThrows(MaterialNotReadyException::class.java) {
+            service.analyze(1L, listOf(9L))
+        }
+        assertEquals(9L, ex.attachmentId)
+        Mockito.verify(analysisResultRepository, Mockito.never())
+            .deleteAllByExpertContactId(Mockito.anyLong())
+        Mockito.verify(analysisResultRepository, Mockito.never())
+            .save(Mockito.any(ExpertAnalysisResult::class.java))
+    }
+
+    @Test
     fun `analyze maps llm timeout to AnalysisFailedException`() {
         Mockito.doNothing().`when`(documentTextExtractor).validateAttachmentBelongsToContact(1L, 10L)
         Mockito.`when`(documentTextExtractor.extract(1L, listOf(10L)))

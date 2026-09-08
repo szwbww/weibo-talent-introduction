@@ -1,10 +1,6 @@
 package com.weibo.talentintroduction.document.service
 
-import com.weibo.talentintroduction.config.MailAttachmentStorageProperties
-import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
 import com.weibo.talentintroduction.mail.domain.MailAttachment
-import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
-import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.text.PDFTextStripper
 import org.springframework.stereotype.Service
@@ -20,64 +16,44 @@ data class ExtractedText(
     val unsupportedReason: String? = null
 )
 
+/**
+ * AI 文本提取器。归属 + 就绪 + realpath 统一委托
+ * [ExpertMaterialService.resolveReadyFile]（I-3）：任何所选文件未就绪即抛
+ * [MaterialNotReadyException]（HTTP 409），并且**先全部解析就绪、再读任何
+ * 文件内容**——不会出现读到一半才发现缺件、也不会部分分析冒充完成。
+ * 只有归属有效（expert_document → attachment → 唯一 owner → 该 contact）的
+ * 文档可被 AI 读取；匿名附件不能借 attachmentId 越权。
+ */
 @Service
 class DocumentTextExtractor(
-    private val properties: MailAttachmentStorageProperties,
-    private val expertDocumentRepository: ExpertDocumentRepository,
-    private val mailAttachmentRepository: MailAttachmentRepository,
-    private val mailRecordRepository: MailRecordRepository
+    private val materialService: ExpertMaterialService
 ) {
     fun extract(contactId: Long, attachmentIds: List<Long>): Map<Long, ExtractedText> {
         require(attachmentIds.isNotEmpty()) { "attachmentIds must not be empty" }
 
-        return attachmentIds.associateWith { attachmentId ->
-            val attachment = resolveAttachment(contactId, attachmentId)
+        // 阶段 1：全部所选先解析并核验就绪（resolveReadyFile 内含归属/路径校验），
+        // 任一失败即抛，未读任何文件字节。
+        val readyFiles = attachmentIds.associateWith { attachmentId ->
+            materialService.resolveReadyFile(contactId, attachmentId)
+        }
+        // 阶段 2：全部就绪后才逐件读取内容。
+        return readyFiles.mapValues { (attachmentId, ready) ->
+            val attachment = ready.attachment
             val contentType = resolveContentType(attachment)
-            extractFromFile(attachmentId, attachment, contentType)
+            extractFromFile(attachmentId, attachment, ready.path, contentType)
         }
     }
 
     fun validateAttachmentBelongsToContact(contactId: Long, attachmentId: Long) {
-        resolveAttachment(contactId, attachmentId)
+        materialService.resolveReadyFile(contactId, attachmentId)
     }
 
-    private fun resolveAttachment(contactId: Long, attachmentId: Long): MailAttachment {
-        val document = expertDocumentRepository.findFirstByMailAttachmentId(attachmentId)
-            ?: throw IllegalArgumentException("Document not found for attachment $attachmentId")
-        require(document.expertContactId == contactId) {
-            "Document $attachmentId does not belong to expert contact $contactId"
-        }
-
-        val attachment = mailAttachmentRepository.findById(attachmentId)
-            .orElseThrow { IllegalArgumentException("Attachment not found: $attachmentId") }
-
-        val mailRecordId = requireNotNull(attachment.mailRecordId) {
-            "Expert document attachment must have mail_record_id"
-        }
-        val mailRecord = mailRecordRepository.findByIdOrNull(mailRecordId)
-            ?: throw IllegalArgumentException("Mail record not found: $mailRecordId")
-        require(mailRecord.expertContactId == contactId) {
-            "Mail record $mailRecordId does not belong to expert contact $contactId"
-        }
-
-        val rawStoragePath = requireNotNull(attachment.storagePath) {
-            "Attachment $attachmentId has no local file (storage_path is null)"
-        }
-        val storagePath = Path.of(rawStoragePath).toAbsolutePath().normalize()
-        require(Files.exists(storagePath)) { "File not found: ${attachment.fileName}" }
-        require(Files.isRegularFile(storagePath)) { "Not a regular file: ${attachment.fileName}" }
-
-        val realBasePath = Path.of(properties.basePath).toRealPath()
-        val realStoragePath = storagePath.toRealPath()
-        require(realStoragePath.startsWith(realBasePath)) {
-            "Attachment path is outside configured base path"
-        }
-
-        return attachment
-    }
-
-    private fun extractFromFile(attachmentId: Long, attachment: MailAttachment, contentType: String): ExtractedText {
-        val path = Path.of(attachment.storagePath).toAbsolutePath().normalize()
+    private fun extractFromFile(
+        attachmentId: Long,
+        attachment: MailAttachment,
+        path: Path,
+        contentType: String
+    ): ExtractedText {
         return when {
             contentType == "application/pdf" -> {
                 val text = PDDocument.load(path.toFile()).use { document ->
