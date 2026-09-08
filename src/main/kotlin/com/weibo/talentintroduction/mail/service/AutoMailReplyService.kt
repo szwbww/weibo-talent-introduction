@@ -13,6 +13,7 @@ import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.InboundIntent
 import com.weibo.talentintroduction.mail.domain.AutoReplyConfidenceLog
 import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.domain.MailAttachmentTransfer
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
@@ -746,12 +747,26 @@ class AutoMailReplyService(
         )
     }
 
-    fun receiveAndAutoReply(accountCode: String, maxMessages: Int): AutoMailReplyBatchResult {
+    /**
+     * 单账号检查（05）：可选 [onPhase] 报告接收/处理阶段（READING_METADATA /
+     * PROCESSING_MAIL，供 Batch/Controller 发布账号进度）；[isCancelled] 只在
+     * 安全边界（每封邮件处理前）停止后续邮件，绝不中断已开始的业务/SMTP 事务
+     * （不把邮件发送回滚当作可用取消方案）。接收窗口预算由 [ImapMailReceiveService]
+     * 按账号执行，本方法不把 120s 称为含 LLM/SMTP 的整任务 SLA。
+     */
+    fun receiveAndAutoReply(
+        accountCode: String,
+        maxMessages: Int,
+        onPhase: ((String) -> Unit)? = null,
+        isCancelled: (() -> Boolean)? = null
+    ): AutoMailReplyBatchResult {
         val account = mailSenderAccountService.getAutoReceiveAccount(accountCode)
         val stored = mailInboxCursorService.get(accountCode)
+        onPhase?.invoke(AccountAutoMailReplyPhases.READING_METADATA)
         var fetch = mailReceiveService.fetchInboundSince(account, stored.lastUid, maxMessages)
         var start = mailInboxCursorService.resolveStart(stored, fetch.uidValidity)
         if (start == 0L && stored.lastUid > 0L) {
+            onPhase?.invoke(AccountAutoMailReplyPhases.READING_METADATA)
             fetch = mailReceiveService.fetchInboundSince(account, 0, maxMessages)
         }
 
@@ -763,13 +778,19 @@ class AutoMailReplyService(
         val handledUids = mutableSetOf<Long>()
         val fetchedUids = fetch.mails.map { it.imapUid }
 
-        fetch.mails.forEach { mail ->
+        onPhase?.invoke(AccountAutoMailReplyPhases.PROCESSING_MAIL)
+        for (mail in fetch.mails) {
+            // I-2：取消只在安全边界（本封邮件尚未开始处理）停止后续邮件；不中断进行中的事务。
+            if (isCancelled?.invoke() == true) {
+                log.info("Auto reply cancelled at a safe boundary for account {}", accountCode)
+                break
+            }
             try {
                 if (selfCheckProbeDetector.isSelfCheckProbe(mail.from, mail.subject, account.senderEmail)) {
                     mailReceiveService.markSeen(account, mail.imapUid)
                     log.debug("Discarded self-check probe: uid={}", mail.imapUid)
                     handledUids.add(mail.imapUid)
-                    return@forEach
+                    continue
                 }
                 val bounceSignal = bounceDetector.detect(mail.from, mail.subject, mail.body)
                 if (bounceSignal != null) {
@@ -784,17 +805,26 @@ class AutoMailReplyService(
                     mailReceiveService.markSeen(account, mail.imapUid)
                     log.debug("Ingested bounce during auto-reply poll: uid={}", mail.imapUid)
                     handledUids.add(mail.imapUid)
-                    return@forEach
+                    continue
                 }
                 if (dmarcReportDetector.isDmarcAggregateReport(mail.from, mail.subject, mail.attachments)) {
-                    try {
-                        dmarcReportIngestService.ingest(mail.attachments)
-                    } catch (e: Exception) {
-                        log.warn("DMARC parse failed uid={}", mail.imapUid, e)
+                    // I-3（metadata 模式）：content=null 的附件不能交给原 ingest（无字节可解压，
+                    // parse-null 会被静默跳过 = 丢报表）。改经 02 队列登记 SYSTEM 的 DMARC 获取请求
+                    // （purpose=DMARC、无 attachmentId、无专家附件/文档），不在检查线程等待下载/解析；
+                    // 每个源索引行持久化且明确入队后才确认该 UID。legacy 模式保持原内联 ingest。
+                    val attachments = mail.attachments
+                    if (attachments.isNotEmpty() && attachments.all { it.content == null }) {
+                        queueDmarcTransfers(account, mail, attachments)
+                    } else {
+                        try {
+                            dmarcReportIngestService.ingest(attachments)
+                        } catch (e: Exception) {
+                            log.warn("DMARC parse failed uid={}", mail.imapUid, e)
+                        }
                     }
                     mailReceiveService.markSeen(account, mail.imapUid)
                     handledUids.add(mail.imapUid)
-                    return@forEach
+                    continue
                 }
                 val r = processSingle(account, mail, skipImapAck = false)
                 handledUids.add(mail.imapUid)
@@ -864,6 +894,62 @@ class AutoMailReplyService(
                     reason = "UID_NOT_FOUND:$uid"
                 )
             processSingle(account, mail, skipImapAck = false)
+        }
+    }
+
+    /**
+     * I-3（metadata 模式 DMARC）：把报表附件逐件登记为 purpose=DMARC 的源索引行并
+     * 由 SYSTEM 请求入队（02 队列），不在检查线程等待下载/解析。任何一步失败都会
+     * 抛出让调用方不确认该 UID（不 markSeen、游标不推进），下次检查重试收敛；
+     * 已入队/已 STORED 的重复登记幂等返回，不新建任务。
+     */
+    private fun queueDmarcTransfers(
+        account: MailSenderAccount,
+        received: ReceivedMail,
+        attachments: List<ReceivedMailAttachment>
+    ) {
+        for (attachment in attachments) {
+            val source = attachment.source
+                ?: error(
+                    "metadata-mode DMARC attachment must carry a remote source descriptor " +
+                        "(file=${attachment.fileName})"
+                )
+            val registration = attachmentTransferService.register(
+                AttachmentTransferService.RegisterTransferRequest(
+                    purpose = MailAttachmentTransfer.PURPOSE_DMARC,
+                    accountCode = account.accountCode,
+                    folder = source.folder,
+                    uidValidity = source.uidValidity,
+                    imapUid = source.uid,
+                    partPath = source.partPath,
+                    messageId = source.messageId,
+                    fileName = attachment.fileName,
+                    contentType = attachment.contentType,
+                    encodedSize = source.encodedSize,
+                    disposition = source.disposition
+                )
+            )
+            val transferId = registration.transfer.id
+                ?: error("registered DMARC transfer has no id")
+            val queued = attachmentTransferService.enqueueTransferByIds(
+                listOf(transferId),
+                AttachmentTransferService.SYSTEM_REQUESTER
+            )
+            val item = queued.items.singleOrNull()
+                ?: error("DMARC transfer enqueue produced no item for transferId=$transferId")
+            if (item.errorCode != null) {
+                error(
+                    "DMARC transfer could not be queued for uid=${received.imapUid} " +
+                        "part=${source.partPath}: ${item.errorCode}"
+                )
+            }
+            log.info(
+                "Queued DMARC report transfer id={} uid={} part={} file={}",
+                transferId,
+                received.imapUid,
+                source.partPath,
+                attachment.fileName
+            )
         }
     }
 

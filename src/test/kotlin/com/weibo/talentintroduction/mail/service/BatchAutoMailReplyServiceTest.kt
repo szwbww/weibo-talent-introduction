@@ -16,14 +16,20 @@ class BatchAutoMailReplyServiceTest {
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val service = BatchAutoMailReplyService(accountService, autoReplyService, mailRecordRepository)
 
+    private fun <T> anyValue(defaultValue: T): T =
+        Mockito.any<T>() ?: defaultValue
+
+    private fun <T> eqValue(value: T): T =
+        Mockito.eq<T>(value) ?: value
+
     @Test
     fun `polls all auto-receive accounts and aggregates results`() {
         Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
             listOf(account("a1"), account("a2"))
         )
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5, null, null))
             .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a2", 5))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a2", 5, null, null))
             .thenReturn(AutoMailReplyBatchResult(fetched = 2, recorded = 2, replied = 1, manualReview = 1))
 
         val result = service.receiveAndAutoReplyAll(5)
@@ -45,11 +51,11 @@ class BatchAutoMailReplyServiceTest {
         Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
             listOf(account("a1"), account("a2"), account("a3"))
         )
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3, null, null))
             .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a2", 3))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a2", 3, null, null))
             .thenThrow(RuntimeException("IMAP connection timeout"))
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a3", 3))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a3", 3, null, null))
             .thenReturn(AutoMailReplyBatchResult(fetched = 2, recorded = 1, replied = 0, manualReview = 1))
 
         val result = service.receiveAndAutoReplyAll(3)
@@ -79,7 +85,7 @@ class BatchAutoMailReplyServiceTest {
         Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
             listOf(account("a1"), account("a2"))
         )
-        Mockito.`when`(autoReplyService.receiveAndAutoReply(Mockito.anyString(), Mockito.anyInt()))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply(anyValue(""), anyValue(0), anyValue(null), anyValue(null)))
             .thenThrow(RuntimeException("IMAP connection timeout"))
 
         val result = service.receiveAndAutoReplyAll(3)
@@ -108,7 +114,7 @@ class BatchAutoMailReplyServiceTest {
         Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
             listOf(account("a1"))
         )
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3, null, null))
             .thenThrow(RuntimeException("Authentication failed with password secret"))
 
         val result = service.receiveAndAutoReplyAll(3)
@@ -124,7 +130,7 @@ class BatchAutoMailReplyServiceTest {
         Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
             listOf(account("real_acct"))
         )
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("real_acct", 3))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("real_acct", 3, null, null))
             .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
 
         val result = service.receiveAndAutoReplyAll(3)
@@ -138,7 +144,7 @@ class BatchAutoMailReplyServiceTest {
         Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
             listOf(account("a1"))
         )
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3, null, null))
             .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
 
         val result = service.receiveAndAutoReplyAll(3)
@@ -154,7 +160,7 @@ class BatchAutoMailReplyServiceTest {
             .thenReturn(listOf("a1"))
         Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a1"))
             .thenReturn(account("a1"))
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3, null, null))
             .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
 
         val result = service.receiveAndAutoReplyForContacts(listOf(1L), 3)
@@ -171,14 +177,14 @@ class BatchAutoMailReplyServiceTest {
             .thenReturn(listOf("a1", "a2"))
         Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a1")).thenReturn(account("a1"))
         Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a2")).thenReturn(account("a2"))
-        Mockito.`when`(autoReplyService.receiveAndAutoReply(Mockito.anyString(), Mockito.anyInt()))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply(anyValue(""), anyValue(0), anyValue(null), anyValue(null)))
             .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
 
         val result = service.receiveAndAutoReplyForContacts(listOf(1L, 2L), 3)
 
         assertEquals(2, result.accountCount)
-        Mockito.verify(autoReplyService).receiveAndAutoReply("a1", 3)
-        Mockito.verify(autoReplyService).receiveAndAutoReply("a2", 3)
+        Mockito.verify(autoReplyService).receiveAndAutoReply("a1", 3, null, null)
+        Mockito.verify(autoReplyService).receiveAndAutoReply("a2", 3, null, null)
         Mockito.verify(accountService, Mockito.never()).listAutoReceiveAccounts()
     }
 
@@ -187,13 +193,13 @@ class BatchAutoMailReplyServiceTest {
         Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
             .thenReturn(listOf("a1"))
         Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a1")).thenReturn(account("a1"))
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5, null, null))
             .thenReturn(AutoMailReplyBatchResult(fetched = 2, recorded = 2, replied = 1, manualReview = 1))
 
         val result = service.receiveAndAutoReplyForContacts(listOf(1L, 2L), 5)
 
         assertEquals(1, result.accountCount)
-        Mockito.verify(autoReplyService, Mockito.times(1)).receiveAndAutoReply("a1", 5)
+        Mockito.verify(autoReplyService, Mockito.times(1)).receiveAndAutoReply("a1", 5, null, null)
     }
 
     @Test
@@ -235,7 +241,7 @@ class BatchAutoMailReplyServiceTest {
         assertTrue(ex.message!!.contains("unavailable"))
         // a1 must NOT have been polled
         Mockito.verify(autoReplyService, Mockito.never()).receiveAndAutoReply(
-            Mockito.anyString(), Mockito.anyInt()
+            Mockito.anyString(), Mockito.anyInt(), anyValue(null), anyValue(null)
         )
     }
 
@@ -258,9 +264,9 @@ class BatchAutoMailReplyServiceTest {
             .thenReturn(listOf("a1", "a2"))
         Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a1")).thenReturn(account("a1"))
         Mockito.`when`(accountService.getAutoReceiveAccountOrNull("a2")).thenReturn(account("a2"))
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3, null, null))
             .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a2", 3))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a2", 3, null, null))
             .thenThrow(RuntimeException("IMAP connection timeout"))
 
         val result = service.receiveAndAutoReplyForContacts(listOf(1L, 2L), 3)
@@ -279,7 +285,7 @@ class BatchAutoMailReplyServiceTest {
             RepliedExpertInfo(3L, "b@test.com", null, "QA_REPLIED")
         )
         Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(listOf(account("a1")))
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 3, null, null))
             .thenReturn(AutoMailReplyBatchResult(
                 fetched = 3, recorded = 3, replied = 3, manualReview = 0, repliedExperts = experts
             ))
@@ -296,9 +302,9 @@ class BatchAutoMailReplyServiceTest {
         Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
             listOf(account("a1"), account("a2"))
         )
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5, null, null))
             .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a2", 5))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a2", 5, null, null))
             .thenReturn(AutoMailReplyBatchResult(fetched = 2, recorded = 2, replied = 1, manualReview = 1))
 
         val progressResults = mutableListOf<AccountAutoMailReplyResult>()
@@ -324,12 +330,17 @@ class BatchAutoMailReplyServiceTest {
         Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
             listOf(account("a1"), account("a2"), account("a3"))
         )
-        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5))
-            .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
-
         var cancelledAfterFirst = false
         val isCancelled: () -> Boolean = {
             cancelledAfterFirst
+        }
+        // 批量把取消判定原样转发进账号接收：stub 用同一 lambda 引用匹配。
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5, null, isCancelled))
+            .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
+
+        val startedEvents = mutableListOf<String>()
+        val onAccountStarted: (AccountAutoMailReplyStage) -> Unit = { stage ->
+            startedEvents.add(stage.accountCode)
         }
         val onProgress: (AccountAutoMailReplyResult, Int, Int) -> Unit = { _, processed, _ ->
             if (processed == 1) {
@@ -337,7 +348,12 @@ class BatchAutoMailReplyServiceTest {
             }
         }
 
-        val result = service.receiveAndAutoReplyAll(5, onProgress = onProgress, isCancelled = isCancelled)
+        val result = service.receiveAndAutoReplyAll(
+            5,
+            onProgress = onProgress,
+            isCancelled = isCancelled,
+            onAccountStarted = onAccountStarted
+        )
 
         assertEquals(3, result.accountCount)
         assertEquals(1, result.accountsPolled)
@@ -345,8 +361,120 @@ class BatchAutoMailReplyServiceTest {
         assertEquals("a1", result.accounts[0].accountCode)
         assertEquals("CANCELLED", result.taskFinalStatus)
         assertTrue(result.wasCancelled)
-        Mockito.verify(autoReplyService, Mockito.never()).receiveAndAutoReply("a2", 5)
-        Mockito.verify(autoReplyService, Mockito.never()).receiveAndAutoReply("a3", 5)
+        // I-1/I-2：取消后的账号既不被轮询也不发布开始事件（安全边界）。
+        assertEquals(listOf("a1"), startedEvents)
+        Mockito.verify(autoReplyService, Mockito.never()).receiveAndAutoReply("a2", 5, null, null)
+        Mockito.verify(autoReplyService, Mockito.never()).receiveAndAutoReply("a3", 5, null, null)
+    }
+
+    @Test
+    fun `account started callback fires before entering each account and after previous completion`() {
+        Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
+            listOf(account("a1"), account("a2"))
+        )
+        val events = mutableListOf<String>()
+        Mockito.`when`(autoReplyService.receiveAndAutoReply(
+            eqValue("a1"), eqValue(5), anyValue(null), anyValue(null)
+        )).thenAnswer { invocation ->
+            events.add("work:a1")
+            AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0)
+        }
+        Mockito.`when`(autoReplyService.receiveAndAutoReply(
+            eqValue("a2"), eqValue(5), anyValue(null), anyValue(null)
+        )).thenAnswer { invocation ->
+            events.add("work:a2")
+            AutoMailReplyBatchResult(fetched = 1, recorded = 0, replied = 0, manualReview = 1)
+        }
+
+        val startedPhases = mutableListOf<Pair<String, String>>()
+        val result = service.receiveAndAutoReplyAll(
+            5,
+            onAccountStarted = { stage ->
+                events.add("started:${stage.accountCode}")
+                startedPhases.add(stage.accountCode to stage.phase)
+            },
+            onStage = { stage ->
+                events.add("stage:${stage.phase}")
+            }
+        )
+
+        // I-1：进入账号前回调（CONNECTING）先于该账号工作；上一账号完成后才轮到下一账号开始。
+        assertEquals(
+            listOf(
+                "started:a1", "work:a1",
+                "started:a2", "work:a2"
+            ),
+            events
+        )
+        assertEquals(
+            listOf("a1" to AccountAutoMailReplyPhases.CONNECTING, "a2" to AccountAutoMailReplyPhases.CONNECTING),
+            startedPhases
+        )
+        assertEquals(2, result.accountsPolled)
+        assertEquals(2, result.successAccountCount)
+    }
+
+    @Test
+    fun `intra-account phases from receive service are forwarded to onStage in order`() {
+        Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
+            listOf(account("a1"))
+        )
+        Mockito.`when`(autoReplyService.receiveAndAutoReply(anyValue(""), anyValue(0), anyValue(null), anyValue(null)))
+            .thenAnswer { invocation ->
+                val onPhase = invocation.getArgument<(String) -> Unit>(2)
+                onPhase(AccountAutoMailReplyPhases.READING_METADATA)
+                onPhase(AccountAutoMailReplyPhases.PROCESSING_MAIL)
+                AutoMailReplyBatchResult(fetched = 2, recorded = 2, replied = 1, manualReview = 0)
+            }
+
+        val recorded = mutableListOf<AccountAutoMailReplyStage>()
+        val started = mutableListOf<AccountAutoMailReplyStage>()
+        val result = service.receiveAndAutoReplyAll(
+            5,
+            onAccountStarted = { stage -> started.add(stage) },
+            onStage = { stage -> recorded.add(stage) }
+        )
+
+        // 阶段顺序 CONNECTING(started) -> READING_METADATA -> PROCESSING_MAIL；
+        // 同一账号的 startedAt 一致、updatedAt 单调不减；totalAccounts 传递。
+        assertEquals(1, started.size)
+        assertEquals(AccountAutoMailReplyPhases.CONNECTING, started[0].phase)
+        assertEquals(listOf("a1", "a1"), recorded.map { it.accountCode })
+        assertEquals(
+            listOf(AccountAutoMailReplyPhases.READING_METADATA, AccountAutoMailReplyPhases.PROCESSING_MAIL),
+            recorded.map { it.phase }
+        )
+        val accountStartedAt = started[0].startedAt
+        recorded.forEach { stage ->
+            assertEquals(accountStartedAt, stage.startedAt)
+            assertTrue(stage.updatedAt >= stage.startedAt)
+            assertEquals(1, stage.totalAccounts)
+        }
+        assertEquals(1, result.successAccountCount)
+    }
+
+    @Test
+    fun `failed account reports failure via onProgress while completed counts are retained`() {
+        Mockito.`when`(accountService.listAutoReceiveAccounts()).thenReturn(
+            listOf(account("a1"), account("a2"))
+        )
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a1", 5, null, null))
+            .thenReturn(AutoMailReplyBatchResult(fetched = 1, recorded = 1, replied = 1, manualReview = 0))
+        Mockito.`when`(autoReplyService.receiveAndAutoReply("a2", 5, null, null))
+            .thenThrow(RuntimeException("IMAP receive window exceeded"))
+
+        val progress = mutableListOf<Pair<Int, Int>>()
+        val result = service.receiveAndAutoReplyAll(
+            5,
+            onProgress = { _, processed, total -> progress.add(processed to total) }
+        )
+
+        // I-4：partial 失败保留已完成账号计数（accountsPolled=2、成功 1、失败 1）。
+        assertEquals("PARTIAL_SUCCESS", result.taskFinalStatus)
+        assertEquals(2, result.accountsPolled)
+        assertEquals(1, result.successAccountCount)
+        assertEquals(1, result.failedAccountCount)
+        assertEquals(listOf(1 to 2, 2 to 2), progress)
     }
 
     private fun account(accountCode: String): MailSenderAccount =

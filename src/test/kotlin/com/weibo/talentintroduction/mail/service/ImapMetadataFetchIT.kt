@@ -71,7 +71,11 @@ class ImapMetadataFetchIT {
             )
         )
 
-    private fun account(port: Int, code: String = "it-account"): MailSenderAccount =
+    private fun account(
+        port: Int,
+        code: String = "it-account",
+        username: String = "user1"
+    ): MailSenderAccount =
         MailSenderAccount(
             accountCode = code,
             senderEmail = "$code@fixture.local",
@@ -86,7 +90,7 @@ class ImapMetadataFetchIT {
             smtpPassword = "pw",
             imapHost = "127.0.0.1",
             imapPort = port,
-            imapUsername = "user1",
+            imapUsername = username,
             imapPassword = "pw"
         )
 
@@ -277,6 +281,115 @@ class ImapMetadataFetchIT {
         )
     }
 
+    @Test
+    fun `slow-drip body past account receive budget is force-closed and raises retryable error`() {
+        // 05 I-2：账号接收窗口预算（accountReceiveTimeoutSeconds=1s，单信预算放宽到 30s），
+        // 服务端按 200ms/字节持续滴流（全信需 100s+）。无 watchdog 时只能等单信预算 30s 或
+        // 永不结束；watchdog 必须在 1s 预算到点真关闭连接，让阻塞读尽快以可重试错误结束。
+        val budgetService = ImapMailReceiveService(
+            MailAttachmentStorageProperties(
+                metadataOnly = true,
+                metadataMaxBodyBytes = 2 * 1024 * 1024,
+                metadataTotalTimeoutSeconds = 30,
+                accountReceiveTimeoutSeconds = 1
+            )
+        )
+        server.addBox(
+            username = "user1",
+            password = "pw",
+            uidValidity = 601L,
+            messages = listOf(server.mailWithDripBody(uid = 61L, perByteDelayMs = 200L))
+        )
+        val startedAt = System.nanoTime()
+        val failure = runCatching {
+            budgetService.fetchInboundSince(account = account(server.port()), afterUid = 0L, maxMessages = 10)
+        }.exceptionOrNull()
+        val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+
+        assertNotNull(failure, "drip body beyond the account receive budget must raise")
+        assertTrue(
+            failure is MetadataTimeoutException || failure is javax.mail.MessagingException,
+            "budget expiry must surface as retryable error, got ${failure!!.javaClass.name}"
+        )
+        // 预算 1s 到点由 watchdog 强制断开：失败远早于 10s 读超时与 30s 单信预算。
+        assertTrue(
+            elapsedMs >= 700 && elapsedMs < 15_000,
+            "force-close must happen at the 1s budget, took ${elapsedMs}ms"
+        )
+    }
+
+    @Test
+    fun `after budget force-close the next account proceeds on a new connection`() {
+        // 05 I-2：慢账号接收超时失败后，同一服务的下一账号（另一邮箱）仍能正常读取。
+        val budgetService = ImapMailReceiveService(
+            MailAttachmentStorageProperties(
+                metadataOnly = true,
+                metadataMaxBodyBytes = 2 * 1024 * 1024,
+                metadataTotalTimeoutSeconds = 30,
+                accountReceiveTimeoutSeconds = 1
+            )
+        )
+        server.addBox(
+            username = "user1",
+            password = "pw",
+            uidValidity = 701L,
+            messages = listOf(server.mailWithDripBody(uid = 71L, perByteDelayMs = 200L))
+        )
+        server.addBox(
+            username = "user2",
+            password = "pw",
+            uidValidity = 702L,
+            messages = listOf(server.mail(uid = 81L, subject = "healthy-next-account", bodyText = "ok", attachmentCount = 1))
+        )
+
+        val slowFailure = runCatching {
+            budgetService.fetchInboundSince(
+                account = account(server.port(), code = "slow-account", username = "user1"),
+                afterUid = 0L,
+                maxMessages = 10
+            )
+        }.exceptionOrNull()
+        assertNotNull(slowFailure, "slow drip account must fail at its receive budget")
+
+        // 下一账号走新连接：完整读到正文与附件元数据，连接未被慢账号拖死。
+        val next = budgetService.fetchInboundSince(
+            account = account(server.port(), code = "next-account", username = "user2"),
+            afterUid = 0L,
+            maxMessages = 10
+        )
+        assertEquals(1, next.mails.size)
+        assertEquals("healthy-next-account", next.mails[0].subject)
+        assertEquals("ok", next.mails[0].body)
+        assertEquals(1, next.mails[0].attachments.size)
+        assertEquals(702L, next.uidValidity)
+    }
+
+    @Test
+    fun `healthy account completes within the receive budget`() {
+        val budgetService = ImapMailReceiveService(
+            MailAttachmentStorageProperties(
+                metadataOnly = true,
+                metadataMaxBodyBytes = 2 * 1024 * 1024,
+                metadataTotalTimeoutSeconds = 30,
+                accountReceiveTimeoutSeconds = 5
+            )
+        )
+        server.addBox(
+            username = "user1",
+            password = "pw",
+            uidValidity = 801L,
+            messages = listOf(server.mail(uid = 91L, subject = "within-budget", bodyText = "fast body", attachmentCount = 2))
+        )
+        val result = budgetService.fetchInboundSince(
+            account = account(server.port()),
+            afterUid = 0L,
+            maxMessages = 10
+        )
+        assertEquals(1, result.mails.size)
+        assertEquals("fast body", result.mails[0].body)
+        assertEquals(2, result.mails[0].attachments.size)
+    }
+
     // ------------------------------------------------------------------
     // Fixture models
     // ------------------------------------------------------------------
@@ -293,7 +406,9 @@ class ImapMetadataFetchIT {
         val bodyText: String,
         val attachments: List<FixtureAttachment>,
         /** 慢源：该信正文响应发送前延迟（metadata 时限断言用）。 */
-        val slowBodyDelayMs: Long = 0L
+        val slowBodyDelayMs: Long = 0L,
+        /** 滴流源：正文 literal 每字节间隔毫秒（账号接收窗口 force-close 断言用）。 */
+        val bodyDripMs: Long = 0L
     )
 
     /** fixture mailbox 句柄（服务端句柄）。 */
@@ -404,6 +519,16 @@ class MetadataFixtureServer : AutoCloseable {
             bodyText = "x".repeat(256),
             attachments = emptyList(),
             slowBodyDelayMs = bodyDelayMs
+        )
+
+    /** 滴流正文：发送方以 [perByteDelayMs] 毫秒/字节持续慢吐，永不快速结束（force-close 断言）。 */
+    fun mailWithDripBody(uid: Long, perByteDelayMs: Long): ImapMetadataFetchIT.FixtureMail =
+        ImapMetadataFetchIT.FixtureMail(
+            uid = uid,
+            subject = "drip-body",
+            bodyText = "y".repeat(512),
+            attachments = emptyList(),
+            bodyDripMs = perByteDelayMs
         )
 
 
@@ -650,7 +775,7 @@ class MetadataFixtureServer : AutoCloseable {
                 if (!item.startsWith("BODY.PEEK[") && !item.startsWith("BODY[")) continue
                 val resolved = resolveBodySection(message, item)
                 if (resolved != null) {
-                    writeLiteralResponse(writer, seq, resolved.marker, resolved.payload)
+                    writeLiteralResponse(writer, seq, resolved.marker, resolved.payload, resolved.dripMs)
                 } else {
                     writeSimpleResponse(writer, seq, listOf("$item {0}"))
                 }
@@ -706,21 +831,38 @@ class MetadataFixtureServer : AutoCloseable {
         writer: java.io.OutputStream,
         seq: Long,
         literalHead: String,
-        payload: ByteArray
+        payload: ByteArray,
+        dripMs: Long = 0L
     ) {
         // 形如 "* 1 FETCH (BODY.PEEK[HEADER] {249}\r\n<payload>)\r\n" —— 整段一次写出，
         // 避免分片 write 让客户端读到半截响应而误判响应行结束。
         val head = "* $seq FETCH ($literalHead\r\n".toByteArray(StandardCharsets.ISO_8859_1)
         val tail = ")\r\n".toByteArray(StandardCharsets.ISO_8859_1)
         writer.write(head)
-        writer.write(payload)
+        if (dripMs > 0L) {
+            // 滴流模式：payload 逐字节慢写（每字节间隔 dripMs），客户端读永远在途。
+            for (b in payload) {
+                writer.write(byteArrayOf(b))
+                writer.flush()
+                try {
+                    Thread.sleep(dripMs)
+                } catch (e: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return
+                }
+            }
+        } else {
+            writer.write(payload)
+        }
         writer.write(tail)
         writer.flush()
     }
 
     private class ResolvedBody(
         val payload: ByteArray,
-        val marker: String
+        val marker: String,
+        /** >0：该 literal 按每字节间隔 dripMs 毫秒发送（force-close 断言）。 */
+        val dripMs: Long = 0L
     )
 
     private fun resolveBodySection(message: PreparedMessage, item: String): ResolvedBody? {
@@ -754,7 +896,7 @@ class MetadataFixtureServer : AutoCloseable {
                 // TEXT = 整信正文（单 part 时即 1 号正文；multipart 时 JavaMail 会另行按 part 请求）
                 val textBody = message.rawLeafBodies["1"] ?: message.wire
                 val payload = applyRange(textBody, start, count)
-                return ResolvedBody(payload, "$responseItem {${payload.size}}")
+                return ResolvedBody(payload, "$responseItem {${payload.size}}", message.fixture.bodyDripMs)
             }
             section.endsWith(".MIME") -> {
                 // part MIME 头（JavaMail 拉 part 级头时用 BODY.PEEK[n.MIME]）
@@ -773,9 +915,15 @@ class MetadataFixtureServer : AutoCloseable {
         ) {
             error("attachment content section requested by client: $section")
         }
+        // 单 part 无附件消息按 part 1 请求正文：同样施加滴流（force-close 断言）
         val rawLeaf = message.rawLeafBodies[section] ?: return null
         val payload = applyRange(rawLeaf, start, count)
-        return ResolvedBody(payload, "$responseItem {${payload.size}}")
+        val drip = if (index != null && index == 1 && message.fixture.attachments.isEmpty()) {
+            message.fixture.bodyDripMs
+        } else {
+            0L
+        }
+        return ResolvedBody(payload, "$responseItem {${payload.size}}", drip)
     }
 
     private fun applyRange(body: ByteArray, start: Long, count: Long?): ByteArray {

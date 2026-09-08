@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.sun.mail.imap.IMAPFolder
 import com.weibo.talentintroduction.config.MailAttachmentStorageProperties
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import org.slf4j.LoggerFactory
@@ -9,6 +10,9 @@ import java.io.InputStream
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.util.Properties
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import javax.mail.FetchProfile
 import javax.mail.Flags
@@ -17,6 +21,7 @@ import javax.mail.Message
 import javax.mail.Multipart
 import javax.mail.Part
 import javax.mail.Session
+import javax.mail.Store
 import javax.mail.UIDFolder
 import javax.mail.internet.InternetAddress
 import javax.mail.internet.MimeMessage
@@ -36,44 +41,44 @@ class ImapMailReceiveService(
         require(maxMessages in 1..100) { "maxMessages must be between 1 and 100" }
         require(afterUid >= 0) { "afterUid must be non-negative" }
 
-        val session = Session.getInstance(imapProperties(account.imapPort))
-        val store = session.getStore("imap")
-        store.connect(account.imapHost, account.imapPort, account.imapUsername, account.imapPassword)
-
-        return store.use { connectedStore ->
-            val inbox = connectedStore.getFolder("INBOX")
-            inbox.open(Folder.READ_WRITE)
-            inbox.use { folder ->
-                val uidFolder = folder as? UIDFolder
-                    ?: error("IMAP INBOX does not support UID lookup")
-                val uidValidity = uidFolder.uidValidity
-                val startUid = if (afterUid == 0L) 1L else afterUid + 1
-                val candidates = uidFolder.getMessagesByUID(startUid, UIDFolder.LASTUID)
-                    .asSequence()
-                    .mapNotNull { message ->
-                        val uid = uidFolder.getUID(message)
-                        if (uid <= afterUid) null else message to uid
-                    }
-                    .sortedBy { it.second }
-                    .take(maxMessages)
-                    .toList()
-                // I-2：只预取 ENVELOPE/CONTENT_INFO(BODYSTRUCTURE)/UID 及必要头，不预取 MESSAGE 全内容。
-                if (candidates.isNotEmpty()) {
-                    val profile = FetchProfile()
-                    profile.add(FetchProfile.Item.ENVELOPE)
-                    profile.add(FetchProfile.Item.CONTENT_INFO)
-                    profile.add(UIDFolder.FetchProfileItem.UID)
-                    folder.fetch(candidates.map { it.first }.toTypedArray(), profile)
+        // I-2：每次账号接收建立独立 deadline（120s 默认）；到期 watchdog forceClose 该连接，
+        // 阻塞中的读立即以异常结束，finally 清理，失败由调用方记 FAILED 后继续下一账号。
+        return withAccountReceiveWindow(account) { folder, budget ->
+            val uidFolder = folder as? UIDFolder
+                ?: error("IMAP INBOX does not support UID lookup")
+            val uidValidity = uidFolder.uidValidity
+            val startUid = if (afterUid == 0L) 1L else afterUid + 1
+            val candidates = uidFolder.getMessagesByUID(startUid, UIDFolder.LASTUID)
+                .asSequence()
+                .mapNotNull { message ->
+                    val uid = uidFolder.getUID(message)
+                    if (uid <= afterUid) null else message to uid
                 }
-                val messages = candidates.map { (message, uid) ->
-                    convertToReceivedMail(message, account, folder.name, uidValidity, uid)
-                }
-                InboundFetchResult(
-                    mails = messages,
-                    uidValidity = uidValidity,
-                    maxUidInWindow = messages.maxOfOrNull { it.imapUid } ?: afterUid
-                )
+                .sortedBy { it.second }
+                .take(maxMessages)
+                .toList()
+            // I-2：只预取 ENVELOPE/CONTENT_INFO(BODYSTRUCTURE)/UID 及必要头，不预取 MESSAGE 全内容。
+            if (candidates.isNotEmpty()) {
+                budget.check()
+                val profile = FetchProfile()
+                profile.add(FetchProfile.Item.ENVELOPE)
+                profile.add(FetchProfile.Item.CONTENT_INFO)
+                profile.add(UIDFolder.FetchProfileItem.UID)
+                folder.fetch(candidates.map { it.first }.toTypedArray(), profile)
             }
+            budget.check()
+            val messages = candidates.map { (message, uid) ->
+                budget.check()
+                convertToReceivedMail(message, account, folder.name, uidValidity, uid)
+            }
+            // 连接已被 watchdog 硬关但单信转换吞掉了 IO 异常时，这里按窗口超时显式失败，
+            // 绝不让「读到空正文」冒充一次成功接收。
+            budget.check()
+            InboundFetchResult(
+                mails = messages,
+                uidValidity = uidValidity,
+                maxUidInWindow = messages.maxOfOrNull { it.imapUid } ?: afterUid
+            )
         }
     }
 
@@ -81,31 +86,30 @@ class ImapMailReceiveService(
         require(uids.isNotEmpty()) { "uids must not be empty" }
         require(uids.all { it > 0 }) { "each uid must be positive" }
 
-        val session = Session.getInstance(imapProperties(account.imapPort))
-        val store = session.getStore("imap")
-        store.connect(account.imapHost, account.imapPort, account.imapUsername, account.imapPassword)
-
-        return store.use { connectedStore ->
-            val inbox = connectedStore.getFolder("INBOX")
-            inbox.open(Folder.READ_WRITE)
-            inbox.use { folder ->
-                val uidFolder = folder as? UIDFolder
-                    ?: error("IMAP INBOX does not support UID lookup")
-                val messages = uidFolder.getMessagesByUID(uids.toLongArray())
-                    .filterNotNull()
-                // I-2：只预取 ENVELOPE/CONTENT_INFO(BODYSTRUCTURE)/UID 及必要头，不预取 MESSAGE 全内容。
-                if (messages.isNotEmpty()) {
-                    val profile = FetchProfile()
-                    profile.add(FetchProfile.Item.ENVELOPE)
-                    profile.add(FetchProfile.Item.CONTENT_INFO)
-                    profile.add(UIDFolder.FetchProfileItem.UID)
-                    folder.fetch(messages.toTypedArray(), profile)
-                }
-                val byUid = messages.associateBy { uidFolder.getUID(it) }
-                uids.mapNotNull { byUid[it] }.map { msg ->
-                    convertToReceivedMail(msg, account, folder.name, uidFolder.uidValidity, uidFolder.getUID(msg))
-                }
+        // I-2：回补读取同样受单账号接收窗口约束（连接/头/正文目录），到期强制断开。
+        return withAccountReceiveWindow(account) { folder, budget ->
+            val uidFolder = folder as? UIDFolder
+                ?: error("IMAP INBOX does not support UID lookup")
+            val messages = uidFolder.getMessagesByUID(uids.toLongArray())
+                .filterNotNull()
+            // I-2：只预取 ENVELOPE/CONTENT_INFO(BODYSTRUCTURE)/UID 及必要头，不预取 MESSAGE 全内容。
+            if (messages.isNotEmpty()) {
+                budget.check()
+                val profile = FetchProfile()
+                profile.add(FetchProfile.Item.ENVELOPE)
+                profile.add(FetchProfile.Item.CONTENT_INFO)
+                profile.add(UIDFolder.FetchProfileItem.UID)
+                folder.fetch(messages.toTypedArray(), profile)
             }
+            budget.check()
+            val byUid = messages.associateBy { uidFolder.getUID(it) }
+            val result = uids.mapNotNull { byUid[it] }.map { msg ->
+                budget.check()
+                convertToReceivedMail(msg, account, folder.name, uidFolder.uidValidity, uidFolder.getUID(msg))
+            }
+            // 与 fetchInboundSince 一致：窗口超时后的转换不得冒充成功。
+            budget.check()
+            result
         }
     }
 
@@ -131,6 +135,135 @@ class ImapMailReceiveService(
                     .map { message -> MimeMessage(message as MimeMessage) }
                     .toList()
             }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 单账号接收窗口（I-2）：连接/头/正文目录共用一次 deadline；到期 watchdog
+    // 真关闭连接（IMAPFolder.forceClose），阻塞读立即失败；finally 收尾清理。
+    // 只约束 IMAP 接收阶段，绝不中断已经开始处理的业务/SMTP 事务。
+    // ------------------------------------------------------------------
+
+    /**
+     * 打开 INBOX 并在 [properties.accountReceiveTimeoutSeconds] 账号预算内执行 [block]。
+     * 预算耗尽：watchdog forceClose 连接；[block] 内 [AccountReceiveBudget.check] 抛
+     * [MetadataTimeoutException]（可重试）；finally 取消 watchdog 并清理连接。
+     * 异常/超时路径不再等待服务端响应（先硬关再收尾），避免慢服务端拖住清理。
+     */
+    private fun <T> withAccountReceiveWindow(
+        account: MailSenderAccount,
+        block: (folder: Folder, budget: AccountReceiveBudget) -> T
+    ): T {
+        require(properties.accountReceiveTimeoutSeconds > 0) {
+            "accountReceiveTimeoutSeconds must be positive"
+        }
+        val session = Session.getInstance(imapProperties(account.imapPort))
+        val store = session.getStore("imap")
+        store.connect(account.imapHost, account.imapPort, account.imapUsername, account.imapPassword)
+        val folder = store.getFolder("INBOX")
+        folder.open(Folder.READ_WRITE)
+        val budget = AccountReceiveBudget(account.accountCode, properties.accountReceiveTimeoutSeconds)
+        budget.arm {
+            // 预算到点：真关闭连接，打断阻塞中的读。实测 JavaMail 1.6.x 的
+            // IMAPFolder.forceClose()/protocol.disconnect() 都会等待在途 literal 读完成
+            // （fixture 滴流下约等于整个响应的发送时长），因此先直接关底层 socket。
+            hardCloseFolder(folder)
+        }
+        try {
+            return block(folder, budget)
+        } finally {
+            budget.cancel()
+            try {
+                if (budget.isExpired()) {
+                    // 超时路径：优雅 CLOSE 会等慢服务端应答，直接硬关。
+                    hardCloseFolder(folder)
+                } else if (folder.isOpen) {
+                    folder.close(false)
+                }
+            } catch (e: Exception) {
+                // 连接可能已被 watchdog 硬关闭
+            }
+            try {
+                if (store.isConnected) {
+                    store.close()
+                }
+            } catch (e: Exception) {
+                runCatching { hardCloseFolder(folder) }
+            }
+        }
+    }
+
+    /**
+     * 硬关闭账号接收连接：先反射关闭 IMAP 协议底层 socket（打断在途阻塞读），
+     * 再调用公开 [IMAPFolder.forceClose] 收尾。全部 runCatching——关闭是尽力而为，
+     * 后续 folder/store 清理各自独立容错。
+     */
+    private fun hardCloseFolder(folder: Folder) {
+        val imapFolder = folder as? IMAPFolder ?: return
+        runCatching {
+            val protocol = findDeclaredField(imapFolder.javaClass, "protocol")
+                ?.let { field ->
+                    field.isAccessible = true
+                    field.get(imapFolder)
+                }
+                ?: return@runCatching
+            val socket = findDeclaredField(protocol.javaClass, "socket")
+                ?.let { field ->
+                    field.isAccessible = true
+                    field.get(protocol) as? java.net.Socket
+                }
+            socket?.close()
+        }
+        runCatching { imapFolder.forceClose() }
+    }
+
+    private fun findDeclaredField(clazz: Class<*>, name: String): java.lang.reflect.Field? {
+        var current: Class<*>? = clazz
+        while (current != null) {
+            try {
+                return current.getDeclaredField(name)
+            } catch (e: NoSuchFieldException) {
+                current = current.superclass
+            }
+        }
+        return null
+    }
+
+    /** 单账号接收窗口的 deadline/check/watchdog 句柄（每次读取独立建立）。 */
+    private class AccountReceiveBudget(
+        private val accountCode: String,
+        timeoutSeconds: Long
+    ) {
+        private val deadlineNanos: Long = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds)
+        private val timeoutSeconds = timeoutSeconds
+
+        @Volatile
+        private var watchdogFuture: ScheduledFuture<*>? = null
+
+        /** 在 deadline 到点时调用 [closer]（watchdog forceClose 连接）。 */
+        fun arm(closer: () -> Unit) {
+            val remainingNanos = deadlineNanos - System.nanoTime()
+            watchdogFuture = WATCHDOG_EXECUTOR.schedule(
+                { closer() },
+                remainingNanos.coerceAtLeast(0L),
+                TimeUnit.NANOSECONDS
+            )
+        }
+
+        fun isExpired(): Boolean = System.nanoTime() > deadlineNanos
+
+        fun check() {
+            if (isExpired()) {
+                throw MetadataTimeoutException(
+                    "IMAP receive window exceeded the $timeoutSeconds" +
+                        "s account budget (account=$accountCode)"
+                )
+            }
+        }
+
+        fun cancel() {
+            watchdogFuture?.cancel(false)
+            watchdogFuture = null
         }
     }
 
@@ -464,6 +597,14 @@ class ImapMailReceiveService(
                 put("mail.imap.ssl.enable", "true")
             }
         }
+
+    companion object {
+        /** 单账号接收窗口 watchdog：到点 forceClose 对应连接（daemon，常驻轻量）。 */
+        private val WATCHDOG_EXECUTOR: ScheduledExecutorService =
+            Executors.newScheduledThreadPool(2) { runnable ->
+                Thread(runnable, "imap-receive-watchdog").apply { isDaemon = true }
+            }
+    }
 }
 
 private inline fun <T : AutoCloseable, R> T.use(block: (T) -> R): R {

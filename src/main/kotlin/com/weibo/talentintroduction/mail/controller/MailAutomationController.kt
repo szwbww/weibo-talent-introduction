@@ -6,6 +6,8 @@ import com.weibo.talentintroduction.campaign.service.InitialOutreachBatchResult
 import com.weibo.talentintroduction.campaign.service.InitialOutreachService
 import com.weibo.talentintroduction.campaign.service.ManualInitialOutreachService
 import com.weibo.talentintroduction.campaign.service.PendingOutreachSummary
+import com.weibo.talentintroduction.mail.service.AccountAutoMailReplyStage
+import com.weibo.talentintroduction.mail.service.AccountAutoMailReplyPhases
 import com.weibo.talentintroduction.mail.service.AutoMailReplyBatchResult
 import com.weibo.talentintroduction.mail.service.AutoMailReplyService
 import com.weibo.talentintroduction.mail.service.BatchAutoMailReplyResult
@@ -156,38 +158,8 @@ class MailAutomationController(
                         var runningManualReview = 0
                         var runningSuccess = 0
                         var runningFailed = 0
-
-                        val onProgress: (com.weibo.talentintroduction.mail.service.AccountAutoMailReplyResult, Int, Int) -> Unit = { accountResult, processed, total ->
-                            if (accountResult.status == "SUCCESS") {
-                                runningSuccess++
-                                runningFetched += accountResult.fetched
-                                runningReplied += accountResult.replied
-                                runningManualReview += accountResult.manualReview
-                            } else {
-                                runningFailed++
-                            }
-                            val currentExecId = executionId
-                            val token = currentExecId ?: pendingToken
-                            progressStore.update("CHECK_REPLIES", TaskProgress(
-                                taskType = "CHECK_REPLIES",
-                                status = "RUNNING",
-                                batchNumber = processed,
-                                processedCount = processed.toLong(),
-                                totalCount = total.toLong(),
-                                message = "正在检查邮箱: ${accountResult.accountCode} (${processed}/${total})",
-                                details = mapOf(
-                                    "totalAccountsToPoll" to total,
-                                    "accountsPolled" to processed,
-                                    "successAccountCount" to runningSuccess,
-                                    "failedAccountCount" to runningFailed,
-                                    "fetched" to runningFetched,
-                                    "replied" to runningReplied,
-                                    "manualReview" to runningManualReview
-                                ),
-                                executionId = currentExecId
-                            ), token)
-                            Unit
-                        }
+                        // 最近一次进入的账号（onAccountStarted 发布）；完成更新复用其开始时间。
+                        var currentAccountStartedAt: Long = 0L
 
                         val isCancelled: () -> Boolean = {
                             val currentExecId = executionId
@@ -198,14 +170,145 @@ class MailAutomationController(
                             }
                         }
 
+                        // 运行期统一发布点：只写现有 TaskProgress.details JSON，新增单个
+                        // accountProgress 对象键（accountCode/phase/startedAt/updatedAt）；
+                        // 不改表、不加列、不新增任务终态。message 字面量：
+                        // 「当前账号：<name> · <activity>；已完成<N>/<M>个账号」。
+                        fun publishRunning(
+                            message: String,
+                            processed: Int,
+                            total: Int,
+                            accountCode: String,
+                            phase: String,
+                            startedAt: Long,
+                            updatedAt: Long
+                        ) {
+                            val currentExecId = executionId
+                            val token = currentExecId ?: pendingToken
+                            progressStore.update("CHECK_REPLIES", TaskProgress(
+                                taskType = "CHECK_REPLIES",
+                                status = "RUNNING",
+                                batchNumber = processed,
+                                processedCount = processed.toLong(),
+                                totalCount = total.toLong(),
+                                message = message,
+                                details = mapOf(
+                                    "totalAccountsToPoll" to total,
+                                    "accountsPolled" to processed,
+                                    "successAccountCount" to runningSuccess,
+                                    "failedAccountCount" to runningFailed,
+                                    "fetched" to runningFetched,
+                                    "replied" to runningReplied,
+                                    "manualReview" to runningManualReview,
+                                    "accountProgress" to mapOf(
+                                        "accountCode" to accountCode,
+                                        "phase" to phase,
+                                        "startedAt" to startedAt,
+                                        "updatedAt" to updatedAt
+                                    )
+                                ),
+                                executionId = currentExecId
+                            ), token)
+                        }
+
+                        val accountActivity: (String) -> String = { phase ->
+                            when (phase) {
+                                AccountAutoMailReplyPhases.CONNECTING -> "连接邮箱"
+                                AccountAutoMailReplyPhases.READING_METADATA -> "读取邮件信息"
+                                AccountAutoMailReplyPhases.PROCESSING_MAIL -> "处理邮件"
+                                AccountAutoMailReplyPhases.COMPLETED -> "检查完成"
+                                AccountAutoMailReplyPhases.FAILED -> "检查失败"
+                                else -> phase
+                            }
+                        }
+
+                        // 进入账号前（I-1）与账号内阶段（READING_METADATA/PROCESSING_MAIL）：
+                        // accountsPolled 保持已完成账号数（本账号不计入）。
+                        val publishStage: (AccountAutoMailReplyStage, Int) -> Unit = { stage, completed ->
+                            require(AccountAutoMailReplyPhases.isValid(stage.phase)) {
+                                "illegal accountProgress phase: ${stage.phase}"
+                            }
+                            val cancelled = isCancelled()
+                            val activity = if (cancelled) {
+                                // I-2：取消请求到达时若账号仍在收尾，明示「正在结束当前处理」，
+                                // 绝不把邮件/SMTP 回滚伪装成已取消。
+                                "正在结束当前处理"
+                            } else {
+                                accountActivity(stage.phase)
+                            }
+                            publishRunning(
+                                "当前账号：${stage.accountCode} · $activity；" +
+                                    "已完成${completed}/${stage.totalAccounts}个账号",
+                                completed,
+                                stage.totalAccounts,
+                                stage.accountCode,
+                                stage.phase,
+                                stage.startedAt,
+                                stage.updatedAt
+                            )
+                        }
+
+                        val onAccountStarted: (AccountAutoMailReplyStage) -> Unit = { stage ->
+                            currentAccountStartedAt = stage.startedAt
+                            publishStage(stage, runningSuccess + runningFailed)
+                        }
+
+                        val onStage: (AccountAutoMailReplyStage) -> Unit = { stage ->
+                            publishStage(stage, runningSuccess + runningFailed)
+                        }
+
+                        // 账号完成：累计结果并把完成态（COMPLETED/FAILED）连同账号计数发布；
+                        // 取消请求后仍处于收尾的账号以「正在结束当前处理」呈现。
+                        val onProgress: (com.weibo.talentintroduction.mail.service.AccountAutoMailReplyResult, Int, Int) -> Unit = { accountResult, processed, total ->
+                            if (accountResult.status == "SUCCESS") {
+                                runningSuccess++
+                                runningFetched += accountResult.fetched
+                                runningReplied += accountResult.replied
+                                runningManualReview += accountResult.manualReview
+                            } else {
+                                runningFailed++
+                            }
+                            val cancelled = isCancelled()
+                            val terminalPhase = if (accountResult.status == "SUCCESS") {
+                                AccountAutoMailReplyPhases.COMPLETED
+                            } else {
+                                AccountAutoMailReplyPhases.FAILED
+                            }
+                            val activity = if (cancelled) {
+                                "正在结束当前处理"
+                            } else {
+                                accountActivity(terminalPhase)
+                            }
+                            val startedAt = currentAccountStartedAt.takeIf { it > 0 } ?: System.currentTimeMillis()
+                            publishRunning(
+                                "当前账号：${accountResult.accountCode} · $activity；" +
+                                    "已完成${processed}/${total}个账号",
+                                processed,
+                                total,
+                                accountResult.accountCode,
+                                terminalPhase,
+                                startedAt,
+                                System.currentTimeMillis()
+                            )
+                            Unit
+                        }
+
                         val result = if (contactIds.isEmpty()) {
-                            batchAutoMailReplyService.receiveAndAutoReplyAll(maxMessages, onProgress, isCancelled)
+                            batchAutoMailReplyService.receiveAndAutoReplyAll(
+                                maxMessages,
+                                onProgress,
+                                isCancelled,
+                                onAccountStarted,
+                                onStage
+                            )
                         } else {
                             batchAutoMailReplyService.receiveAndAutoReplyForContacts(
                                 contactIds = contactIds,
                                 maxMessagesPerAccount = maxMessages,
                                 onProgress = onProgress,
-                                isCancelled = isCancelled
+                                isCancelled = isCancelled,
+                                onAccountStarted = onAccountStarted,
+                                onStage = onStage
                             )
                         }
 
@@ -217,7 +320,8 @@ class MailAutomationController(
                             else -> "检查回复完成：共检查 ${result.accountsPolled}/${result.totalAccountsToPoll} 个邮箱账号，获取 ${result.fetched} 封邮件，自动回复 ${result.replied} 封，转人工 ${result.manualReview} 封"
                         }
 
-                        // update final progress
+                        // update final progress（终态汇总不带 accountProgress：运行期键只在
+                        // RUNNING 阶段发布，任务终态枚举与文案不变）
                         progressStore.update("CHECK_REPLIES", TaskProgress(
                             taskType = "CHECK_REPLIES",
                             status = finalStatus,

@@ -17,11 +17,20 @@ class BatchAutoMailReplyService(
     fun receiveAndAutoReplyAll(
         maxMessagesPerAccount: Int,
         onProgress: ((AccountAutoMailReplyResult, Int, Int) -> Unit)? = null,
-        isCancelled: (() -> Boolean)? = null
+        isCancelled: (() -> Boolean)? = null,
+        onAccountStarted: ((AccountAutoMailReplyStage) -> Unit)? = null,
+        onStage: ((AccountAutoMailReplyStage) -> Unit)? = null
     ): BatchAutoMailReplyResult {
         val accounts = mailSenderAccountService.listAutoReceiveAccounts()
         val startedAt = System.currentTimeMillis()
-        val perAccountResults = pollAccounts(accounts, maxMessagesPerAccount, onProgress, isCancelled)
+        val perAccountResults = pollAccounts(
+            accounts,
+            maxMessagesPerAccount,
+            onProgress,
+            isCancelled,
+            onAccountStarted,
+            onStage
+        )
         val finishedAt = System.currentTimeMillis()
 
         return buildResult(perAccountResults, startedAt, finishedAt, isCancelled?.invoke() ?: false, accounts.size)
@@ -31,10 +40,18 @@ class BatchAutoMailReplyService(
         contactIds: List<Long>,
         maxMessagesPerAccount: Int,
         onProgress: ((AccountAutoMailReplyResult, Int, Int) -> Unit)? = null,
-        isCancelled: (() -> Boolean)? = null
+        isCancelled: (() -> Boolean)? = null,
+        onAccountStarted: ((AccountAutoMailReplyStage) -> Unit)? = null,
+        onStage: ((AccountAutoMailReplyStage) -> Unit)? = null
     ): BatchAutoMailReplyResult {
         if (contactIds.isEmpty()) {
-            return receiveAndAutoReplyAll(maxMessagesPerAccount, onProgress, isCancelled)
+            return receiveAndAutoReplyAll(
+                maxMessagesPerAccount,
+                onProgress,
+                isCancelled,
+                onAccountStarted,
+                onStage
+            )
         }
 
         val accountCodes = mailRecordRepository
@@ -61,7 +78,14 @@ class BatchAutoMailReplyService(
         val accounts = resolvedAccounts.map { it.second!! }
 
         val startedAt = System.currentTimeMillis()
-        val perAccountResults = pollAccounts(accounts, maxMessagesPerAccount, onProgress, isCancelled)
+        val perAccountResults = pollAccounts(
+            accounts,
+            maxMessagesPerAccount,
+            onProgress,
+            isCancelled,
+            onAccountStarted,
+            onStage
+        )
         val finishedAt = System.currentTimeMillis()
 
         return buildResult(perAccountResults, startedAt, finishedAt, isCancelled?.invoke() ?: false, accounts.size)
@@ -71,7 +95,9 @@ class BatchAutoMailReplyService(
         accounts: List<MailSenderAccount>,
         maxMessagesPerAccount: Int,
         onProgress: ((AccountAutoMailReplyResult, Int, Int) -> Unit)? = null,
-        isCancelled: (() -> Boolean)? = null
+        isCancelled: (() -> Boolean)? = null,
+        onAccountStarted: ((AccountAutoMailReplyStage) -> Unit)? = null,
+        onStage: ((AccountAutoMailReplyStage) -> Unit)? = null
     ): List<AccountAutoMailReplyResult> {
         val results = mutableListOf<AccountAutoMailReplyResult>()
         val total = accounts.size
@@ -80,10 +106,39 @@ class BatchAutoMailReplyService(
                 log.info("Check replies task cancelled, stopping at account {}/{}", index, total)
                 break
             }
+            // I-1：进入账号前发布 CONNECTING 阶段；accountsPolled 只在账号完成后增长
+            // （完成态由 onProgress 在账号完成后累计结果时发布，phase=COMPLETED/FAILED）。
+            val startedAt = System.currentTimeMillis()
+            val emitStage: (String) -> Unit = { phase ->
+                onStage?.invoke(
+                    AccountAutoMailReplyStage(
+                        accountCode = account.accountCode,
+                        phase = phase,
+                        startedAt = startedAt,
+                        updatedAt = System.currentTimeMillis(),
+                        totalAccounts = total
+                    )
+                )
+            }
+            onAccountStarted?.invoke(
+                AccountAutoMailReplyStage(
+                    accountCode = account.accountCode,
+                    phase = AccountAutoMailReplyPhases.CONNECTING,
+                    startedAt = startedAt,
+                    updatedAt = startedAt,
+                    totalAccounts = total
+                )
+            )
             val accountResult = try {
                 val result = autoMailReplyService.receiveAndAutoReply(
                     accountCode = account.accountCode,
-                    maxMessages = maxMessagesPerAccount
+                    maxMessages = maxMessagesPerAccount,
+                    onPhase = if (onStage != null) {
+                        { phase -> emitStage(phase) }
+                    } else {
+                        null
+                    },
+                    isCancelled = isCancelled
                 )
                 AccountAutoMailReplyResult(
                     accountCode = account.accountCode,
@@ -195,3 +250,30 @@ data class AccountAutoMailReplyResult(
     val errorMessage: String?,
     val repliedExperts: List<RepliedExpertInfo> = emptyList()
 )
+
+/**
+ * I-4：账号级进行中阶段。phase 限定 [AccountAutoMailReplyPhases] 的五值；
+ * 只扩展任务详情 details.accountProgress（accountCode/phase/startedAt/updatedAt），
+ * 不改变账号结果与任务终态枚举。
+ */
+data class AccountAutoMailReplyStage(
+    val accountCode: String,
+    val phase: String,
+    val startedAt: Long,
+    val updatedAt: Long,
+    /** 本次批量任务待检查账号总数（消息「已完成N/M」的 M 用）。 */
+    val totalAccounts: Int = 0
+)
+
+/** I-4：accountProgress.phase 允许的账号阶段枚举（无新任务终态）。 */
+object AccountAutoMailReplyPhases {
+    const val CONNECTING = "CONNECTING"
+    const val READING_METADATA = "READING_METADATA"
+    const val PROCESSING_MAIL = "PROCESSING_MAIL"
+    const val COMPLETED = "COMPLETED"
+    const val FAILED = "FAILED"
+
+    private val ALLOWED = setOf(CONNECTING, READING_METADATA, PROCESSING_MAIL, COMPLETED, FAILED)
+
+    fun isValid(phase: String): Boolean = phase in ALLOWED
+}

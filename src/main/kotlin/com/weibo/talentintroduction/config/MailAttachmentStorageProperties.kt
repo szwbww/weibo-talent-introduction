@@ -27,5 +27,13 @@ data class MailAttachmentStorageProperties(
     /** 单信 MIME 节点数上限（03：超出抛明确可重试错误，不返回假完整清单）。 */
     val metadataMaxMimeNodes: Int = 10_000,
     /** 单信元数据总时限秒数（03：每封邮件从结构读取到正文提取的预算，到时抛可重试错误）。 */
-    val metadataTotalTimeoutSeconds: Long = 60
+    val metadataTotalTimeoutSeconds: Long = 60,
+    /** 单账号 IMAP 接收窗口总预算秒数（05：含连接/头/正文目录；只约束接收阶段，
+     *  不是含 LLM/SMTP 的整任务 SLA）。到期由 watchdog 强制关闭该连接，
+     *  失败账号记录后继续下一账号。 */
+    val accountReceiveTimeoutSeconds: Long = 120,
+    /** DMARC 归档（05）解压后 XML 内容总字节上限；超过抛 LIMIT_EXCEEDED。 */
+    val dmarcMaxExtractedBytes: Long = 20L * 1024 * 1024,
+    /** DMARC 归档最多处理的成员数；超过抛 LIMIT_EXCEEDED。 */
+    val dmarcMaxArchiveMembers: Int = 10
 )
