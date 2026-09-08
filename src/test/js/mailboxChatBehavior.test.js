@@ -562,6 +562,24 @@ function escapeHtmlLike(value) {
 // 聊天沙箱：mailbox-chat.js + 宿主 stub（app 全局函数按需注入）
 // ════════════════════════════════════════════════════════════════════════
 
+// V-2 修复（R-1）：与 app.js 顶层 operatorStatusOptions/indexLevelOptions 同值的目录。
+// app.js 将其发布到 window，mailbox-chat.js 经 IIFE 参数（浏览器=window）读取；
+// 本沙箱把这些值发布到 chat global，镜像同一宿主契约。
+const OPERATOR_STATUS_CATALOG = [
+    ["NOT_CONTACTED", "未联系"],
+    ["CONTACTED", "已联系"],
+    ["REPLIED", "已回复"],
+    ["MATERIALS_RECEIVED", "已回复材料"],
+    ["INVITED", "已邀约"],
+    ["COMPLETED", "已完成"]
+];
+
+const INDEX_LEVEL_CATALOG = [
+    ["RAW", "原始"],
+    ["CANDIDATE", "筛选"],
+    ["APPLICATION", "有效"]
+];
+
 function createChatSandbox(options) {
     const opts = options || {};
     const requests = [];
@@ -669,6 +687,13 @@ function createChatSandbox(options) {
     }
     if (opts.fetchTags) {
         sandbox.fetchExpertTagsFromEs = (orcidId, level) => Promise.resolve(opts.fetchTags);
+    }
+
+    // V-2 修复（R-1）：默认在 chat global 发布 app.js 同一目录（window 发布后的线上状态）；
+    // catalogs:false 复现 V-2 空目录线上症状（selector 渲染 0 个选项、无 POST）。
+    if (opts.catalogs !== false) {
+        sandbox.operatorStatusOptions = OPERATOR_STATUS_CATALOG;
+        sandbox.indexLevelOptions = INDEX_LEVEL_CATALOG;
     }
 
     vm.createContext(sandbox);
@@ -1206,6 +1231,75 @@ describe("mailbox chat follow (I-5)", () => {
         assert.ok(rolledBack.textContent.includes("★"));
         assert.strictEqual(rolledBack.disabled, false, "失败后按钮恢复可点");
         assert.ok(ctx.calls.status.some((s) => /关注操作失败/.test(s.message)), "报错提示");
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// V-2 修复（R-1）：状态/层级选择器从 window（chat global）发布目录渲染可选值，
+// 变更后走既有 /operator-status、/index-level POST（既有 payload keys，无新端点）
+// ════════════════════════════════════════════════════════════════════════
+
+describe("mailbox chat status/level catalog selectors (V-2)", () => {
+    async function bootSelectedA(serverOverrides) {
+        const conversations = { items: [expertA(), expertB()], total: 2 };
+        const ctx = await bootChat(Object.assign({ conversations, messages: messagesA(), contact: contactA() }, serverOverrides || {}));
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        return ctx;
+    }
+
+    function optionList(select) {
+        return select ? select.querySelectorAll("option") : [];
+    }
+
+    it("目录发布到 chat global：状态/层级下拉渲染全部可选值（value=枚举、文案=既有中文标签）", async () => {
+        const ctx = await bootSelectedA();
+        const statusSelect = ctx.host.querySelector('[data-role="status-select"]');
+        const levelSelect = ctx.host.querySelector('[data-role="level-select"]');
+        assert.ok(statusSelect, "状态下拉存在");
+        assert.ok(levelSelect, "层级下拉存在");
+        const statusOptions = optionList(statusSelect);
+        assert.strictEqual(statusOptions.length, OPERATOR_STATUS_CATALOG.length, "状态目录完整渲染");
+        for (const [value, label] of OPERATOR_STATUS_CATALOG) {
+            assert.ok(statusOptions.some((option) => option.getAttribute("value") === value && option.textContent === label),
+                `状态选项缺失 ${value}/${label}`);
+        }
+        const levelOptions = optionList(levelSelect);
+        assert.strictEqual(levelOptions.length, INDEX_LEVEL_CATALOG.length, "层级目录完整渲染");
+        for (const [value, label] of INDEX_LEVEL_CATALOG) {
+            assert.ok(levelOptions.some((option) => option.getAttribute("value") === value && option.textContent === label),
+                `层级选项缺失 ${value}/${label}`);
+        }
+    });
+
+    it("变更状态与层级：仅发既有 /operator-status 与 /index-level POST（既有 payload keys）", async () => {
+        const ctx = await bootSelectedA();
+        const statusSelect = ctx.host.querySelector('[data-role="status-select"]');
+        const levelSelect = ctx.host.querySelector('[data-role="level-select"]');
+        statusSelect.value = "COMPLETED"; // contactA 原值 REPLIED → 变更
+        levelSelect.value = "RAW";        // contactA 原值 APPLICATION → 变更
+        click(ctx.host.querySelector('[data-action="mc-save-settings"]'));
+        await flush();
+        const statusPost = ctx.calls.api.find((entry) => entry.method === "POST" && entry.url === "/api/expert-contacts/1/operator-status");
+        const levelPost = ctx.calls.api.find((entry) => entry.method === "POST" && entry.url === "/api/expert-contacts/1/index-level");
+        assert.ok(statusPost, "状态变更必须发起既有 /operator-status POST");
+        assert.deepStrictEqual(JSON.parse(statusPost.body), { operatorStatus: "COMPLETED", operatorName: "console" });
+        assert.ok(levelPost, "层级变更必须发起既有 /index-level POST");
+        assert.deepStrictEqual(JSON.parse(levelPost.body), { targetLevel: "RAW", operatorName: "console" });
+        assert.ok(ctx.calls.status.some((s) => /专家信息已更新/.test(s.message)), "保存成功状态提示");
+    });
+
+    it("目录缺失回归：选择器为空（V-2 症状可观测）；且 app.js 源文本发布 window 目录", async () => {
+        const ctx = await bootSelectedA({ catalogs: false });
+        const statusSelect = ctx.host.querySelector('[data-role="status-select"]');
+        const levelSelect = ctx.host.querySelector('[data-role="level-select"]');
+        assert.ok(statusSelect, "状态下拉仍渲染（但无任何选项）");
+        assert.strictEqual(optionList(statusSelect).length, 0, "目录缺失时状态下拉为空");
+        assert.strictEqual(optionList(levelSelect).length, 0, "目录缺失时层级下拉为空");
+        // DOM-stub harness 不整跑 app.js：以源文本断言发布语句存在，防止 stub 假绿
+        assert.match(appSource, /window\.operatorStatusOptions\s*=\s*operatorStatusOptions\s*;/);
+        assert.match(appSource, /window\.indexLevelOptions\s*=\s*indexLevelOptions\s*;/);
     });
 });
 

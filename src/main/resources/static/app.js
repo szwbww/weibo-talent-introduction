@@ -662,11 +662,15 @@ const operatorStatusOptions = [
     ["COMPLETED", "已完成"]
 ];
 
+// mailbox-chat.js 依宿主契约从 window 读取该目录；顶层 const 不自动成为 window 属性，此处发布同一数组
+window.operatorStatusOptions = operatorStatusOptions;
+
 const indexLevelOptions = [
     ["RAW", "原始"],
     ["CANDIDATE", "筛选"],
     ["APPLICATION", "有效"]
 ];
+window.indexLevelOptions = indexLevelOptions;
 
 function labelStatus(value) {
     return statusLabels[value] || value || "";
