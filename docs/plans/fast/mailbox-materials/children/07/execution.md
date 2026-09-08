@@ -101,3 +101,41 @@
 
 - 提交 SHA：见提交输出；提交文件 = 上表 10 个（`git show --stat` 核对），docs/plans/fast/** 未包含。
 - 未 push / merge / amend / rebase；HEAD 仍指向新提交且仅含本实现。
+
+---
+
+## Epoch 2（Amendment A1，2026-09-08 HUMAN 批准；fix_round 重置为 0）
+
+- Amended plan SHA-256: `b133c54ae0138be80b4ce7a67d7a489905baa22ecbfb22d33c2e53d749981337`
+- Execution ID (epoch 2): `…/07-expert-conversations-follow.md@b133c54ae0138be80b4ce7a67d7a489905baa22ecbfb22d33c2e53d749981337`
+- Epoch-1 commit `e0fa706`（10 文件）stands in ancestry；epoch-2 HEAD 起点 `06bea85`（docs-only）
+- Result: **READY_FOR_VERIFICATION**；Commit: `feat(fast-p): implement 07 epoch 2`
+
+### A1 变更（epoch-2 提交 = 2 个授权文件）
+
+| 文件 | 变更 |
+|---|---|
+| `src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt` | A1：退役 campaign 旧 feed 的 `@GetMapping("/{contactId}/materials")` 映射（与 child 06 `document/ExpertMaterialController` class-level `/api/expert-contacts/{contactId}/materials` + `@GetMapping` 完全同模板 → Spring 启动 Ambiguous mapping，生产无法启动）。删除的只有该 GET 映射注解行（净零行号：`OperatorStatusWriteSeamGuardTest` 钉死本文件 :564 `operatorStatus = operatorStatus`，A1 未授权该守卫测试，行号不可位移）。PUT `/materials/{materialCode}`、detail 与其余端点全部不动。 |
+| `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt` | 追加第二顶层类 `MailboxMaterialsDualControllerMappingTest`（@WebMvcTest 同挂 document ExpertMaterialController + campaign ExpertContactManagementController，构造依赖全 @MockBean；**不挂 mysqlIt**，普通全量即回归）。修复前：context 加载即抛 Ambiguous mapping（实测 ERROR）；修复后：1 run / 0 fail，GET materials 唯一由 06 新材料 API 提供、campaign PUT updateMaterialStatus 仍在。 |
+
+### A1 执行中的边界决策（偏差记录）
+
+1. **只删除 GET 映射注解、保留无路由委托方法**：A1 授权文件 = 原 10 文件 + `ExpertContactManagementController.kt`；未授权文件 `campaign/controller/ExpertContactManagementControllerTest.kt` 直接以 `controller.listMaterials(1L)` 调用该方法（单元级）。整方法删除会使未授权测试编译失败（越界修改禁止）；campaign `ExpertMaterialService.listMaterials` 另有服务内部调用方且其文件不在 A1 清单，不能动。故保留不带 `@GetMapping` 的委托方法（不参与路由、HTTP GET materials 已退役并 404→由 06 controller 提供），代码注释注明后续子计划把 `ExpertContactManagementControllerTest` 列入变更清单后可删除方法与对应用例。生产影响与整方法删除完全一致（路由层退役是本缺陷的唯一生产影响）。
+2. **净零行号守卫**：A1 改动落在守卫测试钉死的 `ExpertContactManagementController.kt:564` 之上；以「1 行注释替换 1 行注解」保持净零位移，守卫测试通过。
+3. **前置失败证据**：临时恢复 `@GetMapping` 后运行 `MailboxMaterialsDualControllerMappingTest` → 1 run / 1 ERROR（Ambiguous mapping，context 加载失败），随后还原修复态并复跑 1 run / 0 fail——回归测试满足「pre-fix 失败、post-fix 通过」。
+
+### Epoch-2 命令证据（最终状态重新全跑）
+
+| 命令 | 结果 |
+|---|---|
+| `mvn test -Dtest=MailboxMaterialsDualControllerMappingTest` | PASS — 1 run / 0 fail（post-fix）；pre-fix 实测 1 ERROR（Ambiguous mapping） |
+| `mvn -Pmysql-it -Dtest=MailboxConversationRepositoryIT test` | PASS — 12 run / 0 fail / 0 err |
+| `mvn -Pmysql-it -Dtest=MailboxConversationControllerTest,MailboxServiceTest test` | PASS — 30 run / 0 fail / 0 err（ControllerTest 10 + MailboxServiceTest 20） |
+| `mvn test -Dtest=MailboxConversationControllerTest,MailboxServiceTest`（plain） | PASS — MailboxServiceTest 20/0；ControllerTest 门禁跳过（1 skipped） |
+| `DOCKER_HOST=…orbstack… mvn -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true -Dapi.version=1.40 test` | PASS — 16 run / 0 fail / 0 err |
+| `mvn test`（全量） | PASS — **3248 run / 0 fail / 0 err / 9 skipped**（+1 = 双控制器映射回归）；node 671/671；BUILD SUCCESS 03:04 |
+
+### Epoch-2 剩余担忧
+
+- campaign `ExpertContactManagementController.listMaterials` 无路由委托方法与 `ExpertContactManagementControllerTest.listMaterials delegates…` 用例成为待清理残留（A1 文件边界外）；建议后续 child 把该测试文件列入变更清单后一并删除。
+- epoch-1 剩余担忧（summary `institution` 恒 null）不变。
