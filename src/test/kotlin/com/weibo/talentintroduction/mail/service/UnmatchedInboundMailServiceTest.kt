@@ -28,6 +28,7 @@ class UnmatchedInboundMailServiceTest {
     private val senderAccountRepository = Mockito.mock(MailSenderAccountRepository::class.java)
     private val expertIndexWriterService = Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertIndexWriterService::class.java)
     private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
+    private val mailAttachmentService = Mockito.mock(MailAttachmentService::class.java)
 
     private val service = UnmatchedInboundMailService(
         inboundMailProcessingRepository = inboundMailProcessingRepository,
@@ -36,7 +37,8 @@ class UnmatchedInboundMailServiceTest {
         mailRecordRepository = mailRecordRepository,
         senderAccountRepository = senderAccountRepository,
         expertIndexWriterService = expertIndexWriterService,
-        operatorActionLogService = operatorActionLogService
+        operatorActionLogService = operatorActionLogService,
+        mailAttachmentService = mailAttachmentService
     )
 
     private fun contact(id: Long, email: String) = ExpertContact(
@@ -214,6 +216,36 @@ class UnmatchedInboundMailServiceTest {
 
         Mockito.verify(expertEmailAliasService).bindAlias(contactId, "old@example.com", "MANUAL_BIND")
         Mockito.verify(inboundMailProcessingRepository).save(Mockito.any(InboundMailProcessing::class.java))
+        Mockito.verify(mailAttachmentService).ensureDocumentsForProcessingAttachments(recordId, contactId)
+    }
+
+    @Test
+    fun `bindToContact after metadata registration links the existing attachments without file io`() {
+        val recordId = 1L
+        val contactId = 10L
+        val record = processing(id = recordId, email = "expert@example.com")
+        val c = contact(contactId, "main@example.com")
+
+        Mockito.`when`(inboundMailProcessingRepository.findById(recordId)).thenReturn(Optional.of(record))
+        Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(c))
+        Mockito.`when`(expertEmailAliasService.bindAlias(contactId, "expert@example.com", "MANUAL_BIND"))
+            .thenReturn(ExpertEmailAlias(id = 100L, expertContactId = contactId, email = "expert@example.com", normalizedEmail = "expert@example.com"))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { it.getArgument<ExpertContact>(0) }
+        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+            .thenAnswer { it.getArgument<InboundMailProcessing>(0) }
+
+        val result = service.bindToContact(recordId, contactId, "operator1")
+
+        assertEquals(contactId, result.expertContactId)
+        // 绑定只触发幂等补文档（同 attachmentId、零文件 I/O）；不下载、不搬迁 owner
+        Mockito.verify(mailAttachmentService).ensureDocumentsForProcessingAttachments(recordId, contactId)
+        Mockito.verify(mailAttachmentService, Mockito.never()).saveUnmatchedAttachments(
+            Mockito.anyLong(), Mockito.anyList(), Mockito.any()
+        )
+        Mockito.verify(mailAttachmentService, Mockito.never()).saveInboundAttachments(
+            Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList()
+        )
     }
 
     @Test

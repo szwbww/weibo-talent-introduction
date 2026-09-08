@@ -9,6 +9,8 @@ data class InboundMailProcessing(
     @Id
     val id: Long? = null,
     val senderAccountCode: String,
+    /** 远端邮箱代际（I-1）：0 仅历史未知（V120 默认），新接收必须为实际正值。 */
+    val uidValidity: Long = 0,
     val imapUid: Long,
     val messageId: String?,
     val inReplyTo: String? = null,

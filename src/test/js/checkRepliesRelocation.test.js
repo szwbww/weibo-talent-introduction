@@ -8,7 +8,7 @@ const html = fs.readFileSync(path.join(root, "index.html"), "utf-8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf-8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf-8");
 
-const CACHE_KEY = "20260903-bounce-warning";
+const CACHE_KEY = "20260907-material-chat";
 const CHECK_REPLIES_TAG = '<button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>';
 const BULK_OUTREACH_TAG = '<button class="button primary" id="bulkOutreachBtn" onclick="handleBulkOutreach()">批量发送</button>';
 const AUTO_REPLY_TAG = '<button class="button" id="bulkAutoReplyBtn">自动回复：加载中...</button>';
@@ -61,12 +61,22 @@ describe("check replies relocation (p1)", () => {
             ".view sections must stay in the DOM");
     });
 
-    it("I-3: the cache-key triad uses one current value everywhere", () => {
+    it("I-3: all seven cache-busted assets share one current key", () => {
         const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
-        assert.strictEqual(keys.length, 3, "index.html must carry exactly three cache-busted asset URLs");
+        assert.strictEqual(keys.length, 7, "index.html must carry exactly seven cache-busted asset URLs");
         for (const key of keys) {
             assert.strictEqual(key, CACHE_KEY, "every cache key must equal " + CACHE_KEY);
         }
+        const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css",
+            "trust-reply-workbench.js", "expert-materials.js", "mailbox-chat.js", "app.js"];
+        let previous = -1;
+        for (const asset of ordered) {
+            const at = html.indexOf(asset + "?v=" + CACHE_KEY);
+            assert.ok(at > previous, asset + " must be registered in order (CSS then workbench -> materials -> chat -> app)");
+            previous = at;
+        }
+        assert.ok(!html.includes("20260903-bounce-warning"),
+            "the old cache key must have zero hits in index.html");
     });
 
     it("S-1: exactly one .panel-head-actions in index.html, 检查回复 to the left of 批量发送", () => {

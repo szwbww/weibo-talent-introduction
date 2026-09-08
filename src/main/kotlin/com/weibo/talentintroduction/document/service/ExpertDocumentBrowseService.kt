@@ -1,7 +1,5 @@
 package com.weibo.talentintroduction.document.service
 
-import com.weibo.talentintroduction.config.MailAttachmentStorageProperties
-import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
 import com.weibo.talentintroduction.mail.domain.MailAttachment
 import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
@@ -14,16 +12,16 @@ import java.time.LocalDateTime
 data class ExpertDocumentFile(
     val documentId: Long,
     val attachmentId: Long,
-    val mailRecordId: Long,
+    val mailRecordId: Long?,
     val fileName: String,
-    val contentType: String?,
-    val fileSize: Long,
+    val contentType: String,
+    val fileSize: Long?,
     val documentType: String,
     val documentStatus: String,
     val createdAt: LocalDateTime?,
     val previewable: Boolean,
-    val downloadUrl: String,
-    val previewUrl: String
+    val downloadUrl: String?,
+    val previewUrl: String?
 )
 
 data class DocumentFileResource(
@@ -33,12 +31,17 @@ data class DocumentFileResource(
     val fileSize: Long
 )
 
+/**
+ * 旧专家资料浏览接口（URL/契约不变）。下载/预览的就绪与归属判定统一委托
+ * [ExpertMaterialService.resolveReadyFile]（I-1：双 owner、realpath、409
+ * MATERIAL_NOT_READY），本服务不再各自维护路径校验，杜绝旁路。
+ */
 @Service
 class ExpertDocumentBrowseService(
-    private val properties: MailAttachmentStorageProperties,
     private val expertDocumentRepository: ExpertDocumentRepository,
     private val mailAttachmentRepository: MailAttachmentRepository,
-    private val mailRecordRepository: MailRecordRepository
+    private val mailRecordRepository: MailRecordRepository,
+    private val materialService: ExpertMaterialService
 ) {
     fun listDocuments(contactId: Long): List<ExpertDocumentFile> {
         val documents = expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
@@ -47,17 +50,19 @@ class ExpertDocumentBrowseService(
             val attachment = mailAttachmentRepository.findById(doc.mailAttachmentId)
                 .orElseThrow { error("Attachment not found: ${doc.mailAttachmentId}") }
 
-            val mailRecordId = requireNotNull(attachment.mailRecordId) {
-                "Expert document attachment must have mail_record_id"
-            }
-            val mailRecord = mailRecordRepository.findByIdOrNull(mailRecordId)
-                ?: error("Mail record not found: $mailRecordId")
-            require(mailRecord.expertContactId == contactId) {
-                "Mail record $mailRecordId does not belong to expert contact $contactId"
+            // 双 owner 兼容：mail_record owner（历史）沿用原有归属校验；
+            // processing owner（04 已绑定专家附件）以 expert_document 为准。
+            val mailRecordId = attachment.mailRecordId
+            if (mailRecordId != null) {
+                val mailRecord = mailRecordRepository.findByIdOrNull(mailRecordId)
+                    ?: error("Mail record not found: $mailRecordId")
+                require(mailRecord.expertContactId == contactId) {
+                    "Mail record $mailRecordId does not belong to expert contact $contactId"
+                }
             }
 
             val contentType = resolveContentType(attachment)
-            val previewable = isPreviewable(contentType)
+            val hasLocalFile = attachment.storagePath != null
 
             ExpertDocumentFile(
                 documentId = doc.id ?: error("Document id is required"),
@@ -69,20 +74,32 @@ class ExpertDocumentBrowseService(
                 documentType = doc.documentType,
                 documentStatus = doc.documentStatus,
                 createdAt = doc.createdAt,
-                previewable = previewable,
-                downloadUrl = "/api/expert-contacts/$contactId/attachments/${attachment.id}/download",
-                previewUrl = "/api/expert-contacts/$contactId/attachments/${attachment.id}/preview"
+                previewable = hasLocalFile && isPreviewable(contentType),
+                downloadUrl = if (hasLocalFile) {
+                    "/api/expert-contacts/$contactId/attachments/${attachment.id}/download"
+                } else {
+                    null
+                },
+                previewUrl = if (hasLocalFile) {
+                    "/api/expert-contacts/$contactId/attachments/${attachment.id}/preview"
+                } else {
+                    null
+                }
             )
         }
     }
 
+    /**
+     * 未就绪抛 [MaterialNotReadyException]（HTTP 409，附件仍就绪前不创建任务）；
+     * 越权/路径越界抛 IllegalArgumentException（HTTP 400）。
+     */
     fun resolveForDownload(contactId: Long, attachmentId: Long): DocumentFileResource {
-        val validation = validateAndResolve(contactId, attachmentId)
+        val ready = materialService.resolveReadyFile(contactId, attachmentId)
         return DocumentFileResource(
-            fileName = validation.attachment.fileName,
-            contentType = resolveContentType(validation.attachment),
-            path = validation.resolvedPath,
-            fileSize = validation.attachment.fileSize
+            fileName = ready.attachment.fileName,
+            contentType = resolveContentType(ready.attachment),
+            path = ready.path,
+            fileSize = Files.size(ready.path)
         )
     }
 
@@ -91,43 +108,6 @@ class ExpertDocumentBrowseService(
         val previewable = isPreviewable(resource.contentType)
         require(previewable) { "File type '${resource.contentType}' is not previewable" }
         return resource
-    }
-
-    private data class ValidationResult(
-        val attachment: MailAttachment,
-        val resolvedPath: Path
-    )
-
-    private fun validateAndResolve(contactId: Long, attachmentId: Long): ValidationResult {
-        val document = expertDocumentRepository.findFirstByMailAttachmentId(attachmentId)
-            ?: error("Document not found for attachment $attachmentId")
-        require(document.expertContactId == contactId) {
-            "Document $attachmentId does not belong to expert contact $contactId"
-        }
-
-        val attachment = mailAttachmentRepository.findById(attachmentId)
-            .orElseThrow { error("Attachment not found: $attachmentId") }
-
-        val mailRecordId = requireNotNull(attachment.mailRecordId) {
-            "Expert document attachment must have mail_record_id"
-        }
-        val mailRecord = mailRecordRepository.findByIdOrNull(mailRecordId)
-            ?: error("Mail record not found: $mailRecordId")
-        require(mailRecord.expertContactId == contactId) {
-            "Mail record $mailRecordId does not belong to expert contact $contactId"
-        }
-
-        val storagePath = Path.of(attachment.storagePath).toAbsolutePath().normalize()
-        require(Files.exists(storagePath)) { "File not found: ${attachment.fileName}" }
-        require(Files.isRegularFile(storagePath)) { "Not a regular file: ${attachment.fileName}" }
-
-        val realBasePath = Path.of(properties.basePath).toRealPath()
-        val realStoragePath = storagePath.toRealPath()
-        require(realStoragePath.startsWith(realBasePath)) {
-            "Attachment path is outside configured base path"
-        }
-
-        return ValidationResult(attachment, realStoragePath)
     }
 
     private fun resolveContentType(attachment: MailAttachment): String {

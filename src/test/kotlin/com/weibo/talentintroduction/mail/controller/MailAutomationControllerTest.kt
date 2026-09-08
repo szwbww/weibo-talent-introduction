@@ -8,6 +8,8 @@ import com.weibo.talentintroduction.campaign.service.InitialOutreachService
 import com.weibo.talentintroduction.campaign.service.AccountStatRow
 import com.weibo.talentintroduction.mail.queue.MailQueuePublisher
 import com.weibo.talentintroduction.mail.service.AutoMailReplyService
+import com.weibo.talentintroduction.mail.service.AccountAutoMailReplyStage
+import com.weibo.talentintroduction.mail.service.AccountAutoMailReplyPhases
 import com.weibo.talentintroduction.mail.service.BatchAutoMailReplyResult
 import com.weibo.talentintroduction.mail.service.BatchAutoMailReplyService
 import com.weibo.talentintroduction.task.domain.TaskExecution
@@ -104,7 +106,7 @@ class MailAutomationControllerTest {
             Pair(execution, result)
         }
 
-        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null)))
+        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)))
             .thenReturn(emptyBatchResult())
 
         Mockito.doReturn(Pair(true, 12345L))
@@ -118,7 +120,7 @@ class MailAutomationControllerTest {
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
 
         assertEquals("MANUAL_ALL", capturedTriggerType)
-        verify(batchAutoMailReplyService).receiveAndAutoReplyAll(eqValue(20), anyValue(null), anyValue(null))
+        verify(batchAutoMailReplyService).receiveAndAutoReplyAll(eqValue(20), anyValue(null), anyValue(null), anyValue(null), anyValue(null))
     }
 
     // 2. contactIds = [] -> MANUAL_ALL
@@ -128,35 +130,35 @@ class MailAutomationControllerTest {
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
 
         assertEquals("MANUAL_ALL", capturedTriggerType)
-        verify(batchAutoMailReplyService).receiveAndAutoReplyAll(eqValue(20), anyValue(null), anyValue(null))
+        verify(batchAutoMailReplyService).receiveAndAutoReplyAll(eqValue(20), anyValue(null), anyValue(null), anyValue(null), anyValue(null))
     }
 
     // 3. contactIds = [1,2] -> MANUAL_SELECTIVE
     @Test
     fun `specific contactIds triggers MANUAL_SELECTIVE`() {
         Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyForContacts(
-            anyValue(emptyList()), anyValue(0), anyValue(null), anyValue(null)
+            anyValue(emptyList()), anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)
         )).thenReturn(emptyBatchResult())
 
         val response = controller.checkReplies(CheckRepliesRequest(contactIds = listOf(1L, 2L)))
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
 
         assertEquals("MANUAL_SELECTIVE", capturedTriggerType)
-        verify(batchAutoMailReplyService).receiveAndAutoReplyForContacts(eqValue(listOf(1L, 2L)), eqValue(20), anyValue(null), anyValue(null))
+        verify(batchAutoMailReplyService).receiveAndAutoReplyForContacts(eqValue(listOf(1L, 2L)), eqValue(20), anyValue(null), anyValue(null), anyValue(null), anyValue(null))
     }
 
     // 4. Duplicate id normalization
     @Test
     fun `duplicate contactIds are deduplicated`() {
         Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyForContacts(
-            anyValue(emptyList()), anyValue(0), anyValue(null), anyValue(null)
+            anyValue(emptyList()), anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)
         )).thenReturn(emptyBatchResult())
 
         val response = controller.checkReplies(CheckRepliesRequest(contactIds = listOf(1L, 1L, 2L)))
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
 
         assertEquals("MANUAL_SELECTIVE", capturedTriggerType)
-        verify(batchAutoMailReplyService).receiveAndAutoReplyForContacts(eqValue(listOf(1L, 2L)), eqValue(20), anyValue(null), anyValue(null))
+        verify(batchAutoMailReplyService).receiveAndAutoReplyForContacts(eqValue(listOf(1L, 2L)), eqValue(20), anyValue(null), anyValue(null), anyValue(null), anyValue(null))
     }
 
     // 5. id 0, negative rejected
@@ -209,7 +211,7 @@ class MailAutomationControllerTest {
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
 
         assertEquals("MANUAL_ALL", capturedTriggerType)
-        verify(batchAutoMailReplyService).receiveAndAutoReplyAll(eqValue(1), anyValue(null), anyValue(null))
+        verify(batchAutoMailReplyService).receiveAndAutoReplyAll(eqValue(1), anyValue(null), anyValue(null), anyValue(null), anyValue(null))
     }
 
     @Test
@@ -218,7 +220,7 @@ class MailAutomationControllerTest {
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
 
         assertEquals("MANUAL_ALL", capturedTriggerType)
-        verify(batchAutoMailReplyService).receiveAndAutoReplyAll(eqValue(100), anyValue(null), anyValue(null))
+        verify(batchAutoMailReplyService).receiveAndAutoReplyAll(eqValue(100), anyValue(null), anyValue(null), anyValue(null), anyValue(null))
     }
 
     // 9. Full-mode calls receiveAndAutoReplyAll
@@ -227,9 +229,9 @@ class MailAutomationControllerTest {
         val response = controller.checkReplies(CheckRepliesRequest(contactIds = null, maxMessagesPerAccount = 15))
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
 
-        verify(batchAutoMailReplyService).receiveAndAutoReplyAll(eqValue(15), anyValue(null), anyValue(null))
+        verify(batchAutoMailReplyService).receiveAndAutoReplyAll(eqValue(15), anyValue(null), anyValue(null), anyValue(null), anyValue(null))
         verify(batchAutoMailReplyService, never()).receiveAndAutoReplyForContacts(
-            anyValue(emptyList()), anyValue(0), anyValue(null), anyValue(null)
+            anyValue(emptyList()), anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)
         )
     }
 
@@ -237,21 +239,21 @@ class MailAutomationControllerTest {
     @Test
     fun `selective mode calls receiveAndAutoReplyForContacts not all`() {
         Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyForContacts(
-            anyValue(emptyList()), anyValue(0), anyValue(null), anyValue(null)
+            anyValue(emptyList()), anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)
         )).thenReturn(emptyBatchResult())
 
         val response = controller.checkReplies(CheckRepliesRequest(contactIds = listOf(5L), maxMessagesPerAccount = 10))
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
 
-        verify(batchAutoMailReplyService).receiveAndAutoReplyForContacts(eqValue(listOf(5L)), eqValue(10), anyValue(null), anyValue(null))
-        verify(batchAutoMailReplyService, never()).receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null))
+        verify(batchAutoMailReplyService).receiveAndAutoReplyForContacts(eqValue(listOf(5L)), eqValue(10), anyValue(null), anyValue(null), anyValue(null), anyValue(null))
+        verify(batchAutoMailReplyService, never()).receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null))
     }
 
     // 11. Task requestPayload uses normalized parameters
     @Test
     fun `task records normalized request with deduplicated ids and default maxMessages`() {
         Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyForContacts(
-            anyValue(emptyList()), anyValue(0), anyValue(null), anyValue(null)
+            anyValue(emptyList()), anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)
         )).thenReturn(emptyBatchResult())
 
         val response = controller.checkReplies(
@@ -475,7 +477,7 @@ class MailAutomationControllerTest {
             accountsPolled = 2,
             taskFinalStatus = "COMPLETED"
         )
-        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null)))
+        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)))
             .thenReturn(result)
 
         controller.checkReplies(CheckRepliesRequest(emptyList(), null))
@@ -505,7 +507,7 @@ class MailAutomationControllerTest {
             accountsPolled = 2,
             taskFinalStatus = "PARTIAL_SUCCESS"
         )
-        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null)))
+        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)))
             .thenReturn(result)
 
         controller.checkReplies(CheckRepliesRequest(emptyList(), null))
@@ -535,7 +537,7 @@ class MailAutomationControllerTest {
             accountsPolled = 2,
             taskFinalStatus = "FAILED"
         )
-        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null)))
+        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)))
             .thenReturn(result)
 
         controller.checkReplies(CheckRepliesRequest(emptyList(), null))
@@ -565,7 +567,7 @@ class MailAutomationControllerTest {
             accountsPolled = 1,
             taskFinalStatus = "CANCELLED"
         )
-        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null)))
+        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)))
             .thenReturn(result)
 
         controller.checkReplies(CheckRepliesRequest(emptyList(), null))
@@ -578,5 +580,200 @@ class MailAutomationControllerTest {
         assertEquals(2L, finalProgress.totalCount)
         assertEquals("检查回复已被取消：共检查 1/2 个邮箱账号，获取 5 封邮件，自动回复 1 封，转人工 0 封", finalProgress.message)
         assertEquals(result, lastRecordedResult)
+    }
+
+    // ──── 05：账号开始/阶段/完成进度（accountProgress）与取消文案 ────
+
+    private fun capturedRunningUpdates(): List<TaskProgress> {
+        val progressCaptor = org.mockito.ArgumentCaptor.forClass(TaskProgress::class.java)
+        Mockito.verify(progressStore, Mockito.atLeastOnce()).update(
+            eqValue("CHECK_REPLIES"),
+            captureValue(progressCaptor, TaskProgress("CHECK_REPLIES", "RUNNING", 0, 0, 0)),
+            eqValue(1L)
+        )
+        return progressCaptor.allValues
+    }
+
+    private fun accountProgressOf(progress: TaskProgress): Map<*, *>? =
+        progress.details?.get("accountProgress") as? Map<*, *>
+
+    private fun successAccount(code: String) = com.weibo.talentintroduction.mail.service.AccountAutoMailReplyResult(
+        accountCode = code,
+        status = "SUCCESS",
+        fetched = 2,
+        recorded = 1,
+        replied = 1,
+        manualReview = 0,
+        errorMessage = null
+    )
+
+    private fun failedAccount(code: String) = com.weibo.talentintroduction.mail.service.AccountAutoMailReplyResult(
+        accountCode = code,
+        status = "FAILED",
+        fetched = 0,
+        recorded = 0,
+        replied = 0,
+        manualReview = 0,
+        errorMessage = "IMAP receive window exceeded"
+    )
+
+    private fun stageEvent(code: String, phase: String, total: Int, baseTime: Long): AccountAutoMailReplyStage =
+        AccountAutoMailReplyStage(
+            accountCode = code,
+            phase = phase,
+            startedAt = baseTime,
+            updatedAt = baseTime + 1,
+            totalAccounts = total
+        )
+
+    @Test
+    fun `running progress shows the slow current account with completed count and message literal`() {
+        val partialResult = BatchAutoMailReplyResult(
+            accountCount = 2,
+            successAccountCount = 1,
+            failedAccountCount = 1,
+            fetched = 2,
+            recorded = 1,
+            replied = 1,
+            manualReview = 0,
+            accounts = listOf(successAccount("WuWei"), failedAccount("LuKai")),
+            totalAccountsToPoll = 2,
+            accountsPolled = 2,
+            taskFinalStatus = "PARTIAL_SUCCESS"
+        )
+        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)))
+            .thenAnswer { invocation ->
+                val onProgress = invocation.getArgument<(com.weibo.talentintroduction.mail.service.AccountAutoMailReplyResult, Int, Int) -> Unit>(1)
+                val onAccountStarted = invocation.getArgument<(AccountAutoMailReplyStage) -> Unit>(3)
+                val onStage = invocation.getArgument<(AccountAutoMailReplyStage) -> Unit>(4)
+                val base = System.currentTimeMillis()
+                // WuWei 快：完成
+                onAccountStarted(stageEvent("WuWei", AccountAutoMailReplyPhases.CONNECTING, 2, base))
+                onStage(stageEvent("WuWei", AccountAutoMailReplyPhases.READING_METADATA, 2, base))
+                onStage(stageEvent("WuWei", AccountAutoMailReplyPhases.PROCESSING_MAIL, 2, base))
+                onProgress(successAccount("WuWei"), 1, 2)
+                // LuKai 慢：只发布到 READING_METADATA（接收窗口内被卡住）
+                onAccountStarted(stageEvent("LuKai", AccountAutoMailReplyPhases.CONNECTING, 2, base))
+                onStage(stageEvent("LuKai", AccountAutoMailReplyPhases.READING_METADATA, 2, base))
+                onProgress(failedAccount("LuKai"), 2, 2)
+                partialResult
+            }
+
+        controller.checkReplies(CheckRepliesRequest(emptyList(), null))
+
+        val updates = capturedRunningUpdates()
+        // I-1/I-4：账号2（LuKai）仍在读取时显示 LuKai 且 accountsPolled=1（已完成账号数）
+        val stuck = updates.first { update ->
+            val ap = accountProgressOf(update)
+            ap?.get("accountCode") == "LuKai" && ap?.get("phase") == AccountAutoMailReplyPhases.READING_METADATA
+        }
+        assertEquals(
+            "当前账号：LuKai · 读取邮件信息；已完成1/2个账号",
+            stuck.message
+        )
+        val stuckDetails = stuck.details!!
+        assertEquals(1, stuckDetails["accountsPolled"])
+        assertEquals(2, stuckDetails["totalAccountsToPoll"])
+        val stuckAp = accountProgressOf(stuck)!!
+        assertEquals("LuKai", stuckAp["accountCode"])
+        assertEquals(AccountAutoMailReplyPhases.READING_METADATA, stuckAp["phase"])
+        assertTrue((stuckAp["startedAt"] as Long) <= (stuckAp["updatedAt"] as Long))
+        // I-1：结束文案不得保留「正在检查」
+        assertTrue(stuck.message!!.startsWith("当前账号："))
+        assertTrue(!stuck.message!!.contains("正在检查邮箱"))
+        assertTrue(updates.none { it.message?.contains("正在检查邮箱") == true })
+
+        // 完成态：WuWei COMPLETED（accountsPolled=1）与 LuKai FAILED（accountsPolled=2）
+        val wuweiDone = updates.first { update ->
+            val ap = accountProgressOf(update)
+            ap?.get("accountCode") == "WuWei" && ap?.get("phase") == AccountAutoMailReplyPhases.COMPLETED
+        }
+        assertEquals("当前账号：WuWei · 检查完成；已完成1/2个账号", wuweiDone.message)
+        val lukaiFailed = updates.first { update ->
+            val ap = accountProgressOf(update)
+            ap?.get("accountCode") == "LuKai" && ap?.get("phase") == AccountAutoMailReplyPhases.FAILED
+        }
+        assertEquals("当前账号：LuKai · 检查失败；已完成2/2个账号", lukaiFailed.message)
+        val lukaiDetails = lukaiFailed.details!!
+        assertEquals(2, lukaiDetails["accountsPolled"])
+        assertEquals(1, lukaiDetails["successAccountCount"])
+        assertEquals(1, lukaiDetails["failedAccountCount"])
+
+        // I-4：partial 失败保留已完成账号计数（终态汇总不变）
+        val finalProgress = updates.last()
+        assertEquals("PARTIAL_SUCCESS", finalProgress.status)
+        assertEquals("检查回复部分成功：共检查 2/2 个邮箱账号，成功 1 个，失败 1 个", finalProgress.message)
+        assertEquals(2L, finalProgress.processedCount)
+    }
+
+    @Test
+    fun `cancel request while account finishing shows finishing wording and never claims SMTP cancellation`() {
+        var cancelRequested = false
+        Mockito.`when`(progressStore.isCancelled(eqValue("CHECK_REPLIES"), eqValue(1L)))
+            .thenAnswer { cancelRequested }
+        val completedResult = BatchAutoMailReplyResult(
+            accountCount = 1,
+            successAccountCount = 1,
+            failedAccountCount = 0,
+            fetched = 1,
+            recorded = 1,
+            replied = 1,
+            manualReview = 0,
+            accounts = listOf(successAccount("a1")),
+            totalAccountsToPoll = 1,
+            accountsPolled = 1,
+            taskFinalStatus = "COMPLETED"
+        )
+        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)))
+            .thenAnswer { invocation ->
+                val onProgress = invocation.getArgument<(com.weibo.talentintroduction.mail.service.AccountAutoMailReplyResult, Int, Int) -> Unit>(1)
+                val onAccountStarted = invocation.getArgument<(AccountAutoMailReplyStage) -> Unit>(3)
+                val base = System.currentTimeMillis()
+                onAccountStarted(stageEvent("a1", AccountAutoMailReplyPhases.CONNECTING, 1, base))
+                // 业务处理中收到取消请求：账号仍在收尾，不被当成已取消
+                cancelRequested = true
+                onProgress(successAccount("a1"), 1, 1)
+                completedResult
+            }
+
+        controller.checkReplies(CheckRepliesRequest(emptyList(), null))
+
+        val updates = capturedRunningUpdates()
+        val terminal = updates.first { update ->
+            accountProgressOf(update)?.get("phase") == AccountAutoMailReplyPhases.COMPLETED
+        }
+        // I-2：进行中的业务处理显示「正在结束当前处理」，不是「已取消/SMTP 已回滚」。
+        assertEquals("当前账号：a1 · 正在结束当前处理；已完成1/1个账号", terminal.message)
+        assertTrue(updates.none { it.message?.contains("已取消") == true })
+        assertTrue(updates.none { it.message?.contains("回滚") == true })
+        // token 校验保持生效：所有更新都绑定真实 executionId=1
+        assertTrue(updates.all { it.executionId == 1L })
+    }
+
+    @Test
+    fun `all running updates keep execution token bound to started execution`() {
+        Mockito.`when`(batchAutoMailReplyService.receiveAndAutoReplyAll(anyValue(0), anyValue(null), anyValue(null), anyValue(null), anyValue(null)))
+            .thenAnswer { invocation ->
+                val onAccountStarted = invocation.getArgument<(AccountAutoMailReplyStage) -> Unit>(3)
+                val base = System.currentTimeMillis()
+                onAccountStarted(stageEvent("a1", AccountAutoMailReplyPhases.CONNECTING, 1, base))
+                onAccountStarted(stageEvent("a1", AccountAutoMailReplyPhases.READING_METADATA, 1, base))
+                BatchAutoMailReplyResult(
+                    accountCount = 1, successAccountCount = 0, failedAccountCount = 0,
+                    fetched = 0, recorded = 0, replied = 0, manualReview = 0,
+                    accounts = emptyList(), totalAccountsToPoll = 1, accountsPolled = 0,
+                    taskFinalStatus = "COMPLETED"
+                )
+            }
+
+        controller.checkReplies(CheckRepliesRequest(emptyList(), null))
+
+        val updates = capturedRunningUpdates()
+        val stageUpdates = updates.filter { accountProgressOf(it) != null }
+        assertTrue(stageUpdates.isNotEmpty())
+        // 绑定后全部用 executionId=1 作 token；进度对象本身也带 executionId
+        assertTrue(stageUpdates.all { it.executionId == 1L })
+        Mockito.verify(progressStore, Mockito.atLeastOnce())
+            .update(eqValue("CHECK_REPLIES"), anyValue(TaskProgress("CHECK_REPLIES", "RUNNING", 0, 0, 0)), eqValue(1L))
     }
 }

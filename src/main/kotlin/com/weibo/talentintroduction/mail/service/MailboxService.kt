@@ -25,8 +25,8 @@ class MailboxService(
     private val inboundMailProcessingRepository: InboundMailProcessingRepository,
     private val mailAttachmentRepository: MailAttachmentRepository,
     private val expertContactRepository: ExpertContactRepository,
-    private val inboundMailTagService: InboundMailTagService
-) {
+    private val inboundMailTagService: InboundMailTagService,
+    private val expertMaterialService: com.weibo.talentintroduction.document.service.ExpertMaterialService? = null) {
     fun listMailbox(
         direction: String?,
         accountCode: String?,
@@ -275,24 +275,19 @@ class MailboxService(
         }
     }
 
+    /**
+     * 消息级附件归属（fast-p 07）：委托 06 的精确来源解析
+     * [com.weibo.talentintroduction.document.service.ExpertMaterialService.resolveMessageAttachments]
+     * （bridge / 直接 owner / 严格唯一旧关系；歧义拒绝，绝不展示其它账号/其它邮件的文件）。
+     * 旧的无账号/专家/方向限定的 findFirstByMessageId 回退已停用（串件风险）。
+     *
+     * 依赖以可空默认参数注入：既有 6 参构造测试（MailboxTaskExecutionFilterTest 等）不触达
+     * 本方法；MailboxServiceTest 显式传入 mock。Spring 容器总是注入真实 bean。
+     */
     fun resolveAttachments(source: String, id: Long): List<MailAttachment> {
-        return when (source) {
-            "MAIL_RECORD" -> mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(id)
-            "INBOUND_PROCESSING" -> {
-                val byInbound = mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(id)
-                if (byInbound.isNotEmpty()) {
-                    return byInbound
-                }
-                val inbound = inboundMailProcessingRepository.findById(id).orElse(null)
-                    ?: return emptyList()
-                val mailRecord = inbound.messageId?.let {
-                    mailRecordRepository.findFirstByMessageIdOrderByCreatedAtDesc(it)
-                } ?: return emptyList()
-                val mailRecordId = mailRecord.id ?: return emptyList()
-                mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(mailRecordId)
-            }
-            else -> throw IllegalArgumentException("Unknown mailbox source: $source")
-        }
+        val resolver = expertMaterialService
+            ?: throw IllegalStateException("ExpertMaterialService 未注入，无法解析消息附件")
+        return resolver.resolveMessageAttachments(source, id)
     }
 
     private fun toDetailFromMailRecord(record: MailRecord): MailboxDetailResponse {

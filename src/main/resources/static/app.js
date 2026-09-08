@@ -662,11 +662,15 @@ const operatorStatusOptions = [
     ["COMPLETED", "已完成"]
 ];
 
+// mailbox-chat.js 依宿主契约从 window 读取该目录；顶层 const 不自动成为 window 属性，此处发布同一数组
+window.operatorStatusOptions = operatorStatusOptions;
+
 const indexLevelOptions = [
     ["RAW", "原始"],
     ["CANDIDATE", "筛选"],
     ["APPLICATION", "有效"]
 ];
+window.indexLevelOptions = indexLevelOptions;
 
 function labelStatus(value) {
     return statusLabels[value] || value || "";
@@ -1672,6 +1676,11 @@ function numberValue(value, fallback = 0) {
 function setView(view) {
     if (view !== "ai-training") unmountAiTrainingTrustReply();
     if (view !== "mailbox") unmountMailboxTrustReplyHosts();
+    // child 10（I-2）：离开收发件箱即销毁聊天 mount（草稿为内存态、随销毁清空，
+    // 避免跨会话/跨专家残留目标与 QA 上下文）。
+    if (view !== "mailbox" && typeof unmountMailboxChatHosts === "function") {
+        unmountMailboxChatHosts();
+    }
     if (state.monitoring.autoRefreshTimer && view !== "monitoring") {
         clearTimeout(state.monitoring.autoRefreshTimer);
         state.monitoring.autoRefreshTimer = null;
@@ -7557,6 +7566,10 @@ async function showExpertDetail(expert) {
     const name = expert.displayName || expert.email || expert.orcidId || "?";
     const initial = name.charAt(0).toUpperCase();
     const contactDetail = $("#contactDetail");
+    // 切到 ES 原始专家视图前同样释放上一个联系人的材料组件视图
+    if (typeof unmountExpertMaterialsHosts === "function") {
+        unmountExpertMaterialsHosts(contactDetail);
+    }
     const tagLevel = expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
     let expertTags = { found: false, tags: [] };
     if (expert.orcidId) {
@@ -7570,6 +7583,7 @@ async function showExpertDetail(expert) {
     $("#contactHeadActions").innerHTML = "";
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
+    const noContactMaterialsHtml = typeof renderNoContactMaterialsEmpty === "function" ? renderNoContactMaterialsEmpty() : "";
     contactDetail.innerHTML = `
         ${backToListBtnHtml()}
         <div class="detail">
@@ -7662,6 +7676,7 @@ async function showExpertDetail(expert) {
                     </button>
                 </div>
             ` : ""}
+            ${noContactMaterialsHtml}
             </div>
             <div class="detail-tab-panel" data-panel="template" hidden>
                 <div class="tpl-var-empty">切换到本标签页以加载模板变量预览。</div>
@@ -8060,6 +8075,10 @@ async function loadContactDetail(contactId) {
 
     const banner = renderManualAttentionBanner(contact);
     const contactDetail = $("#contactDetail");
+    // 切专家/刷新详情前先释放上一专家的材料组件视图（轮询、监听、在途读请求）
+    if (typeof unmountExpertMaterialsHosts === "function") {
+        unmountExpertMaterialsHosts(contactDetail);
+    }
     const tagLevel = contact.currentIndexLevel || expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
     const orcidId = contact.orcidId || expert.orcidId || "";
     let expertTags = { found: false, tags: [] };
@@ -8274,6 +8293,10 @@ async function loadContactDetail(contactId) {
             document.querySelector(".contact-detail-panel")?.scrollIntoView({ behavior: "smooth" });
         }
     });
+    // 当前 contact DOM 写入完成后挂载共享材料组件（真实 contactId；组件未加载时为 no-op）
+    if (typeof mountExpertMaterialsInline === "function") {
+        mountExpertMaterialsInline(contact.id, contactDetail);
+    }
     if (contact.id) {
         loadEmailAliases(contact.id, contact);
     }
@@ -8360,7 +8383,66 @@ async function loadEmailAliases(contactId, contact) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// 共享材料组件（子计划 08）宿主适配
+// 渐进式：window.ExpertMaterials 未加载（资源注册前的旧页面）时，下列函数
+// 全部走原路径；组件存在后，专家详情资料卡只输出 data host 并由组件挂载。
+// ─────────────────────────────────────────────────────────────────────────
+
+function expertMaterialsAvailable() {
+    return typeof window !== "undefined" && !!window.ExpertMaterials;
+}
+
+function unmountExpertMaterialsHosts(rootEl) {
+    if (!expertMaterialsAvailable() || !rootEl) return;
+    if (typeof window.ExpertMaterials.unmountHostsIn === "function") {
+        window.ExpertMaterials.unmountHostsIn(rootEl);
+    }
+}
+
+function mountExpertMaterialsInline(contactId, rootEl) {
+    if (!expertMaterialsAvailable() || !rootEl) return null;
+    const id = Number(contactId);
+    if (!Number.isFinite(id) || id <= 0) return null;
+    if (typeof window.ExpertMaterials.configure !== "function" ||
+        typeof window.ExpertMaterials.mount !== "function") {
+        return null;
+    }
+    const host = rootEl.querySelector("[data-expert-materials-host]");
+    if (!host) return null;
+    window.ExpertMaterials.configure({
+        api,
+        contextPath,
+        labels: {
+            documentType: (value) => labelDocumentType(value),
+            documentStatus: (value) => labelDocumentStatus(value),
+            fileSize: (value) => formatFileSize(value)
+        }
+    });
+    return window.ExpertMaterials.mount({ host, contactId: id, mode: "inline" });
+}
+
+// I-4：原始 ES 专家没有 contactId 时不挂载网络材料组件，也不请求
+// undefined/null 的 materials —— 只显示静态空态（组件存在时）。
+function renderNoContactMaterialsEmpty() {
+    if (!expertMaterialsAvailable()) return "";
+    return `
+        <section class="expert-materials" aria-label="专家上传资料" aria-busy="false">
+            <header><h3>专家上传资料 <span>0 份</span></h3></header>
+            <p class="em-empty">尚未建立联系，暂无资料。</p>
+        </section>
+    `;
+}
+
 function renderExpertDocuments(documents, contactId) {
+    // I-4/I-1：组件已加载时旧 document-row 渲染退役，只输出 data host，
+    // 真正的 S-1 面板由 ExpertMaterials.mount 在 loadContactDetail 写入后渲染。
+    if (expertMaterialsAvailable()) {
+        const id = Number(contactId);
+        if (Number.isFinite(id) && id > 0) {
+            return `<div data-expert-materials-host data-contact-id="${id}"></div>`;
+        }
+    }
     const list = Array.isArray(documents) ? documents : (documents?.records || []);
     if (list.length === 0) {
         return `
@@ -8403,28 +8485,62 @@ const aiAnalysisState = {
     documents: [],
     results: [],
     mode: "select",
-    error: null
+    error: null,
+    // 子计划 09：共享材料组件（selectionOnly）衔接字段
+    materialsMode: false,    // 本会话使用 ExpertMaterials 选件流程
+    pickerHost: null,        // 选件挂载点（.em-analysis [data-material-picker]）
+    pickerView: null,        // ExpertMaterials.mount 返回的视图实例
+    unsubscribe: null,       // 共享 store 订阅退订函数
+    snapshot: null,          // 最新共享 store 快照（live 只读引用）
+    intentToken: 0,          // 会话 token：关闭/换专家即销毁（I-3）
+    selectionApplied: false, // 本次选件入口是否已做 带入/默认勾选 处理
+    defaultOverLimit: false, // 默认候选 >500：明确提示、不悄悄截断勾选（I-1）
+    run: null                // 获取→分析运行（冻结快照 + 状态机）
 };
+
+const AI_ANALYSIS_SELECT_LIMIT = 500;
 
 function isDefaultAiAnalysisDocument(doc) {
     return AI_ANALYSIS_DEFAULT_TYPES.has(doc.documentType);
 }
 
 async function openAiAnalysisModal(contactId) {
+    // 任何先前会话先整体销毁：token/订阅/picker 视图（换专家绝不复用旧 token，I-3）
+    teardownAiAnalysisSession();
     aiAnalysisState.contactId = contactId;
     aiAnalysisState.error = null;
-    aiAnalysisState.documents = await api(`/api/expert-contacts/${contactId}/documents`).catch(() => []);
+    const componentFlow = Number.isFinite(Number(contactId)) && Number(contactId) > 0 && aiAnalysisMaterialsCapable();
+    if (!componentFlow) {
+        // 旧路径（组件未加载/无真实 contactId）：documents + 历史结果 + 原选件
+        aiAnalysisState.materialsMode = false;
+        aiAnalysisState.documents = await api(`/api/expert-contacts/${contactId}/documents`).catch(() => []);
+        const existing = await api(`/api/expert-contacts/${contactId}/ai-analysis`).catch(() => ({ fields: [] }));
+        aiAnalysisState.results = existing.fields || [];
+        aiAnalysisState.mode = aiAnalysisState.results.length > 0 ? "results" : "select";
+        renderAiAnalysisModal();
+        const modal = $("#aiAnalysisModal");
+        if (modal) modal.hidden = false;
+        return;
+    }
+    // I-1：打开只 GET 元数据（材料 store，组件自身发起）与历史结果；零 POST、零文件抓取。
+    aiAnalysisState.materialsMode = true;
     const existing = await api(`/api/expert-contacts/${contactId}/ai-analysis`).catch(() => ({ fields: [] }));
-    aiAnalysisState.results = existing.fields || [];
-    aiAnalysisState.mode = aiAnalysisState.results.length > 0 ? "results" : "select";
-    renderAiAnalysisModal();
+    aiAnalysisState.results = (existing && Array.isArray(existing.fields)) ? existing.fields : [];
     const modal = $("#aiAnalysisModal");
     if (modal) modal.hidden = false;
+    if (aiAnalysisState.results.length > 0) {
+        aiAnalysisState.mode = "results";
+        renderAiAnalysisModal();
+    } else {
+        enterAiAnalysisSelectMode(true);
+    }
 }
 
 function closeAiAnalysisModal() {
     const modal = $("#aiAnalysisModal");
     if (modal) modal.hidden = true;
+    // I-3：销毁 intentToken 与订阅；已请求的下载继续，已发出的服务端分析不宣称取消
+    teardownAiAnalysisSession();
     aiAnalysisState.contactId = null;
     aiAnalysisState.documents = [];
     aiAnalysisState.results = [];
@@ -8487,6 +8603,7 @@ function renderAiAnalysisModal() {
     if (!body || !title || !footer) return;
 
     if (aiAnalysisState.mode === "loading") {
+        teardownAiAnalysisPicker();
         title.textContent = "AI 智能分析";
         body.innerHTML = `
             <div class="ai-analysis-loading">
@@ -8499,6 +8616,7 @@ function renderAiAnalysisModal() {
     }
 
     if (aiAnalysisState.mode === "results") {
+        teardownAiAnalysisPicker();
         title.textContent = "AI 分析结果";
         body.innerHTML = aiAnalysisState.error
             ? `<p class="ai-analysis-error">${escapeHtml(aiAnalysisState.error)}</p>${renderAiAnalysisResults()}`
@@ -8511,6 +8629,11 @@ function renderAiAnalysisModal() {
         return;
     }
 
+    // mode === "select"
+    if (aiAnalysisState.materialsMode) {
+        renderAiAnalysisMaterialsSelect();
+        return;
+    }
     title.textContent = "选择分析文件";
     body.innerHTML = aiAnalysisState.error
         ? `<p class="ai-analysis-error">${escapeHtml(aiAnalysisState.error)}</p>${renderAiAnalysisFileSelect()}`
@@ -8522,32 +8645,79 @@ function renderAiAnalysisModal() {
 }
 
 async function startAiAnalysis() {
-    const contactId = aiAnalysisState.contactId;
-    if (!contactId) return;
-    const checked = Array.from(document.querySelectorAll('input[name="aiAnalysisAttachment"]:checked'))
-        .map(el => Number(el.value))
-        .filter(id => Number.isFinite(id));
-    if (checked.length === 0) {
-        aiAnalysisState.error = "请至少选择一个文件";
+    if (!aiAnalysisState.materialsMode) {
+        // —— 旧路径（组件未注册）：原选件列表直接分析 ——
+        const contactId = aiAnalysisState.contactId;
+        if (!contactId) return;
+        const checked = Array.from(document.querySelectorAll('input[name="aiAnalysisAttachment"]:checked'))
+            .map(el => Number(el.value))
+            .filter(id => Number.isFinite(id));
+        if (checked.length === 0) {
+            aiAnalysisState.error = "请至少选择一个文件";
+            renderAiAnalysisModal();
+            return;
+        }
+        aiAnalysisState.error = null;
+        aiAnalysisState.mode = "loading";
+        renderAiAnalysisModal();
+        try {
+            const result = await api(`/api/expert-contacts/${contactId}/ai-analysis`, {
+                method: "POST",
+                body: JSON.stringify({ attachmentIds: checked })
+            });
+            aiAnalysisState.results = result.fields || [];
+            aiAnalysisState.mode = "results";
+            showStatus("AI 分析完成");
+        } catch (e) {
+            aiAnalysisState.mode = "select";
+            aiAnalysisState.error = e.message || "分析失败，请重试";
+        }
         renderAiAnalysisModal();
         return;
     }
-    aiAnalysisState.error = null;
-    aiAnalysisState.mode = "loading";
-    renderAiAnalysisModal();
-    try {
-        const result = await api(`/api/expert-contacts/${contactId}/ai-analysis`, {
-            method: "POST",
-            body: JSON.stringify({ attachmentIds: checked })
-        });
-        aiAnalysisState.results = result.fields || [];
-        aiAnalysisState.mode = "results";
-        showStatus("AI 分析完成");
-    } catch (e) {
-        aiAnalysisState.mode = "select";
-        aiAnalysisState.error = e.message || "分析失败，请重试";
+
+    // —— 09 衔接（I-1/I-2/S-2）：提交时冻结 contactId+attachmentIds ——
+    if (aiAnalysisState.mode !== "select" || !aiAnalysisState.contactId) return;
+    const run = aiAnalysisState.run;
+    if (run && run.phase === "failed") {
+        // 失败态 CTA = 只重试失败项（仍按原冻结快照全部校验后再分析）
+        await retryAiAnalysisFetch(run);
+        return;
     }
-    renderAiAnalysisModal();
+    if (run) return; // watching/提交中：按钮已 disabled，防重复提交
+    const snapshot = aiAnalysisState.snapshot;
+    if (!snapshot) return;
+    const ids = aiAnalysisSelectionIds(snapshot);
+    if (ids.length === 0) {
+        aiAnalysisState.error = "请至少选择一份可分析文件（PDF 或文本）";
+        updateAiAnalysisSelectChrome();
+        return;
+    }
+    const token = aiAnalysisState.intentToken;
+    const needed = ids.filter((id) => aiAnalysisItemStorageState(snapshot, id) !== "STORED");
+    const frozen = { ids, needed, tokenAtFreeze: token, fired: false, phase: "watching", failedIds: [] };
+    aiAnalysisState.run = frozen;
+    aiAnalysisState.error = null;
+    updateAiAnalysisSelectChrome();
+    if (needed.length === 0) {
+        // M=0：全部已存，直接一次分析
+        await fireAiAnalysis(frozen);
+        return;
+    }
+    // M>0：只请求缺失文件；经共享 store 提交（同一轮询/状态同步，不另造下载状态）
+    const result = await window.ExpertMaterials.requestTransfers(aiAnalysisState.contactId, needed);
+    if (token !== aiAnalysisState.intentToken) return; // 关窗/换专家：服务端下载继续，绝不自动分析
+    if (!result || !result.ok) {
+        const message = (result && result.error) ? result.error : "获取所选文件失败，请重试";
+        frozen.phase = "failed";
+        frozen.failedIds = needed.slice();
+        aiAnalysisState.error = `获取所选文件失败：${message}`;
+        updateAiAnalysisSelectChrome();
+        return;
+    }
+    // 进入等待：订阅事件驱动完成/失败判定（全部 STORED 才调用既有 ai-analysis 一次）
+    stepAiAnalysisRunIfReady();
+    updateAiAnalysisSelectChrome();
 }
 
 async function saveAiAnalysisField(fieldId, value) {
@@ -8584,6 +8754,348 @@ async function addAiAnalysisField() {
         renderAiAnalysisModal();
     } catch (e) {
         showStatus(e.message || "添加字段失败", "error");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 子计划 09：AI 选件衔接共享材料组件（S-2）
+// 渐进式：window.ExpertMaterials 未加载（或旧版组件无 09 API）时上述旧路径保持；
+// 组件就绪后本块函数驱动 selectionOnly 选件 → 冻结快照 → 按需获取 → 一次分析。
+// ─────────────────────────────────────────────────────────────────────────
+
+function aiAnalysisMaterialsCapable() {
+    if (!expertMaterialsAvailable()) return false;
+    const component = window.ExpertMaterials;
+    return typeof component.mount === "function" &&
+        typeof component.subscribe === "function" &&
+        typeof component.getState === "function" &&
+        typeof component.setSelection === "function" &&
+        typeof component.requestTransfers === "function";
+}
+
+function enterAiAnalysisSelectMode(allowDefaults) {
+    aiAnalysisState.run = null;
+    aiAnalysisState.error = null;
+    aiAnalysisState.selectionApplied = !allowDefaults;
+    aiAnalysisState.defaultOverLimit = false;
+    aiAnalysisState.mode = "select";
+    renderAiAnalysisModal();
+}
+
+function teardownAiAnalysisPicker() {
+    if (aiAnalysisState.unsubscribe) {
+        aiAnalysisState.unsubscribe();
+        aiAnalysisState.unsubscribe = null;
+    }
+    if (aiAnalysisState.pickerView && typeof aiAnalysisState.pickerView.unmount === "function") {
+        aiAnalysisState.pickerView.unmount();
+    }
+    aiAnalysisState.pickerView = null;
+    aiAnalysisState.pickerHost = null;
+    aiAnalysisState.snapshot = null;
+}
+
+function teardownAiAnalysisSession() {
+    // I-3：关闭/重开/换专家 → 销毁 intentToken（旧 token 的异步回包一律不再写 UI）
+    aiAnalysisState.intentToken += 1;
+    aiAnalysisState.run = null;
+    teardownAiAnalysisPicker();
+    aiAnalysisState.materialsMode = false;
+    aiAnalysisState.selectionApplied = false;
+    aiAnalysisState.defaultOverLimit = false;
+}
+
+/** S-2 选件内容区（嵌入既有 #aiAnalysisModal；挂载 selectionOnly 组件视图）。 */
+function renderAiAnalysisMaterialsSelect() {
+    const body = $("#aiAnalysisModalBody");
+    const title = $("#aiAnalysisModalTitle");
+    const footer = $("#aiAnalysisModalFooter");
+    if (!body || !title || !footer) return;
+    title.textContent = "选择分析文件";
+    teardownAiAnalysisPicker();
+    body.innerHTML = `
+        <section class="em-analysis">
+            <p class="em-analysis-note">仅分析所选文件。未获取的文件将在确认后下载到服务器；图片暂不支持文字识别。</p>
+            <p class="ai-analysis-error" data-role="ai-analysis-error" hidden></p>
+            <div data-material-picker></div>
+            <div class="em-analysis-actions">
+                <span role="status" data-role="ai-analysis-status">正在加载资料…</span>
+                <button class="button primary" type="button" data-action="start-ai-analysis" data-role="ai-analysis-cta" disabled>开始分析</button>
+            </div>
+        </section>
+    `;
+    footer.innerHTML = `<button type="button" class="button secondary" data-action="close-ai-analysis">取消</button>`;
+    const host = body.querySelector("[data-material-picker]");
+    if (!host) return;
+    aiAnalysisState.pickerHost = host;
+    window.ExpertMaterials.configure({
+        api,
+        contextPath,
+        labels: {
+            documentType: (value) => labelDocumentType(value),
+            documentStatus: (value) => labelDocumentStatus(value),
+            fileSize: (value) => formatFileSize(value)
+        }
+    });
+    aiAnalysisState.pickerView = window.ExpertMaterials.mount({
+        host,
+        contactId: aiAnalysisState.contactId,
+        mode: "selectionOnly"
+    });
+    aiAnalysisState.unsubscribe = window.ExpertMaterials.subscribe(
+        aiAnalysisState.contactId,
+        (snapshot, reason) => handleAiMaterialsSnapshot(snapshot, reason)
+    );
+    updateAiAnalysisSelectChrome();
+}
+
+/** 共享 store 订阅回调：进入 select 时的带入/默认处理 + 获取运行状态机 + 文案刷新。 */
+function handleAiMaterialsSnapshot(snapshot, reason) {
+    if (!aiAnalysisState.materialsMode) return;
+    const contactId = aiAnalysisState.contactId;
+    if (contactId == null || Number(snapshot && snapshot.contactId) !== Number(contactId)) return;
+    aiAnalysisState.snapshot = snapshot;
+    if (aiAnalysisState.mode !== "select") return;
+    applyAiAnalysisEntrySelectionIfNeeded();
+    stepAiAnalysisRunIfReady();
+    updateAiAnalysisSelectChrome();
+}
+
+/**
+ * I-1 带入/默认规则（每次 select 入口只执行一次）：
+ * - 已有共享选择 → 只带入可分析（analysisSupported）部分；不可分析行在 picker 内
+ *   禁用并显示原因（JPEG：当前不支持图片文字识别），不再叠加默认勾选。
+ * - 无选择 → 默认勾选跨完整专家集合的 CV/学位（summary.defaultAnalysisAttachmentIds）；
+ *   默认候选 >500 时明确提示分批选择，绝不悄悄只勾前 500。
+ */
+function applyAiAnalysisEntrySelectionIfNeeded() {
+    if (aiAnalysisState.selectionApplied) return;
+    const snap = aiAnalysisState.snapshot;
+    if (!snap || !snap.loadedOnce || !snap.summary) return; // 等首屏材料数据（仅 GET）
+    aiAnalysisState.selectionApplied = true;
+    aiAnalysisState.defaultOverLimit = false;
+    if (snap.selection.size > 0) return;
+    const defaults = Array.isArray(snap.summary.defaultAnalysisAttachmentIds)
+        ? snap.summary.defaultAnalysisAttachmentIds.map(Number).filter((id) => Number.isFinite(id) && id > 0)
+        : [];
+    if (defaults.length > AI_ANALYSIS_SELECT_LIMIT) {
+        aiAnalysisState.defaultOverLimit = true;
+        return;
+    }
+    if (defaults.length > 0) {
+        window.ExpertMaterials.setSelection(snap.contactId, defaults);
+    }
+}
+
+/** 分析候选 = 共享选择 ∩ 服务端 analysisSupported（行未知时默认候选集视为可分析）。 */
+function aiAnalysisSelectionIds(snapshot) {
+    if (!snapshot || !snapshot.selection || !snapshot.items) return [];
+    const defaultIds = new Set(
+        Array.isArray(snapshot.summary && snapshot.summary.defaultAnalysisAttachmentIds)
+            ? snapshot.summary.defaultAnalysisAttachmentIds.map(Number).filter((id) => Number.isFinite(id))
+            : []
+    );
+    const ids = [];
+    snapshot.selection.forEach((value) => {
+        const id = Number(value);
+        if (!Number.isFinite(id) || id <= 0) return;
+        const item = snapshot.items.get(id);
+        const supported = item ? item.analysisSupported !== false : defaultIds.has(id);
+        if (supported) ids.push(id);
+    });
+    return ids.sort((a, b) => a - b);
+}
+
+function aiAnalysisItemStorageState(snapshot, attachmentId) {
+    if (!snapshot || !snapshot.items) return "";
+    const item = snapshot.items.get(Number(attachmentId));
+    return item ? (item.storageState || "") : "";
+}
+
+function aiAnalysisFailureLines(snapshot, ids) {
+    return ids.map((id) => {
+        const item = snapshot && snapshot.items ? snapshot.items.get(Number(id)) : null;
+        const name = (item && item.fileName) ? item.fileName : `附件 #${id}`;
+        const reason = (item && item.error && (item.error.message || item.error.code))
+            ? (item.error.message || item.error.code)
+            : (item && item.storageState === "SOURCE_UNAVAILABLE")
+                ? "来源不可用"
+                : "获取失败";
+        return `附件 ${id}（${name}）：${reason}`;
+    });
+}
+
+/** S-2 状态/按钮文案的局部刷新（不重建选件 DOM，避免丢失挂载的视图）。 */
+function updateAiAnalysisSelectChrome() {
+    if (aiAnalysisState.mode !== "select") return;
+    const body = $("#aiAnalysisModalBody");
+    if (!body) return;
+    const statusEl = body.querySelector('[data-role="ai-analysis-status"]');
+    const ctaEl = body.querySelector('[data-role="ai-analysis-cta"]');
+    const errorEl = body.querySelector('[data-role="ai-analysis-error"]');
+    const snap = aiAnalysisState.snapshot;
+    const run = aiAnalysisState.run;
+
+    if (errorEl) {
+        if (aiAnalysisState.error) {
+            errorEl.innerHTML = String(aiAnalysisState.error).split("\n").map((line) => escapeHtml(line)).join("<br>");
+            errorEl.hidden = false;
+        } else {
+            errorEl.textContent = "";
+            errorEl.hidden = true;
+        }
+    }
+    if (!statusEl || !ctaEl) return;
+    const setStatus = (value) => { statusEl.textContent = value; };
+    const setCta = (label, disabled) => {
+        ctaEl.textContent = label;
+        ctaEl.disabled = !!disabled;
+    };
+
+    if (!snap || !snap.loadedOnce) {
+        setStatus("正在加载资料…");
+        setCta("开始分析", true);
+        return;
+    }
+    if (snap.submitting) {
+        setStatus("正在提交获取请求…");
+        setCta("开始分析", true);
+        return;
+    }
+    if (run && run.phase === "failed") {
+        const count = (run.failedIds || []).length;
+        setStatus(count === 1 ? "1 份获取失败" : `${count} 份获取失败`);
+        setCta("重试获取失败文件并分析", false);
+        return;
+    }
+    if (run && run.phase === "watching") {
+        const done = run.needed.filter((id) => aiAnalysisItemStorageState(snap, id) === "STORED").length;
+        setStatus(`正在获取所选文件（${done}/${run.needed.length}）`);
+        setCta("正在获取所选文件…", true);
+        return;
+    }
+    const ids = aiAnalysisSelectionIds(snap);
+    if (ids.length === 0) {
+        if (aiAnalysisState.defaultOverLimit) {
+            setStatus("默认材料超过500份，请分批选择");
+            setCta("开始分析", true);
+            return;
+        }
+        if (snap.selection.size > 0) {
+            setStatus("所选文件均不支持分析，请选择 PDF 或文本文件");
+            setCta("开始分析", true);
+            return;
+        }
+        setStatus("已选 0 份，已存 0 份，需获取 0 份");
+        setCta("开始分析", true);
+        return;
+    }
+    let stored = 0;
+    ids.forEach((id) => {
+        if (aiAnalysisItemStorageState(snap, id) === "STORED") stored += 1;
+    });
+    const need = ids.length - stored;
+    setStatus(`已选 ${ids.length} 份，已存 ${stored} 份，需获取 ${need} 份`);
+    setCta(need > 0 ? "获取所选文件并分析" : "开始分析", false);
+}
+
+/**
+ * I-2：订阅驱动的获取运行判定。全部冻结缺失项 STORED → 恰好一次调用既有
+ * ai-analysis；任何 FAILED/SOURCE_UNAVAILABLE → 整批停止（0 次分析）并展示失败项。
+ */
+function stepAiAnalysisRunIfReady() {
+    const run = aiAnalysisState.run;
+    if (!run || run.fired || run.phase !== "watching") return;
+    if (aiAnalysisState.intentToken !== run.tokenAtFreeze) {
+        aiAnalysisState.run = null;
+        return;
+    }
+    const snapshot = aiAnalysisState.snapshot;
+    if (!snapshot || !snapshot.items) return;
+    // 提交进行中（POST /transfers 未返回）：行状态还是旧的 FAILED，此刻判定会把
+    // 正在重试的批次误标为失败。等服务端响应（submit-idle 同步）后再推进状态机。
+    if (snapshot.submitting) return;
+    const failed = [];
+    let ready = true;
+    run.needed.forEach((id) => {
+        const state = aiAnalysisItemStorageState(snapshot, id);
+        if (state === "STORED") return;
+        if (state === "FAILED" || state === "SOURCE_UNAVAILABLE") {
+            failed.push(id);
+            return;
+        }
+        ready = false; // QUEUED/DOWNLOADING/METADATA_ONLY/尚未加载的行：继续等待
+    });
+    if (failed.length > 0) {
+        run.phase = "failed";
+        run.failedIds = failed;
+        aiAnalysisState.error = aiAnalysisFailureLines(snapshot, failed).join("\n");
+        return;
+    }
+    if (ready) {
+        fireAiAnalysis(run);
+    }
+}
+
+/** 失败态 CTA：只重试失败项；重试后仍按原冻结快照全部校验，就绪后分析恰好一次。 */
+async function retryAiAnalysisFetch(run) {
+    const contactId = aiAnalysisState.contactId;
+    if (!contactId || run.phase !== "failed") return;
+    const token = run.tokenAtFreeze;
+    if (token !== aiAnalysisState.intentToken) return;
+    const failedIds = (run.failedIds || []).slice();
+    if (failedIds.length === 0) {
+        run.phase = "watching";
+        aiAnalysisState.error = null;
+        updateAiAnalysisSelectChrome();
+        return;
+    }
+    run.phase = "watching";
+    run.failedIds = [];
+    aiAnalysisState.error = null;
+    updateAiAnalysisSelectChrome();
+    const result = await window.ExpertMaterials.requestTransfers(contactId, failedIds);
+    if (token !== aiAnalysisState.intentToken) return;
+    if (!result || !result.ok) {
+        const message = (result && result.error) ? result.error : "获取所选文件失败，请重试";
+        run.phase = "failed";
+        run.failedIds = failedIds;
+        aiAnalysisState.error = `重试失败：${message}`;
+        updateAiAnalysisSelectChrome();
+        return;
+    }
+    stepAiAnalysisRunIfReady();
+    updateAiAnalysisSelectChrome();
+}
+
+/** 调用既有 POST /ai-analysis 恰好一次（run.fired 守卫）；关窗/换专家后不写 UI。 */
+async function fireAiAnalysis(run) {
+    if (run.fired) return;
+    run.fired = true;
+    const token = run.tokenAtFreeze;
+    const contactId = aiAnalysisState.contactId;
+    if (contactId == null || token !== aiAnalysisState.intentToken) return;
+    aiAnalysisState.run = null;
+    aiAnalysisState.error = null;
+    aiAnalysisState.mode = "loading";
+    renderAiAnalysisModal();
+    try {
+        const result = await api(`/api/expert-contacts/${contactId}/ai-analysis`, {
+            method: "POST",
+            body: JSON.stringify({ attachmentIds: run.ids })
+        });
+        if (token !== aiAnalysisState.intentToken) return; // 已发出请求沿用服务端语义，可经历史接口重读
+        aiAnalysisState.results = (result && Array.isArray(result.fields)) ? result.fields : [];
+        aiAnalysisState.mode = "results";
+        renderAiAnalysisModal();
+        showStatus("AI 分析完成");
+    } catch (e) {
+        if (token !== aiAnalysisState.intentToken) return;
+        // 失败回到选件：展示服务端原因（如某 PDF 无可读文字），旧结果绝不在前端提前清空
+        aiAnalysisState.mode = "select";
+        aiAnalysisState.selectionApplied = true;
+        aiAnalysisState.error = (e && e.message) ? e.message : "分析失败，请重试";
+        renderAiAnalysisModal();
     }
 }
 
@@ -9872,9 +10384,7 @@ async function handleContactAction(element) {
         return;
     }
     if (action === "ai-analysis-reanalyze") {
-        aiAnalysisState.mode = "select";
-        aiAnalysisState.error = null;
-        renderAiAnalysisModal();
+        enterAiAnalysisSelectMode(true);
         return;
     }
     if (action === "ai-analysis-add-field") {
@@ -13810,6 +14320,221 @@ function syncMailboxViewModeControls() {
     state.mailbox.viewMode = expertMode ? "EXPERT" : "MAIL";
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// 收发件箱专家聊天（子计划 10）宿主适配
+// 渐进式：window.MailboxChat 未加载（资源注册前/脚本缺失）时全部走原 table/group
+// 路径；组件存在且无 taskExecutionId（任务钻取）时激活聊天。旧 MAIL/EXPERT 模式
+// 控件与旧外部分页只在聊天激活时隐藏，原筛选读取器映射到 child-07 conversations
+// summary API（q=搜索、accountCode/direction/dates/subject/label + pending）。
+// ─────────────────────────────────────────────────────────────────────────
+
+function mailboxChatAvailable() {
+    return typeof MailboxChat !== "undefined" && !!MailboxChat
+        && typeof MailboxChat.mount === "function"
+        && typeof MailboxChat.unmount === "function";
+}
+
+function mailboxChatEligible() {
+    return mailboxChatAvailable() && state.mailbox.taskExecutionId == null;
+}
+
+function unmountMailboxChatHosts() {
+    if (!mailboxChatAvailable()) return;
+    const list = $("#mailboxList");
+    if (!list) return;
+    try {
+        MailboxChat.unmount(list);
+    } catch (e) {
+        // 组件内部清理失败不阻断原路径
+    }
+}
+
+function syncMailboxChatChrome(chatOn) {
+    const viewControls = document.querySelector(".mailbox-view-controls");
+    if (viewControls) viewControls.hidden = !!chatOn;
+    const pagination = $("#mailboxPagination");
+    if (pagination) pagination.hidden = !!chatOn;
+}
+
+function mailboxChatFilterSnapshot() {
+    const snapshot = {};
+    const accountCode = $("#mailboxFilterAccountCode")?.value || "";
+    if (accountCode) snapshot.accountCode = accountCode;
+    const direction = $("#mailboxFilterDirection")?.value || "";
+    if (direction) snapshot.direction = direction;
+    const keyword = ($("#mailboxFilterKeyword")?.value || "").trim();
+    if (keyword) snapshot.subject = keyword;
+    const tag = $("#mailboxFilterTag")?.value || "";
+    if (tag && tag !== "待处理") snapshot.label = tag;
+    const startDate = $("#mailboxFilterStartDate")?.value || "";
+    const endDate = $("#mailboxFilterEndDate")?.value || "";
+    if (!state.mailbox.onlyPending) {
+        if (startDate) snapshot.startDate = startDate;
+        if (endDate) snapshot.endDate = endDate;
+    }
+    snapshot.pendingOnly = !!state.mailbox.onlyPending;
+    return snapshot;
+}
+
+function refreshMailboxChatList() {
+    const list = $("#mailboxList");
+    if (!list || !mailboxChatAvailable()) return Promise.resolve();
+    const mountOptions = { filters: mailboxChatFilterSnapshot() };
+    if (state.mailbox.focusExpertContactId != null) {
+        mountOptions.focus = {
+            contactId: state.mailbox.focusExpertContactId,
+            email: state.mailbox.focusExpertEmail || ""
+        };
+    }
+    try {
+        MailboxChat.mount(list, mountOptions);
+        return Promise.resolve();
+    } catch (e) {
+        showStatus(e.message || "聊天视图加载失败", "error");
+        return Promise.resolve();
+    }
+}
+
+// I-1/I-5：查看全部附件/材料按钮 —— 打开 child-08 ExpertMaterials 原生 dialog 抽屉
+// （同一 contactId 共享 store；本宿主不复制材料 DOM/逻辑）。
+function mcHostOpenMaterials(contactId) {
+    if (!expertMaterialsAvailable()) return false;
+    const id = Number(contactId);
+    if (!Number.isFinite(id) || id <= 0) return false;
+    if (typeof window.ExpertMaterials.configure !== "function" ||
+        typeof window.ExpertMaterials.mount !== "function") {
+        return false;
+    }
+    const host = $("#mailboxList");
+    if (!host) return false;
+    window.ExpertMaterials.configure({
+        api,
+        contextPath,
+        labels: {
+            documentType: (value) => labelDocumentType(value),
+            documentStatus: (value) => labelDocumentStatus(value),
+            fileSize: (value) => formatFileSize(value)
+        }
+    });
+    window.ExpertMaterials.mount({ host, contactId: id, mode: "drawer" });
+    return true;
+}
+
+// I-5：查看专家详情 → 既有联系人详情流程
+async function mcHostOpenExpertDetail(contactId) {
+    const id = Number(contactId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    await openContactInList(id);
+}
+
+// I-2：聊天内可信回复工作台宿主（LIVE_INBOUND 固定；autoBootstrap=false
+// —— 默认折叠不发生成、展开不自动生成，须显式点「重新生成」）。显式传入
+// host 元素，绝不使用既有 [data-trust-reply-live-host] 的全局 querySelector。
+function mcHostMountWorkbench(hostEl, processingId, callbacks) {
+    if (!hostEl) return null;
+    const runtime = requireTrustReplyWorkbenchRuntime(hostEl);
+    if (!runtime) return null;
+    const instance = runtime.mount(hostEl, {
+        mode: "LIVE",
+        source: { sourceType: "LIVE_INBOUND", sourceId: Number(processingId) },
+        contextPath,
+        autoBootstrap: false,
+        onUnauthorized: trustReplyUnauthorized,
+        onComplete: async (assembly) => {
+            if (callbacks && typeof callbacks.onComplete === "function") {
+                callbacks.onComplete(assembly);
+            }
+        }
+    });
+    return {
+        unmount: () => {
+            try {
+                instance.unmount();
+            } catch (e) {
+                // noop
+            }
+        }
+    };
+}
+
+// I-3/I-4：聊天人工回复发送 —— 沿用 submitManualRichReply 的服务端校验/QA 审计与
+// 安全确认文案；不触碰 #unmatchedDetailPanel / manualReplyQaContext 等原流程状态。
+async function mcHostSendRichReply(processingId, requestBody) {
+    const submitWithConfirmation = async (body) => {
+        try {
+            const result = await api(`/api/mail/unmatched-inbound/${processingId}/manual-rich-reply`, {
+                method: "POST",
+                body: JSON.stringify(body)
+            });
+            const archiveStatus = result?.unsupportedAnswerArchiveStatus || "NOT_APPLICABLE";
+            const archivedCount = Number(result?.unsupportedAnswerArchivedCount) || 0;
+            if (archiveStatus === "SAVED") {
+                const suffix = archivedCount > 0 ? `，已记录 ${archivedCount} 条无依据回答` : "";
+                alert(`人工回复邮件发送成功${suffix}`);
+                showStatus(`人工回复邮件发送成功${suffix}`, "ok");
+            } else if (archiveStatus === "PARTIAL" || archiveStatus === "FAILED") {
+                alert("人工回复邮件发送成功\n无依据回答索引未完整写入，请勿重复发送");
+                showStatus("人工回复邮件发送成功；无依据回答索引未完整写入，请勿重复发送", "warn");
+            } else {
+                alert("人工回复邮件发送成功");
+            }
+            return true;
+        } catch (e) {
+            const canConfirmSafety = !body.safetyWarningConfirmed
+                && e.data?.code === "MANUAL_SEND_SAFETY_BLOCKED"
+                && Array.isArray(e.data.findings)
+                && e.data.findings.length > 0;
+            if (canConfirmSafety) {
+                const findings = e.data.findings;
+                const renderFindings = (list) => list.map((finding) => {
+                    const severityClass = finding.severity === "STRONG" ? "ai-reply-error" : "ai-reply-warning";
+                    const label = AI_REPLY_WARNING_LABELS[finding.code] || "正文包含需人工核对的风险声明";
+                    const coverage = finding.sentence
+                        ? `<div class="ai-reply-coverage">命中原句：${escapeHtml(finding.sentence)}</div>`
+                        : "";
+                    return `<div class="${severityClass}">${escapeHtml(label)}</div>${coverage}`;
+                }).join("");
+                const firstConfirmed = await openActionDialog("confirm", {
+                    message: `<p>本次发送命中 ${findings.length} 项内容安全门禁，请逐条核对后确认：</p><div class="ai-reply-feedback">${renderFindings(findings)}</div><p>确认已人工核对，仍要发送吗？</p>`
+                });
+                if (!firstConfirmed) {
+                    alert("人工回复发送失败: " + e.message);
+                    return false;
+                }
+                let strongConfirmationText = null;
+                if (e.data.requiresStrongConfirmation === true) {
+                    const strongFindings = findings.filter((finding) => finding.severity === "STRONG");
+                    const secondConfirmed = await openActionDialog("confirm-typed", {
+                        message: `<div class="ai-reply-error">高风险：本封邮件正文向专家索取护照 / 身份证 / 在职证明 / 银行流水一类敏感证件材料。此类索取存在合规与信任风险，一经发出不可撤回。</div><div class="ai-reply-feedback">${renderFindings(strongFindings)}</div><p>确认要发送，请在下方输入框中逐字输入「确认发送」四个字。</p>`
+                    });
+                    if (!secondConfirmed) {
+                        alert("人工回复发送失败: " + e.message);
+                        return false;
+                    }
+                    strongConfirmationText = "确认发送";
+                }
+                const retryBody = { ...body, safetyWarningConfirmed: true };
+                if (strongConfirmationText !== null) {
+                    retryBody.strongConfirmationText = strongConfirmationText;
+                }
+                return submitWithConfirmation(retryBody);
+            }
+            alert("人工回复发送失败: " + e.message);
+            return false;
+        }
+    };
+    return submitWithConfirmation(requestBody);
+}
+
+// I-4：无来信专家「选择模板发送跟进邮件」→ 既有专家模板发件流程
+// （ManualMailOptionType 仅 COMPOSE_TEMPLATE；command 无自由 subject/body，
+//  因此绝不在此伪造自由富文本编辑器或 processingId）。
+async function mcHostOpenFollowUp(contactId) {
+    const id = Number(contactId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    await openContactInList(id);
+}
+
 async function loadMailboxAccounts() {
     if (state.mailbox.accountsLoaded) return;
     try {
@@ -13828,6 +14553,20 @@ async function loadMailboxAccounts() {
 async function loadMailbox() {
     await loadMailboxAccounts();
     syncMailboxViewModeControls();
+
+    // child 10（I-5）：聊天视图守卫 —— MailboxChat 组件存在且非任务钻取过滤时激活
+    // 专家聊天（左侧仅专家/20 每页；右侧往来 + 工作台/人工回复/日志）。
+    // 原 table/group 代码保留给任务钻取（taskExecutionId）与脚本未加载兼容分支。
+    if (typeof mailboxChatEligible === "function" && mailboxChatEligible()) {
+        state.mailbox.onlyPending = mailboxPendingOnly();
+        state.mailbox.tagFilter = $("#mailboxFilterTag")?.value || "";
+        syncMailboxChatChrome(true);
+        await refreshMailboxChatList();
+        await refreshUnmatchedBadge();
+        return;
+    }
+    if (typeof unmountMailboxChatHosts === "function") unmountMailboxChatHosts();
+    if (typeof syncMailboxChatChrome === "function") syncMailboxChatChrome(false);
 
     const expertMode = state.mailbox.viewMode === "EXPERT";
     state.mailbox.onlyPending = mailboxPendingOnly();

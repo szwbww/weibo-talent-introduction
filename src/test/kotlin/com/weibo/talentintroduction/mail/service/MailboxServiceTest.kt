@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.repository.MailboxExpertSummaryRow
 import com.weibo.talentintroduction.mail.repository.MailboxRow
+import com.weibo.talentintroduction.document.service.ExpertMaterialService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -28,13 +29,15 @@ class MailboxServiceTest {
     private val mailAttachmentRepository = Mockito.mock(MailAttachmentRepository::class.java)
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val inboundMailTagService = Mockito.mock(InboundMailTagService::class.java)
+    private val expertMaterialService = Mockito.mock(ExpertMaterialService::class.java)
     private val mailboxService = MailboxService(
         mailRecordRepository,
         senderAccountRepository,
         inboundMailProcessingRepository,
         mailAttachmentRepository,
         expertContactRepository,
-        inboundMailTagService
+        inboundMailTagService,
+        expertMaterialService
     )
 
     private val activeAccount = MailSenderAccount(
@@ -469,7 +472,7 @@ class MailboxServiceTest {
         )
         Mockito.`when`(mailRecordRepository.findByIdOrNull(5L)).thenReturn(record)
         Mockito.`when`(expertContactRepository.findById(9L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailAttachmentRepository.findAllByMailRecordIdOrderByCreatedAtAsc(5L)).thenReturn(emptyList())
+        Mockito.`when`(expertMaterialService.resolveMessageAttachments("MAIL_RECORD", 5L)).thenReturn(emptyList())
 
         val detail = mailboxService.getMailboxDetail("MAIL_RECORD", 5L)
 
@@ -516,7 +519,8 @@ class MailboxServiceTest {
         )
         Mockito.`when`(inboundMailProcessingRepository.findById(12L)).thenReturn(Optional.of(inbound))
         Mockito.`when`(expertContactRepository.findById(9L)).thenReturn(Optional.of(contact))
-        Mockito.`when`(mailRecordRepository.findFirstByMessageIdOrderByCreatedAtDesc("in-msg")).thenReturn(null)
+        // 附件归属委托 06 精确来源解析；本用例无附件（旧 findFirstByMessageId 回退已停用）。
+        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", 12L)).thenReturn(emptyList())
         Mockito.`when`(inboundMailTagService.listTags(12L)).thenReturn(
             listOf(
                 TagView(
@@ -541,11 +545,15 @@ class MailboxServiceTest {
         assertEquals("APPLICATION", detail.expertIndexLevel)
         assertEquals(1, detail.inboundTags.size)
         assertEquals("跟进", detail.inboundTags[0].label)
+        assertFalse(detail.hasAttachment)
+        // 无账号/专家/方向限定的 findFirstByMessageId 回退必须不再被触达。
+        Mockito.verify(mailRecordRepository, never()).findFirstByMessageIdOrderByCreatedAtDesc(Mockito.anyString())
     }
 
     @Test
-    fun `resolveAttachments prefers inbound processing attachments`() {
-        val inboundAttachment = com.weibo.talentintroduction.mail.domain.MailAttachment(
+    fun `resolveAttachments uses exact bridge result from material resolver and never touches old lookups`() {
+        // 06 精确来源：bridge（transfer.inbound_processing_id）/ 直接 owner 附件。
+        val bridgedAttachment = com.weibo.talentintroduction.mail.domain.MailAttachment(
             id = 1L,
             mailRecordId = null,
             inboundProcessingId = 12L,
@@ -554,13 +562,63 @@ class MailboxServiceTest {
             fileSize = 10L,
             storagePath = "/tmp/a.pdf"
         )
-        Mockito.`when`(mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(12L))
-            .thenReturn(listOf(inboundAttachment))
+        val directAttachment = com.weibo.talentintroduction.mail.domain.MailAttachment(
+            id = 2L,
+            mailRecordId = null,
+            inboundProcessingId = 12L,
+            fileName = "b.pdf",
+            contentType = "application/pdf",
+            fileSize = 20L,
+            storagePath = "/tmp/b.pdf"
+        )
+        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", 12L))
+            .thenReturn(listOf(bridgedAttachment, directAttachment))
+
+        val attachments = mailboxService.resolveAttachments("INBOUND_PROCESSING", 12L)
+
+        assertEquals(listOf("a.pdf", "b.pdf"), attachments.map { it.fileName })
+        Mockito.verify(expertMaterialService).resolveMessageAttachments("INBOUND_PROCESSING", 12L)
+        Mockito.verify(mailRecordRepository, never()).findFirstByMessageIdOrderByCreatedAtDesc(Mockito.anyString())
+        Mockito.verify(mailAttachmentRepository, never())
+            .findAllByInboundProcessingIdOrderByCreatedAtAsc(Mockito.anyLong())
+    }
+
+    @Test
+    fun `resolveAttachments keeps strictly unique legacy relation result from the material resolver`() {
+        // 06 精确来源：严格唯一旧关系（同账号/同专家/INBOUND/非空 messageId 恰 1 条）
+        // 的结果原样透传，MailboxService 不再自行按 messageId 猜最新 record。
+        val legacyAttachment = com.weibo.talentintroduction.mail.domain.MailAttachment(
+            id = 3L,
+            mailRecordId = 9L,
+            inboundProcessingId = null,
+            fileName = "legacy-cv.pdf",
+            contentType = "application/pdf",
+            fileSize = 30L,
+            storagePath = "/tmp/legacy-cv.pdf"
+        )
+        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", 12L))
+            .thenReturn(listOf(legacyAttachment))
 
         val attachments = mailboxService.resolveAttachments("INBOUND_PROCESSING", 12L)
 
         assertEquals(1, attachments.size)
-        assertEquals("a.pdf", attachments[0].fileName)
+        assertEquals("legacy-cv.pdf", attachments[0].fileName)
+        Mockito.verify(expertMaterialService).resolveMessageAttachments("INBOUND_PROCESSING", 12L)
+        Mockito.verify(mailRecordRepository, never()).findFirstByMessageIdOrderByCreatedAtDesc(Mockito.anyString())
+    }
+
+    @Test
+    fun `resolveAttachments refuses cross-account ambiguity as empty without guessing`() {
+        // 跨账号/重复投递歧义 → 06 返回空（来源待核对），MailboxService 绝不回退到
+        // 不限账号/专家/方向的 findFirstByMessageId。
+        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", 12L))
+            .thenReturn(emptyList())
+
+        val attachments = mailboxService.resolveAttachments("INBOUND_PROCESSING", 12L)
+
+        assertTrue(attachments.isEmpty())
+        Mockito.verify(mailRecordRepository, never()).findFirstByMessageIdOrderByCreatedAtDesc(Mockito.anyString())
+        Mockito.verify(inboundMailProcessingRepository, never()).findById(Mockito.anyLong())
     }
 
     @Test
@@ -597,7 +655,7 @@ class MailboxServiceTest {
             storagePath = "/tmp/cv.pdf"
         )
         Mockito.`when`(inboundMailProcessingRepository.findById(12L)).thenReturn(Optional.of(inbound))
-        Mockito.`when`(mailAttachmentRepository.findAllByInboundProcessingIdOrderByCreatedAtAsc(12L))
+        Mockito.`when`(expertMaterialService.resolveMessageAttachments("INBOUND_PROCESSING", 12L))
             .thenReturn(listOf(inboundAttachment))
 
         val detail = mailboxService.getMailboxDetail("INBOUND_PROCESSING", 12L)

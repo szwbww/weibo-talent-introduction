@@ -1,6 +1,5 @@
 package com.weibo.talentintroduction.document.service
 
-import com.weibo.talentintroduction.config.MailAttachmentStorageProperties
 import com.weibo.talentintroduction.document.domain.DocumentStatus
 import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
@@ -11,6 +10,7 @@ import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
@@ -26,30 +26,29 @@ class ExpertDocumentBrowseServiceTest {
     @TempDir
     lateinit var tempDir: Path
 
-    private lateinit var properties: MailAttachmentStorageProperties
     private val expertDocumentRepository = Mockito.mock(ExpertDocumentRepository::class.java)
     private val mailAttachmentRepository = Mockito.mock(MailAttachmentRepository::class.java)
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
+    private val materialService = Mockito.mock(ExpertMaterialService::class.java)
     private lateinit var service: ExpertDocumentBrowseService
 
     private lateinit var storageDir: Path
 
     @BeforeEach
     fun setUp() {
-        properties = MailAttachmentStorageProperties(basePath = tempDir.toString())
         storageDir = tempDir.resolve("1").resolve("100")
         Files.createDirectories(storageDir)
         service = ExpertDocumentBrowseService(
-            properties,
             expertDocumentRepository,
             mailAttachmentRepository,
-            mailRecordRepository
+            mailRecordRepository,
+            materialService
         )
     }
 
     @AfterEach
     fun tearDown() {
-        Mockito.reset(expertDocumentRepository, mailAttachmentRepository, mailRecordRepository)
+        Mockito.reset(expertDocumentRepository, mailAttachmentRepository, mailRecordRepository, materialService)
     }
 
     private fun createTestFile(name: String, content: String = "test", dir: Path? = null): Path {
@@ -96,6 +95,22 @@ class ExpertDocumentBrowseServiceTest {
             sentAt = null
         )
 
+    /** 委托统一就绪解析：mock ExpertMaterialService 返回 ReadyFile（真实落盘路径）。 */
+    private fun stubReadyFile(contactId: Long, attachmentId: Long, file: Path, att: MailAttachment) {
+        Mockito.`when`(materialService.resolveReadyFile(contactId, attachmentId))
+            .thenReturn(ReadyFile(att, file.toRealPath()))
+    }
+
+    private fun stubNotReady(contactId: Long, attachmentId: Long, state: String? = "METADATA_ONLY", message: String = "no local file") {
+        Mockito.`when`(materialService.resolveReadyFile(contactId, attachmentId))
+            .thenThrow(MaterialNotReadyException(attachmentId, state, message))
+    }
+
+    private fun stubOwnershipRejected(contactId: Long, attachmentId: Long, message: String) {
+        Mockito.`when`(materialService.resolveReadyFile(contactId, attachmentId))
+            .thenThrow(IllegalArgumentException(message))
+    }
+
     @Test
     fun `lists documents for expert contact`() {
         val contactId = 1L
@@ -119,26 +134,49 @@ class ExpertDocumentBrowseServiceTest {
         assertEquals("application/pdf", result[0].contentType)
         assertTrue(result[0].previewable)
         assertEquals("CV", result[0].documentType)
-        assertTrue(result[0].downloadUrl.contains("/api/expert-contacts/$contactId/attachments/1/download"))
-        assertTrue(result[0].previewUrl.contains("/api/expert-contacts/$contactId/attachments/1/preview"))
-        assertTrue(result[0].downloadUrl.contains("/api/expert-contacts/$contactId/attachments/1/download"))
-        assertTrue(result[0].previewUrl.contains("/api/expert-contacts/$contactId/attachments/1/preview"))
+        assertEquals("/api/expert-contacts/$contactId/attachments/1/download", result[0].downloadUrl)
+        assertEquals("/api/expert-contacts/$contactId/attachments/1/preview", result[0].previewUrl)
     }
 
     @Test
-    fun `pdf is previewable`() {
+    fun `lists processing-owned documents with null mailRecordId`() {
+        val contactId = 1L
+        val att = MailAttachment(
+            id = 1L,
+            mailRecordId = null,
+            inboundProcessingId = 50L,
+            fileName = "cv.pdf",
+            contentType = "application/pdf",
+            fileSize = 100L,
+            storagePath = createTestFile("cv.pdf").toString(),
+            createdAt = LocalDateTime.now()
+        )
+        val doc = document(1, contactId, 1, "CV")
+
+        Mockito.`when`(expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+            .thenReturn(listOf(doc))
+        Mockito.`when`(mailAttachmentRepository.findById(1L))
+            .thenReturn(Optional.of(att))
+
+        val result = service.listDocuments(contactId)
+
+        assertEquals(1, result.size)
+        assertNull(result[0].mailRecordId)
+        assertEquals(1L, result[0].attachmentId)
+        assertTrue(result[0].previewable)
+    }
+
+    @Test
+    fun `pdf is previewable via shared readiness resolution`() {
         val contactId = 1L
         val f = createTestFile("doc.pdf")
         val att = attachment(1, 100, "doc.pdf", null, f)
-        val doc = document(1, contactId, 1)
-
-        Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(doc)
-        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(att))
-        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, contactId))
+        stubReadyFile(contactId, 1, f, att)
 
         val result = service.resolveForPreview(contactId, 1)
 
         assertEquals("application/pdf", result.contentType)
+        Mockito.verify(materialService).resolveReadyFile(contactId, 1)
     }
 
     @Test
@@ -146,11 +184,7 @@ class ExpertDocumentBrowseServiceTest {
         val contactId = 1L
         val f = createTestFile("photo.png")
         val att = attachment(1, 100, "photo.png", null, f)
-        val doc = document(1, contactId, 1)
-
-        Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(doc)
-        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(att))
-        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, contactId))
+        stubReadyFile(contactId, 1, f, att)
 
         val result = service.resolveForPreview(contactId, 1)
 
@@ -162,11 +196,7 @@ class ExpertDocumentBrowseServiceTest {
         val contactId = 1L
         val f = createTestFile("notes.txt")
         val att = attachment(1, 100, "notes.txt", null, f)
-        val doc = document(1, contactId, 1)
-
-        Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(doc)
-        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(att))
-        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, contactId))
+        stubReadyFile(contactId, 1, f, att)
 
         val result = service.resolveForPreview(contactId, 1)
 
@@ -178,11 +208,7 @@ class ExpertDocumentBrowseServiceTest {
         val contactId = 1L
         val f = createTestFile("data.xlsx")
         val att = attachment(1, 100, "data.xlsx", null, f)
-        val doc = document(1, contactId, 1)
-
-        Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(doc)
-        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(att))
-        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, contactId))
+        stubReadyFile(contactId, 1, f, att)
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
             service.resolveForPreview(contactId, 1)
@@ -191,14 +217,10 @@ class ExpertDocumentBrowseServiceTest {
     }
 
     @Test
-    fun `document not belonging to contact is rejected`() {
+    fun `document not belonging to contact is rejected by the shared readiness resolver`() {
         val f = createTestFile("cv.pdf")
         val att = attachment(1, 100, "cv.pdf", "application/pdf", f)
-        val doc = document(1, 999, 1)
-
-        Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(doc)
-        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(att))
-        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, 999))
+        stubOwnershipRejected(1, 1, "Document for attachment 1 does not belong to expert contact 1")
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
             service.resolveForDownload(1, 1)
@@ -207,14 +229,10 @@ class ExpertDocumentBrowseServiceTest {
     }
 
     @Test
-    fun `mail record not belonging to contact is rejected`() {
+    fun `mail record not belonging to contact is rejected by the shared readiness resolver`() {
         val f = createTestFile("cv.pdf")
         val att = attachment(1, 100, "cv.pdf", "application/pdf", f)
-        val doc = document(1, 1, 1)
-
-        Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(doc)
-        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(att))
-        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, 999))
+        stubOwnershipRejected(1, 1, "Attachment 1 does not belong to expert contact 1")
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
             service.resolveForDownload(1, 1)
@@ -223,17 +241,11 @@ class ExpertDocumentBrowseServiceTest {
     }
 
     @Test
-    fun `path outside basePath is rejected`() {
+    fun `path outside basePath is rejected by the shared readiness resolver`() {
         val outsideDir = Files.createTempDirectory("outside")
         val outsideFile = outsideDir.resolve("bad.txt")
         Files.write(outsideFile, "test".toByteArray())
-
-        val att = attachment(1, 100, "bad.txt", "text/plain", outsideFile)
-        val doc = document(1, 1, 1)
-
-        Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(doc)
-        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(att))
-        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, 1))
+        stubOwnershipRejected(1, 1, "Attachment path is outside configured base path")
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
             service.resolveForDownload(1, 1)
@@ -262,20 +274,11 @@ class ExpertDocumentBrowseServiceTest {
     }
 
     @Test
-    fun `symlink pointing outside basePath is rejected`() {
+    fun `symlink pointing outside basePath is rejected by the shared readiness resolver`() {
         val outsideDir = Files.createTempDirectory("outside-link")
         val outsideFile = outsideDir.resolve("target.txt")
         Files.write(outsideFile, "secret".toByteArray())
-
-        val symlinkPath = storageDir.resolve("link_to_outside.txt")
-        Files.createSymbolicLink(symlinkPath, outsideFile)
-
-        val att = attachment(1, 100, "link_to_outside.txt", "text/plain", symlinkPath)
-        val doc = document(1, 1, 1)
-
-        Mockito.`when`(expertDocumentRepository.findFirstByMailAttachmentId(1L)).thenReturn(doc)
-        Mockito.`when`(mailAttachmentRepository.findById(1L)).thenReturn(Optional.of(att))
-        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L)).thenReturn(mailRecord(100, 1))
+        stubOwnershipRejected(1, 1, "Attachment path is outside configured base path")
 
         val ex = assertThrows(IllegalArgumentException::class.java) {
             service.resolveForDownload(1, 1)
@@ -300,5 +303,81 @@ class ExpertDocumentBrowseServiceTest {
             service.listDocuments(contactId)
         }
         assertTrue(ex.message!!.contains("does not belong"))
+    }
+
+    @Test
+    fun `metadata-only attachment lists null size and no urls and is not previewable`() {
+        val contactId = 1L
+        val att = MailAttachment(
+            id = 1L,
+            mailRecordId = 100L,
+            fileName = "cv.pdf",
+            contentType = "application/pdf",
+            fileSize = null,
+            storagePath = null,
+            createdAt = LocalDateTime.now()
+        )
+        val doc = document(1, contactId, 1, "CV")
+
+        Mockito.`when`(expertDocumentRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+            .thenReturn(listOf(doc))
+        Mockito.`when`(mailAttachmentRepository.findById(1L))
+            .thenReturn(Optional.of(att))
+        Mockito.`when`(mailRecordRepository.findByIdOrNull(100L))
+            .thenReturn(mailRecord(100, contactId))
+
+        val result = service.listDocuments(contactId)
+
+        assertEquals(1, result.size)
+        assertNull(result[0].fileSize)
+        assertNull(result[0].downloadUrl)
+        assertNull(result[0].previewUrl)
+        assertFalse(result[0].previewable)
+        assertEquals("cv.pdf", result[0].fileName)
+    }
+
+    @Test
+    fun `resolveForDownload rejects metadata-only attachment with MATERIAL_NOT_READY`() {
+        val contactId = 1L
+        val att = MailAttachment(
+            id = 1L,
+            mailRecordId = 100L,
+            fileName = "not-landed.pdf",
+            contentType = "application/pdf",
+            fileSize = null,
+            storagePath = null,
+            createdAt = LocalDateTime.now()
+        )
+        stubNotReady(contactId, 1, state = "METADATA_ONLY", message = "no local file")
+
+        val ex = assertThrows(MaterialNotReadyException::class.java) {
+            service.resolveForDownload(contactId, 1)
+        }
+        assertEquals(1L, ex.attachmentId)
+        assertEquals("METADATA_ONLY", ex.state)
+        assertTrue(ex.message!!.contains("no local file"))
+        Mockito.verify(materialService).resolveReadyFile(contactId, 1)
+        Mockito.verifyNoInteractions(expertDocumentRepository)
+    }
+
+    @Test
+    fun `resolveForDownload reports actual size of the verified file not the stored value`() {
+        val contactId = 1L
+        val f = createTestFile("stale-size.pdf", content = "test")
+        val att = MailAttachment(
+            id = 1L,
+            mailRecordId = 100L,
+            fileName = "stale-size.pdf",
+            contentType = "application/pdf",
+            fileSize = 999L,
+            storagePath = f.toString(),
+            createdAt = LocalDateTime.now()
+        )
+        stubReadyFile(contactId, 1, f, att)
+
+        val result = service.resolveForDownload(contactId, 1)
+
+        assertEquals(4L, result.fileSize)
+        assertEquals("test", Files.readString(result.path))
     }
 }

@@ -149,6 +149,18 @@ class DmarcReportParserTest {
         assertNull(summary)
     }
 
+    @Test
+    fun `null content in metadata mode raises explicit content unavailable error`() {
+        val attachment = ReceivedMailAttachment(
+            fileName = "google.com!example.com!1!2.xml.gz",
+            contentType = "application/gzip",
+            content = null
+        )
+        // parse() 的 catch 会把它转成日志+null；内部必须显式抛错，绝不能 ?: byteArrayOf() 当空报表。
+        val summary = parser.parse(attachment)
+        assertNull(summary)
+    }
+
     private fun gzip(content: ByteArray): ByteArray {
         val output = ByteArrayOutputStream()
         GZIPOutputStream(output).use { it.write(content) }

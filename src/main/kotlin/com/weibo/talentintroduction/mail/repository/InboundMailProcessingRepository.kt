@@ -17,6 +17,17 @@ data class SenderAccountLastReceived(
 )
 
 interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing, Long> {
+    /**
+     * 真实远端身份判重（I-1：V120 后唯一键为 account/uid_validity/uid）。
+     * 新写/新收信的判重与代际识别必须使用本 finder，禁止仅按 account+uid 判重。
+     */
+    fun findBySenderAccountCodeAndUidValidityAndImapUid(
+        senderAccountCode: String,
+        uidValidity: Long,
+        imapUid: Long
+    ): InboundMailProcessing?
+
+    /** 兼容读取：按 account+uid（不含代际）的旧 finder；仅允许旧行代际认领核验/历史读取，不得用于新写判重。 */
     fun findBySenderAccountCodeAndImapUid(senderAccountCode: String, imapUid: Long): InboundMailProcessing?
 
     @Modifying

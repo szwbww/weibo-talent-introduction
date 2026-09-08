@@ -36,7 +36,12 @@ class DmarcReportParser {
     }
 
     private fun decompressToXmlBytes(attachment: ReceivedMailAttachment): ByteArray? {
+        // I-1：metadata 模式（content=null）下 DMARC 解析没有可解压字节；
+        // 显式报错而不是 ?: byteArrayOf()（会把空输入当合法报表路径走完）。
         val content = attachment.content
+            ?: throw MetadataContentUnavailableException(
+                "DMARC attachment content is unavailable in metadata mode (file=${attachment.fileName})"
+            )
         if (content.isEmpty()) {
             return null
         }
