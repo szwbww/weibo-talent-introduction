@@ -1,6 +1,6 @@
 # 11 · 资源注册、启用与整体验收门禁
 
-状态：待审阅/未执行。前置：10子计划通过独立验证。 范围：10个文件；不超过2子系统。共同契约见[总计划](00-mailbox-materials-master.md)。
+状态：待审阅/未执行（执行期 Amendment A2 后范围 11 个文件）。前置：10子计划通过独立验证。 范围：11个文件（A2 拓宽，见变更清单）；不超过2子系统。共同契约见[总计划](00-mailbox-materials-master.md)。
 
 ## 需求描述
 
@@ -72,6 +72,12 @@
 | 8 | `src/test/js/ragWorkbenchRender.test.js` | 修改 |
 | 9 | `src/test/js/trustReplyWorkbenchSharedMount.test.js` | 修改 |
 | 10 | `docs/runbooks/mailbox-material-chat-rollout.md` | 新增 |
+
+执行期修订（Amendment A2，2026-09-08 HUMAN 批准）：metadataOnly 默认翻转（false→true）使 child 03 交付的 docker-free 测试 ImapMailReceiveServiceTest.kt（无参构造代表 legacy 模式，断言 content 非 null）失败。授权该测试文件一次性显式 `MailAttachmentStorageProperties(metadataOnly = false)` 构造以解耦 legacy 模式表示与默认值；不改断言语义、不涉及生产代码。
+
+| # | 精确路径 | 操作 |
+|---|---|---|
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveServiceTest.kt` | 修改（A2：构造处显式 metadataOnly=false，仅此一处） |
 
 ## 验收标准
 
