@@ -1,0 +1,15 @@
+## Epoch 1 — Round 1/3
+- Findings: A-1
+- Before: 5f5623dc4df04b701aa37e0904ec07579d6ba8cb
+- Fix commit: 8ba24989302ed4a4e6d0f58a70cb5e19a2ed7cd2
+- Authorized files changed:
+  - src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt
+  - src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt
+  - src/test/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentServiceTest.kt
+  - src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt
+- Commands:
+  - `mvn test -Dtest=AutoMailReplyServiceTest,MailAttachmentServiceTest,UnmatchedInboundMailServiceTest` -> exit 0; 73 tests (50+12+11), 0 F/E
+  - `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock mvn -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true -Dapi.version=1.40 test` -> exit 0; 15 tests, 0 F/E
+  - `mvn test` -> exit 0; fresh surefire 3152 run / 0 F / 0 E / 8 skipped; Node 671/671
+- Result: FIXED
+- Notes: A-1 修复 = bridgeInboundProcessing 的完整性约束只适用于 metadata（content==null）附件：旧 content 模式附件（child-03 两种模式都无条件填 source）由旧路径完整落库、不建 transfer 行，bridge 一律跳过（`if (received.content != null) return@forEach`），不再抛错导致默认 metadataOnly=false 下带附件来信确认回滚/游标停滞。混合信内 metadata 附件仍严格缺行即失败。回归测试：MailAttachmentServiceTest `bridge skips legacy content attachments with remote source and stays strict for metadata`（真实旧路径文件落库 + bridge 零 transfer 交互 + 混合严格性）；AutoMailReplyServiceTest `matched content mode message with attachments confirms through the default bridge path`（content+source 附件走默认 bridgeMetadata=true 正常确认、markSeen、无自动回复）。执行报告 execution.md 已更新最终命令证据。
