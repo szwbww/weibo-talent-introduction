@@ -8,22 +8,35 @@ import com.weibo.talentintroduction.auth.service.AuthService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.document.service.ExpertMaterialService
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository
 import com.weibo.talentintroduction.mail.service.ExpertFollowService
+import com.weibo.talentintroduction.mail.service.InboundMailTagService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
+import com.weibo.talentintroduction.mail.service.TagView
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty
 import org.mockito.Mockito
+import org.mockito.Mockito.anyCollection
+import org.mockito.Mockito.anyList
+import org.mockito.Mockito.never
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
+import org.mockito.Mockito.verifyNoMoreInteractions
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
@@ -43,6 +56,8 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import java.nio.charset.StandardCharsets
+import java.sql.Statement
 import java.sql.Timestamp
 import java.time.LocalDateTime
 import java.util.Optional
@@ -51,6 +66,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import javax.sql.DataSource
+import org.springframework.jdbc.support.GeneratedKeyHolder
+import org.springframework.test.web.servlet.MvcResult
 
 /**
  * 专家会话关注/查询 controller 集成测试（fast-p 07；mysqlIt 门禁）。
@@ -107,6 +124,12 @@ class MailboxConversationControllerTest {
     @MockBean
     private lateinit var expertMaterialService: ExpertMaterialService
 
+    @MockBean
+    private lateinit var inboundMailTagService: InboundMailTagService
+
+    @MockBean
+    private lateinit var expertSearchService: ExpertSearchService
+
     @BeforeEach
     fun setUp() {
         cleanup()
@@ -125,6 +148,16 @@ class MailboxConversationControllerTest {
             Mockito.`when`(expertContactRepository.findById(id))
                 .thenReturn(Optional.of(contact(id)))
         }
+        // I-6 默认投影基座：findAllById 按既有 contact(id) 构造器回页内实体（与 findById
+        // 同源、同 orcid 模板，level 默认 CANDIDATE——与 expert_contact 列默认一致）。
+        // searchByOrcidIds 未 stub 时默认空结果 → expertTags=null（画像缺失语义）。
+        Mockito.`when`(expertContactRepository.findAllById(anyCollection()))
+            .thenAnswer { invocation ->
+                val ids = (invocation.getArgument(0) as Collection<*>).filterIsInstance<Long>()
+                ids.map { contact(it) }
+            }
+        Mockito.`when`(inboundMailTagService.listTagsBatch(anyCollection()))
+            .thenReturn(emptyMap())
         Mockito.`when`(expertMaterialService.resolveMessageAttachments(Mockito.anyString(), Mockito.anyLong()))
             .thenReturn(emptyList())
     }
@@ -436,11 +469,371 @@ class MailboxConversationControllerTest {
             get("/api/mail/mailbox/conversations?q=${"x".repeat(300)}").session(sessionOf("op1"))
         ).andExpect(status().isBadRequest)
         mockMvc.perform(
+            get("/api/mail/mailbox/conversations?recipientEmail=${"r".repeat(300)}").session(sessionOf("op1"))
+        ).andExpect(status().isBadRequest)
+        mockMvc.perform(
+            get("/api/mail/mailbox/conversations?keyword=${"k".repeat(300)}").session(sessionOf("op1"))
+        ).andExpect(status().isBadRequest)
+        mockMvc.perform(
+            get("/api/mail/mailbox/conversations?startDate=2026-09-09&endDate=2026-09-01").session(sessionOf("op1"))
+        ).andExpect(status().isBadRequest)
+        // trim 后为空的 recipientEmail/keyword 按未提供处理（不报错、不缩小结果集）
+        val trimmedBody = mockMvc.perform(
+            get("/api/mail/mailbox/conversations")
+                .param("recipientEmail", "   ")
+                .param("keyword", "   ")
+                .session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        assertEquals(1, objectMapper.readTree(trimmedBody)["total"].asInt(),
+            "空白筛选等价于未提供")
+        mockMvc.perform(
             get("/api/mail/mailbox/conversations/999999/messages").session(sessionOf("op1"))
         ).andExpect(status().isNotFound)
         mockMvc.perform(
             put("/api/mail/mailbox/conversations/999999/follow").session(sessionOf("op1"))
         ).andExpect(status().isNotFound)
+    }
+
+    // ------------------------------------------------------------------
+    // T2：timeline 当前窗口邮件标签（I-3）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `one timeline window of 20 inbound letters triggers exactly one tag batch with real ids`() {
+        val requestedIds = mutableListOf<Collection<Long>>()
+        stubTagBatchRecordingInto(requestedIds)
+        for (i in 1..20) {
+            insertProcessingRow(1, 2000L + i, "PROCESSED", "2026-09-%02d 09:%02d:00".format(i, i),
+                "win-$i", "window subject $i")
+        }
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages?limit=50").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val tree = objectMapper.readTree(utf8Body(result))
+        assertEquals(20, tree["items"].size())
+
+        assertEquals(1, requestedIds.size, "一个窗口只调一次 listTagsBatch")
+        assertEquals(20, requestedIds[0].size)
+        val expected = (1..20).map { processingIdOf("win-$it") }.toSet()
+        assertEquals(expected, requestedIds[0].toSet(),
+            "批量标签只读取当前窗口的真实 INBOUND_PROCESSING id")
+        assertTrue(tree["items"].all { it["tags"].size() == 0 }, "无标签来信返回空数组")
+    }
+
+    @Test
+    fun `same numeric id on outbound and inbound never cross tags`() {
+        insertProcessingRow(1, 3101, "PROCESSED", "2026-09-02 09:00:00", "shared-num-in", "in subject")
+        val sharedId = processingIdOf("shared-num-in")
+        // 强制 mail_record 与 inbound_mail_processing 数值 id 相同：只靠 source 区分。
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (id, expert_contact_id, direction, mail_type, sender_account_code, triggered_by,
+                 message_id, subject, body, send_status, sent_at, created_at)
+            VALUES (?, 1, 'OUTBOUND', 'INTRODUCTION', 'acc-a', 'SYSTEM', 'out-shared-num', 'out subject',
+                    'body', 'SENT', ?, ?)
+            """.trimIndent(),
+            sharedId, Timestamp.valueOf(ts("2026-09-01 09:00:00")), Timestamp.valueOf(ts("2026-09-01 09:00:00"))
+        )
+        Mockito.`when`(inboundMailTagService.listTagsBatch(anyCollection())).thenReturn(
+            mapOf(
+                sharedId to listOf(
+                    TagView(tagId = 77L, tagType = "CUSTOM", qaRuleId = null, label = "会议安排",
+                        source = "MANUAL", active = true)
+                )
+            )
+        )
+
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val tree = objectMapper.readTree(utf8Body(result))
+        assertEquals(2, tree["items"].size())
+        val outbound = tree["items"][0]
+        assertEquals("MAIL_RECORD", outbound["source"].asText())
+        assertEquals(sharedId, outbound["id"].asLong())
+        assertEquals(0, outbound["tags"].size(), "OUTBOUND 与 processing 同数值 id 也不得串标签")
+        val inbound = tree["items"][1]
+        assertEquals("INBOUND_PROCESSING", inbound["source"].asText())
+        assertEquals(sharedId, inbound["id"].asLong())
+        assertEquals("会议安排", inbound["tags"][0]["label"].asText())
+        assertEquals(77L, inbound["tags"][0]["tagId"].asLong())
+    }
+
+    @Test
+    fun `outbound-only timeline window never calls tag batch`() {
+        insertOutbound(1, "SENT", "2026-09-01 09:00:00", "older")
+        insertOutbound(1, "SENT", "2026-09-02 09:00:00", "newer")
+
+        mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk)
+        verify(inboundMailTagService, never()).listTagsBatch(anyCollection())
+    }
+
+    @Test
+    fun `tag added to an inbound letter shows up in the next timeline window and disappears after delete`() {
+        insertProcessingRow(1, 3201, "PROCESSED", "2026-09-02 09:00:00", "tag-read-in", "tagged subject")
+        val processingId = processingIdOf("tag-read-in")
+        val tagId = insertTagRow(processingId, "会议安排")
+        stubTagBatchFromDb()
+
+        fun fetchTags(): String {
+            val result = mockMvc.perform(
+                get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+            ).andExpect(status().isOk).andReturn()
+            val items = objectMapper.readTree(utf8Body(result))["items"]
+            val inbound = items.first { it["source"].asText() == "INBOUND_PROCESSING" }
+            return inbound["tags"].toString()
+        }
+
+        val firstRead = fetchTags()
+        assertTrue(firstRead.contains("\"label\":\"会议安排\""), "落库标签必须在下一次 timeline 返回：$firstRead")
+        assertTrue(firstRead.contains("\"tagId\":$tagId"), "返回真实 DB tagId：$firstRead")
+
+        jdbcTemplate.update("DELETE FROM inbound_mail_tag WHERE id = ?", tagId)
+        val after = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val afterInbound = objectMapper.readTree(utf8Body(after))["items"]
+            .first { it["source"].asText() == "INBOUND_PROCESSING" }
+        assertEquals(0, afterInbound["tags"].size(), "删除标签后 timeline 不再返回")
+    }
+
+    // ------------------------------------------------------------------
+    // T3：历史 encoded subject 读兼容（I-4）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `encoded historical subjects decode in api output and are never rewritten in db`() {
+        val rawInboundSubject = "=?UTF-8?Q?Re:_Remote_advisory_collaboration?= =?UTF-8?Q?_request?="
+        val rawOutboundSubject = "=?windows-1252?Q?caf=E9?="
+        insertProcessingRow(1, 3401, "PROCESSED", "2026-09-02 09:00:00", "enc-subject-in", rawInboundSubject)
+        insertOutbound(2, "SENT", "2026-09-01 09:00:00", rawOutboundSubject)
+
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val tree = objectMapper.readTree(utf8Body(result))
+        val contact1 = tree["items"].first { it["contactId"].asLong() == 1L }
+        assertEquals("Re: Remote advisory collaboration request",
+            contact1["latestMessage"]["subject"].asText(), "summary 最近消息 subject 解码可读")
+        val contact2 = tree["items"].first { it["contactId"].asLong() == 2L }
+        assertEquals("café", contact2["latestMessage"]["subject"].asText())
+
+        // 历史行只读不写：DB 中 encoded subject 原样保留。
+        assertEquals(rawInboundSubject,
+            jdbcTemplate.queryForObject(
+                "SELECT subject FROM inbound_mail_processing WHERE message_id = 'enc-subject-in'",
+                String::class.java
+            )!!)
+        assertEquals(rawOutboundSubject,
+            jdbcTemplate.queryForObject(
+                "SELECT subject FROM mail_record WHERE expert_contact_id = 2 AND direction = 'OUTBOUND'",
+                String::class.java
+            )!!)
+
+        val timeline = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val item = objectMapper.readTree(utf8Body(timeline))["items"]
+            .first { it["source"].asText() == "INBOUND_PROCESSING" }
+        assertEquals("Re: Remote advisory collaboration request", item["subject"].asText())
+    }
+
+    // ------------------------------------------------------------------
+    // T4：本页专家标签投影（I-6）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `one page of twenty same-level experts triggers exactly one batch search in sql order`() {
+        val shared = "2026-09-05 08:00:00"
+        for (id in 5L..24L) {
+            seedContactRow(id, "Expert $id", "expert$id@example.org")
+            insertOutbound(id, "SENT", shared, "s-$id")
+        }
+        val calls = mutableListOf<Pair<List<String>, ExpertIndexLevel>>()
+        Mockito.`when`(expertSearchService.searchByOrcidIds(anyList(), anyLevel())).thenAnswer { invocation ->
+            val orcids = invocation.getArgument(0) as List<String>
+            val level = invocation.getArgument(1) as ExpertIndexLevel
+            calls += orcids to level
+            orcids.reversed().map { orcid -> profile(orcid, listOf("tag-" + orcid.takeLast(4))) }
+        }
+
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations?size=20").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val tree = objectMapper.readTree(utf8Body(result))
+        assertEquals(20, tree["total"].asInt())
+        assertEquals(20, tree["items"].size())
+
+        assertEquals(1, calls.size, "一页 20 位同层专家只调 1 次批量查询")
+        assertEquals(ExpertIndexLevel.CANDIDATE, calls[0].second)
+        assertEquals(20, calls[0].first.size)
+        assertEquals((5L..24L).map(::orcidOf).toSet(), calls[0].first.toSet())
+
+        // ES mock 乱序返回仍按 SQL 页序回填；(level, orcid) 键匹配而非位置匹配。
+        for ((index, id) in (24L downTo 5L).withIndex()) {
+            val item = tree["items"][index]
+            assertEquals(id, item["contactId"].asLong(), "SQL 页序必须保持（contactId DESC）")
+            assertEquals(orcidOf(id), item["orcid"].asText())
+            assertEquals("tag-${orcidOf(id).takeLast(4)}", item["expertTags"][0].asText())
+            assertTrue(item["expertTags"].size() == 1)
+        }
+    }
+
+    @Test
+    fun `experts across three levels trigger at most three batch searches with per level orcids`() {
+        val shared = "2026-09-05 08:00:00"
+        for (id in 5L..7L) {
+            seedContactRow(id, "Expert $id", "expert$id@example.org")
+            insertOutbound(id, "SENT", shared, "s-$id")
+        }
+        val levelsById = mapOf(5L to "RAW", 6L to "CANDIDATE", 7L to "APPLICATION")
+        Mockito.`when`(expertContactRepository.findAllById(anyCollection())).thenAnswer { invocation ->
+            val ids = (invocation.getArgument(0) as Collection<*>).filterIsInstance<Long>()
+            ids.map { id -> contact(id).copy(currentIndexLevel = levelsById[id] ?: "CANDIDATE") }
+        }
+        Mockito.`when`(expertSearchService.searchByOrcidIds(anyList(), anyLevel())).thenAnswer { invocation ->
+            val orcids = invocation.getArgument(0) as List<String>
+            val level = invocation.getArgument(1) as ExpertIndexLevel
+            orcids.map { orcid -> profile(orcid, listOf(level.name + "-tag")) }
+        }
+
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val tree = objectMapper.readTree(utf8Body(result))
+        assertEquals(3, tree["total"].asInt())
+
+        verify(expertSearchService, times(1))
+            .searchByOrcidIds(listOf(orcidOf(5L)), ExpertIndexLevel.RAW)
+        verify(expertSearchService, times(1))
+            .searchByOrcidIds(listOf(orcidOf(6L)), ExpertIndexLevel.CANDIDATE)
+        verify(expertSearchService, times(1))
+            .searchByOrcidIds(listOf(orcidOf(7L)), ExpertIndexLevel.APPLICATION)
+        verifyNoMoreInteractions(expertSearchService)
+
+        val byId = tree["items"].associate { it["contactId"].asLong() to it }
+        assertEquals(listOf("RAW-tag"), byId[5L]!!["expertTags"].map { it.asText() })
+        assertEquals(listOf("CANDIDATE-tag"), byId[6L]!!["expertTags"].map { it.asText() })
+        assertEquals(listOf("APPLICATION-tag"), byId[7L]!!["expertTags"].map { it.asText() })
+    }
+
+    @Test
+    fun `missing profile yields null expert tags while present profiles keep their values`() {
+        val shared = "2026-09-05 08:00:00"
+        for (id in 5L..7L) {
+            seedContactRow(id, "Expert $id", "expert$id@example.org")
+            insertOutbound(id, "SENT", shared, "s-$id")
+        }
+        val levelsById = mapOf(5L to "RAW", 6L to "CANDIDATE", 7L to "APPLICATION")
+        Mockito.`when`(expertContactRepository.findAllById(anyCollection())).thenAnswer { invocation ->
+            val ids = (invocation.getArgument(0) as Collection<*>).filterIsInstance<Long>()
+            ids.map { id -> contact(id).copy(currentIndexLevel = levelsById[id] ?: "CANDIDATE") }
+        }
+        // 只返回 5、7 的画像；6 的画像缺失 → 6 必须 null（绝不伪称 []）。
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf(orcidOf(5L)), ExpertIndexLevel.RAW))
+            .thenReturn(listOf(profile(orcidOf(5L), listOf(orcidOf(5L).takeLast(4)))))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf(orcidOf(6L)), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf(orcidOf(7L)), ExpertIndexLevel.APPLICATION))
+            .thenReturn(listOf(profile(orcidOf(7L), listOf(orcidOf(7L).takeLast(4)))))
+
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val byId = objectMapper.readTree(utf8Body(result))["items"].associate { it["contactId"].asLong() to it }
+        assertEquals("0005", byId[5L]!!["expertTags"][0].asText())
+        assertTrue(byId[6L]!!["expertTags"].isNull, "画像缺失必须是 null 而非 []")
+        assertEquals("0007", byId[7L]!!["expertTags"][0].asText())
+    }
+
+    @Test
+    fun `per level expert search failure nulls only that group and keeps the page at 200`() {
+        val shared = "2026-09-05 08:00:00"
+        for (id in 5L..7L) {
+            seedContactRow(id, "Expert $id", "expert$id@example.org")
+            insertOutbound(id, "SENT", shared, "s-$id")
+        }
+        val levelsById = mapOf(5L to "RAW", 6L to "CANDIDATE", 7L to "APPLICATION")
+        Mockito.`when`(expertContactRepository.findAllById(anyCollection())).thenAnswer { invocation ->
+            val ids = (invocation.getArgument(0) as Collection<*>).filterIsInstance<Long>()
+            ids.map { id -> contact(id).copy(currentIndexLevel = levelsById[id] ?: "CANDIDATE") }
+        }
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf(orcidOf(5L)), ExpertIndexLevel.RAW))
+            .thenReturn(listOf(profile(orcidOf(5L), listOf("RAW-ok"))))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf(orcidOf(6L)), ExpertIndexLevel.CANDIDATE))
+            .thenThrow(IllegalStateException("simulated es outage"))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf(orcidOf(7L)), ExpertIndexLevel.APPLICATION))
+            .thenReturn(listOf(profile(orcidOf(7L), listOf("APPLICATION-ok"))))
+
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val tree = objectMapper.readTree(utf8Body(result))
+        assertEquals(3, tree["total"].asInt(), "某层 ES 失败不得让整页 500 或改变计数")
+        val byId = tree["items"].associate { it["contactId"].asLong() to it }
+        assertEquals(listOf("RAW-ok"), byId[5L]!!["expertTags"].map { it.asText() })
+        assertTrue(byId[6L]!!["expertTags"].isNull, "失败层该组降级为 null")
+        assertEquals(listOf("APPLICATION-ok"), byId[7L]!!["expertTags"].map { it.asText() })
+        verify(expertSearchService, times(3)).searchByOrcidIds(anyList(), anyLevel())
+    }
+
+    @Test
+    fun `no batch expert searches when page empty or rows lack a valid level orcid`() {
+        // 全空页：无任何邮件 → 不读 contact、不查 ES。
+        mockMvc.perform(
+            get("/api/mail/mailbox/conversations").session(sessionOf("op1"))
+        ).andExpect(status().isOk)
+        verify(expertContactRepository, never()).findAllById(anyCollection())
+        verifyNoInteractions(expertSearchService)
+
+        // 有行但 contact 无 ORCID + 非法层级：不查 ES，expertTags=null，页面 200。
+        insertOutbound(1, "SENT", "2026-09-01 09:00:00")
+        Mockito.`when`(expertContactRepository.findAllById(anyCollection())).thenAnswer { invocation ->
+            val ids = (invocation.getArgument(0) as Collection<*>).filterIsInstance<Long>()
+            ids.map { id -> contact(id).copy(orcidId = "", currentIndexLevel = "LEGACY_LEVEL") }
+        }
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val item = objectMapper.readTree(utf8Body(result))["items"][0]
+        assertTrue(item["expertTags"].isNull)
+        verifyNoInteractions(expertSearchService)
+    }
+
+    @Test
+    fun `expert tags and mail tags stay fully separated and tags trim dedupe preserving es order`() {
+        insertProcessingRow(1, 3501, "MANUAL_REVIEW", "2026-09-02 09:00:00", "iso-mail-in", "isolation")
+        insertTagRow(processingIdOf("iso-mail-in"), "会议安排")
+        Mockito.`when`(expertSearchService.searchByOrcidIds(anyList(), anyLevel())).thenAnswer { invocation ->
+            val orcids = invocation.getArgument(0) as List<String>
+            orcids.map { orcid ->
+                profile(orcid, listOf("  学术科研 ", "学术科研", "重点关注"))
+            }
+        }
+        stubTagBatchFromDb()
+
+        val summary = mockMvc.perform(
+            get("/api/mail/mailbox/conversations").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val item = objectMapper.readTree(utf8Body(summary))["items"][0]
+        assertEquals(listOf("学术科研", "重点关注"),
+            item["expertTags"].map { it.asText() }, "trim/去空/去重且保持 ES 顺序")
+        val itemKeys = item.fieldNames().asSequence().toList()
+        assertFalse(itemKeys.contains("tags"), "邮件标签不得泄漏到 summary")
+        assertTrue(itemKeys.contains("expertTags"))
+        verify(expertSearchService, times(1)).searchByOrcidIds(anyList(), anyLevel())
+
+        val timeline = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val timelineItems = objectMapper.readTree(utf8Body(timeline))["items"]
+        val inbound = timelineItems.first { it["source"].asText() == "INBOUND_PROCESSING" }
+        assertEquals("会议安排", inbound["tags"][0]["label"].asText(), "邮件标签只属于 timeline 消息")
+        assertTrue(timelineItems.none { it["source"].asText() == "MAIL_RECORD" && it["tags"].size() > 0 },
+            "OUTBOUND 消息绝不携带邮件标签")
     }
 
     // ------------------------------------------------------------------
@@ -584,6 +977,115 @@ class MailboxConversationControllerTest {
         jdbcTemplate.queryForObject(
             "SELECT id FROM inbound_mail_processing WHERE message_id = ?", Long::class.java, messageId
         )!!
+
+    private fun insertProcessingRow(
+        contactId: Long,
+        imapUid: Long,
+        processStatus: String,
+        eventAt: String,
+        messageId: String,
+        subject: String = "in-$contactId"
+    ) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO inbound_mail_processing
+                (sender_account_code, uid_validity, imap_uid, message_id, from_email,
+                 subject, body, cleaned_body, received_at, process_status, process_reason,
+                 expert_contact_id)
+            VALUES ('acc-a', 1, ?, ?, 'expert@example.org', ?, 'body', 'cleaned', ?, ?, 'QA_AUTO_REPLIED', ?)
+            """.trimIndent(),
+            imapUid, messageId, subject,
+            Timestamp.valueOf(ts(eventAt)), processStatus, contactId
+        )
+    }
+
+    /** 真实落库 CUSTOM 标签行（写路径由既有 InboundMailSummaryController/服务覆盖）。 */
+    private fun insertTagRow(processingId: Long, label: String): Long {
+        val keyHolder = GeneratedKeyHolder()
+        jdbcTemplate.update(
+            { connection ->
+                connection.prepareStatement(
+                    """
+                    INSERT INTO inbound_mail_tag (inbound_processing_id, tag_type, label, source, created_at)
+                    VALUES (?, 'CUSTOM', ?, 'MANUAL', ?)
+                    """.trimIndent(),
+                    Statement.RETURN_GENERATED_KEYS
+                ).apply {
+                    setLong(1, processingId)
+                    setString(2, label)
+                    setTimestamp(3, Timestamp.valueOf(LocalDateTime.of(2026, 9, 1, 10, 0)))
+                }
+            },
+            keyHolder
+        )
+        return keyHolder.key!!.toLong()
+    }
+
+    /** listTagsBatch 从真实 DB 读 CUSTOM 标签行（含真实 DB tagId），模拟既有服务的批量读。 */
+    private fun stubTagBatchFromDb() {
+        Mockito.`when`(inboundMailTagService.listTagsBatch(anyCollection())).thenAnswer { invocation ->
+            val ids = (invocation.getArgument(0) as Collection<*>).filterIsInstance<Long>().toList()
+            if (ids.isEmpty()) {
+                emptyMap<Long, List<TagView>>()
+            } else {
+                val placeholders = ids.joinToString(",") { "?" }
+                val pairs = jdbcTemplate.query(
+                    """
+                    SELECT id, inbound_processing_id, tag_type, qa_rule_id, label, source
+                      FROM inbound_mail_tag
+                     WHERE inbound_processing_id IN ($placeholders)
+                    """.trimIndent(),
+                    { rs, _ ->
+                        rs.getLong("inbound_processing_id") to TagView(
+                            tagId = rs.getLong("id"),
+                            tagType = rs.getString("tag_type"),
+                            qaRuleId = rs.getLong("qa_rule_id").takeIf { !rs.wasNull() },
+                            label = rs.getString("label"),
+                            source = rs.getString("source"),
+                            active = true
+                        )
+                    },
+                    *ids.toTypedArray()
+                )
+                pairs.groupBy({ it.first }, { it.second })
+            }
+        }
+    }
+
+    private fun profile(orcid: String, tags: List<String>?): ExpertProfile =
+        ExpertProfile(
+            orcidId = orcid,
+            email = null,
+            givenNames = null,
+            familyNames = null,
+            country = null,
+            keyword = null,
+            employment = null,
+            tags = tags
+        )
+
+    private fun orcidOf(id: Long): String = "0000-0000-0000-%04d".format(id)
+
+    /** mockMvc 响应按 UTF-8 读取（MockHttpServletResponse 默认 ISO-8859-1 会把中文/é 变乱码）。 */
+    private fun utf8Body(result: MvcResult): String =
+        String(result.response.contentAsByteArray, StandardCharsets.UTF_8)
+
+    /**
+     * Mockito 对 Kotlin 非空参数不能直接返回 null 的匹配器（any()/capture() 会触发
+     * 非空校验 NPE）；anyLevel() 注册 any(Class) 匹配器后返回非空哨兵 RAW。
+     */
+    private fun anyLevel(): ExpertIndexLevel {
+        Mockito.any(ExpertIndexLevel::class.java)
+        return ExpertIndexLevel.RAW
+    }
+
+    /** listTagsBatch 桩：记录每次调用收到的 id 集合，默认返回空标签。 */
+    private fun stubTagBatchRecordingInto(seen: MutableList<Collection<Long>>) {
+        Mockito.`when`(inboundMailTagService.listTagsBatch(anyCollection())).thenAnswer { invocation ->
+            seen += invocation.getArgument(0) as Collection<Long>
+            emptyMap<Long, List<TagView>>()
+        }
+    }
 
     private fun ts(value: String): LocalDateTime =
         LocalDateTime.parse(value.replace(' ', 'T'))

@@ -10,6 +10,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
 import java.util.Properties
 import javax.mail.Message
 import javax.mail.Part
@@ -123,6 +125,59 @@ class ImapMailReceiveServiceTest {
         )
         assertEquals("legacy", String(attachment.content!!))
         assertNull(attachment.source)
+    }
+
+    @Test
+    fun `encoded and folded mime subjects decode at header read without content access`() {
+        // 假消息任何正文/附件内容访问都失败并计数（I-4/P3）：证明 subject 解码只发生在
+        // 已读取的 header 字符串上，不新增 getContent / 附件流访问；walkContent 原有的
+        // 一次 inputStream 正文读取尝试保持不变（被 fixture 拒绝 → 空正文，与改动前一致）。
+        val session = Session.getDefaultInstance(Properties())
+        val blocked = ContentBlockedMessage(session)
+        blocked.setFrom(InternetAddress("expert@university.edu"))
+        blocked.setHeader(
+            "Subject",
+            "=?UTF-8?Q?Re:_Remote_advisory_collaboration?=\r\n =?UTF-8?Q?_request?="
+        )
+        blocked.setHeader("Message-ID", "<blocked-content@example.com>")
+
+        val received = convert(blocked, metadataOnly = true)
+
+        assertEquals("Re: Remote advisory collaboration request", received.subject,
+            "合法 folding 的 Q 两段必须在头读取处解码成可读文本")
+        assertEquals(0, blocked.contentAccesses, "subject 解码绝不触发 getContent")
+        assertEquals(1, blocked.streamAccesses, "仅 walkContent 既有的一次 inputStream 读取尝试")
+        assertEquals("", received.body, "被拒绝的正文保持原行为（空正文，不冒充成功）")
+        assertTrue(received.attachments.isEmpty())
+    }
+
+    @Test
+    fun `non-ascii subject round trips through writeTo and decodes at header read`() {
+        val original = "Re: Remote advisory collaboration request 会议邀请"
+        val message = subjectMessage(original)
+        val received = convert(message, metadataOnly = true)
+
+        assertEquals(original, received.subject,
+            "writeTo 重解析后的 RFC2047（含 folding）subject 必须还原为原文本")
+        assertTrue(received.body.contains("Hello body"), "正文解析不受 subject 解码影响")
+        assertFalse(received.bodyTruncated)
+    }
+
+    @Test
+    fun `unknown charset subject stays raw and never blocks receiving`() {
+        val session = Session.getDefaultInstance(Properties())
+        val message = MimeMessage(session)
+        message.setFrom(InternetAddress("expert@university.edu"))
+        message.setHeader("Subject", "=?x-unknown-charset?Q?abc?=")
+        message.setHeader("Message-ID", "<unknown-charset-subject@example.com>")
+        message.setContent("Hello body", "text/plain; charset=utf-8")
+        message.saveChanges()
+
+        val received = convert(message, metadataOnly = true)
+
+        assertEquals("=?x-unknown-charset?Q?abc?=", received.subject,
+            "未知 charset 回退原串，不抛异常、不阻断收信")
+        assertEquals("Hello body", received.body)
     }
 
     @Test
@@ -321,6 +376,19 @@ class ImapMailReceiveServiceTest {
         )
     }
 
+    private fun subjectMessage(subject: String): MimeMessage {
+        val session = Session.getDefaultInstance(Properties())
+        val message = MimeMessage(session)
+        message.setFrom(InternetAddress("expert@university.edu"))
+        message.subject = subject
+        message.setHeader("Message-ID", "<subject-fixture@example.com>")
+        val multipart = MimeMultipart("mixed")
+        multipart.addBodyPart(MimeBodyPart().apply { setText("Hello body") })
+        message.setContent(multipart)
+        message.saveChanges()
+        return roundTrip(message)
+    }
+
     private fun roundTrip(message: MimeMessage): MimeMessage {
         val buf = ByteArrayOutputStream()
         message.writeTo(buf)
@@ -395,5 +463,27 @@ class ImapMailReceiveServiceTest {
         message.setContent(multipart)
         message.saveChanges()
         return message
+    }
+}
+
+/**
+ * 仅头可读的假消息（I-4/P3）：任何正文/附件内容访问（getContent / 附件 inputStream）
+ * 都抛 IOException 并计数。subject 解码只允许操作已读到的 header 字符串；若实现
+ * 顺手触发内容访问，计数断言立即失败。
+ */
+private class ContentBlockedMessage(session: Session) : MimeMessage(session) {
+    var contentAccesses = 0
+        private set
+    var streamAccesses = 0
+        private set
+
+    override fun getContent(): Any {
+        contentAccesses++
+        throw IOException("content access blocked by fixture")
+    }
+
+    override fun getInputStream(): InputStream {
+        streamAccesses++
+        throw IOException("stream access blocked by fixture")
     }
 }

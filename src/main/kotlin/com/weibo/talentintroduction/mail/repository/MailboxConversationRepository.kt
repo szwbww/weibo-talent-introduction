@@ -39,7 +39,9 @@ class MailboxConversationRepository(
         val startTime: LocalDateTime? = null,
         val endTime: LocalDateTime? = null,
         val subject: String? = null,
-        val label: String? = null
+        val label: String? = null,
+        val recipientEmail: String? = null,
+        val keyword: String? = null
     )
 
     data class ConversationSummarySqlRow(
@@ -166,7 +168,7 @@ class MailboxConversationRepository(
              WHERE ${expertPredicates(username, filter, eligibility)}
              GROUP BY u.expert_contact_id, ec.expert_name, ec.expert_email, ec.orcid_id
              ${havingClause(filter)}
-             ORDER BY latest_event_at DESC, u.expert_contact_id DESC
+             ORDER BY ${orderByClause(filter)}
              LIMIT :size OFFSET :offset
         """.trimIndent()
         val p = params(username, filter)
@@ -178,6 +180,7 @@ class MailboxConversationRepository(
     /**
      * EXPLAIN 诊断（只读、不执行主查询）：供 mysqlIt 集成测试对同一份 SQL 做计划
      * 健全性检查（G-1）。MySQL 支持 EXPLAIN 预编译语句，命名参数原样绑定。
+     * 与 [pageConversations] 共用 [orderByClause]，保证诊断 SQL 与执行 SQL 的排序不漂移。
      */
     fun explainConversationsPage(
         username: String,
@@ -206,13 +209,37 @@ class MailboxConversationRepository(
              WHERE ${expertPredicates(username, filter, eligibility)}
              GROUP BY u.expert_contact_id, ec.expert_name, ec.expert_email, ec.orcid_id
              ${havingClause(filter)}
-             ORDER BY latest_event_at DESC, u.expert_contact_id DESC
+             ORDER BY ${orderByClause(filter)}
              LIMIT :size OFFSET :offset
         """.trimIndent()
         val p = params(username, filter)
         p.addValue("size", size)
         p.addValue("offset", offset)
         return jdbcTemplate.queryForList("EXPLAIN $sql", p)
+    }
+
+    /**
+     * 分页前排序的唯一私有 order 片段（I-1），page 与 explain 共用。
+     *
+     * 排序键：`latest_reply_at = MAX(CASE WHEN u.source = 'INBOUND_PROCESSING' THEN u.event_at END)`
+     * （纯本地 SQL 投影，无表字段、无新响应字段）。"全部" 视图（非关注/待处理/旧 waitingReply）：
+     * 待处理>0 在前 → 最近来信为 NULL（无来信，仅有发件）置底 → 最近来信倒序 → contactId DESC 稳定。
+     * 关注/待处理/旧 waitingReply 省略 pending 首项（只按最近来信倒序 + 稳定 id）。
+     * 聚合先 GROUP BY 再排序 LIMIT；count 不受排序影响。
+     */
+    private fun orderByClause(filter: ConversationFilter): String {
+        val latestReply = "MAX(CASE WHEN u.source = 'INBOUND_PROCESSING' THEN u.event_at END)"
+        val plainOrder = listOf(
+            "CASE WHEN $latestReply IS NULL THEN 1 ELSE 0 END ASC",
+            "$latestReply DESC",
+            "u.expert_contact_id DESC"
+        )
+        val pendingFirst = if (filter.followed || filter.pendingOnly || filter.waitingReply) {
+            emptyList()
+        } else {
+            listOf("CASE WHEN SUM(u.pending_flag) > 0 THEN 0 ELSE 1 END ASC")
+        }
+        return (pendingFirst + plainOrder).joinToString(", ")
     }
 
     // ------------------------------------------------------------------
@@ -480,7 +507,9 @@ class MailboxConversationRepository(
             filter.startTime != null ||
             filter.endTime != null ||
             filter.subject != null ||
-            filter.label != null
+            filter.label != null ||
+            filter.recipientEmail != null ||
+            filter.keyword != null
         if (!hasMessageFilter) {
             return MembershipEligibility(impossible = false, outboundClause = null, inboundClause = null)
         }
@@ -490,6 +519,11 @@ class MailboxConversationRepository(
         }
         val outboundEligible = filter.label == null && filter.direction != DIRECTION_INBOUND
         val inboundEligible = filter.direction != DIRECTION_OUTBOUND
+        // 关键词只出现在消息 EXISTS 内（subject OR cleaned_body OR body；NULL 列照 SQL 空值
+        // 处理）；summary SELECT 永不取回正文。邮箱语义沿旧 mailbox 口径：出站匹配
+        // expert_contact.expert_email（本专家所有出站共享的联系人邮箱，在出站 EXISTS 内恒等），
+        // 入站匹配 inbound_mail_processing.from_email（别名）。recipientEmail/keyword 与
+        // 方向/日期/主题/label 全部 AND 在**同一封消息**的 EXISTS 内（I-2/X3）。
         val outboundClause = if (outboundEligible) {
             """
             EXISTS (
@@ -501,6 +535,11 @@ class MailboxConversationRepository(
                    AND (:startTime IS NULL OR COALESCE(mro.sent_at, mro.created_at) >= :startTime)
                    AND (:endTime IS NULL OR COALESCE(mro.sent_at, mro.created_at) < :endTime)
                    AND (:subject IS NULL OR mro.subject LIKE CONCAT('%', :subject, '%'))
+                   AND (:recipientEmail IS NULL OR ec.expert_email LIKE CONCAT('%', :recipientEmail, '%'))
+                   AND (:keyword IS NULL
+                        OR mro.subject LIKE CONCAT('%', :keyword, '%')
+                        OR mro.cleaned_body LIKE CONCAT('%', :keyword, '%')
+                        OR mro.body LIKE CONCAT('%', :keyword, '%'))
             )
             """.trimIndent()
         } else null
@@ -514,6 +553,11 @@ class MailboxConversationRepository(
                    AND (:startTime IS NULL OR impi.received_at >= :startTime)
                    AND (:endTime IS NULL OR impi.received_at < :endTime)
                    AND (:subject IS NULL OR impi.subject LIKE CONCAT('%', :subject, '%'))
+                   AND (:recipientEmail IS NULL OR impi.from_email LIKE CONCAT('%', :recipientEmail, '%'))
+                   AND (:keyword IS NULL
+                        OR impi.subject LIKE CONCAT('%', :keyword, '%')
+                        OR impi.cleaned_body LIKE CONCAT('%', :keyword, '%')
+                        OR impi.body LIKE CONCAT('%', :keyword, '%'))
                    AND (:label IS NULL OR EXISTS (
                          SELECT 1 FROM inbound_mail_tag imt
                           WHERE imt.inbound_processing_id = impi.id
@@ -532,6 +576,8 @@ class MailboxConversationRepository(
      * WHERE 片段：q（真实 expert_contact 姓名/邮箱）+ followed 过滤 + 消息级 membership。
      * membership 为单消息合取语义：方向/日期/主题/标签须被同一封消息满足；label 只
      * join 其对应来源（inbound_mail_tag → processing），绝不因多标签产生重复行。
+     * outbound/inbound 两个方向 EXISTS 是 OR 互补组：组外加整层括号后再与 q/followed
+     * AND（X1），否则 SQL 优先级会让单个方向 EXISTS 绕过 q/followed。
      */
     private fun expertPredicates(username: String, filter: ConversationFilter, eligibility: MembershipEligibility): String {
         val clauses = mutableListOf<String>()
@@ -548,7 +594,7 @@ class MailboxConversationRepository(
         """.trimIndent()
         val membershipClauses = listOfNotNull(eligibility.outboundClause, eligibility.inboundClause)
         if (membershipClauses.isNotEmpty()) {
-            clauses += membershipClauses.joinToString("\n OR ")
+            clauses += "(\n${membershipClauses.joinToString("\n      OR ")}\n      )"
         }
         return clauses.joinToString("\n   AND ")
     }
@@ -577,6 +623,8 @@ class MailboxConversationRepository(
             .addValue("endTime", filter.endTime)
             .addValue("subject", filter.subject?.takeIf { it.isNotBlank() })
             .addValue("label", filter.label?.takeIf { it.isNotBlank() })
+            .addValue("recipientEmail", filter.recipientEmail?.takeIf { it.isNotBlank() })
+            .addValue("keyword", filter.keyword?.takeIf { it.isNotBlank() })
 
     private fun ResultSet.toSummaryRow(): ConversationSummarySqlRow =
         ConversationSummarySqlRow(

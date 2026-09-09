@@ -333,7 +333,10 @@ class ImapMailReceiveService(
 
     private fun fetchEnvelopeHeaders(message: Message): EnvelopeHeaders =
         EnvelopeHeaders(
-            subject = message.getHeader("Subject")?.firstOrNull(),
+            // I-4：MIME 主题在头读取处解码（新收信唯一行为差异）。解码只操作已读到的
+            // header 字符串，绝不触发 getContent/附件流访问；未知 charset/损坏输入由
+            // MailSubjectDecoder 回退原串，不阻断收信。
+            subject = MailSubjectDecoder.decode(message.getHeader("Subject")?.firstOrNull()),
             from = message.getHeader("From")?.firstOrNull(),
             messageId = message.getHeader("Message-ID")?.firstOrNull(),
             inReplyTo = message.getHeader("In-Reply-To")?.firstOrNull()

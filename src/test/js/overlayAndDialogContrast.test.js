@@ -19,7 +19,7 @@ const indexPath = path.join(root, "index.html");
 const styles = fs.readFileSync(stylesPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260907-material-chat";
+const CACHE_KEY = "20260909-mailbox-refinement";
 
 function stripWs(text) {
     return text.replace(/\s+/g, " ").trim();

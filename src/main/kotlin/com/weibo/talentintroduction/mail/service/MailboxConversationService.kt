@@ -1,7 +1,11 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.document.service.ExpertMaterialService
+import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
+import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.controller.ConversationItemResponse
 import com.weibo.talentintroduction.mail.controller.ConversationLatestInboundItem
 import com.weibo.talentintroduction.mail.controller.ConversationLatestMessageItem
@@ -11,7 +15,9 @@ import com.weibo.talentintroduction.mail.controller.ConversationMessageListRespo
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository.ConversationFilter
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository.ConversationKeyset
+import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository.ConversationSummarySqlRow
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -24,14 +30,22 @@ import java.util.Base64
  * summary/timeline 全部来自 MySQL 归一化 UNION（I-1/I-4），仅当前专家 timeline
  * 才加载正文与附件元数据；附件元数据复用 06 的精确来源解析
  * （[ExpertMaterialService.resolveMessageAttachments]，与详情附件列表同一口径）。
+ *
+ * fast-p 01 追加：timeline 当前窗口邮件标签一次批量读取（I-3，复用
+ * [InboundMailTagService.listTagsBatch]，仅真实 INBOUND_PROCESSING id）；summary 本页
+ * 专家标签按 (level, orcidId) 批量投影（I-6，复用 [ExpertSearchService.searchByOrcidIds]，
+ * 只读 ES 画像，不触发发现/补全/晋级）；主题 MIME 解码统一走 [MailSubjectDecoder]（I-4）。
  */
 @Service
 class MailboxConversationService(
     private val repository: MailboxConversationRepository,
     private val senderAccountRepository: MailSenderAccountRepository,
     private val expertContactRepository: ExpertContactRepository,
-    private val expertMaterialService: ExpertMaterialService
+    private val expertMaterialService: ExpertMaterialService,
+    private val inboundMailTagService: InboundMailTagService,
+    private val expertSearchService: ExpertSearchService
 ) {
+    private val log = LoggerFactory.getLogger(MailboxConversationService::class.java)
     companion object {
         const val DEFAULT_PAGE_SIZE = 20
         const val MAX_PAGE_SIZE = 100
@@ -39,6 +53,9 @@ class MailboxConversationService(
         const val MAX_MESSAGE_LIMIT = 100
         const val MAX_TEXT_FILTER_LENGTH = 255
         const val FIRST_ATTACHMENT_NAME_LIMIT = 3
+
+        /** 专家层级白名单：只在合法层级查询 ES 画像（I-6，禁止跨层猜测回退）。 */
+        private val LEVEL_NAMES = ExpertIndexLevel.values().map { it.name }.toSet()
 
         private val ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME
         private val DATE = DateTimeFormatter.ISO_LOCAL_DATE
@@ -66,6 +83,8 @@ class MailboxConversationService(
         endDate: LocalDate?,
         subject: String?,
         label: String?,
+        recipientEmail: String?,
+        keyword: String?,
         page: Int,
         size: Int
     ): ConversationListResponse {
@@ -73,6 +92,14 @@ class MailboxConversationService(
         validateTextFilter("q", q)
         validateTextFilter("subject", subject)
         validateTextFilter("label", label)
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw IllegalArgumentException("startDate 不能晚于 endDate")
+        }
+        // 新筛选：trim 空白后为空 → null；长度校验在 trim 之后（超长 400）。
+        val recipientEmailFilter = recipientEmail?.trim()?.takeIf { it.isNotEmpty() }
+        val keywordFilter = keyword?.trim()?.takeIf { it.isNotEmpty() }
+        validateTextFilter("recipientEmail", recipientEmailFilter)
+        validateTextFilter("keyword", keywordFilter)
         val activeCodes = activeAccountCodes()
         if (activeCodes.isEmpty() || (accountCode != null && accountCode !in activeCodes)) {
             return ConversationListResponse(emptyList(), 0, page.coerceAtLeast(0), size.coerceIn(1, MAX_PAGE_SIZE))
@@ -90,7 +117,9 @@ class MailboxConversationService(
             startTime = startDate?.atStartOfDay(),
             endTime = endDate?.plusDays(1)?.atStartOfDay(),
             subject = subject,
-            label = label
+            label = label,
+            recipientEmail = recipientEmailFilter,
+            keyword = keywordFilter
         )
         val sessionUser = username.orEmpty()
         val total = repository.countConversations(sessionUser, filter)
@@ -107,6 +136,7 @@ class MailboxConversationService(
         val latestInbounds = repository.latestInboundByContacts(contactIds, activeCodes, accountCode)
         val accountCodesByContact = repository.accountCodesByContacts(contactIds, activeCodes, accountCode)
         val materialCounts = repository.materialCountByContacts(contactIds)
+        val expertTagsByContact = currentPageExpertTags(rows)
 
         val items = rows.map { row ->
             ConversationItemResponse(
@@ -129,7 +159,8 @@ class MailboxConversationService(
                         source = m.source,
                         id = m.id,
                         direction = m.direction,
-                        subject = m.subject,
+                        // 读兼容解码：历史行可能是编码 subject（旧库不 UPDATE，I-4）。
+                        subject = MailSubjectDecoder.decode(m.subject),
                         preview = m.preview,
                         time = m.eventAt.format(ISO),
                         sendStatus = m.sendStatus
@@ -143,7 +174,8 @@ class MailboxConversationService(
                         receivedAt = i.receivedAt.format(ISO)
                     )
                 },
-                materialCount = materialCounts[row.expertContactId] ?: 0L
+                materialCount = materialCounts[row.expertContactId] ?: 0L,
+                expertTags = expertTagsByContact[row.expertContactId]
             )
         }
         return ConversationListResponse(items, total, pageIndex, pageSize)
@@ -170,6 +202,18 @@ class MailboxConversationService(
         val filter = ConversationFilter(accountCodes = activeCodes, accountCode = accountCode)
         val page = repository.timelineMessages(contactId, filter, before, pageLimit)
 
+        // I-3：只把当前窗口的真实 INBOUND_PROCESSING id 交出去批量读一次标签；窗口内
+        // 无来信（纯 OUTBOUND / 更早页）不发请求。绝不用 source_inbound_id / 数值巧合
+        // 给 OUTBOUND 行映射标签。
+        val processingIds = page.rows
+            .filter { it.source == MailboxConversationRepository.SOURCE_INBOUND_PROCESSING }
+            .map { it.id }
+        val tagsByProcessingId = if (processingIds.isEmpty()) {
+            emptyMap()
+        } else {
+            inboundMailTagService.listTagsBatch(processingIds)
+        }
+
         // 行按 DESC（新→旧）返回；正序呈现最新窗口。
         val items = page.rows.asReversed().map { row ->
             val attachments = expertMaterialService.resolveMessageAttachments(row.source, row.id)
@@ -179,7 +223,9 @@ class MailboxConversationService(
                 contactId = row.expertContactId,
                 direction = row.direction,
                 accountCode = row.accountCode,
-                subject = row.subject,
+                // 读兼容解码：历史行可能是编码 subject（旧库不 UPDATE，I-4）；新收信已在
+                // 头读取时解码落库，普通文本二次解码是幂等 no-op。
+                subject = MailSubjectDecoder.decode(row.subject),
                 body = row.body,
                 cleanedBody = row.cleanedBody,
                 eventAt = row.eventAt.format(ISO),
@@ -188,7 +234,12 @@ class MailboxConversationService(
                 attachmentCount = attachments.size,
                 firstAttachmentNames = attachments.take(FIRST_ATTACHMENT_NAME_LIMIT).mapNotNull { it.fileName },
                 messageId = row.messageId,
-                inReplyTo = row.inReplyTo
+                inReplyTo = row.inReplyTo,
+                tags = if (row.source == MailboxConversationRepository.SOURCE_INBOUND_PROCESSING) {
+                    tagsByProcessingId[row.id].orEmpty()
+                } else {
+                    emptyList()
+                }
             )
         }
         val nextBefore = if (page.hasMore) {
@@ -203,6 +254,76 @@ class MailboxConversationService(
             } else null
         } else null
         return ConversationMessageListResponse(items, nextBefore, page.hasMore)
+    }
+
+    // ------------------------------------------------------------------
+    // 本页专家标签投影（I-6/X8）
+    // ------------------------------------------------------------------
+
+    /**
+     * 当前 SQL 页的专家标签：contactId → 标签列表或 null。
+     *
+     * - null = 未取得有效画像结果（本页无该 contact / 无 ORCID / 层级非法 / 画像缺失 /
+     *   该层 ES 查询异常）——绝不伪称 []，绝不跨层猜测；[] = 画像已读取且无标签。
+     * - 只对当前页 id 调一次 findAllById（不查全库、不逐人 findByOrcidId）；按层级分组后
+     *   每层至多一次 searchByOrcidIds（全页 ≤3 次）；页为空/无合法 (level, orcid) 零调用。
+     * - 结果按 (level, orcidId) 回填原 SQL 行序（绝不用 ES 返回顺序替代 SQL 顺序）；
+     *   tags trim/去空/去重并保持 ES 顺序，服务端不截断。只读 ES 画像（复用既有
+     *   _source 投影），不触发发现/补全/晋级；某层异常仅该层降级为 null，不影响其它层、
+     *   SQL 排序、分页与整页响应。
+     */
+    private fun currentPageExpertTags(rows: List<ConversationSummarySqlRow>): Map<Long, List<String>?> {
+        if (rows.isEmpty()) return emptyMap()
+        val contacts = expertContactRepository.findAllById(rows.map { it.expertContactId })
+            .associateBy { requireNotNull(it.id) }
+        val profilesByLevelAndOrcid = mutableMapOf<Pair<String, String>, ExpertProfile>()
+        for ((levelName, orcidIds) in levelOrcidIdsOf(contacts)) {
+            try {
+                val level = ExpertIndexLevel.valueOf(levelName)
+                for (profile in expertSearchService.searchByOrcidIds(orcidIds, level)) {
+                    if (profile.orcidId.isNotBlank()) {
+                        profilesByLevelAndOrcid[levelName to profile.orcidId] = profile
+                    }
+                }
+            } catch (e: Exception) {
+                log.warn(
+                    "Expert tag lookup failed for level {} ({} orcidIds); expertTags=null for this level",
+                    levelName, orcidIds.size, e
+                )
+            }
+        }
+        return rows.associate { row ->
+            val contact = contacts[row.expertContactId]
+            val tags = when {
+                contact == null -> null
+                contact.currentIndexLevel !in LEVEL_NAMES -> null
+                contact.orcidId.isBlank() -> null
+                else -> {
+                    val profile = profilesByLevelAndOrcid[contact.currentIndexLevel to contact.orcidId]
+                    if (profile == null) {
+                        null
+                    } else {
+                        profile.tags
+                            ?.map { it.trim() }
+                            ?.filter { it.isNotEmpty() }
+                            ?.distinct()
+                            ?: emptyList()
+                    }
+                }
+            }
+            row.expertContactId to tags
+        }
+    }
+
+    /** 按合法层级分组去重本页 ORCID（空白或非法层级不进入任何 ES 查询）。 */
+    private fun levelOrcidIdsOf(contacts: Map<Long, ExpertContact>): Map<String, List<String>> {
+        val grouped = mutableMapOf<String, MutableList<String>>()
+        for (contact in contacts.values) {
+            if (contact.currentIndexLevel in LEVEL_NAMES && contact.orcidId.isNotBlank()) {
+                grouped.getOrPut(contact.currentIndexLevel) { mutableListOf() }.add(contact.orcidId)
+            }
+        }
+        return grouped.mapValues { (_, orcids) -> orcids.distinct() }
     }
 
     // ------------------------------------------------------------------

@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.auth.config.AuthSessionKeys
 import com.weibo.talentintroduction.common.controller.ApiErrorResponse
 import com.weibo.talentintroduction.mail.service.ExpertFollowService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
+import com.weibo.talentintroduction.mail.service.TagView
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
@@ -40,6 +41,9 @@ data class ConversationLatestInboundItem(
  * 会话 summary 项：只含聚合口径与最新消息投影，绝不携带全量正文；
  * latestInbound.processingId 是真实 inbound_mail_processing.id（供可信工作台），
  * 绝不从 mail_record 推算。
+ * expertTags：本页该专家的 ES 画像标签（I-6）。null = 未取得有效画像结果
+ * （无 ORCID/层级非法/画像缺失/该层 ES 查询异常，前端不得显示为空）；[] = 画像已读取
+ * 且确实没有标签。与消息 timeline.tags（邮件标签）完全分离。
  */
 data class ConversationItemResponse(
     val contactId: Long,
@@ -57,7 +61,8 @@ data class ConversationItemResponse(
     val waitingReply: Boolean,
     val latestMessage: ConversationLatestMessageItem?,
     val latestInbound: ConversationLatestInboundItem?,
-    val materialCount: Long
+    val materialCount: Long,
+    val expertTags: List<String>? = null
 )
 
 data class ConversationListResponse(
@@ -82,7 +87,13 @@ data class ConversationMessageItemResponse(
     val attachmentCount: Int,
     val firstAttachmentNames: List<String>,
     val messageId: String?,
-    val inReplyTo: String?
+    val inReplyTo: String?,
+    /**
+     * 当前窗口真实邮件标签（I-3）：只有 INBOUND_PROCESSING 消息填充（[TagView] 直出，
+     * child 02 不再逐封请求 /thread）；OUTBOUND 恒为空数组——绝不按 source_inbound_id
+     * 或数值巧合映射。
+     */
+    val tags: List<TagView> = emptyList()
 )
 
 data class ConversationMessageListResponse(
@@ -118,7 +129,9 @@ class MailboxConversationController(
         @RequestParam(required = false) startDate: String?,
         @RequestParam(required = false) endDate: String?,
         @RequestParam(required = false) subject: String?,
-        @RequestParam(required = false) label: String?
+        @RequestParam(required = false) label: String?,
+        @RequestParam(required = false) recipientEmail: String?,
+        @RequestParam(required = false) keyword: String?
     ): ConversationListResponse = conversationService.listConversations(
         username = sessionUsername(request),
         q = q,
@@ -131,6 +144,8 @@ class MailboxConversationController(
         endDate = conversationService.parseDate(endDate, "endDate"),
         subject = subject,
         label = label,
+        recipientEmail = recipientEmail,
+        keyword = keyword,
         page = page,
         size = size
     )

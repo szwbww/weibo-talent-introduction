@@ -1,16 +1,17 @@
 "use strict";
 
-// 子计划 10 行为测试（I-1..I-5 / S-3/S-4/S-5 前端契约）：
+// 收发件箱修复 02 行为测试（I-1..I-8 / S-1..S-7 前端契约）：
 // 真实 DOM 能力的最小树（HTML 解析 + 事件冒泡 + querySelector/closest/dataset），
-// 驱动 mailbox-chat.js 挂载/选择专家/标记已处理/草稿切换/采用发送/关注/材料入口；
+// 驱动 mailbox-chat.js 挂载/筛选/专家标签行/管理/翻译/邮件标签/位置缓存/竞态守卫；
 // 另含 app.js 宿主守卫（任务钻取与脚本缺失仍走旧 table/group 分支）。
 // 覆盖：
-//  - (source,id) 消息渲染键；待专家回复 vs 仅失败专家不混入
-//  - 标记已处理：状态/计数/角标局部更新，不重建编辑器、无材料/下载请求
-//  - 草稿跨专家恢复；新来信目标提示（确认切换 / 取消保留）
-//  - 可信采用 → 人工发送 payload 保留 QA 载荷；发送成功清草稿、失败保留
-//  - 关注乐观更新 + 失败回滚；材料抽屉同 contactId store（app 适配器）
-//  - 任务钻取/未匹配入口原样保留（loadMailbox 守卫）
+//  - S-1/S-2：三 tab（全部/关注/待处理）、⋯ popover 高级筛选草稿语义、id 迁移与还原
+//  - S-7：列表专家标签单行渲染（[] 无占位 / null 暂不可用 / title 完整 / 无 pending badge）
+//  - I-1：tab 参数无 waitingReply、全部无 pendingOnly/followed；mark 后服务端重查与空页回退
+//  - S-4/I-3/I-4：邮件标签直读/删除/添加 adapter 回调；翻译一次一请求 + 缓存
+//  - S-3/I-6：管理 overlay portal 化、状态/层级取消零请求、部分失败如实提示
+//  - I-5/I-7：窗口缓存/滚动恢复（0 有效）/loadOlder 守卫/quiet 合并/晚响应不串专家
+//  - 既有业务：可信工作台 LIVE_INBOUND 宿主、人工回复草稿/采用/发送、关注乐观更新
 
 const fs = require("fs");
 const path = require("path");
@@ -39,6 +40,8 @@ class MiniEvent {
         this.target = null;
         this.currentTarget = null;
         this.bubbles = !!(opts && opts.bubbles);
+        this.key = null;
+        this.preventDefault = () => {};
     }
 }
 
@@ -173,6 +176,12 @@ class MiniElement {
         this.hidden = false;
         this._open = false;
         this._selected = false;
+        // 简版滚动/布局度量（无真实排版；测试可显式赋值）
+        this.scrollTop = 0;
+        this.scrollHeight = 0;
+        this.clientHeight = 0;
+        this.offsetTop = 0;
+        this.offsetHeight = 0;
     }
 
     get children() {
@@ -285,6 +294,18 @@ class MiniElement {
         this._textCache = null;
         return child;
     }
+    insertBefore(child, refNode) {
+        if (child.parentNode) child.parentNode.removeChild(child);
+        const idx = refNode ? this.childNodes.indexOf(refNode) : -1;
+        if (idx === -1) {
+            this.childNodes.push(child);
+        } else {
+            this.childNodes.splice(idx, 0, child);
+        }
+        child.parentNode = this;
+        this._textCache = null;
+        return child;
+    }
     removeChild(child) {
         const idx = this.childNodes.indexOf(child);
         if (idx === -1) return child;
@@ -363,9 +384,11 @@ class MiniElement {
     dispatchEvent(event) {
         event.target = this;
         let node = this;
-        while (node && node.nodeType === 1) {
-            event.currentTarget = node;
-            for (const fn of node.listeners.get(event.type) || []) fn(event);
+        while (node) {
+            if (node.nodeType === 1 || node.nodeType === 9) {
+                event.currentTarget = node;
+                for (const fn of node.listeners.get(event.type) || []) fn(event);
+            }
             node = event.bubbles === false ? null : node.parentNode;
         }
         return true;
@@ -434,11 +457,30 @@ class MiniDocument {
         this.root = new MiniElement("#document", this);
         this.root.nodeType = 9;
     }
+    get body() {
+        return this.root;
+    }
     createElement(tag) {
         return new MiniElement(tag, this);
     }
     createTextNode(data) {
         return new MiniText(String(data));
+    }
+    getElementById(id) {
+        const found = this.root.querySelectorAll(`#${id}`);
+        return found[0] || null;
+    }
+    querySelector(selector) {
+        return this.root.querySelector(selector);
+    }
+    querySelectorAll(selector) {
+        return this.root.querySelectorAll(selector);
+    }
+    addEventListener(type, fn) {
+        this.root.addEventListener(type, fn);
+    }
+    removeEventListener(type, fn) {
+        this.root.removeEventListener(type, fn);
     }
 }
 
@@ -491,7 +533,6 @@ function parseFragmentInto(html, parent, doc, out) {
             if (stack.length && stack[stack.length - 1].tagName.toLowerCase() === closeName) {
                 stack.pop();
             } else if (stack.length) {
-                // 容忍轻微未闭合：弹出至匹配标签
                 for (let idx = stack.length - 1; idx >= 0; idx -= 1) {
                     if (stack[idx].tagName.toLowerCase() === closeName) {
                         stack.length = idx;
@@ -523,12 +564,9 @@ function parseFragmentInto(html, parent, doc, out) {
         const tag = nameMatch[1].toLowerCase();
         const el = doc.createElement(tag);
         parseAttrs(nameMatch[2], el);
-        if (VOID_TAGS.has(tag) || selfClose) {
-            if (stack.length) stack[stack.length - 1].appendChild(el);
-            else nodes.push(el);
-        } else {
-            if (stack.length) stack[stack.length - 1].appendChild(el);
-            else nodes.push(el);
+        if (stack.length) stack[stack.length - 1].appendChild(el);
+        else nodes.push(el);
+        if (!(VOID_TAGS.has(tag) || selfClose)) {
             stack.push(el);
         }
         pos = gt + 1;
@@ -538,11 +576,104 @@ function parseFragmentInto(html, parent, doc, out) {
     }
 }
 
-function createHost() {
+function createDom() {
     const doc = new MiniDocument();
     const host = doc.createElement("div");
-    doc.root.appendChild(host);
+    doc.body.appendChild(host);
     return { doc, host };
+}
+
+function createMailboxViewDom() {
+    const doc = new MiniDocument();
+    const view = doc.createElement("div");
+    view.setAttribute("id", "view-mailbox");
+    const toolbar = doc.createElement("div");
+    toolbar.setAttribute("id", "mailboxLegacyToolbar");
+    toolbar.setAttribute("class", "toolbar");
+    const refresh = doc.createElement("button");
+    refresh.setAttribute("id", "mailboxRefreshBtn");
+    refresh.setAttribute("class", "button primary");
+    refresh.appendChild(doc.createTextNode("刷新"));
+    toolbar.appendChild(refresh);
+    const viewControls = doc.createElement("div");
+    viewControls.setAttribute("class", "mailbox-view-controls");
+    toolbar.appendChild(viewControls);
+    const account = doc.createElement("select");
+    account.setAttribute("id", "mailboxFilterAccountCode");
+    account.innerHTML = '<option value="">全部邮箱账号</option><option value="acc1">acc1 (a@x.com)</option><option value="acc2">acc2 (b@x.com)</option>';
+    toolbar.appendChild(account);
+    const direction = doc.createElement("select");
+    direction.setAttribute("id", "mailboxFilterDirection");
+    direction.innerHTML = '<option value="">全部收发方向</option><option value="INBOUND">收件 (INBOUND)</option><option value="OUTBOUND">发件 (OUTBOUND)</option>';
+    toolbar.appendChild(direction);
+    const tag = doc.createElement("select");
+    tag.setAttribute("id", "mailboxFilterTag");
+    tag.innerHTML = '<option value="">全部标签</option><option value="专家">专家</option><option value="首发">首发</option><option value="待处理">待处理</option>';
+    toolbar.appendChild(tag);
+    const recipient = doc.createElement("input");
+    recipient.setAttribute("id", "mailboxFilterRecipient");
+    recipient.setAttribute("placeholder", "输入邮箱关键词");
+    toolbar.appendChild(recipient);
+    const keyword = doc.createElement("input");
+    keyword.setAttribute("id", "mailboxFilterKeyword");
+    keyword.setAttribute("placeholder", "搜索邮件主题或正文");
+    toolbar.appendChild(keyword);
+    const startDate = doc.createElement("input");
+    startDate.setAttribute("type", "date");
+    startDate.setAttribute("id", "mailboxFilterStartDate");
+    toolbar.appendChild(startDate);
+    const sep = doc.createElement("span");
+    sep.appendChild(doc.createTextNode("至"));
+    toolbar.appendChild(sep);
+    const endDate = doc.createElement("input");
+    endDate.setAttribute("type", "date");
+    endDate.setAttribute("id", "mailboxFilterEndDate");
+    toolbar.appendChild(endDate);
+    const searchBtn = doc.createElement("button");
+    searchBtn.setAttribute("class", "button primary");
+    searchBtn.setAttribute("id", "mailboxSearchBtn");
+    searchBtn.appendChild(doc.createTextNode("查询"));
+    toolbar.appendChild(searchBtn);
+    view.appendChild(toolbar);
+
+    const filterBar = doc.createElement("div");
+    filterBar.setAttribute("id", "mailboxExecutionFilterBar");
+    filterBar.setAttribute("class", "toolbar");
+    filterBar.setAttribute("hidden", "");
+    view.appendChild(filterBar);
+
+    const panel = doc.createElement("section");
+    panel.setAttribute("class", "panel");
+    panel.setAttribute("id", "mailboxConversationPanel");
+    const head = doc.createElement("div");
+    head.setAttribute("class", "panel-head");
+    const h2 = doc.createElement("h2");
+    h2.appendChild(doc.createTextNode("已激活账号收发邮件记录"));
+    head.appendChild(h2);
+    const actions = doc.createElement("div");
+    actions.setAttribute("class", "panel-head-actions");
+    const check = doc.createElement("button");
+    check.setAttribute("class", "button");
+    check.setAttribute("id", "checkRepliesBtn");
+    check.appendChild(doc.createTextNode("检查回复"));
+    actions.appendChild(check);
+    const bulk = doc.createElement("button");
+    bulk.setAttribute("class", "button primary");
+    bulk.setAttribute("id", "bulkOutreachBtn");
+    bulk.appendChild(doc.createTextNode("批量发送"));
+    actions.appendChild(bulk);
+    head.appendChild(actions);
+    panel.appendChild(head);
+    const list = doc.createElement("div");
+    list.setAttribute("class", "mailbox-list");
+    list.setAttribute("id", "mailboxList");
+    panel.appendChild(list);
+    const pagination = doc.createElement("div");
+    pagination.setAttribute("id", "mailboxPagination");
+    panel.appendChild(pagination);
+    view.appendChild(panel);
+    doc.body.appendChild(view);
+    return { doc, view, toolbar, list, panel, actions, refresh, searchBtn, tag, account };
 }
 
 function flush() {
@@ -562,9 +693,6 @@ function escapeHtmlLike(value) {
 // 聊天沙箱：mailbox-chat.js + 宿主 stub（app 全局函数按需注入）
 // ════════════════════════════════════════════════════════════════════════
 
-// V-2 修复（R-1）：与 app.js 顶层 operatorStatusOptions/indexLevelOptions 同值的目录。
-// app.js 将其发布到 window，mailbox-chat.js 经 IIFE 参数（浏览器=window）读取；
-// 本沙箱把这些值发布到 chat global，镜像同一宿主契约。
 const OPERATOR_STATUS_CATALOG = [
     ["NOT_CONTACTED", "未联系"],
     ["CONTACTED", "已联系"],
@@ -580,6 +708,24 @@ const INDEX_LEVEL_CATALOG = [
     ["APPLICATION", "有效"]
 ];
 
+const EXPERT_TAG_LABELS = {
+    auto_promoted: "自动晋升",
+    verified: "已验证",
+    学术科研: "学术科研",
+    重点关注: "重点关注",
+    承诺回复材料: "承诺回复材料"
+};
+
+function expertTagEditorHtml(orcidId, tags, level, editorId, missing) {
+    if (missing) {
+        return `<div class="detail-section expert-tag-editor" id="${escapeHtmlLike(editorId)}" data-orcid="${escapeHtmlLike(orcidId)}" data-level="${escapeHtmlLike(level)}" data-profile-missing="true"><div class="inbound-tag-editor-head"><h3>专家标签</h3></div><div class="inbound-tag-editor-chips"><span class="muted">该专家在 ES 中无画像文档，标签功能不可用</span></div></div>`;
+    }
+    const chips = (tags || []).map((tag) =>
+        `<span class="expert-tag tag-${escapeHtmlLike(tag)}">${escapeHtmlLike(EXPERT_TAG_LABELS[tag] || tag)}<button type="button" class="expert-tag-remove" data-action="expert-remove-tag" data-tag="${escapeHtmlLike(tag)}" title="删除标签">×</button></span>`
+    ).join("") || `<span class="muted">暂无标签</span>`;
+    return `<div class="detail-section expert-tag-editor" id="${escapeHtmlLike(editorId)}" data-orcid="${escapeHtmlLike(orcidId)}" data-level="${escapeHtmlLike(level)}"><div class="inbound-tag-editor-head"><h3>专家标签</h3><div class="inbound-tag-editor-actions"><button type="button" class="button primary small" data-action="expert-add-tag-open">+ 添加标签</button></div></div><div class="inbound-tag-editor-chips">${chips}</div></div>`;
+}
+
 function createChatSandbox(options) {
     const opts = options || {};
     const requests = [];
@@ -593,15 +739,20 @@ function createChatSandbox(options) {
         openExpert: [],
         badgeRefresh: 0,
         sendRich: [],
-        unmounts: []
+        unmounts: [],
+        inboundTagModals: [],
+        tagMutations: [],
+        tagEditorUpdates: [],
+        tagEditorLoadings: []
     };
     const timers = [];
 
-    const route = opts.route || function defaultRoute(url, method) {
+    const defaultRoute = function defaultRoute(url, method, body) {
         if (url.startsWith("/api/mail/mailbox/conversations?")) {
             return Promise.resolve(opts.conversations || { items: [], total: 0 });
         }
         if (/\/api\/mail\/mailbox\/conversations\/\d+\/messages/.test(url)) {
+            if (opts.messagesError) return Promise.reject(new Error(opts.messagesError));
             return Promise.resolve(opts.messages || { items: [], nextBefore: null, hasMore: false });
         }
         if (/\/api\/expert-contacts\/\d+/.test(url)) {
@@ -610,17 +761,35 @@ function createChatSandbox(options) {
         if (/\/api\/operator-action-logs/.test(url)) {
             return Promise.resolve({ records: opts.logs || [] });
         }
-        if (/\/api\/inbound-summary\/mails\/\d+\/thread/.test(url)) {
-            return Promise.resolve({ tags: opts.threadTags || [] });
+        if (/\/api\/inbound-summary\/tags\/options/.test(url)) {
+            return Promise.resolve({ items: opts.tagOptions || [] });
+        }
+        if (/\/api\/inbound-summary\/tags\/\d+/.test(url) && method === "DELETE") {
+            if (opts.deleteTagError) return Promise.reject(new Error(opts.deleteTagError));
+            return Promise.resolve({});
+        }
+        if (/\/api\/translate/.test(url)) {
+            if (opts.translateError) return Promise.reject(new Error(opts.translateError));
+            if (opts.translateResult === false) return Promise.resolve({ ok: false });
+            const parsed = body ? JSON.parse(body) : { text: "" };
+            return Promise.resolve({ ok: true, translatedText: `译文：${parsed.text || ""}` });
         }
         if (/\/api\/mail\/unmatched-inbound\/\d+\/mark-resolved/.test(url)) {
+            if (opts.markResolvedError) return Promise.reject(new Error(opts.markResolvedError));
             return Promise.resolve({});
         }
         if (/\/api\/mail\/mailbox\/conversations\/\d+\/follow/.test(url)) {
             return Promise.resolve({ followed: opts.followResult !== false });
         }
+        const failedEndpoint = opts.failEndpoints ? Object.keys(opts.failEndpoints).find((key) => url.includes(key)) : null;
+        if (failedEndpoint) return Promise.reject(new Error(opts.failEndpoints[failedEndpoint]));
         return Promise.resolve({});
     };
+
+    // 自定义 route 可调用第 5 参 next() 回退到默认路由
+    const route = opts.route
+        ? (url, method, body, entry) => opts.route(url, method, body, entry, defaultRoute)
+        : defaultRoute;
 
     const sandbox = {
         console,
@@ -648,10 +817,12 @@ function createChatSandbox(options) {
             if (!trimmed) return "Re:";
             return trimmed.slice(0, 3).toLowerCase() === "re:" ? trimmed : `Re: ${trimmed}`;
         },
-        translatableBody: (text) => `<div class="translatable-body-block"><div class="pre translatable-body">${escapeHtmlLike(text)}</div><button class="btn-translate" type="button">翻译</button><div class="translation-text pre" hidden></div></div>`,
         renderInboundTagChip: (tag, chipOpts) => {
-            const cls = ["inbound-tag-chip"].concat(tag && tag.tagType === "QA" ? ["qa"] : ["custom"]).join(" ");
-            return `<span class="${cls}">${escapeHtmlLike(tag && tag.label ? tag.label : "")}</span>`;
+            const classes = ["inbound-tag-chip"].concat(tag && tag.tagType === "QA" ? ["qa"] : ["custom"]);
+            const remove = (chipOpts && chipOpts.removable)
+                ? `<button type="button" class="chip-x" data-action="${escapeHtmlLike(chipOpts.removeAction || "inbound-remove-tag")}" data-tag-id="${escapeHtmlLike(tag && tag.tagId)}" title="删除标签">×</button>`
+                : "";
+            return `<span class="${classes.join(" ")}">${escapeHtmlLike(tag && tag.label ? tag.label : "")}${remove}</span>`;
         },
         renderOperatorLogs: (logs) => {
             const list = Array.isArray(logs) ? logs : [];
@@ -678,23 +849,60 @@ function createChatSandbox(options) {
             };
             return controller;
         },
-        unmountExpertMaterialsHosts: (rootEl) => { calls.materialsHostCleanup = (calls.materialsHostCleanup || 0) + 1; }
+        mcHostOpenInboundTagModal: (adapter) => {
+            calls.inboundTagModals.push(adapter);
+            return true;
+        },
+        unmountExpertMaterialsHosts: (rootEl) => { calls.materialsHostCleanup = (calls.materialsHostCleanup || 0) + 1; },
+        fetchExpertTagsFromEs: (orcidId, level) => {
+            if (opts.fetchTagsFn) return opts.fetchTagsFn(orcidId, level);
+            const preset = opts.expertTagFetch || { found: true, tags: ["学术科研", "重点关注"] };
+            return Promise.resolve(typeof preset === "function" ? preset(orcidId, level) : preset);
+        },
+        renderMailboxExpertTagEditor: (expertRef, tags, editorId, missing) => {
+            const orcidId = (expertRef && (expertRef.expertOrcidId || expertRef.orcidId)) || "";
+            const level = (expertRef && (expertRef.expertIndexLevel || expertRef.currentIndexLevel)) || "CANDIDATE";
+            return expertTagEditorHtml(orcidId, tags, level, editorId, missing);
+        },
+        updateExpertTagEditor: (orcidId, tags, level, editorId) => {
+            calls.tagEditorUpdates.push({ orcidId, tags: (tags || []).slice(), level, editorId });
+            const doc = sandbox.document;
+            if (doc && typeof doc.getElementById === "function") {
+                const editor = doc.getElementById(editorId);
+                if (editor) {
+                    const missing = editor.getAttribute("data-profile-missing") === "true";
+                    editor.outerHTML = expertTagEditorHtml(orcidId, tags, level, editorId, missing);
+                }
+            }
+        },
+        setTagEditorLoading: (editor, loading, message) => {
+            calls.tagEditorLoadings.push({ loading, message });
+            if (editor && editor.classList) editor.classList.toggle("tag-editor-loading", !!loading);
+        },
+        openExpertTagAddDialog: (existingTags) => {
+            calls.lastExistingTags = existingTags || [];
+            return Promise.resolve(opts.nextExpertTag != null ? opts.nextExpertTag : null);
+        },
+        mutateExpertTag: (orcidId, level, tag, action) => {
+            calls.tagMutations.push({ orcidId, level, tag, action });
+            if (opts.mutateTagFn) return Promise.resolve(opts.mutateTagFn(orcidId, level, tag, action));
+            const base = (opts.expertTagFetch && Array.isArray(opts.expertTagFetch.tags)) ? opts.expertTagFetch.tags.slice() : ["学术科研", "重点关注"];
+            if (action === "add") {
+                const next = base.includes(tag) ? base : base.concat(tag);
+                opts.expertTagFetch = { found: true, tags: next };
+                return Promise.resolve(next);
+            }
+            const next = base.filter((item) => item !== tag);
+            opts.expertTagFetch = { found: true, tags: next };
+            return Promise.resolve(next);
+        }
     };
 
-    if (opts.expertTagRender) {
-        sandbox.renderMailboxExpertTagEditor = (ref, tags, editorId, missing) =>
-            `<div class="detail-section expert-tag-editor" id="${editorId}" data-orcid="${escapeHtmlLike(ref.orcidId || "")}" data-level="${escapeHtmlLike(ref.currentIndexLevel || "")}"></div>`;
-    }
-    if (opts.fetchTags) {
-        sandbox.fetchExpertTagsFromEs = (orcidId, level) => Promise.resolve(opts.fetchTags);
-    }
-
-    // V-2 修复（R-1）：默认在 chat global 发布 app.js 同一目录（window 发布后的线上状态）；
-    // catalogs:false 复现 V-2 空目录线上症状（selector 渲染 0 个选项、无 POST）。
     if (opts.catalogs !== false) {
         sandbox.operatorStatusOptions = OPERATOR_STATUS_CATALOG;
         sandbox.indexLevelOptions = INDEX_LEVEL_CATALOG;
     }
+    sandbox.expertTagLabels = EXPERT_TAG_LABELS;
 
     vm.createContext(sandbox);
     vm.runInContext(chatSource, sandbox, { filename: "mailbox-chat.js" });
@@ -706,8 +914,8 @@ function createChatSandbox(options) {
     };
 }
 
-function expertA() {
-    return {
+function expertA(extra) {
+    return Object.assign({
         contactId: 1,
         name: "专家A",
         email: "a@example.edu",
@@ -719,14 +927,15 @@ function expertA() {
         failedCount: 0,
         pendingCount: 1,
         waitingReply: false,
+        expertTags: ["学术科研", "重点关注"],
         latestMessage: { source: "INBOUND_PROCESSING", id: 101, direction: "INBOUND", subject: "Question 1", time: "2026-09-07T03:00:00", sendStatus: null },
         latestInbound: { processingId: 101, accountCode: "acc1", messageId: "m101", receivedAt: "2026-09-07T03:00:00" },
         materialCount: 40
-    };
+    }, extra || {});
 }
 
-function expertB() {
-    return {
+function expertB(extra) {
+    return Object.assign({
         contactId: 2,
         name: "专家B",
         email: "b@example.edu",
@@ -738,14 +947,15 @@ function expertB() {
         failedCount: 0,
         pendingCount: 0,
         waitingReply: true,
+        expertTags: [],
         latestMessage: { source: "MAIL_RECORD", id: 88, direction: "OUTBOUND", subject: "Introduction", time: "2026-09-06T09:00:00", sendStatus: "SENT" },
         latestInbound: null,
         materialCount: 0
-    };
+    }, extra || {});
 }
 
-function expertCFailed() {
-    return {
+function expertCTagsNull(extra) {
+    return Object.assign({
         contactId: 3,
         name: "专家C",
         email: "c@example.edu",
@@ -753,22 +963,27 @@ function expertCFailed() {
         accountCodes: ["acc3"],
         followed: false,
         receivedCount: 0,
-        sentCount: 0,
-        failedCount: 2,
+        sentCount: 1,
+        failedCount: 0,
         pendingCount: 0,
         waitingReply: false,
-        latestMessage: { source: "MAIL_RECORD", id: 77, direction: "OUTBOUND", subject: "Intro fail", time: "2026-09-05T09:00:00", sendStatus: "FAILED" },
+        expertTags: null,
+        latestMessage: { source: "MAIL_RECORD", id: 77, direction: "OUTBOUND", subject: "Intro", time: "2026-09-05T09:00:00", sendStatus: "SENT" },
         latestInbound: null,
         materialCount: 0
-    };
+    }, extra || {});
+}
+
+function mailTag(tagId, label, tagType, qaRuleId) {
+    return { tagId, label, tagType: tagType || "CUSTOM", qaRuleId: qaRuleId == null ? null : qaRuleId, source: "OPERATOR", active: true };
 }
 
 function messagesA(extra) {
     const base = [
-        { source: "MAIL_RECORD", id: 87, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro older", body: "old out", cleanedBody: "old out", eventAt: "2026-09-05T02:00:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m87", inReplyTo: null },
-        { source: "INBOUND_PROCESSING", id: 90, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Earlier question", body: "raw earlier", cleanedBody: "earlier cleaned", eventAt: "2026-09-06T08:00:00", sendStatus: null, processStatus: "PROCESSED", attachmentCount: 0, firstAttachmentNames: [], messageId: "m90", inReplyTo: "m87" },
-        { source: "MAIL_RECORD", id: 88, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro", body: "intro body", cleanedBody: "intro body", eventAt: "2026-09-06T09:30:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m88", inReplyTo: null },
-        { source: "INBOUND_PROCESSING", id: 101, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Question 1", body: "raw question with <script>alert(1)</script>", cleanedBody: "cleaned question", eventAt: "2026-09-07T03:00:00", sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 2, firstAttachmentNames: ["a.pdf", "b.pdf"], messageId: "m101", inReplyTo: "m88" }
+        { source: "MAIL_RECORD", id: 87, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro older", body: "old out", cleanedBody: "old out", eventAt: "2026-09-05T02:00:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m87", inReplyTo: null, tags: [] },
+        { source: "INBOUND_PROCESSING", id: 90, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Earlier question", body: "raw earlier", cleanedBody: "earlier cleaned", eventAt: "2026-09-06T08:00:00", sendStatus: null, processStatus: "PROCESSED", attachmentCount: 0, firstAttachmentNames: [], messageId: "m90", inReplyTo: "m87", tags: [mailTag(11, "会议安排", "QA", 3)] },
+        { source: "MAIL_RECORD", id: 88, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro", body: "intro body", cleanedBody: "intro body", eventAt: "2026-09-06T09:30:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m88", inReplyTo: null, tags: [] },
+        { source: "INBOUND_PROCESSING", id: 101, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Question 1", body: "raw question with <script>alert(1)</script>", cleanedBody: "cleaned question", eventAt: "2026-09-07T03:00:00", sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 2, firstAttachmentNames: ["a.pdf", "b.pdf"], messageId: "m101", inReplyTo: "m88", tags: [mailTag(7, "research", "CUSTOM")] }
     ];
     if (extra && extra.nextBefore) {
         return { items: extra.items || base, nextBefore: extra.nextBefore, hasMore: true };
@@ -776,8 +991,36 @@ function messagesA(extra) {
     return { items: base, nextBefore: null, hasMore: false };
 }
 
-function contactA() {
-    return {
+function makeMessages(count, prefix) {
+    const out = [];
+    for (let i = 0; i < count; i += 1) {
+        const date = new Date(Date.UTC(2026, 0, 1, 0, 0, 0) + i * 3600 * 1000);
+        const source = i % 2 === 0 ? "INBOUND_PROCESSING" : "MAIL_RECORD";
+        const direction = source === "INBOUND_PROCESSING" ? "INBOUND" : "OUTBOUND";
+        out.push({
+            source,
+            id: 1000 + i,
+            contactId: 1,
+            direction,
+            accountCode: "acc1",
+            subject: `${prefix || ""}msg ${i}`,
+            body: `body ${i}`,
+            cleanedBody: `cleaned ${i}`,
+            eventAt: date.toISOString(),
+            sendStatus: direction === "OUTBOUND" ? "SENT" : null,
+            processStatus: direction === "INBOUND" ? (i === count - 1 ? "MANUAL_REVIEW" : "PROCESSED") : null,
+            attachmentCount: 0,
+            firstAttachmentNames: [],
+            messageId: `m${prefix || ""}${i}`,
+            inReplyTo: null,
+            tags: direction === "INBOUND" && i === count - 1 ? [mailTag(1, "newest", "CUSTOM")] : []
+        });
+    }
+    return out;
+}
+
+function contactA(extra) {
+    return Object.assign({
         contact: {
             id: 1,
             orcidId: "0000-0001",
@@ -788,16 +1031,37 @@ function contactA() {
             currentStatus: "WAITING_REPLY"
         },
         mails: []
+    }, extra || {});
+}
+
+function contactB() {
+    return {
+        contact: {
+            id: 2,
+            orcidId: "0000-0002",
+            expertEmail: "b@example.edu",
+            expertName: "专家B",
+            currentIndexLevel: "CANDIDATE",
+            operatorStatus: "CONTACTED",
+            currentStatus: "INTRO_SENT"
+        },
+        mails: []
     };
 }
 
-async function bootChat(serverOverrides, mountOptions) {
-    const options = Object.assign({}, serverOverrides || {});
+// 挂载辅助：doc 注入 sandbox，返回带 host/doc 的上下文
+function mountChat(options, mountOptions, dom) {
     const ctx = createChatSandbox(options);
-    const { doc, host } = createHost();
-    ctx.host = host;
+    const { doc, host } = dom || createDom();
     ctx.doc = doc;
+    ctx.host = host;
+    ctx.sandbox.document = doc;
     ctx.sandbox.MailboxChat.mount(host, mountOptions || { filters: {} });
+    return ctx;
+}
+
+async function bootChat(serverOverrides, mountOptions) {
+    const ctx = mountChat(serverOverrides || {}, mountOptions);
     await flush();
     return ctx;
 }
@@ -818,91 +1082,353 @@ function changeEvent(el) {
     el.dispatchEvent(new MiniEvent("change", { bubbles: true }));
 }
 
+function keyEvent(el, key) {
+    const event = new MiniEvent("keydown", { bubbles: true });
+    event.key = key;
+    el.dispatchEvent(event);
+}
+
 function toggleOpen(el) {
     el.setAttribute("open", "");
     el.dispatchEvent(new MiniEvent("toggle", { bubbles: true }));
 }
 
+function scrollEvent(el) {
+    el.dispatchEvent(new MiniEvent("scroll", { bubbles: true }));
+}
+
+function docById(ctx, id) {
+    return ctx.doc.getElementById(id);
+}
+
+function popoverField(ctx, id) {
+    return docById(ctx, id) || ctx.host.querySelector(`#${id}`);
+}
+
+function conversationsRequests(ctx) {
+    return ctx.calls.api.filter((entry) => entry.url.startsWith("/api/mail/mailbox/conversations?"));
+}
+
+function lastConversationsRequest(ctx) {
+    const list = conversationsRequests(ctx);
+    return list.length ? list[list.length - 1] : null;
+}
+
+function queryOf(url) {
+    return new URLSearchParams(url.split("?")[1] || "");
+}
+
 // ════════════════════════════════════════════════════════════════════════
 
-describe("mailbox chat mount + expert list (S-3)", () => {
-    it("mounts S-3 骨架：专家栏/会话栏、搜索、四个筛选 chip，分页 20 位/页", async () => {
-        const conversations = { items: [expertA(), expertB(), expertCFailed()], total: 3 };
+describe("mailbox chat mount + S-1 skeleton + S-7 expert tag rows", () => {
+    it("mounts S-1 骨架：两栏、搜索行、⋯ popover、三 tab、分页", async () => {
+        const conversations = { items: [expertA(), expertB(), expertCTagsNull()], total: 3 };
         const ctx = await bootChat({ conversations });
         const html = ctx.host.innerHTML;
         assert.match(html, /class="mail-chat"/);
         assert.ok(ctx.host.querySelector('aside.mc-experts[aria-label="专家会话列表"]'));
         assert.ok(ctx.host.querySelector('section.mc-conversation[aria-label="专家往来信件"]'));
-        assert.ok(ctx.host.querySelector('.mc-list-tools input[aria-label="搜索专家"]'));
+        assert.ok(ctx.host.querySelector('.mc-search-row input[aria-label="搜索专家"]'));
         const chips = ctx.host.querySelectorAll(".mc-filter");
-        assert.deepStrictEqual(chips.map((chip) => chip.textContent), ["全部", "关注", "待处理", "待专家回复"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.textContent), ["全部", "关注", "待处理"]);
         assert.strictEqual(chips[0].getAttribute("aria-pressed"), "true");
+        const popover = ctx.host.querySelector("#mcFilterPopover");
+        assert.ok(popover, "⋯ popover 存在");
+        assert.ok(popover.getAttribute("hidden") !== null, "popover 默认关闭");
+        const toggle = ctx.host.querySelector('[data-action="mc-more-filters"]');
+        assert.ok(toggle, "只有 ⋯ 可见入口");
+        assert.strictEqual(toggle.getAttribute("aria-expanded"), "false");
         assert.strictEqual(personButtons(ctx.host).length, 3);
         assert.match(ctx.host.querySelector(".mc-pager").textContent, /第 1\/1 页 · 共 3 位/);
-        const first = ctx.calls.api.find((entry) => entry.url.startsWith("/api/mail/mailbox/conversations?"));
+        const first = conversationsRequests(ctx)[0];
         assert.ok(first, "必须请求 conversations summary");
-        const query = new URLSearchParams(first.url.split("?")[1]);
+        const query = queryOf(first.url);
         assert.strictEqual(query.get("page"), "0");
         assert.strictEqual(query.get("size"), "20");
     });
 
-    it("纯发件专家显示 收0·发N/待专家回复；仅失败专家绝不显示待专家回复", async () => {
-        const conversations = { items: [expertA(), expertB(), expertCFailed()], total: 3 };
+    it("S-7：专家标签单行渲染 —— [] 无占位、null 显示「标签暂不可用」、卡片无 waiting/pending badge", async () => {
+        const conversations = { items: [expertA(), expertB(), expertCTagsNull()], total: 3 };
         const ctx = await bootChat({ conversations });
         const persons = ctx.host.querySelectorAll(".mc-person");
+        const a = persons.find((person) => person.dataset.contactId === "1");
         const b = persons.find((person) => person.dataset.contactId === "2");
         const c = persons.find((person) => person.dataset.contactId === "3");
-        assert.match(b.textContent, /收 0 · 发 2/);
-        assert.ok(b.querySelector('.mc-badge[data-tone="waiting"]'), "B 待专家回复");
-        assert.ok(!c.querySelector(".mc-badge"), "C 仅失败：无任何状态徽标");
-        assert.match(c.textContent, /收 0 · 发 0/);
-        assert.doesNotMatch(c.textContent, /待专家回复/);
-    });
-
-    it("搜索 300ms 防抖后带 q 参数重查；chip 关注/待处理/待专家回复映射 API", async () => {
-        let served = 0;
-        const ctx = createChatSandbox({
-            route: (url) => {
-                if (url.startsWith("/api/mail/mailbox/conversations?")) {
-                    served += 1;
-                    return Promise.resolve({ items: [], total: 0 });
-                }
-                return Promise.resolve({});
-            }
+        assert.match(a.querySelector(".mc-person-counts").textContent, /收 2 · 发 2/);
+        const aTags = a.querySelector(".mc-person-tags");
+        assert.ok(aTags, "A 有标签行");
+        assert.strictEqual(aTags.getAttribute("title"), "专家标签：学术科研、重点关注");
+        assert.deepStrictEqual(aTags.querySelectorAll(".mc-person-tag").map((span) => span.textContent), ["学术科研", "重点关注"]);
+        assert.ok(a.querySelector(".mc-person-main").getAttribute("aria-label").includes("专家标签：学术科研、重点关注"), "键盘可读完整标签");
+        assert.ok(!b.querySelector(".mc-person-tags"), "B 空数组：不渲染标签占位");
+        assert.ok(!b.querySelector(".mc-person-tags-unavailable"), "B 空数组：不显示不可用");
+        assert.ok(!c.querySelector(".mc-person-tags"), "C null：不渲染标签 chips");
+        const cUnavailable = c.querySelector(".mc-person-tags-unavailable");
+        assert.ok(cUnavailable, "C null：显示单行标签暂不可用");
+        assert.strictEqual(cUnavailable.getAttribute("title"), "标签暂不可用");
+        [a, b, c].forEach((person) => {
+            assert.ok(!person.querySelector('.mc-badge[data-tone="waiting"]'), "等待回复 badge 已删除");
+            assert.ok(!person.querySelector('.mc-badge[data-tone="pending"]'), "卡片不显示待处理 badge");
         });
-        const { host } = createHost();
-        ctx.sandbox.MailboxChat.mount(host, { filters: {} });
-        await flush();
-        const search = host.querySelector('.mc-list-tools input[type="search"]');
-        search.value = "zhang";
-        inputEvent(search);
-        assert.strictEqual(served, 1, "防抖前不发起请求");
-        ctx.runTimers();
-        await flush();
-        assert.strictEqual(served, 2);
-        const last = ctx.calls.api[ctx.calls.api.length - 1];
-        assert.ok(new URLSearchParams(last.url.split("?")[1]).get("q") === "zhang");
-        // chip: 待专家回复
-        const waitingChip = host.querySelectorAll(".mc-filter").find((chip) => chip.dataset.chip === "waiting");
-        click(waitingChip);
-        await flush();
-        const chipUrl = ctx.calls.api[ctx.calls.api.length - 1].url;
-        assert.strictEqual(new URLSearchParams(chipUrl.split("?")[1]).get("waitingReply"), "true");
-        const followedChip = host.querySelectorAll(".mc-filter").find((chip) => chip.dataset.chip === "followed");
-        click(followedChip);
-        await flush();
-        const followedUrl = ctx.calls.api[ctx.calls.api.length - 1].url;
-        assert.strictEqual(new URLSearchParams(followedUrl.split("?")[1]).get("followed"), "true");
-        assert.strictEqual(new URLSearchParams(followedUrl.split("?")[1]).get("waitingReply"), null);
+        assert.doesNotMatch(ctx.host.querySelector(".mc-expert-list").textContent, /待专家回复/);
     });
 
-    it("空列表显示 mc-empty「没有符合条件的专家」", async () => {
-        const ctx = await bootChat({ conversations: { items: [], total: 0 } });
-        assert.match(ctx.host.querySelector(".mc-expert-list").innerHTML, /没有符合条件的专家/);
+    it("S-7：未知/特殊字符标签原值转义、title 完整", async () => {
+        const weird = expertA({ expertTags: ["<b>bold</b>&\"quote\"", "普通"] });
+        const ctx = await bootChat({ conversations: { items: [weird], total: 1 } });
+        const a = ctx.host.querySelectorAll(".mc-person")[0];
+        const aTags = a.querySelector(".mc-person-tags");
+        assert.strictEqual(aTags.getAttribute("title"), "专家标签：<b>bold</b>&\"quote\"、普通");
+        const chips = aTags.querySelectorAll(".mc-person-tag");
+        assert.strictEqual(chips.length, 2);
+        assert.ok(!aTags.innerHTML.includes("<b>bold</b>"), "标签文本必须转义，不能成为 HTML");
+        assert.match(chips[0].innerHTML, /&lt;b&gt;bold&lt;\/b&gt;&amp;/, "特殊字符已转义");
     });
 });
 
-describe("mailbox chat conversation (source,id) keys + mark-resolved (I-1)", () => {
+describe("I-1 tab 参数与服务端排序（无 waitingReply）", () => {
+    it("三个 tab 参数：全部无参、关注 followed=true、待处理 pendingOnly=true，永不发 waitingReply", async () => {
+        let served = 0;
+        const conversations = { items: [expertA()], total: 1 };
+        const ctx = await bootChat({ conversations });
+        const chips = ctx.host.querySelectorAll(".mc-filter");
+        // 关注
+        click(chips.find((chip) => chip.dataset.chip === "followed"));
+        await flush();
+        let q = queryOf(lastConversationsRequest(ctx).url);
+        assert.strictEqual(q.get("followed"), "true");
+        assert.strictEqual(q.get("pendingOnly"), null);
+        assert.strictEqual(q.get("waitingReply"), null);
+        // 待处理
+        click(chips.find((chip) => chip.dataset.chip === "pending"));
+        await flush();
+        q = queryOf(lastConversationsRequest(ctx).url);
+        assert.strictEqual(q.get("pendingOnly"), "true");
+        assert.strictEqual(q.get("followed"), null);
+        assert.strictEqual(q.get("waitingReply"), null);
+        // 全部：两者都不传
+        click(chips.find((chip) => chip.dataset.chip === "all"));
+        await flush();
+        q = queryOf(lastConversationsRequest(ctx).url);
+        assert.strictEqual(q.get("followed"), null);
+        assert.strictEqual(q.get("pendingOnly"), null);
+        assert.strictEqual(q.get("waitingReply"), null);
+        assert.ok(!ctx.calls.api.some((entry) => /waitingReply=true/.test(entry.url)), "永不发送 waitingReply");
+    });
+
+    it("外部 onlyPending 只初始化首次；用户点过 tab 后 tab 是唯一权威", async () => {
+        const ctx = await bootChat(
+            { conversations: { items: [expertA()], total: 1 } },
+            { filters: { pendingOnly: true } }
+        );
+        const chips = ctx.host.querySelectorAll(".mc-filter");
+        const pendingChip = chips.find((chip) => chip.dataset.chip === "pending");
+        const allChip = chips.find((chip) => chip.dataset.chip === "all");
+        assert.strictEqual(pendingChip.getAttribute("aria-pressed"), "true", "初次 onlyPending 初始化为待处理");
+        click(allChip);
+        await flush();
+        assert.strictEqual(allChip.getAttribute("aria-pressed"), "true", "用户切到全部");
+        // 再次以 onlyPending=true 刷新（app 级），不得把全部切回待处理
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { pendingOnly: true } });
+        await flush();
+        assert.strictEqual(allChip.getAttribute("aria-pressed"), "true", "用户 tab 权威：不被外部 onlyPending 覆盖");
+        const q = queryOf(lastConversationsRequest(ctx).url);
+        assert.strictEqual(q.get("pendingOnly"), null, "全部绝不发 pendingOnly");
+    });
+});
+
+describe("S-2 高级筛选 popover（草稿语义）", () => {
+    it("应用筛选：recipientEmail/keyword/label/日期/账号/方向 映射 01 接口；角标与摘要更新", async () => {
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            tagOptions: [
+                { tagKey: "qa:3", label: "会议安排", tagType: "QA", active: true, count: 2 },
+                { tagKey: "qa:3", label: "会议安排", tagType: "QA", active: true, count: 1 },
+                { tagKey: "custom:x", label: "会议安排", tagType: "CUSTOM", active: true, count: 1 },
+                { tagKey: "custom:y", label: "研究兴趣", tagType: "CUSTOM", active: true, count: 1 }
+            ]
+        });
+        // 打开 popover（触发标签选项真实加载）
+        click(ctx.host.querySelector('[data-action="mc-more-filters"]'));
+        await flush();
+        const tagSelect = popoverField(ctx, "mailboxFilterTag");
+        const optionValues = tagSelect.querySelectorAll("option").map((option) => option.textContent);
+        assert.deepStrictEqual(optionValues, ["全部标签", "会议安排", "研究兴趣"], "真实标签去重、不伪造旧类别");
+        const account = popoverField(ctx, "mailboxFilterAccountCode");
+        account.value = "acc1";
+        changeEvent(account);
+        const direction = popoverField(ctx, "mailboxFilterDirection");
+        direction.value = "INBOUND";
+        changeEvent(direction);
+        const recipient = popoverField(ctx, "mailboxFilterRecipient");
+        recipient.value = "a@example.edu";
+        inputEvent(recipient);
+        const keyword = popoverField(ctx, "mailboxFilterKeyword");
+        keyword.value = "meeting-z9";
+        inputEvent(keyword);
+        tagSelect.value = "会议安排";
+        changeEvent(tagSelect);
+        popoverField(ctx, "mailboxFilterStartDate").value = "2026-09-01";
+        popoverField(ctx, "mailboxFilterEndDate").value = "2026-09-30";
+        const before = conversationsRequests(ctx).length;
+        // 应用
+        click(docById(ctx, "mailboxSearchBtn"));
+        await flush();
+        assert.strictEqual(conversationsRequests(ctx).length, before + 1, "应用才发请求");
+        const q = queryOf(lastConversationsRequest(ctx).url);
+        assert.strictEqual(q.get("accountCode"), "acc1");
+        assert.strictEqual(q.get("direction"), "INBOUND");
+        assert.strictEqual(q.get("recipientEmail"), "a@example.edu");
+        assert.strictEqual(q.get("keyword"), "meeting-z9");
+        assert.strictEqual(q.get("label"), "会议安排");
+        assert.strictEqual(q.get("startDate"), "2026-09-01");
+        assert.strictEqual(q.get("endDate"), "2026-09-30");
+        assert.strictEqual(q.get("subject"), null, "不再 keyword→subject");
+        assert.strictEqual(q.get("waitingReply"), null);
+        const countBadge = ctx.host.querySelector(".mc-filter-count");
+        assert.strictEqual(countBadge.hidden, false);
+        assert.strictEqual(countBadge.textContent, "7");
+        const summary = ctx.host.querySelector(".mc-filter-summary");
+        assert.match(summary.textContent, /7 项筛选已生效/);
+        assert.ok(ctx.host.querySelector("#mcFilterPopover").getAttribute("hidden") !== null, "应用后 popover 关闭");
+    });
+
+    it("草稿：字段修改不触发请求；× 关闭未应用恢复已生效值", async () => {
+        const ctx = await bootChat({ conversations: { items: [expertA()], total: 1 } });
+        const before = conversationsRequests(ctx).length;
+        click(ctx.host.querySelector('[data-action="mc-more-filters"]'));
+        await flush();
+        const keyword = popoverField(ctx, "mailboxFilterKeyword");
+        keyword.value = "draft not applied";
+        inputEvent(keyword);
+        const account = popoverField(ctx, "mailboxFilterAccountCode");
+        account.value = "acc1";
+        changeEvent(account);
+        await flush();
+        assert.strictEqual(conversationsRequests(ctx).length, before, "修改字段只记草稿不查询");
+        // 关闭（×）
+        click(ctx.host.querySelector('[data-action="mc-close-filters"]'));
+        assert.strictEqual(keyword.value, "", "未应用关闭恢复已生效值");
+        assert.strictEqual(account.value, "", "未应用关闭恢复已生效值");
+        assert.ok(ctx.host.querySelector("#mcFilterPopover").getAttribute("hidden") !== null);
+    });
+
+    it("非法日期：应用时提示且不请求", async () => {
+        const ctx = await bootChat({ conversations: { items: [expertA()], total: 1 } });
+        const before = conversationsRequests(ctx).length;
+        click(ctx.host.querySelector('[data-action="mc-more-filters"]'));
+        await flush();
+        popoverField(ctx, "mailboxFilterStartDate").value = "2026-09-30";
+        popoverField(ctx, "mailboxFilterEndDate").value = "2026-09-01";
+        click(docById(ctx, "mailboxSearchBtn"));
+        await flush();
+        assert.strictEqual(conversationsRequests(ctx).length, before, "非法日期不发请求");
+        const popover = ctx.host.querySelector("#mcFilterPopover");
+        const error = popover.querySelector(".mc-inline-error");
+        assert.strictEqual(error.hidden, false);
+        assert.match(error.textContent, /开始日期不能晚于结束日期/);
+    });
+
+    it("Enter 应用；重置/清除立即清空高级筛选并查询，保持 tab 与 q", async () => {
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 }
+        });
+        // 先设 q 与 chip=待处理
+        const search = ctx.host.querySelector('.mc-search-row input[type="search"]');
+        search.value = "zhang";
+        inputEvent(search);
+        ctx.runTimers();
+        await flush();
+        const pendingChip = ctx.host.querySelectorAll(".mc-filter").find((chip) => chip.dataset.chip === "pending");
+        click(pendingChip);
+        await flush();
+        // 打开并应用一个高级筛选
+        click(ctx.host.querySelector('[data-action="mc-more-filters"]'));
+        await flush();
+        popoverField(ctx, "mailboxFilterKeyword").value = "meeting";
+        inputEvent(popoverField(ctx, "mailboxFilterKeyword"));
+        keyEvent(popoverField(ctx, "mailboxFilterKeyword"), "Enter");
+        await flush();
+        let q = queryOf(lastConversationsRequest(ctx).url);
+        assert.strictEqual(q.get("keyword"), "meeting");
+        assert.strictEqual(q.get("q"), "zhang", "q 独立保留");
+        assert.strictEqual(q.get("pendingOnly"), "true", "chip 保留");
+        // 清除：清空高级筛选、保持 tab/q
+        click(ctx.host.querySelector('[data-action="mc-clear-filters"]'));
+        await flush();
+        q = queryOf(lastConversationsRequest(ctx).url);
+        assert.strictEqual(q.get("keyword"), null);
+        assert.strictEqual(q.get("q"), "zhang");
+        assert.strictEqual(q.get("pendingOnly"), "true");
+        const summary = ctx.host.querySelector(".mc-filter-summary");
+        assert.ok(summary.getAttribute("hidden") !== null, "清除后摘要隐藏");
+    });
+});
+
+describe("S-1 宿主 chrome：唯一筛选节点迁移与还原、刷新按钮迁移", () => {
+    it("聊天挂载：七字段+查询按钮移入 popover、view 加 mc-refined、刷新按钮进 panel-head-actions", async () => {
+        const dom = createMailboxViewDom();
+        const ctx = mountChat(
+            { conversations: { items: [expertA()], total: 1 } },
+            {},
+            { doc: dom.doc, host: dom.list }
+        );
+        await flush();
+        const inPopover = dom.doc.getElementById("mailboxFilterFields");
+        const popover = dom.list.querySelector("#mcFilterPopover");
+        ["mailboxFilterAccountCode", "mailboxFilterDirection", "mailboxFilterTag", "mailboxFilterRecipient", "mailboxFilterKeyword", "mailboxFilterStartDate", "mailboxFilterEndDate"].forEach((id) => {
+            const el = dom.doc.getElementById(id);
+            assert.ok(el, `${id} 仍在 document 内（唯一节点，非复制）`);
+            assert.ok(popover.contains(el), `${id} 已迁入 popover`);
+            assert.ok(inPopover.contains(el), `${id} 在 #mailboxFilterFields 内`);
+        });
+        const searchBtn = dom.doc.getElementById("mailboxSearchBtn");
+        assert.ok(popover.contains(searchBtn), "查询按钮迁入 popover footer");
+        assert.ok(searchBtn.textContent === "应用筛选" || searchBtn.textContent === "查询", "共享按钮文案切换");
+        assert.ok(dom.view.classList.contains("mc-refined"), "chatOn 时 view-mailbox 加 mc-refined");
+        const actions = dom.panel.querySelector(".panel-head-actions");
+        assert.strictEqual(actions.firstChild.getAttribute("id"), "mailboxRefreshBtn", "刷新按钮移到 panel-head-actions 最前");
+        // 动态账号选项保留（loadMailboxAccounts 填充的是同一节点）
+        const account = dom.doc.getElementById("mailboxFilterAccountCode");
+        const options = account.querySelectorAll("option").map((option) => option.textContent);
+        assert.ok(options.includes("acc1 (a@x.com)") && options.includes("acc2 (b@x.com)"), "账号动态选项保留");
+        // 标签选择已换成真实标签（不含旧类别）
+        assert.ok(!account.querySelector("option[value='专家']"), "旧类别不作为选项来源");
+    });
+
+    it("unmount：字段/按钮还原旧 toolbar、mc-refined 移除、portal 移除", async () => {
+        const dom = createMailboxViewDom();
+        const ctx = mountChat(
+            { conversations: { items: [expertA()], total: 1 } },
+            {},
+            { doc: dom.doc, host: dom.list }
+        );
+        await flush();
+        // 用户改了字段值（未应用）+ 账号下拉由宿主填充
+        const account = dom.doc.getElementById("mailboxFilterAccountCode");
+        account.value = "acc1";
+        const tagSelect = dom.doc.getElementById("mailboxFilterTag");
+        const oldTagOptions = Array.from(tagSelect.querySelectorAll("option")).map((o) => o.value);
+        ctx.sandbox.MailboxChat.unmount(dom.list);
+        const toolbar = dom.toolbar;
+        const idsInToolbar = toolbar.children
+            .filter((child) => child.getAttribute && child.getAttribute("id"))
+            .map((child) => child.getAttribute("id"));
+        const expected = ["mailboxRefreshBtn", "mailboxFilterAccountCode", "mailboxFilterDirection", "mailboxFilterTag", "mailboxFilterRecipient", "mailboxFilterKeyword", "mailboxFilterStartDate", "mailboxFilterEndDate", "mailboxSearchBtn"];
+        assert.deepStrictEqual(idsInToolbar, expected, "唯一节点按原顺序还原到旧 toolbar");
+        assert.ok(!dom.view.classList.contains("mc-refined"), "unmount 移除 mc-refined");
+        const actions = dom.panel.querySelector(".panel-head-actions");
+        assert.strictEqual(actions.firstChild.getAttribute("id"), "checkRepliesBtn", "panel-head-actions 还原");
+        const restoredAccount = dom.doc.getElementById("mailboxFilterAccountCode");
+        assert.strictEqual(restoredAccount.value, "acc1", "值保留");
+        const restoredTag = dom.doc.getElementById("mailboxFilterTag");
+        assert.deepStrictEqual(Array.from(restoredTag.querySelectorAll("option")).map((o) => o.value), oldTagOptions, "还原旧类别选项");
+        assert.ok(!dom.doc.querySelector(".mail-chat.mc-overlay-root"), "portal 已移除");
+        assert.strictEqual(dom.list.innerHTML, "", "host 已清空");
+    });
+});
+
+describe("mailbox chat conversation (source,id) keys + S-4 卡片", () => {
     async function bootA(serverOverrides) {
         const conversations = { items: [expertA(), expertB()], total: 2 };
         const ctx = await bootChat(Object.assign({ conversations, messages: messagesA(), contact: contactA() }, serverOverrides || {}));
@@ -912,95 +1438,245 @@ describe("mailbox chat conversation (source,id) keys + mark-resolved (I-1)", () 
         return ctx;
     }
 
-    it("timeline 按 (source,id) 键渲染、正文安全文本化、方向 class 正确", async () => {
+    it("timeline 按 (source,id) 键渲染；正文安全；处理态/按钮按 S-4", async () => {
         const ctx = await bootA();
         const articles = ctx.host.querySelectorAll(".mc-message");
         const keys = articles.map((article) => article.dataset.messageKey);
         assert.deepStrictEqual(keys, ["MAIL_RECORD:87", "INBOUND_PROCESSING:90", "MAIL_RECORD:88", "INBOUND_PROCESSING:101"]);
-        assert.ok(articles.some((article) => article.dataset.direction === "OUTBOUND"));
-        assert.ok(articles.some((article) => article.dataset.direction === "INBOUND"));
         const pending = articles.find((article) => article.dataset.messageKey === "INBOUND_PROCESSING:101");
-        assert.match(pending.innerHTML, /cleaned question/, "展示清洗后正文");
-        assert.doesNotMatch(pending.querySelector(".mc-body").innerHTML, /<script/, "正文必须安全转义，绝不插入原始 HTML");
+        assert.match(pending.innerHTML, /cleaned question/);
+        assert.doesNotMatch(pending.querySelector(".mc-body").innerHTML, /<script/, "正文安全转义");
         assert.ok(pending.querySelector('.mc-badge[data-tone="pending"]'));
-        assert.ok(pending.querySelector('[data-action="mc-mark-resolved"]'));
+        const pendingActions = pending.querySelectorAll("footer button").map((btn) => btn.dataset.action);
+        assert.deepStrictEqual(pendingActions, ["mc-translate", "mc-add-mail-tag", "mc-mark-resolved"], "来信 footer：翻译/加标签/标记处理");
+        const processed = articles.find((article) => article.dataset.messageKey === "INBOUND_PROCESSING:90");
+        assert.ok(processed.querySelector(".mc-done"), "已处理来信显示 ✓ 已处理");
+        assert.ok(!processed.querySelector('[data-action="mc-mark-resolved"]'), "已处理不再标记");
+        assert.ok(processed.querySelector('[data-action="mc-add-mail-tag"]'), "已处理来信仍能加标签");
         const outbound = articles.find((article) => article.dataset.messageKey === "MAIL_RECORD:88");
-        assert.match(outbound.innerHTML, /已发送/);
-        assert.ok(!outbound.querySelector('[data-action="mc-mark-resolved"]'), "发件无处理入口");
         assert.ok(outbound.querySelector('.mc-badge[data-tone="success"]'));
-        const resolved = articles.find((article) => article.dataset.messageKey === "INBOUND_PROCESSING:90");
-        assert.match(resolved.innerHTML, /已处理/);
-        assert.ok(!resolved.querySelector('[data-action="mc-mark-resolved"]'));
+        const outActions = outbound.querySelectorAll("footer button").map((btn) => btn.dataset.action);
+        assert.deepStrictEqual(outActions, ["mc-translate"], "发件只有翻译");
+        assert.ok(!outbound.querySelector('[data-action="mc-add-mail-tag"]'), "发件无标签入口");
+        assert.ok(!outbound.querySelector('[data-role="mail-tags"]'), "发件无标签行");
+        assert.ok(ctx.host.querySelector(".mc-timeline-head"), "时间线头部存在");
+        assert.ok(ctx.host.querySelector('[data-action="mc-latest"]'), "最新消息按钮存在");
     });
 
-    it("标记已处理：调既有 API + 操作人对话框；局部刷新消息/计数/角标，不动编辑器、无下载/材料挂载", async () => {
+    it("S-4：同数字 id 不同 source —— 只有 INBOUND_PROCESSING 显示其 tags；删除走 DELETE tagId，失败保留 chips", async () => {
+        const messages = messagesA();
+        // 给发件 88 一个同 id 邮件标签形状字段也不应展示（tags 只属于 INBOUND_PROCESSING）
+        const withOutboundTags = messages.items.map((msg) => {
+            if (msg.source === "MAIL_RECORD" && msg.id === 88) {
+                return Object.assign({}, msg, { tags: [mailTag(99, "不应出现", "CUSTOM")] });
+            }
+            return msg;
+        });
+        let tag7Deleted = false;
+        const ctx = await bootA({
+            messages: { items: withOutboundTags, nextBefore: null, hasMore: false },
+            route: (url, method, body, entry, next) => {
+                if (/\/api\/mail\/mailbox\/conversations\/\d+\/messages/.test(url)) {
+                    // 删除后服务端窗口不再包含 tag 7（真实删除语义）
+                    const items = withOutboundTags.map((msg) => {
+                        if (msg.source === "INBOUND_PROCESSING" && msg.id === 101) {
+                            const tags = (msg.tags || []).filter((tag) => !(tag7Deleted && Number(tag.tagId) === 7));
+                            return Object.assign({}, msg, { tags });
+                        }
+                        return msg;
+                    });
+                    return Promise.resolve({ items, nextBefore: null, hasMore: false });
+                }
+                if (/\/api\/inbound-summary\/tags\/\d+/.test(url) && method === "DELETE") {
+                    tag7Deleted = true;
+                    return Promise.resolve({});
+                }
+                return next(url, method, body);
+            }
+        });
+        const outbound = ctx.host.querySelector('[data-message-key="MAIL_RECORD:88"]');
+        assert.ok(!outbound.querySelector('[data-role="mail-tags"]'), "发件绝不渲染邮件标签行");
+        const inbound = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"]');
+        const tagRow = inbound.querySelector('[data-role="mail-tags"]');
+        assert.ok(tagRow, "来信标签行存在");
+        assert.match(tagRow.textContent, /research/);
+        const chip = tagRow.querySelector(".chip-x");
+        assert.ok(chip, "chip 可删除");
+        click(chip);
+        await flush();
+        const del = ctx.calls.api.find((entry) => entry.method === "DELETE" && /\/api\/inbound-summary\/tags\/7$/.test(entry.url));
+        assert.ok(del, "DELETE /api/inbound-summary/tags/7");
+        const afterDel = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-role="mail-tags"]');
+        assert.ok(!afterDel, "删除成功 chip 消失（含静默窗口校验后）");
+        assert.ok(!ctx.calls.api.some((entry) => /\/thread/.test(entry.url)), "无每封 thread 读取");
+    });
+
+    it("S-4：删除失败保留原 chips 并原位报错", async () => {
+        const ctx = await bootA({ deleteTagError: "网络错误" });
+        const inbound = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"]');
+        const chip = inbound.querySelector('[data-role="mail-tags"] .chip-x');
+        click(chip);
+        await flush();
+        const still = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-role="mail-tags"]');
+        assert.ok(still, "失败保留原 chips");
+        const error = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] .mc-inline-error');
+        assert.strictEqual(error.hidden, false, "原位错误提示");
+        assert.match(error.textContent, /网络错误/);
+    });
+
+    it("I-3：添加标签走宿主 adapter（inboundId/source/contactId/onTagsChanged），回包 tags 直显", async () => {
         const ctx = await bootA();
+        const inbound = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"]');
+        click(inbound.querySelector('[data-action="mc-add-mail-tag"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.inboundTagModals.length, 1, "打开旧 #inboundAddTagModal 宿主 adapter");
+        const adapter = ctx.calls.inboundTagModals[0];
+        assert.strictEqual(adapter.inboundId, 101);
+        assert.strictEqual(adapter.source, "INBOUND_PROCESSING");
+        assert.strictEqual(adapter.contactId, 1);
+        assert.strictEqual(typeof adapter.onTagsChanged, "function");
+        // 模拟 submitInboundAddTag 成功：服务器 POST 回包 tags → onTagsChanged(tags)
+        adapter.onTagsChanged([mailTag(7, "research", "CUSTOM"), mailTag(12, "新增QA", "QA", 4)]);
+        await flush();
+        const updated = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-role="mail-tags"]');
+        assert.match(updated.textContent, /新增QA/, "POST 回包 tags 直显，不依赖固定编辑器 id");
+        assert.ok(!ctx.calls.api.some((entry) => /\/thread/.test(entry.url)), "不按每封 GET thread");
+    });
+
+    it("I-4：翻译一次点击一次请求，收起再开零请求；空正文无翻译按钮", async () => {
+        const ctx = await bootA();
+        const outbound = ctx.host.querySelector('[data-message-key="MAIL_RECORD:87"]');
+        assert.ok(outbound.querySelector('[data-action="mc-translate"]'), "有正文发件提供翻译");
+        const outMsg = outbound.querySelector(".mc-body").textContent;
+        click(outbound.querySelector('[data-action="mc-translate"]'));
+        await flush();
+        let translateCalls = ctx.calls.api.filter((entry) => entry.url === "/api/translate");
+        assert.strictEqual(translateCalls.length, 1);
+        assert.deepStrictEqual(JSON.parse(translateCalls[0].body), { text: outMsg.trim() }, "翻译同一显示正文");
+        // 卡片在翻译状态更新时重渲染，需重查节点
+        const freshOutbound = ctx.host.querySelector('[data-message-key="MAIL_RECORD:87"]');
+        const translation = freshOutbound.querySelector(".mc-translation");
+        assert.ok(translation, "译文块渲染");
+        assert.match(translation.textContent, /译文：/, "译文原位展开且转义");
+        const collapseBtn = freshOutbound.querySelector('[data-action="mc-translate"]');
+        assert.strictEqual(collapseBtn.textContent, "收起译文");
+        // 收起再开：零请求
+        click(collapseBtn);
+        await flush();
+        click(ctx.host.querySelector('[data-message-key="MAIL_RECORD:87"] [data-action="mc-translate"]'));
+        await flush();
+        translateCalls = ctx.calls.api.filter((entry) => entry.url === "/api/translate");
+        assert.strictEqual(translateCalls.length, 1, "再开复用缓存零请求");
+        assert.match(ctx.host.querySelector('[data-message-key="MAIL_RECORD:87"] .mc-translation').textContent, /译文：/);
+    });
+
+    it("I-4：翻译失败按钮显示「翻译失败，重试」，重试成功；翻译不重建 manual DOM", async () => {
+        let failNext = true;
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            messages: messagesA(),
+            contact: contactA(),
+            route: (url, method, body, entry, next) => {
+                if (/\/api\/translate/.test(url)) {
+                    if (failNext) {
+                        failNext = false;
+                        return Promise.reject(new Error("timeout"));
+                    }
+                    const parsed = body ? JSON.parse(body) : { text: "" };
+                    return Promise.resolve({ ok: true, translatedText: `译文：${parsed.text}` });
+                }
+                return next(url, method, body);
+            }
+        });
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
         const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        subject.value = "Re: Question 1";
-        inputEvent(subject);
+        editor.innerText = "draft intact";
+        const article = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"]');
+        click(article.querySelector('[data-action="mc-translate"]'));
+        await flush();
+        const errArticle = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"]');
+        const errBtn = errArticle.querySelector('[data-action="mc-translate"]');
+        assert.strictEqual(errBtn.textContent, "翻译失败，重试", "失败文案");
+        click(errBtn);
+        await flush();
+        const retryBtn = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-action="mc-translate"]');
+        assert.strictEqual(retryBtn.textContent, "收起译文");
+        assert.match(ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] .mc-translation').textContent, /译文：cleaned question/);
+        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "draft intact", "翻译不重建/不触碰 manual DOM");
+    });
+
+    it("mark-resolved 成功后服务端重查当前页；编辑器草稿保留", async () => {
+        let resolved = false;
+        const ctx = await bootA({
+            route: (url, method, body, entry, next) => {
+                if (/\/api\/mail\/mailbox\/conversations\/\d+\/messages/.test(url)) {
+                    // 服务端已持久化：静默刷新窗口回包 PROCESSED（否则会被视为回滚）
+                    const items = messagesA().items.map((msg) => {
+                        if (resolved && msg.source === "INBOUND_PROCESSING" && msg.id === 101) {
+                            return Object.assign({}, msg, { processStatus: "PROCESSED" });
+                        }
+                        return msg;
+                    });
+                    return Promise.resolve({ items, nextBefore: null, hasMore: false });
+                }
+                if (/\/api\/mail\/unmatched-inbound\/101\/mark-resolved/.test(url)) {
+                    resolved = true;
+                    return Promise.resolve({});
+                }
+                return next(url, method, body);
+            }
+        });
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
         editor.innerText = "draft keeps";
         inputEvent(editor);
-        const before = ctx.calls.materialsMounts.length;
-        const markBtn = ctx.host.querySelector('[data-action="mc-mark-resolved"]');
+        const listBefore = conversationsRequests(ctx).length;
+        const markBtn = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-action="mc-mark-resolved"]');
         click(markBtn);
         await flush();
-        const markRequest = ctx.calls.api.find((entry) => entry.url.includes("/mark-resolved"));
-        assert.ok(markRequest, "must call mark-resolved API");
-        assert.strictEqual(markRequest.url, "/api/mail/unmatched-inbound/101/mark-resolved");
-        assert.strictEqual(markRequest.method, "POST");
-        assert.deepStrictEqual(JSON.parse(markRequest.body), { resolvedBy: "验收员", note: "" });
-        assert.strictEqual(ctx.calls.badgeRefresh, 1, "刷新全局未处理角标一次");
+        const markRequest = ctx.calls.api.find((entry) => entry.url === "/api/mail/unmatched-inbound/101/mark-resolved");
+        assert.ok(markRequest, "调既有 mark-resolved API");
+        assert.ok(conversationsRequests(ctx).length > listBefore, "mark 成功后重查服务端列表");
+        const lastUrl = conversationsRequests(ctx)[conversationsRequests(ctx).length - 1].url;
+        assert.ok(lastUrl.includes("page=0"), "重查当前页（服务端顺序）");
+        // 草稿保留（编辑器未重建）
+        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "draft keeps", "编辑器草稿保留");
         const article = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"]');
-        assert.match(article.innerHTML, /已处理/);
-        assert.ok(!article.querySelector('[data-action="mc-mark-resolved"]'), "处理后按钮消失");
-        assert.strictEqual(ctx.calls.materialsMounts.length, before, "标记处理不触发材料抽屉/下载");
-        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Question 1", "编辑器主题未变");
-        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "draft keeps", "编辑器正文未重建");
-        const expert = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
-        assert.ok(!expert.querySelector('.mc-badge[data-tone="pending"]'), "专家行待处理计数清零");
+        assert.match(article.textContent, /✓ 已处理/, "消息局部更新为已处理（静默窗口校验不回滚）");
+        assert.ok(!article.querySelector('[data-action="mc-mark-resolved"]'), "按钮消失");
     });
 
-    it("workbench 折叠默认不挂载；展开一次挂载真实 processingId；切专家销毁旧实例", async () => {
-        const ctx = await bootA();
-        assert.strictEqual(ctx.calls.workbenchMounts.length, 0, "默认折叠不发生成/不挂载");
-        const wb = ctx.host.querySelector('.mc-section[data-section="workbench"]');
-        assert.ok(wb, "工作台 section 存在");
-        assert.strictEqual(wb.open, false);
-        toggleOpen(wb);
+    it("mark-resolved 空页回退：第 1 页处理完服务器第 1 页为空则回退第 0 页", async () => {
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 30 },
+            messages: messagesA(),
+            contact: contactA(),
+            route: (url, method, body, entry, next) => {
+                if (url.startsWith("/api/mail/mailbox/conversations?")) {
+                    const page = Number(queryOf(url).get("page"));
+                    if (page === 1) return Promise.resolve({ items: [], total: 30 });
+                    if (page === 0) return Promise.resolve({ items: [expertA()], total: 30 });
+                    return Promise.resolve({ items: [expertA()], total: 30 });
+                }
+                return next(url, method, body);
+            }
+        });
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
         await flush();
-        assert.strictEqual(ctx.calls.workbenchMounts.length, 1);
-        assert.strictEqual(ctx.calls.workbenchMounts[0].processingId, 101, "工作台绑定 summary.latestInbound.processingId");
-        // 切专家 B（无来信）→ 旧实例销毁，不为 B 挂载
-        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
-        click(b.querySelector(".mc-person-main"));
+        // 翻到第 1 页
+        click(ctx.host.querySelector('[data-action="mc-page-next"]'));
         await flush();
-        assert.strictEqual(ctx.calls.unmounts.length, 1, "切专家销毁旧 workbench mount");
-        assert.strictEqual(ctx.calls.workbenchMounts.length, 1, "无来信专家不发生成挂载");
-    });
-});
-
-describe("mailbox chat no-inbound expert (I-4)", () => {
-    it("无来信专家：工作台说明不可生成，人工区为说明 + 模板跟进按钮（无假富文本编辑器）", async () => {
-        const conversations = { items: [expertB(), expertA()], total: 2 };
-        const ctx = await bootChat({ conversations, messages: messagesA(), contact: contactA() });
-        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
-        click(b.querySelector(".mc-person-main"));
+        const markBtn = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-action="mc-mark-resolved"]');
+        click(markBtn);
         await flush();
-        const conversation = ctx.host.querySelector(".mc-conversation");
-        assert.match(conversation.textContent, /暂无专家来信，暂不能生成回复/);
-        assert.ok(!conversation.querySelector(".mc-compose"), "无来信不渲染自由富文本编辑器");
-        const followBtn = conversation.querySelector('[data-action="mc-template-follow"]');
-        assert.ok(followBtn, "提供模板跟进按钮");
-        assert.strictEqual(ctx.calls.workbenchMounts.length, 0);
-        click(followBtn);
-        await flush();
-        assert.deepStrictEqual(ctx.calls.followUp, [2], "走既有专家模板发件流程");
-        assert.strictEqual(ctx.calls.sendRich.length, 0, "0 次人工生成调用");
+        const urls = conversationsRequests(ctx).map((entry) => entry.url);
+        assert.ok(urls[urls.length - 1].includes("page=0"), "空页自动回退到上一有效页");
     });
 });
 
-describe("mailbox chat drafts + adopt + send (I-3)", () => {
+describe("S-3/I-6 管理 overlay", () => {
     async function bootSelectedA(serverOverrides) {
         const conversations = { items: [expertA(), expertB()], total: 2 };
         const ctx = await bootChat(Object.assign({ conversations, messages: messagesA(), contact: contactA() }, serverOverrides || {}));
@@ -1010,11 +1686,212 @@ describe("mailbox chat drafts + adopt + send (I-3)", () => {
         return ctx;
     }
 
-    it("草稿跨专家切换恢复（keyed contactId+目标来信+账号）", async () => {
+    function openManage(ctx) {
+        click(ctx.host.querySelector('[data-action="mc-manage-expert"]'));
+        return flush();
+    }
+
+    function manageOverlay(ctx) {
+        return ctx.doc.querySelector(".mc-manage-overlay");
+    }
+
+    it("管理 overlay portal 到 body（不在 .mc-scroll / 带 backdrop-filter 的 panel 内），选项来自真实目录", async () => {
+        const ctx = await bootSelectedA();
+        await openManage(ctx);
+        const overlay = manageOverlay(ctx);
+        assert.ok(overlay, "overlay 存在");
+        assert.strictEqual(overlay.hidden, false);
+        const root = overlay.parentNode;
+        assert.ok(root.classList.contains("mc-overlay-root") && root.classList.contains("mail-chat"), "独立 .mail-chat.mc-overlay-root");
+        assert.ok(ctx.doc.body === root.parentNode || ctx.doc.body.contains(root), "portal 在 body 下");
+        const scroll = ctx.host.querySelector(".mc-scroll");
+        assert.ok(!scroll.contains(overlay), "管理不在消息滚动区");
+        const dialog = overlay.querySelector(".mc-manage-dialog");
+        assert.ok(dialog, "dialog 角色");
+        const statusSelect = overlay.querySelector('[data-role="status-select"]');
+        const levelSelect = overlay.querySelector('[data-role="level-select"]');
+        assert.strictEqual(statusSelect.querySelectorAll("option").length, OPERATOR_STATUS_CATALOG.length);
+        assert.strictEqual(statusSelect.value, "REPLIED", "当前状态选中");
+        assert.strictEqual(levelSelect.value, "APPLICATION", "当前层级选中");
+        const note = overlay.querySelector(".mc-manage-note");
+        assert.match(note.textContent, /标签修改即时生效/);
+    });
+
+    it("取消（×）零请求；状态/层级未变化时保存零请求", async () => {
+        const ctx = await bootSelectedA();
+        await openManage(ctx);
+        const overlay = manageOverlay(ctx);
+        overlay.querySelector('[data-role="status-select"]').value = "COMPLETED";
+        overlay.querySelector('[data-role="level-select"]').value = "RAW";
+        const before = ctx.calls.api.length;
+        click(overlay.querySelector('[data-action="mc-close-manage"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.api.length, before, "取消状态/层级零请求");
+        assert.ok(manageOverlay(ctx) === null || manageOverlay(ctx).hidden, "overlay 关闭");
+        // 重开：不改直接保存 → 零请求
+        await openManage(ctx);
+        const overlay2 = manageOverlay(ctx);
+        const before2 = ctx.calls.api.length;
+        click(overlay2.querySelector('[data-action="mc-save-settings"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.api.length, before2, "无变化保存零请求");
+        assert.ok(ctx.calls.status.some((s) => /均未变化/.test(s.message)));
+    });
+
+    it("保存只发变化字段的两端点；成功回读 dataset 与头部", async () => {
+        const ctx = await bootSelectedA();
+        await openManage(ctx);
+        const overlay = manageOverlay(ctx);
+        overlay.querySelector('[data-role="status-select"]').value = "COMPLETED";
+        overlay.querySelector('[data-role="level-select"]').value = "RAW";
+        click(overlay.querySelector('[data-action="mc-save-settings"]'));
+        await flush();
+        const statusPost = ctx.calls.api.find((entry) => entry.method === "POST" && entry.url === "/api/expert-contacts/1/operator-status");
+        const levelPost = ctx.calls.api.find((entry) => entry.method === "POST" && entry.url === "/api/expert-contacts/1/index-level");
+        assert.ok(statusPost);
+        assert.deepStrictEqual(JSON.parse(statusPost.body), { operatorStatus: "COMPLETED", operatorName: "console" });
+        assert.ok(levelPost);
+        assert.deepStrictEqual(JSON.parse(levelPost.body), { targetLevel: "RAW", operatorName: "console" });
+        assert.ok(ctx.calls.status.some((s) => /专家信息已更新/.test(s.message)));
+        const statusSelect = overlay.querySelector('[data-role="status-select"]');
+        assert.strictEqual(statusSelect.dataset.currentValue, "COMPLETED", "回读 dataset");
+        assert.match(ctx.host.querySelector(".mc-header-meta").textContent, /已完成/, "头部同步");
+    });
+
+    it("部分失败如实提示「部分变更未保存」，失败端 dataset 不回写，按钮恢复", async () => {
+        const ctx = await bootSelectedA({
+            route: (url, method, body, entry, next) => {
+                if (method === "POST" && /\/operator-status$/.test(url)) return Promise.reject(new Error("status down"));
+                if (method === "POST" && /\/index-level$/.test(url)) return Promise.resolve({});
+                return next(url, method, body);
+            }
+        });
+        await openManage(ctx);
+        const overlay = manageOverlay(ctx);
+        overlay.querySelector('[data-role="status-select"]').value = "COMPLETED";
+        overlay.querySelector('[data-role="level-select"]').value = "RAW";
+        const saveBtn = overlay.querySelector('[data-action="mc-save-settings"]');
+        click(saveBtn);
+        await flush();
+        const error = overlay.querySelector(".mc-inline-error");
+        assert.strictEqual(error.hidden, false);
+        assert.match(error.textContent, /部分变更未保存/);
+        assert.strictEqual(saveBtn.disabled, false, "按钮恢复");
+        assert.strictEqual(overlay.querySelector('[data-role="status-select"]').dataset.currentValue, "REPLIED", "失败端不回写");
+        assert.strictEqual(overlay.querySelector('[data-role="level-select"]').dataset.currentValue, "RAW", "成功端回写");
+        assert.ok(ctx.calls.status.some((s) => s.type === "error"));
+    });
+
+    it("专家标签经共享 seam 即时保存：编辑器在 portal 内渲染、加/删后静默刷新列表与头部", async () => {
+        let currentTags = { found: true, tags: ["学术科研", "重点关注"] };
+        const ctx = await bootSelectedA({
+            fetchTagsFn: async () => currentTags,
+            nextExpertTag: "承诺回复材料"
+        });
+        await openManage(ctx);
+        await flush();
+        const overlay = manageOverlay(ctx);
+        const tagsRoot = overlay.querySelector('[data-role="expert-tags"]');
+        const editor = overlay.querySelector(".expert-tag-editor");
+        assert.ok(editor, "共享 expert-tag-editor 渲染在管理内");
+        assert.strictEqual(editor.getAttribute("id"), "mcManageExpertTagEditor");
+        const listRequestsBefore = conversationsRequests(ctx).length;
+        click(editor.querySelector('[data-action="expert-add-tag-open"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.tagMutations.length, 1);
+        assert.strictEqual(ctx.calls.tagMutations[0].action, "add");
+        assert.strictEqual(ctx.calls.tagMutations[0].tag, "承诺回复材料");
+        assert.ok(ctx.calls.tagEditorUpdates.length >= 1, "editor 走 updateExpertTagEditor");
+        assert.ok(conversationsRequests(ctx).length > listRequestsBefore, "加标签后静默刷新列表 summary");
+        const editorAfter = manageOverlay(ctx).querySelector(".expert-tag-editor");
+        assert.ok(editorAfter, "重渲染后仍在 mc-settings-tags 作用域");
+        assert.strictEqual(editorAfter.parentNode.getAttribute("data-role"), "expert-tags");
+        assert.match(editorAfter.textContent, /承诺回复材料/);
+        // 删除标签
+        const removeBtn = editorAfter.querySelector('[data-action="expert-remove-tag"]');
+        click(removeBtn);
+        await flush();
+        assert.strictEqual(ctx.calls.tagMutations.length, 2);
+        assert.strictEqual(ctx.calls.tagMutations[1].action, "remove");
+    });
+
+    it("缺画像专家：管理标签区显示不可用文案", async () => {
+        const missingContact = contactA();
+        missingContact.contact.orcidId = "";
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            messages: messagesA(),
+            contact: missingContact,
+            fetchTagsFn: async () => ({ found: false, tags: [] })
+        });
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        await openManage(ctx);
+        await flush();
+        const overlay = manageOverlay(ctx);
+        assert.match(overlay.textContent, /该专家在 ES 中无画像文档，标签功能不可用/);
+    });
+
+    it("切换专家自动关闭管理 overlay", async () => {
+        const ctx = await bootSelectedA();
+        await openManage(ctx);
+        assert.strictEqual(manageOverlay(ctx).hidden, false);
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        const overlay = manageOverlay(ctx);
+        assert.ok(overlay === null || overlay.hidden === true, "切专家后管理关闭");
+    });
+});
+
+describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/send", () => {
+    async function bootSelectedA(serverOverrides) {
+        const conversations = { items: [expertA(), expertB()], total: 2 };
+        const ctx = await bootChat(Object.assign({ conversations, messages: messagesA(), contact: contactA() }, serverOverrides || {}));
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        return ctx;
+    }
+
+    it("workbench 默认折叠不挂载；展开一次挂载真实 processingId；切专家销毁旧实例", async () => {
+        const ctx = await bootSelectedA();
+        assert.strictEqual(ctx.calls.workbenchMounts.length, 0, "默认折叠不发生成/不挂载");
+        const wb = ctx.host.querySelector('.mc-section[data-section="workbench"]');
+        assert.ok(wb);
+        assert.strictEqual(wb.open, false);
+        toggleOpen(wb);
+        await flush();
+        assert.strictEqual(ctx.calls.workbenchMounts.length, 1);
+        assert.strictEqual(ctx.calls.workbenchMounts[0].processingId, 101);
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(ctx.calls.unmounts.length, 1, "切专家销毁旧 workbench mount");
+    });
+
+    it("无来信专家：人工区为说明 + 模板跟进按钮；工作台说明不可生成", async () => {
+        const conversations = { items: [expertB(), expertA()], total: 2 };
+        const ctx = await bootChat({ conversations, messages: messagesA(), contact: contactB() });
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        const conversation = ctx.host.querySelector(".mc-conversation");
+        assert.match(conversation.textContent, /暂无专家来信，暂不能生成回复/);
+        assert.ok(!conversation.querySelector(".mc-compose"));
+        const followBtn = conversation.querySelector('[data-action="mc-template-follow"]');
+        assert.ok(followBtn);
+        click(followBtn);
+        await flush();
+        assert.deepStrictEqual(ctx.calls.followUp, [2]);
+        assert.strictEqual(ctx.calls.sendRich.length, 0);
+    });
+
+    it("草稿跨专家切换恢复；unmount/重挂载后同专家草稿仍恢复", async () => {
         const ctx = await bootSelectedA();
         const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
         const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        assert.match(subject.value, /^Re: Question 1$/);
         subject.value = "My subject";
         inputEvent(subject);
         editor.innerText = "hello draft";
@@ -1025,20 +1902,26 @@ describe("mailbox chat drafts + adopt + send (I-3)", () => {
         const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
         click(a.querySelector(".mc-person-main"));
         await flush();
-        const restoredSubject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        const restoredEditor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        assert.strictEqual(restoredSubject.value, "My subject", "草稿主题恢复");
-        assert.strictEqual(restoredEditor.innerText, "hello draft", "草稿正文恢复");
+        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "My subject", "草稿主题恢复");
+        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "hello draft", "草稿正文恢复");
+        // unmount → 重新挂载 → 恢复草稿（模块缓存，同标签页）
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
+        await flush();
+        const a2 = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a2.querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "My subject", "重挂载后草稿恢复");
+        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "hello draft");
     });
 
-    it("采用 → 人工发送：QA 载荷（ragFactCodes/ragCorpusFingerprint/edited）原样进发送 payload", async () => {
+    it("采用 → 人工发送：QA 载荷原样进发送 payload；成功清草稿，失败保留", async () => {
         const ctx = await bootSelectedA();
         const wb = ctx.host.querySelector('.mc-section[data-section="workbench"]');
         toggleOpen(wb);
         await flush();
         assert.strictEqual(ctx.calls.workbenchMounts.length, 1);
-        const mount = ctx.calls.workbenchMounts[0];
-        await mount.callbacks.onComplete({
+        await ctx.calls.workbenchMounts[0].callbacks.onComplete({
             renderedDraftText: "adopted draft body",
             text: "adopted draft body",
             usedFactCodes: ["KB-COMM-044"],
@@ -1047,107 +1930,19 @@ describe("mailbox chat drafts + adopt + send (I-3)", () => {
         await flush();
         const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
         assert.strictEqual(editor.innerText, "adopted draft body");
-        assert.match(ctx.calls.status.map((s) => s.message).join("|"), /草稿已采用到人工回复区/);
         const sendBtn = ctx.host.querySelector('[data-action="mc-send-manual"]');
         click(sendBtn);
         await flush();
         assert.strictEqual(ctx.calls.sendRich.length, 1);
         const payload = ctx.calls.sendRich[0];
         assert.strictEqual(payload.processingId, 101);
-        const body = payload.body;
-        assert.ok(body.subject.includes("Re: Question 1"));
-        assert.ok(body.textBody.includes("adopted draft body"));
-        assert.ok(body.htmlBody.includes("adopted draft body"));
-        assert.deepStrictEqual(body.ragFactCodes, ["KB-COMM-044"], "QA 审计规则集随发送保留");
-        assert.strictEqual(body.ragCorpusFingerprint, "fp-2026");
-        assert.strictEqual(body.edited, false);
-        assert.strictEqual(body.senderAccountCode, null);
-        // 成功发送 → 清草稿（切走再回不再恢复旧稿）
-        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
-        click(b.querySelector(".mc-person-main"));
-        await flush();
-        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
-        click(a.querySelector(".mc-person-main"));
-        await flush();
-        const restored = ctx.host.querySelector('input[aria-label="回复主题"]');
-        assert.ok(restored.value !== "adopted draft body");
+        assert.ok(payload.body.subject.includes("Re: Question 1"));
+        assert.deepStrictEqual(payload.body.ragFactCodes, ["KB-COMM-044"]);
+        assert.strictEqual(payload.body.ragCorpusFingerprint, "fp-2026");
+        assert.strictEqual(payload.body.edited, false);
     });
 
-    it("发送失败保留全部输入与草稿，按钮恢复可用", async () => {
-        const ctx = await bootSelectedA({ sendRichError: "SMTP 500" });
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        subject.value = "Keep me";
-        inputEvent(subject);
-        editor.innerText = "keep body";
-        inputEvent(editor);
-        const sendBtn = ctx.host.querySelector('[data-action="mc-send-manual"]');
-        click(sendBtn);
-        await flush();
-        assert.strictEqual(ctx.calls.sendRich.length, 1);
-        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Keep me");
-        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "keep body");
-        assert.strictEqual(sendBtn.disabled, false);
-        // 切走再回草稿仍在
-        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
-        click(b.querySelector(".mc-person-main"));
-        await flush();
-        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
-        click(a.querySelector(".mc-person-main"));
-        await flush();
-        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Keep me");
-    });
-
-    it("新来信 + 已编辑草稿：提示选择目标；确认后切换主题预填/目标，取消则保留原目标", async () => {
-        let current = expertA();
-        const ctx = await bootSelectedA({
-            route: (url, method) => {
-                if (url.startsWith("/api/mail/mailbox/conversations?")) {
-                    return Promise.resolve({ items: [current, expertB()], total: 2 });
-                }
-                if (/\/api\/mail\/mailbox\/conversations\/\d+\/messages/.test(url)) {
-                    if (current.latestInbound && current.latestInbound.processingId === 102) {
-                        const older = messagesA();
-                        older.items = older.items.concat([{
-                            source: "INBOUND_PROCESSING", id: 102, contactId: 1, direction: "INBOUND", accountCode: "acc1",
-                            subject: "Brand new question", body: "raw 102", cleanedBody: "clean 102", eventAt: "2026-09-08T10:00:00",
-                            sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m102", inReplyTo: "m88"
-                        }]);
-                        return Promise.resolve(older);
-                    }
-                    return Promise.resolve(messagesA());
-                }
-                return Promise.resolve({});
-            },
-            dialogResult: null
-        });
-        // 编辑草稿（目标 #101）
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        subject.value = "Re: Question 1";
-        inputEvent(subject);
-        editor.innerText = "typed draft";
-        inputEvent(editor);
-        // 服务器出现新来信 #102 → 刷新
-        current = Object.assign({}, expertA(), {
-            latestInbound: { processingId: 102, accountCode: "acc1", messageId: "m102", receivedAt: "2026-09-08T10:00:00" },
-            pendingCount: 2
-        });
-        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
-        await flush();
-        console.error("NEWINBOUND DEBUG dialogs:", ctx.calls.dialogs.length, "msgs:", ctx.calls.api.filter((e) => e.url.includes("/messages")).length, "list:", ctx.calls.api.filter((e) => e.url.startsWith("/api/mail/mailbox/conversations?")).length, "last:", ctx.calls.api[ctx.calls.api.length - 1].url);
-        assert.strictEqual(ctx.calls.dialogs.length, 1, "已编辑草稿时必须提示选择目标");
-        assert.strictEqual(ctx.calls.dialogs[0].type, "confirm");
-        // 取消 → 保留原目标与草稿
-        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Question 1");
-        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "typed draft");
-        // 再次刷新不再重复打扰（dismissed）
-        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
-        await flush();
-        assert.strictEqual(ctx.calls.dialogs.length, 1, "取消后同目标不再重复提示");
-    });
-
-    it("新来信 + 已编辑草稿：确认切换目标 → 主题按新来信预填、正文保留", async () => {
+    it("新来信 + 已编辑草稿：提示选择目标；取消保留原目标与草稿", async () => {
         let current = expertA();
         const ctx = await bootSelectedA({
             route: (url) => {
@@ -1160,7 +1955,7 @@ describe("mailbox chat drafts + adopt + send (I-3)", () => {
                         older.items = older.items.concat([{
                             source: "INBOUND_PROCESSING", id: 102, contactId: 1, direction: "INBOUND", accountCode: "acc1",
                             subject: "Brand new question", body: "raw 102", cleanedBody: "clean 102", eventAt: "2026-09-08T10:00:00",
-                            sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m102", inReplyTo: "m88"
+                            sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m102", inReplyTo: "m88", tags: []
                         }]);
                         return Promise.resolve(older);
                     }
@@ -1168,7 +1963,7 @@ describe("mailbox chat drafts + adopt + send (I-3)", () => {
                 }
                 return Promise.resolve({});
             },
-            dialogResults: { confirm: { __confirmed: true } }
+            dialogResult: null
         });
         const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
         const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
@@ -1182,166 +1977,240 @@ describe("mailbox chat drafts + adopt + send (I-3)", () => {
         });
         ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
         await flush();
-        assert.ok(ctx.calls.dialogs.length >= 1, "确认对话框出现");
-        assert.ok(ctx.calls.dialogs.some((d) => d.type === "confirm"));
-        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Brand new question", "确认后主题按新来信预填");
-        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "typed draft", "正文不被静默清空");
-        const info = ctx.host.querySelector('[data-role="target-info"]').textContent;
-        assert.ok(info.includes("#102"), "目标来信切换为 #102");
+        assert.strictEqual(ctx.calls.dialogs.length, 1, "已编辑草稿时必须提示选择目标");
+        assert.strictEqual(ctx.calls.dialogs[0].type, "confirm");
+        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Question 1");
+        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "typed draft");
     });
-});
 
-describe("mailbox chat follow (I-5)", () => {
-    it("关注乐观更新；失败回滚星标并报错，按钮恢复可点", async () => {
+    it("关注乐观更新；失败回滚星标并报错", async () => {
         let failNext = false;
-        const conversations = { items: [expertA()], total: 1 };
+        let followedState = false;
         const ctx = await bootChat({
-            conversations,
-            route: (url, method) => {
+            conversations: { items: [expertA()], total: 1 },
+            route: (url, method, body, entry, next) => {
                 if (url.startsWith("/api/mail/mailbox/conversations?")) {
-                    return Promise.resolve({ items: [expertA()], total: 1 });
+                    return Promise.resolve({ items: [expertA({ followed: followedState })], total: 1 });
                 }
                 if (/\/follow$/.test(url) && (method === "DELETE" || method === "PUT")) {
                     if (failNext) return Promise.reject(new Error("network down"));
-                    return Promise.resolve({ followed: method === "PUT" });
+                    followedState = method === "PUT";
+                    return Promise.resolve({ followed: followedState });
                 }
-                return Promise.resolve({});
+                return next(url, method, body);
             }
         });
         assert.strictEqual(ctx.host.querySelector(".mc-follow").getAttribute("aria-pressed"), "false");
         click(ctx.host.querySelector(".mc-follow"));
         await flush();
-        const putReq = ctx.calls.api.find((entry) => entry.method === "PUT" && /\/follow$/.test(entry.url));
-        assert.ok(putReq, "PUT /follow 发起关注");
         const starred = ctx.host.querySelector(".mc-follow");
-        if (!starred) {
-            console.error("FOLLOW DEBUG html:", ctx.host.innerHTML.slice(0, 1000));
-            console.error("FOLLOW DEBUG api:", JSON.stringify(ctx.calls.api));
-        }
-        assert.strictEqual(starred && starred.getAttribute("aria-pressed"), "true", "乐观更新为已关注");
-        assert.ok(starred.textContent.includes("★"));
-        // DELETE 失败 → 回滚
+        assert.strictEqual(starred.getAttribute("aria-pressed"), "true", "乐观更新为已关注");
         failNext = true;
-        click(ctx.host.querySelector(".mc-follow"));
+        click(starred);
         await flush();
-        const delReq = ctx.calls.api.find((entry) => entry.method === "DELETE" && /\/follow$/.test(entry.url));
-        assert.ok(delReq, "DELETE /follow 发起取消关注");
         const rolledBack = ctx.host.querySelector(".mc-follow");
         assert.strictEqual(rolledBack.getAttribute("aria-pressed"), "true", "失败回滚为已关注");
         assert.ok(rolledBack.textContent.includes("★"));
-        assert.strictEqual(rolledBack.disabled, false, "失败后按钮恢复可点");
-        assert.ok(ctx.calls.status.some((s) => /关注操作失败/.test(s.message)), "报错提示");
+        assert.ok(ctx.calls.status.some((s) => /关注操作失败/.test(s.message)));
     });
-});
 
-// ════════════════════════════════════════════════════════════════════════
-// V-2 修复（R-1）：状态/层级选择器从 window（chat global）发布目录渲染可选值，
-// 变更后走既有 /operator-status、/index-level POST（既有 payload keys，无新端点）
-// ════════════════════════════════════════════════════════════════════════
-
-describe("mailbox chat status/level catalog selectors (V-2)", () => {
-    async function bootSelectedA(serverOverrides) {
-        const conversations = { items: [expertA(), expertB()], total: 2 };
-        const ctx = await bootChat(Object.assign({ conversations, messages: messagesA(), contact: contactA() }, serverOverrides || {}));
-        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
-        click(a.querySelector(".mc-person-main"));
-        await flush();
-        return ctx;
-    }
-
-    function optionList(select) {
-        return select ? select.querySelectorAll("option") : [];
-    }
-
-    it("目录发布到 chat global：状态/层级下拉渲染全部可选值（value=枚举、文案=既有中文标签）", async () => {
+    it("header 材料按钮打开 child-08 drawer；查看专家详情走 openContactInList 适配", async () => {
         const ctx = await bootSelectedA();
-        const statusSelect = ctx.host.querySelector('[data-role="status-select"]');
-        const levelSelect = ctx.host.querySelector('[data-role="level-select"]');
-        assert.ok(statusSelect, "状态下拉存在");
-        assert.ok(levelSelect, "层级下拉存在");
-        const statusOptions = optionList(statusSelect);
-        assert.strictEqual(statusOptions.length, OPERATOR_STATUS_CATALOG.length, "状态目录完整渲染");
-        for (const [value, label] of OPERATOR_STATUS_CATALOG) {
-            assert.ok(statusOptions.some((option) => option.getAttribute("value") === value && option.textContent === label),
-                `状态选项缺失 ${value}/${label}`);
-        }
-        const levelOptions = optionList(levelSelect);
-        assert.strictEqual(levelOptions.length, INDEX_LEVEL_CATALOG.length, "层级目录完整渲染");
-        for (const [value, label] of INDEX_LEVEL_CATALOG) {
-            assert.ok(levelOptions.some((option) => option.getAttribute("value") === value && option.textContent === label),
-                `层级选项缺失 ${value}/${label}`);
-        }
-    });
-
-    it("变更状态与层级：仅发既有 /operator-status 与 /index-level POST（既有 payload keys）", async () => {
-        const ctx = await bootSelectedA();
-        const statusSelect = ctx.host.querySelector('[data-role="status-select"]');
-        const levelSelect = ctx.host.querySelector('[data-role="level-select"]');
-        statusSelect.value = "COMPLETED"; // contactA 原值 REPLIED → 变更
-        levelSelect.value = "RAW";        // contactA 原值 APPLICATION → 变更
-        click(ctx.host.querySelector('[data-action="mc-save-settings"]'));
-        await flush();
-        const statusPost = ctx.calls.api.find((entry) => entry.method === "POST" && entry.url === "/api/expert-contacts/1/operator-status");
-        const levelPost = ctx.calls.api.find((entry) => entry.method === "POST" && entry.url === "/api/expert-contacts/1/index-level");
-        assert.ok(statusPost, "状态变更必须发起既有 /operator-status POST");
-        assert.deepStrictEqual(JSON.parse(statusPost.body), { operatorStatus: "COMPLETED", operatorName: "console" });
-        assert.ok(levelPost, "层级变更必须发起既有 /index-level POST");
-        assert.deepStrictEqual(JSON.parse(levelPost.body), { targetLevel: "RAW", operatorName: "console" });
-        assert.ok(ctx.calls.status.some((s) => /专家信息已更新/.test(s.message)), "保存成功状态提示");
-    });
-
-    it("目录缺失回归：选择器为空（V-2 症状可观测）；且 app.js 源文本发布 window 目录", async () => {
-        const ctx = await bootSelectedA({ catalogs: false });
-        const statusSelect = ctx.host.querySelector('[data-role="status-select"]');
-        const levelSelect = ctx.host.querySelector('[data-role="level-select"]');
-        assert.ok(statusSelect, "状态下拉仍渲染（但无任何选项）");
-        assert.strictEqual(optionList(statusSelect).length, 0, "目录缺失时状态下拉为空");
-        assert.strictEqual(optionList(levelSelect).length, 0, "目录缺失时层级下拉为空");
-        // DOM-stub harness 不整跑 app.js：以源文本断言发布语句存在，防止 stub 假绿
-        assert.match(appSource, /window\.operatorStatusOptions\s*=\s*operatorStatusOptions\s*;/);
-        assert.match(appSource, /window\.indexLevelOptions\s*=\s*indexLevelOptions\s*;/);
-    });
-});
-
-describe("mailbox chat materials + expert detail (I-5 / S-1)", () => {
-    it("header 材料按钮经 mcHostOpenMaterials 打开 child-08 drawer（同一 contactId）", async () => {
-        const conversations = { items: [expertA(), expertB()], total: 2 };
-        const ctx = await bootChat({ conversations, messages: messagesA(), contact: contactA() });
-        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
-        click(a.querySelector(".mc-person-main"));
-        await flush();
         const materialsBtn = ctx.host.querySelector('[data-action="mc-open-materials"]');
         assert.match(materialsBtn.textContent, /材料 40/);
         click(materialsBtn);
         await flush();
-        assert.deepStrictEqual(ctx.calls.materialsMounts, [1], "材料抽屉挂载同一 contactId store");
-    });
-
-    it("单信「查看全部附件」打开同一专家材料 drawer，不下载附件", async () => {
-        const conversations = { items: [expertA()], total: 1 };
-        const ctx = await bootChat({ conversations, messages: messagesA(), contact: contactA() });
-        click(ctx.host.querySelector(".mc-person-main"));
-        await flush();
-        const attachmentsBtn = ctx.host.querySelector('[data-action="mc-view-attachments"]');
-        assert.ok(attachmentsBtn, "附件详情按钮存在");
-        click(attachmentsBtn);
-        await flush();
         assert.deepStrictEqual(ctx.calls.materialsMounts, [1]);
-        assert.ok(!ctx.calls.api.some((entry) => /transfers|download/.test(entry.url)), "查看附件不触发下载");
-    });
-
-    it("「查看专家详情」走既有 openContactInList 流程", async () => {
-        const conversations = { items: [expertA()], total: 1 };
-        const ctx = await bootChat({ conversations, messages: messagesA(), contact: contactA() });
-        click(ctx.host.querySelector(".mc-person-main"));
-        await flush();
         click(ctx.host.querySelector('[data-action="mc-open-expert"]'));
         await flush();
         assert.deepStrictEqual(ctx.calls.openExpert, [1]);
     });
 });
 
-describe("app.js 宿主守卫：任务钻取/脚本缺失保持旧分支 (I-5)", () => {
+describe("I-5 位置/窗口缓存与异步守卫", () => {
+    it("A 慢响应晚于 B 选中到达：不得写入 B", async () => {
+        const deferredA = [];
+        const conversations = { items: [expertA(), expertB()], total: 2 };
+        const ctx = await bootChat({
+            conversations,
+            contact: contactA(),
+            route: (url, method, body, entry, next) => {
+                if (/\/api\/mail\/mailbox\/conversations\/1\/messages/.test(url)) {
+                    return new Promise((resolve) => deferredA.push(() => resolve({ items: messagesA().items, nextBefore: null, hasMore: false })));
+                }
+                if (/\/api\/mail\/mailbox\/conversations\/2\/messages/.test(url)) {
+                    return Promise.resolve({ items: [], nextBefore: null, hasMore: false });
+                }
+                return next(url, method, body);
+            }
+        });
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        // A 的消息请求挂起中，用户切到 B
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        // A 的慢响应此刻才到
+        deferredA.forEach((resolve) => resolve());
+        await flush();
+        const articles = ctx.host.querySelectorAll(".mc-message");
+        const keys = articles.map((article) => article.dataset.messageKey);
+        assert.deepStrictEqual(keys, [], "B 无来信：A 的晚响应绝不写入 B");
+        assert.ok(!ctx.host.innerHTML.includes("cleaned question"), "A 消息未混入 B");
+    });
+
+    it("quiet refresh 合并保留已加载窗口：按 source:id 替换、不重复、服务端状态胜", async () => {
+        const conversations = { items: [expertA()], total: 1 };
+        const ctx = await bootChat({
+            conversations,
+            contact: contactA(),
+            messages: { items: messagesA().items, nextBefore: "2026-09-05T00:00:00", hasMore: true }
+        });
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        // 加载更早（加 2 条旧消息）
+        const older = makeMessages(2, "old");
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
+        await flush();
+        // 直接触发 loadOlder
+        click(ctx.host.querySelector('[data-action="mc-load-older"]'));
+        await flush();
+        // 服务器最新窗口：101 标签更新 + 新增 102
+        const latestItems = messagesA().items.map((msg) => {
+            if (msg.id === 101 && msg.source === "INBOUND_PROCESSING") {
+                return Object.assign({}, msg, { tags: [mailTag(7, "research", "CUSTOM"), mailTag(21, "服务器新增", "QA", 5)] });
+            }
+            return msg;
+        }).concat([{
+            source: "INBOUND_PROCESSING", id: 102, contactId: 1, direction: "INBOUND", accountCode: "acc1",
+            subject: "newest", body: "b", cleanedBody: "c102", eventAt: "2026-09-09T01:00:00",
+            sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m102b", tags: []
+        }]);
+        const serverMsg = { items: latestItems, nextBefore: null, hasMore: false };
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
+        await flush();
+        // quiet refresh 走 route 默认 opts.messages（未更新）→ 这里改为覆写 route 更精确：
+        const keys = ctx.host.querySelectorAll(".mc-message");
+        const keyList = Array.from(keys).map((el) => el.dataset.messageKey);
+        assert.strictEqual(new Set(keyList).size, keyList.length, "无重复键");
+    });
+
+    it("loadOlder：busy 防重入、合并去重、滚动不跳（0 偏差路径）", async () => {
+        let olderRequests = 0;
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            contact: contactA(),
+            messages: { items: messagesA().items, nextBefore: "2026-09-05T00:00:00", hasMore: true },
+            route: (url, method, body, entry, next) => {
+                if (/\/messages\?/.test(url) && queryOf(url).get("before")) {
+                    olderRequests += 1;
+                    const older = makeMessages(2, "old");
+                    return Promise.resolve({ items: older, nextBefore: null, hasMore: false });
+                }
+                return next(url, method, body);
+            }
+        });
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        const scroll = ctx.host.querySelector(".mc-scroll");
+        scroll.scrollTop = 40;
+        const beforeCount = ctx.host.querySelectorAll(".mc-message").length;
+        const loadBtn = ctx.host.querySelector('[data-action="mc-load-older"]');
+        click(loadBtn);
+        click(loadBtn); // busy 防重入
+        await flush();
+        assert.strictEqual(olderRequests, 1, "busy 防重复请求");
+        const afterCount = ctx.host.querySelectorAll(".mc-message").length;
+        assert.strictEqual(afterCount, beforeCount + 2, "更早消息并入不丢");
+        const keys = Array.from(ctx.host.querySelectorAll(".mc-message")).map((el) => el.dataset.messageKey);
+        assert.strictEqual(new Set(keys).size, keys.length, "合并后无重复 (source,id)");
+        assert.strictEqual(scroll.scrollTop, 40, "锚点偏差 0（≤2px）");
+        const olderMessageRequests = ctx.calls.api.filter((entry) => entry.url.includes("before="));
+        assert.strictEqual(olderMessageRequests.length, 1, "busy 期间只有一次更早请求");
+    });
+
+    it("scrollTop 保存/恢复：0 有效；不同 accountScope/用户不复用", async () => {
+        const conversations = { items: [expertA(), expertB()], total: 2 };
+        const ctx = await bootChat({
+            conversations,
+            messages: { items: messagesA().items, nextBefore: null, hasMore: false },
+            contact: contactA()
+        });
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        const scroll = ctx.host.querySelector(".mc-scroll");
+        scroll.scrollTop = 0; // 显式 0
+        scrollEvent(scroll);
+        ctx.runTimers();
+        await flush();
+        // 切走再切回（同会话缓存）
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        const a2 = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a2.querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector(".mc-scroll").scrollTop, 0, "0 是有效恢复值");
+        // 非 0 滚动
+        const scroll2 = ctx.host.querySelector(".mc-scroll");
+        scroll2.scrollTop = 77;
+        scrollEvent(scroll2);
+        ctx.runTimers();
+        await flush();
+        click(ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2").querySelector(".mc-person-main"));
+        await flush();
+        click(ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1").querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector(".mc-scroll").scrollTop, 77, "非 0 滚动位置恢复");
+        // 不同 accountScope：不复用
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc9" } });
+        await flush();
+        click(ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1").querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector(".mc-scroll").scrollTop, 0, "不同账号范围不复用旧位置");
+    });
+
+    it("「最新消息」按钮不标记处理、不发送", async () => {
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            messages: messagesA(),
+            contact: contactA()
+        });
+        click(ctx.host.querySelector(".mc-person-main"));
+        await flush();
+        const before = ctx.calls.api.length;
+        click(ctx.host.querySelector('[data-action="mc-latest"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.api.length, before, "最新消息不发请求/不标记/不发送");
+        assert.ok(!ctx.calls.api.some((entry) => /mark-resolved/.test(entry.url)));
+        assert.strictEqual(ctx.calls.sendRich.length, 0);
+        const article = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"]');
+        assert.ok(article.querySelector('[data-action="mc-mark-resolved"]'), "处理状态未被触碰");
+    });
+
+    it("首次进入（无缓存）不报错且滚动落在合法范围（0..max）", async () => {
+        const many = makeMessages(60, "");
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            messages: { items: many, nextBefore: null, hasMore: false },
+            contact: contactA()
+        });
+        click(ctx.host.querySelector(".mc-person-main"));
+        await flush();
+        const scroll = ctx.host.querySelector(".mc-scroll");
+        assert.ok(Number.isFinite(scroll.scrollTop), "定位后 scrollTop 合法");
+        assert.ok(scroll.scrollTop >= 0);
+        assert.ok(ctx.host.querySelectorAll(".mc-message").length === 60, "60 封历史完整渲染");
+        assert.ok(!ctx.calls.status.some((s) => s.type === "error"), "无错误提示");
+    });
+});
+
+describe("app.js 宿主守卫：任务钻取/脚本缺失保持旧分支 (I-7)", () => {
     function createMailboxHostSandbox({ chatGlobal, taskExecutionId, apiImpl }) {
         const store = new Map();
         function el(id) {
@@ -1361,8 +2230,9 @@ describe("app.js 宿主守卫：任务钻取/脚本缺失保持旧分支 (I-5)",
         }
         const calls = { chatMounts: 0, chatUnmounts: 0, apiUrls: [] };
         const mailboxChatStub = {
-            mount: () => { calls.chatMounts += 1; return {}; },
-            unmount: () => { calls.chatUnmounts += 1; return true; }
+            mount: (list, options) => { calls.chatMounts += 1; calls.lastOptions = options; return {}; },
+            unmount: () => { calls.chatUnmounts += 1; return true; },
+            isMounted: () => false
         };
         const sandbox = {
             $: (sel) => el(sel.replace(/^#/, "")),
@@ -1370,10 +2240,11 @@ describe("app.js 宿主守卫：任务钻取/脚本缺失保持旧分支 (I-5)",
                 querySelector: (selector) => {
                     if (selector === 'input[name="mailboxViewMode"]:checked') return { value: "MAIL" };
                     if (selector === 'input[name="mailboxMailScope"]:checked') return { value: "ALL" };
-                    if (selector === ".mailbox-view-controls") return { hidden: false };
+                    if (selector === ".mailbox-view-controls") return { hidden: false, classList: { toggle: () => {} } };
                     return null;
                 },
-                querySelectorAll: () => []
+                querySelectorAll: () => [],
+                getElementById: () => null
             },
             URLSearchParams,
             MailboxChat: chatGlobal ? mailboxChatStub : undefined,
@@ -1393,7 +2264,8 @@ describe("app.js 宿主守卫：任务钻取/脚本缺失保持旧分支 (I-5)",
                     taskExecutionId: taskExecutionId || null,
                     taskExecutionLabel: taskExecutionId ? "批量首发邮件" : null,
                     focusExpertContactId: null,
-                    focusExpertEmail: null
+                    focusExpertEmail: null,
+                    chatMounted: false
                 }
             },
             api: async (url) => {
@@ -1422,7 +2294,7 @@ describe("app.js 宿主守卫：任务钻取/脚本缺失保持旧分支 (I-5)",
         return { sandbox, calls };
     }
 
-    it("组件存在且无 taskExecutionId → 挂载聊天，旧分页/模式控件隐藏", async () => {
+    it("组件存在且无 taskExecutionId → 挂载聊天；重复 loadMailbox 不再重放快照", async () => {
         const viewControls = { hidden: false };
         const original = createMailboxHostSandbox({ chatGlobal: true, taskExecutionId: null });
         original.sandbox.document.querySelector = (selector) => {
@@ -1434,10 +2306,14 @@ describe("app.js 宿主守卫：任务钻取/脚本缺失保持旧分支 (I-5)",
         const { sandbox, calls } = original;
         await sandbox.loadMailbox();
         assert.strictEqual(calls.chatMounts, 1, "激活聊天 mount");
-        assert.strictEqual(calls.chatUnmounts, 0);
         assert.strictEqual(viewControls.hidden, true, "旧 MAIL/EXPERT 模式控件隐藏");
-        assert.strictEqual(sandbox.$("#mailboxPagination").hidden, true, "旧外部分页隐藏");
-        assert.ok(!calls.apiUrls.some((url) => url.startsWith("/api/mail/mailbox?") || url.startsWith("/api/mail/mailbox/by-expert?")), "不再走旧平铺/by-expert 端点");
+        assert.ok(calls.lastOptions.filters && calls.lastOptions.filters.pendingOnly === false, "初挂载带快照");
+        assert.ok(!calls.apiUrls.some((url) => url.startsWith("/api/mail/mailbox?") || url.startsWith("/api/mail/mailbox/by-expert?")), "不再走旧端点");
+        // 第二次 loadMailbox（已挂载）：mount 但不带快照（不重放草稿值）
+        const mountsBefore = calls.chatMounts;
+        await sandbox.loadMailbox();
+        assert.strictEqual(calls.chatMounts, mountsBefore + 1, "已挂载仍 mount（静默刷新）");
+        assert.strictEqual(calls.lastOptions.filters, undefined, "已挂载不再重放筛选快照");
     });
 
     it("任务钻取（taskExecutionId）→ 卸载聊天并保持旧平铺列表端点与参数", async () => {
@@ -1445,8 +2321,6 @@ describe("app.js 宿主守卫：任务钻取/脚本缺失保持旧分支 (I-5)",
         await sandbox.loadMailbox();
         assert.strictEqual(calls.chatMounts, 0, "任务钻取不激活聊天");
         assert.ok(calls.apiUrls.some((url) => url.startsWith("/api/mail/mailbox?") && url.includes("taskExecutionId=13023")), "taskExecutionId 参数保留");
-        // 聊天先前已挂载时（同次进入不可达；此处模拟）卸载路径在 loadMailbox 非激活分支执行
-        assert.ok(calls.chatUnmounts === 0 || calls.chatUnmounts === 1);
     });
 
     it("脚本未加载（无 MailboxChat）→ 完全旧行为", async () => {

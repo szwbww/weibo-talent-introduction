@@ -13886,10 +13886,14 @@ function initBulkAutoReply() {
     });
 
     $("#mailboxRefreshBtn").addEventListener("click", () => {
+        // 聊天模式：刷新按钮已迁入 panel-head-actions 并由组件静默刷新
+        if (mailboxChatEligible()) return;
         loadMailbox().catch((e) => showStatus(e.message, "error"));
     });
     bindInboundSummaryEvents();
     $("#mailboxSearchBtn").addEventListener("click", () => {
+        // 聊天模式：同一节点在筛选 popover 内，由组件按草稿语义应用
+        if (mailboxChatEligible()) return;
         state.mailbox.page = 0;
         clearMailboxExpertFocus();
         loadMailbox().catch((e) => showStatus(e.message, "error"));
@@ -13912,6 +13916,8 @@ function initBulkAutoReply() {
     $("#mailboxFilterRecipient").addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
             event.preventDefault();
+            // 聊天模式：popover 内 Enter 由组件应用筛选（草稿语义）
+            if (mailboxChatEligible()) return;
             state.mailbox.page = 0;
             clearMailboxExpertFocus();
             loadMailbox().catch((e) => showStatus(e.message, "error"));
@@ -13920,17 +13926,21 @@ function initBulkAutoReply() {
     $("#mailboxFilterKeyword").addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
             event.preventDefault();
+            if (mailboxChatEligible()) return;
             state.mailbox.page = 0;
             clearMailboxExpertFocus();
             loadMailbox().catch((e) => showStatus(e.message, "error"));
         }
     });
     $("#mailboxFilterAccountCode").addEventListener("change", () => {
+        // 聊天模式：字段改动只记筛选草稿，应用/Enter 才生效
+        if (mailboxChatEligible()) return;
         state.mailbox.page = 0;
         clearMailboxExpertFocus();
         loadMailbox().catch((e) => showStatus(e.message, "error"));
     });
     $("#mailboxFilterDirection").addEventListener("change", () => {
+        if (mailboxChatEligible()) return;
         state.mailbox.page = 0;
         clearMailboxExpertFocus();
         loadMailbox().catch((e) => showStatus(e.message, "error"));
@@ -13938,6 +13948,8 @@ function initBulkAutoReply() {
     $("#mailboxFilterTag").addEventListener("change", (event) => {
         const value = event.target.value;
         state.mailbox.tagFilter = value;
+        // 聊天模式：标签选项为真实标签，组件按草稿语义处理
+        if (mailboxChatEligible()) return;
         if (value === "待处理") {
             setMailboxPendingOnly(true);
             state.mailbox.page = 0;
@@ -14345,6 +14357,9 @@ function unmountMailboxChatHosts() {
     } catch (e) {
         // 组件内部清理失败不阻断原路径
     }
+    state.mailbox.chatMounted = false;
+    // 关闭来信标签 modal 宿主 adapter（聊天目标上下文随卸载失效）
+    if (typeof clearChatInboundTagAdapter === "function") clearChatInboundTagAdapter();
 }
 
 function syncMailboxChatChrome(chatOn) {
@@ -14352,6 +14367,13 @@ function syncMailboxChatChrome(chatOn) {
     if (viewControls) viewControls.hidden = !!chatOn;
     const pagination = $("#mailboxPagination");
     if (pagination) pagination.hidden = !!chatOn;
+    let view = typeof document.getElementById === "function" ? document.getElementById("view-mailbox") : null;
+    if (!view && typeof document.querySelector === "function") {
+        view = document.querySelector("#view-mailbox");
+    }
+    if (view && view.classList) {
+        view.classList.toggle("mc-refined", !!chatOn);
+    }
 }
 
 function mailboxChatFilterSnapshot() {
@@ -14360,16 +14382,16 @@ function mailboxChatFilterSnapshot() {
     if (accountCode) snapshot.accountCode = accountCode;
     const direction = $("#mailboxFilterDirection")?.value || "";
     if (direction) snapshot.direction = direction;
+    const recipientEmail = ($("#mailboxFilterRecipient")?.value || "").trim();
+    if (recipientEmail) snapshot.recipientEmail = recipientEmail;
     const keyword = ($("#mailboxFilterKeyword")?.value || "").trim();
-    if (keyword) snapshot.subject = keyword;
+    if (keyword) snapshot.keyword = keyword;
     const tag = $("#mailboxFilterTag")?.value || "";
     if (tag && tag !== "待处理") snapshot.label = tag;
     const startDate = $("#mailboxFilterStartDate")?.value || "";
     const endDate = $("#mailboxFilterEndDate")?.value || "";
-    if (!state.mailbox.onlyPending) {
-        if (startDate) snapshot.startDate = startDate;
-        if (endDate) snapshot.endDate = endDate;
-    }
+    if (startDate) snapshot.startDate = startDate;
+    if (endDate) snapshot.endDate = endDate;
     snapshot.pendingOnly = !!state.mailbox.onlyPending;
     return snapshot;
 }
@@ -14377,6 +14399,17 @@ function mailboxChatFilterSnapshot() {
 function refreshMailboxChatList() {
     const list = $("#mailboxList");
     if (!list || !mailboxChatAvailable()) return Promise.resolve();
+    // 已挂载时不再重放快照（快照含用户在 popover 中的未应用草稿值；
+    // 由组件内部维护已生效筛选，宿主只触发静默列表刷新）。
+    if (state.mailbox.chatMounted) {
+        try {
+            MailboxChat.mount(list, {});
+            return Promise.resolve();
+        } catch (e) {
+            showStatus(e.message || "聊天视图刷新失败", "error");
+            return Promise.resolve();
+        }
+    }
     const mountOptions = { filters: mailboxChatFilterSnapshot() };
     if (state.mailbox.focusExpertContactId != null) {
         mountOptions.focus = {
@@ -14386,6 +14419,7 @@ function refreshMailboxChatList() {
     }
     try {
         MailboxChat.mount(list, mountOptions);
+        state.mailbox.chatMounted = true;
         return Promise.resolve();
     } catch (e) {
         showStatus(e.message || "聊天视图加载失败", "error");
@@ -15076,6 +15110,27 @@ function showMailboxAddTagModal() {
     showInboundAddTagModal();
 }
 
+// 聊天卡片「＋ 添加标签」宿主 adapter：{inboundId, source, contactId, onTagsChanged}
+// 只服务于 mailbox-chat 新目标；旧来信汇总/详情分支无 adapter 时行为不变。
+function mcHostOpenInboundTagModal(adapter) {
+    if (!adapter || adapter.inboundId == null) return false;
+    const inboundId = Number(adapter.inboundId);
+    if (!Number.isFinite(inboundId) || inboundId <= 0) return false;
+    state.mailbox.chatTagAdapter = {
+        inboundId,
+        source: adapter.source === "MAIL_RECORD" ? "MAIL_RECORD" : "INBOUND_PROCESSING",
+        contactId: adapter.contactId != null ? Number(adapter.contactId) : null,
+        onTagsChanged: typeof adapter.onTagsChanged === "function" ? adapter.onTagsChanged : null
+    };
+    state.mailbox.addTagInboundId = inboundId;
+    showInboundAddTagModal();
+    return true;
+}
+
+function clearChatInboundTagAdapter() {
+    state.mailbox.chatTagAdapter = null;
+}
+
 async function refreshMailboxInboundTagsAfterChange() {
     const ctx = state.mailbox.detailContext;
     if (!ctx?.inboundProcessingId) return;
@@ -15294,6 +15349,8 @@ function hideInboundAddTagModal() {
     document.body.classList.remove("modal-open");
     state.mailbox.addTagInboundId = null;
     state.inboundSummary.tagEditInboundId = null;
+    // 聊天 adapter 在提交/关闭/取消/卸载时一律清理
+    state.mailbox.chatTagAdapter = null;
 }
 
 async function populateInboundAddTagQaOptions() {
@@ -15324,14 +15381,21 @@ async function submitInboundAddTag() {
         if (!label) throw new Error("请输入自定义标签");
         payload.label = label;
     }
-    await api(`/api/inbound-summary/mails/${inboundId}/tags`, {
+    const result = await api(`/api/inbound-summary/mails/${inboundId}/tags`, {
         method: "POST",
         body: JSON.stringify(payload)
     });
+    const adapter = state.mailbox.chatTagAdapter || null;
     hideInboundAddTagModal();
     showStatus("标签已添加", "ok");
     state.mailbox.addTagInboundId = null;
     state.inboundSummary.tagEditInboundId = null;
+    // 聊天卡片目标：直接以服务器 POST 回包 tags 回调（不依赖 detailContext/固定 id）
+    if (adapter && adapter.inboundId === inboundId && typeof adapter.onTagsChanged === "function") {
+        const tags = (result && Array.isArray(result.tags)) ? result.tags : [];
+        adapter.onTagsChanged(tags);
+        return;
+    }
     if (state.mailbox.detailContext?.inboundProcessingId === inboundId) {
         await refreshMailboxInboundTagsAfterChange();
         return;
