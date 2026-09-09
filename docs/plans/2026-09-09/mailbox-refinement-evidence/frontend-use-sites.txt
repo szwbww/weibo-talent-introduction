@@ -1,0 +1,58 @@
+$ rg -n mailboxFilter|renderMailboxInboundTagEditor|submitInboundAddTag|renderExpertTagEditor|renderMailboxExpertTagEditor|mc-expert-settings|mc-mail-extras src/main/resources/static/app.js src/main/resources/static/mailbox-chat.js src/main/resources/static/index.html
+src/main/resources/static/mailbox-chat.js:646:                <details class="mc-mail-extras" data-role="attachment-extras">
+src/main/resources/static/mailbox-chat.js:676:                <details class="mc-mail-extras" data-role="mail-extras" data-source="${escapeText(message.source)}" data-id="${escapeText(message.id)}">
+src/main/resources/static/mailbox-chat.js:758:                const existing = scroll.querySelector(".mc-expert-settings");
+src/main/resources/static/mailbox-chat.js:762:            let settings = scroll.querySelector(".mc-expert-settings");
+src/main/resources/static/mailbox-chat.js:768:                <details class="mc-expert-settings" data-role="expert-settings"${instance.settings.open ? " open" : ""}>
+src/main/resources/static/mailbox-chat.js:784:                settings = scroll.querySelector(".mc-expert-settings");
+src/main/resources/static/mailbox-chat.js:818:            const renderEditor = hostFn("renderMailboxExpertTagEditor");
+src/main/resources/static/mailbox-chat.js:1645:            if (target.classList && target.classList.contains("mc-expert-settings")) {
+src/main/resources/static/index.html:727:                <select id="mailboxFilterAccountCode">
+src/main/resources/static/index.html:730:                <select id="mailboxFilterDirection">
+src/main/resources/static/index.html:735:                <select id="mailboxFilterTag">
+src/main/resources/static/index.html:746:                <input id="mailboxFilterRecipient" placeholder="过滤收件人邮箱" style="width: 180px;">
+src/main/resources/static/index.html:747:                <input id="mailboxFilterKeyword" placeholder="过滤主题/内容关键词" style="width: 200px;">
+src/main/resources/static/index.html:748:                <input type="date" id="mailboxFilterStartDate" style="width: 130px;">
+src/main/resources/static/index.html:750:                <input type="date" id="mailboxFilterEndDate" style="width: 130px;">
+src/main/resources/static/app.js:4826:function renderExpertTagEditor(tags, orcidId, level, editorId = "expertTagEditor", profileMissing = false, layout = "section") {
+src/main/resources/static/app.js:4965:    editor.outerHTML = renderExpertTagEditor(tags, orcidId, level, editorId, false, layout);
+src/main/resources/static/app.js:5364:function renderMailboxExpertTagEditor(expertRef, tags, editorId = "mailboxExpertTagEditor", profileMissing = false) {
+src/main/resources/static/app.js:5368:    return renderExpertTagEditor(tags, orcidId, level, editorId, profileMissing);
+src/main/resources/static/app.js:7600:                ${expert.orcidId ? renderExpertTagEditor(expertTags.tags, expert.orcidId, tagLevel, "expertTagEditor", expertTags.found === false, "inline") : ""}
+src/main/resources/static/app.js:8134:                ${renderExpertTagEditor(expertTags.tags, orcidId, tagLevel, "expertTagEditor", expertTags.found === false, "inline")}
+src/main/resources/static/app.js:10117:    $("#mailboxFilterAccountCode").value = "";
+src/main/resources/static/app.js:10118:    $("#mailboxFilterDirection").value = "";
+src/main/resources/static/app.js:10119:    $("#mailboxFilterTag").value = "";
+src/main/resources/static/app.js:10120:    $("#mailboxFilterRecipient").value = email || "";
+src/main/resources/static/app.js:10121:    $("#mailboxFilterKeyword").value = "";
+src/main/resources/static/app.js:10122:    const startInput = $("#mailboxFilterStartDate");
+src/main/resources/static/app.js:10123:    const endInput = $("#mailboxFilterEndDate");
+src/main/resources/static/app.js:10761:            ? renderMailboxInboundTagEditor(detail.inboundTags || [], inboundProcessingId)
+src/main/resources/static/app.js:10774:            ? renderMailboxExpertTagEditor(
+src/main/resources/static/app.js:11244:    const processingExpertTagHtml = renderMailboxExpertTagEditor(
+src/main/resources/static/app.js:11363:                ${renderMailboxInboundTagEditor(inboundTags, Number(id))}
+src/main/resources/static/app.js:13914:    $("#mailboxFilterRecipient").addEventListener("keydown", (event) => {
+src/main/resources/static/app.js:13922:    $("#mailboxFilterKeyword").addEventListener("keydown", (event) => {
+src/main/resources/static/app.js:13930:    $("#mailboxFilterAccountCode").addEventListener("change", () => {
+src/main/resources/static/app.js:13935:    $("#mailboxFilterDirection").addEventListener("change", () => {
+src/main/resources/static/app.js:13940:    $("#mailboxFilterTag").addEventListener("change", (event) => {
+src/main/resources/static/app.js:13964:                $("#mailboxFilterTag").value = "";
+src/main/resources/static/app.js:14361:    const accountCode = $("#mailboxFilterAccountCode")?.value || "";
+src/main/resources/static/app.js:14363:    const direction = $("#mailboxFilterDirection")?.value || "";
+src/main/resources/static/app.js:14365:    const keyword = ($("#mailboxFilterKeyword")?.value || "").trim();
+src/main/resources/static/app.js:14367:    const tag = $("#mailboxFilterTag")?.value || "";
+src/main/resources/static/app.js:14369:    const startDate = $("#mailboxFilterStartDate")?.value || "";
+src/main/resources/static/app.js:14370:    const endDate = $("#mailboxFilterEndDate")?.value || "";
+src/main/resources/static/app.js:14543:        const select = $("#mailboxFilterAccountCode");
+src/main/resources/static/app.js:14562:        state.mailbox.tagFilter = $("#mailboxFilterTag")?.value || "";
+src/main/resources/static/app.js:14573:    state.mailbox.tagFilter = $("#mailboxFilterTag")?.value || "";
+src/main/resources/static/app.js:14575:    const startInput = $("#mailboxFilterStartDate");
+src/main/resources/static/app.js:14576:    const endInput = $("#mailboxFilterEndDate");
+src/main/resources/static/app.js:14594:    const accountCode = $("#mailboxFilterAccountCode").value;
+src/main/resources/static/app.js:14595:    const recipientEmail = $("#mailboxFilterRecipient").value.trim();
+src/main/resources/static/app.js:14596:    const keyword = $("#mailboxFilterKeyword").value.trim();
+src/main/resources/static/app.js:14602:    const direction = $("#mailboxFilterDirection").value;
+src/main/resources/static/app.js:15051:function renderMailboxInboundTagEditor(tags, inboundProcessingId) {
+src/main/resources/static/app.js:15087:        editor.outerHTML = renderMailboxInboundTagEditor(detail.inboundTags || [], ctx.inboundProcessingId);
+src/main/resources/static/app.js:15314:async function submitInboundAddTag() {
+src/main/resources/static/app.js:15419:        submitInboundAddTag().catch((error) => showStatus(error.message, "error"));

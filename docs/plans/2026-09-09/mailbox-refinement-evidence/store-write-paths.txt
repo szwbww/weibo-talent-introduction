@@ -1,0 +1,24 @@
+$ rg -n inboundMailProcessingRepository\.(save|delete)|mailRecordRepository\.(save|delete)|inboundMailTagRepository\.(save|delete)|reopenManualResolved|INSERT IGNORE INTO expert_follow|DELETE FROM expert_follow src/main/kotlin
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:59:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:110:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:144:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:47:    fun reopenManualResolved(id: Long, now: LocalDateTime): Int
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:346:        val inboundMailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:686:        val outboundRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:961:    ): MailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1159:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1221:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1274:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:58:            inboundMailTagRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:81:        return inboundMailTagRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:106:        return inboundMailTagRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:123:        inboundMailTagRepository.deleteById(tagId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:40:                INSERT IGNORE INTO expert_follow (username, expert_contact_id, created_at)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:51:                DELETE FROM expert_follow
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:69:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1066:        inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1137:        val updated = inboundMailProcessingRepository.reopenManualResolved(inboundProcessingId, now)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:249:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:328:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:178:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:223:        val saved = inboundMailProcessingRepository.save(record.copy(

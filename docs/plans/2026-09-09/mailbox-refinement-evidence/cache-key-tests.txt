@@ -1,0 +1,8 @@
+$ rg -l 20260907-material-chat src/test
+src/test/js/manualReplySubjectPrefill.test.js
+src/test/js/ragKnowledgeBasePage.test.js
+src/test/js/overlayAndDialogContrast.test.js
+src/test/js/checkRepliesRelocation.test.js
+src/test/js/batchSendTaskConsoleVisualFix.test.js
+src/test/js/trustReplyWorkbenchSharedMount.test.js
+src/test/js/ragWorkbenchRender.test.js
