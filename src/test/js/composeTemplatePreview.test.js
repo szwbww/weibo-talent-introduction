@@ -69,6 +69,7 @@ function createSandbox(blocks) {
         },
         isPreviewDrawerOpen: () => true,
         isComposeTemplatePreviewTarget: () => true,
+        refreshVariableEditors: async () => {},
         updatePreviewCoverage: () => {},
         updatePreviewVariantSwitcher: () => {},
         api: async () => ({
@@ -89,6 +90,7 @@ function createSandbox(blocks) {
         "composeTemplatePreviewExpertLabel",
         "composeTemplatePreviewAccountLabel",
         "findComposeTemplatePreviewOption",
+        "renderComposeTemplateBlockRows",
         "composeTemplateBlockRowHtml",
         "collectComposeTemplateBlocksFromForm",
         "collectComposeTemplatePreviewContext",
@@ -242,6 +244,14 @@ describe("compose template server preview", () => {
 
         const blocks = sb.collectComposeTemplateBlocksFromForm();
         assert.equal(blocks.length, 0);
+    });
+
+    it("allows the last compose block to be removed without recreating an empty block", () => {
+        const sb = createSandbox([]);
+
+        sb.renderComposeTemplateBlockRows([]);
+
+        assert.equal(sb.__store.get("composeTemplateBlocksList").innerHTML, "");
     });
 
     it("compose block row keeps QA sample text branch for legacy preview", () => {

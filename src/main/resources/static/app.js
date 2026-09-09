@@ -9780,9 +9780,7 @@ function hideComposeTemplateEditor() {
 function renderComposeTemplateBlockRows(blocks) {
     const container = $("#composeTemplateBlocksList");
     if (!container) return;
-    const rows = (blocks.length ? blocks : [{ blockType: "CUSTOM_TEXT", blockOrder: 0 }]).map((block, index) =>
-        composeTemplateBlockRowHtml(index, block)
-    );
+    const rows = blocks.map((block, index) => composeTemplateBlockRowHtml(index, block));
     container.innerHTML = rows.join("");
     refreshVariableEditors().catch(() => {});
 }
