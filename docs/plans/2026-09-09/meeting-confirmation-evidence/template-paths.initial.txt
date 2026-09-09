@@ -1,0 +1,48 @@
+$ rg -n mailComposeTemplateService|templateRepository|blockRepository src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt:30:    private val mailComposeTemplateService: MailComposeTemplateService,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt:355:            mailComposeTemplateService.getById(templateId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt:35:    private val mailComposeTemplateService: MailComposeTemplateService,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt:286:            runCatching { mailComposeTemplateService.getById(templateId).templateName }.getOrNull()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt:453:            val template = mailComposeTemplateService.getById(templateId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:31:    private val mailComposeTemplateService: MailComposeTemplateService,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:119:        val rendered = mailComposeTemplateService.renderByCode(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:86:    private val mailComposeTemplateService: MailComposeTemplateService
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:431:        val required = mailComposeTemplateService.requiredEsFields(templateId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:30:    private val mailComposeTemplateService: MailComposeTemplateService,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:39:        return mailComposeTemplateService.listEnabled()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:206:        val template = mailComposeTemplateService.getById(templateId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:221:        val rendered = mailComposeTemplateService.render(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:230:        val requiredKeys = (mailComposeTemplateService.effectiveRequiredKeys(templateId) ?: emptyList())
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:47:    private val mailComposeTemplateService: MailComposeTemplateService,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1146:        val rendered = mailComposeTemplateService.renderByCode(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:112:    private val mailComposeTemplateService: MailComposeTemplateService,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:194:        return mailComposeTemplateService.renderWithVariables(html, variables)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:208:        val rendered = mailComposeTemplateService.renderWithVariables(text, variables)
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:30:    private val templateRepository: MailComposeTemplateRepository,
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:31:    private val blockRepository: MailComposeTemplateBlockRepository,
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:42:        templateRepository.findAllByOrderByIdAsc().map { toDetail(it) }
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:45:        templateRepository.findAllByEnabledTrueOrderByIdAsc()
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:56:        val saved = templateRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:79:        templateRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:91:        blockRepository.deleteAllByTemplateId(id)
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:100:        templateRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:112:        blockRepository.deleteAllByTemplateId(id)
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:113:        templateRepository.deleteById(id)
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:118:        val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(id)
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:127:        val template = templateRepository.findByTemplateCodeAndEnabledTrue(templateCode)
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:130:        val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(templateId)
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:189:        val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(id)
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:344:        templateRepository.findById(id).orElseThrow { error("Compose template not found: $id") }
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:348:        val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(templateId)
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:414:            blockRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:42:    private val templateRepository: MailComposeTemplateRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:415:        val template = templateRepository.findById(templateId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingInvitationMailComposer.kt:10:    private val mailComposeTemplateService: MailComposeTemplateService
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingInvitationMailComposer.kt:14:        val rendered = mailComposeTemplateService.renderByCode(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:41:    private val mailComposeTemplateService: MailComposeTemplateService,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:93:                val rendered = mailComposeTemplateService.renderByCode(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt:12:    private val mailComposeTemplateService: MailComposeTemplateService,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt:22:            mailComposeTemplateService.render(templateId, variables, variantSeed)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt:24:            mailComposeTemplateService.renderByCode(templateCode = "INTRODUCTION", variables = variables, variantSeed = variantSeed)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt:28:        val requiredKeys = gateTemplateId?.let { mailComposeTemplateService.effectiveRequiredKeys(it) }.orEmpty()

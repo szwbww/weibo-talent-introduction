@@ -14411,6 +14411,9 @@ function refreshMailboxChatList() {
         }
     }
     const mountOptions = { filters: mailboxChatFilterSnapshot() };
+    // contextPath 是 app.js 顶层 const 词法绑定（非 window 属性）：宿主守卫测试在隔离
+    // 沙箱里逐函数执行 refreshMailboxChatList，typeof 守卫让无绑定的沙箱安全回退空前缀。
+    if (typeof contextPath !== "undefined") mountOptions.contextPath = contextPath;
     if (state.mailbox.focusExpertContactId != null) {
         mountOptions.focus = {
             contactId: state.mailbox.focusExpertContactId,
@@ -14580,6 +14583,53 @@ async function mcHostOpenFollowUp(contactId) {
     const id = Number(contactId);
     if (!Number.isFinite(id) || id <= 0) return;
     await openContactInList(id);
+}
+
+// fast-p 04 (T4/S-5)：已发送日历原件二进制下载宿主适配。
+// relativePath 必须命中 03 固定路由（/api/mail/conversations/{contactId}/
+// messages/{mailRecordId}/calendar-attachment，两段 id 均为整数）；filename 必须
+// 符合 01 安全文件名（meeting-YYYY-MM-DD-[A-Za-z0-9-]{1,60}.ics，空称呼回退
+// expert）。fetch 二进制响应后先 await handleAuthResponse（与 app.js api 同款
+// 401/403 处理，任务钻取/登录态语义一致），非 ok 从 JSON.message 读取错误并
+// throw，由调用方 hostShowStatus(error.message,"error")；成功用 response.blob()
+// 建瞬时 <a hidden download> 节点点击下载，setTimeout(1000) 移除节点并 revoke
+// ObjectURL。不用 window.open、不离开当前草稿页、不调用现有 JSON api 解析 ICS。
+const CALENDAR_DOWNLOAD_ROUTE = /^\/api\/mail\/conversations\/\d+\/messages\/\d+\/calendar-attachment$/;
+const CALENDAR_FILENAME_SAFE = /^meeting-\d{4}-\d{2}-\d{2}-(expert|[A-Za-z0-9-]{1,60})\.ics$/;
+
+async function mcHostDownloadCalendar(relativePath, filename) {
+    const route = String(relativePath || "");
+    const name = String(filename || "");
+    if (!CALENDAR_DOWNLOAD_ROUTE.test(route)) {
+        throw new Error("日历附件下载地址无效");
+    }
+    if (!CALENDAR_FILENAME_SAFE.test(name)) {
+        throw new Error("日历附件文件名无效");
+    }
+    const response = await fetch(`${contextPath}${route}`);
+    await handleAuthResponse(response);
+    if (!response.ok) {
+        let message = `${response.status} ${response.statusText}`;
+        try {
+            const data = await response.json();
+            if (data && typeof data.message === "string" && data.message) message = data.message;
+        } catch (e) {
+            // 非 JSON 错误体：保留 status text
+        }
+        throw new Error(message);
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.setAttribute("href", url);
+    anchor.setAttribute("download", name);
+    anchor.hidden = true;
+    document.body.appendChild(anchor);
+    anchor.click();
+    setTimeout(() => {
+        if (anchor.parentNode) anchor.parentNode.removeChild(anchor);
+        URL.revokeObjectURL(url);
+    }, 1000);
 }
 
 async function loadMailboxAccounts() {

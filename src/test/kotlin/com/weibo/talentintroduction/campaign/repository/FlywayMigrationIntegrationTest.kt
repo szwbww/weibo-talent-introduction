@@ -56,10 +56,57 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh database migrates through V121`() {
+    fun `fresh database migrates through V123`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("121", flyway.migrate().targetSchemaVersion)
+        assertEquals("123", flyway.migrate().targetSchemaVersion)
+    }
+
+    @Test
+    fun `V123 adds nullable calendar attachment json column leaving history null`() {
+        migrateToV23AndSeedBase()
+        // V123 之前的旧行：无该列，随迁移升到 123。
+        connection().use { connection ->
+            connection.execute(
+                """
+                INSERT INTO mail_record
+                    (id, expert_contact_id, direction, mail_type, message_id, send_status, sent_at)
+                VALUES
+                    (201, 1, 'OUTBOUND', 'MANUAL_RICH_REPLY', 'historical-1', 'SENT', '2026-09-01 10:00:00'),
+                    (202, 1, 'OUTBOUND', 'MANUAL_RICH_REPLY', 'historical-2', 'FAILED', NULL)
+                """
+            )
+        }
+
+        assertEquals("123", flyway().migrate().targetSchemaVersion)
+        connection().use { connection ->
+            // 列契约：calendar_attachment_json LONGTEXT NULL（I-1 唯一 absence 形态）。
+            assertTrue(connection.columnExists("mail_record", "calendar_attachment_json"))
+            assertEquals("longtext", connection.queryString(
+                "SELECT DATA_TYPE FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'mail_record' " +
+                    "AND column_name = 'calendar_attachment_json'"
+            ))
+            assertEquals("YES", connection.queryString(
+                "SELECT IS_NULLABLE FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'mail_record' " +
+                    "AND column_name = 'calendar_attachment_json'"
+            ))
+            // 历史行不回填：迁移前旧行保持 NULL（不默认填 {} / 空串 / 假快照）。
+            assertEquals(2L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_record WHERE id IN (201, 202) AND calendar_attachment_json IS NULL"
+            ))
+            assertEquals(0L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_record WHERE calendar_attachment_json IS NOT NULL"
+            ))
+            // 新列可写规范快照 JSON（应用层 codec 才是校验方；本测试只验证列可存）。
+            connection.execute(
+                "UPDATE mail_record SET calendar_attachment_json = '{\"schemaVersion\":1}' WHERE id = 201"
+            )
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_record WHERE id = 201 AND calendar_attachment_json IS NOT NULL"
+            ))
+        }
     }
 
     @Test
@@ -155,7 +202,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("121", flyway().migrate().targetSchemaVersion)
+        assertEquals("123", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(1L, connection.queryLong(
                 "SELECT COUNT(*) FROM mail_sender_account " +
@@ -255,14 +302,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V23 upgrades to V121 without repair`() {
+    fun `database at original V23 upgrades to V122 without repair`() {
         val v23Flyway = flyway(MigrationVersion.fromVersion("23"))
         v23Flyway.clean()
         assertEquals("23", v23Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("121", flyway().migrate().targetSchemaVersion)
+        assertEquals("123", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -271,14 +318,14 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `database at original V24 upgrades to V121 without repair`() {
+    fun `database at original V24 upgrades to V122 without repair`() {
         val v24Flyway = flyway(MigrationVersion.fromVersion("24"))
         v24Flyway.clean()
         assertEquals("24", v24Flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("121", flyway().migrate().targetSchemaVersion)
+        assertEquals("123", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -313,7 +360,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("121", flyway().migrate().targetSchemaVersion)
+        assertEquals("123", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
                 "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
@@ -359,7 +406,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("121", flyway().migrate().targetSchemaVersion)
+        assertEquals("123", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }
@@ -435,7 +482,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("121", flyway().migrate().targetSchemaVersion)
+        assertEquals("123", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 历史值原样保留（I-2/I-3），document_status 迁移前后不变。
             assertEquals(12345L, connection.queryLong(
@@ -551,7 +598,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("121", flyway().migrate().targetSchemaVersion)
+        assertEquals("123", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("mail_attachment_transfer"))
             listOf(
@@ -696,7 +743,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("121", flyway().migrate().targetSchemaVersion)
+        assertEquals("123", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：uid_validity BIGINT NOT NULL DEFAULT 0
             assertTrue(connection.columnExists("inbound_mail_processing", "uid_validity"))
@@ -786,7 +833,7 @@ class FlywayMigrationIntegrationTest {
             assertFalse(connection.tableExists("expert_follow"))
         }
 
-        assertEquals("121", flyway().migrate().targetSchemaVersion)
+        assertEquals("123", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_follow"))
             listOf("username", "expert_contact_id", "created_at").forEach { column ->
@@ -874,6 +921,124 @@ class FlywayMigrationIntegrationTest {
                         "VALUES ('admin', 999999, '2026-09-08 10:00:00')"
                 )
             }
+        }
+    }
+
+    @Test
+    fun `V122 seeds meeting confirmation template without touching old templates`() {
+        val flyway = flyway()
+        flyway.clean()
+        flyway.migrate()
+        connection().use { connection ->
+            // 新专用模板：code/type/名称/subject/描述固定，恰好 1 头 + 1 CUSTOM_TEXT 块。
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_compose_template " +
+                    "WHERE template_code = 'MANUAL_MEETING_CONFIRMATION'"
+            ))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_compose_template " +
+                    "WHERE template_code = 'MANUAL_MEETING_CONFIRMATION' " +
+                    "AND mail_type = 'MANUAL_MEETING_CONFIRMATION' AND enabled = 1"
+            ))
+            assertEquals("专家会议确认 · 英文", connection.queryString(
+                "SELECT template_name FROM mail_compose_template " +
+                    "WHERE template_code = 'MANUAL_MEETING_CONFIRMATION'"
+            ))
+            assertEquals("Meeting confirmation", connection.queryString(
+                "SELECT subject FROM mail_compose_template " +
+                    "WHERE template_code = 'MANUAL_MEETING_CONFIRMATION'"
+            ))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_compose_template_block b " +
+                    "JOIN mail_compose_template t ON t.id = b.template_id " +
+                    "WHERE t.template_code = 'MANUAL_MEETING_CONFIRMATION' AND b.block_type = 'CUSTOM_TEXT'"
+            ))
+            // 四个 {{...}} 变量逐字存在；无通用 ${...} 残留（专用语法不喂给通用渲染）。
+            val customText = connection.queryString(
+                "SELECT b.custom_text FROM mail_compose_template_block b " +
+                    "JOIN mail_compose_template t ON t.id = b.template_id " +
+                    "WHERE t.template_code = 'MANUAL_MEETING_CONFIRMATION'"
+            )
+            listOf(
+                "{{expert_salutation}}", "{{meeting_time}}", "{{zoom_url}}", "{{sender_signature}}"
+            ).forEach { token ->
+                assertTrue(customText.contains(token), "missing token $token")
+            }
+            assertTrue(!customText.contains("\${"))
+
+            // 旧 MEETING_CONFIRMATION（V62 由 mail_template 迁入）原样保留：1 头 + 1 块，正文未变。
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_compose_template WHERE template_code = 'MEETING_CONFIRMATION'"
+            ))
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_compose_template_block b " +
+                    "JOIN mail_compose_template t ON t.id = b.template_id " +
+                    "WHERE t.template_code = 'MEETING_CONFIRMATION'"
+            ))
+            assertEquals(connection.queryString(
+                "SELECT body FROM mail_template WHERE template_code = 'MEETING_CONFIRMATION'"
+            ), connection.queryString(
+                "SELECT b.custom_text FROM mail_compose_template_block b " +
+                    "JOIN mail_compose_template t ON t.id = b.template_id " +
+                    "WHERE t.template_code = 'MEETING_CONFIRMATION'"
+            ))
+        }
+    }
+
+    @Test
+    fun `V122 does not overwrite a pre-existing manual meeting template configuration`() {
+        val v121Flyway = flyway(MigrationVersion.fromVersion("121"))
+        v121Flyway.clean()
+        v121Flyway.migrate()
+        connection().use { connection ->
+            // 运营在 V121 阶段已手工创建同 code 模板（含自定义正文与两个块）。
+            connection.execute(
+                "INSERT INTO mail_compose_template " +
+                    "(template_code, template_name, subject, description, mail_type, enabled) " +
+                    "VALUES ('MANUAL_MEETING_CONFIRMATION', '人工自定义', 'Custom subject', " +
+                    "'custom description', 'MANUAL_MEETING_CONFIRMATION', 0)"
+            )
+            connection.execute(
+                "INSERT INTO mail_compose_template_block (template_id, block_order, block_type, custom_text) " +
+                    "SELECT id, 0, 'CUSTOM_TEXT', 'custom body a' FROM mail_compose_template " +
+                    "WHERE template_code = 'MANUAL_MEETING_CONFIRMATION'"
+            )
+            connection.execute(
+                "INSERT INTO mail_compose_template_block (template_id, block_order, block_type, custom_text) " +
+                    "SELECT id, 1, 'CUSTOM_TEXT', 'custom body b' FROM mail_compose_template " +
+                    "WHERE template_code = 'MANUAL_MEETING_CONFIRMATION'"
+            )
+        }
+
+        assertEquals("123", flyway().migrate().targetSchemaVersion)
+        connection().use { connection ->
+            // 头不被覆盖：名称/主题/禁用状态原样；不新增任何块（禁止为原有模板删块/加块）。
+            assertEquals(1L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_compose_template WHERE template_code = 'MANUAL_MEETING_CONFIRMATION'"
+            ))
+            assertEquals("人工自定义", connection.queryString(
+                "SELECT template_name FROM mail_compose_template " +
+                    "WHERE template_code = 'MANUAL_MEETING_CONFIRMATION'"
+            ))
+            assertEquals("Custom subject", connection.queryString(
+                "SELECT subject FROM mail_compose_template " +
+                    "WHERE template_code = 'MANUAL_MEETING_CONFIRMATION'"
+            ))
+            assertEquals(0L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_compose_template WHERE template_code = 'MANUAL_MEETING_CONFIRMATION' " +
+                    "AND enabled = 1"
+            ))
+            assertEquals(2L, connection.queryLong(
+                "SELECT COUNT(*) FROM mail_compose_template_block b " +
+                    "JOIN mail_compose_template t ON t.id = b.template_id " +
+                    "WHERE t.template_code = 'MANUAL_MEETING_CONFIRMATION'"
+            ))
+            assertTrue(!connection.queryString(
+                "SELECT GROUP_CONCAT(custom_text ORDER BY block_order SEPARATOR '|') " +
+                    "FROM mail_compose_template_block b " +
+                    "JOIN mail_compose_template t ON t.id = b.template_id " +
+                    "WHERE t.template_code = 'MANUAL_MEETING_CONFIRMATION'"
+            ).contains("Dear {{expert_salutation}}"))
         }
     }
 

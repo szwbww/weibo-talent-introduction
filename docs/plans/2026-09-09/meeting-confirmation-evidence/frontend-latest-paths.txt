@@ -1,0 +1,231 @@
+$ rg -n draft|Draft|sessionStore|renderManualSection|manualComposeHtml|adoptAssembly|sendManualReply|retargetManual|renderMessage|unmount|contextPath src/main/resources/static/mailbox-chat.js src/main/resources/static/app.js
+exit=0
+src/main/resources/static/mailbox-chat.js:21: *   每会话 ≤500 条已加载消息；不写 localStorage 正文。scroll/selectExpert/unmount/
+src/main/resources/static/mailbox-chat.js:75:    const sessionStore = new Map();
+src/main/resources/static/mailbox-chat.js:220:        const rec = sessionStore.get(key);
+src/main/resources/static/mailbox-chat.js:222:        sessionStore.delete(key);
+src/main/resources/static/mailbox-chat.js:223:        sessionStore.set(key, rec);
+src/main/resources/static/mailbox-chat.js:228:        const rec = sessionStore.get(key);
+src/main/resources/static/mailbox-chat.js:230:            sessionStore.delete(key);
+src/main/resources/static/mailbox-chat.js:231:            sessionStore.set(key, rec);
+src/main/resources/static/mailbox-chat.js:239:        let rec = sessionStore.get(key);
+src/main/resources/static/mailbox-chat.js:252:                drafts: new Map(),
+src/main/resources/static/mailbox-chat.js:264:            if (patch.drafts) rec.drafts = patch.drafts;
+src/main/resources/static/mailbox-chat.js:267:        sessionStore.delete(key);
+src/main/resources/static/mailbox-chat.js:268:        sessionStore.set(key, rec);
+src/main/resources/static/mailbox-chat.js:270:        if (sessionStore.size > SESSION_CACHE_LIMIT) {
+src/main/resources/static/mailbox-chat.js:273:            sessionStore.forEach((entry, entryKey) => {
+src/main/resources/static/mailbox-chat.js:279:            if (oldestKey !== null && oldestKey !== key) sessionStore.delete(oldestKey);
+src/main/resources/static/mailbox-chat.js:285:        sessionStore.delete(conversationCacheKey(user, accountScope, contactId));
+src/main/resources/static/mailbox-chat.js:330:            draftsRef: null,
+src/main/resources/static/mailbox-chat.js:389:        function currentDraftsMap() {
+src/main/resources/static/mailbox-chat.js:390:            if (instance.draftsRef) return instance.draftsRef;
+src/main/resources/static/mailbox-chat.js:393:                instance.draftsRef = record.drafts;
+src/main/resources/static/mailbox-chat.js:394:                return record.drafts;
+src/main/resources/static/mailbox-chat.js:399:        function ensureDraftsMap() {
+src/main/resources/static/mailbox-chat.js:400:            let drafts = currentDraftsMap();
+src/main/resources/static/mailbox-chat.js:401:            if (drafts) return drafts;
+src/main/resources/static/mailbox-chat.js:406:            instance.draftsRef = record.drafts;
+src/main/resources/static/mailbox-chat.js:407:            return record.drafts;
+src/main/resources/static/mailbox-chat.js:410:        function getDraft(targetKey) {
+src/main/resources/static/mailbox-chat.js:411:            const drafts = currentDraftsMap();
+src/main/resources/static/mailbox-chat.js:412:            if (!drafts || !targetKey) return null;
+src/main/resources/static/mailbox-chat.js:413:            return drafts.get(targetKey) || null;
+src/main/resources/static/mailbox-chat.js:416:        function setDraft(targetKey, draft) {
+src/main/resources/static/mailbox-chat.js:417:            const drafts = ensureDraftsMap();
+src/main/resources/static/mailbox-chat.js:418:            if (!drafts || !targetKey) return;
+src/main/resources/static/mailbox-chat.js:419:            drafts.set(targetKey, draft);
+src/main/resources/static/mailbox-chat.js:422:        function deleteDraft(targetKey) {
+src/main/resources/static/mailbox-chat.js:423:            const drafts = currentDraftsMap();
+src/main/resources/static/mailbox-chat.js:424:            if (drafts && targetKey) drafts.delete(targetKey);
+src/main/resources/static/mailbox-chat.js:1131:            instance.draftsRef = null;
+src/main/resources/static/mailbox-chat.js:1239:                try { instance.workbench.instance.unmount(); } catch (e) { /* noop */ }
+src/main/resources/static/mailbox-chat.js:1243:            const releaseMaterials = hostFn("unmountExpertMaterialsHosts");
+src/main/resources/static/mailbox-chat.js:1281:            instance.draftsRef = null;
+src/main/resources/static/mailbox-chat.js:1310:                    instance.draftsRef = cached.drafts;
+src/main/resources/static/mailbox-chat.js:1329:                    instance.draftsRef = cached.drafts;
+src/main/resources/static/mailbox-chat.js:1483:                html += renderMessage(message);
+src/main/resources/static/mailbox-chat.js:1514:        function renderMessage(message) {
+src/main/resources/static/mailbox-chat.js:1703:                renderManualSectionInto(scrollNode);
+src/main/resources/static/mailbox-chat.js:1842:        // ---- 会话状态保存（scroll/selectExpert/unmount/loadOlder/quiet） ----
+src/main/resources/static/mailbox-chat.js:1855:            const drafts = currentDraftsMap();
+src/main/resources/static/mailbox-chat.js:1864:                drafts: drafts || new Map()
+src/main/resources/static/mailbox-chat.js:1866:            instance.draftsRef = rec.drafts;
+src/main/resources/static/mailbox-chat.js:2109:                try { instance.workbench.instance.unmount(); } catch (e) { /* noop */ }
+src/main/resources/static/mailbox-chat.js:2118:                onComplete: (assembly) => adoptAssembly(processingId, assembly)
+src/main/resources/static/mailbox-chat.js:2126:        function renderManualSectionInto(scroll) {
+src/main/resources/static/mailbox-chat.js:2136:            const draft = targetKey != null ? getDraft(targetKey) : null;
+src/main/resources/static/mailbox-chat.js:2142:            instance.manual.qa = draft && draft.qa ? draft.qa : null;
+src/main/resources/static/mailbox-chat.js:2146:                ? manualComposeHtml(targetKey, targetProcessingId, targetAccount, draft, defaultSubject)
+src/main/resources/static/mailbox-chat.js:2163:        function manualComposeHtml(targetKey, processingId, account, draft, defaultSubject) {
+src/main/resources/static/mailbox-chat.js:2164:            const subjectValue = draft ? draft.subject : defaultSubject;
+src/main/resources/static/mailbox-chat.js:2165:            const editorText = draft ? draft.text : "";
+src/main/resources/static/mailbox-chat.js:2702:        function saveDraftFromInputs() {
+src/main/resources/static/mailbox-chat.js:2707:            setDraft(key, {
+src/main/resources/static/mailbox-chat.js:2724:        function adoptAssembly(processingId, assembly) {
+src/main/resources/static/mailbox-chat.js:2730:            const assemblyText = (assembly && (assembly.renderedDraftText || assembly.rawDraftText || assembly.text)) || "";
+src/main/resources/static/mailbox-chat.js:2745:            saveDraftFromInputs();
+src/main/resources/static/mailbox-chat.js:2753:        function sendManualReply() {
+src/main/resources/static/mailbox-chat.js:2795:                    deleteDraft(key);
+src/main/resources/static/mailbox-chat.js:2871:            const draft = currentTargetKey() ? getDraft(currentTargetKey()) : null;
+src/main/resources/static/mailbox-chat.js:2872:            const hasEditedDraft = draft && (draft.subject || draft.html || draft.text);
+src/main/resources/static/mailbox-chat.js:2873:            if (!hasEditedDraft) {
+src/main/resources/static/mailbox-chat.js:2875:                retargetManual(newestProcessing, latest.accountCode || "");
+src/main/resources/static/mailbox-chat.js:2883:                    retargetManual(newestProcessing, latest.accountCode || "", { keepBody: true });
+src/main/resources/static/mailbox-chat.js:2890:        function retargetManual(newProcessingId, newAccount, options) {
+src/main/resources/static/mailbox-chat.js:2893:            const draft = oldKey ? getDraft(oldKey) : null;
+src/main/resources/static/mailbox-chat.js:2896:            if (draft) {
+src/main/resources/static/mailbox-chat.js:2897:                const next = Object.assign({}, draft, { subject: "", updatedAt: new Date().toISOString() });
+src/main/resources/static/mailbox-chat.js:2898:                setDraft(newKey, next);
+src/main/resources/static/mailbox-chat.js:2899:                if (oldKey && oldKey !== newKey) deleteDraft(oldKey);
+src/main/resources/static/mailbox-chat.js:2904:            instance.manual.qa = draft && draft.qa ? snapshotQa(draft.qa) : null;
+src/main/resources/static/mailbox-chat.js:2934:        // 事件（host 委托 + portal 委托；unmount 解绑）
+src/main/resources/static/mailbox-chat.js:3075:                sendManualReply();
+src/main/resources/static/mailbox-chat.js:3199:                saveDraftFromInputs();
+src/main/resources/static/mailbox-chat.js:3317:        function unmount() {
+src/main/resources/static/mailbox-chat.js:3391:            unmount,
+src/main/resources/static/mailbox-chat.js:3417:            unmount: () => { if (controller) controller.unmount(); },
+src/main/resources/static/mailbox-chat.js:3426:    function unmount(host) {
+src/main/resources/static/mailbox-chat.js:3429:        if (api && typeof api.unmount === "function") {
+src/main/resources/static/mailbox-chat.js:3430:            api.unmount();
+src/main/resources/static/mailbox-chat.js:3444:        unmount,
+src/main/resources/static/app.js:173:function unmountAiTrainingTrustReply() {
+src/main/resources/static/app.js:174:    aiTrainingTrustReplyInstance?.unmount();
+src/main/resources/static/app.js:186:function unmountLiveTrustReply() {
+src/main/resources/static/app.js:188:    liveTrustReplyInstance?.unmount();
+src/main/resources/static/app.js:195:function unmountMailboxTrustReplyHosts() {
+src/main/resources/static/app.js:196:    unmountLiveTrustReply();
+src/main/resources/static/app.js:242:    lastDraftTemplate: "",
+src/main/resources/static/app.js:243:    lastRenderedDraft: "",
+src/main/resources/static/app.js:250:    drafts: {},
+src/main/resources/static/app.js:251:    nextDraftId: 0,
+src/main/resources/static/app.js:412:    const overlay = $(".compose-draft.ai-chat-panel .ai-reply-loading-overlay");
+src/main/resources/static/app.js:436:    const text = $(".compose-draft.ai-chat-panel .ai-reply-loading-text");
+src/main/resources/static/app.js:489:    const response = await fetch(`${contextPath}/api/mail/unmatched-inbound/${recordId}/ai-reply/turn-stream`, {
+src/main/resources/static/app.js:541:const contextPath = (() => {
+src/main/resources/static/app.js:759:            const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+src/main/resources/static/app.js:798:        const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+src/main/resources/static/app.js:914:        const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+src/main/resources/static/app.js:1002:            const url = `${contextPath}/api/task-progress/${taskType}`;
+src/main/resources/static/app.js:1401:        const url = `${contextPath}/api/task-progress/${taskType}/executions?limit=10`;
+src/main/resources/static/app.js:1479:    const response = await fetch(`${contextPath}${path}`, {
+src/main/resources/static/app.js:1677:    if (view !== "ai-training") unmountAiTrainingTrustReply();
+src/main/resources/static/app.js:1678:    if (view !== "mailbox") unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:1681:    if (view !== "mailbox" && typeof unmountMailboxChatHosts === "function") {
+src/main/resources/static/app.js:1682:        unmountMailboxChatHosts();
+src/main/resources/static/app.js:3773:        <td><div class="pre">${escapeHtml(topic.draftBody || "—")}</div></td>
+src/main/resources/static/app.js:3800:function openPendingTopicRuleDraft(button) {
+src/main/resources/static/app.js:3807:    if (form) form.answerBody.value = entry.draftBody || "";
+src/main/resources/static/app.js:4109:    unmountAiTrainingTrustReply();
+src/main/resources/static/app.js:4118:        contextPath,
+src/main/resources/static/app.js:4168:        unmountAiTrainingTrustReply();
+src/main/resources/static/app.js:5227:function resolveAiDraftReadiness(result, coverageSummary) {
+src/main/resources/static/app.js:5228:    if (result && result.draftReadiness === "READY") return "READY";
+src/main/resources/static/app.js:5229:    if (result && result.draftReadiness === "NEEDS_REVIEW") return "NEEDS_REVIEW";
+src/main/resources/static/app.js:5230:    if (result && result.draftReadiness === "BLOCKED") return "BLOCKED";
+src/main/resources/static/app.js:5271:    const readiness = resolveAiDraftReadiness(result, coverageSummary);
+src/main/resources/static/app.js:5290:        const heading = document.getElementById("trustDraftHeading");
+src/main/resources/static/app.js:7570:    if (typeof unmountExpertMaterialsHosts === "function") {
+src/main/resources/static/app.js:7571:        unmountExpertMaterialsHosts(contactDetail);
+src/main/resources/static/app.js:8079:    if (typeof unmountExpertMaterialsHosts === "function") {
+src/main/resources/static/app.js:8080:        unmountExpertMaterialsHosts(contactDetail);
+src/main/resources/static/app.js:8396:function unmountExpertMaterialsHosts(rootEl) {
+src/main/resources/static/app.js:8398:    if (typeof window.ExpertMaterials.unmountHostsIn === "function") {
+src/main/resources/static/app.js:8399:        window.ExpertMaterials.unmountHostsIn(rootEl);
+src/main/resources/static/app.js:8415:        contextPath,
+src/main/resources/static/app.js:8473:                        ${doc.downloadUrl ? `<a class="button small" href="${contextPath}${escapeHtml(doc.downloadUrl)}" download>下载</a>` : ""}
+src/main/resources/static/app.js:8790:    if (aiAnalysisState.pickerView && typeof aiAnalysisState.pickerView.unmount === "function") {
+src/main/resources/static/app.js:8791:        aiAnalysisState.pickerView.unmount();
+src/main/resources/static/app.js:8833:        contextPath,
+src/main/resources/static/app.js:9183:            const hasNewSchema = after?.schemaVersion === "ai-reply-draft-audit-v1";
+src/main/resources/static/app.js:9188:                const shortHash = (after?.draftHash || "").substring(0, 12);
+src/main/resources/static/app.js:9673:        const result = await api("/api/compose-templates/preview-draft", {
+src/main/resources/static/app.js:9929:        const result = await api("/api/compose-templates/preview-draft", {
+src/main/resources/static/app.js:10368:        if (previewUrl) window.open(`${contextPath}${previewUrl}`, "_blank");
+src/main/resources/static/app.js:10829:                        <a class="button small" href="${contextPath}/api/mail/mailbox/attachments/${encodeURIComponent(item.id)}/download" download>下载</a>
+src/main/resources/static/app.js:10891:    aiReplyState.lastDraftTemplate = "";
+src/main/resources/static/app.js:10892:    aiReplyState.lastRenderedDraft = "";
+src/main/resources/static/app.js:10896:    aiReplyState.drafts = {};
+src/main/resources/static/app.js:10897:    aiReplyState.nextDraftId = 0;
+src/main/resources/static/app.js:10917:function appendAiChatDraftBubble(rawText, renderedText, result) {
+src/main/resources/static/app.js:10920:    const draftId = ++aiReplyState.nextDraftId;
+src/main/resources/static/app.js:10924:    const readiness = resolveAiDraftReadiness(result, coverageSummary);
+src/main/resources/static/app.js:10936:    aiReplyState.drafts[draftId] = {
+src/main/resources/static/app.js:10941:        draftReadiness: readiness,
+src/main/resources/static/app.js:10949:        draftHash: (result && result.draftHash) || "",
+src/main/resources/static/app.js:10958:        <div class="ai-chat-draft-actions">
+src/main/resources/static/app.js:10959:            <button type="button" class="button small primary" data-action="ai-adopt-draft" data-draft-id="${draftId}"${adoptDisabledAttr}>${escapeHtml(adoptLabel)}</button>
+src/main/resources/static/app.js:10984:    const capturedDraftId = adopt.draftId;
+src/main/resources/static/app.js:10987:        doPreflightCheck(Number(adopt.recordId), capturedDraftId);
+src/main/resources/static/app.js:10991:async function doPreflightCheck(recordId, capturedDraftId) {
+src/main/resources/static/app.js:10996:    if (Number(adopt.draftId) !== Number(capturedDraftId)) {
+src/main/resources/static/app.js:11034:        const stillSameDraft = stillSameRecord && Number(currentAdopt.draftId) === Number(adopt.draftId)
+src/main/resources/static/app.js:11037:        const stillCurrent = stillSameRecord && stillSameDraft && stillSameText
+src/main/resources/static/app.js:11053:        const stillSameDraft = stillSameRecord && Number(currentAdopt.draftId) === Number(adopt.draftId);
+src/main/resources/static/app.js:11055:        const stillCurrent = stillSameRecord && stillSameDraft && stillSameText
+src/main/resources/static/app.js:11112:    const rendered = assembly.renderedDraftText || assembly.rawDraftText || assembly.text || "";
+src/main/resources/static/app.js:11122:        rawTemplate: assembly.rawDraftText || "",
+src/main/resources/static/app.js:11126:        draftId: -1,
+src/main/resources/static/app.js:11129:        draftReadiness: "READY",
+src/main/resources/static/app.js:11134:        draftHash: assembly.draftHash,
+src/main/resources/static/app.js:11162:    unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:11171:        contextPath,
+src/main/resources/static/app.js:11210:    unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:11454:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:11471:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:11498:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:11539:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:11644:            setAiReplyLoading($(".compose-draft.ai-chat-panel"), false);
+src/main/resources/static/app.js:11668:                assistantDraft: aiReplyState.lastDraftTemplate,
+src/main/resources/static/app.js:11712:            const rawDraft = result.draftText || "";
+src/main/resources/static/app.js:11713:            const renderedDraft = result.renderedDraftText || rawDraft;
+src/main/resources/static/app.js:11714:            appendAiChatDraftBubble(rawDraft, renderedDraft, result);
+src/main/resources/static/app.js:11718:                        assistantDraft: aiReplyState.lastDraftTemplate,
+src/main/resources/static/app.js:11722:                aiReplyState.lastDraftTemplate = rawDraft;
+src/main/resources/static/app.js:11723:                aiReplyState.lastRenderedDraft = renderedDraft;
+src/main/resources/static/app.js:11765:    if (action === "ai-adopt-draft") {
+src/main/resources/static/app.js:11766:        const draftId = Number(element.dataset.draftId);
+src/main/resources/static/app.js:11768:        const entry = aiReplyState.drafts[draftId];
+src/main/resources/static/app.js:11769:        const rendered = entry?.rendered ?? aiReplyState.lastRenderedDraft;
+src/main/resources/static/app.js:11770:        const raw = entry?.raw ?? aiReplyState.lastDraftTemplate;
+src/main/resources/static/app.js:11784:        const draftEvidenceSetVersion = entry?.evidenceSetVersion ?? "";
+src/main/resources/static/app.js:11794:            draftId: draftId,
+src/main/resources/static/app.js:11797:            draftReadiness: entry?.draftReadiness || "READY",
+src/main/resources/static/app.js:11801:            evidenceSetVersion: draftEvidenceSetVersion
+src/main/resources/static/app.js:13060:        if (button) openPendingTopicRuleDraft(button);
+src/main/resources/static/app.js:13277:        unmountMailboxTrustReplyHosts();
+src/main/resources/static/app.js:13459:                const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+src/main/resources/static/app.js:14344:        && typeof MailboxChat.unmount === "function";
+src/main/resources/static/app.js:14351:function unmountMailboxChatHosts() {
+src/main/resources/static/app.js:14356:        MailboxChat.unmount(list);
+src/main/resources/static/app.js:14444:        contextPath,
+src/main/resources/static/app.js:14472:        contextPath,
+src/main/resources/static/app.js:14482:        unmount: () => {
+src/main/resources/static/app.js:14484:                instance.unmount();
+src/main/resources/static/app.js:14600:    if (typeof unmountMailboxChatHosts === "function") unmountMailboxChatHosts();
+src/main/resources/static/app.js:15516:    manualDraft: null,        // current draft values
+src/main/resources/static/app.js:15566:        manualDraft: null,
+src/main/resources/static/app.js:15903:        var manualTemplateId = batchTaskState.manualDraft && batchTaskState.manualDraft.templateId != null
+src/main/resources/static/app.js:15904:            ? batchTaskState.manualDraft.templateId
+src/main/resources/static/app.js:15990:        if (!batchTaskState.manualDraft) batchTaskState.manualDraft = {};
+src/main/resources/static/app.js:15991:        batchTaskState.manualDraft.tags = readBatchTagPickerValue(valueId);
+src/main/resources/static/app.js:16002:        if (!batchTaskState.manualDraft) batchTaskState.manualDraft = {};
+src/main/resources/static/app.js:16003:        batchTaskState.manualDraft.regions = readBatchRegionPickerValue(valueId);
+src/main/resources/static/app.js:16313:        if (!batchTaskState.manualDraft) batchTaskState.manualDraft = {};
+src/main/resources/static/app.js:16314:        batchTaskState.manualDraft.emailDomains = readBatchMultiPickerValue(valueId);
+src/main/resources/static/app.js:16781:    batchTaskState.manualDraft = deepCloneConfig(config);
+src/main/resources/static/app.js:16791:    fillManualFormFromDraft();
+src/main/resources/static/app.js:16797:        batchTaskState.manualDraft = null;
+src/main/resources/static/app.js:16834:    batchTaskState.manualDraft = {
+src/main/resources/static/app.js:16853:    fillManualFormFromDraft();
+src/main/resources/static/app.js:16856:function fillManualFormFromDraft() {
+src/main/resources/static/app.js:16857:    var d = batchTaskState.manualDraft;
+src/main/resources/static/app.js:16914:function detachBatchManualSourcePreservingDraft() {
+src/main/resources/static/app.js:16916:    batchTaskState.manualDraft = Object.assign({}, batchTaskState.manualDraft || {}, readManualFormValues());
+src/main/resources/static/app.js:17014:    var draft = readManualFormValues();
+src/main/resources/static/app.js:17015:    var dn = normalizeManualSnapshot(draft);
+src/main/resources/static/app.js:17221:        detachBatchManualSourcePreservingDraft();
+src/main/resources/static/app.js:17292:    // If current draft has diffs from baseline, confirm before overwriting
+src/main/resources/static/app.js:17293:    if (batchTaskState.manualSource && batchTaskState.manualDraft) {
+src/main/resources/static/app.js:17806:            if (!batchTaskState.manualDraft) batchTaskState.manualDraft = {};
+src/main/resources/static/app.js:17807:            Object.assign(batchTaskState.manualDraft, v);

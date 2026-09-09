@@ -99,6 +99,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
     private val trustReplyWorkbenchService = Mockito.mock(TrustReplyWorkbenchService::class.java)
     private val unsupportedAnswerIndexService = Mockito.mock(UnsupportedAnswerIndexService::class.java)
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
+    // 03 (T3): 新增构造依赖 —— 本文件只做旧 QA/assembly 回归，传模拟依赖即可。
+    private val meetingConfirmationService = Mockito.mock(MeetingConfirmationService::class.java)
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
@@ -121,7 +123,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         manualReplySendAttemptService,
         trustReplyWorkbenchService,
         unsupportedAnswerIndexService,
-        emailSuppressionService
+        emailSuppressionService,
+        meetingConfirmationService
     )
 
     private val contact = ExpertContact(

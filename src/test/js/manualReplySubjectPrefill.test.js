@@ -10,7 +10,7 @@ const indexPath = path.join(root, "index.html");
 const appJsSource = fs.readFileSync(appJsPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260909-mailbox-refinement";
+const CACHE_KEY = "20260909-meeting-confirmation";
 
 function extractFn(name) {
     const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");
@@ -85,13 +85,13 @@ describe("manual reply subject prefill (p3)", () => {
         }
     });
 
-    it("I-5: all seven cache-busted assets share one current key", () => {
+    it("I-5: all nine cache-busted assets share one current key", () => {
         const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
-        assert.strictEqual(keys.length, 7, "index.html must carry exactly seven cache-busted asset URLs");
-        assert.strictEqual(new Set(keys).size, 1, "all seven keys must share one value");
+        assert.strictEqual(keys.length, 9, "index.html must carry exactly nine cache-busted asset URLs");
+        assert.strictEqual(new Set(keys).size, 1, "all nine keys must share one value");
         assert.strictEqual(keys[0], CACHE_KEY, "the shared key must be " + CACHE_KEY);
-        const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css",
-            "trust-reply-workbench.js", "expert-materials.js", "mailbox-chat.js", "app.js"];
+        const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
+            "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js", "mailbox-chat.js", "app.js"];
         let previous = -1;
         for (const asset of ordered) {
             const at = html.indexOf(asset + "?v=" + CACHE_KEY);

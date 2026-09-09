@@ -12,18 +12,32 @@ import com.weibo.talentintroduction.document.service.ExpertMaterialService
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
+import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
+import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository
+import com.weibo.talentintroduction.mail.service.CalendarAttachmentCodec
+import com.weibo.talentintroduction.mail.service.CalendarAttachmentSnapshot
 import com.weibo.talentintroduction.mail.service.ExpertFollowService
 import com.weibo.talentintroduction.mail.service.InboundMailTagService
+import com.weibo.talentintroduction.mail.service.MailContentService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
 import com.weibo.talentintroduction.mail.service.PendingMailSendResult
+import com.weibo.talentintroduction.mail.service.MeetingConfirmationService
+import com.weibo.talentintroduction.mail.service.MeetingConfirmationDomain
+import com.weibo.talentintroduction.mail.service.MeetingInput
+import com.weibo.talentintroduction.mail.service.MeetingPreviewResponse
 import com.weibo.talentintroduction.mail.service.TagView
+import com.weibo.talentintroduction.template.domain.MailComposeTemplate
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -93,7 +107,7 @@ import org.springframework.test.web.servlet.MvcResult
  *   （跨专家/改账号/乱码 400）。
  */
 @EnabledIfSystemProperty(named = "mysqlIt", matches = "true")
-@WebMvcTest(controllers = [MailboxConversationController::class])
+@WebMvcTest(controllers = [MailboxConversationController::class, CalendarAttachmentController::class])
 @Import(
     AuthWebConfig::class,
     MailboxConversationControllerTest.KotlinObjectMapperConfig::class,
@@ -141,6 +155,12 @@ class MailboxConversationControllerTest {
     @MockBean
     private lateinit var senderAccountRepository: MailSenderAccountRepository
 
+    // 03 (T3): MailboxConversationService 新增依赖 —— mysqlIt context 缺此 bean 会启动失败；
+    // 默认 findAllById 返回空集合（旧行/无日历行 → calendarAttachment=null），
+    // CalendarAttachmentIntegrationTest 的日历场景单独 stub。
+    @MockBean
+    private lateinit var mailRecordRepository: MailRecordRepository
+
     @MockBean
     private lateinit var expertMaterialService: ExpertMaterialService
 
@@ -183,6 +203,9 @@ class MailboxConversationControllerTest {
             .thenReturn(emptyMap())
         Mockito.`when`(expertMaterialService.resolveMessageAttachments(Mockito.anyString(), Mockito.anyLong()))
             .thenReturn(emptyList())
+        // 03 (I-4): 默认无日历存档 —— 现有断言不受影响（calendarAttachment=null）。
+        Mockito.`when`(mailRecordRepository.findAllById(anyCollection())).thenReturn(emptyList())
+        Mockito.`when`(mailRecordRepository.findById(Mockito.anyLong())).thenReturn(Optional.empty())
     }
 
     @AfterEach
@@ -1207,89 +1230,513 @@ class MailboxConversationControllerTest {
         LocalDateTime.parse(value.replace(' ', 'T'))
 }
 
-/** 真实 MySQL + Flyway（test application.yml 数据源；迁移到最新含 V121）。 */
-@Configuration
-class MailboxConversationRealJdbcConfig {
-    @Bean
-    fun mailboxConversationDataSource(
-        @Value("\${spring.datasource.url}") url: String,
-        @Value("\${spring.datasource.username:root}") username: String,
-        @Value("\${spring.datasource.password:root}") password: String
-    ): DataSource = DriverManagerDataSource(url, username, password)
-
-    @Bean(initMethod = "migrate")
-    fun mailboxConversationFlyway(dataSource: DataSource): Flyway =
-        Flyway.configure()
-            .dataSource(dataSource)
-            .locations("classpath:db/migration")
-            .placeholderReplacement(false)
-            .load()
-
-    @Bean
-    fun mailboxConversationJdbcTemplate(dataSource: DataSource): JdbcTemplate = JdbcTemplate(dataSource)
-
-    @Bean
-    fun mailboxConversationNamedJdbc(dataSource: DataSource): NamedParameterJdbcTemplate =
-        NamedParameterJdbcTemplate(dataSource)
-}
 
 // ---------------------------------------------------------------------------
-// A1 双控制器映射回归（Amendment A1, 2026-09-08 HUMAN 批准）：同挂 campaign 旧 feed
-// controller 与 06 新材料 controller，证明不再 Ambiguous mapping（修复前本类 context
-// 启动失败：GET /api/expert-contacts/{contactId}/materials 双重映射）。
-// 本类不需要数据库/登录（全部构造依赖 @MockBean），因此不挂 mysqlIt 门禁，普通
-// mvn test 全量即回归；若未来有人恢复 campaign 侧同模板 GET 映射会立即红。
+// 03 (T3/I-3/I-4): CalendarAttachmentIntegrationTest —— 历史日历原件下载与时间线单独
+// 附件元数据（timeline 批量读一次 / 归属 / 损坏 / 旧行 null / 真实 HTTP 字节）。真实
+// MySQL 种子 + 真实 01 生成器（只 mock 模板目录与 processing 存在性）+ 真实 codec。
+// 独立 @WebMvcTest context；与 MailboxConversationControllerTest 共用真实 JDBC 配置。
 // ---------------------------------------------------------------------------
-@WebMvcTest(
-    controllers = [
-        com.weibo.talentintroduction.document.controller.ExpertMaterialController::class,
-        com.weibo.talentintroduction.campaign.controller.ExpertContactManagementController::class
-    ]
+@EnabledIfSystemProperty(named = "mysqlIt", matches = "true")
+@WebMvcTest(controllers = [MailboxConversationController::class, CalendarAttachmentController::class])
+@Import(
+    AuthWebConfig::class,
+    ObjectMapper::class,
+    MailboxConversationRealJdbcConfig::class,
+    MailboxConversationRepository::class,
+    MailboxConversationService::class
 )
-class MailboxMaterialsDualControllerMappingTest {
+@TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
+class CalendarAttachmentIntegrationTest {
 
     @Autowired
     private lateinit var mockMvc: MockMvc
 
-    @MockBean
-    private lateinit var documentMaterialService: com.weibo.talentintroduction.document.service.ExpertMaterialService
+    @Autowired
+    private lateinit var objectMapper: ObjectMapper
+
+    @Autowired
+    private lateinit var jdbcTemplate: JdbcTemplate
 
     @MockBean
-    private lateinit var campaignMaterialService: com.weibo.talentintroduction.campaign.service.ExpertMaterialService
+    private lateinit var authService: AuthService
 
     @MockBean
-    private lateinit var contactManagementService: com.weibo.talentintroduction.campaign.service.ExpertContactManagementService
+    private lateinit var expertContactRepository: ExpertContactRepository
 
     @MockBean
-    private lateinit var manualExpertMailService: com.weibo.talentintroduction.mail.service.ManualExpertMailService
+    private lateinit var senderAccountRepository: MailSenderAccountRepository
 
     @MockBean
-    private lateinit var meetingScheduleService: com.weibo.talentintroduction.campaign.service.MeetingScheduleService
+    private lateinit var mailRecordRepository: MailRecordRepository
 
     @MockBean
-    private lateinit var operatorStatusService: com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
+    private lateinit var expertMaterialService: ExpertMaterialService
 
     @MockBean
-    private lateinit var indexLevelOperationService: com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
+    private lateinit var inboundMailTagService: InboundMailTagService
 
     @MockBean
-    private lateinit var senderAccountBindingService: com.weibo.talentintroduction.mail.service.SenderAccountBindingService
+    private lateinit var expertSearchService: ExpertSearchService
+
+    @MockBean
+    private lateinit var expertFollowService: ExpertFollowService
+
+    private val meetingTemplateId = 9001L
+    private val meetingTemplateBody =
+        "Dear {{expert_salutation}},\n\n" +
+            "Thank you for confirming.\n\n" +
+            "We have noted the meeting time as {{meeting_time}}.\n\n" +
+            "Please join the meeting using the following link:\n\n" +
+            "{{zoom_url}}\n\n" +
+            "We look forward to speaking with you.\n\n" +
+            "Best regards,\n" +
+            "{{sender_signature}}"
+
+    @BeforeEach
+    fun setUp() {
+        cleanup()
+        seedAccount("acc-a")
+        seedContactRow(1, "Alice Expert", "alice@example.org")
+        seedContactRow(2, "Bob Expert", "bob@example.org")
+        Mockito.`when`(authService.findUser("op1")).thenReturn(
+            AdminUser(
+                username = "op1",
+                passwordHash = "not-checked",
+                mustChangePassword = false,
+                createdAt = LocalDateTime.now(),
+                updatedAt = LocalDateTime.now()
+            )
+        )
+        Mockito.`when`(
+            senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+        ).thenReturn(listOf(activeAccount("acc-a"), activeAccount("acc-b")))
+        listOf(1L, 2L).forEach { id ->
+            Mockito.`when`(expertContactRepository.findById(id))
+                .thenReturn(Optional.of(contact(id)))
+        }
+        Mockito.`when`(inboundMailTagService.listTagsBatch(anyCollection()))
+            .thenReturn(emptyMap())
+        Mockito.`when`(expertMaterialService.resolveMessageAttachments(Mockito.anyString(), Mockito.anyLong()))
+            .thenReturn(emptyList())
+        // 默认无日历存档：现有窗口只有旧行时 calendarAttachment=null。
+        Mockito.`when`(mailRecordRepository.findAllById(anyCollection())).thenReturn(emptyList())
+        Mockito.`when`(mailRecordRepository.findById(Mockito.anyLong())).thenReturn(Optional.empty())
+    }
+
+    @AfterEach
+    fun tearDown() {
+        cleanup()
+    }
+
+    private fun meetingInput() = MeetingInput(
+        templateId = meetingTemplateId,
+        templateBody = meetingTemplateBody,
+        expertSalutation = "Professor Basdogan",
+        zoneId = "Europe/Istanbul",
+        startLocal = "2026-09-11T10:00",
+        endLocal = "2026-09-11T10:30",
+        zoomUrl = "https://zoom.us/j/92123456789?pwd=abcDEF123",
+        senderSignature = "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
+        generatedAt = "2026-09-09T02:00:00Z"
+    )
+
+    /** 真实 01 生成器（只 mock 目录 listEnabled 与 processing 存在性，ICS 全真实）。 */
+    private fun previewFor(contactId: Long = 1L): MeetingPreviewResponse {
+        val inboundRepo = Mockito.mock(InboundMailProcessingRepository::class.java)
+        Mockito.`when`(inboundRepo.findById(100L)).thenReturn(
+            Optional.of(
+                InboundMailProcessing(
+                    id = 100L, senderAccountCode = "acc-a", imapUid = 1L, messageId = "in-cal-1",
+                    fromEmail = "expert@example.org", subject = "Question", body = "Body",
+                    cleanedBody = "Body", receivedAt = LocalDateTime.now(),
+                    processStatus = "MANUAL_REVIEW", processReason = "QA_NO_MATCH",
+                    expertContactId = contactId
+                )
+            )
+        )
+        val templateService = Mockito.mock(MailComposeTemplateService::class.java)
+        Mockito.`when`(templateService.listEnabled()).thenReturn(
+            listOf(
+                MailComposeTemplate(
+                    id = meetingTemplateId,
+                    templateCode = "MANUAL_MEETING_CONFIRMATION",
+                    templateName = "专家会议确认 · 英文",
+                    subject = "Meeting confirmation",
+                    mailType = "MANUAL_MEETING_CONFIRMATION",
+                    enabled = true
+                )
+            )
+        )
+        val service = MeetingConfirmationService(
+            inboundRepo,
+            expertContactRepository,
+            Mockito.mock(MailSenderAccountService::class.java),
+            templateService,
+            MailContentService()
+        )
+        return service.validateAndBuild(
+            processingId = 100L,
+            contact = contact(contactId),
+            account = activeAccount("acc-a"),
+            input = meetingInput()
+        )
+    }
+
+    /** 与 02 finalize 同款存档 JSON（真实 codec serialize，schemaVersion=1）。 */
+    private fun archiveJson(preview: MeetingPreviewResponse): String = CalendarAttachmentCodec.serialize(
+        CalendarAttachmentSnapshot(
+            schemaVersion = MeetingConfirmationDomain.CALENDAR_SCHEMA_VERSION,
+            filename = preview.attachment.filename,
+            contentType = preview.attachment.contentType,
+            icsText = preview.attachment.icsText,
+            sha256 = preview.attachment.sha256,
+            semanticSha256 = preview.attachment.semanticSha256
+        )
+    )
+
+    private fun mailRecordOf(
+        id: Long,
+        contactId: Long,
+        calendarJson: String?,
+        accountCode: String = "acc-a",
+        sendStatus: String = "SENT"
+    ) = MailRecord(
+        id = id,
+        expertContactId = contactId,
+        direction = "OUTBOUND",
+        mailType = "MANUAL_RICH_REPLY",
+        senderAccountCode = accountCode,
+        messageId = "out-cal-$id",
+        inReplyTo = "in-cal-1",
+        subject = "cal-subject-$id",
+        body = "body",
+        matchedQaRuleId = null,
+        sendStatus = sendStatus,
+        receivedAt = null,
+        sentAt = LocalDateTime.now(),
+        calendarAttachmentJson = calendarJson
+    )
+
+    private fun stubMailRecords(records: List<MailRecord>) {
+        Mockito.`when`(mailRecordRepository.findAllById(anyCollection()))
+            .thenReturn(records)
+        records.forEach { record ->
+            Mockito.`when`(mailRecordRepository.findById(record.id!!)).thenReturn(Optional.of(record))
+        }
+    }
 
     @Test
-    fun `both materials controllers coexist and the surviving GET feed is the shared material api`() {
-        // 修复前：context 加载即抛 Ambiguous mapping（两个 controller 映射同模板）。
-        // 修复后：GET materials 唯一由 06 新材料 controller 提供（campaign 旧 feed 已退役）。
-        mockMvc.perform(
-            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get(
-                "/api/expert-contacts/1/materials"
+    fun `timeline attaches calendar metadata only for outbound sent rows in one batch read`() {
+        val preview = previewFor()
+        val json = archiveJson(preview)
+        insertOutboundCalendarRow(900001L, 1L, json, subject = "cal-with-attachment")
+        insertOutboundCalendarRow(900002L, 1L, null, subject = "cal-old-null")
+        stubMailRecords(
+            listOf(
+                mailRecordOf(900001L, 1L, json),
+                mailRecordOf(900002L, 1L, null)
             )
-        ).andExpect(status().isOk)
+        )
 
-        // 保留端点的占位验证（PUT updateMaterialStatus 仍由 campaign controller 提供）。
-        mockMvc.perform(
-            org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(
-                "/api/expert-contacts/1/materials/CV"
-            ).contentType(MediaType.APPLICATION_JSON).content("""{"status":"PROVIDED"}""")
-        ).andExpect(status().isOk)
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val items = objectMapper.readTree(utf8Body(result))["items"]
+        val withAttachment = items.first { it["source"].asText() == "MAIL_RECORD" && it["id"].asLong() == 900001L }
+        val calendar = withAttachment["calendarAttachment"]
+        assertNotNull(calendar, "SENT 出站存档行必须暴露 calendarAttachment")
+        assertEquals(preview.attachment.filename, calendar["filename"].asText())
+        assertEquals(
+            preview.attachment.icsText.toByteArray(StandardCharsets.UTF_8).size,
+            calendar["byteLength"].asInt()
+        )
+        assertEquals(
+            "/api/mail/conversations/1/messages/900001/calendar-attachment",
+            calendar["downloadUrl"].asText()
+        )
+        val oldNull = items.first { it["source"].asText() == "MAIL_RECORD" && it["id"].asLong() == 900002L }
+        assertTrue(oldNull["calendarAttachment"].isNull, "无存档旧行 calendarAttachment 必须为 null")
+        // I-4: 整窗只批量读一次。
+        verify(mailRecordRepository, times(1)).findAllById(anyCollection())
     }
+
+    @Test
+    fun `inbound rows with the same numeric id never read the outbound snapshot`() {
+        val preview = previewFor()
+        val json = archiveJson(preview)
+        insertProcessingRow(1L, 3901, "PROCESSED", "2026-09-02 09:00:00", "shared-cal-in", "shared cal in")
+        val sharedId = processingIdOf("shared-cal-in")
+        insertOutboundCalendarRow(sharedId, 1L, json, subject = "out-shared-cal")
+        stubMailRecords(listOf(mailRecordOf(sharedId, 1L, json)))
+
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val items = objectMapper.readTree(utf8Body(result))["items"]
+        val outbound = items.first { it["source"].asText() == "MAIL_RECORD" }
+        assertEquals(sharedId, outbound["id"].asLong())
+        assertNotNull(outbound["calendarAttachment"], "OUTBOUND 行携带自己的快照")
+        val inbound = items.first { it["source"].asText() == "INBOUND_PROCESSING" }
+        assertEquals(sharedId, inbound["id"].asLong())
+        assertTrue(inbound["calendarAttachment"].isNull, "INBOUND 同数值 id 绝不串日历附件")
+    }
+
+    @Test
+    fun `download returns exactly the archived original bytes with archive headers`() {
+        val preview = previewFor()
+        val json = archiveJson(preview)
+        insertOutboundCalendarRow(900001L, 1L, json)
+        stubMailRecords(listOf(mailRecordOf(900001L, 1L, json)))
+
+        val result = mockMvc.perform(
+            get("/api/mail/conversations/1/messages/900001/calendar-attachment").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val expectedBytes = preview.attachment.icsText.toByteArray(StandardCharsets.UTF_8)
+        assertArrayEquals(expectedBytes, result.response.contentAsByteArray, "下载字节必须等于存档原件")
+        val contentType = result.response.getHeader("Content-Type")
+        assertTrue(contentType != null && contentType.startsWith("text/calendar") && contentType.contains("UTF-8"),
+            "Content-Type 必须是 text/calendar; charset=UTF-8: $contentType")
+        val disposition = result.response.getHeader("Content-Disposition")
+        assertTrue(disposition != null && disposition.startsWith("attachment;") && disposition.contains(preview.attachment.filename),
+            "必须是 attachment + 安全 filename: $disposition")
+        assertEquals(expectedBytes.size.toString(), result.response.getHeader("Content-Length"))
+        assertEquals("private,no-store", result.response.getHeader("Cache-Control"))
+        assertEquals("nosniff", result.response.getHeader("X-Content-Type-Options"))
+    }
+
+    @Test
+    fun `download rejects wrong-contact not-sent corrupt old-null and out-of-scope account uniformly 404`() {
+        val preview = previewFor()
+        val json = archiveJson(preview)
+        // 归属不一致：记录属于 contact 2，path contactId=1。
+        insertOutboundCalendarRow(900004L, 2L, json)
+        stubMailRecords(listOf(mailRecordOf(900004L, 2L, json)))
+        mockMvc.perform(
+            get("/api/mail/conversations/1/messages/900004/calendar-attachment").session(sessionOf("op1"))
+        ).andExpect(status().isNotFound)
+            .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+            .andExpect(jsonPath("$.message").value("日历附件不可用"))
+
+        // 未 SENT（FAILED）不可下载。
+        insertOutboundCalendarRow(900005L, 1L, json, sendStatus = "FAILED")
+        stubMailRecords(listOf(mailRecordOf(900005L, 1L, json, sendStatus = "FAILED")))
+        mockMvc.perform(
+            get("/api/mail/conversations/1/messages/900005/calendar-attachment").session(sessionOf("op1"))
+        ).andExpect(status().isNotFound)
+
+        // 损坏 JSON / 空快照：404。
+        insertOutboundCalendarRow(900006L, 1L, "not-a-json-snapshot")
+        stubMailRecords(listOf(mailRecordOf(900006L, 1L, "not-a-json-snapshot")))
+        mockMvc.perform(
+            get("/api/mail/conversations/1/messages/900006/calendar-attachment").session(sessionOf("op1"))
+        ).andExpect(status().isNotFound)
+
+        // 旧行无存档（null）→ 下载 404。
+        insertOutboundCalendarRow(900007L, 1L, null)
+        stubMailRecords(listOf(mailRecordOf(900007L, 1L, null)))
+        mockMvc.perform(
+            get("/api/mail/conversations/1/messages/900007/calendar-attachment").session(sessionOf("op1"))
+        ).andExpect(status().isNotFound)
+
+        // 账号不在会话 active 范围（acc-zz 未在 findAllByAccountCodeNot stub 内）→ 404。
+        insertOutboundCalendarRow(900008L, 1L, json, accountCode = "acc-zz")
+        stubMailRecords(listOf(mailRecordOf(900008L, 1L, json, accountCode = "acc-zz")))
+        mockMvc.perform(
+            get("/api/mail/conversations/1/messages/900008/calendar-attachment").session(sessionOf("op1"))
+        ).andExpect(status().isNotFound)
+
+        // 不存在的记录 → 404。
+        mockMvc.perform(
+            get("/api/mail/conversations/1/messages/999999/calendar-attachment").session(sessionOf("op1"))
+        ).andExpect(status().isNotFound)
+    }
+
+    @Test
+    fun `timeline leaves corrupt snapshot rows null and never reads the batch for inbound only windows`() {
+        insertOutboundCalendarRow(900006L, 1L, "corrupt-json")
+        stubMailRecords(listOf(mailRecordOf(900006L, 1L, "corrupt-json")))
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val items = objectMapper.readTree(utf8Body(result))["items"]
+        val corrupt = items.first { it["source"].asText() == "MAIL_RECORD" && it["id"].asLong() == 900006L }
+        assertTrue(corrupt["calendarAttachment"].isNull, "损坏快照不得出现在 timeline")
+
+        // 纯 INBOUND 窗口：不读 outbound 快照（先移除本测试先前插入的 outbound 行）。
+        jdbcTemplate.update("DELETE FROM mail_record WHERE id = 900006")
+        Mockito.clearInvocations(mailRecordRepository)
+        insertProcessing(1L, "PROCESSED", "2026-09-02 09:00:00", "cal-in-only")
+        mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk)
+        verify(mailRecordRepository, never()).findAllById(anyCollection())
+    }
+
+    // ───────────────────────── 基建（真实 MySQL JDBC） ─────────────────────────
+
+    private fun sessionOf(username: String): MockHttpSession =
+        MockHttpSession().apply { setAttribute(AuthSessionKeys.USERNAME, username) }
+
+    private fun activeAccount(code: String = "acc-a"): MailSenderAccount =
+        MailSenderAccount(
+            accountCode = code,
+            senderEmail = "$code@fixture.local",
+            senderName = code,
+            senderTitle = "Title",
+            senderDisplayName = code,
+            teamName = "Team",
+            countryName = "CN",
+            smtpHost = "smtp.fixture",
+            smtpPort = 465,
+            smtpUsername = code,
+            smtpPassword = "pw",
+            imapHost = "imap.fixture",
+            imapPort = 993,
+            imapUsername = code,
+            imapPassword = "pw",
+            enabled = true
+        )
+
+    private fun contact(id: Long): ExpertContact =
+        ExpertContact(
+            id = id,
+            campaignId = id,
+            orcidId = "0000-0000-0000-%04d".format(id),
+            expertEmail = "expert$id@example.org",
+            expertName = "Expert $id",
+            currentStatus = "NEW",
+            operatorStatus = "CONTACTED",
+            currentIndexLevel = "CANDIDATE"
+        )
+
+    private fun cleanup() {
+        jdbcTemplate.update("DELETE FROM expert_follow")
+        jdbcTemplate.update("DELETE FROM mail_attachment")
+        jdbcTemplate.update("DELETE FROM inbound_mail_tag")
+        jdbcTemplate.update("DELETE FROM inbound_mail_processing")
+        jdbcTemplate.update("DELETE FROM mail_record")
+        jdbcTemplate.update("DELETE FROM expert_contact")
+        jdbcTemplate.update("DELETE FROM campaign")
+        jdbcTemplate.update("DELETE FROM mail_sender_account")
+    }
+
+    private fun seedAccount(code: String) {
+        if (jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM mail_sender_account WHERE account_code = ?", Long::class.java, code
+            )!! == 0L
+        ) {
+            jdbcTemplate.update(
+                """
+                INSERT INTO mail_sender_account
+                    (account_code, sender_email, sender_name, smtp_host, smtp_port,
+                     smtp_username, smtp_password, imap_host, imap_port, imap_username, imap_password)
+                VALUES (?, ?, ?, 'smtp.fixture', 465, ?, ?, 'imap.fixture', 993, ?, ?)
+                """.trimIndent(),
+                code, "$code@fixture.local", code, code, "pw", code, "pw"
+            )
+        }
+    }
+
+    private fun seedContactRow(id: Long, name: String, email: String) {
+        if (jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM campaign WHERE id = ?", Long::class.java, id
+            )!! == 0L
+        ) {
+            jdbcTemplate.update(
+                "INSERT INTO campaign (id, campaign_code, campaign_name, sender_account_id) " +
+                    "VALUES (?, ?, 'Fixture', (SELECT id FROM mail_sender_account WHERE account_code = 'acc-a'))",
+                id, "FIXTURE-$id"
+            )
+        }
+        if (jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM expert_contact WHERE id = ?", Long::class.java, id
+            )!! == 0L
+        ) {
+            jdbcTemplate.update(
+                """
+                INSERT INTO expert_contact (id, campaign_id, orcid_id, expert_email, expert_name, current_status)
+                VALUES (?, ?, ?, ?, ?, 'NEW')
+                """.trimIndent(),
+                id, id, "0000-0000-0000-%04d".format(id), email, name
+            )
+        }
+    }
+
+    private fun insertProcessing(
+        contactId: Long,
+        processStatus: String,
+        eventAt: String,
+        messageId: String,
+        subject: String = "in-$contactId"
+    ) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO inbound_mail_processing
+                (sender_account_code, uid_validity, imap_uid, message_id, from_email,
+                 subject, body, cleaned_body, received_at, process_status, process_reason,
+                 expert_contact_id)
+            VALUES ('acc-a', 1, ?, ?, 'expert@example.org', ?, 'body', 'cleaned', ?, ?, 'QA_AUTO_REPLIED', ?)
+            """.trimIndent(),
+            900L + contactId, messageId, subject,
+            Timestamp.valueOf(ts(eventAt)), processStatus, contactId
+        )
+    }
+
+    private fun insertProcessingRow(
+        contactId: Long,
+        imapUid: Long,
+        processStatus: String,
+        eventAt: String,
+        messageId: String,
+        subject: String = "in-$contactId"
+    ) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO inbound_mail_processing
+                (sender_account_code, uid_validity, imap_uid, message_id, from_email,
+                 subject, body, cleaned_body, received_at, process_status, process_reason,
+                 expert_contact_id)
+            VALUES ('acc-a', 1, ?, ?, 'expert@example.org', ?, 'body', 'cleaned', ?, ?, 'QA_AUTO_REPLIED', ?)
+            """.trimIndent(),
+            imapUid, messageId, subject,
+            Timestamp.valueOf(ts(eventAt)), processStatus, contactId
+        )
+    }
+
+    private fun processingIdOf(messageId: String): Long =
+        jdbcTemplate.queryForObject(
+            "SELECT id FROM inbound_mail_processing WHERE message_id = ?", Long::class.java, messageId
+        )!!
+
+    /** 真实落库一条 OUTBOUND mail_record（可带 calendar_attachment_json 存档）。 */
+    private fun insertOutboundCalendarRow(
+        id: Long,
+        contactId: Long,
+        calendarJson: String?,
+        sendStatus: String = "SENT",
+        accountCode: String = "acc-a",
+        mailType: String = "MANUAL_RICH_REPLY",
+        messageId: String = "out-cal-$id",
+        subject: String = "cal-subject-$id"
+    ) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (id, expert_contact_id, direction, mail_type, sender_account_code, triggered_by,
+                 message_id, subject, body, send_status, sent_at, created_at, calendar_attachment_json)
+            VALUES (?, ?, 'OUTBOUND', ?, ?, 'SYSTEM', ?, ?, 'body', ?, ?, ?, ?)
+            """.trimIndent(),
+            id, contactId, mailType, accountCode, messageId, subject, sendStatus,
+            if (sendStatus == "SENT") Timestamp.valueOf(ts("2026-09-03 09:00:00")) else null,
+            Timestamp.valueOf(ts("2026-09-03 09:00:00")), calendarJson
+        )
+    }
+
+    private fun ts(value: String): LocalDateTime =
+        LocalDateTime.parse(value.replace(' ', 'T'))
+
+    /** mockMvc 响应按 UTF-8 读取（MockHttpServletResponse 默认 ISO-8859-1）。 */
+    private fun utf8Body(result: MvcResult): String =
+        String(result.response.contentAsByteArray, StandardCharsets.UTF_8)
 }

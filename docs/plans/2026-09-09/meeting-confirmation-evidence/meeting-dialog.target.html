@@ -1,0 +1,109 @@
+<dialog class="meeting-dialog" id="meetingDialog" aria-labelledby="meetingTitle">
+<form id="meetingForm" novalidate>
+<header class="meeting-head">
+<div>
+<h2 id="meetingTitle">专家会议确认</h2>
+<p id="meetingContext">生成确认邮件与日历附件</p>
+</div>
+<button type="button" class="meeting-close" id="closeMeeting" aria-label="关闭会议确认">×</button>
+</header>
+<div class="meeting-grid">
+<div class="meeting-form">
+<p id="meetingLoadStatus" class="meeting-status" role="status" aria-live="polite" hidden>
+<span>
+</span>
+<button type="button" class="meeting-link" id="retryMeeting" hidden>重试</button>
+</p>
+<label>邮件模板<select id="meetingTemplate">
+<!-- TEMPLATE_OPTIONS：API返回的id/name，后接“自定义本次模板”；对应规则见S-2 -->
+</select>
+</label>
+<details id="templateDetails" class="meeting-template">
+<summary>查看模板与变量</summary>
+<textarea id="templateText" maxlength="10000" aria-label="会议邮件模板正文" spellcheck="false">
+</textarea>
+<small>修改仅用于本次回复；保存的模板由「邮件模板」统一维护。</small>
+<p>
+<code>{{expert_salutation}}</code> 专家称呼<br>
+<code>{{meeting_time}}</code> 日期、时间和时区<br>
+<code>{{zoom_url}}</code> 会议链接<br>
+<code>{{sender_signature}}</code> 发件账号签名</p>
+<button type="button" class="meeting-link" id="resetTemplate">恢复所选模板</button>
+</details>
+<label>专家称呼 <input id="meetingName" required maxlength="100" placeholder="Professor Basdogan">
+<small>用于 Dear 后的称呼，可按专家习惯调整。</small>
+</label>
+<div class="meeting-zone-field">
+<label id="meetingZoneLabel" for="meetingZoneSearch">会议时区</label>
+<div class="meeting-zone-control">
+<input id="meetingZoneSearch" type="search" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="meetingZoneOptions" aria-labelledby="meetingZoneLabel" autocomplete="off" placeholder="搜索国家、城市、时区或 UTC 偏移">
+<button type="button" id="toggleZone" aria-label="展开时区选项">⌄</button>
+</div>
+<div id="meetingZoneOptions" class="meeting-zone-options" role="listbox" aria-label="会议时区选项" hidden>
+</div>
+<small id="meetingZoneHint">下方日期和时间均按所选时区填写。</small>
+</div>
+<div class="meeting-fields">
+<label>开始日期<input type="date" id="meetingDate" required>
+</label>
+<label>开始时间<input type="time" id="meetingStart" required step="60">
+</label>
+</div>
+<div class="meeting-fields">
+<label>结束日期<input type="date" id="meetingEndDate" required>
+</label>
+<label>结束时间<input type="time" id="meetingEnd" required step="60">
+</label>
+</div>
+<div class="meeting-clock" id="meetingClock" aria-live="polite">
+</div>
+<label>Zoom 会议链接<input type="url" id="meetingUrl" required maxlength="2048" placeholder="https://zoom.us/j/…">
+<small>粘贴已创建的会议链接，包含入会密码参数。</small>
+</label>
+<label>发件签名<textarea id="meetingSignature" required maxlength="2000">
+</textarea>
+<small>默认带入回复账号签名。</small>
+</label>
+<label id="insertModeLabel" hidden>正文已有内容<select id="insertMode">
+<option value="append">保留原文，追加确认邮件</option>
+<option value="replace">替换整篇正文</option>
+</select>
+<small>请检查原文是否包含其他会议时间。</small>
+</label>
+</div>
+<section class="meeting-preview" aria-label="会议邮件和日历预览">
+<h3>
+<span class="meeting-step">邮件正文</span>
+<span>填写后自动预览</span>
+</h3>
+<div id="meetingError" class="meeting-error" role="alert" hidden>
+</div>
+<div id="meetingBody" class="meeting-paper" aria-busy="false">
+</div>
+<div class="meeting-file">
+<span class="meeting-file-icon">ICS</span>
+<div class="meeting-file-main">
+<strong id="meetingFilename">
+</strong>
+<small id="meetingFileMeta">
+</small>
+<div class="meeting-file-actions">
+<a id="downloadMeeting" class="meeting-link" aria-disabled="true" tabindex="-1">下载 ICS 查看</a>
+<button type="button" id="inspectIcs" class="meeting-link" disabled>查看文件内容</button>
+</div>
+</div>
+</div>
+<pre id="meetingRaw" class="meeting-raw" tabindex="0" aria-label="日历文件内容" hidden>
+</pre>
+<p class="meeting-note">日历包含会议时间、Zoom 链接及团队签名，可下载后导入日历查看。确认后作为待发送附件加入当前回复。</p>
+</section>
+</div>
+<footer class="meeting-bottom">
+<p>确认仅填入草稿，发送仍由人工操作。</p>
+<div>
+<button type="button" class="button" id="cancelMeeting">取消</button>
+<button type="submit" class="button primary" id="applyMeeting" disabled>确认并填入回复</button>
+</div>
+</footer>
+</form>
+</dialog>

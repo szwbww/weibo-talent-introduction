@@ -17,7 +17,7 @@ const workbenchSource = fs.readFileSync(workbenchPath, "utf-8");
 const styles = fs.readFileSync(stylesPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260909-mailbox-refinement";
+const CACHE_KEY = "20260909-meeting-confirmation";
 
 // —— S-2..S-4 契约栅格（与计划文件代码栅格逐字节一致，追加在 styles.css EOF）——
 const CSS_S2 = `.trust-reply-layout {
@@ -389,10 +389,10 @@ describe("rag workbench render contracts (计划 05)", () => {
         const match = html.match(/src="trust-reply-workbench\.js\?v=([^"]+)"/);
         assert.ok(match, "index.html must include trust-reply-workbench.js?v=");
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((item) => item[1]);
-        assert.strictEqual(keys.length, 7, "seven cache-busted assets expected");
+        assert.strictEqual(keys.length, 9, "nine cache-busted assets expected");
         assert.ok(keys.every((key) => key === CACHE_KEY), `all keys must equal ${CACHE_KEY}`);
-        const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css",
-            "trust-reply-workbench.js", "expert-materials.js", "mailbox-chat.js", "app.js"];
+        const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
+            "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js", "mailbox-chat.js", "app.js"];
         let previous = -1;
         for (const asset of ordered) {
             const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);

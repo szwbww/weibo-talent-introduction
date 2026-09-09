@@ -1019,4 +1019,78 @@ class ManualExpertMailServiceTest {
         Mockito.`when`(mailSenderAccountRepository.save(anyValue(account)))
             .thenAnswer { it.getArgument<MailSenderAccount>(0) }
     }
+
+    // ── I-2：专用会议模板（MANUAL_MEETING_CONFIRMATION）与普通单发域隔离 ──
+
+    @Test
+    fun `listSendOptions excludes meeting-confirmation-only template`() {
+        Mockito.`when`(mailComposeTemplateService.listEnabled()).thenReturn(
+            listOf(
+                MailComposeTemplate(
+                    id = 10,
+                    templateCode = "INTRODUCTION",
+                    templateName = "Introduction",
+                    subject = "Intro",
+                    mailType = "INTRODUCTION",
+                    enabled = true
+                ),
+                MailComposeTemplate(
+                    id = 50,
+                    templateCode = "MANUAL_MEETING_CONFIRMATION",
+                    templateName = "专家会议确认 · 英文",
+                    subject = "Meeting confirmation",
+                    mailType = "MANUAL_MEETING_CONFIRMATION",
+                    enabled = true
+                )
+            )
+        )
+
+        val options = service.listSendOptions()
+
+        assertTrue(options.isNotEmpty())
+        assertTrue(options.none { it.optionValue == "50" })
+        assertTrue(options.none { it.templateCode == "MANUAL_MEETING_CONFIRMATION" })
+        assertTrue(options.none { it.mailType == "MANUAL_MEETING_CONFIRMATION" })
+        assertTrue(options.any { it.optionValue == "10" })
+    }
+
+    @Test
+    fun `sendManualMail rejects meeting-confirmation template id before SMTP`() {
+        val account = stubAccount()
+        Mockito.`when`(expertContactRepository.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(mailSenderAccountService.selectAccountForManualSending()).thenReturn(account)
+        Mockito.`when`(mailComposeTemplateService.getById(50L)).thenReturn(
+            MailComposeTemplateDetail(
+                id = 50,
+                templateCode = "MANUAL_MEETING_CONFIRMATION",
+                templateName = "专家会议确认 · 英文",
+                subject = "Meeting confirmation",
+                description = "仅供收发件箱会议确认。",
+                mailType = "MANUAL_MEETING_CONFIRMATION",
+                subjectVariants = null,
+                enabled = true,
+                blocks = emptyList(),
+                createdAt = null,
+                updatedAt = null
+            )
+        )
+
+        val ex = assertThrows<IllegalArgumentException> {
+            service.sendManualMail(
+                1,
+                ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "50", senderAccountCode = null)
+            )
+        }
+
+        assertTrue(ex.message!!.contains("会议确认专用模板"))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )
+        Mockito.verify(mailRecordRepository, Mockito.never()).save(anyValue(stubMailRecord))
+        Mockito.verify(mailComposeTemplateService, Mockito.never()).render(
+            Mockito.anyLong(),
+            Mockito.anyMap(),
+            Mockito.anyInt()
+        )
+    }
 }

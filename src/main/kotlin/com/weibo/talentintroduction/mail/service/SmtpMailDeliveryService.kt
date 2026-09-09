@@ -46,19 +46,57 @@ class SmtpMailDeliveryService(
         message.subject = mail.subject
         mail.inReplyTo?.takeIf { it.isNotBlank() }?.let { message.setHeader("In-Reply-To", it) }
         mail.references?.takeIf { it.isNotBlank() }?.let { message.setHeader("References", it) }
-        if (mail.html) {
-            val plain = mail.text?.takeIf { it.isNotBlank() }
-                ?: mailContentService.htmlToPlainText(mail.body)
-            val multipart = javax.mail.internet.MimeMultipart("alternative")
-            multipart.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
-                setText(plain, Charsets.UTF_8.name())
-            })
-            multipart.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
-                setContent(mail.body, "text/html; charset=UTF-8")
-            })
-            message.setContent(multipart)
+        val calendar = mail.calendarAttachment
+        if (calendar == null) {
+            // fast-p 02 (I-3): 无附件分支逐字保留旧实现（正文/MIME 与旧状态机完全一致）。
+            if (mail.html) {
+                val plain = mail.text?.takeIf { it.isNotBlank() }
+                    ?: mailContentService.htmlToPlainText(mail.body)
+                val multipart = javax.mail.internet.MimeMultipart("alternative")
+                multipart.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                    setText(plain, Charsets.UTF_8.name())
+                })
+                multipart.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                    setContent(mail.body, "text/html; charset=UTF-8")
+                })
+                message.setContent(multipart)
+            } else {
+                message.setText(mail.body, Charsets.UTF_8.name())
+            }
         } else {
-            message.setText(mail.body, Charsets.UTF_8.name())
+            // fast-p 02 (I-3): 带 calendar 附件 → multipart/mixed 外层；part 1 包原文
+            // (alternative(plain,html) 或 text/plain)，part 2 = 快照 icsText 的
+            // UTF-8 字节 (text/calendar; charset=UTF-8、attachment disposition、
+            // 安全 filename)。构造用 javax.mail MIME API，禁止自拼 MIME 字符串；
+            // 不重复第二个 html/plain，日历不做 METHOD/文本正文替代。
+            val mixed = javax.mail.internet.MimeMultipart("mixed")
+            mixed.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                if (mail.html) {
+                    val plain = mail.text?.takeIf { it.isNotBlank() }
+                        ?: mailContentService.htmlToPlainText(mail.body)
+                    val alternative = javax.mail.internet.MimeMultipart("alternative")
+                    alternative.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                        setText(plain, Charsets.UTF_8.name())
+                    })
+                    alternative.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                        setContent(mail.body, "text/html; charset=UTF-8")
+                    })
+                    setContent(alternative, alternative.contentType)
+                } else {
+                    setText(mail.body, Charsets.UTF_8.name())
+                }
+            })
+            mixed.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                dataHandler = javax.activation.DataHandler(
+                    javax.mail.util.ByteArrayDataSource(
+                        calendar.icsText.toByteArray(Charsets.UTF_8),
+                        calendar.contentType
+                    )
+                )
+                fileName = calendar.filename
+                disposition = javax.mail.Part.ATTACHMENT
+            })
+            message.setContent(mixed)
         }
 
         if (unsubscribeTokenService.enabled()) {

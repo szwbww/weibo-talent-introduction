@@ -37,6 +37,7 @@ class ManualExpertMailService(
 ) {
     fun listSendOptions(): List<ManualMailOption> {
         return mailComposeTemplateService.listEnabled()
+            .filter { it.mailType != MeetingConfirmationDomain.MANUAL_MEETING_CONFIRMATION }
             .map { template ->
                 ManualMailOption(
                     optionType = ManualMailOptionType.COMPOSE_TEMPLATE.name,
@@ -204,6 +205,11 @@ class ManualExpertMailService(
         allowSuppressed: Boolean
     ): ManualComposedMail {
         val template = mailComposeTemplateService.getById(templateId)
+        // 专用会议模板只经会议弹窗确认流程；普通单发列表已过滤，直接按 id
+        // 提交必须在 SMTP 之前服务端拒绝（花括号正文不进通用变量渲染）。
+        if (template.mailType == MeetingConfirmationDomain.MANUAL_MEETING_CONFIRMATION) {
+            throw IllegalArgumentException("会议确认专用模板不能通过普通单发发送: $templateId")
+        }
         require(template.enabled) { "Compose template is disabled: $templateId" }
 
         val variableService = mailVariableService

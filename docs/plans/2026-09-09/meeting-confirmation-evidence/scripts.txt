@@ -1,0 +1,3 @@
+$ rg -n mail_record|mail_send_attempt|mail_compose_template scripts --glob *.py --glob *.sql --glob *.sh
+exit=0
+scripts/dump_rag_parity_fixtures.py:20:- >= 20 real inbound emails exported from historical `mail_record` INBOUND

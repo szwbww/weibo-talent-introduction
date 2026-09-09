@@ -6,15 +6,19 @@ import com.weibo.talentintroduction.document.service.ExpertMaterialService
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.controller.ConversationCalendarAttachment
 import com.weibo.talentintroduction.mail.controller.ConversationItemResponse
 import com.weibo.talentintroduction.mail.controller.ConversationLatestInboundItem
 import com.weibo.talentintroduction.mail.controller.ConversationLatestMessageItem
 import com.weibo.talentintroduction.mail.controller.ConversationListResponse
 import com.weibo.talentintroduction.mail.controller.ConversationMessageItemResponse
 import com.weibo.talentintroduction.mail.controller.ConversationMessageListResponse
+import com.weibo.talentintroduction.mail.domain.MailRecord
+import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository.ConversationFilter
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository.ConversationKeyset
+import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository.ConversationMessageSqlRow
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository.ConversationSummarySqlRow
 import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.slf4j.LoggerFactory
@@ -43,7 +47,10 @@ class MailboxConversationService(
     private val expertContactRepository: ExpertContactRepository,
     private val expertMaterialService: ExpertMaterialService,
     private val inboundMailTagService: InboundMailTagService,
-    private val expertSearchService: ExpertSearchService
+    private val expertSearchService: ExpertSearchService,
+    // 03 (T2/I-3/I-4): 会话时间线单独日历附件元数据 —— 按 MAIL_RECORD OUTBOUND SENT
+    // id 集合批量读一次存档快照。
+    private val mailRecordRepository: MailRecordRepository
 ) {
     private val log = LoggerFactory.getLogger(MailboxConversationService::class.java)
     companion object {
@@ -53,6 +60,12 @@ class MailboxConversationService(
         const val MAX_MESSAGE_LIMIT = 100
         const val MAX_TEXT_FILTER_LENGTH = 255
         const val FIRST_ATTACHMENT_NAME_LIMIT = 3
+
+        /** 03 (I-3/I-4)：日历附件只在 SENT 出站行暴露（mail_record.send_status 值）。 */
+        const val SEND_STATUS_SENT = "SENT"
+
+        /** 03 (I-4)：时间线单独日历附件下载端点（与 CalendarAttachmentController 同源）。 */
+        const val CALENDAR_DOWNLOAD_BASE = "/api/mail/conversations"
 
         /** 专家层级白名单：只在合法层级查询 ES 画像（I-6，禁止跨层猜测回退）。 */
         private val LEVEL_NAMES = ExpertIndexLevel.values().map { it.name }.toSet()
@@ -214,6 +227,27 @@ class MailboxConversationService(
             inboundMailTagService.listTagsBatch(processingIds)
         }
 
+        // 03 (I-3/I-4)：只对当前窗口的 MAIL_RECORD+OUTBOUND+SENT 行按 id 集合批量读一次
+        // 存档快照（findAllById 恰好一次；窗口无此类行不发请求）。INBOUND 行即使与
+        // outbound 数值 id 相同也绝不读 outbound 快照（避免 source 碰撞串附件）。
+        val outboundSentRows = page.rows.filter {
+            it.source == MailboxConversationRepository.SOURCE_MAIL_RECORD &&
+                it.direction == MailboxConversationRepository.DIRECTION_OUTBOUND &&
+                it.sendStatus == SEND_STATUS_SENT
+        }
+        val mailRecordRowsById = if (outboundSentRows.isEmpty()) {
+            emptyMap()
+        } else {
+            mailRecordRepository.findAllById(outboundSentRows.map { it.id })
+                .asSequence()
+                .filter {
+                    it.id != null &&
+                        it.direction == MailboxConversationRepository.DIRECTION_OUTBOUND &&
+                        it.sendStatus == SEND_STATUS_SENT
+                }
+                .associateBy { requireNotNull(it.id) }
+        }
+
         // 行按 DESC（新→旧）返回；正序呈现最新窗口。
         val items = page.rows.asReversed().map { row ->
             val attachments = expertMaterialService.resolveMessageAttachments(row.source, row.id)
@@ -239,7 +273,8 @@ class MailboxConversationService(
                     tagsByProcessingId[row.id].orEmpty()
                 } else {
                     emptyList()
-                }
+                },
+                calendarAttachment = calendarAttachmentOf(row, mailRecordRowsById[row.id])
             )
         }
         val nextBefore = if (page.hasMore) {
@@ -329,6 +364,34 @@ class MailboxConversationService(
     // ------------------------------------------------------------------
     // 游标（(time, source, id) 编码/校验；绑定 contact/account scope）
     // ------------------------------------------------------------------
+
+    /**
+     * 03 (I-3/I-4)：单条时间线行的日历附件元数据。只在 MAIL_RECORD+OUTBOUND+SENT 行上
+     * 按存档快照解析（01 CalendarAttachmentCodec 校验）；归属（contact/账号）一致且
+     * 快照合法才附加，其余（旧行 null / 损坏 JSON / 跨专家账号）一律 null —— 与下载
+     * 端点同一 parseOrNull，绝不从配置/当前模板重新生成。
+     */
+    private fun calendarAttachmentOf(
+        row: ConversationMessageSqlRow,
+        record: MailRecord?
+    ): ConversationCalendarAttachment? {
+        // I-3/I-4: 只对真实 MAIL_RECORD 行附加 —— INBOUND 行即使与 outbound 数值 id 相同
+        // 也绝不读 outbound 快照（source 碰撞防护与下载端同款显式归属检查）。
+        if (row.source != MailboxConversationRepository.SOURCE_MAIL_RECORD ||
+            record == null ||
+            record.expertContactId != row.expertContactId ||
+            record.senderAccountCode != row.accountCode
+        ) {
+            return null
+        }
+        val snapshot = CalendarAttachmentCodec.parseOrNull(record.calendarAttachmentJson) ?: return null
+        val id = requireNotNull(record.id)
+        return ConversationCalendarAttachment(
+            filename = snapshot.filename,
+            byteLength = snapshot.icsText.toByteArray(Charsets.UTF_8).size,
+            downloadUrl = "$CALENDAR_DOWNLOAD_BASE/${row.expertContactId}/messages/$id/calendar-attachment"
+        )
+    }
 
     private fun encodeCursor(contactId: Long, accountCode: String?, item: ConversationMessageItemResponse): String {
         val sourceRank = SOURCE_RANK_OF[item.source]

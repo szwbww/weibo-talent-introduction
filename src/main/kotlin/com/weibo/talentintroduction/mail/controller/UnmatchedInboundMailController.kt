@@ -267,7 +267,10 @@ class UnmatchedInboundMailController(
             ragFactCodes = request.ragFactCodes,
             ragCorpusFingerprint = request.ragCorpusFingerprint,
             safetyWarningConfirmed = request.safetyWarningConfirmed,
-            strongConfirmationText = request.strongConfirmationText
+            strongConfirmationText = request.strongConfirmationText,
+            // 03 (T1/I-1): 透传已预览会议配置与预览快照 sha256（不新增第二个发送 API）。
+            meeting = request.meeting,
+            previewAttachmentSha256 = request.previewAttachmentSha256
         )
 
     @GetMapping("/unmatched-inbound/{id}/auto-reply-preview")

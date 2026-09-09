@@ -81,6 +81,9 @@ class PendingMailOperationService(
     private val trustReplyWorkbenchService: TrustReplyWorkbenchService,
     private val unsupportedAnswerIndexService: UnsupportedAnswerIndexService,
     private val emailSuppressionService: EmailSuppressionService,
+    // 03 (T1/I-1): 会议日历校验/重建 —— 发送时用服务端解析后的真实 account/contact/
+    // processing 与 01 validateAndBuild 重算（禁止默认 null 让生产依赖悄悄消失）。
+    private val meetingConfirmationService: MeetingConfirmationService,
     // 03b (I-40/I-41/I-43): RAG 发送路径的协作件。可空默认 null 仅为让既有的直接
     // 构造单元测试（不触碰 RAG 分支）保持零改动；Spring 运行时按主构造器完整注入，
     // RAG 分支入口 requireNotNull 防御性校验。
@@ -162,7 +165,12 @@ class PendingMailOperationService(
         // 03b (I-39~I-43): RAG 证据 —— fact_code 字符串列表 + 生成草稿时下发的语料指纹。
         // 追加在参数末尾，既有调用点零改动；与 trustReplyAssembly 互斥（I-39）。
         ragFactCodes: List<String>? = null,
-        ragCorpusFingerprint: String? = null
+        ragCorpusFingerprint: String? = null,
+        // 03 (T1/I-1/I-2): 已预览会议配置与预览快照 sha256。meeting 与
+        // previewAttachmentSha256 必须同时出现/同时为空（否则 400）；非空时在最终变量
+        // 渲染后用真实 processing/contact/account 走 01 validateAndBuild 重算核对。
+        meeting: MeetingInput? = null,
+        previewAttachmentSha256: String? = null
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -175,6 +183,14 @@ class PendingMailOperationService(
         require(htmlBody.isNotBlank()) { "HTML body is required" }
         val trimmedSubject = subject.trim()
         require(trimmedSubject.length <= 255) { "Subject exceeds 255 characters" }
+
+        // 03 (T1/I-1): meeting 与 previewAttachmentSha256 必须同时出现或同时为空。
+        // 半配置请求直接 400，绝不静默降级为无附件发送。
+        if (meeting == null && previewAttachmentSha256 != null ||
+            meeting != null && previewAttachmentSha256 == null
+        ) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "会议附件配置不完整，请重新预览")
+        }
 
         val inboundText = inboundMessageBody(record)
         val researchProfileSufficient = resolveResearchProfileSufficient(contact, inboundText)
@@ -317,7 +333,9 @@ class PendingMailOperationService(
                 edited = edited,
                 inboundText = inboundText,
                 researchProfileSufficient = researchProfileSufficient
-            )
+            ),
+            meeting = meeting,
+            previewAttachmentSha256 = previewAttachmentSha256
         )
     }
 
@@ -432,7 +450,12 @@ class PendingMailOperationService(
         operatorName: String?,
         safetyWarningConfirmed: Boolean,
         strongConfirmationText: String?,
-        evidence: ManualReplyEvidenceContext
+        evidence: ManualReplyEvidenceContext,
+        // 03 (T1/I-1/I-2): 已预览会议配置与预览快照 sha256（仅来信路径携带；会话回信
+        // 路径不传，保持默认 null）。非空时在最终变量渲染后用真实 processing/contact/
+        // account 走 01 validateAndBuild 重算核对，两者必须同时出现/同时为空。
+        meeting: MeetingInput? = null,
+        previewAttachmentSha256: String? = null
     ): PendingMailSendResult {
         val contact = source.contact
         require(rawSubject.isNotBlank()) { "Subject is required" }
@@ -475,6 +498,51 @@ class PendingMailOperationService(
         mailVariableService.requireValidPlaceholders(finalTextBody)
         mailVariableService.requireValidPlaceholders(finalHtmlBody)
 
+        // 03 (T1/I-1/I-2): 会议附件重建与正文核对 —— 位于最终变量渲染之后、Safety/claim/
+        // SMTP 之前。会议仅由来信路径产生（meeting 来自 unmatched-inbound 01 预览，
+        // 会话回信路径恒不携带）；用服务端解析后的真实 account/recipient/contact 与
+        // processing 调用 01 validateAndBuild：digest 不一致 400（配置已变化）；模板禁用
+        // 沿 01 拒绝；01 生成的完整会议正文必须连续存在于最终 text 与
+        // htmlToPlainText(finalHtml) 的规范化文本（不是只检索日期/链接关键词），否则 400。
+        // 最终正文仍取人工编辑器。
+        val calendarSnapshot: CalendarAttachmentSnapshot? = if (meeting != null) {
+            require(source.inboundProcessingId != null) {
+                "Meeting attachment requires an inbound processing context"
+            }
+            val rebuilt = try {
+                meetingConfirmationService.validateAndBuild(
+                    processingId = source.inboundProcessingId,
+                    contact = source.contact,
+                    account = source.account,
+                    input = meeting
+                )
+            } catch (ex: IllegalArgumentException) {
+                throw ResponseStatusException(HttpStatus.BAD_REQUEST, ex.message ?: "会议配置无效")
+            }
+            if (rebuilt.attachment.sha256 != previewAttachmentSha256) {
+                throw ResponseStatusException(HttpStatus.BAD_REQUEST, "会议配置已变化，请重新预览")
+            }
+            val expected = normalizeBodyText(rebuilt.textBody)
+            val finalTextNormalized = normalizeBodyText(finalTextBody)
+            val finalHtmlPlainNormalized = normalizeBodyText(mailContentService.htmlToPlainText(finalHtmlBody))
+            if (!finalTextNormalized.contains(expected) || !finalHtmlPlainNormalized.contains(expected)) {
+                throw ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "会议正文与附件不一致，请编辑会议后重新生成，或移除日历附件"
+                )
+            }
+            // 01 返回的同一份附件数据只构造一次快照实例，SendPayload 与 ComposedMail 共用。
+            CalendarAttachmentSnapshot(
+                schemaVersion = MeetingConfirmationDomain.CALENDAR_SCHEMA_VERSION,
+                filename = rebuilt.attachment.filename,
+                contentType = rebuilt.attachment.contentType,
+                icsText = rebuilt.attachment.icsText,
+                sha256 = rebuilt.attachment.sha256,
+                semanticSha256 = rebuilt.attachment.semanticSha256
+            )
+        } else {
+            null
+        }
         val findings = collectSafetyFindings(
             verificationText = finalValidationText,
             // 03b (I-47 ①): RAG 路径 carriesQa 显式传 false（RAG 不携带 QA 证据）。
@@ -518,7 +586,9 @@ class PendingMailOperationService(
                     "Conversation rich reply requires a real anchor mail record"
                 }.let { "${ManualReplySendAttemptService.SOURCE_ANCHOR_PREFIX}$it" }
             } else null,
-            idempotencyRequestId = source.requestId
+            idempotencyRequestId = source.requestId,
+            // 03 (I-3): 与 ComposedMail 共用同一 01 快照实例，绝不独立生成第二份。
+            calendarAttachment = calendarSnapshot
         )
 
         val persistInReplyTo = source.persistInReplyTo
@@ -549,8 +619,15 @@ class PendingMailOperationService(
                     html = true,
                     text = finalTextBody,
                     messageId = claim.messageId,
-                    inReplyTo = source.smtpInReplyTo,
-                    references = source.smtpReferences
+                    // 03 (I-2/I-3): 带会议日历的新分支用真实来信 processing.messageId 作
+                    // SMTP 线程头（inReplyTo/references 同一来源）；会议只由来信路径产生，
+                    // 无会议时回落该路径原形态（来信 SMTP 头恒 null；会话回信 = 锚点头），
+                    // 不因本合并顺带改变旧邮件线程形态。
+                    inReplyTo = if (calendarSnapshot != null) source.inboundRecord?.messageId
+                        else source.smtpInReplyTo,
+                    references = if (calendarSnapshot != null) source.inboundRecord?.messageId
+                        else source.smtpReferences,
+                    calendarAttachment = calendarSnapshot
                 )
                 val bodyPreviewText = (finalTextBody.ifBlank { mailBodyCleaner.clean(finalHtmlBody) }
                     .takeIf { it.isNotBlank() } ?: mailBodyCleaner.clean(finalHtmlBody)).take(500)
@@ -1065,6 +1142,15 @@ class PendingMailOperationService(
         val isUnknown: Boolean,
         val errorSummary: String?
     )
+
+    /** 03 (I-1)：会议正文一致性核对用的规范化 —— CRLF→LF、NBSP→space、
+     *  所有连续空白→单空格、trim；expected/finalText/htmlToPlainText(finalHtml) 同款。 */
+    private fun normalizeBodyText(value: String): String =
+        value.replace("\r\n", "\n")
+            .replace('\r', '\n')
+            .replace('\u00A0', ' ')
+            .replace(Regex("\\s+"), " ")
+            .trim()
 
     private fun buildFinalValidationText(subject: String, finalText: String, finalHtml: String): String {
         val htmlPlain = mailContentService.htmlToPlainText(finalHtml)
@@ -1595,7 +1681,10 @@ data class PendingManualRichReplyRequest(
     val ragFactCodes: List<String>? = null,
     val ragCorpusFingerprint: String? = null,
     val safetyWarningConfirmed: Boolean = false,
-    val strongConfirmationText: String? = null
+    val strongConfirmationText: String? = null,
+    // 03 (T1/I-1): 已预览会议配置 + 预览快照 sha256；服务端要求两者同时出现/同时为空。
+    val meeting: MeetingInput? = null,
+    val previewAttachmentSha256: String? = null
 )
 
 data class ComposedReplyRequest(

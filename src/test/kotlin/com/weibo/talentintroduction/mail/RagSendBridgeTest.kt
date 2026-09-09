@@ -107,6 +107,8 @@ class RagSendBridgeTest {
     private val unsupportedAnswerIndexService = Mockito.mock(UnsupportedAnswerIndexService::class.java)
     private val emailSuppressionService = Mockito.mock(com.weibo.talentintroduction.mail.service.EmailSuppressionService::class.java)
     private val ragKnowledgeBase = Mockito.mock(RagKnowledgeBase::class.java)
+    // 03 (T3): 新增构造依赖 —— 本文件只做 RAG 回归，传模拟依赖即可。
+    private val meetingConfirmationService = Mockito.mock(com.weibo.talentintroduction.mail.service.MeetingConfirmationService::class.java)
 
     private val renderTemplateService = MailComposeTemplateService(
         Mockito.mock(MailComposeTemplateRepository::class.java),
@@ -147,6 +149,7 @@ class RagSendBridgeTest {
         trustReplyWorkbenchService,
         unsupportedAnswerIndexService,
         emailSuppressionService,
+        meetingConfirmationService,
         mailRecordRagFactRepository = mailRecordRagFactRepository,
         ragKnowledgeBase = ragKnowledgeBase
     )

@@ -8,7 +8,7 @@ const html = fs.readFileSync(path.join(root, "index.html"), "utf-8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf-8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf-8");
 
-const CACHE_KEY = "20260909-mailbox-refinement";
+const CACHE_KEY = "20260909-meeting-confirmation";
 const CHECK_REPLIES_TAG = '<button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>';
 const BULK_OUTREACH_TAG = '<button class="button primary" id="bulkOutreachBtn" onclick="handleBulkOutreach()">批量发送</button>';
 const AUTO_REPLY_TAG = '<button class="button" id="bulkAutoReplyBtn">自动回复：加载中...</button>';
@@ -61,14 +61,14 @@ describe("check replies relocation (p1)", () => {
             ".view sections must stay in the DOM");
     });
 
-    it("I-3: all seven cache-busted assets share one current key", () => {
+    it("I-3: all nine cache-busted assets share one current key", () => {
         const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
-        assert.strictEqual(keys.length, 7, "index.html must carry exactly seven cache-busted asset URLs");
+        assert.strictEqual(keys.length, 9, "index.html must carry exactly nine cache-busted asset URLs");
         for (const key of keys) {
             assert.strictEqual(key, CACHE_KEY, "every cache key must equal " + CACHE_KEY);
         }
-        const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css",
-            "trust-reply-workbench.js", "expert-materials.js", "mailbox-chat.js", "app.js"];
+        const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
+            "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js", "mailbox-chat.js", "app.js"];
         let previous = -1;
         for (const asset of ordered) {
             const at = html.indexOf(asset + "?v=" + CACHE_KEY);

@@ -1,0 +1,22 @@
+$ rg -n 20260909-mailbox-refinement src/main/resources/static/index.html src/test/js
+exit=0
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20260909-mailbox-refinement">
+src/main/resources/static/index.html:12:    <link rel="stylesheet" href="expert-materials.css?v=20260909-mailbox-refinement">
+src/main/resources/static/index.html:13:    <link rel="stylesheet" href="mailbox-chat.css?v=20260909-mailbox-refinement">
+src/main/resources/static/index.html:2109:<script src="trust-reply-workbench.js?v=20260909-mailbox-refinement"></script>
+src/main/resources/static/index.html:2110:<script src="expert-materials.js?v=20260909-mailbox-refinement"></script>
+src/main/resources/static/index.html:2111:<script src="mailbox-chat.js?v=20260909-mailbox-refinement"></script>
+src/main/resources/static/index.html:2112:<script src="app.js?v=20260909-mailbox-refinement"></script>
+src/test/js/ragKnowledgeBasePage.test.js:333:    it("G-5：七处 ?v= 缓存键同值且等于 20260909-mailbox-refinement，注册顺序合规", () => {
+src/test/js/ragKnowledgeBasePage.test.js:336:            assert.ok(html.includes(`${asset}?v=20260909-mailbox-refinement`), `${asset} key`);
+src/test/js/ragKnowledgeBasePage.test.js:340:        assert.ok(keys.every((key) => key === "20260909-mailbox-refinement"), `all keys must share one value: ${keys}`);
+src/test/js/ragKnowledgeBasePage.test.js:345:            const at = html.indexOf(`${asset}?v=20260909-mailbox-refinement`);
+src/test/js/manualReplySubjectPrefill.test.js:13:const CACHE_KEY = "20260909-mailbox-refinement";
+src/test/js/ragWorkbenchRender.test.js:20:const CACHE_KEY = "20260909-mailbox-refinement";
+src/test/js/overlayAndDialogContrast.test.js:22:const CACHE_KEY = "20260909-mailbox-refinement";
+src/test/js/checkRepliesRelocation.test.js:11:const CACHE_KEY = "20260909-mailbox-refinement";
+src/test/js/batchSendTaskConsoleVisualFix.test.js:52:            assert.ok(html.includes(`${asset}?v=20260909-mailbox-refinement`), `${asset} must carry the unified key`);
+src/test/js/batchSendTaskConsoleVisualFix.test.js:58:            const at = html.indexOf(`${asset}?v=20260909-mailbox-refinement`);
+src/test/js/trustReplyWorkbenchSharedMount.test.js:5:// 2) G-5 缓存键七联同值（20260909-mailbox-refinement）；
+src/test/js/trustReplyWorkbenchSharedMount.test.js:22:const CACHE_KEY = "20260909-mailbox-refinement";
+src/test/js/trustReplyWorkbenchSharedMount.test.js:175:    it("G-5: the seven cache-busted assets share one key (20260909-mailbox-refinement)", () => {
