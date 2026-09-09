@@ -330,19 +330,19 @@ describe("RAG 知识库页 (plan 04)", () => {
         });
     });
 
-    it("G-5：七处 ?v= 缓存键同值且等于 20260907-material-chat，注册顺序合规", () => {
+    it("G-5：七处 ?v= 缓存键同值且等于 20260909-mailbox-refinement，注册顺序合规", () => {
         ["styles.css", "trust-reply-workbench.js", "app.js",
             "expert-materials.js", "expert-materials.css", "mailbox-chat.js", "mailbox-chat.css"].forEach((asset) => {
-            assert.ok(html.includes(`${asset}?v=20260907-material-chat`), `${asset} key`);
+            assert.ok(html.includes(`${asset}?v=20260909-mailbox-refinement`), `${asset} key`);
         });
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
         assert.strictEqual(keys.length, 7, `expected exactly 7 cache keys, got ${keys.length}`);
-        assert.ok(keys.every((key) => key === "20260907-material-chat"), `all keys must share one value: ${keys}`);
+        assert.ok(keys.every((key) => key === "20260909-mailbox-refinement"), `all keys must share one value: ${keys}`);
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css",
             "trust-reply-workbench.js", "expert-materials.js", "mailbox-chat.js", "app.js"];
         let previous = -1;
         for (const asset of ordered) {
-            const at = html.indexOf(`${asset}?v=20260907-material-chat`);
+            const at = html.indexOf(`${asset}?v=20260909-mailbox-refinement`);
             assert.ok(at > previous, `${asset} must be registered in order (CSS then workbench -> materials -> chat -> app)`);
             previous = at;
         }
