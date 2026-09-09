@@ -6,8 +6,8 @@
 // 2) DOM class 白名单：meeting-confirmation.js / mailbox-chat.js（会议模板）中
 //    的字面量 class 必须全部命中 S-1 CSS / styles.css / mailbox-chat.css；
 //    未列出的新 class、inline style、全局 p/button 污染一律禁止。
-// 3) 独立资源文件：组件/CSS 均为独立文件；index.html 尚未注册（05 才注册）——
-//    未注册时旧 UI 完整可用（配合集成测试组件缺席降级用例）。
+// 3) 独立资源文件：组件/CSS 均为独立文件；index.html 的注册（统一键/顺序/无重复）
+//    由 meetingConfirmationAssets.test.js 覆盖（A2：退役本文件未注册断言）。
 // 4) 不引入 rev 类/导航/预览 mock/fetch 拦截痕迹；无 element.style 写入。
 
 const fs = require("fs");
@@ -22,7 +22,6 @@ const componentSource = fs.readFileSync(path.join(ROOT, "meeting-confirmation.js
 const chatSource = fs.readFileSync(path.join(ROOT, "mailbox-chat.js"), "utf-8");
 const mailboxChatCss = fs.readFileSync(path.join(ROOT, "mailbox-chat.css"), "utf-8");
 const stylesSource = fs.readFileSync(path.join(ROOT, "styles.css"), "utf-8");
-const indexSource = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
 
 const TARGET_CSS = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-09", "meeting-confirmation-evidence", "meeting-confirmation.target.css");
 
@@ -50,11 +49,9 @@ describe("S-1: 落地 CSS 与 04 evidence 逐字（字节）一致", () => {
         assert.strictEqual(cssSource, target);
     });
 
-    it("文件是独立资源；index.html 尚未注册（注册属 05）", () => {
+    it("文件是独立资源（index.html 注册检查见 meetingConfirmationAssets.test.js）", () => {
         assert.ok(fs.existsSync(cssPath), "CSS 文件独立存在");
         assert.ok(fs.existsSync(path.join(ROOT, "meeting-confirmation.js")), "组件文件独立存在");
-        assert.ok(!indexSource.includes("meeting-confirmation.js"), "index.html 尚未注册组件脚本");
-        assert.ok(!indexSource.includes("meeting-confirmation.css"), "index.html 尚未注册组件样式");
     });
 });
 
