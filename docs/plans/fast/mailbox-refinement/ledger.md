@@ -9,8 +9,8 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-09T01:41:34Z
-- Current child: 01
-- Waiting role: VERIFIER
+- Current child: 03
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -30,9 +30,9 @@
 
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 01 | docs/plans/2026-09-09/01-mailbox-refinement-data.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | none | 1 | LIGHT_VERIFYING | af25bf54df2bc70dd0fe9e3254b246a49395219c | cf257779ae420ab4c745b20aa4de6e6942a66b18 | 0 | — | cf257779ae420ab4c745b20aa4de6e6942a66b18 | — | exactly 9 whitelist files committed; full suite green |
-| 02 | docs/plans/2026-09-09/02-mailbox-refinement-frontend.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | 01 | — | PENDING | — | — | — | — | — | — | 7 files; single frontend subsystem, depends on 01 optional fields |
-| 03 | docs/plans/2026-09-09/03-mailbox-refinement-assets.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | 02 | — | PENDING | — | — | — | — | — | — | 8 files; cache keys only |
+| 01 | docs/plans/2026-09-09/01-mailbox-refinement-data.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | none | 1 | LIGHT_PASS | af25bf54df2bc70dd0fe9e3254b246a49395219c | cf257779ae420ab4c745b20aa4de6e6942a66b18 | 0 | — | cf257779ae420ab4c745b20aa4de6e6942a66b18 | b6a1061afd1403a9d5b8694d9a31588a0f619883 | verifier Verifier01: LIGHT_PASS, gates 1-4 PASS, no findings |
+| 02 | docs/plans/2026-09-09/02-mailbox-refinement-frontend.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | 01 | 1 | LIGHT_PASS_WITH_NOTES | cf257779ae420ab4c745b20aa4de6e6942a66b18 | 1dd2e53f33d5817c9340c44fe733c308db8d5bea | 0 | — | 1dd2e53f33d5817c9340c44fe733c308db8d5bea | — | verifier Verifier02: LIGHT_PASS_WITH_NOTES, gates 1-4 PASS; O-1..O-3 (verify-log) |
+| 03 | docs/plans/2026-09-09/03-mailbox-refinement-assets.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | 02 | 1 | WAITING_FOR_AGENT | 1dd2e53f33d5817c9340c44fe733c308db8d5bea | — | — | — | — | — | base = child 02 terminal Code head |
 
 ## Amendments
 
