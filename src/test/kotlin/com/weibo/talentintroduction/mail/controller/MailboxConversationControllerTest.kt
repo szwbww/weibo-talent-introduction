@@ -1740,3 +1740,29 @@ class CalendarAttachmentIntegrationTest {
     private fun utf8Body(result: MvcResult): String =
         String(result.response.contentAsByteArray, StandardCharsets.UTF_8)
 }
+
+/** 真实 MySQL + Flyway（test application.yml 数据源；迁移到最新含 V121）。 */
+@Configuration
+class MailboxConversationRealJdbcConfig {
+    @Bean
+    fun mailboxConversationDataSource(
+        @Value("\${spring.datasource.url}") url: String,
+        @Value("\${spring.datasource.username:root}") username: String,
+        @Value("\${spring.datasource.password:root}") password: String
+    ): DataSource = DriverManagerDataSource(url, username, password)
+
+    @Bean(initMethod = "migrate")
+    fun mailboxConversationFlyway(dataSource: DataSource): Flyway =
+        Flyway.configure()
+            .dataSource(dataSource)
+            .locations("classpath:db/migration")
+            .placeholderReplacement(false)
+            .load()
+
+    @Bean
+    fun mailboxConversationJdbcTemplate(dataSource: DataSource): JdbcTemplate = JdbcTemplate(dataSource)
+
+    @Bean
+    fun mailboxConversationNamedJdbc(dataSource: DataSource): NamedParameterJdbcTemplate =
+        NamedParameterJdbcTemplate(dataSource)
+}
