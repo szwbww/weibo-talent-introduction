@@ -1,0 +1,43 @@
+$ rg -n mail_sender_account|inbound_mail_processing|CREATE TABLE expert_contact src/main/resources/db/migration
+exit=0
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:36:-- 2. inbound_mail_processing 增加 reason_type 列，给前端按原因过滤用
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:37:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:43:UPDATE inbound_mail_processing
+src/main/resources/db/migration/V20__disable_orphan_simulator_mail_account.sql:2:UPDATE mail_sender_account
+src/main/resources/db/migration/V117__convert_bounce_rate_pause_to_warning.sql:1:UPDATE mail_sender_account
+src/main/resources/db/migration/V8__add_expert_contact_status_history.sql:1:CREATE TABLE expert_contact_status_history (
+src/main/resources/db/migration/V13__merge_manual_review_into_handoff.sql:3:-- The MANUAL_REVIEW value used by inbound_mail_processing.process_status is a
+src/main/resources/db/migration/V28__add_sender_account_auto_pause.sql:1:ALTER TABLE mail_sender_account
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:18:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:23:UPDATE inbound_mail_processing
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:1:CREATE TABLE inbound_mail_processing (
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:16:    UNIQUE KEY uk_inbound_mail_processing_uid (sender_account_code, imap_uid),
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:17:    KEY idx_inbound_mail_processing_status (process_status, received_at),
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:18:    CONSTRAINT fk_inbound_mail_processing_contact
+src/main/resources/db/migration/V16__simulator_campaign.sql:2:INSERT INTO mail_sender_account (account_code, sender_email, sender_name, sender_title, sender_display_name,
+src/main/resources/db/migration/V16__simulator_campaign.sql:12:WHERE NOT EXISTS (SELECT 1 FROM mail_sender_account WHERE account_code = 'SIMULATOR_NOOP');
+src/main/resources/db/migration/V16__simulator_campaign.sql:15:UPDATE mail_sender_account SET enabled = TRUE WHERE account_code = 'SIMULATOR_NOOP' AND enabled = FALSE;
+src/main/resources/db/migration/V16__simulator_campaign.sql:20:FROM mail_sender_account msa
+src/main/resources/db/migration/V16__simulator_campaign.sql:26:   JOIN mail_sender_account msa ON msa.account_code = 'SIMULATOR_NOOP'
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:2:-- V120 inbound_mail_processing: UID 唯一性以 UIDVALIDITY 界定（fast-p 04）
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:17:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:20:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:21:    DROP INDEX uk_inbound_mail_processing_uid,
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:22:    ADD UNIQUE KEY uk_inbound_mail_processing_uid_validity (sender_account_code, uid_validity, imap_uid);
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:62:        FOREIGN KEY (inbound_processing_id) REFERENCES inbound_mail_processing(id),
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:98:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:100:        'ALTER TABLE inbound_mail_processing ADD COLUMN in_reply_to VARCHAR(255) DEFAULT NULL AFTER message_id'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:103:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:105:        'ALTER TABLE inbound_mail_processing ADD COLUMN body TEXT DEFAULT NULL AFTER subject'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:108:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:110:        'ALTER TABLE inbound_mail_processing ADD COLUMN cleaned_body TEXT DEFAULT NULL AFTER body'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:113:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:115:        'ALTER TABLE inbound_mail_processing ADD COLUMN resolved_at DATETIME DEFAULT NULL AFTER process_reason'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:118:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:120:        'ALTER TABLE inbound_mail_processing ADD COLUMN resolved_by VARCHAR(100) DEFAULT NULL AFTER resolved_at'
+src/main/resources/db/migration/V34__add_sender_account_warmup_fields.sql:1:ALTER TABLE mail_sender_account
+src/main/resources/db/migration/V1__create_business_tables.sql:1:CREATE TABLE mail_sender_account (
+src/main/resources/db/migration/V1__create_business_tables.sql:76:        FOREIGN KEY (sender_account_id) REFERENCES mail_sender_account(id)
+src/main/resources/db/migration/V1__create_business_tables.sql:79:CREATE TABLE expert_contact (
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:52:        FOREIGN KEY (inbound_processing_id) REFERENCES inbound_mail_processing(id)
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:12:        FOREIGN KEY (inbound_processing_id) REFERENCES inbound_mail_processing(id);

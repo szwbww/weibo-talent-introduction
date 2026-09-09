@@ -1,0 +1,43 @@
+{
+  "checks": "PASS",
+  "plans": [
+    {
+      "file": "00-meeting-confirmation-master.md",
+      "implementationFiles": 0,
+      "invariants": 5,
+      "manualScenarios": 2
+    },
+    {
+      "file": "01-meeting-confirmation-preview-api.md",
+      "implementationFiles": 9,
+      "invariants": 6,
+      "manualScenarios": 3
+    },
+    {
+      "file": "02-meeting-confirmation-delivery.md",
+      "implementationFiles": 8,
+      "invariants": 4,
+      "manualScenarios": 2
+    },
+    {
+      "file": "03-meeting-confirmation-send-download.md",
+      "implementationFiles": 10,
+      "invariants": 4,
+      "manualScenarios": 2
+    },
+    {
+      "file": "04-meeting-confirmation-frontend.md",
+      "implementationFiles": 7,
+      "invariants": 7,
+      "manualScenarios": 8
+    },
+    {
+      "file": "05-meeting-confirmation-assets.md",
+      "implementationFiles": 9,
+      "invariants": 2,
+      "manualScenarios": 1
+    }
+  ],
+  "cssSha256": "171149a1a002f041fdf844dbb2363138296a2a85bb83dbb305b6ed7c52eb2299",
+  "sourceHashesChecked": 123
+}

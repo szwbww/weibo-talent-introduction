@@ -1,0 +1,108 @@
+$ rg -n mail_record|mail_send_attempt|mail_compose_template src/main/resources/db/migration
+exit=0
+src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql:1:CREATE TABLE mail_send_attempt (
+src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql:15:ALTER TABLE mail_record ADD COLUMN error_summary VARCHAR(1024) DEFAULT NULL;
+src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql:16:ALTER TABLE mail_record ADD COLUMN mail_send_attempt_id BIGINT DEFAULT NULL;
+src/main/resources/db/migration/V23__create_mail_send_attempt_and_add_mail_record_error.sql:17:CREATE INDEX idx_mr_mail_send_attempt_id ON mail_record(mail_send_attempt_id);
+src/main/resources/db/migration/V42__mail_record_qa_rule.sql:3:CREATE TABLE mail_record_qa_rule (
+src/main/resources/db/migration/V42__mail_record_qa_rule.sql:5:    mail_record_id BIGINT NOT NULL,
+src/main/resources/db/migration/V42__mail_record_qa_rule.sql:8:    CONSTRAINT fk_mail_record_qa_rule_mail_record
+src/main/resources/db/migration/V42__mail_record_qa_rule.sql:9:        FOREIGN KEY (mail_record_id) REFERENCES mail_record(id) ON DELETE RESTRICT,
+src/main/resources/db/migration/V42__mail_record_qa_rule.sql:10:    CONSTRAINT fk_mail_record_qa_rule_qa_rule
+src/main/resources/db/migration/V42__mail_record_qa_rule.sql:12:    CONSTRAINT uk_mail_record_qa_rule UNIQUE (mail_record_id, qa_rule_id)
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:1:-- 1. mail_record monitoring fields
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:2:ALTER TABLE mail_record
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:8:        COMMENT '触发本条 OUTBOUND 的 INBOUND mail_record.id' AFTER triggered_by;
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:10:ALTER TABLE mail_record
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:11:    ADD INDEX idx_mail_record_dir_type_sent (direction, mail_type, sent_at),
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:12:    ADD INDEX idx_mail_record_dir_received (direction, received_at),
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:13:    ADD INDEX idx_mail_record_sender_sent (sender_account_code, sent_at),
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:14:    ADD INDEX idx_mail_record_triggered_sent (triggered_by, sent_at),
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:15:    ADD INDEX idx_mail_record_source_inbound (source_inbound_id);
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:32:    source_inbound_id BIGINT NULL COMMENT '触发本次晋级的 INBOUND mail_record.id',
+src/main/resources/db/migration/V88__rewrite_unsubscribe_line_wording.sql:8:UPDATE mail_compose_template_block b
+src/main/resources/db/migration/V88__rewrite_unsubscribe_line_wording.sql:9:JOIN mail_compose_template t ON t.id = b.template_id
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:3:ALTER TABLE mail_record
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:6:CREATE INDEX idx_mail_record_task_execution
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:7:    ON mail_record (task_execution_id, id);
+src/main/resources/db/migration/V84__add_required_keys_to_compose_template.sql:1:-- V84: add required_keys to mail_compose_template for the send-side personalization gate.
+src/main/resources/db/migration/V84__add_required_keys_to_compose_template.sql:5:ALTER TABLE mail_compose_template
+src/main/resources/db/migration/V62__unify_mail_templates.sql:1:ALTER TABLE mail_compose_template
+src/main/resources/db/migration/V62__unify_mail_templates.sql:4:    ADD UNIQUE KEY uk_mail_compose_template_code (template_code);
+src/main/resources/db/migration/V62__unify_mail_templates.sql:6:INSERT INTO mail_compose_template (
+src/main/resources/db/migration/V62__unify_mail_templates.sql:40:FROM mail_compose_template_block b
+src/main/resources/db/migration/V62__unify_mail_templates.sql:41:JOIN mail_compose_template t ON t.id = b.template_id
+src/main/resources/db/migration/V62__unify_mail_templates.sql:49:INSERT INTO mail_compose_template_block (
+src/main/resources/db/migration/V62__unify_mail_templates.sql:62:FROM mail_compose_template t
+src/main/resources/db/migration/V64__add_subject_variants_and_snippet_variant_group.sql:1:ALTER TABLE mail_compose_template ADD COLUMN subject_variants TEXT NULL COMMENT 'JSON 数组: subject 变体列表，为空时使用 subject 字段';
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:4:    source_mail_record_id BIGINT,
+src/main/resources/db/migration/V9__create_meeting_schedule_and_template.sql:16:    CONSTRAINT fk_meeting_schedule_mail FOREIGN KEY (source_mail_record_id) REFERENCES mail_record(id)
+src/main/resources/db/migration/V71__update_material_reminder_template.sql:24:UPDATE mail_compose_template
+src/main/resources/db/migration/V71__update_material_reminder_template.sql:33:FROM mail_compose_template_block b
+src/main/resources/db/migration/V71__update_material_reminder_template.sql:34:JOIN mail_compose_template t ON t.id = b.template_id
+src/main/resources/db/migration/V71__update_material_reminder_template.sql:37:INSERT INTO mail_compose_template_block (
+src/main/resources/db/migration/V71__update_material_reminder_template.sql:50:FROM mail_compose_template t
+src/main/resources/db/migration/V61__create_mail_compose_template.sql:1:CREATE TABLE mail_compose_template (
+src/main/resources/db/migration/V61__create_mail_compose_template.sql:11:CREATE TABLE mail_compose_template_block (
+src/main/resources/db/migration/V61__create_mail_compose_template.sql:18:    FOREIGN KEY (template_id) REFERENCES mail_compose_template(id) ON DELETE CASCADE
+src/main/resources/db/migration/V85__add_expert_contact_sender_binding.sql:2:-- 绑定语义 = 主题发起权归属（回复仍由 mail_record.sender_account_code 决定）。
+src/main/resources/db/migration/V85__add_expert_contact_sender_binding.sql:21:      FROM mail_record mr
+src/main/resources/db/migration/V114__create_rag_fact_audit.sql:5:-- （I-21），与 03b 的 mail_record_rag_fact.corpus_fingerprint 闭环 —— 单看存证
+src/main/resources/db/migration/V114__create_rag_fact_audit.sql:20:-- （与 V113 mail_record_rag_fact 不声明外键的既有基线一致）。
+src/main/resources/db/migration/V114__create_rag_fact_audit.sql:36:  COMMENT = 'RAG 事实改动审计：与 mail_record_rag_fact.corpus_fingerprint 闭环还原发信时的原文版本（I-21/D-16）';
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:3:    mail_record_id BIGINT NOT NULL,
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:9:    KEY idx_mail_attachment_record (mail_record_id, created_at),
+src/main/resources/db/migration/V7__create_mail_attachment_and_expert_document.sql:11:        FOREIGN KEY (mail_record_id) REFERENCES mail_record(id)
+src/main/resources/db/migration/V31__add_mail_record_created_at_index.sql:1:ALTER TABLE mail_record
+src/main/resources/db/migration/V31__add_mail_record_created_at_index.sql:2:    ADD INDEX idx_mail_record_status_created (direction, send_status, created_at);
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:3:CREATE TEMPORARY TABLE v24_mail_record_ambiguous_attempts AS
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:4:SELECT msa.id AS mail_send_attempt_id
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:5:  FROM mail_send_attempt msa
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:6:  JOIN mail_record mr
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:13:CREATE TEMPORARY TABLE v24_mail_record_ambiguous_guard (id BIGINT PRIMARY KEY);
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:14:INSERT INTO v24_mail_record_ambiguous_guard (id) VALUES (1);
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:15:INSERT INTO v24_mail_record_ambiguous_guard (id)
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:16:SELECT 1 FROM v24_mail_record_ambiguous_attempts LIMIT 1;
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:18:ALTER TABLE mail_send_attempt
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:26:UPDATE mail_record mr
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:27:JOIN mail_send_attempt msa
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:31:SET mr.mail_send_attempt_id = msa.id
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:32:WHERE mr.mail_send_attempt_id IS NULL;
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:35:DROP INDEX idx_mr_mail_send_attempt_id ON mail_record;
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:37:ALTER TABLE mail_record
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:38:    ADD CONSTRAINT uq_mail_record_send_attempt UNIQUE (mail_send_attempt_id),
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:39:    ADD CONSTRAINT fk_mail_record_send_attempt
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:40:        FOREIGN KEY (mail_send_attempt_id) REFERENCES mail_send_attempt(id);
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:42:UPDATE mail_send_attempt msa
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:43:JOIN mail_record mr
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:44:  ON mr.mail_send_attempt_id = msa.id
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:5:    MODIFY mail_record_id BIGINT NULL;
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:16:        CHECK ((mail_record_id IS NULL) <> (inbound_processing_id IS NULL));
+src/main/resources/db/migration/V94__backfill_operator_status_for_manual_sends.sql:11:       SELECT 1 FROM mail_record mr
+src/main/resources/db/migration/V6__add_inbound_cleaning_and_intent.sql:1:ALTER TABLE mail_record
+src/main/resources/db/migration/V6__add_inbound_cleaning_and_intent.sql:6:    mail_record_id BIGINT NOT NULL,
+src/main/resources/db/migration/V6__add_inbound_cleaning_and_intent.sql:15:    CONSTRAINT fk_inbound_intent_mail_record
+src/main/resources/db/migration/V6__add_inbound_cleaning_and_intent.sql:16:        FOREIGN KEY (mail_record_id) REFERENCES mail_record(id),
+src/main/resources/db/migration/V1__create_business_tables.sql:97:CREATE TABLE mail_record (
+src/main/resources/db/migration/V1__create_business_tables.sql:111:    CONSTRAINT fk_mail_record_contact
+src/main/resources/db/migration/V1__create_business_tables.sql:113:    CONSTRAINT fk_mail_record_rule
+src/main/resources/db/migration/V78__decouple_compose_templates_from_qa_rule.sql:4:UPDATE mail_compose_template_block b
+src/main/resources/db/migration/V65__qa_rule_dedup_keyword_fix_and_overview.sql:128:--     If mail_record references block the delete, keep them disabled instead.
+src/main/resources/db/migration/V104__create_auto_reply_confidence_log.sql:6:    inbound_mail_record_id BIGINT      NULL,
+src/main/resources/db/migration/V87__append_unsubscribe_line_to_cold_outreach_templates.sql:7:UPDATE mail_compose_template_block b
+src/main/resources/db/migration/V87__append_unsubscribe_line_to_cold_outreach_templates.sql:8:JOIN mail_compose_template t ON t.id = b.template_id
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:2:-- V113 mail_record_rag_fact（plan 03b: 03b-rag-send-bridge.md）
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:4:-- RAG 回信发出后的事实存证表：与 mail_record_qa_rule 并列、互不干扰 ——
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:5:-- 一封信只会写其中一张（I-39：三条发送路径互斥，RAG 路径绝不写 mail_record_qa_rule）。
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:12:--         UNIQUE(mail_record_id, ordinal) 对齐 mail_record_qa_rule.ordinal 语义
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:16:-- 不声明外键到 rag_fact / mail_record：事实可能被停用或改写，存证不应随之失效
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:17:-- （与 mail_record_qa_rule 不声明 ON DELETE CASCADE 的既有基线一致）；RAG 回信
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:18:-- 的 mail_record 生命周期独立于本表。
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:20:CREATE TABLE mail_record_rag_fact (
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:22:    mail_record_id    BIGINT       NOT NULL COMMENT '已发出的 RAG 回信 mail_record.id',
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:28:    UNIQUE KEY uk_mail_record_rag_fact (mail_record_id, ordinal),
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:29:    KEY idx_mail_record_rag_fact_record (mail_record_id),
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:30:    KEY idx_mail_record_rag_fact_code (fact_code)
+src/main/resources/db/migration/V113__create_mail_record_rag_fact.sql:32:  COMMENT = 'RAG 回信的事实存证：与 mail_record_qa_rule 并列，一封信只会写其中一张（I-39）';
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:30:        FOREIGN KEY (template_id) REFERENCES mail_compose_template(id)
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:131:        (SELECT id FROM mail_compose_template WHERE template_code = 'MATERIAL_REMINDER' LIMIT 1)

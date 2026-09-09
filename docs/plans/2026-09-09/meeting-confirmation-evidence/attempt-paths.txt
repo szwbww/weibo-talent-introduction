@@ -1,0 +1,18 @@
+$ rg -n mailSendAttemptRepository\.|attemptRepository\.|MailSendAttempt\( src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/MailSendAttempt.kt:8:data class MailSendAttempt(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:85:        val attempt = mailSendAttemptRepository.findById(attemptId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:87:            mailSendAttemptRepository.save(attempt.copy(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:134:            val attempt = mailSendAttemptRepository.findById(attemptId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:136:                mailSendAttemptRepository.save(attempt.copy(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:734:                    val existingAttempt = mailSendAttemptRepository.findByOrcidIdAndMailType(normOrcid, "INTRODUCTION")
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:735:                    val attempt = mailSendAttemptRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:743:                            MailSendAttempt(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:102:        attemptRepository.insertIgnore(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:116:        val attempt = attemptRepository.findByOrcidIdAndMailTypeForUpdate(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:140:                val affected = attemptRepository.claimStatus(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:164:                val affected = attemptRepository.claimStatus(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:205:        val attempt = attemptRepository.findById(attemptId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:264:        attemptRepository.updateStatusAndError(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:282:        val attempt = attemptRepository.findById(attemptId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:331:        attemptRepository.updateStatusAndError(

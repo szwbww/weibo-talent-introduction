@@ -1,0 +1,20 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Qingfei Tech Talent Team//Meeting Confirmation//EN
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:basdogan-preview-20260911@qingfei-calendar
+DTSTAMP:20260909T030040Z
+DTSTART:20260911T070000Z
+DTEND:20260911T073000Z
+SUMMARY:Meeting with Professor Basdogan | Qingfei Tech Talent Team
+DESCRIPTION:Friday\, September 11\, 2026\, from 10:00 AM to 10:30 AM Türki
+ ye Time (UTC+3)\n\nJoin Zoom meeting:\nhttps://zoom.us/j/87102801187?pwd=R
+ H3bf4vbH0SoyTq2UW1Dzzuag4kISa.1\n\nLuKai\, Customer Care Officer\nQingfei 
+ Tech Talent Team China
+LOCATION:https://zoom.us/j/87102801187?pwd=RH3bf4vbH0SoyTq2UW1Dzzuag4kISa.1
+URL:https://zoom.us/j/87102801187?pwd=RH3bf4vbH0SoyTq2UW1Dzzuag4kISa.1
+STATUS:CONFIRMED
+TRANSP:OPAQUE
+END:VEVENT
+END:VCALENDAR
