@@ -1,6 +1,6 @@
 # 03 人工回复接入与历史日历下载
 
-依赖01→02；子系统：人工回复业务和会话读取，共2个；10文件；新增表字段0。API扩展可独立部署，旧浏览器省略meeting时保持原行为。
+依赖01→02；子系统：人工回复业务和会话读取，共2个；11文件；新增表字段0。API扩展可独立部署，旧浏览器省略meeting时保持原行为。
 
 ## 需求描述
 
@@ -68,6 +68,7 @@ T4（I-2）：UnmatchedInboundMailController新增传参会移动其后operatorS
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/mail/RagSendBridgeTest.kt` | 依赖与RAG回归 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt` | 新增repository mock兼容 |
 | 10 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 同步controller行号钉 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt` | 追加2个尾参matcher（Amendment A1） |
 
 ## 验收标准
 
