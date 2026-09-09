@@ -712,7 +712,7 @@
 
         <!-- View: Mailbox (Inbound / Outbound records) -->
         <section class="view" id="view-mailbox">
-            <div class="toolbar">
+            <div class="toolbar" id="mailboxLegacyToolbar">
                 <button class="button primary" id="mailboxRefreshBtn">刷新</button>
                 <div class="mailbox-view-controls">
                     <div class="mailbox-segmented-control mailbox-view-mode" role="radiogroup" aria-label="收发件箱展示方式">
@@ -743,11 +743,11 @@
                     <option value="收件">收件</option>
                     <option value="发件">发件</option>
                 </select>
-                <input id="mailboxFilterRecipient" placeholder="过滤收件人邮箱" style="width: 180px;">
-                <input id="mailboxFilterKeyword" placeholder="过滤主题/内容关键词" style="width: 200px;">
-                <input type="date" id="mailboxFilterStartDate" style="width: 130px;">
+                <input id="mailboxFilterRecipient" placeholder="输入邮箱关键词">
+                <input id="mailboxFilterKeyword" placeholder="搜索邮件主题或正文">
+                <input type="date" id="mailboxFilterStartDate">
                 <span>至</span>
-                <input type="date" id="mailboxFilterEndDate" style="width: 130px;">
+                <input type="date" id="mailboxFilterEndDate">
                 <button class="button primary" id="mailboxSearchBtn">查询</button>
             </div>
 
@@ -757,7 +757,7 @@
                 <button type="button" class="button small" id="mailboxExecutionFilterClear">清除过滤</button>
             </div>
 
-            <section class="panel">
+            <section class="panel" id="mailboxConversationPanel">
                 <div class="panel-head">
                     <h2>已激活账号收发邮件记录</h2>
                     <div class="panel-head-actions">
