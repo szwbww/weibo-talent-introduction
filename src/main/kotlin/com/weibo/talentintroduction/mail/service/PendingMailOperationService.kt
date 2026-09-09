@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationSe
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
+import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.domain.MailRecordRagFact
 import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
@@ -278,31 +279,192 @@ class PendingMailOperationService(
 
         val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
 
+        val manualSource = ManualRichSendSource(
+            contact = contact,
+            contactId = contactId,
+            inboundProcessingId = inboundProcessingId,
+            inboundRecord = record,
+            account = account,
+            accountCode = account.accountCode,
+            persistInReplyTo = record.messageId,
+            smtpInReplyTo = null,
+            smtpReferences = null,
+            anchorMailRecordId = null,
+            requestId = null
+        )
+        return executeManualRichSend(
+            source = manualSource,
+            rawSubject = subject,
+            htmlBody = htmlBody,
+            textBody = textBody,
+            operatorName = operatorName,
+            safetyWarningConfirmed = safetyWarningConfirmed,
+            strongConfirmationText = strongConfirmationText,
+            evidence = ManualReplyEvidenceContext(
+                verifiedAssembly = verifiedAssembly,
+                carriesQa = carriesQa,
+                canonicalFactIds = canonicalFactIds,
+                serverSuggestedFactIds = serverSuggestedFactIds,
+                degradedFactCodes = factResolution.degradedCodes,
+                ragMode = ragMode,
+                ragFactCodes = ragFactCodes,
+                ragFingerprintAtSend = ragFingerprintAtSend,
+                templateTextBody = templateTextBody,
+                templateHtmlBody = templateHtmlBody,
+                operatorAuthorizedActions = verifiedAssembly
+                    ?.let { trustReplyWorkbenchService.operatorAuthorizedActionsFromVerifiedVersions(it.response.itemVersions) }
+                    .orEmpty(),
+                edited = edited,
+                inboundText = inboundText,
+                researchProfileSufficient = researchProfileSufficient
+            )
+        )
+    }
+
+    /**
+     * 会话级自由回信入口（T2）：联系人有真实 SENT 出站锚点才开放；锚点账号即发件账号。
+     * 幂等（I-4）：先按 requestId 收敛已完成 attempt，再查锚点；无成功发件在 claim/SMTP
+     * 前返回 422 CONVERSATION_SENT_ANCHOR_NOT_FOUND（I-1/I-10）。DTO 不携带
+     * senderAccountCode/QA/RAG —— 本方法只接收可空 accountScope 约束锚点查询（I-6）。
+     */
+    fun sendConversationManualRichReply(
+        contactId: Long,
+        requestId: String,
+        accountScope: String?,
+        subject: String,
+        htmlBody: String,
+        textBody: String?,
+        operatorName: String?,
+        safetyWarningConfirmed: Boolean = false,
+        strongConfirmationText: String? = null
+    ): PendingMailSendResult {
+        val contact = expertContactRepository.findById(contactId)
+            .orElseThrow { error("Expert contact not found: $contactId") }
+        require(subject.isNotBlank()) { "Subject is required" }
+        require(htmlBody.isNotBlank()) { "HTML body is required" }
+        require(subject.trim().length <= 255) { "Subject exceeds 255 characters" }
+        require(requestId.isNotBlank()) { "requestId is required" }
+        val canonicalRequestId = try {
+            manualReplySendAttemptService.canonicalConversationRequestId(requestId)
+        } catch (ex: IllegalArgumentException) {
+            throw IllegalArgumentException("requestId must be a valid UUID", ex)
+        }
+
+        // I-4：已完成 attempt 先收敛 —— SENT 时直接返回原结果，绝不重查锚点/再次投递
+        // （刚发出的信已成为最新成功发件也不得再次 SMTP）。
+        val completed = manualReplySendAttemptService.findCompletedByRequestId(
+            contact.orcidId, canonicalRequestId
+        )
+        if (completed != null) {
+            val record = completed.mailRecord
+            return PendingMailSendResult(
+                contactId = contactId,
+                senderAccountCode = record.senderAccountCode ?: completed.attemptAccountCode,
+                mailType = "MANUAL_RICH_REPLY",
+                subject = record.subject ?: subject,
+                sendStatus = "SENT",
+                messageId = record.messageId ?: completed.attemptMessageId
+            )
+        }
+
+        // I-1：真实 SENT 出站锚点（排除空账号/模拟器）；accountScope 非空时只在该账号内找，
+        // scope 下无成功发件不回退其他账号（I-6）。锚点查询在任何 claim/SMTP 之前。
+        val anchor = mailRecordRepository.findLatestSentOutboundAnchor(
+            contactId = contactId,
+            accountScope = accountScope?.takeIf { it.isNotBlank() },
+            excludedAccountCode = MailSenderAccountService.SIMULATOR_ACCOUNT_CODE
+        ) ?: throw ResponseStatusException(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "CONVERSATION_SENT_ANCHOR_NOT_FOUND"
+        )
+        val accountCode = requireNotNull(anchor.senderAccountCode) {
+            "Conversation anchor mail record has no sender account"
+        }
+        val account = mailSenderAccountService.getManualSendAccount(accountCode)
+
+        // I-7：Message-ID 仅在 trim 后非空且 <=255 时进入落库 inReplyTo 与 SMTP 线程头；
+        // 缺失/超长不取消资格 —— 线程头为空仍发送（I-3：引用链只来自真实锚点）。
+        val anchorMessageId = anchor.messageId
+            ?.trim()
+            ?.takeIf { it.isNotBlank() && it.length <= 255 }
+        val smtpReferences = if (anchorMessageId != null) {
+            listOfNotNull(anchor.inReplyTo?.trim()?.takeIf { it.isNotBlank() }, anchorMessageId)
+                .joinToString(" ")
+        } else null
+
+        val source = ManualRichSendSource(
+            contact = contact,
+            contactId = contactId,
+            inboundProcessingId = null,
+            inboundRecord = null,
+            account = account,
+            accountCode = accountCode,
+            persistInReplyTo = anchorMessageId,
+            smtpInReplyTo = anchorMessageId,
+            smtpReferences = smtpReferences,
+            anchorMailRecordId = requireNotNull(anchor.id) { "Conversation anchor mail record has no id" },
+            requestId = canonicalRequestId
+        )
+        return executeManualRichSend(
+            source = source,
+            rawSubject = subject,
+            htmlBody = htmlBody,
+            textBody = textBody,
+            operatorName = operatorName,
+            safetyWarningConfirmed = safetyWarningConfirmed,
+            strongConfirmationText = strongConfirmationText,
+            evidence = ManualReplyEvidenceContext(runInboundSemanticChecks = false)
+        )
+    }
+
+    /**
+     * 人工富文本发送共同实现（T2.4）：两条路径共享「占位符校验 → 最终渲染 → 最终文本
+     * 安全检查 → suppression → claim → SMTP → 分类 → 持久化 → after-commit audit」
+     * 生命周期（I-9）。来信路径（source.inboundProcessingId != null）保留 QA/RAG/
+     * assembly/archive/旧审计语义（I-8）；会话回信路径（null）只跑通用纯文本风险检查，
+     * 不运行依赖来信语义的 QA/意图检查，审计 target 为联系人（I-11）。
+     */
+    private fun executeManualRichSend(
+        source: ManualRichSendSource,
+        rawSubject: String,
+        htmlBody: String,
+        textBody: String?,
+        operatorName: String?,
+        safetyWarningConfirmed: Boolean,
+        strongConfirmationText: String?,
+        evidence: ManualReplyEvidenceContext
+    ): PendingMailSendResult {
+        val contact = source.contact
+        require(rawSubject.isNotBlank()) { "Subject is required" }
+        require(htmlBody.isNotBlank()) { "HTML body is required" }
+        val trimmedSubject = rawSubject.trim()
+        require(trimmedSubject.length <= 255) { "Subject exceeds 255 characters" }
+
         mailVariableService.requireValidPlaceholders(trimmedSubject)
-        val renderedSubject = mailVariableService.renderForContact(trimmedSubject, account, contact)
+        val renderedSubject = mailVariableService.renderForContact(trimmedSubject, source.account, contact)
         require(renderedSubject.isNotBlank()) { "Rendered subject is empty" }
         require(renderedSubject.length <= 255) { "Rendered subject exceeds 255 characters: ${renderedSubject.length}" }
 
-        val rawText = templateTextBody?.takeIf { it.isNotBlank() }
+        val rawText = evidence.templateTextBody?.takeIf { it.isNotBlank() }
             ?: textBody?.takeIf { it.isNotBlank() }
             ?: mailBodyCleaner.clean(htmlBody)
-        val rawHtmlFromTemplate = templateHtmlBody?.takeIf { it.isNotBlank() }
+        val rawHtmlFromTemplate = evidence.templateHtmlBody?.takeIf { it.isNotBlank() }
         mailVariableService.requireValidPlaceholders(rawText)
         if (rawHtmlFromTemplate != null) {
             mailVariableService.requireValidPlaceholders(rawHtmlFromTemplate)
-        } else if (templateTextBody.isNullOrBlank()) {
+        } else if (evidence.templateTextBody.isNullOrBlank()) {
             mailVariableService.requireValidPlaceholders(htmlBody)
         }
 
-        val renderedText = mailVariableService.renderForContact(rawText, account, contact)
+        val renderedText = mailVariableService.renderForContact(rawText, source.account, contact)
         val finalTextBody = renderedText
         val finalHtmlBody = when {
             rawHtmlFromTemplate != null ->
-                mailVariableService.renderHtmlForContact(rawHtmlFromTemplate, account, contact)
-            !templateTextBody.isNullOrBlank() ->
+                mailVariableService.renderHtmlForContact(rawHtmlFromTemplate, source.account, contact)
+            !evidence.templateTextBody.isNullOrBlank() ->
                 mailContentService.plainTextToHtml(renderedText)
             else ->
-                mailVariableService.renderHtmlForContact(htmlBody, account, contact)
+                mailVariableService.renderHtmlForContact(htmlBody, source.account, contact)
         }
 
         val finalValidationText = buildFinalValidationText(renderedSubject, finalTextBody, finalHtmlBody)
@@ -313,29 +475,22 @@ class PendingMailOperationService(
         mailVariableService.requireValidPlaceholders(finalTextBody)
         mailVariableService.requireValidPlaceholders(finalHtmlBody)
 
-        // 03 (I-5): operator action 授权只来自通过 verifyAssembly 的 locked versions
-        // （服务端重算结果），绝不再直接读取客户端 lockedItems；assembly 无效时
-        // verifiedAssembly 为 null 且发送已失败，授权集合自然为空（fail-closed）。
-        val operatorAuthorized = verifiedAssembly
-            ?.let { trustReplyWorkbenchService.operatorAuthorizedActionsFromVerifiedVersions(it.response.itemVersions) }
-            .orEmpty()
-
         val findings = collectSafetyFindings(
             verificationText = finalValidationText,
-            // 03b (I-47 ①): RAG 路径 carriesQa 显式传 false（RAG 不携带 QA 证据），
-            // 自动落入纯文本检查分支，不产生 QA_FACTS_ALL_INVALID。
-            carriesQa = if (ragMode) false else carriesQa,
-            canonicalFactIds = canonicalFactIds,
+            // 03b (I-47 ①): RAG 路径 carriesQa 显式传 false（RAG 不携带 QA 证据）。
+            carriesQa = if (evidence.ragMode) false else evidence.carriesQa,
+            canonicalFactIds = evidence.canonicalFactIds,
             contact = contact,
-            inboundText = inboundText,
-            researchProfileSufficient = researchProfileSufficient,
-            operatorAuthorizedActions = operatorAuthorized,
-            degradedFactCodes = factResolution.degradedCodes,
-            // 03 (I-4): 可信 assembly 路径复用服务端已验证 selection 作为事实选择数据源，
-            // 禁止再次调用 qaFactSelectionService.select() 做语义重筛。
-            verifiedSelection = verifiedAssembly?.selection,
+            inboundText = evidence.inboundText,
+            researchProfileSufficient = evidence.researchProfileSufficient,
+            operatorAuthorizedActions = evidence.operatorAuthorizedActions,
+            degradedFactCodes = evidence.degradedFactCodes,
+            // 03 (I-4): 可信 assembly 路径复用服务端已验证 selection，禁止再次语义重筛。
+            verifiedSelection = evidence.verifiedAssembly?.selection,
             // 03b (I-47): RAG 发送整段绕开 QA selection/trust-gap/intent 链。
-            ragSend = ragMode
+            ragSend = evidence.ragMode,
+            // T2.7: 会话回信路径在通用纯文本检查后返回，不跑来信语义检查。
+            runInboundSemanticChecks = evidence.runInboundSemanticChecks
         )
         val requiresStrong = findings.any { it.severity == SafetySeverity.STRONG }
         if (findings.isNotEmpty() && !safetyWarningConfirmed) {
@@ -347,20 +502,27 @@ class PendingMailOperationService(
 
         val payload = ManualReplySendAttemptService.SendPayload(
             orcidId = contact.orcidId,
-            contactId = contactId,
-            inboundProcessingId = inboundProcessingId,
-            accountCode = account.accountCode,
+            contactId = source.contactId,
+            inboundProcessingId = source.inboundProcessingId,
+            accountCode = source.accountCode,
             normalizedRecipient = contact.expertEmail.lowercase().trim(),
             subject = renderedSubject,
             finalText = finalTextBody,
             finalHtml = finalHtmlBody,
-            inReplyTo = record.messageId,
-            canonicalQaRuleIds = canonicalFactIds,
-            primaryRuleId = primaryRuleId
+            inReplyTo = source.persistInReplyTo,
+            canonicalQaRuleIds = evidence.canonicalFactIds,
+            primaryRuleId = if (evidence.ragMode) null else evidence.canonicalFactIds.firstOrNull(),
+            // I-3：会话回信锚点只以真实 mail_record.id 表达，绝不伪造 inbound id。
+            sourceAnchor = if (source.inboundProcessingId == null) {
+                requireNotNull(source.anchorMailRecordId) {
+                    "Conversation rich reply requires a real anchor mail record"
+                }.let { "${ManualReplySendAttemptService.SOURCE_ANCHOR_PREFIX}$it" }
+            } else null,
+            idempotencyRequestId = source.requestId
         )
 
-        val inReplyTo = record.messageId
-        if (inReplyTo != null && inReplyTo.length > 255) {
+        val persistInReplyTo = source.persistInReplyTo
+        if (persistInReplyTo != null && persistInReplyTo.length > 255) {
             throw ResponseStatusException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
                 "inReplyTo exceeds 255 characters"
@@ -386,13 +548,15 @@ class PendingMailOperationService(
                     body = finalHtmlBody,
                     html = true,
                     text = finalTextBody,
-                    messageId = claim.messageId
+                    messageId = claim.messageId,
+                    inReplyTo = source.smtpInReplyTo,
+                    references = source.smtpReferences
                 )
                 val bodyPreviewText = (finalTextBody.ifBlank { mailBodyCleaner.clean(finalHtmlBody) }
                     .takeIf { it.isNotBlank() } ?: mailBodyCleaner.clean(finalHtmlBody)).take(500)
 
                 try {
-                    val delivered = mailDeliveryService.send(account, mail)
+                    val delivered = mailDeliveryService.send(source.account, mail)
                     val classification = classifyDelivery(delivered)
 
                     if (classification.isSent) {
@@ -402,50 +566,52 @@ class PendingMailOperationService(
                                 attemptId = claim.attemptId,
                                 messageId = claim.messageId
                             )
-                            manualReplySendAttemptService.recordSendAudit(
-                                inboundProcessingId = inboundProcessingId,
-                                contactId = contactId,
-                                mailRecordId = id,
-                                canonicalFactIds = canonicalFactIds,
-                                carriesQa = carriesQa,
-                                delivered = delivered,
-                                sendSubject = renderedSubject,
-                                bodyPreviewText = bodyPreviewText,
-                                operatorName = operatorName,
-                                inboundRecord = record,
-                                serverSuggestedFactIds = serverSuggestedFactIds,
-                                edited = edited,
-                                // 04 (I-1/I-7): 仅在该次发送存在 verified assembly 时把服务端
-                                // 诊断附加到既有发送 action；无 assembly（纯人工 rich reply、
-                                // legacy QA 发送）传 null，after payload 逐字不变。
-                                trustReplyDiagnostics = verifiedAssembly?.response?.diagnostics,
-                                note = buildString {
-                                    append("Manual rich reply sent for inbound processing $inboundProcessingId")
-                                    if (findings.isNotEmpty()) {
-                                        append("; safety findings confirmed: ")
-                                        val codes = findings.map { it.code }
-                                        append(codes.take(10).joinToString(","))
-                                        if (codes.size > 10) {
-                                            append("+").append(codes.size)
-                                        }
-                                    }
-                                    if (requiresStrong) {
-                                        append("; strong confirmation typed")
-                                    }
-                                }
-                            )
+                            if (source.inboundProcessingId != null) {
+                                manualReplySendAttemptService.recordSendAudit(
+                                    inboundProcessingId = source.inboundProcessingId,
+                                    contactId = source.contactId,
+                                    mailRecordId = id,
+                                    canonicalFactIds = evidence.canonicalFactIds,
+                                    carriesQa = evidence.carriesQa,
+                                    delivered = delivered,
+                                    sendSubject = renderedSubject,
+                                    bodyPreviewText = bodyPreviewText,
+                                    operatorName = operatorName,
+                                    inboundRecord = requireNotNull(source.inboundRecord) {
+                                        "Inbound rich reply audit requires the inbound processing record"
+                                    },
+                                    serverSuggestedFactIds = evidence.serverSuggestedFactIds,
+                                    edited = evidence.edited,
+                                    // 04 (I-1/I-7): 仅在该次发送存在 verified assembly 时附加诊断。
+                                    trustReplyDiagnostics = evidence.verifiedAssembly?.response?.diagnostics,
+                                    note = auditNote(inboundProcessingId = source.inboundProcessingId, contactId = source.contactId, findings = findings, requiresStrong = requiresStrong)
+                                )
+                            } else {
+                                manualReplySendAttemptService.recordConversationSendAudit(
+                                    contactId = source.contactId,
+                                    anchorMailRecordId = requireNotNull(source.anchorMailRecordId) {
+                                        "Conversation rich reply audit requires the anchor mail record"
+                                    },
+                                    mailRecordId = id,
+                                    delivered = delivered,
+                                    sendSubject = renderedSubject,
+                                    bodyPreviewText = bodyPreviewText,
+                                    operatorName = operatorName,
+                                    note = auditNote(inboundProcessingId = null, contactId = source.contactId, findings = findings, requiresStrong = requiresStrong)
+                                )
+                            }
                             // 03b (I-42): 发送成功后按请求中 ragFactCodes 的原始顺序写入
-                            // mail_record_rag_fact 存证 —— 不排序、不去重；RAG 路径的
-                            // canonicalFactIds 恒为空，绝不会写 mail_record_qa_rule。
-                            if (ragFactCodes != null) {
+                            // mail_record_rag_fact 存证；RAG 路径 canonicalFactIds 恒为空，
+                            // 绝不写 mail_record_qa_rule。
+                            if (evidence.ragFactCodes != null) {
                                 val ragEvidenceRepo = requireNotNull(mailRecordRagFactRepository) {
                                     "MailRecordRagFactRepository is not wired for RAG send"
                                 }
-                                val fingerprintAtSend = requireNotNull(ragFingerprintAtSend) {
+                                val fingerprintAtSend = requireNotNull(evidence.ragFingerprintAtSend) {
                                     "RAG fingerprint must be present after gate validation"
                                 }
                                 ragEvidenceRepo.saveAll(
-                                    ragFactCodes.mapIndexed { ordinal, factCode ->
+                                    evidence.ragFactCodes.mapIndexed { ordinal, factCode ->
                                         MailRecordRagFact(
                                             mailRecordId = id,
                                             factCode = factCode,
@@ -475,17 +641,23 @@ class PendingMailOperationService(
                                 "发送状态未知，请勿重复发送 (Message-ID: ${claim.messageId})"
                             )
                         }
-                        val archive = archiveLiveUnsupportedAnswers(
-                            inboundProcessingId = inboundProcessingId,
-                            templateTextBody = templateTextBody,
-                            finalTextBody = finalTextBody,
-                            operatorName = operatorName,
-                            outboundMailRecordId = mailRecordId,
-                            verifiedAssembly = verifiedAssembly
-                        )
+                        // 归档只属来信语义链（verifiedAssembly 非空才可能产生样本）；会话回信
+                        // 路径 verifiedAssembly 恒 null，直接返回默认 NOT_APPLICABLE（I-8/I-11）。
+                        val archive = if (source.inboundProcessingId != null) {
+                            archiveLiveUnsupportedAnswers(
+                                inboundProcessingId = source.inboundProcessingId,
+                                templateTextBody = evidence.templateTextBody,
+                                finalTextBody = finalTextBody,
+                                operatorName = operatorName,
+                                outboundMailRecordId = mailRecordId,
+                                verifiedAssembly = evidence.verifiedAssembly
+                            )
+                        } else {
+                            UnsupportedAnswerIndexArchiveResult()
+                        }
                         PendingMailSendResult(
-                            contactId = contactId,
-                            senderAccountCode = account.accountCode,
+                            contactId = source.contactId,
+                            senderAccountCode = source.accountCode,
                             mailType = "MANUAL_RICH_REPLY",
                             subject = renderedSubject,
                             sendStatus = "SENT",
@@ -547,16 +719,20 @@ class PendingMailOperationService(
 
             ManualReplySendAttemptService.ClaimResult.DEDUP_SENT -> {
                 val existingRecord = mailRecordRepository.findByMailSendAttemptId(claim.attemptId)
-                val archive = archiveLiveUnsupportedAnswers(
-                    inboundProcessingId = inboundProcessingId,
-                    templateTextBody = templateTextBody,
-                    finalTextBody = finalTextBody,
-                    operatorName = operatorName,
-                    outboundMailRecordId = existingRecord?.id,
-                    verifiedAssembly = verifiedAssembly
-                )
+                val archive = if (source.inboundProcessingId != null) {
+                    archiveLiveUnsupportedAnswers(
+                        inboundProcessingId = source.inboundProcessingId,
+                        templateTextBody = evidence.templateTextBody,
+                        finalTextBody = finalTextBody,
+                        operatorName = operatorName,
+                        outboundMailRecordId = existingRecord?.id,
+                        verifiedAssembly = evidence.verifiedAssembly
+                    )
+                } else {
+                    UnsupportedAnswerIndexArchiveResult()
+                }
                 PendingMailSendResult(
-                    contactId = contactId,
+                    contactId = source.contactId,
                     senderAccountCode = payload.accountCode,
                     mailType = "MANUAL_RICH_REPLY",
                     subject = renderedSubject,
@@ -585,6 +761,30 @@ class PendingMailOperationService(
                     HttpStatus.UNPROCESSABLE_ENTITY,
                     "该内容已发送失败，请修改内容后重试"
                 )
+        }
+    }
+
+    private fun auditNote(
+        inboundProcessingId: Long?,
+        contactId: Long,
+        findings: List<SafetyFinding>,
+        requiresStrong: Boolean
+    ): String = buildString {
+        if (inboundProcessingId != null) {
+            append("Manual rich reply sent for inbound processing $inboundProcessingId")
+        } else {
+            append("Manual rich reply sent for conversation of contact $contactId")
+        }
+        if (findings.isNotEmpty()) {
+            append("; safety findings confirmed: ")
+            val codes = findings.map { it.code }
+            append(codes.take(10).joinToString(","))
+            if (codes.size > 10) {
+                append("+").append(codes.size)
+            }
+        }
+        if (requiresStrong) {
+            append("; strong confirmation typed")
         }
     }
 
@@ -898,7 +1098,11 @@ class PendingMailOperationService(
         verifiedSelection: ResolvedQaRules? = null,
         // 03b (I-47): RAG 发送时整段绕开 QA selection/trust-gap/intent 链（见方法体
         // 守卫处注释）。既有两条路径不传（默认 false），逻辑逐字不变。
-        ragSend: Boolean = false
+        ragSend: Boolean = false,
+        // T2.7: 会话（无来信锚点）回信路径传 false —— 数字/URL、高风险声明、信任话术
+        // 通用检查跑完后立即返回，不跑依赖来信语义的 QA selection/trust-gap/intent 门禁。
+        // 来信路径默认 true，行为逐字不变。
+        runInboundSemanticChecks: Boolean = true
     ): List<SafetyFinding> {
         val findings = mutableListOf<SafetyFinding>()
         fun add(code: String, sentence: String? = null) {
@@ -949,7 +1153,7 @@ class PendingMailOperationService(
         // （hallucinated number/url、unbacked high-risk、trust rhetoric）已执行完毕
         // 并保留 —— 它们不读 qa_rule，且是二次确认弹窗（safetyWarningConfirmed /
         // strongConfirmationText）的触发源（D-1：人是唯一的门）。
-        if (ragSend) {
+        if (ragSend || !runInboundSemanticChecks) {
             return findings
         }
 
@@ -1299,6 +1503,58 @@ class PendingMailOperationService(
         )
     }
 }
+
+// ---------------------------------------------------------------------------
+// 人工富文本发送共同实现的最小 source/evidence 上下文（T2.4）。私有文件级类型，
+// 只被 PendingMailOperationService 使用。
+// ---------------------------------------------------------------------------
+
+/**
+ * 发送生命周期最小 source context：联系人、可空 inbound id、可空锚点 mail record id、
+ * 账号 code、落库 inReplyTo、SMTP inReplyTo/references（T2.4）。会话回信路径
+ * inboundProcessingId = null 且携带真实 requestId/anchor；来信路径反向（I-3/I-4）。
+ */
+private data class ManualRichSendSource(
+    val contact: ExpertContact,
+    val contactId: Long,
+    val inboundProcessingId: Long?,
+    val inboundRecord: com.weibo.talentintroduction.mail.domain.InboundMailProcessing?,
+    val account: MailSenderAccount,
+    val accountCode: String,
+    /** 落库 mail_record.inReplyTo 与 SendPayload.inReplyTo 的值（线程锚点）。 */
+    val persistInReplyTo: String?,
+    /** SMTP In-Reply-To 头；来信路径恒 null（I-8 保持现状），会话路径 = 锚点 Message-ID。 */
+    val smtpInReplyTo: String?,
+    /** SMTP References 头；会话路径 = 锚点自身 inReplyTo + 锚点 Message-ID（I-7）。 */
+    val smtpReferences: String?,
+    /** 会话回信审计 before 的锚点 mail record id（I-11）；来信路径恒 null。 */
+    val anchorMailRecordId: Long?,
+    /** 会话回信幂等 requestId（已规范化 UUID）；来信路径恒 null（I-4）。 */
+    val requestId: String?
+)
+
+/**
+ * 来信语义侧的可选证据/归档上下文：QA/RAG/assembly/archive 与模板正文只属于来信路径；
+ * 会话回信路径用全默认值（canonical 空、不归档、不跑来信语义检查）。
+ */
+private data class ManualReplyEvidenceContext(
+    val verifiedAssembly: VerifiedTrustReplyAssembly? = null,
+    val carriesQa: Boolean = false,
+    val canonicalFactIds: List<Long> = emptyList(),
+    val serverSuggestedFactIds: List<Long> = emptyList(),
+    val degradedFactCodes: List<String> = emptyList(),
+    val ragMode: Boolean = false,
+    val ragFactCodes: List<String>? = null,
+    val ragFingerprintAtSend: String? = null,
+    val templateTextBody: String? = null,
+    val templateHtmlBody: String? = null,
+    val operatorAuthorizedActions: Set<AiReplyAction> = emptySet(),
+    val edited: Boolean? = null,
+    val inboundText: String = "",
+    val researchProfileSufficient: Boolean = false,
+    /** T2.7：false 时只跑数字/URL、高风险声明、信任话术通用检查后返回。来信默认 true。 */
+    val runInboundSemanticChecks: Boolean = true
+)
 
 data class PendingMailSendResult(
     val contactId: Long,

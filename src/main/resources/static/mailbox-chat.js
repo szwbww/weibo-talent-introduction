@@ -320,7 +320,7 @@
                 accountScope: null
             },
             manual: {
-                mode: "none", // "none" | "inbound" | "outboundOnly"
+                mode: "none", // "none" | "inbound" | "outbound" | "unavailable"
                 targetProcessingId: null,
                 targetAccountCode: "",
                 targetKey: null,
@@ -2127,12 +2127,28 @@
             if (!scroll) return;
             const summary = instance.selectedSummary || {};
             const latestInbound = summary.latestInbound || null;
-            const mode = latestInbound && latestInbound.processingId != null ? "inbound" : "outboundOnly";
-            const targetProcessingId = mode === "inbound" ? Number(latestInbound.processingId) : null;
-            const targetAccount = mode === "inbound" ? (latestInbound.accountCode || "") : "";
-            const targetKey = mode === "inbound" ? `${Number(instance.selectedContactId)}:${targetProcessingId}:${targetAccount}` : null;
-            const targetMsg = targetProcessingId != null ? latestInboundMessage() : null;
-            const defaultSubject = targetMsg ? chatSubjectPrefill(targetMsg.subject) : "Re:";
+            // 三态（I-1/I-2）：来信（真实 processingId）→ inbound；无来信但至少 1 封真实
+            // SENT 出站 → outbound（自由回信锚点资格由服务端再校验）；其余 → unavailable。
+            const hasInbound = latestInbound && latestInbound.processingId != null;
+            const sentCount = Number(summary.sentCount) || 0;
+            const mode = hasInbound ? "inbound" : (sentCount > 0 ? "outbound" : "unavailable");
+            const targetProcessingId = hasInbound ? Number(latestInbound.processingId) : null;
+            const targetAccount = hasInbound ? (latestInbound.accountCode || "") : "";
+            // outbound 草稿 key 固定为 contactId:OUTBOUND:<accountScope>，不依赖可能变化的
+            // latest message id（草稿缓存恢复语义）。
+            const scope = instance.conversation.accountScope || "";
+            const targetKey = hasInbound
+                ? `${Number(instance.selectedContactId)}:${targetProcessingId}:${targetAccount}`
+                : (mode === "outbound" ? `${Number(instance.selectedContactId)}:OUTBOUND:${scope}` : null);
+            const targetMsg = hasInbound
+                ? latestInboundMessage()
+                : (mode === "outbound" ? (summary.latestMessage || null) : null);
+            // I-1：默认主题只在最新消息确为真实 SENT 出站时由其生成 Re:；失败消息不伪装成锚点。
+            const defaultSubject = targetMsg && hasInbound
+                ? chatSubjectPrefill(targetMsg.subject)
+                : (mode === "outbound" && targetMsg && targetMsg.direction === "OUTBOUND" && targetMsg.sendStatus === "SENT"
+                    ? chatSubjectPrefill(targetMsg.subject)
+                    : "Re:");
             const draft = targetKey != null ? getDraft(targetKey) : null;
 
             instance.manual.mode = mode;
@@ -2142,9 +2158,14 @@
             instance.manual.qa = draft && draft.qa ? draft.qa : null;
             instance.manual.busy = false;
 
-            const manualContent = mode === "inbound"
-                ? manualComposeHtml(targetKey, targetProcessingId, targetAccount, draft, defaultSubject)
-                : manualFollowUpHtml();
+            let manualContent;
+            if (mode === "inbound") {
+                manualContent = manualComposeHtml(targetKey, targetProcessingId, targetAccount, draft, defaultSubject, false);
+            } else if (mode === "outbound") {
+                manualContent = manualComposeHtml(targetKey, null, scope, draft, defaultSubject, true);
+            } else {
+                manualContent = manualFollowUpHtml();
+            }
             scroll.insertAdjacentHTML("beforeend", `
                 <details class="mc-section" data-section="manual" open>
                     <summary>人工回复</summary>
@@ -2160,10 +2181,16 @@
             return parts.join(" · ");
         }
 
-        function manualComposeHtml(targetKey, processingId, account, draft, defaultSubject) {
+        function manualComposeHtml(targetKey, processingId, account, draft, defaultSubject, outbound) {
+            const isOutbound = outbound === true;
             const subjectValue = draft ? draft.subject : defaultSubject;
             const editorText = draft ? draft.text : "";
-            const targetInfo = manualTargetInfoText(processingId, account);
+            const targetInfo = isOutbound
+                ? `${manualTargetInfoText(null, account)} · 回复最近成功发件线程`
+                : manualTargetInfoText(processingId, account);
+            const templateFollowButton = isOutbound
+                ? `<button class="button" type="button" data-action="mc-template-follow" data-contact-id="${escapeText(instance.selectedContactId)}">选择模板发送跟进邮件</button>`
+                : "";
             return `
                 <div class="mc-compose" data-role="manual-compose" data-target-key="${escapeText(targetKey)}">
                     <label>主题<input aria-label="回复主题" value="${escapeText(subjectValue)}"></label>
@@ -2176,6 +2203,7 @@
                     <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorText ? escapeText(editorText) : ""}</div>
                     <div class="mc-compose-footer">
                         <span data-role="target-info">回复账号与目标来信信息：${targetInfo}</span>
+                        ${templateFollowButton}
                         <button class="button primary" type="button" data-action="mc-send-manual">发送人工回复</button>
                     </div>
                 </div>
@@ -2666,11 +2694,12 @@
         }
 
         // --------------------------------------------------------------
-        // 人工回复：草稿 / 采用 / 发送（I-7 保持原业务）
+        // 人工回复：草稿 / 采用 / 发送（I-7 保持原业务；T4 增加 outbound 会话回信）
         // --------------------------------------------------------------
 
         function currentTargetKey() {
-            return instance.manual.mode === "inbound" && instance.manual.targetKey
+            const mode = instance.manual.mode;
+            return (mode === "inbound" || mode === "outbound") && instance.manual.targetKey
                 ? instance.manual.targetKey
                 : null;
         }
@@ -2704,11 +2733,21 @@
             if (!key) return;
             const values = readManualValues();
             if (!values) return;
+            const existing = getDraft(key);
+            // I-4/I-12：主题或正文相对上次保存有任何变化 → 旧 requestId 失效（置 null，
+            // 下次发送生成新值）；逐字未变化（重挂载/程序性重存）保留，保证失败重试仍
+            // 收敛到同一 attempt。成功删除草稿时 requestId 一并删除。
+            const contentChanged = !existing
+                || existing.subject !== values.subject
+                || existing.html !== values.html
+                || existing.text !== values.text;
+            const requestId = contentChanged ? null : (existing.requestId || null);
             setDraft(key, {
                 subject: values.subject,
                 html: values.html,
                 text: values.text,
                 qa: values.qa,
+                requestId,
                 updatedAt: new Date().toISOString()
             });
         }
@@ -2719,6 +2758,44 @@
                 ragCorpusFingerprint: qa.ragCorpusFingerprint || "",
                 baselineText: qa.baselineText || ""
             };
+        }
+
+        // RFC 4122 v4（同 app.js createAiReplyGenerationId 语义）：crypto.randomUUID 可用
+        // 时优先；否则回退纯 JS 实现。确定性只用于测试沙箱（无 crypto 时给出可解析 UUID）。
+        function createRequestId() {
+            if (globalThis && globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+                return globalThis.crypto.randomUUID();
+            }
+            const bytes = new Uint8Array(16);
+            if (globalThis && globalThis.crypto && typeof globalThis.crypto.getRandomValues === "function") {
+                globalThis.crypto.getRandomValues(bytes);
+            }
+            bytes[6] = (bytes[6] & 0x0f) | 0x40;
+            bytes[8] = (bytes[8] & 0x3f) | 0x80;
+            const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+            return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+        }
+
+        // outbound 发送前取/生成 requestId：草稿已有则复用（失败重试/安全取消收敛同一
+        // attempt）；没有则生成并先写回草稿（I-4/I-12）。
+        function ensureOutboundRequestId() {
+            const key = currentTargetKey();
+            if (!key || instance.manual.mode !== "outbound") return null;
+            const existing = getDraft(key);
+            if (existing && existing.requestId) return existing.requestId;
+            const requestId = createRequestId();
+            const values = readManualValues();
+            if (values) {
+                setDraft(key, {
+                    subject: values.subject,
+                    html: values.html,
+                    text: values.text,
+                    qa: null,
+                    requestId,
+                    updatedAt: new Date().toISOString()
+                });
+            }
+            return requestId;
         }
 
         function adoptAssembly(processingId, assembly) {
@@ -2767,26 +2844,53 @@
                 return;
             }
             const textBody = typeof inputs.editor.innerText === "string" ? inputs.editor.innerText : String(inputs.editor.textContent || "");
-            const requestBody = {
-                senderAccountCode: null,
-                subject,
-                htmlBody: inputs.editor.innerHTML,
-                textBody,
-                operatorName: operatorName()
-            };
-            const qa = instance.manual.qa;
-            if (qa && qa.ragFactCodes && qa.ragFactCodes.length) {
-                requestBody.ragFactCodes = qa.ragFactCodes.slice();
-                requestBody.ragCorpusFingerprint = qa.ragCorpusFingerprint || "";
-                requestBody.edited = textBody.trim() !== (qa.baselineText || "").trim();
+            const mode = instance.manual.mode;
+            let request;
+            if (mode === "inbound") {
+                // 来信路径：既有 processingId adapter，保留 QA/RAG payload（I-8）。
+                const requestBody = {
+                    senderAccountCode: null,
+                    subject,
+                    htmlBody: inputs.editor.innerHTML,
+                    textBody,
+                    operatorName: operatorName()
+                };
+                const qa = instance.manual.qa;
+                if (qa && qa.ragFactCodes && qa.ragFactCodes.length) {
+                    requestBody.ragFactCodes = qa.ragFactCodes.slice();
+                    requestBody.ragCorpusFingerprint = qa.ragCorpusFingerprint || "";
+                    requestBody.edited = textBody.trim() !== (qa.baselineText || "").trim();
+                }
+                const processingId = Number(instance.manual.targetProcessingId);
+                const adapter = hostFn("mcHostSendRichReply");
+                request = adapter
+                    ? adapter(processingId, requestBody)
+                    : Promise.reject(new Error("发送能力不可用"));
+            } else if (mode === "outbound") {
+                // 会话回信路径：body 只含 requestId/当前 accountScope/自由正文/确认字段；
+                // 无 processingId/senderAccountCode/QA/RAG（I-3/I-4/I-6）。
+                const requestId = ensureOutboundRequestId();
+                if (!requestId) {
+                    hostShowStatus("无法生成发送请求标识", "error");
+                    return;
+                }
+                const requestBody = {
+                    requestId,
+                    accountScope: instance.conversation.accountScope || null,
+                    subject,
+                    htmlBody: inputs.editor.innerHTML,
+                    textBody,
+                    operatorName: operatorName()
+                };
+                const adapter = hostFn("mcHostSendConversationRichReply");
+                request = adapter
+                    ? adapter(Number(instance.selectedContactId), requestBody)
+                    : Promise.reject(new Error("发送能力不可用"));
+            } else {
+                return;
             }
-            const processingId = Number(instance.manual.targetProcessingId);
             instance.manual.busy = true;
             setSendButtonDisabled(true);
-            const adapter = hostFn("mcHostSendRichReply");
-            const request = adapter
-                ? adapter(processingId, requestBody)
-                : Promise.reject(new Error("发送能力不可用"));
             request.then((sent) => {
                 if (instance.disposed) return;
                 instance.manual.busy = false;
@@ -2796,7 +2900,7 @@
                     instance.manual.qa = null;
                     afterSuccessfulSend(key);
                 }
-                // 失败保留全部输入（不清草稿、不改 QA）
+                // 失败保留全部输入与 requestId（不清草稿、不改 QA）
             }).catch(() => {
                 if (instance.disposed) return;
                 instance.manual.busy = false;

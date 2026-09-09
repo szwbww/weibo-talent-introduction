@@ -14492,9 +14492,24 @@ function mcHostMountWorkbench(hostEl, processingId, callbacks) {
 // I-3/I-4：聊天人工回复发送 —— 沿用 submitManualRichReply 的服务端校验/QA 审计与
 // 安全确认文案；不触碰 #unmatchedDetailPanel / manualReplyQaContext 等原流程状态。
 async function mcHostSendRichReply(processingId, requestBody) {
+    return submitManualRichReply(`/api/mail/unmatched-inbound/${processingId}/manual-rich-reply`, requestBody);
+}
+
+// T4 (I-3/I-4/I-6)：无来信会话自由回信 —— 同一 URL 提交 + 两级安全确认，只换 endpoint。
+// body 只含 requestId/accountScope/自由正文；服务端决定真实锚点与发件账号。
+async function mcHostSendConversationRichReply(contactId, requestBody) {
+    const id = Number(contactId);
+    if (!Number.isFinite(id) || id <= 0) return false;
+    return submitManualRichReply(`/api/mail/mailbox/conversations/${id}/manual-rich-reply`, requestBody);
+}
+
+// 按 URL 提交人工富文本回复并处理两级安全确认（I-9/I-10：失败提示不泄露 SMTP 诊断，
+// 安全确认取消返回 false —— 调用方保留草稿与 requestId）。成功提示与归档状态提示
+// 对来信/会话两条路径保持同一口径（I-8）。
+async function submitManualRichReply(url, requestBody) {
     const submitWithConfirmation = async (body) => {
         try {
-            const result = await api(`/api/mail/unmatched-inbound/${processingId}/manual-rich-reply`, {
+            const result = await api(url, {
                 method: "POST",
                 body: JSON.stringify(body)
             });

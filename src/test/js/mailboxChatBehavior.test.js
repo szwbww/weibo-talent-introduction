@@ -739,6 +739,7 @@ function createChatSandbox(options) {
         openExpert: [],
         badgeRefresh: 0,
         sendRich: [],
+        sendConversation: [],
         unmounts: [],
         inboundTagModals: [],
         tagMutations: [],
@@ -836,6 +837,12 @@ function createChatSandbox(options) {
             calls.sendRich.push({ processingId: Number(processingId), body });
             if (opts.sendRichResult === false) return Promise.resolve(false);
             if (opts.sendRichError) return Promise.reject(new Error(opts.sendRichError));
+            return Promise.resolve(true);
+        },
+        mcHostSendConversationRichReply: (contactId, body) => {
+            calls.sendConversation.push({ contactId: Number(contactId), body });
+            if (opts.sendConversationResult === false) return Promise.resolve(false);
+            if (opts.sendConversationError) return Promise.reject(new Error(opts.sendConversationError));
             return Promise.resolve(true);
         },
         mcHostMountWorkbench: (hostEl, processingId, callbacks) => {
@@ -1871,21 +1878,171 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         assert.strictEqual(ctx.calls.unmounts.length, 1, "切专家销毁旧 workbench mount");
     });
 
-    it("无来信专家：人工区为说明 + 模板跟进按钮；工作台说明不可生成", async () => {
+    it("无来信但有真实 SENT 发件（sentCount=2）：显示自由回复编辑器并走会话 adapter", async () => {
         const conversations = { items: [expertB(), expertA()], total: 2 };
         const ctx = await bootChat({ conversations, messages: messagesA(), contact: contactB() });
         const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
         click(b.querySelector(".mc-person-main"));
         await flush();
         const conversation = ctx.host.querySelector(".mc-conversation");
-        assert.match(conversation.textContent, /暂无专家来信，暂不能生成回复/);
-        assert.ok(!conversation.querySelector(".mc-compose"));
+        assert.match(conversation.textContent, /暂无专家来信，暂不能生成回复/, "工作台仍不可生成");
+        const compose = conversation.querySelector(".mc-compose");
+        assert.ok(compose, "sentCount>0 时显示人工回复编辑器（S-1 骨架）");
+        assert.match(compose.querySelector('[data-role="target-info"]').textContent, /回复最近成功发件线程/);
+        const subjectInput = conversation.querySelector('input[aria-label="回复主题"]');
+        assert.strictEqual(subjectInput.value, "Re: Introduction", "SENT 出站最新消息主题生成 Re: 默认主题");
+        // 既有模板跟进按钮仍在 footer
+        const followBtn = conversation.querySelector('[data-action="mc-template-follow"]');
+        assert.ok(followBtn, "outbound footer 保留模板跟进入口");
+        const editor = conversation.querySelector('[aria-label="人工回复正文"]');
+        editor.innerText = "free follow up";
+        inputEvent(editor);
+        click(conversation.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendRich.length, 0, "outbound 不走旧来信 adapter");
+        assert.strictEqual(ctx.calls.sendConversation.length, 1);
+        const payload = ctx.calls.sendConversation[0];
+        assert.strictEqual(payload.contactId, 2);
+        assert.ok(payload.body.requestId, "body 携带 requestId");
+        assert.ok(!("processingId" in payload.body), "不伪造 processingId");
+        assert.ok(!("senderAccountCode" in payload.body), "不接收/发送发件账号覆盖");
+        assert.ok(!("qaRuleIds" in payload.body) && !("ragFactCodes" in payload.body), "无 QA/RAG 字段");
+        assert.ok(payload.body.subject.includes("Re: Introduction"));
+        // 成功删除草稿：切走再切回主题回到默认
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        const b2 = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b2.querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Introduction", "发送成功后草稿删除");
+    });
+
+    it("pendingCount=0 且真实来信（PROCESSED 已处理）：编辑器存在并走旧 processingId adapter", async () => {
+        // I-2：待处理状态不是回信门禁 —— 已处理（非 MANUAL_REVIEW）来信仍可自由回信。
+        const conversations = { items: [expertA({ pendingCount: 0 }), expertB()], total: 2 };
+        const ctx = await bootChat({ conversations, messages: messagesA(), contact: contactA() });
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        const conversation = ctx.host.querySelector(".mc-conversation");
+        const compose = conversation.querySelector(".mc-compose");
+        assert.ok(compose, "pendingCount=0 + latestInbound 仍显示编辑器");
+        const editor = conversation.querySelector('[aria-label="人工回复正文"]');
+        editor.innerText = "reply to processed";
+        inputEvent(editor);
+        click(conversation.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendRich.length, 1, "inbound 路径继续走旧 adapter");
+        assert.strictEqual(ctx.calls.sendRich[0].processingId, 101);
+        assert.strictEqual(ctx.calls.sendConversation.length, 0);
+    });
+
+    it("仅失败发件（sentCount=0）：不显示编辑器，保留说明与模板跟进", async () => {
+        // I-1/S-2：无来信 + 无真实 SENT 发件不开放自由回信（FAILED 不算锚点）。
+        const onlyFailed = expertB({ sentCount: 0, failedCount: 3, waitingReply: false });
+        const conversations = { items: [onlyFailed, expertA()], total: 2 };
+        const ctx = await bootChat({ conversations, messages: [], contact: contactB() });
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        const conversation = ctx.host.querySelector(".mc-conversation");
+        assert.ok(!conversation.querySelector(".mc-compose"), "仅失败发件不显示编辑器");
+        assert.match(conversation.textContent, /系统不会在没有真实来信时伪造可生成的人工富文本回复/);
         const followBtn = conversation.querySelector('[data-action="mc-template-follow"]');
         assert.ok(followBtn);
         click(followBtn);
         await flush();
         assert.deepStrictEqual(ctx.calls.followUp, [2]);
-        assert.strictEqual(ctx.calls.sendRich.length, 0);
+        assert.strictEqual(ctx.calls.sendConversation.length, 0);
+    });
+
+    it("outbound 草稿 requestId：失败/取消复用、编辑后换新、跨专家切换恢复", async () => {
+        // I-4/I-12：发送失败保留 requestId → 重试同一 requestId；用户再次编辑正文清空
+        // requestId → 下一次发送生成新值；切换专家/重挂载按 OUTBOUND key 恢复草稿。
+        let uuidSeq = 0;
+        const overrides = { conversations: { items: [expertB(), expertA()], total: 2 }, messages: messagesA(), contact: contactB(), sendConversationError: "network down" };
+        const ctx = await bootChat(overrides);
+        ctx.sandbox.crypto = {
+            randomUUID: () => `00000000-0000-4000-8000-${String(++uuidSeq).padStart(12, "0")}`
+        };
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        let conversation = ctx.host.querySelector(".mc-conversation");
+        const editor = conversation.querySelector('[aria-label="人工回复正文"]');
+        editor.innerText = "typed follow up";
+        inputEvent(editor);
+        click(conversation.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation.length, 1, "首次发送失败仍调用 adapter");
+        const firstRequestId = ctx.calls.sendConversation[0].body.requestId;
+        assert.strictEqual(firstRequestId, "00000000-0000-4000-8000-000000000001");
+        // 失败重试：草稿保留且复用同一 requestId（幂等收敛键不变）
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation.length, 2);
+        assert.strictEqual(ctx.calls.sendConversation[1].body.requestId, firstRequestId, "失败重试复用 requestId");
+        // 编辑正文 → requestId 清空；下次发送生成新值
+        editor.innerText = "typed follow up edited";
+        inputEvent(editor);
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation.length, 3);
+        assert.notStrictEqual(ctx.calls.sendConversation[2].body.requestId, firstRequestId, "编辑正文后换新 requestId");
+        // 跨专家切换恢复草稿（含编辑后的正文）
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        const b2 = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b2.querySelector(".mc-person-main"));
+        await flush();
+        conversation = ctx.host.querySelector(".mc-conversation");
+        assert.strictEqual(conversation.querySelector('[aria-label="人工回复正文"]').innerText, "typed follow up edited", "outbound 草稿跨切换恢复");
+        // 网络恢复后发送成功 → 草稿与 requestId 一并删除（切走再切回回到默认主题）
+        overrides.sendConversationError = undefined;
+        ctx.calls.sendConversation.length = 0;
+        click(conversation.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation.length, 1);
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        click(b2.querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Introduction", "成功后草稿删除、主题回默认");
+    });
+
+    it("outbound 安全取消（false）保留正文与 requestId；成功删除草稿", async () => {
+        // I-12：adapter 返回 false（安全确认取消）→ 草稿与 requestId 保留；返回 true 才删除。
+        let uuidSeq = 0;
+        const conversations = { items: [expertB(), expertA()], total: 2 };
+        const ctx = await bootChat({ conversations, messages: messagesA(), contact: contactB(), sendConversationResult: false });
+        ctx.sandbox.crypto = {
+            randomUUID: () => `00000000-0000-4000-8000-${String(++uuidSeq).padStart(12, "0")}`
+        };
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        editor.innerText = "cancelled draft";
+        inputEvent(editor);
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation.length, 1);
+        const requestId = ctx.calls.sendConversation[0].body.requestId;
+        // false → 草稿仍在（切走再切回正文保留）
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        const b2 = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b2.querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "cancelled draft", "取消后草稿保留");
+        // 下次发送复用同一 requestId
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation.length, 2);
+        assert.strictEqual(ctx.calls.sendConversation[1].body.requestId, requestId, "取消后复用 requestId");
     });
 
     it("草稿跨专家切换恢复；unmount/重挂载后同专家草稿仍恢复", async () => {

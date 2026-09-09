@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
 import com.weibo.talentintroduction.auth.config.AuthWebConfig
 import com.weibo.talentintroduction.auth.domain.AdminUser
@@ -18,6 +19,8 @@ import com.weibo.talentintroduction.mail.service.ExpertFollowService
 import com.weibo.talentintroduction.mail.service.InboundMailTagService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
+import com.weibo.talentintroduction.mail.service.PendingMailOperationService
+import com.weibo.talentintroduction.mail.service.PendingMailSendResult
 import com.weibo.talentintroduction.mail.service.TagView
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.AfterEach
@@ -44,6 +47,7 @@ import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Import
+import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
@@ -53,6 +57,7 @@ import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
@@ -91,7 +96,7 @@ import org.springframework.test.web.servlet.MvcResult
 @WebMvcTest(controllers = [MailboxConversationController::class])
 @Import(
     AuthWebConfig::class,
-    ObjectMapper::class,
+    MailboxConversationControllerTest.KotlinObjectMapperConfig::class,
     MailboxConversationRealJdbcConfig::class,
     MailboxConversationRepository::class,
     MailboxConversationService::class,
@@ -99,6 +104,21 @@ import org.springframework.test.web.servlet.MvcResult
 )
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class MailboxConversationControllerTest {
+
+    /**
+     * 本 slice 需要解析 Kotlin data class @RequestBody（ConversationManualRichReplyRequest）。
+     * 生产由 Spring Boot 自动注册 jackson-module-kotlin；@WebMvcTest 不会，故测试侧显式
+     * 提供带 KotlinModule 的 primary ObjectMapper（替代默认构造的裸 ObjectMapper bean）。
+     */
+    @TestConfiguration
+    class KotlinObjectMapperConfig {
+        @Bean
+        fun objectMapper(): ObjectMapper =
+            ObjectMapper()
+                .registerModule(KotlinModule())
+                // 与 Spring Boot 自动配置一致：@RequestBody 忽略未知字段（extra 键不 400）
+                .disable(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+    }
 
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -129,6 +149,9 @@ class MailboxConversationControllerTest {
 
     @MockBean
     private lateinit var expertSearchService: ExpertSearchService
+
+    @MockBean
+    private lateinit var pendingMailOperationService: PendingMailOperationService
 
     @BeforeEach
     fun setUp() {
@@ -834,6 +857,99 @@ class MailboxConversationControllerTest {
         assertEquals("会议安排", inbound["tags"][0]["label"].asText(), "邮件标签只属于 timeline 消息")
         assertTrue(timelineItems.none { it["source"].asText() == "MAIL_RECORD" && it["tags"].size() > 0 },
             "OUTBOUND 消息绝不携带邮件标签")
+    }
+
+    // ------------------------------------------------------------------
+    // 会话级人工回信 POST（T3）：窄 DTO 转发、Auth 拦截、PendingMailSendResult JSON
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `conversation manual rich reply posts narrow fields and maps result json`() {
+        // 全 raw 参数 stub（本仓 Kotlin/Mockito 约定：matcher 需 elvis 实值，见 eqValue helper）
+        Mockito.`when`(
+            pendingMailOperationService.sendConversationManualRichReply(
+                1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", "acc-a",
+                "Re: follow", "<p>follow</p>", "follow", "op1", false, null
+            )
+        ).thenReturn(
+            PendingMailSendResult(
+                contactId = 1L,
+                senderAccountCode = "acc-a",
+                mailType = "MANUAL_RICH_REPLY",
+                subject = "Re: follow",
+                sendStatus = "SENT",
+                messageId = "<manual-rich-1@weibo.com>"
+            )
+        )
+        mockMvc.perform(
+            post("/api/mail/mailbox/conversations/1/manual-rich-reply")
+                .session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"requestId":"b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f",
+                     "accountScope":"acc-a",
+                     "subject":"Re: follow",
+                     "htmlBody":"<p>follow</p>",
+                     "textBody":"follow",
+                     "operatorName":"op1"}
+                    """.trimIndent()
+                )
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.contactId").value(1))
+            .andExpect(jsonPath("$.senderAccountCode").value("acc-a"))
+            .andExpect(jsonPath("$.mailType").value("MANUAL_RICH_REPLY"))
+            .andExpect(jsonPath("$.subject").value("Re: follow"))
+            .andExpect(jsonPath("$.sendStatus").value("SENT"))
+            .andExpect(jsonPath("$.messageId").value("<manual-rich-1@weibo.com>"))
+            .andExpect(jsonPath("$.unsupportedAnswerArchiveStatus").value("NOT_APPLICABLE"))
+    }
+
+    @Test
+    fun `conversation manual rich reply ignores account override and qa fields in body`() {
+        // I-6/I-8：body 不允许 senderAccountCode/qaRuleIds/RAG —— DTO 不接收，extra 键忽略，
+        // service 只收到 requestId/accountScope/正文/确认字段。
+        Mockito.`when`(
+            pendingMailOperationService.sendConversationManualRichReply(
+                1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", null,
+                "Re: follow", "<p>follow</p>", "follow", null, false, null
+            )
+        ).thenReturn(PendingMailSendResult(
+            contactId = 1L, senderAccountCode = "acc-a", mailType = "MANUAL_RICH_REPLY",
+            subject = "Re: follow", sendStatus = "SENT", messageId = null
+        ))
+        mockMvc.perform(
+            post("/api/mail/mailbox/conversations/1/manual-rich-reply")
+                .session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"requestId":"b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f",
+                     "subject":"Re: follow",
+                     "htmlBody":"<p>follow</p>",
+                     "textBody":"follow",
+                     "senderAccountCode":"hacked-acc",
+                     "qaRuleIds":[1,2],
+                     "ragFactCodes":["KB-X"],
+                     "trustReplyAssembly":{"x":1}}
+                    """.trimIndent()
+                )
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.sendStatus").value("SENT"))
+    }
+
+    @Test
+    fun `anonymous conversation rich reply is rejected with 401 and never reaches service`() {
+        mockMvc.perform(
+            post("/api/mail/mailbox/conversations/1/manual-rich-reply")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"requestId":"b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f","subject":"s","htmlBody":"<p>b</p>"}""")
+        ).andExpect(status().isUnauthorized)
+            .andExpect(jsonPath("$.code").value("UNAUTHORIZED"))
+        assertTrue(
+            Mockito.mockingDetails(pendingMailOperationService).invocations.none { it.method.name == "sendConversationManualRichReply" },
+            "匿名请求绝不到达 service"
+        )
     }
 
     // ------------------------------------------------------------------

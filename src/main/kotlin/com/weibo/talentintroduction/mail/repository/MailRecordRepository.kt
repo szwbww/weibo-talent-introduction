@@ -847,6 +847,31 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
 
     /** T2b-4（B4）：/{id}/detail 的 drilldownCount（MAIL_BY_EXECUTION）计数。 */
     fun countByTaskExecutionId(taskExecutionId: Long): Long
+
+    /**
+     * 会话自由回信锚点（I-1）：最近一封真实可发送的成功出站记录 —— 排除空账号/模拟器；
+     * accountScope 非空时只在该账号内找（聊天页有账号筛选时不回退其他账号）。刻意追加在
+     * 接口末尾，避免行号钉死的守卫测试（OperatorStatusWriteSeamGuardTest）误报。
+     */
+    @Query(
+        """
+        SELECT * FROM mail_record
+        WHERE expert_contact_id = :contactId
+          AND direction = 'OUTBOUND'
+          AND send_status = 'SENT'
+          AND sender_account_code IS NOT NULL
+          AND TRIM(sender_account_code) <> ''
+          AND (:excludedAccountCode IS NULL OR sender_account_code <> :excludedAccountCode)
+          AND (:accountScope IS NULL OR :accountScope = '' OR sender_account_code = :accountScope)
+        ORDER BY COALESCE(sent_at, created_at) DESC, id DESC
+        LIMIT 1
+        """
+    )
+    fun findLatestSentOutboundAnchor(
+        contactId: Long,
+        accountScope: String?,
+        excludedAccountCode: String?
+    ): MailRecord?
 }
 
 data class MailboxExpertSummaryRow(

@@ -39,9 +39,13 @@ import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.time.LocalDateTime
 import java.util.Optional
@@ -259,6 +263,340 @@ class PendingMailOperationServiceTest {
             eqValue("op"),
             Mockito.any(Instant::class.java) ?: Instant.EPOCH,
             Mockito.anyMap()
+        )
+    }
+
+    // =====================================================================
+    // 会话（无来信）自由回信（T2）：真实 SENT 锚点/账号/线程头/幂等收敛/422 边界
+    // =====================================================================
+
+    private fun sentAnchor(
+        id: Long = 77L,
+        accountCode: String = "sender-1",
+        messageId: String? = "<anchor-1@test.com>",
+        inReplyTo: String? = null,
+        sentAt: LocalDateTime = LocalDateTime.now()
+    ) = com.weibo.talentintroduction.mail.domain.MailRecord(
+        id = id,
+        expertContactId = 1L,
+        direction = "OUTBOUND",
+        mailType = "INTRODUCTION",
+        senderAccountCode = accountCode,
+        messageId = messageId,
+        inReplyTo = inReplyTo,
+        subject = "Introduction",
+        body = "intro",
+        matchedQaRuleId = null,
+        sendStatus = "SENT",
+        receivedAt = null,
+        sentAt = sentAt
+    )
+
+    private val conversationRequestId = "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f"
+
+    // manualReplySendAttemptService 是 mock：canonicalConversationRequestId 默认返回 null，
+    // 各会话用例须显式回灌 canonical（与真实 UUID.toString() 小写形态一致）。
+    private fun stubConversationRequestCanonical(requestId: String = conversationRequestId) {
+        Mockito.`when`(manualReplySendAttemptService.canonicalConversationRequestId(requestId)).thenReturn(requestId)
+    }
+
+    private fun invocationOf(mock: Any, methodName: String) =
+        Mockito.mockingDetails(mock).invocations.single { it.method.name == methodName }
+
+    private fun hasInvocation(mock: Any, methodName: String) =
+        Mockito.mockingDetails(mock).invocations.any { it.method.name == methodName }
+
+    private fun stubConversationAnchor(anchor: com.weibo.talentintroduction.mail.domain.MailRecord?) {
+        Mockito.`when`(
+            mailRecordRepository.findLatestSentOutboundAnchor(
+                Mockito.eq(1L),
+                Mockito.any(),
+                Mockito.eq(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+            )
+        ).thenAnswer {
+            val scope = it.getArgument<String>(1)
+            if (scope.isNullOrBlank() || anchor?.senderAccountCode == scope) anchor else null
+        }
+    }
+
+    // I-1/I-6/I-7/I-11：最近 SENT 锚点决定账号/落库 inReplyTo/SMTP 线程头；会话审计
+    // target 为联系人、携带真实 anchorMailRecordId；无 QA/RAG 副作用。
+    @Test
+    fun `conversation reply uses latest SENT anchor account with thread headers and contact audit`() {
+        stubConversationAnchor(sentAnchor(messageId = "<anchor-1@test.com>", inReplyTo = "<old-0@test.com>"))
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(null)
+
+        val result = service.sendConversationManualRichReply(
+            contactId = 1L,
+            requestId = conversationRequestId,
+            accountScope = null,
+            subject = "Re: Test",
+            htmlBody = "<p>Test</p>",
+            textBody = "Test",
+            operatorName = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals("sender-1", result.senderAccountCode)
+        assertEquals("MANUAL_RICH_REPLY", result.mailType)
+        assertEquals("<manual-rich-abc@weibo.com>", result.messageId)
+        assertEquals(UnsupportedAnswerArchiveStatus.NOT_APPLICABLE, result.unsupportedAnswerArchiveStatus)
+        // 锚点查询带 scope（空串视为无过滤）与模拟器排除
+        Mockito.verify(mailRecordRepository).findLatestSentOutboundAnchor(1L, null, MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+
+        val payload = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+            .arguments[0] as ManualReplySendAttemptService.SendPayload
+        assertTrue(payload.inboundProcessingId == null, "不伪造 inbound id")
+        assertEquals("MAIL_RECORD:77", payload.sourceAnchor)
+        assertEquals(conversationRequestId, payload.idempotencyRequestId)
+        assertEquals("<anchor-1@test.com>", payload.inReplyTo)
+        assertTrue(payload.canonicalQaRuleIds.isEmpty())
+
+        val sendInvocation = invocationOf(mailDeliveryService, "send")
+        assertEquals("sender-1", (sendInvocation.arguments[0] as MailSenderAccount).accountCode)
+        val mail = sendInvocation.arguments[1] as ComposedMail
+        assertEquals("<anchor-1@test.com>", mail.inReplyTo)
+        assertEquals("<old-0@test.com> <anchor-1@test.com>", mail.references)
+        assertEquals("<manual-rich-abc@weibo.com>", mail.messageId)
+
+        val auditInvocation = invocationOf(manualReplySendAttemptService, "recordConversationSendAudit")
+        assertEquals(1L, auditInvocation.arguments[0])
+        assertEquals(77L, auditInvocation.arguments[1])
+        assertEquals(500L, auditInvocation.arguments[2])
+        assertEquals("SENT", (auditInvocation.arguments[3] as DeliveredMail).status)
+        assertEquals("Re: Test", auditInvocation.arguments[4])
+        assertEquals("op", auditInvocation.arguments[6])
+        assertTrue(
+            !hasInvocation(manualReplySendAttemptService, "recordSendAudit"),
+            "outbound 路径绝不调用来信审计"
+        )
+    }
+
+    // I-6/I-1：accountScope 只约束锚点查询；scope 内无 SENT 锚点 → 422 且不回退其他账号、
+    // 不 claim/不 SMTP。
+    @Test
+    fun `conversation reply without SENT anchor in scope returns 422 before any send side effect`() {
+        stubConversationAnchor(sentAnchor(accountCode = "sender-1"))
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(null)
+        // scope=other-acc：查询命中 null（不同账号）
+        val ex = assertThrows(ResponseStatusException::class.java) {
+            service.sendConversationManualRichReply(
+                contactId = 1L, requestId = conversationRequestId, accountScope = "other-acc",
+                subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+            )
+        }
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.status)
+        assertEquals("CONVERSATION_SENT_ANCHOR_NOT_FOUND", ex.reason)
+        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "无锚点不得 claim")
+        assertTrue(!hasInvocation(mailDeliveryService, "send"), "无锚点不得 SMTP")
+        assertTrue(!hasInvocation(manualReplySendAttemptService, "finalizeSuccess"), "无锚点不得 finalize")
+        // scope 参与查询（excludedAccountCode 恒为模拟器）
+        Mockito.verify(mailRecordRepository).findLatestSentOutboundAnchor(1L, "other-acc", MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+    }
+
+    // I-7：锚点 Message-ID 缺失时仍发送，线程头为空、不伪造引用。
+    @Test
+    fun `conversation reply without anchor message id still sends with empty thread headers`() {
+        stubConversationAnchor(sentAnchor(messageId = null))
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(null)
+        val result = service.sendConversationManualRichReply(
+            contactId = 1L, requestId = conversationRequestId, accountScope = null,
+            subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+        )
+        assertEquals("SENT", result.sendStatus)
+        val payload = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+            .arguments[0] as ManualReplySendAttemptService.SendPayload
+        assertTrue(payload.inReplyTo == null)
+        val mail = invocationOf(mailDeliveryService, "send").arguments[1] as ComposedMail
+        assertTrue(mail.inReplyTo == null)
+        assertTrue(mail.references == null)
+    }
+
+    // I-7：超长 Message-ID 不进线程头但仍发送。
+    @Test
+    fun `conversation reply with overlong anchor message id sends with empty thread headers`() {
+        val overlong = "<" + "x".repeat(300) + "@test.com>"
+        stubConversationAnchor(sentAnchor(messageId = overlong))
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(null)
+        val result = service.sendConversationManualRichReply(
+            contactId = 1L, requestId = conversationRequestId, accountScope = null,
+            subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+        )
+        assertEquals("SENT", result.sendStatus)
+        val payload = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+            .arguments[0] as ManualReplySendAttemptService.SendPayload
+        assertTrue(payload.inReplyTo == null)
+    }
+
+    // I-4/I-10：已完成 requestId 在锚点重查前返回原结果 —— 不再查锚点、不 claim、不 SMTP。
+    @Test
+    fun `completed request id returns original result before anchor requery and never sends again`() {
+        val completed = ManualReplySendAttemptService.CompletedOutboundReply(
+            attemptId = 1L,
+            attemptMessageId = "<manual-rich-orig@weibo.com>",
+            attemptAccountCode = "sender-1",
+            mailRecord = com.weibo.talentintroduction.mail.domain.MailRecord(
+                id = 500L,
+                expertContactId = 1L,
+                direction = "OUTBOUND",
+                mailType = "MANUAL_RICH_REPLY",
+                senderAccountCode = "sender-1",
+                messageId = "<manual-rich-orig@weibo.com>",
+                inReplyTo = "<anchor-1@test.com>",
+                subject = "Re: original",
+                body = "sent",
+                matchedQaRuleId = null,
+                sendStatus = "SENT",
+                receivedAt = null,
+                sentAt = LocalDateTime.now()
+            )
+        )
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(completed)
+        stubConversationRequestCanonical()
+
+        val result = service.sendConversationManualRichReply(
+            contactId = 1L, requestId = conversationRequestId, accountScope = null,
+            subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals("<manual-rich-orig@weibo.com>", result.messageId)
+        assertEquals("sender-1", result.senderAccountCode)
+        assertTrue(!hasInvocation(mailRecordRepository, "findLatestSentOutboundAnchor"), "收敛命中不重查锚点")
+        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "收敛命中不 claim")
+        assertTrue(!hasInvocation(mailDeliveryService, "send"), "收敛命中不再次 SMTP")
+    }
+
+    // I-2/I-8：已处理（PROCESSED）来信继续可回 —— 回信入口不读 processStatus。
+    @Test
+    fun `processed inbound remains replyable without manual review status`() {
+        val processed = inbound().copy(processStatus = "PROCESSED")
+        Mockito.`when`(inboundMailProcessingRepository.findById(100L)).thenReturn(Optional.of(processed))
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>Test</p>",
+            textBody = "Test",
+            operatorName = "op"
+        )
+        assertEquals("SENT", result.sendStatus)
+        val auditInvocation = invocationOf(manualReplySendAttemptService, "recordSendAudit")
+        assertEquals(100L, auditInvocation.arguments[0])
+        assertEquals(1L, auditInvocation.arguments[1])
+        assertEquals(500L, auditInvocation.arguments[2])
+        assertEquals(emptyList<Long>(), auditInvocation.arguments[3])
+        assertEquals(false, auditInvocation.arguments[4])
+        assertEquals("Re: Test", auditInvocation.arguments[6])
+        assertEquals("op", auditInvocation.arguments[8])
+        assertEquals(processed, auditInvocation.arguments[9])
+        assertEquals(emptyList<Long>(), auditInvocation.arguments[10])
+        assertTrue(auditInvocation.arguments[11] == null, "无 assembly 时 edited 恒 null")
+    }
+
+    // T2.7/I-9：outbound 路径不运行来信语义（不调 QA selection）；通用安全检查仍是门禁。
+    @Test
+    fun `conversation reply skips inbound QA selection and respects generic safety confirmation`() {
+        stubConversationAnchor(sentAnchor())
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(null)
+        // 「请放心」命中信任话术通用检查（NORMAL），未确认即 422 阻断（claim 前）
+        val ex = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendConversationManualRichReply(
+                contactId = 1L, requestId = conversationRequestId, accountScope = null,
+                subject = "Re: Test", htmlBody = "<p>请放心，一切顺利</p>", textBody = "请放心，一切顺利",
+                operatorName = "op", safetyWarningConfirmed = false
+            )
+        }
+        assertTrue(ex.findings.any { it.code == AiReplyHighRiskClaimValidator.WARNING_CLAIM_TRUST_RHETORIC })
+        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "阻断发生在 claim 前")
+        assertTrue(!hasInvocation(qaFactSelectionService, "select"), "outbound 不调 QA selection")
+        // 确认后继续发送成功
+        val result = service.sendConversationManualRichReply(
+            contactId = 1L, requestId = conversationRequestId, accountScope = null,
+            subject = "Re: Test", htmlBody = "<p>请放心，一切顺利</p>", textBody = "请放心，一切顺利",
+            operatorName = "op", safetyWarningConfirmed = true
+        )
+        assertEquals("SENT", result.sendStatus)
+    }
+
+    // I-9：suppression 在 claim 前阻断且不烧 attempt。
+    @Test
+    fun `conversation reply honors suppression before claim`() {
+        stubConversationAnchor(sentAnchor())
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(null)
+        Mockito.`when`(emailSuppressionService.isSuppressed(contact.expertEmail)).thenReturn(true)
+        val ex = assertThrows(ResponseStatusException::class.java) {
+            service.sendConversationManualRichReply(
+                contactId = 1L, requestId = conversationRequestId, accountScope = null,
+                subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+            )
+        }
+        assertEquals(HttpStatus.BAD_REQUEST, ex.status)
+        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "suppression 在 claim 前")
+        assertTrue(!hasInvocation(mailDeliveryService, "send"), "suppression 不 SMTP")
+    }
+
+    // I-4/I-10：非法/缺失 requestId 立即失败；suppression 之外无副作用。
+    @Test
+    fun `conversation reply rejects malformed or missing request id before any side effect`() {
+        stubConversationAnchor(sentAnchor())
+        Mockito.`when`(manualReplySendAttemptService.canonicalConversationRequestId("not-a-uuid"))
+            .thenThrow(IllegalArgumentException("invalid uuid"))
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.sendConversationManualRichReply(
+                contactId = 1L, requestId = "not-a-uuid", accountScope = null,
+                subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+            )
+        }
+        assertTrue(ex.message!!.contains("UUID"))
+        assertTrue(!hasInvocation(mailRecordRepository, "findLatestSentOutboundAnchor"), "非法 requestId 不查锚点")
+        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "非法 requestId 不 claim")
+    }
+
+    // repair R-1（V-1）回归守卫：findLatestSentOutboundAnchor 原生查询必须排除空串/纯空白
+    // 账号 —— IS NOT NULL 不拒绝 ''，空白账号的 SENT 行不得遮蔽更早的合法锚点；谓词顺序
+    // 与排序契约（I-1/T1.1）逐字保持。
+    @Test
+    fun `anchor query excludes blank and whitespace-only sender accounts`() {
+        val repoSource = java.nio.file.Files.readString(
+            java.nio.file.Path.of("src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt")
+        )
+        val funIndex = repoSource.indexOf("fun findLatestSentOutboundAnchor(")
+        assertTrue(funIndex >= 0, "仓库必须存在 findLatestSentOutboundAnchor")
+        val blockStart = repoSource.lastIndexOf("@Query", funIndex)
+        assertTrue(blockStart >= 0, "锚点查询必须携带 @Query 原生 SQL")
+        val anchorSql = repoSource.substring(blockStart, funIndex)
+
+        assertTrue(anchorSql.contains("direction = 'OUTBOUND'"), "只做出站")
+        assertTrue(anchorSql.contains("send_status = 'SENT'"), "只认真实成功发件")
+        assertTrue(anchorSql.contains("sender_account_code IS NOT NULL"), "保留非空判定")
+        assertTrue(
+            anchorSql.contains("TRIM(sender_account_code) <> ''"),
+            "空串/纯空白 sender_account_code 不能成为锚点"
+        )
+        // 谓词顺序契约：非空 → trim 非空 → 模拟器排除 → 账号范围
+        val notNullIdx = anchorSql.indexOf("sender_account_code IS NOT NULL")
+        val trimIdx = anchorSql.indexOf("TRIM(sender_account_code) <> ''")
+        val excludedIdx = anchorSql.indexOf(":excludedAccountCode")
+        val scopeIdx = anchorSql.indexOf(":accountScope")
+        assertTrue(notNullIdx >= 0 && trimIdx > notNullIdx && excludedIdx > trimIdx && scopeIdx > excludedIdx)
+        assertTrue(
+            anchorSql.contains("ORDER BY COALESCE(sent_at, created_at) DESC, id DESC") &&
+                anchorSql.contains("LIMIT 1"),
+            "锚点排序/单行契约不变"
         )
     }
 

@@ -4,13 +4,17 @@ import com.weibo.talentintroduction.auth.config.AuthSessionKeys
 import com.weibo.talentintroduction.common.controller.ApiErrorResponse
 import com.weibo.talentintroduction.mail.service.ExpertFollowService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
+import com.weibo.talentintroduction.mail.service.PendingMailOperationService
+import com.weibo.talentintroduction.mail.service.PendingMailSendResult
 import com.weibo.talentintroduction.mail.service.TagView
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
@@ -65,6 +69,23 @@ data class ConversationItemResponse(
     val expertTags: List<String>? = null
 )
 
+/**
+ * 会话级人工回信请求（无来信路径，T3/I-4/I-6）：携带前端生成并随草稿保存的 requestId
+ * （attempt 短键来源）与可空 accountScope（只约束服务端锚点查询，不直接决定发件账号）；
+ * 不接收 senderAccountCode、qaRuleIds、RAG 或 assembly 字段 —— 联系人与锚点校验全部在
+ * service，避免前端成为权限边界。
+ */
+data class ConversationManualRichReplyRequest(
+    val requestId: String,
+    val accountScope: String? = null,
+    val subject: String,
+    val htmlBody: String,
+    val textBody: String? = null,
+    val operatorName: String? = null,
+    val safetyWarningConfirmed: Boolean = false,
+    val strongConfirmationText: String? = null
+)
+
 data class ConversationListResponse(
     val items: List<ConversationItemResponse>,
     val total: Long,
@@ -113,7 +134,8 @@ data class ConversationMessageListResponse(
 @RequestMapping("/api/mail/mailbox/conversations")
 class MailboxConversationController(
     private val conversationService: MailboxConversationService,
-    private val expertFollowService: ExpertFollowService
+    private val expertFollowService: ExpertFollowService,
+    private val pendingMailOperationService: PendingMailOperationService
 ) {
     @GetMapping
     fun list(
@@ -172,6 +194,28 @@ class MailboxConversationController(
             ?: return unauthorized()
         return ResponseEntity.ok(expertFollowService.setFollowed(username, contactId, true))
     }
+
+    // ------------------------------------------------------------------
+    // 会话级人工回信（无来信路径，T3）：自由 subject/body 外发到最近真实 SENT 出站锚点。
+    // 只用窄 DTO 转发；联系人/锚点/账号/安全校验全部在 service（I-6），controller 不
+    // 引入前端可选的账号/QA/RAG 字段。Auth 由 AuthInterceptor 统一拦截（/api/**）。
+    // ------------------------------------------------------------------
+
+    @PostMapping("/{contactId}/manual-rich-reply")
+    fun conversationManualRichReply(
+        @PathVariable contactId: Long,
+        @RequestBody body: ConversationManualRichReplyRequest
+    ): PendingMailSendResult = pendingMailOperationService.sendConversationManualRichReply(
+        contactId = contactId,
+        requestId = body.requestId,
+        accountScope = body.accountScope,
+        subject = body.subject,
+        htmlBody = body.htmlBody,
+        textBody = body.textBody,
+        operatorName = body.operatorName,
+        safetyWarningConfirmed = body.safetyWarningConfirmed,
+        strongConfirmationText = body.strongConfirmationText
+    )
 
     @DeleteMapping("/{contactId}/follow")
     fun unfollow(

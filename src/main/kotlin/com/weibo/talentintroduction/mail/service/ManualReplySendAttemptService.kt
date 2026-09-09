@@ -35,12 +35,19 @@ class ManualReplySendAttemptService(
         private const val MANUAL_RICH_MAIL_TYPE_PREFIX = "MANUAL_RICH:"
         private const val MESSAGE_ID_TEMPLATE = "<manual-rich-%s@weibo.com>"
         private const val MAX_ERROR_SUMMARY_LENGTH = 500
+        // 无来信会话自由回信的 attempt 短键：requestId 派生、内容无关（I-4）。
+        // mail_type 列宽 VARCHAR(50)：前缀 20 字符 + sha256 前 30 位 = 恰好 50。
+        const val CONVERSATION_REQUEST_PREFIX = "MANUAL_RICH_REQUEST:"
+        const val CONVERSATION_REQUEST_HEX_LENGTH = 30
+        /** 会话回信线程/审计锚点类型前缀（真实 mail_record，绝不伪造 inbound id）。 */
+        const val SOURCE_ANCHOR_PREFIX = "MAIL_RECORD:"
     }
 
     data class SendPayload(
         val orcidId: String,
         val contactId: Long,
-        val inboundProcessingId: Long,
+        /** 来信路径 = 真实 inbound_mail_processing.id；会话回信路径 = null（I-3）。 */
+        val inboundProcessingId: Long?,
         val accountCode: String,
         val normalizedRecipient: String,
         val subject: String,
@@ -48,7 +55,22 @@ class ManualReplySendAttemptService(
         val finalHtml: String,
         val inReplyTo: String?,
         val canonicalQaRuleIds: List<Long>,
-        val primaryRuleId: Long?
+        val primaryRuleId: Long?,
+        /**
+         * 会话回信路径的真实线程锚点（"MAIL_RECORD:<mailRecord.id>"，I-3）。
+         * 来信路径必须为 null；与 inboundProcessingId 恰有一个非空。
+         */
+        val sourceAnchor: String? = null,
+        /** 会话回信幂等 requestId（可被 UUID.fromString 解析，I-4）；来信路径恒 null。 */
+        val idempotencyRequestId: String? = null
+    )
+
+    /** findCompletedByRequestId 命中的已完成会话回信（attempt SENT + 唯一 mail_record）。 */
+    data class CompletedOutboundReply(
+        val attemptId: Long,
+        val attemptMessageId: String,
+        val attemptAccountCode: String,
+        val mailRecord: MailRecord
     )
 
     data class Fingerprint(
@@ -74,9 +96,36 @@ class ManualReplySendAttemptService(
 
     fun computeFingerprint(payload: SendPayload): Fingerprint {
         val messageId = String.format(MESSAGE_ID_TEMPLATE, UUID.randomUUID().toString().replace("-", ""))
+        // I-5: 来信路径未带新字段时，原首段仍是原始数字 inboundProcessingId.toString()，
+        // 后续字段与顺序逐字不变，部署前后同一来信/正文产生同一 fullHex/shortKey。
+        // I-3/I-4: 会话回信路径首段写真实 sourceAnchor（"MAIL_RECORD:<id>"），
+        // 短键改由 requestId 派生；两路径指纹身份互不混淆。
+        val inboundId = payload.inboundProcessingId
+        val firstSegment = when {
+            inboundId != null -> {
+                require(payload.sourceAnchor == null) {
+                    "Mail send attempt fingerprint conflict: sourceAnchor must be null when inboundProcessingId is set"
+                }
+                require(payload.idempotencyRequestId == null) {
+                    "Mail send attempt fingerprint conflict: idempotencyRequestId must be null when inboundProcessingId is set"
+                }
+                inboundId.toString()
+            }
+            else -> {
+                val sourceAnchor = requireNotNull(payload.sourceAnchor) {
+                    "Mail send attempt requires sourceAnchor when no inbound processing id"
+                }
+                val requestId = requireNotNull(payload.idempotencyRequestId) {
+                    "Mail send attempt requires idempotencyRequestId when no inbound processing id"
+                }
+                // 防御性双检：入口已用 UUID.fromString(...).toString() 规范化，此处仍须可解析
+                UUID.fromString(requestId.trim())
+                sourceAnchor
+            }
+        }
         val data = ByteArrayOutputStream()
         appendLengthPrefix(data, SCHEMA_VERSION.toString())
-        appendLengthPrefix(data, payload.inboundProcessingId.toString())
+        appendLengthPrefix(data, firstSegment)
         appendLengthPrefix(data, payload.contactId.toString())
         appendLengthPrefix(data, payload.orcidId)
         appendLengthPrefix(data, payload.accountCode)
@@ -87,10 +136,48 @@ class ManualReplySendAttemptService(
         appendLengthPrefix(data, payload.inReplyTo ?: "")
         appendLengthPrefix(data, payload.canonicalQaRuleIds.joinToString(","))
         val fullHex = sha256Hex(data.toByteArray())
+        val shortKey = if (inboundId != null) {
+            MANUAL_RICH_MAIL_TYPE_PREFIX + fullHex.take(32)
+        } else {
+            conversationRequestShortKey(requireNotNull(payload.idempotencyRequestId))
+        }
         return Fingerprint(
             fullHex = fullHex,
-            shortKey = MANUAL_RICH_MAIL_TYPE_PREFIX + fullHex.take(32),
+            shortKey = shortKey,
             messageId = messageId
+        )
+    }
+
+    /** requestId 规范化：trim 后必须可被 UUID.fromString 解析，输出 canonical 小写形式。 */
+    fun canonicalConversationRequestId(value: String): String =
+        UUID.fromString(value.trim()).toString()
+
+    /**
+     * 会话回信 attempt 短键：MANUAL_RICH_REQUEST: + sha256(canonicalRequestId UTF-8) 前
+     * CONVERSATION_REQUEST_HEX_LENGTH 位。内容无关，同一 requestId 恒定（I-4）。
+     */
+    fun conversationRequestShortKey(requestId: String): String {
+        val canonical = canonicalConversationRequestId(requestId)
+        return CONVERSATION_REQUEST_PREFIX +
+            sha256Hex(canonical.toByteArray(Charsets.UTF_8)).take(CONVERSATION_REQUEST_HEX_LENGTH)
+    }
+
+    /**
+     * 会话回信幂等收敛（I-4）：按 requestId 短键读取已完成 attempt；仅当 attempt 为 SENT
+     * 且其唯一 mail_record 存在时返回。其余状态（IN_PROGRESS/UNKNOWN/FAILED…）返回空，
+     * 由调用方继续既有 claim/碰撞/fail-closed 逻辑（I-10）。
+     */
+    fun findCompletedByRequestId(orcidId: String, requestId: String): CompletedOutboundReply? {
+        val shortKey = conversationRequestShortKey(requestId)
+        val attempt = attemptRepository.findByOrcidIdAndMailType(orcidId, shortKey) ?: return null
+        if (attempt.status != MailSendAttemptStatus.SENT) return null
+        val attemptId = attempt.id ?: return null
+        val record = mailRecordRepository.findByMailSendAttemptId(attemptId) ?: return null
+        return CompletedOutboundReply(
+            attemptId = attemptId,
+            attemptMessageId = attempt.messageId,
+            attemptAccountCode = attempt.accountCode,
+            mailRecord = record
         )
     }
 
@@ -357,7 +444,7 @@ class ManualReplySendAttemptService(
         // 或 attempt 幂等键，不新增 action row/action type。
         trustReplyDiagnostics: TrustReplyDiagnostics? = null
     ) {
-        val auditTask = {
+        fun auditTask() {
             try {
                 val actionType = if (carriesQa) {
                     OperatorActionType.SEND_MANUAL_COMPOSED_REPLY
@@ -410,16 +497,66 @@ class ManualReplySendAttemptService(
                 )
             }
         }
+        runAfterCommit(::auditTask)
+    }
+
+    /**
+     * 会话（无来信锚点）回信审计（I-11）：动作类型固定 SEND_MANUAL_RICH_REPLY，
+     * target 为联系人；before 记录锚点 mail record；after 字段沿用纯人工分支的
+     * mailRecordId/sendStatus/subject/bodyPreviewText；inbound_processing_id 恒 NULL。
+     * 与 recordSendAudit 共享 after-commit 调度与 best-effort 吞吐（I-8）。
+     */
+    fun recordConversationSendAudit(
+        contactId: Long,
+        anchorMailRecordId: Long,
+        mailRecordId: Long,
+        delivered: DeliveredMail,
+        sendSubject: String,
+        bodyPreviewText: String,
+        operatorName: String?,
+        note: String
+    ) {
+        fun auditTask() {
+            try {
+                val before = mapOf("anchorMailRecordId" to anchorMailRecordId)
+                val after = mapOf(
+                    "mailRecordId" to mailRecordId,
+                    "sendStatus" to delivered.status,
+                    "subject" to sendSubject,
+                    "bodyPreviewText" to bodyPreviewText
+                )
+                operatorActionLogService.record(
+                    targetType = "EXPERT_CONTACT",
+                    targetId = contactId,
+                    actionType = OperatorActionType.SEND_MANUAL_RICH_REPLY,
+                    expertContactId = contactId,
+                    inboundProcessingId = null,
+                    before = before,
+                    after = after,
+                    operatorName = operatorName,
+                    note = note
+                )
+            } catch (ex: Exception) {
+                log.warn(
+                    "Failed to record conversation send audit for contact {} mailRecord {}: {}",
+                    contactId, mailRecordId, ex.message, ex
+                )
+            }
+        }
+        runAfterCommit(::auditTask)
+    }
+
+    private fun runAfterCommit(task: () -> Unit) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             TransactionSynchronizationManager.registerSynchronization(
                 object : TransactionSynchronization {
                     override fun afterCommit() {
-                        auditTask()
+                        task()
                     }
                 }
             )
         } else {
-            auditTask()
+            task()
         }
     }
 

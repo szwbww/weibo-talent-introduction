@@ -392,5 +392,178 @@ class ManualReplySendAttemptServiceTest {
         Mockito.verify(operatorActionLogService, Mockito.times(1))
             .record("INBOUND_MAIL_PROCESSING", 100L, actionType, 1L, 100L, before, after, "op", "note", null)
     }
+
+    // =====================================================================
+    // 会话（无来信）回信：requestId 幂等键 / 锚点指纹 / 收敛读 / 审计（T1，I-3~I-7）
+    // =====================================================================
+
+    // I-5: 固定 inbound payload 的 fullHex/shortKey 回归值（部署前后同一来信/正文的
+    // 幂等键不得漂移 —— 字段顺序/首段数字 ID/算法不变）。
+    @Test
+    fun `inbound fingerprint stays byte identical to the pinned regression values`() {
+        val fp = service.computeFingerprint(payload)
+        assertEquals(64, fp.fullHex.length)
+        assertEquals("fa838dbceec46871ec1eae26e9ba4666d6f1ac0fda1bd36f872110efd38becda", fp.fullHex)
+        assertEquals("MANUAL_RICH:fa838dbceec46871ec1eae26e9ba4666", fp.shortKey)
+        assertTrue(fp.shortKey.length <= 50, "mail_type VARCHAR(50) 上限")
+    }
+
+    @Test
+    fun `conversation request id canonicalizes to lowercase uuid and fixed 50 char short key`() {
+        val raw = "B5C98F60-7b46-4f1e-9c11-1a2b3c4d5e6f"
+        val canonical = service.canonicalConversationRequestId(raw)
+        assertEquals("b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", canonical)
+        val key1 = service.conversationRequestShortKey(raw)
+        val key2 = service.conversationRequestShortKey(canonical)
+        assertEquals(50, key1.length, "MANUAL_RICH_REQUEST:20 字符 + 30 hex = 50（VARCHAR(50)）")
+        assertTrue(key1.startsWith("MANUAL_RICH_REQUEST:"))
+        assertEquals(key1, key2, "大小写/空白规范化后同一短键")
+        assertFalse(key1.startsWith("MANUAL_RICH:"), "与来信前缀隔离")
+    }
+
+    @Test
+    fun `different request ids produce different short keys and invalid ids fail immediately`() {
+        val keyA = service.conversationRequestShortKey("00000000-0000-4000-8000-000000000001")
+        val keyB = service.conversationRequestShortKey("00000000-0000-4000-8000-000000000002")
+        assertTrue(keyA != keyB)
+        assertThrows(IllegalArgumentException::class.java) {
+            service.canonicalConversationRequestId("not-a-uuid")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.conversationRequestShortKey("not-a-uuid")
+        }
+    }
+
+    private fun outboundPayload(requestId: String, anchorRecordId: Long = 11L) = payload.copy(
+        inboundProcessingId = null,
+        sourceAnchor = "${ManualReplySendAttemptService.SOURCE_ANCHOR_PREFIX}$anchorRecordId",
+        idempotencyRequestId = requestId
+    )
+
+    @Test
+    fun `outbound fingerprint requires exactly one of inbound id or anchor plus request id`() {
+        val withoutRequest = payload.copy(inboundProcessingId = null, sourceAnchor = "MAIL_RECORD:11")
+        assertThrows(IllegalArgumentException::class.java) { service.computeFingerprint(withoutRequest) }
+        val withoutAnchor = payload.copy(inboundProcessingId = null, idempotencyRequestId = "00000000-0000-4000-8000-000000000001")
+        assertThrows(IllegalArgumentException::class.java) { service.computeFingerprint(withoutAnchor) }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.computeFingerprint(payload.copy(sourceAnchor = "MAIL_RECORD:11"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.computeFingerprint(payload.copy(idempotencyRequestId = "00000000-0000-4000-8000-000000000001"))
+        }
+    }
+
+    @Test
+    fun `outbound short key is request derived while anchor enters the full hash`() {
+        val requestId = "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f"
+        val fp1 = service.computeFingerprint(outboundPayload(requestId, anchorRecordId = 11L))
+        val fp2 = service.computeFingerprint(outboundPayload(requestId, anchorRecordId = 12L))
+        assertEquals(service.conversationRequestShortKey(requestId), fp1.shortKey, "同一 requestId 短键固定")
+        assertEquals(fp1.shortKey, fp2.shortKey)
+        assertTrue(fp1.fullHex != fp2.fullHex, "锚点不同进入完整 hash")
+        val fp3 = service.computeFingerprint(outboundPayload(requestId, anchorRecordId = 11L))
+        assertEquals(fp1.fullHex, fp3.fullHex, "同锚点/同正文/同 requestId → 同 fullHex")
+        assertTrue(fp1.messageId.startsWith("<manual-rich-"))
+        assertEquals(64, fp1.fullHex.length)
+    }
+
+    @Test
+    fun `findCompletedByRequestId returns completed reply only when attempt SENT and record exists`() {
+        val requestId = "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f"
+        val fp = service.computeFingerprint(outboundPayload(requestId))
+        val attempt = createAttempt(MailSendAttemptStatus.SENT, fp)
+        Mockito.`when`(attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fp.shortKey))
+            .thenReturn(attempt)
+        val completedRecord = MailRecord(
+            expertContactId = 1L, direction = "OUTBOUND", mailType = "MANUAL_RICH_REPLY",
+            senderAccountCode = "sender-1", messageId = "<manual-rich-x@weibo.com>",
+            inReplyTo = "anchor-mid", subject = "Re: Test", body = "sent",
+            matchedQaRuleId = null,
+            sendStatus = "SENT", receivedAt = null, sentAt = LocalDateTime.now()
+        )
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(completedRecord)
+
+        val result = service.findCompletedByRequestId(payload.orcidId, requestId)
+        org.junit.jupiter.api.Assertions.assertNotNull(result)
+        assertEquals(1L, result!!.attemptId)
+        assertEquals("sender-1", result.attemptAccountCode)
+        assertEquals("anchor-mid", result.mailRecord.inReplyTo)
+        // 非 SENT 状态一律返回空（交给 claim/fail-closed 逻辑），即使结果行存在
+        Mockito.`when`(attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fp.shortKey))
+            .thenReturn(createAttempt(MailSendAttemptStatus.DELIVERY_UNKNOWN, fp))
+        assertTrue(service.findCompletedByRequestId(payload.orcidId, requestId) == null)
+        // attempt 存在但结果行缺失 → 空
+        Mockito.`when`(attemptRepository.findByOrcidIdAndMailType(payload.orcidId, fp.shortKey))
+            .thenReturn(attempt)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        assertTrue(service.findCompletedByRequestId(payload.orcidId, requestId) == null)
+        // 无 attempt → 空
+        Mockito.`when`(attemptRepository.findByOrcidIdAndMailType(Mockito.anyString(), Mockito.anyString()))
+            .thenReturn(null)
+        assertTrue(service.findCompletedByRequestId(payload.orcidId, "00000000-0000-4000-8000-000000000001") == null)
+    }
+
+    @Test
+    fun `finalizeSuccess persists conversation reply with anchor inReplyTo and no inbound source`() {
+        val requestId = "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f"
+        val outPayload = payload.copy(
+            inboundProcessingId = null,
+            inReplyTo = "anchor-mid",
+            canonicalQaRuleIds = emptyList(),
+            sourceAnchor = "MAIL_RECORD:11",
+            idempotencyRequestId = requestId
+        )
+        val attempt = createAttempt(MailSendAttemptStatus.DELIVERY_IN_PROGRESS, service.computeFingerprint(outPayload))
+        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        var saved: MailRecord? = null
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java)))
+            .thenAnswer { invocation ->
+                saved = invocation.getArgument<MailRecord>(0)
+                saved!!.copy(id = 500L)
+            }
+        val mailRecordId = service.finalizeSuccess(outPayload, 1L, "<manual-rich-abc@weibo.com>")
+        assertEquals(500L, mailRecordId)
+        val record = requireNotNull(saved)
+        assertEquals("OUTBOUND", record.direction)
+        assertEquals("MANUAL_RICH_REPLY", record.mailType)
+        assertEquals("sender-1", record.senderAccountCode)
+        assertEquals("<manual-rich-abc@weibo.com>", record.messageId)
+        assertEquals("anchor-mid", record.inReplyTo)
+        assertEquals("SENT", record.sendStatus)
+        assertTrue(record.sourceInboundId == null)
+        assertEquals(com.weibo.talentintroduction.mail.domain.TriggeredBy.OPERATOR, record.triggeredBy)
+        assertEquals(1L, record.expertContactId)
+    }
+
+    @Test
+    fun `recordConversationSendAudit writes expert contact target with anchor before map`() {
+        service.recordConversationSendAudit(
+            contactId = 1L,
+            anchorMailRecordId = 77L,
+            mailRecordId = 500L,
+            delivered = delivered(),
+            sendSubject = "Re: Intro",
+            bodyPreviewText = "Hello",
+            operatorName = "op",
+            note = "conversation send"
+        )
+        val invocation = Mockito.mockingDetails(operatorActionLogService).invocations
+            .single { it.method.name == "record" }
+        assertEquals("EXPERT_CONTACT", invocation.arguments[0])
+        assertEquals(1L, invocation.arguments[1])
+        assertEquals(com.weibo.talentintroduction.audit.domain.OperatorActionType.SEND_MANUAL_RICH_REPLY, invocation.arguments[2])
+        assertEquals(1L, invocation.arguments[3])
+        assertTrue(invocation.arguments[4] == null, "inbound_processing_id 恒 null")
+        val before = invocation.arguments[5] as Map<*, *>
+        assertEquals(77L, before["anchorMailRecordId"])
+        val after = invocation.arguments[6] as Map<*, *>
+        assertEquals(500L, after["mailRecordId"])
+        assertEquals("SENT", after["sendStatus"])
+        assertEquals("Re: Intro", after["subject"])
+        assertEquals("Hello", after["bodyPreviewText"])
+        assertFalse(after.containsKey("canonicalFactIds"))
+    }
 }
 
