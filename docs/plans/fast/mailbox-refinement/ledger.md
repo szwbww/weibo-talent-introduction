@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-09-09/00-mailbox-refinement-master.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-09-09/00-mailbox-refinement-master.md (commit 351d69a538bcf891514f234a8d717cb5ef64c63c)
 - Amendments: N/A
 - Master base: af25bf54df2bc70dd0fe9e3254b246a49395219c
@@ -9,8 +9,8 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-09T01:41:34Z
-- Current child: 03
-- Waiting role: IMPLEMENTER
+- Current child: N/A
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -25,14 +25,17 @@
 - MySQL isolation: dev/business MySQL at 127.0.0.1:3306 was closed at baseline; controller provisioned container `mailbox-refinement-mysql` (hub-managed, mysql:8.0.36, root/root, database talent_introduction inside the container) on 127.0.0.1:3306 for the master-mandated `-Pmysql-it` gates. The only listener on 3306 is the container; `talent_introduction` inside it is the fresh isolated test DB per master plan (「mysql-it只能连接新建隔离测试库」). Test datasource default is `jdbc:mysql://localhost:3306/talent_introduction` (src/test/resources/application.yml, DB_URL-overridable).
 - Environment known-good notes inherited from prior runs: Flyway/Testcontainers migration IT requires DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock + `-Dapi.version=1.40` (docker-java client 1.32 vs OrbStack daemon min API 1.40); bare invocation is env-blocked. Not required by any child command.
 - Child 01 command references `MailboxConversationRepositorySqlCompatTest`, a second class inside authorized file `MailboxConversationRepositoryIT.kt` (source-level SQL-shape regression, runs under plain `mvn test`, no mysqlIt gate) — verified present at base.
+- Interleaved docs commits (evidence a59af9d before child-02 implementation; evidence a27e189 before child-03 implementation) precede later implementations in ancestry without advancing product bases.
+- Finalization: the finalization validator requires every child evidence commit to change execution.md/verify-log.md/fix-log.md and the latest verify-log to carry the canonical `### Required Action`/`- COMPLETE_CHILD` form; child verify-logs were normalized to that form and all three evidence commits (and thereby the child-02/child-03 implementation commits) were rebuilt in place as content-identical replays to record it. Product trees at every recorded code head are byte-identical to the originally verified implementations (child 01 cf257779 == 3e929c0, child 02 1dd2e53 == 3ab5608, child 03 331ab4d/39e9264 == 9b6591c); history is linear and contains no merges.
+- Human acceptance A-1..A-11 (master) and browser/viewport checks are NOT performed by this workflow; see human-review-handoff.md.
 
 ## Children
 
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 01 | docs/plans/2026-09-09/01-mailbox-refinement-data.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | none | 1 | LIGHT_PASS | af25bf54df2bc70dd0fe9e3254b246a49395219c | cf257779ae420ab4c745b20aa4de6e6942a66b18 | 0 | — | cf257779ae420ab4c745b20aa4de6e6942a66b18 | b6a1061afd1403a9d5b8694d9a31588a0f619883 | verifier Verifier01: LIGHT_PASS, gates 1-4 PASS, no findings |
-| 02 | docs/plans/2026-09-09/02-mailbox-refinement-frontend.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | 01 | 1 | LIGHT_PASS_WITH_NOTES | cf257779ae420ab4c745b20aa4de6e6942a66b18 | 1dd2e53f33d5817c9340c44fe733c308db8d5bea | 0 | — | 1dd2e53f33d5817c9340c44fe733c308db8d5bea | — | verifier Verifier02: LIGHT_PASS_WITH_NOTES, gates 1-4 PASS; O-1..O-3 (verify-log) |
-| 03 | docs/plans/2026-09-09/03-mailbox-refinement-assets.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | 02 | 1 | LIGHT_VERIFYING | 1dd2e53f33d5817c9340c44fe733c308db8d5bea | 331ab4d8606742aac75e4c48bd0c0f0ad6c11a69 | 0 | — | 331ab4d8606742aac75e4c48bd0c0f0ad6c11a69 | — | exactly 8 whitelist files, +20/-20 literal flip; node 765 pass; mvn 3255/0/9 |
+| 01 | docs/plans/2026-09-09/01-mailbox-refinement-data.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | none | 1 | LIGHT_PASS | af25bf54df2bc70dd0fe9e3254b246a49395219c | 3e929c07cdb65b2dba50b9494fcff3b8440e269e | 0 | — | 3e929c07cdb65b2dba50b9494fcff3b8440e269e | a59af9df2bac739f475cfb316e79ec0c1ee17d60 | verifier Verifier01: LIGHT_PASS, gates 1-4 PASS, no findings |
+| 02 | docs/plans/2026-09-09/02-mailbox-refinement-frontend.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | 01 | 1 | LIGHT_PASS_WITH_NOTES | 3e929c07cdb65b2dba50b9494fcff3b8440e269e | 3ab56089186f2cf925609ea631c9e997065f9f98 | 0 | — | 3ab56089186f2cf925609ea631c9e997065f9f98 | a27e1892fab8219fc5478cc270862a6e2ae2c528 | verifier Verifier02: LIGHT_PASS_WITH_NOTES, gates 1-4 PASS; O-1..O-3 (verify-log) |
+| 03 | docs/plans/2026-09-09/03-mailbox-refinement-assets.md | commit:351d69a538bcf891514f234a8d717cb5ef64c63c | 02 | 1 | LIGHT_PASS | 3ab56089186f2cf925609ea631c9e997065f9f98 | 9b6591c04545769d4ffad97dd285742958b3c8f3 | 0 | — | 9b6591c04545769d4ffad97dd285742958b3c8f3 | 1353f76b22a91d893b086ac916e1e68425285fff | verifier Verifier03: LIGHT_PASS, gates 1-4 PASS, no findings |
 
 ## Amendments
 
