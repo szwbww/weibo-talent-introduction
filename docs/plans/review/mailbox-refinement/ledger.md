@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-09/00-mailbox-refinement-master.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-09-09/00-mailbox-refinement-master.md
+- Governing master identity: worktree sha256 ed5a0f14bdf3fc21c877e9eacf0f1370b1943194eeea205935434ecc4f7eddb1; recorded identity commit 351d69a538bcf891514f234a8d717cb5ef64c63c
+- Invoked master identity: ed5a0f14bdf3fc21c877e9eacf0f1370b1943194eeea205935434ecc4f7eddb1 (SAME)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/mailbox-refinement/ledger.md, sha256 f5f0f9f445aeaa695d724bb48bc7c728401d05180c0a7f2f040e35c9a71d0f68
+- Fast-p handoff: docs/plans/fast/mailbox-refinement/human-review-handoff.md, sha256 1f5f9855fa92c900532c536d64bd1da3e735f8321528d055660012d972608288
+- Master base: af25bf54df2bc70dd0fe9e3254b246a49395219c
+- Final code head: 9b6591c04545769d4ffad97dd285742958b3c8f3
+- Evidence parent before next commit: ce94a7599b45eac13b7b472578a66c1941506c87
+- Previous evidence commit: N/A
+- Branch: fast/mailbox-refinement
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mailbox-refinement
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: scripts/discover_fast_p.py SELECTED exactly one candidate (fast/mailbox-refinement worktree); invoked/worktree/recorded master sha256 all ed5a0f14…; recorded identity commit 351d69a present; no governing amendment
+- Misdirected review evidence: N/A
+- Reviewer: AggregateReviewerMailboxRefinement (fresh subagent, epoch 1)
+- Reviewer attempt: 1 (dispatch succeeded)
+- Machine result: PASS
+- Machine report epoch: 1 (machine-verification.md "Epoch 1")
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: human executes manual-acceptance.md epoch-1 checklist (01 A-1..A-5, 02 A-1..A-11, 03 A-1, Master A-1) against boundary 9b6591c and reports item verdicts with evidence; then signs off the reviewed boundary
