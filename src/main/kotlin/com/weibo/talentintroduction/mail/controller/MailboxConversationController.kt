@@ -93,13 +93,26 @@ data class ConversationMessageItemResponse(
      * child 02 不再逐封请求 /thread）；OUTBOUND 恒为空数组——绝不按 source_inbound_id
      * 或数值巧合映射。
      */
-    val tags: List<TagView> = emptyList()
+    val tags: List<TagView> = emptyList(),
+    /** 03 (I-4)：单独日历附件元数据；末尾可空默认 null 保持既有构造点不变。 */
+    val calendarAttachment: ConversationCalendarAttachment? = null
 )
 
 data class ConversationMessageListResponse(
     val items: List<ConversationMessageItemResponse>,
     val nextBefore: String?,
     val hasMore: Boolean
+)
+
+/**
+ * 03 (I-4)：单独日历附件元数据（独立于专家材料的 attachmentCount/firstAttachmentNames）。
+ * 只可能出现在 MAIL_RECORD+OUTBOUND+SENT 行；downloadUrl 指向 GET calendar-attachment
+ * （原件字节与预览/SMTP 相同，child 04 不重新渲染）。旧行/非 SENT/损坏快照恒为 null。
+ */
+data class ConversationCalendarAttachment(
+    val filename: String,
+    val byteLength: Int,
+    val downloadUrl: String
 )
 
 /**

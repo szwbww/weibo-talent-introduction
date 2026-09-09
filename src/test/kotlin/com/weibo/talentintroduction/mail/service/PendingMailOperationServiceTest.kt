@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
@@ -39,9 +40,15 @@ import com.weibo.talentintroduction.qa.repository.QaRuleRepository
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.springframework.http.HttpStatus
+import com.weibo.talentintroduction.template.domain.MailComposeTemplate
 import java.time.Instant
 import java.time.LocalDateTime
 import java.util.Optional
@@ -86,6 +93,16 @@ class PendingMailOperationServiceTest {
     private val trustReplyWorkbenchService = Mockito.mock(TrustReplyWorkbenchService::class.java)
     private val unsupportedAnswerIndexService = Mockito.mock(UnsupportedAnswerIndexService::class.java)
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
+    // 03 (T3/I-1): 真实 01 生成器（validateAndBuild + ICS 字节/语义 hash 全真实），只 mock
+    // 模板目录的 listEnabled（启用门禁）—— 不以 mock 返回一模一样硬编码字串替代真实生成。
+    private val meetingTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
+    private val meetingConfirmationService = MeetingConfirmationService(
+        inboundMailProcessingRepository,
+        expertContactRepository,
+        mailSenderAccountService,
+        meetingTemplateService,
+        MailContentService()
+    )
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
@@ -108,7 +125,8 @@ class PendingMailOperationServiceTest {
         manualReplySendAttemptService,
         trustReplyWorkbenchService,
         unsupportedAnswerIndexService,
-        emailSuppressionService
+        emailSuppressionService,
+        meetingConfirmationService
     )
 
     private val contact = ExpertContact(
@@ -161,6 +179,8 @@ class PendingMailOperationServiceTest {
                 )
             )
         Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender-1")).thenReturn(senderAccount())
+        // 03: 专用会议模板默认启用；禁用用例在测试体内另行重 stub（最后 stub 生效）。
+        Mockito.`when`(meetingTemplateService.listEnabled()).thenReturn(listOf(meetingTemplate()))
         val claim = ManualReplySendAttemptService.ClaimedAttempt(
             attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
             result = ManualReplySendAttemptService.ClaimResult.CLAIMED
@@ -398,7 +418,280 @@ class PendingMailOperationServiceTest {
         messageId = "<manual-rich-abc@weibo.com>"
     )
 
+    // ------------------------------------------------------------------
+    // 03 (T3/I-1/I-2): 会议日历发送场景 —— 真实 01 生成器 + 控制器同形传参 +
+    // 实际 ComposedMail/SendPayload。meeting 与 previewAttachmentSha256 走
+    // PendingManualRichReplyRequest → sendManualRichReply 的控制器转发形态。
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `meeting send carries the one real snapshot into payload and composed mail with thread headers`() {
+        val input = meetingInput()
+        val preview = previewFor(input)
+        val capturedMails = mutableListOf<ComposedMail>()
+        val capturedPayloads = captureCalendarSend(capturedMails)
+
+        // 会议正文含日期/会议链接会命中既有纯文本安全检查（NORMAL finding）——
+        // 按 A-1 第 2 步「如果 422 按原安全确认流程提交相同配置」确认后发送。
+        val result = calendarRichSend(preview = preview, input = input, safetyWarningConfirmed = true)
+
+        assertEquals("SENT", result.sendStatus)
+        val mail = capturedMails.single()
+        val payload = capturedPayloads.single()
+        val snapshot = requireNotNull(payload.calendarAttachment) { "payload 必须携带 01 快照" }
+        assertEquals(preview.attachment.sha256, snapshot.sha256)
+        assertEquals(preview.attachment.semanticSha256, snapshot.semanticSha256)
+        assertEquals(preview.attachment.icsText, snapshot.icsText)
+        assertEquals(preview.attachment.filename, snapshot.filename)
+        // 同一快照实例同时进入 SendPayload 与 ComposedMail（不生成第二份）。
+        assertSame(snapshot, mail.calendarAttachment)
+        // I-2: 带日历新分支的线程头 = 真实来信 messageId（in-1）；inReplyTo/references 同源。
+        assertEquals("in-1", mail.inReplyTo)
+        assertEquals("in-1", mail.references)
+        assertEquals(contact.expertEmail, mail.to)
+        Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    @Test
+    fun `meeting without preview digest or digest alone is rejected 400 before any claim`() {
+        val input = meetingInput()
+        val preview = previewFor(input)
+        val missingDigest = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            calendarRichSend(preview = preview, input = input, digest = null)
+        }
+        assertEquals(HttpStatus.BAD_REQUEST, missingDigest.status)
+        assertEquals("会议附件配置不完整，请重新预览", missingDigest.reason)
+        val digestOnly = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            calendarRichSend(preview = preview, input = null, digest = preview.attachment.sha256)
+        }
+        assertEquals(HttpStatus.BAD_REQUEST, digestOnly.status)
+        assertEquals("会议附件配置不完整，请重新预览", digestOnly.reason)
+        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    @Test
+    fun `changed meeting config after preview is rejected 400 config changed`() {
+        val input = meetingInput()
+        val preview = previewFor(input)
+        // 配置已变（改会议时长/链接），仍带旧 digest → 服务端重算 sha 不一致。
+        val changed = input.copy(zoomUrl = "https://zoom.us/j/98765432100?pwd=changedDigest")
+        val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            calendarRichSend(preview = preview, input = changed)
+        }
+        assertEquals(HttpStatus.BAD_REQUEST, ex.status)
+        assertEquals("会议配置已变化，请重新预览", ex.reason)
+        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
+    }
+
+    @Test
+    fun `edited meeting time inside body is rejected 400 body mismatch`() {
+        val input = meetingInput()
+        val preview = previewFor(input)
+        val editedText = preview.textBody.replace("10:00 AM", "11:00 AM").replace("10:30 AM", "11:30 AM")
+        val editedHtml = preview.htmlBody.replace("10:00 AM", "11:00 AM").replace("10:30 AM", "11:30 AM")
+        val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            calendarRichSend(preview = preview, input = input, textOverride = editedText, htmlOverride = editedHtml)
+        }
+        assertEquals(HttpStatus.BAD_REQUEST, ex.status)
+        assertEquals("会议正文与附件不一致，请编辑会议后重新生成，或移除日历附件", ex.reason)
+        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
+    }
+
+    @Test
+    fun `editing only outside the meeting text still sends`() {
+        val input = meetingInput()
+        val preview = previewFor(input)
+        val note = "\n\nThis note outside the meeting block is an operator addition."
+        val result = calendarRichSend(
+            preview = preview, input = input,
+            textOverride = preview.textBody + note, htmlOverride = preview.htmlBody + "<p>Extra note</p>",
+            safetyWarningConfirmed = true
+        )
+        // 附加段落不改动会议块（完整会议正文仍连续存在）→ 正文核对通过并成功发送。
+        assertEquals("SENT", result.sendStatus)
+        Mockito.verify(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+    }
+
+    @Test
+    fun `disabled meeting template rejects with the 01 template message`() {
+        val input = meetingInput()
+        val preview = previewFor(input)
+        Mockito.`when`(meetingTemplateService.listEnabled()).thenReturn(emptyList())
+        val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
+            calendarRichSend(preview = preview, input = input)
+        }
+        assertEquals(HttpStatus.BAD_REQUEST, ex.status)
+        assertEquals("会议模板不可用，请重新选择或检查模板变量", ex.reason)
+        Mockito.verify(manualReplySendAttemptService, Mockito.never()).prepareAndClaim(anyValue(sendPayload()))
+    }
+
+    @Test
+    fun `safety confirmation keeps meeting and digest on the confirmed retry`() {
+        val input = meetingInput()
+        val preview = previewFor(input)
+        val hallucinated = preview.textBody + "\n\nWe confirm the programme provides EUR 1,200,000 in funding."
+        val capturedMails = mutableListOf<ComposedMail>()
+        val capturedPayloads = captureCalendarSend(capturedMails)
+
+        // Zoom/会议来自表单绝不自动确认：未确认首次仍按原 422 语义（safety findings）。
+        val blocked = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            calendarRichSend(
+                preview = preview, input = input,
+                textOverride = hallucinated, htmlOverride = hallucinated,
+                safetyWarningConfirmed = false
+            )
+        }
+        assertTrue(
+            blocked.findings.any { it.code == AiReplyHighRiskClaimValidator.WARNING_CLAIM_HALLUCINATED_FACT },
+            "纯文本虚构数字仍触发幻觉事实确认，实际 codes=${blocked.findings.map { it.code }}"
+        )
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(senderAccount()), anyValue(composedMail()))
+
+        // 原确认流程后用同一 meeting/digest 重试成功，快照仍为同一预览内容。
+        val result = calendarRichSend(
+            preview = preview, input = input,
+            textOverride = hallucinated, htmlOverride = hallucinated,
+            safetyWarningConfirmed = true, strongConfirmationText = "确认发送"
+        )
+        assertEquals("SENT", result.sendStatus)
+        val payload = capturedPayloads.single()
+        assertEquals(preview.attachment.sha256, requireNotNull(payload.calendarAttachment).sha256)
+        assertSame(payload.calendarAttachment, capturedMails.single().calendarAttachment)
+    }
+
+    @Test
+    fun `no meeting old path leaves calendar and thread headers untouched`() {
+        val capturedMails = mutableListOf<ComposedMail>()
+        val capturedPayloads = captureCalendarSend(capturedMails)
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>Remote work is possible.</p>",
+            textBody = "Remote work is possible.",
+            operatorName = "op"
+        )
+        assertEquals("SENT", result.sendStatus)
+        val mail = capturedMails.single()
+        val payload = capturedPayloads.single()
+        assertNull(payload.calendarAttachment, "无 meeting 旧路径不携带快照")
+        assertNull(mail.calendarAttachment)
+        assertNull(mail.inReplyTo, "旧调用形态线程头保持默认 null")
+        assertNull(mail.references)
+    }
+
+    // 03: 发送侧 controller 透传 —— 以 UnmatchedInboundMailController 同形请求调用
+    // PendingManualRichReplyRequest（@RequestBody 绑定面：meeting 嵌套 + digest 默认 null）。
+    @Test
+    fun `controller request binding parses meeting and keeps digest nullable defaults`() {
+        val input = meetingInput()
+        val request = PendingManualRichReplyRequest(
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>meeting</p>",
+            textBody = "meeting",
+            operatorName = "op",
+            meeting = input,
+            previewAttachmentSha256 = "a".repeat(64)
+        )
+        // 与 Spring Boot 默认 mapper 一致（KotlinModule 走主构造反序列化）。
+        val mapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
+        val json = mapper.writeValueAsString(request)
+        val parsed = mapper.readValue(json, PendingManualRichReplyRequest::class.java)
+        assertEquals(input, parsed.meeting)
+        assertEquals("a".repeat(64), parsed.previewAttachmentSha256)
+        val legacy = mapper.readValue(
+            """{"senderAccountCode":null,"subject":"Re","htmlBody":"<p>h</p>","textBody":"t","operatorName":"op"}""",
+            PendingManualRichReplyRequest::class.java
+        )
+        assertNull(legacy.meeting)
+        assertNull(legacy.previewAttachmentSha256)
+    }
+
+    // ── 03 calendar helpers ──
+
+    private fun meetingTemplate(): MailComposeTemplate = MailComposeTemplate(
+        id = MEETING_TEMPLATE_ID,
+        templateCode = "MANUAL_MEETING_CONFIRMATION",
+        templateName = "专家会议确认 · 英文",
+        subject = "Meeting confirmation",
+        mailType = "MANUAL_MEETING_CONFIRMATION",
+        enabled = true
+    )
+
+    private fun meetingInput() = MeetingInput(
+        templateId = MEETING_TEMPLATE_ID,
+        templateBody = MEETING_TEMPLATE_BODY,
+        expertSalutation = "Professor Basdogan",
+        zoneId = "Europe/Istanbul",
+        startLocal = "2026-09-11T10:00",
+        endLocal = "2026-09-11T10:30",
+        zoomUrl = "https://zoom.us/j/92123456789?pwd=abcDEF123",
+        senderSignature = "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
+        generatedAt = "2026-09-09T02:00:00Z"
+    )
+
+    private fun previewFor(input: MeetingInput): MeetingPreviewResponse =
+        meetingConfirmationService.validateAndBuild(100L, contact, senderAccount(), input)
+
+    /**
+     * 以 UnmatchedInboundMailController.sendManualRichReply 的转发形态（同形 named args）
+     * 调用服务：预览正文作为人工编辑器 text/html（变量渲染后仍是同一正文），携带
+     * meeting + previewAttachmentSha256。
+     */
+    private fun calendarRichSend(
+        preview: MeetingPreviewResponse,
+        input: MeetingInput?,
+        digest: String? = preview.attachment.sha256,
+        textOverride: String = preview.textBody,
+        htmlOverride: String = preview.htmlBody,
+        safetyWarningConfirmed: Boolean = false,
+        strongConfirmationText: String? = null
+    ): PendingMailSendResult = service.sendManualRichReply(
+        inboundProcessingId = 100L,
+        senderAccountCode = null,
+        subject = "Re: Test",
+        htmlBody = htmlOverride,
+        textBody = textOverride,
+        operatorName = "op",
+        templateTextBody = textOverride,
+        templateHtmlBody = htmlOverride,
+        safetyWarningConfirmed = safetyWarningConfirmed,
+        strongConfirmationText = strongConfirmationText,
+        meeting = input,
+        previewAttachmentSha256 = digest
+    )
+
+    /** 捕获实际外发的 ComposedMail 与 finalize 的 SendPayload（重 stub 捕获版）。 */
+    private fun captureCalendarSend(capturedMails: MutableList<ComposedMail>): MutableList<ManualReplySendAttemptService.SendPayload> {
+        val capturedPayloads = mutableListOf<ManualReplySendAttemptService.SendPayload>()
+        Mockito.doAnswer { inv ->
+            capturedPayloads += inv.getArgument<ManualReplySendAttemptService.SendPayload>(0)
+            500L
+        }.`when`(manualReplySendAttemptService)
+            .finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+        Mockito.doAnswer { inv ->
+            capturedMails += inv.getArgument<ComposedMail>(1)
+            DeliveredMail(messageId = "<manual-rich-abc@weibo.com>", status = "SENT")
+        }.`when`(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+        return capturedPayloads
+    }
+
     private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
+
+    companion object {
+        private const val MEETING_TEMPLATE_ID = 9001L
+        private const val MEETING_TEMPLATE_BODY =
+            "Dear {{expert_salutation}},\n\n" +
+                "Thank you for confirming.\n\n" +
+                "We have noted the meeting time as {{meeting_time}}.\n\n" +
+                "Please join the meeting using the following link:\n\n" +
+                "{{zoom_url}}\n\n" +
+                "We look forward to speaking with you.\n\n" +
+                "Best regards,\n" +
+                "{{sender_signature}}"
+    }
 }

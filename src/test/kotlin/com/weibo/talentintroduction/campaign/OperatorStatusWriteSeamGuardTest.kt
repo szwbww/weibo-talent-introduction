@@ -51,7 +51,9 @@ class OperatorStatusWriteSeamGuardTest {
         //   2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :1099 偏移至 :1116）
         // 03b (A3-adjacent, 行号钉随授权改动平移 +2): c4 在 sendManualRichReply 转发处新增
         // ragFactCodes/ragCorpusFingerprint 两行（controller :267-268），使本噪声行 1116 → 1118。
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1118, "operatorStatus = operatorStatus"),
+        // 03 (T4, 行号钉随授权改动平移 +3): 03 在 sendManualRichReply 转发处新增
+        // meeting/previewAttachmentSha256 两行 + 注释行（controller :271-273），实测 1118 → 1121。
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1121, "operatorStatus = operatorStatus"),
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO

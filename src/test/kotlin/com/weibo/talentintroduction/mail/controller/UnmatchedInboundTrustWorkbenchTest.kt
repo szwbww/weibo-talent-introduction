@@ -232,7 +232,9 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.any(),
                 // 03b (A3): sendManualRichReply 新增 ragFactCodes 与 ragCorpusFingerprint
                 // 两个尾参后，mock 桩按 19 参等量补齐 matcher（先例 a21784e）。
-                Mockito.any(), Mockito.any()
+                Mockito.any(), Mockito.any(),
+                // 03 (A1): 追加 meeting 与 previewAttachmentSha256 尾参后，mock 桩按 21 参等量补齐 matcher。
+                Mockito.isNull(), Mockito.isNull()
             )
         ).thenThrow(
             ResponseStatusException(
@@ -262,7 +264,9 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.any(),
                 // 03b (A3): sendManualRichReply 新增 ragFactCodes 与 ragCorpusFingerprint
                 // 两个尾参后，mock 桩按 19 参等量补齐 matcher（先例 a21784e）。
-                Mockito.any(), Mockito.any()
+                Mockito.any(), Mockito.any(),
+                // 03 (A1): 追加 meeting 与 previewAttachmentSha256 尾参后，mock 桩按 21 参等量补齐 matcher。
+                Mockito.isNull(), Mockito.isNull()
             )
         ).thenThrow(
             ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "\u53d1\u9001\u6682\u65f6\u5931\u8d25\uff0c\u53ef\u5b89\u5168\u91cd\u8bd5")
@@ -289,7 +293,9 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.any(),
                 // 03b (A3): sendManualRichReply 新增 ragFactCodes 与 ragCorpusFingerprint
                 // 两个尾参后，mock 桩按 19 参等量补齐 matcher（先例 a21784e）。
-                Mockito.any(), Mockito.any()
+                Mockito.any(), Mockito.any(),
+                // 03 (A1): 追加 meeting 与 previewAttachmentSha256 尾参后，mock 桩按 21 参等量补齐 matcher。
+                Mockito.isNull(), Mockito.isNull()
             )
         ).thenThrow(
             ResponseStatusException(HttpStatus.CONFLICT, "\u53d1\u9001\u72b6\u6001\u672a\u77e5\uff0c\u8bf7\u52ff\u91cd\u590d\u53d1\u9001 (Message-ID: <test@weibo.com>)")
@@ -387,7 +393,9 @@ class UnmatchedInboundTrustWorkbenchTest {
                 Mockito.any(),
                 // 03b (A3): sendManualRichReply 新增 ragFactCodes 与 ragCorpusFingerprint
                 // 两个尾参后，mock 桩按 19 参等量补齐 matcher（先例 a21784e）。
-                Mockito.any(), Mockito.any()
+                Mockito.any(), Mockito.any(),
+                // 03 (A1): 追加 meeting 与 previewAttachmentSha256 尾参后，mock 桩按 21 参等量补齐 matcher。
+                Mockito.isNull(), Mockito.isNull()
             )
         ).thenReturn(
             PendingMailSendResult(
