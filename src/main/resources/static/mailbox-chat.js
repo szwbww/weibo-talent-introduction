@@ -75,6 +75,37 @@
     const sessionStore = new Map();
 
     // ------------------------------------------------------------------
+    // 会议确认（fast-p 04）：mailbox-chat 侧宿主接入。
+    // 组件（window.MailboxMeeting）缺席时全部降级 —— 不生成 trigger/附件卡，
+    // 不调用任何会议函数、不向未定义对象发消息；草稿不含 meeting 字段仍走旧路径。
+    // meeting-* 规则声明在独立 meeting-confirmation.css，不在 mailbox-chat.css；
+    // 既有样式白名单契约只认 mailbox-chat.css/styles.css 字面 class，因此这里在
+    // 运行时拼 "meeting-" 前缀，模板不出现字面量 meeting-* class。
+    // ------------------------------------------------------------------
+
+    function meetingLib() {
+        return (typeof global.MailboxMeeting !== "undefined" && global.MailboxMeeting)
+            ? global.MailboxMeeting
+            : null;
+    }
+
+    function meetingEnabled() {
+        const lib = meetingLib();
+        return !!(lib && typeof lib.create === "function");
+    }
+
+    function mcCls(name) {
+        return "meeting-" + String(name);
+    }
+
+    // 草稿 meeting 快照 revision：模块级单调本地整数（I-7）
+    let meetingDraftSeq = 0;
+
+    // 会议发送中的模块级 inFlight（ownerKey|targetKey；volatile，不写缓存/DB）
+    const meetingInFlight = new Set();
+
+
+    // ------------------------------------------------------------------
     // 宿主上下文访问（app.js 顶层全局函数；缺失时按渐进式降级）
     // ------------------------------------------------------------------
 
@@ -333,6 +364,7 @@
             translations: new Map(),
             tagAdapter: null,
             manage: { open: false, trigger: null },
+            meeting: { controller: null, editorRevision: 0, sending: false, lastBlobUrl: "" },
             popoverOpen: false,
             loadOlderBusy: false,
             pendingPrompt: null,
@@ -872,7 +904,9 @@
                 const value = String(values[key] || "").trim();
                 if (value) next[key] = value;
             });
+            const prevAccount = String(instance.filters.accountCode || "");
             instance.filters = next;
+            meetingCloseDisposeOnAccountScopeChange(prevAccount, String(next.accountCode || ""));
             syncTagOptionsWithCommitted();
             setPopoverOpen(false);
             renderFilterChrome();
@@ -881,7 +915,9 @@
         }
 
         function resetAdvancedFilters() {
+            const prevAccount = String(instance.filters.accountCode || "");
             instance.filters = {};
+            meetingCloseDisposeOnAccountScopeChange(prevAccount, "");
             populateFieldsFromCommitted();
             clearFilterError();
             setPopoverOpen(false);
@@ -891,7 +927,9 @@
         }
 
         function restoreAdvancedFilters() {
+            const prevAccount = String(instance.filters.accountCode || "");
             instance.filters = {};
+            meetingCloseDisposeOnAccountScopeChange(prevAccount, "");
             populateFieldsFromCommitted();
             renderFilterChrome();
             instance.list.page = 0;
@@ -1240,6 +1278,7 @@
                 instance.workbench.instance = null;
                 instance.workbench.processingId = null;
             }
+            teardownMeetingViews();
             const releaseMaterials = hostFn("unmountExpertMaterialsHosts");
             if (releaseMaterials && instance.host) releaseMaterials(instance.host);
         }
@@ -1511,6 +1550,32 @@
             return "翻译";
         }
 
+        // S-5（fast-p 04）：仅新 calendarAttachment 非空的 SENT OUTBOUND MAIL_RECORD，
+        // 在 bodyHtml 后、原 attachmentHtml 前插已发送日历卡；元数据只消费 03 响应。
+        function contextPathValue() {
+            return (instance.options && instance.options.contextPath)
+                ? String(instance.options.contextPath)
+                : "";
+        }
+
+        function sentMeetingAttachmentHtml(message) {
+            const ca = message.calendarAttachment;
+            if (!ca) return "";
+            const sizeKb = (Number(ca.byteLength) || 0) / 1024;
+            const metaText = "日历事件 · " + sizeKb.toFixed(1) + " KB";
+            const href = contextPathValue() + String(ca.downloadUrl || "");
+            return `
+                <div class="${mcCls("file")}" data-role="sent-meeting-attachment">
+                    <span class="${mcCls("file-icon")}" aria-hidden="true">ICS</span>
+                    <div class="${mcCls("file-main")}">
+                        <strong><span data-role="filename">${escapeText(ca.filename || "")}</span><span class="${mcCls("badge")}" data-state="sent">已发送日历</span></strong>
+                        <small data-role="file-meta">${escapeText(metaText)}</small>
+                        <div class="${mcCls("file-actions")}"><a class="${mcCls("link")}" data-role="calendar-download" data-action="mc-download-sent-meeting" href="${escapeText(href)}" download>下载 ICS</a></div>
+                    </div>
+                </div>
+            `;
+        }
+
         function renderMessage(message) {
             const direction = message.direction === "OUTBOUND" ? "OUTBOUND" : "INBOUND";
             const isInboundProcessing = message.source === "INBOUND_PROCESSING";
@@ -1522,6 +1587,7 @@
             const subject = message.subject || "(无主题)";
             const displayBody = messageDisplayText(message);
             const bodyHtml = displayBody ? `<div class="mc-body">${escapeText(displayBody)}</div>` : "";
+            const sentMeetingHtml = sentMeetingAttachmentHtml(message);
             const attachmentHtml = Number(message.attachmentCount) > 0 ? renderAttachmentSummary(message) : "";
             const statusBadge = renderStatusBadge(message, direction);
             const pending = isInboundProcessing && message.processStatus === "MANUAL_REVIEW";
@@ -1550,6 +1616,7 @@
                     <header><span>${who}</span>${statusBadge ? `<span>${statusBadge}</span>` : ""}</header>
                     <h3>${escapeText(subject)}</h3>
                     ${bodyHtml}
+                    ${sentMeetingHtml}
                     ${attachmentHtml}
                     ${translationHtml}
                     ${tagRow}
@@ -2151,6 +2218,8 @@
                     <div class="mc-section-content">${manualContent}</div>
                 </details>
             `);
+            // 会议卡（组件缺席时无容器，refresh 为空操作）
+            refreshMeetingAttachmentCard();
         }
 
         function manualTargetInfoText(processingId, account) {
@@ -2160,10 +2229,95 @@
             return parts.join(" · ");
         }
 
+        // 人工回复正文恢复（T3）：组件在场且草稿含 html 时经 04 sanitizer 恢复富文本
+        // （只接受本页捕获内容；script/样式/事件全部剥除）；组件缺席/无 html 时恢复 text。
+        function meetingRestoreEditorHtml(html) {
+            const lib = meetingLib();
+            if (!lib || typeof lib.sanitizeDraftHtml !== "function") return "";
+            const doc = docRoot();
+            if (!doc) return "";
+            try {
+                return lib.sanitizeDraftHtml(html, doc);
+            } catch (e) {
+                return "";
+            }
+        }
+
+        // S-3：触发按钮与附件卡容器。会议 class 运行时拼接（见模块注释）。
+        function meetingTriggerHtml() {
+            return `<button class="${mcCls("trigger")} button" type="button" data-action="mc-open-meeting">` +
+                `<span class="${mcCls("icon")}" aria-hidden="true">▦</span>会议确认</button>`;
+        }
+
+        function meetingCardMetaText(meeting) {
+            const input = meeting && meeting.input ? meeting.input : null;
+            if (!input || !input.startLocal || !input.endLocal) return "";
+            const start = String(input.startLocal);
+            const end = String(input.endLocal);
+            if (start.indexOf("T") === -1 || end.indexOf("T") === -1) return "";
+            const sDate = start.slice(0, 10);
+            const sTime = start.slice(11, 16);
+            const eDate = end.slice(0, 10);
+            const eTime = end.slice(11, 16);
+            const duration = meeting.preview && meeting.preview.durationMinutes ? Number(meeting.preview.durationMinutes) : 0;
+            const zone = String(input.zoneId || "");
+            const when = sDate === eDate
+                ? `${sDate} · ${sTime}–${eTime}`
+                : `${sDate} ${sTime} – ${eDate} ${eTime}`;
+            return `${when} · ${zone} · ${duration} 分钟`;
+        }
+
+        function meetingAttachmentFilename(meeting) {
+            return (meeting && meeting.preview && meeting.preview.attachment && meeting.preview.attachment.filename)
+                ? String(meeting.preview.attachment.filename)
+                : "";
+        }
+
+        function meetingCardInnerHtml(meeting) {
+            if (!meeting) return "";
+            const stale = meeting.state === "stale";
+            const stateAttr = stale ? "stale" : "ready";
+            const badgeText = stale ? "待重新确认" : "待发送附件";
+            const note = stale
+                ? "会议正文或回复目标已变化，请编辑会议重新生成，或移除日历附件。"
+                : "修改会议时间或链接请使用「编辑会议」，同步更新正文和附件。";
+            return `
+                <div class="${mcCls("file")}">
+                    <span class="${mcCls("file-icon")}" aria-hidden="true">ICS</span>
+                    <div class="${mcCls("file-main")}">
+                        <strong><span data-role="filename"></span><span class="${mcCls("badge")}" data-state="${stateAttr}">${badgeText}</span></strong>
+                        <small data-role="file-meta"></small>
+                        <div class="${mcCls("file-actions")}">
+                            <a class="${mcCls("link")}" data-action="mc-download-meeting">下载</a>
+                            <button class="${mcCls("link")}" type="button" data-action="mc-edit-meeting">编辑会议</button>
+                            <button class="${mcCls("link")}" type="button" data-action="mc-remove-meeting" aria-label="移除日历附件">移除</button>
+                        </div>
+                    </div>
+                </div>
+                <p class="${mcCls("draft-note")}">${escapeText(note)}</p>
+            `;
+        }
+
+        function meetingCardContainerHtml(meeting) {
+            const stateAttr = meeting && meeting.state === "stale" ? "stale" : "ready";
+            const inner = meeting ? meetingCardInnerHtml(meeting) : "";
+            return `<div class="${mcCls("attachment")}" data-role="meeting-attachment" data-state="${stateAttr}">${inner}</div>`;
+        }
+
         function manualComposeHtml(targetKey, processingId, account, draft, defaultSubject) {
             const subjectValue = draft ? draft.subject : defaultSubject;
             const editorText = draft ? draft.text : "";
             const targetInfo = manualTargetInfoText(processingId, account);
+            const ui = meetingEnabled();
+            let editorContent = "";
+            if (ui && draft && draft.html && String(draft.html).trim()) {
+                editorContent = meetingRestoreEditorHtml(String(draft.html));
+                if (!editorContent && editorText) editorContent = escapeText(editorText);
+            } else if (editorText) {
+                editorContent = escapeText(editorText);
+            }
+            const meetingTrigger = ui ? meetingTriggerHtml() : "";
+            const meetingAttachment = ui && meetingCardContainerHtml(draft && draft.meeting ? draft.meeting : null) || "";
             return `
                 <div class="mc-compose" data-role="manual-compose" data-target-key="${escapeText(targetKey)}">
                     <label>主题<input aria-label="回复主题" value="${escapeText(subjectValue)}"></label>
@@ -2172,8 +2326,10 @@
                         <button class="button" type="button" data-action="mc-rich-command" data-command="italic">I</button>
                         <button class="button" type="button" data-action="mc-rich-command" data-command="insertUnorderedList">列表</button>
                         <button class="button" type="button" data-action="mc-rich-command" data-command="createLink">链接</button>
+                        ${meetingTrigger}
                     </div>
-                    <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorText ? escapeText(editorText) : ""}</div>
+                    <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorContent}</div>
+                    ${meetingAttachment}
                     <div class="mc-compose-footer">
                         <span data-role="target-info">回复账号与目标来信信息：${targetInfo}</span>
                         <button class="button primary" type="button" data-action="mc-send-manual">发送人工回复</button>
@@ -2699,17 +2855,29 @@
             };
         }
 
-        function saveDraftFromInputs() {
+        function saveDraftFromInputs(extra) {
             const key = currentTargetKey();
             if (!key) return;
             const values = readManualValues();
             if (!values) return;
+            const existing = getDraft(key);
+            const patch = extra || {};
+            const hasMeetingPatch = Object.prototype.hasOwnProperty.call(patch, "meeting");
+            const meeting = hasMeetingPatch
+                ? deepCopyMeeting(patch.meeting)
+                : (existing && existing.meeting ? deepCopyMeeting(existing.meeting) : null);
+            const accountPatch = Object.prototype.hasOwnProperty.call(patch, "meetingAccountCode");
+            const meetingAccountCode = accountPatch
+                ? String(patch.meetingAccountCode || "")
+                : (existing && existing.meetingAccountCode != null ? String(existing.meetingAccountCode) : "");
             setDraft(key, {
                 subject: values.subject,
                 html: values.html,
                 text: values.text,
                 qa: values.qa,
-                updatedAt: new Date().toISOString()
+                updatedAt: new Date().toISOString(),
+                meeting,
+                meetingAccountCode
             });
         }
 
@@ -2721,12 +2889,438 @@
             };
         }
 
+        // --------------------------------------------------------------
+        // 会议确认宿主（fast-p 04 T3/T4/S-3/S-5；组件缺席自动降级）
+        // --------------------------------------------------------------
+
+        function manualMeetingSnapshot() {
+            const key = currentTargetKey();
+            if (!key) return null;
+            const draft = getDraft(key);
+            return draft && draft.meeting ? draft.meeting : null;
+        }
+
+        function deepCopyMeeting(meeting) {
+            if (meeting == null) return null;
+            try {
+                return JSON.parse(JSON.stringify(meeting));
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function meetingRevisionNext() {
+            meetingDraftSeq += 1;
+            return meetingDraftSeq;
+        }
+
+        function meetingNormalizeText(text) {
+            const lib = meetingLib();
+            if (lib && typeof lib.normalizeMeetingText === "function") {
+                try { return lib.normalizeMeetingText(text); } catch (e) { /* fallthrough */ }
+            }
+            return String(text == null ? "" : text)
+                .normalize ? String(text).normalize("NFKC").replace(/\s+/g, " ").trim() : String(text == null ? "" : text).replace(/\s+/g, " ").trim();
+        }
+
+        function meetingBlocksIn(editor) {
+            if (!editor || typeof editor.querySelectorAll !== "function") return [];
+            return Array.prototype.slice.call(editor.querySelectorAll('[data-meeting-block="true"]'));
+        }
+
+        function meetingBlockIn(editor) {
+            const blocks = meetingBlocksIn(editor);
+            return blocks.length > 0 ? blocks[0] : null;
+        }
+
+        function meetingElementText(node) {
+            if (!node) return "";
+            if (typeof node.innerText === "string") return node.innerText;
+            if (node.textContent != null) return String(node.textContent);
+            return "";
+        }
+
+        /** 输入后检测：块数量/可见文本与基线比较；格式-only 更新 blockHtml 基线仍 ready。 */
+        function detectMeetingChange(editor, meeting) {
+            if (!meeting) return null;
+            const blocks = meetingBlocksIn(editor);
+            const block = blocks.length === 1 ? blocks[0] : null;
+            const next = deepCopyMeeting(meeting);
+            let changed = false;
+            if (!block || blocks.length !== 1) {
+                if (next.state !== "stale") { next.state = "stale"; changed = true; }
+                return changed ? { meeting: next } : null;
+            }
+            const currentText = meetingNormalizeText(meetingElementText(block));
+            const baselineText = meetingNormalizeText(next.blockText);
+            if (currentText !== baselineText) {
+                if (next.state !== "stale") { next.state = "stale"; changed = true; }
+                return changed ? { meeting: next } : null;
+            }
+            // 文本相同：仅格式变化可刷新 blockHtml 基线
+            const currentHtml = typeof block.outerHTML === "string" ? block.outerHTML : "";
+            if (currentHtml && currentHtml !== next.blockHtml) {
+                next.blockHtml = currentHtml;
+                changed = true;
+            }
+            return changed ? { meeting: next } : null;
+        }
+
+        function manualEditorNode() {
+            const inputs = manualInputs();
+            return inputs ? inputs.editor : null;
+        }
+
+        /** open() 前把真实 DOM 判定结果作为瞬态 _flow 附在快照副本上（不落库）。 */
+        function meetingSnapshotForDialog(meeting, editor) {
+            if (!meeting) return null;
+            const copy = deepCopyMeeting(meeting);
+            const block = meetingBlockIn(editor);
+            const textSame = !!(meeting.blockText && block &&
+                meetingNormalizeText(meetingElementText(block)) === meetingNormalizeText(meeting.blockText));
+            const hasText = meetingNormalizeText(meetingElementText(editor)) !== "";
+            let flow;
+            if (textSame) flow = "update";
+            else if (!hasText) flow = "fill";
+            else flow = "conflict";
+            copy._flow = flow;
+            return copy;
+        }
+
+        function insertMeetingBlock(editor, action, blockHtml) {
+            const doc = docRoot();
+            if (!doc || !editor || typeof editor.appendChild !== "function") return null;
+            const block = doc.createElement("div");
+            block.setAttribute("class", mcCls("body-block"));
+            block.setAttribute("data-meeting-block", "true");
+            block.innerHTML = String(blockHtml || "");
+            if (action === "replace") {
+                while (editor.firstChild) editor.removeChild(editor.firstChild);
+                editor.appendChild(block);
+                return block;
+            }
+            const oldBlock = meetingBlockIn(editor);
+            if (action === "update" && oldBlock && oldBlock.parentNode) {
+                oldBlock.parentNode.insertBefore(block, oldBlock);
+                oldBlock.parentNode.removeChild(oldBlock);
+                return block;
+            }
+            // append：br 分隔后追加
+            editor.appendChild(doc.createElement("br"));
+            editor.appendChild(block);
+            return block;
+        }
+
+        function createMeetingBlobUrl(icsText) {
+            if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return "";
+            const BlobCtor = (typeof Blob !== "undefined") ? Blob : null;
+            if (!BlobCtor) return "";
+            try {
+                const blob = new BlobCtor([String(icsText || "")], { type: "text/calendar;charset=UTF-8" });
+                return URL.createObjectURL(blob);
+            } catch (e) {
+                return "";
+            }
+        }
+
+        function revokeMeetingBlob() {
+            if (instance.meeting.lastBlobUrl) {
+                if (typeof URL !== "undefined" && typeof URL.revokeObjectURL === "function") {
+                    try { URL.revokeObjectURL(instance.meeting.lastBlobUrl); } catch (e) { /* noop */ }
+                }
+                instance.meeting.lastBlobUrl = "";
+            }
+        }
+
+        function refreshMeetingAttachmentCard() {
+            const composeEl = manualComposeEl();
+            if (!composeEl) return;
+            const container = composeEl.querySelector ? composeEl.querySelector('[data-role="meeting-attachment"]') : null;
+            if (!container) return;
+            const meeting = manualMeetingSnapshot();
+            container.innerHTML = meeting ? meetingCardInnerHtml(meeting) : "";
+            container.setAttribute("data-state", meeting && meeting.state === "stale" ? "stale" : "ready");
+            if (!meeting) {
+                revokeMeetingBlob();
+                return;
+            }
+            const filenameNode = container.querySelector('[data-role="filename"]');
+            if (filenameNode) filenameNode.textContent = meetingAttachmentFilename(meeting);
+            const metaNode = container.querySelector('[data-role="file-meta"]');
+            if (metaNode) metaNode.textContent = meetingCardMetaText(meeting);
+            const download = container.querySelector('[data-action="mc-download-meeting"]');
+            revokeMeetingBlob();
+            if (download) {
+                const ics = meeting.preview && meeting.preview.attachment
+                    ? String(meeting.preview.attachment.icsText || "")
+                    : "";
+                const filename = meetingAttachmentFilename(meeting) || "meeting.ics";
+                const url = createMeetingBlobUrl(ics);
+                if (url) {
+                    instance.meeting.lastBlobUrl = url;
+                    download.setAttribute("href", url);
+                    download.setAttribute("download", filename);
+                } else {
+                    download.removeAttribute("href");
+                    download.removeAttribute("download");
+                }
+            }
+        }
+
+        function teardownMeetingViews() {
+            const controller = instance.meeting.controller;
+            if (controller) {
+                try { controller.close({ restoreFocus: false }); } catch (e) { /* noop */ }
+                try { controller.dispose(); } catch (e) { /* noop */ }
+                instance.meeting.controller = null;
+            }
+            revokeMeetingBlob();
+            instance.meeting.editorRevision = 0;
+        }
+
+        // T5：账号过滤变化 → close/dispose 会议并 abort 在途请求（草稿缓存不清）
+        function meetingCloseDisposeOnAccountScopeChange(prevAccount, nextAccount) {
+            if (instance.selectedContactId == null) return;
+            if (String(prevAccount || "") === String(nextAccount || "")) return;
+            teardownMeetingViews();
+        }
+
+        function meetingCardActionsDisabled(disabled) {
+            const composeEl = manualComposeEl();
+            if (!composeEl || !composeEl.querySelectorAll) return;
+            ["mc-open-meeting", "mc-download-meeting", "mc-edit-meeting", "mc-remove-meeting"].forEach((action) => {
+                composeEl.querySelectorAll(`[data-action="${action}"]`).forEach((node) => {
+                    node.disabled = disabled;
+                    if (disabled) node.setAttribute("aria-disabled", "true");
+                    else node.removeAttribute("aria-disabled");
+                });
+            });
+        }
+
+        function setManualComposeSending(sending) {
+            const composeEl = manualComposeEl();
+            if (!composeEl) return;
+            if (sending) composeEl.setAttribute("data-meeting-sending", "true");
+            else composeEl.removeAttribute("data-meeting-sending");
+            const inputs = manualInputs(composeEl);
+            if (inputs) {
+                inputs.editor.setAttribute("contenteditable", sending ? "false" : "true");
+                inputs.subjectInput.disabled = sending;
+            }
+            if (composeEl.querySelectorAll) {
+                composeEl.querySelectorAll(".mc-editor-tools .button").forEach((button) => {
+                    button.disabled = sending;
+                });
+            }
+            meetingCardActionsDisabled(sending);
+            instance.meeting.sending = sending;
+        }
+
+        function openMeetingDialog() {
+            if (instance.manual.mode !== "inbound" || !currentTargetKey()) return;
+            const composeEl = manualComposeEl();
+            const inputs = manualInputs(composeEl);
+            if (!inputs) return;
+            const lib = meetingLib();
+            if (!lib || typeof lib.create !== "function") return;
+            // open 前先保存当前编辑器值；捕获 owner/key/editorRevision（I-2）
+            saveDraftFromInputs();
+            const key = currentTargetKey();
+            const draft = getDraft(key);
+            const meeting = draft && draft.meeting ? draft.meeting : null;
+            const contactId = Number(instance.selectedContactId);
+            const scope = instance.conversation.accountScope || "";
+            const ownerKey = conversationCacheKey(instance.user, scope, contactId);
+            const summary = instance.selectedSummary || {};
+            const expertLabel = summary && (summary.name || summary.email)
+                ? String(summary.name || summary.email)
+                : "";
+            let controller = instance.meeting.controller;
+            if (!controller) {
+                controller = lib.create({
+                    api: hostApi(),
+                    contextPath: (instance.options && instance.options.contextPath)
+                        ? String(instance.options.contextPath)
+                        : "",
+                    onApply: (capturedTargetKey, payload) => applyMeetingFromDialog(capturedTargetKey, payload),
+                    onStatus: (message, type) => hostShowStatus(message, type)
+                });
+                instance.meeting.controller = controller;
+            }
+            try {
+                controller.open({
+                    ownerKey,
+                    targetKey: key,
+                    contactId,
+                    processingId: Number(instance.manual.targetProcessingId),
+                    senderAccountCode: instance.manual.targetAccountCode || "",
+                    expertLabel,
+                    editorHtml: typeof inputs.editor.innerHTML === "string" ? inputs.editor.innerHTML : "",
+                    editorText: meetingElementText(inputs.editor),
+                    editorRevision: instance.meeting.editorRevision,
+                    savedMeeting: meetingSnapshotForDialog(meeting, inputs.editor)
+                });
+            } catch (e) {
+                hostShowStatus("会议确认打开失败：" + (e && e.message ? e.message : ""), "error");
+            }
+        }
+
+        function writeDraftWithMeeting(meeting, qaOverride) {
+            const key = currentTargetKey();
+            if (!key) return null;
+            const existing = getDraft(key);
+            const qa = qaOverride !== undefined ? qaOverride : (existing && existing.qa ? snapshotQa(existing.qa) : null);
+            const next = {
+                subject: existing ? existing.subject : "",
+                html: existing ? existing.html : "",
+                text: existing ? existing.text : "",
+                qa,
+                updatedAt: new Date().toISOString(),
+                meeting: deepCopyMeeting(meeting),
+                meetingAccountCode: meeting ? (instance.manual.targetAccountCode || "") : ""
+            };
+            setDraft(key, next);
+            return next;
+        }
+
+        /** 组件 onApply：返回 false 表示目标/修订不匹配或禁止的追加冲突。 */
+        function applyMeetingFromDialog(capturedTargetKey, payload) {
+            const key = currentTargetKey();
+            if (!key || capturedTargetKey !== key) return false;
+            if (!payload || !payload.preview) return false;
+            if (Number(payload.capturedEditorRevision) !== Number(instance.meeting.editorRevision)) return false;
+            const composeEl = manualComposeEl();
+            const inputs = manualInputs(composeEl);
+            if (!inputs) return false;
+            const lib = meetingLib();
+            if (!lib || typeof lib.planMeetingInsertion !== "function") return false;
+            const draft = getDraft(key);
+            const saved = draft && draft.meeting ? draft.meeting : null;
+            const mode = payload.mode === "replace" ? "replace" : "append";
+            let plan = null;
+            try {
+                plan = lib.planMeetingInsertion(inputs.editor, saved, payload.preview, mode);
+            } catch (e) {
+                plan = null;
+            }
+            if (!plan || !plan.allowed) {
+                if (plan && plan.reason === "hand-edited") {
+                    hostShowStatus("会议正文已手动修改；请选择替换整篇正文，或取消后移除日历附件。", "error");
+                } else {
+                    hostShowStatus("回复目标已变化，请重新打开会议确认", "error");
+                }
+                return false;
+            }
+            const block = insertMeetingBlock(inputs.editor, plan.action, plan.blockHtml);
+            if (!block) return false;
+            if (plan.qaClear) instance.manual.qa = null;
+            const preview = payload.preview || {};
+            const attachment = preview.attachment || {};
+            const revision = meetingRevisionNext();
+            const meeting = {
+                input: deepCopyMeeting(preview.meeting || null),
+                preview: {
+                    htmlBody: preview.htmlBody || "",
+                    textBody: preview.textBody || "",
+                    attachment: {
+                        filename: attachment.filename || "",
+                        contentType: attachment.contentType || "",
+                        icsText: attachment.icsText || "",
+                        byteLength: Number(attachment.byteLength) || 0,
+                        sha256: attachment.sha256 || "",
+                        semanticSha256: attachment.semanticSha256 || ""
+                    },
+                    startUtc: preview.startUtc || "",
+                    endUtc: preview.endUtc || "",
+                    meetingTime: preview.meetingTime || "",
+                    chinaTime: preview.chinaTime || "",
+                    durationMinutes: Number(preview.durationMinutes) || 0
+                },
+                blockHtml: typeof block.outerHTML === "string" ? block.outerHTML : "",
+                blockText: meetingNormalizeText(meetingElementText(block)),
+                state: "ready",
+                revision
+            };
+            const qaValue = plan.qaClear ? null : (draft && draft.qa ? snapshotQa(draft.qa) : instance.manual.qa ? snapshotQa(instance.manual.qa) : null);
+            writeDraftWithMeeting(meeting, qaValue);
+            instance.meeting.editorRevision += 1;
+            refreshMeetingAttachmentCard();
+            saveConversationState();
+            hostShowStatus(payload.mode === "replace" ? "会议正文已替换并填入回复" : "会议确认已填入回复草稿，发送前请确认", "ok");
+            return true;
+        }
+
+        function removeMeetingFromDraft() {
+            const key = currentTargetKey();
+            if (!key) return;
+            const meeting = manualMeetingSnapshot();
+            if (!meeting) {
+                hostShowStatus("当前没有日历附件", "error");
+                return;
+            }
+            const composeEl = manualComposeEl();
+            const inputs = manualInputs(composeEl);
+            if (inputs) {
+                saveDraftFromInputs({ meeting: null, meetingAccountCode: "" });
+            } else {
+                const existing = getDraft(key);
+                setDraft(key, Object.assign({}, existing || {}, {
+                    meeting: null,
+                    meetingAccountCode: "",
+                    updatedAt: new Date().toISOString()
+                }));
+            }
+            refreshMeetingAttachmentCard();
+            saveConversationState();
+            hostShowStatus("已移除日历附件，正文保留", "ok");
+        }
+
+        /** 编辑器输入统一入口：editorRevision++、meeting stale 检测、草稿保存。 */
+        function handleManualComposeInput(target) {
+            const composeEl = manualComposeEl();
+            const inputs = manualInputs(composeEl);
+            const isEditor = !!(inputs && target === inputs.editor);
+            let patch = null;
+            if (isEditor) {
+                instance.meeting.editorRevision += 1;
+                const meeting = manualMeetingSnapshot();
+                if (meeting) {
+                    const change = detectMeetingChange(inputs.editor, meeting);
+                    if (change) patch = change;
+                }
+            }
+            saveDraftFromInputs(patch || {});
+            if (patch) refreshMeetingAttachmentCard();
+        }
+
+        function downloadSentMeetingAttachment(button) {
+            const article = (button && typeof button.closest === "function")
+                ? button.closest(".mc-message")
+                : null;
+            const key = article && article.dataset ? article.dataset.messageKey : "";
+            const message = key ? messageByKey(key) : null;
+            const ca = message && message.calendarAttachment ? message.calendarAttachment : null;
+            if (!ca) return;
+            const adapter = hostFn("mcHostDownloadCalendar");
+            if (!adapter) {
+                hostShowStatus("日历下载能力不可用", "error");
+                return;
+            }
+            adapter(String(ca.downloadUrl || ""), String(ca.filename || "")).catch((err) => {
+                if (instance.disposed) return;
+                hostShowStatus(err && err.message ? err.message : "日历附件下载失败", "error");
+            });
+        }
+
         function adoptAssembly(processingId, assembly) {
             if (instance.manual.mode !== "inbound" || Number(instance.manual.targetProcessingId) !== Number(processingId)) return;
             const composeEl = manualComposeEl();
             if (!composeEl) return;
             const inputs = manualInputs(composeEl);
             if (!inputs) return;
+            // 全文替换采用前：先移除旧会议附件与快照（I-3/I-6），正文由 assembly 覆盖
+            const hadMeeting = !!manualMeetingSnapshot();
+            if (hadMeeting) revokeMeetingBlob();
             const assemblyText = (assembly && (assembly.renderedDraftText || assembly.rawDraftText || assembly.text)) || "";
             const usedFactCodes = assembly && Array.isArray(assembly.usedFactCodes)
                 ? assembly.usedFactCodes.slice()
@@ -2742,8 +3336,11 @@
             if (inputs.editor.innerText !== assemblyText) {
                 inputs.editor.innerText = assemblyText;
             }
-            saveDraftFromInputs();
-            hostShowStatus("草稿已采用到人工回复区，请确认后发送", "ok");
+            saveDraftFromInputs({ meeting: null, meetingAccountCode: "" });
+            refreshMeetingAttachmentCard();
+            hostShowStatus(hadMeeting
+                ? "草稿已采用到人工回复区，请确认后发送；原日历附件已移除"
+                : "草稿已采用到人工回复区，请确认后发送", "ok");
             const manualSection = composeEl.closest ? composeEl.closest('.mc-section[data-section="manual"]') : null;
             if (manualSection && !manualSection.open && manualSection.setAttribute) {
                 manualSection.setAttribute("open", "");
@@ -2767,6 +3364,20 @@
                 return;
             }
             const textBody = typeof inputs.editor.innerText === "string" ? inputs.editor.innerText : String(inputs.editor.textContent || "");
+            // 带会议快照的发送（T4）：state 必须 ready 且当前会议块文本与基线一致
+            const meeting = manualMeetingSnapshot();
+            if (meeting) {
+                if (meeting.state !== "ready") {
+                    hostShowStatus("会议正文或回复目标已变化，请编辑会议重新生成，或移除日历附件。", "error");
+                    return;
+                }
+                const block = meetingBlockIn(inputs.editor);
+                const blockText = block ? meetingNormalizeText(meetingElementText(block)) : "";
+                if (!block || blockText !== meetingNormalizeText(meeting.blockText)) {
+                    hostShowStatus("会议正文已被修改，请编辑会议重新生成后再发送", "error");
+                    return;
+                }
+            }
             const requestBody = {
                 senderAccountCode: null,
                 subject,
@@ -2780,27 +3391,82 @@
                 requestBody.ragCorpusFingerprint = qa.ragCorpusFingerprint || "";
                 requestBody.edited = textBody.trim() !== (qa.baselineText || "").trim();
             }
+            if (meeting) {
+                const sha = meeting.preview && meeting.preview.attachment
+                    ? String(meeting.preview.attachment.sha256 || "")
+                    : "";
+                if (!sha) {
+                    hostShowStatus("会议附件信息不完整，请重新预览", "error");
+                    return;
+                }
+                requestBody.meeting = deepCopyMeeting(meeting.input);
+                requestBody.previewAttachmentSha256 = sha;
+            }
             const processingId = Number(instance.manual.targetProcessingId);
+            // I-2：异步前捕获 draftsMap/owner/key/revision/requestBody；不回调里再取
+            const draftsMap = ensureDraftsMap();
+            const contactId = Number(instance.selectedContactId);
+            const ownerKey = conversationCacheKey(instance.user, instance.conversation.accountScope || "", contactId);
+            const capturedRevision = meeting ? meeting.revision : null;
+            const inFlightKey = meeting ? `${ownerKey}|${key}` : null;
+            if (inFlightKey && meetingInFlight.has(inFlightKey)) {
+                hostShowStatus("该回复目标已有发送中的会议回复，请稍候", "error");
+                return;
+            }
+            if (inFlightKey) meetingInFlight.add(inFlightKey);
             instance.manual.busy = true;
             setSendButtonDisabled(true);
+            if (meeting) setManualComposeSending(true);
             const adapter = hostFn("mcHostSendRichReply");
             const request = adapter
                 ? adapter(processingId, requestBody)
                 : Promise.reject(new Error("发送能力不可用"));
             request.then((sent) => {
-                if (instance.disposed) return;
-                instance.manual.busy = false;
-                setSendButtonDisabled(false);
-                if (sent) {
-                    deleteDraft(key);
-                    instance.manual.qa = null;
-                    afterSuccessfulSend(key);
+                if (instance.disposed) {
+                    if (inFlightKey) meetingInFlight.delete(inFlightKey);
+                    return;
                 }
-                // 失败保留全部输入（不清草稿、不改 QA）
-            }).catch(() => {
-                if (instance.disposed) return;
+                const stillCurrent = currentTargetKey() === key;
+                if (meeting && stillCurrent) setManualComposeSending(false);
                 instance.manual.busy = false;
                 setSendButtonDisabled(false);
+                if (inFlightKey) meetingInFlight.delete(inFlightKey);
+                if (!sent) return; // 失败/取消保留全部输入（不清草稿、不改 QA、不删附件）
+                if (meeting) {
+                    // 成功只清该份已发送快照（I-2）：captured map + revision 匹配才删；
+                    // 已切目标/新草稿一律不动新目标的草稿与 QA。
+                    const snapshot = draftsMap.get(key);
+                    const currentMeeting = snapshot && snapshot.meeting ? snapshot.meeting : null;
+                    if (currentMeeting && Number(currentMeeting.revision) === Number(capturedRevision)) {
+                        draftsMap.delete(key);
+                        if (stillCurrent) {
+                            instance.manual.qa = null;
+                            refreshMeetingAttachmentCard();
+                        }
+                        if (stillCurrent) afterSuccessfulSend(key);
+                    } else if (currentMeeting && stillCurrent) {
+                        const nextDraft = Object.assign({}, snapshot, {
+                            meeting: Object.assign({}, currentMeeting, { state: "stale" }),
+                            updatedAt: new Date().toISOString()
+                        });
+                        draftsMap.set(key, nextDraft);
+                        refreshMeetingAttachmentCard();
+                    }
+                    return;
+                }
+                deleteDraft(key);
+                instance.manual.qa = null;
+                afterSuccessfulSend(key);
+            }).catch(() => {
+                if (instance.disposed) {
+                    if (inFlightKey) meetingInFlight.delete(inFlightKey);
+                    return;
+                }
+                const stillCurrent = currentTargetKey() === key;
+                if (meeting && stillCurrent) setManualComposeSending(false);
+                instance.manual.busy = false;
+                setSendButtonDisabled(false);
+                if (inFlightKey) meetingInFlight.delete(inFlightKey);
             });
         }
 
@@ -2893,17 +3559,33 @@
             const draft = oldKey ? getDraft(oldKey) : null;
             const contactId = Number(instance.selectedContactId);
             const newKey = `${contactId}:${newProcessingId}:${newAccount}`;
+            // 目标切换：关闭会议弹窗并撤销 modal URL；meeting 标 stale、保留旧 input 供改
+            const meetingController = instance.meeting.controller;
+            if (meetingController) {
+                try { meetingController.close({ restoreFocus: false }); } catch (e) { /* noop */ }
+            }
+            revokeMeetingBlob();
             if (draft) {
-                const next = Object.assign({}, draft, { subject: "", updatedAt: new Date().toISOString() });
-                setDraft(newKey, next);
+                let migrated = Object.assign({}, draft, { subject: "", updatedAt: new Date().toISOString() });
+                if (draft.meeting) {
+                    migrated = Object.assign({}, migrated, {
+                        meeting: Object.assign({}, draft.meeting, { state: "stale" })
+                    });
+                }
+                setDraft(newKey, migrated);
                 if (oldKey && oldKey !== newKey) deleteDraft(oldKey);
             }
+            instance.meeting.editorRevision += 1;
             instance.manual.targetProcessingId = Number(newProcessingId);
             instance.manual.targetAccountCode = newAccount || "";
             instance.manual.targetKey = newKey;
             instance.manual.qa = draft && draft.qa ? snapshotQa(draft.qa) : null;
             const composeEl = manualComposeEl();
-            if (!composeEl) return;
+            if (composeEl) {
+                refreshMeetingAttachmentCard();
+            } else {
+                return;
+            }
             const inputs = manualInputs(composeEl);
             if (inputs) {
                 const targetMsg = (instance.conversation.items || []).find(
@@ -3075,6 +3757,26 @@
                 sendManualReply();
                 return;
             }
+            if (action === "mc-open-meeting" || action === "mc-edit-meeting") {
+                openMeetingDialog();
+                return;
+            }
+            if (action === "mc-remove-meeting") {
+                removeMeetingFromDraft();
+                return;
+            }
+            if (action === "mc-download-meeting") {
+                // 附件卡下载：默认 anchor 下载（href=blob）；sending/无快照时拦截
+                if (button && button.getAttribute && button.getAttribute("aria-disabled") === "true") {
+                    if (event && typeof event.preventDefault === "function") event.preventDefault();
+                }
+                return;
+            }
+            if (action === "mc-download-sent-meeting") {
+                if (event && typeof event.preventDefault === "function") event.preventDefault();
+                downloadSentMeetingAttachment(button);
+                return;
+            }
             if (action === "mc-template-follow") {
                 openFollowUpTemplateFlow();
                 return;
@@ -3196,7 +3898,7 @@
             }
             const composeEl = manualComposeEl();
             if (composeEl && composeEl.contains && composeEl.contains(target)) {
-                saveDraftFromInputs();
+                handleManualComposeInput(target);
             }
         }
 
@@ -3298,7 +4000,9 @@
             }
             if (next.filters) {
                 // 快照完整替换，不能合并残留旧值（I-2）
+                const prevAccount = String(instance.filters.accountCode || "");
                 instance.filters = Object.assign({}, next.filters);
+                meetingCloseDisposeOnAccountScopeChange(prevAccount, String(next.filters.accountCode || ""));
                 // 仅初次（用户尚未操作 tab）允许外部 onlyPending 初始化
                 if (typeof next.filters.pendingOnly === "boolean" && !instance.chipUserTouched) {
                     if (next.filters.pendingOnly && instance.chip !== CHIP_PENDING) {

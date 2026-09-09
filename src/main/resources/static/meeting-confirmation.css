@@ -1,0 +1,103 @@
+/* 专家会议确认：只限新组件及新生成正文块。 */
+.mail-chat .button.meeting-trigger{color:#1e40af;border-color:#b8cef5;background:#eef4ff;gap:7px;margin-left:3px}
+.mail-chat .button.meeting-trigger:hover{background:#e5eeff;border-color:#93b4ec}
+.mail-chat .button.meeting-trigger:active{background:#dbeafe}
+.meeting-icon{display:inline-flex;font-size:16px;line-height:1}
+.meeting-dialog{margin:auto;inset:0;width:min(1080px,calc(100vw - 40px));max-height:calc(100dvh - 40px);padding:0;border:1px solid #d5dfed;border-radius:14px;background:#fff;color:#334155;font-family:var(--font-body);font-size:12px;line-height:1.6;box-shadow:0 24px 100px #172c473d;overflow:auto;overscroll-behavior:contain}
+.meeting-dialog::backdrop{background:#182a464f;backdrop-filter:blur(2px)}
+.meeting-dialog *{box-sizing:border-box}
+.meeting-dialog [hidden],.mail-chat .meeting-attachment[hidden]{display:none!important}
+.meeting-dialog form{margin:0;padding:0}
+.meeting-head{display:flex;align-items:center;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #e2e8f0;gap:16px;position:sticky;top:0;background:#fff;z-index:2}
+.meeting-head h2{margin:0;font-size:19px;font-weight:600;color:#334155;line-height:1.4}
+.meeting-head p{margin:6px 0 0;font-size:12px;color:#64748b;line-height:1.6;overflow-wrap:anywhere}
+.meeting-close{display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:5px;background:transparent;color:#91a1b7;font:inherit;font-size:21px;line-height:1;cursor:pointer}
+.meeting-close:hover{background:#edf3ff;color:#2451b9}
+.meeting-close:active{background:#dbeafe}
+.meeting-grid{display:grid;grid-template-columns:45% 55%}
+.meeting-form{padding:18px 24px;border-right:1px solid #e2e8f0;min-width:0}
+.meeting-preview{padding:22px 24px;background:#f8faff;min-width:0}
+.meeting-form label{display:flex;flex-direction:column;gap:6px;font-size:12px;line-height:18px;color:#52647e;margin-bottom:12px;font-weight:500;letter-spacing:0;text-transform:none;min-width:0}
+.meeting-form input,.meeting-form select,.meeting-form textarea{min-width:0;width:100%;height:36px;min-height:36px;margin:0;padding:7px 10px;font:inherit;font-weight:400;color:#334155;border:1px solid #d7e0ed;border-radius:7px;background:#fff;box-shadow:none}
+.meeting-form textarea{height:70px;resize:vertical;line-height:1.6}
+.meeting-form input::placeholder,.meeting-form textarea::placeholder{color:#94a3b8;opacity:1}
+.meeting-form small{font-size:11px;font-weight:400;color:#76859b;line-height:16px}
+.meeting-form :is(input,textarea,select):hover:not(:disabled){border-color:#93b4ec}
+.meeting-form :is(input,textarea,select)[aria-invalid=true]{border-color:#e11d48;background:#fff8fa}
+.meeting-form :is(input,textarea):read-only{background:#f8faff}
+.meeting-form :is(input,textarea,select):disabled{opacity:.55;cursor:not-allowed;background:#f1f5f9}
+.meeting-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+.meeting-clock{margin:-3px 0 14px;padding:11px 12px;border:1px solid #dce7fa;border-radius:7px;background:#f0f5ff;font-size:12px;line-height:1.65;color:#47658b}
+.meeting-clock b{font-weight:500;color:#234f99}
+.meeting-preview h3{font-size:12px;font-weight:600;margin:0 0 12px;color:#536680;display:flex;align-items:center;justify-content:space-between;gap:8px;line-height:1.6}
+.meeting-preview h3>span:last-child{font-weight:400;color:#73859c;font-size:11px}
+.meeting-step{display:inline-block;color:#1e40af;background:#eff5ff;border:1px solid #d6e3f8;border-radius:5px;padding:3px 7px;font-size:11px;margin-right:9px}
+.meeting-paper{background:#fff;border:1px solid #dce4ef;border-radius:9px;padding:20px 22px;font-size:13px;line-height:1.85;overflow-wrap:anywhere;min-height:342px;color:#334155}
+.meeting-paper p{margin:0 0 14px;color:inherit;font-size:inherit;line-height:inherit}
+.meeting-paper p:last-child{margin:0}
+.meeting-paper a,.mail-chat .meeting-body-block a{color:#2563b1;text-decoration:underline;overflow-wrap:anywhere}
+.meeting-paper a:hover,.mail-chat .meeting-body-block a:hover{color:#1e40af}
+.meeting-paper a:active,.mail-chat .meeting-body-block a:active{color:#172554}
+.meeting-file{display:flex;align-items:flex-start;gap:11px;padding:13px 14px;margin-top:14px;border:1px solid #d8e3f2;border-radius:8px;background:#fff;min-width:0}
+.meeting-file-icon{flex:none;display:grid;place-items:center;width:36px;height:42px;background:#edf4ff;border:1px solid #cbdcf6;border-radius:6px;font-size:11px;color:#3964a4;font-weight:600}
+.meeting-file-main{flex:1;min-width:0}
+.meeting-file-main strong{display:block;font-size:12px;font-weight:500;overflow-wrap:anywhere;color:#435b7c;line-height:1.6}
+.meeting-file-main small{display:block;font-size:11px;color:#788ba5;margin-top:5px;line-height:1.6}
+.meeting-file-actions{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:9px}
+.meeting-link{display:inline-flex;align-items:center;border:0;border-radius:3px;background:none;color:#315fa7;font-family:inherit;font-size:12px;line-height:1.6;cursor:pointer;padding:0;text-decoration:none;white-space:nowrap}
+.meeting-link:hover{color:#244ca9;text-decoration:underline}
+.meeting-link:active{color:#172554;background:#edf3ff}
+.meeting-raw{font-family:ui-monospace,monospace;font-size:11px;line-height:1.6;color:#62768e;white-space:pre-wrap;overflow-wrap:anywhere;max-height:160px;overflow:auto;padding:12px;border:1px solid #dae3ef;border-radius:7px;background:#fff;margin:12px 0 0}
+.meeting-bottom{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px 24px;border-top:1px solid #e2e8f0;background:#fff;position:sticky;bottom:0;z-index:1}
+.meeting-bottom p{font-size:12px;line-height:1.6;color:#76859b;margin:0}
+.meeting-bottom>div{display:flex;gap:9px;flex:none}
+.meeting-dialog .button{min-height:36px;height:36px;font-size:12px;padding:0 15px}
+.meeting-error{font-size:12px;line-height:1.6;padding:10px 14px;color:#be123c;border:1px solid #fecdd3;background:#fff1f2;border-radius:7px;margin:12px 0;overflow-wrap:anywhere}
+.meeting-status{font-size:12px;line-height:1.6;padding:10px 14px;color:#47658b;border:1px solid #dce7fa;background:#f0f5ff;border-radius:7px;margin:0 0 12px}
+.meeting-status .meeting-link{margin-left:10px}
+.meeting-note{font-size:11px;line-height:1.7;color:#73859d;margin:12px 0 0}
+.meeting-template{margin:0 0 14px;font-size:12px}
+.meeting-template summary{color:#466795;cursor:pointer;font-size:12px;line-height:1.6}
+.meeting-template summary:hover{color:#1e40af}
+.meeting-template summary:active{color:#172554}
+.meeting-form .meeting-template textarea{height:245px;margin:12px 0 8px;font-family:ui-monospace,monospace;font-size:11px}
+.meeting-template code{font-size:11px;color:#466795}
+.meeting-template p{font-size:11px;color:#73859d;line-height:1.8;margin:8px 0}
+.meeting-badge{display:inline-flex;align-items:center;margin-left:6px;padding:2px 6px;border:1px solid #d6e3f8;border-radius:5px;background:#eff5ff;color:#1e40af;font-size:10px;line-height:1.6;font-weight:400;vertical-align:middle}
+.meeting-badge[data-state=stale]{border-color:#fed7aa;background:#fff7ed;color:#b45309}
+.meeting-badge[data-state=sent]{border-color:#a7f3d0;background:#ecfdf5;color:#059669}
+.mail-chat .meeting-attachment:empty{display:none}
+.mail-chat .meeting-attachment .meeting-file{margin:0}
+.mail-chat .meeting-draft-note{font-size:11px;color:#70829a;margin:7px 0 0;line-height:1.6}
+.mail-chat .meeting-body-block{font-size:13px;line-height:1.85;color:#334155;overflow-wrap:anywhere}
+.mail-chat .meeting-body-block p{font-size:inherit;line-height:inherit;color:inherit;margin:0 0 14px}
+.mail-chat .meeting-body-block p:last-child{margin:0}
+.mail-chat .meeting-attachment[data-state=stale] .meeting-file{border-color:#fed7aa;background:#fffcf7}
+.meeting-zone-field{position:relative;margin-bottom:14px}
+.meeting-zone-field>label{margin-bottom:6px}
+.meeting-zone-control{display:flex;position:relative}
+.meeting-zone-control input{padding-right:40px}
+.meeting-zone-control>button{position:absolute;right:1px;top:1px;width:34px;height:34px;padding:0;border:0;background:#f7faff;color:#627ca5;border-radius:0 6px 6px 0;font:inherit;cursor:pointer}
+.meeting-zone-control>button:hover{background:#edf3ff;color:#1e40af}
+.meeting-zone-control>button:active{background:#dbeafe}
+.meeting-zone-field>small{display:block;margin-top:6px}
+.meeting-zone-options{position:absolute;top:64px;left:0;right:0;max-height:252px;overflow:auto;overscroll-behavior:contain;z-index:10;border:1px solid #cbd9ed;border-radius:8px;background:#fff;box-shadow:0 10px 25px #223c6226;padding:5px}
+.meeting-zone-options>button{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;background:#fff;border:0;border-radius:5px;text-align:left;color:#334155;font:inherit;font-size:12px;line-height:1.6;cursor:pointer}
+.meeting-zone-options>button:hover,.meeting-zone-options>button.focused{background:#eff5ff}
+.meeting-zone-options>button:active{background:#dbeafe}
+.meeting-zone-options>button[aria-selected=true]{background:#eaf1ff;color:#1e40af}
+.meeting-zone-options small{display:block;margin-top:2px;font-size:11px;color:#7b8ba2;line-height:1.5}
+.meeting-zone-options>button>span:last-child{white-space:nowrap;color:#5b769e}
+.meeting-zone-empty{padding:15px;color:#718198;font-size:12px;line-height:1.6}
+.meeting-dialog :is(button,a,input,select,textarea,summary):focus-visible,.mail-chat :is(.meeting-trigger,.meeting-link):focus-visible{outline:2px solid #82a8e8;outline-offset:2px}
+.meeting-dialog :is(button,.button):disabled,.meeting-link:disabled,.meeting-link[aria-disabled=true],.mail-chat .meeting-trigger:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none;text-decoration:none}
+.meeting-dialog .button:disabled::after,.mail-chat .meeting-trigger:disabled::after{display:none}
+.meeting-dialog :is(button,.button):disabled:hover,.meeting-link:disabled:hover,.meeting-link[aria-disabled=true]:hover{filter:none;transform:none;box-shadow:none}
+.meeting-dialog .button:not(.primary):disabled,.meeting-dialog .button:not(.primary):disabled:hover{background-color:transparent;color:#1e293b;border-color:rgba(15,23,42,.11)}
+.meeting-dialog .button.primary:disabled,.meeting-dialog .button.primary:disabled:hover{background-image:linear-gradient(180deg,#3b82f6,#1e40af);background-color:#1e40af;border-color:transparent;color:#fff}
+.meeting-link:disabled,.meeting-link:disabled:hover,.meeting-link[aria-disabled=true],.meeting-link[aria-disabled=true]:hover{color:#315fa7;background:none}
+.mail-chat .button.meeting-trigger:disabled,.mail-chat .button.meeting-trigger:disabled:hover{color:#1e40af;border-color:#b8cef5;background:#eef4ff}
+.mail-chat [data-role=manual-compose][data-meeting-sending=true] .mc-editor{background:#f8faff;cursor:wait}
+@media(max-width:800px){.meeting-grid{grid-template-columns:minmax(0,1fr)}.meeting-form{padding:18px;border-right:0;border-bottom:1px solid #e2e8f0}.meeting-preview{padding:18px}.meeting-dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}.meeting-bottom{flex-wrap:wrap;padding:12px 18px}.meeting-head{padding:16px 18px}.meeting-head h2{font-size:17px}.meeting-bottom>div{margin-left:auto}.meeting-fields{gap:9px}.meeting-file{flex-wrap:wrap}}
+@media(max-width:420px){.meeting-head,.meeting-form,.meeting-preview{padding:14px}.meeting-paper{padding:16px}.meeting-bottom{padding:12px 14px}.meeting-bottom>div{width:100%;justify-content:flex-end}.meeting-bottom .button{padding:0 10px}.meeting-zone-options{max-height:220px}}
+@media(prefers-reduced-motion:reduce){.meeting-dialog *,.mail-chat .meeting-trigger,.mail-chat .meeting-link{transition:none!important;scroll-behavior:auto!important}.meeting-dialog .button:hover,.meeting-dialog .button:active,.mail-chat .meeting-trigger:hover,.mail-chat .meeting-trigger:active{transform:none}}
