@@ -1,8 +1,17 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.UnsubscribeProperties
+import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
+import com.weibo.talentintroduction.template.domain.MailComposeTemplate
+import com.weibo.talentintroduction.template.service.MailComposeTemplateBlockDetail
+import com.weibo.talentintroduction.template.service.MailComposeTemplateDetail
+import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -12,8 +21,15 @@ import org.mockito.Mockito
 import org.springframework.mail.MailAuthenticationException
 import org.springframework.mail.MailSendException
 import org.springframework.mail.javamail.JavaMailSenderImpl
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.time.LocalDateTime
+import java.util.Optional
 import javax.mail.AuthenticationFailedException
 import javax.mail.MessagingException
+import javax.mail.internet.MimeBodyPart
 import javax.mail.internet.MimeMessage
 import javax.mail.internet.MimeMultipart
 import javax.mail.SendFailedException
@@ -273,6 +289,269 @@ class SmtpMailDeliveryServiceTest {
 
         val multipart = captured.single().content as MimeMultipart
         assertEquals("Custom plain text", multipart.getBodyPart(0).content.toString().trim())
+    }
+
+    // ───────────────────────── fast-p 02：calendar MIME 附件（I-3） ─────────────────────────
+    // IP-3/4/5：附件字节来自 01 真实生成器 preview 产物（icsText/sha256/semanticSha256），
+    // 通过真实 MIME 构造与 writeTo→reparse 往返验证，禁止手写相同假串。
+
+    private fun meetingAccount() = MailSenderAccount(
+        accountCode = "test_acct",
+        senderEmail = "test@example.com",
+        senderName = "LuKai",
+        senderTitle = "Customer Care Officer",
+        senderDisplayName = null,
+        teamName = "Qingfei Tech Talent Team",
+        countryName = "China",
+        smtpHost = "smtp.example.com",
+        smtpPort = 465,
+        smtpUsername = "test@example.com",
+        smtpPassword = "secret",
+        imapHost = "imap.example.com",
+        imapPort = 993,
+        imapUsername = "test@example.com",
+        imapPassword = "secret"
+    )
+
+    private val meetingTemplateBody = "Dear {{expert_salutation}},\n\n" +
+        "Thank you for confirming.\n\n" +
+        "We have noted the meeting time as {{meeting_time}}.\n\n" +
+        "Please join the meeting using the following link:\n\n" +
+        "{{zoom_url}}\n\n" +
+        "We look forward to speaking with you.\n\n" +
+        "Best regards,\n" +
+        "{{sender_signature}}"
+
+    /** 01 真实生成器产物 → 快照（与 01 样例同配置：2026-09-11 伊斯坦布尔 15:00–15:30 中国时间）。 */
+    private fun realMeetingSnapshot(): CalendarAttachmentSnapshot {
+        val inboundRepo = Mockito.mock(InboundMailProcessingRepository::class.java)
+        val contactRepo = Mockito.mock(ExpertContactRepository::class.java)
+        val accountService = Mockito.mock(MailSenderAccountService::class.java)
+        val templateService = Mockito.mock(MailComposeTemplateService::class.java)
+        val processing = InboundMailProcessing(
+            id = 7L, senderAccountCode = "test_acct", imapUid = 1L,
+            messageId = "in-1", fromEmail = "expert@test.com",
+            subject = "Re: invitation", body = "Hello", cleanedBody = "Hello",
+            receivedAt = LocalDateTime.now(),
+            processStatus = "MANUAL_REVIEW", processReason = "QA_NO_MATCH",
+            expertContactId = 1L
+        )
+        val contact = ExpertContact(
+            id = 1L, campaignId = 1, orcidId = "0000-0001-2345-6789",
+            expertEmail = "expert@test.com", expertName = "Professor Basdogan",
+            currentStatus = "WAITING_MEETING_CONFIRMATION"
+        )
+        Mockito.`when`(inboundRepo.findById(7L)).thenReturn(Optional.of(processing))
+        Mockito.`when`(contactRepo.findById(1L)).thenReturn(Optional.of(contact))
+        Mockito.`when`(accountService.getManualSendAccount("test_acct")).thenReturn(meetingAccount())
+        Mockito.`when`(templateService.listEnabled()).thenReturn(
+            listOf(
+                MailComposeTemplate(
+                    id = 100L,
+                    templateCode = "MANUAL_MEETING_CONFIRMATION",
+                    templateName = "专家会议确认 · 英文",
+                    subject = "Meeting confirmation",
+                    mailType = "MANUAL_MEETING_CONFIRMATION",
+                    enabled = true
+                )
+            )
+        )
+        Mockito.`when`(templateService.getById(100L)).thenReturn(
+            MailComposeTemplateDetail(
+                id = 100L,
+                templateCode = "MANUAL_MEETING_CONFIRMATION",
+                templateName = "专家会议确认 · 英文",
+                subject = "Meeting confirmation",
+                description = "仅供收发件箱会议确认。",
+                mailType = "MANUAL_MEETING_CONFIRMATION",
+                subjectVariants = null,
+                enabled = true,
+                blocks = listOf(
+                    MailComposeTemplateBlockDetail(
+                        id = 1, blockOrder = 0, blockType = "CUSTOM_TEXT",
+                        refId = null, refDisplayName = null, customText = meetingTemplateBody,
+                    )
+                ),
+                createdAt = null,
+                updatedAt = null
+            )
+        )
+        val generator = MeetingConfirmationService(
+            inboundRepo, contactRepo, accountService, templateService, MailContentService()
+        )
+        val input = MeetingInput(
+            templateId = 100L,
+            templateBody = meetingTemplateBody,
+            expertSalutation = "Professor Basdogan",
+            zoneId = "Europe/Istanbul",
+            startLocal = "2026-09-11T10:00",
+            endLocal = "2026-09-11T10:30",
+            zoomUrl = "https://zoom.us/j/87102801187?pwd=RH3bf4vbH0SoyTq2UW1Dzzuag4kISa.1",
+            senderSignature = "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
+            generatedAt = "2026-09-09T03:00:40Z"
+        )
+        val preview = generator.preview(7L, MeetingPreviewRequest(contactId = 1L, meeting = input))
+        // A-1 fixture 契约：附件名与 01 样例同；时间 15:00–15:30 中国。
+        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", preview.attachment.filename)
+        assertTrue(preview.chinaTime.startsWith("2026/09/11"))
+        return CalendarAttachmentSnapshot(
+            schemaVersion = 1,
+            filename = preview.attachment.filename,
+            contentType = preview.attachment.contentType,
+            icsText = preview.attachment.icsText,
+            sha256 = preview.attachment.sha256,
+            semanticSha256 = preview.attachment.semanticSha256
+        )
+    }
+
+    private fun captureSentMime(
+        account: MailSenderAccount,
+        mail: ComposedMail,
+        tokenService: UnsubscribeTokenService = disabledTokenService
+    ): MimeMessage {
+        val captured = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        val sender = object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) {
+                captured += mimeMessage
+            }
+        }
+        Mockito.`when`(factory.getSender(account)).thenReturn(sender)
+        val delivered = SmtpMailDeliveryService(factory, tokenService, mailContentService, emailSuppressionService)
+            .send(account, mail)
+        assertEquals("SENT", delivered.status)
+        return captured.single()
+    }
+
+    /** Mockito 捕获真实 MimeMessage → writeTo → 以 MimeMessage 重新解析（真实 MIME 往返）。 */
+    private fun roundTrip(message: MimeMessage): MimeMessage {
+        val out = ByteArrayOutputStream()
+        message.writeTo(out)
+        return MimeMessage(javax.mail.Session.getInstance(System.getProperties()), ByteArrayInputStream(out.toByteArray()))
+    }
+
+    @Test
+    fun `send with calendar attachment builds exactly mixed body part and calendar part`() {
+        val snapshot = realMeetingSnapshot()
+        val mail = ComposedMail(
+            to = "recipient@example.com",
+            subject = "Meeting confirmation",
+            body = "<p>Please join the meeting.</p>",
+            html = true,
+            text = "Please join the meeting.",
+            messageId = "msg-meeting-1",
+            inReplyTo = "<in-1@example.com>",
+            references = "<in-0@example.com> <in-1@example.com>",
+            calendarAttachment = snapshot
+        )
+        val reparsed = roundTrip(captureSentMime(testAccount(), mail, enabledTokenService))
+
+        // I-3：外层 multipart/mixed 恰好 2 part；part 2 为 text/calendar 附件。
+        assertTrue(reparsed.contentType.startsWith("multipart/mixed"), "outer must be mixed: ${reparsed.contentType}")
+        val mixed = reparsed.content as MimeMultipart
+        assertEquals(2, mixed.count)
+        val alternative = mixed.getBodyPart(0).content as MimeMultipart
+        assertTrue(alternative.contentType.startsWith("multipart/alternative"))
+        assertEquals(2, alternative.count)
+        assertTrue(alternative.getBodyPart(0).contentType.lowercase().startsWith("text/plain"))
+        assertEquals("Please join the meeting.", alternative.getBodyPart(0).content.toString().trim())
+        assertTrue(alternative.getBodyPart(1).contentType.lowercase().startsWith("text/html"))
+        assertEquals("<p>Please join the meeting.</p>", alternative.getBodyPart(1).content.toString())
+
+        val calendarPart = mixed.getBodyPart(1)
+        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", calendarPart.fileName)
+        assertEquals("attachment", calendarPart.disposition)
+        assertTrue(calendarPart.contentType.lowercase().startsWith("text/calendar"))
+        assertEquals(snapshot.icsText, calendarPart.inputStream.readBytes().toString(Charsets.UTF_8))
+        assertEquals(snapshot.icsText.toByteArray(Charsets.UTF_8).size, calendarPart.inputStream.readBytes().size)
+
+        // I-3：退订/线程/messageId 保持原有位置与值。
+        assertEquals("msg-meeting-1", reparsed.messageID)
+        assertEquals("<in-1@example.com>", reparsed.getHeader("In-Reply-To", null))
+        assertEquals("<in-0@example.com> <in-1@example.com>", reparsed.getHeader("References", null))
+        val listUnsubscribe = reparsed.getHeader("List-Unsubscribe", null)
+        assertTrue(listUnsubscribe.contains("https://outreach.example.com/u/unsubscribe?token="))
+        assertTrue(listUnsubscribe.contains("mailto:test@example.com?subject=unsubscribe"))
+    }
+
+    @Test
+    fun `send with calendar attachment and plain body keeps single plain part plus ics`() {
+        val snapshot = realMeetingSnapshot()
+        val mail = ComposedMail(
+            to = "recipient@example.com",
+            subject = "Meeting confirmation",
+            body = "Plain meeting body",
+            html = false,
+            calendarAttachment = snapshot
+        )
+        val reparsed = roundTrip(captureSentMime(testAccount(), mail))
+
+        val mixed = reparsed.content as MimeMultipart
+        assertTrue(reparsed.contentType.startsWith("multipart/mixed"))
+        assertEquals(2, mixed.count)
+        assertEquals("Plain meeting body", mixed.getBodyPart(0).content.toString().trim())
+        val calendarPart = mixed.getBodyPart(1)
+        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", calendarPart.fileName)
+        assertEquals(snapshot.icsText, calendarPart.inputStream.readBytes().toString(Charsets.UTF_8))
+    }
+
+    @Test
+    fun `calendar attachment bytes survive writeTo round trip byte identical`() {
+        val snapshot = realMeetingSnapshot()
+        val mail = ComposedMail(
+            to = "recipient@example.com",
+            subject = "Meeting confirmation",
+            body = "<p>Join</p>",
+            html = true,
+            text = "Join",
+            calendarAttachment = snapshot
+        )
+        val reparsed = roundTrip(captureSentMime(testAccount(), mail))
+        val mixed = reparsed.content as MimeMultipart
+        val calendarBytes = mixed.getBodyPart(1).inputStream.readBytes()
+        assertArrayEquals(snapshot.icsText.toByteArray(Charsets.UTF_8), calendarBytes)
+    }
+
+    @Test
+    fun `no-calendar html and plain sends keep pre-02 single multipart shapes`() {
+        val htmlMessage = roundTrip(captureSentMime(testAccount(), ComposedMail(
+            to = "recipient@example.com", subject = "S", body = "<p>B</p>", html = true, text = "B"
+        )))
+        assertTrue(htmlMessage.contentType.startsWith("multipart/alternative"))
+        assertEquals(2, (htmlMessage.content as MimeMultipart).count)
+        val textMessage = roundTrip(captureSentMime(testAccount(), ComposedMail(
+            to = "recipient@example.com", subject = "S", body = "B", html = false
+        )))
+        assertEquals("B", textMessage.content.toString())
+    }
+
+    @Test
+    fun `smtp test saves meeting confirmation eml fixture to target for A-1 comparison`() {
+        val snapshot = realMeetingSnapshot()
+        val mail = ComposedMail(
+            to = "recipient@example.com",
+            subject = "Meeting confirmation",
+            body = "<p>Please join the meeting.</p>",
+            html = true,
+            text = "Please join the meeting.",
+            messageId = "meeting-confirmation-fixture@example.com",
+            calendarAttachment = snapshot
+        )
+        val reparsed = roundTrip(captureSentMime(testAccount(), mail, enabledTokenService))
+        val mixed = reparsed.content as MimeMultipart
+        val calendarPart = mixed.getBodyPart(1)
+        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", calendarPart.fileName)
+        assertEquals(snapshot.icsText, calendarPart.inputStream.readBytes().toString(Charsets.UTF_8))
+        assertArrayEquals(snapshot.icsText.toByteArray(Charsets.UTF_8), calendarPart.inputStream.readBytes())
+        assertTrue(snapshot.sha256.length == 64 && snapshot.semanticSha256.length == 64)
+
+        // A-1：把 SMTP 测试真实产出的 .eml 保存到 target/meeting-confirmation.eml
+        // （供人工打开邮件客户端下载附件并与 01 样例 SHA256 比对）。
+        val out = ByteArrayOutputStream()
+        reparsed.writeTo(out)
+        val target = Paths.get("target")
+        Files.createDirectories(target)
+        Files.write(target.resolve("meeting-confirmation.eml"), out.toByteArray())
     }
 
     @Test

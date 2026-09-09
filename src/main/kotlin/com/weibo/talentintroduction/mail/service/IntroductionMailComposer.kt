@@ -80,5 +80,8 @@ data class ComposedMail(
     val inReplyTo: String? = null,
     val references: String? = null,
     /** 显式绕过抑制名单拦截。只允许人工单发路径按操作端请求置 true；批量与自动路径恒为 false。见 plan I-4。 */
-    val allowSuppressedRecipient: Boolean = false
+    val allowSuppressedRecipient: Boolean = false,
+    /** 会议日历附件快照（fast-p 02，I-3）：null=无附件，旧无附件构造形态不变；
+     *  非 null 时 SMTP 以 multipart/mixed 携带该快照的 icsText（text/calendar 附件）。 */
+    val calendarAttachment: CalendarAttachmentSnapshot? = null
 )
