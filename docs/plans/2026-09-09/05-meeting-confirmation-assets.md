@@ -1,6 +1,6 @@
 # 05 资源激活与整体浏览器验收
 
-依赖01→02→03→04全部验证；1个静态资源子系统；9文件；新增存储字段0。
+依赖01→02→03→04全部验证；1个静态资源子系统；10文件；新增存储字段0。
 
 ## 需求描述
 
@@ -65,6 +65,7 @@ T3（I-1/I-2/S-1）：新增meetingConfirmationAssets.test.js检查9个带?v资�
 | 7 | `src/test/js/checkRepliesRelocation.test.js` | 同步固定缓存断言 |
 | 8 | `src/test/js/trustReplyWorkbenchSharedMount.test.js` | 同步固定缓存断言 |
 | 9 | `src/test/js/meetingConfirmationAssets.test.js` | 新增资源检查 |
+| 10 | `src/test/js/meetingConfirmationStyle.test.js` | 退役未注册断言（Amendment A2） |
 
 ## 验收标准
 
