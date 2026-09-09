@@ -99,4 +99,42 @@ Exit 0, BUILD SUCCESS.
 Notes on the new calendar scenarios in PendingMailOperationServiceTest (11 tests total incl. 7 new):
 - Real 01 generator (MeetingConfirmationService real; only template listEnabled mocked) produces genuine ICS/sha/text; send path asserts payload+ComposedMail share the one snapshot, thread headers = record.messageId, digest/sha/content-mismatch/pair/template-disabled 400s, outside-block edits pass, safety confirm retains meeting, no-meeting old path keeps calendar null and default thread headers, and controller request DTO (KotlinModule mapper) round-trips meeting/previewAttachmentSha256 with nullable defaults.
 
+## Epoch 2 (A1 resume — ImplementChild03d, 2026-09-09)
+
+- Amendment A1 (plan commit 42c149c) re-authorized file #11 and fixed the epoch-1 blocker: +2 trailing
+  Mockito matchers (`Mockito.isNull()` for `meeting`, `Mockito.isNull()` for `previewAttachmentSha256`) at
+  each of the 4 matcher-recorded `sendManualRichReply` stub sites in
+  `src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt`
+  (stub sites at lines 226/258/287/387 after edit; the two all-named raw-arg stub sites were untouched).
+  No production code and no assertion/semantic changes — this epoch's only file edit was the 11th file.
+- Plan identity rechecked: sha256 `2d5ea78207cd484dae3b56ea7d4e2aa6695dc24fe49e1c2017a0e25df30c0f72`
+  (unchanged since epoch-2 start; differs from epoch 1 hash 4cd5c1ff because A1 amended the plan).
+- Worktree identity rechecked pre-commit: root `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-confirmation`,
+  branch `fast/meeting-confirmation`, git dir `…/.git/worktrees/weibo-talent-introduction-fast-meeting-confirmation`, HEAD 42c149c.
+
+### Command 1 — targeted 11th-file test (fresh)
+```
+JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home \
+  mvn test -Dtest=UnmatchedInboundTrustWorkbenchTest
+```
+Exit 0, BUILD SUCCESS. Surefire: Tests run: 12, Failures: 0, Errors: 0, Skipped: 0.
+Node JS suite (lifecycle): 766/766 pass.
+
+### Command 2 — full suite (fresh)
+```
+JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test
+```
+Exit 0, BUILD SUCCESS. Surefire aggregate: Tests run: 3310, Failures: 0, Errors: 0, Skipped: 10.
+Node JS suite (lifecycle): tests 766, pass 766, fail 0. (Epoch-1's only failures — the 4
+InvalidUseOfMatchersException "21 matchers expected, 19 recorded" errors on the 11th file — are gone.)
+
+### Commit
+- `a275366c1d29951814443d34bdab8b49da634232` — `feat(fast-p): implement 03`
+  (11 files: the epoch-1 10-file implementation + the A1-amended 11th file; docs/plans/fast/** excluded;
+  parent 42c149c, HEAD of fast/meeting-confirmation at handoff).
+- Working tree after commit: only `docs/plans/fast/meeting-confirmation/ledger.md` modified (fast-p
+  machinery, intentionally uncommitted).
+
+## Outcome: READY_FOR_VERIFICATION (epoch 2)
+
 
