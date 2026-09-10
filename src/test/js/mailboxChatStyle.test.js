@@ -139,6 +139,15 @@ describe("S-6: DOM class 白名单与模板卫生", () => {
 });
 
 describe("S-7: 专家标签单行关键规则", () => {
+    it("正文最终行高为紧凑的 1.55，且保留真实换行", () => {
+        const finalBodyRule = cssSource.slice(cssSource.lastIndexOf(".mail-chat .mc-body"));
+        assert.match(
+            finalBodyRule,
+            /^\.mail-chat \.mc-body\{font-size:13px;line-height:1\.55;color:#465974\}/,
+            "收发件箱只压缩展示行距，不能改写正文换行"
+        );
+    });
+
     it("mc-person-meta 强制 nowrap + min-width:0 + 100% 上限", () => {
         assert.match(cssSource, /\.mail-chat \.mc-person-meta\{flex-wrap:nowrap;min-width:0;gap:6px;max-width:100%\}/);
     });
