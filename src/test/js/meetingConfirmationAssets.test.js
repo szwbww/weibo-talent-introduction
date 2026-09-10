@@ -2,7 +2,7 @@
 
 // fast-p 05 资源激活测试（T3；I-1/I-2/S-1）：
 // 1) index.html 恰好 9 个带 ?v= 资源（7 旧 + meeting-confirmation.css/.js），全部同值
-//    20260909-meeting-confirmation，无重复注册、无旧键残留；
+//    20260910-mailbox-spacing，无重复注册、无旧键残留；
 // 2) S-1 注册顺序：meeting CSS 紧跟 mailbox-chat.css 之后；meeting JS 在 mailbox-chat.js
 //    与 app.js 之前；link 全在 head、script 全在 body；task-modal-runtime.js 保持未版本化原位；
 // 3) 组件已引用且不注入样例/预览 mock 数据：注册行仅相对路径 + 单一版本查询串；
@@ -18,14 +18,14 @@ const indexPath = path.join(ROOT, "index.html");
 const html = fs.readFileSync(indexPath, "utf-8");
 const meetingSource = fs.readFileSync(path.join(ROOT, "meeting-confirmation.js"), "utf-8");
 
-const CACHE_KEY = "20260909-meeting-confirmation";
+const CACHE_KEY = "20260910-mailbox-spacing";
 const CSS_ORDER = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css"];
 const JS_ORDER = ["trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
     "mailbox-chat.js", "app.js"];
 const ALL_ASSETS = [...CSS_ORDER, ...JS_ORDER];
 
 describe("T3: 9 个带版本资源统一键与注册（I-1/S-1）", () => {
-    it("恰好 9 个带 ?v= 资源且全部等于 20260909-meeting-confirmation，无旧键残留", () => {
+    it("恰好 9 个带 ?v= 资源且全部等于 20260910-mailbox-spacing，无旧键残留", () => {
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
         assert.strictEqual(keys.length, 9, `index.html 必须恰好注册 9 个带版本资源，实际 ${keys.length}`);
         assert.ok(keys.every((key) => key === CACHE_KEY), `全部键必须等于 ${CACHE_KEY}: ${keys}`);
@@ -54,8 +54,8 @@ describe("T3: 9 个带版本资源统一键与注册（I-1/S-1）", () => {
         const headEnd = html.indexOf("</head>");
         const bodyEnd = html.lastIndexOf("</body>");
         assert.ok(headEnd > 0 && bodyEnd > headEnd, "index.html 结构异常");
-        const linkRe = /<link rel="stylesheet" href="[^"]+\.css\?v=20260909-meeting-confirmation">/g;
-        const scriptRe = /<script src="[^"]+\.js\?v=20260909-meeting-confirmation"><\/script>/g;
+        const linkRe = /<link rel="stylesheet" href="[^"]+\.css\?v=20260910-mailbox-spacing">/g;
+        const scriptRe = /<script src="[^"]+\.js\?v=20260910-mailbox-spacing"><\/script>/g;
         let match;
         while ((match = linkRe.exec(html)) !== null) {
             assert.ok(match.index < headEnd, "样式 link 必须位于 head 内");

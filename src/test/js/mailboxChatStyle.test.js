@@ -88,6 +88,16 @@ describe("S-1/S-2: index.html 宿主 id 与唯一筛选节点（源文本断言�
     });
 });
 
+describe("收发件箱静态资源版本", () => {
+    it("正文行距更新必须刷新 mailbox-chat.css 缓存版本", () => {
+        assert.match(
+            indexSource,
+            /href="mailbox-chat\.css\?v=20260910-mailbox-spacing"/,
+            "CSS 版本号必须随正文样式更新，避免浏览器继续使用旧行距"
+        );
+    });
+});
+
 describe("S-6: DOM class 白名单与模板卫生", () => {
     function literalClasses(source) {
         const out = new Set();

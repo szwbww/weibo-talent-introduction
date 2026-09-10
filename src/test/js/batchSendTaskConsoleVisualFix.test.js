@@ -50,13 +50,13 @@ describe("batch send task console visual repair", () => {
             "expert-materials.js", "expert-materials.css", "mailbox-chat.js", "mailbox-chat.css",
             "meeting-confirmation.js", "meeting-confirmation.css"];
         for (const asset of assets) {
-            assert.ok(html.includes(`${asset}?v=20260909-meeting-confirmation`), `${asset} must carry the unified key`);
+            assert.ok(html.includes(`${asset}?v=20260910-mailbox-spacing`), `${asset} must carry the unified key`);
         }
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
             "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js", "mailbox-chat.js", "app.js"];
         let previous = -1;
         for (const asset of ordered) {
-            const at = html.indexOf(`${asset}?v=20260909-meeting-confirmation`);
+            const at = html.indexOf(`${asset}?v=20260910-mailbox-spacing`);
             assert.ok(at > previous, `${asset} must be registered in order (CSS then workbench -> materials -> chat -> app)`);
             previous = at;
         }
