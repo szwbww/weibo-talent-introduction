@@ -5,7 +5,7 @@
 // 驱动 mailbox-chat.js 挂载/筛选/专家标签行/管理/翻译/邮件标签/位置缓存/竞态守卫；
 // 另含 app.js 宿主守卫（任务钻取与脚本缺失仍走旧 table/group 分支）。
 // 覆盖：
-//  - S-1/S-2：三 tab（全部/关注/待处理）、⋯ popover 高级筛选草稿语义、id 迁移与还原
+//  - S-1/S-2：四 tab（全部/关注/待处理/待匹配）、⋯ popover 高级筛选草稿语义、id 迁移与还原
 //  - S-7：列表专家标签单行渲染（[] 无占位 / null 暂不可用 / title 完整 / 无 pending badge）
 //  - I-1：tab 参数无 waitingReply、全部无 pendingOnly/followed；mark 后服务端重查与空页回退
 //  - S-4/I-3/I-4：邮件标签直读/删除/添加 adapter 回调；翻译一次一请求 + 缓存
@@ -192,6 +192,13 @@ class MiniElement {
     }
     get lastChild() {
         return this.childNodes[this.childNodes.length - 1] || null;
+    }
+
+    get nextSibling() {
+        if (!this.parentNode) return null;
+        const idx = this.parentNode.childNodes.indexOf(this);
+        if (idx === -1) return null;
+        return this.parentNode.childNodes[idx + 1] || null;
     }
 
     get classList() {
@@ -744,13 +751,20 @@ function createChatSandbox(options) {
         inboundTagModals: [],
         tagMutations: [],
         tagEditorUpdates: [],
-        tagEditorLoadings: []
+        tagEditorLoadings: [],
+        unmatchedMounts: [],
+        unmatchedReleases: 0,
+        unmatchedUnmounts: []
     };
     const timers = [];
 
     const defaultRoute = function defaultRoute(url, method, body) {
         if (url.startsWith("/api/mail/mailbox/conversations?")) {
             return Promise.resolve(opts.conversations || { items: [], total: 0 });
+        }
+        if (url.startsWith("/api/mail/unmatched-inbound?")) {
+            if (opts.unmatchedError) return Promise.reject(new Error(opts.unmatchedError));
+            return Promise.resolve(opts.unmatched || { records: [], totalCount: 0, manualReviewTotal: 0, countsByReasonType: {} });
         }
         if (/\/api\/mail\/mailbox\/conversations\/\d+\/messages/.test(url)) {
             if (opts.messagesError) return Promise.reject(new Error(opts.messagesError));
@@ -859,6 +873,25 @@ function createChatSandbox(options) {
         mcHostOpenInboundTagModal: (adapter) => {
             calls.inboundTagModals.push(adapter);
             return true;
+        },
+        // 待匹配详情宿主适配（app.js 真实实现见文件末尾 lease 测试）：
+        // 这里只记录聊天侧调用协议并把面板节点挂进宿主，用于断言 mount/release 边界。
+        mcHostMountUnmatchedDetail: (hostEl, processingId) => {
+            calls.unmatchedMounts.push({ hostEl, id: Number(processingId) });
+            const panel = opts.unmatchedPanel || null;
+            if (panel && hostEl && typeof hostEl.appendChild === "function") hostEl.appendChild(panel);
+            if (opts.unmatchedMountError) return Promise.reject(new Error(opts.unmatchedMountError));
+            return Promise.resolve();
+        },
+        mcHostReleaseUnmatchedDetail: () => {
+            calls.unmatchedReleases += 1;
+            const panel = opts.unmatchedPanel || null;
+            if (panel && panel.parentNode) {
+                calls.unmatchedUnmounts.push(panel);
+                const home = opts.unmatchedPanelHome || panel.ownerDocument.body;
+                home.appendChild(panel);
+            }
+            return undefined;
         },
         unmountExpertMaterialsHosts: (rootEl) => { calls.materialsHostCleanup = (calls.materialsHostCleanup || 0) + 1; },
         fetchExpertTagsFromEs: (orcidId, level) => {
@@ -1026,6 +1059,28 @@ function makeMessages(count, prefix) {
     return out;
 }
 
+// 待匹配（邮件级）夹具：process_status=MANUAL_REVIEW 且 expert_contact_id=null 的来信响应。
+function unmatchedMail(id, extra) {
+    return Object.assign({
+        id,
+        senderAccountCode: "acc-unmatched",
+        imapUid: 500 + id,
+        messageId: `msg-${id}`,
+        inReplyTo: null,
+        fromEmail: `sender${id}@example.com`,
+        subject: `待匹配来信 ${id}`,
+        body: null,
+        cleanedBody: null,
+        receivedAt: "2026-09-10T10:00:00",
+        processStatus: "MANUAL_REVIEW",
+        processReason: "CONTACT_NOT_FOUND",
+        reasonType: null,
+        resolvedAt: null,
+        resolvedBy: null,
+        expertContactId: null
+    }, extra || {});
+}
+
 function contactA(extra) {
     return Object.assign({
         contact: {
@@ -1067,8 +1122,8 @@ function mountChat(options, mountOptions, dom) {
     return ctx;
 }
 
-async function bootChat(serverOverrides, mountOptions) {
-    const ctx = mountChat(serverOverrides || {}, mountOptions);
+async function bootChat(serverOverrides, mountOptions, dom) {
+    const ctx = mountChat(serverOverrides || {}, mountOptions, dom);
     await flush();
     return ctx;
 }
@@ -1116,6 +1171,23 @@ function conversationsRequests(ctx) {
     return ctx.calls.api.filter((entry) => entry.url.startsWith("/api/mail/mailbox/conversations?"));
 }
 
+function unmatchedRequests(ctx) {
+    return ctx.calls.api.filter((entry) => entry.url.startsWith("/api/mail/unmatched-inbound?"));
+}
+
+function lastUnmatchedRequest(ctx) {
+    const list = unmatchedRequests(ctx);
+    return list.length ? list[list.length - 1] : null;
+}
+
+function chipButton(ctx, key) {
+    return ctx.host.querySelectorAll(".mc-filter").find((chip) => chip.dataset.chip === key) || null;
+}
+
+function unmatchedCards(ctx) {
+    return ctx.host.querySelectorAll('[data-action="mc-select-unmatched"]');
+}
+
 function lastConversationsRequest(ctx) {
     const list = conversationsRequests(ctx);
     return list.length ? list[list.length - 1] : null;
@@ -1137,7 +1209,8 @@ describe("mailbox chat mount + S-1 skeleton + S-7 expert tag rows", () => {
         assert.ok(ctx.host.querySelector('section.mc-conversation[aria-label="专家往来信件"]'));
         assert.ok(ctx.host.querySelector('.mc-search-row input[aria-label="搜索专家"]'));
         const chips = ctx.host.querySelectorAll(".mc-filter");
-        assert.deepStrictEqual(chips.map((chip) => chip.textContent), ["全部", "关注", "待处理"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.textContent), ["全部", "关注", "待处理", "待匹配"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "pending", "unmatched"]);
         assert.strictEqual(chips[0].getAttribute("aria-pressed"), "true");
         const popover = ctx.host.querySelector("#mcFilterPopover");
         assert.ok(popover, "⋯ popover 存在");
@@ -2515,5 +2588,458 @@ describe("mcHostOpenMaterials app 适配器（drawer/store 契约）", () => {
         assert.strictEqual(calls.mounts[0].contactId, 7);
         assert.strictEqual(calls.mounts[0].mode, "drawer");
         assert.ok(calls.mounts[0].host, "drawer host 传入");
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// 待匹配 Tab（邮件级队列，I-1/I-2/I-3/I-5/I-6/I-8 + S-1/S-2/S-3）
+// ════════════════════════════════════════════════════════════════════════
+
+function createUnmatchedPanelDom() {
+    const { doc, host } = createDom();
+    const panel = doc.createElement("section");
+    panel.setAttribute("class", "panel");
+    panel.setAttribute("id", "unmatchedDetailPanel");
+    panel.hidden = true;
+    doc.body.appendChild(panel);
+    return { doc, host, panel };
+}
+
+describe("待匹配 Tab：第四 chip、请求契约与邮件级列表", () => {
+    const conversations = { items: [expertA()], total: 1 };
+
+    it("S-1：四个 tab 顺序/anchor 固定，待匹配只请求 unmatched-inbound（offset=page*20、无专家参数）", async () => {
+        const ctx = await bootChat({ conversations, unmatched: { records: [unmatchedMail(901)], totalCount: 1 } });
+        const chips = ctx.host.querySelectorAll(".mc-filter");
+        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "pending", "unmatched"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.textContent), ["全部", "关注", "待处理", "待匹配"]);
+        assert.strictEqual(chips[0].getAttribute("aria-pressed"), "true", "默认全部");
+        assert.strictEqual(chips[3].getAttribute("aria-pressed"), "false");
+
+        click(chips[3]);
+        await flush();
+
+        assert.strictEqual(chips[3].getAttribute("aria-pressed"), "true", "待匹配选中态");
+        assert.strictEqual(chips[0].getAttribute("aria-pressed"), "false");
+        const q = queryOf(lastUnmatchedRequest(ctx).url);
+        assert.strictEqual(q.get("unmatchedOnly"), "true");
+        assert.strictEqual(q.get("pageSize"), "20");
+        assert.strictEqual(q.get("pageOffset"), "0");
+        ["query", "followed", "pendingOnly", "page", "size", "accountCode", "keyword", "recipientEmail", "label"].forEach((key) => {
+            assert.strictEqual(q.get(key), null, `待匹配请求不得携带 ${key}`);
+        });
+
+        // ⋯ 高级筛选在待匹配隐藏、搜索框文案切换；离开后恢复
+        const moreBtn = ctx.host.querySelector('[data-action="mc-more-filters"]');
+        const searchInput = ctx.host.querySelector('.mc-search-row input[type="search"]');
+        assert.strictEqual(moreBtn.hidden, true, "待匹配隐藏高级筛选入口");
+        assert.strictEqual(searchInput.getAttribute("aria-label"), "搜索待匹配来信");
+        assert.strictEqual(searchInput.getAttribute("placeholder"), "搜索发件邮箱、主题");
+
+        const expertRequestsBefore = conversationsRequests(ctx).length;
+        click(chips[0]);
+        await flush();
+        assert.strictEqual(moreBtn.hidden, false, "离开待匹配恢复 ⋯");
+        assert.strictEqual(searchInput.getAttribute("aria-label"), "搜索专家");
+        assert.strictEqual(searchInput.getAttribute("placeholder"), "搜索专家姓名、邮箱");
+        assert.ok(conversationsRequests(ctx).length > expertRequestsBefore, "切回全部重新请求专家会话");
+        assert.ok(!unmatchedRequests(ctx).some((entry) => entry.url.includes("pendingOnly")), "待匹配请求不带专家参数");
+    });
+
+    it("S-2：卡片渲染主题/发件人/时间/账号/待匹配 badge，分页单位为「封」", async () => {
+        const ctx = await bootChat({
+            conversations,
+            unmatched: { records: [unmatchedMail(901), unmatchedMail(902, { subject: "" })], totalCount: 21 }
+        });
+        click(chipButton(ctx, "unmatched"));
+        await flush();
+
+        const cards = ctx.host.querySelectorAll(".mc-person");
+        assert.strictEqual(cards.length, 2, "服务端返回的记录原样渲染（无客户端过滤）");
+        const first = cards[0];
+        assert.strictEqual(first.dataset.unmatchedId, "901");
+        assert.strictEqual(first.dataset.active, "false");
+        assert.strictEqual(first.querySelector(".mc-person-heading strong").textContent, "待匹配来信 901");
+        const smalls = first.querySelectorAll("small");
+        assert.strictEqual(smalls.length, 2);
+        assert.strictEqual(smalls[0].textContent, "sender901@example.com");
+        assert.strictEqual(smalls[1].textContent, "2026-09-10T10:00:00 · 账号：acc-unmatched");
+        const badgeEl = first.querySelector(".mc-badge");
+        assert.strictEqual(badgeEl.textContent, "未关联专家");
+        assert.strictEqual(badgeEl.getAttribute("data-tone"), "pending");
+        assert.strictEqual(first.querySelector(".mc-follow"), null, "待匹配卡片无关注星标");
+        assert.strictEqual(cards[1].querySelector(".mc-person-heading strong").textContent, "（无主题）");
+        assert.match(ctx.host.querySelector(".mc-pager").textContent, /第 1\/2 页 · 共 21 封/);
+    });
+
+    it("S-2：空列表与加载失败文案；分页 0 条为「第 1/1 页 · 共 0 封」", async () => {
+        const emptyCtx = await bootChat({ conversations, unmatched: { records: [], totalCount: 0 } });
+        click(chipButton(emptyCtx, "unmatched"));
+        await flush();
+        assert.strictEqual(emptyCtx.host.querySelector(".mc-expert-list .mc-empty").textContent, "暂无待匹配来信");
+        assert.match(emptyCtx.host.querySelector(".mc-pager").textContent, /第 1\/1 页 · 共 0 封/);
+        const conversation = emptyCtx.host.querySelector(".mc-conversation");
+        assert.strictEqual(conversation.getAttribute("aria-label"), "待匹配来信处理");
+        assert.strictEqual(conversation.querySelector(".mc-empty").textContent, "请选择左侧待匹配来信");
+        const emptyScroll = conversation.querySelector(".mc-scroll");
+        assert.strictEqual(emptyScroll.getAttribute("aria-label"), "待匹配来信详情");
+        assert.strictEqual(emptyScroll.getAttribute("tabindex"), "0");
+
+        const failCtx = await bootChat({ conversations, unmatchedError: "boom" });
+        click(chipButton(failCtx, "unmatched"));
+        await flush();
+        const error = failCtx.host.querySelector(".mc-expert-list .mc-error");
+        assert.ok(error, "加载失败显示错误块");
+        assert.match(error.textContent, /待匹配来信加载失败，请重试/);
+    });
+
+    it("I-8：搜索走服务端 query，切页 offset=page*20；待匹配不做客户端过滤", async () => {
+        const server = {
+            conversations,
+            unmatched: { records: [unmatchedMail(901)], totalCount: 21 }
+        };
+        const ctx = await bootChat(server);
+        click(chipButton(ctx, "unmatched"));
+        await flush();
+
+        const searchInput = ctx.host.querySelector('.mc-search-row input[type="search"]');
+        searchInput.value = "acceptance-key";
+        inputEvent(searchInput);
+        ctx.runTimers();
+        await flush();
+        assert.strictEqual(queryOf(lastUnmatchedRequest(ctx).url).get("query"), "acceptance-key");
+
+        server.unmatched = { records: [unmatchedMail(902)], totalCount: 21 };
+        click(ctx.host.querySelector('[data-action="mc-page-next"]'));
+        await flush();
+        const next = queryOf(lastUnmatchedRequest(ctx).url);
+        assert.strictEqual(next.get("pageOffset"), "20");
+        assert.strictEqual(next.get("query"), "acceptance-key");
+        assert.strictEqual(ctx.host.querySelectorAll(".mc-person")[0].dataset.unmatchedId, "902");
+    });
+
+    it("I-5：点击卡片把 .mc-scroll 宿主交给宿主函数；同一卡片不重复请求", async () => {
+        const dom = createUnmatchedPanelDom();
+        const server = {
+            conversations,
+            unmatched: { records: [unmatchedMail(901), unmatchedMail(902)], totalCount: 2 },
+            unmatchedPanel: dom.panel
+        };
+        const ctx = await bootChat(server, undefined, { doc: dom.doc, host: dom.host });
+        click(chipButton(ctx, "unmatched"));
+        await flush();
+
+        click(unmatchedCards(ctx)[0]);
+        await flush();
+
+        assert.strictEqual(ctx.calls.unmatchedMounts.length, 1);
+        assert.strictEqual(ctx.calls.unmatchedMounts[0].id, 901);
+        const scrollHost = ctx.calls.unmatchedMounts[0].hostEl;
+        assert.ok(scrollHost.classList.contains("mc-scroll"), "宿主是 .mc-scroll");
+        assert.strictEqual(scrollHost.parentNode, ctx.host.querySelector(".mc-conversation"));
+        assert.strictEqual(dom.panel.parentNode, scrollHost, "同一详情节点被挂进右栏");
+        assert.strictEqual(dom.doc.querySelectorAll("#unmatchedDetailPanel").length, 1, "详情面板始终唯一");
+        const active = ctx.host.querySelectorAll(".mc-person").find((card) => card.dataset.active === "true");
+        assert.strictEqual(active.dataset.unmatchedId, "901", "选中卡片高亮");
+
+        click(unmatchedCards(ctx)[0]);
+        await flush();
+        assert.strictEqual(ctx.calls.unmatchedMounts.length, 1, "当前 id 仍存在时不重复 mount");
+    });
+
+    it("I-5：记录消失/切占位 Tab/unmount 都先归还节点，右栏回落空态", async () => {
+        const dom = createUnmatchedPanelDom();
+        const server = {
+            conversations,
+            unmatched: { records: [unmatchedMail(901)], totalCount: 1 },
+            unmatchedPanel: dom.panel
+        };
+        const ctx = await bootChat(server, undefined, { doc: dom.doc, host: dom.host });
+        click(chipButton(ctx, "unmatched"));
+        await flush();
+        click(unmatchedCards(ctx)[0]);
+        await flush();
+        assert.strictEqual(dom.panel.parentNode, ctx.calls.unmatchedMounts[0].hostEl);
+
+        // 服务端重查后该记录消失（例如已绑定/已标记处理）
+        server.unmatched = { records: [], totalCount: 0 };
+        ctx.sandbox.MailboxChat.mount(ctx.host, {});
+        await flush();
+
+        assert.ok(ctx.calls.unmatchedReleases >= 1, "记录消失先归还 lease");
+        assert.strictEqual(dom.panel.parentNode, dom.doc.body, "节点被移出聊天右栏（未被 innerHTML 销毁）");
+        assert.strictEqual(ctx.host.querySelector(".mc-conversation .mc-empty").textContent, "请选择左侧待匹配来信");
+        assert.strictEqual(ctx.host.querySelectorAll('.mc-person[data-active="true"]').length, 0, "选中键被清空");
+
+        // 重新选中后 unmount：必须先归还再清空宿主
+        server.unmatched = { records: [unmatchedMail(901)], totalCount: 1 };
+        ctx.sandbox.MailboxChat.mount(ctx.host, {});
+        await flush();
+        click(unmatchedCards(ctx)[0]);
+        await flush();
+        assert.strictEqual(dom.panel.parentNode, ctx.calls.unmatchedMounts[1].hostEl, "重新挂载回右栏");
+        const releasesBefore = ctx.calls.unmatchedReleases;
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        assert.strictEqual(ctx.calls.unmatchedReleases, releasesBefore + 1, "unmount 归还 lease");
+        assert.strictEqual(dom.panel.parentNode, dom.doc.body);
+        assert.strictEqual(dom.doc.querySelectorAll("#unmatchedDetailPanel").length, 1, "静态面板未随宿主清空被销毁");
+    });
+
+    it("I-3：晚到的专家列表响应不得覆盖待匹配列表（反之亦然）", async () => {
+        const pending = [];
+        const server = {
+            conversations,
+            unmatched: { records: [unmatchedMail(901)], totalCount: 1 },
+            route: (url, method, body, entry, next) => {
+                if (url.startsWith("/api/mail/mailbox/conversations?")) {
+                    return new Promise((resolve) => { pending.push(() => resolve(server.conversations)); });
+                }
+                return next(url, method, body, entry);
+            }
+        };
+        const ctx = await bootChat(server);
+        assert.strictEqual(pending.length, 1, "初挂载专家列表请求挂起");
+
+        click(chipButton(ctx, "unmatched"));
+        await flush();
+        assert.strictEqual(unmatchedCards(ctx).length, 1, "待匹配列表已渲染");
+
+        pending[0]();
+        await flush();
+        assert.strictEqual(unmatchedCards(ctx).length, 1, "晚到的专家响应不覆盖待匹配列表");
+        assert.strictEqual(ctx.host.querySelectorAll('[data-action="mc-select-expert"]').length, 0);
+
+        // 反向：待匹配请求挂起时切回专家 tab，晚到的待匹配响应不得覆盖专家列表
+        const pendingUnmatched = [];
+        const reverse = {
+            conversations,
+            unmatched: { records: [unmatchedMail(902)], totalCount: 1 },
+            route: (url, method, body, entry, next) => {
+                if (url.startsWith("/api/mail/unmatched-inbound?")) {
+                    return new Promise((resolve) => { pendingUnmatched.push(() => resolve(reverse.unmatched)); });
+                }
+                return next(url, method, body, entry);
+            }
+        };
+        const reverseCtx = await bootChat(reverse);
+        click(chipButton(reverseCtx, "unmatched"));
+        await flush();
+        assert.strictEqual(pendingUnmatched.length, 1, "待匹配请求挂起");
+        click(chipButton(reverseCtx, "all"));
+        await flush();
+        assert.strictEqual(personButtons(reverseCtx.host).length, 1, "专家列表已渲染");
+
+        pendingUnmatched[0]();
+        await flush();
+        assert.strictEqual(unmatchedCards(reverseCtx).length, 0, "晚到的待匹配响应不覆盖专家列表");
+        assert.strictEqual(personButtons(reverseCtx.host).length, 1);
+    });
+
+    it("I-6：待匹配选择不写 selectedContactId/sessionStore；切回专家仍恢复草稿", async () => {
+        const dom = createUnmatchedPanelDom();
+        const server = {
+            conversations: { items: [expertA()], total: 1 },
+            messages: messagesA(),
+            contact: contactA(),
+            unmatched: { records: [unmatchedMail(901)], totalCount: 1 },
+            unmatchedPanel: dom.panel
+        };
+        const ctx = await bootChat(server, undefined, { doc: dom.doc, host: dom.host });
+
+        click(personButtons(ctx.host)[0]);
+        await flush();
+        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        subject.value = "My subject";
+        inputEvent(subject);
+        editor.innerText = "hello draft";
+        inputEvent(editor);
+
+        click(chipButton(ctx, "unmatched"));
+        await flush();
+        click(unmatchedCards(ctx)[0]);
+        await flush();
+
+        const mailIdRequests = ctx.calls.api.filter(
+            (entry) => /\/api\/mail\/mailbox\/conversations\/\d+\/(messages|manual-rich-reply)/.test(entry.url) && entry.url.includes("901")
+        );
+        assert.deepStrictEqual(mailIdRequests, [], "邮件 id 绝不进入专家会话 endpoint");
+        assert.strictEqual(ctx.calls.unmatchedMounts[0].id, 901);
+
+        click(chipButton(ctx, "all"));
+        await flush();
+        const expertAgain = personButtons(ctx.host)[0];
+        assert.ok(expertAgain, "切回全部仍能选中专家");
+        click(expertAgain);
+        await flush();
+        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "My subject", "草稿主题未被待匹配污染");
+        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "hello draft", "草稿正文未被待匹配污染");
+    });
+
+    it("无宿主函数时右栏给出明确不可用提示，不伪造处理 UI", async () => {
+        const ctx = await bootChat({ conversations, unmatched: { records: [unmatchedMail(901)], totalCount: 1 } });
+        delete ctx.sandbox.mcHostMountUnmatchedDetail;
+        click(chipButton(ctx, "unmatched"));
+        await flush();
+        click(unmatchedCards(ctx)[0]);
+        await flush();
+        const alertEl = ctx.host.querySelector('.mc-conversation .mc-empty[role="alert"]');
+        assert.ok(alertEl, "右栏显示错误");
+        assert.match(alertEl.textContent, /来信处理面板不可用，请刷新页面重试/);
+        assert.strictEqual(ctx.host.querySelector('[data-action="bind-candidate"]'), null, "不伪造绑定入口");
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// app.js 详情面板宿主 lease（I-4/I-5/S-3）
+// ════════════════════════════════════════════════════════════════════════
+
+describe("app.js mcHostMountUnmatchedDetail / mcHostReleaseUnmatchedDetail（lease）", () => {
+    function createLeaseDom() {
+        const doc = new MiniDocument();
+        const view = doc.createElement("div");
+        view.setAttribute("id", "view-mailbox");
+        const list = doc.createElement("div");
+        list.setAttribute("id", "mailboxList");
+        view.appendChild(list);
+        const panel = doc.createElement("section");
+        panel.setAttribute("class", "panel");
+        panel.setAttribute("id", "unmatchedDetailPanel");
+        panel.hidden = true;
+        view.appendChild(panel);
+        const tail = doc.createElement("div");
+        tail.setAttribute("id", "mailboxTail");
+        view.appendChild(tail);
+        doc.body.appendChild(view);
+        return { doc, view, list, panel, tail };
+    }
+
+    function createLeaseSandbox(dom, options) {
+        const opts = options || {};
+        const calls = { releases: 0, teardowns: 0, details: [], scrolled: [] };
+        const main = { scrollTop: 0, scrollTo: (args) => calls.scrolled.push(args) };
+        const state = { mailbox: { detailContext: null } };
+        const sandbox = {
+            console,
+            requestAnimationFrame: (fn) => { fn(); return 1; },
+            $: (selector) => (selector === "#unmatchedDetailPanel" ? dom.panel : dom.doc.querySelector(selector)),
+            document: {
+                querySelector: (selector) => (selector === ".main" ? main : dom.doc.querySelector(selector))
+            },
+            state,
+            unmountMailboxTrustReplyHosts: () => { calls.teardowns += 1; },
+            showUnmatchedDetail: (id) => {
+                calls.details.push(Number(id));
+                if (opts.detailError) return Promise.reject(new Error(opts.detailError));
+                return Promise.resolve();
+            }
+        };
+        vm.createContext(sandbox);
+        const leaseDecl = appSource.match(/const unmatchedDetailLease = \{[^}]*\};/);
+        assert.ok(leaseDecl, "app.js 必须声明 unmatchedDetailLease");
+        vm.runInContext(leaseDecl[0], sandbox);
+        vm.runInContext(extractFn("mcHostReleaseUnmatchedDetail"), sandbox);
+        vm.runInContext(extractFn("mcHostMountUnmatchedDetail"), sandbox);
+        vm.runInContext(extractFn("focusMailboxProcessingPanel"), sandbox);
+        return { sandbox, calls, state, main };
+    }
+
+    function scrollHost(dom, doc) {
+        const body = doc.createElement("div");
+        body.setAttribute("class", "mc-conversation");
+        const scroll = doc.createElement("div");
+        scroll.setAttribute("class", "mc-scroll");
+        body.appendChild(scroll);
+        dom.view.appendChild(body);
+        return scroll;
+    }
+
+    it("挂载：同一节点挂进右栏，原父节点/兄弟位置被登记；释放后逐字归位", async () => {
+        const dom = createLeaseDom();
+        const { sandbox, calls, state } = createLeaseSandbox(dom);
+        const host = scrollHost(dom, dom.doc);
+        sandbox.state.mailbox.detailContext = { source: "INBOUND_PROCESSING", id: 901, inboundProcessingId: 901 };
+        const originalIndex = dom.view.children.indexOf(dom.panel);
+
+        await sandbox.mcHostMountUnmatchedDetail(host, 901);
+
+        assert.strictEqual(sandbox.$("#unmatchedDetailPanel"), dom.panel, "节点身份不变，无 clone/第二实例");
+        assert.strictEqual(dom.panel.parentNode, host, "面板挂进传入的 .mc-scroll");
+        assert.deepStrictEqual(calls.details, [901]);
+
+        sandbox.mcHostReleaseUnmatchedDetail();
+
+        assert.strictEqual(dom.panel.parentNode, dom.view, "归还原父节点");
+        assert.strictEqual(dom.view.children[originalIndex], dom.panel, "回到原兄弟位置（tail 之前）");
+        assert.strictEqual(dom.panel.nextSibling, dom.tail, "原 nextSibling 精确保留");
+        assert.strictEqual(dom.panel.hidden, true, "归还即隐藏");
+        assert.strictEqual(calls.teardowns, 1, "统一 teardown 使旧详情响应失效");
+        assert.strictEqual(state.mailbox.detailContext, null, "详情上下文清空");
+    });
+
+    it("重复释放无副作用；非法 id/宿主直接拒绝且不动节点", async () => {
+        const dom = createLeaseDom();
+        const { sandbox } = createLeaseSandbox(dom);
+        const host = scrollHost(dom, dom.doc);
+        const before = dom.view.children.length;
+
+        await assert.rejects(() => sandbox.mcHostMountUnmatchedDetail(host, 0));
+        await assert.rejects(() => sandbox.mcHostMountUnmatchedDetail(null, 901));
+        assert.strictEqual(dom.panel.parentNode, dom.view, "拒绝路径不动节点");
+        assert.strictEqual(dom.view.children.length, before);
+
+        await sandbox.mcHostMountUnmatchedDetail(host, 901);
+        sandbox.mcHostReleaseUnmatchedDetail();
+        const index = dom.view.children.indexOf(dom.panel);
+        sandbox.mcHostReleaseUnmatchedDetail();
+        sandbox.mcHostReleaseUnmatchedDetail();
+        assert.strictEqual(dom.panel.parentNode, dom.view);
+        assert.strictEqual(dom.view.children.indexOf(dom.panel), index, "重复释放保持归位后的位置");
+        assert.strictEqual(dom.doc.querySelectorAll("#unmatchedDetailPanel").length, 1);
+    });
+
+    it("详情加载失败：先归还节点再抛错（供右栏显示错误）", async () => {
+        const dom = createLeaseDom();
+        const { sandbox, calls } = createLeaseSandbox(dom, { detailError: "detail down" });
+        const host = scrollHost(dom, dom.doc);
+
+        await assert.rejects(() => sandbox.mcHostMountUnmatchedDetail(host, 902), /detail down/);
+
+        assert.strictEqual(dom.panel.parentNode, dom.view, "失败路径归还节点");
+        assert.strictEqual(dom.panel.hidden, true);
+        assert.strictEqual(calls.teardowns, 1);
+    });
+
+    it("I-4：面板节点迁移后既有 click 委托仍生效（处理动作不新增入口）", async () => {
+        const dom = createLeaseDom();
+        const { sandbox } = createLeaseSandbox(dom);
+        const host = scrollHost(dom, dom.doc);
+        const handled = [];
+        dom.panel.addEventListener("click", (event) => {
+            const button = event.target.closest ? event.target.closest("[data-action]") : null;
+            if (button) handled.push(button.dataset.action);
+        });
+
+        await sandbox.mcHostMountUnmatchedDetail(host, 901);
+        dom.panel.innerHTML = '<button class="button primary" data-action="bind-candidate" data-contact-id="7">绑定</button>';
+        click(dom.panel.querySelector('[data-action="bind-candidate"]'));
+
+        assert.deepStrictEqual(handled, ["bind-candidate"], "移动后的面板仍把动作交给原委托");
+        assert.strictEqual(dom.doc.querySelectorAll("#unmatchedDetailPanel").length, 1);
+        sandbox.mcHostReleaseUnmatchedDetail();
+    });
+
+    it("focusMailboxProcessingPanel：面板在 .mc-scroll 内只重置该容器，不滚动整页", async () => {
+        const dom = createLeaseDom();
+        const { sandbox, calls, main } = createLeaseSandbox(dom);
+        const host = scrollHost(dom, dom.doc);
+        await sandbox.mcHostMountUnmatchedDetail(host, 901);
+        host.scrollTop = 240;
+
+        sandbox.focusMailboxProcessingPanel();
+
+        assert.strictEqual(host.scrollTop, 0, "只重置右栏滚动容器");
+        assert.deepStrictEqual(calls.scrolled, [], "不滚动整页 .main");
+        assert.strictEqual(main.scrollTop, 0);
     });
 });

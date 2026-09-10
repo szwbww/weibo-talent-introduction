@@ -1454,10 +1454,72 @@ function renderBySourceTable(bySource, container) {
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
+// 收发件箱“待匹配”详情宿主 lease（I-5）：全页只允许存在一个 #unmatchedDetailPanel，
+// 进入待匹配详情时把该既有节点临时挂入聊天右栏，归还时精确回原父节点/原兄弟位置。
+// 只保存位置引用，不保存/复制面板 HTML（节点身份不变，按钮监听器随节点一起移动）。
+const unmatchedDetailLease = { panel: null, parent: null, nextSibling: null };
+
+function mcHostReleaseUnmatchedDetail() {
+    const panel = $("#unmatchedDetailPanel");
+    const parent = unmatchedDetailLease.parent;
+    const anchor = unmatchedDetailLease.nextSibling;
+    unmatchedDetailLease.panel = null;
+    unmatchedDetailLease.parent = null;
+    unmatchedDetailLease.nextSibling = null;
+    // 统一 teardown：使未完成的详情响应（liveDetailLoadSeq）失效，避免晚到响应落到新上下文。
+    unmountMailboxTrustReplyHosts();
+    if (panel) {
+        panel.hidden = true;
+        if (parent) {
+            if (anchor && anchor.parentNode === parent) parent.insertBefore(panel, anchor);
+            else parent.appendChild(panel);
+        }
+    }
+    state.mailbox.detailContext = null;
+}
+
+// 仅在面板确实被租出时归还 —— 面板在原位（邮件监控/取消处理等流程）时保持可见，不改既有行为。
+function releaseUnmatchedDetailLeaseIfHeld() {
+    if (!unmatchedDetailLease.panel) return false;
+    mcHostReleaseUnmatchedDetail();
+    return true;
+}
+
+async function mcHostMountUnmatchedDetail(hostEl, id) {
+    const processingId = Number(id);
+    const panel = $("#unmatchedDetailPanel");
+    if (!panel || !hostEl || typeof hostEl.appendChild !== "function"
+        || !Number.isInteger(processingId) || processingId <= 0) {
+        throw new Error("来信处理面板不可用，请刷新页面重试");
+    }
+    // 换宿主：先归还旧租约（幂等），再重新登记原位置。
+    if (unmatchedDetailLease.panel === panel) mcHostReleaseUnmatchedDetail();
+    const parent = panel.parentNode;
+    if (!parent) throw new Error("来信处理面板不可用，请刷新页面重试");
+    unmatchedDetailLease.panel = panel;
+    unmatchedDetailLease.parent = parent;
+    unmatchedDetailLease.nextSibling = panel.nextSibling || null;
+    hostEl.appendChild(panel);
+    try {
+        await showUnmatchedDetail(processingId);
+    } catch (error) {
+        mcHostReleaseUnmatchedDetail();
+        throw error;
+    }
+}
+
 function focusMailboxProcessingPanel() {
     const panel = $("#unmatchedDetailPanel");
-    const scrollContainer = document.querySelector(".main");
     if (!panel) return;
+    // 待匹配右栏：面板被挂进 .mc-scroll，只重置该滚动容器，不滚动整页（S-3）。
+    const scrollHost = panel.closest ? panel.closest(".mc-scroll") : null;
+    if (scrollHost) {
+        requestAnimationFrame(() => {
+            scrollHost.scrollTop = 0;
+        });
+        return;
+    }
+    const scrollContainer = document.querySelector(".main");
 
     requestAnimationFrame(() => {
         if (!scrollContainer) {
@@ -10835,6 +10897,8 @@ function renderMailboxAttachments(attachments) {
 }
 
 async function refreshMailboxAfterPendingAction() {
+    // 聊天右栏可能在本次刷新中改写 DOM：先归还详情面板 lease（未租出时不动原面板）。
+    releaseUnmatchedDetailLeaseIfHeld();
     await loadMailbox();
     await refreshUnmatchedBadge();
 }
@@ -11451,9 +11515,7 @@ async function handleUnmatchedAction(element) {
         return;
     }
     if (action === "close-unmatched-detail") {
-        unmountMailboxTrustReplyHosts();
-        $("#unmatchedDetailPanel").hidden = true;
-        state.mailbox.detailContext = null;
+        mcHostReleaseUnmatchedDetail();
         return;
     }
     if (action === "open-contact-from-unmatched") {
@@ -11468,6 +11530,7 @@ async function handleUnmatchedAction(element) {
             body: JSON.stringify(payload)
         });
         showStatus("已标记为处理完成");
+        // 非租约场景（邮件监控等）仍由本分支隐藏面板；租约场景由统一刷新入口归还节点。
         unmountMailboxTrustReplyHosts();
         $("#unmatchedDetailPanel").hidden = true;
         state.mailbox.detailContext = null;

@@ -58,6 +58,112 @@ class UnmatchedInboundMailServiceTest {
         expertContactId = contactId
     )
 
+    private fun account(code: String, enabled: Boolean) = MailSenderAccount(
+        accountCode = code, senderEmail = "$code@b.com", senderName = code, senderTitle = null,
+        senderDisplayName = null, teamName = null, countryName = null,
+        smtpHost = "h", smtpPort = 587, smtpUsername = "u", smtpPassword = "p",
+        imapHost = "h", imapPort = 993, imapUsername = "u", imapPassword = "p",
+        enabled = enabled
+    )
+
+    private fun stubAccounts(accounts: List<MailSenderAccount>) {
+        Mockito.`when`(senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE))
+            .thenReturn(accounts)
+    }
+
+    @Test
+    fun `listManualReviewQueue default mode still uses the legacy queue queries`() {
+        stubAccounts(listOf(account("acc1", true)))
+        Mockito.`when`(
+            inboundMailProcessingRepository.findManualReviewQueue("UNMATCHED_CONTACT", null, null, 20, 40)
+        ).thenReturn(listOf(processing(id = 3L, email = "legacy@b.com")))
+        Mockito.`when`(
+            inboundMailProcessingRepository.countManualReviewQueue("UNMATCHED_CONTACT", null, null)
+        ).thenReturn(4L)
+        Mockito.`when`(inboundMailProcessingRepository.countManualReviewByAccounts(listOf("acc1"))).thenReturn(4L)
+        Mockito.`when`(inboundMailProcessingRepository.countGroupedByReasonTypeForAccounts(listOf("acc1")))
+            .thenReturn(emptyList())
+
+        // I-7：未传 unmatchedOnly 时（邮件监控等既有读路径）行为与响应字段保持不变。
+        val result = service.listManualReviewQueue("UNMATCHED_CONTACT", null, null, 20, 40)
+
+        assertEquals(3L, result.records[0].id)
+        assertEquals(4L, result.totalCount)
+        assertEquals(4L, result.manualReviewTotal)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .findUnmatchedManualReviewQueue(Mockito.anyList(), Mockito.any(), Mockito.anyInt(), Mockito.anyInt())
+    }
+
+    @Test
+    fun `listManualReviewQueue unmatchedOnly passes non-simulator accounts and keeps the global badge total`() {
+        val codes = listOf("acc1", "acc-disabled")
+        stubAccounts(listOf(account("acc1", true), account("acc-disabled", false)))
+        Mockito.`when`(
+            inboundMailProcessingRepository.findUnmatchedManualReviewQueue(codes, null, 20, 0)
+        ).thenReturn(listOf(processing(id = 5L, email = "unmatched@b.com")))
+        Mockito.`when`(
+            inboundMailProcessingRepository.countUnmatchedManualReviewQueue(codes, null)
+        ).thenReturn(1L)
+        Mockito.`when`(
+            inboundMailProcessingRepository.countManualReviewByAccounts(codes)
+        ).thenReturn(7L)
+        Mockito.`when`(
+            inboundMailProcessingRepository.countGroupedByReasonTypeForAccounts(codes)
+        ).thenReturn(emptyList())
+
+        // I-2：disabled 真实账号仍属于收发范围（不追加 enabled 判定）；I-8：空搜索串归一为 null。
+        val result = service.listManualReviewQueue(
+            pageSize = 20, pageOffset = 0, unmatchedOnly = true, query = "   "
+        )
+
+        assertEquals(1, result.records.size)
+        assertEquals(1L, result.totalCount)
+        assertEquals(7L, result.manualReviewTotal)
+        // I-2：账号范围只排除模拟器（用同一 finder），不追加 enabled 判定。
+        Mockito.verify(senderAccountRepository)
+            .findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .findManualReviewQueue(Mockito.any(), Mockito.any(), Mockito.any(), Mockito.anyInt(), Mockito.anyInt())
+    }
+
+    @Test
+    fun `listManualReviewQueue unmatchedOnly forwards a trimmed query`() {
+        val codes = listOf("acc1")
+        stubAccounts(listOf(account("acc1", true)))
+        Mockito.`when`(
+            inboundMailProcessingRepository.findUnmatchedManualReviewQueue(codes, "acceptance-key", 20, 40)
+        ).thenReturn(listOf(processing(id = 9L, email = "key@b.com")))
+        Mockito.`when`(
+            inboundMailProcessingRepository.countUnmatchedManualReviewQueue(codes, "acceptance-key")
+        ).thenReturn(1L)
+        Mockito.`when`(inboundMailProcessingRepository.countManualReviewByAccounts(codes)).thenReturn(3L)
+        Mockito.`when`(inboundMailProcessingRepository.countGroupedByReasonTypeForAccounts(codes))
+            .thenReturn(listOf(ReasonTypeCount("UNMATCHED_CONTACT", 3L)))
+
+        val result = service.listManualReviewQueue(
+            pageSize = 20, pageOffset = 40, unmatchedOnly = true, query = "  acceptance-key  "
+        )
+
+        assertEquals(9L, result.records[0].id)
+        assertEquals("UNMATCHED_CONTACT", result.countsByReasonType.keys.first())
+    }
+
+    @Test
+    fun `listManualReviewQueue unmatchedOnly with no accounts never hits the IN query`() {
+        stubAccounts(emptyList())
+
+        val result = service.listManualReviewQueue(unmatchedOnly = true, query = "key")
+
+        assertEquals(0, result.records.size)
+        assertEquals(0L, result.totalCount)
+        assertEquals(0L, result.manualReviewTotal)
+        assertTrue(result.countsByReasonType.isEmpty())
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .findUnmatchedManualReviewQueue(Mockito.anyList(), Mockito.any(), Mockito.anyInt(), Mockito.anyInt())
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .countUnmatchedManualReviewQueue(Mockito.anyList(), Mockito.any())
+    }
+
     @Test
     fun `listManualReviewQueue returns manual review records and counts`() {
         val records = listOf(processing(id = 1L, email = "a@b.com"))

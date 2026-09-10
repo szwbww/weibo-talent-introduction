@@ -91,14 +91,18 @@ class UnmatchedInboundMailController(
         @RequestParam(required = false) email: String?,
         @RequestParam(required = false) subject: String?,
         @RequestParam(required = false, defaultValue = "20") pageSize: Int,
-        @RequestParam(required = false, defaultValue = "0") pageOffset: Int
+        @RequestParam(required = false, defaultValue = "0") pageOffset: Int,
+        @RequestParam(required = false, defaultValue = "false") unmatchedOnly: Boolean,
+        @RequestParam(required = false) query: String?
     ): InboundMailProcessingListResponse {
         val result = unmatchedInboundMailService.listManualReviewQueue(
             reasonType = reasonType,
             email = email,
             subject = subject,
             pageSize = pageSize,
-            pageOffset = pageOffset
+            pageOffset = pageOffset,
+            unmatchedOnly = unmatchedOnly,
+            query = query
         )
         val contactIds = result.records.mapNotNull { it.expertContactId }.distinct()
         val contactsMap = if (contactIds.isNotEmpty()) {

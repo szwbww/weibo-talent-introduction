@@ -33,23 +33,38 @@ class UnmatchedInboundMailService(
         email: String? = null,
         subject: String? = null,
         pageSize: Int = 20,
-        pageOffset: Int = 0
+        pageOffset: Int = 0,
+        unmatchedOnly: Boolean = false,
+        query: String? = null
     ): ManualReviewQueueResult {
-        val records = inboundMailProcessingRepository.findManualReviewQueue(
-            reasonType = reasonType,
-            email = email,
-            subject = subject,
-            limit = pageSize,
-            offset = pageOffset
-        )
-        val totalCount = inboundMailProcessingRepository.countManualReviewQueue(
-            reasonType = reasonType,
-            email = email,
-            subject = subject
-        )
+        // I-2：账号范围与顶部 badge 同源（非模拟器），不附加 enabled 条件。
         val activeCodes = senderAccountRepository
             .findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
             .map { it.accountCode }
+        val (records, totalCount) = if (unmatchedOnly) {
+            // I-1：成员资格由 MANUAL_REVIEW + expert_contact_id IS NULL 共同决定。
+            val normalizedQuery = query?.trim()?.takeIf { it.isNotEmpty() }
+            if (activeCodes.isEmpty()) {
+                // 账号集合为空：直接返回空结果，禁止生成空 IN (...) SQL。
+                emptyList<InboundMailProcessing>() to 0L
+            } else {
+                inboundMailProcessingRepository.findUnmatchedManualReviewQueue(
+                    activeCodes, normalizedQuery, pageSize, pageOffset
+                ) to inboundMailProcessingRepository.countUnmatchedManualReviewQueue(activeCodes, normalizedQuery)
+            }
+        } else {
+            inboundMailProcessingRepository.findManualReviewQueue(
+                reasonType = reasonType,
+                email = email,
+                subject = subject,
+                limit = pageSize,
+                offset = pageOffset
+            ) to inboundMailProcessingRepository.countManualReviewQueue(
+                reasonType = reasonType,
+                email = email,
+                subject = subject
+            )
+        }
         val (manualReviewTotal, counts) = if (activeCodes.isEmpty()) {
             0L to emptyMap()
         } else {

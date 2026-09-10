@@ -98,6 +98,40 @@ interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing
         subject: String?
     ): Long
 
+    /**
+     * 收发件箱“待匹配”队列（I-1/I-2/I-8）：仅未关联专家的 MANUAL_REVIEW 来信，
+     * 账号范围由调用方传入（非模拟器集合），搜索/排序/分页全部在 SQL 完成。
+     */
+    @Query("""
+        SELECT * FROM inbound_mail_processing
+        WHERE process_status = 'MANUAL_REVIEW'
+          AND expert_contact_id IS NULL
+          AND sender_account_code IN (:accountCodes)
+          AND (:query IS NULL
+               OR from_email LIKE CONCAT('%', :query, '%')
+               OR subject LIKE CONCAT('%', :query, '%'))
+        ORDER BY received_at DESC, id DESC
+        LIMIT :limit OFFSET :offset
+    """)
+    fun findUnmatchedManualReviewQueue(
+        accountCodes: List<String>,
+        query: String?,
+        limit: Int,
+        offset: Int
+    ): List<InboundMailProcessing>
+
+    /** 同上 WHERE 的计数（I-8：过滤必须在 LIMIT/OFFSET 之前）。 */
+    @Query("""
+        SELECT COUNT(*) FROM inbound_mail_processing
+        WHERE process_status = 'MANUAL_REVIEW'
+          AND expert_contact_id IS NULL
+          AND sender_account_code IN (:accountCodes)
+          AND (:query IS NULL
+               OR from_email LIKE CONCAT('%', :query, '%')
+               OR subject LIKE CONCAT('%', :query, '%'))
+    """)
+    fun countUnmatchedManualReviewQueue(accountCodes: List<String>, query: String?): Long
+
     @Query("""
         SELECT reason_type, COUNT(*) as count
         FROM inbound_mail_processing

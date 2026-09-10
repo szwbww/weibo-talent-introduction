@@ -7,8 +7,13 @@
  * 字段修改只是草稿，应用/Enter 才生效，重置/清除保留 tab 与 q；退出聊天还原父节点。
  *
  * 关键约束（与宿主/既有模块的关系）：
- * - 全部专家/消息请求走 conversations API；列表排序唯一权威在服务端（01），
- *   UI 不 sort、不发 waitingReply；三 tab = 全部(无参)/关注(followed)/待处理(pendingOnly)。
+ * - 全部/关注/待处理专家请求走 conversations API；列表排序唯一权威在服务端（01），
+ *   UI 不 sort、不发 waitingReply。三 tab = 全部(无参)/关注(followed)/待处理(pendingOnly)。
+ * - 第四个 tab「待匹配」是邮件级队列（I-1/I-3/I-8）：只请求
+ *   /api/mail/unmatched-inbound?unmatchedOnly=true（未关联专家的 MANUAL_REVIEW 来信），
+ *   选中键为独立 selectedUnmatchedId（不写 selectedContactId/sessionStore），
+ *   详情复用唯一 #unmatchedDetailPanel —— 经宿主 mcHostMountUnmatchedDetail 挂入右栏
+ *   .mc-scroll，离开 tab/记录消失/切页/unmount 前必须 mcHostReleaseUnmatchedDetail 归还。
  * - 来信/邮件标签只属于 INBOUND_PROCESSING：timeline.tags 直读、POST 回包直显、
  *   删除按 tagId；发件无标签入口。标签 modal 经宿主 adapter（app.js
  *   mcHostOpenInboundTagModal）打开旧 #inboundAddTagModal，成功回调服务器回包 tags。
@@ -46,11 +51,13 @@
     const CHIP_ALL = "all";
     const CHIP_FOLLOWED = "followed";
     const CHIP_PENDING = "pending";
+    const CHIP_UNMATCHED = "unmatched";
 
     const FILTER_CHIPS = [
         { key: CHIP_ALL, label: "全部" },
         { key: CHIP_FOLLOWED, label: "关注" },
-        { key: CHIP_PENDING, label: "待处理" }
+        { key: CHIP_PENDING, label: "待处理" },
+        { key: CHIP_UNMATCHED, label: "待匹配" }
     ];
 
     const SOURCE_LABELS = {
@@ -338,6 +345,10 @@
             list: { page: 0, total: 0, items: [], loading: false, error: "" },
             selectedContactId: null,
             selectedSummary: null,
+            /** 待匹配（邮件级）选择键；与 selectedContactId/sessionStore 完全独立（I-6）。 */
+            selectedUnmatchedId: null,
+            /** 当前承载 #unmatchedDetailPanel 的 .mc-scroll 宿主；null = 未持有 lease（I-5）。 */
+            unmatchedDetailHost: null,
             focusHandledContactId: null,
             focusLocating: false,
             focusMissedContactId: null,
@@ -1034,6 +1045,21 @@
             return params;
         }
 
+        // 待匹配（邮件级）请求：不带任何专家会话高级筛选（I-3/I-8）。
+        function unmatchedParams(page) {
+            const params = new URLSearchParams();
+            params.set("unmatchedOnly", "true");
+            params.set("pageSize", String(PAGE_SIZE));
+            params.set("pageOffset", String(page * PAGE_SIZE));
+            const q = instance.searchText.trim();
+            if (q) params.set("query", q);
+            return params;
+        }
+
+        function isUnmatchedChip() {
+            return instance.chip === CHIP_UNMATCHED;
+        }
+
         function personTagNames(item) {
             const tags = item && Array.isArray(item.expertTags) ? item.expertTags : null;
             if (!tags) return null;
@@ -1089,14 +1115,52 @@
             root.innerHTML = items.map(renderPerson).join("");
         }
 
+        // S-2：待匹配邮件卡片（邮件级，无关注星标/专家标签/收发计数）。
+        function renderUnmatchedPerson(item) {
+            const id = Number(item.id);
+            const active = instance.selectedUnmatchedId != null
+                && String(id) === String(instance.selectedUnmatchedId);
+            return `
+                <div class="mc-person" data-active="${active ? "true" : "false"}" data-unmatched-id="${escapeText(id)}">
+                    <button class="mc-person-main" type="button" data-action="mc-select-unmatched" data-unmatched-id="${escapeText(id)}"${active ? ' aria-current="true"' : ""}>
+                        <span class="mc-person-heading"><strong>${escapeText(item.subject || "（无主题）")}</strong></span>
+                        <small>${escapeText(item.fromEmail || "-")}</small>
+                        <small>${escapeText(item.receivedAt || "-")} · 账号：${escapeText(item.senderAccountCode || "-")}</small>
+                        <span class="mc-person-meta"><span class="mc-badge" data-tone="pending">未关联专家</span></span>
+                    </button>
+                </div>
+            `;
+        }
+
+        function renderUnmatchedList() {
+            const root = expertsRoot();
+            if (!root) return;
+            if (instance.list.error) {
+                root.innerHTML = `<div class="mc-error" role="alert">待匹配来信加载失败，请重试。<button class="button" type="button" data-action="mc-retry-list">重试</button></div>`;
+                return;
+            }
+            const items = instance.list.items || [];
+            if (items.length === 0) {
+                root.innerHTML = `<div class="mc-empty">暂无待匹配来信</div>`;
+                return;
+            }
+            root.innerHTML = items.map(renderUnmatchedPerson).join("");
+        }
+
+        function renderList() {
+            if (isUnmatchedChip()) renderUnmatchedList();
+            else renderExpertList();
+        }
+
         function renderPager() {
             const root = pagerRoot();
             if (!root) return;
             const total = Number(instance.list.total) || 0;
             const maxPage = Math.max(0, Math.ceil(total / PAGE_SIZE) - 1);
             const page = instance.list.page;
+            const unit = isUnmatchedChip() ? "封" : "位";
             root.innerHTML = `
-                <span>第 ${page + 1}/${maxPage + 1} 页 · 共 ${total} 位</span>
+                <span>第 ${page + 1}/${maxPage + 1} 页 · 共 ${total} ${unit}</span>
                 <button class="button" type="button" data-action="mc-page-prev"${page <= 0 ? " disabled" : ""}>上一页</button>
                 <button class="button" type="button" data-action="mc-page-next"${page >= maxPage ? " disabled" : ""}>下一页</button>
             `;
@@ -1109,23 +1173,41 @@
             const mySeq = instance.listSeq;
             instance.list.loading = true;
             instance.list.error = "";
-            const url = `/api/mail/mailbox/conversations?${conversationsParams(page).toString()}`;
+            // 请求模式在发出时固化；晚到的另一模式响应由 listSeq 拒绝（I-3）。
+            const unmatched = isUnmatchedChip();
+            const url = unmatched
+                ? `/api/mail/unmatched-inbound?${unmatchedParams(page).toString()}`
+                : `/api/mail/mailbox/conversations?${conversationsParams(page).toString()}`;
             return hostApi()(url).then((data) => {
                 if (instance.disposed || mySeq !== instance.listSeq) return null;
-                instance.list.items = (data && Array.isArray(data.items)) ? data.items : [];
-                instance.list.total = Number(data && data.total) || 0;
+                instance.list.items = unmatched
+                    ? ((data && Array.isArray(data.records)) ? data.records : [])
+                    : ((data && Array.isArray(data.items)) ? data.items : []);
+                instance.list.total = unmatched
+                    ? (Number(data && data.totalCount) || 0)
+                    : (Number(data && data.total) || 0);
                 instance.list.page = page;
                 instance.list.loading = false;
-                renderExpertList();
+                renderList();
                 renderPager();
+                if (unmatched) resolveUnmatchedSelection();
                 return data;
             }).catch((err) => {
                 if (instance.disposed || mySeq !== instance.listSeq) return null;
                 instance.list.loading = false;
                 instance.list.error = err && err.message ? err.message : "加载失败";
-                renderExpertList();
+                renderList();
                 renderPager();
-                hostShowStatus(`获取邮件记录失败: ${instance.list.error}`, "error");
+                hostShowStatus(
+                    unmatched
+                        ? `获取待匹配来信失败: ${instance.list.error}`
+                        : `获取邮件记录失败: ${instance.list.error}`,
+                    "error"
+                );
+                if (unmatched) {
+                    clearUnmatchedState();
+                    renderUnmatchedEmpty();
+                }
                 return null;
             });
         }
@@ -1133,7 +1215,8 @@
         function loadList() {
             return fetchList({ page: instance.list.page }).then((data) => {
                 if (instance.disposed) return data;
-                resolveFocusAndSelection();
+                if (isUnmatchedChip()) resolveUnmatchedSelection();
+                else resolveFocusAndSelection();
                 return data;
             });
         }
@@ -1155,6 +1238,125 @@
                 resolveFocusAndSelection();
                 return data;
             });
+        }
+
+        // --------------------------------------------------------------
+        // 待匹配（邮件级队列，I-3/I-5/I-6）
+        // --------------------------------------------------------------
+
+        function renderUnmatchedEmpty() {
+            const body = conversationBody();
+            if (!body) return;
+            body.setAttribute("aria-label", "待匹配来信处理");
+            body.innerHTML = `
+                <div class="mc-scroll" tabindex="0" aria-label="待匹配来信详情"><div class="mc-empty">请选择左侧待匹配来信</div></div>
+            `;
+        }
+
+        // 归还 lease（幂等）：详情面板先回到原父节点与原位置，才允许改写右栏/根节点（I-5）。
+        function releaseUnmatchedDetailNode() {
+            const release = hostFn("mcHostReleaseUnmatchedDetail");
+            if (release) release();
+            instance.unmatchedDetailHost = null;
+        }
+
+        function clearUnmatchedState() {
+            releaseUnmatchedDetailNode();
+            instance.selectedUnmatchedId = null;
+        }
+
+        // 宿主内是否仍真实持有唯一的 #unmatchedDetailPanel（宿主被外部归还/清空时自愈）。
+        function unmatchedDetailMounted() {
+            const host = instance.unmatchedDetailHost;
+            if (!host) return false;
+            const panel = host.querySelector ? host.querySelector("#unmatchedDetailPanel") : null;
+            if (!panel) {
+                instance.unmatchedDetailHost = null;
+                return false;
+            }
+            return true;
+        }
+
+        function resolveUnmatchedSelection() {
+            const items = instance.list.items || [];
+            if (instance.selectedUnmatchedId == null) {
+                releaseUnmatchedDetailNode();
+                renderUnmatchedEmpty();
+                return;
+            }
+            const stillPresent = items.some((item) => String(item.id) === String(instance.selectedUnmatchedId));
+            if (!stillPresent) {
+                // 选中记录经服务端刷新消失（绑定成功/已标记处理/切页）：先归还，再回空态。
+                clearUnmatchedState();
+                renderUnmatchedEmpty();
+                return;
+            }
+            if (!unmatchedDetailMounted()) mountUnmatchedDetail(instance.selectedUnmatchedId);
+        }
+
+        function selectUnmatched(id) {
+            const items = instance.list.items || [];
+            const item = items.find((entry) => String(entry.id) === String(id));
+            if (!item) return;
+            const changed = String(instance.selectedUnmatchedId) !== String(item.id);
+            instance.selectedUnmatchedId = Number(item.id);
+            renderUnmatchedList();
+            if (!changed && unmatchedDetailMounted()) return;
+            mountUnmatchedDetail(Number(item.id));
+        }
+
+        function mountUnmatchedDetail(id) {
+            releaseUnmatchedDetailNode();
+            const body = conversationBody();
+            if (!body) return;
+            const mount = hostFn("mcHostMountUnmatchedDetail");
+            body.setAttribute("aria-label", "待匹配来信处理");
+            body.innerHTML = `
+                <div class="mc-scroll" tabindex="0" aria-label="待匹配来信详情"><div class="mc-empty">正在加载来信详情…</div></div>
+            `;
+            const scrollHost = body.querySelector ? body.querySelector(".mc-scroll") : null;
+            if (!mount || !scrollHost) {
+                body.innerHTML = `
+                    <div class="mc-scroll" tabindex="0" aria-label="待匹配来信详情"><div class="mc-empty" role="alert">来信处理面板不可用，请刷新页面重试</div></div>
+                `;
+                return;
+            }
+            instance.unmatchedDetailHost = scrollHost;
+            let started = null;
+            try {
+                started = mount(scrollHost, id);
+            } catch (e) {
+                instance.unmatchedDetailHost = null;
+                scrollHost.innerHTML = `<div class="mc-empty" role="alert">来信处理面板不可用，请刷新页面重试</div>`;
+                return;
+            }
+            if (started && typeof started.catch === "function") {
+                started.catch(() => {
+                    if (instance.disposed || instance.unmatchedDetailHost !== scrollHost) return;
+                    instance.unmatchedDetailHost = null;
+                    scrollHost.innerHTML = `<div class="mc-empty" role="alert">来信处理面板不可用，请刷新页面重试</div>`;
+                });
+            }
+        }
+
+        function syncSearchChrome() {
+            const unmatched = isUnmatchedChip();
+            const input = host.querySelector ? host.querySelector('.mc-search-row input[type="search"]') : null;
+            if (input && typeof input.setAttribute === "function") {
+                input.setAttribute("aria-label", unmatched ? "搜索待匹配来信" : "搜索专家");
+                input.setAttribute("placeholder", unmatched ? "搜索发件邮箱、主题" : "搜索专家姓名、邮箱");
+            }
+            const toggle = host.querySelector ? host.querySelector('[data-action="mc-more-filters"]') : null;
+            if (toggle) toggle.hidden = unmatched;
+            if (unmatched && instance.popoverOpen) closeFilterPopover({ restore: false, focusButton: false });
+        }
+
+        // 离开待匹配 Tab：归还 lease 并把右栏恢复为专家空态。
+        function leaveUnmatchedMode() {
+            clearUnmatchedState();
+            renderConversationEmpty();
+            const body = conversationBody();
+            if (body) body.setAttribute("aria-label", "专家往来信件");
         }
 
         // --------------------------------------------------------------
@@ -3748,12 +3950,27 @@
                 toggleFollow(data.contactId);
                 return;
             }
+            if (action === "mc-select-unmatched") {
+                const unmatchedId = Number(data.unmatchedId);
+                if (Number.isFinite(unmatchedId) && unmatchedId > 0) selectUnmatched(unmatchedId);
+                return;
+            }
             if (action === "mc-filter") {
                 const chip = data.chip || CHIP_ALL;
-                instance.chip = FILTER_CHIPS.some((entry) => entry.key === chip) ? chip : CHIP_ALL;
+                const nextChip = FILTER_CHIPS.some((entry) => entry.key === chip) ? chip : CHIP_ALL;
+                if (nextChip !== instance.chip) {
+                    if (instance.chip === CHIP_UNMATCHED) leaveUnmatchedMode();
+                    if (nextChip === CHIP_UNMATCHED) {
+                        // 离开专家会话前保存草稿/滚动，但邮件 id 绝不写入 selectedContactId（I-6）。
+                        saveConversationState();
+                        clearSelectedConversation();
+                    }
+                }
+                instance.chip = nextChip;
                 instance.chipUserTouched = true;
                 instance.list.page = 0;
                 syncChipButtons();
+                syncSearchChrome();
                 loadList();
                 return;
             }
@@ -4129,6 +4346,8 @@
         function unmount() {
             if (instance.disposed) return;
             saveConversationState();
+            // 右栏/根节点清空前必须先归还详情面板 lease（I-5）。
+            clearUnmatchedState();
             instance.disposed = true;
             clearTimeout(instance.searchTimer);
             clearTimeout(instance.saveTimer);
@@ -4177,6 +4396,7 @@
             rememberLegacyFilterTexts();
             ensureFilterFieldsPresent();
             renderFilterChrome();
+            syncSearchChrome();
             const doc = docRoot();
             if (doc && typeof doc.addEventListener === "function") {
                 doc.addEventListener("click", onOutsideFilterClick);

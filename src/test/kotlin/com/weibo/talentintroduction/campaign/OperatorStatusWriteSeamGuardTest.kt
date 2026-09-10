@@ -45,7 +45,8 @@ class OperatorStatusWriteSeamGuardTest {
         // ── DTO 构造命名参数（7 处，P-A 现状审计确认，非 DB 写入）──
         // 入站处理请求 DTO 构造：把请求体字段透传到处理 DTO，不落库
         // （2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :203 偏移至 :215）
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 215, "operatorStatus = request.operatorStatus"),
+        // （2026-09-10 待匹配计划在 :95-96/:104-105 新增 unmatchedOnly/query 两参数两转发，:215 平移至 :219）
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 219, "operatorStatus = request.operatorStatus"),
         // 响应 DTO 构造：把当前值原样回显到出参 DTO
         // （守卫误报修正：行号登记 1098 → 实际 1099，2026-08-20 人工回复透传新增一行导致偏移；
         //   2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :1099 偏移至 :1116）
@@ -53,7 +54,8 @@ class OperatorStatusWriteSeamGuardTest {
         // ragFactCodes/ragCorpusFingerprint 两行（controller :267-268），使本噪声行 1116 → 1118。
         // 03 (T4, 行号钉随授权改动平移 +3): 03 在 sendManualRichReply 转发处新增
         // meeting/previewAttachmentSha256 两行 + 注释行（controller :271-273），实测 1118 → 1121。
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1121, "operatorStatus = operatorStatus"),
+        // （2026-09-10 待匹配计划在 :95-96/:104-105 新增 unmatchedOnly/query，:1121 平移至 :1125）
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1125, "operatorStatus = operatorStatus"),
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO
