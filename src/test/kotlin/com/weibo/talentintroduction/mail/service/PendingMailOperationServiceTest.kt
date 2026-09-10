@@ -37,6 +37,7 @@ import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
 import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -102,7 +103,8 @@ class PendingMailOperationServiceTest {
         expertContactRepository,
         mailSenderAccountService,
         meetingTemplateService,
-        MailContentService()
+        MailContentService(),
+        mailVariableService
     )
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
@@ -180,8 +182,27 @@ class PendingMailOperationServiceTest {
                 )
             )
         Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender-1")).thenReturn(senderAccount())
-        // 03: 专用会议模板默认启用；禁用用例在测试体内另行重 stub（最后 stub 生效）。
-        Mockito.`when`(meetingTemplateService.listEnabled()).thenReturn(listOf(meetingTemplate()))
+        // 03: 会议正文由通用 MEETING_INVITATION 模板渲染；缺失/禁用用例在测试体内另行重 stub。
+        Mockito.`when`(
+            meetingTemplateService.renderByCode(
+                eqValue("MEETING_INVITATION"),
+                anyValue(emptyMap()),
+                Mockito.anyInt()
+            )
+        ).thenAnswer { invocation ->
+            val variables = invocation.getArgument<Map<String, String>>(1)
+            ComposeTemplateRenderResult(
+                subject = "Meeting confirmation",
+                body = "Dear " + variables["expertFamilyName"].orEmpty().ifBlank { "Colleague" } + ",\n\n" +
+                    "Thank you for confirming.\n\n" +
+                    "We have noted the meeting time as " + variables["meeting_time"].orEmpty() + ".\n\n" +
+                    "Please join the meeting using the following link:\n\n" +
+                    variables["zoom_url"].orEmpty() + "\n\n" +
+                    "We look forward to speaking with you.\n\n" +
+                    "Best regards,\n" +
+                    variables["senderName"].orEmpty() + ", " + variables["senderTitle"].orEmpty()
+            )
+        }
         val claim = ManualReplySendAttemptService.ClaimedAttempt(
             attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
             result = ManualReplySendAttemptService.ClaimResult.CLAIMED
@@ -849,10 +870,16 @@ class PendingMailOperationServiceTest {
     }
 
     @Test
-    fun `disabled meeting template rejects with the 01 template message`() {
+    fun `missing meeting invitation template rejects with the 01 template message`() {
         val input = meetingInput()
         val preview = previewFor(input)
-        Mockito.`when`(meetingTemplateService.listEnabled()).thenReturn(emptyList())
+        Mockito.`when`(
+            meetingTemplateService.renderByCode(
+                eqValue("MEETING_INVITATION"),
+                anyValue(emptyMap()),
+                Mockito.anyInt()
+            )
+        ).thenThrow(IllegalStateException("Enabled compose template not found: MEETING_INVITATION"))
         val ex = assertThrows(org.springframework.web.server.ResponseStatusException::class.java) {
             calendarRichSend(preview = preview, input = input)
         }
@@ -946,24 +973,11 @@ class PendingMailOperationServiceTest {
 
     // ── 03 calendar helpers ──
 
-    private fun meetingTemplate(): MailComposeTemplate = MailComposeTemplate(
-        id = MEETING_TEMPLATE_ID,
-        templateCode = "MANUAL_MEETING_CONFIRMATION",
-        templateName = "专家会议确认 · 英文",
-        subject = "Meeting confirmation",
-        mailType = "MANUAL_MEETING_CONFIRMATION",
-        enabled = true
-    )
-
     private fun meetingInput() = MeetingInput(
-        templateId = MEETING_TEMPLATE_ID,
-        templateBody = MEETING_TEMPLATE_BODY,
-        expertSalutation = "Professor Basdogan",
         zoneId = "Europe/Istanbul",
         startLocal = "2026-09-11T10:00",
         endLocal = "2026-09-11T10:30",
         zoomUrl = "https://zoom.us/j/92123456789?pwd=abcDEF123",
-        senderSignature = "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
         generatedAt = "2026-09-09T02:00:00Z"
     )
 
@@ -1016,17 +1030,4 @@ class PendingMailOperationServiceTest {
     private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
-
-    companion object {
-        private const val MEETING_TEMPLATE_ID = 9001L
-        private const val MEETING_TEMPLATE_BODY =
-            "Dear {{expert_salutation}},\n\n" +
-                "Thank you for confirming.\n\n" +
-                "We have noted the meeting time as {{meeting_time}}.\n\n" +
-                "Please join the meeting using the following link:\n\n" +
-                "{{zoom_url}}\n\n" +
-                "We look forward to speaking with you.\n\n" +
-                "Best regards,\n" +
-                "{{sender_signature}}"
-    }
 }

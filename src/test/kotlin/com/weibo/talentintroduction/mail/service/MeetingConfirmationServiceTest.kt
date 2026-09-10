@@ -1,14 +1,21 @@
 package com.weibo.talentintroduction.mail.service
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
+import com.weibo.talentintroduction.qa.repository.QaRuleRepository
+import com.weibo.talentintroduction.reply.domain.ReplySnippet
+import com.weibo.talentintroduction.reply.repository.ReplySnippetRepository
 import com.weibo.talentintroduction.template.domain.MailComposeTemplate
-import com.weibo.talentintroduction.template.service.MailComposeTemplateBlockDetail
-import com.weibo.talentintroduction.template.service.MailComposeTemplateDetail
+import com.weibo.talentintroduction.template.domain.MailComposeTemplateBlock
+import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlockRepository
+import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
+import com.weibo.talentintroduction.variant.repository.ContentVariantRepository
+import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
@@ -21,7 +28,6 @@ import org.mockito.Mockito
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.format.DateTimeParseException
 import java.util.NoSuchElementException
 import java.util.Optional
 
@@ -30,39 +36,80 @@ class MeetingConfirmationServiceTest {
     private val inboundMailProcessingRepository = Mockito.mock(InboundMailProcessingRepository::class.java)
     private val expertContactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
-    private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
+    private val mailVariableService = Mockito.mock(MailVariableService::class.java)
+    private val templateRepository = Mockito.mock(MailComposeTemplateRepository::class.java)
+    private val blockRepository = Mockito.mock(MailComposeTemplateBlockRepository::class.java)
+    private val qaRuleRepository = Mockito.mock(QaRuleRepository::class.java)
+    private val replySnippetRepository = Mockito.mock(ReplySnippetRepository::class.java)
 
     /**
-     * I-1 只读证明的结构基础：被测服务只注入只读协作者（来信处理/专家/账号/模板
-     * 查询 + 纯函数 MailContentService）。SMTP、mail_record、mail_send_attempt、
-     * meeting_schedule、状态/绑定/计数的写入口在此对象图上不存在，成功的
-     * options/preview 在结构上不可能发信或写库。
+     * I-1 证据：通用模板链路用**真实** MailComposeTemplateService（renderByCode +
+     * REPLY_SNIPPET/CUSTOM_TEXT 全序 + ${...} 替换），只 mock 模板/片段仓库与变量服务；
+     * 因此“正文确实由通用模板渲染出一条完整文本”是被测行为而非硬编码字串。
+     * spy 只为捕获 renderByCode 收到的变量 map（I-2 判据），不改渲染行为。
+     *
+     * I-1 只读证明：被测服务只注入只读协作者（来信处理/专家/账号/模板/变量/纯函数
+     * MailContentService）。SMTP、mail_record、mail_send_attempt、meeting_schedule、
+     * 状态/绑定/计数的写入口在此对象图上不存在。
      */
+    private val mailComposeTemplateService = Mockito.spy(
+        MailComposeTemplateService(
+            templateRepository,
+            blockRepository,
+            qaRuleRepository,
+            replySnippetRepository,
+            ObjectMapper(),
+            mailVariableService,
+            expertContactRepository,
+            mailSenderAccountService,
+            ContentVariantService(Mockito.mock(ContentVariantRepository::class.java), MailPlaceholderService())
+        )
+    )
+
     private val service = MeetingConfirmationService(
         inboundMailProcessingRepository,
         expertContactRepository,
         mailSenderAccountService,
         mailComposeTemplateService,
-        MailContentService()
+        MailContentService(),
+        mailVariableService
     )
 
     companion object {
         const val TEMPLATE_ID = 100L
+        const val SNIPPET_ID = 900L
         const val PROCESSING_ID = 7L
         const val CONTACT_ID = 1L
         const val ACCOUNT_CODE = "acc-1"
         const val ZOOM_URL = "https://zoom.us/j/87102801187?pwd=RH3bf4vbH0SoyTq2UW1Dzzuag4kISa.1"
         const val GENERATED_AT = "2026-09-09T03:00:40Z"
 
-        /** 与 V122 CUSTOM_TEXT 块逐字一致（不含首尾空行）。 */
-        val DEFAULT_TEMPLATE = "Dear {{expert_salutation}},\n\n" +
-            "Thank you for confirming.\n\n" +
-            "We have noted the meeting time as {{meeting_time}}.\n\n" +
+        /** REPLY_SNIPPET 块：沿用既有邀请模板的 ${expertFamilyName|Colleague} 语法。 */
+        val DEFAULT_SNIPPET = "Dear \${expertFamilyName|Colleague},\n\n" +
+            "Thank you for confirming your interest in our programme."
+
+        /** CUSTOM_TEXT 块：两个会议专用变量 + 既有 sender/team 变量。 */
+        val DEFAULT_CUSTOM_TEXT = "We have noted the meeting time as \${meeting_time}.\n\n" +
             "Please join the meeting using the following link:\n\n" +
-            "{{zoom_url}}\n\n" +
+            "\${zoom_url}\n\n" +
             "We look forward to speaking with you.\n\n" +
             "Best regards,\n" +
-            "{{sender_signature}}"
+            "\${senderName}, \${senderTitle}\n" +
+            "\${teamName} \${countryName}"
+
+        val DEFAULT_TEMPLATE_BODY = DEFAULT_SNIPPET + "\n\n" + DEFAULT_CUSTOM_TEXT
+
+        /** `MailVariableService.buildVariables` 返回的通用 map（测试替身，键集即契约）。 */
+        val GENERIC_VARIABLES: Map<String, String> = linkedMapOf(
+            "senderEmail" to "sender@example.com",
+            "senderName" to "LuKai",
+            "senderTitle" to "Customer Care Officer",
+            "teamName" to "Qingfei Tech Talent Team",
+            "countryName" to "China",
+            "expertName" to "Professor Basdogan",
+            "expertFamilyName" to "Basdogan",
+            "unsubscribeUrl" to "https://example.com/unsubscribe"
+        )
     }
 
     private fun processing(
@@ -127,63 +174,102 @@ class MeetingConfirmationServiceTest {
         Mockito.`when`(mailSenderAccountService.getManualSendAccount(code)).thenReturn(requestedAccount ?: account())
     }
 
-    private fun stubSpecialTemplate(headerId: Long = TEMPLATE_ID, body: String = DEFAULT_TEMPLATE) {
-        Mockito.`when`(mailComposeTemplateService.listEnabled()).thenReturn(
-            listOf(
+    /** 启用中的通用 `MEETING_INVITATION`：回复片段块 + 自定义文本块（有序）。 */
+    private fun stubInvitationTemplate(
+        customText: String = DEFAULT_CUSTOM_TEXT,
+        snippet: String? = DEFAULT_SNIPPET
+    ) {
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("MEETING_INVITATION"))
+            .thenReturn(
                 MailComposeTemplate(
-                    id = headerId,
-                    templateCode = "MANUAL_MEETING_CONFIRMATION",
-                    templateName = "专家会议确认 · 英文",
-                    subject = "Meeting confirmation",
-                    mailType = "MANUAL_MEETING_CONFIRMATION",
+                    id = TEMPLATE_ID,
+                    templateCode = "MEETING_INVITATION",
+                    templateName = "会议邀请 · 英文",
+                    subject = "Meeting invitation",
+                    mailType = "MEETING_INVITATION",
                     enabled = true
                 )
             )
-        )
-        Mockito.`when`(mailComposeTemplateService.getById(headerId)).thenReturn(
-            MailComposeTemplateDetail(
-                id = headerId,
-                templateCode = "MANUAL_MEETING_CONFIRMATION",
-                templateName = "专家会议确认 · 英文",
-                subject = "Meeting confirmation",
-                description = "仅供收发件箱会议确认。",
-                mailType = "MANUAL_MEETING_CONFIRMATION",
-                subjectVariants = null,
-                enabled = true,
-                blocks = listOf(
-                    MailComposeTemplateBlockDetail(
-                        id = 1,
-                        blockOrder = 0,
-                        blockType = "CUSTOM_TEXT",
-                        refId = null,
-                        refDisplayName = null,
-                        customText = body
-                    )
-                ),
-                createdAt = null,
-                updatedAt = null
+        val blocks = mutableListOf<MailComposeTemplateBlock>()
+        if (snippet != null) {
+            blocks += MailComposeTemplateBlock(
+                id = 1,
+                templateId = TEMPLATE_ID,
+                blockOrder = 0,
+                blockType = "REPLY_SNIPPET",
+                refId = SNIPPET_ID
             )
+            Mockito.`when`(replySnippetRepository.findById(SNIPPET_ID)).thenReturn(
+                Optional.of(
+                    ReplySnippet(
+                        id = SNIPPET_ID,
+                        snippetType = "GREETING",
+                        content = snippet,
+                        enabled = true
+                    )
+                )
+            )
+        }
+        blocks += MailComposeTemplateBlock(
+            id = 2,
+            templateId = TEMPLATE_ID,
+            blockOrder = 1,
+            blockType = "CUSTOM_TEXT",
+            customText = customText
         )
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(TEMPLATE_ID)).thenReturn(blocks)
+    }
+
+    /** 通用变量（与普通人工单发同序：sender + expert + unsubscribe）。 */
+    private fun genericVariables(overrides: Map<String, String> = emptyMap()): Map<String, String> =
+        GENERIC_VARIABLES + overrides
+
+    private fun stubVariables(overrides: Map<String, String> = emptyMap()) {
+        Mockito.`when`(mailVariableService.resolveExpertProfileFor(anyValue(contact()))).thenReturn(null)
+        Mockito.`when`(
+            mailVariableService.buildVariables(
+                anyValue(account()),
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.anyBoolean(),
+                Mockito.any()
+            )
+        ).thenReturn(genericVariables(overrides))
+    }
+
+    /** 捕获通用模板渲染实际收到的变量 map（I-2 判据）；spy 仍执行真实渲染。 */
+    private fun captureRenderedVariables(): MutableList<Map<String, String>> {
+        val captured = mutableListOf<Map<String, String>>()
+        Mockito.doAnswer { invocation ->
+            captured += invocation.getArgument<Map<String, String>>(1)
+            invocation.callRealMethod()
+        }.`when`(mailComposeTemplateService).renderByCode(
+            anyValue(MeetingConfirmationService.MEETING_INVITATION_TEMPLATE_CODE),
+            anyValue(emptyMap()),
+            Mockito.anyInt()
+        )
+        return captured
+    }
+
+    /** Mockito.any() 对 Kotlin 非空参数会返回 null；传一个真实默认值实例占位（既有测试同款手法）。 */
+    private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
+
+    private fun stubMeetingPreparation(overrides: Map<String, String> = emptyMap()) {
+        stubInvitationTemplate()
+        stubVariables(overrides)
     }
 
     private fun meetingInput(
         zoneId: String = "Europe/Istanbul",
         startLocal: String = "2026-09-11T10:00",
         endLocal: String = "2026-09-11T10:30",
-        salutation: String = "Professor Basdogan",
-        signature: String = "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
-        templateBody: String = DEFAULT_TEMPLATE,
         zoomUrl: String = ZOOM_URL,
         generatedAt: String = GENERATED_AT
     ) = MeetingInput(
-        templateId = TEMPLATE_ID,
-        templateBody = templateBody,
-        expertSalutation = salutation,
         zoneId = zoneId,
         startLocal = startLocal,
         endLocal = endLocal,
         zoomUrl = zoomUrl,
-        senderSignature = signature,
         generatedAt = generatedAt
     )
 
@@ -204,7 +290,7 @@ class MeetingConfirmationServiceTest {
             response.meetingTime
         )
         assertEquals("2026/09/11 周五 15:00 – 2026/09/11 周五 15:30", response.chinaTime)
-        assertTrue(response.textBody.startsWith("Dear Professor Basdogan,\n\nThank you for confirming."))
+        assertTrue(response.textBody.startsWith("Dear Basdogan,\n\nThank you for confirming"), response.textBody)
         assertTrue(response.textBody.contains("Friday, September 11, 2026, from 10:00 AM to 10:30 AM Türkiye Time (UTC+3)"))
         assertTrue(response.textBody.contains(ZOOM_URL))
         assertTrue(response.textBody.endsWith("Best regards,\nLuKai, Customer Care Officer\nQingfei Tech Talent Team China"))
@@ -216,12 +302,65 @@ class MeetingConfirmationServiceTest {
         assertEquals(response.attachment.semanticSha256.take(32) + "@qingfei-calendar", uidOf(response))
     }
 
-    // ───────────────────────── I-1：身份与只读 ─────────────────────────
+    // ───────────────────────── I-1/I-2：通用邀请模板链路 ─────────────────────────
+
+    @Test
+    fun `preview renders reply snippet and custom text through the generic template chain`() {
+        stubIdentity()
+        stubMeetingPreparation()
+
+        val response = preview()
+
+        assertIstanbulResponse(response)
+        // 回复片段与自定义文本都进入正文，且 ${...} 全部被替换（含 |Colleague 回退语法）
+        assertTrue(response.textBody.contains(DEFAULT_SNIPPET.replace("\${expertFamilyName|Colleague}", "Basdogan")))
+        assertTrue(response.textBody.contains(DEFAULT_CUSTOM_TEXT
+            .replace("\${meeting_time}", response.meetingTime)
+            .replace("\${zoom_url}", ZOOM_URL)
+            .replace("\${senderName}", "LuKai")
+            .replace("\${senderTitle}", "Customer Care Officer")
+            .replace("\${teamName}", "Qingfei Tech Talent Team")
+            .replace("\${countryName}", "China")))
+        assertFalse(response.textBody.contains("\${"), "正文不得残留 \${...}")
+        assertFalse(response.textBody.contains("{{"), "正文不得残留下划线花括号专用语法")
+        assertFalse(response.textBody.contains("MANUAL_MEETING_CONFIRMATION"))
+    }
+
+    @Test
+    fun `render map adds only meeting_time and zoom_url to the generic variables`() {
+        stubIdentity()
+        stubMeetingPreparation()
+        val captured = captureRenderedVariables()
+
+        val response = preview()
+
+        assertIstanbulResponse(response)
+        val rendered = captured.single()
+        // 除通用 map 之外只允许新增/覆盖两个会议值（I-2）
+        assertEquals(GENERIC_VARIABLES.keys + setOf("meeting_time", "zoom_url"), rendered.keys)
+        assertFalse(rendered.containsKey("senderDisplayName"), "不得注入通用 map 之外的变量")
+        assertEquals(response.meetingTime, rendered["meeting_time"])
+        assertEquals(ZOOM_URL, rendered["zoom_url"])
+        // 其余键逐字等于通用 map
+        assertEquals(GENERIC_VARIABLES, rendered - "meeting_time" - "zoom_url")
+    }
+
+    @Test
+    fun `family name fallback renders Colleague when the expert profile has no family name`() {
+        stubIdentity()
+        stubMeetingPreparation(mapOf("expertName" to "", "expertFamilyName" to ""))
+
+        val response = preview()
+
+        assertTrue(response.textBody.startsWith("Dear Colleague,"), response.textBody)
+        // ICS 称呼回退到联系人姓名，而不是空串
+        assertEquals("meeting-2026-09-11-Professor-Basdogan.ics", response.attachment.filename)
+    }
 
     @Test
     fun `preview is served purely from read collaborators and touches nothing else`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
 
         val response = preview()
 
@@ -230,27 +369,62 @@ class MeetingConfirmationServiceTest {
         Mockito.verify(inboundMailProcessingRepository, Mockito.times(2)).findById(PROCESSING_ID)
         Mockito.verify(expertContactRepository).findById(CONTACT_ID)
         Mockito.verify(mailSenderAccountService).getManualSendAccount(ACCOUNT_CODE)
-        Mockito.verify(mailComposeTemplateService).listEnabled()
+        Mockito.verify(mailVariableService).resolveExpertProfileFor(anyValue(contact()))
+        Mockito.verify(mailVariableService).buildVariables(
+            anyValue(account()),
+            Mockito.any(),
+            Mockito.any(),
+            Mockito.anyBoolean(),
+            Mockito.any()
+        )
+        Mockito.verify(templateRepository).findByTemplateCodeAndEnabledTrue("MEETING_INVITATION")
+        Mockito.verify(blockRepository).findAllByTemplateIdOrderByBlockOrderAsc(TEMPLATE_ID)
+        Mockito.verify(replySnippetRepository).findById(SNIPPET_ID)
         // 无任何额外读取/写入交互：写库/发信入口未注入，额外调用会被严格捕获。
         Mockito.verifyNoMoreInteractions(
             inboundMailProcessingRepository,
             expertContactRepository,
             mailSenderAccountService,
-            mailComposeTemplateService
+            mailVariableService,
+            templateRepository,
+            blockRepository,
+            qaRuleRepository,
+            replySnippetRepository
         )
+    }
+
+    @Test
+    fun `preview rejects when the enabled meeting invitation template is missing`() {
+        stubIdentity()
+        stubVariables()
+        Mockito.`when`(templateRepository.findByTemplateCodeAndEnabledTrue("MEETING_INVITATION"))
+            .thenReturn(null)
+
+        val ex = assertThrows<IllegalArgumentException> { preview() }
+        assertEquals("会议模板不可用，请重新选择或检查模板变量", ex.message)
+    }
+
+    @Test
+    fun `preview rejects a blank rendered body`() {
+        stubIdentity()
+        stubInvitationTemplate(customText = "   ", snippet = null)
+        stubVariables()
+
+        val ex = assertThrows<IllegalArgumentException> { preview() }
+        assertEquals("会议模板不可用，请重新选择或检查模板变量", ex.message)
     }
 
     @Test
     fun `preview rejects processing bound to a different contact`() {
         stubIdentity(processing = processing(expertContactId = 99))
-        stubSpecialTemplate()
+        stubMeetingPreparation()
 
         val ex = assertThrows<IllegalArgumentException> {
             preview()
         }
         assertTrue(ex.message!!.contains("绑定 expertContact 99"))
         assertTrue(ex.message!!.contains("请求 contactId $CONTACT_ID"))
-        Mockito.verifyNoMoreInteractions(expertContactRepository, mailSenderAccountService, mailComposeTemplateService)
+        Mockito.verifyNoMoreInteractions(expertContactRepository, mailSenderAccountService, mailVariableService)
     }
 
     @Test
@@ -273,7 +447,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `preview uses requested account when provided else inbound account like Pending`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         // requested 为空 → 来信账号
         val inboundDefault = preview()
         assertEquals(ACCOUNT_CODE, inboundDefault.resolvedAccountCode)
@@ -296,53 +470,31 @@ class MeetingConfirmationServiceTest {
     }
 
     @Test
-    fun `options returns account defaults and special template directory`() {
+    fun `options returns only target account generatedAt and default zone without touching templates`() {
         stubIdentity()
-        stubSpecialTemplate()
 
         val response = service.options(PROCESSING_ID, CONTACT_ID, null)
 
         assertEquals("$CONTACT_ID:$ACCOUNT_CODE", response.targetKey)
         assertEquals(ACCOUNT_CODE, response.resolvedAccountCode)
-        assertEquals("Professor Basdogan", response.expertSalutation)
-        assertEquals(
-            "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
-            response.senderSignature
-        )
         assertEquals("Asia/Shanghai", response.defaultZoneId)
         // generatedAt：UTC ISO Instant，精度秒
         val generatedAt = Instant.parse(response.generatedAt)
         assertEquals(0, generatedAt.nano)
-        assertEquals(1, response.templates.size)
-        assertEquals(TEMPLATE_ID, response.templates[0].id)
-        assertEquals("专家会议确认 · 英文", response.templates[0].name)
-        assertEquals(DEFAULT_TEMPLATE, response.templates[0].body)
         Mockito.verify(inboundMailProcessingRepository).findById(PROCESSING_ID)
         Mockito.verify(expertContactRepository).findById(CONTACT_ID)
         Mockito.verify(mailSenderAccountService).getManualSendAccount(ACCOUNT_CODE)
-        Mockito.verify(mailComposeTemplateService).listEnabled()
-        Mockito.verify(mailComposeTemplateService).getById(TEMPLATE_ID)
+        // I-1：options 不再读取专用模板目录或任何模板/变量读取
         Mockito.verifyNoMoreInteractions(
             inboundMailProcessingRepository,
             expertContactRepository,
             mailSenderAccountService,
-            mailComposeTemplateService
+            mailVariableService,
+            templateRepository,
+            blockRepository,
+            qaRuleRepository,
+            replySnippetRepository
         )
-    }
-
-    @Test
-    fun `options keeps empty template directory as empty array and empty display fields are not fabricated`() {
-        stubIdentity()
-        Mockito.`when`(mailComposeTemplateService.listEnabled()).thenReturn(emptyList())
-        val bareAccount = account().copy(senderTitle = null, teamName = null, countryName = null)
-        Mockito.`when`(mailSenderAccountService.getManualSendAccount(ACCOUNT_CODE)).thenReturn(bareAccount)
-
-        val response = service.options(PROCESSING_ID, CONTACT_ID, null)
-
-        assertTrue(response.templates.isEmpty())
-        assertEquals("LuKai", response.senderSignature)
-        assertFalse(response.senderSignature.contains("Customer Care Officer"))
-        assertFalse(response.senderSignature.contains("Qingfei Tech Talent Team"))
     }
 
     @Test
@@ -353,6 +505,7 @@ class MeetingConfirmationServiceTest {
         }
         assertTrue(ex.message!!.contains("不匹配"))
     }
+
 
     // ───────────────────────── I-3：时区与时间换算 ─────────────────────────
 
@@ -399,14 +552,14 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `istanbul morning preview matches the approved example`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         assertIstanbulResponse(preview())
     }
 
     @Test
     fun `shanghai meeting converts to same china display clock`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val response = preview(meetingInput(zoneId = "Asia/Shanghai"))
         assertEquals("2026-09-11T02:00:00Z", response.startUtc)
         assertEquals("2026-09-11T02:30:00Z", response.endUtc)
@@ -417,7 +570,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `kolkata half-hour offset is converted independently`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val response = preview(meetingInput(zoneId = "Asia/Kolkata"))
         assertEquals("2026-09-11T04:30:00Z", response.startUtc)
         assertEquals("2026-09-11T05:00:00Z", response.endUtc)
@@ -428,7 +581,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `sydney overnight meeting writes full dates on both ends`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val response = preview(
             meetingInput(
                 zoneId = "Australia/Sydney",
@@ -449,7 +602,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `london dst spring-forward shows start and end offset change`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val response = preview(
             meetingInput(
                 zoneId = "Europe/London",
@@ -469,7 +622,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `new york dst gap local time is rejected with fixed message`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val ex = assertThrows<IllegalArgumentException> {
             preview(
                 meetingInput(
@@ -485,7 +638,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `new york dst overlap local time is rejected with fixed message`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val ex = assertThrows<IllegalArgumentException> {
             preview(
                 meetingInput(
@@ -501,7 +654,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `invalid zone and missing times and duration use fixed messages`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val badZone = assertThrows<IllegalArgumentException> {
             preview(meetingInput(zoneId = "Mars/Olympus"))
         }
@@ -551,7 +704,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `past meetings are allowed for review and replay`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val response = preview(
             meetingInput(
                 startLocal = "2025-03-05T10:00",
@@ -565,12 +718,13 @@ class MeetingConfirmationServiceTest {
     // ───────────────────────── I-5：受限内容与安全 ─────────────────────────
 
     @Test
-    fun `html escapes salutation markup and anchor only the zoom url`() {
+    fun `html escapes expert markup and anchor only the zoom url`() {
         stubIdentity()
-        stubSpecialTemplate()
-        val response = preview(
-            meetingInput(salutation = "<img src=x onerror=alert(1)>")
-        )
+        stubInvitationTemplate(customText = "Dear \${expertName},\n\nJoin: \${zoom_url}")
+        stubVariables(mapOf("expertName" to "<img src=x onerror=alert(1)>"))
+
+        val response = preview()
+
         // 文本中仍是字面量；HTML 中被逐段 escape，绝不成标签
         assertTrue(response.textBody.contains("Dear <img src=x onerror=alert(1)>,"))
         assertFalse(response.htmlBody.contains("<img"))
@@ -587,7 +741,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `zoom url query parameters survive html anchor and ics url`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val url = "https://zoom.us/j/87102801187?pwd=RH3bf4vbH0SoyTq2UW1Dzzuag4kISa.1&tk=keepcase&x=Y"
         val response = preview(meetingInput(zoomUrl = url))
         // HTML 中 & 被实体转义，锚文本/链接保持完整查询
@@ -601,7 +755,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `zoom url rejects evil hosts userinfo fragments and http`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val evilSuffix = assertThrows<IllegalArgumentException> {
             preview(meetingInput(zoomUrl = "https://zoom.us.evil.example/j/1"))
         }
@@ -634,81 +788,9 @@ class MeetingConfirmationServiceTest {
     }
 
     @Test
-    fun `salutation and signature reject template chars and control characters`() {
-        stubIdentity()
-        stubSpecialTemplate()
-        val salutationBrace = assertThrows<IllegalArgumentException> {
-            preview(meetingInput(salutation = "Hello {{zoom_url}}"))
-        }
-        assertTrue(salutationBrace.message!!.contains("模板变量字符"))
-
-        val signatureDollar = assertThrows<IllegalArgumentException> {
-            preview(meetingInput(signature = "Regards \${senderName}"))
-        }
-        assertTrue(signatureDollar.message!!.contains("模板变量字符"))
-
-        val control = assertThrows<IllegalArgumentException> {
-            preview(meetingInput(signature = "Line1\u0007Line2"))
-        }
-        assertTrue(control.message!!.contains("控制字符"))
-
-        val longName = assertThrows<IllegalArgumentException> {
-            preview(meetingInput(salutation = "N".repeat(101)))
-        }
-        assertTrue(longName.message!!.contains("100"))
-    }
-
-    @Test
-    fun `signature crlf is normalized to lf before render and digest`() {
-        stubIdentity()
-        stubSpecialTemplate()
-        val response = preview(meetingInput(signature = "Line one\r\nLine two\r\nLine three"))
-        assertTrue(response.textBody.contains("Line one\nLine two\nLine three"))
-        assertFalse(response.textBody.contains("\r"))
-    }
-
-    @Test
-    fun `template with unknown unclosed or missing variables is rejected`() {
-        stubIdentity()
-        stubSpecialTemplate()
-        val unknown = assertThrows<IllegalArgumentException> {
-            preview(meetingInput(templateBody = DEFAULT_TEMPLATE.replace("{{zoom_url}}", "{{unknown_var}}")))
-        }
-        assertEquals("会议模板不可用，请重新选择或检查模板变量", unknown.message)
-
-        val missing = assertThrows<IllegalArgumentException> {
-            preview(meetingInput(templateBody = DEFAULT_TEMPLATE.replace("{{sender_signature}}", "Best")))
-        }
-        assertEquals("会议模板不可用，请重新选择或检查模板变量", missing.message)
-
-        val unclosed = assertThrows<IllegalArgumentException> {
-            preview(meetingInput(templateBody = DEFAULT_TEMPLATE + "{{oops"))
-        }
-        assertEquals("会议模板不可用，请重新选择或检查模板变量", unclosed.message)
-
-        val genericResidue = assertThrows<IllegalArgumentException> {
-            preview(meetingInput(templateBody = DEFAULT_TEMPLATE.replace("{{zoom_url}}", "\${senderName}")))
-        }
-        assertEquals("会议模板不可用，请重新选择或检查模板变量", genericResidue.message)
-
-        val emptyBody = assertThrows<IllegalArgumentException> {
-            preview(meetingInput(templateBody = "   "))
-        }
-        assertEquals("会议模板不可用，请重新选择或检查模板变量", emptyBody.message)
-    }
-
-    @Test
-    fun `preview rejects a template id that is not an enabled special template`() {
-        stubIdentity()
-        Mockito.`when`(mailComposeTemplateService.listEnabled()).thenReturn(emptyList())
-        val ex = assertThrows<IllegalArgumentException> { preview() }
-        assertEquals("会议模板不可用，请重新选择或检查模板变量", ex.message)
-    }
-
-    @Test
     fun `generatedAt must be utc iso seconds and is frozen when blank`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val notUtc = assertThrows<IllegalArgumentException> {
             preview(meetingInput(generatedAt = "2026-09-09T03:00:40+02:00"))
         }
@@ -732,7 +814,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `ics structure uid and fixed property order`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val response = preview()
         val ics = response.attachment.icsText
         assertTrue(ics.endsWith("\r\n"))
@@ -768,7 +850,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `description escapes and folds back to the original value`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val response = preview()
         val description = propertyLine(response, "DESCRIPTION")
         assertEquals(
@@ -786,9 +868,18 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `physical ics lines stay within 75 utf-8 bytes and never split codepoints`() {
         stubIdentity()
-        stubSpecialTemplate()
         val longChineseSignature = "签名🎉 中文长签名，" + "长".repeat(150) + "，结尾 emoji 🚀 ok"
-        val response = preview(meetingInput(signature = longChineseSignature))
+        stubInvitationTemplate()
+        stubVariables(
+            mapOf(
+                "senderName" to longChineseSignature,
+                "senderTitle" to "",
+                "teamName" to "",
+                "countryName" to ""
+            )
+        )
+
+        val response = preview()
         val ics = response.attachment.icsText
 
         val physicalLines = ics.split("\r\n")
@@ -811,7 +902,7 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `same configuration recomputes identical bytes and generatedAt only changes sha`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val first = preview()
         val second = preview()
         assertEquals(first.attachment.icsText, second.attachment.icsText)
@@ -827,7 +918,7 @@ class MeetingConfirmationServiceTest {
 
         // 语义变化（换 processing 实例）会改变 semanticSha256 与 UID
         stubIdentity(processing = processing(id = 8))
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val otherProcessing = service.preview(
             8,
             MeetingPreviewRequest(contactId = CONTACT_ID, senderAccountCode = null, meeting = meetingInput())
@@ -839,22 +930,46 @@ class MeetingConfirmationServiceTest {
     @Test
     fun `filename falls back to expert for non-ascii salutation`() {
         stubIdentity()
-        stubSpecialTemplate()
-        val response = preview(meetingInput(salutation = "王教授"))
+        stubInvitationTemplate()
+        stubVariables(mapOf("expertName" to "王教授", "expertFamilyName" to "王教授", "senderName" to "", "senderTitle" to "",
+            "teamName" to "", "countryName" to ""))
+
+        val response = preview()
         assertEquals("meeting-2026-09-11-expert.ics", response.attachment.filename)
         assertTrue(MeetingConfirmationDomain.CALENDAR_FILENAME_REGEX.matches(response.attachment.filename))
 
-        val punctuationName = preview(meetingInput(salutation = "Dr. Anne-Marie O'Brien -- x"))
+        stubVariables(mapOf("expertName" to "Dr. Anne-Marie O'Brien -- x"))
+        val punctuationName = preview()
         assertEquals("meeting-2026-09-11-Dr-Anne-Marie-O-Brien-x.ics", punctuationName.attachment.filename)
     }
 
     @Test
     fun `meeting input is echoed back for reuse`() {
         stubIdentity()
-        stubSpecialTemplate()
+        stubMeetingPreparation()
         val input = meetingInput()
         val response = preview(input = input)
         assertEquals(input, response.meeting)
+    }
+
+    @Test
+    fun `legacy meeting input JSON with dedicated-template fields still deserializes and is ignored`() {
+        stubIdentity()
+        stubMeetingPreparation()
+        val legacy = ObjectMapper().registerModule(com.fasterxml.jackson.module.kotlin.KotlinModule.Builder().build())
+            .readValue(
+                """{"templateId":100,"templateBody":"Dear {{expert_salutation}}",""" +
+                    """"expertSalutation":"Professor Basdogan","zoneId":"Europe/Istanbul",""" +
+                    """"startLocal":"2026-09-11T10:00","endLocal":"2026-09-11T10:30",""" +
+                    """"zoomUrl":"$ZOOM_URL","senderSignature":"LuKai","generatedAt":"$GENERATED_AT"}""",
+                MeetingInput::class.java
+            )
+
+        // 旧字段只作兼容载体：正文/称呼/签名一律取自通用模板链路
+        val response = preview(legacy)
+        assertIstanbulResponse(response)
+        assertFalse(response.textBody.contains("{{expert_salutation}}"))
+        assertFalse(response.textBody.contains("\${"))
     }
 
     // ───────────────────────── CalendarAttachmentCodec（I-6/02 契约） ─────────────────────────

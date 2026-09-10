@@ -33,7 +33,8 @@ import com.weibo.talentintroduction.mail.service.MeetingConfirmationDomain
 import com.weibo.talentintroduction.mail.service.MeetingInput
 import com.weibo.talentintroduction.mail.service.MeetingPreviewResponse
 import com.weibo.talentintroduction.mail.service.TagView
-import com.weibo.talentintroduction.template.domain.MailComposeTemplate
+import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.flywaydb.core.Flyway
 import org.junit.jupiter.api.AfterEach
@@ -1283,15 +1284,57 @@ class CalendarAttachmentIntegrationTest {
     private lateinit var expertFollowService: ExpertFollowService
 
     private val meetingTemplateId = 9001L
-    private val meetingTemplateBody =
-        "Dear {{expert_salutation}},\n\n" +
-            "Thank you for confirming.\n\n" +
-            "We have noted the meeting time as {{meeting_time}}.\n\n" +
-            "Please join the meeting using the following link:\n\n" +
-            "{{zoom_url}}\n\n" +
-            "We look forward to speaking with you.\n\n" +
-            "Best regards,\n" +
-            "{{sender_signature}}"
+    private val variableServiceForMeeting = Mockito.mock(MailVariableService::class.java)
+
+    /** Mockito.any() 对 Kotlin 非空参数会返回 null；传真实默认值实例占位（既有测试同款手法）。 */
+    private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
+
+    /** Mockito.eq() 对 Kotlin 非空参数会返回 null；传真实默认值实例占位。 */
+    private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
+
+
+    /**
+     * 01 生成器协作者 stub：正文由通用 `MEETING_INVITATION` 模板链路渲染。
+     */
+    private fun mockMeetingInvitationBody(templateService: MailComposeTemplateService) {
+        Mockito.`when`(variableServiceForMeeting.resolveExpertProfileFor(anyValue(contact(1L)))).thenReturn(null)
+        Mockito.`when`(
+            variableServiceForMeeting.buildVariables(
+                anyValue(activeAccount("acc-a")),
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.anyBoolean(),
+                Mockito.any()
+            )
+        ).thenReturn(
+            mapOf(
+                "senderName" to "LuKai",
+                "senderTitle" to "Customer Care Officer",
+                "teamName" to "Qingfei Tech Talent Team",
+                "countryName" to "China",
+                "expertName" to "Professor Basdogan",
+                "expertFamilyName" to "Basdogan"
+            )
+        )
+        Mockito.`when`(
+            templateService.renderByCode(
+                eqValue("MEETING_INVITATION"),
+                anyValue(emptyMap()),
+                Mockito.anyInt()
+            )
+        ).thenAnswer { invocation ->
+            val variables = invocation.getArgument<Map<String, String>>(1)
+            ComposeTemplateRenderResult(
+                subject = "Meeting invitation",
+                body = "Dear " + variables["expertName"].orEmpty() + ",\n\n" +
+                    "We have noted the meeting time as " + variables["meeting_time"].orEmpty() + ".\n\n" +
+                    "Please join the meeting using the following link:\n\n" +
+                    variables["zoom_url"].orEmpty() + "\n\n" +
+                    "Best regards,\n" + variables["senderName"].orEmpty() + ", " +
+                    variables["senderTitle"].orEmpty()
+            )
+        }
+    }
 
     @BeforeEach
     fun setUp() {
@@ -1330,18 +1373,14 @@ class CalendarAttachmentIntegrationTest {
     }
 
     private fun meetingInput() = MeetingInput(
-        templateId = meetingTemplateId,
-        templateBody = meetingTemplateBody,
-        expertSalutation = "Professor Basdogan",
         zoneId = "Europe/Istanbul",
         startLocal = "2026-09-11T10:00",
         endLocal = "2026-09-11T10:30",
         zoomUrl = "https://zoom.us/j/92123456789?pwd=abcDEF123",
-        senderSignature = "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
         generatedAt = "2026-09-09T02:00:00Z"
     )
 
-    /** 真实 01 生成器（只 mock 目录 listEnabled 与 processing 存在性，ICS 全真实）。 */
+    /** 真实 01 生成器（只 mock 通用模板渲染与 processing 存在性，ICS 全真实）。 */
     private fun previewFor(contactId: Long = 1L): MeetingPreviewResponse {
         val inboundRepo = Mockito.mock(InboundMailProcessingRepository::class.java)
         Mockito.`when`(inboundRepo.findById(100L)).thenReturn(
@@ -1356,24 +1395,14 @@ class CalendarAttachmentIntegrationTest {
             )
         )
         val templateService = Mockito.mock(MailComposeTemplateService::class.java)
-        Mockito.`when`(templateService.listEnabled()).thenReturn(
-            listOf(
-                MailComposeTemplate(
-                    id = meetingTemplateId,
-                    templateCode = "MANUAL_MEETING_CONFIRMATION",
-                    templateName = "专家会议确认 · 英文",
-                    subject = "Meeting confirmation",
-                    mailType = "MANUAL_MEETING_CONFIRMATION",
-                    enabled = true
-                )
-            )
-        )
+        mockMeetingInvitationBody(templateService)
         val service = MeetingConfirmationService(
             inboundRepo,
             expertContactRepository,
             Mockito.mock(MailSenderAccountService::class.java),
             templateService,
-            MailContentService()
+            MailContentService(),
+            variableServiceForMeeting
         )
         return service.validateAndBuild(
             processingId = 100L,

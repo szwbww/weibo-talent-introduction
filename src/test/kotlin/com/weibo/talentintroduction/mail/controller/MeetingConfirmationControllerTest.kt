@@ -10,8 +10,8 @@ import com.weibo.talentintroduction.mail.service.MeetingInput
 import com.weibo.talentintroduction.mail.service.MeetingOptionsResponse
 import com.weibo.talentintroduction.mail.service.MeetingPreviewRequest
 import com.weibo.talentintroduction.mail.service.MeetingPreviewResponse
-import com.weibo.talentintroduction.mail.service.MeetingTemplateOption
 import com.weibo.talentintroduction.mail.service.MeetingTimeZoneOption
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
@@ -65,17 +65,8 @@ class MeetingConfirmationControllerTest {
     private fun sampleOptions() = MeetingOptionsResponse(
         targetKey = "1:acc-1",
         resolvedAccountCode = "acc-1",
-        expertSalutation = "Professor Basdogan",
-        senderSignature = "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
         generatedAt = "2026-09-09T03:00:40Z",
-        defaultZoneId = "Asia/Shanghai",
-        templates = listOf(
-            MeetingTemplateOption(
-                id = 100,
-                name = "专家会议确认 · 英文",
-                body = "Dear {{expert_salutation}},\n\n{{meeting_time}}"
-            )
-        )
+        defaultZoneId = "Asia/Shanghai"
     )
 
     private fun sampleZones() = listOf(
@@ -99,14 +90,10 @@ class MeetingConfirmationControllerTest {
         targetKey = "1:acc-1",
         resolvedAccountCode = "acc-1",
         meeting = MeetingInput(
-            templateId = 100,
-            templateBody = "Dear {{expert_salutation}}",
-            expertSalutation = "Professor Basdogan",
             zoneId = "Europe/Istanbul",
             startLocal = "2026-09-11T10:00",
             endLocal = "2026-09-11T10:30",
             zoomUrl = "https://zoom.us/j/1",
-            senderSignature = "LuKai",
             generatedAt = "2026-09-09T03:00:40Z"
         ),
         textBody = "Dear Professor Basdogan,",
@@ -160,7 +147,7 @@ class MeetingConfirmationControllerTest {
     }
 
     @Test
-    fun `authenticated options returns the directory contract`() {
+    fun `authenticated options returns only target account generatedAt and zone`() {
         stubAuth()
         Mockito.`when`(meetingConfirmationService.options(7L, 1L, null))
             .thenReturn(sampleOptions())
@@ -173,13 +160,12 @@ class MeetingConfirmationControllerTest {
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.targetKey").value("1:acc-1"))
             .andExpect(jsonPath("$.resolvedAccountCode").value("acc-1"))
-            .andExpect(jsonPath("$.expertSalutation").value("Professor Basdogan"))
-            .andExpect(jsonPath("$.senderSignature").value("LuKai, Customer Care Officer\nQingfei Tech Talent Team China"))
             .andExpect(jsonPath("$.defaultZoneId").value("Asia/Shanghai"))
             .andExpect(jsonPath("$.generatedAt").value("2026-09-09T03:00:40Z"))
-            .andExpect(jsonPath("$.templates[0].id").value(100))
-            .andExpect(jsonPath("$.templates[0].name").value("专家会议确认 · 英文"))
-            .andExpect(jsonPath("$.templates[0].body").value("Dear {{expert_salutation}},\n\n{{meeting_time}}"))
+            // I-1：options 不再返回专用模板目录/称呼/签名
+            .andExpect(jsonPath("$.templates").doesNotExist())
+            .andExpect(jsonPath("$.expertSalutation").doesNotExist())
+            .andExpect(jsonPath("$.senderSignature").doesNotExist())
     }
 
     @Test
@@ -242,6 +228,47 @@ class MeetingConfirmationControllerTest {
             .andExpect(jsonPath("$[0].offsetLabel").value("UTC+3"))
             .andExpect(jsonPath("$[0].offsetSeconds").value(10800))
             .andExpect(jsonPath("$[1].offsetLabel").value("UTC+5:30"))
+    }
+
+    @Test
+    fun `preview accepts the minimal meeting json without legacy fields`() {
+        stubAuth()
+        var captured: MeetingPreviewRequest? = null
+        Mockito.`when`(
+            meetingConfirmationService.preview(
+                Mockito.eq(7L),
+                anyValue(MeetingPreviewRequest(contactId = 1, meeting = samplePreview().meeting))
+            )
+        ).thenAnswer { invocation ->
+            captured = invocation.getArgument<MeetingPreviewRequest>(1)
+            samplePreview()
+        }
+
+        mockMvc.perform(
+            post("/api/mail/unmatched-inbound/7/meeting-confirmation/preview")
+                .session(sessionOf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"contactId":1,"meeting":{"zoneId":"Europe/Istanbul",""" +
+                        """"startLocal":"2026-09-11T10:00","endLocal":"2026-09-11T10:30",""" +
+                        """"zoomUrl":"https://zoom.us/j/1","generatedAt":"2026-09-09T03:00:40Z"}}"""
+                )
+        )
+            .andExpect(status().isOk)
+
+        val request = requireNotNull(captured)
+        val meeting = request.meeting
+        assertEquals(1L, request.contactId)
+        assertEquals("Europe/Istanbul", meeting.zoneId)
+        assertEquals("2026-09-11T10:00", meeting.startLocal)
+        assertEquals("2026-09-11T10:30", meeting.endLocal)
+        assertEquals("https://zoom.us/j/1", meeting.zoomUrl)
+        assertEquals("2026-09-09T03:00:40Z", meeting.generatedAt)
+        // 兼容字段走默认值（新请求不必发送）
+        assertEquals(0L, meeting.templateId)
+        assertEquals("", meeting.templateBody)
+        assertEquals("", meeting.expertSalutation)
+        assertEquals("", meeting.senderSignature)
     }
 
     @Test

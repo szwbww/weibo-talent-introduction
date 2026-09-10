@@ -92,7 +92,7 @@ describe("收发件箱静态资源版本", () => {
     it("正文行距更新必须刷新 mailbox-chat.css 缓存版本", () => {
         assert.match(
             indexSource,
-            /href="mailbox-chat\.css\?v=20260910-mailbox-spacing"/,
+            /href="mailbox-chat\.css\?v=20260910-meeting-generic-template"/,
             "CSS 版本号必须随正文样式更新，避免浏览器继续使用旧行距"
         );
     });

@@ -19,6 +19,9 @@ object MeetingConfirmationDomain {
     /** 表单无默认猜测时的明确应用默认时区（I-4），不推断专家所在地。 */
     const val DEFAULT_ZONE_ID = "Asia/Shanghai"
 
+    /** 会议邮件与 ICS 正文确实拿不到专家姓名时的唯一兜底称呼（与 `${expertFamilyName|Colleague}` 同词）。 */
+    const val DEFAULT_ADDRESSEE = "Colleague"
+
     const val CALENDAR_CONTENT_TYPE = "text/calendar; charset=UTF-8"
 
     const val CALENDAR_SCHEMA_VERSION = 1
@@ -27,14 +30,20 @@ object MeetingConfirmationDomain {
     val CALENDAR_FILENAME_REGEX = Regex("""^meeting-[0-9]{4}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9-]{1,60}\.ics$""")
 }
 
-/** 会议配置输入（打开/编辑草稿时冻结；不写回模板）。 */
+/**
+ * 会议配置输入（打开/编辑草稿时冻结；不写回模板）。
+ *
+ * 正文由通用 `MEETING_INVITATION` 模板链路渲染（I-1/I-2），因此前四项只作为
+ * 历史草稿/旧请求的兼容字段保留默认值，服务端不再读取；新请求只发时区、
+ * 起止本地时间、Zoom 链接与 generatedAt。
+ */
 data class MeetingInput(
-    /** 专用模板 id（MANUAL_MEETING_CONFIRMATION，启用）。 */
-    val templateId: Long,
-    /** 从该模板取出的正文快照；允许比库模板新/旧，不回写模板。 */
-    val templateBody: String,
-    /** 人工称呼（Dear 后），原样可改，不猜测职称/姓氏。 */
-    val expertSalutation: String,
+    /** 兼容字段：旧专用模板 id；服务端忽略。 */
+    val templateId: Long = 0L,
+    /** 兼容字段：旧模板正文快照；服务端忽略。 */
+    val templateBody: String = "",
+    /** 兼容字段：旧专家称呼；称呼改用模板变量渲染。 */
+    val expertSalutation: String = "",
     /** 服务端目录中的 IANA 区域或 UTC。 */
     val zoneId: String,
     /** YYYY-MM-DDTHH:mm，分钟精度。 */
@@ -43,8 +52,8 @@ data class MeetingInput(
     val endLocal: String,
     /** 已创建的 Zoom 会议链接（含入会密码参数）。 */
     val zoomUrl: String,
-    /** 发件签名（多行允许 LF；CRLF 统一 LF）。 */
-    val senderSignature: String,
+    /** 兼容字段：旧发件签名；签名改用模板变量渲染。 */
+    val senderSignature: String = "",
     /** UTC ISO Instant（精度秒）；options 发出、已有草稿复用。 */
     val generatedAt: String
 )
@@ -56,25 +65,13 @@ data class MeetingPreviewRequest(
     val meeting: MeetingInput
 )
 
-/** options 模板目录条目（只含本专用 type 的启用模板）。 */
-data class MeetingTemplateOption(
-    val id: Long,
-    val name: String,
-    val body: String
-)
-
 data class MeetingOptionsResponse(
     /** 目标键（联系人+解析后账号作用域），options 与 preview 同源。 */
     val targetKey: String,
     val resolvedAccountCode: String,
-    /** 专家称呼默认值：expert_contact.expertName 原文（可改；无值留空）。 */
-    val expertSalutation: String,
-    /** 默认签名：由账号 senderName/title、teamName/countryName 拼接（不伪造职位）。 */
-    val senderSignature: String,
     /** UTC ISO Instant（精度秒）。 */
     val generatedAt: String,
-    val defaultZoneId: String,
-    val templates: List<MeetingTemplateOption>
+    val defaultZoneId: String
 )
 
 data class MeetingTimeZoneOption(

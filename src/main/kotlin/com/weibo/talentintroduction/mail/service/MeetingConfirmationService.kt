@@ -4,7 +4,6 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
-import com.weibo.talentintroduction.template.domain.ComposeBlockType
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.stereotype.Service
 import java.io.ByteArrayOutputStream
@@ -32,6 +31,9 @@ import java.util.Locale
  *
  * 本服务不调用需要写库的旧 meeting 服务；结构化配置是唯一输入，客户端不能
  * 直传任意 ICS/filename/MIME（I-5）；同源时间对生成文本/中国时间/ICS（I-3/I-6）。
+ *
+ * 正文来源唯一：通用 `MEETING_INVITATION` 模板（`renderByCode`，含回复片段与
+ * 自定义文本），变量只额外覆盖 `meeting_time`/`zoom_url`（I-1/I-2）。
  */
 @Service
 class MeetingConfirmationService(
@@ -39,21 +41,19 @@ class MeetingConfirmationService(
     private val expertContactRepository: ExpertContactRepository,
     private val mailSenderAccountService: MailSenderAccountService,
     private val mailComposeTemplateService: MailComposeTemplateService,
-    private val mailContentService: MailContentService
+    private val mailContentService: MailContentService,
+    private val mailVariableService: MailVariableService
 ) {
 
     fun options(processingId: Long, contactId: Long, senderAccountCode: String?): MeetingOptionsResponse {
         val processing = requireProcessingForContact(processingId, contactId)
-        val contact = findContact(contactId)
+        findContact(contactId)
         val account = resolveAccount(processing.senderAccountCode, senderAccountCode)
         return MeetingOptionsResponse(
             targetKey = targetKey(contactId, account.accountCode),
             resolvedAccountCode = account.accountCode,
-            expertSalutation = contact.expertName?.trim().orEmpty(),
-            senderSignature = buildDefaultSignature(account),
             generatedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS).toString(),
-            defaultZoneId = MeetingConfirmationDomain.DEFAULT_ZONE_ID,
-            templates = specialTemplateOptions()
+            defaultZoneId = MeetingConfirmationDomain.DEFAULT_ZONE_ID
         )
     }
 
@@ -84,6 +84,9 @@ class MeetingConfirmationService(
     /**
      * 纯时间/模板生成边界：preview 先读目标/账号再调用本方法；03 传已解析的
      * 真实实例并在本方法内再次校验 processing 归属（IP-2）。
+     *
+     * 正文只走通用 `MEETING_INVITATION` 模板链路（I-1），变量只额外覆盖
+     * `meeting_time`/`zoom_url`（I-2）；输入里的旧模板/称呼/签名字段不再读取。
      */
     fun validateAndBuild(
         processingId: Long,
@@ -94,9 +97,6 @@ class MeetingConfirmationService(
         val contactId = contact.id ?: throw IllegalArgumentException("Expert contact id is required")
         requireProcessingForContact(processingId, contactId)
 
-        val templateText = validateTemplateSnapshot(input.templateBody, input.templateId)
-        val salutation = validateSalutation(input.expertSalutation)
-        val signature = validateSignature(input.senderSignature)
         val zoomUrl = validateZoomUrl(input.zoomUrl)
         val zoneIdRaw = validateZoneId(input.zoneId)
         val zone = ZoneId.of(zoneIdRaw)
@@ -116,15 +116,15 @@ class MeetingConfirmationService(
         val meetingTime = meetingTimeText(zoneIdRaw, zone, startZoned, endZoned)
         val chinaTime = chinaTimeText(startInstant, endInstant)
 
-        val textBody = renderTemplate(templateText, salutation, meetingTime, zoomUrl, signature)
-        if (textBody.length > MAX_BODY_CHARS) {
-            throw IllegalArgumentException("会议邮件正文不能超过 $MAX_BODY_CHARS 字符")
-        }
+        val variables = meetingTemplateVariables(contact, account, meetingTime, zoomUrl)
+        val textBody = renderMeetingBody(contact, variables)
         val htmlBody = renderHtml(textBody, zoomUrl)
         if (htmlBody.length > MAX_BODY_CHARS) {
             throw IllegalArgumentException("会议邮件 HTML 正文不能超过 $MAX_BODY_CHARS 字符")
         }
 
+        val salutation = addressee(variables, contact)
+        val signature = signature(variables)
         val normalizedRecipient = contact.expertEmail.lowercase().trim()
         val semanticSha256 = semanticSha256(
             processingId = processingId,
@@ -209,110 +209,74 @@ class MeetingConfirmationService(
             requestedAccountCode?.takeIf { it.isNotBlank() } ?: inboundSenderAccountCode
         )
 
-    private fun specialTemplateOptions(): List<MeetingTemplateOption> {
-        val headers = mailComposeTemplateService.listEnabled()
-            .filter { it.mailType == MeetingConfirmationDomain.MANUAL_MEETING_CONFIRMATION }
-            .mapNotNull { header -> header.id?.let { id -> id to header } }
-        return headers.map { (id, header) ->
-            val detail = mailComposeTemplateService.getById(id)
-            val body = detail.blocks
-                .filter { it.blockType == ComposeBlockType.CUSTOM_TEXT }
-                .sortedWith(compareBy({ it.blockOrder }, { it.id ?: Long.MAX_VALUE }))
-                .mapNotNull { it.customText }
-                .joinToString("\n\n")
-            MeetingTemplateOption(id = id, name = detail.templateName, body = body)
-        }
-    }
-
-    private fun buildDefaultSignature(account: MailSenderAccount): String {
-        val line1 = listOf(
-            account.senderName.trim().takeIf { it.isNotBlank() },
-            account.senderTitle?.trim()?.takeIf { it.isNotBlank() }
-        ).filterNotNull().joinToString(", ")
-        val line2 = listOf(
-            account.teamName?.trim()?.takeIf { it.isNotBlank() },
-            account.countryName?.trim()?.takeIf { it.isNotBlank() }
-        ).filterNotNull().joinToString(" ")
-        return listOf(line1, line2).filter { it.isNotBlank() }.joinToString("\n")
-    }
-
     private fun targetKey(contactId: Long, accountCode: String): String = "$contactId:$accountCode"
 
-    // ───────────────────────── 输入校验（I-4/I-5） ─────────────────────────
+    // ───────────────────────── 正文渲染（I-1/I-2） ─────────────────────────
 
-    /** 模板快照校验：trim 后 1..10000；四变量各至少 1 次；未知/不闭合 {{ 或 }} 与所有 ${ 残留拒绝。 */
-    private fun validateTemplateSnapshot(raw: String, templateId: Long): String {
-        val text = raw.trim()
-        if (text.isEmpty() || text.length > MAX_TEMPLATE_CHARS) {
-            throw IllegalArgumentException(MSG_TEMPLATE_UNAVAILABLE)
-        }
-        if (text.contains("\${")) {
-            throw IllegalArgumentException(MSG_TEMPLATE_UNAVAILABLE)
-        }
-        val required = setOf(
-            "{{expert_salutation}}", "{{meeting_time}}", "{{zoom_url}}", "{{sender_signature}}"
+    /**
+     * 通用模板变量（与普通人工单发同序）：专家画像 → sender/expert/unsubscribe
+     * 变量，再加入会议值。模板配置采用现有 `${meeting_time}`、`${zoom_url}`。
+     *
+     * I-2：除通用 map 的键之外只允许新增/覆盖 `meeting_time` 与 `zoom_url`；
+     * 不注入任何其他全局或会议专用变量。
+     */
+    private fun meetingTemplateVariables(
+        contact: ExpertContact,
+        account: MailSenderAccount,
+        meetingTime: String,
+        zoomUrl: String
+    ): Map<String, String> {
+        val expert = mailVariableService.resolveExpertProfileFor(contact)
+        val base = mailVariableService.buildVariables(
+            account, expert, contact.expertEmail, previewFallbacks = false, contact = contact
         )
-        var index = 0
-        val seen = mutableSetOf<String>()
-        while (index < text.length) {
-            val open = text.indexOf("{{", index)
-            val closeStart = text.indexOf("}}", index)
-            when {
-                open == -1 && closeStart == -1 -> index = text.length
-                open == -1 || closeStart == -1 || open > closeStart -> throw IllegalArgumentException(MSG_TEMPLATE_UNAVAILABLE)
-                else -> {
-                    val token = text.substring(open, closeStart + 2)
-                    if (token !in required) {
-                        throw IllegalArgumentException(MSG_TEMPLATE_UNAVAILABLE)
-                    }
-                    seen += token
-                    index = closeStart + 2
-                }
-            }
-        }
-        if (required.minus(seen).isNotEmpty()) {
+        return base + mapOf(
+            "meeting_time" to meetingTime,
+            "zoom_url" to zoomUrl
+        )
+    }
+
+    /** 唯一正文来源：通用 `MEETING_INVITATION`（REPLY_SNIPPET + CUSTOM_TEXT 全序）。 */
+    private fun renderMeetingBody(contact: ExpertContact, variables: Map<String, String>): String {
+        val rendered = try {
+            mailComposeTemplateService.renderByCode(
+                MEETING_INVITATION_TEMPLATE_CODE,
+                variables,
+                MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+            )
+        } catch (ex: IllegalStateException) {
             throw IllegalArgumentException(MSG_TEMPLATE_UNAVAILABLE)
         }
-        // 模板 id 必须仍指向启用目录中的专用模板（发送时仍查存在/enabled/type）。
-        val known = mailComposeTemplateService.listEnabled()
-            .any { it.mailType == MeetingConfirmationDomain.MANUAL_MEETING_CONFIRMATION && it.id == templateId }
-        if (!known) {
+        val text = rendered.body.trim()
+        if (text.isEmpty()) {
             throw IllegalArgumentException(MSG_TEMPLATE_UNAVAILABLE)
+        }
+        if (text.length > MAX_BODY_CHARS) {
+            throw IllegalArgumentException("会议邮件正文不能超过 $MAX_BODY_CHARS 字符")
         }
         return text
     }
 
-    private fun validateSalutation(raw: String): String {
-        val value = raw.trim()
-        if (value.isEmpty()) {
-            throw IllegalArgumentException("请填写专家称呼")
-        }
-        if (value.length > 100) {
-            throw IllegalArgumentException("专家称呼不能超过 100 字符")
-        }
-        if (value.any { it.isISOControl() }) {
-            throw IllegalArgumentException("专家称呼不能包含控制字符")
-        }
-        rejectTemplateChars(value, "专家称呼")
-        return value
+    /** ICS 称呼与模板正文同源：ES 画像姓名 → 联系人姓名 → 固定兜底。 */
+    private fun addressee(variables: Map<String, String>, contact: ExpertContact): String =
+        listOf("expertName", "expertFamilyName")
+            .firstNotNullOfOrNull { key -> variables[key]?.trim()?.takeIf { it.isNotBlank() } }
+            ?: contact.expertName?.trim()?.takeIf { it.isNotBlank() }
+            ?: MeetingConfirmationDomain.DEFAULT_ADDRESSEE
+
+    /** ICS 签名与模板变量同源（senderName/senderTitle、teamName/countryName）。 */
+    private fun signature(variables: Map<String, String>): String {
+        fun value(key: String) = variables[key]?.trim().orEmpty()
+        val line1 = listOf(value("senderName"), value("senderTitle"))
+            .filter { it.isNotBlank() }
+            .joinToString(", ")
+        val line2 = listOf(value("teamName"), value("countryName"))
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+        return listOf(line1, line2).filter { it.isNotBlank() }.joinToString("\n")
     }
 
-    private fun validateSignature(raw: String): String {
-        val normalized = raw.replace("\r\n", "\n")
-        val value = normalized.trim()
-        if (value.isEmpty()) {
-            throw IllegalArgumentException("请填写发件签名")
-        }
-        if (value.length > 2000) {
-            throw IllegalArgumentException("发件签名不能超过 2000 字符")
-        }
-        if (value.any { it != '\n' && it.isISOControl() }) {
-            throw IllegalArgumentException("发件签名只允许换行，不能包含其它控制字符")
-        }
-        rejectTemplateChars(value, "发件签名")
-        return value
-    }
-
+    // ───────────────────────── 输入校验（I-4/I-5） ─────────────────────────
     private fun validateZoomUrl(raw: String): String {
         val url = raw.trim()
         if (url.isEmpty()) {
@@ -462,23 +426,6 @@ class MeetingConfirmationService(
             "UTC$sign$hours:%02d".format(minutes)
         }
     }
-
-    // ───────────────────────── 正文渲染（I-5） ─────────────────────────
-
-    /** 四个 {{...}} 各单次替换；值已拒绝 {{/}}/${，不存在二次展开。 */
-    private fun renderTemplate(
-        templateText: String,
-        salutation: String,
-        meetingTime: String,
-        zoomUrl: String,
-        signature: String
-    ): String =
-        templateText
-            .replace("{{expert_salutation}}", salutation)
-            .replace("{{meeting_time}}", meetingTime)
-            .replace("{{zoom_url}}", zoomUrl)
-            .replace("{{sender_signature}}", signature)
-            .trim()
 
     /** 先 MailContentService.plainTextToHtml 安全转义，再只把已 escape 的完整 Zoom URL 文本替换为同文字安全 a 标签。 */
     private fun renderHtml(textBody: String, zoomUrl: String): String {
@@ -637,6 +584,9 @@ class MeetingConfirmationService(
             .apply { add("UTC") }
 
     companion object {
+        /** 会议正文唯一来源：通用邀请模板 code（I-1）。 */
+        const val MEETING_INVITATION_TEMPLATE_CODE = "MEETING_INVITATION"
+
         private const val MSG_TEMPLATE_UNAVAILABLE = "会议模板不可用，请重新选择或检查模板变量"
         private const val MSG_ZONE_INVALID = "请选择有效会议时区"
         private const val MSG_TIME_MISSING = "请填写日期和起止时间"
@@ -644,7 +594,6 @@ class MeetingConfirmationService(
         private const val MSG_DST_GAP = "该当地时间不存在，请避开夏令时跳时区间"
         private const val MSG_DST_OVERLAP = "该当地时间出现两次，请选择不处于夏令时回拨区间的时间"
 
-        private const val MAX_TEMPLATE_CHARS = 10_000
         private const val MAX_BODY_CHARS = 20_000
         private const val MAX_DURATION_MINUTES = 1440
         private const val MAX_ICS_BYTES = 64 * 1024

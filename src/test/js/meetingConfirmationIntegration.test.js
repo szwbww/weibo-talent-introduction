@@ -689,11 +689,6 @@ function escapeHtmlLike(value) {
 // fast-p 04 会议 fixture：01 options/zones/preview 的 stub 响应形状（只读契约）
 // ════════════════════════════════════════════════════════════════════════
 
-const DEFAULT_MEETING_TEMPLATES = [
-    { id: 42, name: "会议确认（默认）", body: "Dear {{expert_salutation}},\n\nWe would like to invite you to a meeting.\n\nMeeting time: {{meeting_time}}\nJoin Zoom: {{zoom_url}}\n\n{{sender_signature}}" },
-    { id: 43, name: "会议确认（英文）", body: "Dear {{expert_salutation}},\n\nI look forward to our meeting on {{meeting_time}}.\nZoom link: {{zoom_url}}\n\n{{sender_signature}}" }
-];
-
 const DEFAULT_MEETING_ZONES = [
     { id: "Europe/Istanbul", labelZh: "土耳其 · 伊斯坦布尔", aliases: ["土耳其", "伊斯坦布尔", "Turkey", "Türkiye", "Istanbul"], offsetLabel: "UTC+3", offsetSeconds: 10800 },
     { id: "Asia/Shanghai", labelZh: "中国 · 北京 / 上海", aliases: ["中国", "北京", "上海", "China", "Beijing", "Shanghai"], offsetLabel: "UTC+8", offsetSeconds: 28800 },
@@ -712,11 +707,10 @@ function meetingInputToLocal(input) {
     return { startDate, startTime, endDate, endTime };
 }
 
-function defaultPreviewResponse(input) {
+function defaultPreviewResponse(input, options) {
     const meeting = input || {};
-    const tplBody = String(meeting.templateBody || "");
     const zoneId = String(meeting.zoneId || "Europe/Istanbul");
-    const name = String(meeting.expertSalutation || "Professor Basdogan");
+    const name = String((options && options.addressee) || "Professor Basdogan");
     const { startDate, startTime, endTime } = meetingInputToLocal(meeting);
     const textBody = `Dear ${name},\n\nPlease join our online meeting on ${startDate} ${startTime}-${endTime} (${zoneId}).\n\nBest regards`;
     const htmlBody = `<p>Dear ${name},</p><p>Please join our online meeting on ${startDate} ${startTime}-${endTime} (${zoneId}).</p><p>Best regards</p>`;
@@ -843,11 +837,8 @@ function createChatSandbox(options) {
             const saved = opts.meetingOptions || {
                 targetKey: "1:acc1",
                 resolvedAccountCode: "acc1",
-                expertSalutation: "Professor Basdogan",
-                senderSignature: "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
                 generatedAt: "2026-09-09T08:00:00Z",
-                defaultZoneId: "Europe/Istanbul",
-                templates: (opts.meetingTemplates !== undefined ? opts.meetingTemplates : DEFAULT_MEETING_TEMPLATES)
+                defaultZoneId: "Europe/Istanbul"
             };
             return Promise.resolve(saved);
         }
@@ -1191,6 +1182,10 @@ function click(el) {
     el.dispatchEvent(new MiniEvent("click", { bubbles: true }));
 }
 
+function mousedown(el) {
+    el.dispatchEvent(new MiniEvent("mousedown", { bubbles: true }));
+}
+
 function inputEvent(el) {
     el.dispatchEvent(new MiniEvent("input", { bubbles: true }));
 }
@@ -1276,7 +1271,7 @@ function setMeetingFieldValue(ctx, id, value) {
     return node;
 }
 
-/** 通过搜索+点击明确选中时区（I-5：只有显式选择才改 selectedZoneId） */
+/** 通过搜索 + 鼠标按下候选项明确选中时区（I-4：只有显式选择才改 selectedZoneId） */
 function pickZone(ctx, zoneId) {
     const search = meetingField(ctx, "meetingZoneSearch");
     assert.ok(search);
@@ -1287,7 +1282,7 @@ function pickZone(ctx, zoneId) {
     const option = Array.prototype.slice.call(list.querySelectorAll('button[role="option"]'))
         .find((button) => button.getAttribute("data-zone") === zoneId);
     assert.ok(option, `候选必须包含 ${zoneId}`);
-    click(option);
+    mousedown(option);
 }
 
 function meetingPreviewRequests(ctx) {
@@ -1301,22 +1296,19 @@ function meetingBodyText(editor) {
 
 async function fillCompleteMeetingForm(ctx, overrides) {
     const values = Object.assign({
-        meetingName: "Professor Basdogan",
         meetingDate: "2026-09-11",
         meetingStart: "10:00",
         meetingEndDate: "2026-09-11",
         meetingEnd: "10:30",
         meetingUrl: "https://zoom.us/j/123456789?pwd=AbC123"
     }, overrides || {});
-    setMeetingFieldValue(ctx, "meetingName", values.meetingName);
     pickZone(ctx, values.zoneId || "Europe/Istanbul");
     setMeetingFieldValue(ctx, "meetingDate", values.meetingDate);
     setMeetingFieldValue(ctx, "meetingStart", values.meetingStart);
     setMeetingFieldValue(ctx, "meetingEndDate", values.meetingEndDate);
     setMeetingFieldValue(ctx, "meetingEnd", values.meetingEnd);
+    // 最后一个字段触发 300ms debounce 的最终一次预览
     setMeetingFieldValue(ctx, "meetingUrl", values.meetingUrl);
-    // 触发达 300ms debounce 的最终一次预览
-    setMeetingFieldValue(ctx, "meetingSignature", values.meetingSignature || "LuKai, Customer Care Officer\nQingfei Tech Talent Team China");
 }
 
 async function bootMeetingA(serverOverrides, mountOverrides) {
@@ -1424,7 +1416,7 @@ describe("fast-p 04: 组件门禁与 S-3 人工回复区（trigger/附件卡）"
 });
 
 describe("fast-p 04: 弹窗加载与表单默认值（options/zones 只读）", () => {
-    it("并行拉 options/zones；上下文/默认值正确；custom 末项；确认禁用", async () => {
+    it("并行拉 options/zones；上下文/默认值正确；只剩时区与时间字段；确认禁用", async () => {
         const ctx = await bootMeetingA();
         await openMeetingLoaded(ctx);
         const optsCalls = ctx.calls.api.filter((e) => /\/meeting-confirmation\/options/.test(e.url));
@@ -1434,24 +1426,27 @@ describe("fast-p 04: 弹窗加载与表单默认值（options/zones 只读）", 
         assert.ok(optsCalls[0].url.includes("contactId=1"));
         assert.ok(optsCalls[0].url.includes("senderAccountCode=acc1"));
         assert.match(meetingField(ctx, "meetingContext").textContent, /专家A · 回复账号 acc1/);
-        assert.strictEqual(meetingField(ctx, "meetingName").value, "Professor Basdogan");
-        assert.ok(meetingField(ctx, "meetingSignature").value.includes("LuKai"));
-        const select = meetingField(ctx, "meetingTemplate");
-        const options = select.querySelectorAll("option");
-        assert.strictEqual(options.length, DEFAULT_MEETING_TEMPLATES.length + 1);
-        assert.strictEqual(options[options.length - 1].value, "custom");
+        // I-5：模板/称呼/签名节点整体移除
+        ["meetingTemplate", "templateDetails", "templateText", "resetTemplate",
+            "meetingName", "meetingSignature"].forEach((id) => {
+            assert.strictEqual(meetingField(ctx, id), null, `${id} 必须已从弹窗移除`);
+        });
+        assert.ok(meetingField(ctx, "meetingZoneSearch"), "时区字段保留");
+        assert.ok(meetingField(ctx, "meetingUrl"), "Zoom 链接字段保留");
+        assert.ok(meetingField(ctx, "inspectIcs"), "ICS 操作保留");
         assert.strictEqual(meetingField(ctx, "meetingZoneSearch").value, "土耳其 · 伊斯坦布尔 (UTC+3)");
         assert.strictEqual(meetingField(ctx, "meetingDate").value, "");
         assert.strictEqual(meetingField(ctx, "applyMeeting").disabled, true, "未预览前确认禁用");
     });
 
-    it("无模板：表单禁用 + 固定文案，无伪默认模板", async () => {
+    it("options 不带模板目录也能继续：表单可用，模板缺失由 preview 400 呈现", async () => {
         const ctx = await bootMeetingA({ meetingTemplates: [] });
         await openMeetingLoaded(ctx);
-        assert.strictEqual(meetingField(ctx, "meetingTemplate").querySelectorAll("option").length, 0);
-        assert.match(meetingField(ctx, "meetingLoadStatus").textContent, /会议模板不可用/);
-        assert.strictEqual(meetingField(ctx, "meetingName").disabled, true);
-        assert.strictEqual(meetingField(ctx, "applyMeeting").disabled, true);
+        assert.strictEqual(meetingField(ctx, "meetingLoadStatus").hidden, true, "options 成功即 ready，不报模板目录");
+        assert.strictEqual(meetingField(ctx, "meetingUrl").disabled, false);
+        await fillCompleteMeetingForm(ctx);
+        await flush();
+        assert.ok(meetingPreviewRequests(ctx).length >= 1, "模板可用性由服务端 preview 判定");
     });
 
     it("配置加载失败：状态文案 + 重试可用；重试成功进入 ready", async () => {
@@ -1472,7 +1467,7 @@ describe("fast-p 04: 弹窗加载与表单默认值（options/zones 只读）", 
         click(retry);
         await flush();
         assert.strictEqual(meetingField(ctx, "meetingLoadStatus").hidden, true);
-        assert.strictEqual(meetingField(ctx, "meetingName").value, "Professor Basdogan");
+        assert.strictEqual(meetingField(ctx, "meetingZoneSearch").value, "土耳其 · 伊斯坦布尔 (UTC+3)");
     });
 });
 
@@ -1542,6 +1537,33 @@ describe("fast-p 04: 时区搜索（S-4/I-5 键盘与显式选择）", () => {
         // 第二下 Esc 关弹窗
         keyEvent(meetingDialog(ctx), "Escape");
         assert.strictEqual(meetingDialog(ctx).hasAttribute("open"), false, "第二下 Esc 关闭弹窗");
+    });
+
+    it("鼠标 mousedown 选时区：从上海切到 Istanbul，标签/选中值/预览 payload 同步", async () => {
+        const ctx = await bootMeetingA();
+        await openMeetingLoaded(ctx);
+        const search = meetingField(ctx, "meetingZoneSearch");
+        // 先显式选中上海
+        pickZone(ctx, "Asia/Shanghai");
+        assert.strictEqual(search.value, "中国 · 北京 / 上海 (UTC+8)");
+        assert.strictEqual(meetingField(ctx, "meetingZoneHint").textContent,
+            "Asia/Shanghai · 日期和时间均按此时区填写");
+        // blur 在 mousedown 之后仍可能出现：不得回退已选值
+        search.dispatchEvent(new MiniEvent("blur", { bubbles: true }));
+        assert.strictEqual(search.value, "中国 · 北京 / 上海 (UTC+8)");
+        // 鼠标按下 Istanbul 候选项（I-4）
+        pickZone(ctx, "Europe/Istanbul");
+        assert.strictEqual(search.value, "土耳其 · 伊斯坦布尔 (UTC+3)", "点击后立即显示新时区");
+        assert.strictEqual(meetingField(ctx, "meetingZoneHint").textContent,
+            "Europe/Istanbul · 日期和时间均按此时区填写");
+        assert.strictEqual(meetingField(ctx, "meetingZoneOptions").hidden, true, "选择后关闭候选");
+        await fillCompleteMeetingForm(ctx);
+        await flush();
+        const previews = meetingPreviewRequests(ctx);
+        const payload = JSON.parse(previews[previews.length - 1].body);
+        assert.strictEqual(payload.meeting.zoneId, "Europe/Istanbul", "payload 时区为显式选择值");
+        assert.deepStrictEqual(Object.keys(payload.meeting).sort(),
+            ["endLocal", "generatedAt", "startLocal", "zoneId", "zoomUrl"], "只发最小会议字段");
     });
 
     it("日期变化：重拉目录且保留 zone id；endDate 自动跟随不隐式改时区", async () => {
@@ -1617,7 +1639,7 @@ describe("fast-p 04: 预览生成与右栏（T2/S-2 绑定）", () => {
         // 服务端 400
         assert.match(meetingField(ctx, "meetingError").textContent, /请输入有效的 Zoom 会议链接/);
         assert.strictEqual(meetingField(ctx, "meetingLoadStatus").hidden, true, "400 不显示重试");
-        assert.strictEqual(meetingField(ctx, "meetingName").value, "Professor Basdogan", "左栏值保留");
+        assert.strictEqual(meetingField(ctx, "meetingUrl").value, "https://zoom.us/j/123456789?pwd=AbC123", "左栏值保留");
         assert.strictEqual(meetingField(ctx, "meetingDate").value, "2026-09-11", "左栏日期保留");
         // 网络错误
         mode = "network";
@@ -1651,17 +1673,23 @@ describe("fast-p 04: 预览生成与右栏（T2/S-2 绑定）", () => {
             }
         });
         await openMeetingLoaded(ctx);
-        await fillCompleteMeetingForm(ctx, { meetingName: "First Name" });
-        await fillCompleteMeetingForm(ctx, { meetingName: "Second Name" });
+        await fillCompleteMeetingForm(ctx, { meetingUrl: "https://zoom.us/j/1?pwd=first" });
+        await fillCompleteMeetingForm(ctx, { meetingUrl: "https://zoom.us/j/2?pwd=second" });
         assert.ok(pending.length >= 2, "两次完整预览必须发生");
         const latestBody = meetingField(ctx, "meetingBody");
         assert.ok(!latestBody.textContent.includes("Second Name") || latestBody.textContent.includes("请填写"), "尚未返回前不展示旧值");
         // 旧响应先返回：不得覆盖
-        pending[pending.length - 2].resolve(defaultPreviewResponse({ expertSalutation: "First Name", startLocal: "2026-09-11T10:00", endLocal: "2026-09-11T10:30", zoneId: "Europe/Istanbul" }));
+        pending[pending.length - 2].resolve(defaultPreviewResponse(
+            { startLocal: "2026-09-11T10:00", endLocal: "2026-09-11T10:30", zoneId: "Europe/Istanbul" },
+            { addressee: "First Name" }
+        ));
         await flush();
         assert.ok(!meetingField(ctx, "meetingBody").textContent.includes("First Name"), "旧响应不得覆盖新表单");
         // 新响应返回：展示新值
-        pending[pending.length - 1].resolve(defaultPreviewResponse({ expertSalutation: "Second Name", startLocal: "2026-09-11T10:00", endLocal: "2026-09-11T10:30", zoneId: "Europe/Istanbul" }));
+        pending[pending.length - 1].resolve(defaultPreviewResponse(
+            { startLocal: "2026-09-11T10:00", endLocal: "2026-09-11T10:30", zoneId: "Europe/Istanbul" },
+            { addressee: "Second Name" }
+        ));
         await flush();
         assert.match(meetingField(ctx, "meetingBody").textContent, /Dear Second Name/);
     });

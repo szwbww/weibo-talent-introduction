@@ -637,11 +637,8 @@ function inputInto(el, value) {
     eventOn(el, "input");
 }
 
-// ---- 组件 stub API（01 只读形状） ----
+// ---- 组件 stub API（01 只读形状；正文由服务端通用模板渲染，弹窗不传模板） ----
 
-const UNIT_TEMPLATES = [
-    { id: 42, name: "会议确认（默认）", body: "Dear {{expert_salutation}},\n\nWe invite you on {{meeting_time}}.\nJoin: {{zoom_url}}\n\n{{sender_signature}}" }
-];
 const UNIT_ZONES = [
     { id: "Europe/Istanbul", labelZh: "土耳其 · 伊斯坦布尔", aliases: ["土耳其", "伊斯坦布尔", "Turkey", "Türkiye", "Istanbul"], offsetLabel: "UTC+3", offsetSeconds: 10800 },
     { id: "Asia/Shanghai", labelZh: "中国 · 北京 / 上海", aliases: ["中国", "北京", "上海", "China", "Beijing", "Shanghai"], offsetLabel: "UTC+8", offsetSeconds: 28800 },
@@ -656,9 +653,8 @@ function makeStubApi(overrides) {
         if (/\/meeting-confirmation\/options/.test(url)) {
             return Promise.resolve(overrides && overrides.options !== undefined
                 ? overrides.options
-                : { targetKey: "1:acc1", resolvedAccountCode: "acc1", expertSalutation: "Professor Basdogan",
-                    senderSignature: "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
-                    generatedAt: "2026-09-09T08:00:00Z", defaultZoneId: "Europe/Istanbul", templates: UNIT_TEMPLATES });
+                : { targetKey: "1:acc1", resolvedAccountCode: "acc1",
+                    generatedAt: "2026-09-09T08:00:00Z", defaultZoneId: "Europe/Istanbul" });
         }
         if (/\/meeting-confirmation\/time-zones/.test(url)) {
             return Promise.resolve(UNIT_ZONES);
@@ -668,7 +664,7 @@ function makeStubApi(overrides) {
             const parsed = JSON.parse((opts && opts.body) || "{}");
             const input = parsed.meeting || {};
             if (overrides && typeof overrides.preview === "function") return Promise.resolve(overrides.preview(parsed));
-            const name = String(input.expertSalutation || "Professor Basdogan");
+            const name = "Professor Basdogan";
             const start = String(input.startLocal || "2026-09-11T10:00");
             const end = String(input.endLocal || "2026-09-11T10:30");
             const zoneId = String(input.zoneId || "Europe/Istanbul");
@@ -971,25 +967,28 @@ describe("fast-p 04 组件：create/open/close/dispose 生命周期（S-2）", (
         const mount = mountComponent();
         openComponent(mount);
         await flush();
-        const name = mount.el("meetingName");
-        assert.strictEqual(name.value, "Professor Basdogan", "默认称呼来自 options");
-        const select = mount.el("meetingTemplate");
-        assert.ok(select.querySelectorAll("option").length >= 2, "模板项 + 自定义项");
-        assert.strictEqual(select.querySelectorAll("option")[1].value, "custom");
+        assert.strictEqual(mount.el("meetingName"), null, "称呼输入已移除");
+        assert.strictEqual(mount.el("meetingTemplate"), null, "模板选择已移除");
+        assert.strictEqual(mount.el("templateText"), null, "模板正文已移除");
+        assert.strictEqual(mount.el("meetingSignature"), null, "签名输入已移除");
+        assert.strictEqual(mount.el("meetingZoneSearch").value, "土耳其 · 伊斯坦布尔 (UTC+3)", "默认时区来自 options");
         assert.strictEqual(mount.el("meetingDate").value, "");
         // 填写完整 → 预览
-        inputInto(mount.el("meetingName"), "Professor Basdogan");
         inputInto(mount.el("meetingDate"), "2026-09-11");
         inputInto(mount.el("meetingStart"), "10:00");
         inputInto(mount.el("meetingEndDate"), "2026-09-11");
         inputInto(mount.el("meetingEnd"), "10:30");
         inputInto(mount.el("meetingUrl"), "https://zoom.us/j/1?pwd=x");
-        inputInto(mount.el("meetingSignature"), "LuKai");
         runTimers();
         await flush();
         assert.strictEqual(mount.el("applyMeeting").disabled, false, "ready 后可确认");
         const filename = mount.el("meetingFilename").textContent;
         assert.match(filename, /^meeting-2026-09-11-/);
+        // I-3：新请求只携带时区/起止本地时间/Zoom/generatedAt
+        const previews = mount.api.requests.filter((r) => /preview/.test(r.url));
+        const payload = JSON.parse(previews[previews.length - 1].body);
+        assert.deepStrictEqual(Object.keys(payload.meeting).sort(),
+            ["endLocal", "generatedAt", "startLocal", "zoneId", "zoomUrl"]);
         mount.controller.dispose();
     });
 });
@@ -1047,6 +1046,43 @@ describe("fast-p 04 组件：时区搜索键盘状态（S-4/I-5）", () => {
         const secondOffset = second.querySelector('[data-role="zone-offset"]').textContent.replace(" ✓", "");
         assert.strictEqual(search.value, `${secondLabel} (${secondOffset})`, "Enter 显式选中 active 项");
         assert.strictEqual(mount.el("meetingZoneHint").textContent, `${secondZoneId} · 日期和时间均按此时区填写`);
+        mount.controller.dispose();
+    });
+
+    it("鼠标 mousedown 选择候选项：先选定再关列表（不依赖迟到的 click）", async () => {
+        const mount = mountComponent();
+        openComponent(mount);
+        await flush();
+        const search = mount.el("meetingZoneSearch");
+        const list = mount.el("meetingZoneOptions");
+        // 先显式选中上海
+        search.value = "Shanghai";
+        eventOn(search, "input");
+        eventOn(list.querySelectorAll('button[role="option"]')[0], "mousedown");
+        assert.strictEqual(search.value, "中国 · 北京 / 上海 (UTC+8)");
+        // 再用鼠标按下 Istanbul：mousedown 即选中，blur 顺序不再抢先
+        search.value = "Istanbul";
+        eventOn(search, "input");
+        eventOn(search, "keydown", "ArrowDown");
+        const option = list.querySelectorAll('button[role="option"]')[0];
+        assert.strictEqual(option.getAttribute("data-zone"), "Europe/Istanbul");
+        eventOn(option, "mousedown");
+        assert.strictEqual(search.value, "土耳其 · 伊斯坦布尔 (UTC+3)", "点击候选项立即改选中值");
+        assert.strictEqual(mount.el("meetingZoneHint").textContent, "Europe/Istanbul · 日期和时间均按此时区填写");
+        assert.strictEqual(list.hidden, true, "选择后关闭候选");
+        // blur 恢复标签不覆盖已选（I-4：同一 selectZone 路径）
+        eventOn(search, "blur");
+        assert.strictEqual(search.value, "土耳其 · 伊斯坦布尔 (UTC+3)");
+        // 预览 payload 携带新 zoneId
+        inputInto(mount.el("meetingDate"), "2026-09-11");
+        inputInto(mount.el("meetingStart"), "10:00");
+        inputInto(mount.el("meetingEndDate"), "2026-09-11");
+        inputInto(mount.el("meetingEnd"), "10:30");
+        inputInto(mount.el("meetingUrl"), "https://zoom.us/j/1?pwd=x");
+        runTimers();
+        await flush();
+        const previews = mount.api.requests.filter((r) => /preview/.test(r.url));
+        assert.strictEqual(JSON.parse(previews[previews.length - 1].body).meeting.zoneId, "Europe/Istanbul");
         mount.controller.dispose();
     });
 
@@ -1113,13 +1149,11 @@ describe("fast-p 04 组件：apply 契约（onApply 参数/返回值）", () => 
         });
         openComponent(mount);
         await flush();
-        inputInto(mount.el("meetingName"), "Professor Basdogan");
         inputInto(mount.el("meetingDate"), "2026-09-11");
         inputInto(mount.el("meetingStart"), "10:00");
         inputInto(mount.el("meetingEndDate"), "2026-09-11");
         inputInto(mount.el("meetingEnd"), "10:30");
         inputInto(mount.el("meetingUrl"), "https://zoom.us/j/1?pwd=x");
-        inputInto(mount.el("meetingSignature"), "LuKai");
         runTimers();
         await flush();
         const dialog = mount.doc.getElementById("meetingDialog");

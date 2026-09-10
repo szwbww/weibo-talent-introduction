@@ -11,6 +11,9 @@
  * 纯导出：filterZones / normalizeMeetingText / sanitizeDraftHtml /
  *   planMeetingInsertion（T1 契约签名）。
  *
+ * 正文由服务端按启用的通用 `MEETING_INVITATION` 模板渲染：弹窗不选模板、不编辑
+ * 模板正文、不填称呼与签名，只发时区/起止本地时间/Zoom 链接（I-1/I-2/I-5）。
+ *
  * 可信边界（I-6）：正文/时区/文件只绑定服务端值；不使用 fetch 拦截、不维护
  * 演示/造数据、不写 element.style；外部文本一律 textContent 或 escape；恢复/插入的
  * 正文 html 只接受本页捕获内容且经 sanitizeDraftHtml 白名单；只渲染 S-1 声明过的
@@ -260,8 +263,6 @@
             options: null,
             zones: [],
             zoneDate: "",
-            templates: [],
-            baseTemplateId: null,
             selectedZone: null,
             zoneListOpen: false,
             activeZoneIndex: -1,
@@ -509,10 +510,6 @@
             return node ? String(node.value || "") : "";
         }
 
-        function signatureValue() {
-            return fieldValue("meetingSignature").replace(/\r\n?/g, "\n").trim();
-        }
-
         function validUrl(value) {
             if (!value) return false;
             if (!/^https?:\/\//i.test(value)) return false;
@@ -524,10 +521,6 @@
 
         function localIssues() {
             var issues = {};
-            var template = fieldValue("meetingTemplate");
-            if (!template) issues.meetingTemplate = "请选择会议邮件模板";
-            if (!templateBodyValue()) issues.templateText = "会议模板正文不能为空";
-            if (!meetingNameValue()) issues.meetingName = "请填写专家称呼";
             if (!zoneSelectedValue()) issues.meetingZoneSearch = "请选择会议时区";
             var startLocal = startLocalValue();
             var endLocal = endLocalValue();
@@ -544,15 +537,9 @@
             }
             if (!zoomValue()) issues.meetingUrl = "请填写 Zoom 会议链接";
             else if (!validUrl(zoomValue())) issues.meetingUrl = "请输入有效的 Zoom 会议链接";
-            if (!signatureValue()) issues.meetingSignature = "请填写发件签名";
             var complete = !!startLocal && !!endLocal && startLocal < endLocal &&
-                !!meetingNameValue() && !!zoomValue() && !!signatureValue() &&
-                !!zoneSelectedValue() && !!template && !!templateBodyValue() && validUrl(zoomValue());
+                !!zoomValue() && !!zoneSelectedValue() && validUrl(zoomValue());
             return { complete: complete, issues: issues };
-        }
-
-        function meetingNameValue() {
-            return fieldValue("meetingName").trim();
         }
 
         function zoneSelectedValue() {
@@ -561,10 +548,6 @@
 
         function zoomValue() {
             return fieldValue("meetingUrl").trim();
-        }
-
-        function templateBodyValue() {
-            return fieldValue("templateText");
         }
 
         function startLocalValue() {
@@ -593,7 +576,6 @@
         // ---- 预览（T2：300ms debounce；序号防过期响应覆盖） ----
 
         function buildMeetingInput() {
-            var templateId = baseTemplateIdValue();
             var generatedAt = "";
             if (state.savedMeeting && state.savedMeeting.input && state.savedMeeting.input.generatedAt) {
                 generatedAt = String(state.savedMeeting.input.generatedAt);
@@ -601,29 +583,16 @@
                 generatedAt = String(state.options.generatedAt);
             }
             return {
-                templateId: templateId,
-                templateBody: templateBodyValue(),
-                expertSalutation: meetingNameValue(),
                 zoneId: zoneSelectedValue(),
                 startLocal: startLocalValue(),
                 endLocal: endLocalValue(),
                 zoomUrl: zoomValue(),
-                senderSignature: signatureValue(),
                 generatedAt: generatedAt
             };
         }
 
-        function baseTemplateIdValue() {
-            var value = fieldValue("meetingTemplate");
-            if (value && value !== "custom") return Number(value);
-            return state.baseTemplateId != null ? Number(state.baseTemplateId) : null;
-        }
-
         function canPreview() {
-            var check = localIssues();
-            if (!check.complete) return false;
-            if (!state.options || !state.templates || state.templates.length === 0) return false;
-            return true;
+            return !!state.options && localIssues().complete;
         }
 
         function schedulePreview() {
@@ -814,108 +783,6 @@
             syncApplyState();
         }
 
-        // ---- 模板（T2：有效 id 填充；custom 只保留 baseTemplateId） ----
-
-        function populateTemplates() {
-            var select = el("meetingTemplate");
-            if (!select) return;
-            var list = state.templates || [];
-            var html = "";
-            list.forEach(function (item) {
-                html += '<option value="' + escapeHtml(String(item.id)) + '">' +
-                    escapeHtml(String(item.name || item.id)) + "</option>";
-            });
-            if (list.length > 0) {
-                html += '<option value="custom">自定义本次模板</option>';
-            }
-            select.innerHTML = html;
-        }
-
-        function applyTemplateSelection() {
-            var select = el("meetingTemplate");
-            if (!select) return;
-            var saved = state.savedMeeting;
-            var savedTemplateId = saved && saved.input && saved.input.templateId != null
-                ? String(saved.input.templateId)
-                : "";
-            var savedBody = saved && saved.input ? String(saved.input.templateBody || "") : "";
-            var known = state.templates.some(function (item) { return String(item.id) === savedTemplateId; });
-            if (savedTemplateId && known) {
-                select.value = savedTemplateId;
-                var textarea = el("templateText");
-                if (textarea) textarea.value = savedBody;
-                state.baseTemplateId = Number(savedTemplateId);
-                return;
-            }
-            if (savedTemplateId && !known && state.templates.length > 0) {
-                select.value = "custom";
-                var ta = el("templateText");
-                if (ta) ta.value = savedBody;
-                state.baseTemplateId = Number(savedTemplateId);
-                refreshLoadStatus("原会议模板已不可用，请重新选择有效模板", null);
-                return;
-            }
-            if (state.templates.length > 0) {
-                var first = state.templates[0];
-                select.value = String(first.id);
-                var t2 = el("templateText");
-                if (t2) t2.value = String(first.body || "");
-                state.baseTemplateId = Number(first.id);
-            } else {
-                select.value = "";
-                state.baseTemplateId = null;
-            }
-        }
-
-        function onTemplateChange() {
-            var select = el("meetingTemplate");
-            var value = select ? select.value : "";
-            var found = null;
-            (state.templates || []).forEach(function (item) {
-                if (String(item.id) === value) found = item;
-            });
-            if (found) {
-                state.baseTemplateId = Number(found.id);
-                var textarea = el("templateText");
-                if (textarea) textarea.value = String(found.body || "");
-            } else if (value === "custom" && state.baseTemplateId == null && state.templates.length > 0) {
-                state.baseTemplateId = Number(state.templates[0].id);
-            }
-            formChanged();
-        }
-
-        function onTemplateTextInput() {
-            var select = el("meetingTemplate");
-            if (select && select.value !== "custom" && state.templates.length > 0) {
-                var previous = select.value;
-                select.value = "custom";
-                if (state.baseTemplateId == null && previous && previous !== "custom") {
-                    state.baseTemplateId = Number(previous);
-                }
-            }
-            formChanged();
-        }
-
-        function onResetTemplate() {
-            var targetId = state.baseTemplateId;
-            if (targetId == null) {
-                var select = el("meetingTemplate");
-                var value = select ? select.value : "";
-                if (value && value !== "custom") targetId = Number(value);
-            }
-            var found = null;
-            (state.templates || []).forEach(function (item) {
-                if (String(item.id) === String(targetId)) found = item;
-            });
-            if (!found) return;
-            var sel = el("meetingTemplate");
-            if (sel) sel.value = String(found.id);
-            state.baseTemplateId = Number(found.id);
-            var textarea = el("templateText");
-            if (textarea) textarea.value = String(found.body || "");
-            formChanged();
-        }
-
         // ---- 表单变更 ----
 
         function formChanged() {
@@ -994,7 +861,6 @@
             state.phase = "config-loading";
             state.configError = false;
             state.options = null;
-            state.templates = [];
             setFieldsDisabled(true);
             showStatus("正在加载会议配置…", null);
             var contactId = Number(state.openCtx.contactId);
@@ -1014,19 +880,11 @@
                 var optionsData = results[0] || {};
                 var zonesData = results[1];
                 state.options = optionsData;
-                state.templates = Array.isArray(optionsData.templates) ? optionsData.templates : [];
                 state.zones = Array.isArray(zonesData) ? zonesData : [];
-                populateTemplates();
-                applyTemplateSelection();
                 populateFormFromOptions();
                 state.phase = "ready";
-                if (state.templates.length === 0) {
-                    setFieldsDisabled(true);
-                    showStatus("会议模板不可用，请先启用会议确认专用模板", null);
-                } else {
-                    setFieldsDisabled(false);
-                    refreshLoadStatus(null, null);
-                }
+                setFieldsDisabled(false);
+                refreshLoadStatus(null, null);
                 var context = el("meetingContext");
                 if (context) {
                     context.textContent = state.openCtx.expertLabel + " · 回复账号 " +
@@ -1040,7 +898,6 @@
                 state.phase = "config-error";
                 state.configError = true;
                 state.options = null;
-                state.templates = [];
                 state.zones = [];
                 setFieldsDisabled(true);
                 showStatus("会议配置加载失败，请重试", "config");
@@ -1049,10 +906,6 @@
 
         function populateFormFromOptions() {
             var saved = state.savedMeeting && state.savedMeeting.input ? state.savedMeeting.input : null;
-            var name = el("meetingName");
-            if (name) name.value = saved ? String(saved.expertSalutation || "") : String(state.options.expertSalutation || "");
-            var signature = el("meetingSignature");
-            if (signature) signature.value = saved ? String(saved.senderSignature || "") : String(state.options.senderSignature || "");
             var date = el("meetingDate");
             var start = el("meetingStart");
             var endDate = el("meetingEndDate");
@@ -1214,7 +1067,10 @@
             });
             var list = el("meetingZoneOptions");
             if (list) {
-                list.addEventListener("click", function (event) {
+                // I-4：候选项选择必须早于搜索框 blur 关闭列表 —— 在 mousedown 阶段
+                // 先 preventDefault（阻止默认焦点转移 → 不触发 blur），再走既有
+                // selectZoneById 路径；选择逻辑不复制。
+                list.addEventListener("mousedown", function (event) {
                     var target = event.target;
                     var button = target && typeof target.closest === "function"
                         ? target.closest('button[role="option"][data-zone]')
@@ -1242,19 +1098,13 @@
         }
 
         function bindFormEvents() {
-            var ids = ["meetingName", "meetingStart", "meetingEnd", "meetingEndDate", "meetingUrl", "meetingSignature"];
+            var ids = ["meetingStart", "meetingEnd", "meetingEndDate", "meetingUrl"];
             ids.forEach(function (id) {
                 var node = el(id);
                 if (node) node.addEventListener("input", function () { formChanged(); });
             });
             var date = el("meetingDate");
             if (date) date.addEventListener("input", onMeetingDateChanged);
-            var templateSelect = el("meetingTemplate");
-            if (templateSelect) templateSelect.addEventListener("change", onTemplateChange);
-            var templateText = el("templateText");
-            if (templateText) templateText.addEventListener("input", onTemplateTextInput);
-            var reset = el("resetTemplate");
-            if (reset) reset.addEventListener("click", onResetTemplate);
             var insertSelect = el("insertMode");
             if (insertSelect) insertSelect.addEventListener("change", function () {
                 state.mode = String(insertSelect.value || "append");
@@ -1466,8 +1316,8 @@
                     state.triggerEl = doc.activeElement;
                 }
                 if (!dialog && !buildDialog()) return null;
-                ["meetingName", "meetingDate", "meetingStart", "meetingEndDate", "meetingEnd",
-                    "meetingUrl", "meetingSignature", "templateText"].forEach(function (id) {
+                ["meetingDate", "meetingStart", "meetingEndDate", "meetingEnd",
+                    "meetingUrl"].forEach(function (id) {
                         var node = el(id);
                         if (node) node.value = "";
                     });
@@ -1540,21 +1390,6 @@
         "<span></span>" +
         '<button type="button" class="meeting-link" id="retryMeeting" hidden>重试</button>' +
         "</p>" +
-        '<label>邮件模板<select id="meetingTemplate"></select></label>' +
-        '<details id="templateDetails" class="meeting-template">' +
-        "<summary>查看模板与变量</summary>" +
-        '<textarea id="templateText" maxlength="10000" aria-label="会议邮件模板正文" spellcheck="false"></textarea>' +
-        "<small>修改仅用于本次回复；保存的模板由「邮件模板」统一维护。</small>" +
-        "<p>" +
-        "<code>{{expert_salutation}}</code> 专家称呼<br>" +
-        "<code>{{meeting_time}}</code> 日期、时间和时区<br>" +
-        "<code>{{zoom_url}}</code> 会议链接<br>" +
-        "<code>{{sender_signature}}</code> 发件账号签名</p>" +
-        '<button type="button" class="meeting-link" id="resetTemplate">恢复所选模板</button>' +
-        "</details>" +
-        '<label>专家称呼 <input id="meetingName" required maxlength="100" placeholder="Professor Basdogan">' +
-        "<small>用于 Dear 后的称呼，可按专家习惯调整。</small>" +
-        "</label>" +
         '<div class="meeting-zone-field">' +
         '<label id="meetingZoneLabel" for="meetingZoneSearch">会议时区</label>' +
         '<div class="meeting-zone-control">' +
@@ -1575,9 +1410,6 @@
         '<div class="meeting-clock" id="meetingClock" aria-live="polite"></div>' +
         '<label>Zoom 会议链接<input type="url" id="meetingUrl" required maxlength="2048" placeholder="https://zoom.us/j/…">' +
         "<small>粘贴已创建的会议链接，包含入会密码参数。</small>" +
-        "</label>" +
-        '<label>发件签名<textarea id="meetingSignature" required maxlength="2000"></textarea>' +
-        "<small>默认带入回复账号签名。</small>" +
         "</label>" +
         '<label id="insertModeLabel" hidden>正文已有内容<select id="insertMode">' +
         '<option value="append">保留原文，追加确认邮件</option>' +

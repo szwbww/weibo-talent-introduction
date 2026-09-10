@@ -7,9 +7,7 @@ import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
-import com.weibo.talentintroduction.template.domain.MailComposeTemplate
-import com.weibo.talentintroduction.template.service.MailComposeTemplateBlockDetail
-import com.weibo.talentintroduction.template.service.MailComposeTemplateDetail
+import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -313,14 +311,62 @@ class SmtpMailDeliveryServiceTest {
         imapPassword = "secret"
     )
 
-    private val meetingTemplateBody = "Dear {{expert_salutation}},\n\n" +
-        "Thank you for confirming.\n\n" +
-        "We have noted the meeting time as {{meeting_time}}.\n\n" +
-        "Please join the meeting using the following link:\n\n" +
-        "{{zoom_url}}\n\n" +
-        "We look forward to speaking with you.\n\n" +
-        "Best regards,\n" +
-        "{{sender_signature}}"
+    /**
+     * 01 生成器协作者 stub：正文由通用 `MEETING_INVITATION` 模板链路渲染；
+     * 变量取服务端事实，正文只拼装两个会议值，ICS 字节/语义可复算。
+     */
+    private fun mockMeetingInvitationBody(
+        templateService: MailComposeTemplateService,
+        variableService: MailVariableService
+    ) {
+        Mockito.`when`(variableService.resolveExpertProfileFor(anyValue(meetingContact()))).thenReturn(null)
+        Mockito.`when`(
+            variableService.buildVariables(
+                anyValue(meetingAccount()),
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.anyBoolean(),
+                Mockito.any()
+            )
+        ).thenReturn(
+            mapOf(
+                "senderName" to "LuKai",
+                "senderTitle" to "Customer Care Officer",
+                "teamName" to "Qingfei Tech Talent Team",
+                "countryName" to "China",
+                "expertName" to "Professor Basdogan",
+                "expertFamilyName" to "Basdogan"
+            )
+        )
+        Mockito.`when`(
+            templateService.renderByCode(
+                eqValue("MEETING_INVITATION"),
+                anyValue(emptyMap()),
+                Mockito.anyInt()
+            )
+        ).thenAnswer { invocation ->
+            val variables = invocation.getArgument<Map<String, String>>(1)
+            ComposeTemplateRenderResult(
+                subject = "Meeting invitation",
+                body = "Dear " + variables["expertName"].orEmpty() + ",\n\n" +
+                    "We have noted the meeting time as " + variables["meeting_time"].orEmpty() + ".\n\n" +
+                    "Please join the meeting using the following link:\n\n" +
+                    variables["zoom_url"].orEmpty() + "\n\n" +
+                    "Best regards,\n" + variables["senderName"].orEmpty() + ", " +
+                    variables["senderTitle"].orEmpty()
+            )
+        }
+    }
+
+    /** Matcher 占位：resolveExpertProfileFor 参数非空。 */
+    private fun meetingContact() = ExpertContact(
+        id = 1L,
+        campaignId = 1,
+        orcidId = "0000-0001-2345-6789",
+        expertEmail = "expert@test.com",
+        expertName = "Professor Basdogan",
+        currentStatus = "WAITING_MEETING_CONFIRMATION"
+    )
 
     /** 01 真实生成器产物 → 快照（与 01 样例同配置：2026-09-11 伊斯坦布尔 15:00–15:30 中国时间）。 */
     private fun realMeetingSnapshot(): CalendarAttachmentSnapshot {
@@ -328,6 +374,7 @@ class SmtpMailDeliveryServiceTest {
         val contactRepo = Mockito.mock(ExpertContactRepository::class.java)
         val accountService = Mockito.mock(MailSenderAccountService::class.java)
         val templateService = Mockito.mock(MailComposeTemplateService::class.java)
+        val variableService = Mockito.mock(MailVariableService::class.java)
         val processing = InboundMailProcessing(
             id = 7L, senderAccountCode = "test_acct", imapUid = 1L,
             messageId = "in-1", fromEmail = "expert@test.com",
@@ -344,50 +391,16 @@ class SmtpMailDeliveryServiceTest {
         Mockito.`when`(inboundRepo.findById(7L)).thenReturn(Optional.of(processing))
         Mockito.`when`(contactRepo.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(accountService.getManualSendAccount("test_acct")).thenReturn(meetingAccount())
-        Mockito.`when`(templateService.listEnabled()).thenReturn(
-            listOf(
-                MailComposeTemplate(
-                    id = 100L,
-                    templateCode = "MANUAL_MEETING_CONFIRMATION",
-                    templateName = "专家会议确认 · 英文",
-                    subject = "Meeting confirmation",
-                    mailType = "MANUAL_MEETING_CONFIRMATION",
-                    enabled = true
-                )
-            )
-        )
-        Mockito.`when`(templateService.getById(100L)).thenReturn(
-            MailComposeTemplateDetail(
-                id = 100L,
-                templateCode = "MANUAL_MEETING_CONFIRMATION",
-                templateName = "专家会议确认 · 英文",
-                subject = "Meeting confirmation",
-                description = "仅供收发件箱会议确认。",
-                mailType = "MANUAL_MEETING_CONFIRMATION",
-                subjectVariants = null,
-                enabled = true,
-                blocks = listOf(
-                    MailComposeTemplateBlockDetail(
-                        id = 1, blockOrder = 0, blockType = "CUSTOM_TEXT",
-                        refId = null, refDisplayName = null, customText = meetingTemplateBody,
-                    )
-                ),
-                createdAt = null,
-                updatedAt = null
-            )
-        )
+        mockMeetingInvitationBody(templateService, variableService)
         val generator = MeetingConfirmationService(
-            inboundRepo, contactRepo, accountService, templateService, MailContentService()
+            inboundRepo, contactRepo, accountService, templateService, MailContentService(),
+            variableService
         )
         val input = MeetingInput(
-            templateId = 100L,
-            templateBody = meetingTemplateBody,
-            expertSalutation = "Professor Basdogan",
             zoneId = "Europe/Istanbul",
             startLocal = "2026-09-11T10:00",
             endLocal = "2026-09-11T10:30",
             zoomUrl = "https://zoom.us/j/87102801187?pwd=RH3bf4vbH0SoyTq2UW1Dzzuag4kISa.1",
-            senderSignature = "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
             generatedAt = "2026-09-09T03:00:40Z"
         )
         val preview = generator.preview(7L, MeetingPreviewRequest(contactId = 1L, meeting = input))
@@ -763,6 +776,10 @@ class SmtpMailDeliveryServiceTest {
     }
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
+
+    /** Mockito.eq() 对 Kotlin 非空参数会返回 null；传真实默认值实例占位。 */
+    private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
+
 
     private fun testAccount(senderDisplayName: String? = null): MailSenderAccount =
         MailSenderAccount(

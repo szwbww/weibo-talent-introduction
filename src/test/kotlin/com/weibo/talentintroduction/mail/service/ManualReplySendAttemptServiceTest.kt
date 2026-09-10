@@ -88,14 +88,70 @@ class ManualReplySendAttemptServiceTest {
     // IP-3/4/5：日历语义/字节均来自 01 真实生成器输出（preview 产物），禁止手写
     // 两个相同假串伪证集成。
 
-    private val meetingTemplateBody = "Dear {{expert_salutation}},\n\n" +
-        "Thank you for confirming.\n\n" +
-        "We have noted the meeting time as {{meeting_time}}.\n\n" +
-        "Please join the meeting using the following link:\n\n" +
-        "{{zoom_url}}\n\n" +
-        "We look forward to speaking with you.\n\n" +
-        "Best regards,\n" +
-        "{{sender_signature}}"
+    /**
+     * 01 生成器协作者 stub：正文由通用 `MEETING_INVITATION` 模板链路渲染。
+     * 变量取服务端事实、正文只拼装两个会议值，保证 ICS 字节/语义可复算。
+     */
+    private fun mockMeetingInvitationBody(
+        templateService: MailComposeTemplateService,
+        variableService: MailVariableService
+    ) {
+        Mockito.`when`(variableService.resolveExpertProfileFor(anyValue(meetingContact()))).thenReturn(null)
+        Mockito.`when`(
+            variableService.buildVariables(
+                anyValue(meetingAccount()),
+                Mockito.any(),
+                Mockito.any(),
+                Mockito.anyBoolean(),
+                Mockito.any()
+            )
+        ).thenReturn(MEETING_VARIABLES)
+        Mockito.`when`(
+            templateService.renderByCode(
+                eqValue("MEETING_INVITATION"),
+                anyValue(emptyMap()),
+                Mockito.anyInt()
+            )
+        ).thenAnswer { invocation ->
+            val variables = invocation.getArgument<Map<String, String>>(1)
+            com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult(
+                subject = "Meeting invitation",
+                body = "Dear " + variables["expertName"].orEmpty() + ",\n\n" +
+                    "We have noted the meeting time as " + variables["meeting_time"].orEmpty() + ".\n\n" +
+                    "Please join the meeting using the following link:\n\n" +
+                    variables["zoom_url"].orEmpty() + "\n\n" +
+                    "Best regards,\n" + variables["senderName"].orEmpty() + ", " +
+                    variables["senderTitle"].orEmpty()
+            )
+        }
+    }
+
+    private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
+
+    /** Mockito.eq() 对 Kotlin 非空参数会返回 null；传真实默认值实例占位。 */
+    private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
+
+
+    /** Matcher 占位：resolveExpertProfileFor 参数非空。 */
+    private fun meetingContact() = ExpertContact(
+        id = 1L,
+        campaignId = 1,
+        orcidId = "0000-0001-2345-6789",
+        expertEmail = "expert@test.com",
+        expertName = "Professor Basdogan",
+        currentStatus = "WAITING_MEETING_CONFIRMATION"
+    )
+
+    companion object {
+        private val MEETING_VARIABLES = mapOf(
+            "senderName" to "LuKai",
+            "senderTitle" to "Customer Care Officer",
+            "teamName" to "Qingfei Tech Talent Team",
+            "countryName" to "China",
+            "expertName" to "Professor Basdogan",
+            "expertFamilyName" to "Basdogan"
+        )
+    }
 
     private fun meetingAccount() = MailSenderAccount(
         accountCode = "sender-1",
@@ -117,18 +173,14 @@ class ManualReplySendAttemptServiceTest {
 
     private fun meetingInput(zoomUrl: String = "https://zoom.us/j/87102801187", generatedAt: String = "2026-09-09T03:00:40Z") =
         MeetingInput(
-            templateId = 100L,
-            templateBody = meetingTemplateBody,
-            expertSalutation = "Professor Basdogan",
             zoneId = "Europe/Istanbul",
             startLocal = "2026-09-11T10:00",
             endLocal = "2026-09-11T10:30",
             zoomUrl = zoomUrl,
-            senderSignature = "LuKai, Customer Care Officer\nQingfei Tech Talent Team China",
             generatedAt = generatedAt
         )
 
-    /** 01 真实生成器产物 → 快照：stub 只读身份/模板，preview 生成真实 ICS/sha256/semanticSha256。 */
+    /** 01 真实生成器产物 → 快照：stub 只读身份/通用模板，preview 生成真实 ICS/sha256/semanticSha256。 */
     private fun realSnapshot(input: MeetingInput = meetingInput()): CalendarAttachmentSnapshot {
         val inboundRepo = Mockito.mock(InboundMailProcessingRepository::class.java)
         val contactRepo = Mockito.mock(ExpertContactRepository::class.java)
@@ -150,40 +202,11 @@ class ManualReplySendAttemptServiceTest {
         Mockito.`when`(inboundRepo.findById(100L)).thenReturn(Optional.of(processing))
         Mockito.`when`(contactRepo.findById(1L)).thenReturn(Optional.of(contact))
         Mockito.`when`(accountService.getManualSendAccount("sender-1")).thenReturn(meetingAccount())
-        Mockito.`when`(templateService.getById(100L)).thenReturn(
-            MailComposeTemplateDetail(
-                id = 100L,
-                templateCode = "MANUAL_MEETING_CONFIRMATION",
-                templateName = "专家会议确认 · 英文",
-                subject = "Meeting confirmation",
-                description = "仅供收发件箱会议确认。",
-                mailType = "MANUAL_MEETING_CONFIRMATION",
-                subjectVariants = null,
-                enabled = true,
-                blocks = listOf(
-                    MailComposeTemplateBlockDetail(
-                        id = 1, blockOrder = 0, blockType = "CUSTOM_TEXT",
-                        refId = null, refDisplayName = null, customText = input.templateBody,
-                    )
-                ),
-                createdAt = null,
-                updatedAt = null
-            )
-        )
-        Mockito.`when`(templateService.listEnabled()).thenReturn(
-            listOf(
-                MailComposeTemplate(
-                    id = 100L,
-                    templateCode = "MANUAL_MEETING_CONFIRMATION",
-                    templateName = "专家会议确认 · 英文",
-                    subject = "Meeting confirmation",
-                    mailType = "MANUAL_MEETING_CONFIRMATION",
-                    enabled = true
-                )
-            )
-        )
+        val variableService = Mockito.mock(MailVariableService::class.java)
+        mockMeetingInvitationBody(templateService, variableService)
         val generator = MeetingConfirmationService(
-            inboundRepo, contactRepo, accountService, templateService, MailContentService()
+            inboundRepo, contactRepo, accountService, templateService, MailContentService(),
+            variableService
         )
         val preview = generator.preview(100L, MeetingPreviewRequest(contactId = 1L, meeting = input))
         return CalendarAttachmentSnapshot(

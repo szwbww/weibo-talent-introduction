@@ -104,14 +104,18 @@ describe("S-1/I-6: DOM class 白名单与模板卫生", () => {
 describe("S-2/S-3/S-4/S-5: 关键 id 与 data-role 源文本存在性（DOM stub 防悬空）", () => {
     const COMPONENT_IDS = [
         "id=\"meetingForm\"", "id=\"meetingTitle\"", "id=\"meetingContext\"",
-        "id=\"closeMeeting\"", "id=\"meetingLoadStatus\"", "id=\"retryMeeting\"", "id=\"meetingTemplate\"",
-        "id=\"templateDetails\"", "id=\"templateText\"", "id=\"resetTemplate\"", "id=\"meetingName\"",
+        "id=\"closeMeeting\"", "id=\"meetingLoadStatus\"", "id=\"retryMeeting\"",
         "id=\"meetingZoneLabel\"", "id=\"meetingZoneSearch\"", "id=\"toggleZone\"", "id=\"meetingZoneOptions\"",
         "id=\"meetingZoneHint\"", "id=\"meetingDate\"", "id=\"meetingStart\"", "id=\"meetingEndDate\"",
-        "id=\"meetingEnd\"", "id=\"meetingClock\"", "id=\"meetingUrl\"", "id=\"meetingSignature\"",
+        "id=\"meetingEnd\"", "id=\"meetingClock\"", "id=\"meetingUrl\"",
         "id=\"insertModeLabel\"", "id=\"insertMode\"", "id=\"meetingError\"", "id=\"meetingBody\"",
         "id=\"meetingFilename\"", "id=\"meetingFileMeta\"", "id=\"downloadMeeting\"", "id=\"inspectIcs\"",
         "id=\"meetingRaw\"", "id=\"cancelMeeting\"", "id=\"applyMeeting\""
+    ];
+    // I-5：已废弃的模板/称呼/签名节点必须整块消失（含模板 CSS 类与 id）。
+    const REMOVED_IDS = [
+        "meetingTemplate", "templateDetails", "templateText", "resetTemplate",
+        "meetingName", "meetingSignature"
     ];
     const HOST_ROLES = [
         "data-action=\"mc-open-meeting\"", "data-role=\"meeting-attachment\"", "data-action=\"mc-edit-meeting\"",
@@ -125,6 +129,19 @@ describe("S-2/S-3/S-4/S-5: 关键 id 与 data-role 源文本存在性（DOM stub
             const count = componentSource.split(needle).length - 1;
             assert.ok(count >= 1, `${needle} 必须在 meeting-confirmation.js 中存在`);
         });
+    });
+
+    it("I-5 废弃节点与模板专用语法不在组件源文本出现", () => {
+        REMOVED_IDS.forEach((id) => {
+            assert.ok(!componentSource.includes(`id="${id}"`), `${id} 必须已从弹窗移除`);
+        });
+        assert.ok(!componentSource.includes("meeting-template"), "模板详情 class 必须移除");
+        assert.ok(!componentSource.includes("{{expert_salutation}}"), "专用 {{...}} 变量文案必须移除");
+        assert.ok(!componentSource.includes("{{meeting_time}}"), "专用 {{...}} 变量文案必须移除");
+        assert.ok(!componentSource.includes("meetingNameValue"), "称呼读取函数必须移除");
+        assert.ok(!componentSource.includes("signatureValue"), "签名读取函数必须移除");
+        assert.ok(!componentSource.includes("state.templates"), "模板目录状态必须移除");
+        assert.ok(!componentSource.includes("baseTemplateId"), "模板选择状态必须移除");
     });
 
     it("S-3/S-5 宿主 data-action/data-role 在 mailbox-chat.js 源文本存在", () => {
