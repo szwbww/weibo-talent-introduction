@@ -7,6 +7,8 @@ import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.boot.context.event.ApplicationReadyEvent
+import org.springframework.context.event.EventListener
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.stereotype.Component
 import org.springframework.transaction.PlatformTransactionManager
@@ -25,6 +27,7 @@ import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import javax.annotation.PreDestroy
 
 /**
  * 附件传输的领取-下载-提交驱动。独立有界执行器（不占用 manualOutreachExecutor，
@@ -69,6 +72,17 @@ class AttachmentTransferWorker(
     /** 最近一次扫描发现的无消费者 QUEUED purpose（观察/配置错误上报）。 */
     @Volatile
     private var lastMissingPurposes: Set<String> = emptySet()
+
+    /**
+     * 只在 Spring Boot 已完成启动后才领取任务，确保 Flyway、数据源和全部 purpose
+     * consumer 已就绪。重复 ApplicationReadyEvent 由 [start] 的幂等保护吸收。
+     */
+    @EventListener(ApplicationReadyEvent::class)
+    fun startAfterApplicationReady() = start()
+
+    /** Spring 正常关闭时中断进行中的下载并释放本 worker 的线程池。 */
+    @PreDestroy
+    fun stopBeforeApplicationShutdown() = stop()
 
     fun start() {
         synchronized(lock) {
