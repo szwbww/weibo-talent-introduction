@@ -8,7 +8,6 @@ import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.expert.domain.ExpertApplicationPromotion
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
-import com.weibo.talentintroduction.expert.repository.ExpertApplicationPromotionRepository
 import com.weibo.talentintroduction.mail.domain.TriggeredBy
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import org.slf4j.LoggerFactory
@@ -33,7 +32,7 @@ class ExpertIndexWriterService(
     private val properties: ElasticsearchProperties,
     private val expertIndexService: ExpertIndexService,
     private val objectMapper: ObjectMapper,
-    private val expertApplicationPromotionRepository: ExpertApplicationPromotionRepository,
+    private val expertPromotionAuditService: ExpertPromotionAuditService,
     private val expertContactRepository: ExpertContactRepository
 ) {
     private val log = LoggerFactory.getLogger(ExpertIndexWriterService::class.java)
@@ -409,7 +408,7 @@ class ExpertIndexWriterService(
         triggeredBy: String = TriggeredBy.SYSTEM,
         operatorName: String? = null
     ): Boolean {
-        val audit = createPromotionAudit(contact, orcid, sourceInboundId, triggeredBy, operatorName)
+        val audit = expertPromotionAuditService.create(contact, orcid, sourceInboundId, triggeredBy, operatorName)
         val normalizedOrcid = ExpertIdNormalizer.normalize(orcid)
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val applicationIndex = expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
@@ -423,12 +422,12 @@ class ExpertIndexWriterService(
                 JsonNode::class.java
             ).body
         } catch (e: Exception) {
-            markPromotionFailed(audit, e.message ?: "Failed to read candidate index")
+            expertPromotionAuditService.markFailed(audit, e.message ?: "Failed to read candidate index")
             return false
         }
 
         val source = candidateResponse?.path("_source") ?: run {
-            markPromotionFailed(audit, "Candidate index document has no _source")
+            expertPromotionAuditService.markFailed(audit, "Candidate index document has no _source")
             return false
         }
 
@@ -463,20 +462,19 @@ class ExpertIndexWriterService(
             )
             val removedFromCandidate = removeFromCandidateIndex(normalizedOrcid)
             if (!removedFromCandidate) {
-                markPromotionFailed(audit, "Failed to remove candidate index document after application promotion")
+                expertPromotionAuditService.markFailed(audit, "Failed to remove candidate index document after application promotion")
                 return false
             }
-            markPromotionSuccess(audit)
+            expertPromotionAuditService.markSuccess(audit)
             true
         } catch (e: Exception) {
-            markPromotionFailed(audit, e.message ?: "Failed to write application index")
+            expertPromotionAuditService.markFailed(audit, e.message ?: "Failed to write application index")
             throw e
         }
     }
 
     fun retryFailedPromotion(promotionId: Long): ExpertApplicationPromotion {
-        val promotion = expertApplicationPromotionRepository.findById(promotionId)
-            .orElseThrow { error("Promotion audit not found: $promotionId") }
+        val promotion = expertPromotionAuditService.requireById(promotionId)
         require(promotion.promotionStatus == "FAILED") { "Only FAILED promotions can be retried" }
         val contact = expertContactRepository.findById(promotion.expertContactId)
             .orElseThrow { error("Expert contact not found: ${promotion.expertContactId}") }
@@ -489,16 +487,10 @@ class ExpertIndexWriterService(
             triggeredBy = promotion.triggeredBy,
             operatorName = promotion.operatorName
         )
-        return expertApplicationPromotionRepository
-            .findFirstByExpertContactIdAndPromotionStatusOrderByCreatedAtDesc(
-                promotion.expertContactId,
-                "SUCCESS"
-            )
-            ?: expertApplicationPromotionRepository
-                .findFirstByExpertContactIdAndPromotionStatusOrderByCreatedAtDesc(
-                    promotion.expertContactId,
-                    "FAILED"
-                )
+        return expertPromotionAuditService
+            .findLatestByContactAndStatus(promotion.expertContactId, "SUCCESS")
+            ?: expertPromotionAuditService
+                .findLatestByContactAndStatus(promotion.expertContactId, "FAILED")
             ?: promotion
     }
 
@@ -785,46 +777,6 @@ class ExpertIndexWriterService(
         return "Basic $encoded"
     }
 
-    private fun createPromotionAudit(
-        contact: ExpertContact,
-        orcid: String,
-        sourceInboundId: Long?,
-        triggeredBy: String,
-        operatorName: String?
-    ): ExpertApplicationPromotion? {
-        val contactId = contact.id ?: return null
-        val now = LocalDateTime.now()
-        return expertApplicationPromotionRepository.save(
-            ExpertApplicationPromotion(
-                expertContactId = contactId,
-                orcidId = orcid,
-                sourceInboundId = sourceInboundId,
-                triggeredBy = triggeredBy,
-                promotionStatus = "PENDING",
-                operatorName = operatorName,
-                createdAt = now,
-                updatedAt = now
-            )
-        )
-    }
-
-    private fun markPromotionSuccess(audit: ExpertApplicationPromotion?) {
-        if (audit == null) return
-        expertApplicationPromotionRepository.save(
-            audit.copy(promotionStatus = "SUCCESS", updatedAt = LocalDateTime.now())
-        )
-    }
-
-    private fun markPromotionFailed(audit: ExpertApplicationPromotion?, message: String) {
-        if (audit == null) return
-        expertApplicationPromotionRepository.save(
-            audit.copy(
-                promotionStatus = "FAILED",
-                errorMessage = message.take(2000),
-                updatedAt = LocalDateTime.now()
-            )
-        )
-    }
 }
 
 data class SingleSyncResult(

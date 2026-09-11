@@ -39,6 +39,9 @@ class AutomaticApplicationPromotionServiceTest {
     private fun <T> anyValue(defaultValue: T): T =
         Mockito.any<T>() ?: defaultValue
 
+    private fun <T> eqValue(value: T): T =
+        Mockito.eq(value) ?: value
+
     @Test
     fun `reply count 1 does not promote`() {
         Mockito.`when`(mailRecordRepository.countInboundReplies(anyValue(1L))).thenReturn(1)
@@ -137,6 +140,10 @@ class AutomaticApplicationPromotionServiceTest {
         assertTrue(result.applicationIndexed)
         assertEquals("APPLICATION", result.currentIndexLevel)
         assertEquals(OperatorStatus.MATERIALS_RECEIVED.name, result.operatorStatus)
+        Mockito.verify(expertIndexWriterService).promoteToApplication(
+            anyValue(""), anyValue(contact), anyValue(java.time.Instant.now()),
+            anyValue(null) as Long?, eqValue("MATERIAL_ATTACHED"), anyValue(null) as String?
+        )
     }
 
     @Test

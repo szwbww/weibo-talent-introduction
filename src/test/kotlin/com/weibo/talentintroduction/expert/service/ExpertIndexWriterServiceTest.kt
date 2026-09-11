@@ -7,7 +7,6 @@ import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertType
-import com.weibo.talentintroduction.expert.repository.ExpertApplicationPromotionRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -37,11 +36,11 @@ class ExpertIndexWriterServiceTest {
         applicationIndexName = "orcid_info_application"
     )
     private val expertIndexService = ExpertIndexService(properties, restTemplate, mapper)
-    private val promotionRepository = Mockito.mock(ExpertApplicationPromotionRepository::class.java)
+    private val promotionAuditService = Mockito.mock(ExpertPromotionAuditService::class.java)
     private val contactRepository = Mockito.mock(ExpertContactRepository::class.java)
     private val service = ExpertIndexWriterService(
         restTemplate, properties, expertIndexService, mapper,
-        promotionRepository, contactRepository
+        promotionAuditService, contactRepository
     )
 
     @Test
