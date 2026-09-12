@@ -1009,6 +1009,20 @@ function createChatSandbox(options) {
         return Promise.resolve();
     };
 
+    // 固定沙箱时钟：meeting-confirmation.js:650 用 Date.now() 判定「会议时间已过去」，
+    // 而 fixture 的 startUtc 固定为 2026-09-11T07:00:00Z（改相对日期要重算 10+ 处逐字
+    // 断言的格式化产物）。组件跑在 vm realm 里，宿主 Date 传不进去，必须注入 sandbox.Date。
+    // 需要跨过 startUtc 的用例用 opts.nowMs 推送时钟。
+    const fixedNowMs = Number.isFinite(opts.nowMs) ? opts.nowMs : Date.parse("2026-09-11T00:00:00Z");
+    class FixedDate extends Date {
+        constructor() {
+            if (arguments.length) super(...arguments);
+            else super(fixedNowMs);
+        }
+        static now() { return fixedNowMs; }
+    }
+    sandbox.Date = FixedDate;
+
     vm.createContext(sandbox);
     vm.runInContext(chatSource, sandbox, { filename: "mailbox-chat.js" });
     if (opts.meetingEnabled) {
@@ -1657,6 +1671,18 @@ describe("fast-p 04: 预览生成与右栏（T2/S-2 绑定）", () => {
         await flush();
         assert.strictEqual(meetingField(ctx, "meetingLoadStatus").hidden, true);
         assert.strictEqual(meetingField(ctx, "applyMeeting").disabled, false, "重试成功后 ready");
+    });
+
+    it("startUtc 已过当前时间：状态条提示核对，提示不阻断确认", async () => {
+        // 沙箱时钟推到 fixture startUtc（2026-09-11T07:00:00Z）之后
+        const ctx = await bootMeetingA({ nowMs: Date.parse("2026-09-11T08:00:00Z") });
+        await openMeetingLoaded(ctx);
+        await fillCompleteMeetingForm(ctx);
+        await flush();
+        assert.strictEqual(meetingPreviewRequests(ctx).length, 1, "预览仍须发起");
+        assert.strictEqual(meetingField(ctx, "meetingLoadStatus").hidden, false);
+        assert.match(meetingField(ctx, "meetingLoadStatus").textContent, /会议时间已过去，请核对/);
+        assert.strictEqual(meetingField(ctx, "applyMeeting").disabled, false, "过期提示不阻断确认");
     });
 
     it("陈旧预览响应不覆盖新值（双重序号保护）", async () => {
