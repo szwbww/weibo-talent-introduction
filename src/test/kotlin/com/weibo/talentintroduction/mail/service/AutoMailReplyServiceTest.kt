@@ -14,6 +14,7 @@ import com.weibo.talentintroduction.mail.domain.AutoReplyConfidenceLog
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
+import com.weibo.talentintroduction.mail.domain.MailAttachmentTransfer
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.handoff.repository.ManualHandoffRepository
 import com.weibo.talentintroduction.mail.repository.AutoReplyConfidenceLogRepository
@@ -1955,6 +1956,185 @@ class AutoMailReplyServiceTest {
         Mockito.verifyNoInteractions(groundedAutoReplyDecisionService, deliveryService)
     }
 
+    // ------------------------------------------------------------------
+    // 受控 Drive 外链材料并入资料写链（I-3/I-4/I-5）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `matched path registers drive material after mime attachments through the same bridge`() {
+        val account = account("sender")
+        val contact = ExpertContact(
+            id = 11,
+            campaignId = 1,
+            orcidId = "ORCID-11",
+            expertEmail = "expert@example.com",
+            expertName = "Expert",
+            currentStatus = ConversationStatus.INTRO_SENT.name,
+            autoReplyEnabled = false,
+            operatorStatus = "CONTACTED"
+        )
+        defaultPromotionStubs(contact)
+        val mime = mimeAttachment()
+        val drive = driveMaterial()
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(reply(attachments = listOf(mime), linkedMaterials = listOf(drive))))
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com"))
+            .thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            val record = invocation.getArgument<MailRecord>(0)
+            record.copy(id = record.id ?: 100)
+        }
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+        Mockito.`when`(manualHandoffRepository.save(Mockito.any(ManualHandoff::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ManualHandoff>(0) }
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(SinglePipelineOutcome.AUTO_REPLY_DISABLED.name, result.repliedExperts.single().outcome)
+        // MIME 在前、外链在后，共两份；两个写链入口看到同一份合并列表（唯一合并点）
+        Mockito.verify(mailAttachmentService).saveInboundAttachments(11L, 100L, listOf(mime, drive))
+        Mockito.verify(mailAttachmentService).bridgeInboundProcessing(Mockito.anyLong(), eqValue(listOf(mime, drive)))
+        Mockito.verify(mailAttachmentService, Mockito.never())
+            .saveUnmatchedAttachments(Mockito.anyLong(), Mockito.anyList(), Mockito.nullable(Long::class.java))
+    }
+
+    @Test
+    fun `unmatched contact registers drive material with the processing owner`() {
+        val account = account("sender")
+        val mime = mimeAttachment()
+        val drive = driveMaterial()
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(
+            inboundFetch(listOf(reply(attachments = listOf(mime), linkedMaterials = listOf(drive))))
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
+        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+            .thenAnswer { invocation ->
+                val record = invocation.getArgument<InboundMailProcessing>(0)
+                record.copy(id = 503L)
+            }
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.manualReview)
+        Mockito.verify(mailAttachmentService)
+            .saveUnmatchedAttachments(
+                eqValue(503L),
+                eqValue(listOf(mime, drive)),
+                Mockito.nullable(Long::class.java)
+            )
+        Mockito.verify(mailAttachmentService, Mockito.never())
+            .saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+    }
+
+    @Test
+    fun `processByUids merges drive material into the processing owner list`() {
+        val account = account("sender")
+        val uid = 22L
+        val mime = mimeAttachment(uid = uid)
+        val drive = driveMaterial(uid = uid)
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchByUids(account, listOf(uid))).thenReturn(
+            listOf(reply(imapUid = uid, attachments = listOf(mime), linkedMaterials = listOf(drive)))
+        )
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
+        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+            .thenAnswer { invocation ->
+                val record = invocation.getArgument<InboundMailProcessing>(0)
+                record.copy(id = 504L)
+            }
+
+        val results = service.processByUids("sender", listOf(uid))
+
+        assertEquals(SinglePipelineOutcome.UNMATCHED_CONTACT, results.single().outcome)
+        Mockito.verify(mailAttachmentService)
+            .saveUnmatchedAttachments(
+                eqValue(504L),
+                eqValue(listOf(mime, drive)),
+                Mockito.nullable(Long::class.java)
+            )
+        Mockito.verify(receiveService).markSeen(account, uid)
+    }
+
+    @Test
+    fun `dmarc report registers only mime attachments and ignores drive material`() {
+        val account = account("sender")
+        val mime = mimeAttachment(uid = 201L)
+        val drive = driveMaterial(uid = 201L)
+        val dmarcMail = ReceivedMail(
+            imapUid = 201L,
+            from = "noreply-dmarc-support@google.com",
+            subject = "Report domain: qftechtalent.com Submitter: google.com Report-ID: drive-link",
+            body = "China_Collaborator.zip <https://drive.google.com/file/d/1eUOvutQu2yinCWYHiWIbVAVt2icbSwW9/view>",
+            messageId = "dmarc-drive",
+            inReplyTo = null,
+            receivedAt = LocalDateTime.of(2026, 6, 26, 10, 0),
+            attachments = listOf(mime),
+            uidValidity = 1L,
+            linkedMaterials = listOf(drive)
+        )
+        Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
+        Mockito.`when`(receiveService.fetchInboundSince(account, 0L, 5)).thenReturn(inboundFetch(listOf(dmarcMail)))
+        // Kotlin 非空形参不能配 ArgumentCaptor.capture()（返回 null 触发 null 检查），
+        // 用 thenAnswer 记录实际请求。
+        val registered = mutableListOf<AttachmentTransferService.RegisterTransferRequest>()
+        Mockito.`when`(attachmentTransferService.register(anyRegisterRequest())).thenAnswer { invocation ->
+            registered.add(invocation.getArgument(0))
+            AttachmentTransferService.RegistrationResult(
+                transfer = MailAttachmentTransfer(
+                    id = 77L,
+                    purpose = MailAttachmentTransfer.PURPOSE_DMARC,
+                    accountCode = "sender",
+                    folder = "INBOX",
+                    uidValidity = 1L,
+                    imapUid = 201L,
+                    partPath = "2",
+                    fileName = "report.xml.gz"
+                ),
+                created = true
+            )
+        }
+        Mockito.`when`(
+            attachmentTransferService.enqueueTransferByIds(listOf(77L), AttachmentTransferService.SYSTEM_REQUESTER)
+        ).thenReturn(
+            AttachmentTransferService.TransferEnqueueBatch(
+                items = listOf(
+                    AttachmentTransferService.TransferEnqueueResult(
+                        transferId = 77L,
+                        transferState = MailAttachmentTransfer.STATE_QUEUED
+                    )
+                ),
+                acceptedCount = 1,
+                queueFull = false
+            )
+        )
+
+        val result = service.receiveAndAutoReply("sender", 5)
+
+        assertEquals(1, result.fetched)
+        assertEquals(
+            listOf("2"),
+            registered.map { it.partPath },
+            "DMARC 只登记真实 MIME 报告附件，正文外链不得进入报告来源"
+        )
+        assertEquals(listOf(MailAttachmentTransfer.PURPOSE_DMARC), registered.map { it.purpose })
+        Mockito.verify(dmarcReportIngestService, Mockito.never()).ingest(Mockito.anyList())
+        Mockito.verify(mailAttachmentService, Mockito.never())
+            .saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        Mockito.verify(mailAttachmentService, Mockito.never())
+            .saveUnmatchedAttachments(Mockito.anyLong(), Mockito.anyList(), Mockito.nullable(Long::class.java))
+        Mockito.verify(receiveService).markSeen(account, 201L)
+    }
+
     private fun stubExpertProfile(
         orcidId: String,
         familyNames: String? = "Lovelace",
@@ -2096,6 +2276,7 @@ class AutoMailReplyServiceTest {
         from: String = "expert@example.com",
         subject: String = "Re: Talent Program",
         attachments: List<ReceivedMailAttachment> = emptyList(),
+        linkedMaterials: List<ReceivedMailAttachment> = emptyList(),
         imapUid: Long = 101,
         uidValidity: Long = 1L,
         messageId: String = "reply-1",
@@ -2111,7 +2292,58 @@ class AutoMailReplyServiceTest {
             receivedAt = LocalDateTime.of(2026, 5, 22, 10, 0),
             attachments = attachments,
             uidValidity = uidValidity,
-            bodyTruncated = bodyTruncated
+            bodyTruncated = bodyTruncated,
+            linkedMaterials = linkedMaterials
+        )
+
+    /** 非空参数的 Mockito 匹配器（Mockito.any() 对 Kotlin 非空形参会触发 NPE）。 */
+    private fun anyRegisterRequest(): AttachmentTransferService.RegisterTransferRequest =
+        anyValue(
+            AttachmentTransferService.RegisterTransferRequest(
+                purpose = MailAttachmentTransfer.PURPOSE_DMARC,
+                accountCode = "sender",
+                folder = "INBOX",
+                uidValidity = 1L,
+                imapUid = 201L,
+                partPath = "2",
+                fileName = "report.xml.gz"
+            )
+        )
+
+    /** metadata 模式的真实 MIME 附件（content=null + 完整远端来源）。 */
+    private fun mimeAttachment(uid: Long = 101L, partPath: String = "2"): ReceivedMailAttachment =
+        ReceivedMailAttachment(
+            fileName = "cv.pdf",
+            contentType = "application/pdf",
+            content = null,
+            source = ImapAttachmentSource(
+                accountCode = "sender",
+                folder = "INBOX",
+                uidValidity = 1L,
+                uid = uid,
+                partPath = partPath,
+                messageId = "reply-1",
+                encodedSize = 1024L,
+                disposition = "attachment"
+            )
+        )
+
+    /** 正文受控 Drive 链接识别出的外链材料（content=null，partPath=gdrive:{fileId}）。 */
+    private fun driveMaterial(uid: Long = 101L): ReceivedMailAttachment =
+        ReceivedMailAttachment(
+            fileName = "China_Collaborator.zip",
+            contentType = null,
+            content = null,
+            source = ImapAttachmentSource(
+                accountCode = "sender",
+                folder = "INBOX",
+                uidValidity = 1L,
+                uid = uid,
+                partPath = "gdrive:1eUOvutQu2yinCWYHiWIbVAVt2icbSwW9",
+                messageId = "reply-1",
+                encodedSize = null,
+                disposition = "external-link"
+            )
         )
 
     private fun account(accountCode: String): MailSenderAccount =

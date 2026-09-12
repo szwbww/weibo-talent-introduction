@@ -29,12 +29,19 @@ data class ReceivedMail(
     /** 实际 IMAP UIDVALIDITY（04 持久化契约：新收信必须为正值，不能补猜）。 */
     val uidValidity: Long = 0L,
     /** 正文是否因超过单信读取上限而被有界截断（默认 false；true 时后续必须转人工，不得自动回复）。 */
-    val bodyTruncated: Boolean = false
+    val bodyTruncated: Boolean = false,
+    /**
+     * 正文中的受控 Google Drive 文件分享链接（I-2/I-3）：只登记元数据、content 恒为 null，
+     * 与 MIME [attachments] 分离——self-check/bounce/DMARC 等机器邮件继续只读真实 MIME
+     * 附件，linked material 只在公共业务事务入口并入资料写链。
+     */
+    val linkedMaterials: List<ReceivedMailAttachment> = emptyList()
 )
 
 /**
  * 远端附件来源描述（I-1：metadataOnly 模式下 content=null，定位信息只存在于
- * source；partPath 是点分 1-based MIME 路径，绝不按文件名定位）。
+ * source；partPath 是点分 1-based MIME 路径，或受控外链来源的 `gdrive:{fileId}`
+ * （见 [GoogleDriveMaterialSource]），绝不按文件名定位）。
  */
 data class ImapAttachmentSource(
     val accountCode: String,

@@ -48,6 +48,8 @@ class AttachmentTransferWorker(
     private val transferRepository: MailAttachmentTransferRepository,
     private val senderAccountRepository: MailSenderAccountRepository,
     private val fetcher: ImapAttachmentContentFetcher,
+    /** 受控 Drive 外链来源（partPath=`gdrive:{fileId}`）的固定域取件（I-1/I-8）。 */
+    private val googleDriveFetcher: GoogleDriveAttachmentContentFetcher,
     private val properties: MailAttachmentStorageProperties,
     private val transactionTemplate: TransactionTemplate,
     private val jdbcTemplate: JdbcTemplate,
@@ -361,31 +363,7 @@ class AttachmentTransferWorker(
         dir: Path,
         onSuccess: (Long) -> Unit
     ) {
-        val account = senderAccountRepository.findByAccountCode(claimed.accountCode)
-        if (account == null) {
-            failAttempt(
-                claimed, ctx,
-                MailAttachmentTransfer.STATE_FAILED, "ACCOUNT_NOT_FOUND",
-                "sender account for this transfer no longer exists"
-            )
-            return
-        }
-        val resolved = try {
-            fetcher.resolve(
-                account,
-                RemotePartSource(
-                    folder = claimed.folder,
-                    uidValidity = claimed.uidValidity,
-                    uid = claimed.imapUid,
-                    messageId = claimed.messageId,
-                    partPath = claimed.partPath,
-                    expectedContentType = claimed.contentType
-                )
-            )
-        } catch (e: AttachmentFetchException) {
-            failAttempt(claimed, ctx, e)
-            return
-        }
+        val resolved = resolveSource(claimed, ctx) ?: return
         ctx.closeHook = { runCatching { resolved.forceClose() } }
         try {
             if (ctx.abortReason.get() != null) return // 领取后、流开始前被中止
@@ -423,6 +401,59 @@ class AttachmentTransferWorker(
         } finally {
             runCatching { resolved.close() }
             ctx.closeHook = null
+        }
+    }
+
+    /**
+     * 按 partPath 来源语法分派（I-5）：`gdrive:{fileId}` -> 固定域 HTTP（不需要邮箱凭据，
+     * 因此不查 sender account）；点分数字 MIME 路径 -> 原 IMAP 取件；其他语法一律
+     * SOURCE_UNAVAILABLE/UNSUPPORTED_SOURCE 且不触网。下载、`.part`、watchdog 与提交
+     * 逻辑两边完全共用，不复制。
+     */
+    private fun resolveSource(
+        claimed: MailAttachmentTransfer,
+        ctx: ActiveTransfer
+    ): ResolvedAttachmentPart? {
+        GoogleDriveMaterialSource.fileIdFromPartPath(claimed.partPath)?.let { fileId ->
+            return try {
+                googleDriveFetcher.resolve(fileId)
+            } catch (e: AttachmentFetchException) {
+                failAttempt(claimed, ctx, e)
+                null
+            }
+        }
+        if (runCatching { ImapAttachmentContentFetcher.parsePartPath(claimed.partPath) }.isFailure) {
+            failAttempt(
+                claimed, ctx,
+                MailAttachmentTransfer.STATE_SOURCE_UNAVAILABLE, "UNSUPPORTED_SOURCE",
+                "registered part path is not a supported attachment source"
+            )
+            return null
+        }
+        val account = senderAccountRepository.findByAccountCode(claimed.accountCode)
+        if (account == null) {
+            failAttempt(
+                claimed, ctx,
+                MailAttachmentTransfer.STATE_FAILED, "ACCOUNT_NOT_FOUND",
+                "sender account for this transfer no longer exists"
+            )
+            return null
+        }
+        return try {
+            fetcher.resolve(
+                account,
+                RemotePartSource(
+                    folder = claimed.folder,
+                    uidValidity = claimed.uidValidity,
+                    uid = claimed.imapUid,
+                    messageId = claimed.messageId,
+                    partPath = claimed.partPath,
+                    expectedContentType = claimed.contentType
+                )
+            )
+        } catch (e: AttachmentFetchException) {
+            failAttempt(claimed, ctx, e)
+            null
         }
     }
 

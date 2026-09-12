@@ -29,7 +29,8 @@ data class MailAttachmentTransfer(
     val folder: String,
     val uidValidity: Long,
     val imapUid: Long,
-    /** 点分 1-based part 路径（如 2、2.1），ASCII，登记后不可变。 */
+    /** 来源语法（登记后不可变）：点分 1-based MIME part 路径（如 2、2.1），或受控
+     *  Google Drive 外链的 `gdrive:{fileId}`（248 上限 = part_path 列宽减前缀长度）。 */
     val partPath: String,
     /** 可空；仅用于下载复核，空不补猜值。 */
     val messageId: String? = null,

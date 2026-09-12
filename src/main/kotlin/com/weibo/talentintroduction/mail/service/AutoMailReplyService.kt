@@ -89,8 +89,18 @@ class AutoMailReplyService(
         received: ReceivedMail,
         skipImapAck: Boolean = false
     ): SinglePipelineResult {
+        // I-3/I-4：外链材料只在这里并入业务资料写链（MIME 之后，保持稳定顺序），
+        // self-check/bounce/DMARC 位于调用前，仍只读真实 MIME attachments。
+        val businessMail = if (received.linkedMaterials.isEmpty()) {
+            received
+        } else {
+            received.copy(
+                attachments = received.attachments + received.linkedMaterials,
+                linkedMaterials = emptyList()
+            )
+        }
         val result = transactionTemplate.execute {
-            processSingleCore(account, received)
+            processSingleCore(account, businessMail)
         } ?: error(
             "processSingle transaction produced no result: account=${account.accountCode} uid=${received.imapUid}"
         )

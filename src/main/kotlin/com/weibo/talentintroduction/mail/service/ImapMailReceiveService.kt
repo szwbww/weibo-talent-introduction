@@ -29,7 +29,8 @@ import javax.mail.internet.MimeUtility
 
 @Service
 class ImapMailReceiveService(
-    private val properties: MailAttachmentStorageProperties = MailAttachmentStorageProperties()
+    private val properties: MailAttachmentStorageProperties = MailAttachmentStorageProperties(),
+    private val mailBodyCleaner: MailBodyCleaner = MailBodyCleaner()
 ) : MailReceiveService {
     private val log = LoggerFactory.getLogger(ImapMailReceiveService::class.java)
 
@@ -319,7 +320,8 @@ class ImapMailReceiveService(
                 ?: LocalDateTime.now(),
             attachments = extracted.attachments,
             uidValidity = uidValidity,
-            bodyTruncated = extracted.bodyTruncated
+            bodyTruncated = extracted.bodyTruncated,
+            linkedMaterials = extracted.linkedMaterials
         )
     }
 
@@ -374,7 +376,9 @@ class ImapMailReceiveService(
     internal class WalkResult(
         val bodyText: String,
         val bodyTruncated: Boolean,
-        val attachments: List<ReceivedMailAttachment>
+        val attachments: List<ReceivedMailAttachment>,
+        /** 真实 MIME 附件之外的外链材料（I-3：与 attachments 分离，只在业务事务入口合并）。 */
+        val linkedMaterials: List<ReceivedMailAttachment>
     )
 
     internal fun walkContent(part: Part, context: MailSourceContext, deadlineNanos: Long): WalkResult {
@@ -383,7 +387,8 @@ class ImapMailReceiveService(
         return WalkResult(
             bodyText = walk.bodyText,
             bodyTruncated = walk.bodyTruncated,
-            attachments = walk.attachments
+            attachments = walk.attachments,
+            linkedMaterials = GoogleDriveMaterialSource.dedupe(walk.linkedMaterials)
         )
     }
 
@@ -391,11 +396,12 @@ class ImapMailReceiveService(
         var count = 0
     }
 
-    /** 一个节点的遍历结果：正文文本 / 是否截断 / 已登记附件。 */
+    /** 一个节点的遍历结果：正文文本 / 是否截断 / 已登记附件 / 外链材料。 */
     private class NodeResult(
         val bodyText: String,
         val bodyTruncated: Boolean,
-        val attachments: List<ReceivedMailAttachment>
+        val attachments: List<ReceivedMailAttachment>,
+        val linkedMaterials: List<ReceivedMailAttachment> = emptyList()
     )
 
     private fun checkDeadline(deadlineNanos: Long) {
@@ -434,6 +440,7 @@ class ImapMailReceiveService(
             val segmentTexts = ArrayList<String>()
             var anyTruncated = false
             val allAttachments = ArrayList<ReceivedMailAttachment>()
+            val allLinkedMaterials = ArrayList<ReceivedMailAttachment>()
             for (i in 0 until multipart.count) {
                 val child = multipart.getBodyPart(i)
                 val childPath = if (pathPrefix.isEmpty()) (i + 1).toString() else "$pathPrefix.${i + 1}"
@@ -443,6 +450,7 @@ class ImapMailReceiveService(
                 }
                 anyTruncated = anyTruncated || childResult.bodyTruncated
                 allAttachments.addAll(childResult.attachments)
+                allLinkedMaterials.addAll(childResult.linkedMaterials)
             }
             // alternative 各分段是同一内容的多种表现 → 取首个非空；
             // mixed/report/related 等各分段是不同内容 → 按顺序拼接
@@ -451,7 +459,7 @@ class ImapMailReceiveService(
             } else {
                 segmentTexts.firstOrNull().orEmpty()
             }
-            return NodeResult(chosen, anyTruncated, allAttachments)
+            return NodeResult(chosen, anyTruncated, allAttachments, allLinkedMaterials)
         }
 
         // 附件叶：metadataOnly 只登记；legacy 读字节（含带文件名的 text/* 附件）。
@@ -462,9 +470,21 @@ class ImapMailReceiveService(
         val isText = contentType == "text/plain" || contentType == "text/html"
         val isDeliveryStatus = contentType == "message/delivery-status"
         if (isText || isDeliveryStatus) {
+            // 每个 text 叶只做一次有界读：同一份结果既供既有正文，也供 Drive 扫描，
+            // 绝不二次读 part 流（I-6）。
             val read = readBoundedText(part, metadataOnly, deadlineNanos)
             val text = if (contentType == "text/html") stripHtml(read.text) else read.text
-            return NodeResult(text, read.truncated, emptyList())
+            val linkedMaterials = if (metadataOnly && isText) {
+                // 只在 metadata 模式启用（I-2）：legacy 附件模式不引入半套外链语义。
+                if (contentType == "text/html") {
+                    GoogleDriveMaterialSource.fromHtml(read.text, context, mailBodyCleaner)
+                } else {
+                    GoogleDriveMaterialSource.fromPlainText(read.text, context, mailBodyCleaner)
+                }
+            } else {
+                emptyList()
+            }
+            return NodeResult(text, read.truncated, emptyList(), linkedMaterials)
         }
 
         // 其余 message/*（rfc822/global/…）：嵌套消息的内容整体只作为「正文源」

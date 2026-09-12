@@ -55,6 +55,13 @@ class ImapMailReceiveServiceTest {
         imapPassword = "secret"
     )
 
+    private companion object {
+        /** 2026-09-12 生产真实样本（只读验证过的分享链接）。 */
+        const val DRIVE_SAMPLE_FILE_ID = "1eUOvutQu2yinCWYHiWIbVAVt2icbSwW9"
+        const val DRIVE_SAMPLE_URL =
+            "https://drive.google.com/file/d/$DRIVE_SAMPLE_FILE_ID/view?usp=drive_web"
+    }
+
     private fun convert(message: Message, metadataOnly: Boolean = false, tinyCap: Boolean = false): ReceivedMail {
         val svc = when {
             tinyCap -> tinyCapMetadataService
@@ -308,6 +315,184 @@ class ImapMailReceiveServiceTest {
         val received = convert(message)
         assertEquals("Hello", received.body)
         assertEquals(1, Regex("Hello").findAll(received.body).count())
+    }
+
+    // ------------------------------------------------------------------
+    // 受控 Google Drive 外链材料识别（I-1/I-2/I-5/I-6/I-7）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `plain text drive link registers one metadata material and leaves body untouched`() {
+        val body = "请查收材料：\n\nChina_Collaborator.zip <$DRIVE_SAMPLE_URL>"
+        val message = roundTrip(
+            multipartMessage(parts = listOf(MimeBodyPart().apply { setText(body) }))
+        )
+
+        val received = convert(message, metadataOnly = true)
+
+        assertEquals(
+            convert(message, metadataOnly = false).body,
+            received.body,
+            "正文不得因材料识别而改写（与 legacy 解析逐字一致）"
+        )
+        assertTrue(received.body.contains("China_Collaborator.zip <$DRIVE_SAMPLE_URL>"))
+        assertFalse(received.bodyTruncated)
+        assertTrue(received.attachments.isEmpty(), "外链与真实 MIME 附件必须分离")
+        assertEquals(1, received.linkedMaterials.size)
+        val material = received.linkedMaterials.single()
+        assertEquals("China_Collaborator.zip", material.fileName)
+        assertNull(material.content, "识别阶段不得携带内容")
+        assertNull(material.contentType, "外链登记时 contentType 为空，由后续按文件名推断")
+        val source = material.source
+        assertNotNull(source)
+        assertEquals("unit-test-account", source!!.accountCode)
+        assertEquals("INBOX", source.folder)
+        assertEquals(42L, source.uidValidity)
+        assertEquals(7L, source.uid)
+        assertEquals("gdrive:$DRIVE_SAMPLE_FILE_ID", source.partPath)
+        assertEquals(received.messageId, source.messageId)
+        assertNull(source.encodedSize)
+        assertEquals("external-link", source.disposition)
+    }
+
+    @Test
+    fun `html anchor and bare url for the same file id register exactly one material`() {
+        val html = """
+            <p>Here is the archive:</p>
+            <p><a href="$DRIVE_SAMPLE_URL">China_Collaborator.zip</a></p>
+            <p>Mirror: $DRIVE_SAMPLE_URL</p>
+        """.trimIndent()
+        val message = roundTrip(
+            multipartMessage(parts = listOf(MimeBodyPart().apply { setContent(html, "text/html") }))
+        )
+
+        val received = convert(message, metadataOnly = true)
+
+        assertEquals(1, received.linkedMaterials.size, "同一 fileId 在同一叶内至多一份")
+        val material = received.linkedMaterials.single()
+        assertEquals("China_Collaborator.zip", material.fileName, "锚文本优先于裸 URL 前缀")
+        assertEquals("gdrive:$DRIVE_SAMPLE_FILE_ID", material.source?.partPath)
+        assertFalse(received.body.contains("<a href"), "正文仍走既有 stripHtml，不保留标签")
+    }
+
+    @Test
+    fun `multipart alternative plain and html forms of the same link register one material`() {
+        val session = Session.getDefaultInstance(Properties())
+        val message = MimeMessage(session)
+        message.setFrom(InternetAddress("expert@university.edu"))
+        message.subject = "Re: Introduction"
+        message.setHeader("Message-ID", "<gdrive-alternative@example.com>")
+        val multipart = MimeMultipart("alternative")
+        multipart.addBodyPart(MimeBodyPart().apply { setText("China_Collaborator.zip <$DRIVE_SAMPLE_URL>") })
+        multipart.addBodyPart(
+            MimeBodyPart().apply {
+                setContent("<p><a href=\"$DRIVE_SAMPLE_URL\">China_Collaborator.zip</a></p>", "text/html")
+            }
+        )
+        message.setContent(multipart)
+        message.saveChanges()
+
+        val received = convert(roundTrip(message), metadataOnly = true)
+
+        assertEquals(1, received.linkedMaterials.size, "plain + HTML 同 fileId 只登记一份")
+        assertEquals("gdrive:$DRIVE_SAMPLE_FILE_ID", received.linkedMaterials.single().source?.partPath)
+        assertEquals(
+            "China_Collaborator.zip <$DRIVE_SAMPLE_URL>",
+            received.body,
+            "alternative 正文仍取首个非空分段"
+        )
+    }
+
+    @Test
+    fun `non file url shapes and quoted history never register materials`() {
+        val fileId = DRIVE_SAMPLE_FILE_ID
+        val rejected = listOf(
+            "http://drive.google.com/file/d/$fileId/view",
+            "https://drive.google.com.evil/file/d/$fileId/view",
+            "https://drive.google.com:8443/file/d/$fileId/view",
+            "https://user@drive.google.com/file/d/$fileId/view",
+            "https://drive.google.com/open?id=$fileId",
+            "https://drive.google.com/file/d/$fileId/edit",
+            "https://drive.google.com/drive/folders/$fileId",
+            "https://drive.google.com/file/d//view",
+            "https://drive.google.com/file/d/${"A".repeat(249)}/view",
+            "https://docs.google.com/document/d/$fileId/edit"
+        )
+        for (url in rejected) {
+            val message = roundTrip(
+                multipartMessage(parts = listOf(MimeBodyPart().apply { setText("See $url") }))
+            )
+            val received = convert(message, metadataOnly = true)
+            assertTrue(
+                received.linkedMaterials.isEmpty(),
+                "must not register $url (got ${received.linkedMaterials.map { it.fileName }})"
+            )
+        }
+
+        val quoted = """
+            Thanks, here is the new reply.
+
+            On 2026-09-10 10:00, Sam <sam@example.com> wrote:
+            China_Collaborator.zip <$DRIVE_SAMPLE_URL>
+        """.trimIndent()
+        val quotedMessage = roundTrip(
+            multipartMessage(parts = listOf(MimeBodyPart().apply { setText(quoted) }))
+        )
+        val quotedReceived = convert(quotedMessage, metadataOnly = true)
+        assertTrue(
+            quotedReceived.linkedMaterials.isEmpty(),
+            "引用历史中的旧链接不得重复导入 (got ${quotedReceived.linkedMaterials.map { it.fileName }})"
+        )
+    }
+
+    @Test
+    fun `invalid anchor text falls back to the generated drive file name`() {
+        val html = "<p><a href=\"$DRIVE_SAMPLE_URL\">click here</a></p>"
+        val message = roundTrip(
+            multipartMessage(parts = listOf(MimeBodyPart().apply { setContent(html, "text/html") }))
+        )
+
+        val received = convert(message, metadataOnly = true)
+
+        assertEquals(
+            "GoogleDrive-$DRIVE_SAMPLE_FILE_ID",
+            received.linkedMaterials.single().fileName
+        )
+    }
+
+    @Test
+    fun `legacy attachment mode never registers linked materials`() {
+        val message = roundTrip(
+            multipartMessage(
+                parts = listOf(
+                    MimeBodyPart().apply { setText("China_Collaborator.zip <$DRIVE_SAMPLE_URL>") },
+                    attachmentPdf()
+                )
+            )
+        )
+
+        val received = convert(message, metadataOnly = false)
+
+        assertTrue(received.linkedMaterials.isEmpty(), "legacy 附件模式不引入外链语义")
+        assertEquals(1, received.attachments.size)
+        assertNotNull(received.attachments[0].content)
+    }
+
+    @Test
+    fun `metadata mode keeps mime attachments separate from drive materials`() {
+        val message = roundTrip(
+            multipartMessage(
+                parts = listOf(
+                    MimeBodyPart().apply { setText("China_Collaborator.zip <$DRIVE_SAMPLE_URL>") },
+                    attachmentPdf()
+                )
+            )
+        )
+
+        val received = convert(message, metadataOnly = true)
+
+        assertEquals(listOf("2"), received.attachments.map { it.source?.partPath })
+        assertEquals(listOf("gdrive:$DRIVE_SAMPLE_FILE_ID"), received.linkedMaterials.map { it.source?.partPath })
     }
 
     @Test

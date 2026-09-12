@@ -36,6 +36,7 @@ import java.io.OutputStreamWriter
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -81,13 +82,16 @@ import java.util.concurrent.TimeUnit
     AttachmentTransferTransactionConfig::class,
     AttachmentTransferService::class,
     AttachmentTransferWorker::class,
-    ImapAttachmentContentFetcher::class
+    ImapAttachmentContentFetcher::class,
+    MailAttachmentService::class
 )
 class AttachmentTransferWorkerIT {
 
     companion object {
         const val PER_FILE_MAX_BYTES = 1_048_576L // 测试配置：单文件 1MiB
         const val TOTAL_TIMEOUT_SECONDS = 5L
+        /** 2026-09-12 生产真实样本 fileId（形状与真实分享链接一致）。 */
+        const val DRIVE_FILE_ID = "1eUOvutQu2yinCWYHiWIbVAVt2icbSwW9"
 
         @JvmStatic
         @DynamicPropertySource
@@ -114,7 +118,12 @@ class AttachmentTransferWorkerIT {
     @Autowired
     private lateinit var transferRepository: MailAttachmentTransferRepository
 
+    @Autowired
+    private lateinit var mailAttachmentService: MailAttachmentService
+
     private lateinit var server: ImapFixtureServer
+
+    private var driveServer: DriveHttpFixtureServer? = null
 
     // ------------------------------------------------------------------
     // 生命周期
@@ -130,6 +139,8 @@ class AttachmentTransferWorkerIT {
     fun tearDown() {
         worker.stop()
         runCatching { server.close() }
+        driveServer?.let { runCatching { it.close() } }
+        driveServer = null
         cleanupTables()
     }
 
@@ -326,6 +337,12 @@ class AttachmentTransferWorkerIT {
     private fun errorCodeOf(transferId: Long): String? =
         jdbcTemplate.queryForObject(
             "SELECT error_code FROM mail_attachment_transfer WHERE id = ?",
+            String::class.java, transferId
+        )
+
+    private fun errorMessageOf(transferId: Long): String? =
+        jdbcTemplate.queryForObject(
+            "SELECT error_message FROM mail_attachment_transfer WHERE id = ?",
             String::class.java, transferId
         )
 
@@ -1066,6 +1083,268 @@ class AttachmentTransferWorkerIT {
     }
 
     // ------------------------------------------------------------------
+    // 受控 Drive 外链来源（partPath=gdrive:{fileId}）：固定域 HTTP 取件
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `drive transfer downloads through the fixed endpoint without a sender account`() {
+        seedExpert(1)
+        val payload = contentBytes(2048, 21)
+        val drive = startDriveServer(mapOf(DRIVE_FILE_ID to DriveHttpFile(bytes = payload)))
+        // 不建 mail_sender_account：Drive 来源不依赖邮箱凭据
+        val transferId = registerDriveMaterial(1, "acc-drive-missing", DRIVE_FILE_ID)
+        val attachmentId = attachmentIdOfTransfer(transferId)
+        val enqueued = enqueueMaterial(1, transferId)
+        assertEquals(1, enqueued.acceptedCount)
+        assertEquals(0, drive.totalRequests(), "登记与入队阶段绝不触网（I-2）")
+
+        worker.start()
+        awaitState(transferId, setOf("STORED"))
+        worker.stop()
+
+        assertEquals(1, drive.requestCount(DRIVE_FILE_ID), "恰好下载一次")
+        val storagePath = jdbcTemplate.queryForObject(
+            "SELECT storage_path FROM mail_attachment WHERE id = ?", String::class.java, attachmentId
+        )
+        assertNotNull(storagePath)
+        assertTrue(storagePath!!.endsWith("content.bin"), "unexpected storage path: $storagePath")
+        assertTrue(Files.readAllBytes(Path.of(storagePath)).contentEquals(payload))
+        assertEquals(payload.size.toLong(), jdbcTemplate.queryForObject(
+            "SELECT file_size FROM mail_attachment WHERE id = ?", Long::class.java, attachmentId
+        ))
+        assertTrue(listPartFiles().isEmpty(), ".part must never be left visible: ${listPartFiles()}")
+    }
+
+    @Test
+    fun `mixed drive and mime sources both complete in one worker run`() {
+        seedExpert(1)
+        val drivePayload = contentBytes(1024, 31)
+        val drive = startDriveServer(mapOf(DRIVE_FILE_ID to DriveHttpFile(bytes = drivePayload)))
+        val box = FixtureMailbox(
+            "acc-a", "pwd", 7,
+            listOf(fixtureMail(1, "m1", "cv.pdf", contentBytes(4096, 32)))
+        )
+        val imap = startServer(box)
+        seedSenderAccount("acc-a", "acc-a", "pwd", imap.port)
+        val mime = registerMaterial(1, "acc-a", box, box.messages[0], "cv.pdf")
+        val driveTransfer = registerDriveMaterial(1, "acc-drive-missing", DRIVE_FILE_ID)
+        enqueueMaterial(1, mime, driveTransfer)
+
+        worker.start()
+        listOf(mime, driveTransfer).forEach { awaitState(it, setOf("STORED")) }
+        worker.stop()
+
+        assertEquals(1, imap.tracker().downloadsByKey()["acc-a:1"], "数字 partPath 仍走 IMAP 取件")
+        assertEquals(1, drive.requestCount(DRIVE_FILE_ID), "gdrive partPath 走固定 HTTP 端点")
+        assertEquals("STORED", stateOf(mime))
+        assertEquals("STORED", stateOf(driveTransfer))
+    }
+
+    @Test
+    fun `drive responses that cannot be served are source unavailable`() {
+        seedExpert(1)
+        val redirectId = "redirect-id"
+        val htmlId = "html-id"
+        val noDispositionId = "no-disposition-id"
+        val forbiddenId = "forbidden-id"
+        val missingId = "missing-id"
+        startDriveServer(
+            mapOf(
+                redirectId to DriveHttpFile(
+                    status = 302, contentType = "text/html", contentDisposition = null
+                ),
+                htmlId to DriveHttpFile(
+                    bytes = "not a file".toByteArray(StandardCharsets.UTF_8),
+                    contentType = "text/html"
+                ),
+                noDispositionId to DriveHttpFile(
+                    bytes = "bytes".toByteArray(StandardCharsets.UTF_8),
+                    contentDisposition = null
+                ),
+                forbiddenId to DriveHttpFile(
+                    status = 403, contentType = "text/html", contentDisposition = null
+                ),
+                missingId to DriveHttpFile(
+                    status = 404, contentType = "text/html", contentDisposition = null
+                )
+            )
+        )
+        val transfers = listOf(redirectId, htmlId, noDispositionId, forbiddenId, missingId)
+            .map { registerDriveMaterial(1, "acc-drive", it, "x.zip") }
+        enqueueMaterial(1, *transfers.toLongArray())
+
+        worker.start()
+        transfers.forEach { awaitState(it, setOf("SOURCE_UNAVAILABLE")) }
+        Thread.sleep(1_000) // 失败不自动重试
+        worker.stop()
+
+        transfers.forEach { assertFalse(Files.exists(finalPath(it)), "no final file for transfer $it") }
+        assertTrue(listPartFiles().isEmpty(), ".part must be removed on failure: ${listPartFiles()}")
+        assertEquals("REDIRECT", errorCodeOf(transfers[0]))
+        assertEquals("NOT_AN_ATTACHMENT", errorCodeOf(transfers[1]))
+        assertEquals("NOT_AN_ATTACHMENT", errorCodeOf(transfers[2]))
+        assertEquals("HTTP_403", errorCodeOf(transfers[3]))
+        assertEquals("HTTP_404", errorCodeOf(transfers[4]))
+    }
+
+    @Test
+    fun `drive transport failures and oversized streams fail as retryable failures`() {
+        seedExpert(1)
+        val serverErrorId = "server-error-id"
+        val brokenId = "broken-id"
+        val declaredTooLargeId = "declared-too-large-id"
+        val streamTooLargeId = "stream-too-large-id"
+        startDriveServer(
+            mapOf(
+                serverErrorId to DriveHttpFile(
+                    status = 500, contentType = "text/html", contentDisposition = null
+                ),
+                brokenId to DriveHttpFile(
+                    bytes = contentBytes(64 * 1024, 41),
+                    declaredContentLength = 64L * 1024,
+                    truncateAfterBytes = 8 * 1024
+                ),
+                declaredTooLargeId to DriveHttpFile(
+                    bytes = contentBytes(1024, 42),
+                    declaredContentLength = PER_FILE_MAX_BYTES + 1
+                ),
+                streamTooLargeId to DriveHttpFile(
+                    bytes = ByteArray((PER_FILE_MAX_BYTES + 512 * 1024L).toInt()) { 5 },
+                    chunked = true,
+                    // 逐块慢发：客户端必须在服务端发完/关闭之前先撞到流式上限，
+                    // 否则可能先收到连接重置（那属于「连接中断」而不是「超限」）。
+                    chunkDelayMs = 30
+                )
+            )
+        )
+        val transfers = listOf(serverErrorId, brokenId, declaredTooLargeId, streamTooLargeId)
+            .map { registerDriveMaterial(1, "acc-drive", it, "x.zip") }
+        enqueueMaterial(1, *transfers.toLongArray())
+
+        worker.start()
+        transfers.forEach { awaitState(it, setOf("FAILED")) }
+        worker.stop()
+
+        assertEquals("HTTP_5XX", errorCodeOf(transfers[0]), "5xx 必须落可重试失败: ${errorMessageOf(transfers[0])}")
+        assertEquals(
+            "INCOMPLETE_DOWNLOAD",
+            errorCodeOf(transfers[1]),
+            "半截下载绝不能当成功: ${errorMessageOf(transfers[1])}"
+        )
+        assertEquals(
+            "LIMIT_EXCEEDED",
+            errorCodeOf(transfers[2]),
+            "声明长度超限立即失败: ${errorMessageOf(transfers[2])}"
+        )
+        assertEquals(
+            "LIMIT_EXCEEDED",
+            errorCodeOf(transfers[3]),
+            "未知长度仍受流式上限约束: ${errorMessageOf(transfers[3])}"
+        )
+        assertEquals(
+            PER_FILE_MAX_BYTES,
+            jdbcTemplate.queryForObject(
+                "SELECT bytes_downloaded FROM mail_attachment_transfer WHERE id = ?",
+                Long::class.java, transfers[3]
+            )
+        )
+        assertTrue(listPartFiles().isEmpty(), ".part must be removed on failure: ${listPartFiles()}")
+    }
+
+    @Test
+    fun `slow drive source is aborted by the watchdog and leaves no artifacts`() {
+        seedExpert(1)
+        val slowId = "slow-id"
+        val drive = startDriveServer(
+            mapOf(
+                slowId to DriveHttpFile(
+                    bytes = ByteArray(800 * 1024) { 7 },
+                    chunkBytes = 64 * 1024,
+                    chunkDelayMs = 1_500
+                )
+            )
+        )
+        val box = FixtureMailbox(
+            "acc-a", "pwd", 7,
+            listOf(fixtureMail(1, "m1", "cv.pdf", contentBytes(20_000, 51)))
+        )
+        val imap = startServer(box)
+        seedSenderAccount("acc-a", "acc-a", "pwd", imap.port)
+        val slow = registerDriveMaterial(1, "acc-drive", slowId)
+        val fast = registerMaterial(1, "acc-a", box, box.messages[0], "cv.pdf")
+        val enqueuedAt = System.currentTimeMillis()
+        enqueueMaterial(1, slow, fast)
+
+        worker.start()
+        awaitState(slow, setOf("FAILED"), timeoutMs = 30_000)
+        val elapsedMs = System.currentTimeMillis() - enqueuedAt
+        awaitState(fast, setOf("STORED"))
+        worker.stop()
+
+        assertEquals("FAILED", stateOf(slow))
+        assertEquals("TIMEOUT", errorCodeOf(slow))
+        assertTrue(
+            elapsedMs in 4_000..20_000,
+            "slow drive transfer failed after ${elapsedMs}ms (total deadline is 5s)"
+        )
+        assertTrue(jdbcTemplate.queryForObject(
+            "SELECT bytes_downloaded FROM mail_attachment_transfer WHERE id = ?",
+            Long::class.java, slow
+        ) > 0)
+        assertFalse(Files.exists(finalPath(slow)), "aborted drive transfer must not keep a final file")
+        assertTrue(listPartFiles().isEmpty(), ".part must be removed on abort: ${listPartFiles()}")
+        assertEquals("STORED", stateOf(fast), "其余来源继续完成")
+        assertEquals(1, drive.requestCount(slowId))
+    }
+
+    /**
+     * 走真实登记写链（[MailAttachmentService.saveInboundAttachments] 的 metadata 分流）建
+     * Drive 附件与 METADATA_ONLY transfer 行：证明 `gdrive:{fileId}` 自然满足现有
+     * attachment/transfer/document 契约，无需新字段与新分支。
+     */
+    private fun registerDriveMaterial(
+        contactId: Long,
+        accountCode: String,
+        fileId: String,
+        fileName: String = "China_Collaborator.zip"
+    ): Long {
+        val mailRecordId = insertMailRecord(contactId, "drive-$fileId")
+        mailAttachmentService.saveInboundAttachments(
+            expertContactId = contactId,
+            mailRecordId = mailRecordId,
+            attachments = listOf(
+                ReceivedMailAttachment(
+                    fileName = fileName,
+                    contentType = null,
+                    content = null,
+                    source = ImapAttachmentSource(
+                        accountCode = accountCode,
+                        folder = "INBOX",
+                        uidValidity = 7L,
+                        uid = 1L,
+                        partPath = GoogleDriveMaterialSource.partPathFor(fileId),
+                        messageId = "drive-$fileId",
+                        encodedSize = null,
+                        disposition = GoogleDriveMaterialSource.EXTERNAL_LINK_DISPOSITION
+                    )
+                )
+            )
+        )
+        return jdbcTemplate.queryForObject(
+            "SELECT id FROM mail_attachment_transfer WHERE part_path = ?",
+            Long::class.java,
+            GoogleDriveMaterialSource.partPathFor(fileId)
+        )!!
+    }
+
+    private fun startDriveServer(files: Map<String, DriveHttpFile>): DriveHttpFixtureServer {
+        val started = DriveHttpFixtureServer(files)
+        driveServer = started
+        DriveDownloadEndpointHolder.baseUrl = started.baseUrl
+        return started
+    }
+
+    // ------------------------------------------------------------------
     // 数据构造助手
     // ------------------------------------------------------------------
 
@@ -1099,7 +1378,25 @@ class AttachmentTransferWorkerIT {
 
 @TestConfiguration
 @EnableConfigurationProperties(MailAttachmentStorageProperties::class)
-class AttachmentTransferWorkerItConfig
+class AttachmentTransferWorkerItConfig {
+    /**
+     * 生产构造恒指向 `drive.usercontent.google.com`；IT 只替换 endpoint factory 为 loopback
+     * fixture（package-internal 构造，业务代码无法传入任意下载 URL）。
+     */
+    @Bean
+    fun googleDriveAttachmentContentFetcher(
+        properties: MailAttachmentStorageProperties
+    ): GoogleDriveAttachmentContentFetcher =
+        GoogleDriveAttachmentContentFetcher(properties) { fileId ->
+            URL("${DriveDownloadEndpointHolder.baseUrl}/download?id=$fileId")
+        }
+}
+
+/** IT 内把固定下载域替换为 loopback fixture 的持有者（每个用例在启动 fixture 时写入）。 */
+object DriveDownloadEndpointHolder {
+    @Volatile
+    var baseUrl: String = "http://127.0.0.1:1"
+}
 
 // ---------------------------------------------------------------------------
 // 本地 IMAP fixture（JDK socket；按 JavaMail 1.6.7 实际命令应答）
@@ -1507,6 +1804,141 @@ class ImapFixtureServer(
         writer.write(line)
         writer.write("\r\n")
         writer.flush()
+    }
+
+    override fun close() {
+        runCatching { serverSocket.close() }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 本地 HTTP fixture（JDK socket）：受控 Drive 下载端点的形状，按 fileId 返回预置响应
+// ---------------------------------------------------------------------------
+
+/** 单个 fileId 的预置响应（loopback HTTP fixture）。 */
+data class DriveHttpFile(
+    val bytes: ByteArray = ByteArray(0),
+    val status: Int = 200,
+    val contentType: String? = "application/octet-stream",
+    val contentDisposition: String? = "attachment; filename=\"content.bin\"",
+    /** 覆盖 Content-Length（用于「声明长度超限」与「提前断开」两种现场）。 */
+    val declaredContentLength: Long? = null,
+    /** 只写这么多字节就断开（模拟连接中断）。 */
+    val truncateAfterBytes: Int? = null,
+    /** 以 chunked 传输且不带 Content-Length（模拟未知长度）。 */
+    val chunked: Boolean = false,
+    val chunkBytes: Int = 64 * 1024,
+    /** 每个数据块前的延迟（慢源；watchdog 必须能在总时限内断开）。 */
+    val chunkDelayMs: Long = 0
+)
+
+/**
+ * 极简 HTTP/1.1 fixture：每连接一个线程；只实现 `GET /download?id={fileId}`，按 fileId
+ * 返回预置状态/头/内容，并统计每个 fileId 的请求次数（证明「只有显式获取才触网」）。
+ */
+class DriveHttpFixtureServer(private val files: Map<String, DriveHttpFile>) : AutoCloseable {
+    private val serverSocket = ServerSocket(0, 128, InetAddress.getLoopbackAddress())
+    val port: Int = serverSocket.localPort
+    val baseUrl: String get() = "http://127.0.0.1:$port"
+
+    private val requestCounts = ConcurrentHashMap<String, Int>()
+    private val acceptThread = Thread { acceptLoop() }.apply {
+        isDaemon = true
+        start()
+    }
+
+    fun requestCount(fileId: String): Int = requestCounts[fileId] ?: 0
+
+    fun totalRequests(): Int = requestCounts.values.sum()
+
+    private fun acceptLoop() {
+        while (!serverSocket.isClosed) {
+            val socket = try {
+                serverSocket.accept()
+            } catch (e: IOException) {
+                break
+            }
+            Thread { runCatching { handle(socket) } }
+                .apply { isDaemon = true }
+                .start()
+        }
+    }
+
+    private fun handle(socket: Socket) {
+        socket.use {
+            val reader = BufferedReader(InputStreamReader(socket.getInputStream(), StandardCharsets.ISO_8859_1))
+            val requestLine = reader.readLine() ?: return
+            while (true) {
+                val header = reader.readLine() ?: break
+                if (header.isEmpty()) break
+            }
+            if (!requestLine.startsWith("GET ")) {
+                writeResponse(socket, DriveHttpFile(status = 405, contentDisposition = null))
+                return
+            }
+            val target = requestLine.removePrefix("GET ").substringBefore(" ").trim()
+            val fileId = target.substringAfter("id=", "").substringBefore("&")
+            if (fileId.isNotBlank()) {
+                requestCounts.merge(fileId, 1, Int::plus)
+            }
+            val file = files[fileId]
+            if (file == null) {
+                writeResponse(socket, DriveHttpFile(status = 404, contentDisposition = null))
+                return
+            }
+            writeResponse(socket, file)
+        }
+    }
+
+    private fun writeResponse(socket: Socket, file: DriveHttpFile) {
+        val out = socket.getOutputStream()
+        val head = StringBuilder()
+        head.append("HTTP/1.1 ${file.status} ${reasonPhrase(file.status)}\r\n")
+        file.contentType?.let { head.append("Content-Type: $it\r\n") }
+        file.contentDisposition?.let { head.append("Content-Disposition: $it\r\n") }
+        if (file.status == 200 && file.chunked) {
+            head.append("Transfer-Encoding: chunked\r\n")
+        } else {
+            head.append("Content-Length: ${file.declaredContentLength ?: file.bytes.size.toLong()}\r\n")
+        }
+        head.append("Connection: close\r\n\r\n")
+        out.write(head.toString().toByteArray(StandardCharsets.ISO_8859_1))
+        out.flush()
+        if (file.status != 200 || file.bytes.isEmpty()) return
+
+        val bodyBytes = file.truncateAfterBytes ?: file.bytes.size
+        var offset = 0
+        while (offset < bodyBytes) {
+            val size = minOf(file.chunkBytes, bodyBytes - offset)
+            if (file.chunkDelayMs > 0) {
+                // 慢源：块间延迟（客户端阻塞等首字节；watchdog 到期硬断开这里就会写失败）。
+                Thread.sleep(file.chunkDelayMs)
+            }
+            if (file.chunked) {
+                // chunk 大小必须是十六进制。
+                out.write("${Integer.toHexString(size)}\r\n".toByteArray(StandardCharsets.ISO_8859_1))
+            }
+            out.write(file.bytes, offset, size)
+            if (file.chunked) {
+                out.write("\r\n".toByteArray(StandardCharsets.ISO_8859_1))
+            }
+            out.flush()
+            offset += size
+        }
+        if (file.chunked) {
+            out.write("0\r\n\r\n".toByteArray(StandardCharsets.ISO_8859_1))
+            out.flush()
+        }
+    }
+
+    private fun reasonPhrase(status: Int): String = when (status) {
+        200 -> "OK"
+        302 -> "Found"
+        403 -> "Forbidden"
+        404 -> "Not Found"
+        405 -> "Method Not Allowed"
+        500 -> "Internal Server Error"
+        else -> "Status"
     }
 
     override fun close() {
