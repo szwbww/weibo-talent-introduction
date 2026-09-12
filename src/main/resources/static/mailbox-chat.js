@@ -162,6 +162,33 @@
             .replace(/'/g, "&#039;");
     }
 
+    // 人工富文本换行规范化（I-1/I-2）：与服务端 MailContentService 的
+    // normalizeManualTextLineBreaks / normalizeManualRichHtmlLineBreaks 同规则。前端先规范化
+    // 保证编辑/提交一致，服务端仍是最终发送门（I-3）；不改编辑器 DOM、不改其他邮件段落约定。
+    function normalizeManualTextLineBreaks(value) {
+        const text = value == null ? "" : String(value);
+        if (!text) return text;
+        // 空白行（仅空格/Tab，含空行）整行丢弃：非空行之间只剩一个 \n。
+        return text.replace(/\r\n?/g, "\n")
+            .split("\n")
+            .filter((line) => !/^[ \t]*$/.test(line))
+            .join("\n");
+    }
+
+    const MANUAL_CONSECUTIVE_BR = /<br\s*\/?>(?:\s*<br\s*\/?>)+/gi;
+    const MANUAL_EMPTY_BLOCK = /<(p|div)(\s[^>]*)?>(?:\s|&nbsp;|&amp;nbsp;|<br\s*\/?>)*<\/\1>/gi;
+
+    function normalizeManualRichHtmlLineBreaks(value) {
+        let html = value == null ? "" : String(value);
+        if (!html) return html;
+        for (let pass = 0; pass < 8; pass += 1) {
+            const next = html.replace(MANUAL_CONSECUTIVE_BR, "<br>").replace(MANUAL_EMPTY_BLOCK, "");
+            if (next === html) return html;
+            html = next;
+        }
+        return html;
+    }
+
     function datePart(iso) {
         return String(iso || "").slice(0, 10);
     }
@@ -3081,8 +3108,13 @@
             if (!inputs) return null;
             return {
                 subject: inputs.subjectInput.value || "",
-                html: typeof inputs.editor.innerHTML === "string" ? inputs.editor.innerHTML : "",
-                text: typeof inputs.editor.innerText === "string" ? inputs.editor.innerText : String(inputs.editor.textContent || ""),
+                // 草稿持久化 canonical 正文（仅换行收敛，标签与文本逐字保留）。
+                html: normalizeManualRichHtmlLineBreaks(
+                    typeof inputs.editor.innerHTML === "string" ? inputs.editor.innerHTML : ""
+                ),
+                text: normalizeManualTextLineBreaks(
+                    typeof inputs.editor.innerText === "string" ? inputs.editor.innerText : String(inputs.editor.textContent || "")
+                ),
                 qa: instance.manual.qa ? snapshotQa(instance.manual.qa) : null
             };
         }
@@ -3603,7 +3635,9 @@
             // 全文替换采用前：先移除旧会议附件与快照（I-3/I-6），正文由 assembly 覆盖
             const hadMeeting = !!manualMeetingSnapshot();
             if (hadMeeting) revokeMeetingBlob();
-            const assemblyText = (assembly && (assembly.renderedDraftText || assembly.rawDraftText || assembly.text)) || "";
+            const assemblyText = normalizeManualTextLineBreaks(
+                (assembly && (assembly.renderedDraftText || assembly.rawDraftText || assembly.text)) || ""
+            );
             const usedFactCodes = assembly && Array.isArray(assembly.usedFactCodes)
                 ? assembly.usedFactCodes.slice()
                 : [];
@@ -3645,7 +3679,14 @@
                 hostShowStatus("请输入邮件正文", "error");
                 return;
             }
-            const textBody = typeof inputs.editor.innerText === "string" ? inputs.editor.innerText : String(inputs.editor.textContent || "");
+            const textBody = normalizeManualTextLineBreaks(
+                typeof inputs.editor.innerText === "string" ? inputs.editor.innerText : String(inputs.editor.textContent || "")
+            );
+            // I-1/I-3：提交前规范化 HTML（折叠连续 <br> 与空 <p>/<div>），请求体、确认重提与
+            // 服务端最终发送门使用同一份 canonical 正文；编辑器 DOM 不改写。
+            const htmlBody = normalizeManualRichHtmlLineBreaks(
+                typeof inputs.editor.innerHTML === "string" ? inputs.editor.innerHTML : ""
+            );
             const mode = instance.manual.mode;
             // 会议快照发送（T4）：只属于来信人工回复（inbound）—— 快照存在且 state ready
             // 且当前会议块文本与基线一致才允许带附件发送；outbound/跟进路径无 meeting。
@@ -3669,7 +3710,7 @@
                 requestBody = {
                     senderAccountCode: null,
                     subject,
-                    htmlBody: inputs.editor.innerHTML,
+                    htmlBody,
                     textBody,
                     operatorName: operatorName()
                 };
@@ -3677,7 +3718,7 @@
                 if (qa && qa.ragFactCodes && qa.ragFactCodes.length) {
                     requestBody.ragFactCodes = qa.ragFactCodes.slice();
                     requestBody.ragCorpusFingerprint = qa.ragCorpusFingerprint || "";
-                    requestBody.edited = textBody.trim() !== (qa.baselineText || "").trim();
+                    requestBody.edited = textBody.trim() !== normalizeManualTextLineBreaks(qa.baselineText || "").trim();
                 }
                 // 会议字段只进来信人工富文本请求（T4/S-3）
                 if (meeting) {
@@ -3704,7 +3745,7 @@
                     requestId,
                     accountScope: instance.conversation.accountScope || null,
                     subject,
-                    htmlBody: inputs.editor.innerHTML,
+                    htmlBody,
                     textBody,
                     operatorName: operatorName()
                 };

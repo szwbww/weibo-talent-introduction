@@ -41,6 +41,7 @@ import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -941,6 +942,85 @@ class PendingMailOperationServiceTest {
         assertNull(mail.calendarAttachment)
         assertNull(mail.inReplyTo, "旧调用形态线程头保持默认 null")
         assertNull(mail.references)
+    }
+
+    // I-1/I-2/I-4：来信路径的 final body 在变量渲染后、claim 前规范化一次；claim 载荷、
+    // SMTP 两个 MIME alternative、落库 payload 逐字引用同一份 canonical text/html。
+    @Test
+    fun `sendManualRichReply normalizes final bodies before claim and reuses them verbatim`() {
+        val capturedMails = mutableListOf<ComposedMail>()
+        val capturedPayloads = captureCalendarSend(capturedMails)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<b>A</b><br><br><br>B",
+            textBody = "A\r\n\r\n\r\n\r\nB",
+            operatorName = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        val claimed = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+            .arguments[0] as ManualReplySendAttemptService.SendPayload
+        assertEquals("A\nB", claimed.finalText, "claim 前 payload 已是 canonical 纯文本")
+        assertEquals("<b>A</b><br>B", claimed.finalHtml, "claim 前 payload 已是 canonical HTML")
+        assertFalse(claimed.finalText.contains('\r'))
+        assertFalse(claimed.finalText.contains("\n\n"))
+
+        val mail = capturedMails.single()
+        assertEquals(claimed.finalText, mail.text, "text/plain alternative 与 payload 逐字相同")
+        assertEquals(claimed.finalHtml, mail.body, "HTML alternative 与 payload 逐字相同")
+        val persisted = capturedPayloads.single()
+        assertEquals(claimed.finalText, persisted.finalText, "落库 payload 引用同一 canonical 正文")
+        assertEquals(claimed.finalHtml, persisted.finalHtml)
+    }
+
+    // I-1/I-4：规范化发生在最终变量渲染之后；已是单换行/无连续 <br> 的正文逐字保留。
+    @Test
+    fun `sendManualRichReply renders variables before normalizing and keeps single lf verbatim`() {
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>A</p><p>B</p>",
+            textBody = "A\n\n\n\${senderName}\n\n\nB",
+            operatorName = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        val claimed = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+            .arguments[0] as ManualReplySendAttemptService.SendPayload
+        assertEquals("A\nSender\nB", claimed.finalText, "占位符先渲染，再收敛换行")
+        assertEquals("<p>A</p><p>B</p>", claimed.finalHtml, "无连续 <br> 的人工 HTML 逐字保留")
+    }
+
+    // I-1/I-2/I-3：会话回信入口（无来信上下文、不经过浏览器）同样落规范化门禁。
+    @Test
+    fun `sendConversationManualRichReply normalizes final bodies without any client cooperation`() {
+        stubConversationAnchor(sentAnchor())
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(null)
+
+        val result = service.sendConversationManualRichReply(
+            contactId = 1L,
+            requestId = conversationRequestId,
+            accountScope = null,
+            subject = "Re: Test",
+            htmlBody = "<div>A</div><div><br></div><div><b>B</b></div>",
+            textBody = "A\n \t\n\nB\n\n\n",
+            operatorName = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        val claimed = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+            .arguments[0] as ManualReplySendAttemptService.SendPayload
+        assertEquals("A\nB", claimed.finalText)
+        assertEquals("<div>A</div><div><b>B</b></div>", claimed.finalHtml)
+        val mail = invocationOf(mailDeliveryService, "send").arguments[1] as ComposedMail
+        assertEquals(claimed.finalText, mail.text)
+        assertEquals(claimed.finalHtml, mail.body)
     }
 
     // 03: 发送侧 controller 透传 —— 以 UnmatchedInboundMailController 同形请求调用

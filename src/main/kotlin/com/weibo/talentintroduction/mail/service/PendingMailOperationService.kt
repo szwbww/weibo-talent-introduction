@@ -480,7 +480,11 @@ class PendingMailOperationService(
         }
 
         val renderedText = mailVariableService.renderForContact(rawText, source.account, contact)
-        val finalTextBody = renderedText
+        // I-1/I-2/I-3：人工富文本最终正文必须在变量渲染之后、最终校验/安全确认/幂等指纹/
+        // SMTP/落库/审计之前规范化一次；本方法后续所有读路径（finalValidationText、会议正文
+        // 核对、SendPayload 指纹、ComposedMail 两个 MIME alternative、预览与归档）全部引用这
+        // 一份 canonical final body，禁止检查原文却发送另一份正文（I-4）。
+        val finalTextBody = mailContentService.normalizeManualTextLineBreaks(renderedText)
         val finalHtmlBody = when {
             rawHtmlFromTemplate != null ->
                 mailVariableService.renderHtmlForContact(rawHtmlFromTemplate, source.account, contact)
@@ -488,7 +492,7 @@ class PendingMailOperationService(
                 mailContentService.plainTextToHtml(renderedText)
             else ->
                 mailVariableService.renderHtmlForContact(htmlBody, source.account, contact)
-        }
+        }.let { mailContentService.normalizeManualRichHtmlLineBreaks(it) }
 
         val finalValidationText = buildFinalValidationText(renderedSubject, finalTextBody, finalHtmlBody)
         require(finalValidationText.isNotBlank()) { "Final validation text is empty after rendering" }

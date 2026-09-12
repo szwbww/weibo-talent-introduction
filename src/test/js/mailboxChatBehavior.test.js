@@ -1140,6 +1140,20 @@ function inputEvent(el) {
     el.dispatchEvent(new MiniEvent("input", { bubbles: true }));
 }
 
+// 浏览器语义模拟：真实 contenteditable 的 innerText 由渲染后的 DOM 派生，与 innerHTML
+// 不同源（迷你 DOM 不做布局推导）。人工富文本用例需要「HTML 含连续 <br>、纯文本含连续
+// 换行」这一真实组合，故显式注入该元素的 innerText 取值。
+function setEditorContent(editor, html, text) {
+    editor.innerHTML = html;
+    let innerTextValue = String(text == null ? "" : text);
+    Object.defineProperty(editor, "innerText", {
+        configurable: true,
+        get: () => innerTextValue,
+        set: (next) => { innerTextValue = String(next == null ? "" : next); }
+    });
+    return editor;
+}
+
 function changeEvent(el) {
     el.dispatchEvent(new MiniEvent("change", { bubbles: true }));
 }
@@ -2170,6 +2184,122 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         assert.deepStrictEqual(payload.body.ragFactCodes, ["KB-COMM-044"]);
         assert.strictEqual(payload.body.ragCorpusFingerprint, "fp-2026");
         assert.strictEqual(payload.body.edited, false);
+    });
+
+    // I-1/I-2/I-3：来信人工富文本发送前把任意连续换行（含空白行/CRLF）压成单 LF，
+    // 并把连续 <br> 折叠为一个；bold/link/list 等格式逐字保留。
+    it("来信人工富文本发送：5 个 LF / CRLF / 空白行压成单 LF，HTML 折叠连续 <br>", async () => {
+        const ctx = await bootSelectedA();
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        setEditorContent(
+            editor,
+            "<b>A</b><br><br><br><a href=\"https://x.test\">B</a><ul><li>C</li></ul>",
+            "A\r\n\r\n\r\n\r\nB"
+        );
+        inputEvent(editor);
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+
+        assert.strictEqual(ctx.calls.sendRich.length, 1);
+        const body = ctx.calls.sendRich[0].body;
+        assert.strictEqual(body.textBody, "A\nB", "连续换行/CRLF 压成单 LF");
+        assert.ok(!body.textBody.includes("\r"), "不含 CR");
+        assert.ok(!body.textBody.includes("\n\n"), "不含相邻换行");
+        assert.strictEqual(
+            body.htmlBody,
+            "<b>A</b><br><a href=\"https://x.test\">B</a><ul><li>C</li></ul>",
+            "连续 <br> 折叠为一个，bold/link/list 保留"
+        );
+    });
+
+    it("来信人工富文本发送：空白行（空格/Tab）与空 <p>/<div> 同样收敛", async () => {
+        const ctx = await bootSelectedA();
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        setEditorContent(
+            editor,
+            "<p>A</p><p><br></p><p>&nbsp;</p><div>B</div>",
+            "A\n \t\n\nB"
+        );
+        inputEvent(editor);
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+
+        const body = ctx.calls.sendRich[0].body;
+        assert.strictEqual(body.textBody, "A\nB");
+        assert.strictEqual(body.htmlBody, "<p>A</p><div>B</div>", "重复空 p/div 不产生连续空行");
+    });
+
+    // I-3/I-6：会话回信路径同样在生成 request body 前规范化；adapter 取消（安全确认）
+    // 后重提必须复用同一 canonical 正文与既有 requestId。
+    it("会话回信：canonical 正文与 requestId 在取消重提后不漂移", async () => {
+        let uuidSeq = 0;
+        const overrides = {
+            conversations: { items: [expertB(), expertA()], total: 2 },
+            messages: messagesA(),
+            contact: contactB(),
+            sendConversationResult: false
+        };
+        const ctx = await bootChat(overrides);
+        ctx.sandbox.crypto = {
+            randomUUID: () => `00000000-0000-4000-8000-00000000000${(uuidSeq += 1)}`
+        };
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        setEditorContent(editor, "<b>A</b><br><br><br>B", "A\n\n\n\n\nB");
+        inputEvent(editor);
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+
+        assert.strictEqual(ctx.calls.sendConversation.length, 1, "outbound 走会话 adapter");
+        const first = ctx.calls.sendConversation[0].body;
+        assert.strictEqual(first.textBody, "A\nB");
+        assert.strictEqual(first.htmlBody, "<b>A</b><br>B");
+        assert.ok(first.requestId, "首次发送生成 requestId");
+
+        // 安全确认取消（adapter 返回 false）→ 重提同一 canonical 正文与 requestId
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation.length, 2);
+        const second = ctx.calls.sendConversation[1].body;
+        assert.strictEqual(second.textBody, first.textBody, "重提正文不漂移");
+        assert.strictEqual(second.htmlBody, first.htmlBody);
+        assert.strictEqual(second.requestId, first.requestId, "重提复用同一 requestId");
+    });
+
+    // I-6：采用 AI 草稿即写入 canonical 正文与基线，仅换行差异不得标记语义编辑。
+    it("采用 AI 草稿：正文换行先收敛，仅换行差异不令 edited=true", async () => {
+        // adapter 返回 false（安全确认取消）→ 草稿与 QA 基线保留，第二次发送仍带 edited 判定。
+        const ctx = await bootSelectedA({ sendRichResult: false });
+        const wb = ctx.host.querySelector('.mc-section[data-section="workbench"]');
+        toggleOpen(wb);
+        await flush();
+        await ctx.calls.workbenchMounts[0].callbacks.onComplete({
+            renderedDraftText: "First paragraph.\r\n\r\n\r\nSecond paragraph.",
+            usedFactCodes: ["KB-COMM-044"],
+            ragCorpusFingerprint: "fp-2026"
+        });
+        await flush();
+
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        assert.strictEqual(editor.innerText, "First paragraph.\nSecond paragraph.", "采用即收敛到单 LF");
+        assert.ok(ctx.calls.sendRich.length === 0, "采用不触发发送");
+
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        const body = ctx.calls.sendRich[0].body;
+        assert.strictEqual(body.textBody, "First paragraph.\nSecond paragraph.");
+        assert.strictEqual(body.edited, false, "仅换行差异不标记语义编辑");
+
+        // 真正的内容编辑仍标记 edited=true
+        editor.innerText = "First paragraph.\nSecond paragraph. Extra.";
+        inputEvent(editor);
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendRich.length, 2);
+        assert.strictEqual(ctx.calls.sendRich[1].body.edited, true, "内容变化仍标语义编辑");
     });
 
     it("新来信 + 已编辑草稿：提示选择目标；取消保留原目标与草稿", async () => {
