@@ -892,7 +892,7 @@ class MailboxConversationControllerTest {
         // 全 raw 参数 stub（本仓 Kotlin/Mockito 约定：matcher 需 elvis 实值，见 eqValue helper）
         Mockito.`when`(
             pendingMailOperationService.sendConversationManualRichReply(
-                1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", "acc-a",
+                1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", "acc-a", null,
                 "Re: follow", "<p>follow</p>", "follow", "op1", false, null
             )
         ).thenReturn(
@@ -935,7 +935,7 @@ class MailboxConversationControllerTest {
         // service 只收到 requestId/accountScope/正文/确认字段。
         Mockito.`when`(
             pendingMailOperationService.sendConversationManualRichReply(
-                1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", null,
+                1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", null, null,
                 "Re: follow", "<p>follow</p>", "follow", null, false, null
             )
         ).thenReturn(PendingMailSendResult(
@@ -960,6 +960,37 @@ class MailboxConversationControllerTest {
                 )
         ).andExpect(status().isOk)
             .andExpect(jsonPath("$.sendStatus").value("SENT"))
+    }
+
+    @Test
+    fun `conversation manual rich reply forwards the explicit followup anchor to the service`() {
+        // 跟进（I-2/I-8）：anchorMailRecordId 逐字转发；service 侧是唯一校验点。
+        Mockito.`when`(
+            pendingMailOperationService.sendConversationManualRichReply(
+                1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", "acc-a", 77L,
+                "Re: older", "<p>older</p>", "older", "op1", false, null
+            )
+        ).thenReturn(PendingMailSendResult(
+            contactId = 1L, senderAccountCode = "acc-a", mailType = "MANUAL_RICH_REPLY",
+            subject = "Re: older", sendStatus = "SENT", messageId = "<manual-rich-77@weibo.com>"
+        ))
+        mockMvc.perform(
+            post("/api/mail/mailbox/conversations/1/manual-rich-reply")
+                .session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"requestId":"b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f",
+                     "accountScope":"acc-a",
+                     "anchorMailRecordId":77,
+                     "subject":"Re: older",
+                     "htmlBody":"<p>older</p>",
+                     "textBody":"older",
+                     "operatorName":"op1"}
+                    """.trimIndent()
+                )
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.messageId").value("<manual-rich-77@weibo.com>"))
     }
 
     @Test

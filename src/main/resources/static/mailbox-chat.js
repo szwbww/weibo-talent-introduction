@@ -209,6 +209,79 @@
         return prefixed.length > 255 ? prefixed.slice(0, 255) : prefixed;
     }
 
+    // ------------------------------------------------------------------
+    // 跟进邮件（followup 01 · I-5/I-6）：自然短正文 + 与线程锚点同源的完整引用。
+    // 引用纯文本转换是确定性的：先按块级/换行标签保留边界，再在惰性文档取 textContent，
+    // 最后统一 CRLF、去行尾空白并把 3 个以上连续换行压为 2 个。所有输出再经 escapeText
+    // 或 DOM textContent，绝不把邮件正文当 HTML 插入。
+    // ------------------------------------------------------------------
+
+    const FOLLOWUP_VIDEO_TAG = "待约视频";
+    const FOLLOWUP_CV_TAG = "待发简历";
+    /** 与 MailSenderAccountService.SIMULATOR_ACCOUNT_CODE 同值：模拟器发件永不作为候选。 */
+    const FOLLOWUP_SIMULATOR_ACCOUNT = "SIMULATOR_NOOP";
+    const FOLLOWUP_HTMLISH = /<[a-z!/][^>]*>/i;
+    const FOLLOWUP_ENTITY = /&(?:amp|lt|gt|quot|apos|nbsp|#\d+|#x[0-9a-fA-F]+);/g;
+
+    const FOLLOWUP_BODY_LINES = {
+        video: "Just following up on my email below about a brief Zoom call. Would you be available sometime this week or next? We’re happy to work around your time zone.",
+        cv: "Just following up on my note below. When convenient, could you please send your CV? It will help us identify suitable industry partners.",
+        generic: "Just following up on my email below. Please let me know when you have a chance."
+    };
+
+    function quotePlainTextFromSource(raw) {
+        const value = raw == null ? "" : String(raw);
+        if (!value) return "";
+        if (!FOLLOWUP_HTMLISH.test(value)) return finalizeQuotePlainText(value);
+        const withBlockBreaks = value
+            .replace(/<br\s*\/?>/gi, "\n")
+            .replace(/<\/li\s*>/gi, "\n")
+            .replace(/<\/(p|div|blockquote|h[1-6])\s*>/gi, "\n\n");
+        return finalizeQuotePlainText(htmlFragmentToPlainText(withBlockBreaks));
+    }
+
+    /**
+     * 惰性文档取纯文本（I-6）：优先 `DOMParser.parseFromString(...).body.textContent`；
+     * 沙箱没有 DOMParser 时剥标签后解实体 —— 两者在同一输入上同结果（块级边界已在上一步
+     * 转成换行，故 textContent 不会吞掉段落）。
+     */
+    function htmlFragmentToPlainText(html) {
+        if (typeof global.DOMParser === "function") {
+            try {
+                const parsed = new global.DOMParser().parseFromString(html, "text/html");
+                if (parsed && parsed.body) return String(parsed.body.textContent || "");
+            } catch (e) { /* 退回文本剥离 */ }
+        }
+        return decodeQuoteEntities(html.replace(/<[^>]*>/g, ""));
+    }
+
+    function decodeQuoteEntities(value) {
+        return String(value == null ? "" : value).replace(FOLLOWUP_ENTITY, (entity) => {
+            const name = entity.slice(1, -1).toLowerCase();
+            if (name === "amp") return "&";
+            if (name === "lt") return "<";
+            if (name === "gt") return ">";
+            if (name === "quot") return "\"";
+            if (name === "apos") return "'";
+            if (name === "nbsp") return " ";
+            if (name.charAt(0) === "#") {
+                const code = name.charAt(1) === "x" ? parseInt(name.slice(2), 16) : parseInt(name.slice(1), 10);
+                if (Number.isFinite(code) && code > 0) return String.fromCharCode(code);
+            }
+            return entity;
+        });
+    }
+
+    function finalizeQuotePlainText(value) {
+        return String(value == null ? "" : value)
+            .replace(/\r\n?/g, "\n")
+            .split("\n")
+            .map((line) => line.replace(/[ \t]+$/, ""))
+            .join("\n")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim();
+    }
+
     function expertTagLabel(value) {
         const text = String(value == null ? "" : value);
         // app.js 顶层 const（非 window 属性）；经典脚本同 realm 经全局词法作用域可见
@@ -403,6 +476,7 @@
             tagAdapter: null,
             manage: { open: false, trigger: null },
             meeting: { controller: null, editorRevision: 0, sending: false, lastBlobUrl: "" },
+            followup: { open: false, targetKey: null, selectedId: null, trigger: null },
             popoverOpen: false,
             loadOlderBusy: false,
             pendingPrompt: null,
@@ -1502,6 +1576,7 @@
 
         function teardownConversationSubViews() {
             closeManageOverlay({ restoreFocus: false });
+            closeFollowUpDialog({ restoreFocus: false });
             if (instance.workbench.instance) {
                 try { instance.workbench.instance.unmount(); } catch (e) { /* noop */ }
                 instance.workbench.instance = null;
@@ -2574,6 +2649,15 @@
                 editorContent = escapeText(editorText);
             }
             const meetingTrigger = ui ? meetingTriggerHtml() : "";
+            // S-1：跟进按钮只在当前专家确有成功发件时渲染，固定紧随既有会议按钮之后，
+            // class 严格为 button（不新增按钮 class、不改会议按钮顺序）。
+            const followUpButton = Number(instance.selectedSummary && instance.selectedSummary.sentCount) > 0
+                ? `<button class="button" type="button" data-action="mc-open-followup">↗ 跟进邮件</button>`
+                : "";
+            // S-3：草稿携带跟进锚点时，在 .mc-editor 之后、会议附件之前显示所选邮件提示。
+            const anchorNote = draft && draft.followUpAnchorMailRecordId != null
+                ? followupAnchorNoteHtml(draft.followUpAnchorMailRecordId)
+                : "";
             const meetingAttachment = ui && meetingCardContainerHtml(draft && draft.meeting ? draft.meeting : null) || "";
             return `
                 <div class="mc-compose" data-role="manual-compose" data-target-key="${escapeText(targetKey)}">
@@ -2583,9 +2667,10 @@
                         <button class="button" type="button" data-action="mc-rich-command" data-command="italic">I</button>
                         <button class="button" type="button" data-action="mc-rich-command" data-command="insertUnorderedList">列表</button>
                         <button class="button" type="button" data-action="mc-rich-command" data-command="createLink">链接</button>
-                        ${meetingTrigger}
+                        ${meetingTrigger}${followUpButton}
                     </div>
                     <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorContent}</div>
+                    ${anchorNote}
                     ${meetingAttachment}
                     <div class="mc-compose-footer">
                         <span data-role="target-info">回复账号与目标来信信息：${targetInfo}</span>
@@ -2764,6 +2849,8 @@
                 instance.conversation.contact = loaded;
                 instance.manage.open = true;
                 instance.manage.trigger = trigger;
+                // 唯一 portal 只承载一个 overlay：管理面板打开前关闭跟进弹窗（不触碰草稿状态）。
+                closeFollowUpDialog({ restoreFocus: false });
                 const root = ensurePortalRoot();
                 if (!root) {
                     hostShowStatus("管理面板挂载失败", "error");
@@ -3125,18 +3212,29 @@
             const values = readManualValues();
             if (!values) return;
             const existing = getDraft(key);
-            // I-4/I-12：主题或正文相对上次保存有任何变化 → 旧 requestId 失效（置 null，
+            const patch = extra || {};
+            // 跟进锚点（I-4）：patch 显式给值才改（null = 清除，如采用可信草稿/应用会议），
+            // 其余保存沿用既有草稿值。
+            const hasAnchorPatch = Object.prototype.hasOwnProperty.call(patch, "followUpAnchorMailRecordId");
+            const anchor = hasAnchorPatch
+                ? (patch.followUpAnchorMailRecordId == null ? null : Number(patch.followUpAnchorMailRecordId))
+                : (existing && existing.followUpAnchorMailRecordId != null
+                    ? Number(existing.followUpAnchorMailRecordId)
+                    : null);
+            // I-4/I-12：主题、正文或锚点相对上次保存有任何变化 → 旧 requestId 失效（置 null，
             // 下次发送生成新值）；逐字未变化（重挂载/程序性重存）保留，保证失败重试仍
             // 收敛到同一 attempt。成功删除草稿时 requestId 一并删除。
             const contentChanged = !existing
                 || existing.subject !== values.subject
                 || existing.html !== values.html
-                || existing.text !== values.text;
+                || existing.text !== values.text
+                || (existing.followUpAnchorMailRecordId != null
+                    ? Number(existing.followUpAnchorMailRecordId)
+                    : null) !== anchor;
             const requestId = contentChanged ? null : (existing.requestId || null);
             // 会议快照（T3/S-3）：输入保存时随草稿持久化 —— 无显式 meeting patch 则沿用
             // 既有草稿快照（不清除）；切专家/换 accountScope/target 时 targetKey 隔离，
             // 不会跨目标串会议数据；会议块被手改时调用方经 patch 把 state 置 stale。
-            const patch = extra || {};
             const hasMeetingPatch = Object.prototype.hasOwnProperty.call(patch, "meeting");
             const meeting = hasMeetingPatch
                 ? deepCopyMeeting(patch.meeting)
@@ -3153,7 +3251,8 @@
                 requestId,
                 updatedAt: new Date().toISOString(),
                 meeting,
-                meetingAccountCode
+                meetingAccountCode,
+                followUpAnchorMailRecordId: anchor
             });
         }
 
@@ -3181,26 +3280,308 @@
             return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
         }
 
-        // outbound 发送前取/生成 requestId：草稿已有则复用（失败重试/安全取消收敛同一
-        // attempt）；没有则生成并先写回草稿（I-4/I-12）。
+        // 会话回信发送前取/生成 requestId：草稿已有则复用（失败重试/安全取消收敛同一
+        // attempt）；没有则生成并先写回草稿（I-4/I-12）。跟进草稿（I-4）在 inbound 目标上
+        // 同样需要 requestId，故判定条件是「outbound 或草稿已带跟进锚点」。
         function ensureOutboundRequestId() {
             const key = currentTargetKey();
-            if (!key || instance.manual.mode !== "outbound") return null;
+            if (!key) return null;
             const existing = getDraft(key);
+            const anchored = !!(existing && existing.followUpAnchorMailRecordId != null);
+            if (instance.manual.mode !== "outbound" && !anchored) return null;
             if (existing && existing.requestId) return existing.requestId;
             const requestId = createRequestId();
             const values = readManualValues();
             if (values) {
-                setDraft(key, {
+                setDraft(key, Object.assign({}, existing || {}, {
                     subject: values.subject,
                     html: values.html,
                     text: values.text,
-                    qa: null,
+                    qa: values.qa,
                     requestId,
                     updatedAt: new Date().toISOString()
-                });
+                }));
             }
             return requestId;
+        }
+
+        // --------------------------------------------------------------
+        // 跟进邮件（followup 01 · I-1..I-8/S-1..S-3）：人工选择引用邮件 → 自然短正文 +
+        // 同源完整引用 → 填入草稿。弹窗只列出当前已加载窗口的候选（不额外拉历史）；
+        // 默认不选中；填入是全文替换并清 QA/会议；发送复用既有会话人工回信 adapter。
+        // --------------------------------------------------------------
+
+        function followupItemById(id) {
+            const target = Number(id);
+            if (!Number.isFinite(target)) return null;
+            const items = instance.conversation.items || [];
+            return items.find((item) => item
+                && Number(item.id) === target
+                && String(item.source) === "MAIL_RECORD") || null;
+        }
+
+        /** I-2：候选必须是当前账号已加载窗口内的真实 SENT 发件；按 eventAt DESC,id DESC。 */
+        function followupCandidates() {
+            const scope = String(instance.conversation.accountScope || "");
+            return (instance.conversation.items || [])
+                .filter((item) => item
+                    && String(item.source) === "MAIL_RECORD"
+                    && String(item.direction) === "OUTBOUND"
+                    && String(item.sendStatus) === "SENT"
+                    && String(item.accountCode || "").trim() !== ""
+                    && String(item.accountCode) !== FOLLOWUP_SIMULATOR_ACCOUNT
+                    && (!scope || String(item.accountCode) === scope))
+                .slice()
+                .sort((a, b) => {
+                    const left = String(a.eventAt || "");
+                    const right = String(b.eventAt || "");
+                    if (left !== right) return left < right ? 1 : -1;
+                    return Number(b.id) - Number(a.id);
+                });
+        }
+
+        /** I-5：标签只按 selectedSummary.expertTags 原值判定，歧义/缺失一律通用文案。 */
+        function followupVariant() {
+            const summary = instance.selectedSummary || {};
+            const tags = Array.isArray(summary.expertTags) ? summary.expertTags : [];
+            const video = tags.indexOf(FOLLOWUP_VIDEO_TAG) >= 0;
+            const cv = tags.indexOf(FOLLOWUP_CV_TAG) >= 0;
+            if (video && !cv) return "video";
+            if (cv && !video) return "cv";
+            return "generic";
+        }
+
+        /** I-6：引用源优先非空 cleanedBody，否则 body。 */
+        function followupSourceText(item) {
+            const cleaned = item ? item.cleanedBody : null;
+            if (cleaned != null && String(cleaned).trim() !== "") return String(cleaned);
+            return item && item.body != null ? String(item.body) : "";
+        }
+
+        /** I-6：主题/引用头/引用正文同源；引用头固定 `On YYYY-MM-DD HH:mm, <accountCode> wrote:`。 */
+        function followupQuoteText(item) {
+            const when = `${datePart(item.eventAt)} ${timePart(item.eventAt)}`.trim();
+            return `On ${when}, ${String(item.accountCode || "")} wrote:\n\n`
+                + quotePlainTextFromSource(followupSourceText(item));
+        }
+
+        /** I-5：称呼优先复用所选邮件纯文本首个非空行（只接受 Dear/Hi 且 <=100 字符）。 */
+        function followupGreeting(item) {
+            const plain = quotePlainTextFromSource(followupSourceText(item));
+            const first = plain.split("\n").map((line) => line.trim()).find((line) => line !== "") || "";
+            if (/^(Dear|Hi)(\s|,)/.test(first) && first.length <= 100) return first;
+            return "Dear Professor,";
+        }
+
+        function followupBodyText(item) {
+            const line = FOLLOWUP_BODY_LINES[followupVariant()];
+            return `${followupGreeting(item)}\n\n${line}\n\nBest regards,\n${String(item.accountCode || "")}`;
+        }
+
+        function followupAnchorNoteText(id) {
+            const item = followupItemById(id);
+            const parts = [`已引用邮件 #${Number(id)}`];
+            if (item) {
+                const when = `${datePart(item.eventAt)} ${timePart(item.eventAt)}`.trim();
+                if (when) parts.push(when);
+                if (item.subject) parts.push(String(item.subject));
+            }
+            return parts.join(" · ");
+        }
+
+        function followupAnchorNoteHtml(id) {
+            return `<div class="mc-note" data-role="followup-anchor-note">${escapeText(followupAnchorNoteText(id))}</div>`;
+        }
+
+        function currentFollowUpAnchorId() {
+            const key = currentTargetKey();
+            if (!key) return null;
+            const draft = getDraft(key);
+            if (!draft || draft.followUpAnchorMailRecordId == null) return null;
+            const id = Number(draft.followUpAnchorMailRecordId);
+            return Number.isFinite(id) ? id : null;
+        }
+
+        /** S-3：draft 有锚点时把提示插入 `.mc-editor` 之后、会议附件之前；无则移除。 */
+        function refreshFollowupAnchorNote() {
+            const composeEl = manualComposeEl();
+            if (!composeEl || !composeEl.querySelector) return;
+            const editor = composeEl.querySelector('[data-role="mc-editor"]');
+            if (!editor || !editor.parentNode) return;
+            const existing = composeEl.querySelector('[data-role="followup-anchor-note"]');
+            if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+            const id = currentFollowUpAnchorId();
+            if (id == null) return;
+            const doc = docRoot();
+            if (!doc || typeof doc.createElement !== "function") return;
+            const holder = doc.createElement("div");
+            holder.innerHTML = followupAnchorNoteHtml(id);
+            const node = holder.firstChild;
+            if (!node) return;
+            editor.parentNode.insertBefore(node, editor.nextSibling);
+        }
+
+        function followupDialogEl() {
+            const root = instance.elements.portalRoot;
+            if (!root || !root.querySelector) return null;
+            return root.querySelector(".followup-dialog");
+        }
+
+        function buildFollowupHtml(candidates) {
+            const name = (instance.selectedSummary && instance.selectedSummary.name) || "-";
+            const options = candidates.map((item) => `
+                        <button class="followup-mail-option" type="button" role="radio" aria-checked="false" data-action="mc-select-followup" data-mail-record-id="${Number(item.id)}">
+                            <small>${escapeText(`${datePart(item.eventAt)} ${timePart(item.eventAt)} · ${item.accountCode || ""}`)}</small>
+                            <strong>${escapeText(item.subject || "(无主题)")}</strong>
+                            <span>${escapeText(quotePlainTextFromSource(followupSourceText(item)).slice(0, 160))}</span>
+                        </button>`).join("");
+            const list = options || '<p class="followup-help">当前窗口没有可引用的已发送邮件。</p>';
+            // 范围外第 4 项：只列已加载窗口，存在更早页时明确提示，不自动循环拉取。
+            const more = instance.conversation.hasMore
+                ? '<p class="followup-help" data-role="followup-more">仅显示当前已加载的最近邮件；如需更早邮件，请关闭本窗口并点击「加载更早信件」。</p>'
+                : "";
+            return `
+                <dialog class="followup-dialog" aria-labelledby="followupTitle">
+                    <header class="followup-head">
+                        <div><h2 id="followupTitle">生成跟进邮件</h2><p>${escapeText(name)} · 请手动选择本次要引用的邮件</p></div>
+                        <button class="followup-close" type="button" data-action="mc-close-followup" aria-label="关闭跟进邮件">×</button>
+                    </header>
+                    <div class="followup-grid">
+                        <section class="followup-list-pane">
+                            <h3 class="followup-pane-title">1. 选择引用邮件</h3>
+                            <p class="followup-help">仅显示当前回复账号成功发出的已加载邮件。系统不会自动选择。</p>
+                            ${more}
+                            <div class="followup-mail-list" role="radiogroup" aria-label="可引用的已发送邮件">${list}</div>
+                        </section>
+                        <section class="followup-preview-pane">
+                            <h3 class="followup-pane-title">2. 跟进内容</h3>
+                            <label class="followup-field">主题<input type="text" aria-label="跟进邮件主题" data-role="followup-subject"></label>
+                            <label class="followup-field">跟进正文<textarea aria-label="跟进邮件正文" data-role="followup-body"></textarea></label>
+                            <h3 class="followup-pane-title">3. 引用的原邮件</h3>
+                            <div class="followup-quote" data-role="followup-quote"></div>
+                        </section>
+                    </div>
+                    <footer class="followup-actions">
+                        <p>选择只填入草稿，不会立即发送邮件</p>
+                        <div><button class="button" type="button" data-action="mc-close-followup">取消</button><button class="button primary" type="button" data-action="mc-apply-followup" disabled>填入人工回复</button></div>
+                    </footer>
+                </dialog>`;
+        }
+
+        function openFollowUpDialog() {
+            const key = currentTargetKey();
+            if (!key) return;
+            // 唯一 portal 只承载一个 overlay：先关管理面板，避免互相覆盖后状态失同步。
+            closeManageOverlay({ restoreFocus: false });
+            const root = ensurePortalRoot();
+            if (!root) {
+                hostShowStatus("跟进邮件面板挂载失败", "error");
+                return;
+            }
+            root.innerHTML = buildFollowupHtml(followupCandidates());
+            const dialog = followupDialogEl();
+            if (!dialog) return;
+            instance.followup.open = true;
+            instance.followup.targetKey = key;
+            instance.followup.selectedId = null;
+            instance.followup.trigger = host.querySelector ? host.querySelector('[data-action="mc-open-followup"]') : null;
+            if (typeof dialog.showModal === "function") {
+                try {
+                    dialog.showModal();
+                } catch (e) {
+                    dialog.setAttribute("open", "");
+                }
+            } else {
+                dialog.setAttribute("open", "");
+            }
+            // I-1：打开即无选中项，apply 禁用（绝不默认选最新一封）。
+            renderFollowUpSelection(null);
+            if (typeof dialog.focus === "function") dialog.focus();
+        }
+
+        function renderFollowUpSelection(mailRecordId) {
+            const dialog = followupDialogEl();
+            if (!dialog) return;
+            const id = mailRecordId == null ? null : Number(mailRecordId);
+            const item = id == null ? null : followupItemById(id);
+            instance.followup.selectedId = item ? id : null;
+            const chosen = item ? String(id) : "";
+            dialog.querySelectorAll('[data-action="mc-select-followup"]').forEach((node) => {
+                node.setAttribute("aria-checked", node.dataset.mailRecordId === chosen ? "true" : "false");
+            });
+            const applyButton = dialog.querySelector('[data-action="mc-apply-followup"]');
+            const subjectInput = dialog.querySelector('[data-role="followup-subject"]');
+            const bodyInput = dialog.querySelector('[data-role="followup-body"]');
+            const quoteNode = dialog.querySelector('[data-role="followup-quote"]');
+            if (subjectInput) subjectInput.value = item ? chatSubjectPrefill(item.subject) : "";
+            if (bodyInput) bodyInput.value = item ? followupBodyText(item) : "";
+            // 引用预览只用 textContent（I-6：不把邮件正文当 HTML 插入）。
+            if (quoteNode) quoteNode.textContent = item ? followupQuoteText(item) : "";
+            if (applyButton) applyButton.disabled = !item;
+        }
+
+        /** I-7：填入是全文替换（清 QA/会议快照与会议正文块），并写入所选锚点。 */
+        function applyFollowUpFromDialog() {
+            const key = currentTargetKey();
+            const dialog = followupDialogEl();
+            if (!key || !dialog || !instance.followup.open || instance.followup.targetKey !== key) return;
+            const item = instance.followup.selectedId == null
+                ? null
+                : followupItemById(instance.followup.selectedId);
+            if (!item) return;
+            const composeEl = manualComposeEl();
+            const inputs = manualInputs(composeEl);
+            if (!inputs) return;
+            const subjectInput = dialog.querySelector('[data-role="followup-subject"]');
+            const bodyInput = dialog.querySelector('[data-role="followup-body"]');
+            const typedSubject = subjectInput ? String(subjectInput.value || "").trim() : "";
+            const typedBody = bodyInput ? String(bodyInput.value || "") : "";
+            inputs.subjectInput.value = typedSubject || chatSubjectPrefill(item.subject);
+            // 全文替换：原编辑器内容（含任何会议正文块）整体消失。
+            inputs.editor.innerText = `${typedBody}\n\n${followupQuoteText(item)}`;
+            instance.manual.qa = null;
+            instance.meeting.editorRevision += 1;
+            saveDraftFromInputs({
+                meeting: null,
+                meetingAccountCode: "",
+                followUpAnchorMailRecordId: Number(item.id)
+            });
+            refreshMeetingAttachmentCard();
+            refreshFollowupAnchorNote();
+            closeFollowUpDialog({ restoreFocus: true });
+            saveConversationState();
+            const manualSection = composeEl && composeEl.closest
+                ? composeEl.closest('.mc-section[data-section="manual"]')
+                : null;
+            if (manualSection && !manualSection.open && manualSection.setAttribute) {
+                manualSection.setAttribute("open", "");
+            }
+            hostShowStatus("已填入跟进回复草稿，发送前请确认", "ok");
+        }
+
+        /** 只关闭弹窗：不触碰主题/正文/QA/会议/锚点（I-7）。 */
+        function closeFollowUpDialog(options) {
+            const opts = options || {};
+            const wasOpen = instance.followup.open;
+            instance.followup.open = false;
+            instance.followup.selectedId = null;
+            instance.followup.targetKey = null;
+            const dialog = followupDialogEl();
+            if (dialog) {
+                if (typeof dialog.close === "function") {
+                    try {
+                        dialog.close();
+                    } catch (e) { /* noop */ }
+                }
+                if (dialog.hasAttribute && dialog.hasAttribute("open")) dialog.removeAttribute("open");
+            }
+            const root = instance.elements.portalRoot;
+            if (root) root.innerHTML = "";
+            if (wasOpen && opts.restoreFocus !== false) {
+                const trigger = instance.followup.trigger;
+                if (trigger && typeof trigger.focus === "function") trigger.focus();
+            }
+            instance.followup.trigger = null;
         }
 
         // --------------------------------------------------------------
@@ -3396,6 +3777,8 @@
         function meetingCloseDisposeOnAccountScopeChange(prevAccount, nextAccount) {
             if (instance.selectedContactId == null) return;
             if (String(prevAccount || "") === String(nextAccount || "")) return;
+            // 跟进候选绑定账号范围：范围变化即关闭弹窗（草稿缓存不清，I-7）。
+            closeFollowUpDialog({ restoreFocus: false });
             teardownMeetingViews();
         }
 
@@ -3491,7 +3874,9 @@
                 qa,
                 updatedAt: new Date().toISOString(),
                 meeting: deepCopyMeeting(meeting),
-                meetingAccountCode: meeting ? (instance.manual.targetAccountCode || "") : ""
+                meetingAccountCode: meeting ? (instance.manual.targetAccountCode || "") : "",
+                // I-7：应用会议即全文替换为会议正文，跟进锚点必须同时清除。
+                followUpAnchorMailRecordId: null
             };
             setDraft(key, next);
             return next;
@@ -3559,6 +3944,7 @@
             writeDraftWithMeeting(meeting, qaValue);
             instance.meeting.editorRevision += 1;
             refreshMeetingAttachmentCard();
+            refreshFollowupAnchorNote();
             saveConversationState();
             hostShowStatus(payload.mode === "replace" ? "会议正文已替换并填入回复" : "会议确认已填入回复草稿，发送前请确认", "ok");
             return true;
@@ -3652,8 +4038,10 @@
             if (inputs.editor.innerText !== assemblyText) {
                 inputs.editor.innerText = assemblyText;
             }
-            saveDraftFromInputs({ meeting: null, meetingAccountCode: "" });
+            // I-7：采用可信回复草稿是全文替换 —— 同时清除跟进锚点与会议快照。
+            saveDraftFromInputs({ meeting: null, meetingAccountCode: "", followUpAnchorMailRecordId: null });
             refreshMeetingAttachmentCard();
+            refreshFollowupAnchorNote();
             hostShowStatus(hadMeeting
                 ? "草稿已采用到人工回复区，请确认后发送；原日历附件已移除"
                 : "草稿已采用到人工回复区，请确认后发送", "ok");
@@ -3688,9 +4076,16 @@
                 typeof inputs.editor.innerHTML === "string" ? inputs.editor.innerHTML : ""
             );
             const mode = instance.manual.mode;
-            // 会议快照发送（T4）：只属于来信人工回复（inbound）—— 快照存在且 state ready
-            // 且当前会议块文本与基线一致才允许带附件发送；outbound/跟进路径无 meeting。
-            const meeting = mode === "inbound" ? manualMeetingSnapshot() : null;
+            // I-8/跟进（I-3）：草稿携带所选锚点时，无论当前 target 是来信还是无来信会话，
+            // 都必须走会话级接口并把真实 id 交给服务端重新校验。
+            const draftSnapshot = getDraft(key);
+            const followUpAnchorId = draftSnapshot && draftSnapshot.followUpAnchorMailRecordId != null
+                ? Number(draftSnapshot.followUpAnchorMailRecordId)
+                : null;
+            const conversationSend = mode === "outbound" || followUpAnchorId != null;
+            // 会议快照发送（T4）：只属于来信人工回复（inbound）且未选跟进锚点 —— 快照存在且
+            // state ready 且当前会议块文本与基线一致才允许带附件发送；outbound/跟进路径无 meeting。
+            const meeting = mode === "inbound" && !conversationSend ? manualMeetingSnapshot() : null;
             if (meeting) {
                 if (meeting.state !== "ready") {
                     hostShowStatus("会议正文或回复目标已变化，请编辑会议重新生成，或移除日历附件。", "error");
@@ -3705,7 +4100,7 @@
             }
             let requestBody = null;
             let processingId = null;
-            if (mode === "inbound") {
+            if (!conversationSend) {
                 // 来信路径：既有 processingId adapter，保留 QA/RAG payload（I-8）。
                 requestBody = {
                     senderAccountCode: null,
@@ -3733,9 +4128,9 @@
                     requestBody.previewAttachmentSha256 = sha;
                 }
                 processingId = Number(instance.manual.targetProcessingId);
-            } else if (mode === "outbound") {
-                // 会话回信路径：body 只含 requestId/当前 accountScope/自由正文/确认字段；
-                // 无 processingId/senderAccountCode/QA/RAG/meeting（I-3/I-4/I-6）。
+            } else {
+                // 会话回信路径：body 只含 requestId/当前 accountScope/显式锚点/自由正文/确认
+                // 字段；无 processingId/senderAccountCode/QA/RAG/meeting（I-3/I-4/I-6）。
                 const requestId = ensureOutboundRequestId();
                 if (!requestId) {
                     hostShowStatus("无法生成发送请求标识", "error");
@@ -3749,8 +4144,7 @@
                     textBody,
                     operatorName: operatorName()
                 };
-            } else {
-                return;
+                if (followUpAnchorId != null) requestBody.anchorMailRecordId = followUpAnchorId;
             }
             // I-2：异步前捕获 draftsMap/owner/key/revision/requestBody；不回调里再取。
             const draftsMap = ensureDraftsMap();
@@ -3766,11 +4160,13 @@
             instance.manual.busy = true;
             setSendButtonDisabled(true);
             if (meeting) setManualComposeSending(true);
-            const adapter = mode === "inbound" ? hostFn("mcHostSendRichReply") : hostFn("mcHostSendConversationRichReply");
+            const adapter = conversationSend
+                ? hostFn("mcHostSendConversationRichReply")
+                : hostFn("mcHostSendRichReply");
             const request = adapter
-                ? (mode === "inbound"
-                    ? adapter(processingId, requestBody)
-                    : adapter(contactId, requestBody))
+                ? (conversationSend
+                    ? adapter(contactId, requestBody)
+                    : adapter(processingId, requestBody))
                 : Promise.reject(new Error("发送能力不可用"));
             request.then((sent) => {
                 if (instance.disposed) {
@@ -3807,6 +4203,7 @@
                 }
                 deleteDraft(key);
                 instance.manual.qa = null;
+                if (stillCurrent) refreshFollowupAnchorNote();
                 afterSuccessfulSend(key);
             }).catch(() => {
                 if (instance.disposed) {
@@ -4127,6 +4524,10 @@
                 openMeetingDialog();
                 return;
             }
+            if (action === "mc-open-followup") {
+                openFollowUpDialog();
+                return;
+            }
             if (action === "mc-remove-meeting") {
                 removeMeetingFromDraft();
                 return;
@@ -4188,10 +4589,27 @@
                 retryManageExpertTags();
                 return;
             }
+            if (action === "mc-close-followup") {
+                closeFollowUpDialog({ restoreFocus: true });
+                return;
+            }
+            if (action === "mc-select-followup") {
+                renderFollowUpSelection(button.dataset ? button.dataset.mailRecordId : null);
+                return;
+            }
+            if (action === "mc-apply-followup") {
+                applyFollowUpFromDialog();
+                return;
+            }
         }
 
         function onPortalKeyDown(event) {
             if (instance.disposed) return;
+            if (event.key === "Escape" && instance.followup.open) {
+                event.preventDefault();
+                closeFollowUpDialog({ restoreFocus: true });
+                return;
+            }
             if (event.key === "Escape" && instance.manage.open) {
                 const overlay = manageOverlayEl();
                 if (overlay && !overlay.hidden) {

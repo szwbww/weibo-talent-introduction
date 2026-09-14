@@ -19,7 +19,7 @@ const indexPath = path.join(root, "index.html");
 const styles = fs.readFileSync(stylesPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260910-meeting-generic-template";
+const CACHE_KEY = "20260914-followup-email";
 
 function stripWs(text) {
     return text.replace(/\s+/g, " ").trim();

@@ -92,7 +92,7 @@ describe("收发件箱静态资源版本", () => {
     it("正文行距更新必须刷新 mailbox-chat.css 缓存版本", () => {
         assert.match(
             indexSource,
-            /href="mailbox-chat\.css\?v=20260910-meeting-generic-template"/,
+            /href="mailbox-chat\.css\?v=20260914-followup-email"/,
             "CSS 版本号必须随正文样式更新，避免浏览器继续使用旧行距"
         );
     });
@@ -176,5 +176,66 @@ describe("S-7: 专家标签单行关键规则", () => {
 
     it("null 专家标签显示单行「标签暂不可用」", () => {
         assert.match(cssSource, /\.mail-chat \.mc-person-tags-unavailable\{color:#94a3b8;font-size:10px\}/);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// 跟进邮件 01（S-1/S-2/S-3）：弹窗样式是 docs/plans/2026-09-14/
+// followup-email-01-manual-anchor.md 的逐字合同，landed 值不得调整；字节锁定的
+// mailbox-chat.css 不得吸收任何 followup-* 规则；S-3 复用既有 .mc-note。
+// 注：本文件与 02 缓存激活计划共享，上方「收发件箱静态资源版本」块是 01 的基线，
+// 02 只替换其中的旧缓存键字面量。
+// ---------------------------------------------------------------------------
+
+describe("S-2: 跟进弹窗逐字样式（followup 01 合同）", () => {
+    const PLAN_PATH = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-14", "followup-email-01-manual-anchor.md");
+    const planSource = fs.readFileSync(PLAN_PATH, "utf-8");
+    const contractBlock = planSource.match(/```css\n([\s\S]*?)```/)[1];
+
+    it("styles.css 逐字包含 S-2 合同样式块（不删一行、不改一个值）", () => {
+        assert.ok(
+            stylesSource.includes(contractBlock),
+            "S-2 的完整 CSS 块必须逐字追加在 styles.css（含注释与响应式规则）"
+        );
+    });
+
+    it("S-2 桌面/窄屏网格、焦点与禁用实值", () => {
+        assert.match(stylesSource, /\.followup-grid\{display:grid;grid-template-columns:44% 56%;min-height:430px\}/);
+        assert.match(stylesSource, /@media\(max-width:760px\)\{\.followup-dialog\{width:calc\(100vw - 20px\);max-height:calc\(100dvh - 20px\)\}\.followup-grid\{grid-template-columns:1fr\}/);
+        assert.match(stylesSource, /\.followup-dialog :is\(button,input,textarea\):focus-visible\{outline:2px solid #3b82f6;outline-offset:2px\}/);
+        assert.match(stylesSource, /\.followup-dialog :is\(button,\.button\):disabled\{opacity:\.45;cursor:not-allowed;transform:none;box-shadow:none\}/);
+        assert.match(stylesSource, /\.followup-mail-option\[aria-checked=true\]\{border-color:#3b82f6;background:#eff5ff;box-shadow:0 0 0 1px #3b82f6\}/);
+        assert.match(stylesSource, /@media\(prefers-reduced-motion:reduce\)\{\.followup-dialog \*\{transition:none!important;scroll-behavior:auto!important\}\}/);
+    });
+
+    it("跟进弹窗全部 class 已在 styles.css 声明（无未声明 class）", () => {
+        const dialogClasses = [
+            "followup-dialog", "followup-head", "followup-close", "followup-grid",
+            "followup-list-pane", "followup-preview-pane", "followup-pane-title", "followup-help",
+            "followup-mail-list", "followup-mail-option", "followup-empty", "followup-field",
+            "followup-quote", "followup-actions"
+        ];
+        dialogClasses.forEach((cls) => {
+            assert.ok(new RegExp(`\\.${cls}(?=[\\s,{.:\\[])`).test(stylesSource), `${cls} 必须在 styles.css 声明`);
+        });
+        assert.ok(
+            stylesSource.includes(`.followup-dialog{`),
+            "弹窗根规则必须存在于 styles.css（不在字节锁定的 mailbox-chat.css）"
+        );
+    });
+
+    it("S-2 不写入字节锁定的 mailbox-chat.css，也不引入 inline style", () => {
+        assert.ok(!/followup-/.test(cssSource), "mailbox-chat.css 不得出现 followup-* 规则或引用");
+        assert.ok(!/"style="/.test(chatSource), "mailbox-chat.js 模板不得出现 style 属性");
+        assert.ok(!/'style='/.test(chatSource), "mailbox-chat.js 模板不得出现 style 属性");
+    });
+
+    it("S-3 复用既有 .mc-note，不新增锚点提示 class", () => {
+        assert.match(cssSource, /\.mail-chat \.mc-note\{/, "S-3 必须复用既有 .mc-note");
+        assert.ok(!/\.followup-anchor-note/.test(stylesSource), "锚点提示不得新增 CSS 规则");
+    });
+
+    it("S-1 复用 .button，不新增按钮 class", () => {
+        assert.ok(!/\.followup-button|\.followup-trigger/.test(stylesSource), "跟进按钮只允许既有 .button class");
     });
 });

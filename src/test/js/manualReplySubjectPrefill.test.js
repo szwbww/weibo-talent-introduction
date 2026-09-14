@@ -10,7 +10,7 @@ const indexPath = path.join(root, "index.html");
 const appJsSource = fs.readFileSync(appJsPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260910-meeting-generic-template";
+const CACHE_KEY = "20260914-followup-email";
 
 function extractFn(name) {
     const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");

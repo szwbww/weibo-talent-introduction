@@ -344,11 +344,16 @@ class PendingMailOperationService(
      * 幂等（I-4）：先按 requestId 收敛已完成 attempt，再查锚点；无成功发件在 claim/SMTP
      * 前返回 422 CONVERSATION_SENT_ANCHOR_NOT_FOUND（I-1/I-10）。DTO 不携带
      * senderAccountCode/QA/RAG —— 本方法只接收可空 accountScope 约束锚点查询（I-6）。
+     *
+     * 跟进邮件（I-2/I-3）：`anchorMailRecordId` 非空时按 id 重读权威 `mail_record` 并逐条
+     * 校验（同 contactId、OUTBOUND、SENT、非空非模拟器账号、accountScope 相等），任一不满足
+     * 统一 422 且不 claim/不 SMTP；为空保持既有「最近成功发件」查询，不改变旧行为。
      */
     fun sendConversationManualRichReply(
         contactId: Long,
         requestId: String,
         accountScope: String?,
+        anchorMailRecordId: Long? = null,
         subject: String,
         htmlBody: String,
         textBody: String?,
@@ -387,11 +392,18 @@ class PendingMailOperationService(
 
         // I-1：真实 SENT 出站锚点（排除空账号/模拟器）；accountScope 非空时只在该账号内找，
         // scope 下无成功发件不回退其他账号（I-6）。锚点查询在任何 claim/SMTP 之前。
-        val anchor = mailRecordRepository.findLatestSentOutboundAnchor(
-            contactId = contactId,
-            accountScope = accountScope?.takeIf { it.isNotBlank() },
-            excludedAccountCode = MailSenderAccountService.SIMULATOR_ACCOUNT_CODE
-        ) ?: throw ResponseStatusException(
+        // 跟进（I-2）：显式 id 必须重读同一行并全校验，前端只作提示、绝不作为权限边界。
+        val anchor = if (anchorMailRecordId != null) {
+            mailRecordRepository.findById(anchorMailRecordId)
+                .orElse(null)
+                ?.takeIf { isConversationSentAnchor(it, contactId, accountScope) }
+        } else {
+            mailRecordRepository.findLatestSentOutboundAnchor(
+                contactId = contactId,
+                accountScope = accountScope?.takeIf { it.isNotBlank() },
+                excludedAccountCode = MailSenderAccountService.SIMULATOR_ACCOUNT_CODE
+            )
+        } ?: throw ResponseStatusException(
             HttpStatus.UNPROCESSABLE_ENTITY,
             "CONVERSATION_SENT_ANCHOR_NOT_FOUND"
         )
@@ -433,6 +445,25 @@ class PendingMailOperationService(
             strongConfirmationText = strongConfirmationText,
             evidence = ManualReplyEvidenceContext(runInboundSemanticChecks = false)
         )
+    }
+
+    /**
+     * I-2：显式锚点资格判定 —— 与 `findLatestSentOutboundAnchor` 的 SQL 谓词同口径
+     * （同联系人 / OUTBOUND / SENT / 非空非模拟器账号 / accountScope 相等）。前端只传 id，
+     * 这里重读的行是唯一权威。
+     */
+    private fun isConversationSentAnchor(
+        record: MailRecord,
+        contactId: Long,
+        accountScope: String?
+    ): Boolean {
+        val accountCode = record.senderAccountCode
+        return record.expertContactId == contactId &&
+            record.direction == "OUTBOUND" &&
+            record.sendStatus == "SENT" &&
+            !accountCode.isNullOrBlank() &&
+            accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE &&
+            (accountScope.isNullOrBlank() || accountCode == accountScope)
     }
 
     /**

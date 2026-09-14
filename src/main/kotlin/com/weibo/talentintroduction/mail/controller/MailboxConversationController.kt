@@ -74,10 +74,15 @@ data class ConversationItemResponse(
  * （attempt 短键来源）与可空 accountScope（只约束服务端锚点查询，不直接决定发件账号）；
  * 不接收 senderAccountCode、qaRuleIds、RAG 或 assembly 字段 —— 联系人与锚点校验全部在
  * service，避免前端成为权限边界。
+ *
+ * 跟进邮件（followup I-2）：`anchorMailRecordId` 只作提示，service 必须重新读取
+ * `mail_record` 并验证（同联系人/OUTBOUND/SENT/真实账号/scope），非法一律 422；null
+ * 保持既有「最近成功发件」语义。
  */
 data class ConversationManualRichReplyRequest(
     val requestId: String,
     val accountScope: String? = null,
+    val anchorMailRecordId: Long? = null,
     val subject: String,
     val htmlBody: String,
     val textBody: String? = null,
@@ -222,6 +227,7 @@ class MailboxConversationController(
         contactId = contactId,
         requestId = body.requestId,
         accountScope = body.accountScope,
+        anchorMailRecordId = body.anchorMailRecordId,
         subject = body.subject,
         htmlBody = body.htmlBody,
         textBody = body.textBody,

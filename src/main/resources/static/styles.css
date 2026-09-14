@@ -11124,3 +11124,42 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .rag-prompt-savebar-status.dirty {
     color: var(--primary);
 }
+
+/* Follow-up email composer: mailbox portal only. */
+.followup-dialog{margin:auto;inset:0;width:min(980px,calc(100vw - 40px));max-height:calc(100dvh - 40px);padding:0;border:1px solid #d5dfed;border-radius:14px;background:#fff;color:#334155;font-family:var(--font-body);font-size:12px;line-height:1.6;box-shadow:0 24px 100px #172c473d;overflow:auto;overscroll-behavior:contain}
+.followup-dialog::backdrop{background:#182a464f;backdrop-filter:blur(2px)}
+.followup-dialog *{box-sizing:border-box}
+.followup-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px 22px;border-bottom:1px solid #e2e8f0;background:#fff;position:sticky;top:0;z-index:2}
+.followup-head h2{margin:0;font-size:18px;font-weight:600;color:#334155;line-height:1.4}
+.followup-head p{margin:5px 0 0;color:#64748b;font-size:12px}
+.followup-close{display:inline-flex;align-items:center;justify-content:center;flex:none;width:28px;height:28px;padding:0;border:0;border-radius:5px;background:transparent;color:#91a1b7;font:inherit;font-size:21px;cursor:pointer}
+.followup-close:hover{background:#edf3ff;color:#2451b9}
+.followup-close:active{background:#dbeafe}
+.followup-grid{display:grid;grid-template-columns:44% 56%;min-height:430px}
+.followup-list-pane,.followup-preview-pane{min-width:0;padding:18px 20px}
+.followup-list-pane{border-right:1px solid #e2e8f0;background:#f8faff}
+.followup-pane-title{margin:0 0 5px;font-size:13px;font-weight:600;color:#445b79}
+.followup-help{margin:0 0 12px;color:#75859c;font-size:11px;line-height:1.7}
+.followup-mail-list{display:flex;flex-direction:column;gap:8px}
+.followup-mail-option{width:100%;padding:11px 12px;border:1px solid #d8e1ee;border-radius:9px;background:#fff;color:#334155;text-align:left;font:inherit;cursor:pointer}
+.followup-mail-option:hover{border-color:#93b4ec;background:#f5f8ff}
+.followup-mail-option:active{background:#eaf1ff}
+.followup-mail-option[aria-checked=true]{border-color:#3b82f6;background:#eff5ff;box-shadow:0 0 0 1px #3b82f6}
+.followup-mail-option small,.followup-mail-option span{display:block;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.followup-mail-option small{color:#7b8ba2;font-size:11px}
+.followup-mail-option strong{display:block;margin:4px 0;color:#334155;font-size:12px;font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.followup-mail-option span{color:#64748b;font-size:11px}
+.followup-empty{display:grid;place-content:center;min-height:340px;color:#7b8ba2;text-align:center}
+.followup-field{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;color:#52647e;font-weight:500}
+.followup-field input,.followup-field textarea{width:100%;margin:0;padding:8px 10px;border:1px solid #d7e0ed;border-radius:7px;background:#fff;color:#334155;font:inherit;font-weight:400;box-shadow:none}
+.followup-field input{height:36px;min-height:36px}
+.followup-field textarea{min-height:128px;resize:vertical;line-height:1.7}
+.followup-field :is(input,textarea):hover:not(:disabled){border-color:#93b4ec}
+.followup-quote{max-height:190px;overflow:auto;padding:12px 14px;border-left:3px solid #bfd0e8;background:#f8faff;color:#5d6f88;font-size:11px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+.followup-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 22px;border-top:1px solid #e2e8f0;background:#fff;position:sticky;bottom:0}
+.followup-actions p{margin:0;color:#75859c;font-size:11px}
+.followup-actions>div{display:flex;gap:8px;flex:none}
+.followup-dialog :is(button,input,textarea):focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
+.followup-dialog :is(button,.button):disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+@media(max-width:760px){.followup-dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}.followup-grid{grid-template-columns:1fr}.followup-list-pane{border-right:0;border-bottom:1px solid #e2e8f0}.followup-head,.followup-list-pane,.followup-preview-pane{padding:14px}.followup-actions{align-items:flex-end;flex-wrap:wrap;padding:12px 14px}.followup-actions p{width:100%}.followup-actions>div{margin-left:auto}}
+@media(prefers-reduced-motion:reduce){.followup-dialog *{transition:none!important;scroll-behavior:auto!important}}

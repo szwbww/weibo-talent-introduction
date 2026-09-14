@@ -3173,3 +3173,541 @@ describe("app.js mcHostMountUnmatchedDetail / mcHostReleaseUnmatchedDetail（lea
         assert.strictEqual(main.scrollTop, 0);
     });
 });
+
+// ════════════════════════════════════════════════════════════════════════
+// 跟进邮件 01（I-1..I-8 / S-1/S-3）：人工选择引用邮件、自然短正文与同源引用、
+// 草稿锚点/幂等、填入后的互斥清理，以及发送分支（有锚点 → 会话接口）。
+// 需求 02 计划：docs/plans/2026-09-14/followup-email-01-manual-anchor.md
+// ════════════════════════════════════════════════════════════════════════
+
+describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S-3）", () => {
+    const VIDEO_BODY = "Just following up on my email below about a brief Zoom call. Would you be available sometime this week or next? We’re happy to work around your time zone.";
+    const CV_BODY = "Just following up on my note below. When convenient, could you please send your CV? It will help us identify suitable industry partners.";
+    const GENERIC_BODY = "Just following up on my email below. Please let me know when you have a chance.";
+
+    // 时间线夹具：合法 SENT（acc1：#2893 较旧、#4007 最新）+ 全部非法形态。
+    function followupMessage(extra) {
+        return Object.assign({
+            source: "MAIL_RECORD",
+            id: 2893,
+            contactId: 1,
+            direction: "OUTBOUND",
+            accountCode: "acc1",
+            subject: "Older introduction",
+            body: "<p>A</p><p>B<br>C</p>",
+            cleanedBody: "<p>A</p><p>B<br>C</p>",
+            eventAt: "2026-09-05T11:49:00",
+            sendStatus: "SENT",
+            processStatus: null,
+            attachmentCount: 0,
+            firstAttachmentNames: [],
+            messageId: "m2893",
+            inReplyTo: null,
+            tags: []
+        }, extra || {});
+    }
+
+    function followupInbound(extra) {
+        return Object.assign({
+            source: "INBOUND_PROCESSING",
+            id: 5001,
+            contactId: 1,
+            direction: "INBOUND",
+            accountCode: "acc1",
+            subject: "inbound question",
+            body: "inbound raw",
+            cleanedBody: "inbound cleaned",
+            eventAt: "2026-09-07T09:00:00",
+            sendStatus: null,
+            processStatus: "PROCESSED",
+            attachmentCount: 0,
+            firstAttachmentNames: [],
+            messageId: "m5001",
+            inReplyTo: null,
+            tags: []
+        }, extra || {});
+    }
+
+    function followupMessages(overrides) {
+        const opts = overrides || {};
+        const items = opts.items ? opts.items.slice() : [
+            followupMessage(),
+            followupMessage({
+                id: 4007, subject: "Newer introduction", body: "newer body", cleanedBody: "newer body",
+                eventAt: "2026-09-06T09:00:00", messageId: "m4007", inReplyTo: "m2893"
+            }),
+            followupInbound(),
+            followupMessage({ id: 4010, subject: "failed send", body: "failed", cleanedBody: "failed", eventAt: "2026-09-07T10:00:00", sendStatus: "FAILED" }),
+            followupMessage({ id: 4012, subject: "blank account", body: "blank", cleanedBody: "blank", eventAt: "2026-09-08T11:00:00", accountCode: "   " }),
+            followupMessage({ id: 4013, subject: "simulator", body: "sim", cleanedBody: "sim", eventAt: "2026-09-08T12:00:00", accountCode: "SIMULATOR_NOOP" })
+        ];
+        if (opts.withOtherAccount) {
+            items.push(followupMessage({ id: 4011, subject: "other account", body: "other", cleanedBody: "other", eventAt: "2026-09-08T10:00:00", accountCode: "acc9" }));
+        }
+        return { items, nextBefore: opts.nextBefore || null, hasMore: !!opts.hasMore };
+    }
+
+    async function bootFollowup(serverOverrides, mountOptions) {
+        const conversations = { items: [expertA(), expertB()], total: 2 };
+        return bootChat(
+            Object.assign({ conversations, messages: followupMessages(), contact: contactA() }, serverOverrides || {}),
+            mountOptions
+        );
+    }
+
+    function dialogOf(ctx) {
+        return ctx.doc.querySelector(".followup-dialog");
+    }
+
+    function followupOptions(ctx) {
+        const dialog = dialogOf(ctx);
+        return dialog ? dialog.querySelectorAll('[data-action="mc-select-followup"]') : [];
+    }
+
+    function openFollowup(ctx) {
+        click(ctx.host.querySelector('[data-action="mc-open-followup"]'));
+    }
+
+    function selectOption(ctx, id) {
+        const option = followupOptions(ctx).find((node) => node.dataset.mailRecordId === String(id));
+        assert.ok(option, `候选 #${id} 必须存在`);
+        click(option);
+    }
+
+    function applyFollowup(ctx) {
+        click(dialogOf(ctx).querySelector('[data-action="mc-apply-followup"]'));
+    }
+
+    function anchorNote(ctx) {
+        return ctx.host.querySelector('[data-role="followup-anchor-note"]');
+    }
+
+    function draftFixture(ctx, extra) {
+        // 夹具：把一次合法发送产物当作可引用邮件（body/cleanedBody 由用例指定）。
+        return followupMessage(extra);
+    }
+
+    it("S-1：跟进按钮只在有成功发件时渲染，位于工具栏末位且 class 严格为 button", async () => {
+        const ctx = await bootFollowup();
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        const tools = ctx.host.querySelector(".mc-editor-tools");
+        const button = tools.querySelector('[data-action="mc-open-followup"]');
+        assert.ok(button, "有成功发件的专家必须提供跟进入口");
+        assert.strictEqual(button.getAttribute("class"), "button", "只允许既有 button class");
+        assert.strictEqual(tools.children[tools.children.length - 1], button, "跟进按钮必须是工具栏最后一个按钮");
+        assert.strictEqual(button.textContent, "↗ 跟进邮件");
+
+        // sentCount=0（只有失败发件）不渲染跟进入口
+        const onlyFailed = expertB({ sentCount: 0, failedCount: 3 });
+        const noSent = await bootChat({
+            conversations: { items: [onlyFailed, expertA()], total: 2 },
+            messages: followupMessages(),
+            contact: contactB()
+        });
+        const b = noSent.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(noSent.host.querySelector('[data-action="mc-open-followup"]'), null, "无成功发件不显示跟进入口");
+        assert.ok(noSent.host.querySelector('[data-role="manual-followup"]'), "保留既有无来信提示与模板跟进");
+    });
+
+    it("I-1/I-2：弹窗默认不选择、只列合法 SENT，且不改变主题与正文", async () => {
+        const ctx = await bootFollowup();
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        const subjectBefore = ctx.host.querySelector('input[aria-label="回复主题"]').value;
+        const editorBefore = ctx.host.querySelector('[aria-label="人工回复正文"]').innerText;
+
+        openFollowup(ctx);
+        await flush();
+        const dialog = dialogOf(ctx);
+        assert.ok(dialog, "弹窗必须挂载到 portal root");
+        assert.ok(dialog.hasAttribute("open"), "弹窗必须处于打开状态");
+        assert.strictEqual(dialog.querySelector("#followupTitle").textContent, "生成跟进邮件");
+
+        const options = followupOptions(ctx);
+        assert.deepStrictEqual(options.map((node) => node.dataset.mailRecordId), ["4007", "2893"], "只列合法 SENT，且按时间倒序");
+        assert.deepStrictEqual(options.map((node) => node.getAttribute("aria-checked")), ["false", "false"], "默认无选中项");
+        assert.strictEqual(dialog.querySelector('[data-action="mc-apply-followup"]').disabled, true, "未选择时不得填入");
+        assert.strictEqual(dialog.querySelector('[data-role="followup-subject"]').value, "");
+        assert.strictEqual(dialog.querySelector('[data-role="followup-body"]').value, "");
+        assert.strictEqual(dialog.querySelector('[data-role="followup-quote"]').textContent, "");
+
+        // 打开弹窗不改变人工回复区
+        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, subjectBefore);
+        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, editorBefore);
+        assert.strictEqual(anchorNote(ctx), null, "未填入不得出现锚点提示");
+    });
+
+    it("I-2：INBOUND/FAILED/其他账号/空账号/模拟器行永不出现在候选里；账号范围生效", async () => {
+        const ctx = await bootFollowup();
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        openFollowup(ctx);
+        const ids = followupOptions(ctx).map((node) => node.dataset.mailRecordId);
+        ["5001", "4010", "4011", "4012", "4013"].forEach((illegal) => {
+            assert.ok(ids.indexOf(illegal) === -1, `非法行 ${illegal} 不得成为候选`);
+        });
+
+        // accountScope=acc9：只允许该账号的成功发件（含其他账号行时必须过滤）
+        const scoped = await bootFollowup({ messages: followupMessages({ withOtherAccount: true }) }, { filters: { accountCode: "acc9" } });
+        const a2 = scoped.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a2.querySelector(".mc-person-main"));
+        await flush();
+        openFollowup(scoped);
+        assert.deepStrictEqual(
+            followupOptions(scoped).map((node) => node.dataset.mailRecordId),
+            ["4011"],
+            "账号范围外的成功发件不得成为候选"
+        );
+    });
+
+    it("I-1/I-5/I-6：切换选择只高亮一项，主题/正文/引用随所选邮件同步", async () => {
+        const ctx = await bootFollowup({ conversations: { items: [expertA({ expertTags: ["待约视频"] })], total: 1 } });
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        openFollowup(ctx);
+        const dialog = dialogOf(ctx);
+
+        selectOption(ctx, 2893);
+        await flush();
+        assert.deepStrictEqual(
+            followupOptions(ctx).map((node) => node.getAttribute("aria-checked")),
+            ["false", "true"],
+            "只有所选一项为选中态"
+        );
+        assert.strictEqual(dialog.querySelector('[data-action="mc-apply-followup"]').disabled, false);
+        assert.strictEqual(dialog.querySelector('[data-role="followup-subject"]').value, "Re: Older introduction");
+        assert.strictEqual(
+            dialog.querySelector('[data-role="followup-body"]').value,
+            `Dear Professor,\n\n${VIDEO_BODY}\n\nBest regards,\nacc1`
+        );
+        // I-6：引用头 + 块级/换行标签确定性转换后的完整原文
+        assert.strictEqual(
+            dialog.querySelector('[data-role="followup-quote"]').textContent,
+            "On 2026-09-05 11:49, acc1 wrote:\n\nA\n\nB\nC"
+        );
+        assert.strictEqual(dialog.querySelector('[data-role="followup-body"]').value.indexOf("September"), -1);
+        assert.strictEqual(dialog.querySelector('[data-role="followup-body"]').value.indexOf("For reference"), -1);
+
+        selectOption(ctx, 4007);
+        await flush();
+        assert.deepStrictEqual(
+            followupOptions(ctx).map((node) => node.getAttribute("aria-checked")),
+            ["true", "false"]
+        );
+        assert.strictEqual(dialog.querySelector('[data-role="followup-subject"]').value, "Re: Newer introduction");
+        assert.strictEqual(
+            dialog.querySelector('[data-role="followup-quote"]').textContent,
+            "On 2026-09-06 09:00, acc1 wrote:\n\nnewer body"
+        );
+    });
+
+    it("I-5：待约视频/待发简历/歧义/缺失标签分别得到视频、简历与通用正文", async () => {
+        const cases = [
+            { tags: ["待约视频"], line: VIDEO_BODY },
+            { tags: ["待发简历"], line: CV_BODY },
+            { tags: ["待约视频", "待发简历"], line: GENERIC_BODY },
+            { tags: [], line: GENERIC_BODY },
+            { tags: null, line: GENERIC_BODY }
+        ];
+        for (const item of cases) {
+            const ctx = await bootFollowup({ conversations: { items: [expertA({ expertTags: item.tags })], total: 1 } });
+            const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+            click(a.querySelector(".mc-person-main"));
+            await flush();
+            openFollowup(ctx);
+            selectOption(ctx, 2893);
+            const body = dialogOf(ctx).querySelector('[data-role="followup-body"]').value;
+            assert.strictEqual(body, `Dear Professor,\n\n${item.line}\n\nBest regards,\nacc1`, `标签 ${JSON.stringify(item.tags)} 文案`);
+        }
+    });
+
+    it("I-5：称呼只复用所选邮件首行的 Dear/Hi 且不超过 100 字符", async () => {
+        const cases = [
+            { cleanedBody: "Dear Prof. Smith,\n\nWelcome aboard", greeting: "Dear Prof. Smith," },
+            { cleanedBody: "Hi Anna,\n\nthanks", greeting: "Hi Anna," },
+            { cleanedBody: "Hello there,\n\nthanks", greeting: "Dear Professor," },
+            { cleanedBody: `Dear ${"x".repeat(120)},\n\nhi`, greeting: "Dear Professor," }
+        ];
+        for (const item of cases) {
+            const messages = followupMessages({ items: [followupMessage({ cleanedBody: item.cleanedBody, body: item.cleanedBody })] });
+            const ctx = await bootFollowup({ messages });
+            const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+            click(a.querySelector(".mc-person-main"));
+            await flush();
+            openFollowup(ctx);
+            selectOption(ctx, 2893);
+            const body = dialogOf(ctx).querySelector('[data-role="followup-body"]').value;
+            assert.strictEqual(body.slice(0, item.greeting.length + 1), `${item.greeting}\n`, `首行 ${JSON.stringify(item.cleanedBody.slice(0, 20))}`);
+        }
+    });
+
+    it("I-6：HTML 正文确定性转纯文本，脚本内容不生成 DOM script", async () => {
+        const messages = followupMessages({
+            items: [followupMessage({
+                body: "cleaned question <script>alert(1)</script>",
+                cleanedBody: "cleaned question <script>alert(1)</script>"
+            })]
+        });
+        const ctx = await bootFollowup({ messages });
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        openFollowup(ctx);
+        selectOption(ctx, 2893);
+        const quote = dialogOf(ctx).querySelector('[data-role="followup-quote"]').textContent;
+        assert.strictEqual(quote, "On 2026-09-05 11:49, acc1 wrote:\n\ncleaned question alert(1)");
+        assert.strictEqual(ctx.doc.querySelectorAll("script").length, 0, "邮件正文绝不生成 script 元素");
+        assert.strictEqual(dialogOf(ctx).querySelectorAll("script").length, 0);
+        assert.strictEqual(ctx.host.querySelectorAll("script").length, 0);
+    });
+
+    it("I-7/S-3：取消不改状态；填入是全文替换并写入锚点提示", async () => {
+        const ctx = await bootFollowup();
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        const subjectInput = ctx.host.querySelector('input[aria-label="回复主题"]');
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        const subjectBefore = subjectInput.value;
+        const editorBefore = editor.innerText;
+
+        // 打开 → 选择 → 取消：主题/正文/提示都不变（选择不是填写）
+        openFollowup(ctx);
+        selectOption(ctx, 2893);
+        click(dialogOf(ctx).querySelector('[data-action="mc-close-followup"]'));
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "取消后弹窗关闭");
+        assert.strictEqual(subjectInput.value, subjectBefore);
+        assert.strictEqual(editor.innerText, editorBefore);
+        assert.strictEqual(anchorNote(ctx), null);
+
+        // 填入：主题与正文全文替换 + 锚点提示
+        openFollowup(ctx);
+        selectOption(ctx, 2893);
+        applyFollowup(ctx);
+        await flush();
+        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Older introduction");
+        const filled = ctx.host.querySelector('[aria-label="人工回复正文"]').innerText;
+        assert.ok(filled.indexOf("Just following up on my email below. Please let me know when you have a chance.") >= 0, "正文含通用文案");
+        assert.ok(filled.indexOf("On 2026-09-05 11:49, acc1 wrote:\n\nA\n\nB\nC") >= 0, "正文含同源完整引用");
+        const note = anchorNote(ctx);
+        assert.ok(note, "填入后必须显示锚点提示");
+        assert.strictEqual(note.getAttribute("class"), "mc-note");
+        assert.strictEqual(note.textContent, "已引用邮件 #2893 · 2026-09-05 11:49 · Older introduction");
+        const composeEl = ctx.host.querySelector('[data-role="manual-compose"]');
+        const kids = composeEl.children;
+        const editorEl = ctx.host.querySelector('[data-role="mc-editor"]');
+        assert.strictEqual(kids[kids.indexOf(editorEl) + 1], note, "提示紧随编辑器");
+        assert.strictEqual(kids[kids.indexOf(note) + 1].getAttribute("class"), "mc-compose-footer", "提示位于会议附件/底部操作区之前");
+        assert.strictEqual(note.textContent.indexOf("m2893"), -1, "不得显示 Message-ID");
+        assert.strictEqual(dialogOf(ctx), null, "填入后弹窗关闭");
+    });
+
+    it("I-8：有锚点的来信草稿只走会话接口，无锚点来信仍走 processingId 接口", async () => {
+        const ctx = await bootFollowup();
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+
+        // 无锚点：既有来信路径
+        editor.innerText = "plain inbound reply";
+        inputEvent(editor);
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendRich.length, 1, "无锚点来信走 processingId adapter");
+        assert.strictEqual(ctx.calls.sendConversation.length, 0);
+        assert.strictEqual(ctx.calls.sendRich[0].processingId, 101);
+
+        // 有锚点：会话路径 + 显式 anchorMailRecordId
+        ctx.sandbox.crypto = { randomUUID: () => "00000000-0000-4000-8000-000000000001" };
+        openFollowup(ctx);
+        selectOption(ctx, 2893);
+        applyFollowup(ctx);
+        await flush();
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendRich.length, 1, "有锚点来信不得再走 processingId adapter");
+        assert.strictEqual(ctx.calls.sendConversation.length, 1);
+        const body = ctx.calls.sendConversation[0].body;
+        assert.strictEqual(ctx.calls.sendConversation[0].contactId, 1);
+        assert.strictEqual(body.anchorMailRecordId, 2893);
+        assert.strictEqual(body.accountScope, null);
+        assert.strictEqual(body.subject, "Re: Older introduction");
+        assert.ok(body.textBody.indexOf("On 2026-09-05 11:49, acc1 wrote:") >= 0, "发送正文与所选引用同源");
+        assert.strictEqual(body.senderAccountCode, undefined, "会话请求不得携带发件账号");
+        assert.strictEqual(body.ragFactCodes, undefined, "会话请求不得携带 QA/RAG");
+        assert.strictEqual(body.meeting, undefined, "会话请求不得携带会议字段");
+    });
+
+    it("I-3/I-8：无来信会话（outbound）不带 anchorMailRecordId，填入后携带所选 id", async () => {
+        const ctx = await bootFollowup({ contact: contactB() });
+        ctx.sandbox.crypto = { randomUUID: () => "00000000-0000-4000-8000-000000000002" };
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        editor.innerText = "free reply without anchor";
+        inputEvent(editor);
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation.length, 1);
+        assert.strictEqual(Object.prototype.hasOwnProperty.call(ctx.calls.sendConversation[0].body, "anchorMailRecordId"), false,
+            "未使用跟进弹窗的旧会话回信不得携带锚点字段");
+
+        openFollowup(ctx);
+        selectOption(ctx, 2893);
+        applyFollowup(ctx);
+        await flush();
+        assert.ok(anchorNote(ctx), "outbound 草稿同样显示锚点提示");
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation.length, 2);
+        assert.strictEqual(ctx.calls.sendConversation[1].body.anchorMailRecordId, 2893);
+    });
+
+    it("I-4：换锚点清 requestId，同锚点失败重试复用同一 requestId", async () => {
+        let uuidSeq = 0;
+        const ctx = await bootFollowup({ sendConversationResult: false });
+        ctx.sandbox.crypto = { randomUUID: () => `00000000-0000-4000-8000-${String(++uuidSeq).padStart(12, "0")}` };
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+
+        openFollowup(ctx);
+        selectOption(ctx, 2893);
+        applyFollowup(ctx);
+        await flush();
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        const first = ctx.calls.sendConversation[0].body;
+        assert.strictEqual(first.anchorMailRecordId, 2893);
+        assert.ok(first.requestId, "发送前必须生成 requestId");
+
+        // 同锚点、正文不变 → 复用（失败重试收敛到同一 attempt）
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation[1].body.requestId, first.requestId, "同锚点重试复用 requestId");
+        assert.strictEqual(ctx.calls.sendConversation[1].body.anchorMailRecordId, 2893);
+
+        // 换锚点 → requestId 严格作废
+        openFollowup(ctx);
+        selectOption(ctx, 4007);
+        applyFollowup(ctx);
+        await flush();
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        const third = ctx.calls.sendConversation[2].body;
+        assert.strictEqual(third.anchorMailRecordId, 4007);
+        assert.notStrictEqual(third.requestId, first.requestId, "换锚点必须作废旧 requestId");
+    });
+
+    it("I-7：采用可信草稿清除锚点提示并回落到无锚点发送", async () => {
+        const ctx = await bootFollowup();
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        openFollowup(ctx);
+        selectOption(ctx, 2893);
+        applyFollowup(ctx);
+        await flush();
+        assert.ok(anchorNote(ctx));
+
+        const wb = ctx.host.querySelector('.mc-section[data-section="workbench"]');
+        toggleOpen(wb);
+        await flush();
+        await ctx.calls.workbenchMounts[0].callbacks.onComplete({ renderedDraftText: "adopted body", usedFactCodes: ["KB-1"] });
+        await flush();
+        assert.strictEqual(anchorNote(ctx), null, "采用可信草稿后锚点提示必须消失");
+
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendRich.length, 1, "清锚点后回到来信 adapter");
+        assert.strictEqual(ctx.calls.sendConversation.length, 0);
+    });
+
+    it("I-4/S-3：切走再切回按草稿恢复主题、正文与锚点提示", async () => {
+        const ctx = await bootFollowup();
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        openFollowup(ctx);
+        selectOption(ctx, 2893);
+        applyFollowup(ctx);
+        await flush();
+
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        const a2 = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a2.querySelector(".mc-person-main"));
+        await flush();
+
+        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Older introduction");
+        assert.ok(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText.indexOf("On 2026-09-05 11:49, acc1 wrote:") >= 0);
+        const note = anchorNote(ctx);
+        assert.ok(note, "草稿恢复后锚点提示仍在");
+        assert.strictEqual(note.textContent, "已引用邮件 #2893 · 2026-09-05 11:49 · Older introduction");
+    });
+
+    it("I-1/I-2：hasMore 时提示更早邮件；切专家关闭弹窗", async () => {
+        const ctx = await bootFollowup({ messages: followupMessages({ hasMore: true, nextBefore: "cur" }) });
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        openFollowup(ctx);
+        await flush();
+        const more = dialogOf(ctx).querySelector('[data-role="followup-more"]');
+        assert.ok(more, "存在更早页时必须明确提示");
+        assert.ok(more.textContent.indexOf("加载更早信件") >= 0);
+        assert.deepStrictEqual(
+            followupOptions(ctx).map((node) => node.dataset.mailRecordId),
+            ["4007", "2893"],
+            "弹窗只列当前已加载窗口，不自动拉取历史"
+        );
+
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "切专家必须关闭弹窗");
+    });
+
+    it("I-8：发送成功删除草稿与提示；失败保留草稿与提示", async () => {
+        const ok = await bootFollowup();
+        const a = ok.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        ok.sandbox.crypto = { randomUUID: () => "00000000-0000-4000-8000-000000000003" };
+        openFollowup(ok);
+        selectOption(ok, 2893);
+        applyFollowup(ok);
+        await flush();
+        assert.ok(anchorNote(ok));
+        click(ok.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ok.calls.sendConversation.length, 1);
+        assert.strictEqual(anchorNote(ok), null, "发送成功后锚点提示随草稿删除");
+
+        const bad = await bootFollowup({ sendConversationError: "mail down" });
+        const a2 = bad.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a2.querySelector(".mc-person-main"));
+        await flush();
+        bad.sandbox.crypto = { randomUUID: () => "00000000-0000-4000-8000-000000000004" };
+        openFollowup(bad);
+        selectOption(bad, 2893);
+        applyFollowup(bad);
+        await flush();
+        click(bad.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(bad.calls.sendConversation.length, 1);
+        assert.ok(anchorNote(bad), "发送失败保留草稿与锚点提示");
+        assert.ok(bad.host.querySelector('[aria-label="人工回复正文"]').innerText.indexOf("On 2026-09-05 11:49, acc1 wrote:") >= 0);
+    });
+});

@@ -1356,7 +1356,7 @@ describe("fast-p 04: 组件门禁与 S-3 人工回复区（trigger/附件卡）"
         const a = ctx.host.querySelectorAll(".mc-person")[0];
         click(a.querySelector(".mc-person-main"));
         await flush();
-        const tools = ctx.host.querySelectorAll('[data-role="manual-compose"] .mc-editor-tools .button');
+        const tools = ctx.host.querySelectorAll('[data-role="manual-compose"] .mc-editor-tools .button[data-command]');
         assert.deepStrictEqual(Array.prototype.slice.call(tools).map((b) => b.getAttribute("data-command")),
             ["bold", "italic", "insertUnorderedList", "createLink"], "组件缺席时四按钮原样");
         assert.strictEqual(ctx.host.querySelector('[data-action="mc-open-meeting"]'), null, "无 trigger");
@@ -1408,8 +1408,9 @@ describe("fast-p 04: 组件门禁与 S-3 人工回复区（trigger/附件卡）"
         const ctx = await bootMeetingA();
         const compose = ctx.host.querySelector('[data-role="manual-compose"]');
         const tools = compose.querySelector('.mc-editor-tools').querySelectorAll("button");
-        assert.strictEqual(tools.length, 5);
+        assert.strictEqual(tools.length, 6);
         assert.strictEqual(tools[4].getAttribute("data-action"), "mc-open-meeting");
+        assert.strictEqual(tools[5].getAttribute("data-action"), "mc-open-followup");
         const editor = compose.querySelector('[aria-label="人工回复正文"]');
         const container = compose.querySelector('[data-role="meeting-attachment"]');
         const footer = compose.querySelector(".mc-compose-footer");

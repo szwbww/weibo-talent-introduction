@@ -437,6 +437,135 @@ class PendingMailOperationServiceTest {
         Mockito.verify(mailRecordRepository).findLatestSentOutboundAnchor(1L, "other-acc", MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
     }
 
+    // 跟进（I-2/I-3）：显式锚点重读权威行 —— 选择较旧 #2893 时不得回退到最新 #4007；
+    // 账号、落库 inReplyTo、SMTP In-Reply-To/References 与 sourceAnchor 全部取所选记录。
+    @Test
+    fun `explicit anchor drives account thread headers and source anchor without the latest query`() {
+        val chosen = sentAnchor(
+            id = 2893L,
+            accountCode = "sender-old",
+            messageId = "<m2893@test.com>",
+            inReplyTo = "<m2800@test.com>"
+        )
+        val oldAccount = senderAccount().copy(accountCode = "sender-old", senderEmail = "old@test.com")
+        Mockito.`when`(mailRecordRepository.findById(2893L)).thenReturn(Optional.of(chosen))
+        Mockito.`when`(mailSenderAccountService.getManualSendAccount("sender-old")).thenReturn(oldAccount)
+        Mockito.`when`(mailDeliveryService.send(anyValue(oldAccount), anyValue(composedMail())))
+            .thenReturn(DeliveredMail(messageId = "<manual-rich-abc@weibo.com>", status = "SENT"))
+        // 最新成功发件桩：一旦被查询就会返回 #4007（本用例断言绝不发生）
+        Mockito.`when`(
+            mailRecordRepository.findLatestSentOutboundAnchor(1L, null, MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+        ).thenReturn(
+            sentAnchor(id = 4007L, accountCode = "sender-new", messageId = "<m4007@test.com>")
+        )
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(null)
+
+        val result = service.sendConversationManualRichReply(
+            contactId = 1L, requestId = conversationRequestId, accountScope = null,
+            anchorMailRecordId = 2893L,
+            subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals("sender-old", result.senderAccountCode)
+        assertTrue(!hasInvocation(mailRecordRepository, "findLatestSentOutboundAnchor"), "显式锚点绝不回退最近发件")
+
+        val payload = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+            .arguments[0] as ManualReplySendAttemptService.SendPayload
+        assertEquals("MAIL_RECORD:2893", payload.sourceAnchor)
+        assertEquals("<m2893@test.com>", payload.inReplyTo)
+
+        val sendInvocation = invocationOf(mailDeliveryService, "send")
+        assertEquals("sender-old", (sendInvocation.arguments[0] as MailSenderAccount).accountCode)
+        val mail = sendInvocation.arguments[1] as ComposedMail
+        assertEquals("<m2893@test.com>", mail.inReplyTo)
+        assertEquals("<m2800@test.com> <m2893@test.com>", mail.references)
+
+        val auditInvocation = invocationOf(manualReplySendAttemptService, "recordConversationSendAudit")
+        assertEquals(2893L, auditInvocation.arguments[1])
+    }
+
+    // 跟进（I-2）：显式锚点每种非法形态统一 422 CONVERSATION_SENT_ANCHOR_NOT_FOUND，
+    // 且在任何 claim/SMTP/finalize 之前短路；不存在的 id 同样 422。
+    @Test
+    fun `explicit anchor rejects wrong contact direction status account simulator scope and missing row`() {
+        val cases = listOf(
+            "跨联系人" to (sentAnchor(id = 2893L).copy(expertContactId = 2L) to null),
+            "非 OUTBOUND" to (sentAnchor(id = 2893L).copy(direction = "INBOUND") to null),
+            "非 SENT" to (sentAnchor(id = 2893L).copy(sendStatus = "FAILED") to null),
+            "空账号" to (sentAnchor(id = 2893L).copy(senderAccountCode = "   ") to null),
+            "模拟器账号" to (sentAnchor(id = 2893L).copy(senderAccountCode = MailSenderAccountService.SIMULATOR_ACCOUNT_CODE) to null),
+            "scope 不同" to (sentAnchor(id = 2893L, accountCode = "sender-1") to "other-acc"),
+            "行不存在" to (null to null)
+        )
+        cases.forEach { (label, pair) ->
+            val (record, scope) = pair
+            Mockito.clearInvocations(manualReplySendAttemptService, mailDeliveryService, mailRecordRepository)
+            Mockito.`when`(mailRecordRepository.findById(2893L)).thenReturn(Optional.ofNullable(record))
+            stubConversationRequestCanonical()
+            Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+                .thenReturn(null)
+
+            val ex = assertThrows(ResponseStatusException::class.java) {
+                service.sendConversationManualRichReply(
+                    contactId = 1L, requestId = conversationRequestId, accountScope = scope,
+                    anchorMailRecordId = 2893L,
+                    subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+                )
+            }
+            assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, ex.status, label)
+            assertEquals("CONVERSATION_SENT_ANCHOR_NOT_FOUND", ex.reason, label)
+            assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "$label 不得 claim")
+            assertTrue(!hasInvocation(mailDeliveryService, "send"), "$label 不得 SMTP")
+            assertTrue(!hasInvocation(manualReplySendAttemptService, "finalizeSuccess"), "$label 不得 finalize")
+            assertTrue(!hasInvocation(mailRecordRepository, "findLatestSentOutboundAnchor"), "$label 不得回退最近发件")
+        }
+    }
+
+    // I-4/I-10：已完成 requestId 优先于任何锚点读取 —— 携带显式 id 也不读 mail_record、不重投。
+    @Test
+    fun `completed request id with an explicit anchor never reads the anchor row`() {
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(completedConversationReply())
+        stubConversationRequestCanonical()
+
+        val result = service.sendConversationManualRichReply(
+            contactId = 1L, requestId = conversationRequestId, accountScope = null,
+            anchorMailRecordId = 2893L,
+            subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals("<manual-rich-orig@weibo.com>", result.messageId)
+        assertTrue(!hasInvocation(mailRecordRepository, "findById"), "收敛命中不读锚点行")
+        assertTrue(!hasInvocation(mailRecordRepository, "findLatestSentOutboundAnchor"), "收敛命中不查最近发件")
+        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "收敛命中不 claim")
+        assertTrue(!hasInvocation(mailDeliveryService, "send"), "收敛命中不再次 SMTP")
+    }
+
+    private fun completedConversationReply() = ManualReplySendAttemptService.CompletedOutboundReply(
+        attemptId = 1L,
+        attemptMessageId = "<manual-rich-orig@weibo.com>",
+        attemptAccountCode = "sender-1",
+        mailRecord = com.weibo.talentintroduction.mail.domain.MailRecord(
+            id = 500L,
+            expertContactId = 1L,
+            direction = "OUTBOUND",
+            mailType = "MANUAL_RICH_REPLY",
+            senderAccountCode = "sender-1",
+            messageId = "<manual-rich-orig@weibo.com>",
+            inReplyTo = "<anchor-1@test.com>",
+            subject = "Re: original",
+            body = "sent",
+            matchedQaRuleId = null,
+            sendStatus = "SENT",
+            receivedAt = null,
+            sentAt = LocalDateTime.now()
+        )
+    )
+
     // I-7：锚点 Message-ID 缺失时仍发送，线程头为空、不伪造引用。
     @Test
     fun `conversation reply without anchor message id still sends with empty thread headers`() {
@@ -478,26 +607,7 @@ class PendingMailOperationServiceTest {
     // I-4/I-10：已完成 requestId 在锚点重查前返回原结果 —— 不再查锚点、不 claim、不 SMTP。
     @Test
     fun `completed request id returns original result before anchor requery and never sends again`() {
-        val completed = ManualReplySendAttemptService.CompletedOutboundReply(
-            attemptId = 1L,
-            attemptMessageId = "<manual-rich-orig@weibo.com>",
-            attemptAccountCode = "sender-1",
-            mailRecord = com.weibo.talentintroduction.mail.domain.MailRecord(
-                id = 500L,
-                expertContactId = 1L,
-                direction = "OUTBOUND",
-                mailType = "MANUAL_RICH_REPLY",
-                senderAccountCode = "sender-1",
-                messageId = "<manual-rich-orig@weibo.com>",
-                inReplyTo = "<anchor-1@test.com>",
-                subject = "Re: original",
-                body = "sent",
-                matchedQaRuleId = null,
-                sendStatus = "SENT",
-                receivedAt = null,
-                sentAt = LocalDateTime.now()
-            )
-        )
+        val completed = completedConversationReply()
         Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
             .thenReturn(completed)
         stubConversationRequestCanonical()
