@@ -28,8 +28,11 @@ import org.mockito.Mockito
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets
 import java.util.NoSuchElementException
 import java.util.Optional
+import java.util.Properties
 
 class MeetingConfirmationServiceTest {
 
@@ -559,6 +562,23 @@ class MeetingConfirmationServiceTest {
         val cairo = zones.first { it.id == "Africa/Cairo" }
         assertEquals("埃及 · 开罗", cairo.labelZh)
         assertTrue(cairo.aliases.containsAll(listOf("埃及", "开罗", "Egypt", "Cairo")))
+    }
+
+    @Test
+    fun `packaged catalog covers Java 8 zone IDs used by production`() {
+        val properties = Properties()
+        MeetingConfirmationService::class.java.classLoader
+            .getResourceAsStream("meeting-timezones-zh.properties")
+            .use { input ->
+                requireNotNull(input) { "missing timezone catalog resource" }
+                InputStreamReader(input, StandardCharsets.UTF_8).use(properties::load)
+            }
+
+        listOf("America/Ciudad_Juarez", "Europe/Kyiv").forEach { zoneId ->
+            val entry = properties.getProperty(zoneId)
+            assertTrue(!entry.isNullOrBlank(), "missing Java 8 zone ID: $zoneId")
+            assertTrue(entry.substringBefore('\t').isNotBlank(), "missing Chinese label: $zoneId")
+        }
     }
 
     @Test

@@ -13,7 +13,9 @@ from pathlib import Path
 
 
 COMPATIBILITY_LABELS = {
+    "America/Ciudad_Juarez": "墨西哥 · 华雷斯城",
     "Europe/Istanbul": "土耳其 · 伊斯坦布尔",
+    "Europe/Kyiv": "乌克兰 · 基辅",
     "Asia/Shanghai": "中国 · 北京 / 上海",
     "Europe/London": "英国 · 伦敦",
     "Europe/Berlin": "德国 · 柏林",
@@ -32,7 +34,9 @@ COMPATIBILITY_LABELS = {
     "Asia/Dubai": "阿联酋 · 迪拜",
 }
 COMPATIBILITY_ALIASES = {
+    "America/Ciudad_Juarez": ["墨西哥", "华雷斯城", "Mexico", "Ciudad Juárez", "Ciudad Juarez"],
     "Europe/Istanbul": ["土耳其", "伊斯坦布尔", "Turkey", "Türkiye", "Istanbul"],
+    "Europe/Kyiv": ["乌克兰", "基辅", "Ukraine", "Kyiv", "Kiev"],
     "Asia/Shanghai": ["中国", "北京", "上海", "China", "Beijing", "Shanghai"],
     "Europe/London": ["英国", "伦敦", "UK", "London"],
     "Europe/Berlin": ["德国", "柏林", "Germany", "Berlin"],
@@ -51,6 +55,10 @@ COMPATIBILITY_ALIASES = {
     "Asia/Dubai": ["阿联酋", "迪拜", "UAE", "Dubai"],
 }
 UTC_ENTRY = ("协调世界时", ["协调世界时", "世界协调时间", "UTC", "Coordinated Universal Time"])
+
+# Production uses JDK 8 tzdata, which still exposes these IDs.  Keep the
+# checked-in catalog compatible with the build JDK and the production JDK.
+RUNTIME_COMPATIBILITY_ZONE_IDS = ["America/Ciudad_Juarez", "Europe/Kyiv"]
 
 
 def texts_by_type(root, tag):
@@ -144,7 +152,7 @@ def main():
     args = parser.parse_args()
 
     zone_ids = [line.strip() for line in args.zone_ids.read_text(encoding="utf-8").splitlines() if line.strip()]
-    zone_ids = unique([*zone_ids, "UTC"])
+    zone_ids = unique([*zone_ids, *RUNTIME_COMPATIBILITY_ZONE_IDS, "UTC"])
     zh_root = ET.parse(args.zh).getroot()
     en_root = ET.parse(args.en).getroot()
     records, aliases_by_zone = timezone_records(ET.parse(args.timezone).getroot())
