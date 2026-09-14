@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.mail.repository.InboundMailProcessingReposit
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.springframework.stereotype.Service
 import java.io.ByteArrayOutputStream
+import java.io.InputStreamReader
 import java.net.URI
 import java.security.MessageDigest
 import java.time.DayOfWeek
@@ -20,6 +21,8 @@ import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import java.util.Properties
+import java.nio.charset.StandardCharsets
 
 /**
  * 专家会议确认 · 只读生成器（fast-p 01）。
@@ -64,10 +67,12 @@ class MeetingConfirmationService(
             (zoneIds - COMMON_ZONE_IDS.toSet()).sorted()
         return orderedIds.map { id ->
             val offset = ZoneId.of(id).rules.getOffset(noonUtc)
+            val metadata = TIME_ZONE_CATALOG[id]
+                ?: throw IllegalStateException("时区中文目录缺少条目：$id")
             MeetingTimeZoneOption(
                 id = id,
-                labelZh = ZONE_CHINESE[id] ?: id,
-                aliases = ZONE_ALIASES[id]?.split(' ')?.filter { it.isNotBlank() } ?: emptyList(),
+                labelZh = metadata.labelZh,
+                aliases = metadata.aliases,
                 offsetLabel = formatUtcOffset(offset.totalSeconds),
                 offsetSeconds = offset.totalSeconds
             )
@@ -626,47 +631,31 @@ class MeetingConfirmationService(
             DayOfWeek.SUNDAY to "周日"
         )
 
-        /** 中文展示标签逐字迁移自已确认 preview（zoneChinese 映射）。 */
-        private val ZONE_CHINESE: Map<String, String> = mapOf(
-            "Europe/Istanbul" to "土耳其 · 伊斯坦布尔",
-            "Asia/Shanghai" to "中国 · 北京 / 上海",
-            "Europe/London" to "英国 · 伦敦",
-            "Europe/Berlin" to "德国 · 柏林",
-            "America/New_York" to "美国东部 · 纽约",
-            "America/Los_Angeles" to "美国西部 · 洛杉矶",
-            "Asia/Tokyo" to "日本 · 东京",
-            "Asia/Kolkata" to "印度 · 加尔各答",
-            "Asia/Calcutta" to "印度 · 加尔各答",
-            "Australia/Sydney" to "澳大利亚 · 悉尼",
-            "Asia/Hong_Kong" to "中国 · 香港",
-            "Asia/Singapore" to "新加坡",
-            "Europe/Paris" to "法国 · 巴黎",
-            "Europe/Moscow" to "俄罗斯 · 莫斯科",
-            "America/Toronto" to "加拿大 · 多伦多",
-            "Pacific/Auckland" to "新西兰 · 奥克兰",
-            "Asia/Dubai" to "阿联酋 · 迪拜"
+        private data class TimeZoneCatalogEntry(
+            val labelZh: String,
+            val aliases: List<String>
         )
 
-        /** 搜索别名逐字迁移自已确认 preview（zoneAliases 映射），空格分词为 token。 */
-        private val ZONE_ALIASES: Map<String, String> = mapOf(
-            "Europe/Istanbul" to "土耳其 伊斯坦布尔 Turkey Türkiye Istanbul",
-            "Asia/Shanghai" to "中国 北京 上海 China Beijing Shanghai",
-            "Europe/London" to "英国 伦敦 UK London",
-            "Europe/Berlin" to "德国 柏林 Germany Berlin",
-            "America/New_York" to "美国东部 纽约 US Eastern New York",
-            "America/Los_Angeles" to "美国西部 洛杉矶 US Pacific Los Angeles",
-            "Asia/Tokyo" to "日本 东京 Japan Tokyo",
-            "Asia/Kolkata" to "印度 加尔各答 India Kolkata",
-            "Asia/Calcutta" to "印度 加尔各答 India Kolkata Calcutta",
-            "Australia/Sydney" to "澳大利亚 悉尼 Australia Sydney",
-            "Asia/Hong_Kong" to "中国 香港 Hong Kong",
-            "Asia/Singapore" to "新加坡 Singapore",
-            "Europe/Paris" to "法国 巴黎 France Paris",
-            "Europe/Moscow" to "俄罗斯 莫斯科 Russia Moscow",
-            "America/Toronto" to "加拿大 多伦多 Canada Toronto",
-            "Pacific/Auckland" to "新西兰 奥克兰 New Zealand Auckland",
-            "Asia/Dubai" to "阿联酋 迪拜 UAE Dubai"
-        )
+        /**
+         * 由 Unicode CLDR 生成并随应用发布的离线目录。运行时不联网；目录缺条目时
+         * 显式失败，防止 JDK tzdata 新增时区后重新退化为英文 ID。
+         */
+        private val TIME_ZONE_CATALOG: Map<String, TimeZoneCatalogEntry> by lazy {
+            val properties = Properties()
+            MeetingConfirmationService::class.java.classLoader
+                .getResourceAsStream("meeting-timezones-zh.properties")
+                ?.use { input ->
+                    InputStreamReader(input, StandardCharsets.UTF_8).use(properties::load)
+                }
+                ?: throw IllegalStateException("找不到时区中文目录资源")
+            properties.stringPropertyNames().associateWith { id ->
+                val parts = properties.getProperty(id).split('\t', limit = 2)
+                require(parts.size == 2 && parts[0].isNotBlank()) { "时区中文目录格式错误：$id" }
+                val aliases = parts[1].split('\u001f').filter { it.isNotBlank() }
+                require(aliases.isNotEmpty()) { "时区中文目录缺少搜索别名：$id" }
+                TimeZoneCatalogEntry(parts[0], aliases)
+            }
+        }
 
         /** 固定常用表先行（与映射同序）；余者 id 字典序；UTC 由目录并入。 */
         private val COMMON_ZONE_IDS = listOf(

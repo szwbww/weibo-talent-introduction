@@ -550,6 +550,18 @@ class MeetingConfirmationServiceTest {
     }
 
     @Test
+    fun `timeZones provide Chinese labels and searchable aliases for every selectable zone`() {
+        val zones = service.timeZones(LocalDate.of(2026, 9, 11))
+
+        assertTrue(zones.all { it.labelZh.isNotBlank() && it.labelZh != it.id })
+        assertTrue(zones.all { it.aliases.isNotEmpty() })
+
+        val cairo = zones.first { it.id == "Africa/Cairo" }
+        assertEquals("埃及 · 开罗", cairo.labelZh)
+        assertTrue(cairo.aliases.containsAll(listOf("埃及", "开罗", "Egypt", "Cairo")))
+    }
+
+    @Test
     fun `istanbul morning preview matches the approved example`() {
         stubIdentity()
         stubMeetingPreparation()
