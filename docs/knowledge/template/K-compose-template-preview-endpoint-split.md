@@ -2,8 +2,8 @@
 id: K-compose-template-preview-endpoint-split
 domain: template
 created: 2026-08-14
-last_used: 2026-08-14
-hit_count: 1
+last_used: 2026-09-09
+hit_count: 2
 source: create-p:expert-mail-preview
 severity: P1
 ---

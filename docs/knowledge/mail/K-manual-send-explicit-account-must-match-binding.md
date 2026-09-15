@@ -2,8 +2,8 @@
 id: K-manual-send-explicit-account-must-match-binding
 domain: mail
 created: 2026-08-14
-last_used: 2026-08-14
-hit_count: 0
+last_used: 2026-09-14
+hit_count: 3
 source: create-p:expert-detail-head
 severity: P1
 ---

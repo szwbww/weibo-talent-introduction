@@ -2,8 +2,8 @@
 id: K-expert-filter-registration-sites
 domain: frontend
 created: 2026-08-12
-last_used: 2026-08-25
-hit_count: 6
+last_used: 2026-08-31
+hit_count: 7
 source: create-p:discipline-filter-batch-send
 revalidated_by: create-p:batch-send-rhythm-and-filter-00-master
 ---

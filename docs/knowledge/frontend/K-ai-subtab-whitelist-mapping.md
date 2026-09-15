@@ -2,8 +2,8 @@
 id: K-ai-subtab-whitelist-mapping
 domain: frontend
 created: 2026-07-08
-last_used: 2026-07-29
-hit_count: 3
+last_used: 2026-09-02
+hit_count: 4
 source: create-p:ai-training-dialogue-ui
 ---
 经验：AI 训练视图的子 Tab（`.ai-tab` / `.ai-tab-content`）与侧栏视图注册（K-view-registration-triad）机制不同：点击绑定是通配的（app.js `querySelectorAll("#view-ai-training .ai-tab")`），但面板显隐由 `switchAiTrainingTab()` 内**显式 `||` 白名单映射链**决定。

@@ -11,3 +11,4 @@ config/application-local.yml
 .worktrees/
 exports/
 __pycache__/
+/scripts/properties/apllo.properties

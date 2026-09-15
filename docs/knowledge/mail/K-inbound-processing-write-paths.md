@@ -2,8 +2,8 @@
 id: K-inbound-processing-write-paths
 domain: mail
 created: 2026-07-01
-last_used: 2026-08-18
-hit_count: 6
+last_used: 2026-09-12
+hit_count: 12
 source: create-p:inbound-mail-tag-backend
 severity: P2
 ---
@@ -13,3 +13,5 @@ severity: P2
 ② `AutoMailReplyService.confirmManualReviewWithBody()`（~:1010）——带 cleanedBody，QA_NO_MATCH/QA_GAP/退订等。
 copy 改状态（非新建，勿挂新建副作用）：`UnmatchedInboundMailService.bindToContact()`(:177)/`markResolved()`(:217)、`PendingMailOperationService.markResolved()`(:459)。
 配合 K-process-single-all-callers：6 个 processSingle 调用方最终都汇入上述两 sink，故挂一次即全覆盖；副作用须 best-effort（runCatching）避免阻断收信主流程。
+
+2026-09-10重新核验：两个新建sink当前位于AutoMailReplyService:1221/1274；状态改写位于UnmatchedInboundMailService:178/223、PendingMailOperationService:1356，另有PendingMailOperationService:1427→InboundMailProcessingRepository.reopenManualResolved条件UPDATE撤销人工处理。当前UID唯一键以V120的(account,uid_validity,uid)为准。

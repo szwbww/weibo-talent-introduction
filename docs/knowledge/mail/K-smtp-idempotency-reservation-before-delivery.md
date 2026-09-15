@@ -2,8 +2,8 @@
 id: K-smtp-idempotency-reservation-before-delivery
 domain: mail
 created: 2026-07-20
-last_used: 2026-07-20
-hit_count: 0
+last_used: 2026-09-12
+hit_count: 2
 source: create-p:ai-reply-07-final-send-integrity-plan
 ---
 

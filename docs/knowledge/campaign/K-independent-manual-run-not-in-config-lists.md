@@ -2,8 +2,8 @@
 id: K-independent-manual-run-not-in-config-lists
 domain: campaign
 created: 2026-08-16
-last_used: 2026-08-16
-hit_count: 0
+last_used: 2026-09-03
+hit_count: 1
 source: create-p:batch-console-log-drawer
 severity: P1
 ---

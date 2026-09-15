@@ -2,8 +2,8 @@
 id: K-batch-send-daily-cap-cross-invocation
 domain: campaign
 created: 2026-07-13
-last_used: 2026-07-14
-hit_count: 7
+last_used: 2026-09-12
+hit_count: 8
 source: fix-v:material-reminder-batch-send:fix-1
 severity: P1
 ---

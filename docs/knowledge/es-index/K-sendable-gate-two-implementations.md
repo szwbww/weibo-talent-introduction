@@ -1,12 +1,31 @@
 ---
 id: K-sendable-gate-two-implementations
 domain: es-index
-created: 2026-08-25
-last_used: 2026-08-25
-hit_count: 0
+created: 2026-08-28
+last_used: 2026-08-28
+hit_count: 1
 source: create-p:05a-institution-type-collection
 severity: P1
 ---
+
+> **2026-08-28 复验更正（create-p:00-single-gate-master）**：本条原文写「两处独立实现」，
+> **实测为四处** —— 内存侧是**三份逐字相同的手抄副本**，不是一份。行号也已随 05A / 05A-2 偏移。
+> 下方「两处」小节保留原文用于对照，实际清单以本更正段为准：
+>
+> | # | 位置（2026-08-28 grep 复核） | 形态 |
+> |---|---|---|
+> | 1 | `ExpertSearchService.expertSendableFilter():55-63` | ES 谓词；**2 个调用点**：`ManualInitialOutreachService.kt:1326`、`ExpertSearchService.kt:420` |
+> | 2 | `BatchExecutionModels.kt:66-72` | 内存 —— `RecipientScope.matchesExpert` 开头的硬门禁块 |
+> | 3 | `ManualInitialOutreachService.kt:604-620` | 内存 —— 发送前最后门禁，记 `EXPERT_NOT_SENDABLE` |
+> | 4 | `InitialOutreachService.kt:44-45` | 内存 —— 旧首发链路的发送前门禁 |
+>
+> 三份内存副本的表达式逐字相同：
+> `classification?.sendable != true || classification.version !in ACCEPTED_CLASSIFICATION_VERSIONS`
+> （05A-2 Part C 已把 `!=VERSION` 改为 `!in ACCEPTED_...`）。
+> **教训**：统计"门禁有几处"时，不要只 grep 函数名 —— 手抄副本不含函数名，
+> 必须同时 grep 语义关键词（本例是 `classification.version`）。
+>
+> 另：`ExpertSearchServiceTest.kt:1951` 的逐字断言行号亦已偏移，改动前须重新定位。
 
 发信硬门禁（`sendable` + 分类策略版本）在仓库中有**两处独立实现**，不是一处。
 任何改动分类 `VERSION` 或门禁语义的计划，两处必须同步改，否则复现

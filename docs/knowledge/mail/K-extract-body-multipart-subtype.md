@@ -2,8 +2,8 @@
 id: K-extract-body-multipart-subtype
 domain: mail
 created: 2026-08-18
-last_used: 2026-08-18
-hit_count: 0
+last_used: 2026-09-07
+hit_count: 1
 source: create-p:bounce-dsn-classification-and-email-invalid-writeback
 severity: P1
 ---

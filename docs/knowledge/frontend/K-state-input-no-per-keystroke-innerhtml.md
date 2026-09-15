@@ -2,8 +2,8 @@
 id: K-state-input-no-per-keystroke-innerhtml
 domain: frontend
 created: 2026-08-01
-last_used: 2026-08-21
-hit_count: 2
+last_used: 2026-09-09
+hit_count: 4
 source: create-p:trust-reply-manual-generation-and-stable-input
 severity: P1
 ---

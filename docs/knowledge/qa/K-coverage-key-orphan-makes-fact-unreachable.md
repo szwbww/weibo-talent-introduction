@@ -1,11 +1,11 @@
 ---
 id: K-coverage-key-orphan-makes-fact-unreachable
 domain: qa
-created: 2026-08-26
-last_used: 2026-08-26
-hit_count: 2
+created: 2026-08-28
+last_used: 2026-08-28
+hit_count: 3
 source: create-p:01-fact-and-catalog
-last_source: create-p:02-unrecognized-asks-and-orphan-keys
+last_source: create-p:11-fact-supply
 severity: P1
 ---
 
@@ -40,3 +40,27 @@ alternative 引用）、`work.remote_arrangement`、`work.travel_arrangement`（
 正确做法：新增 coverage key 与新增 intent 必须成对提交，并加一条**双向**守卫测试——intent 引用的键都合法，目录里的键都被引用（例外走显式豁免常量并注释理由，使后续删豁免时测试立刻变红）。
 
 关联：[[K-qa-coverage-keys-management-write-boundary]]、[[K-intent-keyword-two-sided-normalization]]、[[K-coverage-catalog-append-only]]
+
+## 2026-08-28 再次重测（create-p:11-fact-supply）——上节 2026-08-26 的名单又已过时
+
+同一脚本口径（`QaCoverageKeyCatalog.kt` 的 `Entry("<key>"` vs `AiReplyIntentCatalog.kt` 的
+`(required|alternative)CoverageKeys = listOf(...)` 全文字面量，双向差集）：
+
+```
+catalog keys: 33 / intent-referenced keys: 31
+ORPHANS: general.answer, work.relocation
+REVERSE MISMATCH: (无)
+```
+
+与 2026-08-26 的差异：**`application.required_materials` 已不再是孤儿** ——
+`AiReplyIntentCatalog.kt:282-283` 把它作为 `application.steps` 的
+`alternativeCoverageKeys` 引用了。上节把它定性为「真缺陷」的结论已失效。
+
+`src/test/kotlin/.../qa/service/QaCoverageKeyIntentParityTest.kt` 的
+`knownUnreferencedKeys` 现为 general.answer + work.relocation 两项，与本次实测一致 ——
+**该测试已是比本条目更权威的实时来源，读本条目时应先看它。**
+
+本条目的**机制部分**（非空且不相交 → `selectIntentKeyForRule` 返回 null → 结构性不可达；
+留空反而可达）在两次重测中均未变，仍然有效。名单部分请一律重跑脚本。
+
+关联补充：[[K-reachable-key-without-owning-rule]]（对称缺陷）

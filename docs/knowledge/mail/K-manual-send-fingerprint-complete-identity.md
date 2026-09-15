@@ -2,8 +2,8 @@
 id: K-manual-send-fingerprint-complete-identity
 domain: mail
 created: 2026-07-20
-last_used: 2026-07-20
-hit_count: 4
+last_used: 2026-09-14
+hit_count: 7
 source: fix-v:ai-reply-07-final-send-integrity-plan:fix-1
 last_source: create-p:ai-reply-final-send-identity-scope-repair
 severity: P1

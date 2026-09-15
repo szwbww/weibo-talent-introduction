@@ -2,8 +2,8 @@
 id: K-mail-placeholder-labels-are-semantic-contracts
 domain: mail
 created: 2026-08-25
-last_used: 2026-08-25
-hit_count: 0
+last_used: 2026-09-10
+hit_count: 2
 source: create-p:00-rnd-gate-master
 severity: P1
 ---

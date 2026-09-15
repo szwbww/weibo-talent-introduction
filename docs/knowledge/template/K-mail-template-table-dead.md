@@ -2,8 +2,8 @@
 id: K-mail-template-table-dead
 domain: template
 created: 2026-08-11
-last_used: 2026-08-11
-hit_count: 0
+last_used: 2026-09-10
+hit_count: 2
 source: create-p:unsubscribe-01-body-link
 severity: P2
 ---

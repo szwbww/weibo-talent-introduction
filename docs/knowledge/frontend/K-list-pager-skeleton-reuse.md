@@ -2,8 +2,8 @@
 id: K-list-pager-skeleton-reuse
 domain: frontend
 created: 2026-08-16
-last_used: 2026-08-16
-hit_count: 0
+last_used: 2026-08-31
+hit_count: 1
 source: create-p:p0-task-execution-list-performance
 ---
 

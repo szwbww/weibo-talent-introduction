@@ -2,8 +2,8 @@
 id: K-enrichment-excludes-email-id-experts
 domain: es-index
 created: 2026-08-25
-last_used: 2026-08-25
-hit_count: 1
+last_used: 2026-08-28
+hit_count: 2
 source: create-p:00-rnd-gate-master
 severity: P1
 ---

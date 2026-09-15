@@ -2,8 +2,8 @@
 id: K-panel-head-space-between-third-child
 domain: frontend
 created: 2026-08-21
-last_used: 2026-08-21
-hit_count: 0
+last_used: 2026-09-02
+hit_count: 2
 source: create-p:ui-tweaks-01-check-replies-move-and-auto-preview-removal
 severity: P2
 ---

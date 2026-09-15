@@ -2,8 +2,8 @@
 id: K-raw-index-scoring-fields-sparse
 domain: es-index
 created: 2026-08-25
-last_used: 2026-08-25
-hit_count: 0
+last_used: 2026-08-28
+hit_count: 1
 source: create-p:03-promotion-classification-gate
 severity: P1
 ---

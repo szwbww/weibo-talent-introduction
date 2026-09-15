@@ -1,19 +1,16 @@
 ---
 id: K-outbound-thread-headers-single-seam
 domain: mail
-created: 2026-08-06
-last_used: 2026-08-06
-hit_count: 0
+created: 2026-09-09
+last_used: 2026-09-14
+hit_count: 4
 source: create-p:material-reminder-01-threading
 ---
 
-现状（2026-08-06 审计）：出站邮件的 `In-Reply-To` / `References` 头在全代码库**从未被设置**。grep `In-Reply-To` 只在读取侧命中两处：`ImapMailReceiveService.kt:135`、`BounceDetector.kt:193`。`mail_record.in_reply_to` 列（`V1__create_business_tables.sql:103`，`VARCHAR(255)`）虽被自动回复与人工回复路径填充，但那只是**库内记账**，从未落到实际发出的 MIME 头上。
+2026-09-09 重新读代码：旧“全库未设置线程头”结论已失效。`ComposedMail`（IntroductionMailComposer.kt:73）已有可空默认 `inReplyTo` / `references`；`SmtpMailDeliveryService.send` 的唯一MIME写入点已将非空值设置到真实邮件头。AutoMailReplyService、ManualExpertMailService 的部分构造点已传入。
 
-后果：所有外发邮件（含对已回信专家的跟进）在收件人客户端里都是独立新会话，无法继承原线程的分类与信誉信号。
+审计仍必须检查**调用方实际传参**：PendingMailOperationService.sendManualRichReply:383 当前只传messageId，没有传这两个头；其SendPayload.inReplyTo和mail_record.in_reply_to仍记真实来信messageId。不能把数据库记账等同于已写入MIME，也不能把这一处缺参推广成所有出站路径缺失。
 
-写路径边界（改线程头时的完整改动面）：
-- **唯一 MIME 写入点**：`SmtpMailDeliveryService.send()` —— 全部 7 个投递调用点共用（`PendingMailOperationService:270`、`AutoMailReplyService:574/:963`、`ManualExpertMailService:57`、`ManualInitialOutreachService:626`、`MeetingScheduleService:130`、`InitialOutreachService:66`）。
-- **唯一载体**：`ComposedMail`（`IntroductionMailComposer.kt:59`）—— 全部 8 个构造点。新增字段必须带默认值，否则 8 处全要改。
-- **锚点数据源**：`MailRecordRepository.findLatestInboundByExpertContactId(contactId)` 已存在，无需新增查询。
+可复用规则：修改线程行为时，逐项追踪真实INBOUND messageId→ComposedMail→SMTP headers→mail_record.in_reply_to；没有真实messageId时不伪造。对已有调用新增可选载体字段必须带默认值；是否改变旧调用的线程行为需要明确范围，不能借新附件功能顺带修改全站发件。
 
-规则：线程头只能取自真实 INBOUND 记录的 `messageId`；缺失时**不写头**（fail-open 照常发送），禁止伪造或写空串。库内 `in_reply_to` 必须与实际发出的头同源同值，两侧不一致会让 `UnmatchedInboundMailService.suggestCandidates()` 的 `IN_REPLY_TO`（confidence 90）审计失真。`in_reply_to` 与 `subject` 均为 `VARCHAR(255)`，需长度守卫（先例：`PendingMailOperationService.kt:245-249`）。
+本次证据：docs/plans/2026-09-09/meeting-confirmation-audit.md D3；原始构造点见同目录meeting-confirmation-evidence/constructors.txt。本条描述现有代码，不意味着会议日历功能已实现。

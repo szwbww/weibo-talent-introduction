@@ -1,0 +1,188 @@
+[
+  {
+    "plan": "01-attachment-storage-compat.md",
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachment.kt",
+      "src/main/resources/db/migration/V118__allow_attachment_metadata_only.sql",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxAttachmentService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractor.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxAttachmentServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractorTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt"
+    ],
+    "invariants": 3,
+    "style": null,
+    "manualChecks": 1
+  },
+  {
+    "plan": "02-attachment-transfer-core.md",
+    "files": [
+      "src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailAttachmentTransfer.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailAttachmentTransferRepository.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapAttachmentContentFetcher.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/config/MailAttachmentStorageProperties.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt"
+    ],
+    "invariants": 4,
+    "style": null,
+    "manualChecks": 2
+  },
+  {
+    "plan": "03-mime-metadata-reader.md",
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReceiveService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/DmarcReportParser.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/config/MailAttachmentStorageProperties.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/DmarcReportParserTest.kt"
+    ],
+    "invariants": 3,
+    "style": null,
+    "manualChecks": 1
+  },
+  {
+    "plan": "04-inbound-metadata-persistence.md",
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/domain/InboundMailProcessing.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt",
+      "src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt"
+    ],
+    "invariants": 4,
+    "style": null,
+    "manualChecks": 2
+  },
+  {
+    "plan": "05-reply-check-progress-and-machine-mail.md",
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationController.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/DmarcAttachmentTransferConsumer.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/config/MailAttachmentStorageProperties.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationControllerTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/DmarcAttachmentTransferConsumerTest.kt"
+    ],
+    "invariants": 4,
+    "style": null,
+    "manualChecks": 2
+  },
+  {
+    "plan": "06-shared-material-api.md",
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/document/controller/ExpertMaterialController.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractor.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxAttachmentService.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentAnalysisServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/document/service/DocumentTextExtractorTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxAttachmentServiceTest.kt"
+    ],
+    "invariants": 4,
+    "style": null,
+    "manualChecks": 2
+  },
+  {
+    "plan": "07-expert-conversations-follow.md",
+    "files": [
+      "src/main/resources/db/migration/V121__create_expert_follow.sql",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailboxServiceTest.kt"
+    ],
+    "invariants": 4,
+    "style": null,
+    "manualChecks": 2
+  },
+  {
+    "plan": "08-shared-materials-frontend.md",
+    "files": [
+      "src/main/resources/static/expert-materials.js",
+      "src/main/resources/static/expert-materials.css",
+      "src/main/resources/static/app.js",
+      "src/test/js/expertMaterialsShared.test.js",
+      "src/test/js/expertMaterialsStyle.test.js"
+    ],
+    "invariants": 4,
+    "style": "materials",
+    "manualChecks": 2
+  },
+  {
+    "plan": "09-material-analysis-selection.md",
+    "files": [
+      "src/main/resources/static/app.js",
+      "src/main/resources/static/expert-materials.js",
+      "src/test/js/expertMaterialAnalysisFlow.test.js",
+      "src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentAnalysisService.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentAnalysisServiceTest.kt"
+    ],
+    "invariants": 3,
+    "style": "analysis",
+    "manualChecks": 2
+  },
+  {
+    "plan": "10-mailbox-chat-frontend.md",
+    "files": [
+      "src/main/resources/static/mailbox-chat.js",
+      "src/main/resources/static/mailbox-chat.css",
+      "src/main/resources/static/app.js",
+      "src/test/js/mailboxChatBehavior.test.js",
+      "src/test/js/mailboxChatStyle.test.js",
+      "src/test/js/mailboxExpertGrouping.test.js",
+      "src/test/js/mailboxDateDefault.test.js",
+      "src/test/js/taskDrilldown.test.js",
+      "src/test/js/unmatchedDetailResolvedAction.test.js",
+      "src/test/js/unmatchedQaReplySource.test.js"
+    ],
+    "invariants": 5,
+    "style": "chat",
+    "manualChecks": 3
+  },
+  {
+    "plan": "11-release-and-cache-gate.md",
+    "files": [
+      "src/main/resources/static/index.html",
+      "src/main/kotlin/com/weibo/talentintroduction/config/MailAttachmentStorageProperties.kt",
+      "src/test/js/batchSendTaskConsoleVisualFix.test.js",
+      "src/test/js/checkRepliesRelocation.test.js",
+      "src/test/js/manualReplySubjectPrefill.test.js",
+      "src/test/js/overlayAndDialogContrast.test.js",
+      "src/test/js/ragKnowledgeBasePage.test.js",
+      "src/test/js/ragWorkbenchRender.test.js",
+      "src/test/js/trustReplyWorkbenchSharedMount.test.js",
+      "docs/runbooks/mailbox-material-chat-rollout.md"
+    ],
+    "invariants": 3,
+    "style": "release",
+    "manualChecks": 2
+  }
+]

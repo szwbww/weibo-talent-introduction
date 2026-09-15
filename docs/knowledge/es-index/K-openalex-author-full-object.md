@@ -2,8 +2,8 @@
 id: K-openalex-author-full-object
 domain: discovery
 created: 2026-07-11
-last_used: 2026-08-25
-hit_count: 3
+last_used: 2026-08-28
+hit_count: 4
 source: create-p:discipline-category-data
 ---
 

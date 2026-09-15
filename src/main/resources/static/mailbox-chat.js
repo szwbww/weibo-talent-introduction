@@ -221,8 +221,6 @@
     // 或 DOM textContent，绝不把邮件正文当 HTML 插入。
     // ------------------------------------------------------------------
 
-    const FOLLOWUP_VIDEO_TAG = "待约视频";
-    const FOLLOWUP_CV_TAG = "待发简历";
     /** 与 MailSenderAccountService.SIMULATOR_ACCOUNT_CODE 同值：模拟器发件永不作为候选。 */
     const FOLLOWUP_SIMULATOR_ACCOUNT = "SIMULATOR_NOOP";
     const FOLLOWUP_HTMLISH = /<[a-z!/][^>]*>/i;
@@ -481,7 +479,7 @@
             tagAdapter: null,
             manage: { open: false, trigger: null },
             meeting: { controller: null, editorRevision: 0, sending: false, lastBlobUrl: "" },
-            followup: { open: false, targetKey: null, selectedId: null, trigger: null },
+            followup: { open: false, targetKey: null, selectedId: null, selectedCopy: null, trigger: null },
             popoverOpen: false,
             loadOlderBusy: false,
             pendingPrompt: null,
@@ -3345,17 +3343,6 @@
                 });
         }
 
-        /** I-5：标签只按 selectedSummary.expertTags 原值判定，歧义/缺失一律通用文案。 */
-        function followupVariant() {
-            const summary = instance.selectedSummary || {};
-            const tags = Array.isArray(summary.expertTags) ? summary.expertTags : [];
-            const video = tags.indexOf(FOLLOWUP_VIDEO_TAG) >= 0;
-            const cv = tags.indexOf(FOLLOWUP_CV_TAG) >= 0;
-            if (video && !cv) return "video";
-            if (cv && !video) return "cv";
-            return "generic";
-        }
-
         /** I-6：引用源优先非空 cleanedBody，否则 body。 */
         function followupSourceText(item) {
             const cleaned = item ? item.cleanedBody : null;
@@ -3378,8 +3365,9 @@
             return "Dear Professor,";
         }
 
-        function followupBodyText(item) {
-            const line = FOLLOWUP_BODY_LINES[followupVariant()];
+        function followupBodyText(item, copy) {
+            const line = FOLLOWUP_BODY_LINES[copy];
+            if (!line) return "";
             return `${followupGreeting(item)}\n\n${line}\n\nBest regards,\n${String(item.accountCode || "")}`;
         }
 
@@ -3459,10 +3447,17 @@
                             <div class="followup-mail-list" role="radiogroup" aria-label="可引用的已发送邮件">${list}</div>
                         </section>
                         <section class="followup-preview-pane">
-                            <h3 class="followup-pane-title">2. 跟进内容</h3>
+                            <h3 class="followup-pane-title">2. 选择跟进文案</h3>
+                            <p class="followup-help">请选择本次跟进重点；系统不会按专家状态自动选择。</p>
+                            <div class="followup-field" role="group" aria-label="跟进文案">
+                                <button class="button" type="button" data-action="mc-select-followup-copy" data-followup-copy="video" aria-pressed="false" disabled>视频会议</button>
+                                <button class="button" type="button" data-action="mc-select-followup-copy" data-followup-copy="cv" aria-pressed="false" disabled>索取简历</button>
+                                <button class="button" type="button" data-action="mc-select-followup-copy" data-followup-copy="generic" aria-pressed="false" disabled>通用跟进</button>
+                            </div>
+                            <h3 class="followup-pane-title">3. 跟进内容</h3>
                             <label class="followup-field">主题<input type="text" aria-label="跟进邮件主题" data-role="followup-subject"></label>
                             <label class="followup-field">跟进正文<textarea aria-label="跟进邮件正文" data-role="followup-body"></textarea></label>
-                            <h3 class="followup-pane-title">3. 引用的原邮件</h3>
+                            <h3 class="followup-pane-title">4. 引用的原邮件</h3>
                             <div class="followup-quote" data-role="followup-quote"></div>
                         </section>
                     </div>
@@ -3489,6 +3484,7 @@
             instance.followup.open = true;
             instance.followup.targetKey = key;
             instance.followup.selectedId = null;
+            instance.followup.selectedCopy = null;
             instance.followup.trigger = host.querySelector ? host.querySelector('[data-action="mc-open-followup"]') : null;
             if (typeof dialog.showModal === "function") {
                 try {
@@ -3518,11 +3514,35 @@
             const subjectInput = dialog.querySelector('[data-role="followup-subject"]');
             const bodyInput = dialog.querySelector('[data-role="followup-body"]');
             const quoteNode = dialog.querySelector('[data-role="followup-quote"]');
+            instance.followup.selectedCopy = null;
+            dialog.querySelectorAll('[data-action="mc-select-followup-copy"]').forEach((button) => {
+                button.disabled = !item;
+                button.setAttribute("aria-pressed", "false");
+            });
             if (subjectInput) subjectInput.value = item ? chatSubjectPrefill(item.subject) : "";
-            if (bodyInput) bodyInput.value = item ? followupBodyText(item) : "";
+            if (bodyInput) bodyInput.value = "";
             // 引用预览只用 textContent（I-6：不把邮件正文当 HTML 插入）。
             if (quoteNode) quoteNode.textContent = item ? followupQuoteText(item) : "";
-            if (applyButton) applyButton.disabled = !item;
+            if (applyButton) applyButton.disabled = true;
+        }
+
+        function renderFollowUpCopy(copy) {
+            const dialog = followupDialogEl();
+            if (!dialog) return;
+            const item = instance.followup.selectedId == null
+                ? null
+                : followupItemById(instance.followup.selectedId);
+            const selected = item && Object.prototype.hasOwnProperty.call(FOLLOWUP_BODY_LINES, copy) ? copy : null;
+            instance.followup.selectedCopy = selected;
+            dialog.querySelectorAll('[data-action="mc-select-followup-copy"]').forEach((button) => {
+                const chosen = button.dataset.followupCopy === selected;
+                button.disabled = !item;
+                button.setAttribute("aria-pressed", chosen ? "true" : "false");
+            });
+            const bodyInput = dialog.querySelector('[data-role="followup-body"]');
+            if (bodyInput) bodyInput.value = selected ? followupBodyText(item, selected) : "";
+            const applyButton = dialog.querySelector('[data-action="mc-apply-followup"]');
+            if (applyButton) applyButton.disabled = !(item && selected);
         }
 
         /** I-7：填入是全文替换（清 QA/会议快照与会议正文块），并写入所选锚点。 */
@@ -3533,7 +3553,7 @@
             const item = instance.followup.selectedId == null
                 ? null
                 : followupItemById(instance.followup.selectedId);
-            if (!item) return;
+            if (!item || !Object.prototype.hasOwnProperty.call(FOLLOWUP_BODY_LINES, instance.followup.selectedCopy)) return;
             const composeEl = manualComposeEl();
             const inputs = manualInputs(composeEl);
             if (!inputs) return;
@@ -3570,6 +3590,7 @@
             const wasOpen = instance.followup.open;
             instance.followup.open = false;
             instance.followup.selectedId = null;
+            instance.followup.selectedCopy = null;
             instance.followup.targetKey = null;
             const dialog = followupDialogEl();
             if (dialog) {
@@ -4600,6 +4621,10 @@
             }
             if (action === "mc-select-followup") {
                 renderFollowUpSelection(button.dataset ? button.dataset.mailRecordId : null);
+                return;
+            }
+            if (action === "mc-select-followup-copy") {
+                renderFollowUpCopy(button.dataset ? button.dataset.followupCopy : null);
                 return;
             }
             if (action === "mc-apply-followup") {

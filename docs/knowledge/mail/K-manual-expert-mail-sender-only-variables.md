@@ -2,8 +2,8 @@
 id: K-manual-expert-mail-sender-only-variables
 domain: mail
 created: 2026-08-11
-last_used: 2026-08-11
-hit_count: 1
+last_used: 2026-08-31
+hit_count: 2
 source: create-p:material-reminder-01-threading
 revalidated_by: create-p:unsubscribe-01-body-link
 severity: P2

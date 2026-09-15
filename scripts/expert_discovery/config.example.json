@@ -1,0 +1,25 @@
+{
+  "demand_company": "亨通光电",
+  "company": "Prysmian Group",
+  "domain": "prysmiangroup.com",
+  "aliases": ["Prysmian", "Prysmian Group"],
+  "topics": ["submarine cable", "submarine cables", "insulation", "extrusion", "cable manufacturing"],
+  "titles": ["R&D", "Research", "Process Development", "Manufacturing Engineer", "Cable Design", "Materials Development"],
+  "include_historical": true,
+  "overseas_only": true,
+  "countries": [],
+  "source_urls": [
+    "https://www.cigre.org/article/GB/news/the_latest_news/submarine-cables-theres-power-under-water"
+  ],
+  "allowed_hosts": ["www.cigre.org", "cigre.org", "electra.cigre.org", "www.prysmian.com", "www.prysmiangroup.com", "www.jicable.org"],
+  "model": "deepseek-v4-flash",
+  "budgets": {
+    "fetch": 6,
+    "deepseek": 3,
+    "input_chars": 14000,
+    "output_tokens": 2200,
+    "apollo_enrich": 1,
+    "email_verify": 1,
+    "apollo_search_pages": 1
+  }
+}

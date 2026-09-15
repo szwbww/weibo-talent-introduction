@@ -2,8 +2,8 @@
 id: K-compose-template-html-after-render
 domain: mail
 created: 2026-08-10
-last_used: 2026-08-10
-hit_count: 0
+last_used: 2026-09-10
+hit_count: 2
 source: create-p:compose-template-html-formatting
 ---
 

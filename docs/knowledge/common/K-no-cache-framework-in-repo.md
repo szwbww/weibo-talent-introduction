@@ -2,8 +2,8 @@
 id: K-no-cache-framework-in-repo
 domain: common
 created: 2026-08-26
-last_used: 2026-08-26
-hit_count: 0
+last_used: 2026-09-02
+hit_count: 1
 source: create-p:01-llm-fact-retrieval
 ---
 

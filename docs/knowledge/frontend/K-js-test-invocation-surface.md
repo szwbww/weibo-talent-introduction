@@ -2,8 +2,8 @@
 id: K-js-test-invocation-surface
 domain: frontend
 created: 2026-08-07
-last_used: 2026-08-21
-hit_count: 8
+last_used: 2026-09-02
+hit_count: 10
 source: create-p:batch-timeline-running-status-render
 ---
 

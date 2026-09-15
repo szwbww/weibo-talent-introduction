@@ -2,8 +2,8 @@
 id: K-distinct-contact-order-query
 domain: mail
 created: 2026-07-01
-last_used: 2026-07-18
-hit_count: 4
+last_used: 2026-09-02
+hit_count: 6
 source: fix-v:04-frontend-tab:fix-1
 severity: P1
 ---

@@ -62,6 +62,19 @@ Flyway runs on startup from `src/main/resources/db/migration` (`V1`..`V10`). **S
 A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `styles.css`) is served by `common/controller/FrontendController` and talks to the REST controllers under `/api/*` (`/api/mail`, `/api/mail/sender-accounts`, `/api/expert-contacts`, `/api/experts`, `/api/qa`, `/api/task-executions`).
 
 ## 团队沉淀知识
+- `mail_sender_account.enabled=false` 只禁止自动外发，不排除 IMAP 接收、显式收信账号回复或收发件箱/待处理可见性；这些读取统一允许 disabled、只排除 `SIMULATOR_NOOP`。(K-sender-account-enabled-scope)
+- `mail_record.source_inbound_id` 的设计来源是触发出站的入站 `mail_record.id`，不是 `inbound_mail_processing.id`；跨表归属须按真实写入链核对，禁止凭字段名或数值相同推断。(K-mail-record-source-inbound-id)
+- 来信状态的写路径除新建/mark-resolved外还包含`InboundMailProcessingRepository.reopenManualResolved`条件UPDATE；待处理列表/计数变更必须覆盖撤销人工处理后的重新读取。(K-inbound-processing-write-paths)
+- 共享可信工作台保持内部DOM/状态/transport唯一，宿主只传固定mode、精确source与回调；切上下文必须unmount并隔离旧异步响应。(K-shared-workbench-fixed-mode-host-adapter)
+- `OperatorStatusWriteSeamGuardTest` 的 `EXCLUDED_NOISE_SITES` 把若干文件的**具体行号**钉死；在 `MailRecordRepository.kt`、`ExpertContactRepository.kt`、`ExpertSearchService.kt` 等文件里增删行必然撞红它，与改动内容无关。触及这些文件的计划须把该测试列入变更清单并授权行号修正（只改行号、不改片段）。(K-line-number-guard-breaks-on-any-insertion)
+- `bounce_record` 无任何外键，`original_expert_contact_id` 可指向已删除的专家；`JOIN expert_contact` 会静默丢这些行，「未归因」判据必须是「为空 OR NOT EXISTS 专家」两类并集。往 `MailRecordRepositoryMonitoringIT` 加退信用例前，必须在 `cleanMailRecords()` 补 `DELETE FROM bounce_record`，否则 `seedBaseContact()` 重建的固定 id=1 专家会重新关联上一用例的残留退信。(K-bounce-record-has-no-foreign-key)
+- 退信归因到域名/服务商必须 join `bounce_record.original_expert_contact_id` → `expert_contact.expert_email`；用 `failed_recipient` 分桶会把所有解析失败的退信堆进 other 桶。两者都空的退信单独计数显示，不塞进任何桶。(K-bounce-attribution-prefer-contact-id)
+- `BounceRateMonitorService` 的账号级熔断分子分母都是滚动 7 天窗口：账号被暂停后停发，`sentCount` 衰减到 `MIN_SAMPLE_SIZE`(20) 以下即恒静默 `return -1.0`——「等几天指标就正常了」是分母饿死的假象。**不要为减少误报提高 `MIN_SAMPLE_SIZE`**（2026-09-03 实测 n=48 会直接漏判一次 16.67% 的真实批次），也不要照抄 `ReputationAutoPauseService` 的时间滞回做自动恢复（不发信=分母为零=自动达标）。(K-bounce-rate-monitor-denominator-starvation)
+- 退信的 MIME 解析路径（`BounceCollectionService.collectBounces` 走 `fetchUnseenMessages`）实际跑不到——内联路径（`AutoMailReplyService.kt:703`）先用纯文本 `detect` 处理并 `markSeen`。故 `bounce_type`/`dsn_status` 不可信；统计类需求应不区分 HARD/SOFT 以绕开。(K-inline-bounce-path-preempts-mime-parse)
+- `index.html` 的 styles.css / trust-reply-workbench.js / app.js 缓存键必须同值同时 bump；固定键测试数量会变化，必须从 index 当前键用 `rg -l` 反查全部测试，不按资源引用写法检索。(K-frontend-cache-key-triad)
+- 前端 JS 用例跑法：单文件 `node --test src/test/js/<x>.test.js`、全量 `node --test src/test/js/*.test.js`、语法检查 `node --check src/main/resources/static/<x>.js`；三者也由 `exec-maven-plugin` 绑在 `mvn test` 的 test 阶段（`pom.xml:186-232`）。`verify.sh` 只跑一个文件，不能当前端回归门禁。(K-js-tests-run-via-exec-plugin, K-js-test-invocation-surface)
+- `expert_contact.first_reply_at` 是晋级 APPLICATION 时补写的快照（唯一 DB 写入点 `AutomaticApplicationPromotionService.kt:84-90`），不是首次回信时刻；统计「是否/何时回信」一律取 `mail_record` INBOUND 的 `MIN(received_at)`。(K-first-reply-at-is-promotion-snapshot)
+- `mail_record` 中 `send_status='FAILED'` 的行 `sent_at` 恒为 NULL（三处写入点均如此），故按 `sent_at` 过滤即等价于「已发出」，无需再加 `send_status` 条件；反之统计失败量必须用 `created_at`。(K-failed-mail-record-has-null-sent-at)
 - 人工 QA 组装路径必须让 UI 预览、payload、外发正文和审计 ordinal 共用同一 `qaRuleIds` 顺序契约，避免运营调整顺序只影响日志不影响正文。(K-composed-reply-order-contract)
 - 前端邮件正文展示点分散在 app.js 多处（专家详情、专家详情邮件预览标签页、收发件箱、未匹配详情、自动回复预览等），统一类名 `.pre`；任何要在「所有正文位置」统一加能力的需求须按全集逐点改，改前先 grep `class="pre"` 复核行号。(K-mail-body-display-sites)
 - QA 复合覆盖规则与缺口检测共存时，缺口检测必须用覆盖前命中集计算覆盖度，或把 `supersedesChildren=true` 复合规则视为覆盖总览型多主题意图；否则概览型多问来信会被误转人工。(K-overview-gap-supersede)
@@ -137,6 +150,8 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - `sendQaRuleIds` 有两套产生口径：`select()` 走 `orderEvidenceRuleIds`（只读 intent 证据），workbench 走 `flatMap { factRuleIds }`；任何扩大 `factRuleIds` 的改动必须同时评估两条，否则正文与 `mail_record_qa_rule` 审计对不上。(K-send-rule-ids-two-derivations)
 - 本仓没有任何缓存框架（无 Spring Cache/Caffeine/Redis）；需要缓存只有「服务字段上的 ConcurrentHashMap」或「新建带 expiresAt 的表 + Flyway 迁移」两条路。(K-no-cache-framework-in-repo)
 
+- 删除 UI 功能（DOM / 端点 / 表格列）必须同步删除或改写直接断言它们的契约测试，并把这些测试文件列入变更文件清单；漏掉会让全量测试持续失败并阻塞发布。(K-ui-removal-retires-obsolete-contract-tests)
+- 前端测试用 `extractFn` + DOM stub，`document.getElementById` 永远返回 stub，因此真实 `index.html` 里 DOM 已删除时测试仍全绿而函数在生产中静默短路；新增「按 id 取元素再写入」的渲染函数时，测试中必须额外断言该 id 出现在 `index.html` 源文本里。(K-dom-stub-tests-hide-dangling-refs)
 ---
 
 # 项目元信息（供 multi-ai-kit 使用）

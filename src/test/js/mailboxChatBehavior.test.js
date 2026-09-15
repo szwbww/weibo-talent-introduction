@@ -2283,13 +2283,13 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         await flush();
 
         const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        assert.strictEqual(editor.innerText, "First paragraph.\nSecond paragraph.", "采用即收敛到单 LF");
+        assert.strictEqual(editor.innerText, "First paragraph.\n\nSecond paragraph.", "采用即保留一个空行");
         assert.ok(ctx.calls.sendRich.length === 0, "采用不触发发送");
 
         click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
         await flush();
         const body = ctx.calls.sendRich[0].body;
-        assert.strictEqual(body.textBody, "First paragraph.\nSecond paragraph.");
+        assert.strictEqual(body.textBody, "First paragraph.\n\nSecond paragraph.");
         assert.strictEqual(body.edited, false, "仅换行差异不标记语义编辑");
 
         // 真正的内容编辑仍标记 edited=true
@@ -3273,8 +3273,21 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         click(option);
     }
 
+    function followupCopyOptions(ctx) {
+        const dialog = dialogOf(ctx);
+        return dialog ? dialog.querySelectorAll('[data-action="mc-select-followup-copy"]') : [];
+    }
+
+    function selectCopy(ctx, copy) {
+        const option = followupCopyOptions(ctx).find((node) => node.dataset.followupCopy === copy);
+        assert.ok(option, `文案 ${copy} 必须存在`);
+        click(option);
+    }
+
     function applyFollowup(ctx) {
-        click(dialogOf(ctx).querySelector('[data-action="mc-apply-followup"]'));
+        const apply = dialogOf(ctx).querySelector('[data-action="mc-apply-followup"]');
+        if (apply.disabled) selectCopy(ctx, "generic");
+        click(apply);
     }
 
     function anchorNote(ctx) {
@@ -3365,8 +3378,8 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         );
     });
 
-    it("I-1/I-5/I-6：切换选择只高亮一项，主题/正文/引用随所选邮件同步", async () => {
-        const ctx = await bootFollowup({ conversations: { items: [expertA({ expertTags: ["待约视频"] })], total: 1 } });
+    it("I-1/I-5/I-6：选择引用邮件后仍须人工选择文案，主题和引用随邮件同步", async () => {
+        const ctx = await bootFollowup();
         const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
         click(a.querySelector(".mc-person-main"));
         await flush();
@@ -3380,11 +3393,13 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
             ["false", "true"],
             "只有所选一项为选中态"
         );
-        assert.strictEqual(dialog.querySelector('[data-action="mc-apply-followup"]').disabled, false);
+        assert.strictEqual(dialog.querySelector('[data-action="mc-apply-followup"]').disabled, true, "未选文案不得填入");
         assert.strictEqual(dialog.querySelector('[data-role="followup-subject"]').value, "Re: Older introduction");
-        assert.strictEqual(
-            dialog.querySelector('[data-role="followup-body"]').value,
-            `Dear Professor,\n\n${VIDEO_BODY}\n\nBest regards,\nacc1`
+        assert.strictEqual(dialog.querySelector('[data-role="followup-body"]').value, "");
+        assert.deepStrictEqual(
+            followupCopyOptions(ctx).map((node) => [node.dataset.followupCopy, node.getAttribute("aria-pressed")]),
+            [["video", "false"], ["cv", "false"], ["generic", "false"]],
+            "三种文案都必须由运营手动选择"
         );
         // I-6：引用头 + 块级/换行标签确定性转换后的完整原文
         assert.strictEqual(
@@ -3393,6 +3408,13 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         );
         assert.strictEqual(dialog.querySelector('[data-role="followup-body"]').value.indexOf("September"), -1);
         assert.strictEqual(dialog.querySelector('[data-role="followup-body"]').value.indexOf("For reference"), -1);
+
+        selectCopy(ctx, "video");
+        assert.strictEqual(dialog.querySelector('[data-action="mc-apply-followup"]').disabled, false);
+        assert.strictEqual(
+            dialog.querySelector('[data-role="followup-body"]').value,
+            `Dear Professor,\n\n${VIDEO_BODY}\n\nBest regards,\nacc1`
+        );
 
         selectOption(ctx, 4007);
         await flush();
@@ -3405,25 +3427,26 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
             dialog.querySelector('[data-role="followup-quote"]').textContent,
             "On 2026-09-06 09:00, acc1 wrote:\n\nnewer body"
         );
+        assert.strictEqual(dialog.querySelector('[data-role="followup-body"]').value, "", "换引用邮件必须重新选择文案");
+        assert.strictEqual(dialog.querySelector('[data-action="mc-apply-followup"]').disabled, true);
     });
 
-    it("I-5：待约视频/待发简历/歧义/缺失标签分别得到视频、简历与通用正文", async () => {
+    it("I-5：人工选择视频、简历、通用文案；不读取专家标签", async () => {
         const cases = [
-            { tags: ["待约视频"], line: VIDEO_BODY },
-            { tags: ["待发简历"], line: CV_BODY },
-            { tags: ["待约视频", "待发简历"], line: GENERIC_BODY },
-            { tags: [], line: GENERIC_BODY },
-            { tags: null, line: GENERIC_BODY }
+            { copy: "video", line: VIDEO_BODY },
+            { copy: "cv", line: CV_BODY },
+            { copy: "generic", line: GENERIC_BODY }
         ];
         for (const item of cases) {
-            const ctx = await bootFollowup({ conversations: { items: [expertA({ expertTags: item.tags })], total: 1 } });
+            const ctx = await bootFollowup({ conversations: { items: [expertA({ expertTags: null })], total: 1 } });
             const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
             click(a.querySelector(".mc-person-main"));
             await flush();
             openFollowup(ctx);
             selectOption(ctx, 2893);
+            selectCopy(ctx, item.copy);
             const body = dialogOf(ctx).querySelector('[data-role="followup-body"]').value;
-            assert.strictEqual(body, `Dear Professor,\n\n${item.line}\n\nBest regards,\nacc1`, `标签 ${JSON.stringify(item.tags)} 文案`);
+            assert.strictEqual(body, `Dear Professor,\n\n${item.line}\n\nBest regards,\nacc1`, `人工文案 ${item.copy}`);
         }
     });
 
@@ -3442,6 +3465,7 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
             await flush();
             openFollowup(ctx);
             selectOption(ctx, 2893);
+            selectCopy(ctx, "generic");
             const body = dialogOf(ctx).querySelector('[data-role="followup-body"]').value;
             assert.strictEqual(body.slice(0, item.greeting.length + 1), `${item.greeting}\n`, `首行 ${JSON.stringify(item.cleanedBody.slice(0, 20))}`);
         }

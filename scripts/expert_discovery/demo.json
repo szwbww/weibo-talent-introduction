@@ -1,0 +1,52 @@
+{
+  "config": {
+    "demand_company": "示例需求方（虚构）",
+    "company": "Example Cable",
+    "domain": "example.org",
+    "aliases": ["Example Cable"],
+    "topics": ["submarine cable", "insulation"],
+    "titles": ["R&D", "Process Development"],
+    "source_urls": ["https://example.org/research"],
+    "allowed_hosts": ["example.org"],
+    "include_historical": true,
+    "overseas_only": true,
+    "budgets": {"fetch": 1, "deepseek": 1, "apollo_enrich": 1, "email_verify": 1}
+  },
+  "documents": {
+    "https://example.org/research": {
+      "text": "Fictional testing document. Published 2024-04-01. Alice Example worked at Example Cable in 2024. Alice Example was a Process Development Engineer developing submarine cable insulation. Alice Example is located in Chile. Corresponding author Alice Example: alice@example.org. Bob Example worked at Example Cable in 2024. Bob Example developed submarine cable manufacturing processes. Bob Example is located in Chile.",
+      "links": []
+    }
+  },
+  "responses": {
+    "deepseek.extract": [{"result": {
+      "people": [
+        {"name": "Alice Example", "name_quote": "Alice Example worked at Example Cable in 2024.",
+         "company": "Example Cable", "employment_quote": "Alice Example worked at Example Cable in 2024.",
+         "employment_kind": "HISTORICAL", "title": "Process Development Engineer",
+         "title_quote": "Alice Example was a Process Development Engineer developing submarine cable insulation.",
+         "country": "Chile", "country_quote": "Alice Example is located in Chile.",
+         "technical_quote": "Alice Example was a Process Development Engineer developing submarine cable insulation.",
+         "source_date": "2024-04-01", "source_date_quote": "Published 2024-04-01.",
+         "emails": [{"address": "alice@example.org", "quote": "Corresponding author Alice Example: alice@example.org."}]},
+        {"name": "Bob Example", "name_quote": "Bob Example worked at Example Cable in 2024.",
+         "company": "Example Cable", "employment_quote": "Bob Example worked at Example Cable in 2024.",
+         "employment_kind": "HISTORICAL", "title": "", "title_quote": "",
+         "country": "Chile", "country_quote": "Bob Example is located in Chile.",
+         "technical_quote": "Bob Example developed submarine cable manufacturing processes.",
+         "source_date": "2024-04-01", "source_date_quote": "Published 2024-04-01.", "emails": []}
+      ], "usage": {"prompt_tokens": 100, "completion_tokens": 100, "total_tokens": 200}
+    }}],
+    "apollo.enrich": [{"match": {"name": "Bob Example"}, "result": {"person": {
+      "id": "demo-bob", "name": "Bob Example", "first_name": "Bob", "last_name": "Example",
+      "title": "R&D Engineer", "country": "Chile", "organization": {"name": "Example Cable"},
+      "email": "bob@example.org", "email_status": "verified"
+    }}}],
+    "apollo.search": [{"result": {"people": [{"id": "demo-search", "first_name": "Casey", "last_name_obfuscated": "Ex***", "title": "R&D Manager", "organization": {"name": "Example Cable"}}]}}],
+    "emailable.account": [{"result": {"available_credits": 250}}],
+    "emailable.verify": [
+      {"match": {"email": "alice@example.org"}, "result": {"email": "alice@example.org", "state": "deliverable", "reason": "accepted_email", "accept_all": false, "role": false, "free": false}},
+      {"match": {"email": "bob@example.org"}, "result": {"email": "bob@example.org", "state": "risky", "reason": "low_quality", "accept_all": true}}
+    ]
+  }
+}

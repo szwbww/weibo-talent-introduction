@@ -19,35 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-v4-flash"
 
-SAMPLE_INBOUND_EMAIL = """Dear Mr. LiLei,
-
-                          Thank you for reaching out and for introducing this potential opportunity
-                          for collaboration with Chinese companies.
-
-                          I would be interested in exploring such an industry collaboration,
-                          particularly in areas aligned with my research expertise in *gas-sensing
-                          nanomaterials, semiconductor thin films, nanoelectronic devices, and sensor
-                          technologies*.
-
-                          My current research interests include *green/biogenic synthesis of ZnO,
-                          SnO₂, MgO and related semiconductor nanomaterials; heterostructures for gas
-                          sensing; FET/TFT and IDE-based sensor devices; and detection of gases such
-                          as H₂, H₂S, NH₃, NO and NO₂*. I am particularly interested in translating
-                          these research outcomes into practical industrial sensing solutions,
-                          including *hydrogen-leak detection, environmental monitoring, and
-                          high-sensitivity semiconductor gas sensors*.
-
-                          I would be pleased to learn more about the potential industry partners, the
-                          national talent programme, expected collaboration scope, funding mechanism,
-                          advisory responsibilities, and possible remuneration structure. I would
-                          also appreciate information regarding the application process and
-                          eligibility requirements.
-
-                          Please feel free to share further details or arrange an initial discussion
-                          by email or online meeting.
-
-                          I look forward to exploring possible opportunities for mutually beneficial
-                          collaboration.
+SAMPLE_INBOUND_EMAIL = """Dear Qingfei, Thank you for sharing the detailed information about the Qiming Programme and the proposed collaboration opportunities. I am very interested in exploring the Innovative Talent Scheme, particularly in collaboration with Chinese enterprises working on biofertilizers, biostimulants, soil amendments, precision nutrient management, soil health, and sustainable agriculture. The opportunity to contribute as a research consultant while continuing my current academic position is highly aligned with my professional interests and research expertise. I would be pleased to proceed with the preliminary assessment and enterprise-matching process. Kindly share the profiles of suitable Chinese enterprises, including their websites, locations, areas of R&D interest, and specific technical requirements, so that I can evaluate the potential collaboration. I would also appreciate further information regarding the expected research direction, time commitment, proposed deliverables, remuneration/contractual arrangements, intellectual property, publication rights, and the overall application timeline. I look forward to exploring this opportunity and hope we can develop a meaningful and mutually beneficial scientific and industrial collaboration.  With regards,
 """
 
 # SAMPLE_INBOUND_EMAIL = """
