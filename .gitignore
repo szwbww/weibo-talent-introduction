@@ -12,3 +12,18 @@ config/application-local.yml
 exports/
 __pycache__/
 /scripts/properties/apllo.properties
+
+# 本地调研、导出、预览与临时资料
+/_to_delete/
+/artifacts/
+/outputs/
+/tmp/
+/video_transcripts/
+/ops/
+/docs/research/
+/docs/knowledge/rag/
+/docs/knowledge/**/*.md
+/docs/runbooks/*.md
+/docs/talent-expert-relational-model.md
+/docs/专家申报材料清单.md
+/*.docx
