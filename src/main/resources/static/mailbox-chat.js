@@ -162,27 +162,32 @@
             .replace(/'/g, "&#039;");
     }
 
-    // 人工富文本换行规范化（I-1/I-2）：与服务端 MailContentService 的
-    // normalizeManualTextLineBreaks / normalizeManualRichHtmlLineBreaks 同规则。前端先规范化
-    // 保证编辑/提交一致，服务端仍是最终发送门（I-3）；不改编辑器 DOM、不改其他邮件段落约定。
+    // 人工富文本换行规范化：普通换行保留，连续空行最多保留一行；与服务端保持一致。
     function normalizeManualTextLineBreaks(value) {
         const text = value == null ? "" : String(value);
         if (!text) return text;
-        // 空白行（仅空格/Tab，含空行）整行丢弃：非空行之间只剩一个 \n。
-        return text.replace(/\r\n?/g, "\n")
-            .split("\n")
-            .filter((line) => !/^[ \t]*$/.test(line))
-            .join("\n");
+        let result = "";
+        let pendingBlankLine = false;
+        text.replace(/\r\n?/g, "\n").split("\n").forEach((line) => {
+            if (/^[ \t]*$/.test(line)) {
+                if (result) pendingBlankLine = true;
+                return;
+            }
+            if (result) result += pendingBlankLine ? "\n\n" : "\n";
+            result += line;
+            pendingBlankLine = false;
+        });
+        return result;
     }
 
     const MANUAL_CONSECUTIVE_BR = /<br\s*\/?>(?:\s*<br\s*\/?>)+/gi;
-    const MANUAL_EMPTY_BLOCK = /<(p|div)(\s[^>]*)?>(?:\s|&nbsp;|&amp;nbsp;|<br\s*\/?>)*<\/\1>/gi;
+    const MANUAL_EMPTY_BLOCK_RUN = /(<(?:p|div)(?:\s[^>]*)?>(?:\s|&nbsp;|&amp;nbsp;|<br\s*\/?>)*<\/(?:p|div)>)(?:\s*<(?:p|div)(?:\s[^>]*)?>(?:\s|&nbsp;|&amp;nbsp;|<br\s*\/?>)*<\/(?:p|div)>)+/gi;
 
     function normalizeManualRichHtmlLineBreaks(value) {
         let html = value == null ? "" : String(value);
         if (!html) return html;
         for (let pass = 0; pass < 8; pass += 1) {
-            const next = html.replace(MANUAL_CONSECUTIVE_BR, "<br>").replace(MANUAL_EMPTY_BLOCK, "");
+            const next = html.replace(MANUAL_CONSECUTIVE_BR, "<br><br>").replace(MANUAL_EMPTY_BLOCK_RUN, "$1");
             if (next === html) return html;
             html = next;
         }

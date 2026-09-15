@@ -121,56 +121,56 @@ class MailContentServiceTest {
         assertFalse(html.contains("href=\"https://www.qingfeitalent.com\""))
     }
 
-    // I-1：人工富文本纯文本任意连续换行（含 CRLF/CR、仅空格或 Tab 的空白行）压成单个 \n。
+    // 人工富文本：普通换行保留；连续空行最多保留一行（即连续 LF 最多两个）。
     @Test
-    fun `normalizeManualTextLineBreaks collapses every consecutive newline run to one lf`() {
-        assertEquals("A\nB", service.normalizeManualTextLineBreaks("A\n\n\n\n\nB"))
-        assertEquals("A\nB", service.normalizeManualTextLineBreaks("A\r\n\r\n\r\nB"))
-        assertEquals("A\nB", service.normalizeManualTextLineBreaks("A\r\rB"))
-        assertEquals("A\nB", service.normalizeManualTextLineBreaks("A\n \t\nB"))
+    fun `normalizeManualTextLineBreaks keeps one blank line and caps consecutive blank lines`() {
+        assertEquals("A\n\nB", service.normalizeManualTextLineBreaks("A\n\n\n\n\nB"))
+        assertEquals("A\n\nB", service.normalizeManualTextLineBreaks("A\r\n\r\n\r\nB"))
+        assertEquals("A\n\nB", service.normalizeManualTextLineBreaks("A\r\rB"))
+        assertEquals("A\n\nB", service.normalizeManualTextLineBreaks("A\n \t\nB"))
         // 单换行与纯文本正文幂等（不得引入多余换行或删除内容）
         assertEquals("A\nB", service.normalizeManualTextLineBreaks("A\nB"))
         assertEquals("A\nB\nC", service.normalizeManualTextLineBreaks("A\nB\nC"))
-        // 结果不含 CR，也不含相邻换行
+        // 结果不含 CR，且至多一行空白
         val collapsed = service.normalizeManualTextLineBreaks("A\r\n\r\n \r\nB")
         assertFalse(collapsed.contains('\r'))
-        assertFalse(collapsed.contains("\n\n"))
+        assertEquals("A\n\nB", collapsed)
     }
 
     // I-1：非空行内容逐字保留（不 trim、不合并行内空白、不动空串）。
     @Test
     fun `normalizeManualTextLineBreaks keeps non blank lines verbatim`() {
-        assertEquals("A\n B \nC", service.normalizeManualTextLineBreaks("A\n\n B \n\nC"))
+        assertEquals("A\n\n B \n\nC", service.normalizeManualTextLineBreaks("A\n\n B \n\nC"))
         assertEquals("A  B", service.normalizeManualTextLineBreaks("A  B"))
         assertEquals("", service.normalizeManualTextLineBreaks(""))
         assertEquals("A", service.normalizeManualTextLineBreaks("A"))
     }
 
-    // I-2：连续 <br>（标签间允许空白）折叠为一个；其他标签/属性/文本顺序逐字保留。
+    // 人工富文本：连续 <br> 最多保留两个，以保留一行空白。
     @Test
-    fun `normalizeManualRichHtmlLineBreaks folds consecutive br into one`() {
+    fun `normalizeManualRichHtmlLineBreaks keeps one blank line from consecutive br`() {
         assertEquals(
-            "<b>A</b><br><a href=\"https://x.test\">B</a>",
+            "<b>A</b><br><br><a href=\"https://x.test\">B</a>",
             service.normalizeManualRichHtmlLineBreaks("<b>A</b><br><br><br><a href=\"https://x.test\">B</a>")
         )
-        assertEquals("A<br>B", service.normalizeManualRichHtmlLineBreaks("A<br> \n<br />B"))
+        assertEquals("A<br><br>B", service.normalizeManualRichHtmlLineBreaks("A<br> \n<br />B"))
         // 单个 br 不动
         assertEquals("<p>A<br>B</p>", service.normalizeManualRichHtmlLineBreaks("<p>A<br>B</p>"))
     }
 
-    // I-2：仅由空白/&nbsp;/<br> 组成的空 <p>/<div> 不产生重复空行；嵌套空块也收敛。
+    // 人工富文本：仅由空白/&nbsp;/<br> 组成的空 <p>/<div> 连续时保留一个。
     @Test
-    fun `normalizeManualRichHtmlLineBreaks removes empty blocks without touching content`() {
+    fun `normalizeManualRichHtmlLineBreaks keeps one empty block without touching content`() {
         assertEquals(
-            "<p>A</p><p>B</p>",
+            "<p>A</p><p><br></p><p>B</p>",
             service.normalizeManualRichHtmlLineBreaks("<p>A</p><p><br></p><p>&nbsp;</p><p>B</p>")
         )
         assertEquals(
-            "<div>A</div><div>B</div>",
-            service.normalizeManualRichHtmlLineBreaks("<div>A</div><div><br></div><div>B</div>")
+            "<div>A</div><div><br></div><div>B</div>",
+            service.normalizeManualRichHtmlLineBreaks("<div>A</div><div><br></div><div><br></div><div>B</div>")
         )
         assertEquals(
-            "<p>A</p>",
+            "<p>A</p><div><div><br></div></div>",
             service.normalizeManualRichHtmlLineBreaks("<p>A</p><div><div><br></div></div>")
         )
     }

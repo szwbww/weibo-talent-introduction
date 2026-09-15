@@ -2186,9 +2186,8 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         assert.strictEqual(payload.body.edited, false);
     });
 
-    // I-1/I-2/I-3：来信人工富文本发送前把任意连续换行（含空白行/CRLF）压成单 LF，
-    // 并把连续 <br> 折叠为一个；bold/link/list 等格式逐字保留。
-    it("来信人工富文本发送：5 个 LF / CRLF / 空白行压成单 LF，HTML 折叠连续 <br>", async () => {
+    // 人工富文本发送：保留一个空行，更多空行收敛；格式逐字保留。
+    it("来信人工富文本发送：5 个 LF / CRLF / 空白行压成一个空行，HTML 保留两个 <br>", async () => {
         const ctx = await bootSelectedA();
         const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
         setEditorContent(
@@ -2202,17 +2201,17 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
 
         assert.strictEqual(ctx.calls.sendRich.length, 1);
         const body = ctx.calls.sendRich[0].body;
-        assert.strictEqual(body.textBody, "A\nB", "连续换行/CRLF 压成单 LF");
+        assert.strictEqual(body.textBody, "A\n\nB", "连续换行/CRLF 保留一个空行");
         assert.ok(!body.textBody.includes("\r"), "不含 CR");
-        assert.ok(!body.textBody.includes("\n\n"), "不含相邻换行");
+        assert.ok(!body.textBody.includes("\n\n\n"), "至多保留一个空行");
         assert.strictEqual(
             body.htmlBody,
-            "<b>A</b><br><a href=\"https://x.test\">B</a><ul><li>C</li></ul>",
-            "连续 <br> 折叠为一个，bold/link/list 保留"
+            "<b>A</b><br><br><a href=\"https://x.test\">B</a><ul><li>C</li></ul>",
+            "连续 <br> 保留两个，bold/link/list 保留"
         );
     });
 
-    it("来信人工富文本发送：空白行（空格/Tab）与空 <p>/<div> 同样收敛", async () => {
+    it("来信人工富文本发送：空白行与空 <p>/<div> 同样保留一个", async () => {
         const ctx = await bootSelectedA();
         const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
         setEditorContent(
@@ -2225,8 +2224,8 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         await flush();
 
         const body = ctx.calls.sendRich[0].body;
-        assert.strictEqual(body.textBody, "A\nB");
-        assert.strictEqual(body.htmlBody, "<p>A</p><div>B</div>", "重复空 p/div 不产生连续空行");
+        assert.strictEqual(body.textBody, "A\n\nB");
+        assert.strictEqual(body.htmlBody, "<p>A</p><p><br></p><div>B</div>", "重复空 p/div 至多保留一个空行");
     });
 
     // I-3/I-6：会话回信路径同样在生成 request body 前规范化；adapter 取消（安全确认）
@@ -2255,8 +2254,8 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
 
         assert.strictEqual(ctx.calls.sendConversation.length, 1, "outbound 走会话 adapter");
         const first = ctx.calls.sendConversation[0].body;
-        assert.strictEqual(first.textBody, "A\nB");
-        assert.strictEqual(first.htmlBody, "<b>A</b><br>B");
+        assert.strictEqual(first.textBody, "A\n\nB");
+        assert.strictEqual(first.htmlBody, "<b>A</b><br><br>B");
         assert.ok(first.requestId, "首次发送生成 requestId");
 
         // 安全确认取消（adapter 返回 false）→ 重提同一 canonical 正文与 requestId
@@ -2269,7 +2268,7 @@ describe("mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/sen
         assert.strictEqual(second.requestId, first.requestId, "重提复用同一 requestId");
     });
 
-    // I-6：采用 AI 草稿即写入 canonical 正文与基线，仅换行差异不得标记语义编辑。
+    // 采用 AI 草稿即写入 canonical 正文与基线；一行空白保留，更多空行收敛。
     it("采用 AI 草稿：正文换行先收敛，仅换行差异不令 edited=true", async () => {
         // adapter 返回 false（安全确认取消）→ 草稿与 QA 基线保留，第二次发送仍带 edited 判定。
         const ctx = await bootSelectedA({ sendRichResult: false });

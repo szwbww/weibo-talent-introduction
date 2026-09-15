@@ -1073,10 +1073,10 @@ class PendingMailOperationServiceTest {
         assertEquals("SENT", result.sendStatus)
         val claimed = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
             .arguments[0] as ManualReplySendAttemptService.SendPayload
-        assertEquals("A\nB", claimed.finalText, "claim 前 payload 已是 canonical 纯文本")
-        assertEquals("<b>A</b><br>B", claimed.finalHtml, "claim 前 payload 已是 canonical HTML")
+        assertEquals("A\n\nB", claimed.finalText, "claim 前 payload 保留一个空行")
+        assertEquals("<b>A</b><br><br>B", claimed.finalHtml, "claim 前 payload 保留一个 HTML 空行")
         assertFalse(claimed.finalText.contains('\r'))
-        assertFalse(claimed.finalText.contains("\n\n"))
+        assertFalse(claimed.finalText.contains("\n\n\n"))
 
         val mail = capturedMails.single()
         assertEquals(claimed.finalText, mail.text, "text/plain alternative 与 payload 逐字相同")
@@ -1101,7 +1101,7 @@ class PendingMailOperationServiceTest {
         assertEquals("SENT", result.sendStatus)
         val claimed = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
             .arguments[0] as ManualReplySendAttemptService.SendPayload
-        assertEquals("A\nSender\nB", claimed.finalText, "占位符先渲染，再收敛换行")
+        assertEquals("A\n\nSender\n\nB", claimed.finalText, "占位符先渲染，再收敛换行")
         assertEquals("<p>A</p><p>B</p>", claimed.finalHtml, "无连续 <br> 的人工 HTML 逐字保留")
     }
 
@@ -1126,8 +1126,8 @@ class PendingMailOperationServiceTest {
         assertEquals("SENT", result.sendStatus)
         val claimed = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
             .arguments[0] as ManualReplySendAttemptService.SendPayload
-        assertEquals("A\nB", claimed.finalText)
-        assertEquals("<div>A</div><div><b>B</b></div>", claimed.finalHtml)
+        assertEquals("A\n\nB", claimed.finalText)
+        assertEquals("<div>A</div><div><br></div><div><b>B</b></div>", claimed.finalHtml)
         val mail = invocationOf(mailDeliveryService, "send").arguments[1] as ComposedMail
         assertEquals(claimed.finalText, mail.text)
         assertEquals(claimed.finalHtml, mail.body)
