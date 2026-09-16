@@ -9,3 +9,15 @@
 - Product code head: `24f5c8205a304d3682e09e02458960bc2caa0463`; the retained product files are uncommitted in the worktree.
 - Result: `PAUSED_FOR_HUMAN`.
 - Resume action: acquire a fresh isolated implementer, inspect the retained files against this brief, complete the required execution report and implementation commit, then dispatch a distinct verifier.
+
+## Epoch 2 — RESUMED
+
+- Resume instruction: user said `继续`.
+- Preflight: branch/worktree/ledger identities match; product-code index has no staged changes; retained product files remain in the worktree.
+- Next action: fresh isolated implementer inspects and completes the retained files, then writes the execution report and implementation commit.
+
+## Epoch 2 — PAUSED_FOR_HUMAN
+
+- User requested pause to continue with another agent.
+- Current product code head: `24f5c8205a304d3682e09e02458960bc2caa0463`; retained partial authorized files remain uncommitted.
+- Result: `PAUSED_FOR_HUMAN`.
