@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-09-16/meeting-mail-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-09-16/meeting-mail-master.md (commit 59e909070529b4b1e8ae62e61d03e67855f479ba)
 - Amendments: N/A
 - Master base: 24f5c8205a304d3682e09e02458960bc2caa0463
@@ -11,16 +11,16 @@
 - Started: 2026-09-16T21:27:09+08:00
 - Current child: 01-calendar-api
 - Waiting role: IMPLEMENTER
-- Agent attempt: 0
-- Last agent error: N/A
-- Pause reason: N/A
+- Agent attempt: 3
+- Last agent error: Three required implementer agents became unresponsive before producing the required execution report and implementation commit; each was shut down after bounded polling.
+- Pause reason: Mandatory isolated implementer unavailable after three dispatch attempts.
 - Resume from: N/A
 - Baseline: JDK11 `mvn test -Dtest=MeetingCalendarServiceTest,MeetingCalendarControllerTest` -> exit 1; no matching tests existed before child 01. `git diff --check` -> exit 0.
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01-calendar-api | docs/plans/2026-09-16/meeting-mail-01-calendar-api.md | commit:59e909070529b4b1e8ae62e61d03e67855f479ba | none | 1 | PENDING | 24f5c8205a304d3682e09e02458960bc2caa0463 | N/A | 0 | N/A | N/A | N/A | N/A |
+| 01-calendar-api | docs/plans/2026-09-16/meeting-mail-01-calendar-api.md | commit:59e909070529b4b1e8ae62e61d03e67855f479ba | none | 1 | PAUSED_FOR_HUMAN | 24f5c8205a304d3682e09e02458960bc2caa0463 | N/A | 0 | N/A | 24f5c8205a304d3682e09e02458960bc2caa0463 | N/A | Three implementer agents shut down after no final response; authorized partial files remain uncommitted. |
 | 02-calendar-send | docs/plans/2026-09-16/meeting-mail-02-calendar-send.md | commit:59e909070529b4b1e8ae62e61d03e67855f479ba | 01-calendar-api | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | N/A |
 | 03-calendar-ui | docs/plans/2026-09-16/meeting-mail-03-calendar-ui.md | commit:59e909070529b4b1e8ae62e61d03e67855f479ba | 01-calendar-api,02-calendar-send | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | N/A |
 | 04-attachment-storage | docs/plans/2026-09-16/meeting-mail-04-attachment-storage.md | commit:59e909070529b4b1e8ae62e61d03e67855f479ba | 01-calendar-api | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | N/A |
