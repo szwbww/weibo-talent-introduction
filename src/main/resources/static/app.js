@@ -550,6 +550,7 @@ const viewMeta = {
     suppressions: ["退订名单", "查看和管理退订抑制邮箱，手动加入或移除。"],
     contacts: ["专家列表", "查看联系状态、邮件时间线和人工处理。"],
     mailbox: ["收发件箱", "查看所有已激活邮箱账号的收发记录，含待处理来信与标签筛选。"],
+    "meeting-calendar": ["会议日历", "按北京时间的会议排期月历与列表，支持新增、改期与取消。"],
     "inbound-summary": ["来信汇总", "按标签汇总来信、查看往来记录与标签统计。"],
     "ai-training": ["AI 回复训练", "导入提炼 QA、配置提示词与约束，用历史邮件模拟 AI 回复效果。"],
     tasks: ["任务记录", "查看定时任务、队列消费和失败记录。"]
@@ -1773,6 +1774,7 @@ async function refreshCurrentView() {
             loadMailbox(),
             refreshAutoReplySummary().catch(() => {})
         ]);
+        if (state.view === "meeting-calendar") await loadMeetingCalendar();
         if (state.view === "inbound-summary") await loadInboundSummary();
         if (state.view === "ai-training") await loadAiTraining();
         if (state.view === "tasks") await loadTasks();
@@ -17987,6 +17989,1055 @@ function bindBatchSendTaskEvents() {
             if (e.target === confirmDialog) closeBatchManualConfirmDialog();
         });
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 会议日历（fast-p 03 · I-1～I-5 / S-1～S-3）
+// I-1 服务器权威：只有一套排期表单和一套 API adapter，日历页与收发件箱经 mcHost*
+//     调用同一实现；保存成功才关闭并回读，失败保留输入；不落另一份排期真值。
+// I-2 中文北京时间：唯一 formatter（zh-CN + Asia/Shanghai + 24 小时），墙钟与 UTC
+//     互转显式经 formatToParts / +08:00 运算，绝不用 new Date(无时区文本)。
+// I-3 异步隔离：列表 epoch 与弹窗 contactId/eventId/版本在发出请求时固化，旧响应丢弃。
+// I-4 取消与多排期：默认月历不含 CANCELLED，「显示已取消」为只读历史，摘要失败不冒充 0 场。
+// I-5 注册与外观：四点注册齐全，动态文本一律 textContent / escapeHtml，外链仅 http/https + noopener。
+// ─────────────────────────────────────────────────────────────────────────
+
+const MEETING_CALENDAR_ZONE = "Asia/Shanghai";
+/** 北京固定 +08:00（无夏令时）：`datetime-local` 文本与 UTC 互转的显式偏移。 */
+const MEETING_CALENDAR_OFFSET_MS = 8 * 60 * 60 * 1000;
+const MEETING_CALENDAR_DAY_MS = 24 * 60 * 60 * 1000;
+const MEETING_CALENDAR_GRID_DAYS = 42;
+const MEETING_CALENDAR_PAGE_LIMIT = 200;
+const MEETING_CALENDAR_MAX_PAGES = 10;
+const MEETING_CALENDAR_WEEKDAY_ROW_HTML =
+    '<div class="calendar-weekday">周一</div>'
+    + '<div class="calendar-weekday">周二</div>'
+    + '<div class="calendar-weekday">周三</div>'
+    + '<div class="calendar-weekday">周四</div>'
+    + '<div class="calendar-weekday">周五</div>'
+    + '<div class="calendar-weekday">周六</div>'
+    + '<div class="calendar-weekday">周日</div>';
+const MEETING_CALENDAR_TIME_LABEL = "专家会议时间（北京时间）";
+
+/** I-2：全站唯一的会议时间 formatter（中文、北京、24 小时）。 */
+const MEETING_CALENDAR_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: MEETING_CALENDAR_ZONE,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit"
+});
+
+const meetingCalendarState = {
+    month: null,            // {year, month}：北京月份锚点（月初/月末/今天均按北京日期）
+    viewMode: "month",      // "month" | "list"
+    showCancelled: false,
+    events: [],
+    loading: false,
+    error: "",
+    seq: 0,                 // I-3 列表请求序号：旧响应不得覆盖新月份/新筛选
+    contacts: null,
+    contactsPromise: null,
+    dialog: {
+        open: false,
+        mode: "create",     // "create" | "edit" | "cancel" | "pick" | "view"
+        contactId: null,
+        event: null,
+        expertLabel: "",
+        pickEvents: [],
+        pickMode: "",
+        returnFocus: null,
+        saving: false
+    }
+};
+
+// ── 时间：唯一 formatter + 显式北京/UTC 转换（I-2） ──────────────────────
+
+function meetingCalendarBeijingParts(value) {
+    let date = null;
+    if (value instanceof Date) {
+        date = Number.isNaN(value.getTime()) ? null : value;
+    } else if (value != null && value !== "") {
+        const parsed = new Date(String(value));
+        date = Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+    if (!date) return null;
+    const parts = {};
+    MEETING_CALENDAR_FORMATTER.formatToParts(date).forEach((part) => { parts[part.type] = part.value; });
+    if (!parts.year || !parts.month || !parts.day) return null;
+    const month = String(Number(parts.month));
+    const day = String(Number(parts.day));
+    parts.dateKey = `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+    parts.clock = `${parts.hour || "00"}:${parts.minute || "00"}`;
+    parts.dateText = `${month}月${day}日`;
+    parts.fullText = `${parts.year}年${month}月${day}日 ${parts.weekday || ""}`.trim();
+    return parts;
+}
+
+/** I-2：北京墙钟文本（datetime-local）→ 瞬时；显式按 +08:00 运算并拒绝被归一化的非法值。 */
+function meetingCalendarBeijingTextToInstant(text) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(text == null ? "" : text).trim());
+    if (!match) return null;
+    const [, year, month, day, hour, minute] = match;
+    const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)) - MEETING_CALENDAR_OFFSET_MS);
+    const parts = meetingCalendarBeijingParts(date);
+    if (!parts || parts.dateKey !== `${year}-${month}-${day}` || parts.clock !== `${hour}:${minute}`) return null;
+    return date;
+}
+
+/** I-2：瞬时 → datetime-local 值（北京墙钟，显式 formatToParts）。 */
+function meetingCalendarBeijingLocalValue(value) {
+    const parts = meetingCalendarBeijingParts(value);
+    return parts ? `${parts.dateKey}T${parts.clock}` : "";
+}
+
+/** I-2：统一中文北京区间（同日 `2026年9月18日 周五 10:00–10:30`；跨日两端各带完整日期）。 */
+function formatBeijingMeetingRange(startUtc, endUtc) {
+    const start = meetingCalendarBeijingParts(startUtc);
+    if (!start) return "";
+    const end = meetingCalendarBeijingParts(endUtc);
+    if (!end) return `${start.fullText} ${start.clock}`;
+    if (start.dateKey === end.dateKey) return `${start.fullText} ${start.clock}–${end.clock}`;
+    return `${start.fullText} ${start.clock} – ${end.fullText} ${end.clock}`;
+}
+
+/** S-3 列表摘要短式（同一 formatter）：`9月18日 10:00`。 */
+function formatBeijingMeetingShort(value) {
+    const parts = meetingCalendarBeijingParts(value);
+    return parts ? `${parts.dateText} ${parts.clock}` : "";
+}
+
+// ── API adapter：日历与收发件箱共用的唯一写路径（I-1） ────────────────────
+
+async function meetingCalendarFetchEvents(query) {
+    const items = [];
+    let cursor = "";
+    for (let page = 0; page < MEETING_CALENDAR_MAX_PAGES; page += 1) {
+        const params = new URLSearchParams();
+        params.set("from", query.from);
+        params.set("to", query.to);
+        params.set("showCancelled", query.showCancelled ? "true" : "false");
+        params.set("limit", String(MEETING_CALENDAR_PAGE_LIMIT));
+        if (cursor) params.set("cursor", cursor);
+        const data = await api(`/api/meeting-calendar/events?${params.toString()}`);
+        ((data && Array.isArray(data.items)) ? data.items : []).forEach((item) => items.push(item));
+        cursor = (data && data.nextCursor) ? String(data.nextCursor) : "";
+        if (!cursor) break;
+    }
+    return items;
+}
+
+async function meetingCalendarFetchEvent(id) {
+    return api(`/api/meeting-calendar/events/${encodeURIComponent(String(id))}`);
+}
+
+async function meetingCalendarFetchSummaries(contactIds) {
+    const ids = (Array.isArray(contactIds) ? contactIds : [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id) && id > 0);
+    if (ids.length === 0) return [];
+    const data = await api(`/api/meeting-calendar/summaries?contactIds=${encodeURIComponent(ids.join(","))}`);
+    return Array.isArray(data) ? data : [];
+}
+
+async function meetingCalendarCreateEvent(payload) {
+    return api("/api/meeting-calendar/events", { method: "POST", body: JSON.stringify(payload) });
+}
+
+async function meetingCalendarUpdateEvent(id, payload) {
+    return api(`/api/meeting-calendar/events/${encodeURIComponent(String(id))}`, {
+        method: "PUT",
+        body: JSON.stringify(payload)
+    });
+}
+
+async function meetingCalendarCancelEvent(id, payload) {
+    return api(`/api/meeting-calendar/events/${encodeURIComponent(String(id))}/cancel`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    });
+}
+
+// ── 月历模型（I-2：周一至周日、固定 42 格、北京日期） ─────────────────────
+
+function meetingCalendarMonthAnchor() {
+    if (!meetingCalendarState.month) {
+        const today = meetingCalendarBeijingParts(new Date());
+        meetingCalendarState.month = { year: Number(today.year), month: Number(today.month) };
+    }
+    return meetingCalendarState.month;
+}
+
+function meetingCalendarShiftMonth(delta) {
+    const anchor = meetingCalendarMonthAnchor();
+    const shifted = new Date(Date.UTC(anchor.year, anchor.month - 1 + Number(delta || 0), 1));
+    meetingCalendarState.month = { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1 };
+    return meetingCalendarState.month;
+}
+
+function meetingCalendarResetToToday() {
+    const today = meetingCalendarBeijingParts(new Date());
+    meetingCalendarState.month = { year: Number(today.year), month: Number(today.month) };
+    return meetingCalendarState.month;
+}
+
+function meetingCalendarMonthLabel(anchor) {
+    const value = anchor || meetingCalendarMonthAnchor();
+    return `${value.year}年${value.month}月`;
+}
+
+function meetingCalendarPad(value) {
+    return String(value).padStart(2, "0");
+}
+
+/** 42 日期格（周一开头）：outside=不属于当前北京月份，today=北京今天。 */
+function meetingCalendarGridCells(anchor) {
+    const month = anchor || meetingCalendarMonthAnchor();
+    const firstMs = Date.UTC(month.year, month.month - 1, 1);
+    const offset = (new Date(firstMs).getUTCDay() + 6) % 7;
+    const startMs = firstMs - offset * MEETING_CALENDAR_DAY_MS;
+    const todayKey = meetingCalendarBeijingParts(new Date()).dateKey;
+    const cells = [];
+    for (let index = 0; index < MEETING_CALENDAR_GRID_DAYS; index += 1) {
+        const ms = startMs + index * MEETING_CALENDAR_DAY_MS;
+        const date = new Date(ms);
+        const key = `${date.getUTCFullYear()}-${meetingCalendarPad(date.getUTCMonth() + 1)}-${meetingCalendarPad(date.getUTCDate())}`;
+        cells.push({
+            key,
+            ms,
+            dayNumber: String(date.getUTCDate()),
+            outside: date.getUTCMonth() + 1 !== month.month || date.getUTCFullYear() !== month.year,
+            today: key === todayKey
+        });
+    }
+    return cells;
+}
+
+/** 请求区间：整格北京日期 [gridStart, gridEnd+1d) 转 UTC 瞬时（列表按重叠语义命中跨日事件）。 */
+function meetingCalendarGridRange(anchor) {
+    const cells = meetingCalendarGridCells(anchor);
+    const fromMs = cells[0].ms - MEETING_CALENDAR_OFFSET_MS;
+    const toMs = cells[cells.length - 1].ms + MEETING_CALENDAR_DAY_MS - MEETING_CALENDAR_OFFSET_MS;
+    return {
+        from: new Date(fromMs).toISOString(),
+        to: new Date(toMs).toISOString()
+    };
+}
+
+/** 事件覆盖的北京日期键（跨午夜在涉及的每个日期格展示）。 */
+function meetingCalendarEventDateSpan(event) {
+    const start = meetingCalendarBeijingParts(event && event.startUtc);
+    if (!start) return null;
+    const end = meetingCalendarBeijingParts(event && event.endUtc);
+    return { startKey: start.dateKey, endKey: end ? end.dateKey : start.dateKey };
+}
+
+function meetingCalendarEventsByDate(events, cells) {
+    const byDate = new Map();
+    cells.forEach((cell) => byDate.set(cell.key, []));
+    (events || []).forEach((event) => {
+        const span = meetingCalendarEventDateSpan(event);
+        if (!span) return;
+        byDate.forEach((list, key) => {
+            if (key >= span.startKey && key <= span.endKey) list.push(event);
+        });
+    });
+    return byDate;
+}
+
+function meetingCalendarIsCancelled(event) {
+    return !!(event && String(event.status || "").toUpperCase() === "CANCELLED");
+}
+
+function meetingCalendarEventExpertLabel(event) {
+    if (!event) return "";
+    if (event.expertName) return String(event.expertName);
+    return event.expertEmail ? String(event.expertEmail) : "";
+}
+
+function meetingCalendarEventTimeText(event, mode) {
+    const start = meetingCalendarBeijingParts(event && event.startUtc);
+    if (!start) return "";
+    const end = meetingCalendarBeijingParts(event && event.endUtc);
+    if (!end) return start.clock;
+    if (mode === "month" && start.dateKey === end.dateKey) return `${start.clock}–${end.clock}`;
+    return formatBeijingMeetingRange(event.startUtc, event.endUtc);
+}
+
+/** I-5：外链只允许 http/https，且必须带 noopener。 */
+function meetingCalendarSafeLink(value) {
+    const link = String(value == null ? "" : value).trim();
+    return /^https?:\/\/\S+$/i.test(link) ? link : "";
+}
+
+// ── 渲染（S-2 DOM 合同：骨架常量为逐字文本，动态文本一律 textContent） ────
+
+const MEETING_CALENDAR_CHROME_HTML =
+    '<div class="calendar-toolbar"><h2 data-role="calendar-month"></h2><div class="calendar-actions">'
+    + '<button class="button" data-calendar-action="previous">上月</button>'
+    + '<button class="button" data-calendar-action="today">今天</button>'
+    + '<button class="button" data-calendar-action="next">下月</button>'
+    + '<button class="button" data-calendar-action="month" aria-pressed="true">月历</button>'
+    + '<button class="button" data-calendar-action="list" aria-pressed="false">列表</button>'
+    + '<label><input type="checkbox" data-role="show-cancelled">显示已取消</label>'
+    + '<button class="button primary" data-calendar-action="create">新增排期</button>'
+    + '</div></div>'
+    + '<p class="calendar-note" data-role="calendar-status" role="status"></p>'
+    + '<div class="calendar-scroll"><div class="calendar-grid" data-role="calendar-grid"></div></div>'
+    + '<div class="calendar-list" data-role="calendar-list" hidden></div>';
+
+// 日期格骨架：格内先放日期号，再循环追加事件按钮骨架（S-2 数据循环只重复同一骨架）。
+const MEETING_CALENDAR_DAY_OPEN =
+    '<div class="calendar-day" data-outside="false" data-today="false"><span data-role="day-number"></span>';
+const MEETING_CALENDAR_DAY_CLOSE = '</div>';
+
+const MEETING_CALENDAR_EVENT_SKELETON =
+    '<button class="calendar-event" data-cancelled="false" data-event-id=""><time></time><strong></strong><span data-role="event-status"></span></button>';
+
+function meetingCalendarRootEl() {
+    if (typeof document === "undefined" || !document) return null;
+    return $("#meetingCalendarRoot");
+}
+
+function meetingCalendarSetHidden(el, hidden) {
+    if (!el) return;
+    el.hidden = !!hidden;
+}
+
+function meetingCalendarFillEventButton(button, event, mode) {
+    if (!button) return;
+    const cancelled = meetingCalendarIsCancelled(event);
+    button.setAttribute("data-event-id", String(event && event.id != null ? event.id : ""));
+    button.setAttribute("data-cancelled", cancelled ? "true" : "false");
+    const timeEl = button.querySelector("time");
+    if (timeEl) timeEl.textContent = meetingCalendarEventTimeText(event, mode);
+    const strongEl = button.querySelector("strong");
+    if (strongEl) strongEl.textContent = meetingCalendarEventExpertLabel(event);
+    const statusEl = button.querySelector('[data-role="event-status"]');
+    if (statusEl) statusEl.textContent = cancelled ? "已取消" : "";
+}
+
+function renderMeetingCalendarGrid(gridEl, cells, events) {
+    if (!gridEl) return;
+    if (meetingCalendarState.error) {
+        gridEl.innerHTML = '<p class="calendar-error"></p>';
+        gridEl.querySelector(".calendar-error").textContent = `排期加载失败：${meetingCalendarState.error}`;
+        return;
+    }
+    const byDate = meetingCalendarEventsByDate(events, cells);
+    let html = MEETING_CALENDAR_WEEKDAY_ROW_HTML;
+    cells.forEach((cell) => {
+        html += MEETING_CALENDAR_DAY_OPEN;
+        html += MEETING_CALENDAR_EVENT_SKELETON.repeat((byDate.get(cell.key) || []).length);
+        html += MEETING_CALENDAR_DAY_CLOSE;
+    });
+    gridEl.innerHTML = html;
+    const cellEls = gridEl.querySelectorAll(".calendar-day");
+    cells.forEach((cell, index) => {
+        const cellEl = cellEls[index];
+        if (!cellEl) return;
+        cellEl.setAttribute("data-outside", cell.outside ? "true" : "false");
+        cellEl.setAttribute("data-today", cell.today ? "true" : "false");
+        const numberEl = cellEl.querySelector('[data-role="day-number"]');
+        if (numberEl) numberEl.textContent = cell.dayNumber;
+        const eventsInCell = byDate.get(cell.key) || [];
+        const buttons = cellEl.querySelectorAll(".calendar-event");
+        eventsInCell.forEach((event, eventIndex) => meetingCalendarFillEventButton(buttons[eventIndex], event, "month"));
+    });
+}
+
+function renderMeetingCalendarList(listEl, events) {
+    if (!listEl) return;
+    if (meetingCalendarState.error) {
+        listEl.innerHTML = '<p class="calendar-error"></p>';
+        listEl.querySelector(".calendar-error").textContent = `排期加载失败：${meetingCalendarState.error}`;
+        return;
+    }
+    if (!events || events.length === 0) {
+        listEl.innerHTML = '<p class="calendar-note"></p>';
+        listEl.querySelector(".calendar-note").textContent =
+            `${meetingCalendarMonthLabel()}暂无排期${meetingCalendarState.showCancelled ? "（含已取消）" : ""}`;
+        return;
+    }
+    listEl.innerHTML = MEETING_CALENDAR_EVENT_SKELETON.repeat(events.length);
+    const buttons = listEl.querySelectorAll(".calendar-event");
+    events.forEach((event, index) => meetingCalendarFillEventButton(buttons[index], event, "list"));
+}
+
+function meetingCalendarStatusText() {
+    if (meetingCalendarState.loading) return "排期加载中…";
+    if (meetingCalendarState.error) return "排期加载失败";
+    const count = (meetingCalendarState.events || []).length;
+    return `${meetingCalendarMonthLabel()}共 ${count} 场排期${meetingCalendarState.showCancelled ? "（含已取消）" : ""}`;
+}
+
+function renderMeetingCalendar() {
+    const root = meetingCalendarRootEl();
+    if (!root) return;
+    if (root.dataset.meetingCalendarSkeleton !== "1") {
+        root.innerHTML = MEETING_CALENDAR_CHROME_HTML;
+        root.dataset.meetingCalendarSkeleton = "1";
+    }
+    const monthEl = root.querySelector('[data-role="calendar-month"]');
+    if (monthEl) monthEl.textContent = meetingCalendarMonthLabel();
+    const monthButton = root.querySelector('[data-calendar-action="month"]');
+    if (monthButton) monthButton.setAttribute("aria-pressed", meetingCalendarState.viewMode === "month" ? "true" : "false");
+    const listButton = root.querySelector('[data-calendar-action="list"]');
+    if (listButton) listButton.setAttribute("aria-pressed", meetingCalendarState.viewMode === "list" ? "true" : "false");
+    const cancelledBox = root.querySelector('[data-role="show-cancelled"]');
+    if (cancelledBox) cancelledBox.checked = !!meetingCalendarState.showCancelled;
+    const statusEl = root.querySelector('[data-role="calendar-status"]');
+    if (statusEl) statusEl.textContent = meetingCalendarStatusText();
+    const monthView = meetingCalendarState.viewMode === "month";
+    const scroll = root.querySelector(".calendar-scroll");
+    meetingCalendarSetHidden(scroll, !monthView);
+    const gridEl = root.querySelector('[data-role="calendar-grid"]');
+    const listEl = root.querySelector('[data-role="calendar-list"]');
+    meetingCalendarSetHidden(listEl, monthView);
+    if (monthView) renderMeetingCalendarGrid(gridEl, meetingCalendarGridCells(), meetingCalendarState.events);
+    else renderMeetingCalendarList(listEl, meetingCalendarState.events);
+}
+
+/** I-1/I-3：进入 Tab 或写成功后才回读；旧响应按 seq 丢弃。 */
+async function loadMeetingCalendar() {
+    const root = meetingCalendarRootEl();
+    if (!root) return;
+    ensureMeetingCalendarBound();
+    meetingCalendarState.seq += 1;
+    const mySeq = meetingCalendarState.seq;
+    meetingCalendarState.loading = true;
+    meetingCalendarState.error = "";
+    renderMeetingCalendar();
+    const range = meetingCalendarGridRange();
+    try {
+        const items = await meetingCalendarFetchEvents({
+            from: range.from,
+            to: range.to,
+            showCancelled: !!meetingCalendarState.showCancelled
+        });
+        if (meetingCalendarState.seq !== mySeq) return;   // I-3：旧回包不得覆盖新筛选/新月份
+        meetingCalendarState.events = items;
+        meetingCalendarState.loading = false;
+    } catch (error) {
+        if (meetingCalendarState.seq !== mySeq) return;
+        meetingCalendarState.events = [];
+        meetingCalendarState.loading = false;
+        meetingCalendarState.error = (error && error.message) ? error.message : "未知错误";
+    }
+    renderMeetingCalendar();
+}
+
+// ── 共享排期表单（S-2）：日历与收发件箱唯一入口（I-1） ────────────────────
+
+function meetingCalendarDialogEl() {
+    if (typeof document === "undefined" || !document) return null;
+    return $("#meetingCalendarDialog");
+}
+
+function meetingCalendarFormEl() {
+    const dialog = meetingCalendarDialogEl();
+    return dialog ? dialog.querySelector("#meetingCalendarForm") : null;
+}
+
+function meetingCalendarField(name) {
+    const form = meetingCalendarFormEl();
+    if (!form || !form.elements) return null;
+    return form.elements[name] || null;
+}
+
+function meetingCalendarFieldLabel(name) {
+    const field = meetingCalendarField(name);
+    return field && typeof field.closest === "function" ? field.closest("label") : null;
+}
+
+function meetingCalendarDialogTitle() {
+    const titles = {
+        create: "新增排期",
+        edit: "修改排期",
+        cancel: "取消这场排期？",
+        pick: "选择要变更的排期",
+        view: "排期详情"
+    };
+    return titles[meetingCalendarState.dialog.mode] || "排期";
+}
+
+function setMeetingCalendarDialogError(message) {
+    const dialog = meetingCalendarDialogEl();
+    const el = dialog ? dialog.querySelector('[data-role="calendar-error"]') : null;
+    if (!el) return;
+    el.textContent = message || "";
+    el.hidden = !message;
+}
+
+function refreshMeetingCalendarDialogTimeSummary() {
+    const dialog = meetingCalendarDialogEl();
+    const el = dialog ? dialog.querySelector('[data-role="time-summary"]') : null;
+    if (!el) return;
+    const ds = meetingCalendarState.dialog;
+    if (ds.mode === "cancel" || ds.mode === "view") {
+        const event = ds.event;
+        const when = event ? formatBeijingMeetingRange(event.startUtc, event.endUtc) : "";
+        let suffix = "";
+        if (ds.mode === "cancel") {
+            suffix = " · 确认取消后不可恢复";
+        } else if (meetingCalendarIsCancelled(event)) {
+            suffix = ` · 已取消${event.cancelReason ? ` · 原因：${event.cancelReason}` : ""}`;
+        }
+        el.textContent = `${MEETING_CALENDAR_TIME_LABEL}：${when}${suffix}`;
+        return;
+    }
+    const start = meetingCalendarBeijingTextToInstant((meetingCalendarField("startBeijing") || {}).value);
+    const end = meetingCalendarBeijingTextToInstant((meetingCalendarField("endBeijing") || {}).value);
+    el.textContent = (start && end)
+        ? `${MEETING_CALENDAR_TIME_LABEL}：${formatBeijingMeetingRange(start.toISOString(), end.toISOString())}`
+        : `${MEETING_CALENDAR_TIME_LABEL}：请填写开始与结束时间`;
+}
+
+function renderMeetingCalendarDialogSourceSummary() {
+    const dialog = meetingCalendarDialogEl();
+    const el = dialog ? dialog.querySelector('[data-role="source-summary"]') : null;
+    if (!el) return;
+    el.textContent = "";
+    const event = meetingCalendarState.dialog.event;
+    if (!event) return;
+    if (event.sourceMailRecordId != null) el.textContent = `来源邮件 #${Number(event.sourceMailRecordId)}`;
+    const link = meetingCalendarSafeLink(event.meetingLink);
+    if (!link) return;
+    if (el.textContent) el.textContent = `${el.textContent} · `;
+    const anchor = document.createElement("a");
+    anchor.setAttribute("href", link);
+    anchor.setAttribute("target", "_blank");
+    anchor.setAttribute("rel", "noopener");
+    anchor.textContent = "会议链接";
+    el.appendChild(anchor);
+}
+
+function meetingCalendarContactLabel(contact) {
+    const name = contact && contact.expertName ? String(contact.expertName) : "";
+    const email = contact && contact.expertEmail ? String(contact.expertEmail) : "";
+    if (name && email) return `${name}（${email}）`;
+    return name || email || "未命名专家";
+}
+
+function renderMeetingCalendarContactOptions(keyword) {
+    const select = meetingCalendarField("contactId");
+    if (!select) return;
+    const ds = meetingCalendarState.dialog;
+    const previous = String(select.value || (ds.contactId != null ? ds.contactId : ""));
+    const filter = String(keyword == null ? "" : keyword).trim().toLowerCase();
+    const contacts = (meetingCalendarState.contacts || []).filter((contact) => {
+        if (!filter) return true;
+        return meetingCalendarContactLabel(contact).toLowerCase().indexOf(filter) !== -1;
+    });
+    select.innerHTML = contacts
+        .map((contact) => `<option value="${escapeHtml(contact.id)}">${escapeHtml(meetingCalendarContactLabel(contact))}</option>`)
+        .join("");
+    if (previous) {
+        const hasPrevious = contacts.some((contact) => String(contact.id) === previous);
+        if (hasPrevious) select.value = previous;
+    }
+    ds.contactId = select.value ? Number(select.value) : null;
+    const nameEl = meetingCalendarDialogEl() ? meetingCalendarDialogEl().querySelector('[data-role="expert-name"]') : null;
+    if (nameEl) {
+        const contact = (meetingCalendarState.contacts || []).find((row) => String(row.id) === String(select.value));
+        nameEl.textContent = contact ? meetingCalendarContactLabel(contact) : "";
+    }
+}
+
+function loadMeetingCalendarContacts() {
+    if (meetingCalendarState.contacts) return Promise.resolve(meetingCalendarState.contacts);
+    if (meetingCalendarState.contactsPromise) return meetingCalendarState.contactsPromise;
+    meetingCalendarState.contactsPromise = Promise.resolve(api("/api/expert-contacts")).then((data) => {
+        const contacts = (data && Array.isArray(data.contacts)) ? data.contacts : [];
+        meetingCalendarState.contacts = contacts;
+        return contacts;
+    }).catch((error) => {
+        meetingCalendarState.contactsPromise = null;
+        throw error;
+    });
+    return meetingCalendarState.contactsPromise;
+}
+
+function fillMeetingCalendarDialogFields() {
+    const ds = meetingCalendarState.dialog;
+    const event = ds.event;
+    const startField = meetingCalendarField("startBeijing");
+    if (startField) startField.value = event ? meetingCalendarBeijingLocalValue(event.startUtc) : "";
+    const endField = meetingCalendarField("endBeijing");
+    if (endField) endField.value = event ? meetingCalendarBeijingLocalValue(event.endUtc) : "";
+    const linkField = meetingCalendarField("meetingLink");
+    if (linkField) linkField.value = event && event.meetingLink ? String(event.meetingLink) : "";
+    const noteField = meetingCalendarField("note");
+    if (noteField) noteField.value = event && event.note ? String(event.note) : "";
+    const reasonField = meetingCalendarField("cancelReason");
+    if (reasonField) reasonField.value = "";
+    const nameEl = meetingCalendarDialogEl() ? meetingCalendarDialogEl().querySelector('[data-role="expert-name"]') : null;
+    if (nameEl) nameEl.textContent = ds.expertLabel || "";
+}
+
+/** 模式 → 可见/可用状态（S-2：已取消只读、取消确认态独立替换区）。 */
+function applyMeetingCalendarDialogMode() {
+    const dialog = meetingCalendarDialogEl();
+    const form = meetingCalendarFormEl();
+    if (!dialog || !form) return;
+    const ds = meetingCalendarState.dialog;
+    const mode = ds.mode;
+    const cancelled = meetingCalendarIsCancelled(ds.event);
+    const readonly = mode === "view" || cancelled;
+    const saving = !!ds.saving;
+    const titleEl = dialog.querySelector("#meetingCalendarDialogTitle");
+    if (titleEl) titleEl.textContent = meetingCalendarDialogTitle();
+    meetingCalendarSetHidden(dialog.querySelector('[data-role="expert-picker"]'), mode !== "create");
+    const showEventFields = mode === "create" || mode === "edit" || mode === "view";
+    meetingCalendarSetHidden(meetingCalendarFieldLabel("startBeijing"), !showEventFields);
+    meetingCalendarSetHidden(meetingCalendarFieldLabel("endBeijing"), !showEventFields);
+    meetingCalendarSetHidden(meetingCalendarFieldLabel("meetingLink"), !showEventFields);
+    meetingCalendarSetHidden(meetingCalendarFieldLabel("note"), !showEventFields);
+    ["startBeijing", "endBeijing", "meetingLink", "note"].forEach((name) => {
+        const field = meetingCalendarField(name);
+        if (field) field.disabled = readonly;
+    });
+    const searchField = dialog.querySelector('[data-role="expert-search"]');
+    if (searchField) searchField.disabled = saving;
+    meetingCalendarSetHidden(dialog.querySelector('[data-role="cancel-reason-field"]'), mode !== "cancel");
+    const reasonField = meetingCalendarField("cancelReason");
+    if (reasonField) reasonField.disabled = saving;
+    meetingCalendarSetHidden(dialog.querySelector('[data-role="cancel-confirm-actions"]'), mode !== "cancel");
+    const actions = form.querySelector(".calendar-actions");
+    meetingCalendarSetHidden(actions, mode === "cancel");
+    const submitButton = form.querySelector('button[type="submit"]');
+    if (submitButton) {
+        meetingCalendarSetHidden(submitButton, !(mode === "create" || mode === "edit") || readonly);
+        submitButton.disabled = saving;
+    }
+    const cancelButton = dialog.querySelector('[data-calendar-action="cancel-event"]');
+    if (cancelButton) {
+        meetingCalendarSetHidden(cancelButton, mode !== "edit" || cancelled);
+        cancelButton.disabled = saving;
+    }
+    const keepButton = dialog.querySelector('[data-calendar-action="keep-event"]');
+    if (keepButton) keepButton.disabled = saving;
+    const confirmButton = dialog.querySelector('[data-calendar-action="confirm-cancel"]');
+    if (confirmButton) confirmButton.disabled = saving;
+    const closeButton = dialog.querySelector('[data-calendar-action="close"]');
+    if (closeButton) closeButton.disabled = saving;
+    const eventListEl = dialog.querySelector('[data-role="expert-events"]');
+    meetingCalendarSetHidden(eventListEl, mode !== "pick");
+    if (mode === "pick") renderMeetingCalendarDialogEventList();
+    meetingCalendarSetHidden(dialog.querySelector('[data-role="source-summary"]'), mode === "create");
+    refreshMeetingCalendarDialogTimeSummary();
+    renderMeetingCalendarDialogSourceSummary();
+}
+
+function renderMeetingCalendarDialogEventList() {
+    const dialog = meetingCalendarDialogEl();
+    const listEl = dialog ? dialog.querySelector('[data-role="expert-events"]') : null;
+    if (!listEl) return;
+    const events = meetingCalendarState.dialog.pickEvents || [];
+    if (events.length === 0) {
+        listEl.innerHTML = '<p class="calendar-note"></p>';
+        listEl.querySelector(".calendar-note").textContent = "该专家暂无有效排期";
+        return;
+    }
+    listEl.innerHTML = MEETING_CALENDAR_EVENT_SKELETON.repeat(events.length);
+    const buttons = listEl.querySelectorAll(".calendar-event");
+    events.forEach((event, index) => meetingCalendarFillEventButton(buttons[index], event, "list"));
+}
+
+function openMeetingCalendarDialog(options) {
+    const opts = options || {};
+    ensureMeetingCalendarBound();
+    const dialog = meetingCalendarDialogEl();
+    if (!dialog || typeof dialog.showModal !== "function") {
+        showStatus("当前浏览器不支持排期弹窗", "error");
+        return null;
+    }
+    const ds = meetingCalendarState.dialog;
+    ds.open = true;
+    ds.mode = opts.mode || "create";
+    ds.contactId = opts.contactId != null ? Number(opts.contactId) : null;
+    ds.event = opts.event || null;
+    ds.pickEvents = Array.isArray(opts.pickEvents) ? opts.pickEvents : [];
+    ds.pickMode = opts.pickMode || "";
+    ds.expertLabel = String(opts.expertLabel || meetingCalendarEventExpertLabel(opts.event) || "");
+    ds.saving = false;
+    ds.returnFocus = (typeof document !== "undefined" && document.activeElement) ? document.activeElement : null;
+    fillMeetingCalendarDialogFields();
+    setMeetingCalendarDialogError("");
+    applyMeetingCalendarDialogMode();
+    dialog.showModal();
+    if (ds.mode === "create") {
+        loadMeetingCalendarContacts().then(() => {
+            if (meetingCalendarState.dialog !== ds || !ds.open) return;
+            renderMeetingCalendarContactOptions((meetingCalendarField("expertSearch") || {}).value || "");
+        }).catch((error) => {
+            if (meetingCalendarState.dialog !== ds || !ds.open) return;
+            setMeetingCalendarDialogError(`专家列表加载失败：${(error && error.message) ? error.message : "未知错误"}`);
+        });
+    }
+    const timeField = meetingCalendarField("startBeijing");
+    if (timeField && typeof timeField.focus === "function" && ds.mode === "create") timeField.focus();
+    return ds;
+}
+
+function closeMeetingCalendarDialog(options) {
+    const opts = options || {};
+    const dialog = meetingCalendarDialogEl();
+    const ds = meetingCalendarState.dialog;
+    const target = ds.returnFocus;
+    ds.open = false;
+    ds.saving = false;
+    if (dialog && typeof dialog.close === "function") {
+        try { dialog.close(); } catch (error) { /* 未打开时忽略 */ }
+    }
+    if (opts.restoreFocus !== false && target && typeof target.focus === "function") target.focus();
+}
+
+function meetingCalendarDialogErrorMessage(error, fallback) {
+    if (error && Number(error.status) === 409) return "该排期已被其他操作修改，请关闭弹窗后重新打开再试";
+    if (error && error.message) return String(error.message);
+    return fallback;
+}
+
+function meetingCalendarDialogReadPayload() {
+    const form = meetingCalendarFormEl();
+    if (!form || !form.elements) return { error: "表单不可用" };
+    const ds = meetingCalendarState.dialog;
+    const contactId = ds.mode === "create"
+        ? Number((form.elements.contactId || {}).value)
+        : Number(ds.contactId);
+    if (!Number.isFinite(contactId) || contactId <= 0) return { error: "请选择专家" };
+    const startText = String((form.elements.startBeijing || {}).value || "").trim();
+    const endText = String((form.elements.endBeijing || {}).value || "").trim();
+    const start = meetingCalendarBeijingTextToInstant(startText);
+    const end = meetingCalendarBeijingTextToInstant(endText);
+    if (!start || !end) return { error: "请填写开始与结束时间（北京时间）" };
+    if (end.getTime() <= start.getTime()) return { error: "结束时间必须晚于开始时间" };
+    const link = String((form.elements.meetingLink || {}).value || "").trim();
+    if (link && !meetingCalendarSafeLink(link)) return { error: "会议链接必须是 http 或 https 地址" };
+    const note = String((form.elements.note || {}).value || "").trim();
+    return {
+        contactId,
+        startBeijing: startText,
+        endBeijing: endText,
+        meetingLink: link || null,
+        note: note || null
+    };
+}
+
+/** 保存：成功才关闭并回读；失败保留全部输入（I-1）。 */
+function submitMeetingCalendarDialog(event) {
+    if (event && typeof event.preventDefault === "function") event.preventDefault();
+    const ds = meetingCalendarState.dialog;
+    if (!ds.open || ds.saving) return;
+    if (ds.mode === "cancel") {
+        confirmMeetingCalendarCancel();
+        return;
+    }
+    if (ds.mode !== "create" && ds.mode !== "edit") return;
+    const payload = meetingCalendarDialogReadPayload();
+    if (payload.error) {
+        setMeetingCalendarDialogError(payload.error);
+        return;
+    }
+    const mode = ds.mode;
+    const eventId = ds.event ? ds.event.id : null;
+    const expectedUpdatedAt = ds.event ? ds.event.updatedAt : "";
+    setMeetingCalendarDialogError("");
+    ds.saving = true;
+    applyMeetingCalendarDialogMode();
+    const body = {
+        startBeijing: payload.startBeijing,
+        endBeijing: payload.endBeijing,
+        meetingLink: payload.meetingLink,
+        note: payload.note
+    };
+    const request = mode === "create"
+        ? meetingCalendarCreateEvent(Object.assign({ contactId: payload.contactId }, body))
+        : meetingCalendarUpdateEvent(eventId, Object.assign({ expectedUpdatedAt }, body));
+    Promise.resolve(request).then(() => {
+        ds.saving = false;
+        closeMeetingCalendarDialog({ restoreFocus: true });
+        showStatus(mode === "create" ? "已新增排期" : "已更新排期", "ok");
+        mcHostMeetingScheduleChanged(payload.contactId);
+    }).catch((error) => {
+        ds.saving = false;
+        applyMeetingCalendarDialogMode();
+        setMeetingCalendarDialogError(meetingCalendarDialogErrorMessage(error, "保存失败"));
+    });
+}
+
+/** 取消确认态：进入时零写请求（保留/Escape 同样零写）。 */
+function requestMeetingCalendarCancel() {
+    const ds = meetingCalendarState.dialog;
+    if (!ds.open || !ds.event || meetingCalendarIsCancelled(ds.event)) return;
+    ds.mode = "cancel";
+    setMeetingCalendarDialogError("");
+    applyMeetingCalendarDialogMode();
+    const reasonField = meetingCalendarField("cancelReason");
+    if (reasonField && typeof reasonField.focus === "function") reasonField.focus();
+}
+
+function keepMeetingCalendarEvent() {
+    const ds = meetingCalendarState.dialog;
+    if (ds.mode !== "cancel") return;
+    ds.mode = ds.event ? "edit" : "create";
+    applyMeetingCalendarDialogMode();
+}
+
+/** 确认取消：先取最新版本，再带最新 expectedUpdatedAt 提交一次写请求。 */
+function confirmMeetingCalendarCancel() {
+    const ds = meetingCalendarState.dialog;
+    const event = ds.event;
+    if (!ds.open || !event || ds.saving) return;
+    const reason = String((meetingCalendarField("cancelReason") || {}).value || "").trim();
+    const contactId = Number(event.contactId != null ? event.contactId : ds.contactId);
+    ds.saving = true;
+    setMeetingCalendarDialogError("");
+    applyMeetingCalendarDialogMode();
+    Promise.resolve(meetingCalendarFetchEvent(event.id))
+        .catch(() => event)
+        .then((fresh) => {
+            const version = (fresh && fresh.updatedAt) ? fresh.updatedAt : event.updatedAt;
+            return meetingCalendarCancelEvent(event.id, { expectedUpdatedAt: version, reason: reason || null });
+        })
+        .then(() => {
+            ds.saving = false;
+            closeMeetingCalendarDialog({ restoreFocus: true });
+            showStatus("已取消排期", "ok");
+            mcHostMeetingScheduleChanged(contactId);
+        })
+        .catch((error) => {
+            ds.saving = false;
+            applyMeetingCalendarDialogMode();
+            setMeetingCalendarDialogError(meetingCalendarDialogErrorMessage(error, "取消失败"));
+        });
+}
+
+function selectMeetingCalendarDialogEvent(planId) {
+    const ds = meetingCalendarState.dialog;
+    const events = Array.isArray(ds.pickEvents) ? ds.pickEvents : [];
+    const event = events.find((row) => String(row.id) === String(planId));
+    if (!event) return;
+    ds.event = event;
+    ds.contactId = Number(event.contactId);
+    ds.expertLabel = meetingCalendarEventExpertLabel(event);
+    ds.mode = ds.pickMode === "cancel" ? "cancel" : "edit";
+    fillMeetingCalendarDialogFields();
+    setMeetingCalendarDialogError("");
+    applyMeetingCalendarDialogMode();
+}
+
+function openMeetingCalendarEvent(eventId) {
+    const id = Number(eventId);
+    if (!Number.isFinite(id) || id <= 0) return;
+    const known = (meetingCalendarState.events || []).find((row) => Number(row.id) === id);
+    const open = (event) => openMeetingCalendarDialog({
+        mode: meetingCalendarIsCancelled(event) ? "view" : "edit",
+        contactId: event && event.contactId,
+        event,
+        expertLabel: meetingCalendarEventExpertLabel(event)
+    });
+    if (known) {
+        open(known);
+        return;
+    }
+    Promise.resolve(meetingCalendarFetchEvent(id)).then(open).catch((error) => {
+        showStatus(`排期加载失败：${(error && error.message) ? error.message : "未知错误"}`, "error");
+    });
+}
+
+// ── 事件绑定（S-2：data-calendar-action 委托，无 inline style/handler） ────
+
+function onMeetingCalendarClick(event) {
+    const target = event && event.target;
+    if (!target || typeof target.closest !== "function") return;
+    const actionButton = target.closest("[data-calendar-action]");
+    if (actionButton) {
+        const action = actionButton.getAttribute("data-calendar-action") || "";
+        if (action === "previous" || action === "next") {
+            meetingCalendarShiftMonth(action === "next" ? 1 : -1);
+            loadMeetingCalendar();
+            return;
+        }
+        if (action === "today") {
+            meetingCalendarResetToToday();
+            loadMeetingCalendar();
+            return;
+        }
+        if (action === "month" || action === "list") {
+            meetingCalendarState.viewMode = action;
+            renderMeetingCalendar();
+            return;
+        }
+        if (action === "create") {
+            openMeetingCalendarDialog({ mode: "create" });
+            return;
+        }
+        return;
+    }
+    const eventButton = target.closest("[data-event-id]");
+    if (eventButton) openMeetingCalendarEvent(eventButton.getAttribute("data-event-id"));
+}
+
+function onMeetingCalendarChange(event) {
+    const target = event && event.target;
+    if (!target || typeof target.getAttribute !== "function") return;
+    if (target.getAttribute("data-role") === "show-cancelled") {
+        meetingCalendarState.showCancelled = !!target.checked;
+        loadMeetingCalendar();
+    }
+}
+
+function onMeetingCalendarDialogClick(event) {
+    const target = event && event.target;
+    if (!target || typeof target.closest !== "function") return;
+    const actionButton = target.closest("[data-calendar-action]");
+    if (actionButton) {
+        const action = actionButton.getAttribute("data-calendar-action") || "";
+        if (action === "close") {
+            closeMeetingCalendarDialog({ restoreFocus: true });
+            return;
+        }
+        if (action === "cancel-event") {
+            requestMeetingCalendarCancel();
+            return;
+        }
+        if (action === "keep-event") {
+            keepMeetingCalendarEvent();
+            return;
+        }
+        if (action === "confirm-cancel") {
+            confirmMeetingCalendarCancel();
+            return;
+        }
+        return;
+    }
+    const eventButton = target.closest("[data-event-id]");
+    if (eventButton) selectMeetingCalendarDialogEvent(eventButton.getAttribute("data-event-id"));
+}
+
+function onMeetingCalendarDialogInput(event) {
+    const target = event && event.target;
+    if (!target || typeof target.getAttribute !== "function") return;
+    const role = target.getAttribute("data-role");
+    if (role === "expert-search") {
+        renderMeetingCalendarContactOptions(target.value);
+        return;
+    }
+    if (target.getAttribute("name") === "startBeijing" || target.getAttribute("name") === "endBeijing") {
+        refreshMeetingCalendarDialogTimeSummary();
+    }
+}
+
+function onMeetingCalendarDialogChange(event) {
+    const target = event && event.target;
+    if (!target || typeof target.getAttribute !== "function") return;
+    if (target.getAttribute("name") === "contactId") {
+        const ds = meetingCalendarState.dialog;
+        ds.contactId = Number(target.value);
+        const nameEl = meetingCalendarDialogEl() ? meetingCalendarDialogEl().querySelector('[data-role="expert-name"]') : null;
+        if (nameEl) {
+            const contact = (meetingCalendarState.contacts || []).find((row) => String(row.id) === String(target.value));
+            nameEl.textContent = contact ? meetingCalendarContactLabel(contact) : "";
+        }
+        return;
+    }
+    if (target.getAttribute("name") === "startBeijing" || target.getAttribute("name") === "endBeijing") {
+        refreshMeetingCalendarDialogTimeSummary();
+    }
+}
+
+function ensureMeetingCalendarBound() {
+    const root = meetingCalendarRootEl();
+    if (root && root.dataset.meetingCalendarBound !== "1") {
+        root.dataset.meetingCalendarBound = "1";
+        root.addEventListener("click", onMeetingCalendarClick);
+        root.addEventListener("change", onMeetingCalendarChange);
+    }
+    const dialog = meetingCalendarDialogEl();
+    if (dialog && dialog.dataset.meetingCalendarBound !== "1") {
+        dialog.dataset.meetingCalendarBound = "1";
+        dialog.addEventListener("click", onMeetingCalendarDialogClick);
+        dialog.addEventListener("input", onMeetingCalendarDialogInput);
+        dialog.addEventListener("change", onMeetingCalendarDialogChange);
+        // Escape 只关闭不提交（S-2）：零写请求，并归还焦点
+        dialog.addEventListener("cancel", (event) => {
+            event.preventDefault();
+            closeMeetingCalendarDialog({ restoreFocus: true });
+        });
+        dialog.addEventListener("close", () => { meetingCalendarState.dialog.open = false; });
+        const form = dialog.querySelector("#meetingCalendarForm");
+        if (form) form.addEventListener("submit", submitMeetingCalendarDialog);
+    }
+}
+
+// ── 宿主 adapter（I-1：收发件箱与日历共用同一表单/API） ────────────────────
+
+/** 收发件箱批量读取当前页专家摘要；失败必须向上抛出（I-4 不得冒充 0 场）。 */
+function mcHostGetMeetingSummaries(contactIds) {
+    return meetingCalendarFetchSummaries(contactIds);
+}
+
+/** 排期已变更：按 contactId 失效并回读，同时广播给页面内其它订阅者（I-1/I-3）。 */
+function mcHostMeetingScheduleChanged(contactId) {
+    const id = Number(contactId);
+    if (typeof CustomEvent === "function" && typeof document !== "undefined" && document
+        && typeof document.dispatchEvent === "function") {
+        document.dispatchEvent(new CustomEvent("meeting-calendar-changed", {
+            detail: { contactId: Number.isFinite(id) ? id : null }
+        }));
+    }
+    if (state.view === "meeting-calendar") loadMeetingCalendar();
+}
+
+/** 收发件箱入口：新增直接用共享表单；改期/取消先按专家取有效排期（多场先选择）。 */
+async function mcHostOpenMeetingSchedule(contactId, options) {
+    const opts = options || {};
+    const id = Number(contactId);
+    if (!Number.isFinite(id) || id <= 0) throw new Error("缺少专家标识");
+    const mode = (opts.mode === "edit" || opts.mode === "cancel") ? opts.mode : "create";
+    const expertLabel = String(opts.expertLabel || "");
+    if (mode === "create") {
+        openMeetingCalendarDialog({ mode: "create", contactId: id, expertLabel });
+        return;
+    }
+    const events = await meetingCalendarFetchExpertEvents(id);
+    const active = (events || []).filter((event) => !meetingCalendarIsCancelled(event));
+    if (active.length === 0) {
+        showStatus("该专家暂无排期", "error");
+        mcHostMeetingScheduleChanged(id);
+        return;
+    }
+    const label = expertLabel || meetingCalendarEventExpertLabel(active[0]);
+    if (active.length === 1) {
+        openMeetingCalendarDialog({
+            mode: mode === "cancel" ? "cancel" : "edit",
+            contactId: id,
+            event: active[0],
+            expertLabel: label
+        });
+        return;
+    }
+    openMeetingCalendarDialog({
+        mode: "pick",
+        contactId: id,
+        expertLabel: label,
+        pickEvents: active,
+        pickMode: mode
+    });
+}
+
+async function meetingCalendarFetchExpertEvents(contactId) {
+    const params = new URLSearchParams();
+    params.set("contactId", String(contactId));
+    params.set("showCancelled", "false");
+    params.set("limit", String(MEETING_CALENDAR_PAGE_LIMIT));
+    const data = await api(`/api/meeting-calendar/events?${params.toString()}`);
+    return (data && Array.isArray(data.items)) ? data.items : [];
 }
 
 // Auto-init on load: bind events after DOM is ready

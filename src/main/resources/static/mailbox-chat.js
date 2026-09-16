@@ -204,6 +204,20 @@
         return idx >= 0 ? value.slice(idx + 1, idx + 6) : "";
     }
 
+    /**
+     * fast-p 03（I-2）：会议草稿卡时间文本。只用 preview 的真实 UTC 值经统一的中文北京
+     * formatter（宿主 formatBeijingMeetingRange）渲染；不回显 input.zoneId 的原 IANA 串，
+     * 也不出现英文周/月。formatter 缺席或 UTC 值缺失时返回空串（不伪造时间）。
+     */
+    function meetingCardMetaTextFor(preview, formatRange) {
+        if (!preview || !preview.startUtc || !preview.endUtc) return "";
+        if (typeof formatRange !== "function") return "";
+        const when = String(formatRange(preview.startUtc, preview.endUtc) || "");
+        if (!when) return "";
+        const duration = Number(preview.durationMinutes) || 0;
+        return duration > 0 ? when + " · " + duration + " 分钟" : when;
+    }
+
     function chatSubjectPrefill(inboundSubject) {
         if (typeof global.buildManualReplySubject === "function") {
             return global.buildManualReplySubject(inboundSubject);
@@ -478,7 +492,15 @@
             translations: new Map(),
             tagAdapter: null,
             manage: { open: false, trigger: null },
-            meeting: { controller: null, editorRevision: 0, sending: false, lastBlobUrl: "" },
+            meeting: {
+                controller: null,
+                editorRevision: 0,
+                sending: false,
+                lastBlobUrl: "",
+                // fast-p 03：contactId → { state: "ok"|"error", activeCount, next }（只读缓存，非真值）
+                summaryByContact: new Map(),
+                summaryEpoch: -1
+            },
             followup: { open: false, targetKey: null, selectedId: null, selectedCopy: null, trigger: null },
             popoverOpen: false,
             loadOlderBusy: false,
@@ -1198,6 +1220,7 @@
                             <span class="mc-person-counts">收 ${Number(item.receivedCount) || 0} · 发 ${Number(item.sentCount) || 0}</span>
                             ${tagLine}
                         </span>
+                        <span class="calendar-summary" data-role="meeting-summary"></span>
                     </button>
                     <button class="mc-follow" type="button" data-action="mc-toggle-follow" data-contact-id="${escapeText(item.contactId)}" aria-label="${item.followed ? "取消关注该专家" : "关注该专家"}" aria-pressed="${item.followed ? "true" : "false"}">${item.followed ? "★" : "☆"}</button>
                 </div>
@@ -1217,6 +1240,7 @@
                 return;
             }
             root.innerHTML = items.map(renderPerson).join("");
+            root.querySelectorAll(".mc-person").forEach(applyMeetingSummaryToCard);
         }
 
         // S-2：待匹配邮件卡片（邮件级，无关注星标/专家标签/收发计数）。
@@ -1295,6 +1319,8 @@
                 renderList();
                 renderPager();
                 if (unmatched) resolveUnmatchedSelection();
+                // fast-p 03（I-3）：批量摘要按当前页专家 id，epoch = 本次列表请求
+                else loadMeetingSummaries();
                 return data;
             }).catch((err) => {
                 if (instance.disposed || mySeq !== instance.listSeq) return null;
@@ -1735,7 +1761,7 @@
             if (!head) return;
             const identity = head.querySelector(".mc-identity");
             if (identity) {
-                identity.innerHTML = `<h2>${escapeText(summary.name || summary.email || "-")}</h2><p>${escapeText(conversationSummaryInfo() || "-")}</p>`;
+                identity.innerHTML = `<h2>${escapeText(summary.name || summary.email || "-")}</h2><p>${escapeText(conversationSummaryInfo() || "-")}</p><span class="calendar-summary" data-role="meeting-summary"></span>`;
             }
             const actions = head.querySelector(".mc-actions");
             if (actions) {
@@ -1743,8 +1769,13 @@
                     <button class="button" type="button" data-action="mc-toggle-follow" data-contact-id="${escapeText(contactId)}">${followed ? "★ 已关注" : "☆ 关注"}</button>
                     <button class="button" type="button" data-action="mc-open-materials" data-contact-id="${escapeText(contactId)}">材料 ${materialCount}</button>
                     <button class="button" type="button" data-action="mc-manage-expert">管理</button>
+                    <button class="button" type="button" data-action="mc-add-schedule">新增排期</button>
+                    <button class="button" type="button" data-action="mc-edit-schedule">变更日期</button>
+                    <button class="button danger" type="button" data-action="mc-cancel-schedule">取消排期</button>
                 `;
             }
+            renderHeaderMeetingSummary();
+            ensureMeetingSummaryFor(contactId);
             const meta = head.querySelector(".mc-header-meta");
             if (meta) {
                 renderHeaderMeta(meta);
@@ -1802,6 +1833,178 @@
             }).catch(() => {
                 if (instance.disposed) return;
                 instance.headerTags = instance.headerTags || [];
+            });
+        }
+
+        // --------------------------------------------------------------
+        // 会议排期（fast-p 03 · I-1/I-3/I-4 · S-3）
+        // 摘要、表单与 API 一律经宿主 adapter（app.js 唯一实现），组件不落第二份
+        // 排期真值、不从邮件正文推测；摘要请求按列表/会话 epoch 固化，旧响应丢弃。
+        // --------------------------------------------------------------
+
+        function meetingSummaryEntry(contactId) {
+            const id = Number(contactId);
+            if (!Number.isFinite(id)) return null;
+            return instance.meeting.summaryByContact.get(id) || null;
+        }
+
+        /** S-3 文案：读失败显示“排期暂不可用”，绝不用 0 场冒充（I-4）。 */
+        function meetingSummaryText(contactId) {
+            const entry = meetingSummaryEntry(contactId);
+            if (!entry) return "";
+            if (entry.state === "error") return "排期暂不可用";
+            const count = Number(entry.activeCount) || 0;
+            if (count <= 0) return "暂无排期";
+            const short = entry.next ? beijingMeetingShort(entry.next.startUtc) : "";
+            const base = `已有排期 · ${count}场`;
+            return short ? `${base} · ${short}` : base;
+        }
+
+        function beijingMeetingShort(value) {
+            const fn = hostFn("formatBeijingMeetingShort");
+            if (!fn) return "";
+            try { return String(fn(value) || ""); } catch (e) { return ""; }
+        }
+
+        function meetingSummaryActiveCount(contactId) {
+            const entry = meetingSummaryEntry(contactId);
+            return entry && entry.state === "ok" ? (Number(entry.activeCount) || 0) : null;
+        }
+
+        function applyMeetingSummaryToCard(person) {
+            if (!person || typeof person.querySelector !== "function") return;
+            const el = person.querySelector('[data-role="meeting-summary"]');
+            if (!el) return;
+            const id = person.dataset ? person.dataset.contactId : null;
+            el.textContent = meetingSummaryText(id);
+        }
+
+        /** 只更新排期区域（列表摘要 + 头部摘要/按钮），不重建人工回复或可信工作台（I-3）。 */
+        function refreshMeetingSummaryChrome() {
+            const root = expertsRoot();
+            if (root && typeof root.querySelectorAll === "function") {
+                root.querySelectorAll(".mc-person").forEach(applyMeetingSummaryToCard);
+            }
+            renderHeaderMeetingSummary();
+        }
+
+        function renderHeaderMeetingSummary() {
+            const body = conversationBody();
+            if (!body) return;
+            const contactId = Number(instance.selectedContactId);
+            const identity = body.querySelector(".mc-identity");
+            if (identity) {
+                const el = identity.querySelector('[data-role="meeting-summary"]');
+                if (el) el.textContent = meetingSummaryText(contactId);
+            }
+            const actions = body.querySelector(".mc-actions");
+            if (!actions) return;
+            const count = meetingSummaryActiveCount(contactId);
+            // 0 场隐藏改期/取消，保留新增（S-3）
+            const hideActions = !(count !== null && count > 0);
+            ["mc-edit-schedule", "mc-cancel-schedule"].forEach((action) => {
+                const button = actions.querySelector(`[data-action="${action}"]`);
+                if (button) button.hidden = hideActions;
+            });
+        }
+
+        function loadMeetingSummaries() {
+            const ids = (instance.list.items || [])
+                .map((item) => Number(item.contactId))
+                .filter((id) => Number.isFinite(id) && id > 0);
+            if (ids.length === 0) return Promise.resolve();
+            const fn = hostFn("mcHostGetMeetingSummaries");
+            if (!fn) return Promise.resolve();
+            const epoch = instance.listSeq;   // I-3：捕获列表 epoch
+            return Promise.resolve().then(() => fn(ids)).then((rows) => {
+                if (instance.disposed || epoch !== instance.listSeq) return;
+                const map = new Map(instance.meeting.summaryByContact);
+                const seen = new Set();
+                (Array.isArray(rows) ? rows : []).forEach((row) => {
+                    const id = Number(row && row.contactId);
+                    if (!ids.includes(id)) return;
+                    seen.add(id);
+                    map.set(id, { state: "ok", activeCount: Number(row.activeCount) || 0, next: row.next || null });
+                });
+                ids.forEach((id) => {
+                    if (!seen.has(id) && !map.has(id)) map.set(id, { state: "ok", activeCount: 0, next: null });
+                });
+                instance.meeting.summaryByContact = map;
+                instance.meeting.summaryEpoch = epoch;
+                refreshMeetingSummaryChrome();
+            }).catch(() => {
+                if (instance.disposed || epoch !== instance.listSeq) return;
+                const map = new Map(instance.meeting.summaryByContact);
+                ids.forEach((id) => map.set(id, { state: "error" }));
+                instance.meeting.summaryByContact = map;
+                refreshMeetingSummaryChrome();
+            });
+        }
+
+        /** 当前专家头部摘要（切专家即回读；旧响应按 convEpoch 丢弃）。 */
+        function ensureMeetingSummaryFor(contactId) {
+            const id = Number(contactId);
+            if (!Number.isFinite(id) || id <= 0) return;
+            if (instance.meeting.summaryByContact.has(id)) return;
+            const fn = hostFn("mcHostGetMeetingSummaries");
+            if (!fn) return;
+            const epoch = instance.convEpoch;
+            Promise.resolve().then(() => fn([id])).then((rows) => {
+                if (instance.disposed || epoch !== instance.convEpoch) return;
+                const row = (Array.isArray(rows) ? rows : []).find((item) => Number(item && item.contactId) === id);
+                const map = new Map(instance.meeting.summaryByContact);
+                map.set(id, row
+                    ? { state: "ok", activeCount: Number(row.activeCount) || 0, next: row.next || null }
+                    : { state: "error" });
+                instance.meeting.summaryByContact = map;
+                refreshMeetingSummaryChrome();
+            }).catch(() => {
+                if (instance.disposed || epoch !== instance.convEpoch) return;
+                const map = new Map(instance.meeting.summaryByContact);
+                map.set(id, { state: "error" });
+                instance.meeting.summaryByContact = map;
+                refreshMeetingSummaryChrome();
+            });
+        }
+
+        /** 宿主排期变更广播：只刷新自己当前 owner（当前页摘要 + 当前专家头部）。 */
+        function onMeetingScheduleChanged(event) {
+            if (instance.disposed) return;
+            const detail = event && event.detail ? event.detail : null;
+            const changedId = detail && detail.contactId != null ? Number(detail.contactId) : null;
+            const map = new Map(instance.meeting.summaryByContact);
+            if (changedId != null && Number.isFinite(changedId)) map.delete(changedId);
+            instance.meeting.summaryByContact = map;
+            refreshMeetingSummaryChrome();
+            // 当前页批量回读已覆盖本页专家；仅当所选专家不在本页时单独回读（I-3 精确额度）
+            loadMeetingSummaries();
+            const selectedId = Number(instance.selectedContactId);
+            const inPage = (instance.list.items || []).some((item) => Number(item.contactId) === selectedId);
+            if (!inPage) ensureMeetingSummaryFor(selectedId);
+        }
+
+        /** 排期写成功/发信成功 → 通知宿主失效并回读；宿主缺席时本地刷新。 */
+        function notifyMeetingScheduleChanged(contactId) {
+            const fn = hostFn("mcHostMeetingScheduleChanged");
+            if (fn) {
+                try { fn(contactId); } catch (e) { /* 宿主通知失败不阻断发送结果 */ }
+                return;
+            }
+            onMeetingScheduleChanged({ detail: { contactId } });
+        }
+
+        function openMeetingSchedule(mode) {
+            const contactId = Number(instance.selectedContactId);
+            if (!Number.isFinite(contactId) || contactId <= 0) return;
+            const fn = hostFn("mcHostOpenMeetingSchedule");
+            if (!fn) {
+                hostShowStatus("排期功能暂不可用", "error");
+                return;
+            }
+            const label = (instance.selectedSummary
+                && (instance.selectedSummary.name || instance.selectedSummary.email)) || "";
+            Promise.resolve(fn(contactId, { mode, expertLabel: label })).catch((error) => {
+                hostShowStatus(error && error.message ? error.message : "打开排期失败", "error");
             });
         }
 
@@ -2577,22 +2780,13 @@
                 `<span class="${mcCls("icon")}" aria-hidden="true">▦</span>会议确认</button>`;
         }
 
+        // I-2：草稿卡时间改由 preview 的真实 UTC 值经统一中文北京 formatter 显示
+        // （宿主 formatBeijingMeetingRange）；不再回显 input.zoneId 的 IANA 串或英文日期。
         function meetingCardMetaText(meeting) {
-            const input = meeting && meeting.input ? meeting.input : null;
-            if (!input || !input.startLocal || !input.endLocal) return "";
-            const start = String(input.startLocal);
-            const end = String(input.endLocal);
-            if (start.indexOf("T") === -1 || end.indexOf("T") === -1) return "";
-            const sDate = start.slice(0, 10);
-            const sTime = start.slice(11, 16);
-            const eDate = end.slice(0, 10);
-            const eTime = end.slice(11, 16);
-            const duration = meeting.preview && meeting.preview.durationMinutes ? Number(meeting.preview.durationMinutes) : 0;
-            const zone = String(input.zoneId || "");
-            const when = sDate === eDate
-                ? `${sDate} · ${sTime}–${eTime}`
-                : `${sDate} ${sTime} – ${eDate} ${eTime}`;
-            return `${when} · ${zone} · ${duration} 分钟`;
+            return meetingCardMetaTextFor(
+                meeting && meeting.preview ? meeting.preview : null,
+                hostFn("formatBeijingMeetingRange")
+            );
         }
 
         function meetingAttachmentFilename(meeting) {
@@ -4269,6 +4463,8 @@
                 saveConversationState();
             }).catch(() => {});
             fetchList({ page: instance.list.page });
+            // fast-p 03（IP-3）：发送成功恰由服务端产生排期，按 contactId 使两端失效并回读
+            notifyMeetingScheduleChanged(contactId);
         }
 
         // ---- quiet refresh（I-5：合并保留已加载窗口） ----
@@ -4532,6 +4728,18 @@
             }
             if (action === "mc-manage-expert") {
                 openManageOverlay();
+                return;
+            }
+            if (action === "mc-add-schedule") {
+                openMeetingSchedule("create");
+                return;
+            }
+            if (action === "mc-edit-schedule") {
+                openMeetingSchedule("edit");
+                return;
+            }
+            if (action === "mc-cancel-schedule") {
+                openMeetingSchedule("cancel");
                 return;
             }
             if (action === "mc-save-settings") {
@@ -4851,6 +5059,7 @@
             const doc = docRoot();
             if (doc && typeof doc.removeEventListener === "function") {
                 doc.removeEventListener("click", onOutsideFilterClick);
+                doc.removeEventListener("meeting-calendar-changed", onMeetingScheduleChanged);
             }
             restoreRefreshButton();
             restoreLegacyFilterNodes();
@@ -4889,6 +5098,8 @@
             const doc = docRoot();
             if (doc && typeof doc.addEventListener === "function") {
                 doc.addEventListener("click", onOutsideFilterClick);
+                // fast-p 03（I-1/I-3）：排期写成功后由宿主广播，组件只刷新自己当前 owner
+                doc.addEventListener("meeting-calendar-changed", onMeetingScheduleChanged);
             }
             bindFilterEvents();
             ensurePortalRoot();
