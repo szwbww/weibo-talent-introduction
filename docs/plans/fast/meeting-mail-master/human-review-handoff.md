@@ -8,7 +8,7 @@
 ## Child Status
 | Child | Status | Code boundary | Fix rounds | Evidence commit |
 |---|---|---|---:|---|
-| 01-calendar-api | PAUSED_FOR_HUMAN | 24f5c8205a304d3682e09e02458960bc2caa0463..24f5c8205a304d3682e09e02458960bc2caa0463 | 0 | pending pause commit |
+| 01-calendar-api | PAUSED_FOR_HUMAN | 24f5c8205a304d3682e09e02458960bc2caa0463..24f5c8205a304d3682e09e02458960bc2caa0463 | 0 | a397c8c6eb88fcf2ca8e5cf1ebc98e339f2b8d22 |
 | 02-calendar-send | PENDING | N/A | 0 | N/A |
 | 03-calendar-ui | PENDING | N/A | 0 | N/A |
 | 04-attachment-storage | PENDING | N/A | 0 | N/A |

@@ -20,7 +20,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01-calendar-api | docs/plans/2026-09-16/meeting-mail-01-calendar-api.md | commit:59e909070529b4b1e8ae62e61d03e67855f479ba | none | 1 | PAUSED_FOR_HUMAN | 24f5c8205a304d3682e09e02458960bc2caa0463 | N/A | 0 | N/A | 24f5c8205a304d3682e09e02458960bc2caa0463 | N/A | Three implementer agents shut down after no final response; authorized partial files remain uncommitted. |
+| 01-calendar-api | docs/plans/2026-09-16/meeting-mail-01-calendar-api.md | commit:59e909070529b4b1e8ae62e61d03e67855f479ba | none | 1 | PAUSED_FOR_HUMAN | 24f5c8205a304d3682e09e02458960bc2caa0463 | N/A | 0 | N/A | 24f5c8205a304d3682e09e02458960bc2caa0463 | a397c8c6eb88fcf2ca8e5cf1ebc98e339f2b8d22 | Three implementer agents shut down after no final response; authorized partial files remain uncommitted. |
 | 02-calendar-send | docs/plans/2026-09-16/meeting-mail-02-calendar-send.md | commit:59e909070529b4b1e8ae62e61d03e67855f479ba | 01-calendar-api | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | N/A |
 | 03-calendar-ui | docs/plans/2026-09-16/meeting-mail-03-calendar-ui.md | commit:59e909070529b4b1e8ae62e61d03e67855f479ba | 01-calendar-api,02-calendar-send | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | N/A |
 | 04-attachment-storage | docs/plans/2026-09-16/meeting-mail-04-attachment-storage.md | commit:59e909070529b4b1e8ae62e61d03e67855f479ba | 01-calendar-api | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | N/A |
