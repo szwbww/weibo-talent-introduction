@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
@@ -32,6 +33,7 @@ import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexService
 import com.weibo.talentintroduction.llm.service.VerifiedTrustReplyAssembly
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -42,6 +44,7 @@ import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -910,6 +913,12 @@ class PendingMailOperationServiceTest {
         assertEquals(preview.attachment.semanticSha256, snapshot.semanticSha256)
         assertEquals(preview.attachment.icsText, snapshot.icsText)
         assertEquals(preview.attachment.filename, snapshot.filename)
+        // fast-p 02 (I-1)：结构化排期输入来自同一次 validateAndBuild —— 秒级 UTC 起止与
+        // 已校验链接与预览逐字段一致，绝不重新取当前时间/重新生成 ICS。
+        val event = requireNotNull(payload.meetingEvent) { "payload 必须携带结构化排期输入" }
+        assertEquals(Instant.parse(preview.startUtc), event.startUtc)
+        assertEquals(Instant.parse(preview.endUtc), event.endUtc)
+        assertEquals(input.zoomUrl, event.meetingLink)
         // 同一快照实例同时进入 SendPayload 与 ComposedMail（不生成第二份）。
         assertSame(snapshot, mail.calendarAttachment)
         // I-2: 带日历新分支的线程头 = 真实来信 messageId（in-1）；inReplyTo/references 同源。
@@ -1049,6 +1058,7 @@ class PendingMailOperationServiceTest {
         val mail = capturedMails.single()
         val payload = capturedPayloads.single()
         assertNull(payload.calendarAttachment, "无 meeting 旧路径不携带快照")
+        assertNull(payload.meetingEvent, "无 meeting 旧路径不携带排期输入")
         assertNull(mail.calendarAttachment)
         assertNull(mail.inReplyTo, "旧调用形态线程头保持默认 null")
         assertNull(mail.references)
@@ -1161,6 +1171,89 @@ class PendingMailOperationServiceTest {
         assertNull(legacy.previewAttachmentSha256)
     }
 
+    // I-2：SMTP 安全失败只走 finalizeFailure（成功事务从未被调用 → 0 新增排期），
+    // 发送语义仍是既有「可安全重试」。
+    @Test
+    fun `meeting smtp safe failure never creates a schedule and stays a safe retry`() {
+        val input = meetingInput()
+        val preview = previewFor(input)
+        captureCalendarSend(mutableListOf())
+        stubFinalizeFailure(501L)
+        Mockito.`when`(mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail())))
+            .thenReturn(
+                DeliveredMail(
+                    messageId = "<manual-rich-abc@weibo.com>",
+                    status = "FAILED",
+                    errorCategory = SmtpErrorCategory.TRANSIENT,
+                    smtpResponseCode = 421,
+                    errorDetail = "SMTP timeout"
+                )
+            )
+
+        val ex = assertThrows(ResponseStatusException::class.java) {
+            calendarRichSend(preview = preview, input = input, safetyWarningConfirmed = true)
+        }
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, ex.status)
+        assertEquals("发送暂时失败，可安全重试", ex.reason)
+        Mockito.verify(manualReplySendAttemptService, Mockito.never())
+            .finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+        val failure = invocationOf(manualReplySendAttemptService, "finalizeFailure")
+        val failingPayload = failure.arguments[0] as ManualReplySendAttemptService.SendPayload
+        assertNotNull(
+            failingPayload.meetingEvent,
+            "失败记录仍带本次校验产物，但失败事务绝不创建排期"
+        )
+        assertEquals(MailSendAttemptStatus.FAILED_SAFE_TO_RETRY, failure.arguments[3])
+    }
+
+    // I-3：重提 SENT 请求与 UNKNOWN 重试都不产生第二次 SMTP，也不重新创建/刷新排期。
+    @Test
+    fun `meeting dedup sent and unknown claims never resend smtp or recreate the schedule`() {
+        val input = meetingInput()
+        val preview = previewFor(input)
+        val capturedMails = mutableListOf<ComposedMail>()
+        val capturedPayloads = captureCalendarSend(capturedMails)
+
+        val first = calendarRichSend(preview = preview, input = input, safetyWarningConfirmed = true)
+        assertEquals("SENT", first.sendStatus)
+        assertEquals(1, capturedMails.size, "首次发送恰好一次 SMTP")
+        assertEquals(1, capturedPayloads.size)
+
+        // 重提同一请求（真实收敛为 DEDUP_SENT 由 MeetingCalendarSendIntegrationTest 用真实库证明）
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(
+                ManualReplySendAttemptService.ClaimedAttempt(
+                    attemptId = 1L,
+                    messageId = "<manual-rich-abc@weibo.com>",
+                    result = ManualReplySendAttemptService.ClaimResult.DEDUP_SENT
+                )
+            )
+        val dedup = calendarRichSend(preview = preview, input = input, safetyWarningConfirmed = true)
+        assertEquals("SENT", dedup.sendStatus)
+        assertEquals(1, capturedMails.size, "重提 SENT 请求不再 SMTP")
+        assertEquals(1, capturedPayloads.size, "重提 SENT 请求不重新创建/刷新排期")
+        Mockito.verify(manualReplySendAttemptService, Mockito.times(1))
+            .finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+
+        // UNKNOWN：保留既有「发送状态未知，请勿重复发送」语义，不 SMTP、不落成功记录。
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(
+                ManualReplySendAttemptService.ClaimedAttempt(
+                    attemptId = 1L,
+                    messageId = "<manual-rich-abc@weibo.com>",
+                    result = ManualReplySendAttemptService.ClaimResult.UNKNOWN
+                )
+            )
+        val unknown = assertThrows(ResponseStatusException::class.java) {
+            calendarRichSend(preview = preview, input = input, safetyWarningConfirmed = true)
+        }
+        assertEquals(HttpStatus.CONFLICT, unknown.status)
+        assertTrue(requireNotNull(unknown.reason).startsWith("发送状态未知，请勿重复发送"))
+        assertEquals(1, capturedMails.size, "UNKNOWN 重试不再次 SMTP")
+        assertEquals(1, capturedPayloads.size, "UNKNOWN 重试不伪造成功排期")
+    }
+
     // ── 03 calendar helpers ──
 
     private fun meetingInput() = MeetingInput(
@@ -1220,4 +1313,14 @@ class PendingMailOperationServiceTest {
     private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
+
+    /** 失败路径 stub：finalizeFailure 返回失败记录 id（与生产 mock 一致，避免 null 返回值）。 */
+    private fun stubFinalizeFailure(recordId: Long) {
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeFailure(
+                anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"),
+                anyValue(MailSendAttemptStatus.DELIVERY_UNKNOWN), anyValue(null)
+            )
+        ).thenReturn(recordId)
+    }
 }

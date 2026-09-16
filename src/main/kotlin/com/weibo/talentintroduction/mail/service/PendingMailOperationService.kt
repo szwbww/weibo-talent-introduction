@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.audit.domain.OperatorActionType
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
@@ -540,7 +541,7 @@ class PendingMailOperationService(
         // 沿 01 拒绝；01 生成的完整会议正文必须连续存在于最终 text 与
         // htmlToPlainText(finalHtml) 的规范化文本（不是只检索日期/链接关键词），否则 400。
         // 最终正文仍取人工编辑器。
-        val calendarSnapshot: CalendarAttachmentSnapshot? = if (meeting != null) {
+        val rebuiltMeeting: MeetingPreviewResponse? = if (meeting != null) {
             require(source.inboundProcessingId != null) {
                 "Meeting attachment requires an inbound processing context"
             }
@@ -566,7 +567,12 @@ class PendingMailOperationService(
                     "会议正文与附件不一致，请编辑会议后重新生成，或移除日历附件"
                 )
             }
-            // 01 返回的同一份附件数据只构造一次快照实例，SendPayload 与 ComposedMail 共用。
+            rebuilt
+        } else {
+            null
+        }
+        // 01 返回的同一份附件数据只构造一次快照实例，SendPayload 与 ComposedMail 共用。
+        val calendarSnapshot: CalendarAttachmentSnapshot? = rebuiltMeeting?.let { rebuilt ->
             CalendarAttachmentSnapshot(
                 schemaVersion = MeetingConfirmationDomain.CALENDAR_SCHEMA_VERSION,
                 filename = rebuilt.attachment.filename,
@@ -575,8 +581,16 @@ class PendingMailOperationService(
                 sha256 = rebuilt.attachment.sha256,
                 semanticSha256 = rebuilt.attachment.semanticSha256
             )
-        } else {
-            null
+        }
+        // fast-p 02 (I-1)：结构化排期输入同样来自这一次 validateAndBuild —— 只取已校验的
+        // startUtc/endUtc/zoomUrl，绝不重新生成 ICS、不重新取当前时间、不接受浏览器排期
+        // 对象；与 calendarSnapshot 同有同无（均仅在有 meeting 时为非 null）。
+        val meetingCalendarInput: MeetingCalendarInput? = rebuiltMeeting?.let { rebuilt ->
+            MeetingCalendarInput(
+                startUtc = Instant.parse(rebuilt.startUtc),
+                endUtc = Instant.parse(rebuilt.endUtc),
+                meetingLink = rebuilt.meeting.zoomUrl
+            )
         }
         val findings = collectSafetyFindings(
             verificationText = finalValidationText,
@@ -623,7 +637,9 @@ class PendingMailOperationService(
             } else null,
             idempotencyRequestId = source.requestId,
             // 03 (I-3): 与 ComposedMail 共用同一 01 快照实例，绝不独立生成第二份。
-            calendarAttachment = calendarSnapshot
+            calendarAttachment = calendarSnapshot,
+            // fast-p 02 (I-1)：同一次重算产出的结构化排期输入；无会议恒 null。
+            meetingEvent = meetingCalendarInput
         )
 
         val persistInReplyTo = source.persistInReplyTo

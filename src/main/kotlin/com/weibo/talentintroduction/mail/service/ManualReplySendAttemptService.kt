@@ -3,7 +3,9 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.audit.domain.OperatorActionType
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
+import com.weibo.talentintroduction.campaign.service.MeetingCalendarService
 import com.weibo.talentintroduction.llm.service.TrustReplyDiagnostics
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailRecordQaRule
@@ -26,7 +28,10 @@ class ManualReplySendAttemptService(
     private val attemptRepository: MailSendAttemptRepository,
     private val mailRecordRepository: MailRecordRepository,
     private val mailRecordQaRuleRepository: MailRecordQaRuleRepository,
-    private val operatorActionLogService: OperatorActionLogService
+    private val operatorActionLogService: OperatorActionLogService,
+    // fast-p 02 (I-2): 成功事务内创建排期的唯一协作件（01 createFromSentMail 要求
+    // 调用方已在事务中，本方法即调用方）。
+    private val meetingCalendarService: MeetingCalendarService
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(ManualReplySendAttemptService::class.java)
@@ -66,7 +71,15 @@ class ManualReplySendAttemptService(
         /** fast-p 02 (I-2/I-3)：会议日历附件快照；null=无日历（原发送身份字节流
          *  完全不变）。非 null 时把语义指纹并入发送身份：同配置不重复发，
          *  改时间/链接等语义获得不同发送身份。 */
-        val calendarAttachment: CalendarAttachmentSnapshot? = null
+        val calendarAttachment: CalendarAttachmentSnapshot? = null,
+        /**
+         * fast-p 02 (I-1/I-2)：与 calendarAttachment 同一次校验产物派生的结构化排期
+         * 输入（只含已校验 startUtc/endUtc/zoomUrl，不接收浏览器排期对象）。
+         * 默认 null：普通发送与无会议回信的身份、行为逐字不变；非 null 时
+         * finalizeSuccess 在成功事务内创建排期，二者同有同无。
+         * 不进入指纹（时间/链接语义已由 calendarAttachment.semanticSha256 覆盖）。
+         */
+        val meetingEvent: MeetingCalendarInput? = null
     )
 
     /** findCompletedByRequestId 命中的已完成会话回信（attempt SENT + 唯一 mail_record）。 */
@@ -362,6 +375,15 @@ class ManualReplySendAttemptService(
                     )
                 )
             }
+        }
+
+        // fast-p 02 (I-2)：真实 SENT mail_record 取得 id 之后、attempt 标 SENT 之前创建
+        // 排期 —— 与成功落库同一 REQUIRES_NEW 事务提交，二者同成功或同回滚（排期写失败
+        // 绝不返回发送成功）。普通发送/无会议回信 meetingEvent 为 null，完全跳过。
+        // 01 createFromSentMail 校验来源邮件（OUTBOUND/MANUAL_RICH_REPLY/SENT/带日历附件）
+        // 与结构化输入；校验失败同样回滚整个成功事务（不静默吞掉排期写入错误）。
+        payload.meetingEvent?.let { event ->
+            meetingCalendarService.createFromSentMail(savedRecord, event)
         }
 
         attemptRepository.updateStatusAndError(

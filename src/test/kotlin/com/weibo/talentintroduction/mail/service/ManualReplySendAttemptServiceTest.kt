@@ -4,8 +4,10 @@ import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import com.weibo.talentintroduction.campaign.domain.MeetingCalendarInput
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
+import com.weibo.talentintroduction.campaign.service.MeetingCalendarService
 import com.weibo.talentintroduction.llm.service.RequestGroundingStatus
 import com.weibo.talentintroduction.llm.service.TrustReplyDiagnosticFlag
 import com.weibo.talentintroduction.llm.service.TrustReplyDiagnostics
@@ -31,6 +33,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito
+import java.time.Instant
 import java.time.LocalDateTime
 import java.util.Optional
 
@@ -39,8 +42,10 @@ class ManualReplySendAttemptServiceTest {
     private val mailRecordRepository = Mockito.mock(MailRecordRepository::class.java)
     private val mailRecordQaRuleRepository = Mockito.mock(MailRecordQaRuleRepository::class.java)
     private val operatorActionLogService = Mockito.mock(OperatorActionLogService::class.java)
+    private val meetingCalendarService = Mockito.mock(MeetingCalendarService::class.java)
     private val service = ManualReplySendAttemptService(
-        attemptRepository, mailRecordRepository, mailRecordQaRuleRepository, operatorActionLogService
+        attemptRepository, mailRecordRepository, mailRecordQaRuleRepository, operatorActionLogService,
+        meetingCalendarService
     )
 
     private val payload = ManualReplySendAttemptService.SendPayload(
@@ -624,6 +629,115 @@ class ManualReplySendAttemptServiceTest {
         assertEquals("FAILED", saved.sendStatus)
         assertNull(saved.sentAt)
         assertNull(saved.calendarAttachmentJson)
+    }
+
+    // ───────────────────────── fast-p 02：成功事务内创建排期（I-1/I-2） ─────────────────────────
+
+    /** 同一 validateAndBuild 产物派生的结构化排期输入（生产由 PendingMailOperationService 装配）。 */
+    private fun meetingEventInput() = MeetingCalendarInput(
+        startUtc = Instant.parse("2026-09-18T02:00:00Z"),
+        endUtc = Instant.parse("2026-09-18T02:30:00Z"),
+        meetingLink = "https://zoom.us/j/87102801187"
+    )
+
+    private fun calendarPayloadWithEvent(
+        snapshot: CalendarAttachmentSnapshot = realSnapshot(),
+        event: MeetingCalendarInput = meetingEventInput()
+    ) = payload.copy(calendarAttachment = snapshot, meetingEvent = event)
+
+    /** Matcher 占位：Kotlin 非空参数不接受 null，`any()` 之前先给一个真实实例。 */
+    private fun placeholderRecord() = MailRecord(
+        id = 1L,
+        expertContactId = 1L,
+        direction = "OUTBOUND",
+        mailType = "MANUAL_RICH_REPLY",
+        messageId = "<placeholder@weibo.com>",
+        inReplyTo = null,
+        subject = "Meeting",
+        body = "body",
+        matchedQaRuleId = null,
+        sendStatus = "SENT",
+        receivedAt = null,
+        sentAt = LocalDateTime.now()
+    )
+
+    @Test
+    fun `finalizeSuccess creates the schedule from the persisted sent record before marking the attempt sent`() {
+        val event = meetingEventInput()
+        val withEvent = calendarPayloadWithEvent(event = event)
+        stubFindByIdFor(withEvent)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        stubSaveReturning(600L)
+
+        val id = service.finalizeSuccess(withEvent, 1L, "<manual-rich-abc@weibo.com>")
+        assertEquals(600L, id)
+
+        // Kotlin 非空参数不得传 null matcher：先从调用记录取真实参数，再用真实值做顺序校验。
+        val calendarCall = Mockito.mockingDetails(meetingCalendarService).invocations
+            .single { it.method.name == "createFromSentMail" }
+        val persisted = calendarCall.arguments[0] as MailRecord
+        val passedEvent = calendarCall.arguments[1] as MeetingCalendarInput
+        assertEquals(600L, persisted.id, "排期来源必须是真实落库取得 id 的 SENT 记录")
+        assertEquals("SENT", persisted.sendStatus)
+        assertEquals("OUTBOUND", persisted.direction)
+        assertEquals("MANUAL_RICH_REPLY", persisted.mailType)
+        assertNotNull(persisted.calendarAttachmentJson)
+        assertEquals(event, passedEvent, "排期输入逐字段取自 payload（不重新取时间/链接）")
+
+        val order = Mockito.inOrder(mailRecordRepository, meetingCalendarService, attemptRepository)
+        // save 的实参是 mock 保存前的记录（返回的是补 id 后的副本）→ 用占位 matcher 匹配，
+        // 顺序断言仍绑定真实的 meetingCalendarService 调用参数。
+        order.verify(mailRecordRepository).save(anyValue(placeholderRecord()))
+        order.verify(meetingCalendarService).createFromSentMail(persisted, event)
+        order.verify(attemptRepository).updateStatusAndError(
+            Mockito.anyLong(), anyString(), Mockito.any(), anyValue(LocalDateTime.now())
+        )
+    }
+
+    @Test
+    fun `finalizeSuccess without meeting event never touches the calendar`() {
+        val attempt = createAttempt(MailSendAttemptStatus.DELIVERY_IN_PROGRESS, service.computeFingerprint(payload))
+        Mockito.`when`(attemptRepository.findById(1L)).thenReturn(Optional.of(attempt))
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        stubSaveReturning(600L)
+
+        service.finalizeSuccess(payload, 1L, "<manual-rich-abc@weibo.com>")
+
+        Mockito.verifyNoInteractions(meetingCalendarService)
+    }
+
+    @Test
+    fun `finalizeFailure never creates a schedule even when the payload carries a meeting`() {
+        val withEvent = calendarPayloadWithEvent()
+        stubFindByIdFor(withEvent)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        stubSaveReturning(601L)
+
+        service.finalizeFailure(
+            withEvent, 1L, "<manual-rich-abc@weibo.com>",
+            MailSendAttemptStatus.FAILED_SAFE_TO_RETRY, "SMTP timeout"
+        )
+
+        Mockito.verifyNoInteractions(meetingCalendarService)
+    }
+
+    @Test
+    fun `finalizeSuccess propagates a schedule write failure instead of marking the attempt sent`() {
+        val withEvent = calendarPayloadWithEvent()
+        stubFindByIdFor(withEvent)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        stubSaveReturning(600L)
+        Mockito.doThrow(IllegalStateException("calendar down"))
+            .`when`(meetingCalendarService)
+            .createFromSentMail(anyValue(placeholderRecord()), anyValue(meetingEventInput()))
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            service.finalizeSuccess(withEvent, 1L, "<manual-rich-abc@weibo.com>")
+        }
+
+        assertEquals("calendar down", ex.message)
+        Mockito.verify(attemptRepository, Mockito.never())
+            .updateStatusAndError(Mockito.anyLong(), anyString(), Mockito.any(), anyValue(LocalDateTime.now()))
     }
 
     // fast-p 02 (I-4)：带 calendar 的认领路径 —— 安全失败→成功 copy 收敛、DEDUP_SENT、
