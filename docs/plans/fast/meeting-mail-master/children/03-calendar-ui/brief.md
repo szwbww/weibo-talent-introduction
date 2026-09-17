@@ -1,6 +1,6 @@
 # 03 · 会议日历Tab与收发件箱双端操作
 
-状态：待审批；依赖01、02；发布还需08统一静态缓存激活。一个前端子系统，6文件；不引入前端框架或日历依赖包。
+状态：待审批；依赖01、02；发布还需08统一静态缓存激活。一个前端子系统，7文件（A1 将授权由 6 扩至 7）；不引入前端框架或日历依赖包。
 
 ## 需求描述
 
@@ -150,6 +150,7 @@
 |4|`src/main/resources/static/styles.css`|修改|仅追加本计划calendar-*规则|
 |5|`src/test/js/meetingCalendar.test.js`|新增|区间/月历/列表/时区/DOM注册|
 |6|`src/test/js/mailboxCalendarIntegration.test.js`|新增|摘要和双端CRUD同步、陈旧回调|
+|7|`src/test/js/meetingConfirmationIntegration.test.js`|修改|A1：:1738 草稿卡时间期望随 I-2 改为中文北京口径，弃用旧 IANA zone 文案|
 
 ## 验收标准
 
