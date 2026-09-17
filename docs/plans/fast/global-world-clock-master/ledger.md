@@ -28,8 +28,8 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-09-17/global-world-clock-01-component.md | commit:96a0a411c88eaa447c2c6512f9c70fa8d8aaffb1 | none | 1 | LIGHT_PASS_WITH_NOTES | 24f5c8205a304d3682e09e02458960bc2caa0463 | 4c4c85c3ae236307a4435ca382929dc88c74eaa0 | 0 | — | 4c4c85c3ae236307a4435ca382929dc88c74eaa0 | EVIDENCE_SHA_01 | implementer ImplementChild01; verifier VerifyChild01: LIGHT_PASS_WITH_NOTES, gates 1-4 PASS; RECORD_ONLY O-1 (template constants lack the fence trailing LF, zero DOM effect), O-2 (extra frozen `templates` key on window.WorldClock, additive) |
-| 02 | docs/plans/2026-09-17/global-world-clock-02-registration.md | commit:96a0a411c88eaa447c2c6512f9c70fa8d8aaffb1 | 01 | 1 | PENDING | — | — | 0 | — | — | — | authorized files: index.html + 9 JS test files |
+| 01 | docs/plans/2026-09-17/global-world-clock-01-component.md | commit:96a0a411c88eaa447c2c6512f9c70fa8d8aaffb1 | none | 1 | LIGHT_PASS_WITH_NOTES | 24f5c8205a304d3682e09e02458960bc2caa0463 | 4c4c85c3ae236307a4435ca382929dc88c74eaa0 | 0 | — | 4c4c85c3ae236307a4435ca382929dc88c74eaa0 | 7be8357258b132374f59a828e58d5da618438003 | implementer ImplementChild01; verifier VerifyChild01: LIGHT_PASS_WITH_NOTES, gates 1-4 PASS; RECORD_ONLY O-1 (template constants lack the fence trailing LF, zero DOM effect), O-2 (extra frozen `templates` key on window.WorldClock, additive) |
+| 02 | docs/plans/2026-09-17/global-world-clock-02-registration.md | commit:96a0a411c88eaa447c2c6512f9c70fa8d8aaffb1 | 01 | 1 | LIGHT_PASS_WITH_NOTES | 4c4c85c3ae236307a4435ca382929dc88c74eaa0 | 474445a3f9b84921decbf7f28c1a2b995fa6b897 | 0 | — | 474445a3f9b84921decbf7f28c1a2b995fa6b897 | EVIDENCE_SHA_02 | implementer ImplementChild02; verifier VerifyChild02: LIGHT_PASS_WITH_NOTES, gates 1-4 PASS (932 pass / 0 fail); RECORD_ONLY O-1 stale title in child-01 test file, outside the ten authorized files |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
