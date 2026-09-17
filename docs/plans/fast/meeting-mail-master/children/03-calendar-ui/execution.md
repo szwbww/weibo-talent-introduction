@@ -106,3 +106,70 @@ src/test/js/meetingConfirmationIntegration.test.js:1726  suite "fast-p 04: 确�
 - Preflight: branch/worktree/ledger identities match; no staged index changes; product base for this epoch is `f83e29c397dd01ceafb98025e0d649a69c6eafae` with epoch-1 implementation `25b47e541cddc72a4d5acf33ee71c075fe8e392c` already committed.
 - Scope of this epoch: update the superseded assertion at `src/test/js/meetingConfirmationIntegration.test.js:1738` to the shared Beijing formatter output, then re-run the required commands and commit the epoch-2 implementation.
 - The 760px nav overflow observation stays RECORD_ONLY: no answer was given for it, so no authority was added for a `.nav-tabs` rule.
+
+## Epoch 2 — IMPLEMENTATION
+
+### 执行结果：READY_FOR_VERIFICATION
+
+- Plan（已批准，A1 后）：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master/docs/plans/2026-09-16/meeting-mail-03-calendar-ui.md`
+- Plan SHA-256：`ea0ba5c5245aeb3ea9fbf0112128d69925f2786305d83200b5b692ae5307140a`（child brief 与之逐字节一致，`shasum -a 256` 双值相同 + `cmp` 无差异）
+- Execution ID：`…/docs/plans/2026-09-16/meeting-mail-03-calendar-ui.md@ea0ba5c5…`
+- Execution epoch：RESUME（同路径新内容：A1 把授权文件由 6 扩至 7）
+- Executor：`Implementer03b`
+- Target worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master`
+- Target branch：`fast/meeting-mail-master`；worktree git dir `…/.git/worktrees/weibo-talent-introduction-fast-meeting-mail-master`
+- Pre-execution HEAD：`296b736`（A1 文档提交）；产品基线 `f83e29c`（child 02 终端码头），epoch-1 实现提交 `25b47e5`
+- Post-execution code SHA：`23b8fa1edf2edc8eb8977b682e95c1d4f941755a`
+- Implementation boundary：`296b736..23b8fa1`（仅 1 个授权测试文件）
+
+### 任务状态
+
+| 需求 | 状态 | 文件 | 证据 |
+|---|---|---|---|
+| A1-1：`:1738` 草稿卡时间期望改中文北京口径（弃用 IANA zone 文案） | IMPLEMENTED | `src/test/js/meetingConfirmationIntegration.test.js` | 断言改为 `assert.strictEqual(textContent, "2026年9月11日 周五 15:00–15:30 · 30 分钟")`（由收紧的 `match` 变精确 `strictEqual`） |
+| A1-2：让该断言真正观测生产渲染路径（宿主 formatter 注入） | IMPLEMENTED | 同上 | `createChatSandbox` 在 `vm.createContext` 后注入 app.js 切片 `extractAppRegion("const MEETING_CALENDAR_ZONE = ", "// ── API adapter")`；注入前实渲染值为 `''`（宿主函数缺失），注入后为该唯一 formatter 产物 |
+| 旧 IANA 断言不得残留 / Istanbul 时区选择器断言保持 | IMPLEMENTED | 同上 | `Europe\/Istanbul · 30 分钟` 0 处残留；其余 12 处 `Europe/Istanbul`（时区选择器）源码未改动，同文件 30/30 通过 |
+
+### 命令（本调用内全新执行，提交后复跑）
+
+| 命令 | 结果 | 证据 |
+|---|---|---|
+| `node --check src/main/resources/static/app.js` | PASS | exit 0 |
+| `node --check src/main/resources/static/mailbox-chat.js` | PASS | exit 0 |
+| `node --test src/test/js/*.test.js` | PASS | exit 0；tests 923 / suites 177 / pass 923 / fail 0（epoch-1 为 923/922/1） |
+| `node --test src/test/js/meetingConfirmationIntegration.test.js`（定位复现→修复） | PASS | 修复前：`tests 30 / pass 29 / fail 1`，`actual: ''`；修复后：`tests 30 / pass 30 / fail 0` |
+
+### 变更文件
+
+- `src/test/js/meetingConfirmationIntegration.test.js` — A1：新增 `extractAppRegion` 抽取 helper；`createChatSandbox` 注入 app.js 唯一中文北京 formatter；`:1738` 断言 re-point 到真实渲染串。（+17 / −1）
+
+### 关键发现（与批上下文的一处偏差）
+
+批上下文预期「formatter 输出 = `2026年9月11日 周五 15:00–15:30 · 30 分钟`」，但该测试文件实际渲染值是**空串**：`createChatSandbox` 从未向沙箱提供宿主函数，`hostFn("formatBeijingMeetingRange")` 返回 null，`meetingCardMetaTextFor` 按设计返回 `""`（`mailbox-chat.js:212-219`）。因此仅把正则换成中文串会让断言在**未运行任何真实文案**的前提下通过——属于伪证据。最小忠实修复是在同一授权文件内注入真实宿主 formatter（抽取口径与 03 集成测试 `mailboxCalendarIntegration.test.js:createMetaSandbox` 完全一致），再断言精确串；未 stub、未自造文案。
+
+判别性证据：`src/main/resources/static/{mailbox-chat.js,app.js}` 中字面串 `2026年9月11日` 出现 0 次（渲染值必须由宿主 formatter 组合）；`const MEETING_CALENDAR_FORMATTER = new Intl.DateTimeFormat` 唯一 1 处；`hostFn("formatBeijingMeetingRange")` 唯一 1 处；`mailbox-chat.js` 的 `zoneId`/`startLocal` 仅存在于 2 处注释、无代码兜底。
+
+### 不变量覆盖（本 epoch 相关面）
+
+- **I-2**：草稿卡 meta 现由唯一 `MEETING_CALENDAR_FORMATTER`（zh-CN / Asia/Shanghai / h23）经宿主 adapter 渲染并被精确断言；回显 IANA zone 的旧实现或空渲染都会使该断言失败。已对外英文邮件模板与 ICS 内容未触碰。
+- **I-1/I-3/I-4**：本次仅改测试文件，未触碰 `app.js`/`mailbox-chat.js`/`index.html`/`styles.css`；`git diff 25b47e5..HEAD -- src/main/resources/static/` 为空。
+- **I-5**：`src/main/resources/static/mailbox-chat.css` 与 child_base `f83e29c` 字节一致（sha256 `0fd354027e54ae69f0a2ba76451801b85c6b74cd2792e98a3852cbb14bade17d`，两处取值相同）；`index.html` 静态资源缓存键未 bump（`git diff 25b47e5..HEAD -- index.html` 为空，属 child 08）；四点注册仍在且唯一（`data-view="meeting-calendar"` ×1、`id="view-meeting-calendar"` ×1、`app.js:553` viewMeta、`app.js:1777` refreshCurrentView）。
+- **epoch-1 未被改写**：`git merge-base --is-ancestor 25b47e5 HEAD` 通过；`25b47e5..HEAD` 仅含 4 个 `docs/plans/**` 文件（A1 修正记录），无代码改动。
+
+### 未验证 / 阻塞项
+
+1. **【观察，沿用 epoch-1，未修】≤760px 视口下第 12 个 Tab 使页面横向溢出 74px。** 修复需改 `.nav-tabs` 或加媒体查询，属 S-1「不修改既有规则及其使用点」与「styles.css 仅追加 calendar-* 规则」之外；本 epoch 未获授权。
+2. 未运行 Maven/JUnit 全量（03 不涉及 Kotlin 文件；批量约束禁止项目级验证），未跑 `mvn test` 的 exec-plugin 前端阶段。
+3. 批次要求的既有浏览器冒烟（epoch 1 已做）未在本 epoch 重跑：本 epoch 无生产代码改动，渲染面未变。
+
+### 偏差
+
+- 除上文「关键发现」中记录的沙箱宿主函数缺失（在同一授权文件内修复，未扩范围）外无偏差；未新增/删除文件、未改 `docs/plans/**` 之外未授权内容、未推送/合并/rebase/amend/改写历史。
+
+### Freshness
+
+- Plan identity rechecked: YES（执行前后 `ea0ba5c5…` 不变；brief 与已批准计划 `cmp` 无差异）
+- Worktree identity rechecked: YES（root `…/weibo-talent-introduction-fast-meeting-mail-master`、branch `fast/meeting-mail-master`、git dir `…/worktrees/weibo-talent-introduction-fast-meeting-mail-master` 于 add/commit 前后一致）
+- Reported commit reachable from target branch: YES（`23b8fa1` = `fast/meeting-mail-master` 的 HEAD，`git merge-base --is-ancestor` 通过）
+- Required commands run this invocation: YES（提交后复跑，见上表）
+- Historical evidence used only as baseline: YES（epoch-1 的 923/922/1 仅作基线对照）
