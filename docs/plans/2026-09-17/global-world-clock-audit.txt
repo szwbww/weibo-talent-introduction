@@ -1,0 +1,725 @@
+# Global world clock — source audit receipts
+Date: 2026-09-17
+Read-only source inspection; not implementation evidence.
+
+## E-1
+$ git rev-parse HEAD
+24f5c8205a304d3682e09e02458960bc2caa0463
+
+exit=0
+
+## E-2
+$ rg -n 'topnav|nav-tabs|brand-subtitle|user-info|logout-btn' src/main/resources/static/styles.css
+140:.topnav {
+154:.topnav .brand {
+160:.topnav-side {
+168:.topnav-side .user-info {
+211:.brand-subtitle {
+218:.nav-tabs {
+4124:    .topnav {
+4129:    .nav-tabs {
+4143:    .brand-subtitle,
+4144:    .topnav-side .user-info {
+5076:.user-info {
+5080:.logout-btn {
+9754:    .topnav {
+
+exit=0
+
+## E-3
+$ rg -n 'class="[^"\n]*(topnav|topnav-side|brand-title|brand-subtitle|nav-tabs|user-info)' src/main/resources/static --glob '*.html' --glob '*.js'
+src/main/resources/static/index.html:61:    <header class="topnav">
+src/main/resources/static/index.html:72:                <div class="brand-title">Talent Console</div>
+src/main/resources/static/index.html:73:                <div class="brand-subtitle">专家引进自动化</div>
+src/main/resources/static/index.html:76:        <nav class="nav-tabs" aria-label="Main">
+src/main/resources/static/index.html:143:        <div class="topnav-side">
+src/main/resources/static/index.html:144:            <div class="user-info">
+
+exit=0
+
+## E-4
+$ rg -n 'showPollLogBtn|showPollLog|pollLogPanel|closePollLogPanelBtn' src/main/resources/static/app.js src/main/resources/static/index.html src/test/js
+src/main/resources/static/index.html:147:            <button class="nav-tab logout-btn" id="showPollLogBtn" onclick="showPollLog()">
+src/main/resources/static/index.html:632:            <div id="pollLogPanel" class="panel" style="margin-top: 12px; margin-bottom: 12px; padding: 14px;" hidden>
+src/main/resources/static/index.html:635:                    <button class="button small secondary" id="closePollLogPanelBtn">关闭</button>
+src/main/resources/static/app.js:7332:async function showPollLog() {
+src/main/resources/static/app.js:7380:    const panel = $("#pollLogPanel");
+src/main/resources/static/app.js:14114:    $("#closePollLogPanelBtn")?.addEventListener("click", () => {
+src/main/resources/static/app.js:14115:        $("#pollLogPanel").hidden = true;
+
+exit=0
+
+## E-5
+$ rg -l 20260914-followup-email src/test
+src/test/js/mailboxChatStyle.test.js
+src/test/js/ragWorkbenchRender.test.js
+src/test/js/checkRepliesRelocation.test.js
+src/test/js/ragKnowledgeBasePage.test.js
+src/test/js/trustReplyWorkbenchSharedMount.test.js
+src/test/js/manualReplySubjectPrefill.test.js
+src/test/js/overlayAndDialogContrast.test.js
+src/test/js/batchSendTaskConsoleVisualFix.test.js
+src/test/js/meetingConfirmationAssets.test.js
+
+exit=0
+
+## E-6
+$ rg -n 'keys.length|refs.length|size, 9' src/test/js/checkRepliesRelocation.test.js src/test/js/meetingConfirmationAssets.test.js src/test/js/overlayAndDialogContrast.test.js src/test/js/ragKnowledgeBasePage.test.js src/test/js/ragWorkbenchRender.test.js src/test/js/manualReplySubjectPrefill.test.js src/test/js/trustReplyWorkbenchSharedMount.test.js
+src/test/js/ragWorkbenchRender.test.js:392:        assert.strictEqual(keys.length, 9, "nine cache-busted assets expected");
+src/test/js/manualReplySubjectPrefill.test.js:90:        assert.strictEqual(keys.length, 9, "index.html must carry exactly nine cache-busted asset URLs");
+src/test/js/trustReplyWorkbenchSharedMount.test.js:177:        assert.strictEqual(keys.length, 9, "index.html must carry exactly nine cache-busted asset URLs");
+src/test/js/checkRepliesRelocation.test.js:66:        assert.strictEqual(keys.length, 9, "index.html must carry exactly nine cache-busted asset URLs");
+src/test/js/meetingConfirmationAssets.test.js:30:        assert.strictEqual(keys.length, 9, `index.html 必须恰好注册 9 个带版本资源，实际 ${keys.length}`);
+src/test/js/meetingConfirmationAssets.test.js:43:        assert.strictEqual(refs.length, 9, "link+script 带版本注册行合计必须为 9");
+src/test/js/meetingConfirmationAssets.test.js:49:        assert.strictEqual(new Set(refs.map((ref) => ref.name)).size, 9,
+src/test/js/overlayAndDialogContrast.test.js:59:        assert.strictEqual(keys.length, 9, "index.html must carry exactly nine cache-busted asset URLs");
+src/test/js/ragKnowledgeBasePage.test.js:340:        assert.strictEqual(keys.length, 9, `expected exactly 9 cache keys, got ${keys.length}`);
+
+exit=0
+
+## E-7
+$ rg -n 'timeZones\(|time-zones|COMMON_ZONE_IDS' src/main/kotlin/com/weibo/talentintroduction/mail/controller/MeetingConfirmationController.kt src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt src/main/resources/static/meeting-confirmation.js
+src/main/resources/static/meeting-confirmation.js:5: * 无 npm/构建依赖。本文件只做只读 API 调用（options / time-zones / preview）与
+src/main/resources/static/meeting-confirmation.js:831:        // ---- 配置加载（options / time-zones 并行；seq 保护） ----
+src/main/resources/static/meeting-confirmation.js:837:            var url = "/api/mail/meeting-confirmation/time-zones?date=" + encodeURIComponent(zoneDate);
+src/main/resources/static/meeting-confirmation.js:874:            var zonesUrl = "/api/mail/meeting-confirmation/time-zones?date=" + encodeURIComponent(zoneDate);
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MeetingConfirmationController.kt:19: * 专家会议确认 · 只读接口（fast-p 01）：options / time-zones / preview。
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MeetingConfirmationController.kt:42:    @GetMapping("/meeting-confirmation/time-zones")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MeetingConfirmationController.kt:43:    fun timeZones(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MeetingConfirmationController.kt:47:        return meetingConfirmationService.timeZones(date)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:63:    fun timeZones(date: LocalDate): List<MeetingTimeZoneOption> {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:66:        val orderedIds = COMMON_ZONE_IDS.filter { it in zoneIds } +
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:67:            (zoneIds - COMMON_ZONE_IDS.toSet()).sorted()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:661:        private val COMMON_ZONE_IDS = listOf(
+
+exit=0
+
+## E-8
+$ rg -n -F meeting-timezones-zh.properties scripts src/main src/test
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationServiceTest.kt:571:            .getResourceAsStream("meeting-timezones-zh.properties")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:646:                .getResourceAsStream("meeting-timezones-zh.properties")
+
+exit=0
+
+## E-9
+$ rg -n 'filterZones:|global.MailboxMeeting|function filterZones' src/main/resources/static/meeting-confirmation.js
+26:    if (global && global.MailboxMeeting) return;
+104:    function filterZones(zones, query) {
+1454:        filterZones: filterZones,
+1462:            global.MailboxMeeting = API;
+
+exit=0
+
+## E-10
+$ rg -n 'app-shell|shell.style.display|function api\(|function setView\(|function bootstrap\(|bootstrap\(\);' src/main/resources/static/app.js
+1540:async function api(path, options = {}) {
+1738:function setView(view) {
+14208:    const shell = $(".app-shell");
+14210:        shell.style.display = "grid";
+14233:    const shell = $(".app-shell");
+14235:        shell.style.display = "none";
+15620:function bootstrap() {
+17997:bootstrap();
+
+exit=0
+
+## src/main/resources/static/index.html:60
+60: <div class="app-shell" style="display: none;">
+61:     <header class="topnav">
+62:         <div class="brand">
+63:             <div class="brand-mark">
+64:                 <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
+65:                     <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+66:                     <circle cx="9" cy="7" r="4"/>
+67:                     <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+68:                     <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+69:                 </svg>
+70:             </div>
+71:             <div>
+72:                 <div class="brand-title">Talent Console</div>
+73:                 <div class="brand-subtitle">专家引进自动化</div>
+74:             </div>
+75:         </div>
+76:         <nav class="nav-tabs" aria-label="Main">
+77:             <button class="nav-tab" data-view="monitoring">
+78:                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+79:                     <path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/>
+80:                 </svg>
+81:                 <span>邮件监控</span>
+82:             </button>
+83:             <button class="nav-tab active" data-view="accounts">
+84:                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+85:                     <rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+86:                 </svg>
+87:                 <span>邮箱账号</span>
+88:             </button>
+89:             <button class="nav-tab" data-view="mail-templates">
+90:                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+91:                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+92:                     <polyline points="14 2 14 8 20 8"/>
+93:                     <line x1="16" y1="13" x2="8" y2="13"/>
+94:                     <line x1="16" y1="17" x2="8" y2="17"/>
+95:                 </svg>
+96:                 <span>邮件模板</span>
+97:             </button>
+98:             <button class="nav-tab" data-view="suppressions">
+99:                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+100:                     <circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+101:                 </svg>
+102:                 <span>退订名单</span>
+103:             </button>
+104:             <button class="nav-tab" data-view="contacts">
+105:                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+106:                     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
+107:                     <path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+108:                 </svg>
+109:                 <span>专家列表</span>
+110:             </button>
+111:             <button class="nav-tab" data-view="mailbox">
+112:                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+113:                     <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+114:                     <polyline points="22,6 12,13 2,6"/>
+115:                 </svg>
+116:                 <span>收发件箱</span>
+117:                 <span id="unmatchedBadgeHigh" class="nav-badge nav-badge-high" hidden>0</span>
+118:                 <span id="unmatchedBadgeNormal" class="nav-badge nav-badge-normal" hidden>0</span>
+119:             </button>
+120:             <button class="nav-tab" data-view="inbound-summary">
+121:                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+122:                     <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+123:                     <line x1="7" y1="7" x2="7.01" y2="7"/>
+124:                 </svg>
+125:                 <span>来信汇总</span>
+126:             </button>
+127:             <button class="nav-tab" data-view="ai-training">
+128:                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+129:                     <path d="M12 2a4 4 0 0 1 4 4v2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2h2V6a4 4 0 0 1 4-4z"/>
+130:                     <circle cx="12" cy="13" r="2"/>
+131:                     <path d="M9 2h6"/>
+132:                 </svg>
+133:                 <span>AI 训练</span>
+134:             </button>
+135:             <button class="nav-tab" data-view="tasks">
+136:                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+137:                     <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+138:                     <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+139:                 </svg>
+140:                 <span>任务记录</span>
+141:             </button>
+142:         </nav>
+143:         <div class="topnav-side">
+144:             <div class="user-info">
+145:                 当前登录: <span id="currentUserDisplay">admin</span>
+146:             </div>
+147:             <button class="nav-tab logout-btn" id="showPollLogBtn" onclick="showPollLog()">
+148:                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+149:                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+150:                     <polyline points="14 2 14 8 20 8"/>
+151:                     <line x1="16" y1="13" x2="8" y2="13"/>
+152:                     <line x1="16" y1="17" x2="8" y2="17"/>
+153:                     <polyline points="10 9 9 9 8 9"/>
+154:                 </svg>
+155:                 <span>轮询日志</span>
+156:             </button>
+157:             <button class="nav-tab logout-btn" id="logoutBtn">
+158:                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+159:                     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+160:                     <polyline points="16 17 21 12 16 7"/>
+161:                     <line x1="21" y1="12" x2="9" y2="12"/>
+162:                 </svg>
+163:                 <span>退出登录</span>
+164:             </button>
+165:         </div>
+166:     </header>
+
+## src/main/resources/static/styles.css:140
+140: .topnav {
+141:     display: flex;
+142:     align-items: center;
+143:     gap: 20px;
+144:     padding: 10px 24px;
+145:     background: var(--panel-bg);
+146:     backdrop-filter: blur(20px) saturate(1.3);
+147:     -webkit-backdrop-filter: blur(20px) saturate(1.3);
+148:     border-bottom: 1px solid var(--glass-border);
+149:     box-shadow: 0 1px 12px rgba(var(--primary-rgb), 0.06);
+150:     position: relative;
+151:     z-index: var(--z-overlay);
+152: }
+153: 
+154: .topnav .brand {
+155:     margin-bottom: 0;
+156:     padding: 0;
+157:     flex-shrink: 0;
+158: }
+159: 
+160: .topnav-side {
+161:     margin-left: auto;
+162:     display: flex;
+163:     align-items: center;
+164:     gap: 4px;
+165:     flex-shrink: 0;
+166: }
+167: 
+168: .topnav-side .user-info {
+169:     padding-left: 0;
+170:     margin-right: 8px;
+171:     white-space: nowrap;
+172: }
+173: 
+174: .brand {
+175:     display: flex;
+176:     align-items: center;
+177:     gap: 10px;
+178:     margin-bottom: 28px;
+179:     padding: 0 8px;
+180: }
+181: 
+182: .brand-mark {
+183:     width: 32px;
+184:     height: 32px;
+185:     display: flex;
+186:     align-items: center;
+187:     justify-content: center;
+188:     background: linear-gradient(140deg, var(--primary-bright) 0%, var(--primary) 55%, var(--primary-active) 100%);
+189:     color: #ffffff;
+190:     font-weight: 700;
+191:     font-family: var(--font-mono);
+192:     font-size: 13px;
+193:     border-radius: var(--radius-md);
+194:     box-shadow: 0 4px 12px -2px rgba(var(--primary-rgb), 0.45), inset 0 1px 0 rgba(255,255,255,0.25);
+195: }
+196: 
+197: .brand-mark svg {
+198:     width: 16px;
+199:     height: 16px;
+200:     stroke-width: 2.5;
+201: }
+202: 
+203: .brand-title {
+204:     font-family: var(--font-body);
+205:     font-size: 14px;
+206:     font-weight: 600;
+207:     color: var(--text-main);
+208:     letter-spacing: -0.3px;
+209: }
+210: 
+211: .brand-subtitle {
+212:     font-size: 11px;
+213:     color: var(--text-muted);
+214:     margin-top: 1px;
+215:     font-family: var(--font-body);
+216: }
+217: 
+218: .nav-tabs {
+219:     display: flex;
+220:     flex-direction: row;
+221:     align-items: center;
+222:     gap: 4px;
+223:     min-width: 0;
+224: }
+225: 
+226: .nav-tab {
+227:     position: relative;
+228:     display: flex;
+229:     align-items: center;
+230:     gap: 8px;
+231:     border: none;
+232:     background: transparent;
+233:     color: var(--text-sidebar);
+234:     padding: 6px 14px;
+235:     border-radius: 999px;
+236:     cursor: pointer;
+237:     font-weight: 500;
+238:     font-size: 13px;
+239:     text-align: left;
+240:     white-space: nowrap;
+241:     transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+242: }
+243: 
+244: .nav-tab > svg {
+245:     display: none;
+246: }
+247: 
+248: .nav-tab:hover {
+249:     background-color: rgba(255, 255, 255, 0.5);
+250:     color: var(--text-main);
+251: }
+252: 
+253: .nav-tab.active {
+254:     background-color: #ffffff;
+255:     color: var(--primary);
+256:     font-weight: 600;
+257:     box-shadow: 0 2px 8px rgba(var(--primary-rgb), 0.14);
+258: }
+
+## src/main/resources/static/styles.css:4123
+4123: @media (max-width: 1100px) {
+4124:     .topnav {
+4125:         flex-wrap: wrap;
+4126:         row-gap: 8px;
+4127:     }
+4128: 
+4129:     .nav-tabs {
+4130:         overflow-x: auto;
+4131:         order: 3;
+4132:         flex-basis: 100%;
+4133:         padding-bottom: 4px;
+4134:     }
+4135: 
+4136:     .nav-tab {
+4137:         white-space: nowrap;
+4138:         padding: 6px 12px;
+4139:     }
+4140: }
+4141: 
+4142: @media (max-width: 640px) {
+4143:     .brand-subtitle,
+4144:     .topnav-side .user-info {
+4145:         display: none;
+4146:     }
+4147: 
+4148:     .main {
+4149:         padding: 16px;
+4150:     }
+4151: }
+
+## src/main/resources/static/styles.css:5076
+5076: .user-info {
+5077:     font-size: 12px;
+5078:     color: var(--text-secondary);
+5079: }
+5080: .logout-btn {
+5081:     width: auto;
+5082:     text-align: left;
+5083: }
+
+## src/main/resources/static/app.js:12655
+12655: function bindEvents() {
+12656:     ensureTranslateClickHandler();
+12657:     $$(".nav-tab").forEach((tab) => tab.addEventListener("click", () => {
+12658:         if (tab.dataset.view === "mailbox") clearMailboxExpertFocus();
+12659:         setView(tab.dataset.view);
+12660:     }));
+12661:     $("#refreshBtn").addEventListener("click", refreshCurrentView);
+
+## src/main/resources/static/app.js:14201
+14201: function startAuthenticatedApp(username) {
+14202:     $("#loginOverlay").hidden = true;
+14203:     $("#changePasswordOverlay").hidden = true;
+14204:     const userDisplay = $("#currentUserDisplay");
+14205:     if (userDisplay) {
+14206:         userDisplay.textContent = username;
+14207:     }
+14208:     const shell = $(".app-shell");
+14209:     if (shell) {
+14210:         shell.style.display = "grid";
+14211:     }
+14212:     if (!appStarted) {
+14213:         appStarted = true;
+14214:         if (typeof ensureVariableMeta === "function") {
+14215:             ensureVariableMeta()
+14216:                 .then(() => {
+14217:                     if (typeof refreshVariableEditors === "function") {
+14218:                         return refreshVariableEditors();
+14219:                     }
+14220:                     return undefined;
+14221:                 })
+14222:                 .catch((error) => showStatus(error.message, "error"));
+14223:         }
+14224:         updateUnmatchedBadge();
+14225:         resumeProgressPollingIfNeeded().catch(() => {});
+14226:         initBatchSendBanner();
+14227:         refreshCurrentView();
+14228:     }
+14229: }
+14230: 
+14231: function stopAuthenticatedApp() {
+14232:     appStarted = false;
+14233:     const shell = $(".app-shell");
+14234:     if (shell) {
+14235:         shell.style.display = "none";
+14236:     }
+14237:     stopBatchSendBannerPoll();
+14238:     stopBatchSendStatusPoll();
+14239:     stopAllWatchers();
+14240:     if (currentTaskModal) {
+14241:         stopTaskModalPolling();
+14242:         $("#taskProgressModal").hidden = true;
+14243:         document.body.classList.remove("modal-open");
+14244:         currentTaskModal = null;
+14245:     }
+14246:     if (state.monitoring.autoRefreshTimer) {
+14247:         clearTimeout(state.monitoring.autoRefreshTimer);
+14248:         state.monitoring.autoRefreshTimer = null;
+14249:     }
+14250: }
+
+## src/main/resources/static/app.js:1540
+1540: async function api(path, options = {}) {
+1541:     const response = await fetch(`${contextPath}${path}`, {
+1542:         headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+1543:         ...options
+1544:     });
+1545:     await handleAuthResponse(response);
+1546:     const text = await response.text();
+1547:     const data = text ? JSON.parse(text) : null;
+1548:     if (!response.ok) {
+1549:         const message = data?.message || `${response.status} ${response.statusText}`;
+1550:         const error = new Error(message);
+1551:         error.status = response.status;
+1552:         error.data = data;
+1553:         throw error;
+1554:     }
+1555:     return data;
+1556: }
+
+## src/main/resources/static/meeting-confirmation.js:94
+94:         var match = /^utc([+-])(\d{1,2})(?::(\d{2}))?$/.exec(normalizeZoneText(query));
+95:         if (!match) return null;
+96:         var hours = Number(match[2]);
+97:         var minutes = match[3] != null ? Number(match[3]) : 0;
+98:         if (hours > 14 || minutes > 59) return null;
+99:         var total = hours * 3600 + minutes * 60;
+100:         return match[1] === "-" ? -total : total;
+101:     }
+102: 
+103:     /** 目录过滤（不截断）：id/labelZh/aliases/offsetLabel 联合包含；UTC±H:MM 按偏移匹配。 */
+104:     function filterZones(zones, query) {
+105:         var list = Array.isArray(zones) ? zones : [];
+106:         var q = normalizeZoneText(query);
+107:         if (!q) return list.slice();
+108:         var qSeconds = parseUtcOffsetSeconds(q);
+109:         return list.filter(function (zone) {
+110:             if (!zone || typeof zone !== "object") return false;
+111:             var id = normalizeZoneText(zone.id);
+112:             var label = normalizeZoneText(zone.labelZh);
+113:             var offset = normalizeZoneText(zone.offsetLabel);
+114:             var aliasText = normalizeZoneText((Array.isArray(zone.aliases) ? zone.aliases : []).join(" "));
+115:             if (id.indexOf(q) !== -1 || label.indexOf(q) !== -1 ||
+116:                 aliasText.indexOf(q) !== -1 || offset.indexOf(q) !== -1) {
+117:                 return true;
+118:             }
+119:             if (qSeconds !== null && Number(zone.offsetSeconds) === qSeconds) return true;
+120:             return false;
+121:         });
+122:     }
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationModels.kt:77
+77: data class MeetingTimeZoneOption(
+78:     val id: String,
+79:     /** 中文展示标签；未映射 id 用英文 id 兜底（不宣称全球城市都有中文翻译）。 */
+80:     val labelZh: String,
+81:     /** 搜索别名（含中英文与常见异名）；未映射 id 为空。 */
+82:     val aliases: List<String>,
+83:     /** 该 date 12:00 UTC 的偏移展示（仅列表辅助，不作会议时间换算结果）。 */
+84:     val offsetLabel: String,
+85:     val offsetSeconds: Int
+86: )
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:63
+63:     fun timeZones(date: LocalDate): List<MeetingTimeZoneOption> {
+64:         val noonUtc = date.atTime(12, 0).toInstant(ZoneOffset.UTC)
+65:         val zoneIds = catalogZoneIds()
+66:         val orderedIds = COMMON_ZONE_IDS.filter { it in zoneIds } +
+67:             (zoneIds - COMMON_ZONE_IDS.toSet()).sorted()
+68:         return orderedIds.map { id ->
+69:             val offset = ZoneId.of(id).rules.getOffset(noonUtc)
+70:             val metadata = TIME_ZONE_CATALOG[id]
+71:                 ?: throw IllegalStateException("时区中文目录缺少条目：$id")
+72:             MeetingTimeZoneOption(
+73:                 id = id,
+74:                 labelZh = metadata.labelZh,
+75:                 aliases = metadata.aliases,
+76:                 offsetLabel = formatUtcOffset(offset.totalSeconds),
+77:                 offsetSeconds = offset.totalSeconds
+78:             )
+79:         }
+80:     }
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:643
+643:         private val TIME_ZONE_CATALOG: Map<String, TimeZoneCatalogEntry> by lazy {
+644:             val properties = Properties()
+645:             MeetingConfirmationService::class.java.classLoader
+646:                 .getResourceAsStream("meeting-timezones-zh.properties")
+647:                 ?.use { input ->
+648:                     InputStreamReader(input, StandardCharsets.UTF_8).use(properties::load)
+649:                 }
+650:                 ?: throw IllegalStateException("找不到时区中文目录资源")
+651:             properties.stringPropertyNames().associateWith { id ->
+652:                 val parts = properties.getProperty(id).split('\t', limit = 2)
+653:                 require(parts.size == 2 && parts[0].isNotBlank()) { "时区中文目录格式错误：$id" }
+654:                 val aliases = parts[1].split('\u001f').filter { it.isNotBlank() }
+655:                 require(aliases.isNotEmpty()) { "时区中文目录缺少搜索别名：$id" }
+656:                 TimeZoneCatalogEntry(parts[0], aliases)
+657:             }
+658:         }
+659: 
+660:         /** 固定常用表先行（与映射同序）；余者 id 字典序；UTC 由目录并入。 */
+661:         private val COMMON_ZONE_IDS = listOf(
+662:             "Europe/Istanbul",
+663:             "Asia/Shanghai",
+664:             "Europe/London",
+665:             "Europe/Berlin",
+666:             "America/New_York",
+667:             "America/Los_Angeles",
+668:             "Asia/Tokyo",
+669:             "Asia/Kolkata",
+670:             "Asia/Calcutta",
+671:             "Australia/Sydney",
+672:             "Asia/Hong_Kong",
+673:             "Asia/Singapore",
+674:             "Europe/Paris",
+675:             "Europe/Moscow",
+676:             "America/Toronto",
+677:             "Pacific/Auckland",
+678:             "Asia/Dubai"
+679:         )
+
+## src/main/resources/static/index.html:2108
+2108: <!-- App Core controller -->
+2109: <script src="task-modal-runtime.js"></script>
+2110: <script src="trust-reply-workbench.js?v=20260914-followup-email"></script>
+2111: <script src="expert-materials.js?v=20260914-followup-email"></script>
+2112: <script src="meeting-confirmation.js?v=20260914-followup-email"></script>
+2113: <script src="mailbox-chat.js?v=20260914-followup-email"></script>
+2114: <script src="app.js?v=20260914-followup-email"></script>
+2115: </body>
+2116: </html>
+
+## pom.xml:183
+183:             </plugin>
+184:             <plugin>
+185:                 <groupId>org.codehaus.mojo</groupId>
+186:                 <artifactId>exec-maven-plugin</artifactId>
+187:                 <version>3.1.0</version>
+188:                 <executions>
+189:                     <execution>
+190:                         <id>node-test</id>
+191:                         <phase>test</phase>
+192:                         <goals>
+193:                             <goal>exec</goal>
+194:                         </goals>
+195:                         <configuration>
+196:                             <executable>bash</executable>
+197:                             <arguments>
+198:                                 <argument>-lc</argument>
+199:                                 <argument>node --test src/test/js/*.test.js</argument>
+200:                             </arguments>
+201:                             <skip>${skipNodeTests}</skip>
+202:                         </configuration>
+203:                     </execution>
+204:                     <execution>
+205:                         <id>node-check-app</id>
+206:                         <phase>test</phase>
+207:                         <goals>
+208:                             <goal>exec</goal>
+209:                         </goals>
+210:                         <configuration>
+211:                             <executable>node</executable>
+212:                             <arguments>
+213:                                 <argument>--check</argument>
+214:                                 <argument>src/main/resources/static/app.js</argument>
+215:                             </arguments>
+216:                             <skip>${skipNodeTests}</skip>
+217:                         </configuration>
+218:                     </execution>
+219:                     <execution>
+220:                         <id>node-check-task-modal-runtime</id>
+221:                         <phase>test</phase>
+222:                         <goals>
+223:                             <goal>exec</goal>
+224:                         </goals>
+225:                         <configuration>
+226:                             <executable>node</executable>
+227:                             <arguments>
+228:                                 <argument>--check</argument>
+229:                                 <argument>src/main/resources/static/task-modal-runtime.js</argument>
+230:                             </arguments>
+231:                             <skip>${skipNodeTests}</skip>
+232:                         </configuration>
+233:                     </execution>
+
+## Baseline JS test run
+$ node --test src/test/js/meetingConfirmation.test.js src/test/js/meetingConfirmationAssets.test.js
+▶ fast-p 04 纯导出：filterZones（I-5 搜索语义）
+  ✔ 空查询返回全部（不截断） (2.159917ms)
+  ✔ 中文/别名/id 联合命中：土耳其、Türkiye、istanbul、Europe/Istanbul (2.353833ms)
+  ✔ 偏移归一：UTC+03:00、utc+3、UTC−3（Unicode 减号）、+5:30 半小时间隔 (0.520959ms)
+  ✔ 大小写/空白/全角归一后匹配；结果不截断 (0.582042ms)
+✔ fast-p 04 纯导出：filterZones（I-5 搜索语义） (6.502792ms)
+▶ fast-p 04 纯导出：normalizeMeetingText
+  ✔ NBSP/全角/回车/多空格/空行归一，行间边界保留 (0.182084ms)
+✔ fast-p 04 纯导出：normalizeMeetingText (0.251667ms)
+▶ fast-p 04 纯导出：sanitizeDraftHtml（I-6 白名单）
+  ✔ 保留 p/b/strong/i/em/u/ul/ol/li/br/span；href 白名单 + target/rel 固定 (1.678458ms)
+  ✔ script/style/iframe/object 连内容删除；事件/style 属性删除；未知标签 unwrap (0.233375ms)
+  ✔ javascript: 链接去 href 保留文本；其它 div class/data 剥除 (0.50875ms)
+  ✔ 脏邮件 HTML 只显示文本/去事件，不把事件脚本带进编辑器 (0.121459ms)
+  ✔ 空/无文档输入为空串（防注入） (0.10075ms)
+✔ fast-p 04 纯导出：sanitizeDraftHtml（I-6 白名单） (3.040917ms)
+▶ fast-p 04 纯导出：planMeetingInsertion（T3 插入语义）
+  ✔ 空正文 → replace（qaClear）；正文已存在 → append（保留 QA） (0.782458ms)
+  ✔ 显式 replace：始终 replace + qaClear (0.134792ms)
+  ✔ 已保存 + 唯一未手改块 → update（原位替换，不清 QA） (0.744875ms)
+  ✔ 已保存但块被手改 → allowed=false reason=hand-edited（禁止追加/静默覆盖） (0.618209ms)
+  ✔ 块内容经 sanitize 白名单（script 剥离） (0.372042ms)
+✔ fast-p 04 纯导出：planMeetingInsertion（T3 插入语义） (3.143667ms)
+▶ fast-p 04 组件：create/open/close/dispose 生命周期（S-2）
+  ✔ open 创建唯一 dialog 于 body；options/zones 请求发生；取消可关闭；dispose 移除 (87.825791ms)
+  ✔ 重复 create 先 dispose 旧实例（全局 id 唯一） (3.964084ms)
+  ✔ backdrop（dialog 自身点击）不关闭；Esc 在列表关闭态才关弹窗 (4.536459ms)
+  ✔ loading 阶段字段禁用、确认/下载禁用；成功后可填并预览 (16.433333ms)
+✔ fast-p 04 组件：create/open/close/dispose 生命周期（S-2） (113.877375ms)
+▶ fast-p 04 组件：时区搜索键盘状态（S-4/I-5）
+  ✔ focus 展开全部、输入过滤、Enter 单选/多选不自动选、Tab 恢复标签 (6.672375ms)
+  ✔ 键盘 active/selected 分离：Arrow 移动 focused 但不改 selected；aria 同步 (4.729292ms)
+  ✔ 鼠标 mousedown 选择候选项：先选定再关列表（不依赖迟到的 click） (8.334041ms)
+  ✔ Escape 两级与 Tab 恢复：先关列表再关弹窗；无结果不吞已选值 (9.00875ms)
+  ✔ 日期 change 只重载目录偏移、保留 zone id；endDate 为空时跟随 startDate (5.156458ms)
+✔ fast-p 04 组件：时区搜索键盘状态（S-4/I-5） (34.25575ms)
+▶ fast-p 04 组件：apply 契约（onApply 参数/返回值）
+  ✔ apply 携带 {preview, mode, capturedEditorRevision}；true 关闭、false 显示目标变化错误 (5.951083ms)
+✔ fast-p 04 组件：apply 契约（onApply 参数/返回值） (6.162875ms)
+▶ T3: 9 个带版本资源统一键与注册（I-1/S-1）
+  ✔ 恰好 9 个带 ?v= 资源且全部等于 20260914-followup-email，无旧键残留 (1.583375ms)
+  ✔ 9 个资源 = 7 旧资源 + meeting-confirmation.css/.js，各恰好注册 1 次（无重复） (0.786625ms)
+  ✔ link 全在 head、script 全在 body；task-modal-runtime.js 未版本化且位于组件脚本之前 (0.721375ms)
+  ✔ CSS 顺序：meeting-confirmation.css 紧跟 mailbox-chat.css 之后（S-1） (0.117792ms)
+  ✔ 脚本顺序：meeting-confirmation.js 在 mailbox-chat.js 之前、app.js 之前（S-1） (0.417959ms)
+✔ T3: 9 个带版本资源统一键与注册（I-1/S-1） (5.586542ms)
+▶ T3: 组件被引用且不注入样例/预览 mock 数据（I-2）
+  ✔ meeting-confirmation.css/.js 均以统一键注册且作为独立文件存在 (0.2115ms)
+  ✔ meeting 注册行仅相对路径 + 单一版本查询串，无样例/预览 mock 数据引用（I-2） (1.642083ms)
+  ✔ 组件脚本自身不携带样例/模拟数据或 fetch 改写痕迹（I-2） (1.59775ms)
+✔ T3: 组件被引用且不注入样例/预览 mock 数据（I-2） (3.648459ms)
+ℹ tests 33
+ℹ suites 9
+ℹ pass 33
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 439.916542
+
+## Planning Intl reference-value check
+Runtime: v25.7.0 / ICU 78.2
+2026-09-17T15:00:00+08:00 -> Europe/London = 2026-09-17 08:00, offsetMinutes=60
+2026-09-17T15:00:00+08:00 -> Europe/Berlin = 2026-09-17 09:00, offsetMinutes=120
+2026-09-17T15:00:00+08:00 -> America/New_York = 2026-09-17 03:00, offsetMinutes=-240
+2026-09-17T15:00:00+08:00 -> America/Los_Angeles = 2026-09-17 00:00, offsetMinutes=-420
+2026-09-17T15:00:00+08:00 -> Asia/Tokyo = 2026-09-17 16:00, offsetMinutes=540
+2026-09-17T15:00:00+08:00 -> Asia/Seoul = 2026-09-17 16:00, offsetMinutes=540
+2026-01-17T15:00:00+08:00 -> America/Los_Angeles = 2026-01-16 23:00, offsetMinutes=-480
+2026-09-17T23:30:00+08:00 -> Asia/Tokyo = 2026-09-18 00:30, offsetMinutes=540
+2026-09-17T15:00:00+08:00 -> Asia/Kolkata = 2026-09-17 12:30, offsetMinutes=330
+2026-09-17T15:00:00+08:00 -> Asia/Kathmandu = 2026-09-17 12:45, offsetMinutes=345
+2026-03-08T14:30:00+08:00 -> America/New_York = 2026-03-08 01:30, offsetMinutes=-300
+2026-03-08T15:30:00+08:00 -> America/New_York = 2026-03-08 03:30, offsetMinutes=-240
+2026-11-01T13:30:00+08:00 -> America/New_York = 2026-11-01 01:30, offsetMinutes=-240
+2026-11-01T14:30:00+08:00 -> America/New_York = 2026-11-01 01:30, offsetMinutes=-300
+
+## ICS regression evidence
+$ rg -n 'DTSTART|DTEND' src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt
+473:            "DTSTART:${basicUtc(start)}",
+474:            "DTEND:${basicUtc(end)}",

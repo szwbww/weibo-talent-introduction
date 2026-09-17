@@ -2,7 +2,7 @@
 
 // 计划 05（c6）改写 —— 只保留三组断言（G-7）：
 // 1) I-24 挂载契约（window.TrustReplyWorkbench.mount / instance.unmount / options 键集合不变）；
-// 2) G-5 缓存键九联同值（20260914-followup-email）；
+// 2) G-5 11 个缓存资源同值（20260917-global-world-clock）；
 // 3) I-25 unmount 语义：abort 全部在途请求、解绑全部监听器、late response 不写宿主。
 
 const fs = require("fs");
@@ -19,7 +19,7 @@ const source = fs.readFileSync(workbenchPath, "utf-8");
 const appSource = fs.readFileSync(appPath, "utf-8");
 const indexSource = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260914-followup-email";
+const CACHE_KEY = "20260917-global-world-clock";
 // I-24：options 键集合（顺序无关）—— 两个宿主与运行时都不得改名/改必填性。
 const OPTION_KEYS = ["mode", "source", "contextPath", "autoBootstrap", "onUnauthorized", "onChange", "onComplete"];
 
@@ -172,13 +172,14 @@ describe("shared trust reply workbench mount contract (计划 05 改写)", () =>
         assert.ok(!/src="\/trust-reply-workbench\.js/.test(indexSource), "script include must stay context-relative");
     });
 
-    it("G-5: the nine cache-busted assets share one key (20260914-followup-email)", () => {
+    it("G-5: the eleven cache-busted assets share one key (20260917-global-world-clock)", () => {
         const keys = [...indexSource.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
-        assert.strictEqual(keys.length, 9, "index.html must carry exactly nine cache-busted asset URLs");
-        assert.strictEqual(new Set(keys).size, 1, "all nine keys must share one value");
+        assert.strictEqual(keys.length, 11, "index.html must carry exactly eleven cache-busted asset URLs");
+        assert.strictEqual(new Set(keys).size, 1, "all eleven keys must share one value");
         assert.strictEqual(keys[0], CACHE_KEY, `the shared key must be ${CACHE_KEY}`);
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
-            "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js", "mailbox-chat.js", "app.js"];
+            "world-clock.css", "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
+            "mailbox-chat.js", "app.js", "world-clock.js"];
         let previous = -1;
         for (const asset of ordered) {
             const at = indexSource.indexOf(`${asset}?v=${CACHE_KEY}`);

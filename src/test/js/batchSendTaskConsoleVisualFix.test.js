@@ -48,15 +48,16 @@ describe("batch send task console visual repair", () => {
     it("bumps the stylesheet cache key", () => {
         const assets = ["styles.css", "trust-reply-workbench.js", "app.js",
             "expert-materials.js", "expert-materials.css", "mailbox-chat.js", "mailbox-chat.css",
-            "meeting-confirmation.js", "meeting-confirmation.css"];
+            "meeting-confirmation.js", "meeting-confirmation.css", "world-clock.js", "world-clock.css"];
         for (const asset of assets) {
-            assert.ok(html.includes(`${asset}?v=20260914-followup-email`), `${asset} must carry the unified key`);
+            assert.ok(html.includes(`${asset}?v=20260917-global-world-clock`), `${asset} must carry the unified key`);
         }
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
-            "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js", "mailbox-chat.js", "app.js"];
+            "world-clock.css", "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
+            "mailbox-chat.js", "app.js", "world-clock.js"];
         let previous = -1;
         for (const asset of ordered) {
-            const at = html.indexOf(`${asset}?v=20260914-followup-email`);
+            const at = html.indexOf(`${asset}?v=20260917-global-world-clock`);
             assert.ok(at > previous, `${asset} must be registered in order (CSS then workbench -> materials -> chat -> app)`);
             previous = at;
         }
