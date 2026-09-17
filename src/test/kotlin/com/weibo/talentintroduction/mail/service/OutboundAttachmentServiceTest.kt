@@ -465,8 +465,6 @@ class OutboundAttachmentServiceTest {
         assertEquals(snapshots, OutboundAttachmentSnapshotCodec.parseOrThrow(json))
         assertEquals(snapshots, OutboundAttachmentSnapshotCodec.parseOrNull(json))
         assertNull(OutboundAttachmentSnapshotCodec.parseOrThrow(null))
-        assertNull(OutboundAttachmentSnapshotCodec.parseOrThrow(""))
-        assertNull(OutboundAttachmentSnapshotCodec.parseOrThrow("   "))
         assertNull(OutboundAttachmentSnapshotCodec.parseOrNull(null))
         // 快照不含绝对路径、字节或上传用户名。
         assertFalse(json.contains(storageRoot.toString()))
@@ -483,6 +481,9 @@ class OutboundAttachmentServiceTest {
             "not-json",
             "{}",
             "[]",
+            // V-1：非空的空白存档不是「没有附件」（唯一形态是 SQL NULL），严格解析一律按损坏 409。
+            "",
+            "   ",
             valid + "null",
             valid.dropLast(1),
             valid.replace("\"schemaVersion\":1", "\"schemaVersion\":9"),

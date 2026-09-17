@@ -122,15 +122,15 @@ data class OutboundAttachmentUploadResponse(
 /**
  * 快照 JSON 数组编解码（I-5）。
  *
- * 固定契约：`mail_record` 里「没有通用附件」的唯一表示是 SQL NULL / 空串；非空才存
- * JSON 数组，空数组**不是**合法存档形态。严格解析：数量、文件名/类型长度与形态、
- * schemaVersion、id 规范 UUID、sha256 小写 hex、单项与总字节边界全部校验，未知字段
- * 一律拒绝。
+ * 固定契约：`mail_record` 里「没有通用附件」的唯一表示是 SQL NULL；非空才存 JSON 数组，
+ * 空数组与空白串**都不是**合法存档形态（非空空白一律视为损坏）。严格解析：数量、文件名/
+ * 类型长度与形态、schemaVersion、id 规范 UUID、sha256 小写 hex、单项与总字节边界全部校验，
+ * 未知字段一律拒绝。
  *
  * 两种读取语义，调用方按是否需要 fail-closed 选择：
- *  - [parseOrNull]：展示/可选路径用；NULL、空白与**损坏**都归为 null（不抛）。
- *  - [parseOrThrow]：发送门与审计比较用；只有真正未存档（NULL/空白）才是 null，
- *    损坏一律 409，绝不静默当成「没有附件」继续发信（I-4）。
+ *  - [parseOrNull]：展示/可选路径用；NULL 与**任何损坏**（含空白）都归为 null（不抛）。
+ *  - [parseOrThrow]：发送门与审计比较用；只有 NULL 才是 null，非空（含空白）一律 409，
+ *    绝不静默当成「没有附件」继续发信（I-4）。
  */
 object OutboundAttachmentSnapshotCodec {
 
@@ -153,7 +153,7 @@ object OutboundAttachmentSnapshotCodec {
         }
     }
 
-    /** 展示/可选路径：NULL、空白与损坏一律 null。 */
+    /** 展示/可选路径：NULL 与任何损坏（含空白）一律 null。 */
     fun parseOrNull(json: String?): List<OutboundAttachmentSnapshot>? =
         try {
             parseOrThrow(json)
@@ -161,10 +161,13 @@ object OutboundAttachmentSnapshotCodec {
             null
         }
 
-    /** 发送门/审计比较：NULL、空白 -> null（真正未存档）；其余任何损坏 -> 409。 */
+    /** 发送门/审计比较：只有 NULL -> null（真正未存档）；非空（含空白）一律按损坏 -> 409。 */
     fun parseOrThrow(json: String?): List<OutboundAttachmentSnapshot>? {
-        if (json.isNullOrBlank()) {
+        if (json == null) {
             return null
+        }
+        if (json.isBlank()) {
+            throw OutboundAttachmentException.conflict("通用附件快照已损坏：空白不是「没有附件」")
         }
         val snapshots = try {
             mapper.readValue(json, Array<OutboundAttachmentSnapshot>::class.java).toList()
