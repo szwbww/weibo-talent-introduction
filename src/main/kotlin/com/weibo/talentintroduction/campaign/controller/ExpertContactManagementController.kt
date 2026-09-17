@@ -15,6 +15,7 @@ import com.weibo.talentintroduction.campaign.service.CreateMeetingCommand
 import com.weibo.talentintroduction.campaign.service.UpdateMeetingCommand
 import com.weibo.talentintroduction.campaign.service.ConfirmMeetingCommand
 import com.weibo.talentintroduction.campaign.service.ExpertMaterialItem
+import com.weibo.talentintroduction.campaign.service.ExpertMaterialRequestItem
 import com.weibo.talentintroduction.campaign.service.ExpertMaterialService
 import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.handoff.domain.ManualHandoff
@@ -252,6 +253,19 @@ class ExpertContactManagementController(
         @RequestBody request: UpdateExpertMaterialStatusRequest
     ): List<ExpertMaterialItem> =
         expertMaterialService.updateStatus(contactId, materialCode, request.status)
+
+    // 02 (I-4): 材料索取固定 5 项独立路由，与 06 占用的 GET /materials（上传文件分页）路径分离。
+    @GetMapping("/{contactId}/material-requests")
+    fun listMaterialRequests(@PathVariable contactId: Long): List<ExpertMaterialRequestItem> =
+        expertMaterialService.listMaterialRequests(contactId)
+
+    @PutMapping("/{contactId}/material-requests/{code}")
+    fun updateMaterialRequestStatus(
+        @PathVariable contactId: Long,
+        @PathVariable code: String,
+        @RequestBody request: UpdateExpertMaterialStatusRequest
+    ): List<ExpertMaterialRequestItem> =
+        expertMaterialService.updateMaterialRequestStatus(contactId, code, request.status)
 }
 
 data class ManualHandoffCreateRequest(

@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.service.BulkAutoReplyResult
 import com.weibo.talentintroduction.campaign.service.ExpertContactManagementService
 import com.weibo.talentintroduction.campaign.service.ExpertMaterialItem
+import com.weibo.talentintroduction.campaign.service.ExpertMaterialRequestItem
 import com.weibo.talentintroduction.campaign.service.ExpertMaterialService
 import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -12,6 +13,13 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.springframework.http.MediaType
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.content
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
+import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import java.time.LocalDateTime
 import java.util.Optional
 
@@ -27,6 +35,7 @@ class ExpertContactManagementControllerTest {
         senderAccountBindingService = Mockito.mock(SenderAccountBindingService::class.java),
         expertMaterialService = expertMaterialService
     )
+    private val mockMvc: MockMvc = MockMvcBuilders.standaloneSetup(controller).build()
 
     @Test
     fun `listMaterials delegates contactId to service and returns catalog items`() {
@@ -115,6 +124,70 @@ class ExpertContactManagementControllerTest {
         assertEquals(null, response.followUpMarkedAt)
         Mockito.verify(service).unmarkFollowUp(1L)
     }
+
+    // ── 02 材料索取固定 5 项路由（I-4：真实 HTTP 映射与 JSON 契约）──
+
+    @Test
+    fun `GET material-requests route maps to the five-item status array`() {
+        Mockito.`when`(expertMaterialService.listMaterialRequests(1L)).thenReturn(requestItems())
+
+        mockMvc.perform(get("/api/expert-contacts/1/material-requests"))
+            .andExpect(status().isOk)
+            .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+            .andExpect(content().json(allPendingRequestBody(), true))
+
+        Mockito.verify(expertMaterialService).listMaterialRequests(1L)
+    }
+
+    @Test
+    fun `PUT material-requests route maps the status body and returns the updated array`() {
+        Mockito.`when`(expertMaterialService.updateMaterialRequestStatus(1L, "REQ_AWARDS", "DECLINED"))
+            .thenReturn(requestItems(mapOf("REQ_AWARDS" to "DECLINED")))
+
+        mockMvc.perform(
+            put("/api/expert-contacts/1/material-requests/REQ_AWARDS")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"status":"DECLINED"}""")
+        )
+            .andExpect(status().isOk)
+            .andExpect(content().json(expectedRequestBody(awardsStatus = "DECLINED"), true))
+
+        Mockito.verify(expertMaterialService).updateMaterialRequestStatus(1L, "REQ_AWARDS", "DECLINED")
+    }
+
+    @Test
+    fun `GET materials stays unrouted here so the document paging endpoint is not shadowed`() {
+        mockMvc.perform(get("/api/expert-contacts/1/materials"))
+            .andExpect(status().isNotFound)
+    }
+
+    private fun requestItems(overrides: Map<String, String> = emptyMap()): List<ExpertMaterialRequestItem> =
+        listOf(
+            Triple("REQ_PUBLICATIONS", "代表性论文", "Copies of your representative publications"),
+            Triple("REQ_PROJECTS", "科研项目", "Supporting documents for research projects"),
+            Triple("REQ_PATENTS", "专利", "Patent certificates"),
+            Triple("REQ_AWARDS", "荣誉奖项", "Certificates of honors and awards"),
+            Triple("REQ_DEGREES", "学位", "Bachelor’s, master’s, and doctoral degree certificates")
+        ).map { (code, label, requestText) ->
+            ExpertMaterialRequestItem(
+                code = code,
+                label = label,
+                status = overrides[code] ?: "PENDING",
+                requestText = requestText
+            )
+        }
+
+    private fun allPendingRequestBody(): String = expectedRequestBody()
+
+    private fun expectedRequestBody(awardsStatus: String = "PENDING"): String = """
+        [
+          {"code":"REQ_PUBLICATIONS","label":"代表性论文","status":"PENDING","requestText":"Copies of your representative publications"},
+          {"code":"REQ_PROJECTS","label":"科研项目","status":"PENDING","requestText":"Supporting documents for research projects"},
+          {"code":"REQ_PATENTS","label":"专利","status":"PENDING","requestText":"Patent certificates"},
+          {"code":"REQ_AWARDS","label":"荣誉奖项","status":"$awardsStatus","requestText":"Certificates of honors and awards"},
+          {"code":"REQ_DEGREES","label":"学位","status":"PENDING","requestText":"Bachelor’s, master’s, and doctoral degree certificates"}
+        ]
+    """.trimIndent()
 
     private fun sampleContact(): ExpertContact =
         ExpertContact(
