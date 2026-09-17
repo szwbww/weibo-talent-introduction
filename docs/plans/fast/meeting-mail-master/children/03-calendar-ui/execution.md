@@ -98,3 +98,11 @@ src/test/js/meetingConfirmationIntegration.test.js:1726  suite "fast-p 04: 确�
 - Recorded observation (not repaired, needs a `.nav-tabs` rule that S-1 forbids): at 760px viewport the 12th nav tab overflows the page by 74px; measured elements are `header.topnav`/`nav.nav-tabs`/`button.nav-tab`, not `.calendar-*`.
 - Controller action: paused for a HUMAN-approved plan amendment; no verifier was dispatched for this child.
 - Resume from: `25b47e541cddc72a4d5acf33ee71c075fe8e392c`.
+
+## Epoch 2 — RESUMED UNDER AMENDMENT A1
+
+- Approval: user instruction 继续 (2026-09-17T09:14+08:00) released the pause whose single stated resolution was this amendment.
+- Amendment A1: child plan 03 变更文件清单 widened from 6 to 7 files by adding `src/test/js/meetingConfirmationIntegration.test.js` (修改); plan identity `commit:59e909070529b4b1e8ae62e61d03e67855f479ba` -> `commit:6f1db6d7ec27f7d21105b9f3b59306c38587a3fd`; brief re-synced byte-identical. The master plan's aggregate 变更文件清单 already listed this file.
+- Preflight: branch/worktree/ledger identities match; no staged index changes; product base for this epoch is `f83e29c397dd01ceafb98025e0d649a69c6eafae` with epoch-1 implementation `25b47e541cddc72a4d5acf33ee71c075fe8e392c` already committed.
+- Scope of this epoch: update the superseded assertion at `src/test/js/meetingConfirmationIntegration.test.js:1738` to the shared Beijing formatter output, then re-run the required commands and commit the epoch-2 implementation.
+- The 760px nav overflow observation stays RECORD_ONLY: no answer was given for it, so no authority was added for a `.nav-tabs` rule.
