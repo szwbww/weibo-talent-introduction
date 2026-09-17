@@ -38,7 +38,13 @@ import com.weibo.talentintroduction.mail.service.MailBodyCleaner
 import com.weibo.talentintroduction.mail.service.MailContentService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.mail.service.OUTBOUND_ATTACHMENT_SCHEMA_VERSION
+import com.weibo.talentintroduction.mail.service.OutboundAttachmentFileSet
+import com.weibo.talentintroduction.mail.service.OutboundAttachmentService
+import com.weibo.talentintroduction.mail.service.OutboundAttachmentSnapshot
+import com.weibo.talentintroduction.mail.service.OutboundMailFile
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
+import com.weibo.talentintroduction.mail.service.outboundSha256Hex
 import com.weibo.talentintroduction.qa.domain.QaReplyPolicy
 import com.weibo.talentintroduction.qa.domain.QaRule
 import com.weibo.talentintroduction.qa.repository.QaCategoryRepository
@@ -109,6 +115,8 @@ class RagSendBridgeTest {
     private val ragKnowledgeBase = Mockito.mock(RagKnowledgeBase::class.java)
     // 03 (T3): 新增构造依赖 —— 本文件只做 RAG 回归，传模拟依赖即可。
     private val meetingConfirmationService = Mockito.mock(com.weibo.talentintroduction.mail.service.MeetingConfirmationService::class.java)
+    // 06 (T1): 通用附件协作件 —— RAG 证据归档必须不受附件影响（回归在下方新增用例）。
+    private val outboundAttachmentService = Mockito.mock(OutboundAttachmentService::class.java)
 
     private val renderTemplateService = MailComposeTemplateService(
         Mockito.mock(MailComposeTemplateRepository::class.java),
@@ -151,7 +159,8 @@ class RagSendBridgeTest {
         emailSuppressionService,
         meetingConfirmationService,
         mailRecordRagFactRepository = mailRecordRagFactRepository,
-        ragKnowledgeBase = ragKnowledgeBase
+        ragKnowledgeBase = ragKnowledgeBase,
+        outboundAttachmentService = outboundAttachmentService
     )
 
     private val contact = ExpertContact(
@@ -510,6 +519,46 @@ class RagSendBridgeTest {
         )
     }
 
+    // 06 (I-1/I-5)：RAG 证据链必须与通用附件完全独立 —— 带附件的 RAG 发送仍按请求顺序写
+    // mail_record_rag_fact、仍不写 mail_record_qa_rule，且 payload 同时携带快照。
+    @Test
+    fun `rag send with attachments keeps evidence ordering and never touches qa rules`() {
+        val capturedPayloads = stubSuccessfulSend()
+        val savedRows = mutableListOf<MailRecordRagFact>()
+        Mockito.doAnswer { inv ->
+            savedRows += inv.getArgument<Iterable<MailRecordRagFact>>(0).toList()
+            savedRows
+        }.`when`(mailRecordRagFactRepository).saveAll(Mockito.anyIterable())
+        val fileSet = attachmentFileSet()
+        Mockito.`when`(outboundAttachmentService.resolveForSend(1L, listOf(ATTACHMENT_ID), "op"))
+            .thenReturn(fileSet)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = "sender-1",
+            subject = "Re: Test",
+            htmlBody = "<p>Remote work is possible.</p>",
+            textBody = "Remote work is possible.",
+            operatorName = "op",
+            ragFactCodes = listOf("KB-FUND-033", "KB-COMP-007"),
+            ragCorpusFingerprint = fingerprint,
+            attachmentIds = listOf(ATTACHMENT_ID),
+            authenticatedUsername = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(
+            listOf("KB-FUND-033" to 0, "KB-COMP-007" to 1),
+            savedRows.map { it.factCode to it.ordinal }
+        )
+        assertTrue(savedRows.all { it.corpusFingerprint == fingerprint })
+        Mockito.verifyNoInteractions(mailRecordQaRuleRepository)
+        val payload = capturedPayloads.single()
+        assertEquals(fileSet.snapshots, payload.outboundAttachments)
+        assertNull(payload.primaryRuleId)
+        assertEquals(emptyList<Long>(), payload.canonicalQaRuleIds)
+    }
+
     @Test
     fun `rag send preserves duplicate fact codes in request order without dedupe`() {
         stubSuccessfulSend()
@@ -734,5 +783,23 @@ class RagSendBridgeTest {
             canonicalFactIds = emptyList(),
             itemVersions = listOf(version)
         )
+    }
+
+    // ── 06 attachment helpers ──
+
+    private fun attachmentFileSet(bytes: ByteArray = "会议资料".toByteArray(Charsets.UTF_8)): OutboundAttachmentFileSet {
+        val snapshot = OutboundAttachmentSnapshot(
+            schemaVersion = OUTBOUND_ATTACHMENT_SCHEMA_VERSION,
+            id = ATTACHMENT_ID,
+            filename = "会议资料.txt",
+            contentType = "text/plain",
+            byteLength = bytes.size.toLong(),
+            sha256 = outboundSha256Hex(bytes)
+        )
+        return OutboundAttachmentFileSet(listOf(OutboundMailFile(snapshot, bytes)), listOf(snapshot))
+    }
+
+    private companion object {
+        const val ATTACHMENT_ID = "3f7c1a52-90de-4a1b-8b0e-6c2f5d4a1e77"
     }
 }

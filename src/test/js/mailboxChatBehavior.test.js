@@ -3528,7 +3528,9 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         const kids = composeEl.children;
         const editorEl = ctx.host.querySelector('[data-role="mc-editor"]');
         assert.strictEqual(kids[kids.indexOf(editorEl) + 1], note, "提示紧随编辑器");
-        assert.strictEqual(kids[kids.indexOf(note) + 1].getAttribute("class"), "mc-compose-footer", "提示位于会议附件/底部操作区之前");
+        const footerEl = composeEl.querySelector(".mc-compose-footer");
+        assert.ok(footerEl, "底部操作区存在");
+        assert.ok(kids.indexOf(note) < kids.indexOf(footerEl), "提示位于会议附件/底部操作区之前");
         assert.strictEqual(note.textContent.indexOf("m2893"), -1, "不得显示 Message-ID");
         assert.strictEqual(dialogOf(ctx), null, "填入后弹窗关闭");
     });

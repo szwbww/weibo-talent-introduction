@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260917-global-world-clock">
-    <link rel="stylesheet" href="expert-materials.css?v=20260917-global-world-clock">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20260917-global-world-clock">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20260917-global-world-clock">
-    <link rel="stylesheet" href="world-clock.css?v=20260917-global-world-clock">
+    <link rel="stylesheet" href="styles.css?v=20260917-meeting-mail-global-world-clock">
+    <link rel="stylesheet" href="expert-materials.css?v=20260917-meeting-mail-global-world-clock">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20260917-meeting-mail-global-world-clock">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20260917-meeting-mail-global-world-clock">
+    <link rel="stylesheet" href="world-clock.css?v=20260917-meeting-mail-global-world-clock">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -118,6 +118,7 @@
                 <span id="unmatchedBadgeHigh" class="nav-badge nav-badge-high" hidden>0</span>
                 <span id="unmatchedBadgeNormal" class="nav-badge nav-badge-normal" hidden>0</span>
             </button>
+            <button class="nav-tab" data-view="meeting-calendar"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg><span>会议日历</span></button>
             <button class="nav-tab" data-view="inbound-summary">
                 <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
@@ -770,6 +771,9 @@
                 <div id="unmatchedDetailContent" class="detail" style="padding: 24px;"></div>
             </section>
         </section>
+
+        <!-- View: Meeting Calendar (fast-p 03 · S-1) -->
+        <section class="view" id="view-meeting-calendar"><div id="meetingCalendarRoot" class="calendar-root"></div></section>
 
         <!-- View: Inbound Mail Summary -->
         <section class="view" id="view-inbound-summary">
@@ -1993,6 +1997,11 @@
     </form>
 </dialog>
 
+<!-- Modal 4: Meeting calendar shared schedule dialog (fast-p 03 · S-2) -->
+<dialog id="meetingCalendarDialog" class="calendar-dialog" aria-labelledby="meetingCalendarDialogTitle"><form id="meetingCalendarForm"><div class="calendar-toolbar"><h2 id="meetingCalendarDialogTitle">新增排期</h2><button class="button icon-button" type="button" data-calendar-action="close" aria-label="关闭">×</button></div><div class="calendar-form"><label class="calendar-field calendar-wide" data-role="expert-picker">选择专家<input type="search" data-role="expert-search" placeholder="搜索姓名或邮箱"><select name="contactId" required></select></label><p class="calendar-note calendar-wide" data-role="expert-name"></p><label class="calendar-field">开始时间（北京时间）<input name="startBeijing" type="datetime-local" required></label><label class="calendar-field">结束时间（北京时间）<input name="endBeijing" type="datetime-local" required></label><label class="calendar-field calendar-wide">会议链接（选填）<input name="meetingLink" type="url" maxlength="1024"></label><label class="calendar-field calendar-wide">备注（选填）<textarea name="note" maxlength="200"></textarea></label></div>
+<label class="calendar-field calendar-wide" data-role="cancel-reason-field">取消原因（选填）<textarea name="cancelReason" maxlength="200"></textarea></label>
+<p class="calendar-note" data-role="time-summary"></p><p class="calendar-note" data-role="source-summary"></p><p class="calendar-note">排期操作不会自动发送通知邮件。</p><p class="calendar-error" role="alert" data-role="calendar-error" hidden></p><div class="calendar-list" data-role="expert-events" hidden></div><div class="calendar-actions"><button class="button" type="button" data-calendar-action="close">关闭</button><button class="button danger" type="button" data-calendar-action="cancel-event">取消排期</button><button class="button primary" type="submit">保存排期</button></div>
+<div class="calendar-actions" data-role="cancel-confirm-actions"><button class="button" type="button" data-calendar-action="keep-event">保留排期</button><button class="button danger" type="button" data-calendar-action="confirm-cancel">确认取消排期</button></div></form></dialog>
 <!-- Modal: AI Document Analysis -->
 <div class="modal-shell" id="aiAnalysisModal" hidden>
     <button class="modal-backdrop" id="aiAnalysisModalBackdrop" type="button" aria-label="关闭 AI 分析"></button>
@@ -2098,11 +2107,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260917-global-world-clock"></script>
-<script src="expert-materials.js?v=20260917-global-world-clock"></script>
-<script src="meeting-confirmation.js?v=20260917-global-world-clock"></script>
-<script src="mailbox-chat.js?v=20260917-global-world-clock"></script>
-<script src="app.js?v=20260917-global-world-clock"></script>
-<script src="world-clock.js?v=20260917-global-world-clock"></script>
+<script src="trust-reply-workbench.js?v=20260917-meeting-mail-global-world-clock"></script>
+<script src="expert-materials.js?v=20260917-meeting-mail-global-world-clock"></script>
+<script src="meeting-confirmation.js?v=20260917-meeting-mail-global-world-clock"></script>
+<script src="mailbox-chat.js?v=20260917-meeting-mail-global-world-clock"></script>
+<script src="app.js?v=20260917-meeting-mail-global-world-clock"></script>
+<script src="world-clock.js?v=20260917-meeting-mail-global-world-clock"></script>
 </body>
 </html>

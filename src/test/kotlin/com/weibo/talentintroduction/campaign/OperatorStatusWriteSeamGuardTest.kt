@@ -46,7 +46,9 @@ class OperatorStatusWriteSeamGuardTest {
         // 入站处理请求 DTO 构造：把请求体字段透传到处理 DTO，不落库
         // （2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :203 偏移至 :215）
         // （2026-09-10 待匹配计划在 :95-96/:104-105 新增 unmatchedOnly/query 两参数两转发，:215 平移至 :219）
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 219, "operatorStatus = request.operatorStatus"),
+        // 06 (A3, 行号钉随授权改动平移 +2): 82a46dc 在 import 段新增 AuthSessionKeys(:5) 与
+        // javax.servlet.http.HttpServletRequest(:47) 两行，使本噪声行 :219 平移至 :221，path/context 不变。
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 221, "operatorStatus = request.operatorStatus"),
         // 响应 DTO 构造：把当前值原样回显到出参 DTO
         // （守卫误报修正：行号登记 1098 → 实际 1099，2026-08-20 人工回复透传新增一行导致偏移；
         //   2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :1099 偏移至 :1116）
@@ -55,7 +57,11 @@ class OperatorStatusWriteSeamGuardTest {
         // 03 (T4, 行号钉随授权改动平移 +3): 03 在 sendManualRichReply 转发处新增
         // meeting/previewAttachmentSha256 两行 + 注释行（controller :271-273），实测 1118 → 1121。
         // （2026-09-10 待匹配计划在 :95-96/:104-105 新增 unmatchedOnly/query，:1121 平移至 :1125）
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1125, "operatorStatus = operatorStatus"),
+        // 06 (A3, 行号钉随授权改动平移 +12): 82a46dc 在同一文件共新增 12 行 —— import 两行（:5/:47）、
+        // sendManualRichReply 形参 servletRequest 与注释三行（:255-257）、转发实参
+        // attachmentIds/authenticatedUsername 与注释三行（:282-284）、会话身份 helper 四行（:288-291），
+        // 使本噪声行 :1125 平移至 :1137，path/context 不变。
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1137, "operatorStatus = operatorStatus"),
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO

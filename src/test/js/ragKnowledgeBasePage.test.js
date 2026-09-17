@@ -330,21 +330,21 @@ describe("RAG 知识库页 (plan 04)", () => {
         });
     });
 
-    it("G-5：11 处 ?v= 缓存键同值且等于 20260917-global-world-clock，注册顺序合规", () => {
+    it("G-5：11 处 ?v= 缓存键同值且等于 20260917-meeting-mail-global-world-clock，注册顺序合规", () => {
         ["styles.css", "trust-reply-workbench.js", "app.js",
             "expert-materials.js", "expert-materials.css", "mailbox-chat.js", "mailbox-chat.css",
             "meeting-confirmation.js", "meeting-confirmation.css", "world-clock.js", "world-clock.css"].forEach((asset) => {
-            assert.ok(html.includes(`${asset}?v=20260917-global-world-clock`), `${asset} key`);
+            assert.ok(html.includes(`${asset}?v=20260917-meeting-mail-global-world-clock`), `${asset} key`);
         });
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
         assert.strictEqual(keys.length, 11, `expected exactly 11 cache keys, got ${keys.length}`);
-        assert.ok(keys.every((key) => key === "20260917-global-world-clock"), `all keys must share one value: ${keys}`);
+        assert.ok(keys.every((key) => key === "20260917-meeting-mail-global-world-clock"), `all keys must share one value: ${keys}`);
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
             "world-clock.css", "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
             "mailbox-chat.js", "app.js", "world-clock.js"];
         let previous = -1;
         for (const asset of ordered) {
-            const at = html.indexOf(`${asset}?v=20260917-global-world-clock`);
+            const at = html.indexOf(`${asset}?v=20260917-meeting-mail-global-world-clock`);
             assert.ok(at > previous, `${asset} must be registered in order (CSS then workbench -> materials -> meeting -> chat -> app)`);
             previous = at;
         }

@@ -34,6 +34,10 @@ import com.weibo.talentintroduction.mail.service.MeetingInput
 import com.weibo.talentintroduction.mail.service.MeetingPreviewResponse
 import com.weibo.talentintroduction.mail.service.TagView
 import com.weibo.talentintroduction.mail.service.MailVariableService
+import com.weibo.talentintroduction.mail.service.OUTBOUND_ATTACHMENT_SCHEMA_VERSION
+import com.weibo.talentintroduction.mail.service.OutboundAttachmentSnapshot
+import com.weibo.talentintroduction.mail.service.OutboundAttachmentSnapshotCodec
+import com.weibo.talentintroduction.mail.service.outboundSha256Hex
 import com.weibo.talentintroduction.template.service.ComposeTemplateRenderResult
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.flywaydb.core.Flyway
@@ -502,6 +506,61 @@ class MailboxConversationControllerTest {
         assertEquals("diploma.pdf", inboundItem["firstAttachmentNames"][1].asText())
     }
 
+    // ------------------------------------------------------------------
+    // 06 (I-3): timeline 只投影真实 SENT 人工富文本附件快照
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `timeline projects archived outbound attachments only for manual rich reply sent rows in one batch read`() {
+        val bytes = "会议资料".toByteArray(StandardCharsets.UTF_8)
+        val snapshot = outboundAttachmentSnapshot(OUTBOUND_ATTACHMENT_ID, bytes)
+        val json = OutboundAttachmentSnapshotCodec.serialize(listOf(snapshot))
+        insertOutboundAttachmentRow(900101L, 1L, json, subject = "rich-with-attachment")
+        insertOutboundAttachmentRow(900102L, 1L, json, sendStatus = "FAILED", subject = "rich-failed")
+        insertOutboundAttachmentRow(900103L, 1L, "{not-a-snapshot", subject = "rich-corrupt")
+        insertOutboundAttachmentRow(900104L, 1L, json, mailType = "INTRODUCTION", subject = "intro-with-json")
+        insertProcessingRow(1L, 8201, "PROCESSED", "2026-09-02 09:00:00", "att-in", "inbound row")
+        stubOutboundAttachmentRecords(
+            listOf(
+                mailRecordRow(900101L, 1L, json),
+                mailRecordRow(900102L, 1L, json, sendStatus = "FAILED"),
+                mailRecordRow(900103L, 1L, "{not-a-snapshot"),
+                mailRecordRow(900104L, 1L, json, mailType = "INTRODUCTION")
+            )
+        )
+
+        val result = mockMvc.perform(
+            get("/api/mail/mailbox/conversations/1/messages").session(sessionOf("op1"))
+        ).andExpect(status().isOk).andReturn()
+        val items = objectMapper.readTree(utf8Body(result))["items"]
+
+        val sent = items.first { it["id"].asLong() == 900101L }
+        assertEquals(1, sent["outboundAttachments"].size())
+        val attachment = sent["outboundAttachments"][0]
+        assertEquals(OUTBOUND_ATTACHMENT_ID, attachment["id"].asText())
+        assertEquals("会议资料.txt", attachment["filename"].asText())
+        assertEquals("text/plain", attachment["contentType"].asText())
+        assertEquals(bytes.size.toLong(), attachment["byteLength"].asLong())
+        assertEquals(
+            "/api/mail/conversations/1/messages/900101/outbound-attachments/$OUTBOUND_ATTACHMENT_ID/download",
+            attachment["downloadUrl"].asText()
+        )
+        // 既有口径不变：通用附件不进入入站材料计数，日历字段仍独立为 null。
+        assertEquals(0, sent["attachmentCount"].asInt())
+        assertTrue(sent["firstAttachmentNames"].isEmpty)
+        assertTrue(sent["calendarAttachment"].isNull)
+
+        // FAILED / 损坏快照 / 非人工富文本行一律空列表，且整页仍 200（损坏行不阻断其它行）。
+        listOf(900102L, 900103L, 900104L).forEach { id ->
+            val item = items.first { it["id"].asLong() == id }
+            assertEquals(0, item["outboundAttachments"].size(), "id=$id 不得投影通用附件")
+        }
+        val inbound = items.first { it["source"].asText() == "INBOUND_PROCESSING" }
+        assertEquals(0, inbound["outboundAttachments"].size(), "入站消息恒空列表")
+        // I-3: 整窗仍只批量读一次 mail_record。
+        verify(mailRecordRepository, times(1)).findAllById(anyCollection())
+    }
+
     @Test
     fun `query parameters are whitelisted and validated`() {
         insertOutbound(1, "SENT", "2026-09-01 09:00:00")
@@ -893,7 +952,7 @@ class MailboxConversationControllerTest {
         Mockito.`when`(
             pendingMailOperationService.sendConversationManualRichReply(
                 1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", "acc-a", null,
-                "Re: follow", "<p>follow</p>", "follow", "op1", false, null
+                "Re: follow", "<p>follow</p>", "follow", "op1", false, null, emptyList(), "op1"
             )
         ).thenReturn(
             PendingMailSendResult(
@@ -936,7 +995,7 @@ class MailboxConversationControllerTest {
         Mockito.`when`(
             pendingMailOperationService.sendConversationManualRichReply(
                 1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", null, null,
-                "Re: follow", "<p>follow</p>", "follow", null, false, null
+                "Re: follow", "<p>follow</p>", "follow", null, false, null, emptyList(), "op1"
             )
         ).thenReturn(PendingMailSendResult(
             contactId = 1L, senderAccountCode = "acc-a", mailType = "MANUAL_RICH_REPLY",
@@ -968,7 +1027,7 @@ class MailboxConversationControllerTest {
         Mockito.`when`(
             pendingMailOperationService.sendConversationManualRichReply(
                 1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", "acc-a", 77L,
-                "Re: older", "<p>older</p>", "older", "op1", false, null
+                "Re: older", "<p>older</p>", "older", "op1", false, null, emptyList(), "op1"
             )
         ).thenReturn(PendingMailSendResult(
             contactId = 1L, senderAccountCode = "acc-a", mailType = "MANUAL_RICH_REPLY",
@@ -993,6 +1052,46 @@ class MailboxConversationControllerTest {
             .andExpect(jsonPath("$.messageId").value("<manual-rich-77@weibo.com>"))
     }
 
+    // 06 (I-1/I-2)：attachmentIds 逐字转发，附件归属身份只取会话（请求体 operatorName 只是
+    // 旧审计显示值，绝不作为 04 的归属判据）。
+    @Test
+    fun `conversation manual rich reply forwards attachment ids with the session identity`() {
+        val attachmentId = OUTBOUND_ATTACHMENT_ID
+        Mockito.`when`(
+            pendingMailOperationService.sendConversationManualRichReply(
+                1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", "acc-a", null,
+                "Re: attach", "<p>attach</p>", "attach", "body-op", false, null,
+                listOf(attachmentId), "op1"
+            )
+        ).thenReturn(PendingMailSendResult(
+            contactId = 1L, senderAccountCode = "acc-a", mailType = "MANUAL_RICH_REPLY",
+            subject = "Re: attach", sendStatus = "SENT", messageId = "<manual-rich-attach@weibo.com>"
+        ))
+        mockMvc.perform(
+            post("/api/mail/mailbox/conversations/1/manual-rich-reply")
+                .session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                    {"requestId":"b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f",
+                     "accountScope":"acc-a",
+                     "subject":"Re: attach",
+                     "htmlBody":"<p>attach</p>",
+                     "textBody":"attach",
+                     "operatorName":"body-op",
+                     "attachmentIds":["$attachmentId"]}
+                    """.trimIndent()
+                )
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.sendStatus").value("SENT"))
+
+        Mockito.verify(pendingMailOperationService).sendConversationManualRichReply(
+            1L, "b5c98f60-7b46-4f1e-9c11-1a2b3c4d5e6f", "acc-a", null,
+            "Re: attach", "<p>attach</p>", "attach", "body-op", false, null,
+            listOf(attachmentId), "op1"
+        )
+    }
+
     @Test
     fun `anonymous conversation rich reply is rejected with 401 and never reaches service`() {
         mockMvc.perform(
@@ -1013,6 +1112,72 @@ class MailboxConversationControllerTest {
 
     private fun sessionOf(username: String): MockHttpSession =
         MockHttpSession().apply { setAttribute(AuthSessionKeys.USERNAME, username) }
+
+    // ── 06 (I-3/I-4) 通用附件工具 ──
+
+    private companion object {
+        const val OUTBOUND_ATTACHMENT_ID = "3f7c1a52-90de-4a1b-8b0e-6c2f5d4a1e77"
+    }
+
+    private fun outboundAttachmentSnapshot(id: String, bytes: ByteArray) = OutboundAttachmentSnapshot(
+        schemaVersion = OUTBOUND_ATTACHMENT_SCHEMA_VERSION,
+        id = id,
+        filename = "会议资料.txt",
+        contentType = "text/plain",
+        byteLength = bytes.size.toLong(),
+        sha256 = outboundSha256Hex(bytes)
+    )
+
+    private fun mailRecordRow(
+        id: Long,
+        contactId: Long,
+        attachmentsJson: String?,
+        accountCode: String = "acc-a",
+        sendStatus: String = "SENT",
+        mailType: String = "MANUAL_RICH_REPLY"
+    ) = MailRecord(
+        id = id,
+        expertContactId = contactId,
+        direction = "OUTBOUND",
+        mailType = mailType,
+        senderAccountCode = accountCode,
+        messageId = "out-att-$id",
+        inReplyTo = null,
+        subject = "att-subject-$id",
+        body = "body",
+        matchedQaRuleId = null,
+        sendStatus = sendStatus,
+        receivedAt = null,
+        sentAt = LocalDateTime.now(),
+        outboundAttachmentsJson = attachmentsJson
+    )
+
+    /** 真实落库 mail_record 行（含 outbound_attachments_json 存档）。 */
+    private fun insertOutboundAttachmentRow(
+        id: Long,
+        contactId: Long,
+        attachmentsJson: String?,
+        sendStatus: String = "SENT",
+        accountCode: String = "acc-a",
+        mailType: String = "MANUAL_RICH_REPLY",
+        subject: String = "att-subject-$id"
+    ) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO mail_record
+                (id, expert_contact_id, direction, mail_type, sender_account_code, triggered_by,
+                 message_id, subject, body, send_status, sent_at, created_at, outbound_attachments_json)
+            VALUES (?, ?, 'OUTBOUND', ?, ?, 'SYSTEM', ?, ?, 'body', ?, ?, ?, ?)
+            """.trimIndent(),
+            id, contactId, mailType, accountCode, "out-att-$id", subject, sendStatus,
+            if (sendStatus == "SENT") Timestamp.valueOf(ts("2026-09-03 09:00:00")) else null,
+            Timestamp.valueOf(ts("2026-09-03 09:00:00")), attachmentsJson
+        )
+    }
+
+    private fun stubOutboundAttachmentRecords(records: List<MailRecord>) {
+        Mockito.`when`(mailRecordRepository.findAllById(anyCollection())).thenReturn(records)
+    }
 
     private fun adminUser(username: String): AdminUser =
         AdminUser(

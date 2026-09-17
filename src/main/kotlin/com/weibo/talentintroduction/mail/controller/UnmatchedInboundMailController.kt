@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.mail.controller
 
 import com.weibo.talentintroduction.audit.domain.OperatorActionLog
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
+import com.weibo.talentintroduction.auth.config.AuthSessionKeys
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertEmailAlias
 import com.weibo.talentintroduction.campaign.service.ExpertEmailAliasService
@@ -43,6 +44,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter
+import javax.servlet.http.HttpServletRequest
 import java.time.LocalDateTime
 import java.util.UUID
 import java.util.concurrent.ExecutorService
@@ -250,7 +252,10 @@ class UnmatchedInboundMailController(
     @PostMapping("/unmatched-inbound/{id}/manual-rich-reply")
     fun sendManualRichReply(
         @PathVariable id: Long,
-        @RequestBody request: PendingManualRichReplyRequest
+        @RequestBody request: PendingManualRichReplyRequest,
+        // 06 (I-1): 通用附件身份只取会话（AuthInterceptor 保证生产必已登录）；直接调用
+        // （测试/内部）可省略，无附件路径完全不依赖它。
+        servletRequest: HttpServletRequest? = null
     ): PendingMailSendResult =
         pendingMailOperationService.sendManualRichReply(
             inboundProcessingId = id,
@@ -274,8 +279,15 @@ class UnmatchedInboundMailController(
             strongConfirmationText = request.strongConfirmationText,
             // 03 (T1/I-1): 透传已预览会议配置与预览快照 sha256（不新增第二个发送 API）。
             meeting = request.meeting,
-            previewAttachmentSha256 = request.previewAttachmentSha256
+            previewAttachmentSha256 = request.previewAttachmentSha256,
+            // 06 (T1/I-1): 透传附件 id 与会话身份；identity 绝不取请求体 operatorName。
+            attachmentIds = request.attachmentIds,
+            authenticatedUsername = servletRequest.sessionUsernameOrNull()
         )
+
+    private fun HttpServletRequest?.sessionUsernameOrNull(): String? = this
+        ?.getSession(false)
+        ?.getAttribute(AuthSessionKeys.USERNAME) as? String
 
     @GetMapping("/unmatched-inbound/{id}/auto-reply-preview")
     fun previewAutoReply(@PathVariable id: Long): AutoReplyPreviewResponse =

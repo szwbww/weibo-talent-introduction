@@ -88,7 +88,13 @@ data class ConversationManualRichReplyRequest(
     val textBody: String? = null,
     val operatorName: String? = null,
     val safetyWarningConfirmed: Boolean = false,
-    val strongConfirmationText: String? = null
+    val strongConfirmationText: String? = null,
+    /**
+     * 06 (I-1/I-2)：通用附件 id（用户选择顺序，04 上传产物）。默认空 = 既有纯文本回复
+     * 形态逐字不变；非空时服务端按 (专家 + 会话身份) 重读 04 元数据与原件，失败在 claim
+     * 之前以 400/404/409/413 返回。同一 requestId 重提时附件语义必须与原记录一致。
+     */
+    val attachmentIds: List<String> = emptyList()
 )
 
 data class ConversationListResponse(
@@ -121,7 +127,14 @@ data class ConversationMessageItemResponse(
      */
     val tags: List<TagView> = emptyList(),
     /** 03 (I-4)：单独日历附件元数据；末尾可空默认 null 保持既有构造点不变。 */
-    val calendarAttachment: ConversationCalendarAttachment? = null
+    val calendarAttachment: ConversationCalendarAttachment? = null,
+    /**
+     * 06 (I-3)：该已发消息真实存档的人工通用附件（05 快照）。默认空数组 = 非
+     * `MAIL_RECORD + OUTBOUND + MANUAL_RICH_REPLY + SENT` 行、无附件或快照损坏；
+     * 与 03 的 calendarAttachment、入站材料口径的 attachmentCount/firstAttachmentNames
+     * 三者互相独立，绝不混用。
+     */
+    val outboundAttachments: List<ConversationOutboundAttachment> = emptyList()
 )
 
 data class ConversationMessageListResponse(
@@ -138,6 +151,21 @@ data class ConversationMessageListResponse(
 data class ConversationCalendarAttachment(
     val filename: String,
     val byteLength: Int,
+    val downloadUrl: String
+)
+
+/**
+ * 06 (I-3/I-4)：已发消息的人工通用附件元数据（来自 05 存档快照，只读）。
+ *
+ * 只可能出现在 `MAIL_RECORD + OUTBOUND + MANUAL_RICH_REPLY + SENT` 行；downloadUrl 由
+ * 服务端按固定路径构建（消息归属下载端点），客户端不得自行拼接、也不得拿任意上传 id
+ * 当已发附件下载。列表顺序 = 当时发送的选择顺序。
+ */
+data class ConversationOutboundAttachment(
+    val id: String,
+    val filename: String,
+    val contentType: String,
+    val byteLength: Long,
     val downloadUrl: String
 )
 
@@ -222,7 +250,10 @@ class MailboxConversationController(
     @PostMapping("/{contactId}/manual-rich-reply")
     fun conversationManualRichReply(
         @PathVariable contactId: Long,
-        @RequestBody body: ConversationManualRichReplyRequest
+        @RequestBody body: ConversationManualRichReplyRequest,
+        // 06 (I-1)：通用附件身份只取会话（AuthInterceptor 保证生产必已登录）；无附件请求
+        // 完全不依赖它，直接调用（测试/内部）可省略。
+        servletRequest: HttpServletRequest? = null
     ): PendingMailSendResult = pendingMailOperationService.sendConversationManualRichReply(
         contactId = contactId,
         requestId = body.requestId,
@@ -233,7 +264,10 @@ class MailboxConversationController(
         textBody = body.textBody,
         operatorName = body.operatorName,
         safetyWarningConfirmed = body.safetyWarningConfirmed,
-        strongConfirmationText = body.strongConfirmationText
+        strongConfirmationText = body.strongConfirmationText,
+        // 06 (I-1/I-2)：附件 id 与会话身份；identity 绝不取请求体 operatorName。
+        attachmentIds = body.attachmentIds,
+        authenticatedUsername = servletRequest?.let { sessionUsername(it) }
     )
 
     @DeleteMapping("/{contactId}/follow")

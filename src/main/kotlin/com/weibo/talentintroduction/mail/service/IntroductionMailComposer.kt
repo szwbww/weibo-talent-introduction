@@ -83,5 +83,9 @@ data class ComposedMail(
     val allowSuppressedRecipient: Boolean = false,
     /** 会议日历附件快照（fast-p 02，I-3）：null=无附件，旧无附件构造形态不变；
      *  非 null 时 SMTP 以 multipart/mixed 携带该快照的 icsText（text/calendar 附件）。 */
-    val calendarAttachment: CalendarAttachmentSnapshot? = null
+    val calendarAttachment: CalendarAttachmentSnapshot? = null,
+    /** 通用附件原件（fast-p 05，I-3）：默认空 = 旧无附件/仅 ICS 形态逐字不变；
+     *  元素是 04 已验证快照 + 已核过尺寸/hash 的原件字节，非空时 SMTP 在既有
+     *  ICS 之后按选择顺序以 multipart/mixed 携带。所有既有调用点保持默认不改。 */
+    val outboundAttachments: List<OutboundMailFile> = emptyList()
 )

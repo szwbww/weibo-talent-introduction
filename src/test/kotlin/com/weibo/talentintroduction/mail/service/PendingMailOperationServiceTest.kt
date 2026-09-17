@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.KotlinModule
 import com.weibo.talentintroduction.audit.service.OperatorActionLogService
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.service.ExpertIndexLevelOperationService
 import com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService
@@ -32,6 +33,7 @@ import com.weibo.talentintroduction.llm.service.UnsupportedAnswerIndexService
 import com.weibo.talentintroduction.llm.service.VerifiedTrustReplyAssembly
 import com.weibo.talentintroduction.mail.domain.InboundMailProcessing
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -42,6 +44,8 @@ import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertArrayEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -96,6 +100,9 @@ class PendingMailOperationServiceTest {
     private val trustReplyWorkbenchService = Mockito.mock(TrustReplyWorkbenchService::class.java)
     private val unsupportedAnswerIndexService = Mockito.mock(UnsupportedAnswerIndexService::class.java)
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
+    // 06 (T1/I-1/I-2): 通用附件协作件 —— 本文件断言两条入口的 id/身份透传与文件集合流动，
+    // 真实原件读取/归属/容量边界由 OutboundAttachmentFlowTest 用真实 04 服务覆盖。
+    private val outboundAttachmentService = Mockito.mock(OutboundAttachmentService::class.java)
     // 03 (T3/I-1): 真实 01 生成器（validateAndBuild + ICS 字节/语义 hash 全真实），只 mock
     // 模板目录的 listEnabled（启用门禁）—— 不以 mock 返回一模一样硬编码字串替代真实生成。
     private val meetingTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
@@ -130,7 +137,8 @@ class PendingMailOperationServiceTest {
         trustReplyWorkbenchService,
         unsupportedAnswerIndexService,
         emailSuppressionService,
-        meetingConfirmationService
+        meetingConfirmationService,
+        outboundAttachmentService = outboundAttachmentService
     )
 
     private val contact = ExpertContact(
@@ -910,6 +918,12 @@ class PendingMailOperationServiceTest {
         assertEquals(preview.attachment.semanticSha256, snapshot.semanticSha256)
         assertEquals(preview.attachment.icsText, snapshot.icsText)
         assertEquals(preview.attachment.filename, snapshot.filename)
+        // fast-p 02 (I-1)：结构化排期输入来自同一次 validateAndBuild —— 秒级 UTC 起止与
+        // 已校验链接与预览逐字段一致，绝不重新取当前时间/重新生成 ICS。
+        val event = requireNotNull(payload.meetingEvent) { "payload 必须携带结构化排期输入" }
+        assertEquals(Instant.parse(preview.startUtc), event.startUtc)
+        assertEquals(Instant.parse(preview.endUtc), event.endUtc)
+        assertEquals(input.zoomUrl, event.meetingLink)
         // 同一快照实例同时进入 SendPayload 与 ComposedMail（不生成第二份）。
         assertSame(snapshot, mail.calendarAttachment)
         // I-2: 带日历新分支的线程头 = 真实来信 messageId（in-1）；inReplyTo/references 同源。
@@ -1049,6 +1063,7 @@ class PendingMailOperationServiceTest {
         val mail = capturedMails.single()
         val payload = capturedPayloads.single()
         assertNull(payload.calendarAttachment, "无 meeting 旧路径不携带快照")
+        assertNull(payload.meetingEvent, "无 meeting 旧路径不携带排期输入")
         assertNull(mail.calendarAttachment)
         assertNull(mail.inReplyTo, "旧调用形态线程头保持默认 null")
         assertNull(mail.references)
@@ -1161,6 +1176,89 @@ class PendingMailOperationServiceTest {
         assertNull(legacy.previewAttachmentSha256)
     }
 
+    // I-2：SMTP 安全失败只走 finalizeFailure（成功事务从未被调用 → 0 新增排期），
+    // 发送语义仍是既有「可安全重试」。
+    @Test
+    fun `meeting smtp safe failure never creates a schedule and stays a safe retry`() {
+        val input = meetingInput()
+        val preview = previewFor(input)
+        captureCalendarSend(mutableListOf())
+        stubFinalizeFailure(501L)
+        Mockito.`when`(mailDeliveryService.send(anyValue(senderAccount()), anyValue(composedMail())))
+            .thenReturn(
+                DeliveredMail(
+                    messageId = "<manual-rich-abc@weibo.com>",
+                    status = "FAILED",
+                    errorCategory = SmtpErrorCategory.TRANSIENT,
+                    smtpResponseCode = 421,
+                    errorDetail = "SMTP timeout"
+                )
+            )
+
+        val ex = assertThrows(ResponseStatusException::class.java) {
+            calendarRichSend(preview = preview, input = input, safetyWarningConfirmed = true)
+        }
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, ex.status)
+        assertEquals("发送暂时失败，可安全重试", ex.reason)
+        Mockito.verify(manualReplySendAttemptService, Mockito.never())
+            .finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+        val failure = invocationOf(manualReplySendAttemptService, "finalizeFailure")
+        val failingPayload = failure.arguments[0] as ManualReplySendAttemptService.SendPayload
+        assertNotNull(
+            failingPayload.meetingEvent,
+            "失败记录仍带本次校验产物，但失败事务绝不创建排期"
+        )
+        assertEquals(MailSendAttemptStatus.FAILED_SAFE_TO_RETRY, failure.arguments[3])
+    }
+
+    // I-3：重提 SENT 请求与 UNKNOWN 重试都不产生第二次 SMTP，也不重新创建/刷新排期。
+    @Test
+    fun `meeting dedup sent and unknown claims never resend smtp or recreate the schedule`() {
+        val input = meetingInput()
+        val preview = previewFor(input)
+        val capturedMails = mutableListOf<ComposedMail>()
+        val capturedPayloads = captureCalendarSend(capturedMails)
+
+        val first = calendarRichSend(preview = preview, input = input, safetyWarningConfirmed = true)
+        assertEquals("SENT", first.sendStatus)
+        assertEquals(1, capturedMails.size, "首次发送恰好一次 SMTP")
+        assertEquals(1, capturedPayloads.size)
+
+        // 重提同一请求（真实收敛为 DEDUP_SENT 由 MeetingCalendarSendIntegrationTest 用真实库证明）
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(
+                ManualReplySendAttemptService.ClaimedAttempt(
+                    attemptId = 1L,
+                    messageId = "<manual-rich-abc@weibo.com>",
+                    result = ManualReplySendAttemptService.ClaimResult.DEDUP_SENT
+                )
+            )
+        val dedup = calendarRichSend(preview = preview, input = input, safetyWarningConfirmed = true)
+        assertEquals("SENT", dedup.sendStatus)
+        assertEquals(1, capturedMails.size, "重提 SENT 请求不再 SMTP")
+        assertEquals(1, capturedPayloads.size, "重提 SENT 请求不重新创建/刷新排期")
+        Mockito.verify(manualReplySendAttemptService, Mockito.times(1))
+            .finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+
+        // UNKNOWN：保留既有「发送状态未知，请勿重复发送」语义，不 SMTP、不落成功记录。
+        Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+            .thenReturn(
+                ManualReplySendAttemptService.ClaimedAttempt(
+                    attemptId = 1L,
+                    messageId = "<manual-rich-abc@weibo.com>",
+                    result = ManualReplySendAttemptService.ClaimResult.UNKNOWN
+                )
+            )
+        val unknown = assertThrows(ResponseStatusException::class.java) {
+            calendarRichSend(preview = preview, input = input, safetyWarningConfirmed = true)
+        }
+        assertEquals(HttpStatus.CONFLICT, unknown.status)
+        assertTrue(requireNotNull(unknown.reason).startsWith("发送状态未知，请勿重复发送"))
+        assertEquals(1, capturedMails.size, "UNKNOWN 重试不再次 SMTP")
+        assertEquals(1, capturedPayloads.size, "UNKNOWN 重试不伪造成功排期")
+    }
+
     // ── 03 calendar helpers ──
 
     private fun meetingInput() = MeetingInput(
@@ -1220,4 +1318,235 @@ class PendingMailOperationServiceTest {
     private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
+
+    /** 失败路径 stub：finalizeFailure 返回失败记录 id（与生产 mock 一致，避免 null 返回值）。 */
+    private fun stubFinalizeFailure(recordId: Long) {
+        Mockito.`when`(
+            manualReplySendAttemptService.finalizeFailure(
+                anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"),
+                anyValue(MailSendAttemptStatus.DELIVERY_UNKNOWN), anyValue(null)
+            )
+        ).thenReturn(recordId)
+    }
+
+    // ------------------------------------------------------------------
+    // 06 (I-1/I-2/I-5): 两条人工发送入口的通用附件透传与收敛
+    // ------------------------------------------------------------------
+
+    private val attachmentId = "3f7c1a52-90de-4a1b-8b0e-6c2f5d4a1e77"
+    private val otherUploaderSnapshotId = "0b6e2d18-4c77-4e21-9d5a-1f8a2b3c4d5e"
+
+    /** 04 已解析产物：真实字节 + 快照（本文件只验证流动，原件校验在 FlowTest 用真实服务）。 */
+    private fun attachmentFileSet(bytes: ByteArray = "会议资料".toByteArray(Charsets.UTF_8)): OutboundAttachmentFileSet {
+        val snapshot = OutboundAttachmentSnapshot(
+            schemaVersion = OUTBOUND_ATTACHMENT_SCHEMA_VERSION,
+            id = attachmentId,
+            filename = "会议资料.txt",
+            contentType = "text/plain",
+            byteLength = bytes.size.toLong(),
+            sha256 = outboundSha256Hex(bytes)
+        )
+        return OutboundAttachmentFileSet(listOf(OutboundMailFile(snapshot, bytes)), listOf(snapshot))
+    }
+
+    private fun stubConversationNoCompleted() {
+        stubConversationRequestCanonical()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(null)
+    }
+
+    // I-1：来信入口按会话身份解析附件，同一文件集合同时喂 payload 快照与 ComposedMail 载荷。
+    @Test
+    fun `inbound rich reply feeds the resolved attachment file set into payload and mail`() {
+        val fileSet = attachmentFileSet()
+        Mockito.`when`(outboundAttachmentService.resolveForSend(1L, listOf(attachmentId), "session-op"))
+            .thenReturn(fileSet)
+        val capturedMails = mutableListOf<ComposedMail>()
+        val capturedPayloads = captureCalendarSend(capturedMails)
+
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L,
+            senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>Test</p>",
+            textBody = "Test",
+            // 请求体里的 operatorName 是旧审计显示值，绝不是附件归属身份。
+            operatorName = "body-op",
+            attachmentIds = listOf(attachmentId),
+            authenticatedUsername = "session-op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        val payload = capturedPayloads.single()
+        assertEquals(fileSet.snapshots, payload.outboundAttachments, "payload 快照 = 04 有序快照")
+        val mail = capturedMails.single()
+        assertEquals(1, mail.outboundAttachments.size)
+        assertEquals(fileSet.snapshots.single(), mail.outboundAttachments.single().snapshot)
+        assertArrayEquals(fileSet.files.single().bytes, mail.outboundAttachments.single().bytes)
+    }
+
+    // I-1：无来信入口同样按会话身份解析，且解析发生在幂等 claim 之前。
+    @Test
+    fun `conversation rich reply resolves attachments with the session identity before the claim`() {
+        stubConversationAnchor(sentAnchor())
+        stubConversationNoCompleted()
+        val fileSet = attachmentFileSet()
+        Mockito.`when`(outboundAttachmentService.resolveForSend(1L, listOf(attachmentId), "op"))
+            .thenReturn(fileSet)
+        val capturedMails = mutableListOf<ComposedMail>()
+        val capturedPayloads = captureCalendarSend(capturedMails)
+
+        val result = service.sendConversationManualRichReply(
+            contactId = 1L, requestId = conversationRequestId, accountScope = null,
+            subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op",
+            attachmentIds = listOf(attachmentId), authenticatedUsername = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(fileSet.snapshots, capturedPayloads.single().outboundAttachments)
+        assertEquals(1, capturedMails.single().outboundAttachments.size)
+        val order = Mockito.inOrder(outboundAttachmentService, manualReplySendAttemptService)
+        order.verify(outboundAttachmentService).resolveForSend(1L, listOf(attachmentId), "op")
+        order.verify(manualReplySendAttemptService).prepareAndClaim(anyValue(sendPayload()))
+    }
+
+    // I-1/I-5：无附件时完全不触碰 04 服务（既有短路路径逐字不变）。
+    @Test
+    fun `rich replies without attachment ids never touch the attachment service`() {
+        stubConversationAnchor(sentAnchor())
+        stubConversationNoCompleted()
+
+        val result = service.sendConversationManualRichReply(
+            contactId = 1L, requestId = conversationRequestId, accountScope = null,
+            subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        Mockito.verifyNoInteractions(outboundAttachmentService)
+        val payload = invocationOf(manualReplySendAttemptService, "prepareAndClaim")
+            .arguments[0] as ManualReplySendAttemptService.SendPayload
+        assertTrue(payload.outboundAttachments.isEmpty())
+    }
+
+    // I-1：04 的每一种附件失败（越权/缺失 404、损坏 409、非法 400、超量 413）都在 claim
+    // 之前原样抛出 —— 0 attempt、0 SMTP，且绝不归类成投递失败/UNKNOWN。
+    @Test
+    fun `attachment resolution failures fail before claim for both entries without any delivery classification`() {
+        val failures = listOf(
+            "越权/缺失" to OutboundAttachmentException.notFound("附件不存在或不属于当前会话"),
+            "原件损坏" to OutboundAttachmentException.conflict("附件原件摘要与元数据不一致（id=x）"),
+            "非法 id" to OutboundAttachmentException.badRequest("通用附件 id 不能重复"),
+            "超总量" to OutboundAttachmentException.payloadTooLarge("通用附件总计不能超过上限")
+        )
+        // 会话入口需先有真实 SENT 锚点才会走到附件解析（解析仍在 claim 之前）。
+        stubConversationAnchor(sentAnchor())
+        stubConversationNoCompleted()
+        failures.forEach { (label, failure) ->
+            Mockito.reset(outboundAttachmentService)
+            Mockito.`when`(outboundAttachmentService.resolveForSend(1L, listOf(attachmentId), "op"))
+                .thenThrow(failure)
+            val inbound = assertThrows(OutboundAttachmentException::class.java) {
+                service.sendManualRichReply(
+                    inboundProcessingId = 100L, senderAccountCode = null,
+                    subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test",
+                    operatorName = "op",
+                    attachmentIds = listOf(attachmentId), authenticatedUsername = "op"
+                )
+            }
+            assertEquals(failure.status, inbound.status, label)
+            val conversation = assertThrows(OutboundAttachmentException::class.java) {
+                service.sendConversationManualRichReply(
+                    contactId = 1L, requestId = conversationRequestId, accountScope = null,
+                    subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test",
+                    operatorName = "op",
+                    attachmentIds = listOf(attachmentId), authenticatedUsername = "op"
+                )
+            }
+            assertEquals(failure.status, conversation.status, label)
+            assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "$label 不得 claim")
+            assertTrue(!hasInvocation(mailDeliveryService, "send"), "$label 不得 SMTP")
+            assertTrue(!hasInvocation(manualReplySendAttemptService, "finalizeFailure"), "$label 不得写投递失败")
+        }
+    }
+
+    // I-2：已 SENT 的 requestId 只读原记录与 04 元数据 —— 语义相同（含同内容重新上传的新 id）
+    // 返回原 SENT；语义不同固定 409；两侧都无附件时保持既有短路。
+    @Test
+    fun `completed conversation request compares attachment semantics before returning the original sent`() {
+        val bytes = "会议资料".toByteArray(Charsets.UTF_8)
+        val original = attachmentFileSet(bytes).snapshots.single()
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(
+                completedConversationReply().let {
+                    it.copy(
+                        mailRecord = it.mailRecord.copy(
+                            outboundAttachmentsJson = OutboundAttachmentSnapshotCodec.serialize(listOf(original))
+                        )
+                    )
+                }
+            )
+        stubConversationRequestCanonical()
+
+        // 同一份内容重新上传得到的新 id：filename/type/size/hash 有序语义相同 → 原 SENT。
+        Mockito.`when`(outboundAttachmentService.loadSnapshots(1L, listOf(otherUploaderSnapshotId), "op"))
+            .thenReturn(listOf(original.copy(id = otherUploaderSnapshotId)))
+        val same = service.sendConversationManualRichReply(
+            contactId = 1L, requestId = conversationRequestId, accountScope = null,
+            subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op",
+            attachmentIds = listOf(otherUploaderSnapshotId), authenticatedUsername = "op"
+        )
+        assertEquals("SENT", same.sendStatus)
+        assertEquals("<manual-rich-orig@weibo.com>", same.messageId)
+        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "相同附件不得 claim")
+        assertTrue(!hasInvocation(mailDeliveryService, "send"), "相同附件不得再次 SMTP")
+        assertTrue(!hasInvocation(mailRecordRepository, "findById"), "收敛命中不重读锚点")
+        assertTrue(!hasInvocation(mailRecordRepository, "findLatestSentOutboundAnchor"), "收敛命中不重选锚点")
+
+        // 内容不同（hash 不同）→ 04 固定 409 文案，不谎报新附件已发送。
+        val changed = original.copy(
+            id = otherUploaderSnapshotId,
+            byteLength = original.byteLength + 1,
+            sha256 = "b".repeat(64)
+        )
+        Mockito.`when`(outboundAttachmentService.loadSnapshots(1L, listOf(otherUploaderSnapshotId), "op"))
+            .thenReturn(listOf(changed))
+        val conflict = assertThrows(OutboundAttachmentException::class.java) {
+            service.sendConversationManualRichReply(
+                contactId = 1L, requestId = conversationRequestId, accountScope = null,
+                subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op",
+                attachmentIds = listOf(otherUploaderSnapshotId), authenticatedUsername = "op"
+            )
+        }
+        assertEquals(HttpStatus.CONFLICT, conflict.status)
+        assertEquals("该请求已发送，附件与原请求不同，请发起新回复", conflict.message)
+
+        // 原记录有附件、本次一个都没有 → 同样不同。
+        val removed = assertThrows(OutboundAttachmentException::class.java) {
+            service.sendConversationManualRichReply(
+                contactId = 1L, requestId = conversationRequestId, accountScope = null,
+                subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+            )
+        }
+        assertEquals(HttpStatus.CONFLICT, removed.status)
+        assertTrue(!hasInvocation(manualReplySendAttemptService, "prepareAndClaim"), "附件不同不得 claim")
+        assertTrue(!hasInvocation(mailDeliveryService, "send"), "附件不同不得 SMTP")
+    }
+
+    // I-2：原记录与本次都没有附件 → 既有短路路径逐字不变（不读 04 元数据）。
+    @Test
+    fun `completed conversation request without any attachments keeps the untouched short circuit`() {
+        Mockito.`when`(manualReplySendAttemptService.findCompletedByRequestId(contact.orcidId, conversationRequestId))
+            .thenReturn(completedConversationReply())
+        stubConversationRequestCanonical()
+
+        val result = service.sendConversationManualRichReply(
+            contactId = 1L, requestId = conversationRequestId, accountScope = null,
+            subject = "Re: Test", htmlBody = "<p>Test</p>", textBody = "Test", operatorName = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals("<manual-rich-orig@weibo.com>", result.messageId)
+        Mockito.verifyNoInteractions(outboundAttachmentService)
+        assertTrue(!hasInvocation(mailDeliveryService, "send"))
+    }
 }

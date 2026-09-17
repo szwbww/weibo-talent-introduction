@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-16/meeting-mail-master.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
+- Master plan: docs/plans/2026-09-16/meeting-mail-master.md
+- Governing master identity: worktree sha256 `feb4f2cb7e68ef1e5c728c49d4386f800be4a83021047f7607da8e47cf3a3a72`; recorded commit `59e909070529b4b1e8ae62e61d03e67855f479ba`
+- Invoked master identity: `feb4f2cb7e68ef1e5c728c49d4386f800be4a83021047f7607da8e47cf3a3a72`
+- Master identity state: CONSISTENT
+- Governing amendment: A1/A2/A3 recorded in the fast-p ledger (master rules, reasons, and HUMAN approvals retained there)
+- Amendments: A1 `meeting-mail-03-calendar-ui.md` `59e909070529b4b1e8ae62e61d03e67855f479ba..6f1db6d7ec27f7d21105b9f3b59306c38587a3fd`; A2 `meeting-mail-07-attachment-ui.md` `59e909070529b4b1e8ae62e61d03e67855f479ba..4010bc0074b8534afaf31e968cfd37a6d05dd9a5`; A3 `meeting-mail-08-assets-release.md` `59e909070529b4b1e8ae62e61d03e67855f479ba..2d72662186afe82ba5bbe64488f2d18bafaea977`
+- Fast-p ledger: docs/plans/fast/meeting-mail-master/ledger.md (`599983c7512831311d33c9aa3938dcfc5f2b387dfaacafeb807c0856541cf03b`)
+- Fast-p handoff: docs/plans/fast/meeting-mail-master/human-review-handoff.md (`13176e7c3c7796cd25cb6cdb03236d378386c42b5149350900eccb16ab7cc3cb`)
+- Master base: 24f5c8205a304d3682e09e02458960bc2caa0463
+- Final code head: 06dfb878f68e909540e9ef7c4ea63e519beded6e
+- Evidence parent before next commit: ed6945ce0774f88c5c95a11cf69e2a73db8a1c76
+- Previous evidence commit: ed6945ce0774f88c5c95a11cf69e2a73db8a1c76
+- Branch: fast/meeting-mail-master
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: `discover_fast_p.py --repo /Users/lukai/IdeaProjects/weibo-talent-introduction --master-plan docs/plans/2026-09-16/meeting-mail-master.md` => SELECTED `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master`, branch `fast/meeting-mail-master`, master base `24f5c8205a304d3682e09e02458960bc2caa0463`, final code head `ae5d947b7257bf714e1d70e93dafbaf1894cbff6`, terminal eight-child run and matching READY_FOR_HUMAN_REVIEW handoff.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer_epoch2 (fresh epoch-2 aggregate reviewer created after `06dfb878f68e909540e9ef7c4ea63e519beded6e`; distinct from recorded fast-p implementers/verifiers and repair executor `Main`)
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: `machine-verification.md` epoch 2
+- Repair artifact: docs/plans/fix/meeting-mail-master/repair.md
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: human invocation `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master/docs/plans/fix/meeting-mail-master/repair.md` on 2026-09-17
+- Repair executor: Main
+- Repair code head: 06dfb878f68e909540e9ef7c4ea63e519beded6e
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Epoch 2 aggregate review PASS. Await human A-1/A-2/A-3 verdicts and explicit sign-off for `06dfb878f68e909540e9ef7c4ea63e519beded6e`.

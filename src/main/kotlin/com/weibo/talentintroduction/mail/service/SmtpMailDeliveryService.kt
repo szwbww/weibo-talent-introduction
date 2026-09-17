@@ -47,7 +47,8 @@ class SmtpMailDeliveryService(
         mail.inReplyTo?.takeIf { it.isNotBlank() }?.let { message.setHeader("In-Reply-To", it) }
         mail.references?.takeIf { it.isNotBlank() }?.let { message.setHeader("References", it) }
         val calendar = mail.calendarAttachment
-        if (calendar == null) {
+        val outboundAttachments = mail.outboundAttachments
+        if (calendar == null && outboundAttachments.isEmpty()) {
             // fast-p 02 (I-3): 无附件分支逐字保留旧实现（正文/MIME 与旧状态机完全一致）。
             if (mail.html) {
                 val plain = mail.text?.takeIf { it.isNotBlank() }
@@ -64,38 +65,37 @@ class SmtpMailDeliveryService(
                 message.setText(mail.body, Charsets.UTF_8.name())
             }
         } else {
-            // fast-p 02 (I-3): 带 calendar 附件 → multipart/mixed 外层；part 1 包原文
-            // (alternative(plain,html) 或 text/plain)，part 2 = 快照 icsText 的
-            // UTF-8 字节 (text/calendar; charset=UTF-8、attachment disposition、
-            // 安全 filename)。构造用 javax.mail MIME API，禁止自拼 MIME 字符串；
-            // 不重复第二个 html/plain，日历不做 METHOD/文本正文替代。
+            // fast-p 02/05 (I-3): 任一附件存在 → multipart/mixed 外层；part 1 包原文
+            // (alternative(plain,html) 或 text/plain)，之后先既有 ICS，再通用附件按
+            // 选择顺序。构造用 javax.mail MIME API，禁止自拼 MIME 字符串；
+            // 不重复第二个 html/plain，日历不做 METHOD/文本正文替代；通用附件一律
+            // Disposition=ATTACHMENT、快照 contentType、快照 filename 的原件字节
+            // （不改变字节、不展开压缩包、不把任意文件按 text/calendar 发送）。
             val mixed = javax.mail.internet.MimeMultipart("mixed")
-            mixed.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
-                if (mail.html) {
-                    val plain = mail.text?.takeIf { it.isNotBlank() }
-                        ?: mailContentService.htmlToPlainText(mail.body)
-                    val alternative = javax.mail.internet.MimeMultipart("alternative")
-                    alternative.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
-                        setText(plain, Charsets.UTF_8.name())
-                    })
-                    alternative.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
-                        setContent(mail.body, "text/html; charset=UTF-8")
-                    })
-                    setContent(alternative, alternative.contentType)
-                } else {
-                    setText(mail.body, Charsets.UTF_8.name())
-                }
-            })
-            mixed.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
-                dataHandler = javax.activation.DataHandler(
-                    javax.mail.util.ByteArrayDataSource(
-                        calendar.icsText.toByteArray(Charsets.UTF_8),
-                        calendar.contentType
+            mixed.addBodyPart(originalBodyPart(mail))
+            if (calendar != null) {
+                // fast-p 02 (I-3): 快照 icsText 的 UTF-8 字节
+                // (text/calendar; charset=UTF-8、attachment disposition、安全 filename)。
+                mixed.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                    dataHandler = javax.activation.DataHandler(
+                        javax.mail.util.ByteArrayDataSource(
+                            calendar.icsText.toByteArray(Charsets.UTF_8),
+                            calendar.contentType
+                        )
                     )
-                )
-                fileName = calendar.filename
-                disposition = javax.mail.Part.ATTACHMENT
-            })
+                    fileName = calendar.filename
+                    disposition = javax.mail.Part.ATTACHMENT
+                })
+            }
+            outboundAttachments.forEach { file ->
+                mixed.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                    dataHandler = javax.activation.DataHandler(
+                        javax.mail.util.ByteArrayDataSource(file.bytes, file.snapshot.contentType)
+                    )
+                    fileName = file.snapshot.filename
+                    disposition = javax.mail.Part.ATTACHMENT
+                })
+            }
             message.setContent(mixed)
         }
 
@@ -122,4 +122,27 @@ class SmtpMailDeliveryService(
             SmtpErrorClassifier.fromMailException(e, mail.messageId)
         }
     }
+
+    /**
+     * mixed 外层的 part 1（fast-p 02/05，I-3）：html 时 multipart/alternative(plain,
+     * html)，否则单 text/plain。与旧混合分支逐字同构（contentType 显式取自
+     * alternative 本体），仅从 send 中提取以便 ICS 与通用附件共用。
+     */
+    private fun originalBodyPart(mail: ComposedMail): javax.mail.internet.MimeBodyPart =
+        javax.mail.internet.MimeBodyPart().apply {
+            if (mail.html) {
+                val plain = mail.text?.takeIf { it.isNotBlank() }
+                    ?: mailContentService.htmlToPlainText(mail.body)
+                val alternative = javax.mail.internet.MimeMultipart("alternative")
+                alternative.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                    setText(plain, Charsets.UTF_8.name())
+                })
+                alternative.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+                    setContent(mail.body, "text/html; charset=UTF-8")
+                })
+                setContent(alternative, alternative.contentType)
+            } else {
+                setText(mail.body, Charsets.UTF_8.name())
+            }
+        }
 }

@@ -26,6 +26,16 @@ function extractFn(name, source) {
     return match[0];
 }
 
+// fast-p 03（I-2）：app.js 顶层唯一中文北京时间 formatter 切片（与 03 集成测试同一
+// 抽取口径），用于把真实宿主 `formatBeijingMeetingRange` 注入聊天沙箱——草稿卡 meta
+// 由宿主 formatter 渲染，测试不得自造或 stub 该文案。
+function extractAppRegion(startMarker, endMarker) {
+    const start = appSource.indexOf(startMarker);
+    const end = appSource.indexOf(endMarker, start);
+    if (start < 0 || end < 0) throw new Error("app.js region not found: " + startMarker);
+    return appSource.slice(start, end);
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // 最小真实 DOM（含 innerHTML 解析 —— 聊天组件以模板字符串渲染）
 // ════════════════════════════════════════════════════════════════════════
@@ -1024,6 +1034,9 @@ function createChatSandbox(options) {
     sandbox.Date = FixedDate;
 
     vm.createContext(sandbox);
+    // fast-p 03（I-2）：注入真实宿主 formatter，草稿卡 meta 走与月历同一唯一口径，
+    // 测试观察到的是生产渲染结果（回显 IANA zone 的旧实现必须在此失败）。
+    vm.runInContext(extractAppRegion("const MEETING_CALENDAR_ZONE = ", "// ── API adapter"), sandbox);
     vm.runInContext(chatSource, sandbox, { filename: "mailbox-chat.js" });
     if (opts.meetingEnabled) {
         vm.runInContext(meetingSource, sandbox, { filename: "meeting-confirmation.js" });
@@ -1404,13 +1417,16 @@ describe("fast-p 04: 组件门禁与 S-3 人工回复区（trigger/附件卡）"
         }]);
     });
 
-    it("组件在场：trigger 位于四个富文本按钮之后，附件容器在 editor 与 footer 之间", async () => {
+    it("组件在场：trigger 位于五个富文本/附件按钮之后，附件容器在 editor 与 footer 之间", async () => {
         const ctx = await bootMeetingA();
         const compose = ctx.host.querySelector('[data-role="manual-compose"]');
         const tools = compose.querySelector('.mc-editor-tools').querySelectorAll("button");
-        assert.strictEqual(tools.length, 6);
-        assert.strictEqual(tools[4].getAttribute("data-action"), "mc-open-meeting");
-        assert.strictEqual(tools[5].getAttribute("data-action"), "mc-open-followup");
+        // fast-p 07（I-5/S-1）：工具栏顺序 B/I/列表/链接/回形针/会议确认/跟进。
+        assert.strictEqual(tools.length, 7);
+        assert.strictEqual(tools[4].getAttribute("data-action"), "mc-upload-attachment", "回形针紧随链接之后");
+        assert.strictEqual(tools[4].textContent.trim(), "", "附件入口只有图标");
+        assert.strictEqual(tools[5].getAttribute("data-action"), "mc-open-meeting");
+        assert.strictEqual(tools[6].getAttribute("data-action"), "mc-open-followup");
         const editor = compose.querySelector('[aria-label="人工回复正文"]');
         const container = compose.querySelector('[data-role="meeting-attachment"]');
         const footer = compose.querySelector(".mc-compose-footer");
@@ -1735,7 +1751,10 @@ describe("fast-p 04: 确认填入草稿（I-1/I-3/T3/S-3 块与卡）", () => {
         assert.ok(container.querySelector(".meeting-file"), "确认后附件卡出现");
         assert.strictEqual(container.getAttribute("data-state"), "ready");
         assert.ok(container.querySelector('[data-role="filename"]').textContent.startsWith("meeting-2026-09-11-"));
-        assert.match(container.querySelector('[data-role="file-meta"]').textContent, /Europe\/Istanbul · 30 分钟/);
+        assert.strictEqual(
+            container.querySelector('[data-role="file-meta"]').textContent,
+            "2026年9月11日 周五 15:00–15:30 · 30 分钟"
+        );
         assert.strictEqual(meetingDialog(ctx).hasAttribute("open"), false, "apply 成功后关闭弹窗");
         // I-1：确认只写草稿
         assert.strictEqual(ctx.calls.sendRich.length, 0, "确认不发送");

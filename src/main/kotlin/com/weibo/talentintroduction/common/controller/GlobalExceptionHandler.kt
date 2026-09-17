@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.common.controller
 
 import com.weibo.talentintroduction.document.service.AnalysisFailedException
 import com.weibo.talentintroduction.mail.service.ManualSendSafetyBlockedException
+import com.weibo.talentintroduction.mail.service.OutboundAttachmentException
 import com.weibo.talentintroduction.mail.service.SafetySeverity
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -10,6 +11,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException
+import org.springframework.web.multipart.MaxUploadSizeExceededException
 
 @RestControllerAdvice
 class GlobalExceptionHandler {
@@ -62,6 +64,21 @@ class GlobalExceptionHandler {
     fun handleRequestBinding(ex: Exception): ResponseEntity<ApiErrorResponse> =
         error(HttpStatus.BAD_REQUEST, "BAD_REQUEST", ex.message ?: "Invalid request")
 
+    /**
+     * 04：通用附件的固定业务状态（400/404/409/413），只回固定文案，不回磁盘路径或堆栈。
+     */
+    @ExceptionHandler(OutboundAttachmentException::class)
+    fun handleOutboundAttachment(ex: OutboundAttachmentException): ResponseEntity<ApiErrorResponse> =
+        error(ex.status, ex.code, ex.message)
+
+    /**
+     * 04：容器 multipart 解析阶段的大小超限（发生在进入 controller 之前，因此必须由
+     * 全局 advice 处理）。响应固定 413，不回容器内部异常文案（含内部尺寸描述）。
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException::class)
+    fun handleMaxUploadSizeExceeded(ex: MaxUploadSizeExceededException): ResponseEntity<ApiErrorResponse> =
+        error(HttpStatus.PAYLOAD_TOO_LARGE, PAYLOAD_TOO_LARGE_CODE, UPLOAD_TOO_LARGE_MESSAGE)
+
     @ExceptionHandler(Exception::class)
     fun handleException(ex: Exception): ResponseEntity<ApiErrorResponse> =
         error(HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", ex.message ?: "Internal server error")
@@ -78,6 +95,11 @@ class GlobalExceptionHandler {
                 detail = status.reasonPhrase
             )
         )
+
+    private companion object {
+        const val PAYLOAD_TOO_LARGE_CODE = "PAYLOAD_TOO_LARGE"
+        const val UPLOAD_TOO_LARGE_MESSAGE = "上传文件超出大小上限"
+    }
 }
 
 data class ApiErrorResponse(
