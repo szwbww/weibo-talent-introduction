@@ -164,3 +164,7 @@ task-modal unversioned: True   unversioned-with-key: False
 3. **未新增缓存键以外的断言放宽**：九个文件中的旧键负断言（`20260903-bounce-warning`、`20260910-mailbox-spacing`）按计划保留为「上一键 0 命中」，本次未改动。
 4. **未修改** `world-clock.js`/`world-clock.css`（01 交付物）、`app.js`、`styles.css`、`meeting-confirmation.*`、后端、DB、`pom.xml`；未 push/merge/rebase/amend/squash。
 5. **未执行浏览器人工验收**：A-9/A-10/A-11 需真实浏览器与测试环境，属后续人工阶段；DOM stub 绿测不构成布局结论。A-10 的旧缓存升级需上线后实测。
+
+## 证据边界（控制器记录）
+
+本报告由子计划 02 的证据提交一并记录；该提交同时记录 `execution.md`、`verify-log.md` 与 `fix-log.md`。

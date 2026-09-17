@@ -21,3 +21,5 @@ Verifier: VerifyChild02
 
 ### Required Action
 - COMPLETE_CHILD
+
+Evidence boundary note (controller): this report is recorded by the child-02 evidence commit that also records `execution.md` and `fix-log.md`; the earlier docs-only commit that first carried this report is not the recorded evidence boundary.
