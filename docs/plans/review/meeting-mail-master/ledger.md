@@ -1,33 +1,33 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-09-16/meeting-mail-master.md
 
-- Status: BLOCKED_PREFLIGHT
-- Review epoch: 0
+- Status: REPAIR_PLAN_READY
+- Review epoch: 1
 - Master plan: docs/plans/2026-09-16/meeting-mail-master.md
-- Governing master identity: N/A — not eligible for identity resolution
-- Invoked master identity: N/A
-- Master identity state: N/A
-- Governing amendment: N/A
-- Amendments: N/A
-- Fast-p ledger: docs/plans/fast/meeting-mail-master/ledger.md
-- Fast-p handoff: docs/plans/fast/meeting-mail-master/human-review-handoff.md
+- Governing master identity: worktree sha256 `feb4f2cb7e68ef1e5c728c49d4386f800be4a83021047f7607da8e47cf3a3a72`; recorded commit `59e909070529b4b1e8ae62e61d03e67855f479ba`
+- Invoked master identity: `feb4f2cb7e68ef1e5c728c49d4386f800be4a83021047f7607da8e47cf3a3a72`
+- Master identity state: CONSISTENT
+- Governing amendment: A1/A2/A3 recorded in the fast-p ledger (master rules, reasons, and HUMAN approvals retained there)
+- Amendments: A1 `meeting-mail-03-calendar-ui.md` `59e909070529b4b1e8ae62e61d03e67855f479ba..6f1db6d7ec27f7d21105b9f3b59306c38587a3fd`; A2 `meeting-mail-07-attachment-ui.md` `59e909070529b4b1e8ae62e61d03e67855f479ba..4010bc0074b8534afaf31e968cfd37a6d05dd9a5`; A3 `meeting-mail-08-assets-release.md` `59e909070529b4b1e8ae62e61d03e67855f479ba..2d72662186afe82ba5bbe64488f2d18bafaea977`
+- Fast-p ledger: docs/plans/fast/meeting-mail-master/ledger.md (`599983c7512831311d33c9aa3938dcfc5f2b387dfaacafeb807c0856541cf03b`)
+- Fast-p handoff: docs/plans/fast/meeting-mail-master/human-review-handoff.md (`13176e7c3c7796cd25cb6cdb03236d378386c42b5149350900eccb16ab7cc3cb`)
 - Master base: 24f5c8205a304d3682e09e02458960bc2caa0463
-- Final code head: N/A
-- Evidence parent before next commit: 3aa871c973d9dec305088928ba678672763b43fa
-- Previous evidence commit: N/A
+- Final code head: ae5d947b7257bf714e1d70e93dafbaf1894cbff6
+- Evidence parent before next commit: 13b4dbd77bbf9168e771ca07fbf8af648234b565
+- Previous evidence commit: e0bf21a4a4f5a4ce30a17eda409604ea25e21d89 (superseded stale preflight evidence)
 - Branch: fast/meeting-mail-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
-- Discovery evidence: `discover_fast_p.py --repo /Users/lukai/IdeaProjects/weibo-talent-introduction --master-plan /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-09-16/meeting-mail-master.md` invoked; selected registered candidate's fast-p evidence is not eligible.
+- Discovery evidence: `discover_fast_p.py --repo /Users/lukai/IdeaProjects/weibo-talent-introduction --master-plan docs/plans/2026-09-16/meeting-mail-master.md` => SELECTED `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master`, branch `fast/meeting-mail-master`, master base `24f5c8205a304d3682e09e02458960bc2caa0463`, final code head `ae5d947b7257bf714e1d70e93dafbaf1894cbff6`, terminal eight-child run and matching READY_FOR_HUMAN_REVIEW handoff.
 - Misdirected review evidence: N/A
-- Reviewer: N/A
-- Reviewer attempt: 0
-- Machine result: PENDING
-- Machine report epoch: N/A
-- Repair artifact: N/A
+- Reviewer: /root/aggregate_reviewer (fresh aggregate reviewer created after `ae5d947b7257bf714e1d70e93dafbaf1894cbff6`; distinct from recorded fast-p implementers/verifiers)
+- Reviewer attempt: 1
+- Machine result: FAIL
+- Machine report epoch: `machine-verification.md` epoch 1
+- Repair artifact: docs/plans/fix/meeting-mail-master/repair.md
 - Repair evidence mode: N/A
 - Repair approval source: N/A
 - Repair executor: N/A
 - Repair code head: N/A
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Fast-p ledger and handoff are `PAUSED_FOR_HUMAN`, child 07 is `PAUSED_FOR_HUMAN`, child 08 is `PENDING`; complete and finalize the exact fast-p run before aggregate review.
+- Blocker/next action: Aggregate review epoch 1 confirmed P1 V-1: strict parsing treats non-null blank outbound attachment snapshots as absent. Human approval is required before executing `docs/plans/fix/meeting-mail-master/repair.md`.
