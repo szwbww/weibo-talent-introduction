@@ -17,7 +17,12 @@ const workbenchSource = fs.readFileSync(workbenchPath, "utf-8");
 const styles = fs.readFileSync(stylesPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260917-meeting-mail-global-world-clock";
+// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+const CACHE_KEY = (() => {
+    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
 
 // —— S-2..S-4 契约栅格（与计划文件代码栅格逐字节一致，追加在 styles.css EOF）——
 const CSS_S2 = `.trust-reply-layout {

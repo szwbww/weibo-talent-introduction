@@ -8,7 +8,12 @@ const html = fs.readFileSync(path.join(root, "index.html"), "utf-8");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf-8");
 const css = fs.readFileSync(path.join(root, "styles.css"), "utf-8");
 
-const CACHE_KEY = "20260917-meeting-mail-global-world-clock";
+// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+const CACHE_KEY = (() => {
+    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
 const CHECK_REPLIES_TAG = '<button class="button" id="checkRepliesBtn" onclick="handleCheckReplies()">检查回复</button>';
 const BULK_OUTREACH_TAG = '<button class="button primary" id="bulkOutreachBtn" onclick="handleBulkOutreach()">批量发送</button>';
 const AUTO_REPLY_TAG = '<button class="button" id="bulkAutoReplyBtn">自动回复：加载中...</button>';

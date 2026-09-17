@@ -2,7 +2,7 @@
 
 // fast-p 05 资源激活测试（T3；I-1/I-2/S-1）+ 02 注册回归：
 // 1) index.html 恰好 11 个带 ?v= 资源（7 旧 + meeting-confirmation.css/.js 与
-//    world-clock.css/.js），全部同值 20260917-meeting-mail-global-world-clock，无重复注册；
+//    world-clock.css/.js），全部同值 index.html 的 styles.css?v= 键，无重复注册；
 // 2) S-1 注册顺序：meeting CSS 紧跟 mailbox-chat.css 之后；meeting JS 在 mailbox-chat.js
 //    与 app.js 之前；world-clock CSS/JS 分别位于最后；link 全在 head、script 全在 body；
 //    task-modal-runtime.js 保持未版本化原位；
@@ -21,7 +21,13 @@ const indexPath = path.join(ROOT, "index.html");
 const html = fs.readFileSync(indexPath, "utf-8");
 const meetingSource = fs.readFileSync(path.join(ROOT, "meeting-confirmation.js"), "utf-8");
 
-const CACHE_KEY = "20260917-meeting-mail-global-world-clock";
+// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+const CACHE_KEY = (() => {
+    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const CSS_ORDER = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
     "world-clock.css"];
 const JS_ORDER = ["trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
@@ -29,7 +35,7 @@ const JS_ORDER = ["trust-reply-workbench.js", "expert-materials.js", "meeting-co
 const ALL_ASSETS = [...CSS_ORDER, ...JS_ORDER];
 
 describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
-    it("恰好 11 个带 ?v= 资源且全部等于 20260917-meeting-mail-global-world-clock，无旧键残留", () => {
+    it(`恰好 11 个带 ?v= 资源且全部等于 ${CACHE_KEY}，无旧键残留`, () => {
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
         assert.strictEqual(keys.length, 11, `index.html 必须恰好注册 11 个带版本资源，实际 ${keys.length}`);
         assert.ok(keys.every((key) => key === CACHE_KEY), `全部键必须等于 ${CACHE_KEY}: ${keys}`);
@@ -58,8 +64,8 @@ describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
         const headEnd = html.indexOf("</head>");
         const bodyEnd = html.lastIndexOf("</body>");
         assert.ok(headEnd > 0 && bodyEnd > headEnd, "index.html 结构异常");
-        const linkRe = /<link rel="stylesheet" href="[^"]+\.css\?v=20260917-meeting-mail-global-world-clock">/g;
-        const scriptRe = /<script src="[^"]+\.js\?v=20260917-meeting-mail-global-world-clock"><\/script>/g;
+        const linkRe = new RegExp('<link rel="stylesheet" href="[^"]+\\.css\\?v=' + escapeRegExp(CACHE_KEY) + '">', "g");
+        const scriptRe = new RegExp('<script src="[^"]+\\.js\\?v=' + escapeRegExp(CACHE_KEY) + '"><\\/script>', "g");
         let match;
         while ((match = linkRe.exec(html)) !== null) {
             assert.ok(match.index < headEnd, "样式 link 必须位于 head 内");

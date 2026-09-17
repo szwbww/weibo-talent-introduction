@@ -9,6 +9,13 @@ const css = fs.readFileSync(path.join(root, "static", "styles.css"), "utf-8");
 const app = fs.readFileSync(path.join(root, "static", "app.js"), "utf-8");
 const migrationPath = path.join(root, "db", "migration", "V74__repair_batch_send_task_config_encoding.sql");
 
+// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+const CACHE_KEY = (() => {
+    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
+
 describe("batch send task console visual repair", () => {
     it("uses a scoped horizontal modal header with subtitle", () => {
         assert.ok(html.includes('class="modal-header batch-send-task-header"'));
@@ -50,14 +57,14 @@ describe("batch send task console visual repair", () => {
             "expert-materials.js", "expert-materials.css", "mailbox-chat.js", "mailbox-chat.css",
             "meeting-confirmation.js", "meeting-confirmation.css", "world-clock.js", "world-clock.css"];
         for (const asset of assets) {
-            assert.ok(html.includes(`${asset}?v=20260917-meeting-mail-global-world-clock`), `${asset} must carry the unified key`);
+            assert.ok(html.includes(`${asset}?v=${CACHE_KEY}`), `${asset} must carry the unified key`);
         }
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
             "world-clock.css", "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
             "mailbox-chat.js", "app.js", "world-clock.js"];
         let previous = -1;
         for (const asset of ordered) {
-            const at = html.indexOf(`${asset}?v=20260917-meeting-mail-global-world-clock`);
+            const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);
             assert.ok(at > previous, `${asset} must be registered in order (CSS then workbench -> materials -> chat -> app)`);
             previous = at;
         }

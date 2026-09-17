@@ -9,6 +9,13 @@ const html = fs.readFileSync(path.join(staticDir, "index.html"), "utf-8");
 const css = fs.readFileSync(path.join(staticDir, "styles.css"), "utf-8");
 const app = fs.readFileSync(path.join(staticDir, "app.js"), "utf-8");
 
+// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+const CACHE_KEY = (() => {
+    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
+
 // 逐字 CSS 契约（plan 04 S-1..S-5）：styles.css 中对应规则块与契约逐字一致，
 // 含全部状态选择器。S-1 追加在 :root 末尾，S-2..S-5 追加在文件末尾。
 const CSS_S1 = `    --verbatim: #7c3aed;
@@ -330,21 +337,21 @@ describe("RAG 知识库页 (plan 04)", () => {
         });
     });
 
-    it("G-5：11 处 ?v= 缓存键同值且等于 20260917-meeting-mail-global-world-clock，注册顺序合规", () => {
+    it(`G-5：11 处 ?v= 缓存键同值且等于 ${CACHE_KEY}，注册顺序合规`, () => {
         ["styles.css", "trust-reply-workbench.js", "app.js",
             "expert-materials.js", "expert-materials.css", "mailbox-chat.js", "mailbox-chat.css",
             "meeting-confirmation.js", "meeting-confirmation.css", "world-clock.js", "world-clock.css"].forEach((asset) => {
-            assert.ok(html.includes(`${asset}?v=20260917-meeting-mail-global-world-clock`), `${asset} key`);
+            assert.ok(html.includes(`${asset}?v=${CACHE_KEY}`), `${asset} key`);
         });
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
         assert.strictEqual(keys.length, 11, `expected exactly 11 cache keys, got ${keys.length}`);
-        assert.ok(keys.every((key) => key === "20260917-meeting-mail-global-world-clock"), `all keys must share one value: ${keys}`);
+        assert.ok(keys.every((key) => key === CACHE_KEY), `all keys must share one value: ${keys}`);
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
             "world-clock.css", "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
             "mailbox-chat.js", "app.js", "world-clock.js"];
         let previous = -1;
         for (const asset of ordered) {
-            const at = html.indexOf(`${asset}?v=20260917-meeting-mail-global-world-clock`);
+            const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);
             assert.ok(at > previous, `${asset} must be registered in order (CSS then workbench -> materials -> meeting -> chat -> app)`);
             previous = at;
         }
