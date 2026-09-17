@@ -184,3 +184,7 @@ mysqlIt 业务 SQL 组 105/0/0 全绿；
 - Routing constraint: the repair commit lands after child 08's implementation commit, so it cannot become child 06's `Code head` without breaking the `Base = prior child's terminal Code head` chain; the repair must therefore be child 08's fix round under a widened file authorization.
 - Controller action: paused for a HUMAN-approved amendment; no fixer was dispatched.
 - Resume from: `8c91c656d6530972ff8fc242705c928715c5b4d5`.
+
+### Finalization note
+
+- The child-08 evidence commit records `execution.md`, `verify-log.md` and `fix-log.md` together so the fast-p final artifact contract can bind all three to this child's terminal state.

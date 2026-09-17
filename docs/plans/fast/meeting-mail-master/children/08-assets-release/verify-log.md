@@ -99,3 +99,5 @@ Verifier: Verifier08b
 
 ### Required Action
 - COMPLETE_CHILD
+
+Evidence note: this report is bound to child 08 in the ledger; the previous evidence commit `2362d107c648c64d73a0d25e355cd9832cdd96c5` carried only the verify/fix logs.
