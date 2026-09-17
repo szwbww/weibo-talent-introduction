@@ -101,6 +101,9 @@ class PendingMailOperationServiceTrustWorkbenchTest {
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
     // 03 (T3): 新增构造依赖 —— 本文件只做旧 QA/assembly 回归，传模拟依赖即可。
     private val meetingConfirmationService = Mockito.mock(MeetingConfirmationService::class.java)
+    // 06 (T1): 通用附件协作件（安全确认重提/QA 审计回归用；附件语义与原件读取在
+    // OutboundAttachmentFlowTest 用真实 04 服务覆盖）。
+    private val outboundAttachmentService = Mockito.mock(OutboundAttachmentService::class.java)
     private val service = PendingMailOperationService(
         inboundMailProcessingRepository,
         expertContactRepository,
@@ -124,7 +127,8 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         trustReplyWorkbenchService,
         unsupportedAnswerIndexService,
         emailSuppressionService,
-        meetingConfirmationService
+        meetingConfirmationService,
+        outboundAttachmentService = outboundAttachmentService
     )
 
     private val contact = ExpertContact(
@@ -756,6 +760,53 @@ class PendingMailOperationServiceTrustWorkbenchTest {
         }
         assertTrue(ex.findings.isNotEmpty())
         Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    // 06 (I-1/I-5)：两级安全确认的重提必须保留同一 attachmentIds/身份，且确认后的 payload
+    // 与 ComposedMail 使用同一文件集合；未确认的一次不产生任何投递副作用。
+    @Test
+    fun `attachments survive the two stage confirmation with the same file set`() {
+        val fileSet = attachmentFileSet()
+        Mockito.`when`(outboundAttachmentService.resolveForSend(1L, listOf(ATTACHMENT_ID), "op"))
+            .thenReturn(fileSet)
+
+        val blocked = assertThrows(ManualSendSafetyBlockedException::class.java) {
+            service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null,
+                subject = "Re: Test",
+                htmlBody = "<p>Please also send your passport copy for verification.</p>",
+                textBody = "Please also send your passport copy for verification.",
+                operatorName = "op",
+                attachmentIds = listOf(ATTACHMENT_ID),
+                authenticatedUsername = "op"
+            )
+        }
+        assertTrue(blocked.findings.any { it.severity == SafetySeverity.STRONG })
+        Mockito.verifyNoInteractions(mailDeliveryService)
+
+        val capturedMails = mutableListOf<ComposedMail>()
+        stubSuccessfulSend()
+        val capturedPayloads = captureAttachmentSend(capturedMails)
+        val result = service.sendManualRichReply(
+            inboundProcessingId = 100L, senderAccountCode = null,
+            subject = "Re: Test",
+            htmlBody = "<p>Please also send your passport copy for verification.</p>",
+            textBody = "Please also send your passport copy for verification.",
+            operatorName = "op",
+            safetyWarningConfirmed = true,
+            strongConfirmationText = "确认发送",
+            attachmentIds = listOf(ATTACHMENT_ID),
+            authenticatedUsername = "op"
+        )
+
+        assertEquals("SENT", result.sendStatus)
+        assertEquals(fileSet.snapshots, capturedPayloads.single().outboundAttachments)
+        assertEquals(1, capturedMails.single().outboundAttachments.size)
+        assertEquals(
+            fileSet.files.single().snapshot,
+            capturedMails.single().outboundAttachments.single().snapshot
+        )
+        Mockito.verify(outboundAttachmentService).resolveForSend(1L, listOf(ATTACHMENT_ID), "op")
     }
 
     @Test
@@ -2606,4 +2657,38 @@ class PendingMailOperationServiceTrustWorkbenchTest {
 
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
 
+    // ── 06 attachment helpers ──
+
+    private fun attachmentFileSet(bytes: ByteArray = "会议资料".toByteArray(Charsets.UTF_8)): OutboundAttachmentFileSet {
+        val snapshot = OutboundAttachmentSnapshot(
+            schemaVersion = OUTBOUND_ATTACHMENT_SCHEMA_VERSION,
+            id = ATTACHMENT_ID,
+            filename = "会议资料.txt",
+            contentType = "text/plain",
+            byteLength = bytes.size.toLong(),
+            sha256 = outboundSha256Hex(bytes)
+        )
+        return OutboundAttachmentFileSet(listOf(OutboundMailFile(snapshot, bytes)), listOf(snapshot))
+    }
+
+    /** 捕获附件发送实际使用的 SendPayload 与 ComposedMail（附件会改变载荷 → 用 any 匹配）。 */
+    private fun captureAttachmentSend(
+        capturedMails: MutableList<ComposedMail>
+    ): MutableList<ManualReplySendAttemptService.SendPayload> {
+        val capturedPayloads = mutableListOf<ManualReplySendAttemptService.SendPayload>()
+        Mockito.doAnswer { inv ->
+            capturedPayloads += inv.getArgument<ManualReplySendAttemptService.SendPayload>(0)
+            500L
+        }.`when`(manualReplySendAttemptService)
+            .finalizeSuccess(anyValue(sendPayload()), Mockito.eq(1L), eqValue("<manual-rich-abc@weibo.com>"))
+        Mockito.doAnswer { inv ->
+            capturedMails += inv.getArgument<ComposedMail>(1)
+            DeliveredMail(messageId = "<manual-rich-abc@weibo.com>", status = "SENT")
+        }.`when`(mailDeliveryService).send(anyValue(senderAccount()), anyValue(composedMail()))
+        return capturedPayloads
+    }
+
+    private companion object {
+        const val ATTACHMENT_ID = "3f7c1a52-90de-4a1b-8b0e-6c2f5d4a1e77"
+    }
 }

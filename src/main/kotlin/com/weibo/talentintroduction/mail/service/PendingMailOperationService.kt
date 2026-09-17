@@ -89,12 +89,23 @@ class PendingMailOperationService(
     // 构造单元测试（不触碰 RAG 分支）保持零改动；Spring 运行时按主构造器完整注入，
     // RAG 分支入口 requireNotNull 防御性校验。
     private val mailRecordRagFactRepository: MailRecordRagFactRepository? = null,
-    private val ragKnowledgeBase: RagKnowledgeBase? = null
+    private val ragKnowledgeBase: RagKnowledgeBase? = null,
+    // 06 (I-1/I-2): 通用附件原件解析/元数据读取（04）。与上方两个 RAG 协作件同款：
+    // Spring 运行时按主构造器完整注入，可空默认值只让既有的直接构造单元测试零改动；
+    // 携带附件的入口在 claim 之前用 requireNotNull 防御性校验，绝不静默放行。
+    private val outboundAttachmentService: OutboundAttachmentService? = null
 ) {
     companion object {
         private val log = LoggerFactory.getLogger(PendingMailOperationService::class.java)
         const val AI_REPLY_PREFLIGHT_SOURCE_CHANGED = "AI_REPLY_PREFLIGHT_SOURCE_CHANGED"
         const val AI_REPLY_PREFLIGHT_NO_EVIDENCE = "AI_REPLY_PREFLIGHT_NO_EVIDENCE"
+        /**
+         * 06 (I-2)：会话 requestId 已 SENT 且本次附件的有序语义（filename/type/size/hash）
+         * 与原记录不同 —— 由 04 的 [OutboundAttachmentException] 固定 409，绝不谎报新附件
+         * 已发送、绝不自动换 requestId 重投。
+         */
+        const val CONVERSATION_SENT_ATTACHMENTS_CHANGED =
+            "该请求已发送，附件与原请求不同，请发起新回复"
         // 计划 04 (T2.7): 显式 QA 选择在发送路径被降级为可确认风险时的诊断码。
         const val QA_FACT_NOT_MATCHING_REQUEST = "QA_FACT_NOT_MATCHING_REQUEST"
         const val QA_FACT_UNAVAILABLE = "QA_FACT_UNAVAILABLE"
@@ -171,7 +182,12 @@ class PendingMailOperationService(
         // previewAttachmentSha256 必须同时出现/同时为空（否则 400）；非空时在最终变量
         // 渲染后用真实 processing/contact/account 走 01 validateAndBuild 重算核对。
         meeting: MeetingInput? = null,
-        previewAttachmentSha256: String? = null
+        previewAttachmentSha256: String? = null,
+        // 06 (T1/I-1): 通用附件 id（用户选择顺序）与本次请求的真实会话身份。默认空/空身份
+        // 保持既有内部调用点零改动；非空 id 时身份必须真实（空身份在 claim 前 400），
+        // 绝不回退请求体里的 operatorName。
+        attachmentIds: List<String> = emptyList(),
+        authenticatedUsername: String? = null
     ): PendingMailSendResult {
         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
@@ -336,7 +352,9 @@ class PendingMailOperationService(
                 researchProfileSufficient = researchProfileSufficient
             ),
             meeting = meeting,
-            previewAttachmentSha256 = previewAttachmentSha256
+            previewAttachmentSha256 = previewAttachmentSha256,
+            attachmentIds = attachmentIds,
+            authenticatedUsername = authenticatedUsername
         )
     }
 
@@ -360,7 +378,10 @@ class PendingMailOperationService(
         textBody: String?,
         operatorName: String?,
         safetyWarningConfirmed: Boolean = false,
-        strongConfirmationText: String? = null
+        strongConfirmationText: String? = null,
+        // 06 (T1/I-2)：通用附件 id 与真实会话身份。空/空身份保持既有调用点零改动。
+        attachmentIds: List<String> = emptyList(),
+        authenticatedUsername: String? = null
     ): PendingMailSendResult {
         val contact = expertContactRepository.findById(contactId)
             .orElseThrow { error("Expert contact not found: $contactId") }
@@ -376,11 +397,27 @@ class PendingMailOperationService(
 
         // I-4：已完成 attempt 先收敛 —— SENT 时直接返回原结果，绝不重查锚点/再次投递
         // （刚发出的信已成为最新成功发件也不得再次 SMTP）。
+        // 06 (I-2)：本次或原记录任何一侧带通用附件时，先用 04 批量元数据校验归属
+        // （同专家 + 同上传者，不要求原件仍在线），再按 filename/type/size/hash 有序语义
+        // 比较：相同返回原 SENT；不同固定 409，绝不谎报新附件已发送、也不换 requestId。
         val completed = manualReplySendAttemptService.findCompletedByRequestId(
             contact.orcidId, canonicalRequestId
         )
         if (completed != null) {
             val record = completed.mailRecord
+            val originalSnapshots = OutboundAttachmentSnapshotCodec.parseOrThrow(
+                record.outboundAttachmentsJson
+            )
+            val requestedSnapshots = resolveRequestedAttachmentSnapshots(
+                contactId = contactId,
+                attachmentIds = attachmentIds,
+                authenticatedUsername = authenticatedUsername
+            )
+            if ((originalSnapshots != null || requestedSnapshots.isNotEmpty()) &&
+                !sameOutboundAttachmentSet(originalSnapshots.orEmpty(), requestedSnapshots)
+            ) {
+                throw OutboundAttachmentException.conflict(CONVERSATION_SENT_ATTACHMENTS_CHANGED)
+            }
             return PendingMailSendResult(
                 contactId = contactId,
                 senderAccountCode = record.senderAccountCode ?: completed.attemptAccountCode,
@@ -444,7 +481,9 @@ class PendingMailOperationService(
             operatorName = operatorName,
             safetyWarningConfirmed = safetyWarningConfirmed,
             strongConfirmationText = strongConfirmationText,
-            evidence = ManualReplyEvidenceContext(runInboundSemanticChecks = false)
+            evidence = ManualReplyEvidenceContext(runInboundSemanticChecks = false),
+            attachmentIds = attachmentIds,
+            authenticatedUsername = authenticatedUsername
         )
     }
 
@@ -487,7 +526,11 @@ class PendingMailOperationService(
         // 路径不传，保持默认 null）。非空时在最终变量渲染后用真实 processing/contact/
         // account 走 01 validateAndBuild 重算核对，两者必须同时出现/同时为空。
         meeting: MeetingInput? = null,
-        previewAttachmentSha256: String? = null
+        previewAttachmentSha256: String? = null,
+        // 06 (I-1)：通用附件 id（选择顺序）与真实会话身份；两条入口都传到这里，附件在
+        // claim 之前解析（同一文件集合同时喂 SendPayload 快照与 ComposedMail 载荷）。
+        attachmentIds: List<String> = emptyList(),
+        authenticatedUsername: String? = null
     ): PendingMailSendResult {
         val contact = source.contact
         require(rawSubject.isNotBlank()) { "Subject is required" }
@@ -617,6 +660,16 @@ class PendingMailOperationService(
             throw ManualSendSafetyBlockedException(findings)
         }
 
+        // 06 (I-1)：通用附件在幂等 claim 之前解析 —— 04 按 (专家 + 上传者) 读元数据与原件、
+        // 校验容量/尺寸/hash，失败以 400/404/409/413 直接抛出（位于下方投递 try 块之外，
+        // 绝不烧掉 attempt，也绝不被归成 SMTP UNKNOWN）。安全确认重提会重新解析同一批 id，
+        // 同一原件 → 同一快照 → 同一发送身份指纹。
+        val attachmentFileSet = resolveOutboundAttachmentFileSet(
+            contactId = source.contactId,
+            attachmentIds = attachmentIds,
+            authenticatedUsername = authenticatedUsername
+        )
+
         val payload = ManualReplySendAttemptService.SendPayload(
             orcidId = contact.orcidId,
             contactId = source.contactId,
@@ -639,7 +692,10 @@ class PendingMailOperationService(
             // 03 (I-3): 与 ComposedMail 共用同一 01 快照实例，绝不独立生成第二份。
             calendarAttachment = calendarSnapshot,
             // fast-p 02 (I-1)：同一次重算产出的结构化排期输入；无会议恒 null。
-            meetingEvent = meetingCalendarInput
+            meetingEvent = meetingCalendarInput,
+            // 06 (I-1)：与 ComposedMail.outboundAttachments 同一文件集合导出的有序快照；
+            // 05 的 finalize 四分支据此写 mail_record.outbound_attachments_json。
+            outboundAttachments = attachmentFileSet.snapshots
         )
 
         val persistInReplyTo = source.persistInReplyTo
@@ -678,7 +734,10 @@ class PendingMailOperationService(
                         else source.smtpInReplyTo,
                     references = if (calendarSnapshot != null) source.inboundRecord?.messageId
                         else source.smtpReferences,
-                    calendarAttachment = calendarSnapshot
+                    calendarAttachment = calendarSnapshot,
+                    // 06 (I-1)：同一文件集合的原件（已核尺寸/hash），SMTP 在 ICS 之后按
+                    // 选择顺序以 multipart/mixed 携带。
+                    outboundAttachments = attachmentFileSet.files
                 )
                 val bodyPreviewText = (finalTextBody.ifBlank { mailBodyCleaner.clean(finalHtmlBody) }
                     .takeIf { it.isNotBlank() } ?: mailBodyCleaner.clean(finalHtmlBody)).take(500)
@@ -891,6 +950,62 @@ class PendingMailOperationService(
                 )
         }
     }
+
+    /**
+     * 06 (I-1)：04 通用附件原件解析 —— 元数据/原件读取与归属（同专家 + 同上传者）、容量校验
+     * 全部发生在调用方（最终发送门）的幂等 claim 之前。空 id 列表是「无通用附件」的既有
+     * 形态，不触碰 04 服务、不要求会话身份。[authenticatedUsername] 为 null 时传空身份，
+     * 由 04 的 normalizeOperator 固定 400「上传身份缺失」——绝不用请求体 operatorName 兜底。
+     */
+    private fun resolveOutboundAttachmentFileSet(
+        contactId: Long,
+        attachmentIds: List<String>,
+        authenticatedUsername: String?
+    ): OutboundAttachmentFileSet {
+        if (attachmentIds.isEmpty()) {
+            return OutboundAttachmentFileSet(emptyList(), emptyList())
+        }
+        val service = requireNotNull(outboundAttachmentService) {
+            "OutboundAttachmentService is not wired for attachment send"
+        }
+        return service.resolveForSend(contactId, attachmentIds, authenticatedUsername.orEmpty())
+    }
+
+    /**
+     * 06 (I-2)：已完成 requestId 的附件元数据读取 —— 只读 04 元数据（不加载字节、不要求
+     * 原件仍在线），空 id 列表返回空列表（不与 04 服务交互）。
+     */
+    private fun resolveRequestedAttachmentSnapshots(
+        contactId: Long,
+        attachmentIds: List<String>,
+        authenticatedUsername: String?
+    ): List<OutboundAttachmentSnapshot> {
+        if (attachmentIds.isEmpty()) {
+            return emptyList()
+        }
+        val service = requireNotNull(outboundAttachmentService) {
+            "OutboundAttachmentService is not wired for attachment comparison"
+        }
+        return service.loadSnapshots(contactId, attachmentIds, authenticatedUsername.orEmpty())
+    }
+
+    /**
+     * 06 (I-2)：有序附件语义比较 —— filename/contentType/byteLength/sha256 逐项、按顺序
+     * 全等即视为同一附件集合（同内容重新上传得到的新 id 仍算相同：语义相同即不改变
+     * 已发送事实）。
+     */
+    private fun sameOutboundAttachmentSet(
+        original: List<OutboundAttachmentSnapshot>,
+        requested: List<OutboundAttachmentSnapshot>
+    ): Boolean =
+        original.size == requested.size && original.indices.all { index ->
+            val left = original[index]
+            val right = requested[index]
+            left.filename == right.filename &&
+                left.contentType == right.contentType &&
+                left.byteLength == right.byteLength &&
+                left.sha256 == right.sha256
+        }
 
     private fun auditNote(
         inboundProcessingId: Long?,
@@ -1735,7 +1850,10 @@ data class PendingManualRichReplyRequest(
     val strongConfirmationText: String? = null,
     // 03 (T1/I-1): 已预览会议配置 + 预览快照 sha256；服务端要求两者同时出现/同时为空。
     val meeting: MeetingInput? = null,
-    val previewAttachmentSha256: String? = null
+    val previewAttachmentSha256: String? = null,
+    // 06 (T1/I-1): 通用附件 id（用户选择顺序，04 上传产物）。默认空 = 既有无附件形态逐字
+    // 不变；非空时服务端按 (专家 + 会话身份) 重读 04 元数据与原件，越权/缺失在 claim 前失败。
+    val attachmentIds: List<String> = emptyList()
 )
 
 data class ComposedReplyRequest(

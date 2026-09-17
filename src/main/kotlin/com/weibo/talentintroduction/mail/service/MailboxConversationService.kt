@@ -13,6 +13,7 @@ import com.weibo.talentintroduction.mail.controller.ConversationLatestMessageIte
 import com.weibo.talentintroduction.mail.controller.ConversationListResponse
 import com.weibo.talentintroduction.mail.controller.ConversationMessageItemResponse
 import com.weibo.talentintroduction.mail.controller.ConversationMessageListResponse
+import com.weibo.talentintroduction.mail.controller.ConversationOutboundAttachment
 import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailboxConversationRepository
@@ -64,8 +65,11 @@ class MailboxConversationService(
         /** 03 (I-3/I-4)：日历附件只在 SENT 出站行暴露（mail_record.send_status 值）。 */
         const val SEND_STATUS_SENT = "SENT"
 
-        /** 03 (I-4)：时间线单独日历附件下载端点（与 CalendarAttachmentController 同源）。 */
-        const val CALENDAR_DOWNLOAD_BASE = "/api/mail/conversations"
+        /** 会话消息级下载端点前缀（03 日历附件与 06 通用附件共用同一 `/api/mail/conversations` 前缀）。 */
+        const val CONVERSATION_API_BASE = "/api/mail/conversations"
+
+        /** 06 (I-3)：通用附件快照只投影人工富文本回复（05 的四个 finalize 分支之一）。 */
+        const val MANUAL_RICH_REPLY_MAIL_TYPE = "MANUAL_RICH_REPLY"
 
         /** 专家层级白名单：只在合法层级查询 ES 画像（I-6，禁止跨层猜测回退）。 */
         private val LEVEL_NAMES = ExpertIndexLevel.values().map { it.name }.toSet()
@@ -274,7 +278,9 @@ class MailboxConversationService(
                 } else {
                     emptyList()
                 },
-                calendarAttachment = calendarAttachmentOf(row, mailRecordRowsById[row.id])
+                calendarAttachment = calendarAttachmentOf(row, mailRecordRowsById[row.id]),
+                // 06 (I-3)：同一批 findAllById 结果投影通用附件快照（零额外查询、不读磁盘）。
+                outboundAttachments = outboundAttachmentsOf(row, mailRecordRowsById[row.id])
             )
         }
         val nextBefore = if (page.hasMore) {
@@ -389,8 +395,58 @@ class MailboxConversationService(
         return ConversationCalendarAttachment(
             filename = snapshot.filename,
             byteLength = snapshot.icsText.toByteArray(Charsets.UTF_8).size,
-            downloadUrl = "$CALENDAR_DOWNLOAD_BASE/${row.expertContactId}/messages/$id/calendar-attachment"
+            downloadUrl = "$CONVERSATION_API_BASE/${row.expertContactId}/messages/$id/calendar-attachment"
         )
+    }
+
+    /**
+     * 06 (I-3)：该已发出站行的人工通用附件投影。
+     *
+     * - 只认 `MAIL_RECORD + OUTBOUND + MANUAL_RICH_REPLY + SENT`（行来源/方向/状态已由
+     *   窗口批量查询过滤，这里再显式要求 MANUAL_RICH_REPLY、同专家、同账号）；
+     * - 快照用 04 codec 的**展示语义**解析：NULL/空白与损坏都归为 null → 该行空列表，
+     *   绝不让整页 500；非空白却解析失败时留一条不含正文/磁盘路径的诊断；
+     * - downloadUrl 由服务端按消息归属固定路径拼接（client 不得自行构造）；
+     * - 只读内存中的批量结果，不额外查询、不读磁盘/IMAP。
+     */
+    private fun outboundAttachmentsOf(
+        row: ConversationMessageSqlRow,
+        record: MailRecord?
+    ): List<ConversationOutboundAttachment> {
+        if (row.source != MailboxConversationRepository.SOURCE_MAIL_RECORD ||
+            record == null ||
+            record.expertContactId != row.expertContactId ||
+            record.senderAccountCode != row.accountCode ||
+            record.mailType != MANUAL_RICH_REPLY_MAIL_TYPE ||
+            record.sendStatus != SEND_STATUS_SENT
+        ) {
+            return emptyList()
+        }
+        val json = record.outboundAttachmentsJson
+        if (json.isNullOrBlank()) {
+            return emptyList()
+        }
+        val snapshots = OutboundAttachmentSnapshotCodec.parseOrNull(json)
+        if (snapshots == null) {
+            // 诊断不含正文/路径/用户名，也不改变页面上其它行。
+            log.warn(
+                "Corrupt outbound attachment snapshot on mail record {} (contact {})",
+                record.id,
+                row.expertContactId
+            )
+            return emptyList()
+        }
+        val recordId = requireNotNull(record.id)
+        return snapshots.map { snapshot ->
+            ConversationOutboundAttachment(
+                id = snapshot.id,
+                filename = snapshot.filename,
+                contentType = snapshot.contentType,
+                byteLength = snapshot.byteLength,
+                downloadUrl = "$CONVERSATION_API_BASE/${row.expertContactId}/messages/" +
+                    "$recordId/outbound-attachments/${snapshot.id}/download"
+            )
+        }
     }
 
     private fun encodeCursor(contactId: Long, accountCode: String?, item: ConversationMessageItemResponse): String {
