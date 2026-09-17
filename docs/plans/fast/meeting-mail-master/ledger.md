@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-09-16/meeting-mail-master.md
 
-- Status: PAUSED_FOR_HUMAN
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-09-16/meeting-mail-master.md (commit 59e909070529b4b1e8ae62e61d03e67855f479ba)
 - Amendments: A1, A2, A3
 - Master base: 24f5c8205a304d3682e09e02458960bc2caa0463
@@ -13,8 +13,8 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Finalization validation cannot reach VALID. All eight children are terminal and every canonical ledger/handoff fact validates, but the validator still reports seven `Evidence commit did not record fix-log.md` errors for the zero-fix-round children 01-07: their evidence commits recorded execution.md + verify-log.md while fix-log.md stayed empty from the seeding commit. No commit inside any of those children's evidence windows (code head .. next child's implementation) records fix-log.md, so the only repair would be rewriting completed commits, which fast-p forbids.
-- Resume from: 091c9f63f3d8fc90b1cf858a274da2c8db3b7789
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Baseline
 
@@ -24,6 +24,7 @@
 - Environment during the run: JDK 11 (zulu-11) required everywhere; MySQL 8.0.46 container `ti-mysql-it` on `127.0.0.1:3306` (database `talent_introduction`, root/root) for every `-DmysqlIt=true` group; Docker/OrbStack for `-DmigrationIt=true`, which needs `DOCKER_API_VERSION=1.44` because the bundled docker-java client negotiates API 1.32 while the local engine requires >=1.40. Docker and MySQL were down for part of the run and were restarted by the controller; child 01/04/05 recorded their Docker-gated checks as 未验证 before that.
 - Terminal command evidence per child lives in `children/<id>/execution.md`; lightweight verification reports in `children/<id>/verify-log.md`; child 08 repair round in `children/08-assets-release/fix-log.md`. No whole-system verification was performed; that is deferred to human review.
 - Finalization validator (`scripts/validate_fast_p.py`, run 2026-09-17 with `--allow-dirty-artifacts` at `091c9f63f3d8fc90b1cf858a274da2c8db3b7789`) returned `result: INVALID` with exactly seven errors, all of the same class: `01-calendar-api`/`02-calendar-send`/`03-calendar-ui`/`04-attachment-storage`/`05-attachment-delivery`/`06-attachment-flow`/`07-attachment-ui` — `Evidence commit did not record fix-log.md`. Every other check passed: master identity, master base, branch/worktree, amendment rows and their before/after identities, ordered child coverage, one row per child, terminal states, child/fix ancestry, plan identities, child-artifact blob identity, latest verifier verdicts, ledger/handoff agreement, and post-final commit scope. Those seven children had zero fix rounds, so their `fix-log.md` stayed byte-empty from the seeding commit `59e909070529b4b1e8ae62e61d03e67855f479ba` and was therefore not part of their evidence commits; no commit inside any of their evidence windows records that path, so satisfying the check requires rewriting completed commits. Child 08's evidence deficiency was repaired in place by `091c9f6`.
+- Accepted deviation (HUMAN:2026-09-17 ask 抉择「接受偏差，标记 READY_FOR_HUMAN_REVIEW（推荐）」): the seven `Evidence commit did not record fix-log.md` errors are accepted rather than repaired, because the affected `fix-log.md` files are empty and the only alternative is a history rewrite that fast-p forbids and that would invalidate every SHA these logs cite. The run is therefore terminal as `READY_FOR_HUMAN_REVIEW` under this single recorded deviation; re-running the validator will reproduce exactly those seven errors and nothing else beyond the status/outcome fields this acceptance sets.
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |

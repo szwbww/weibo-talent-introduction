@@ -1,6 +1,6 @@
 # Fast-P Human Review Handoff
 
-- Outcome: PAUSED_FOR_HUMAN
+- Outcome: READY_FOR_HUMAN_REVIEW
 - Master base: 24f5c8205a304d3682e09e02458960bc2caa0463
 - Current/final code head: ae5d947b7257bf714e1d70e93dafbaf1894cbff6
 - Branch/worktree: fast/meeting-mail-master / /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master
@@ -33,7 +33,11 @@
 | Both defects repaired in child 08's fix round were already red at the boundary base (they originate in child 06's commit `82a46dc`), so the repair is base-level breakage fixed under the A3 authorization. | 08-assets-release | children/08-assets-release/verify-log.md (RECORD_ONLY O-2) | verify-log.md |
 
 ## Pause/Resume
-- Reason: Finalization validation cannot reach VALID. All eight children are terminal and every canonical ledger/handoff fact validates, but `scripts/validate_fast_p.py` still returns `result: INVALID` with exactly seven `Evidence commit did not record fix-log.md` errors, one per zero-fix-round child (01-calendar-api, 02-calendar-send, 03-calendar-ui, 04-attachment-storage, 05-attachment-delivery, 06-attachment-flow, 07-attachment-ui). Their evidence commits recorded `execution.md` and `verify-log.md`; `fix-log.md` stayed byte-empty from the seeding commit `59e909070529b4b1e8ae62e61d03e67855f479ba`, so the path never appears in a commit inside those children's evidence windows (verified by enumerating every commit in each window). Child 08's equivalent deficiency was repaired in place by commit `091c9f63f3d8fc90b1cf858a274da2c8db3b7789`.
-- Resume from: `091c9f63f3d8fc90b1cf858a274da2c8db3b7789`, final code head `ae5d947b7257bf714e1d70e93dafbaf1894cbff6`. Next action is a human decision: either accept the documented bookkeeping deviation for the seven zero-fix-round children, or authorize a history rewrite that folds a `fix-log.md` touch into their evidence commits (fast-p otherwise forbids rewriting completed commits; that path also invalidates the SHAs the child logs cite). No product or test code is outstanding.
+- Reason: N/A
+- Resume from: N/A
+
+## Finalization deviation (human-accepted)
+- `scripts/validate_fast_p.py` returns `result: INVALID` with exactly seven errors, all `Evidence commit did not record fix-log.md`, for the zero-fix-round children `01-calendar-api`, `02-calendar-send`, `03-calendar-ui`, `04-attachment-storage`, `05-attachment-delivery`, `06-attachment-flow`, `07-attachment-ui`. Their evidence commits recorded `execution.md` and `verify-log.md`; `fix-log.md` stayed byte-empty from the seeding commit `59e909070529b4b1e8ae62e61d03e67855f479ba`, so the path appears in no commit inside those children's evidence windows (verified by enumerating every commit in each window). Child 08's equivalent deficiency was repaired in place by commit `091c9f63f3d8fc90b1cf858a274da2c8db3b7789`.
+- Accepted by the human at 2026-09-17 instead of repairing it, because the affected `fix-log.md` files are empty and the only repair is a history rewrite that fast-p forbids and that would invalidate every SHA these logs cite. Everything else in the validator passes: master identity, master base, branch/worktree, the three amendment rows and their before/after identities, ordered child coverage, one row per child, terminal states, child/fix ancestry, plan identities, child-artifact blob identity, latest verifier verdicts, ledger/handoff agreement, and post-final commit scope.
 
 No whole-system verification was performed.
