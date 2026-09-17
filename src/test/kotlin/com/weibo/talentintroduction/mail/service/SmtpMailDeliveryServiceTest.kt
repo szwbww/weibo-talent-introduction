@@ -25,6 +25,7 @@ import java.nio.file.Files
 import java.nio.file.Paths
 import java.time.LocalDateTime
 import java.util.Optional
+import java.util.UUID
 import javax.mail.AuthenticationFailedException
 import javax.mail.MessagingException
 import javax.mail.internet.MimeBodyPart
@@ -565,6 +566,137 @@ class SmtpMailDeliveryServiceTest {
         val target = Paths.get("target")
         Files.createDirectories(target)
         Files.write(target.resolve("meeting-confirmation.eml"), out.toByteArray())
+    }
+
+    // ─────────────────── fast-p 05：通用附件进 MIME（I-3） ───────────────────
+
+    /** 04 快照 + 已核过尺寸/hash 的原件字节（发送载荷元素；id 是上传 UUID）。 */
+    private fun outboundFile(filename: String, contentType: String, bytes: ByteArray): OutboundMailFile =
+        OutboundMailFile(
+            snapshot = OutboundAttachmentSnapshot(
+                schemaVersion = OUTBOUND_ATTACHMENT_SCHEMA_VERSION,
+                id = UUID.randomUUID().toString(),
+                filename = filename,
+                contentType = contentType,
+                byteLength = bytes.size.toLong(),
+                sha256 = outboundSha256Hex(bytes)
+            ),
+            bytes = bytes
+        )
+
+    /** 真实 zip（两个条目）：验证二进制原件不被展开、不按 text/calendar 发送。 */
+    private fun zipBytes(): ByteArray {
+        val out = ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("材料/说明.txt"))
+            zip.write("压缩包内正文".toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+            zip.putNextEntry(java.util.zip.ZipEntry("report.bin"))
+            zip.write(ByteArray(512) { (it % 251).toByte() })
+            zip.closeEntry()
+        }
+        return out.toByteArray()
+    }
+
+    @Test
+    fun `send with generic attachments only builds mixed body part then attachments in selection order`() {
+        val txt = outboundFile("说明-中文.txt", "text/plain", "附件一：中文说明\n第二行".toByteArray(Charsets.UTF_8))
+        val zip = outboundFile("材料.zip", "application/zip", zipBytes())
+        val mail = ComposedMail(
+            to = "recipient@example.com",
+            subject = "Re: 材料",
+            body = "<p>请查收附件。</p>",
+            html = true,
+            text = "请查收附件。",
+            messageId = "msg-attachments-1",
+            inReplyTo = "<in-1@example.com>",
+            references = "<in-0@example.com> <in-1@example.com>",
+            outboundAttachments = listOf(txt, zip)
+        )
+        val reparsed = roundTrip(captureSentMime(testAccount(), mail, enabledTokenService))
+
+        // I-3：无 ICS 但有通用附件 → 外层 multipart/mixed，part 1 保持原双版本正文。
+        assertTrue(reparsed.contentType.startsWith("multipart/mixed"), "outer must be mixed: ${reparsed.contentType}")
+        val mixed = reparsed.content as MimeMultipart
+        assertEquals(3, mixed.count, "每个原件恰好一个 part，压缩包不展开")
+        val alternative = mixed.getBodyPart(0).content as MimeMultipart
+        assertTrue(alternative.contentType.startsWith("multipart/alternative"))
+        assertEquals(2, alternative.count)
+        assertEquals("请查收附件。", alternative.getBodyPart(0).content.toString().trim())
+        assertEquals("<p>请查收附件。</p>", alternative.getBodyPart(1).content.toString())
+
+        val txtPart = mixed.getBodyPart(1)
+        assertEquals("说明-中文.txt", txtPart.fileName)
+        assertEquals("attachment", txtPart.disposition)
+        assertTrue(txtPart.contentType.lowercase().startsWith("text/plain"))
+        assertArrayEquals(txt.bytes, txtPart.inputStream.readBytes())
+        val zipPart = mixed.getBodyPart(2)
+        assertEquals("材料.zip", zipPart.fileName)
+        assertEquals("attachment", zipPart.disposition)
+        assertTrue(zipPart.contentType.lowercase().startsWith("application/zip"))
+        assertArrayEquals(zip.bytes, zipPart.inputStream.readBytes())
+
+        // 线程头/退订/正文形态不受通用附件影响。
+        assertEquals("msg-attachments-1", reparsed.messageID)
+        assertEquals("<in-1@example.com>", reparsed.getHeader("In-Reply-To", null))
+        assertEquals("<in-0@example.com> <in-1@example.com>", reparsed.getHeader("References", null))
+        assertTrue(
+            reparsed.getHeader("List-Unsubscribe", null).contains("mailto:test@example.com?subject=unsubscribe")
+        )
+    }
+
+    @Test
+    fun `send with calendar and generic attachments keeps ics before attachments in selection order`() {
+        val snapshot = realMeetingSnapshot()
+        val txt = outboundFile("说明-中文.txt", "text/plain", "附件一".toByteArray(Charsets.UTF_8))
+        val zip = outboundFile("材料.zip", "application/zip", zipBytes())
+        val mail = ComposedMail(
+            to = "recipient@example.com",
+            subject = "Meeting confirmation",
+            body = "<p>Please join the meeting.</p>",
+            html = true,
+            text = "Please join the meeting.",
+            calendarAttachment = snapshot,
+            outboundAttachments = listOf(txt, zip)
+        )
+        val reparsed = roundTrip(captureSentMime(testAccount(), mail))
+
+        val mixed = reparsed.content as MimeMultipart
+        assertEquals(4, mixed.count, "正文 + 既有 ICS + 两个通用附件")
+        val icsPart = mixed.getBodyPart(1)
+        assertEquals(snapshot.filename, icsPart.fileName)
+        assertEquals("attachment", icsPart.disposition)
+        assertTrue(icsPart.contentType.lowercase().startsWith("text/calendar"))
+        assertArrayEquals(snapshot.icsText.toByteArray(Charsets.UTF_8), icsPart.inputStream.readBytes())
+
+        assertEquals(txt.snapshot.filename, mixed.getBodyPart(2).fileName)
+        assertEquals(zip.snapshot.filename, mixed.getBodyPart(3).fileName)
+        assertArrayEquals(txt.bytes, mixed.getBodyPart(2).inputStream.readBytes())
+        assertArrayEquals(zip.bytes, mixed.getBodyPart(3).inputStream.readBytes())
+        // 只有既有 ICS 是 text/calendar：通用附件绝不按 text/calendar 发送。
+        assertEquals(
+            1,
+            (0 until mixed.count).count { mixed.getBodyPart(it).contentType.lowercase().startsWith("text/calendar") }
+        )
+    }
+
+    @Test
+    fun `send with plain body and generic attachment keeps single plain part plus attachment`() {
+        val zip = outboundFile("材料.zip", "application/zip", zipBytes())
+        val mail = ComposedMail(
+            to = "recipient@example.com",
+            subject = "Re: 材料",
+            body = "Plain body",
+            html = false,
+            outboundAttachments = listOf(zip)
+        )
+        val mixed = roundTrip(captureSentMime(testAccount(), mail)).content as MimeMultipart
+
+        assertEquals(2, mixed.count)
+        assertEquals("Plain body", mixed.getBodyPart(0).content.toString().trim())
+        assertEquals("材料.zip", mixed.getBodyPart(1).fileName)
+        assertEquals("attachment", mixed.getBodyPart(1).disposition)
+        assertArrayEquals(zip.bytes, mixed.getBodyPart(1).inputStream.readBytes())
     }
 
     @Test

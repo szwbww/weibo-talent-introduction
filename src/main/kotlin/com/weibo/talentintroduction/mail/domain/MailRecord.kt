@@ -32,5 +32,11 @@ data class MailRecord(
      *  CalendarAttachmentCodec.serialize 生成的规范快照（schemaVersion=1）。
      *  只由 ManualReplySendAttemptService 两个 finalize 的 copy/new 四支显式写，
      *  其余构造点保持默认 null（不强迫无关调用改参数）。 */
-    val calendarAttachmentJson: String? = null
+    val calendarAttachmentJson: String? = null,
+    /** 人工回复通用附件存档 JSON（fast-p 05，I-1）：null=无通用附件（唯一 absence
+     *  形态，不用空数组/空串）；非 null 只能由 04
+     *  OutboundAttachmentSnapshotCodec.serialize 生成的有序快照数组。
+     *  只由 ManualReplySendAttemptService 两个 finalize 的 copy/new 四支显式写，
+     *  其余构造点保持默认 null（不强迫无关调用改参数）。 */
+    val outboundAttachmentsJson: String? = null
 )

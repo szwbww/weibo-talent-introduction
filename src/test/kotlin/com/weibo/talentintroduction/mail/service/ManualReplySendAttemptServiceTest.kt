@@ -36,6 +36,7 @@ import org.mockito.Mockito
 import java.time.Instant
 import java.time.LocalDateTime
 import java.util.Optional
+import java.util.UUID
 
 class ManualReplySendAttemptServiceTest {
     private val attemptRepository = Mockito.mock(MailSendAttemptRepository::class.java)
@@ -256,6 +257,104 @@ class ManualReplySendAttemptServiceTest {
         val fpNone = service.computeFingerprint(payload)
         val fpCalendar = service.computeFingerprint(payload.copy(calendarAttachment = realSnapshot()))
         assertTrue(fpNone.fullHex != fpCalendar.fullHex)
+    }
+
+    // ─────────────────────── fast-p 05：通用附件发送身份（I-2） ───────────────────────
+
+    /** 04 快照形态（真实 sha256/字节数口径）；id 是上传 UUID，不参与发送身份。 */
+    private fun attachmentSnapshot(
+        filename: String,
+        contentType: String,
+        bytes: ByteArray,
+        id: String = UUID.randomUUID().toString()
+    ) = OutboundAttachmentSnapshot(
+        schemaVersion = OUTBOUND_ATTACHMENT_SCHEMA_VERSION,
+        id = id,
+        filename = filename,
+        contentType = contentType,
+        byteLength = bytes.size.toLong(),
+        sha256 = outboundSha256Hex(bytes)
+    )
+
+    private fun txtBytes() = "附件一：中文说明\n第二行".toByteArray(Charsets.UTF_8)
+
+    private fun zipBytes(): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("材料/说明.txt"))
+            zip.write("压缩包内正文".toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
+            zip.putNextEntry(java.util.zip.ZipEntry("report.bin"))
+            zip.write(ByteArray(512) { (it % 251).toByte() })
+            zip.closeEntry()
+        }
+        return out.toByteArray()
+    }
+
+    @Test
+    fun `attachment fingerprint ignores upload id and keeps original no-attachment golden`() {
+        val txt = attachmentSnapshot("说明.txt", "text/plain", txtBytes())
+        val zip = attachmentSnapshot("材料.zip", "application/zip", zipBytes())
+        val fp = service.computeFingerprint(payload.copy(outboundAttachments = listOf(txt, zip)))
+
+        // 同字节同文件名重传（新上传 UUID）得到同一发送身份。
+        val reuploaded = service.computeFingerprint(
+            payload.copy(outboundAttachments = listOf(txt.copy(id = UUID.randomUUID().toString()), zip))
+        )
+        assertEquals(fp.fullHex, reuploaded.fullHex)
+        assertEquals(fp.shortKey, reuploaded.shortKey)
+        assertEquals("MANUAL_RICH:" + fp.fullHex.take(32), fp.shortKey)
+
+        // 无附件（含显式空列表）仍是 01 冻结 golden：空列表不追加任何字节。
+        assertEquals(
+            "fa838dbceec46871ec1eae26e9ba4666d6f1ac0fda1bd36f872110efd38becda",
+            service.computeFingerprint(payload.copy(outboundAttachments = emptyList())).fullHex
+        )
+        assertTrue(fp.fullHex != service.computeFingerprint(payload).fullHex)
+    }
+
+    @Test
+    fun `attachment fingerprint changes with bytes filename mime and order`() {
+        val txt = attachmentSnapshot("说明.txt", "text/plain", txtBytes())
+        val zip = attachmentSnapshot("材料.zip", "application/zip", zipBytes())
+        val base = service.computeFingerprint(payload.copy(outboundAttachments = listOf(txt, zip)))
+
+        val otherBytes = txtBytes() + "改一个字节".toByteArray(Charsets.UTF_8)
+        val changedBytes = txt.copy(byteLength = otherBytes.size.toLong(), sha256 = outboundSha256Hex(otherBytes))
+        assertTrue(base.fullHex != service.computeFingerprint(
+            payload.copy(outboundAttachments = listOf(changedBytes, zip))
+        ).fullHex, "字节变化必须改变发送身份")
+
+        assertTrue(base.fullHex != service.computeFingerprint(
+            payload.copy(outboundAttachments = listOf(txt.copy(filename = "说明-改名.txt"), zip))
+        ).fullHex, "文件名变化必须改变发送身份")
+
+        assertTrue(base.fullHex != service.computeFingerprint(
+            payload.copy(outboundAttachments = listOf(txt.copy(contentType = "text/markdown"), zip))
+        ).fullHex, "MIME 变化必须改变发送身份")
+
+        assertTrue(base.fullHex != service.computeFingerprint(
+            payload.copy(outboundAttachments = listOf(zip, txt))
+        ).fullHex, "选取顺序变化必须改变发送身份")
+    }
+
+    @Test
+    fun `attachment segment is independent of the calendar segment`() {
+        val calendar = realSnapshot()
+        val txt = attachmentSnapshot("说明.txt", "text/plain", txtBytes())
+        val fpNone = service.computeFingerprint(payload)
+        val fpCalendar = service.computeFingerprint(payload.copy(calendarAttachment = calendar))
+        val fpAttachments = service.computeFingerprint(payload.copy(outboundAttachments = listOf(txt)))
+        val fpBoth = service.computeFingerprint(
+            payload.copy(calendarAttachment = calendar, outboundAttachments = listOf(txt))
+        )
+
+        assertEquals(4, listOf(fpNone.fullHex, fpCalendar.fullHex, fpAttachments.fullHex, fpBoth.fullHex).toSet().size)
+        // calendar 段仍按 02 的顺序由 semanticSha256 决定：仅换日历语义即换身份（附件不变）。
+        val otherCalendar = realSnapshot(meetingInput(zoomUrl = "https://zoom.us/j/87102801188?pwd=other"))
+        assertTrue(fpBoth.fullHex != service.computeFingerprint(
+            payload.copy(calendarAttachment = otherCalendar, outboundAttachments = listOf(txt))
+        ).fullHex)
     }
 
     @Test
@@ -629,6 +728,189 @@ class ManualReplySendAttemptServiceTest {
         assertEquals("FAILED", saved.sendStatus)
         assertNull(saved.sentAt)
         assertNull(saved.calendarAttachmentJson)
+    }
+
+    // ──────────────── fast-p 05：四分支通用附件快照存档（I-1/I-4） ────────────────
+
+    private fun attachmentPayload(vararg files: OutboundAttachmentSnapshot) =
+        payload.copy(outboundAttachments = files.toList())
+
+    private fun attachmentsJson(vararg files: OutboundAttachmentSnapshot) =
+        OutboundAttachmentSnapshotCodec.serialize(files.toList())
+
+    /** 上一次尝试（成功或失败）留下的附件存档记录。 */
+    private fun priorFailedRecord(
+        id: Long,
+        snapshotJsonValue: String?,
+        calendarJsonValue: String? = null
+    ) = MailRecord(
+        id = id,
+        expertContactId = payload.contactId,
+        direction = "OUTBOUND",
+        mailType = "MANUAL_RICH_REPLY",
+        senderAccountCode = payload.accountCode,
+        messageId = "<manual-rich-first@weibo.com>",
+        inReplyTo = payload.inReplyTo,
+        subject = payload.subject,
+        body = payload.finalText,
+        matchedQaRuleId = payload.primaryRuleId,
+        sendStatus = "FAILED",
+        receivedAt = null,
+        sentAt = null,
+        errorSummary = "SMTP timeout",
+        mailSendAttemptId = 1L,
+        createdAt = LocalDateTime.now(),
+        calendarAttachmentJson = calendarJsonValue,
+        outboundAttachmentsJson = snapshotJsonValue
+    )
+
+    @Test
+    fun `finalizeSuccess new branch persists ordered attachment snapshot json`() {
+        val txt = attachmentSnapshot("说明.txt", "text/plain", txtBytes())
+        val zip = attachmentSnapshot("材料.zip", "application/zip", zipBytes())
+        val withAttachments = attachmentPayload(txt, zip)
+        stubFindByIdFor(withAttachments)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        stubSaveReturning(600L)
+
+        val id = service.finalizeSuccess(withAttachments, 1L, "<manual-rich-att@weibo.com>")
+
+        assertEquals(600L, id)
+        val saved = capturedSavedRecord()
+        assertEquals("SENT", saved.sendStatus)
+        assertEquals(attachmentsJson(txt, zip), saved.outboundAttachmentsJson)
+        assertEquals(listOf(txt, zip), OutboundAttachmentSnapshotCodec.parseOrThrow(saved.outboundAttachmentsJson))
+        assertNull(saved.calendarAttachmentJson, "无会议日历仍是 NULL，不被通用附件影响")
+    }
+
+    @Test
+    fun `finalizeSuccess copy branch overwrites previous attachment snapshot with this attempt`() {
+        val previous = attachmentSnapshot("旧.txt", "text/plain", "上一次的附件".toByteArray(Charsets.UTF_8))
+        val zip = attachmentSnapshot("材料.zip", "application/zip", zipBytes())
+        val retryPayload = attachmentPayload(zip)
+        stubFindByIdFor(retryPayload)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L))
+            .thenReturn(priorFailedRecord(700L, attachmentsJson(previous)))
+        stubSaveReturning(700L)
+
+        val id = service.finalizeSuccess(retryPayload, 1L, "<manual-rich-retry@weibo.com>")
+
+        assertEquals(700L, id)
+        val saved = capturedSavedRecord()
+        assertEquals("SENT", saved.sendStatus)
+        assertEquals(attachmentsJson(zip), saved.outboundAttachmentsJson)
+        assertEquals(listOf(zip), OutboundAttachmentSnapshotCodec.parseOrThrow(saved.outboundAttachmentsJson))
+    }
+
+    @Test
+    fun `finalizeSuccess copy branch without attachments clears the failed record snapshot`() {
+        // 安全失败带附件 → 人工重试去掉附件（正文其余字段一致）的 copy 成功：必须显式
+        // 清空为 NULL，绝不沿用失败记录的旧附件（I-1）。
+        val previous = attachmentSnapshot("旧.txt", "text/plain", "上一次的附件".toByteArray(Charsets.UTF_8))
+        stubFindByIdFor(payload)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L))
+            .thenReturn(priorFailedRecord(701L, attachmentsJson(previous)))
+        stubSaveReturning(701L)
+
+        val id = service.finalizeSuccess(payload, 1L, "<manual-rich-retry@weibo.com>")
+
+        assertEquals(701L, id)
+        val saved = capturedSavedRecord()
+        assertEquals("SENT", saved.sendStatus)
+        assertNull(saved.outboundAttachmentsJson)
+    }
+
+    @Test
+    fun `finalizeFailure new branch persists ordered attachment snapshot json`() {
+        val txt = attachmentSnapshot("说明.txt", "text/plain", txtBytes())
+        val zip = attachmentSnapshot("材料.zip", "application/zip", zipBytes())
+        val withAttachments = attachmentPayload(txt, zip)
+        stubFindByIdFor(withAttachments)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        stubSaveReturning(602L)
+
+        val id = service.finalizeFailure(
+            withAttachments, 1L, "<manual-rich-safe-fail@weibo.com>",
+            MailSendAttemptStatus.FAILED_SAFE_TO_RETRY, "SMTP error: 421 try later"
+        )
+
+        assertEquals(602L, id)
+        val saved = capturedSavedRecord()
+        assertEquals("FAILED", saved.sendStatus)
+        assertNull(saved.sentAt)
+        assertEquals(attachmentsJson(txt, zip), saved.outboundAttachmentsJson)
+        assertEquals(listOf(txt, zip), OutboundAttachmentSnapshotCodec.parseOrThrow(saved.outboundAttachmentsJson))
+    }
+
+    @Test
+    fun `finalizeFailure copy branch without attachments clears the previous snapshot`() {
+        val previous = attachmentSnapshot("旧.txt", "text/plain", "上一次的附件".toByteArray(Charsets.UTF_8))
+        stubFindByIdFor(payload)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L))
+            .thenReturn(priorFailedRecord(702L, attachmentsJson(previous)))
+        stubSaveReturning(702L)
+
+        val id = service.finalizeFailure(
+            payload, 1L, "<manual-rich-retry@weibo.com>",
+            MailSendAttemptStatus.FAILED, "SMTP error: 550 rejected"
+        )
+
+        assertEquals(702L, id)
+        val saved = capturedSavedRecord()
+        assertEquals("FAILED", saved.sendStatus)
+        assertNull(saved.outboundAttachmentsJson)
+    }
+
+    @Test
+    fun `plain send persists explicit null and never an empty array or blank string`() {
+        stubFindByIdFor(payload)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        stubSaveReturning(603L)
+
+        service.finalizeSuccess(payload, 1L, "<manual-rich-plain@weibo.com>")
+
+        val saved = capturedSavedRecord()
+        assertNull(saved.outboundAttachmentsJson)
+        assertFalse(saved.outboundAttachmentsJson == "[]")
+        assertFalse(saved.outboundAttachmentsJson == "")
+    }
+
+    @Test
+    fun `attachment only send never touches the scheduling service`() {
+        // I-4：只附普通文件（无 calendar/meetingEvent）不触发排期，也不产生会议。
+        val txt = attachmentSnapshot("说明.txt", "text/plain", txtBytes())
+        val withAttachments = attachmentPayload(txt)
+        stubFindByIdFor(withAttachments)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L)).thenReturn(null)
+        stubSaveReturning(604L)
+
+        val id = service.finalizeSuccess(withAttachments, 1L, "<manual-rich-att-only@weibo.com>")
+
+        assertEquals(604L, id)
+        Mockito.verify(meetingCalendarService, Mockito.never())
+            .createFromSentMail(anyValue(placeholderRecord()), anyValue(meetingEventInput()))
+        val saved = capturedSavedRecord()
+        assertEquals("SENT", saved.sendStatus)
+        assertNull(saved.calendarAttachmentJson)
+        assertEquals(attachmentsJson(txt), saved.outboundAttachmentsJson)
+    }
+
+    @Test
+    fun `retry with attachments after a plain failed attempt keeps both calendar and attachments`() {
+        val calendar = realSnapshot()
+        val txt = attachmentSnapshot("说明.txt", "text/plain", txtBytes())
+        val retryPayload = payload.copy(calendarAttachment = calendar, outboundAttachments = listOf(txt))
+        stubFindByIdFor(retryPayload)
+        Mockito.`when`(mailRecordRepository.findByMailSendAttemptId(1L))
+            .thenReturn(priorFailedRecord(704L, null))
+        stubSaveReturning(704L)
+
+        val id = service.finalizeSuccess(retryPayload, 1L, "<manual-rich-both@weibo.com>")
+
+        assertEquals(704L, id)
+        val saved = capturedSavedRecord()
+        assertEquals(snapshotJson(calendar), saved.calendarAttachmentJson)
+        assertEquals(attachmentsJson(txt), saved.outboundAttachmentsJson)
     }
 
     // ───────────────────────── fast-p 02：成功事务内创建排期（I-1/I-2） ─────────────────────────

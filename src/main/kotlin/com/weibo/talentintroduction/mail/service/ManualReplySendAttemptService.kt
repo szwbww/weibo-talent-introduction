@@ -40,6 +40,8 @@ class ManualReplySendAttemptService(
         private const val MANUAL_RICH_MAIL_TYPE_PREFIX = "MANUAL_RICH:"
         private const val MESSAGE_ID_TEMPLATE = "<manual-rich-%s@weibo.com>"
         private const val MAX_ERROR_SUMMARY_LENGTH = 500
+        /** 通用附件指纹段域标记（fast-p 05，I-2）：独立版本段，不复用 calendar 段。 */
+        private const val OUTBOUND_ATTACHMENTS_SEGMENT = "outbound-attachments-v1"
         // 无来信会话自由回信的 attempt 短键：requestId 派生、内容无关（I-4）。
         // mail_type 列宽 VARCHAR(50)：前缀 20 字符 + sha256 前 30 位 = 恰好 50。
         const val CONVERSATION_REQUEST_PREFIX = "MANUAL_RICH_REQUEST:"
@@ -79,7 +81,15 @@ class ManualReplySendAttemptService(
          * finalizeSuccess 在成功事务内创建排期，二者同有同无。
          * 不进入指纹（时间/链接语义已由 calendarAttachment.semanticSha256 覆盖）。
          */
-        val meetingEvent: MeetingCalendarInput? = null
+        val meetingEvent: MeetingCalendarInput? = null,
+        /**
+         * fast-p 05 (I-1/I-2)：本次发送的有序通用附件快照（04
+         * `OutboundAttachmentService.resolveForSend` 产物，选取顺序；不含上传 UUID/
+         * 磁盘路径/上传时间）。默认空：不进入指纹、不写新列，普通发送身份与行为逐字
+         * 不变；非空时追加 outbound-attachments-v1 段，并在两个 finalize 的四分支
+         * 显式写入本次快照（空即显式 null）。
+         */
+        val outboundAttachments: List<OutboundAttachmentSnapshot> = emptyList()
     )
 
     /** findCompletedByRequestId 命中的已完成会话回信（attempt SENT + 唯一 mail_record）。 */
@@ -158,6 +168,21 @@ class ManualReplySendAttemptService(
         payload.calendarAttachment?.let { calendar ->
             appendLengthPrefix(data, "meeting-calendar-v1")
             appendLengthPrefix(data, calendar.semanticSha256)
+        }
+        // fast-p 05 (I-2)：通用附件只在非空时于既有全部段之后追加独立版本段
+        // （域标记 + 数量 + 逐项 filename/contentType/byteLength/sha256，全部长度前缀
+        // 编码，不用带分隔符的字符串拼接）。上传 UUID/磁盘路径/上传时间不进入
+        // 身份：同字节同文件名重传（新上传 id）得到同一 fullHex/shortKey。
+        // 空列表不追加任何字节，无附件与仅 ICS 的既有 hash 逐字不变。
+        if (payload.outboundAttachments.isNotEmpty()) {
+            appendLengthPrefix(data, OUTBOUND_ATTACHMENTS_SEGMENT)
+            appendLengthPrefix(data, payload.outboundAttachments.size.toString())
+            payload.outboundAttachments.forEach { attachment ->
+                appendLengthPrefix(data, attachment.filename)
+                appendLengthPrefix(data, attachment.contentType)
+                appendLengthPrefix(data, attachment.byteLength.toString())
+                appendLengthPrefix(data, attachment.sha256)
+            }
         }
         val fullHex = sha256Hex(data.toByteArray())
         val shortKey = if (inboundId != null) {
@@ -326,6 +351,11 @@ class ManualReplySendAttemptService(
         // fast-p 02 (I-1/I-4)：与本次发送同一实例的规范快照 JSON；null 显式清空
         // （不沿用安全失败记录的旧附件）。
         val snapshotJson = payload.calendarAttachment?.let { CalendarAttachmentCodec.serialize(it) }
+        // fast-p 05 (I-1/I-4)：本次发送的有序通用附件快照 JSON；空列表显式 null
+        // （唯一 absence 形态，绝不写 []/空串，也不沿用上一次尝试的旧快照）。
+        val outboundSnapshotJson = payload.outboundAttachments
+            .takeIf { it.isNotEmpty() }
+            ?.let { OutboundAttachmentSnapshotCodec.serialize(it) }
         val existingRecord = mailRecordRepository.findByMailSendAttemptId(attemptId)
 
         val mailRecord = if (existingRecord != null) {
@@ -339,7 +369,8 @@ class ManualReplySendAttemptService(
                 sendStatus = "SENT",
                 sentAt = now,
                 errorSummary = null,
-                calendarAttachmentJson = snapshotJson
+                calendarAttachmentJson = snapshotJson,
+                outboundAttachmentsJson = outboundSnapshotJson
             )
         } else {
             MailRecord(
@@ -359,7 +390,8 @@ class ManualReplySendAttemptService(
                 sentAt = now,
                 mailSendAttemptId = attemptId,
                 createdAt = existingRecord?.createdAt ?: now,
-                calendarAttachmentJson = snapshotJson
+                calendarAttachmentJson = snapshotJson,
+                outboundAttachmentsJson = outboundSnapshotJson
             )
         }
         val savedRecord = mailRecordRepository.save(mailRecord)
@@ -417,6 +449,11 @@ class ManualReplySendAttemptService(
         val boundedError = errorSummary?.take(MAX_ERROR_SUMMARY_LENGTH)
         // fast-p 02 (I-1/I-4)：安全失败同样持久化本次快照 JSON；null 显式清空。
         val snapshotJson = payload.calendarAttachment?.let { CalendarAttachmentCodec.serialize(it) }
+        // fast-p 05 (I-1/I-4)：安全失败同样持久化本次有序通用附件快照；空显式 null，
+        // 绝不沿用上一次尝试（成功或失败）的旧快照。
+        val outboundSnapshotJson = payload.outboundAttachments
+            .takeIf { it.isNotEmpty() }
+            ?.let { OutboundAttachmentSnapshotCodec.serialize(it) }
         val existingRecord = mailRecordRepository.findByMailSendAttemptId(attemptId)
 
         val mailRecord = if (existingRecord != null) {
@@ -430,7 +467,8 @@ class ManualReplySendAttemptService(
                 sendStatus = "FAILED",
                 sentAt = null,
                 errorSummary = boundedError,
-                calendarAttachmentJson = snapshotJson
+                calendarAttachmentJson = snapshotJson,
+                outboundAttachmentsJson = outboundSnapshotJson
             )
         } else {
             MailRecord(
@@ -451,7 +489,8 @@ class ManualReplySendAttemptService(
                 errorSummary = boundedError,
                 mailSendAttemptId = attemptId,
                 createdAt = now,
-                calendarAttachmentJson = snapshotJson
+                calendarAttachmentJson = snapshotJson,
+                outboundAttachmentsJson = outboundSnapshotJson
             )
         }
         val savedRecord = mailRecordRepository.save(mailRecord)
