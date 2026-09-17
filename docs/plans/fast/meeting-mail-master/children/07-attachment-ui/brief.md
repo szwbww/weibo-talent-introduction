@@ -1,6 +1,6 @@
 # 07 · 富文本仅图标上传、多附件草稿与会话展示
 
-状态：待审批；依赖06。一个前端子系统，4文件。共享草稿对象只新增outboundAttachmentDraft一个字段；其内部revision/items为本需求的完整对象，不另加平行状态真值。
+状态：待审批；依赖06。一个前端子系统，5文件（A2 将授权由 4 扩至 5）。共享草稿对象只新增outboundAttachmentDraft一个字段；其内部revision/items为本需求的完整对象，不另加平行状态真值。
 
 ## 需求描述
 
@@ -117,6 +117,7 @@
 |2|`src/main/resources/static/styles.css`|修改|仅追加outbound-* CSS|
 |3|`src/test/js/mailboxOutboundAttachments.test.js`|新增|真实链路adapter/异步归属/原文件下载链接|
 |4|`src/test/js/meetingConfirmationIntegration.test.js`|修改|工具栏顺序由6项变7项并回归混合附件|
+|5|`src/test/js/mailboxChatBehavior.test.js`|修改|A2：:3531 锚点提示与发送 footer 的兄弟邻接断言放宽为顺序断言，配合 S-2 插入 outbound-files|
 
 ## 验收标准
 
