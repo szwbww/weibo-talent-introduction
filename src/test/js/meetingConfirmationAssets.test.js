@@ -1,12 +1,15 @@
 "use strict";
 
-// fast-p 05 资源激活测试（T3；I-1/I-2/S-1）：
-// 1) index.html 恰好 9 个带 ?v= 资源（7 旧 + meeting-confirmation.css/.js），全部同值
-//    20260914-followup-email，无重复注册、无旧键残留；
+// fast-p 05 资源激活测试（T3；I-1/I-2/S-1）+ 02 注册回归：
+// 1) index.html 恰好 11 个带 ?v= 资源（7 旧 + meeting-confirmation.css/.js 与
+//    world-clock.css/.js），全部同值 20260917-global-world-clock，无重复注册；
 // 2) S-1 注册顺序：meeting CSS 紧跟 mailbox-chat.css 之后；meeting JS 在 mailbox-chat.js
-//    与 app.js 之前；link 全在 head、script 全在 body；task-modal-runtime.js 保持未版本化原位；
+//    与 app.js 之前；world-clock CSS/JS 分别位于最后；link 全在 head、script 全在 body；
+//    task-modal-runtime.js 保持未版本化原位；
 // 3) 组件已引用且不注入样例/预览 mock 数据：注册行仅相对路径 + 单一版本查询串；
-//    组件文件不携带 sample/mock/fixture/demo 数据或 fetch 改写痕迹（I-2）。
+//    组件文件不携带 sample/mock/fixture/demo 数据或 fetch 改写痕迹（I-2）；
+// 4) 02：新资源各注册一次且顺序正确；顶栏删除轮询日志入口后 logout/currentUserDisplay/
+//    pollLogPanel/closePollLogPanelBtn 仍在，九个 data-view 集合与顺序不变（I-7/S-5）。
 
 const fs = require("fs");
 const path = require("path");
@@ -18,44 +21,45 @@ const indexPath = path.join(ROOT, "index.html");
 const html = fs.readFileSync(indexPath, "utf-8");
 const meetingSource = fs.readFileSync(path.join(ROOT, "meeting-confirmation.js"), "utf-8");
 
-const CACHE_KEY = "20260914-followup-email";
-const CSS_ORDER = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css"];
+const CACHE_KEY = "20260917-global-world-clock";
+const CSS_ORDER = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
+    "world-clock.css"];
 const JS_ORDER = ["trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
-    "mailbox-chat.js", "app.js"];
+    "mailbox-chat.js", "app.js", "world-clock.js"];
 const ALL_ASSETS = [...CSS_ORDER, ...JS_ORDER];
 
-describe("T3: 9 个带版本资源统一键与注册（I-1/S-1）", () => {
-    it("恰好 9 个带 ?v= 资源且全部等于 20260914-followup-email，无旧键残留", () => {
+describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
+    it("恰好 11 个带 ?v= 资源且全部等于 20260917-global-world-clock，无旧键残留", () => {
         const keys = [...html.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
-        assert.strictEqual(keys.length, 9, `index.html 必须恰好注册 9 个带版本资源，实际 ${keys.length}`);
+        assert.strictEqual(keys.length, 11, `index.html 必须恰好注册 11 个带版本资源，实际 ${keys.length}`);
         assert.ok(keys.every((key) => key === CACHE_KEY), `全部键必须等于 ${CACHE_KEY}: ${keys}`);
         assert.ok(!html.includes("20260910-mailbox-spacing"),
             "上一缓存键 20260910-mailbox-spacing 必须 0 命中 index.html");
     });
 
-    it("9 个资源 = 7 旧资源 + meeting-confirmation.css/.js，各恰好注册 1 次（无重复）", () => {
+    it("11 个资源 = 9 旧资源 + world-clock.css/.js，各恰好注册 1 次（无重复）", () => {
         const refs = [];
         const linkRe = /<link rel="stylesheet" href="([^"]+\.css)\?v=([0-9a-z-]+)">/g;
         const scriptRe = /<script src="([^"]+\.js)\?v=([0-9a-z-]+)"><\/script>/g;
         let match;
         while ((match = linkRe.exec(html)) !== null) refs.push({ tag: "link", name: match[1] });
         while ((match = scriptRe.exec(html)) !== null) refs.push({ tag: "script", name: match[1] });
-        assert.strictEqual(refs.length, 9, "link+script 带版本注册行合计必须为 9");
+        assert.strictEqual(refs.length, 11, "link+script 带版本注册行合计必须为 11");
         for (const asset of ALL_ASSETS) {
             const hits = refs.filter((ref) => ref.name === asset).length;
             assert.strictEqual(hits, 1, `${asset} 必须恰好注册 1 次，实际 ${hits}`);
         }
-        // 无重名：9 个名字互不重复
-        assert.strictEqual(new Set(refs.map((ref) => ref.name)).size, 9,
-            "9 个注册资源名不得重复");
+        // 无重名：11 个名字互不重复
+        assert.strictEqual(new Set(refs.map((ref) => ref.name)).size, 11,
+            "11 个注册资源名不得重复");
     });
 
     it("link 全在 head、script 全在 body；task-modal-runtime.js 未版本化且位于组件脚本之前", () => {
         const headEnd = html.indexOf("</head>");
         const bodyEnd = html.lastIndexOf("</body>");
         assert.ok(headEnd > 0 && bodyEnd > headEnd, "index.html 结构异常");
-        const linkRe = /<link rel="stylesheet" href="[^"]+\.css\?v=20260914-followup-email">/g;
-        const scriptRe = /<script src="[^"]+\.js\?v=20260914-followup-email"><\/script>/g;
+        const linkRe = /<link rel="stylesheet" href="[^"]+\.css\?v=20260917-global-world-clock">/g;
+        const scriptRe = /<script src="[^"]+\.js\?v=20260917-global-world-clock"><\/script>/g;
         let match;
         while ((match = linkRe.exec(html)) !== null) {
             assert.ok(match.index < headEnd, "样式 link 必须位于 head 内");
@@ -124,5 +128,71 @@ describe("T3: 组件被引用且不注入样例/预览 mock 数据（I-2）", ()
             "meeting-confirmation.js 不得改写/拦截 fetch");
         assert.ok(!/data:(text|application)\//.test(meetingSource),
             "meeting-confirmation.js 不得内嵌 data: 注入载荷");
+    });
+});
+
+describe("T4: 02 注册新资源与顶栏入口回归（I-7/I-8/S-5/S-6）", () => {
+    const versionedRefs = () => {
+        const refs = [];
+        const linkRe = /<link rel="stylesheet" href="([^"]+\.css)\?v=([0-9a-z-]+)">/g;
+        const scriptRe = /<script src="([^"]+\.js)\?v=([0-9a-z-]+)"><\/script>/g;
+        let match;
+        while ((match = linkRe.exec(html)) !== null) refs.push({ tag: "link", name: match[1], key: match[2] });
+        while ((match = scriptRe.exec(html)) !== null) refs.push({ tag: "script", name: match[1], key: match[2] });
+        return refs;
+    };
+
+    it("新资源各自作为独立文件存在、以正确标签注册 1 次且携带统一键（I-8/S-6）", () => {
+        for (const [name, tag] of [["world-clock.css", "link"], ["world-clock.js", "script"]]) {
+            assert.ok(fs.existsSync(path.join(ROOT, name)), `${name} 必须作为独立文件存在`);
+            const hits = versionedRefs().filter((ref) => ref.name === name);
+            assert.strictEqual(hits.length, 1, `${name} 必须恰好注册 1 次，实际 ${hits.length}`);
+            assert.strictEqual(hits[0].tag, tag, `${name} 必须以 ${tag} 注册`);
+            assert.strictEqual(hits[0].key, CACHE_KEY, `${name} 必须携带统一键 ${CACHE_KEY}`);
+        }
+    });
+
+    it("world-clock.css 在最后一个旧 CSS 之后；world-clock.js 在 app.js 之后且为最后一个带版本脚本（I-8/S-6）", () => {
+        const lastOldCssAt = html.indexOf(`meeting-confirmation.css?v=${CACHE_KEY}`);
+        const clockCssAt = html.indexOf(`world-clock.css?v=${CACHE_KEY}`);
+        assert.ok(lastOldCssAt > -1 && clockCssAt > lastOldCssAt,
+            "world-clock.css 必须注册在最后一个旧 CSS（meeting-confirmation.css）之后");
+        const appAt = html.indexOf(`app.js?v=${CACHE_KEY}`);
+        const clockJsAt = html.indexOf(`world-clock.js?v=${CACHE_KEY}`);
+        assert.ok(appAt > -1 && clockJsAt > appAt, "world-clock.js 必须注册在 app.js 之后");
+        const lastScript = versionedRefs().filter((ref) => ref.tag === "script").pop();
+        assert.strictEqual(lastScript.name, "world-clock.js", "world-clock.js 必须是最后一个带版本脚本");
+        const scriptAt = html.indexOf(`meeting-confirmation.js?v=${CACHE_KEY}`);
+        assert.ok(scriptAt > -1 && scriptAt < appAt,
+            "meeting-confirmation.js 仍必须位于 app.js 之前（相对依赖顺序不变）");
+    });
+
+    it("删除轮询日志入口但保留用户名/退出/日志面板（I-7/S-5）", () => {
+        assert.ok(!html.includes("showPollLogBtn"), "轮询日志入口 #showPollLogBtn 必须已删除");
+        assert.ok(!html.includes("showPollLog()"), "轮询日志按钮的 onclick 调用不得残留在 index.html");
+        for (const id of ["currentUserDisplay", "logoutBtn", "pollLogPanel", "pollLogBody", "closePollLogPanelBtn"]) {
+            assert.ok(html.includes(`id="${id}"`), `#${id} 必须保留在 index.html`);
+        }
+    });
+
+    it("顶栏侧栏只剩用户名与退出登录一个按钮，顺序为用户在前（S-5）", () => {
+        const sideStart = html.indexOf('<div class="topnav-side">');
+        assert.ok(sideStart > -1, "index.html 必须保留 .topnav-side");
+        const sideEnd = html.indexOf("</header>", sideStart);
+        assert.ok(sideEnd > sideStart, "index.html 结构异常：topnav 未闭合");
+        const side = html.slice(sideStart, sideEnd);
+        const userAt = side.indexOf('id="currentUserDisplay"');
+        const logoutAt = side.indexOf('id="logoutBtn"');
+        assert.ok(userAt > -1 && logoutAt > userAt, "顶栏顺序必须为当前用户在前、退出登录在后");
+        assert.strictEqual((side.match(/<button/g) || []).length, 1,
+            "顶栏侧栏必须只剩退出登录一个按钮（时钟由 01 boot 动态插入）");
+        assert.ok(side.includes('<span>退出登录</span>'), "退出登录文案与节点必须保持");
+    });
+
+    it("原九个 data-view 导航集合与顺序不变（I-1/S-5）", () => {
+        const views = [...html.matchAll(/data-view="([^"]+)"/g)].map((match) => match[1]);
+        assert.deepStrictEqual(views, ["monitoring", "accounts", "mail-templates", "suppressions",
+            "contacts", "mailbox", "inbound-summary", "ai-training", "tasks"],
+            "九个 data-view 导航的集合与顺序不得变化");
     });
 });

@@ -4,7 +4,7 @@
 // 旧 I-1..I-6（renderMarkup/renderBusyOverlay/busyOverlayState 等旧工作台内部函数切片）
 // 与整段「rendered behavior」随旧版按条目工作台一并退役；本文件只保留：
 // I-7（.action-dialog 与 .trust-reply-busy-* 不透明白底 + dark-mode 配对）、
-// I-8（G-5 缓存键九联）、S-1（.reply-workflow-content 逐字块）、
+// I-8（G-5 11 个缓存资源同值）、S-1（.reply-workflow-content 逐字块）、
 // S-2（busy 四规则逐字 + spinner/keyframes 唯一）、S-3（dialog-body 对比度作用域）。
 // 被断言 CSS 块均不在 05 的 S-5 处置表内 → 保持逐字不动。
 
@@ -19,7 +19,7 @@ const indexPath = path.join(root, "index.html");
 const styles = fs.readFileSync(stylesPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260914-followup-email";
+const CACHE_KEY = "20260917-global-world-clock";
 
 function stripWs(text) {
     return text.replace(/\s+/g, " ").trim();
@@ -54,13 +54,14 @@ describe("P2 overlay + dialog contrast (source contract)", () => {
         assert.ok(dark.includes("background: rgba(21, 31, 48, 0.97);"), "dark action-dialog override");
     });
 
-    it("I-8: the nine cache-busted assets share one key, in order", () => {
+    it("I-8: the eleven cache-busted assets share one key, in order", () => {
         const keys = (html.match(/\?v=[^"]+/g) || []).map((k) => k.slice(3));
-        assert.strictEqual(keys.length, 9, "index.html must carry exactly nine cache-busted asset URLs");
-        assert.strictEqual(new Set(keys).size, 1, "all nine keys must share one value");
+        assert.strictEqual(keys.length, 11, "index.html must carry exactly eleven cache-busted asset URLs");
+        assert.strictEqual(new Set(keys).size, 1, "all eleven keys must share one value");
         assert.strictEqual(keys[0], CACHE_KEY, "the shared key must be " + CACHE_KEY);
         const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
-            "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js", "mailbox-chat.js", "app.js"];
+            "world-clock.css", "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
+            "mailbox-chat.js", "app.js", "world-clock.js"];
         let previous = -1;
         for (const asset of ordered) {
             const at = html.indexOf(asset + "?v=" + CACHE_KEY);
