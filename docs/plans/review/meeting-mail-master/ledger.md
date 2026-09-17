@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-16/meeting-mail-master.md
+
+- Status: BLOCKED_PREFLIGHT
+- Review epoch: 0
+- Master plan: docs/plans/2026-09-16/meeting-mail-master.md
+- Governing master identity: N/A — not eligible for identity resolution
+- Invoked master identity: N/A
+- Master identity state: N/A
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/meeting-mail-master/ledger.md
+- Fast-p handoff: docs/plans/fast/meeting-mail-master/human-review-handoff.md
+- Master base: 24f5c8205a304d3682e09e02458960bc2caa0463
+- Final code head: N/A
+- Evidence parent before next commit: 3aa871c973d9dec305088928ba678672763b43fa
+- Previous evidence commit: N/A
+- Branch: fast/meeting-mail-master
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: `discover_fast_p.py --repo /Users/lukai/IdeaProjects/weibo-talent-introduction --master-plan /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-09-16/meeting-mail-master.md` invoked; selected registered candidate's fast-p evidence is not eligible.
+- Misdirected review evidence: N/A
+- Reviewer: N/A
+- Reviewer attempt: 0
+- Machine result: PENDING
+- Machine report epoch: N/A
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Fast-p ledger and handoff are `PAUSED_FOR_HUMAN`, child 07 is `PAUSED_FOR_HUMAN`, child 08 is `PENDING`; complete and finalize the exact fast-p run before aggregate review.
