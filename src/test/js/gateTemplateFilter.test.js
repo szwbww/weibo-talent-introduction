@@ -14,6 +14,13 @@ function extractGateFn() {
     return match[0];
 }
 
+function extractFn(name) {
+    const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");
+    const match = appJsSource.match(regex);
+    if (!match) throw new Error("Could not find " + name + " in app.js");
+    return match[0];
+}
+
 function makeClassList() {
     const set = new Set();
     return {
@@ -107,6 +114,18 @@ describe("expert gate template filter", () => {
         assert.doesNotMatch(gateSource, /recentWorkTitles/, "gate must not hardcode es fields");
         assert.doesNotMatch(gateSource, /researchFields/, "gate must not hardcode es fields");
         assert.doesNotMatch(gateSource, /可发送|可发/, "count text must not imply exact sendable count (I-9)");
+    });
+
+    it("batch gate copy never mentions the legacy required_keys column (S-2)", () => {
+        const gateSource = extractFn("refreshBatchGateState");
+
+        assert.doesNotMatch(gateSource, /required_keys/, "legacy column name must be gone from the copy");
+        assert.match(
+            gateSource,
+            /未配置门禁字段/,
+            "the no-gate-fields state must stay descriptive"
+        );
+        assert.doesNotMatch(gateSource, /可发送|可发/, "count text must not imply exact sendable count");
     });
 
     it("gate-fields 500 applies no filter: no chip selection, no hasField param, summary hidden, one notice", async () => {

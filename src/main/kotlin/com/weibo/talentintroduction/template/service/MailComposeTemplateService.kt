@@ -1,6 +1,5 @@
 package com.weibo.talentintroduction.template.service
 
-import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
@@ -19,8 +18,8 @@ import com.weibo.talentintroduction.template.repository.MailComposeTemplateBlock
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
 import com.weibo.talentintroduction.variant.domain.ContentVariantOwnerType
 import com.weibo.talentintroduction.variant.service.ContentVariantService
-import org.slf4j.LoggerFactory
 import org.springframework.context.annotation.Lazy
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
@@ -37,7 +36,14 @@ class MailComposeTemplateService(
     private val mailSenderAccountService: MailSenderAccountService,
     private val contentVariantService: ContentVariantService
 ) {
-    private val log = LoggerFactory.getLogger(MailComposeTemplateService::class.java)
+    /**
+     * Stateless placeholder parser (I-1). Instantiated directly, exactly like
+     * [com.weibo.talentintroduction.mail.service.PersonalizationGateService] does, so the
+     * constructor injection surface — and every caller that builds this service — stays
+     * unchanged.
+     */
+    private val mailPlaceholderService = MailPlaceholderService()
+
     fun listAll(): List<MailComposeTemplateDetail> =
         templateRepository.findAllByOrderByIdAsc().map { toDetail(it) }
 
@@ -59,7 +65,10 @@ class MailComposeTemplateService(
                 templateName = command.templateName.trim(),
                 subject = command.subject.trim(),
                 description = command.description?.trim()?.takeIf { it.isNotBlank() },
-                mailType = command.mailType?.trim()?.takeIf { it.isNotBlank() },
+                // I-3: a template created in the UI must be selectable by a batch task,
+                // and BatchSendTaskConfigService.resolveMailType only accepts
+                // INTRODUCTION/MATERIAL_REMINDER.
+                mailType = command.mailType?.trim()?.takeIf { it.isNotBlank() } ?: INTRODUCTION_MAIL_TYPE,
                 subjectVariants = null,
                 enabled = command.enabled,
                 createdAt = now,
@@ -82,7 +91,10 @@ class MailComposeTemplateService(
                 templateName = command.templateName.trim(),
                 subject = command.subject.trim(),
                 description = command.description?.trim()?.takeIf { it.isNotBlank() },
-                mailType = command.mailType?.trim()?.takeIf { it.isNotBlank() } ?: existing.mailType,
+                // I-3: an edit keeps the stored mail type (and therefore the task
+                // binding semantics); the request value is only used to backfill a
+                // template that has none yet.
+                mailType = existing.mailType ?: command.mailType?.trim()?.takeIf { it.isNotBlank() },
                 subjectVariants = null,
                 enabled = command.enabled,
                 updatedAt = now
@@ -106,11 +118,36 @@ class MailComposeTemplateService(
         return getById(id)
     }
 
+    /**
+     * I-3: unreferenced templates (and their blocks, via `ON DELETE CASCADE`) are
+     * deleted; a template still referenced by `batch_send_task_config.template_id`
+     * surfaces as a clear business error instead of an opaque 500. The row is
+     * deleted first so a rejected delete cannot leave the blocks behind, and any
+     * non-reference integrity error is rethrown untouched.
+     */
     @Transactional
     fun delete(id: Long) {
         findTemplate(id)
+        try {
+            templateRepository.deleteById(id)
+        } catch (e: DataIntegrityViolationException) {
+            if (!isReferenceViolation(e)) {
+                throw e
+            }
+            throw IllegalArgumentException("该邮件模板已被批量任务引用，无法删除（templateId=$id）")
+        }
         blockRepository.deleteAllByTemplateId(id)
-        templateRepository.deleteById(id)
+    }
+
+    private fun isReferenceViolation(e: DataIntegrityViolationException): Boolean {
+        val message = sequenceOf(e.message, e.mostSpecificCause.message)
+            .filterNotNull()
+            .joinToString(" ")
+            .lowercase()
+        return message.contains("foreign key") ||
+            message.contains("parent row") ||
+            message.contains("referential") ||
+            message.contains("constraint")
     }
 
     fun render(id: Long, variables: Map<String, String> = emptyMap(), variantSeed: Int = 0): ComposeTemplateRenderResult {
@@ -132,40 +169,91 @@ class MailComposeTemplateService(
     }
 
     /**
-     * Effective required-variable keys for the send gate (I-4): NULL, blank,
-     * empty JSON array or unparseable JSON all yield an empty list (gate
-     * disabled); unknown keys are filtered out. Parse failures log WARN but
-     * never throw.
+     * I-1: required-variable keys for the send gate, derived from the LIVE template —
+     * its current subject plus every text its enabled blocks can contribute, including
+     * every enabled reply-snippet variant. A key is required when it appears as a bare
+     * `${key}` (or with a blank default) in any of those texts. First-occurrence order,
+     * deduplicated. The legacy `required_keys` column is never read.
      */
     fun effectiveRequiredKeys(templateId: Long): List<String> {
-        val template = findTemplate(templateId)
-        return parseRequiredKeys(template.requiredKeys)
+        val pool = renderTextPool(findTemplate(templateId))
+        val keys = linkedSetOf<String>()
+        keys.addAll(mailPlaceholderService.requiredKeysIn(pool.subject))
+        pool.blockTexts.flatten().forEach { text ->
+            keys.addAll(mailPlaceholderService.requiredKeysIn(text))
+        }
+        return keys.toList()
     }
 
     /**
-     * Maps [effectiveRequiredKeys] through the variable→ES-field table, dropping
-     * keys without an ES field, deduplicated, in stable order.
+     * I-2: the subset of [effectiveRequiredKeys] that is required in EVERY possible
+     * render (`ALLOWED_HAS_FIELDS` prefilter input) mapped through the variable→ES-field
+     * table, deduplicated in stable order. A key that only some snippet variant makes
+     * mandatory — or that a whole block can be skipped without — is not a field the ES
+     * prefilter may exclude experts on; the send gate still rejects those recipients.
      */
     fun requiredEsFields(templateId: Long): List<String> =
-        effectiveRequiredKeys(templateId)
+        alwaysRequiredKeys(findTemplate(templateId))
             .mapNotNull { MailPlaceholderService.ES_FIELD_BY_KEY[it] }
             .distinct()
 
-    private fun parseRequiredKeys(requiredKeys: String?): List<String> {
-        val text = requiredKeys?.trim().orEmpty()
-        if (text.isEmpty()) {
-            return emptyList()
+    private fun alwaysRequiredKeys(template: MailComposeTemplate): List<String> {
+        val pool = renderTextPool(template)
+        val keys = linkedSetOf<String>()
+        keys.addAll(mailPlaceholderService.requiredKeysIn(pool.subject))
+        pool.blockTexts.forEach { texts ->
+            val requiredByEveryVariant = texts
+                .map { mailPlaceholderService.requiredKeysIn(it).toSet() }
+                .reduce { acc, next -> acc intersect next }
+            mailPlaceholderService.requiredKeysIn(texts.first())
+                .filter { it in requiredByEveryVariant }
+                .forEach { keys.add(it) }
         }
-        val keys = try {
-            objectMapper.readValue(text, object : TypeReference<List<String>>() {})
-        } catch (e: Exception) {
-            log.warn("Failed to parse required_keys as JSON array, gate disabled: {}", e.message)
-            return emptyList()
-        }
-        val knownKeys = MailVariableService.VARIABLE_LABELS
-        return keys.map { it.trim() }
-            .filter { it.isNotEmpty() && it in knownKeys }
+        return keys.toList()
     }
+
+    private data class RenderTextPool(
+        val subject: String,
+        val blockTexts: List<List<String>>
+    )
+
+    /**
+     * Every text the template can render: the subject plus, per enabled block, each text
+     * that block may contribute. Blocks whose reference is missing or disabled are
+     * dropped — they render nothing and therefore can never require a variable.
+     */
+    private fun renderTextPool(template: MailComposeTemplate): RenderTextPool {
+        val templateId = template.id ?: error("Compose template id is required")
+        val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(templateId)
+            .sortedBy { it.blockOrder }
+        return RenderTextPool(
+            subject = template.subject,
+            blockTexts = blocks.mapNotNull { possibleRenderTexts(it) }
+        )
+    }
+
+    private fun possibleRenderTexts(block: MailComposeTemplateBlock): List<String>? =
+        when (block.blockType) {
+            ComposeBlockType.CUSTOM_TEXT -> listOf(block.customText.orEmpty())
+            ComposeBlockType.REPLY_SNIPPET -> {
+                val refId = block.refId
+                val snippet = refId?.let { replySnippetRepository.findById(it).orElse(null) }
+                if (snippet == null || !snippet.enabled) {
+                    null
+                } else {
+                    val variants = contentVariantService
+                        .listByOwner(ContentVariantOwnerType.REPLY_SNIPPET, refId)
+                        .filter { it.enabled }
+                        .map { it.content }
+                    listOf(snippet.content) + variants
+                }
+            }
+            ComposeBlockType.QA_RULE -> {
+                val rule = block.refId?.let { qaRuleRepository.findById(it).orElse(null) }
+                if (rule == null || !rule.enabled) null else listOf(rule.replyBody)
+            }
+            else -> null
+        }
 
     private fun renderTemplate(
         template: MailComposeTemplate,
@@ -427,8 +515,15 @@ class MailComposeTemplateService(
         require(command.templateName.isNotBlank()) { "templateName is required" }
         require(command.subject.isNotBlank()) { "subject is required" }
         require(command.blocks.isNotEmpty()) { "At least one content block is required" }
+        // I-1: reject unknown keys, blank defaults and broken `${` tokens at save time
+        // for the subject and every custom block; snippet/QA bodies keep their own
+        // (stricter) validation in ReplySnippetService / QaFactBodyPolicy.
+        mailPlaceholderService.requireValidTemplatePlaceholders(command.subject)
         command.blocks.forEach { block ->
             validateBlockCommand(block)
+            if (block.blockType.uppercase() == ComposeBlockType.CUSTOM_TEXT) {
+                mailPlaceholderService.requireValidTemplatePlaceholders(block.customText.orEmpty())
+            }
         }
     }
 
@@ -621,6 +716,9 @@ class MailComposeTemplateService(
 
     companion object {
         const val EXCERPT_MAX_CHARS = 40
+
+        /** I-3: mail type of a template created through the UI (BatchSendType.INTRODUCTION). */
+        const val INTRODUCTION_MAIL_TYPE = "INTRODUCTION"
 
         private val FALLBACK_PLACEHOLDER_REGEX = Regex("""\$\{(\w+)\|([^}]*)\}""")
 

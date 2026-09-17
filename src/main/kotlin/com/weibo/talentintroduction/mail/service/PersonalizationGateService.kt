@@ -6,10 +6,11 @@ import org.springframework.stereotype.Service
  * Send-side hard gate for personalized mail (P1).
  *
  * Two independent responsibilities:
- * 1. [evaluate] decides whether the mail may be sent at all: a required variable
- *    that fell back to its default value means the expert's data is incomplete
- *    (I-3). The decision is based on the RAW template text (placeholders still
- *    present), never on rendered text where fallbacks have already been filled in.
+ * 1. [evaluate] decides whether the mail may be sent at all: a variable that the
+ *    template makes required (I-1: `${key}` without a default) has no value for
+ *    this recipient — `null`, `""` or whitespace-only all count as missing. The
+ *    decision is based on the RAW template text (placeholders still present),
+ *    never on rendered text where defaults have already been filled in.
  * 2. [requireNoPlaceholderResidue] is the last line of defense right before SMTP:
  *    any `${...}` left in the final subject/body aborts the send (I-2). This is
  *    deliberately NOT `requireValidPlaceholders`, which only checks key
@@ -34,9 +35,12 @@ class PersonalizationGateService(
     private val mailPlaceholderService: MailPlaceholderService = MailPlaceholderService()
 ) {
     /**
-     * Gates a send on the intersection of (keys that actually took their fallback
-     * in [rawTexts] given [variables]) and [requiredKeys]. An empty [requiredKeys]
-     * disables the gate entirely (I-4).
+     * Gates a send on [requiredKeys] restricted to the keys that actually occur in
+     * the raw texts being sent, given [variables]. A key is missing when its value
+     * is null, empty or whitespace-only (I-2: the gate is exact for the blocks and
+     * variants actually selected — keys resolved through their default value never
+     * reach this call because the template gate does not list them as required).
+     * An empty [requiredKeys] disables the gate entirely (I-4).
      */
     fun evaluate(
         rawTexts: List<String>,
@@ -46,11 +50,13 @@ class PersonalizationGateService(
         if (requiredKeys.isEmpty()) {
             return PersonalizationGateResult(blocked = false, missingKeys = emptyList())
         }
-        val fallbackKeys = linkedSetOf<String>()
+        val keysInText = linkedSetOf<String>()
         rawTexts.forEach { text ->
-            fallbackKeys.addAll(mailPlaceholderService.detectFallbackKeys(text, variables))
+            keysInText.addAll(mailPlaceholderService.placeholderKeysIn(text))
         }
-        val missing = requiredKeys.filter { it in fallbackKeys }
+        val missing = requiredKeys.filter { key ->
+            key in keysInText && variables[key].isNullOrBlank()
+        }
         return PersonalizationGateResult(blocked = missing.isNotEmpty(), missingKeys = missing)
     }
 

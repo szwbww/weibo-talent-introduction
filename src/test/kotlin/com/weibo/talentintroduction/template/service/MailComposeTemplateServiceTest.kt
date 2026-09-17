@@ -28,6 +28,7 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.springframework.dao.DataIntegrityViolationException
 import java.util.Optional
 
 class MailComposeTemplateServiceTest {
@@ -1196,50 +1197,371 @@ class MailComposeTemplateServiceTest {
             content = content
         )
 
-    // ── P1 effectiveRequiredKeys / requiredEsFields (I-3, I-4) ──
+    // ── I-1/I-2: gate keys are derived from the live template, never from required_keys ──
 
-    private fun stubTemplateWithRequiredKeys(raw: String?) {
-        Mockito.`when`(templateRepository.findById(1L))
+    private fun stubTemplate(
+        id: Long,
+        subject: String,
+        mailType: String? = "INTRODUCTION",
+        requiredKeys: String? = null,
+        blocks: List<MailComposeTemplateBlock> = listOf(customBlock(id, 0, "Body"))
+    ) {
+        Mockito.`when`(templateRepository.findById(id))
             .thenReturn(
                 Optional.of(
                     MailComposeTemplate(
-                        id = 1,
+                        id = id,
                         templateName = "Test",
-                        subject = "Subject",
-                        requiredKeys = raw
+                        subject = subject,
+                        mailType = mailType,
+                        requiredKeys = requiredKeys
                     )
                 )
             )
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(id)).thenReturn(blocks)
+    }
+
+    private fun customBlock(templateId: Long, order: Int, text: String): MailComposeTemplateBlock =
+        MailComposeTemplateBlock(
+            templateId = templateId,
+            blockOrder = order,
+            blockType = ComposeBlockType.CUSTOM_TEXT,
+            customText = text
+        )
+
+    private fun snippetBlock(templateId: Long, order: Int, refId: Long): MailComposeTemplateBlock =
+        MailComposeTemplateBlock(
+            templateId = templateId,
+            blockOrder = order,
+            blockType = ComposeBlockType.REPLY_SNIPPET,
+            refId = refId
+        )
+
+    private fun allSnippetVariants(ownerId: Long, variants: List<ContentVariant>) {
+        Mockito.`when`(
+            contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.REPLY_SNIPPET,
+                ownerId
+            )
+        ).thenReturn(variants)
+    }
+
+    private fun snippetVariant(id: Long, ownerId: Long, order: Int, content: String): ContentVariant =
+        ContentVariant(
+            id = id,
+            ownerType = ContentVariantOwnerType.REPLY_SNIPPET,
+            ownerId = ownerId,
+            variantOrder = order,
+            content = content
+        )
+
+    private fun snippet(id: Long, content: String, enabled: Boolean = true): ReplySnippet =
+        ReplySnippet(id = id, snippetType = "CUSTOM", content = content, enabled = enabled)
+
+    @Test
+    fun `bare token is required while a defaulted token is optional (I-1)`() {
+        stubTemplate(
+            id = 1,
+            subject = "Hello \${institution}",
+            blocks = listOf(customBlock(1, 0, "Topic: \${primaryResearchField|your research area}"))
+        )
+
+        assertEquals(listOf("institution"), service.effectiveRequiredKeys(1L))
+        assertEquals(listOf("institution"), service.requiredEsFields(1L))
     }
 
     @Test
-    fun `effectiveRequiredKeys returns empty for null blank empty array and invalid json`() {
-        val cases = listOf<String?>(null, "", "   ", "[]", "{}", "{不是数组}")
-        cases.forEach { raw ->
-            stubTemplateWithRequiredKeys(raw)
-            assertEquals(emptyList<String>(), service.effectiveRequiredKeys(1L), "raw=$raw")
+    fun `removing the default makes the key required and prefiltrable (I-1)`() {
+        stubTemplate(
+            id = 1,
+            subject = "Hello \${institution}",
+            blocks = listOf(customBlock(1, 0, "Topic: \${primaryResearchField}"))
+        )
+
+        assertEquals(listOf("institution", "primaryResearchField"), service.effectiveRequiredKeys(1L))
+        assertEquals(listOf("institution", "researchFields"), service.requiredEsFields(1L))
+    }
+
+    @Test
+    fun `legacy required_keys column never decides the gate (I-1)`() {
+        stubTemplate(
+            id = 1,
+            subject = "Hello \${institution}",
+            requiredKeys = """["recentWorkTitle","expertName"]""",
+            blocks = listOf(customBlock(1, 0, "Topic: \${primaryResearchField|your research area}"))
+        )
+
+        // neither decides nor stacks: only the live placeholder set is returned
+        assertEquals(listOf("institution"), service.effectiveRequiredKeys(1L))
+        assertEquals(listOf("institution"), service.requiredEsFields(1L))
+    }
+
+    @Test
+    fun `gate keys deduplicate in first-occurrence order and drop keys without es fields (I-1)`() {
+        stubTemplate(
+            id = 1,
+            subject = "\${institution} and \${primaryResearchField|Your field}",
+            blocks = listOf(
+                customBlock(1, 0, "\${institution} / \${senderEmail}"),
+                customBlock(1, 1, "\${primaryResearchField}")
+            )
+        )
+
+        assertEquals(
+            // subject first-occurrence order, then blocks in blockOrder:
+            // `${primaryResearchField|Your field}` in the subject is optional, so it is
+            // only picked up when its bare occurrence inside block #2 appears.
+            listOf("institution", "senderEmail", "primaryResearchField"),
+            service.effectiveRequiredKeys(1L)
+        )
+        // senderEmail is required but has no ES field → dropped from the prefilter
+        assertEquals(listOf("institution", "researchFields"), service.requiredEsFields(1L))
+    }
+
+    @Test
+    fun `key required by only some snippet variants gates the send but is never prefiltrable (I-2)`() {
+        stubTemplate(
+            id = 1,
+            subject = "Hello",
+            blocks = listOf(snippetBlock(1, 0, 5L))
+        )
+        Mockito.`when`(replySnippetRepository.findById(5L))
+            .thenReturn(Optional.of(snippet(5L, "Hi \${institution}")))
+        allSnippetVariants(5L, listOf(snippetVariant(21L, 5L, 20, "Hi \${institution|your institution}")))
+
+        // the variant that does require it must still be hard-blocked at send time
+        assertEquals(listOf("institution"), service.effectiveRequiredKeys(1L))
+        // not required by every possible render → the ES prefilter must not exclude experts
+        assertEquals(emptyList<String>(), service.requiredEsFields(1L))
+    }
+
+    @Test
+    fun `key required by every snippet variant stays prefiltrable (I-2)`() {
+        stubTemplate(
+            id = 1,
+            subject = "Hello",
+            blocks = listOf(snippetBlock(1, 0, 5L))
+        )
+        Mockito.`when`(replySnippetRepository.findById(5L))
+            .thenReturn(Optional.of(snippet(5L, "Hi \${institution}")))
+        allSnippetVariants(5L, listOf(snippetVariant(21L, 5L, 20, "Dear \${institution}")))
+
+        assertEquals(listOf("institution"), service.effectiveRequiredKeys(1L))
+        assertEquals(listOf("institution"), service.requiredEsFields(1L))
+    }
+
+    @Test
+    fun `disabled snippet block contributes no gate keys (I-2)`() {
+        stubTemplate(
+            id = 1,
+            subject = "Hello",
+            blocks = listOf(snippetBlock(1, 0, 5L))
+        )
+        Mockito.`when`(replySnippetRepository.findById(5L))
+            .thenReturn(Optional.of(snippet(5L, "Hi \${institution}", enabled = false)))
+
+        assertEquals(emptyList<String>(), service.effectiveRequiredKeys(1L))
+        assertEquals(emptyList<String>(), service.requiredEsFields(1L))
+    }
+
+    // ── I-1: template save rejects unknown keys, blank defaults and broken tokens ──
+
+    @Test
+    fun `create rejects blank default unknown key and broken token (I-1)`() {
+        val subjects = listOf("\${institution|}", "\${bogus}", "Hello \${institution")
+        subjects.forEach { subject ->
+            val ex = assertThrows(IllegalArgumentException::class.java) {
+                service.create(validTemplateCommand().copy(subject = subject))
+            }
+            assertTrue(
+                ex.message!!.contains("Invalid template placeholders"),
+                "subject=$subject message=${ex.message}"
+            )
         }
     }
 
     @Test
-    fun `effectiveRequiredKeys keeps configured order and filters unknown keys`() {
-        stubTemplateWithRequiredKeys("""["recentWorkTitle","primaryResearchField"]""")
-        assertEquals(listOf("recentWorkTitle", "primaryResearchField"), service.effectiveRequiredKeys(1L))
+    fun `create rejects invalid placeholders inside a custom block (I-1)`() {
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service.create(
+                validTemplateCommand().copy(blocks = listOf(customBlockCommand(0, "Hi \${bogus}")))
+            )
+        }
 
-        stubTemplateWithRequiredKeys("""["recentWorkTitle","bogus","expertFamilyName"]""")
-        assertEquals(listOf("recentWorkTitle", "expertFamilyName"), service.effectiveRequiredKeys(1L))
+        assertTrue(ex.message!!.contains("\${bogus}"))
     }
 
     @Test
-    fun `requiredEsFields maps keys to es fields deduplicated in stable order`() {
-        stubTemplateWithRequiredKeys(
-            """["primaryResearchField","recentWorkTitle","primaryResearchField","senderEmail"]"""
+    fun `create accepts bare tokens and non-blank defaults (I-1)`() {
+        Mockito.`when`(templateRepository.save(Mockito.any(MailComposeTemplate::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<MailComposeTemplate>(0).copy(id = 11) }
+        Mockito.`when`(templateRepository.findById(11)).thenReturn(
+            Optional.of(
+                MailComposeTemplate(
+                    id = 11,
+                    templateName = "Intro",
+                    subject = "Hello \${institution}",
+                    mailType = "INTRODUCTION"
+                )
+            )
         )
-        // senderEmail is known but has no ES field → dropped
-        assertEquals(
-            listOf("researchFields", "recentWorkTitles"),
-            service.requiredEsFields(1L)
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(11)).thenReturn(emptyList())
+
+        val detail = service.create(
+            validTemplateCommand()
+                .copy(subject = "Hello \${institution}")
+                .copy(blocks = listOf(customBlockCommand(0, "Topic: \${primaryResearchField|your research area}")))
         )
+
+        assertEquals("INTRODUCTION", detail.mailType)
+    }
+
+    @Test
+    fun `update rejects invalid custom block placeholders without touching the stored row (I-1)`() {
+        Mockito.`when`(templateRepository.findById(10)).thenReturn(
+            Optional.of(
+                MailComposeTemplate(
+                    id = 10,
+                    templateCode = "INTRODUCTION",
+                    templateName = "Intro",
+                    subject = "Main",
+                    mailType = "INTRODUCTION"
+                )
+            )
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.update(
+                10,
+                validTemplateCommand().copy(blocks = listOf(customBlockCommand(0, "Hi \${bogus}")))
+            )
+        }
+        Mockito.verify(templateRepository, Mockito.never())
+            .save(Mockito.any(MailComposeTemplate::class.java))
+    }
+
+    // ── I-3: CRUD lifecycle ──
+
+    @Test
+    fun `create list get update preview enable disable delete round trip (I-3)`() {
+        val store = InMemoryTemplateStore()
+        stubInMemoryStore(store)
+
+        val created = service.create(validTemplateCommand())
+        assertEquals(5L, created.id)
+        assertEquals("INTRODUCTION", created.mailType)
+        assertEquals(listOf("Body"), created.blocks.map { it.customText })
+
+        assertEquals(listOf(5L), service.listAll().map { it.id })
+        assertEquals("Intro", service.getById(5L).templateName)
+
+        val updated = service.update(
+            5L,
+            MailComposeTemplateCommand(
+                templateCode = "CODE",
+                templateName = "Intro v2",
+                subject = "Main v2",
+                // I-3: an edit keeps the stored mail type
+                mailType = "MATERIAL_REMINDER",
+                blocks = listOf(customBlockCommand(1, "Second"), customBlockCommand(0, "First"))
+            )
+        )
+        assertEquals(5L, updated.id)
+        assertEquals("INTRODUCTION", updated.mailType)
+        assertEquals(listOf(0, 1), updated.blocks.map { it.blockOrder })
+        assertEquals(listOf("First", "Second"), updated.blocks.map { it.customText })
+
+        assertEquals("Main v2", service.preview(5L).subject)
+        assertEquals(false, service.setEnabled(5L, false).enabled)
+        assertEquals(true, service.setEnabled(5L, true).enabled)
+
+        service.delete(5L)
+        Mockito.verify(templateRepository).deleteById(5L)
+        assertEquals(0, store.blocks.size)
+    }
+
+    @Test
+    fun `delete of a template referenced by a batch task reports a clear conflict (I-3)`() {
+        Mockito.`when`(templateRepository.findById(7L)).thenReturn(
+            Optional.of(
+                MailComposeTemplate(
+                    id = 7,
+                    templateName = "Intro",
+                    subject = "Main",
+                    mailType = "INTRODUCTION"
+                )
+            )
+        )
+        Mockito.`when`(templateRepository.deleteById(7L)).thenThrow(
+            DataIntegrityViolationException(
+                "Cannot delete or update a parent row: a foreign key constraint fails " +
+                    "(`talent`.`batch_send_task_config`, CONSTRAINT `fk_task_template`)"
+            )
+        )
+
+        val ex = assertThrows(IllegalArgumentException::class.java) { service.delete(7L) }
+
+        assertTrue(ex.message!!.contains("已被批量任务引用"), "message=${ex.message}")
+        // the template row delete is the first write: a rejected delete leaves the blocks alone
+        Mockito.verify(blockRepository, Mockito.never()).deleteAllByTemplateId(7L)
+    }
+
+    @Test
+    fun `delete rethrows integrity failures that are not reference conflicts (I-3)`() {
+        Mockito.`when`(templateRepository.findById(8L)).thenReturn(
+            Optional.of(
+                MailComposeTemplate(
+                    id = 8,
+                    templateName = "Intro",
+                    subject = "Main",
+                    mailType = "INTRODUCTION"
+                )
+            )
+        )
+        Mockito.`when`(templateRepository.deleteById(8L))
+            .thenThrow(DataIntegrityViolationException("connection reset by peer"))
+
+        assertThrows(DataIntegrityViolationException::class.java) { service.delete(8L) }
+    }
+
+    private fun customBlockCommand(order: Int, text: String): MailComposeTemplateBlockCommand =
+        MailComposeTemplateBlockCommand(
+            blockOrder = order,
+            blockType = ComposeBlockType.CUSTOM_TEXT,
+            customText = text
+        )
+
+    private class InMemoryTemplateStore {
+        var template: MailComposeTemplate? = null
+        val blocks = mutableListOf<MailComposeTemplateBlock>()
+    }
+
+    private fun stubInMemoryStore(store: InMemoryTemplateStore, id: Long = 5L) {
+        Mockito.`when`(templateRepository.save(Mockito.any(MailComposeTemplate::class.java)))
+            .thenAnswer { invocation ->
+                val incoming = invocation.getArgument<MailComposeTemplate>(0)
+                val persisted = if (incoming.id == null) incoming.copy(id = id) else incoming
+                store.template = persisted
+                persisted
+            }
+        Mockito.`when`(templateRepository.findById(id))
+            .thenAnswer { Optional.ofNullable(store.template) }
+        Mockito.`when`(templateRepository.findAllByOrderByIdAsc())
+            .thenAnswer { listOfNotNull(store.template) }
+        Mockito.`when`(blockRepository.save(Mockito.any(MailComposeTemplateBlock::class.java)))
+            .thenAnswer { invocation ->
+                val block = invocation.getArgument<MailComposeTemplateBlock>(0)
+                store.blocks += block
+                block
+            }
+        Mockito.`when`(blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(id))
+            .thenAnswer { store.blocks.sortedBy { it.blockOrder } }
+        Mockito.`when`(blockRepository.deleteAllByTemplateId(id))
+            .thenAnswer {
+                val removed = store.blocks.size
+                store.blocks.clear()
+                removed
+            }
     }
 
     @Test

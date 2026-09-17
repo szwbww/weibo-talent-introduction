@@ -119,6 +119,100 @@ function customTextRow(text) {
     };
 }
 
+const indexHtmlPath = path.join(__dirname, "..", "..", "main", "resources", "static", "index.html");
+const indexHtmlSource = fs.readFileSync(indexHtmlPath, "utf-8");
+
+/** Keys `/api/qa/template-variables-meta` returns today (MailPlaceholderService.VARIABLE_LABELS). */
+const VARIABLE_META_KEYS = [
+    "senderEmail", "senderName", "senderTitle", "teamName", "countryName",
+    "expertName", "expertFamilyName", "researchFields", "institution", "keyword",
+    "expertCountry", "employment", "hIndex", "worksCount", "lastPublicationYear",
+    "degree", "recentWorkTitle", "patentTitle", "primaryResearchField",
+    "pendingExpertMaterials", "unsubscribeUrl"
+];
+
+function createVarEditorSandbox() {
+    const textareas = {};
+    const expertKeys = new Set([
+        "expertName", "expertFamilyName", "researchFields", "institution", "keyword",
+        "expertCountry", "employment", "hIndex", "worksCount", "lastPublicationYear",
+        "degree", "recentWorkTitle", "patentTitle", "primaryResearchField"
+    ]);
+    const sandbox = {
+        state: {
+            variableMeta: VARIABLE_META_KEYS.map((key) => ({
+                key,
+                label: key,
+                nullable: expertKeys.has(key),
+                example: ""
+            }))
+        },
+        EXPERT_VAR_KEY_SET: expertKeys,
+        SENDER_VAR_KEY_SET: new Set([
+            "senderEmail", "senderName", "senderTitle", "teamName", "countryName", "senderDisplayName"
+        ]),
+        document: {
+            activeElement: null,
+            getElementById: (id) => textareas[id] || null,
+            querySelector: () => null,
+            querySelectorAll: () => []
+        },
+        Event: function Event() {},
+        escapeHtml: (v) => String(v == null ? "" : v)
+            .replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;").replaceAll("'", "&#39;")
+    };
+    vm.createContext(sandbox);
+    [
+        "parsePlaceholderToken",
+        "validatePlaceholderText",
+        "brokenPlaceholderFragments",
+        "isComposeTemplateVarTarget",
+        "placeholderDefaultFallback",
+        "renderVarChipButtons",
+        "renderVarInsertMenuContent",
+        "resolveVarTextarea",
+        "rememberVarSelection",
+        "resolveVarInsertRange",
+        "insertVarAtCursor",
+        "updateVarValidationForTarget",
+        "bindVarChipBar"
+    ].forEach((name) => vm.runInContext(extractFn(name), sandbox));
+
+    sandbox.__textarea = (id, value) => {
+        const textarea = {
+            id,
+            value,
+            selectionStart: value.length,
+            selectionEnd: value.length,
+            dataset: {},
+            closest: () => null,
+            focus() {},
+            dispatchEvent() {}
+        };
+        textareas[id] = textarea;
+        return textarea;
+    };
+    sandbox.__chip = (targetId, key, nullable, fallback) => {
+        const listeners = {};
+        return {
+            dataset: {
+                varTarget: targetId,
+                varKey: key,
+                varNullable: nullable ? "true" : "false",
+                varFallback: fallback || ""
+            },
+            addEventListener(type, fn) {
+                (listeners[type] = listeners[type] || []).push(fn);
+            },
+            click() {
+                (listeners.click || []).forEach((fn) => fn());
+            }
+        };
+    };
+    return sandbox;
+}
+
 describe("compose template server preview", () => {
     it("docks compose template preview inside the editor", () => {
         const sb = createSandbox([]);
@@ -269,5 +363,90 @@ describe("compose template server preview", () => {
             sb.collectComposeTemplatePreviewSampleText(),
             'Professor ${expertFamilyName|Professor} - ${researchFields|Your Field}\nLegacy QA body'
         );
+    });
+});
+
+describe("compose template variable editor (I-1/I-4)", () => {
+    it("relaxes bare tokens for the template editor but keeps QA/snippet rules strict", () => {
+        const sb = createVarEditorSandbox();
+
+        // template editor: `${key}` (the mandatory form) and `${key|默认值}` are both legal
+        assert.equal(sb.validatePlaceholderText("Hello ${institution}", { lenient: true }).valid, true);
+        assert.equal(
+            sb.validatePlaceholderText("Topic ${primaryResearchField|your research area}", { lenient: true }).valid,
+            true
+        );
+        // unknown key, blank default and broken token are rejected even in the template editor
+        assert.equal(sb.validatePlaceholderText("${bogus}", { lenient: true }).valid, false);
+        assert.equal(sb.validatePlaceholderText("${institution|}", { lenient: true }).valid, false);
+        assert.equal(sb.validatePlaceholderText("${institution|   }", { lenient: true }).valid, false);
+        const broken = sb.validatePlaceholderText("Hello ${institution", { lenient: true });
+        assert.equal(broken.valid, false);
+        assert.deepEqual(broken.violations, ["${institution"]);
+
+        // QA rule / reply snippet editors keep the pre-existing severity
+        assert.equal(sb.validatePlaceholderText("Hello ${institution}").valid, false);
+        assert.equal(sb.validatePlaceholderText("Hello ${institution|your institution}").valid, true);
+        assert.equal(sb.validatePlaceholderText("Hello ${senderName}").valid, true);
+    });
+
+    it("inserts a bare token in the template editor and the defaulted token elsewhere", () => {
+        const sb = createVarEditorSandbox();
+        const subject = sb.__textarea("composeTemplateSubject", "Hello ");
+        const qaBody = sb.__textarea("qaRuleAnswerBody", "Dear expert,");
+        const chips = [
+            { target: "composeTemplateSubject", nullable: true, fallback: "your institution" },
+            { target: "qaRuleAnswerBody", nullable: true, fallback: "your institution" }
+        ].map((spec) => sb.__chip(spec.target, "institution", spec.nullable, spec.fallback));
+
+        sb.bindVarChipBar({ querySelectorAll: () => chips });
+        chips.forEach((chip) => chip.click());
+
+        assert.equal(subject.value, "Hello ${institution}");
+        assert.equal(qaBody.value, "Dear expert,${institution|your institution}");
+    });
+
+    it("every variable-meta key reaches the insert menu, including institution/primaryResearchField", () => {
+        const sb = createVarEditorSandbox();
+        const metas = sb.state.variableMeta;
+
+        assert.ok(metas.some((meta) => meta.key === "institution"));
+        assert.ok(metas.some((meta) => meta.key === "primaryResearchField"));
+
+        const html = sb.renderVarInsertMenuContent("composeTemplateSubject");
+
+        metas.forEach((meta) => {
+            assert.ok(html.includes(`data-var-key="${meta.key}"`), `${meta.key} must be in the menu`);
+        });
+        assert.equal((html.match(/data-var-key="/g) || []).length, metas.length);
+    });
+
+    it("index.html documents the mandatory form of a template placeholder", () => {
+        assert.ok(
+            indexHtmlSource.includes("${变量名} 为必填变量，缺值会阻止发送"),
+            "editor hint must state that `${变量名}` is mandatory"
+        );
+        assert.ok(indexHtmlSource.includes("${变量名|默认值} 缺值时使用默认值"));
+    });
+
+    it("reopening the editor keeps block order and custom text", () => {
+        const sb = createSandbox([]);
+        const texts = ["First ${institution}", "Second"];
+
+        sb.renderComposeTemplateBlockRows([
+            { blockOrder: 0, blockType: "CUSTOM_TEXT", customText: texts[0] },
+            { blockOrder: 1, blockType: "CUSTOM_TEXT", customText: texts[1] }
+        ]);
+        const html = sb.__store.get("composeTemplateBlocksList").innerHTML;
+        assert.deepEqual(
+            [...html.matchAll(/data-block-index="(\d+)"/g)].map((match) => Number(match[1])),
+            [0, 1]
+        );
+        assert.ok(html.indexOf("First") < html.indexOf("Second"), "rendered order must follow blockOrder");
+
+        sb.$$ = () => texts.map((text) => customTextRow(text));
+        const blocks = sb.collectComposeTemplateBlocksFromForm();
+        assert.deepEqual(blocks.map((block) => block.blockOrder), [0, 1]);
+        assert.deepEqual(blocks.map((block) => block.customText), texts);
     });
 });

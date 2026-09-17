@@ -9,55 +9,80 @@ import org.junit.jupiter.api.Test
 class PersonalizationGateServiceTest {
     private val service = PersonalizationGateService()
 
-    // ── I-3: gate input is raw text; missing keys = intersection(required, fallback) ──
+    // ── I-1/I-2: the gate is the template's bare `${key}` set ∩ the texts actually sent ──
 
     @Test
-    fun `evaluate blocks when a required variable fell back to its default`() {
+    fun `evaluate blocks a bare required key that has no value`() {
+        val result = service.evaluate(
+            rawTexts = listOf("Subject: \${institution}"),
+            variables = mapOf("institution" to ""),
+            requiredKeys = listOf("institution")
+        )
+
+        assertTrue(result.blocked)
+        assertEquals(listOf("institution"), result.missingKeys)
+    }
+
+    @Test
+    fun `evaluate treats whitespace-only values as missing`() {
+        val result = service.evaluate(
+            rawTexts = listOf("Body: \${primaryResearchField}"),
+            variables = mapOf("primaryResearchField" to "   \n"),
+            requiredKeys = listOf("primaryResearchField")
+        )
+
+        assertTrue(result.blocked)
+        assertEquals(listOf("primaryResearchField"), result.missingKeys)
+    }
+
+    @Test
+    fun `evaluate passes when every required key has a real value`() {
+        val result = service.evaluate(
+            rawTexts = listOf("Subject: \${institution}", "Body: \${primaryResearchField}"),
+            variables = mapOf(
+                "institution" to "MIT",
+                "primaryResearchField" to "Quantum Computing"
+            ),
+            requiredKeys = listOf("institution", "primaryResearchField")
+        )
+
+        assertFalse(result.blocked)
+        assertTrue(result.missingKeys.isEmpty())
+    }
+
+    @Test
+    fun `evaluate ignores required keys absent from the texts actually sent`() {
+        // I-2: exactness — a key made mandatory by another block/variant of the template
+        // must not block a send whose selected texts do not use it.
+        val result = service.evaluate(
+            rawTexts = listOf("Subject: \${institution}"),
+            variables = mapOf("institution" to "MIT"),
+            requiredKeys = listOf("institution", "primaryResearchField")
+        )
+
+        assertFalse(result.blocked)
+        assertTrue(result.missingKeys.isEmpty())
+    }
+
+    @Test
+    fun `evaluate blocks a listed required key written with a default that has no value`() {
+        // Legacy shape kept intact: when a caller still lists a key as required, a blank
+        // value blocks the send even though the token carries a default.
         val result = service.evaluate(
             rawTexts = listOf(
                 "Topic: \${researchFields|Science}",
                 "At \${institution|your institution}"
             ),
-            variables = mapOf(
-                "researchFields" to "",
-                "institution" to "Oxford"
-            ),
+            variables = mapOf("researchFields" to "", "institution" to "Oxford"),
             requiredKeys = listOf("researchFields", "institution", "expertName")
         )
 
         assertTrue(result.blocked)
-        // exact intersection: researchFields took fallback, institution did not, expertName not in text
         assertEquals(listOf("researchFields"), result.missingKeys)
     }
 
     @Test
-    fun `evaluate does not block when required variable has a real value`() {
-        val result = service.evaluate(
-            rawTexts = listOf("Topic: \${researchFields|Science}"),
-            variables = mapOf("researchFields" to "Machine Learning"),
-            requiredKeys = listOf("researchFields")
-        )
-
-        assertFalse(result.blocked)
-        assertTrue(result.missingKeys.isEmpty())
-    }
-
-    @Test
-    fun `evaluate does not flag rendered text as blocked`() {
-        // Rendered text has the fallback already substituted, so fallback detection
-        // sees nothing — proving the gate must be fed pre-render raw text (I-3).
-        val result = service.evaluate(
-            rawTexts = listOf("Topic: Science"),
-            variables = mapOf("researchFields" to ""),
-            requiredKeys = listOf("researchFields")
-        )
-
-        assertFalse(result.blocked)
-        assertTrue(result.missingKeys.isEmpty())
-    }
-
-    @Test
-    fun `evaluate collects fallback keys across multiple raw texts`() {
+    fun `evaluate collects missing keys across multiple raw texts in required order`() {
         val result = service.evaluate(
             rawTexts = listOf(
                 "Subject: \${recentWorkTitle|Untitled}",
@@ -69,6 +94,20 @@ class PersonalizationGateServiceTest {
 
         assertTrue(result.blocked)
         assertEquals(listOf("recentWorkTitle", "primaryResearchField"), result.missingKeys)
+    }
+
+    @Test
+    fun `evaluate does not flag rendered text as blocked`() {
+        // Rendered text has the default already substituted, so nothing is missing there —
+        // proving the gate must be fed pre-render raw text (I-2).
+        val result = service.evaluate(
+            rawTexts = listOf("Topic: Science"),
+            variables = mapOf("researchFields" to ""),
+            requiredKeys = listOf("researchFields")
+        )
+
+        assertFalse(result.blocked)
+        assertTrue(result.missingKeys.isEmpty())
     }
 
     // ── I-4: empty required set disables the gate ──

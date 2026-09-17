@@ -2676,10 +2676,13 @@ function parsePlaceholderToken(inner) {
     return { key: inner, fallback: null };
 }
 
-function validatePlaceholderText(text) {
+function validatePlaceholderText(text, options) {
     if (!text) {
         return { valid: true, violations: [] };
     }
+    // I-4: the compose template editor accepts bare `${key}` (the mandatory form) and
+    // `${key|默认值}`; QA rules and reply snippets keep the stricter legacy rule below.
+    const lenient = Boolean(options && options.lenient);
     const metaByKey = Object.fromEntries((state.variableMeta || []).map((meta) => [meta.key, meta]));
     const violations = [];
     const regex = /\$\{([^}]*)\}/g;
@@ -2691,11 +2694,38 @@ function validatePlaceholderText(text) {
             violations.push(match[0]);
             continue;
         }
-        if (meta.nullable && (!parsed.fallback || !parsed.fallback.trim().length)) {
+        const blankDefault = parsed.fallback !== null && !parsed.fallback.trim().length;
+        if (lenient ? blankDefault : (meta.nullable && (parsed.fallback === null || blankDefault))) {
             violations.push(match[0]);
         }
     }
+    if (lenient) {
+        violations.push(...brokenPlaceholderFragments(text));
+    }
     return { valid: violations.length === 0, violations };
+}
+
+/** I-1: `${` fragments that do not open a well-formed `${...}` token. */
+function brokenPlaceholderFragments(text) {
+    const matchedStarts = [];
+    const tokenRegex = /\$\{([^}]*)\}/g;
+    let token;
+    while ((token = tokenRegex.exec(text)) !== null) {
+        matchedStarts.push(token.index);
+    }
+    let index = text.indexOf("${");
+    while (index >= 0) {
+        if (!matchedStarts.includes(index)) {
+            return [text.slice(index)];
+        }
+        index = text.indexOf("${", index + 2);
+    }
+    return [];
+}
+
+/** I-4: the compose template editor is the only placeholder editor that allows bare tokens. */
+function isComposeTemplateVarTarget(targetId) {
+    return targetId === "composeTemplateSubject" || targetId.indexOf("composeBlockCustomText-") === 0;
 }
 
 function placeholderDefaultFallback(key) {
@@ -2806,7 +2836,9 @@ function updateVarValidationForTarget(targetId, textarea) {
     const hint = document.getElementById(`varHint-${targetId}`);
     const form = textarea?.closest("form");
     const submitBtn = form?.querySelector('button[type="submit"]');
-    const { valid, violations } = validatePlaceholderText(textarea?.value || "");
+    const { valid, violations } = validatePlaceholderText(textarea?.value || "", {
+        lenient: isComposeTemplateVarTarget(targetId)
+    });
     if (hint) {
         if (!valid) {
             hint.hidden = false;
@@ -2836,8 +2868,13 @@ function bindVarChipBar(container) {
             const key = chip.dataset.varKey;
             const nullable = chip.dataset.varNullable === "true";
             const fallback = chip.dataset.varFallback || "";
-            const insertText = nullable ? `\${${key}|${fallback}}` : `\${${key}}`;
-            const cursorOffset = nullable && !fallback ? 1 : 0;
+            // I-4: in the compose template editor a bare `${key}` is how the operator
+            // makes the variable mandatory (a default is still available by typing
+            // `${key|默认值}`); QA rules and reply snippets keep the legacy behaviour of
+            // inserting `${key|默认值}` for nullable variables.
+            const insertBare = !nullable || isComposeTemplateVarTarget(targetId);
+            const insertText = insertBare ? `\${${key}}` : `\${${key}|${fallback}}`;
+            const cursorOffset = !insertBare && !fallback ? 1 : 0;
             insertVarAtCursor(textarea, insertText, cursorOffset);
             updateVarValidationForTarget(targetId, textarea);
         });
@@ -10072,14 +10109,17 @@ async function saveComposeTemplate(event) {
         blocks
     };
     if (state.selectedComposeTemplateId) {
+        // I-3: an edit never rewrites the stored mail type; the server keeps it.
         await api(`/api/compose-templates/${state.selectedComposeTemplateId}`, {
             method: "PUT",
             body: JSON.stringify(payload)
         });
     } else {
+        // I-3: new templates must be selectable by a batch task, which only accepts
+        // INTRODUCTION / MATERIAL_REMINDER.
         await api("/api/compose-templates", {
             method: "POST",
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ ...payload, mailType: "INTRODUCTION" })
         });
     }
     hideComposeTemplateEditor();
@@ -16649,9 +16689,9 @@ async function refreshBatchGateState(kind) {
     }
 
     var esFields = Array.isArray(data && data.esFields) ? data.esFields : [];
-    // 步骤 4：无门禁字段 → 不可用态
+    // 步骤 4：无门禁字段 → 不可用态（S-2：文案不再引用已废弃的旧必填列）
     if (esFields.length === 0) {
-        setUnavailable("该模板未配置门禁字段（required_keys 为空），门禁本身未启用，开启无效。");
+        setUnavailable("该模板未配置门禁字段，门禁本身未启用，开启无效。");
         updateGateToggleLabel(kind);
         scheduleRecipientPreview(kind);
         return;
@@ -16778,7 +16818,7 @@ function refreshRecipientPreview(kind) {
             body: JSON.stringify(Object.assign({}, snapshot, { gateFilterEnabled: gateOn }))
         });
     };
-    // I4b-6：不可用态只发一次（当前全库 required_keys 为空，双发会让 ES 计数量翻倍且结果恒等）
+    // I4b-6：不可用态只发一次（当前全库门禁字段为空，双发会让 ES 计数量翻倍且结果恒等）
     var gateAvailable = batchGateState[kind].available;
     var requests = gateAvailable ? [post(false), post(true)] : [post(false)];
 

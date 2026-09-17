@@ -79,6 +79,75 @@ class MailPlaceholderService {
         return tokens.toList()
     }
 
+    /**
+     * I-1: keys that gate a send from [text] — every `${key}` without a default and
+     * every `${key|<blank>}`. `${key|non-blank default}` never gates. First-occurrence
+     * order, deduplicated. This is the single source of the gate; the legacy
+     * `required_keys` column is never consulted.
+     */
+    fun requiredKeysIn(text: String): List<String> {
+        if (text.isEmpty()) {
+            return emptyList()
+        }
+        val keys = linkedSetOf<String>()
+        PLACEHOLDER_REGEX.findAll(text).forEach { match ->
+            val parsed = parsePlaceholderToken(match.groupValues[1])
+            if (parsed.gates && parsed.key.isNotBlank()) {
+                keys.add(parsed.key)
+            }
+        }
+        return keys.toList()
+    }
+
+    /**
+     * I-1 save-time validation for compose templates: unknown keys, blank defaults and
+     * broken `${` fragments. Deliberately looser than [validatePlaceholders], which
+     * keeps rejecting bare nullable expert variables in QA rules and reply snippets.
+     */
+    fun templatePlaceholderViolations(text: String): List<String> {
+        if (text.isEmpty()) {
+            return emptyList()
+        }
+        val metaByKey = variableMetadata().associateBy { it.key }
+        val violations = linkedSetOf<String>()
+        PLACEHOLDER_REGEX.findAll(text).forEach { match ->
+            val parsed = parsePlaceholderToken(match.groupValues[1])
+            if (metaByKey[parsed.key] == null || parsed.blankDefault) {
+                violations.add(match.value)
+            }
+        }
+        violations.addAll(brokenTokens(text))
+        return violations.toList()
+    }
+
+    fun requireValidTemplatePlaceholders(text: String) {
+        val violations = templatePlaceholderViolations(text)
+        require(violations.isEmpty()) {
+            "Invalid template placeholders: ${violations.joinToString(", ")}"
+        }
+    }
+
+    /**
+     * I-1: `${` occurrences that do not open a well-formed `${...}` token, e.g.
+     * `Hello ${expertName`. Reported from the broken `${` to the end of the text.
+     */
+    private fun brokenTokens(text: String): List<String> {
+        if (!text.contains("\${")) {
+            return emptyList()
+        }
+        val fragments = linkedSetOf<String>()
+        var index = text.indexOf("\${")
+        while (index >= 0) {
+            val match = PLACEHOLDER_REGEX.find(text, index)
+            if (match == null || match.range.first != index) {
+                fragments.add(text.substring(index))
+                break
+            }
+            index = text.indexOf("\${", match.range.last + 1)
+        }
+        return fragments.toList()
+    }
+
     fun detectFallbackKeys(text: String, variables: Map<String, String>): List<String> {
         val metaByKey = variableMetadata().associateBy { it.key }
         val keys = linkedSetOf<String>()
@@ -201,4 +270,10 @@ class MailPlaceholderService {
 private data class ParsedPlaceholder(
     val key: String,
     val fallback: String?
-)
+) {
+    /** I-1: no `|` at all (or `|` with only blanks) → the value is required. */
+    val gates: Boolean get() = fallback.isNullOrBlank()
+
+    /** I-1: `|` present but the default is empty/blank → rejected at template save. */
+    val blankDefault: Boolean get() = fallback != null && fallback.isBlank()
+}
