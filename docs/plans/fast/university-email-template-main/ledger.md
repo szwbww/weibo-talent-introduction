@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-09-18/00-university-email-template-main.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-09-18/00-university-email-template-main.md (commit d51c89105fb5a1f3cf6a1d3a3d71612b8898fc07)
 - Amendments: N/A
 - Master base: 7f7b3a821f09d4255dc735c1e7b96eacf9c32164
@@ -20,7 +20,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---:|---|---|---|---|---|---|---|---|---|
 | template-placeholder-gate-crud | docs/plans/2026-09-18/template-placeholder-gate-crud.md | commit:d51c89105fb5a1f3cf6a1d3a3d71612b8898fc07 | none | 1 | LIGHT_PASS_WITH_NOTES | d51c89105fb5a1f3cf6a1d3a3d71612b8898fc07 | 971a21d35a0d5bdffefa4aff9dc6faf93819207d | 0 | — | 971a21d35a0d5bdffefa4aff9dc6faf93819207d | 2bf2cd4f6c2d19dfd678460edd81ad01546cb4ac | T1 per master plan; implementer TemplateGateImplementer; verifier TemplateGateVerifier; RECORD_ONLY O-1 mixed-variant defaulted token still blocks, O-2 stale required_keys wording in unauthorized file, O-3 JS test hardcodes metadata key list |
-| batch-research-direction-filter | docs/plans/2026-09-18/batch-research-direction-filter.md | commit:d51c89105fb5a1f3cf6a1d3a3d71612b8898fc07 | template-placeholder-gate-crud | 1 | LIGHT_PASS_WITH_NOTES | 971a21d35a0d5bdffefa4aff9dc6faf93819207d | decdb28dfe6431c9f238b76fa64fc9a1aad7939e | 0 | — | decdb28dfe6431c9f238b76fa64fc9a1aad7939e | — | T2 per master plan; implementer ResearchDirectionImplementer; verifier ResearchDirectionVerifier; RECORD_ONLY O-1 V128 backfill clause rests on reading not tests, O-2 pre-existing dead buildMaterialReminderEsFilters in authorized file |
+| batch-research-direction-filter | docs/plans/2026-09-18/batch-research-direction-filter.md | commit:d51c89105fb5a1f3cf6a1d3a3d71612b8898fc07 | template-placeholder-gate-crud | 1 | LIGHT_PASS_WITH_NOTES | 971a21d35a0d5bdffefa4aff9dc6faf93819207d | decdb28dfe6431c9f238b76fa64fc9a1aad7939e | 0 | — | decdb28dfe6431c9f238b76fa64fc9a1aad7939e | 7a60101db72329a097c8372001dab7e8163e8fdf | T2 per master plan; implementer ResearchDirectionImplementer; verifier ResearchDirectionVerifier; RECORD_ONLY O-1 V128 backfill clause rests on reading not tests, O-2 pre-existing dead buildMaterialReminderEsFilters in authorized file |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
