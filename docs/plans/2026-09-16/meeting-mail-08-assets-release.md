@@ -1,6 +1,6 @@
 # 08 · 静态资源缓存激活与最终回归
 
-状态：待审批；依赖03/07，后端01/02/04/05/06应已完成。一个前端发布子系统，10文件；无新字段/接口。
+状态：待审批；依赖03/07，后端01/02/04/05/06应已完成。一个前端发布子系统，12文件（A3 将授权由 10 扩至 12）；无新字段/接口。
 
 ## 需求描述
 
@@ -66,6 +66,8 @@
 |8|`src/test/js/trustReplyWorkbenchSharedMount.test.js`|修改|同步当前键字面量；保留功能断言|
 |9|`src/test/js/checkRepliesRelocation.test.js`|修改|同步当前键字面量；保留功能断言|
 |10|`src/test/js/batchSendTaskConsoleVisualFix.test.js`|修改|同步当前键字面量；保留功能断言|
+|11|`src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt`|修改|A3：`EXCLUDED_NOISE_SITES` 中 `UnmatchedInboundMailController.kt` 的行号随 06 的插入平移（219→221、1125→1137），只改行号与注释，不改片段|
+|12|`src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt`|修改|A3：`sendManualRichReply` 新增 `attachmentIds`/`authenticatedUsername` 两参数后，四处 Mockito matcher 计数由 21 补到 23|
 
 ## 验收标准
 
