@@ -7,6 +7,7 @@ import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCom
 import com.weibo.talentintroduction.campaign.domain.OperatorStatus
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
+import com.weibo.talentintroduction.campaign.domain.ResearchDirectionFilters
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
@@ -78,6 +79,7 @@ class BatchSendTaskConfigService(
                 expertTypesJson = normalized.expertTypesJson,
                 templateId = normalized.templateId,
                 gateFilterEnabled = normalized.gateFilterEnabled,
+                researchDirectionFilter = normalized.researchDirectionFilter,
                 createdAt = now,
                 updatedAt = now
             ),
@@ -113,6 +115,7 @@ class BatchSendTaskConfigService(
                 expertTypesJson = normalized.expertTypesJson,
                 templateId = normalized.templateId,
                 gateFilterEnabled = normalized.gateFilterEnabled,
+                researchDirectionFilter = normalized.researchDirectionFilter,
                 updatedAt = now
             ),
             configName = normalized.configName
@@ -198,6 +201,8 @@ class BatchSendTaskConfigService(
                 templateId = request.templateId,
                 // I4a-6 (M-2): 旧 typed API 不传门禁开关，必须显式保留存量值（漏写会命中默认值静默重置为 false）。
                 gateFilterEnabled = existing.gateFilterEnabled,
+                // I-1: 旧 typed API 不传方向三态，必须显式保留存量值（漏写会命中默认值静默重置为 ANY）。
+                researchDirectionFilter = existing.researchDirectionFilter,
             )
         )
         return BatchSendConfig(
@@ -313,6 +318,8 @@ class BatchSendTaskConfigService(
         val regions = normalizeRegions(fields.regions)
         val regionsJson = objectMapper.writeValueAsString(regions)
         val mailType = resolveMailType(fields.templateId)
+        // I-1: 三态白名单是权威 —— 非法值在此拒绝（未传值/空白归一为 ANY）。
+        val researchDirectionFilter = ResearchDirectionFilters.requireAllowed(fields.researchDirectionFilter)
 
         // I3-1/I3-2: INTRODUCTION 的研发类型必填非空 —— 空集合在子计划 04 之后
         // 等价于「发给零个人」，必须在保存时就拒绝，不能留到运行时。
@@ -338,7 +345,8 @@ class BatchSendTaskConfigService(
             operatorStatusesJson = operatorStatusesJson,
             expertTypesJson = expertTypesJson,
             templateId = fields.templateId,
-            gateFilterEnabled = fields.gateFilterEnabled
+            gateFilterEnabled = fields.gateFilterEnabled,
+            researchDirectionFilter = researchDirectionFilter
         )
     }
 
@@ -485,6 +493,7 @@ class BatchSendTaskConfigService(
             expertTypes = parseExpertTypes(row.expertTypesJson),
             templateId = row.templateId,
             gateFilterEnabled = row.gateFilterEnabled,
+            researchDirectionFilter = row.researchDirectionFilter,
             createdAt = row.createdAt,
             updatedAt = row.updatedAt,
             nextFireTime = computeNextFireTime(row.cron),
@@ -577,7 +586,8 @@ class BatchSendTaskConfigService(
         val operatorStatuses: List<String>,
         val expertTypes: List<String> = emptyList(),
         val templateId: Long?,
-        val gateFilterEnabled: Boolean = false
+        val gateFilterEnabled: Boolean = false,
+        val researchDirectionFilter: String = ResearchDirectionFilters.ANY
     )
 
     private data class NormalizedConfig(
@@ -598,7 +608,8 @@ class BatchSendTaskConfigService(
         val operatorStatusesJson: String,
         val expertTypesJson: String,
         val templateId: Long?,
-        val gateFilterEnabled: Boolean = false
+        val gateFilterEnabled: Boolean = false,
+        val researchDirectionFilter: String = ResearchDirectionFilters.ANY
     )
 
     private fun BatchSendTaskConfigCreateCommand.toFields() = ConfigFields(
@@ -618,7 +629,8 @@ class BatchSendTaskConfigService(
         operatorStatuses = operatorStatuses,
         expertTypes = expertTypes,
         templateId = templateId,
-        gateFilterEnabled = gateFilterEnabled
+        gateFilterEnabled = gateFilterEnabled,
+        researchDirectionFilter = researchDirectionFilter
     )
 
     private fun BatchSendTaskConfigUpdateCommand.toFields() = ConfigFields(
@@ -638,7 +650,8 @@ class BatchSendTaskConfigService(
         operatorStatuses = operatorStatuses,
         expertTypes = expertTypes,
         templateId = templateId,
-        gateFilterEnabled = gateFilterEnabled
+        gateFilterEnabled = gateFilterEnabled,
+        researchDirectionFilter = researchDirectionFilter
     )
 
     private fun BatchSendTaskConfig.toFields() = ConfigFields(
@@ -658,7 +671,8 @@ class BatchSendTaskConfigService(
         operatorStatuses = parseOperatorStatuses(operatorStatusesJson),
         expertTypes = parseExpertTypes(expertTypesJson),
         templateId = templateId,
-        gateFilterEnabled = gateFilterEnabled
+        gateFilterEnabled = gateFilterEnabled,
+        researchDirectionFilter = researchDirectionFilter
     )
 
     private companion object {

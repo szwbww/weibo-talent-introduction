@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.campaign.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
+import com.weibo.talentintroduction.campaign.domain.ResearchDirectionFilters
 import com.weibo.talentintroduction.campaign.domain.toExecutionSnapshot
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
@@ -429,6 +430,8 @@ class BatchSendControlService(
             snapshot.regions.forEach { region ->
                 require(region in CountryContinentMapping.allRegions()) { "Invalid region: $region" }
             }
+            // I-1: 手动路径的快照直接来自请求体，不经配置服务，三态白名单必须在此独立校验。
+            ResearchDirectionFilters.requireAllowed(snapshot.researchDirectionFilter)
             // I3-2: 手动路径的快照直接来自请求体，不经配置服务，必须在此独立校验。
             if (snapshot.mailType == BatchSendType.INTRODUCTION.name) {
                 require(snapshot.expertTypes.any { it.isNotBlank() }) { "研发类型至少选择一个" }

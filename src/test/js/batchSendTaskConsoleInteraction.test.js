@@ -6,6 +6,8 @@ const { describe, it } = require("node:test");
 
 const appPath = path.join(__dirname, "..", "..", "main", "resources", "static", "app.js");
 const appSource = fs.readFileSync(appPath, "utf-8");
+const indexPath = path.join(__dirname, "..", "..", "main", "resources", "static", "index.html");
+const indexSource = fs.readFileSync(indexPath, "utf-8");
 
 function extractFn(name) {
     const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");
@@ -1121,6 +1123,8 @@ describe("batch send task console interactions", () => {
             discipline: "STEM",
             operatorStatuses: ["NOT_CONTACTED"],
             expertTypes: ["PRODUCTION_RND"],
+            // I-1/I-2: 方向三态必须与预估/执行共用同一完整快照（不得只改一条路径）。
+            researchDirectionFilter: "ABSENT",
             templateId: 7
         };
         const sandbox = { readManualFormValues: () => values, Number };
@@ -2199,5 +2203,241 @@ describe("batch send task console interactions", () => {
             assert.match(o.value, /^[A-Z_]+$/, "value must stay an English enum name (W1)");
             assert.notStrictEqual(o.value, o.label, "value and label must stay distinct (W1)");
         });
+    });
+
+    // ── P5a: 研究方向三态 researchDirectionFilter（I-1 / I-2 / I-3 / S-1）────────
+
+    it("H1: showBatchConfigEditor echoes the direction state and defaults to ANY (I-1)", () => {
+        const showEditor = extractFn("showBatchConfigEditor");
+        assert.ok(showEditor, "showBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) {
+                elements[id] = { id, value: "", textContent: "", hidden: true, classList: { add() {}, remove() {} } };
+            }
+            return elements[id];
+        }
+        const sandbox = {
+            batchTaskState: { editorAutoEnabled: false, preloadedTemplates: [] },
+            document: { getElementById: (id) => el(id) },
+            setBatchTagPickerValue: () => {},
+            setBatchRegionPickerValue: () => {},
+            renderBatchMultiPicker: () => {},
+            syncBatchConfigEditorScheduleFields: () => {},
+            fillBatchConfigEditorTemplateSelector: () => {},
+            updateBatchConfigVolumeHint: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("readBatchMultiPickerValue"), sandbox);
+        vm.runInContext(extractFn("setBatchMultiPickerValue"), sandbox);
+        vm.runInContext(extractFn("isCronClock"), sandbox);
+        vm.runInContext(extractFn("padClock"), sandbox);
+        vm.runInContext(showEditor, sandbox);
+
+        // 保存为 ABSENT 的任务：刷新/重开必须仍是 ABSENT（I-1 回显）。
+        sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 15 3 * * ?", tags: [], regions: [], researchDirectionFilter: "ABSENT" });
+        assert.strictEqual(el("batchConfigEditorResearchDirectionFilter").value, "ABSENT",
+            "a persisted ABSENT task must echo ABSENT (I-1)");
+
+        // 迁移前的旧任务（view 无该字段）→ 不限，不得沿用上一条任务的值。
+        sandbox.showBatchConfigEditor({ id: 2, configName: "旧任务", cron: "0 15 3 * * ?", tags: [], regions: [] });
+        assert.strictEqual(el("batchConfigEditorResearchDirectionFilter").value, "ANY",
+            "a legacy config without the field must echo ANY (I-1)");
+
+        // 新建任务 → 不限。
+        sandbox.showBatchConfigEditor(null);
+        assert.strictEqual(el("batchConfigEditorResearchDirectionFilter").value, "ANY",
+            "a new task must start at 不限 (I-1)");
+    });
+
+    it("H2: saveBatchConfigEditor payload carries the direction select value (I-1)", async () => {
+        const saveConfig = extractFn("saveBatchConfigEditor");
+        assert.ok(saveConfig, "saveBatchConfigEditor must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) elements[id] = { id, value: "", disabled: false };
+            return elements[id];
+        }
+        const apiBodies = [];
+        const sandbox = {
+            document: { getElementById: (id) => el(id) },
+            batchTaskState: { editorMode: "edit", editorId: 9, editorAutoEnabled: false, preloadedTemplates: [] },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => ["PRODUCTION_RND"],
+            gateToggleChecked: () => false,
+            showStatus: () => {},
+            api: async (url, options) => { apiBodies.push(JSON.parse(options.body)); return {}; },
+            hideBatchConfigEditor: () => {},
+            loadBatchConfigList: () => {}
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(saveConfig, sandbox);
+
+        el("batchConfigEditorName").value = "无方向任务";
+        el("batchConfigEditorFrequency").value = "daily";
+        el("batchConfigEditorTime").value = "07:30";
+        el("batchConfigEditorCron").value = "";
+        el("batchConfigEditorResearchDirectionFilter").value = "ABSENT";
+
+        await sandbox.saveBatchConfigEditor();
+
+        assert.strictEqual(apiBodies.length, 1, "exactly one save request");
+        assert.strictEqual(apiBodies[0].researchDirectionFilter, "ABSENT",
+            "payload must carry the direction state from the select (I-1)");
+    });
+
+    it("H3: deepCloneConfig and the independent manual draft carry the direction state (I-1)", () => {
+        const clone = extractFn("deepCloneConfig");
+        const defaults = extractFn("fillManualFormDefaults");
+        assert.ok(clone && defaults, "draft helpers must exist");
+
+        const sandbox = { batchTaskState: {}, fillManualFormFromDraft: () => {} };
+        vm.createContext(sandbox);
+        vm.runInContext(clone, sandbox);
+        vm.runInContext(defaults, sandbox);
+
+        const cloned = sandbox.deepCloneConfig({ id: 7, configName: "无方向任务", researchDirectionFilter: "ABSENT" });
+        assert.strictEqual(cloned.researchDirectionFilter, "ABSENT",
+            "the manual draft must clone the persisted direction state (I-1)");
+        const legacyClone = sandbox.deepCloneConfig({ id: 8, configName: "旧任务" });
+        assert.strictEqual(legacyClone.researchDirectionFilter, "ANY",
+            "a legacy config must clone as 不限 (I-1)");
+
+        sandbox.fillManualFormDefaults();
+        assert.strictEqual(sandbox.batchTaskState.manualDraft.researchDirectionFilter, "ANY",
+            "an independent manual run must default to 不限 (I-1)");
+    });
+
+    it("H4: readManualFormValues reads the manual direction select and defaults to ANY (I-1)", () => {
+        const readValues = extractFn("readManualFormValues");
+        assert.ok(readValues, "readManualFormValues must exist");
+
+        const elements = {};
+        function el(id) {
+            if (!elements[id]) elements[id] = element("");
+            return elements[id];
+        }
+        const sandbox = {
+            document: { getElementById: (id) => el(id) },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => [],
+            resolveBatchTemplateMailType: () => "INTRODUCTION"
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(readValues, sandbox);
+
+        assert.strictEqual(sandbox.readManualFormValues().researchDirectionFilter, "ANY",
+            "a missing select value must read as 不限 (I-1)");
+        el("batchManualResearchDirectionFilter").value = "PRESENT";
+        assert.strictEqual(sandbox.readManualFormValues().researchDirectionFilter, "PRESENT",
+            "the manual override must reach the execution snapshot (I-1)");
+    });
+
+    it("H5: the direction state participates in manual diffs with 不限/有研究方向/无研究方向 (I-1/S-1)", () => {
+        const normalize = extractFn("normalizeManualSnapshot");
+        const formatDiffValue = extractFn("formatManualDiffValue");
+        const computeDiffs = extractFn("computeManualDiffs");
+        assert.ok(normalize && formatDiffValue && computeDiffs, "diff pipeline helpers must exist");
+
+        function makeConfig(researchDirectionFilter) {
+            return {
+                id: 1, templateId: 1, mailType: "INTRODUCTION", funnelLevel: "",
+                tags: [], regions: [], emailDomains: [], discipline: "", operatorStatuses: [], expertTypes: [],
+                researchDirectionFilter,
+                gateFilterEnabled: false,
+                roundSize: 50, roundsPerRun: 1, perMailIntervalMs: 1000, perRoundIntervalMs: 60000,
+                selfCheckTtlMinutes: 30, configName: "任务", updatedAt: null
+            };
+        }
+        function runDiffs(sourceDirection, draftDirection) {
+            const sandbox = {
+                batchTaskState: { manualSource: makeConfig(sourceDirection) },
+                readManualFormValues: () => makeConfig(draftDirection),
+                supportedBatchComposeTemplates: () => []
+            };
+            vm.createContext(sandbox);
+            vm.runInContext(normalize, sandbox);
+            vm.runInContext(formatDiffValue, sandbox);
+            vm.runInContext(computeDiffs, sandbox);
+            return sandbox.computeManualDiffs();
+        }
+
+        const changed = runDiffs("ANY", "ABSENT");
+        assert.ok(changed.some((d) => d.key === "researchDirectionFilter" && d.label === "研究方向"),
+            "the manual override must surface as a 研究方向 diff (I-1)");
+        assert.strictEqual(changed.find((d) => d.key === "researchDirectionFilter").oldDisplay, "不限");
+        assert.strictEqual(changed.find((d) => d.key === "researchDirectionFilter").newDisplay, "无研究方向");
+        assert.strictEqual(runDiffs("ABSENT", "PRESENT").find((d) => d.key === "researchDirectionFilter").newDisplay,
+            "有研究方向");
+        assert.ok(!runDiffs("ABSENT", "ABSENT").some((d) => d.key === "researchDirectionFilter"),
+            "an unchanged direction must not be flagged (I-1)");
+
+        const formatSandbox = {};
+        vm.createContext(formatSandbox);
+        vm.runInContext(formatDiffValue, formatSandbox);
+        assert.strictEqual(formatSandbox.formatManualDiffValue("researchDirectionFilter", "ANY"), "不限");
+        assert.strictEqual(formatSandbox.formatManualDiffValue("researchDirectionFilter", "PRESENT"), "有研究方向");
+        assert.strictEqual(formatSandbox.formatManualDiffValue("researchDirectionFilter", "ABSENT"), "无研究方向");
+    });
+
+    it("H6: both direction selects exist in index.html with only the S-1 classes, no inline style (S-1)", () => {
+        // K-dom-stub-tests-hide-dangling-refs: 测试里的 getElementById 恒返回元素，
+        // 新增 id 必须以 index.html 源文本存在性断言兜底。
+        for (const id of ["batchConfigEditorResearchDirectionFilter", "manualFieldResearchDirectionFilter", "batchManualResearchDirectionFilter"]) {
+            assert.strictEqual((indexSource.match(new RegExp(`id="${id}"`, "g")) || []).length, 1,
+                `${id} must appear exactly once in index.html`);
+        }
+
+        // S-1: 新增 DOM 只允许契约列出的既有 class（与“学科”字段同骨架）。
+        const allowedClasses = new Set([
+            "bsc-input", "bsc-select", "batch-config-field", "batch-config-field-label",
+            "batch-config-diff-badge", "batch-config-diff-original"
+        ]);
+        for (const id of ["batchConfigEditorResearchDirectionFilter", "batchManualResearchDirectionFilter"]) {
+            const selectIdx = indexSource.indexOf(`id="${id}"`);
+            const start = indexSource.lastIndexOf("<label", selectIdx);
+            const end = indexSource.indexOf("</label>", selectIdx);
+            assert.ok(start >= 0 && end > start, `the ${id} field must be a <label class="batch-config-field"> field`);
+            const block = indexSource.slice(start, end);
+            const classes = [...block.matchAll(/class="([^"]*)"/g)]
+                .flatMap((m) => m[1].split(/\s+/).filter(Boolean));
+            const unknown = classes.filter((c) => !allowedClasses.has(c));
+            assert.deepStrictEqual(unknown, [], `new DOM must use only the S-1 classes: ${unknown.join(",")}`);
+            assert.ok(!/style="/.test(block), "no inline style is allowed (S-1)");
+            assert.ok(block.includes('class="bsc-input bsc-select"'),
+                "the direction select must reuse the 学科 field styling (S-1)");
+            assert.ok(block.includes("研究方向"), "the field label must name 研究方向 (S-1/I-3)");
+            assert.deepStrictEqual(
+                [...block.matchAll(/<option value="([^"]+)"/g)].map((m) => m[1]),
+                ["ANY", "PRESENT", "ABSENT"],
+                "each direction select must offer 不限/有/无 in that order (S-1)"
+            );
+            assert.deepStrictEqual(
+                [...block.matchAll(/<option value="[^"]+">([^<]+)<\/option>/g)].map((m) => m[1]),
+                ["不限", "有研究方向", "无研究方向"]
+            );
+        }
+
+        // 手动页的差异提示节点必须与配置页字段名一一对应（S-1 保留 diff badge/original）。
+        const manualBlock = indexSource.slice(
+            indexSource.lastIndexOf("<label", indexSource.indexOf('id="manualFieldResearchDirectionFilter"')),
+            indexSource.indexOf("</label>", indexSource.indexOf('id="manualFieldResearchDirectionFilter"'))
+        );
+        assert.ok(manualBlock.includes('class="batch-config-diff-badge"') && manualBlock.includes('class="batch-config-diff-original"'),
+            "the manual field must keep the diff badge and original value nodes (S-1)");
+    });
+
+    it("H7: the manual direction field is wired into the diff node map and marker cleanup (S-1)", () => {
+        const computeAndRender = extractFn("computeAndRenderDiffs");
+        const clearMarkers = extractFn("clearAllDiffMarkers");
+        assert.ok(computeAndRender && clearMarkers, "diff rendering helpers must exist");
+        assert.ok(computeAndRender.includes('researchDirectionFilter: "manualFieldResearchDirectionFilter"'),
+            "the diff renderer must target the new field wrapper (S-1)");
+        assert.ok(clearMarkers.includes('"manualFieldResearchDirectionFilter"'),
+            "clearing diff markers must cover the new field (S-1)");
     });
 });

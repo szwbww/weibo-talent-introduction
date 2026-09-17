@@ -1283,6 +1283,14 @@
                                 <option value="UNCLASSIFIED">未分类</option>
                             </select>
                         </label>
+                        <label class="batch-config-field">
+                            <span class="batch-config-field-label">研究方向（“无”≠研发类型“未知”）</span>
+                            <select id="batchConfigEditorResearchDirectionFilter" class="bsc-input bsc-select">
+                                <option value="ANY">不限</option>
+                                <option value="PRESENT">有研究方向</option>
+                                <option value="ABSENT">无研究方向</option>
+                            </select>
+                        </label>
                         <div class="batch-config-field">
                             <span class="batch-config-field-label">专家状态</span>
                             <div class="batch-tag-picker" data-tag-picker="batchConfigEditorOperatorStatuses">
@@ -1486,6 +1494,16 @@
                             <option value="STEM">仅理工科</option>
                             <option value="HUMANITIES">仅文社科</option>
                             <option value="UNCLASSIFIED">未分类</option>
+                        </select>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </label>
+                    <label class="batch-config-field" id="manualFieldResearchDirectionFilter">
+                        <span class="batch-config-field-label">研究方向（“无”≠研发类型“未知”）</span>
+                        <select id="batchManualResearchDirectionFilter" class="bsc-input bsc-select">
+                            <option value="ANY">不限</option>
+                            <option value="PRESENT">有研究方向</option>
+                            <option value="ABSENT">无研究方向</option>
                         </select>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>

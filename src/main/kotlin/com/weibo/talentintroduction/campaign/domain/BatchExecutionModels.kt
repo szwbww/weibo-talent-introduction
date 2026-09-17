@@ -23,6 +23,11 @@ data class BatchExecutionSnapshot(
     val expertTypes: List<String> = emptyList(),
     val templateId: Long? = null,
     val gateFilterEnabled: Boolean = false,
+    /**
+     * I-1/I-2: 研究方向三态（[ResearchDirectionFilters]）；默认 [ResearchDirectionFilters.ANY]。
+     * 前端手动快照、`toExecutionSnapshot` 与 `RecipientScope.fromSnapshot` 逐字传递。
+     */
+    val researchDirectionFilter: String = ResearchDirectionFilters.ANY,
     val oneRoundOnly: Boolean = false
 )
 
@@ -60,7 +65,14 @@ data class RecipientScope(
     /** I4-2: 研发类型收窄（INTRODUCTION 专属；空集合 = 发给零个人，fail-closed，见 [matchesExpertType]）。 */
     val expertTypes: List<String> = emptyList(),
     /** I4a-4: 已解析的门禁 ES 字段（ALLOWED_HAS_FIELDS 交集）；解析只发生在 resolveScope。 */
-    val gateEsFields: List<String> = emptyList()
+    val gateEsFields: List<String> = emptyList(),
+    /**
+     * I-2/I-3: 研究方向三态（[ResearchDirectionFilters]）。与 ES 侧同口径：
+     * `PRESENT` 命中 `fieldPresenceFilter("researchFields")`（`exists AND NOT term ""`），
+     * `ABSENT` 为其补集，`ANY` 不判定。与研发类型（`UNKNOWN`/`UNCLASSIFIED`）和模板门禁
+     * 是彼此独立的 AND 维度（I-3）。
+     */
+    val researchDirectionFilter: String = ResearchDirectionFilters.ANY
 ) {
     fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
         // I3a-5：与 ES 的 operatorStatusesFilter 同口径 —— 多状态取 OR；
@@ -87,6 +99,14 @@ data class RecipientScope(
             val email = profile.email
             if (email.isNullOrBlank()) return false
             if (emailDomains.none { email.endsWith("@$it") }) return false
+        }
+        // I-2: 方向三态与 ES 的 researchFields 存在性判据同口径。keyword 字段下
+        // `fieldPresenceFilter("researchFields")` = `exists AND NOT term ""`，
+        // 故只有 null/空串算「无」，纯空格串在 ES 里 exists 且非 term ""，算「有」。
+        // I-3: 本判定与 expertTypes / gateEsFields 是独立维度，同时指定即 AND。
+        when (researchDirectionFilter) {
+            ResearchDirectionFilters.PRESENT -> if (profile.researchFields.isNullOrEmpty()) return false
+            ResearchDirectionFilters.ABSENT -> if (!profile.researchFields.isNullOrEmpty()) return false
         }
         if (tags.isNotEmpty()) {
             val expertTags = profile.tags.orEmpty()
@@ -148,7 +168,9 @@ data class RecipientScope(
                 // I3a-3：trim、丢空、去重保序；空集合 = 不限。
                 operatorStatuses = snapshot.operatorStatuses.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
                 // I4-2：trim、丢空、去重保序；空集合在发信判定中 fail-closed（发给零个人）。
-                expertTypes = snapshot.expertTypes.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+                expertTypes = snapshot.expertTypes.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
+                // I-1/I-2：三态原样传递（空白/未传值归一为 ANY）；非法值已在校验层被拒。
+                researchDirectionFilter = ResearchDirectionFilters.normalize(snapshot.researchDirectionFilter)
             )
         }
     }
@@ -317,6 +339,7 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         expertTypes = expertTypes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
+        researchDirectionFilter = researchDirectionFilter,
         oneRoundOnly = oneRoundOnly
     )
 }

@@ -15989,6 +15989,8 @@ function showBatchConfigEditor(config) {
     setVal("batchConfigEditorFunnelLevel", config ? (config.funnelLevel || "") : "");
     setBatchTagPickerValue("batchConfigEditorTags", config && Array.isArray(config.tags) ? config.tags : []);
     setVal("batchConfigEditorDiscipline", config ? (config.discipline || "") : "");
+    // I-1: 旧任务（无该字段）与新建任务都回显 ANY（不限）；不把上一条任务的值留在框里。
+    setVal("batchConfigEditorResearchDirectionFilter", config ? (config.researchDirectionFilter || "ANY") : "ANY");
     setBatchMultiPickerValue("batchConfigEditorOperatorStatuses", config && Array.isArray(config.operatorStatuses) ? config.operatorStatuses : []);
     setBatchMultiPickerValue("batchConfigEditorExpertTypes", config && Array.isArray(config.expertTypes) ? config.expertTypes : ["PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"]);
     setVal("batchConfigEditorRoundsPerRun", config ? config.roundsPerRun : "1");
@@ -16758,6 +16760,7 @@ function buildConfigEditorRecipientSnapshot() {
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
         expertTypes: readBatchMultiPickerValue("batchConfigEditorExpertTypes"),
+        researchDirectionFilter: val("batchConfigEditorResearchDirectionFilter") || "ANY",
         gateFilterEnabled: gateToggleChecked("editor"),
         templateId: templateId
     };
@@ -16779,6 +16782,7 @@ function buildManualExecutionSnapshot() {
         discipline: values.discipline,
         operatorStatuses: values.operatorStatuses,
         expertTypes: values.expertTypes,
+        researchDirectionFilter: values.researchDirectionFilter || "ANY",
         gateFilterEnabled: values.gateFilterEnabled,
         templateId: values.templateId
     };
@@ -16898,6 +16902,7 @@ async function saveBatchConfigEditor() {
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
         expertTypes: readBatchMultiPickerValue("batchConfigEditorExpertTypes"),
+        researchDirectionFilter: val("batchConfigEditorResearchDirectionFilter") || "ANY",
         gateFilterEnabled: gateToggleChecked("editor"),
         templateId: templateId
     };
@@ -16989,6 +16994,7 @@ function deepCloneConfig(c) {
         discipline: c.discipline || "",
         operatorStatuses: Array.isArray(c.operatorStatuses) ? c.operatorStatuses.slice() : [],
         expertTypes: Array.isArray(c.expertTypes) ? c.expertTypes.slice() : [],
+        researchDirectionFilter: c.researchDirectionFilter || "ANY",
         gateFilterEnabled: c.gateFilterEnabled === true,
         roundSize: c.roundSize || 50,
         roundsPerRun: c.roundsPerRun || 1,
@@ -17011,6 +17017,7 @@ function fillManualFormDefaults() {
         discipline: "",
         operatorStatuses: [],
         expertTypes: ["PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"],
+        researchDirectionFilter: "ANY",
         gateFilterEnabled: false,
         roundSize: 50,
         roundsPerRun: 1,
@@ -17034,6 +17041,7 @@ function fillManualFormFromDraft() {
     setBatchRegionPickerValue("batchManualRegions", Array.isArray(d.regions) ? d.regions : []);
     setBatchMultiPickerValue("batchManualEmailDomains", Array.isArray(d.emailDomains) ? d.emailDomains : []);
     setVal("batchManualDiscipline", d.discipline || "");
+    setVal("batchManualResearchDirectionFilter", d.researchDirectionFilter || "ANY");
     setBatchMultiPickerValue("batchManualOperatorStatuses", Array.isArray(d.operatorStatuses) ? d.operatorStatuses : []);
     setBatchMultiPickerValue("batchManualExpertTypes", Array.isArray(d.expertTypes) ? d.expertTypes : []);
     setVal("batchManualRoundSize", d.roundSize);
@@ -17118,6 +17126,7 @@ function readManualFormValues() {
         regions: typeof readBatchRegionPickerValue === "function" ? readBatchRegionPickerValue("batchManualRegions") : [],
         emailDomains: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualEmailDomains") : [],
         discipline: val("batchManualDiscipline") || null,
+        researchDirectionFilter: val("batchManualResearchDirectionFilter") || "ANY",
         operatorStatuses: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualOperatorStatuses") : [],
         expertTypes: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualExpertTypes") : [],
         gateFilterEnabled: Boolean(gateCheckboxEl && gateCheckboxEl.checked),
@@ -17137,6 +17146,7 @@ function normalizeManualSnapshot(v) {
         regions: (Array.isArray(v.regions) ? v.regions.slice() : []).map(function(r) { return r.trim(); }).filter(function(r) { return r.length > 0; }).sort().filter(function(r, i, arr) { return arr.indexOf(r) === i; }),
         emailDomains: (Array.isArray(v.emailDomains) ? v.emailDomains : []).map(function(s) { return String(s).trim(); }).filter(Boolean).slice().sort(),
         discipline: (v.discipline || "").trim() || null,
+        researchDirectionFilter: (v.researchDirectionFilter || "ANY").trim() || "ANY",
         operatorStatuses: (Array.isArray(v.operatorStatuses) ? v.operatorStatuses : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
         expertTypes: (Array.isArray(v.expertTypes) ? v.expertTypes : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
         gateFilterEnabled: Boolean(v.gateFilterEnabled),
@@ -17158,6 +17168,11 @@ function formatManualDiffValue(key, value) {
         return template ? template.templateName : "模板 #" + value;
     }
     if (key === "funnelLevel") return value || "全部层级";
+    if (key === "researchDirectionFilter") {
+        if (value === "PRESENT") return "有研究方向";
+        if (value === "ABSENT") return "无研究方向";
+        return "不限";
+    }
     if (key === "emailDomains") return (Array.isArray(value) && value.length > 0) ? value.join("、") : "全部服务商";
     if (key === "discipline") {
         if (!value) return "全部学科";
@@ -17191,6 +17206,7 @@ function computeManualDiffs() {
         { key: "regions", label: "地区" },
         { key: "emailDomains", label: "邮箱服务商" },
         { key: "discipline", label: "学科" },
+        { key: "researchDirectionFilter", label: "研究方向" },
         { key: "operatorStatuses", label: "专家状态" },
         { key: "expertTypes", label: "研发类型" },
         { key: "gateFilterEnabled", label: "邮件模版门禁过滤" },
@@ -17239,6 +17255,7 @@ function computeAndRenderDiffs() {
         regions: "manualFieldRegions",
         emailDomains: "manualFieldEmailDomain",
         discipline: "manualFieldDiscipline",
+        researchDirectionFilter: "manualFieldResearchDirectionFilter",
         operatorStatuses: "manualFieldOperatorStatus",
         expertTypes: "manualFieldExpertTypes",
         gateFilterEnabled: "manualFieldGateFilter",
@@ -17271,7 +17288,7 @@ function computeAndRenderDiffs() {
 
 function clearAllDiffMarkers() {
     var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldRegions", "manualFieldEmailDomain",
-        "manualFieldDiscipline", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldGateFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
+        "manualFieldDiscipline", "manualFieldResearchDirectionFilter", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldGateFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
         var el = document.getElementById(id);
@@ -17923,7 +17940,7 @@ function bindBatchSendTaskEvents() {
 
     // Recipient preview (P-F / 06): filter selects → debounced estimate
     ["batchConfigEditorTemplateId", "batchConfigEditorFunnelLevel",
-     "batchConfigEditorDiscipline"].forEach(function(id) {
+     "batchConfigEditorDiscipline", "batchConfigEditorResearchDirectionFilter"].forEach(function(id) {
         var el = document.getElementById(id);
         if (el) el.addEventListener("change", function() { scheduleRecipientPreview("editor"); });
     });

@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.campaign.domain.BatchOutcomeReasonCodes
 import com.weibo.talentintroduction.campaign.domain.OutcomeAccumulator
 import com.weibo.talentintroduction.campaign.domain.OutcomeBreakdown
 import com.weibo.talentintroduction.campaign.domain.RecipientScope
+import com.weibo.talentintroduction.campaign.domain.ResearchDirectionFilters
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
@@ -1311,6 +1312,22 @@ class ManualInitialOutreachService(
             filters.add(mapOf("terms" to mapOf("tags" to scope.tags)))
         }
         ExpertSearchService.regionsFilter(scope.regions)?.let { filters.add(it) }
+        // I-2: 方向三态 —— ABSENT 是既有 PRESENT 存在性 filter 的 bool.must_not；
+        // ANY 不追加任何项（旧任务人群不变）。与模板门禁字段/研发类型平铺为 AND（I-3）。
+        when (scope.researchDirectionFilter) {
+            ResearchDirectionFilters.PRESENT ->
+                filters.add(ExpertSearchService.fieldPresenceFilter(ResearchDirectionFilters.ES_FIELD))
+            ResearchDirectionFilters.ABSENT ->
+                filters.add(
+                    mapOf(
+                        "bool" to mapOf(
+                            "must_not" to listOf(
+                                ExpertSearchService.fieldPresenceFilter(ResearchDirectionFilters.ES_FIELD)
+                            )
+                        )
+                    )
+                )
+        }
         // I4a-2: 门禁字段之间 AND —— 平铺进 filter 数组，不用 should。
         // I4a-1: 空集合时 fieldPresenceFilters 返回空列表，不追加任何项。
         filters.addAll(ExpertSearchService.fieldPresenceFilters(scope.gateEsFields))

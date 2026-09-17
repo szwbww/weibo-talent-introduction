@@ -4,10 +4,14 @@ import com.weibo.talentintroduction.campaign.domain.Campaign
 import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.BatchOutcomeReasonCodes
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig
+import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCommand
+import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
+import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
 import com.weibo.talentintroduction.campaign.domain.RecipientScope
+import com.weibo.talentintroduction.campaign.domain.toExecutionSnapshot
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
@@ -57,9 +61,11 @@ import org.junit.jupiter.api.Test
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyLong
 import org.mockito.Mockito
+import org.springframework.http.HttpStatus
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import java.time.LocalDateTime
+import java.util.concurrent.Executor
 
 class ManualInitialOutreachServiceTest {
     private val expertSearchService = Mockito.mock(ExpertSearchService::class.java)
@@ -1629,7 +1635,7 @@ class ManualInitialOutreachServiceTest {
      * subject 是 run 流本身（轮次/容量/SMTP/预热），故按 toSnapshot 的相同派生规则构造
      * 等价快照并携带 fixture 类型，改走现代 [ManualInitialOutreachService.run] 入口。
      */
-    private fun runScheduledSnapshot() =
+    private fun runScheduledSnapshot(researchDirectionFilter: String = "ANY") =
         com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
             mailType = "INTRODUCTION",
             roundSize = batchSendSettingService.getConfig().roundSize,
@@ -1642,7 +1648,9 @@ class ManualInitialOutreachServiceTest {
             discipline = batchSendSettingService.getConfig().discipline.ifBlank { null },
             templateId = batchSendSettingService.getConfig().templateId,
             // I4-2: fixture 默认分类为 PRODUCTION_RND —— 快照必须携带该类型，否则 fail-closed 一律不发。
-            expertTypes = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND")
+            expertTypes = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"),
+            // I-1/I-2: 方向三态默认 ANY —— 既有用例（未显式传值）行为逐字不变。
+            researchDirectionFilter = researchDirectionFilter
         )
 
     private fun introSnapshot(
@@ -4269,6 +4277,393 @@ class ManualInitialOutreachServiceTest {
         assertEquals(0, result.failed)
         assertEquals(0, result.skipped)
         Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(account("chen")), anyValue(ComposedMail("", "", "")))
+    }
+
+    // ──── P5a: 研究方向三态 researchDirectionFilter（I-1 / I-2 / I-3）──────────
+
+    private fun directionScope(filter: String) = RecipientScope(
+        mailType = "INTRODUCTION", funnelLevels = setOf("CANDIDATE"),
+        tags = emptyList(), regions = emptyList(),
+        emailDomains = emptyList(), discipline = null,
+        operatorStatuses = emptyList(),
+        // I4-2: fixture 分类 PRODUCTION_RND —— 类型判定通过后再测方向维度（I-3 的 AND 语义）。
+        expertTypes = listOf("PRODUCTION_RND"),
+        researchDirectionFilter = filter
+    )
+
+    /** I-2: PRESENT 精确复用既有存在性 filter。 */
+    private fun researchFieldsPresenceFilter(): Map<String, Any> =
+        ExpertSearchService.fieldPresenceFilter("researchFields")
+
+    /** I-2: ABSENT 是同一个 PRESENT filter 的 bool.must_not。 */
+    private fun researchFieldsAbsenceFilter(): Map<String, Any> =
+        mapOf("bool" to mapOf("must_not" to listOf(researchFieldsPresenceFilter())))
+
+    @Test
+    fun `buildEsFiltersForLevel adds no direction filter for ANY and the exact presence pair for PRESENT ABSENT (I-2)`() {
+        val presence = researchFieldsPresenceFilter()
+        val absence = researchFieldsAbsenceFilter()
+
+        // I-1/I-2/I-3: ANY（旧任务默认）不得追加任何方向 filter —— 收件范围逐字不变。
+        val anyFilters = invokeBuildEsFiltersForLevel(service, directionScope("ANY"), "CANDIDATE")
+        assertFalse(anyFilters.contains(presence), "ANY must not add the presence filter")
+        assertFalse(anyFilters.contains(absence), "ANY must not add the absence filter")
+
+        // I-2: PRESENT 精确等于既有 ExpertSearchService.fieldPresenceFilter("researchFields")。
+        val presentFilters = invokeBuildEsFiltersForLevel(service, directionScope("PRESENT"), "CANDIDATE")
+        assertEquals(anyFilters.size + 1, presentFilters.size)
+        assertEquals(presence, presentFilters[2], "PRESENT must be flat in bool.filter")
+
+        // I-2: ABSENT 是同一个 filter 的 bool.must_not（等值于「不存在 或 term ""」）。
+        val absentFilters = invokeBuildEsFiltersForLevel(service, directionScope("ABSENT"), "CANDIDATE")
+        assertEquals(anyFilters.size + 1, absentFilters.size)
+        assertEquals(absence, absentFilters[2], "ABSENT must be bool.must_not of the PRESENT filter")
+
+        // MATERIAL_REMINDER 走同一 buildEsFiltersForLevel，方向三态同样生效。
+        val reminderScope = directionScope("ABSENT").copy(
+            mailType = "MATERIAL_REMINDER",
+            funnelLevels = setOf("APPLICATION"),
+            tags = listOf("承诺回复材料")
+        )
+        assertTrue(
+            invokeBuildEsFiltersForLevel(service, reminderScope, "APPLICATION").contains(absence),
+            "MATERIAL_REMINDER shares the same direction filter path"
+        )
+    }
+
+    @Test
+    fun `matchesExpert applies the direction three-state per profile with null and empty string absent (I-2)`() {
+        val any = directionScope("ANY")
+        val present = directionScope("PRESENT")
+        val absent = directionScope("ABSENT")
+
+        val cases = listOf(
+            expert("0001", "a@b.com").copy(researchFields = null) to false,
+            expert("0002", "b@b.com").copy(researchFields = "") to false,
+            expert("0003", "c@b.com").copy(researchFields = "Quantum Computing") to true,
+            // I-2: keyword 字段下纯空格串 `exists` 且非 `term ""` —— ES 算「有」，内存侧同口径。
+            expert("0004", "d@b.com").copy(researchFields = " ") to true
+        )
+        cases.forEach { (profile, hasDirection) ->
+            assertEquals(
+                hasDirection, present.matchesExpert(profile),
+                "PRESENT mismatch for researchFields=[${profile.researchFields}]"
+            )
+            assertEquals(
+                !hasDirection, absent.matchesExpert(profile),
+                "ABSENT mismatch for researchFields=[${profile.researchFields}]"
+            )
+            assertTrue(
+                any.matchesExpert(profile),
+                "ANY must not judge direction for researchFields=[${profile.researchFields}]"
+            )
+        }
+    }
+
+    @Test
+    fun `countBySnapshot applies direction to retryable profiles exactly like the ES presence rule (I-2)`() {
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        val noDirection = ExpertContact(id = 1L, campaignId = 10L, orcidId = "ABS1", expertEmail = "abs@x.com", expertName = "A", currentStatus = "NEW")
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(noDirection))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(1L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("ABS1"))).thenReturn(
+            listOf(expert("ABS1", "abs@x.com").copy(researchFields = null))
+        )
+        stubScrolledExperts(emptyList())
+
+        // ABSENT: 缺方向的 retryable 保留，ES 侧同一快照追加 must_not 存在性 filter。
+        val absentFilters = ExpertSearchService.notContactedWithEmailDomainsFilters().toMutableList()
+        absentFilters.add(researchFieldsAbsenceFilter())
+        absentFilters.add(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"))!!)
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(absentFilters))).thenReturn(0L)
+        val absentSummary = service.countBySnapshot(runScheduledSnapshot(researchDirectionFilter = "ABSENT"))
+        assertEquals(1, absentSummary.retryable)
+        assertEquals(1, absentSummary.totalSendable)
+
+        // PRESENT: 同一个缺方向 retryable 被排除，ES 侧换成存在性 filter。
+        val presentFilters = ExpertSearchService.notContactedWithEmailDomainsFilters().toMutableList()
+        presentFilters.add(researchFieldsPresenceFilter())
+        presentFilters.add(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"))!!)
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(presentFilters))).thenReturn(0L)
+        val presentSummary = service.countBySnapshot(runScheduledSnapshot(researchDirectionFilter = "PRESENT"))
+        assertEquals(0, presentSummary.retryable)
+        assertEquals(0, presentSummary.totalSendable)
+
+        // I-2: 两条路径只认这两个精确 filter 列表（内存重试与 ES 同口径）。
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(absentFilters))
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(presentFilters))
+    }
+
+    @Test
+    fun `preview and execution use identical direction filters for the same snapshot (I-2)`() {
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+
+        val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters().toMutableList()
+        expectedFilters.add(researchFieldsAbsenceFilter())
+        expectedFilters.add(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND"))!!)
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
+            .thenReturn(2L)
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION", roundSize = 10, roundsPerRun = 1,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE",
+            expertTypes = listOf("PRODUCTION_RND"),
+            researchDirectionFilter = "ABSENT"
+        )
+
+        // 预估路径（countBySnapshot → resolveScope → countEsTargets）
+        val preview = service.countBySnapshot(snapshot)
+        assertEquals(2, preview.pending)
+        assertEquals(0, preview.retryable)
+        assertEquals(2, preview.totalSendable)
+
+        // 执行路径（无可用账号 → 停在轮次闸口，不发信）
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+        val result = service.run(snapshot, 12348L, ExecutionMode.MANUAL, oneRoundOnly = true)
+        assertEquals(preview.totalSendable, result.total)
+
+        // I-2: 调用次数 = 预估 countEsTargets(1) + 执行 countEsTargets(1) + 执行 fetchEsPage 首页(1)，
+        // 全部命中同一 filter 列表 —— 预估人数与实际收件筛选同口径。
+        Mockito.verify(expertSearchService, Mockito.times(3))
+            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
+    }
+
+    @Test
+    fun `ABSENT combined with a required researchFields template gate selects nobody (I-3)`() {
+        Mockito.`when`(mailComposeTemplateService.requiredEsFields(42L)).thenReturn(listOf("researchFields"))
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "INTRODUCTION", roundSize = 10, roundsPerRun = 1,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", templateId = 42L, gateFilterEnabled = true,
+            expertTypes = listOf("PRODUCTION_RND"),
+            researchDirectionFilter = "ABSENT"
+        )
+        val scope = invokeResolveScope(service, snapshot)
+        assertEquals(listOf("researchFields"), scope.gateEsFields)
+        assertEquals("ABSENT", scope.researchDirectionFilter)
+
+        // I-3: 方向与模板门禁是独立维度、取 AND —— 存在性与其否定同时下发，合法结果为 0，
+        // 且任何一项都不得被静默丢弃（丢弃任一项都会放进缺必填变量的专家）。
+        val filters = invokeBuildEsFiltersForLevel(service, scope, "CANDIDATE")
+        assertTrue(filters.contains(researchFieldsPresenceFilter()), "template gate presence filter must survive")
+        assertTrue(filters.contains(researchFieldsAbsenceFilter()), "direction absence filter must survive")
+
+        // 内存重试侧同样恒 false —— 缺方向者不可能进入本次目标。
+        assertFalse(scope.matchesExpert(expert("0001", "a@b.com").copy(researchFields = null)))
+        assertFalse(scope.matchesExpert(expert("0002", "b@b.com").copy(researchFields = "AI")))
+    }
+
+    @Test
+    fun `persisted config carries the direction state into the snapshot and ES filters (I-1)`() {
+        val mapper = ObjectMapper().registerKotlinModule()
+        val legacyEntity = BatchSendTaskConfig(
+            id = 7L, configName = "旧任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            expertTypesJson = """["PRODUCTION_RND"]"""
+        )
+
+        // I-1: 迁移前的存量任务（未写该列）读出 ANY；旧 BatchSendConfig → snapshot 派生同样不带方向。
+        assertEquals("ANY", legacyEntity.researchDirectionFilter)
+        val legacyScope = invokeResolveScope(service, legacyEntity.toExecutionSnapshot(mapper))
+        assertEquals("ANY", legacyScope.researchDirectionFilter)
+        val legacyFilters = invokeBuildEsFiltersForLevel(service, legacyScope, "CANDIDATE")
+        assertFalse(legacyFilters.contains(researchFieldsPresenceFilter()), "legacy ANY must not narrow the audience")
+        assertFalse(legacyFilters.contains(researchFieldsAbsenceFilter()), "legacy ANY must not narrow the audience")
+
+        // 保存为 ABSENT 的任务：快照与 ES filter 全链路保留。
+        val absentScope = invokeResolveScope(
+            service,
+            legacyEntity.copy(researchDirectionFilter = "ABSENT").toExecutionSnapshot(mapper)
+        )
+        assertEquals("ABSENT", absentScope.researchDirectionFilter)
+        assertTrue(
+            invokeBuildEsFiltersForLevel(service, absentScope, "CANDIDATE").contains(researchFieldsAbsenceFilter())
+        )
+    }
+
+    @Test
+    fun `create and update persist the direction state and never reset it (I-1)`() {
+        val configRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
+        val eventPublisher = Mockito.mock(org.springframework.context.ApplicationEventPublisher::class.java)
+        val execService = Mockito.mock(com.weibo.talentintroduction.task.service.TaskExecutionService::class.java)
+        val configService = BatchSendTaskConfigService(
+            repository = configRepository,
+            mailComposeTemplateService = mailComposeTemplateService,
+            objectMapper = ObjectMapper().registerKotlinModule(),
+            eventPublisher = eventPublisher,
+            taskExecutionService = execService
+        )
+        Mockito.`when`(configRepository.findByConfigNameAndDeletedAtIsNull(Mockito.anyString())).thenReturn(null)
+        Mockito.`when`(execService.lastExecutedAtByBatchConfigIds(Mockito.anyList())).thenReturn(emptyMap())
+        val savedEntities = mutableListOf<BatchSendTaskConfig>()
+        Mockito.`when`(configRepository.save(Mockito.any(BatchSendTaskConfig::class.java))).thenAnswer { invocation ->
+            val entity = invocation.arguments[0] as BatchSendTaskConfig
+            savedEntities.add(entity)
+            entity.copy(id = 31L)
+        }
+
+        // 未传值 → ANY（旧 typed 客户端与旧前端不发该字段）。
+        val defaultView = configService.create(
+            BatchSendTaskConfigCreateCommand(
+                configName = "默认方向任务", cron = "0 0 9 * * ?", roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                expertTypes = listOf("PRODUCTION_RND")
+            )
+        )
+        assertEquals("ANY", defaultView.researchDirectionFilter)
+
+        // 显式 ABSENT → 落库并原样回显（list/get 共用 toView）。
+        val absentView = configService.create(
+            BatchSendTaskConfigCreateCommand(
+                configName = "无方向任务", cron = "0 0 9 * * ?", roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                expertTypes = listOf("PRODUCTION_RND"),
+                researchDirectionFilter = "ABSENT"
+            )
+        )
+        assertEquals("ABSENT", absentView.researchDirectionFilter)
+        assertEquals("ABSENT", savedEntities.last().researchDirectionFilter)
+
+        // 编辑改回 PRESENT → 落库为 PRESENT（不是被默认值重置 / 也不保留旧值）。
+        Mockito.`when`(configRepository.findByIdAndDeletedAtIsNull(31L)).thenReturn(
+            savedEntities.last().copy(id = 31L)
+        )
+        val updated = configService.update(
+            31L,
+            BatchSendTaskConfigUpdateCommand(
+                configName = "无方向任务", autoEnabled = false, cron = "0 0 9 * * ?", roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                expertTypes = listOf("PRODUCTION_RND"),
+                researchDirectionFilter = "PRESENT"
+            )
+        )
+        assertEquals("PRESENT", updated.researchDirectionFilter)
+        assertEquals("PRESENT", savedEntities.last().researchDirectionFilter)
+    }
+
+    @Test
+    fun `create rejects an illegal direction state and saves nothing (I-1)`() {
+        val configRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
+        val configService = BatchSendTaskConfigService(
+            repository = configRepository,
+            mailComposeTemplateService = mailComposeTemplateService,
+            objectMapper = ObjectMapper().registerKotlinModule(),
+            eventPublisher = Mockito.mock(org.springframework.context.ApplicationEventPublisher::class.java),
+            taskExecutionService = Mockito.mock(com.weibo.talentintroduction.task.service.TaskExecutionService::class.java)
+        )
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            configService.create(
+                BatchSendTaskConfigCreateCommand(
+                    configName = "非法方向任务", cron = "0 0 9 * * ?", roundSize = 10,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                    expertTypes = listOf("PRODUCTION_RND"),
+                    researchDirectionFilter = "MAYBE"
+                )
+            )
+        }
+        assertTrue(ex.message!!.contains("researchDirectionFilter"))
+        assertTrue(ex.message!!.contains("ABSENT"), "message must carry the allowed list: ${ex.message}")
+        Mockito.verify(configRepository, Mockito.never()).save(Mockito.any(BatchSendTaskConfig::class.java))
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves the existing direction state (I-1)`() {
+        val configRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java)
+        val eventPublisher = Mockito.mock(org.springframework.context.ApplicationEventPublisher::class.java)
+        val execService = Mockito.mock(com.weibo.talentintroduction.task.service.TaskExecutionService::class.java)
+        val configService = BatchSendTaskConfigService(
+            repository = configRepository,
+            mailComposeTemplateService = mailComposeTemplateService,
+            objectMapper = ObjectMapper().registerKotlinModule(),
+            eventPublisher = eventPublisher,
+            taskExecutionService = execService
+        )
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = "[]", regionsJson = "[]",
+            emailDomainsJson = "[]", discipline = null, operatorStatusesJson = "[]",
+            expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
+            templateId = null, legacyCode = "INTRODUCTION",
+            researchDirectionFilter = "ABSENT",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        Mockito.`when`(configRepository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        Mockito.`when`(configRepository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        Mockito.`when`(configRepository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        Mockito.`when`(configRepository.save(Mockito.any(BatchSendTaskConfig::class.java))).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+        Mockito.`when`(execService.lastExecutedAtByBatchConfigIds(Mockito.anyList())).thenReturn(emptyMap())
+
+        configService.updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "ox.ac.uk",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        // I-1: 旧 typed API 不传方向三态 —— 必须显式保留存量值（漏写会命中 Kotlin 默认值静默重置为 ANY）。
+        val captor = org.mockito.ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        Mockito.verify(configRepository).save(captor.capture())
+        assertEquals("ABSENT", captor.value.researchDirectionFilter)
+    }
+
+    @Test
+    fun `startManual rejects an illegal direction state with 422 before launching (I-1)`() {
+        val control = BatchSendControlService(
+            progressStore = progressStore,
+            taskExecutionService = taskExecutionService,
+            manualInitialOutreachService = service,
+            batchSendSettingService = batchSendSettingService,
+            batchSendTaskConfigRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java),
+            mailSenderAccountService = mailSenderAccountService,
+            mailComposeTemplateService = mailComposeTemplateService,
+            objectMapper = ObjectMapper().registerKotlinModule(),
+            manualOutreachExecutor = Mockito.mock(Executor::class.java)
+        )
+
+        val response = control.startManual(
+            ManualBatchExecutionRequest(
+                sourceConfigId = null,
+                sourceUpdatedAt = null,
+                snapshot = BatchExecutionSnapshot(
+                    mailType = "INTRODUCTION", roundSize = 10, roundsPerRun = 1,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                    funnelLevel = "CANDIDATE",
+                    expertTypes = listOf("PRODUCTION_RND"),
+                    researchDirectionFilter = "MAYBE"
+                )
+            )
+        )
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, response.statusCode)
+        assertTrue(
+            response.body?.get("message").toString().contains("researchDirectionFilter"),
+            "validation message must name the field: ${response.body}"
+        )
+        // 校验先于启动：不占用执行 token、不进入任何发送链路。
+        Mockito.verifyNoInteractions(progressStore)
     }
 
     // ──── Helpers ────
