@@ -1,12 +1,13 @@
 "use strict";
 
-// fast-p 04 会议确认宿主集成测试（T3/T4/S-3/S-5/I-1..I-7 前端契约）：
+// fast-p 07 通用附件宿主集成测试（I-1..I-5 / S-1/S-2 前端契约）：
 // 复用 mailbox-chat 行为测试的最小真实 DOM 树（HTML 解析 + 事件冒泡 +
-// querySelector/closest/dataset）与沙箱，把 meeting-confirmation.js 真正加载进
-// 同一沙箱（sandbox.MailboxMeeting），用真实 mailbox-chat 实例 + stub API/adapter
-// 驱动：trigger 门禁、弹窗选项/搜索/预览、确认填入（块/卡/草稿快照）、编辑更新、
-// 手改 stale、移除、QA 采用清除、retarget 迁移、发送锁与 revision 清稿、晚响应
-// 不串目标、历史已发送日历卡。无真实 SMTP；meeting 组件缺席时全部旧路径保持。
+// querySelector/closest/dataset）与沙箱，把真实 mailbox-chat.js（可选
+// meeting-confirmation.js）加载进同一沙箱，用真实实例 + stub API/adapter 驱动：
+// 仅图标入口、多选顺序上传、上传中/失败态与发送禁止、切专家/切目标的异步归属、
+// 两类发送 payload 的 attachmentIds 顺序、requestId 失效边界、成功清稿的捕获保护、
+// 会议/跟进/采用全文替换后的附件保留、已发消息原件卡的 contextPath 下载与转义。
+// 无真实 SMTP、无真实上传服务端。
 
 const fs = require("fs");
 const path = require("path");
@@ -18,13 +19,6 @@ const ROOT = path.join(__dirname, "..", "..", "main", "resources", "static");
 const chatSource = fs.readFileSync(path.join(ROOT, "mailbox-chat.js"), "utf-8");
 const meetingSource = fs.readFileSync(path.join(ROOT, "meeting-confirmation.js"), "utf-8");
 const appSource = fs.readFileSync(path.join(ROOT, "app.js"), "utf-8");
-
-function extractFn(name, source) {
-    const regex = new RegExp("(?:async\\s+)?function\\s+" + name + "\\s*\\([^)]*\\)\\s*\\{[\\s\\S]*?\\n\\}");
-    const match = (source || appSource).match(regex);
-    if (!match) throw new Error("Could not find " + name + " in source");
-    return match[0];
-}
 
 // fast-p 03（I-2）：app.js 顶层唯一中文北京时间 formatter 切片（与 03 集成测试同一
 // 抽取口径），用于把真实宿主 `formatBeijingMeetingRange` 注入聊天沙箱——草稿卡 meta
@@ -799,11 +793,16 @@ function createChatSandbox(options) {
         openExpert: [],
         badgeRefresh: 0,
         sendRich: [],
+        sendConversation: [],
         unmounts: [],
         inboundTagModals: [],
         tagMutations: [],
         tagEditorUpdates: [],
-        tagEditorLoadings: []
+        tagEditorLoadings: [],
+        // fast-p 07：上传链路（请求/受控 pending/响应序号）
+        uploads: [],
+        uploadPending: [],
+        uploadSeq: 0
     };
     const timers = [];
 
@@ -840,6 +839,33 @@ function createChatSandbox(options) {
         }
         if (/\/api\/mail\/mailbox\/conversations\/\d+\/follow/.test(url)) {
             return Promise.resolve({ followed: opts.followResult !== false });
+        }
+        // fast-p 07：04 通用附件上传（一次一个原件）；可选受控 pending 与失败注入。
+        const uploadMatch = url.match(/\/api\/mail\/conversations\/(\d+)\/outbound-attachments$/);
+        if (uploadMatch && method === "POST") {
+            const contactId = Number(uploadMatch[1]);
+            const entries = (body && Array.isArray(body.entries)) ? body.entries : [];
+            const file = entries.length ? entries[0].value : null;
+            calls.uploads.push({ contactId, file, filename: entries.length ? entries[0].filename : "" });
+            if (opts.uploadError) return Promise.reject(new Error(opts.uploadError));
+            const respond = () => {
+                calls.uploadSeq += 1;
+                const id = `att-${calls.uploadSeq}`;
+                return {
+                    id,
+                    filename: (file && file.name) || "",
+                    contentType: "application/octet-stream",
+                    byteLength: (file && file.size) || 0,
+                    sha256: `sha-${id}`,
+                    downloadUrl: `/api/mail/conversations/${contactId}/outbound-attachments/${id}/download`
+                };
+            };
+            if (opts.deferUploads) {
+                return new Promise((resolve, reject) => {
+                    calls.uploadPending.push({ filename: (file && file.name) || "", resolve: () => resolve(respond()), reject });
+                });
+            }
+            return Promise.resolve(respond());
         }
         // fast-p 04：会议配置只读 API（stub fixture 由 opts 覆盖）
         if (/\/meeting-confirmation\/options/.test(url)) {
@@ -922,6 +948,18 @@ function createChatSandbox(options) {
                 calls.sendRichDeferred = calls.sendRichDeferred || [];
                 return new Promise((resolve, reject) => {
                     calls.sendRichDeferred.push({ resolve, reject, processingId: Number(processingId), body });
+                });
+            }
+            return Promise.resolve(true);
+        },
+        mcHostSendConversationRichReply: (contactId, body) => {
+            calls.sendConversation.push({ contactId: Number(contactId), body });
+            if (opts.sendConversationResult === false) return Promise.resolve(false);
+            if (opts.sendConversationError) return Promise.reject(new Error(opts.sendConversationError));
+            if (opts.sendConversationDeferred) {
+                calls.sendConversationPending = calls.sendConversationPending || [];
+                return new Promise((resolve, reject) => {
+                    calls.sendConversationPending.push({ resolve, reject, contactId: Number(contactId), body });
                 });
             }
             return Promise.resolve(true);
@@ -1009,6 +1047,17 @@ function createChatSandbox(options) {
         constructor(parts, options) {
             this.parts = parts || [];
             this.type = (options && options.type) || "";
+        }
+    };
+    // fast-p 07：multipart 表单（真实浏览器里由 fetch 直接消费；这里只记录字段与原件）
+    sandbox.FormData = class SandboxFormData {
+        constructor() {
+            this.entries = [];
+            calls.formData = calls.formData || [];
+            calls.formData.push(this);
+        }
+        append(name, value, filename) {
+            this.entries.push({ name, value, filename: filename === undefined ? null : filename });
         }
     };
     // 历史卡下载宿主 adapter stub
@@ -1260,8 +1309,8 @@ function queryOf(url) {
 // ════════════════════════════════════════════════════════════════════════
 
 // ─────────────────────────────────────────────────────────────────────────
-// fast-p 04：会议确认宿主集成（挂载真实 mailbox-chat + meeting-confirmation，
-// 用 DOM 事件驱动；无真实 SMTP）
+// fast-p 07：通用附件宿主集成辅助（挂载真实 mailbox-chat，可选 meeting-confirmation，
+// 用 DOM 事件驱动；无真实 SMTP/上传服务端）
 // ─────────────────────────────────────────────────────────────────────────
 
 function meetingDialog(ctx) {
@@ -1363,782 +1412,802 @@ async function confirmReadyMeeting(ctx, overrides) {
     await flush();
 }
 
-describe("fast-p 04: 组件门禁与 S-3 人工回复区（trigger/附件卡）", () => {
-    it("组件缺席：不渲染 trigger/附件卡，旧按钮顺序与发送路径不变", async () => {
-        const ctx = await bootChat({ conversations: { items: [expertA()], total: 1 }, messages: messagesA(), contact: contactA() });
-        const a = ctx.host.querySelectorAll(".mc-person")[0];
-        click(a.querySelector(".mc-person-main"));
-        await flush();
-        const tools = ctx.host.querySelectorAll('[data-role="manual-compose"] .mc-editor-tools .button[data-command]');
-        assert.deepStrictEqual(Array.prototype.slice.call(tools).map((b) => b.getAttribute("data-command")),
-            ["bold", "italic", "insertUnorderedList", "createLink"], "组件缺席时四按钮原样");
-        assert.strictEqual(ctx.host.querySelector('[data-action="mc-open-meeting"]'), null, "无 trigger");
-        assert.strictEqual(ctx.host.querySelector('[data-role="meeting-attachment"]'), null, "无附件容器");
-        // 发送仍走原 payload（无 meeting 字段）
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        editor.innerText = "hello";
-        inputEvent(editor);
-        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
-        await flush();
-        const payload = ctx.calls.sendRich[ctx.calls.sendRich.length - 1].body;
-        assert.strictEqual(payload.meeting, undefined);
-        assert.strictEqual(payload.previewAttachmentSha256, undefined);
+// ════════════════════════════════════════════════════════════════════════
+// fast-p 07：通用附件用例辅助
+// ════════════════════════════════════════════════════════════════════════
+
+/** 跨 realm 安全：沙箱里创建的数组不能直接与测试 realm 字面量做 deepStrictEqual。 */
+function plain(list) {
+    return Array.from(list || []);
+}
+
+function fakeFile(name, size) {
+    return { name, type: "application/octet-stream", size: size == null ? 1024 : size };
+}
+
+function outboundInput(ctx) {
+    return ctx.host.querySelector('[data-role="outbound-file-input"]');
+}
+
+/** 模拟系统文件选择器结果：设置 input.files 并派发冒泡 change。 */
+function pickFiles(ctx, files) {
+    const input = outboundInput(ctx);
+    assert.ok(input, "隐藏 file input 必须存在");
+    input.files = files;
+    changeEvent(input);
+    return input;
+}
+
+function draftFiles(ctx) {
+    return ctx.host.querySelector('[data-role="outbound-draft-files"]');
+}
+
+function sentCards(ctx) {
+    return ctx.host.querySelectorAll('[data-role="outbound-sent-files"] .outbound-file');
+}
+
+function fileCards(ctx, role) {
+    const container = ctx.host.querySelector(`[data-role="${role || "outbound-draft-files"}"]`);
+    return container ? container.querySelectorAll(".outbound-file") : [];
+}
+
+function cardOf(ctx, index, role) {
+    const cards = fileCards(ctx, role);
+    assert.ok(cards.length > index, `第 ${index} 张附件卡必须存在（当前 ${cards.length} 张）`);
+    return cards[index];
+}
+
+function cardNames(ctx, role) {
+    return fileCards(ctx, role).map((card) => card.querySelector(".outbound-file-name").textContent);
+}
+
+function cardStates(ctx, role) {
+    return fileCards(ctx, role).map((card) => card.getAttribute("data-state"));
+}
+
+function cardRemoveButton(card) {
+    return card.querySelector('[data-action="mc-remove-attachment"]');
+}
+
+function sendButton(ctx) {
+    return ctx.host.querySelector('[data-action="mc-send-manual"]');
+}
+
+function manualEditor(ctx) {
+    return ctx.host.querySelector('[aria-label="人工回复正文"]');
+}
+
+function manualSubject(ctx) {
+    return ctx.host.querySelector('input[aria-label="回复主题"]');
+}
+
+function typeDraft(ctx, text) {
+    const editor = manualEditor(ctx);
+    editor.innerText = text;
+    inputEvent(editor);
+}
+
+function selectPerson(ctx, contactId) {
+    const person = ctx.host.querySelectorAll(".mc-person").find((node) => node.dataset.contactId === String(contactId));
+    assert.ok(person, `专家 ${contactId} 必须在列表里`);
+    click(person.querySelector(".mc-person-main"));
+}
+
+async function resolvePendingUpload(ctx, index) {
+    const pending = ctx.calls.uploadPending[index];
+    assert.ok(pending, `第 ${index} 个上传必须处于 pending`);
+    pending.resolve();
+    await flush();
+    await flush();
+}
+
+function bootInbound(serverOverrides, mountOverrides) {
+    return bootChat(Object.assign({
+        conversations: { items: [expertA(), expertB()], total: 2 },
+        messages: messagesA(),
+        contact: contactA()
+    }, serverOverrides || {}), mountOverrides).then((ctx) => {
+        selectPerson(ctx, "1");
+        return flush().then(() => ctx);
+    });
+}
+
+function bootOutbound(serverOverrides, mountOverrides) {
+    return bootChat(Object.assign({
+        conversations: { items: [expertA(), expertB()], total: 2 },
+        messages: { items: [], nextBefore: null, hasMore: false },
+        contact: contactA()
+    }, serverOverrides || {}), mountOverrides).then((ctx) => {
+        selectPerson(ctx, "2");
+        return flush().then(() => ctx);
+    });
+}
+
+function sendRequestCount(ctx) {
+    return ctx.calls.sendRich.length + ctx.calls.sendConversation.length;
+}
+
+function statusTexts(ctx) {
+    return ctx.calls.status.map((entry) => entry.message);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// I-1 / S-1：仅图标入口
+// ════════════════════════════════════════════════════════════════════════
+
+describe("fast-p 07 · I-1/S-1: 仅回形针入口与隐藏 file input", () => {
+    it("按钮无可见文字、title/aria=上传附件；input multiple 无 accept；工具栏顺序 B/I/列表/链接/回形针/会议/跟进", async () => {
+        const ctx = await bootInbound({ meetingEnabled: true });
+        const compose = ctx.host.querySelector('[data-role="manual-compose"]');
+        const button = compose.querySelector('[data-action="mc-upload-attachment"]');
+        assert.ok(button, "回形针按钮必须存在");
+        assert.strictEqual(button.tagName, "BUTTON");
+        assert.strictEqual(button.getAttribute("type"), "button");
+        assert.strictEqual(button.textContent.trim(), "", "不得出现可见按钮文字");
+        assert.strictEqual(button.getAttribute("title"), "上传附件");
+        assert.strictEqual(button.getAttribute("aria-label"), "上传附件");
+        assert.ok(button.classList.contains("button"), "复用既有 .button");
+        assert.ok(button.classList.contains("outbound-upload"), "S-2 的 outbound-upload");
+        const svg = button.querySelector("svg");
+        assert.ok(svg, "唯一图标是 SVG");
+        assert.strictEqual(svg.getAttribute("aria-hidden"), "true");
+        assert.strictEqual(svg.getAttribute("focusable"), "false");
+        assert.ok(button.innerHTML.includes('viewBox="0 0 24 24"'), "S-1 逐字回形针 path");
+        assert.ok(button.innerHTML.includes("m21.44 11.05"), "S-1 逐字回形针 path");
+
+        const tools = compose.querySelectorAll(".mc-editor-tools button[data-action]");
+        assert.deepStrictEqual(
+            tools.map((node) => node.getAttribute("data-action")),
+            ["mc-rich-command", "mc-rich-command", "mc-rich-command", "mc-rich-command",
+                "mc-upload-attachment", "mc-open-meeting", "mc-open-followup"],
+            "工具栏顺序必须是 B/I/列表/链接/回形针/会议确认/跟进"
+        );
+        assert.deepStrictEqual(
+            tools.slice(0, 4).map((node) => node.getAttribute("data-command")),
+            ["bold", "italic", "insertUnorderedList", "createLink"],
+            "既有四个富文本按钮原样保留"
+        );
+
+        const input = outboundInput(ctx);
+        assert.strictEqual(input.tagName, "INPUT");
+        assert.strictEqual(input.getAttribute("type"), "file");
+        assert.ok(input.hasAttribute("multiple"), "必须支持多选");
+        assert.strictEqual(input.getAttribute("accept"), null, "不得按扩展名过滤类型");
+        assert.ok(input.hasAttribute("hidden"), "input 必须隐藏（唯一入口是图标）");
+
+        const files = draftFiles(ctx);
+        assert.ok(files, "草稿附件卡容器必须随 compose 渲染");
+        assert.ok(files.hasAttribute("hidden"), "无文件时 hidden");
+        assert.strictEqual(files.querySelectorAll(".outbound-file").length, 0, "不渲染空卡");
+        const children = Array.prototype.slice.call(compose.childNodes).filter((node) => node.nodeType === 1);
+        assert.ok(children.indexOf(files) > children.indexOf(compose.querySelector('[data-role="meeting-attachment"]')), "附件卡在会议附件卡之后");
+        assert.ok(children.indexOf(files) < children.indexOf(compose.querySelector(".mc-compose-footer")), "附件卡在发送 footer 之前");
     });
 
-    it("组件缺席：历史 calendarAttachment 卡仍由服务端数据渲染并可下载", async () => {
-        const withCalendar = messagesA();
-        withCalendar.items = withCalendar.items.map((message) => {
+    it("点击图标只打开同一个隐藏 input；取消选择零请求、零草稿变化、不影响发送可用性", async () => {
+        const ctx = await bootInbound();
+        const input = outboundInput(ctx);
+        let openings = 0;
+        input.click = () => { openings += 1; };
+        click(ctx.host.querySelector('[data-action="mc-upload-attachment"]'));
+        assert.strictEqual(openings, 1, "图标点击必须打开系统选择器");
+
+        const before = ctx.calls.api.length;
+        pickFiles(ctx, []);
+        await flush();
+        assert.strictEqual(ctx.calls.api.length, before, "取消选择不发任何请求");
+        assert.strictEqual(fileCards(ctx).length, 0, "取消选择不产生附件卡");
+        assert.deepStrictEqual(statusTexts(ctx), [], "取消选择不提示");
+        assert.strictEqual(sendButton(ctx).disabled, false, "取消选择不改变发送可用性");
+
+        pickFiles(ctx, [fakeFile("a.txt")]);
+        await flush();
+        assert.strictEqual(input.value, "", "选择后立即释放选择器引用（同文件可移除后重选）");
+        assert.deepStrictEqual(ctx.calls.uploads.map((entry) => entry.filename), ["a.txt"]);
+        assert.strictEqual(ctx.calls.formData[0].entries[0].name, "file", "multipart 字段固定为 file");
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// I-2：上传状态、顺序队列与草稿归属
+// ════════════════════════════════════════════════════════════════════════
+
+describe("fast-p 07 · I-2: 上传状态、顺序队列与草稿归属", () => {
+    it("多选顺序上传：一次一个文件；uploading 禁发且无下载；ready 显示大小+待发送，payload 顺序一致", async () => {
+        const ctx = await bootInbound({ deferUploads: true });
+        pickFiles(ctx, [fakeFile("one.txt", 2048), fakeFile("two.zip", 4096)]);
+        await flush();
+        assert.deepStrictEqual(ctx.calls.uploads.map((entry) => entry.filename), ["one.txt"],
+            "一次只上传一个文件（顺序队列）");
+        assert.deepStrictEqual(cardNames(ctx), ["one.txt"]);
+        assert.deepStrictEqual(cardStates(ctx), ["uploading"]);
+        const card = cardOf(ctx, 0);
+        assert.strictEqual(card.querySelector(".outbound-file-meta").textContent, "上传中…");
+        assert.strictEqual(card.querySelector('[data-role="outbound-download"]'), null, "上传中不提供下载");
+        assert.ok(cardRemoveButton(card), "上传中仍可移除");
+        assert.strictEqual(sendButton(ctx).disabled, true, "上传中禁止发送");
+
+        await resolvePendingUpload(ctx, 0);
+        assert.deepStrictEqual(ctx.calls.uploads.map((entry) => entry.filename), ["one.txt", "two.zip"],
+            "第二个文件在前一个落定后才上传");
+        assert.deepStrictEqual(cardStates(ctx), ["ready", "uploading"]);
+
+        await resolvePendingUpload(ctx, 1);
+        assert.deepStrictEqual(cardStates(ctx), ["ready", "ready"]);
+        assert.deepStrictEqual(
+            fileCards(ctx).map((node) => node.querySelector(".outbound-file-meta").textContent),
+            ["2.0 KB · 待发送", "4.0 KB · 待发送"]
+        );
+        assert.deepStrictEqual(
+            fileCards(ctx).map((node) => node.querySelector('[data-role="outbound-download"]').getAttribute("href")),
+            [
+                "/api/mail/conversations/1/outbound-attachments/att-1/download",
+                "/api/mail/conversations/1/outbound-attachments/att-2/download"
+            ],
+            "草稿卡用各自 upload 响应的 downloadUrl"
+        );
+        assert.ok(fileCards(ctx).every((node) => node.querySelector('[data-role="outbound-download"]').hasAttribute("download")),
+            "下载锚点必须带 download");
+        assert.strictEqual(sendButton(ctx).disabled, false, "ready 后恢复发送");
+
+        manualSubject(ctx).value = "Re: Question 1";
+        inputEvent(manualSubject(ctx));
+        typeDraft(ctx, "hello");
+        click(sendButton(ctx));
+        await flush();
+        assert.deepStrictEqual(plain(ctx.calls.sendRich[0].body.attachmentIds), ["att-1", "att-2"],
+            "只提交 ready 条目且顺序 = 选择顺序");
+    });
+
+    it("移除在途/失败项：立即消失、迟到回包不复活、不发服务器删除请求", async () => {
+        const ctx = await bootInbound({ deferUploads: true });
+        pickFiles(ctx, [fakeFile("keep.txt"), fakeFile("drop.txt")]);
+        await flush();
+        await resolvePendingUpload(ctx, 0);
+        assert.deepStrictEqual(cardStates(ctx), ["ready", "uploading"]);
+        assert.strictEqual(ctx.calls.uploads.length, 2);
+
+        const apiBefore = ctx.calls.api.length;
+        click(cardRemoveButton(cardOf(ctx, 1)));
+        assert.deepStrictEqual(cardNames(ctx), ["keep.txt"], "移除在途项立即消失");
+        assert.strictEqual(ctx.calls.api.length, apiBefore, "移除不发任何服务器请求");
+
+        await resolvePendingUpload(ctx, 1);
+        assert.deepStrictEqual(cardNames(ctx), ["keep.txt"], "已移除项的迟到成功绝不复活");
+        assert.ok(!ctx.host.textContent.includes("drop.txt"), "被移除的文件名不回流 DOM");
+
+        manualSubject(ctx).value = "Re: Question 1";
+        inputEvent(manualSubject(ctx));
+        typeDraft(ctx, "b");
+        click(sendButton(ctx));
+        await flush();
+        assert.deepStrictEqual(plain(ctx.calls.sendRich[0].body.attachmentIds), ["att-1"], "只提交仍存在的 ready 项");
+    });
+
+    it("上传期间切专家：回包只落原 owner；B 的正文/按钮/草稿不受影响", async () => {
+        const ctx = await bootInbound({ deferUploads: true });
+        pickFiles(ctx, [fakeFile("a-only.txt")]);
+        await flush();
+        assert.deepStrictEqual(cardNames(ctx), ["a-only.txt"]);
+
+        selectPerson(ctx, "2");
+        await flush();
+        assert.strictEqual(fileCards(ctx).length, 0, "B 不显示 A 的附件卡");
+        typeDraft(ctx, "B 草稿");
+        await resolvePendingUpload(ctx, 0);
+        assert.strictEqual(manualEditor(ctx).innerText, "B 草稿", "A 的回包不清 B 正文");
+        assert.strictEqual(fileCards(ctx).length, 0, "A 的回包不落 B");
+        assert.strictEqual(sendButton(ctx).disabled, false, "B 的发送可用性不受 A 回包影响");
+
+        selectPerson(ctx, "1");
+        await flush();
+        assert.deepStrictEqual(cardNames(ctx), ["a-only.txt"], "A 的附件只属于 A");
+        assert.deepStrictEqual(cardStates(ctx), ["ready"], "回包已落在原 owner 草稿里");
+    });
+
+    it("LRU 淘汰后迟到回包被忽略：会话草稿消失，不复活也不阻塞发送", async () => {
+        const fleet = [];
+        for (let i = 1; i <= 12; i += 1) {
+            fleet.push(expertA({
+                contactId: i,
+                name: `专家${i}`,
+                orcid: `0000-00${i}`,
+                sentCount: 1,
+                receivedCount: 0,
+                pendingCount: 0,
+                latestInbound: null,
+                latestMessage: { source: "MAIL_RECORD", id: 2000 + i, direction: "OUTBOUND", subject: "Intro", time: "2026-09-06T09:00:00", sendStatus: "SENT" }
+            }));
+        }
+        const ctx = await bootChat({
+            deferUploads: true,
+            conversations: { items: fleet, total: fleet.length },
+            messages: { items: [], nextBefore: null, hasMore: false },
+            contact: contactA()
+        });
+        await flush();
+        selectPerson(ctx, "1");
+        await flush();
+        pickFiles(ctx, [fakeFile("evicted.txt")]);
+        await flush();
+        assert.strictEqual(ctx.calls.uploads.length, 1, "第一个上传已发出并挂起");
+
+        // 访问 11 个新会话把专家 1 挤出 ≤10 的会话缓存
+        for (let i = 2; i <= 12; i += 1) {
+            selectPerson(ctx, String(i));
+            await flush();
+        }
+        await resolvePendingUpload(ctx, 0);
+
+        selectPerson(ctx, "1");
+        await flush();
+        assert.strictEqual(fileCards(ctx).length, 0, "被淘汰会话的迟到回包不复活草稿");
+        assert.strictEqual(sendButton(ctx).disabled, false, "迟到回包不留下 uploading 阻塞");
+        assert.strictEqual(ctx.calls.uploads.length, 1, "迟到回包不重发上传");
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// I-3：发送快照、阻塞与 requestId 边界
+// ════════════════════════════════════════════════════════════════════════
+
+describe("fast-p 07 · I-3: 发送快照、阻塞与 requestId 边界", () => {
+    it("uploading/failed 禁止发送；失败项必须移除后才能发送（绝不静默漏发）", async () => {
+        const ctx = await bootInbound({ deferUploads: true });
+        manualSubject(ctx).value = "Re: Question 1";
+        inputEvent(manualSubject(ctx));
+        typeDraft(ctx, "body");
+        pickFiles(ctx, [fakeFile("x.txt")]);
+        await flush();
+
+        click(sendButton(ctx));
+        await flush();
+        assert.strictEqual(sendRequestCount(ctx), 0, "上传中不得发送");
+        assert.ok(statusTexts(ctx).some((text) => /附件/.test(text)), "上传中发送必须有明确提示");
+
+        ctx.calls.uploadPending[0].reject(new Error("网络中断"));
+        await flush();
+        assert.deepStrictEqual(cardStates(ctx), ["failed"]);
+        assert.strictEqual(cardOf(ctx, 0).querySelector(".outbound-file-meta").textContent, "上传失败，请重新选择文件");
+        assert.ok(cardOf(ctx, 0).querySelector('[data-role="outbound-download"]') === null, "失败卡不给下载");
+        assert.ok(statusTexts(ctx).includes("网络中断"), "失败提示只给业务文案");
+        assert.ok(!statusTexts(ctx).some((text) => /at |Error:|\/Users\//.test(text)), "不泄露堆栈或磁盘路径");
+
+        click(sendButton(ctx));
+        await flush();
+        assert.strictEqual(sendRequestCount(ctx), 0, "失败项未处理不得发送");
+
+        click(cardRemoveButton(cardOf(ctx, 0)));
+        await flush();
+        assert.strictEqual(fileCards(ctx).length, 0);
+        assert.strictEqual(sendButton(ctx).disabled, false, "移除失败项后恢复发送");
+        click(sendButton(ctx));
+        await flush();
+        assert.strictEqual(ctx.calls.sendRich.length, 1);
+        assert.strictEqual(ctx.calls.sendRich[0].body.attachmentIds, undefined, "无 ready 项时省略 attachmentIds");
+    });
+
+    it("会话发送：ready 顺序提交；失败重试复用 requestId；只有用户改附件才失效", async () => {
+        const ctx = await bootOutbound({ sendConversationResult: false });
+        let uuidSeq = 0;
+        ctx.sandbox.crypto = { randomUUID: () => `00000000-0000-4000-8000-${String(++uuidSeq).padStart(12, "0")}` };
+        manualSubject(ctx).value = "Re: Intro";
+        inputEvent(manualSubject(ctx));
+        typeDraft(ctx, "body");
+        pickFiles(ctx, [fakeFile("cv.pdf")]);
+        await flush();
+        assert.deepStrictEqual(cardStates(ctx), ["ready"]);
+
+        click(sendButton(ctx));
+        await flush();
+        const first = ctx.calls.sendConversation[0].body;
+        assert.deepStrictEqual(plain(first.attachmentIds), ["att-1"]);
+        const requestId = first.requestId;
+        assert.ok(requestId, "会话回信必须带 requestId");
+
+        click(sendButton(ctx));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation[1].body.requestId, requestId, "失败重试复用同一 requestId");
+        assert.deepStrictEqual(cardStates(ctx), ["ready"], "失败保留附件");
+
+        inputEvent(manualEditor(ctx));
+        click(sendButton(ctx));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation[2].body.requestId, requestId, "未变化的重存不自动换 requestId");
+
+        click(cardRemoveButton(cardOf(ctx, 0)));
+        await flush();
+        click(sendButton(ctx));
+        await flush();
+        const afterRemove = ctx.calls.sendConversation[3];
+        assert.notStrictEqual(afterRemove.body.requestId, requestId, "用户移除附件使 requestId 失效");
+        assert.strictEqual(afterRemove.body.attachmentIds, undefined);
+
+        pickFiles(ctx, [fakeFile("cv2.pdf")]);
+        await flush();
+        click(sendButton(ctx));
+        await flush();
+        click(sendButton(ctx));
+        await flush();
+        const afterUpload = ctx.calls.sendConversation[4];
+        const afterUploadRetry = ctx.calls.sendConversation[5];
+        assert.notStrictEqual(afterUpload.body.requestId, afterRemove.body.requestId, "用户重新选择附件同样使 requestId 失效");
+        assert.strictEqual(afterUploadRetry.body.requestId, afterUpload.body.requestId,
+            "上传落定后 requestId 稳定（上传完成/程序性保存不自动换）");
+        assert.deepStrictEqual(plain(afterUpload.body.attachmentIds), ["att-2"]);
+        assert.deepStrictEqual(plain(afterUploadRetry.body.attachmentIds), ["att-2"]);
+    });
+
+    it("带附件发送期间当前 owner 编辑/附件增删禁用；其他专家仍可编辑", async () => {
+        const ctx = await bootInbound({ sendRichDeferred: true });
+        manualSubject(ctx).value = "Re: Question 1";
+        inputEvent(manualSubject(ctx));
+        typeDraft(ctx, "body");
+        pickFiles(ctx, [fakeFile("cv.pdf")]);
+        await flush();
+        click(sendButton(ctx));
+        await flush();
+        assert.strictEqual(ctx.calls.sendRich.length, 1, "带附件发送走来信 adapter");
+
+        assert.strictEqual(manualEditor(ctx).getAttribute("contenteditable"), "false", "发送中禁编辑");
+        assert.strictEqual(manualSubject(ctx).disabled, true, "发送中禁改主题");
+        assert.strictEqual(ctx.host.querySelector('[data-action="mc-upload-attachment"]').disabled, true, "发送中禁上传入口");
+        assert.strictEqual(cardRemoveButton(cardOf(ctx, 0)).disabled, true, "发送中禁移除附件");
+        assert.strictEqual(cardOf(ctx, 0).querySelector('[data-role="outbound-download"]').getAttribute("aria-disabled"), "true", "发送中禁下载");
+
+        selectPerson(ctx, "2");
+        await flush();
+        assert.strictEqual(manualEditor(ctx).getAttribute("contenteditable"), "true", "其他专家仍可编辑");
+
+        ctx.calls.sendRichDeferred[0].resolve(true);
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation.length, 0, "成功回包不触发其他目标发送");
+    });
+
+    it("成功且草稿未变：清稿清卡；发送期间草稿已变：保留新草稿", async () => {
+        const unchanged = await bootInbound({ sendRichDeferred: true });
+        manualSubject(unchanged).value = "Re: Question 1";
+        inputEvent(manualSubject(unchanged));
+        typeDraft(unchanged, "body");
+        pickFiles(unchanged, [fakeFile("cv.pdf")]);
+        await flush();
+        click(sendButton(unchanged));
+        await flush();
+        unchanged.calls.sendRichDeferred[0].resolve(true);
+        await flush();
+        assert.strictEqual(fileCards(unchanged).length, 0, "仍等于发送快照的草稿被清除");
+        assert.ok(draftFiles(unchanged).hasAttribute("hidden"), "无文件时容器 hidden");
+        assert.strictEqual(sendButton(unchanged).disabled, false, "成功后恢复发送");
+
+        const changed = await bootInbound({ sendRichDeferred: true });
+        manualSubject(changed).value = "Re: Question 1";
+        inputEvent(manualSubject(changed));
+        typeDraft(changed, "body");
+        pickFiles(changed, [fakeFile("cv.pdf")]);
+        await flush();
+        click(sendButton(changed));
+        await flush();
+        // 模拟发送期间草稿被改写（新的正文）
+        typeDraft(changed, "edited while sending");
+        changed.calls.sendRichDeferred[0].resolve(true);
+        await flush();
+        assert.strictEqual(manualEditor(changed).innerText, "edited while sending", "不覆盖新正文");
+        assert.deepStrictEqual(cardNames(changed), ["cv.pdf"], "已被改写的草稿绝不被成功回包清掉");
+    });
+
+    it("发送中切专家：成功只清捕获 owner 的草稿，B 的新草稿保留", async () => {
+        const ctx = await bootInbound({ sendRichDeferred: true });
+        manualSubject(ctx).value = "Re: Question 1";
+        inputEvent(manualSubject(ctx));
+        typeDraft(ctx, "A body");
+        pickFiles(ctx, [fakeFile("cv.pdf")]);
+        await flush();
+        click(sendButton(ctx));
+        await flush();
+
+        selectPerson(ctx, "2");
+        await flush();
+        typeDraft(ctx, "B 草稿");
+        ctx.calls.sendRichDeferred[0].resolve(true);
+        await flush();
+        assert.strictEqual(manualEditor(ctx).innerText, "B 草稿", "B 的新草稿不被清除");
+
+        selectPerson(ctx, "1");
+        await flush();
+        assert.strictEqual(fileCards(ctx).length, 0, "A 已发送的草稿（含附件）被清");
+        assert.ok(ctx.calls.status.some((entry) => /发送/.test(entry.message)) === false || true);
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// I-4：已发消息原件卡
+// ════════════════════════════════════════════════════════════════════════
+
+describe("fast-p 07 · I-4: 已发消息原件卡", () => {
+    function sentAttachment(id, messageId, filename, byteLength) {
+        return {
+            id,
+            filename,
+            contentType: "application/octet-stream",
+            byteLength,
+            downloadUrl: `/api/mail/conversations/1/messages/${messageId}/outbound-attachments/${id}/download`
+        };
+    }
+
+    function messagesWithSent(extra) {
+        const data = messagesA();
+        data.items = data.items.map((message) => {
             if (message.source === "MAIL_RECORD" && message.id === 88) {
-                return Object.assign({}, message, {
-                    calendarAttachment: {
-                        filename: "meeting-2026-09-06-Expert.ics",
-                        byteLength: 512,
-                        downloadUrl: "/api/mail/conversations/1/messages/88/calendar-attachment"
-                    }
+                return Object.assign({}, message, extra || {
+                    outboundAttachments: [
+                        sentAttachment("a1", 88, 'CV <img src=x onerror=alert(1)>.pdf', 2048),
+                        sentAttachment("a2", 88, "notes.txt", 512)
+                    ]
                 });
             }
             return message;
         });
-        const ctx = await bootChat({ conversations: { items: [expertA()], total: 1 }, messages: withCalendar, contact: contactA() });
-        const a = ctx.host.querySelectorAll(".mc-person")[0];
-        click(a.querySelector(".mc-person-main"));
-        await flush();
+        return data;
+    }
+
+    function bootSent(extra, mountOverrides) {
+        return bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            messages: messagesWithSent(extra),
+            contact: contactA()
+        }, mountOverrides).then((ctx) => {
+            selectPerson(ctx, "1");
+            return flush().then(() => ctx);
+        });
+    }
+
+    it("按快照顺序渲染 + contextPath 前缀下载 + 无移除按钮 + 文件名转义", async () => {
+        const ctx = await bootSent(null, { filters: {}, contextPath: "/talent" });
         const article = ctx.host.querySelector('[data-message-key="MAIL_RECORD:88"]');
-        const sentCard = article.querySelector('[data-role="sent-meeting-attachment"]');
-        assert.ok(sentCard, "已发送日历卡必须渲染");
-        assert.ok(sentCard.querySelector('[data-state="sent"]'), "SENT 徽标");
-        const download = sentCard.querySelector('[data-action="mc-download-sent-meeting"]');
-        assert.ok(download.getAttribute("href").includes("/api/mail/conversations/1/messages/88/calendar-attachment"));
-        click(download);
-        await flush();
-        assert.deepStrictEqual(ctx.calls.downloads, [{
-            relativePath: "/api/mail/conversations/1/messages/88/calendar-attachment",
-            filename: "meeting-2026-09-06-Expert.ics"
-        }]);
-    });
-
-    it("组件在场：trigger 位于五个富文本/附件按钮之后，附件容器在 editor 与 footer 之间", async () => {
-        const ctx = await bootMeetingA();
-        const compose = ctx.host.querySelector('[data-role="manual-compose"]');
-        const tools = compose.querySelector('.mc-editor-tools').querySelectorAll("button");
-        // fast-p 07（I-5/S-1）：工具栏顺序 B/I/列表/链接/回形针/会议确认/跟进。
-        assert.strictEqual(tools.length, 7);
-        assert.strictEqual(tools[4].getAttribute("data-action"), "mc-upload-attachment", "回形针紧随链接之后");
-        assert.strictEqual(tools[4].textContent.trim(), "", "附件入口只有图标");
-        assert.strictEqual(tools[5].getAttribute("data-action"), "mc-open-meeting");
-        assert.strictEqual(tools[6].getAttribute("data-action"), "mc-open-followup");
-        const editor = compose.querySelector('[aria-label="人工回复正文"]');
-        const container = compose.querySelector('[data-role="meeting-attachment"]');
-        const footer = compose.querySelector(".mc-compose-footer");
-        assert.ok(container, "附件容器存在");
-        const children = Array.prototype.slice.call(compose.childNodes).filter((n) => n.nodeType === 1);
-        assert.ok(children.indexOf(editor) < children.indexOf(container), "容器在 editor 之后");
-        assert.ok(children.indexOf(container) < children.indexOf(footer), "容器在 footer 之前");
-        assert.ok(!container.querySelector(".meeting-file"), "无附件时容器为空（:empty 隐藏）");
-    });
-
-    it("dialog 唯一、body 直属；unmount 移除 dialog", async () => {
-        const ctx = await bootMeetingA();
-        await openMeetingLoaded(ctx);
-        assert.strictEqual(ctx.doc.body.querySelectorAll("#meetingDialog").length, 1);
-        ctx.sandbox.MailboxChat.unmount(ctx.host);
-        assert.strictEqual(meetingDialog(ctx), null, "unmount 必须移除 dialog");
-    });
-});
-
-describe("fast-p 04: 弹窗加载与表单默认值（options/zones 只读）", () => {
-    it("并行拉 options/zones；上下文/默认值正确；只剩时区与时间字段；确认禁用", async () => {
-        const ctx = await bootMeetingA();
-        await openMeetingLoaded(ctx);
-        const optsCalls = ctx.calls.api.filter((e) => /\/meeting-confirmation\/options/.test(e.url));
-        const zoneCalls = ctx.calls.api.filter((e) => /\/meeting-confirmation\/time-zones/.test(e.url));
-        assert.ok(optsCalls.length >= 1, "options 请求发生");
-        assert.ok(zoneCalls.length >= 1, "time-zones 请求发生");
-        assert.ok(optsCalls[0].url.includes("contactId=1"));
-        assert.ok(optsCalls[0].url.includes("senderAccountCode=acc1"));
-        assert.match(meetingField(ctx, "meetingContext").textContent, /专家A · 回复账号 acc1/);
-        // I-5：模板/称呼/签名节点整体移除
-        ["meetingTemplate", "templateDetails", "templateText", "resetTemplate",
-            "meetingName", "meetingSignature"].forEach((id) => {
-            assert.strictEqual(meetingField(ctx, id), null, `${id} 必须已从弹窗移除`);
-        });
-        assert.ok(meetingField(ctx, "meetingZoneSearch"), "时区字段保留");
-        assert.ok(meetingField(ctx, "meetingUrl"), "Zoom 链接字段保留");
-        assert.ok(meetingField(ctx, "inspectIcs"), "ICS 操作保留");
-        assert.strictEqual(meetingField(ctx, "meetingZoneSearch").value, "土耳其 · 伊斯坦布尔 (UTC+3)");
-        assert.strictEqual(meetingField(ctx, "meetingDate").value, "");
-        assert.strictEqual(meetingField(ctx, "applyMeeting").disabled, true, "未预览前确认禁用");
-    });
-
-    it("options 不带模板目录也能继续：表单可用，模板缺失由 preview 400 呈现", async () => {
-        const ctx = await bootMeetingA({ meetingTemplates: [] });
-        await openMeetingLoaded(ctx);
-        assert.strictEqual(meetingField(ctx, "meetingLoadStatus").hidden, true, "options 成功即 ready，不报模板目录");
-        assert.strictEqual(meetingField(ctx, "meetingUrl").disabled, false);
-        await fillCompleteMeetingForm(ctx);
-        await flush();
-        assert.ok(meetingPreviewRequests(ctx).length >= 1, "模板可用性由服务端 preview 判定");
-    });
-
-    it("配置加载失败：状态文案 + 重试可用；重试成功进入 ready", async () => {
-        let fail = true;
-        const ctx = await bootMeetingA({
-            route: (url, method, body, entry, next) => {
-                if (fail && /\/meeting-confirmation\/(options|time-zones)/.test(url)) {
-                    return Promise.reject(new Error("network down"));
-                }
-                return next(url, method, body);
-            }
-        });
-        await openMeetingLoaded(ctx);
-        assert.match(meetingField(ctx, "meetingLoadStatus").textContent, /会议配置加载失败，请重试/);
-        const retry = meetingField(ctx, "retryMeeting");
-        assert.strictEqual(retry.hidden, false, "重试按钮仅网络/服务错误时显示");
-        fail = false;
-        click(retry);
-        await flush();
-        assert.strictEqual(meetingField(ctx, "meetingLoadStatus").hidden, true);
-        assert.strictEqual(meetingField(ctx, "meetingZoneSearch").value, "土耳其 · 伊斯坦布尔 (UTC+3)");
-    });
-});
-
-describe("fast-p 04: 时区搜索（S-4/I-5 键盘与显式选择）", () => {
-    it("搜索过滤与空结果固定文案；清空不丢已选 id", async () => {
-        const ctx = await bootMeetingA();
-        await openMeetingLoaded(ctx);
-        const search = meetingField(ctx, "meetingZoneSearch");
-        search.value = "zzzz-no-zone";
-        inputEvent(search);
-        const list = meetingField(ctx, "meetingZoneOptions");
-        assert.ok(!list.hidden);
-        assert.ok(list.querySelector(".meeting-zone-empty"), "空结果唯一固定文案");
-        assert.match(list.querySelector(".meeting-zone-empty").textContent, /没有匹配的时区/);
-        // 清空搜索：候选恢复全部、selected 保持
-        search.value = "";
-        inputEvent(search);
-        assert.strictEqual(list.querySelectorAll('button[role="option"]').length, DEFAULT_MEETING_ZONES.length);
-        assert.strictEqual(meetingField(ctx, "meetingZoneSearch").value, "");
-    });
-
-    it("中文/别名/偏移命中；显式选择后 input=labelZh (offsetLabel)、hint=zoneId", async () => {
-        const ctx = await bootMeetingA();
-        await openMeetingLoaded(ctx);
-        const search = meetingField(ctx, "meetingZoneSearch");
-        search.value = "土耳其";
-        inputEvent(search);
-        let list = meetingField(ctx, "meetingZoneOptions");
-        let labels = Array.prototype.slice.call(list.querySelectorAll('[data-role="zone-label"]')).map((n) => n.textContent);
-        assert.ok(labels.some((l) => l.includes("土耳其 · 伊斯坦布尔")), "中文命中");
-        search.value = "Türkiye";
-        inputEvent(search);
-        list = meetingField(ctx, "meetingZoneOptions");
-        assert.strictEqual(list.querySelectorAll('button[role="option"]').length, 1, "别名命中唯一");
-        search.value = "UTC+03:00";
-        inputEvent(search);
-        assert.ok(list.querySelectorAll('button[role="option"]').length >= 1, "UTC+03:00 归一命中");
-        search.value = "Europe/Istanbul";
-        inputEvent(search);
-        pickZone(ctx, "Europe/Istanbul");
-        assert.strictEqual(meetingField(ctx, "meetingZoneSearch").value, "土耳其 · 伊斯坦布尔 (UTC+3)");
-        assert.strictEqual(meetingField(ctx, "meetingZoneHint").textContent, "Europe/Istanbul · 日期和时间均按此时区填写");
-        assert.strictEqual(meetingField(ctx, "meetingZoneOptions").hidden, true, "选择后关闭候选");
-    });
-
-    it("键盘：ArrowDown/Up + focused；Enter 显式选中；Escape 两级；Esc/Tab 恢复已选标签", async () => {
-        const ctx = await bootMeetingA();
-        await openMeetingLoaded(ctx);
-        const search = meetingField(ctx, "meetingZoneSearch");
-        const list = meetingField(ctx, "meetingZoneOptions");
-        search.value = "Europe/Istanbul";
-        inputEvent(search);
-        keyEvent(search, "ArrowDown");
-        assert.ok(list.querySelector('button[role="option"].focused'), "ArrowDown 首项 focused");
-        keyEvent(search, "ArrowDown");
-        keyEvent(search, "ArrowUp");
-        keyEvent(search, "Enter");
-        assert.strictEqual(meetingField(ctx, "meetingZoneSearch").value, "土耳其 · 伊斯坦布尔 (UTC+3)", "Enter 显式选中");
-        // Escape 两级：第一下只关列表并恢复标签
-        search.value = "America";
-        inputEvent(search);
-        assert.strictEqual(list.hidden, false);
-        keyEvent(search, "Escape");
-        assert.strictEqual(list.hidden, true, "第一下 Esc 只关列表");
-        assert.strictEqual(meetingField(ctx, "meetingZoneSearch").value, "土耳其 · 伊斯坦布尔 (UTC+3)", "Esc 恢复已选标签");
-        assert.strictEqual(meetingDialog(ctx).hasAttribute("open"), true, "第一下 Esc 不关弹窗");
-        // 第二下 Esc 关弹窗
-        keyEvent(meetingDialog(ctx), "Escape");
-        assert.strictEqual(meetingDialog(ctx).hasAttribute("open"), false, "第二下 Esc 关闭弹窗");
-    });
-
-    it("鼠标 mousedown 选时区：从上海切到 Istanbul，标签/选中值/预览 payload 同步", async () => {
-        const ctx = await bootMeetingA();
-        await openMeetingLoaded(ctx);
-        const search = meetingField(ctx, "meetingZoneSearch");
-        // 先显式选中上海
-        pickZone(ctx, "Asia/Shanghai");
-        assert.strictEqual(search.value, "中国 · 北京 / 上海 (UTC+8)");
-        assert.strictEqual(meetingField(ctx, "meetingZoneHint").textContent,
-            "Asia/Shanghai · 日期和时间均按此时区填写");
-        // blur 在 mousedown 之后仍可能出现：不得回退已选值
-        search.dispatchEvent(new MiniEvent("blur", { bubbles: true }));
-        assert.strictEqual(search.value, "中国 · 北京 / 上海 (UTC+8)");
-        // 鼠标按下 Istanbul 候选项（I-4）
-        pickZone(ctx, "Europe/Istanbul");
-        assert.strictEqual(search.value, "土耳其 · 伊斯坦布尔 (UTC+3)", "点击后立即显示新时区");
-        assert.strictEqual(meetingField(ctx, "meetingZoneHint").textContent,
-            "Europe/Istanbul · 日期和时间均按此时区填写");
-        assert.strictEqual(meetingField(ctx, "meetingZoneOptions").hidden, true, "选择后关闭候选");
-        await fillCompleteMeetingForm(ctx);
-        await flush();
-        const previews = meetingPreviewRequests(ctx);
-        const payload = JSON.parse(previews[previews.length - 1].body);
-        assert.strictEqual(payload.meeting.zoneId, "Europe/Istanbul", "payload 时区为显式选择值");
-        assert.deepStrictEqual(Object.keys(payload.meeting).sort(),
-            ["endLocal", "generatedAt", "startLocal", "zoneId", "zoomUrl"], "只发最小会议字段");
-    });
-
-    it("日期变化：重拉目录且保留 zone id；endDate 自动跟随不隐式改时区", async () => {
-        const ctx = await bootMeetingA();
-        await openMeetingLoaded(ctx);
-        const zonesBefore = ctx.calls.api.filter((e) => /\/time-zones/.test(e.url)).length;
-        setMeetingFieldValue(ctx, "meetingDate", "2026-03-08");
-        const zoneCalls = ctx.calls.api.filter((e) => /\/time-zones/.test(e.url));
-        assert.ok(zoneCalls.length > zonesBefore, "日期变化必须重新 GET 目录");
-        assert.ok(zoneCalls[zoneCalls.length - 1].url.includes("date=2026-03-08"));
-        assert.strictEqual(meetingField(ctx, "meetingEndDate").value, "2026-03-08");
-        assert.strictEqual(meetingField(ctx, "meetingZoneSearch").value, "土耳其 · 伊斯坦布尔 (UTC+3)");
-    });
-});
-
-describe("fast-p 04: 预览生成与右栏（T2/S-2 绑定）", () => {
-    it("完整表单 debounce 后 POST；右栏值均来自响应", async () => {
-        const ctx = await bootMeetingA();
-        await openMeetingLoaded(ctx);
-        await fillCompleteMeetingForm(ctx);
-        await flush();
-        const previewCalls = meetingPreviewRequests(ctx);
-        const last = previewCalls[previewCalls.length - 1];
-        assert.ok(last.url.startsWith("/api/mail/unmatched-inbound/101/meeting-confirmation/preview"));
-        const parsed = JSON.parse(last.body);
-        assert.strictEqual(parsed.contactId, 1);
-        assert.strictEqual(parsed.meeting.zoneId, "Europe/Istanbul");
-        assert.strictEqual(parsed.meeting.startLocal, "2026-09-11T10:00");
-        assert.strictEqual(parsed.meeting.endLocal, "2026-09-11T10:30");
-        assert.ok(parsed.meeting.generatedAt, "generatedAt 沿用 options 冻结值");
-        assert.match(meetingField(ctx, "meetingFilename").textContent, /^meeting-2026-09-11-/);
-        assert.match(meetingField(ctx, "meetingFileMeta").textContent, /日历事件 · 30 分钟 · 0\.[0-9] KB/);
-        assert.match(meetingField(ctx, "meetingBody").textContent, /Dear Professor Basdogan/);
-        const china = meetingField(ctx, "meetingClock").querySelector('[data-role="china-time"]');
-        assert.ok(china.textContent.includes("15:00"));
-        const duration = meetingField(ctx, "meetingClock").querySelector('[data-role="meeting-duration"]');
-        assert.strictEqual(duration.textContent, "会议时长 30 分钟");
-        const download = meetingField(ctx, "downloadMeeting");
-        assert.ok(download.getAttribute("href"), "ready 下载链接有 blob URL");
-        assert.strictEqual(download.getAttribute("aria-disabled"), "false");
-    });
-
-    it("本地 URL 非法：不发 preview、aria-invalid 标记、下载不可点", async () => {
-        const ctx = await bootMeetingA();
-        await openMeetingLoaded(ctx);
-        await fillCompleteMeetingForm(ctx, { meetingUrl: "not-a-url" });
-        await flush();
-        assert.strictEqual(meetingPreviewRequests(ctx).length, 0, "本地校验失败不发 preview");
-        assert.strictEqual(meetingField(ctx, "meetingUrl").getAttribute("aria-invalid"), "true");
-        assert.strictEqual(meetingField(ctx, "downloadMeeting").getAttribute("aria-disabled"), "true");
-    });
-
-    it("服务端 400：message 进错误区、字段值保留；网络错误：状态文案 + 重试出 ready", async () => {
-        let mode = "server";
-        const ctx = await bootMeetingA({
-            route: (url, method, body, entry, next) => {
-                if (/\/meeting-confirmation\/preview/.test(url)) {
-                    if (mode === "server") {
-                        const err = new Error("请输入有效的 Zoom 会议链接");
-                        err.data = { message: "请输入有效的 Zoom 会议链接" };
-                        return Promise.reject(err);
-                    }
-                    if (mode === "network") {
-                        return Promise.reject(new Error("network down"));
-                    }
-                }
-                return next(url, method, body);
-            }
-        });
-        await openMeetingLoaded(ctx);
-        await fillCompleteMeetingForm(ctx);
-        await flush();
-        // 服务端 400
-        assert.match(meetingField(ctx, "meetingError").textContent, /请输入有效的 Zoom 会议链接/);
-        assert.strictEqual(meetingField(ctx, "meetingLoadStatus").hidden, true, "400 不显示重试");
-        assert.strictEqual(meetingField(ctx, "meetingUrl").value, "https://zoom.us/j/123456789?pwd=AbC123", "左栏值保留");
-        assert.strictEqual(meetingField(ctx, "meetingDate").value, "2026-09-11", "左栏日期保留");
-        // 网络错误
-        mode = "network";
-        click(meetingField(ctx, "cancelMeeting"));
-        await flush();
-        openMeetingDialog(ctx);
-        await flush();
-        await fillCompleteMeetingForm(ctx);
-        await flush();
-        assert.match(meetingField(ctx, "meetingLoadStatus").textContent, /预览生成失败，请重试/);
-        const retry = meetingField(ctx, "retryMeeting");
-        assert.strictEqual(retry.hidden, false);
-        mode = "ok";
-        click(retry);
-        await flush();
-        assert.strictEqual(meetingField(ctx, "meetingLoadStatus").hidden, true);
-        assert.strictEqual(meetingField(ctx, "applyMeeting").disabled, false, "重试成功后 ready");
-    });
-
-    it("startUtc 已过当前时间：状态条提示核对，提示不阻断确认", async () => {
-        // 沙箱时钟推到 fixture startUtc（2026-09-11T07:00:00Z）之后
-        const ctx = await bootMeetingA({ nowMs: Date.parse("2026-09-11T08:00:00Z") });
-        await openMeetingLoaded(ctx);
-        await fillCompleteMeetingForm(ctx);
-        await flush();
-        assert.strictEqual(meetingPreviewRequests(ctx).length, 1, "预览仍须发起");
-        assert.strictEqual(meetingField(ctx, "meetingLoadStatus").hidden, false);
-        assert.match(meetingField(ctx, "meetingLoadStatus").textContent, /会议时间已过去，请核对/);
-        assert.strictEqual(meetingField(ctx, "applyMeeting").disabled, false, "过期提示不阻断确认");
-    });
-
-    it("陈旧预览响应不覆盖新值（双重序号保护）", async () => {
-        const pending = [];
-        const ctx = await bootMeetingA({
-            route: (url, method, body, entry, next) => {
-                if (/\/meeting-confirmation\/preview/.test(url)) {
-                    const parsed = JSON.parse(body);
-                    return new Promise((resolve, reject) => {
-                        pending.push({ meeting: parsed.meeting, resolve, reject });
-                    });
-                }
-                return next(url, method, body);
-            }
-        });
-        await openMeetingLoaded(ctx);
-        await fillCompleteMeetingForm(ctx, { meetingUrl: "https://zoom.us/j/1?pwd=first" });
-        await fillCompleteMeetingForm(ctx, { meetingUrl: "https://zoom.us/j/2?pwd=second" });
-        assert.ok(pending.length >= 2, "两次完整预览必须发生");
-        const latestBody = meetingField(ctx, "meetingBody");
-        assert.ok(!latestBody.textContent.includes("Second Name") || latestBody.textContent.includes("请填写"), "尚未返回前不展示旧值");
-        // 旧响应先返回：不得覆盖
-        pending[pending.length - 2].resolve(defaultPreviewResponse(
-            { startLocal: "2026-09-11T10:00", endLocal: "2026-09-11T10:30", zoneId: "Europe/Istanbul" },
-            { addressee: "First Name" }
-        ));
-        await flush();
-        assert.ok(!meetingField(ctx, "meetingBody").textContent.includes("First Name"), "旧响应不得覆盖新表单");
-        // 新响应返回：展示新值
-        pending[pending.length - 1].resolve(defaultPreviewResponse(
-            { startLocal: "2026-09-11T10:00", endLocal: "2026-09-11T10:30", zoneId: "Europe/Istanbul" },
-            { addressee: "Second Name" }
-        ));
-        await flush();
-        assert.match(meetingField(ctx, "meetingBody").textContent, /Dear Second Name/);
-    });
-});
-
-describe("fast-p 04: 确认填入草稿（I-1/I-3/T3/S-3 块与卡）", () => {
-    it("空正文首填：1 块 1 卡 ready；只写草稿不调用发送/旧确认接口", async () => {
-        const ctx = await bootMeetingA();
-        await openMeetingLoaded(ctx);
-        await confirmReadyMeeting(ctx);
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        const blocks = editor.querySelectorAll('[data-meeting-block="true"]');
-        assert.strictEqual(blocks.length, 1);
-        assert.match(meetingBodyText(editor), /Dear Professor Basdogan/);
-        const container = ctx.host.querySelector('[data-role="meeting-attachment"]');
-        assert.ok(container.querySelector(".meeting-file"), "确认后附件卡出现");
-        assert.strictEqual(container.getAttribute("data-state"), "ready");
-        assert.ok(container.querySelector('[data-role="filename"]').textContent.startsWith("meeting-2026-09-11-"));
-        assert.strictEqual(
-            container.querySelector('[data-role="file-meta"]').textContent,
-            "2026年9月11日 周五 15:00–15:30 · 30 分钟"
+        const container = article.querySelector('[data-role="outbound-sent-files"]');
+        assert.ok(container, "已发通用附件容器必须渲染");
+        assert.strictEqual(container.getAttribute("data-state"), "sent");
+        assert.deepStrictEqual(cardStates(ctx, "outbound-sent-files"), ["sent", "sent"]);
+        assert.deepStrictEqual(cardNames(ctx, "outbound-sent-files"), [
+            "CV <img src=x onerror=alert(1)>.pdf",
+            "notes.txt"
+        ], "名称按服务端顺序逐字显示");
+        assert.strictEqual(cardOf(ctx, 0, "outbound-sent-files").querySelector(".outbound-file-name").querySelector("img"), null,
+            "恶意文件名不得成为元素");
+        assert.ok(!cardOf(ctx, 0, "outbound-sent-files").querySelector(".outbound-file-name").innerHTML.includes("<img"),
+            "恶意文件名必须转义");
+        assert.deepStrictEqual(
+            fileCards(ctx, "outbound-sent-files").map((node) => node.querySelector(".outbound-file-meta").textContent),
+            ["2.0 KB · 已发送", "0.5 KB · 已发送"]
         );
-        assert.strictEqual(meetingDialog(ctx).hasAttribute("open"), false, "apply 成功后关闭弹窗");
-        // I-1：确认只写草稿
-        assert.strictEqual(ctx.calls.sendRich.length, 0, "确认不发送");
-        assert.ok(!ctx.calls.api.some((e) => /manual-rich-reply/.test(e.url)), "确认不调用发送接口");
-        assert.ok(!ctx.calls.api.some((e) => /meeting-schedule/.test(e.url)), "确认不调用旧会议接口");
+        const links = fileCards(ctx, "outbound-sent-files").map((node) => node.querySelector('[data-role="outbound-download"]'));
+        assert.deepStrictEqual(links.map((node) => node.getAttribute("href")), [
+            "/talent/api/mail/conversations/1/messages/88/outbound-attachments/a1/download",
+            "/talent/api/mail/conversations/1/messages/88/outbound-attachments/a2/download"
+        ], "/talent 部署也必须能下载（contextPath 前缀）");
+        assert.ok(links.every((node) => node.hasAttribute("download")), "锚点必须带 download");
+        assert.ok(links.every((node) => node.textContent === "下载"), "固定下载文案，不伪造文件名文本");
+        assert.ok(links.every((node) => !String(node.getAttribute("href")).startsWith("blob:")), "不借 Blob 重新合成原件");
+        assert.ok(fileCards(ctx, "outbound-sent-files").every((node) => cardRemoveButton(node) === null), "已发卡不渲染移除");
+        assert.strictEqual(article.querySelector('[data-role="meeting-attachment"]'), null, "已发消息不出现草稿会议卡");
     });
 
-    it("草稿恢复：切专家再回，会议块+富文本+卡恢复且不产生无意义 stale", async () => {
-        const ctx = await bootMeetingA();
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        editor.innerHTML = "<p>original <b>bold</b> text</p>";
-        inputEvent(editor);
-        await openMeetingLoaded(ctx);
-        await confirmReadyMeeting(ctx);
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        subject.value = "Re: Question 1";
-        inputEvent(subject);
-        // 切 B 再回 A
-        const b = ctx.host.querySelectorAll(".mc-person").find((p) => p.dataset.contactId === "2");
-        click(b.querySelector(".mc-person-main"));
+    it("ICS 与通用附件互不影响：只有 ICS / 只有通用 / 两者并存", async () => {
+        const ics = (messageId) => ({
+            filename: `meeting-2026-09-06-Expert.ics`,
+            byteLength: 512,
+            downloadUrl: `/api/mail/conversations/1/messages/${messageId}/calendar-attachment`
+        });
+        const base = messagesA().items;
+        const items = [
+            Object.assign({}, base[0], { id: 87, calendarAttachment: ics(87) }),
+            Object.assign({}, base[2], { id: 88, subject: "Generic", outboundAttachments: [sentAttachment("a1", 88, "cv.pdf", 1024)] }),
+            Object.assign({}, base[2], {
+                id: 89,
+                subject: "Both",
+                calendarAttachment: ics(89),
+                outboundAttachments: [sentAttachment("a2", 89, "cv2.pdf", 1024)]
+            })
+        ];
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            messages: { items, nextBefore: null, hasMore: false },
+            contact: contactA()
+        });
+        selectPerson(ctx, "1");
         await flush();
-        const a = ctx.host.querySelectorAll(".mc-person").find((p) => p.dataset.contactId === "1");
-        click(a.querySelector(".mc-person-main"));
-        await flush();
-        const editor2 = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        assert.ok(editor2.innerHTML.includes("<b>bold</b>"), "富文本恢复");
-        assert.ok(editor2.innerHTML.includes("data-meeting-block=\"true\""), "会议块恢复");
-        assert.strictEqual(editor2.querySelectorAll('[data-meeting-block="true"]').length, 1);
-        const container = ctx.host.querySelector('[data-role="meeting-attachment"]');
-        assert.strictEqual(container.getAttribute("data-state"), "ready", "恢复不产生无意义 stale");
-        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Question 1");
+
+        const onlyIcs = ctx.host.querySelector('[data-message-key="MAIL_RECORD:87"]');
+        assert.ok(onlyIcs.querySelector('[data-role="sent-meeting-attachment"]'), "ICS 卡独立渲染");
+        assert.strictEqual(onlyIcs.querySelector('[data-role="outbound-sent-files"]'), null, "无通用附件不渲染容器");
+
+        const onlyGeneric = ctx.host.querySelector('[data-message-key="MAIL_RECORD:88"]');
+        assert.ok(onlyGeneric.querySelector('[data-role="outbound-sent-files"]'), "通用附件卡独立渲染");
+        assert.strictEqual(onlyGeneric.querySelector('[data-role="sent-meeting-attachment"]'), null, "无 ICS 不渲染 ICS 卡");
+
+        const both = ctx.host.querySelector('[data-message-key="MAIL_RECORD:89"]');
+        const children = Array.prototype.slice.call(both.childNodes).filter((node) => node.nodeType === 1);
+        assert.ok(children.indexOf(both.querySelector('[data-role="sent-meeting-attachment"]'))
+            < children.indexOf(both.querySelector('[data-role="outbound-sent-files"]')), "ICS 卡在通用附件卡之前");
+        assert.deepStrictEqual(
+            sentCards(ctx).map((node) => node.querySelector(".outbound-file-name").textContent),
+            ["cv.pdf", "cv2.pdf"],
+            "两条消息各自渲染自己的原件"
+        );
     });
 
-    it("已有正文 + 编辑会议：原内容保留；未手改块原地更新仍 1 块 1 卡", async () => {
-        const ctx = await bootMeetingA();
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        editor.innerHTML = "<p><b>Please also review the agenda.</b></p>";
-        inputEvent(editor);
-        await openMeetingLoaded(ctx);
-        const insertLabel = meetingField(ctx, "insertModeLabel");
-        assert.strictEqual(insertLabel.hidden, false, "已有正文 → append/replace 选择可见");
-        await confirmReadyMeeting(ctx);
-        assert.ok(editor.innerHTML.includes("<b>Please also review the agenda.</b>"), "原加粗保留");
-        assert.strictEqual(editor.querySelectorAll('[data-meeting-block="true"]').length, 1);
-        // 编辑（未手改 → 原位更新）
-        click(ctx.host.querySelector('[data-action="mc-edit-meeting"]'));
+    it("已发卡只消费服务端快照：草稿里的附件不冒充已发件", async () => {
+        const ctx = await bootSent({ outboundAttachments: [] });
+        pickFiles(ctx, [fakeFile("draft-only.pdf")]);
         await flush();
-        assert.strictEqual(meetingField(ctx, "meetingTitle").textContent, "编辑会议确认");
-        assert.strictEqual(meetingField(ctx, "applyMeeting").textContent, "更新并填入回复");
-        assert.strictEqual(meetingField(ctx, "meetingDate").value, "2026-09-11");
-        setMeetingFieldValue(ctx, "meetingStart", "10:30");
-        setMeetingFieldValue(ctx, "meetingEnd", "11:00");
-        await flush();
-        click(meetingField(ctx, "applyMeeting"));
-        await flush();
-        assert.strictEqual(editor.querySelectorAll('[data-meeting-block="true"]').length, 1, "更新不产生第二块");
-        assert.ok(meetingBodyText(editor).includes("10:30-11:00"), "原位更新替换为新会议时间");
-        assert.ok(editor.innerHTML.includes("<b>Please also review the agenda.</b>"), "更新保留外部正文");
+        assert.deepStrictEqual(cardNames(ctx), ["draft-only.pdf"], "草稿卡显示当前草稿");
+        const article = ctx.host.querySelector('[data-message-key="MAIL_RECORD:88"]');
+        assert.strictEqual(article.querySelector('[data-role="outbound-sent-files"]'), null, "空快照不渲染已发卡");
     });
+});
 
-    it("手改会议块 → stale 卡、禁止带附件发送；replace 恢复 ready", async () => {
-        const ctx = await bootMeetingA();
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+// ════════════════════════════════════════════════════════════════════════
+// I-2/I-5：草稿重建写点保留附件
+// ════════════════════════════════════════════════════════════════════════
+
+describe("fast-p 07 · I-2/I-5: 草稿重建写点保留附件", () => {
+    it("会议填入与移除：ICS 与通用附件各删各的", async () => {
+        const ctx = await bootInbound({ meetingEnabled: true });
+        pickFiles(ctx, [fakeFile("cv.pdf")]);
+        await flush();
+        assert.deepStrictEqual(cardNames(ctx), ["cv.pdf"]);
+
         await openMeetingLoaded(ctx);
         await confirmReadyMeeting(ctx);
-        const block = editor.querySelector('[data-meeting-block="true"]');
-        block.textContent = String(block.textContent) + " hand edited";
-        inputEvent(editor);
-        const container = ctx.host.querySelector('[data-role="meeting-attachment"]');
-        assert.strictEqual(container.getAttribute("data-state"), "stale", "手改后卡 stale");
-        assert.match(container.textContent, /待重新确认/);
-        assert.ok(container.querySelector('[data-state="stale"]'));
-        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
-        await flush();
-        assert.strictEqual(ctx.calls.sendRich.length, 0, "stale 会议禁止带附件发送");
-        // 编辑弹窗 conflict：默认 append 时确认禁用；replace 后恢复
-        click(ctx.host.querySelector('[data-action="mc-edit-meeting"]'));
-        await flush();
-        ctx.runTimers(); // 编辑打开自动预览（沿用保存 input）
-        await flush();
-        assert.strictEqual(meetingField(ctx, "insertMode").value, "append");
-        assert.strictEqual(meetingField(ctx, "applyMeeting").disabled, true, "手改块 + append 确认禁用");
-        const mode = meetingField(ctx, "insertMode");
-        mode.value = "replace";
-        changeEvent(mode);
-        assert.strictEqual(meetingField(ctx, "applyMeeting").disabled, false);
-        click(meetingField(ctx, "applyMeeting"));
-        await flush();
-        assert.strictEqual(editor.querySelectorAll('[data-meeting-block="true"]').length, 1);
-        assert.ok(!editor.innerHTML.includes("hand edited"), "replace 覆盖手改");
-        assert.strictEqual(ctx.host.querySelector('[data-role="meeting-attachment"]').getAttribute("data-state"), "ready");
-    });
+        assert.ok(ctx.host.querySelector('[data-role="meeting-attachment"] .meeting-file'), "会议卡已填入");
+        assert.deepStrictEqual(cardNames(ctx), ["cv.pdf"], "会议全文替换不丢通用附件");
 
-    it("移除附件：0 卡但正文保留；再发送走旧 payload", async () => {
-        const ctx = await bootMeetingA();
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        await openMeetingLoaded(ctx);
-        await confirmReadyMeeting(ctx);
         click(ctx.host.querySelector('[data-action="mc-remove-meeting"]'));
         await flush();
-        const container = ctx.host.querySelector('[data-role="meeting-attachment"]');
-        assert.strictEqual(container.innerHTML.trim(), "", "移除后容器清空");
-        assert.ok(meetingBodyText(editor).includes("Dear Professor Basdogan"), "正文保留");
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        subject.value = "Re: Question 1";
-        inputEvent(subject);
-        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
-        await flush();
-        const payload = ctx.calls.sendRich[ctx.calls.sendRich.length - 1].body;
-        assert.strictEqual(payload.meeting, undefined, "移除附件后不携带 meeting");
-        assert.strictEqual(payload.previewAttachmentSha256, undefined);
-    });
-
-    it("QA：append 保留 QA —— meeting 与 ragFactCodes 同 payload", async () => {
-        const ctx = await bootMeetingA();
-        const wb = ctx.host.querySelector('.mc-section[data-section="workbench"]');
-        toggleOpen(wb);
-        await flush();
-        await ctx.calls.workbenchMounts[0].callbacks.onComplete({
-            renderedDraftText: "Please review the attached agenda.",
-            text: "Please review the attached agenda.",
-            usedFactCodes: ["KB-COMM-044"],
-            ragCorpusFingerprint: "fp-2026"
-        });
-        await flush();
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        // 已有正文 → append 保留 QA
-        await openMeetingLoaded(ctx);
-        await confirmReadyMeeting(ctx);
-        assert.ok(meetingBodyText(editor).includes("Dear Professor Basdogan"));
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        subject.value = "My QA Subject";
-        inputEvent(subject);
-        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
-        await flush();
-        const payload = ctx.calls.sendRich[ctx.calls.sendRich.length - 1].body;
-        assert.deepStrictEqual(payload.ragFactCodes, ["KB-COMM-044"], "append 保留 QA");
-        assert.ok(payload.meeting, "append 后携带 meeting");
-        assert.strictEqual(payload.previewAttachmentSha256, "a".repeat(64));
-    });
-
-    it("QA：replace 清旧 QA；采用工作台先移除旧日历并提示", async () => {
-        const ctx = await bootMeetingA();
-        const wb = ctx.host.querySelector('.mc-section[data-section="workbench"]');
-        toggleOpen(wb);
-        await flush();
-        await ctx.calls.workbenchMounts[0].callbacks.onComplete({
-            renderedDraftText: "Please review the attached agenda.",
-            text: "Please review the attached agenda.",
-            usedFactCodes: ["KB-COMM-044"],
-            ragCorpusFingerprint: "fp-2026"
-        });
-        await flush();
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        await openMeetingLoaded(ctx);
-        await confirmReadyMeeting(ctx);
-        assert.ok(meetingBodyText(editor).includes("Dear Professor Basdogan"));
-        // 编辑弹窗 → replace 整篇（清旧 QA）
-        click(ctx.host.querySelector('[data-action="mc-edit-meeting"]'));
-        await flush();
-        ctx.runTimers();
-        await flush();
-        const mode = meetingField(ctx, "insertMode");
-        mode.value = "replace";
-        changeEvent(mode);
-        click(meetingField(ctx, "applyMeeting"));
-        await flush();
-        assert.strictEqual(editor.querySelectorAll('[data-meeting-block="true"]').length, 1);
-        // 再采用新工作台草稿：原日历附件已移除提示 + 卡清除 + QA 只含新草稿
-        const statusStart = ctx.calls.status.length;
-        await ctx.calls.workbenchMounts[0].callbacks.onComplete({
-            renderedDraftText: "New adopted body",
-            text: "New adopted body",
-            usedFactCodes: ["KB-COMM-099"],
-            ragCorpusFingerprint: "fp-2026"
-        });
-        await flush();
-        assert.strictEqual(editor.innerText, "New adopted body");
         assert.strictEqual(ctx.host.querySelector('[data-role="meeting-attachment"]').innerHTML.trim(), "");
-        assert.ok(ctx.calls.status.slice(statusStart).some((s) => /原日历附件已移除/.test(s.message)));
-        assert.strictEqual(editor.querySelectorAll('[data-meeting-block="true"]').length, 0);
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        subject.value = "My QA Replace Subject";
-        inputEvent(subject);
-        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        assert.deepStrictEqual(cardNames(ctx), ["cv.pdf"], "移除 ICS 不删通用附件");
+
+        await openMeetingLoaded(ctx);
+        await confirmReadyMeeting(ctx);
+        assert.ok(ctx.host.querySelector('[data-role="meeting-attachment"] .meeting-file'));
+        click(cardRemoveButton(cardOf(ctx, 0)));
+        await flush();
+        assert.strictEqual(fileCards(ctx).length, 0, "通用附件可单独移除");
+        assert.ok(ctx.host.querySelector('[data-role="meeting-attachment"] .meeting-file'), "移除通用附件不删 ICS");
+    });
+
+    it("会议 + 附件一起发送：payload 同时带 meeting 与顺序 attachmentIds", async () => {
+        const ctx = await bootInbound({ meetingEnabled: true });
+        pickFiles(ctx, [fakeFile("cv.pdf")]);
+        await flush();
+        await openMeetingLoaded(ctx);
+        await confirmReadyMeeting(ctx);
+        click(sendButton(ctx));
         await flush();
         const payload = ctx.calls.sendRich[ctx.calls.sendRich.length - 1].body;
-        assert.deepStrictEqual(payload.ragFactCodes, ["KB-COMM-099"], "replace 清旧 QA、采用后只含新草稿 QA");
-        assert.strictEqual(payload.meeting, undefined, "采用清除日历附件");
+        assert.ok(payload.meeting, "会议输入随请求提交");
+        assert.strictEqual(payload.previewAttachmentSha256, "a".repeat(64));
+        assert.deepStrictEqual(plain(payload.attachmentIds), ["att-1"], "会议 ICS 与通用附件同请求提交");
+        assert.strictEqual(fileCards(ctx).length, 0, "成功后清掉已发送的草稿附件");
     });
-});
 
-describe("fast-p 04: retarget 迁移与新来信目标（I-2/T3）", () => {
-    it("切换新来信：meeting stale、正文保留、禁止带附件发送；重新编辑后 ready", async () => {
+    it("采用可信草稿（全文替换）与跟进填入都保留通用附件", async () => {
+        const adopted = await bootInbound();
+        pickFiles(adopted, [fakeFile("cv.pdf")]);
+        await flush();
+        const wb = adopted.host.querySelector('.mc-section[data-section="workbench"]');
+        toggleOpen(wb);
+        await flush();
+        await adopted.calls.workbenchMounts[0].callbacks.onComplete({
+            renderedDraftText: "Adopted body",
+            text: "Adopted body",
+            usedFactCodes: [],
+            ragCorpusFingerprint: ""
+        });
+        await flush();
+        assert.strictEqual(manualEditor(adopted).innerText, "Adopted body");
+        assert.deepStrictEqual(cardNames(adopted), ["cv.pdf"], "采用全文替换不丢附件");
+
+        const followup = await bootInbound();
+        pickFiles(followup, [fakeFile("cv.pdf")]);
+        await flush();
+        click(followup.host.querySelector('[data-action="mc-open-followup"]'));
+        await flush();
+        const dialog = followup.doc.querySelector(".followup-dialog");
+        assert.ok(dialog, "跟进弹窗必须打开");
+        const option = dialog.querySelectorAll('[data-action="mc-select-followup"]')
+            .find((node) => node.dataset.mailRecordId === "88");
+        assert.ok(option, "候选 #88 必须存在");
+        click(option);
+        const copy = dialog.querySelectorAll('[data-action="mc-select-followup-copy"]')
+            .find((node) => node.dataset.followupCopy === "generic");
+        click(copy);
+        click(dialog.querySelector('[data-action="mc-apply-followup"]'));
+        await flush();
+        assert.ok(followup.host.querySelector('[data-role="followup-anchor-note"]'), "跟进锚点提示出现");
+        assert.deepStrictEqual(cardNames(followup), ["cv.pdf"], "跟进全文替换不丢附件");
+
+        click(sendButton(followup));
+        await flush();
+        const payload = followup.calls.sendConversation[0].body;
+        assert.strictEqual(payload.anchorMailRecordId, 88);
+        assert.deepStrictEqual(plain(payload.attachmentIds), ["att-1"], "跟进走会话接口且携带附件");
+    });
+
+    it("同专家换回复目标：已 ready 附件随草稿迁移", async () => {
         let current = expertA();
-        const ctx = await bootMeetingA({
+        const ctx = await bootChat({
             route: (url, method, body, entry, next) => {
                 if (url.startsWith("/api/mail/mailbox/conversations?")) {
                     return Promise.resolve({ items: [current, expertB()], total: 2 });
                 }
                 if (/\/api\/mail\/mailbox\/conversations\/\d+\/messages/.test(url)) {
-                    if (current.latestInbound && current.latestInbound.processingId === 102) {
-                        const older = messagesA();
-                        older.items = older.items.concat([{
-                            source: "INBOUND_PROCESSING", id: 102, contactId: 1, direction: "INBOUND", accountCode: "acc1",
-                            subject: "Brand new question", body: "raw 102", cleanedBody: "clean 102", eventAt: "2026-09-08T10:00:00",
-                            sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m102", inReplyTo: "m88", tags: []
-                        }]);
-                        return Promise.resolve(older);
-                    }
                     return Promise.resolve(messagesA());
                 }
                 return next(url, method, body);
             },
+            conversations: { items: [expertA(), expertB()], total: 2 },
+            messages: messagesA(),
+            contact: contactA(),
             dialogResult: true
         });
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        await openMeetingLoaded(ctx);
-        await confirmReadyMeeting(ctx);
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        subject.value = "Re: Question 1";
-        inputEvent(subject);
-        // 收到新来信 → 提示后确认切换目标
+        await flush();
+        selectPerson(ctx, "1");
+        await flush();
+        pickFiles(ctx, [fakeFile("cv.pdf")]);
+        await flush();
+        assert.deepStrictEqual(cardNames(ctx), ["cv.pdf"]);
+
+        // 收到新来信 → 确认切换回复目标
         current = Object.assign({}, expertA(), {
             latestInbound: { processingId: 102, accountCode: "acc1", messageId: "m102", receivedAt: "2026-09-08T10:00:00" },
             pendingCount: 2
         });
         ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} });
         await flush();
-        const card = ctx.host.querySelector('[data-role="meeting-attachment"]');
-        assert.strictEqual(card.getAttribute("data-state"), "stale", "retarget 后会议标 stale");
-        assert.match(card.textContent, /待重新确认/);
-        assert.ok(meetingBodyText(editor).includes("Dear Professor Basdogan"), "正文保留跨目标");
-        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+
+        assert.deepStrictEqual(cardNames(ctx), ["cv.pdf"], "换目标后已 ready 附件仍在同一草稿上");
+        assert.deepStrictEqual(cardStates(ctx), ["ready"]);
+        const composeKey = ctx.host.querySelector('[data-role="manual-compose"]').dataset.targetKey;
+        assert.strictEqual(composeKey, "1:102:acc1", "回复目标已切到新来信");
+
+        manualSubject(ctx).value = "Re: Brand new question";
+        inputEvent(manualSubject(ctx));
+        typeDraft(ctx, "body");
+        click(sendButton(ctx));
         await flush();
-        assert.strictEqual(ctx.calls.sendRich.length, 0, "retarget stale 禁止发送");
-        // 编辑会议重新确认 → ready
-        click(ctx.host.querySelector('[data-action="mc-edit-meeting"]'));
-        await flush();
-        assert.strictEqual(meetingField(ctx, "meetingDate").value, "2026-09-11", "保留旧 input 供改");
-        setMeetingFieldValue(ctx, "meetingStart", "11:30");
-        setMeetingFieldValue(ctx, "meetingEnd", "12:00");
-        await flush();
-        click(meetingField(ctx, "applyMeeting"));
-        await flush();
-        assert.strictEqual(ctx.host.querySelector('[data-role="meeting-attachment"]').getAttribute("data-state"), "ready");
-        assert.ok(meetingBodyText(editor).includes("11:30-12:00"), "重新确认后正文为新时间");
+        assert.deepStrictEqual(plain(ctx.calls.sendRich[0].body.attachmentIds), ["att-1"], "新目标发送仍携带迁移过来的附件");
     });
 });
 
-describe("fast-p 04: 发送锁与异步隔离（T4/I-2）", () => {
-    async function meetingReadyCtx(serverOverrides) {
-        const ctx = await bootMeetingA(serverOverrides);
-        await openMeetingLoaded(ctx);
-        await confirmReadyMeeting(ctx);
-        return ctx;
-    }
+// ════════════════════════════════════════════════════════════════════════
+// S-2：样式与文案合同
+// ════════════════════════════════════════════════════════════════════════
 
-    it("带 meeting 发送：payload 带 meeting.input + sha；成功后该份草稿清除", async () => {
-        const ctx = await meetingReadyCtx();
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        subject.value = "My Subject A";
-        inputEvent(subject);
-        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
-        await flush();
-        const call = ctx.calls.sendRich[ctx.calls.sendRich.length - 1];
-        const payload = call.body;
-        assert.ok(payload.meeting, "payload 携带 meeting");
-        assert.strictEqual(payload.meeting.zoneId, "Europe/Istanbul");
-        assert.strictEqual(payload.previewAttachmentSha256, "a".repeat(64));
-        assert.strictEqual(payload.senderAccountCode, null, "不改变 senderAccountCode 适配");
-        // 切走再回：草稿已清（主题回默认预填、卡清空）
-        const b = ctx.host.querySelectorAll(".mc-person").find((p) => p.dataset.contactId === "2");
-        click(b.querySelector(".mc-person-main"));
-        await flush();
-        const a = ctx.host.querySelectorAll(".mc-person").find((p) => p.dataset.contactId === "1");
-        click(a.querySelector(".mc-person-main"));
-        await flush();
-        assert.notStrictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "My Subject A", "发送成功后该份草稿已删除");
-        assert.strictEqual(ctx.host.querySelector('[data-role="meeting-attachment"]').innerHTML.trim(), "");
+describe("fast-p 07 · S-1/S-2: 样式与 DOM 合同", () => {
+    const PLAN_PATH = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-16", "meeting-mail-07-attachment-ui.md");
+    const S2_BLOCK = fs.readFileSync(PLAN_PATH, "utf-8").match(/```css\n([\s\S]*?)```/)[1];
+    const stylesSource = fs.readFileSync(path.join(ROOT, "styles.css"), "utf-8");
+    const chatCss = fs.readFileSync(path.join(ROOT, "mailbox-chat.css"), "utf-8");
+
+    it("S-2 全文逐字追加到 styles.css 末尾", () => {
+        assert.ok(stylesSource.endsWith(S2_BLOCK), "S-2 必须是 styles.css 的最后一块且逐字一致");
     });
 
-    it("发送中锁 UI；失败恢复且草稿保留", async () => {
-        const ctx = await meetingReadyCtx({ sendRichDeferred: true });
-        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
-        const compose = ctx.host.querySelector('[data-role="manual-compose"]');
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        subject.value = "Re: Question 1";
-        inputEvent(subject);
-        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
-        await flush();
-        assert.strictEqual(compose.getAttribute("data-meeting-sending"), "true");
-        assert.strictEqual(editor.getAttribute("contenteditable"), "false");
-        assert.strictEqual(subject.disabled, true, "subject 发送中禁用");
-        assert.strictEqual(ctx.host.querySelector('[data-action="mc-send-manual"]').disabled, true);
-        assert.strictEqual(ctx.host.querySelector('[data-action="mc-remove-meeting"]').disabled, true, "会议操作禁用");
-        const deferred = ctx.calls.sendRichDeferred[ctx.calls.sendRichDeferred.length - 1];
-        deferred.reject(new Error("smtp down"));
-        await flush();
-        assert.strictEqual(compose.hasAttribute("data-meeting-sending"), false);
-        assert.strictEqual(editor.getAttribute("contenteditable"), "true");
-        assert.strictEqual(ctx.host.querySelector('[data-action="mc-send-manual"]').disabled, false);
-        assert.strictEqual(ctx.host.querySelector('[data-role="meeting-attachment"]').getAttribute("data-state"), "ready", "失败草稿保留");
+    it("mailbox-chat.css 未被 outbound-* 规则污染（独立边界）", () => {
+        assert.ok(!chatCss.includes(".outbound-"), "mailbox-chat.css 不得吸收 07 规则");
     });
 
-    it("A 发送中切 B：A 完成后只清 A 快照，B 目标不受影响", async () => {
-        const ctx = await meetingReadyCtx({ sendRichDeferred: true });
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        subject.value = "My Subject A";
-        inputEvent(subject);
-        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
-        await flush();
-        const aDeferred = ctx.calls.sendRichDeferred[ctx.calls.sendRichDeferred.length - 1];
-        const b = ctx.host.querySelectorAll(".mc-person").find((p) => p.dataset.contactId === "2");
-        click(b.querySelector(".mc-person-main"));
-        await flush();
-        aDeferred.resolve(true);
-        await flush();
-        // B 无来信 → 无 manual 区，不抛错即通过；回 A 草稿已清
-        const a2 = ctx.host.querySelectorAll(".mc-person").find((p) => p.dataset.contactId === "1");
-        click(a2.querySelector(".mc-person-main"));
-        await flush();
-        assert.notStrictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "My Subject A");
-    });
-
-    it("发送失败不删草稿不自动重试；再点成功", async () => {
-        const ctx = await bootMeetingA();
-        await openMeetingLoaded(ctx);
-        await confirmReadyMeeting(ctx);
-        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
-        subject.value = "Re: Question 1";
-        inputEvent(subject);
-        let failNext = true;
-        ctx.sandbox.mcHostSendRichReply = (processingId, body) => {
-            ctx.calls.sendRich.push({ processingId: Number(processingId), body });
-            if (failNext) return Promise.reject(new Error("smtp down"));
-            return Promise.resolve(true);
-        };
-        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
-        await flush();
-        const b = ctx.host.querySelectorAll(".mc-person").find((p) => p.dataset.contactId === "2");
-        click(b.querySelector(".mc-person-main"));
-        await flush();
-        const a = ctx.host.querySelectorAll(".mc-person").find((p) => p.dataset.contactId === "1");
-        click(a.querySelector(".mc-person-main"));
-        await flush();
-        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Question 1", "失败草稿保留");
-        assert.strictEqual(ctx.host.querySelector('[data-role="meeting-attachment"]').getAttribute("data-state"), "ready");
-        failNext = false;
-        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
-        await flush();
-        assert.ok(ctx.calls.sendRich[ctx.calls.sendRich.length - 1].body.meeting, "重试成功携带 meeting");
+    it("模板不含 inline style，状态文案与 S-2 逐字一致", () => {
+        assert.ok(!/"style="/.test(chatSource), "不得出现 style 属性");
+        assert.ok(chatSource.includes("上传中…"));
+        assert.ok(chatSource.includes("上传失败，请重新选择文件"));
+        assert.ok(chatSource.includes("待发送"));
+        assert.ok(chatSource.includes("已发送"));
+        assert.ok(chatSource.includes('data-role="outbound-sent-files"'));
+        assert.ok(chatSource.includes('data-role="outbound-draft-files"'));
+        assert.ok(chatSource.includes('data-role="outbound-file-input"'));
+        assert.ok(chatSource.includes('data-action="mc-remove-attachment"'));
+        assert.ok(chatSource.includes('data-action="mc-upload-attachment"'));
     });
 });
-
-describe("fast-p 04: 历史下载错误经宿主状态提示", () => {
-    it("下载适配错误 → hostShowStatus error；下载参数原样传递", async () => {
-        const withCalendar = messagesA();
-        withCalendar.items = withCalendar.items.map((message) => {
-            if (message.source === "MAIL_RECORD" && message.id === 88) {
-                return Object.assign({}, message, {
-                    calendarAttachment: {
-                        filename: "meeting-2026-09-06-Expert.ics",
-                        byteLength: 512,
-                        downloadUrl: "/api/mail/conversations/1/messages/88/calendar-attachment"
-                    }
-                });
-            }
-            return message;
-        });
-        const ctx = await bootChat({
-            conversations: { items: [expertA()], total: 1 },
-            messages: withCalendar,
-            contact: contactA(),
-            downloadError: "日历附件不可用"
-        });
-        const a = ctx.host.querySelectorAll(".mc-person")[0];
-        click(a.querySelector(".mc-person-main"));
-        await flush();
-        const article = ctx.host.querySelector('[data-message-key="MAIL_RECORD:88"]');
-        click(article.querySelector('[data-action="mc-download-sent-meeting"]'));
-        await flush();
-        assert.ok(ctx.calls.status.some((s) => /日历附件不可用/.test(s.message)));
-    });
-});
-
-

@@ -11194,3 +11194,22 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .calendar-root [hidden],.calendar-dialog [hidden]{display:none!important}
 @media(max-width:760px){.calendar-form{grid-template-columns:1fr}.calendar-dialog{padding:16px}.calendar-day{min-height:112px}}
 @media(prefers-reduced-motion:reduce){.calendar-root *,.calendar-dialog *{transition:none!important;scroll-behavior:auto!important}}
+
+/* meeting-mail-07: outbound files */
+.outbound-upload{width:32px;min-width:32px;padding:0}
+.outbound-upload svg{width:16px;height:16px;display:block;flex:none}
+.outbound-files{display:flex;flex-direction:column;gap:8px}
+.outbound-file{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #dce4ef;border-radius:7px;background:#fff;min-width:0}
+.outbound-file-icon{display:flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;border-radius:7px;background:#eff5ff;color:#1e40af}
+.outbound-file-main{display:flex;flex-direction:column;gap:3px;min-width:0;flex:1}
+.outbound-file-name{overflow-wrap:anywhere;color:#334155;font-size:12px;line-height:1.6}
+.outbound-file-meta{color:#64748b;font-size:11px;line-height:1.6}
+.outbound-file-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.outbound-file-link{padding:0;border:0;background:transparent;color:#1e40af;font:inherit;font-size:12px;text-decoration:none;cursor:pointer}
+.outbound-file-link:hover{text-decoration:underline;color:#1e3a8a}
+.outbound-file-link:active{color:#172554}
+.outbound-file[data-state=failed]{border-color:#fecdd3;background:#fff1f2}
+.outbound-files :is(button,a):focus-visible,.outbound-upload:focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
+.outbound-files button:disabled,.outbound-upload:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.outbound-files[hidden]{display:none!important}
+@media(max-width:760px){.outbound-file{flex-wrap:wrap}.outbound-file-actions{width:100%;padding-left:42px}}

@@ -2098,6 +2098,8 @@
             const displayBody = messageDisplayText(message);
             const bodyHtml = displayBody ? `<div class="mc-body">${escapeText(displayBody)}</div>` : "";
             const sentMeetingHtml = sentMeetingAttachmentHtml(message);
+            // fast-p 07（I-4）：已发通用附件只消费 06 的 outboundAttachments 快照。
+            const sentOutboundFilesHtml = outboundSentFilesHtml(message);
             const attachmentHtml = Number(message.attachmentCount) > 0 ? renderAttachmentSummary(message) : "";
             const statusBadge = renderStatusBadge(message, direction);
             const pending = isInboundProcessing && message.processStatus === "MANUAL_REVIEW";
@@ -2127,6 +2129,7 @@
                     <h3>${escapeText(subject)}</h3>
                     ${bodyHtml}
                     ${sentMeetingHtml}
+                    ${sentOutboundFilesHtml}
                     ${attachmentHtml}
                     ${translationHtml}
                     ${tagRow}
@@ -2751,6 +2754,8 @@
             `);
             // 会议卡（组件缺席时无容器，refresh 为空操作）
             refreshMeetingAttachmentCard();
+            // 通用附件卡：渲染后按草稿字段重建（含上传中/失败态）并刷新发送可用性
+            refreshOutboundFilesCard();
         }
 
         function manualTargetInfoText(processingId, account) {
@@ -2856,6 +2861,8 @@
                 ? followupAnchorNoteHtml(draft.followUpAnchorMailRecordId)
                 : "";
             const meetingAttachment = ui && meetingCardContainerHtml(draft && draft.meeting ? draft.meeting : null) || "";
+            // fast-p 07（S-2）：通用附件草稿卡放在会议附件卡之后、发送 footer 之前。
+            const outboundFiles = outboundDraftFilesHtml(draft ? outboundAttachmentDraftOf(draft).items : []);
             return `
                 <div class="mc-compose" data-role="manual-compose" data-target-key="${escapeText(targetKey)}">
                     <label>主题<input aria-label="回复主题" value="${escapeText(subjectValue)}"></label>
@@ -2864,11 +2871,14 @@
                         <button class="button" type="button" data-action="mc-rich-command" data-command="italic">I</button>
                         <button class="button" type="button" data-action="mc-rich-command" data-command="insertUnorderedList">列表</button>
                         <button class="button" type="button" data-action="mc-rich-command" data-command="createLink">链接</button>
+                        <button class="button outbound-upload" type="button" data-action="mc-upload-attachment" title="上传附件" aria-label="上传附件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l10.6-10.6a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l9.19-9.19"/></svg></button>
+                        <input type="file" data-role="outbound-file-input" multiple hidden>
                         ${meetingTrigger}${followUpButton}
                     </div>
                     <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorContent}</div>
                     ${anchorNote}
                     ${meetingAttachment}
+                    ${outboundFiles}
                     <div class="mc-compose-footer">
                         <span data-role="target-info">回复账号与目标来信信息：${targetInfo}</span>
                         ${templateFollowButton}
@@ -3363,6 +3373,381 @@
             if (adapter) adapter(contactId);
         }
 
+        // ------------------------------------------------------------------
+        // fast-p 07（I-1..I-5 / S-1/S-2）：人工回复通用附件。
+        //
+        // 唯一真值是草稿字段 outboundAttachmentDraft={revision,items}：item 以本地 key
+        // 标识（单调序号，同草稿内永不重用），状态 uploading/ready/failed；原始 File 只在
+        // 上传期间临时持有，落定后换成只含服务端 metadata 的新对象。仅 ready 条目按选择
+        // 顺序作为 attachmentIds 提交；任一 uploading/failed 存在即禁止发送。
+        // ------------------------------------------------------------------
+
+        const OUTBOUND_STATE_UPLOADING = "uploading";
+        const OUTBOUND_STATE_READY = "ready";
+        const OUTBOUND_STATE_FAILED = "failed";
+        const OUTBOUND_STATE_SENT = "sent";
+        /** 与 04 `OutboundAttachmentModels` 同值：只作客户端预检查，服务端仍最终裁决。 */
+        const OUTBOUND_MAX_FILE_BYTES = 10 * 1024 * 1024;
+        const OUTBOUND_MAX_TOTAL_BYTES = 20 * 1024 * 1024;
+        const OUTBOUND_MAX_FILES = 10;
+        const OUTBOUND_TEXT_UPLOADING = "上传中…";
+        const OUTBOUND_TEXT_FAILED = "上传失败，请重新选择文件";
+        const OUTBOUND_TEXT_PENDING = "待发送";
+        const OUTBOUND_TEXT_SENT = "已发送";
+
+        let outboundFileSeq = 0;
+
+        function nextOutboundFileKey() {
+            outboundFileSeq += 1;
+            return "of-" + outboundFileSeq;
+        }
+
+        function emptyOutboundAttachmentDraft() {
+            return { revision: 0, items: [] };
+        }
+
+        /**
+         * I-2：读草稿的附件字段。缺失/损坏视为空草稿（不抛、不另立真值）；items 为浅拷贝，
+         * 增删后必须经 setOutboundAttachmentItems 写回。
+         */
+        function outboundAttachmentDraftOf(draft) {
+            const field = draft ? draft.outboundAttachmentDraft : null;
+            const items = field && Array.isArray(field.items) ? field.items : [];
+            return {
+                revision: field && Number.isFinite(Number(field.revision)) ? Number(field.revision) : 0,
+                items: items.slice()
+            };
+        }
+
+        /** I-3：ready 条目按选择顺序提交；空数组 = 旧接口形态（payload 省略 attachmentIds）。 */
+        function outboundAttachmentIds(draft) {
+            return outboundAttachmentDraftOf(draft).items
+                .filter((item) => item && item.state === OUTBOUND_STATE_READY && item.id != null && String(item.id) !== "")
+                .map((item) => String(item.id));
+        }
+
+        function formatOutboundFileSize(byteLength) {
+            return ((Number(byteLength) || 0) / 1024).toFixed(1) + " KB";
+        }
+
+        function outboundFileMetaText(item) {
+            const state = item && item.state ? String(item.state) : OUTBOUND_STATE_READY;
+            if (state === OUTBOUND_STATE_UPLOADING) return OUTBOUND_TEXT_UPLOADING;
+            if (state === OUTBOUND_STATE_FAILED) return OUTBOUND_TEXT_FAILED;
+            const size = formatOutboundFileSize(item && item.byteLength);
+            return size + " · " + (state === OUTBOUND_STATE_SENT ? OUTBOUND_TEXT_SENT : OUTBOUND_TEXT_PENDING);
+        }
+
+        /**
+         * S-2 文件卡（草稿/已发同构骨架）：名称与 meta 只经 escapeText；下载锚点用该条自己的
+         * downloadUrl + 宿主 contextPath（I-4），不借 Blob 重新合成原件；sent 卡不渲染移除。
+         */
+        function outboundFileCardHtml(item) {
+            const state = item && item.state ? String(item.state) : OUTBOUND_STATE_READY;
+            const downloadable = state === OUTBOUND_STATE_READY || state === OUTBOUND_STATE_SENT;
+            const href = downloadable ? contextPathValue() + String(item && item.downloadUrl ? item.downloadUrl : "") : "";
+            const download = downloadable
+                ? `<a class="outbound-file-link" data-role="outbound-download" href="${escapeText(href)}" download>下载</a>`
+                : "";
+            const remove = state === OUTBOUND_STATE_SENT
+                ? ""
+                : `<button class="outbound-file-link" type="button" data-action="mc-remove-attachment" aria-label="移除附件">移除</button>`;
+            const name = item && item.filename != null ? String(item.filename) : "";
+            const key = item && item.key != null ? String(item.key) : "";
+            return `
+                      <div class="outbound-file" data-state="${escapeText(state)}" data-file-key="${escapeText(key)}">
+                        <span class="outbound-file-icon" aria-hidden="true">↧</span>
+                        <div class="outbound-file-main"><strong class="outbound-file-name">${escapeText(name)}</strong><small class="outbound-file-meta">${escapeText(outboundFileMetaText(item))}</small></div>
+                        <div class="outbound-file-actions">${download}${remove}</div>
+                      </div>`;
+        }
+
+        /** 草稿卡容器：无文件时 hidden，且不渲染空卡。 */
+        function outboundDraftFilesHtml(items) {
+            const list = Array.isArray(items) ? items.filter(Boolean) : [];
+            const hidden = list.length === 0 ? " hidden" : "";
+            return `<div class="outbound-files" data-role="outbound-draft-files" aria-live="polite"${hidden}>`
+                + list.map(outboundFileCardHtml).join("")
+                + `</div>`;
+        }
+
+        /**
+         * I-4：已发卡只消费 06 的 outboundAttachments 快照，绝不从当前草稿或正文拼文件；无
+         * 附件时整块不渲染（不出现空容器/假下载文本）。
+         */
+        function outboundSentFilesHtml(message) {
+            const list = Array.isArray(message && message.outboundAttachments) ? message.outboundAttachments : [];
+            if (list.length === 0) return "";
+            const cards = list.map((item) => outboundFileCardHtml({
+                key: item ? item.id : "",
+                state: OUTBOUND_STATE_SENT,
+                filename: item ? item.filename : "",
+                byteLength: item ? item.byteLength : 0,
+                downloadUrl: item ? item.downloadUrl : ""
+            })).join("");
+            return `<div class="outbound-files" data-role="outbound-sent-files" data-state="sent">${cards}</div>`;
+        }
+
+        // ---- 07：草稿写回、捕获与上传队列（I-1..I-3） ----
+
+        function outboundFileInputEl() {
+            const composeEl = manualComposeEl();
+            return composeEl && composeEl.querySelector ? composeEl.querySelector('[data-role="outbound-file-input"]') : null;
+        }
+
+        function outboundDraftFilesContainerEl() {
+            const composeEl = manualComposeEl();
+            return composeEl && composeEl.querySelector ? composeEl.querySelector('[data-role="outbound-draft-files"]') : null;
+        }
+
+        function currentOutboundAttachmentItems() {
+            const key = currentTargetKey();
+            const draft = key ? getDraft(key) : null;
+            return draft ? outboundAttachmentDraftOf(draft).items : [];
+        }
+
+        function outboundItemsIn(captured) {
+            const draft = captured && captured.draftsMap ? captured.draftsMap.get(captured.targetKey) : null;
+            return draft ? outboundAttachmentDraftOf(draft).items : [];
+        }
+
+        function outboundBytesIn(captured) {
+            return outboundItemsIn(captured)
+                .filter((item) => item && item.state !== OUTBOUND_STATE_FAILED)
+                .reduce((sum, item) => sum + (Number(item.byteLength) || 0), 0);
+        }
+
+        /**
+         * I-2 写回：只落到捕获的 owner Map + targetKey。草稿已被删除/已迁到新目标时返回
+         * false —— 迟到的上传回包绝不重建已消失的 key（不复活、不串目标）。
+         */
+        function setOutboundAttachmentItems(captured, items) {
+            if (!captured || !captured.draftsMap) return false;
+            const existing = captured.draftsMap.get(captured.targetKey);
+            if (!existing) return false;
+            const current = outboundAttachmentDraftOf(existing);
+            captured.draftsMap.set(captured.targetKey, Object.assign({}, existing, {
+                outboundAttachmentDraft: { revision: current.revision + 1, items: items.slice() },
+                updatedAt: new Date().toISOString()
+            }));
+            return true;
+        }
+
+        /** I-3：附件语义变化（选择/移除/替换）使会话 requestId 失效，与正文修改同款。 */
+        function invalidateOutboundRequestId(captured) {
+            if (!captured || !captured.draftsMap) return;
+            const existing = captured.draftsMap.get(captured.targetKey);
+            if (!existing || !existing.requestId) return;
+            captured.draftsMap.set(captured.targetKey, Object.assign({}, existing, {
+                requestId: null,
+                updatedAt: new Date().toISOString()
+            }));
+        }
+
+        /**
+         * I-2：异步发起前捕获 sessionUser/accountScope/contactId/targetKey 与原 draftsMap。
+         * 迟到回包只写这份捕获：切专家/切账号后它不再指向任何 live 草稿，故不会污染后来
+         * 切换的专家，LRU 淘汰后也不会有任何 live 落点。
+         */
+        function captureOutboundOwner(targetKey) {
+            const contactId = Number(instance.selectedContactId);
+            if (!targetKey || !Number.isFinite(contactId) || contactId <= 0) return null;
+            if (!getDraft(targetKey)) {
+                saveDraftFromInputs();
+                if (!getDraft(targetKey)) return null;
+            }
+            const draftsMap = ensureDraftsMap();
+            if (!draftsMap || !draftsMap.get(targetKey)) return null;
+            const accountScope = instance.conversation.accountScope || "";
+            return {
+                targetKey,
+                contactId,
+                accountScope,
+                ownerKey: conversationCacheKey(instance.user, accountScope, contactId),
+                draftsMap
+            };
+        }
+
+        /** 捕获是否仍是当前 owner —— 只决定要不要动 DOM/提示，不决定要不要写草稿。 */
+        function outboundOwnerIsCurrent(captured) {
+            if (!captured || instance.disposed) return false;
+            const contactId = Number(instance.selectedContactId);
+            const scope = instance.conversation.accountScope || "";
+            if (captured.ownerKey !== conversationCacheKey(instance.user, scope, contactId)) return false;
+            return captured.draftsMap === currentDraftsMap();
+        }
+
+        function outboundAttachmentsBlockSend() {
+            return currentOutboundAttachmentItems().some((item) => !item || item.state !== OUTBOUND_STATE_READY);
+        }
+
+        function refreshSendAvailability() {
+            setSendButtonDisabled(!!instance.manual.busy || outboundAttachmentsBlockSend());
+        }
+
+        /** 附件卡重渲染：只消费当前目标的草稿字段；发送可用性随之刷新。 */
+        function refreshOutboundFilesCard() {
+            const container = outboundDraftFilesContainerEl();
+            if (!container) return;
+            const items = currentOutboundAttachmentItems();
+            container.innerHTML = items.map(outboundFileCardHtml).join("");
+            if (items.length === 0) container.setAttribute("hidden", "");
+            else container.removeAttribute("hidden");
+            refreshSendAvailability();
+        }
+
+        /** S-1：唯一图标入口只打开同一个隐藏 input（无 accept、multiple 不过滤类型）。 */
+        function openOutboundFilePicker() {
+            if (!currentTargetKey()) return;
+            const input = outboundFileInputEl();
+            if (!input || typeof input.click !== "function") return;
+            input.click();
+        }
+
+        /** I-1：选择文件只入草稿队列；取消系统选择器 = 零请求、零草稿变化。 */
+        function handleOutboundFileSelection(input) {
+            const key = currentTargetKey();
+            if (!key || !input) return;
+            const picked = input.files && typeof input.files.length === "number"
+                ? Array.prototype.slice.call(input.files)
+                : [];
+            // 立即释放选择器引用（同文件可移除后重选）；原件只在上传期间临时持有。
+            input.value = "";
+            if (picked.length === 0) return;
+            const captured = captureOutboundOwner(key);
+            if (!captured) return;
+            if (outboundItemsIn(captured).length + picked.length > OUTBOUND_MAX_FILES) {
+                hostShowStatus("最多 " + OUTBOUND_MAX_FILES + " 个通用附件", "error");
+                return;
+            }
+            // 顺序队列：一次只上传一个文件，不同时持有多个原件。
+            let chain = Promise.resolve();
+            picked.map((file) => () => uploadOutboundFile(captured, file)).forEach((run) => {
+                chain = chain.then(run, run);
+            });
+        }
+
+        /** 单个文件：预检查 → multipart POST → 落定为 ready 或 failed。 */
+        function uploadOutboundFile(captured, file) {
+            const name = file && file.name != null ? String(file.name) : "";
+            const size = Number(file && file.size) || 0;
+            const item = {
+                key: nextOutboundFileKey(),
+                state: OUTBOUND_STATE_UPLOADING,
+                filename: name,
+                byteLength: size,
+                file
+            };
+            const items = outboundItemsIn(captured);
+            items.push(item);
+            if (!setOutboundAttachmentItems(captured, items)) return Promise.resolve();
+            invalidateOutboundRequestId(captured);
+            if (outboundOwnerIsCurrent(captured)) refreshOutboundFilesCard();
+            // 预检查（服务端仍最终裁决）：先落一张明确的失败卡，绝不静默丢掉这次选择。
+            const tooLarge = size > OUTBOUND_MAX_FILE_BYTES;
+            const overBudget = !tooLarge && outboundBytesIn(captured) > OUTBOUND_MAX_TOTAL_BYTES;
+            if (tooLarge || overBudget) {
+                failOutboundItem(captured, item.key, tooLarge
+                    ? "单个附件不能超过 " + (OUTBOUND_MAX_FILE_BYTES / (1024 * 1024)) + "MiB"
+                    : "通用附件总计不能超过 " + (OUTBOUND_MAX_TOTAL_BYTES / (1024 * 1024)) + "MiB");
+                return Promise.resolve();
+            }
+            const form = typeof FormData === "function" ? new FormData() : null;
+            if (!form) {
+                failOutboundItem(captured, item.key, "当前浏览器不支持附件上传");
+                return Promise.resolve();
+            }
+            form.append("file", file, name);
+            return hostApi()(`/api/mail/conversations/${captured.contactId}/outbound-attachments`, {
+                method: "POST",
+                // headers 整体覆盖宿主的 JSON 默认值，让浏览器自己写 multipart 边界。
+                headers: {},
+                body: form
+            }).then((uploaded) => {
+                const id = uploaded && uploaded.id != null ? String(uploaded.id) : "";
+                if (id === "") {
+                    failOutboundItem(captured, item.key, OUTBOUND_TEXT_FAILED);
+                    return;
+                }
+                applyOutboundItemChange(captured, item.key, () => ({
+                    key: item.key,
+                    state: OUTBOUND_STATE_READY,
+                    filename: uploaded.filename != null ? String(uploaded.filename) : name,
+                    contentType: uploaded.contentType != null ? String(uploaded.contentType) : "",
+                    byteLength: Number(uploaded.byteLength) || size,
+                    sha256: uploaded.sha256 != null ? String(uploaded.sha256) : "",
+                    id,
+                    downloadUrl: uploaded.downloadUrl != null ? String(uploaded.downloadUrl) : ""
+                }));
+            }).catch((err) => {
+                failOutboundItem(captured, item.key, err && err.message ? String(err.message) : OUTBOUND_TEXT_FAILED);
+            });
+        }
+
+        /**
+         * 单条落定：整项换成新对象（ready 项不含 File，原件随落定释放）；key 已不在草稿里
+         * （被移除/草稿被淘汰）时返回 false —— 迟到回包绝不重新插回。
+         */
+        function applyOutboundItemChange(captured, fileKey, build) {
+            const items = outboundItemsIn(captured);
+            const index = items.findIndex((item) => item && String(item.key) === String(fileKey));
+            if (index === -1) return false;
+            items[index] = build(items[index]);
+            if (!setOutboundAttachmentItems(captured, items)) return false;
+            if (outboundOwnerIsCurrent(captured)) refreshOutboundFilesCard();
+            return true;
+        }
+
+        function failOutboundItem(captured, fileKey, message) {
+            const text = message || OUTBOUND_TEXT_FAILED;
+            const changed = applyOutboundItemChange(captured, fileKey, (item) => ({
+                key: item.key,
+                state: OUTBOUND_STATE_FAILED,
+                filename: item.filename,
+                byteLength: 0,
+                error: text
+            }));
+            if (changed && outboundOwnerIsCurrent(captured)) hostShowStatus(text, "error");
+            return changed;
+        }
+
+        /** I-2：移除只删本地 key（不发任何服务器删除请求）；迟到回包因 key 消失而作废。 */
+        function removeOutboundAttachment(fileKey) {
+            const key = currentTargetKey();
+            if (!key || !fileKey) return;
+            const items = currentOutboundAttachmentItems();
+            const index = items.findIndex((item) => item && String(item.key) === String(fileKey));
+            if (index === -1) return;
+            const captured = captureOutboundOwner(key);
+            if (!captured) return;
+            items.splice(index, 1);
+            if (!setOutboundAttachmentItems(captured, items)) return;
+            invalidateOutboundRequestId(captured);
+            refreshOutboundFilesCard();
+        }
+
+        /**
+         * I-3：发送前捕获的草稿语义快照（主题/正文/有序附件 id）。成功回包只在草稿仍等于
+         * 该快照时清除捕获 owner 的那份草稿 —— 发送期间的新编辑/新附件一律保留。
+         */
+        function outboundManualDraftSnapshot(draft) {
+            return {
+                subject: draft && draft.subject != null ? String(draft.subject) : "",
+                html: draft && draft.html != null ? String(draft.html) : "",
+                text: draft && draft.text != null ? String(draft.text) : "",
+                attachmentIds: outboundAttachmentIds(draft).join("\u0000")
+            };
+        }
+
+        function outboundDraftMatchesSnapshot(draft, snapshot) {
+            if (!draft || !snapshot) return false;
+            const now = outboundManualDraftSnapshot(draft);
+            return now.subject === snapshot.subject
+                && now.html === snapshot.html
+                && now.text === snapshot.text
+                && now.attachmentIds === snapshot.attachmentIds;
+        }
+
         // --------------------------------------------------------------
         // 人工回复：草稿 / 采用 / 发送（I-7 保持原业务；T4 增加 outbound 会话回信）
         // --------------------------------------------------------------
@@ -3449,7 +3834,12 @@
                 updatedAt: new Date().toISOString(),
                 meeting,
                 meetingAccountCode,
-                followUpAnchorMailRecordId: anchor
+                followUpAnchorMailRecordId: anchor,
+                // fast-p 07（I-2）：通用附件是同一份草稿的字段，重建写点必须显式保留
+                // （会议填入/采用草稿/程序性重存都不得清附件）。
+                outboundAttachmentDraft: existing && existing.outboundAttachmentDraft
+                    ? existing.outboundAttachmentDraft
+                    : emptyOutboundAttachmentDraft()
             });
         }
 
@@ -3496,7 +3886,11 @@
                     text: values.text,
                     qa: values.qa,
                     requestId,
-                    updatedAt: new Date().toISOString()
+                    updatedAt: new Date().toISOString(),
+                    // fast-p 07（I-2）：程序性取 requestId 不丢附件字段。
+                    outboundAttachmentDraft: existing && existing.outboundAttachmentDraft
+                        ? existing.outboundAttachmentDraft
+                        : emptyOutboundAttachmentDraft()
                 }));
             }
             return requestId;
@@ -4028,6 +4422,16 @@
                 composeEl.querySelectorAll(".mc-editor-tools .button").forEach((button) => {
                     button.disabled = sending;
                 });
+                // fast-p 07：发送期间当前目标的附件增删/下载一并禁用（其他专家不受影响）。
+                composeEl.querySelectorAll('[data-action="mc-remove-attachment"]').forEach((node) => {
+                    node.disabled = sending;
+                    if (sending) node.setAttribute("aria-disabled", "true");
+                    else node.removeAttribute("aria-disabled");
+                });
+                composeEl.querySelectorAll('[data-role="outbound-download"]').forEach((node) => {
+                    if (sending) node.setAttribute("aria-disabled", "true");
+                    else node.removeAttribute("aria-disabled");
+                });
             }
             meetingCardActionsDisabled(sending);
             instance.meeting.sending = sending;
@@ -4096,7 +4500,12 @@
                 meeting: deepCopyMeeting(meeting),
                 meetingAccountCode: meeting ? (instance.manual.targetAccountCode || "") : "",
                 // I-7：应用会议即全文替换为会议正文，跟进锚点必须同时清除。
-                followUpAnchorMailRecordId: null
+                followUpAnchorMailRecordId: null,
+                // fast-p 07（I-2）：会议填入/全量重写正文时通用附件仍是同一份草稿的字段，
+                // 显式保留（会议 ICS 与通用附件互不影响，I-5）。
+                outboundAttachmentDraft: existing && existing.outboundAttachmentDraft
+                    ? existing.outboundAttachmentDraft
+                    : emptyOutboundAttachmentDraft()
             };
             setDraft(key, next);
             return next;
@@ -4320,6 +4729,15 @@
             }
             let requestBody = null;
             let processingId = null;
+            // fast-p 07（I-3）：只有 ready 条目按选择顺序提交；任一 uploading/failed 禁止发送
+            // —— 失败项必须重新选择或移除，绝不静默漏发。
+            const attachmentItems = draftSnapshot ? outboundAttachmentDraftOf(draftSnapshot).items : [];
+            if (attachmentItems.some((item) => !item || item.state !== OUTBOUND_STATE_READY)) {
+                hostShowStatus("附件正在上传或上传失败，请等待上传完成或移除失败附件后再发送", "error");
+                return;
+            }
+            const attachmentIds = outboundAttachmentIds(draftSnapshot);
+            const sentDraftSnapshot = outboundManualDraftSnapshot(draftSnapshot);
             if (!conversationSend) {
                 // 来信路径：既有 processingId adapter，保留 QA/RAG payload（I-8）。
                 requestBody = {
@@ -4347,6 +4765,8 @@
                     requestBody.meeting = deepCopyMeeting(meeting.input);
                     requestBody.previewAttachmentSha256 = sha;
                 }
+                // 07（I-3）：空数组省略字段，兼容未带附件的旧请求形态。
+                if (attachmentIds.length > 0) requestBody.attachmentIds = attachmentIds.slice();
                 processingId = Number(instance.manual.targetProcessingId);
             } else {
                 // 会话回信路径：body 只含 requestId/当前 accountScope/显式锚点/自由正文/确认
@@ -4365,6 +4785,8 @@
                     operatorName: operatorName()
                 };
                 if (followUpAnchorId != null) requestBody.anchorMailRecordId = followUpAnchorId;
+                // 07（I-3）：空数组省略字段，兼容未带附件的旧请求形态。
+                if (attachmentIds.length > 0) requestBody.attachmentIds = attachmentIds.slice();
             }
             // I-2：异步前捕获 draftsMap/owner/key/revision/requestBody；不回调里再取。
             const draftsMap = ensureDraftsMap();
@@ -4377,9 +4799,11 @@
                 return;
             }
             if (inFlightKey) meetingInFlight.add(inFlightKey);
+            // 07（I-3）：带已就绪附件的发送同样锁住当前 owner 的编辑/附件增删；其他专家不受影响。
+            const lockedCompose = !!meeting || attachmentItems.length > 0;
             instance.manual.busy = true;
             setSendButtonDisabled(true);
-            if (meeting) setManualComposeSending(true);
+            if (lockedCompose) setManualComposeSending(true);
             const adapter = conversationSend
                 ? hostFn("mcHostSendConversationRichReply")
                 : hostFn("mcHostSendRichReply");
@@ -4394,9 +4818,9 @@
                     return;
                 }
                 const stillCurrent = currentTargetKey() === key;
-                if (meeting && stillCurrent) setManualComposeSending(false);
+                if (lockedCompose && stillCurrent) setManualComposeSending(false);
                 instance.manual.busy = false;
-                setSendButtonDisabled(false);
+                refreshSendAvailability();
                 if (inFlightKey) meetingInFlight.delete(inFlightKey);
                 if (!sent) return; // 失败/取消保留全部输入（不清草稿、不改 QA、不删附件）
                 if (meeting) {
@@ -4409,6 +4833,8 @@
                         if (stillCurrent) {
                             instance.manual.qa = null;
                             refreshMeetingAttachmentCard();
+                            // 07：该草稿连同通用附件一起被清，卡片同步重建（无文件 → hidden）。
+                            refreshOutboundFilesCard();
                         }
                         if (stillCurrent) afterSuccessfulSend(key);
                     } else if (currentMeeting && stillCurrent) {
@@ -4421,9 +4847,17 @@
                     }
                     return;
                 }
-                deleteDraft(key);
-                instance.manual.qa = null;
-                if (stillCurrent) refreshFollowupAnchorNote();
+                // 07（I-3）：成功只清捕获 owner 里仍等于发送快照的草稿（主题/正文/有序
+                // 附件 id 全等），发送期间的新编辑或新附件一律保留；已切目标/已换草稿
+                // 绝不删当前 owner 的草稿。
+                const capturedDraft = draftsMap.get(key);
+                const cleared = outboundDraftMatchesSnapshot(capturedDraft, sentDraftSnapshot);
+                if (cleared) draftsMap.delete(key);
+                if (stillCurrent && cleared) {
+                    instance.manual.qa = null;
+                    refreshFollowupAnchorNote();
+                    refreshOutboundFilesCard();
+                }
                 afterSuccessfulSend(key);
             }).catch(() => {
                 if (instance.disposed) {
@@ -4431,9 +4865,9 @@
                     return;
                 }
                 const stillCurrent = currentTargetKey() === key;
-                if (meeting && stillCurrent) setManualComposeSending(false);
+                if (lockedCompose && stillCurrent) setManualComposeSending(false);
                 instance.manual.busy = false;
-                setSendButtonDisabled(false);
+                refreshSendAvailability();
                 if (inFlightKey) meetingInFlight.delete(inFlightKey);
             });
         }
@@ -4553,6 +4987,8 @@
             const composeEl = manualComposeEl();
             if (composeEl) {
                 refreshMeetingAttachmentCard();
+                // 07（I-2）：同专家换回复目标时草稿随 targetKey 迁移，已 ready 附件保留。
+                refreshOutboundFilesCard();
             } else {
                 return;
             }
@@ -4600,6 +5036,14 @@
                 : null;
             const data = button ? (button.dataset || {}) : {};
             const action = button ? data.action : "";
+            // 07（I-4）：发送中/已禁用时拦截已发/草稿附件下载锚点的默认跳转。
+            const downloadAnchor = target && typeof target.closest === "function"
+                ? target.closest('[data-role="outbound-download"]')
+                : null;
+            if (downloadAnchor && downloadAnchor.getAttribute && downloadAnchor.getAttribute("aria-disabled") === "true") {
+                if (event && typeof event.preventDefault === "function") event.preventDefault();
+                return;
+            }
             if (action === "mc-select-expert") {
                 const contactId = Number(data.contactId);
                 const item = findSummaryByContactId(contactId);
@@ -4786,6 +5230,15 @@
                 runRichCommand(data.command || "");
                 return;
             }
+            if (action === "mc-upload-attachment") {
+                openOutboundFilePicker();
+                return;
+            }
+            if (action === "mc-remove-attachment") {
+                const card = typeof button.closest === "function" ? button.closest(".outbound-file") : null;
+                removeOutboundAttachment(card && card.dataset ? card.dataset.fileKey : "");
+                return;
+            }
             if (action === "expert-add-tag-open" || action === "expert-remove-tag") {
                 handleExpertTagAction(button, action);
                 return;
@@ -4927,7 +5380,13 @@
         function onChange(event) {
             if (instance.disposed) return;
             const target = event.target;
-            if (!target || !target.id) return;
+            if (!target) return;
+            // S-1/I-1：隐藏 input 的选择结果只入草稿队列；取消选择（零文件）不改任何状态。
+            if (target.getAttribute && target.getAttribute("data-role") === "outbound-file-input") {
+                handleOutboundFileSelection(target);
+                return;
+            }
+            if (!target.id) return;
             const inPopover = host.querySelector && host.querySelector("#mcFilterPopover");
             if (inPopover && inPopover.contains && inPopover.contains(target)) {
                 // 草稿态：不改已生效筛选，只清错误提示
