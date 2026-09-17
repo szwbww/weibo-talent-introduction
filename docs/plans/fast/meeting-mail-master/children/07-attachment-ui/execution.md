@@ -121,3 +121,96 @@ src/test/js/mailboxChatBehavior.test.js:3531  suite "followup 01：人工选择�
 - Unlike amendment A1, this file is NOT in the master plan's aggregate 变更文件清单, so widening child 07 is a real scope addition and needs explicit human approval.
 - Controller action: paused for a HUMAN-approved plan amendment; no verifier was dispatched for this child.
 - Resume from: `b003e4ea7aacb27767f59689392252fe28b3381e`.
+
+## Epoch 2 — RESUMED UNDER AMENDMENT A2
+
+- Approval: HUMAN ask answer 2026-09-17T12:19+08:00 「批准：加该测试文件并放宽那 1 行邻接断言」.
+- Amendment A2: child plan 07 变更文件清单 widened from 4 to 5 files by adding `src/test/js/mailboxChatBehavior.test.js` (修改); plan identity `commit:59e909070529b4b1e8ae62e61d03e67855f479ba` -> `commit:4010bc0074b8534afaf31e968cfd37a6d05dd9a5`; brief re-synced byte-identical.
+- Preflight: branch/worktree/ledger identities match; no staged index changes; product base for this epoch is `82a46dcc32d50cbc352165656842417bc0a569f2` with epoch-1 implementation `b003e4ea7aacb27767f59689392252fe28b3381e` already committed.
+- Scope of this epoch: relax the single adjacency assertion at `src/test/js/mailboxChatBehavior.test.js:3531` to an ordering assertion, then re-run the required commands and commit the epoch-2 implementation.
+
+## Epoch 2 — IMPLEMENTATION
+
+## Execution Result: READY_FOR_VERIFICATION
+
+- Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master/docs/plans/2026-09-16/meeting-mail-07-attachment-ui.md`（与 `children/07-attachment-ui/brief.md` 逐字节相同）
+- Plan SHA-256: `4d598349ecb2e97ffd1342c2098484653ed0c9d1f7eaa5cfb51cb88039510f9e`
+- Execution ID: 上述路径 `@` 上述 SHA-256
+- Execution epoch: RESUME（同路径新内容；A2 提交 `4010bc0` 之前 epoch-1 报告的 `18b9e748…` 属于旧 plan 身份，不构成本身份的执行证据）
+- Approval basis: 人工批准 2026-09-17T12:19+08:00「批准：加该测试文件并放宽那 1 行邻接断言」+ A2 修订提交 `4010bc0`
+- Executor: `Implementer07b`
+- Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master`
+- Target branch: `fast/meeting-mail-master`
+- Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-mail-master@fast/meeting-mail-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-meeting-mail-master`
+- Pre-execution code SHA: `4010bc0074b8534afaf31e968cfd37a6d05dd9a5`（本 epoch 起点的 HEAD，其上为 epoch-1 产品提交 `b003e4ea7aacb27767f59689392252fe28b3381e`）
+- Post-execution code SHA: `ef836c3e13f57bc14696318ec0f8a5c89ab06874`
+- Evidence HEAD: N/A（controller 另行提交 evidence；`execution.md` 与 `ledger.md` 保持未暂存/未提交）
+- Implementation boundary: `82a46dcc32d50cbc352165656842417bc0a569f2..ef836c3e13f57bc14696318ec0f8a5c89ab06874`（child 06 末端代码头 → epoch-2 提交）
+
+### Task Status
+
+| Requirement | Status | Files | Evidence |
+|---|---|---|---|
+| A2 唯一授权改动：`mailboxChatBehavior.test.js:3531` 兄弟邻接断言 → 顺序断言 | IMPLEMENTED | `src/test/js/mailboxChatBehavior.test.js` | 提交 `ef836c3`，+3/-1；该文件由 epoch-1 的 79/80（唯一失败即此断言）变为 80/80 |
+| I-1 仅图标按钮 + 逐字 S-1 DOM | IMPLEMENTED（epoch 1，未改动，本 epoch 复验） | `src/main/resources/static/mailbox-chat.js` | grep 计数 1 处 `data-action="mc-upload-attachment" title="上传附件" aria-label="上传附件"`、1 处 `data-role="outbound-file-input" multiple hidden`；`mailboxOutboundAttachments.test.js` 21/21 内含 I-1 用例 |
+| I-2 `outboundAttachmentDraft` per-draft，owner/item 捕获，移除项不复活 | IMPLEMENTED（epoch 1，未改动） | `src/main/resources/static/mailbox-chat.js` | 全量 JS 944/944；`mailboxOutboundAttachments.test.js` 21/21 |
+| I-3 仅 `ready` 有序提交，uploading/failed 阻断发送，语义变更才失效 requestId | IMPLEMENTED（epoch 1，未改动） | `src/main/resources/static/mailbox-chat.js` | 同上 |
+| I-4 已发仅消费 06 `outboundAttachments` + `contextPath` 前缀 + 转义 | IMPLEMENTED（epoch 1，未改动） | `src/main/resources/static/mailbox-chat.js` | `contextPathValue()` 用在 :2076（ICS 已发卡）与 :3448（通用附件卡）；已发容器 `data-role="outbound-sent-files"` 于 :3488 |
+| I-5 ICS 与通用附件独立卡片、session Map 上限不变、工具栏顺序 B/I/列表/链接/回形针/会议确认/跟进 | IMPLEMENTED（epoch 1，未改动） | `src/main/resources/static/mailbox-chat.js`、`styles.css` | 工具栏 DOM 见 `manualComposeHtml`（B/I/列表/链接/回形针/input/会议/跟进）；`meetingConfirmationIntegration.test.js` 30/30 |
+| S-1/S-2 逐字样式追加、`mailbox-chat.css` 字节不变、`index.html` 缓存键未 bump | IMPLEMENTED（epoch 1，未改动，本 epoch 复验） | `src/main/resources/static/styles.css` | `outbound-upload{width:32px` 命中 1 处；`mailbox-chat.css` sha256 `0fd354027e54ae69f0a2ba76451801b85c6b74cd2792e98a3852cbb14bade17d` 未变；`index.html` 本 epoch 与 epoch 1 均未被修改 |
+
+### Commands（本 epoch 在最终代码状态上全新复跑）
+
+| Command | Result | Evidence |
+|---|---|---|
+| `node --check src/main/resources/static/mailbox-chat.js` | PASS | exit 0（`CHECK_EXIT=0`） |
+| `node --test src/test/js/*.test.js` | PASS | exit 0；tests 944 / suites 183 / pass 944 / fail 0（epoch-1 基线为 944/943/1） |
+| `node --test src/test/js/mailboxChatBehavior.test.js` | PASS | exit 0；tests 80 / pass 80 / fail 0（epoch-1 为 79/80） |
+| `node --test src/test/js/mailboxOutboundAttachments.test.js` | PASS | exit 0；tests 21 / pass 21 / fail 0 |
+| `node --test src/test/js/meetingConfirmationIntegration.test.js` | PASS | exit 0；tests 30 / pass 30 / fail 0 |
+| `git diff --check -- src/` | PASS | exit 0（无空白/冲突标记） |
+| `shasum -a 256 src/main/resources/static/mailbox-chat.css` | PASS | `0fd354027e54ae69f0a2ba76451801b85c6b74cd2792e98a3852cbb14bade17d` == 基线 |
+| `git merge-base --is-ancestor ef836c3 fast/meeting-mail-master` | PASS | exit 0 |
+
+### Changed Files（相对 `4010bc0`）
+
+- `src/test/js/mailboxChatBehavior.test.js` — A2 授权的唯一改动：:3531 邻接断言放宽为顺序断言（+3/-1）。
+
+改动逐字：
+
+```diff
+-        assert.strictEqual(kids[kids.indexOf(note) + 1].getAttribute("class"), "mc-compose-footer", "提示位于会议附件/底部操作区之前");
++        const footerEl = composeEl.querySelector(".mc-compose-footer");
++        assert.ok(footerEl, "底部操作区存在");
++        assert.ok(kids.indexOf(note) < kids.indexOf(footerEl), "提示位于会议附件/底部操作区之前");
+```
+
+- 同文件其余断言全部保留，包括上一行 `assert.strictEqual(kids[kids.indexOf(editorEl) + 1], note, "提示紧随编辑器")`。
+- 未新增/未删除其它任何文件；4 个 epoch-1 产品文件与 1 个 A2 测试文件合计 5 个授权文件，与 brief 变更文件清单一致。
+- `docs/plans/**` 与本 epoch 的 evidence 文件未纳入实现提交；实现提交树仅含上述 1 个文件。
+
+### Invariant / Acceptance Coverage
+
+- I-1：S-1 逐字 DOM（含 `multiple` 且无 `accept`）在源码中唯一存在，仅图标按钮无可见文字。
+- I-2/I-3：由 `mailboxOutboundAttachments.test.js`（21 例，含 pending Promise 切 A/B、上传中移除、迟到回包不复活、两分支 payload、requestId 失效边界）与全量 944 例覆盖。
+- I-4：`contextPathValue()` 前缀同时用于 ICS 已发卡与通用附件卡；已发卡无移除动作、`download` 属性、名称走转义。
+- I-5：ICS 与通用附件字段/卡片独立；工具栏顺序与会议/跟进入口不变；`mailbox-chat.css` 字节不变；未改 `index.html` 缓存键（child 08 职责）。
+- S-2：`outbound-*` 规则仅追加在 `styles.css`；草稿卡位于会议附件卡之后、footer 之前；已发卡位于正文与 ICS 之后。
+
+### Deviations
+
+- 无。唯一改动即 A2 授权的那 1 处断言；未触碰任何其他文件，未改 `mailbox-chat.css`，未 bump `index.html` 缓存键，未 push/merge/rebase/amend。
+
+### Freshness
+
+- Plan identity rechecked: YES（执行前后均为 `4d598349ecb2e97ffd1342c2098484653ed0c9d1f7eaa5cfb51cb88039510f9e`；brief 与 plan 逐字节相同）
+- Worktree identity rechecked: YES（root/branch/git-dir 在 `git add`/`git commit` 前后一致）
+- Reported commits reachable from target branch: YES（`ef836c3` = `fast/meeting-mail-master` HEAD，`merge-base --is-ancestor` 通过；`b003e4e` 仍为其祖先且未被改写）
+- Required commands run this invocation: YES（见命令表，全部在最终代码状态上复跑）
+- Historical evidence used only as baseline: YES（epoch-1 的 944/943/1 仅作对照）
+
+### 未验证（本执行无法覆盖）
+
+- A-1/A-2/A-3/A-4 人工验收清单全部未执行：需要部署中的 `/talent` 实例 + MySQL/ES + 可用 SMTP 沙箱 + 1440px/760px 浏览器会话与 Slow 3G 限速；本执行环境的授权范围仅为上述 JS 命令，故按计划设计留给人工验收。
+- 「浏览器真实下载文件 SHA 与原文件一致」与「刷新后已发附件仍可下载」两条验收：同上，未在真实部署上执行；本 epoch 仅以单测断言 `contextPathValue()` 前缀拼接覆盖其 URL 构造侧。
+- 上述未验证项没有具体报错信息可记录——它们是本执行环境的既有能力边界（无运行中的后端与信源），不是命令失败。
