@@ -11,6 +11,14 @@ spring:
     # 迁移中的 ${...} 是邮件模板变量（数据），不是 Flyway 占位符。
     # 开启替换会导致含 ${} 的正文迁移抛 "No value provided for placeholder expressions"。
     placeholder-replacement: false
+  servlet:
+    multipart:
+      # 04 通用附件上传：单请求一个原件。max-file-size 与
+      # OutboundAttachmentModels.MAX_FILE_BYTES 同为 10MiB（Spring DataSize 的 MB = 1024^2），
+      # max-request-size 留 multipart 边界/头部空间；超限由容器抛
+      # MaxUploadSizeExceededException，经 GlobalExceptionHandler 固定 413。
+      max-file-size: 10MB
+      max-request-size: 11MB
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
