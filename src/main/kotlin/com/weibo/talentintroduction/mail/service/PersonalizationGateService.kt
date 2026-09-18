@@ -35,11 +35,13 @@ class PersonalizationGateService(
     private val mailPlaceholderService: MailPlaceholderService = MailPlaceholderService()
 ) {
     /**
-     * Gates a send on [requiredKeys] restricted to the keys that actually occur in
-     * the raw texts being sent, given [variables]. A key is missing when its value
-     * is null, empty or whitespace-only (I-2: the gate is exact for the blocks and
-     * variants actually selected — keys resolved through their default value never
-     * reach this call because the template gate does not list them as required).
+     * Gates a send on [requiredKeys] restricted to the keys that the raw texts being
+     * sent actually write as a bare `${key}` token ([MailPlaceholderService.requiredKeysIn]),
+     * given [variables]. A key is missing when its value is null, empty or
+     * whitespace-only (I-2: the gate is exact for the blocks and variants actually
+     * selected). [requiredKeys] arrives as the template-wide union, so a key that
+     * another block or variant writes bare must not gate a send whose selected text
+     * resolves it through a non-blank default (M-1/V-1) — such a token never gates.
      * An empty [requiredKeys] disables the gate entirely (I-4).
      */
     fun evaluate(
@@ -50,12 +52,12 @@ class PersonalizationGateService(
         if (requiredKeys.isEmpty()) {
             return PersonalizationGateResult(blocked = false, missingKeys = emptyList())
         }
-        val keysInText = linkedSetOf<String>()
+        val bareKeysInText = linkedSetOf<String>()
         rawTexts.forEach { text ->
-            keysInText.addAll(mailPlaceholderService.placeholderKeysIn(text))
+            bareKeysInText.addAll(mailPlaceholderService.requiredKeysIn(text))
         }
         val missing = requiredKeys.filter { key ->
-            key in keysInText && variables[key].isNullOrBlank()
+            key in bareKeysInText && variables[key].isNullOrBlank()
         }
         return PersonalizationGateResult(blocked = missing.isNotEmpty(), missingKeys = missing)
     }

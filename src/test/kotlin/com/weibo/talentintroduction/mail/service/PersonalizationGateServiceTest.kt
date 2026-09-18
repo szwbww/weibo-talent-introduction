@@ -65,9 +65,10 @@ class PersonalizationGateServiceTest {
     }
 
     @Test
-    fun `evaluate blocks a listed required key written with a default that has no value`() {
-        // Legacy shape kept intact: when a caller still lists a key as required, a blank
-        // value blocks the send even though the token carries a default.
+    fun `evaluate ignores a template-wide required key that the selected text defaults`() {
+        // V-1/M-1: the caller passes the template-wide required union, which lists a key
+        // as soon as ANY block or variant writes it bare. A selected text that resolves
+        // that same key through a non-blank default must still send.
         val result = service.evaluate(
             rawTexts = listOf(
                 "Topic: \${researchFields|Science}",
@@ -75,6 +76,21 @@ class PersonalizationGateServiceTest {
             ),
             variables = mapOf("researchFields" to "", "institution" to "Oxford"),
             requiredKeys = listOf("researchFields", "institution", "expertName")
+        )
+
+        assertFalse(result.blocked)
+        assertTrue(result.missingKeys.isEmpty())
+    }
+
+    @Test
+    fun `evaluate still blocks a bare token of a key defaulted elsewhere in the send`() {
+        val result = service.evaluate(
+            rawTexts = listOf(
+                "Topic: \${researchFields|Science}",
+                "Body: \${researchFields}"
+            ),
+            variables = mapOf("researchFields" to ""),
+            requiredKeys = listOf("researchFields")
         )
 
         assertTrue(result.blocked)
@@ -85,8 +101,8 @@ class PersonalizationGateServiceTest {
     fun `evaluate collects missing keys across multiple raw texts in required order`() {
         val result = service.evaluate(
             rawTexts = listOf(
-                "Subject: \${recentWorkTitle|Untitled}",
-                "Body: \${primaryResearchField|N/A}"
+                "Subject: \${recentWorkTitle}",
+                "Body: \${primaryResearchField}"
             ),
             variables = mapOf("recentWorkTitle" to "", "primaryResearchField" to ""),
             requiredKeys = listOf("recentWorkTitle", "primaryResearchField")

@@ -424,7 +424,7 @@ class IntroductionMailComposerTest {
     )
 
     @Test
-    fun `compose throws PersonalizationGateException when required key fell back`() {
+    fun `compose throws PersonalizationGateException when a selected bare key has no value`() {
         stubEnabledAccount()
         Mockito.`when`(
             templateService.renderByCode(
@@ -437,7 +437,7 @@ class IntroductionMailComposerTest {
                 subject = "Intro Subject",
                 body = "Intro Body",
                 mailType = "INTRODUCTION",
-                rawTexts = listOf("Topic \${recentWorkTitle|Untitled}"),
+                rawTexts = listOf("Topic \${recentWorkTitle}"),
                 templateId = 10
             )
         )
@@ -452,7 +452,7 @@ class IntroductionMailComposerTest {
     }
 
     @Test
-    fun `compose throws PersonalizationGateException for template id path`() {
+    fun `compose throws PersonalizationGateException for a bare key on the template id path`() {
         stubEnabledAccount()
         Mockito.`when`(
             templateService.render(
@@ -465,7 +465,7 @@ class IntroductionMailComposerTest {
                 subject = "Custom intro",
                 body = "Custom body",
                 mailType = "INTRODUCTION",
-                rawTexts = listOf("Focus \${primaryResearchField|N/A}"),
+                rawTexts = listOf("Focus \${primaryResearchField}"),
                 templateId = 7
             )
         )

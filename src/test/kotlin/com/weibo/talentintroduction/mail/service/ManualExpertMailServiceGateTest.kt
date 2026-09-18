@@ -268,7 +268,7 @@ class ManualExpertMailServiceGateTest {
     // ── I-3 / I-5: required variable falling back blocks the send with the exact keys ──
 
     @Test
-    fun `gate blocks send when required key falls back to default`() {
+    fun `gate blocks send when a selected bare key has no value`() {
         val sparseExpert = expert.copy(recentWorkTitles = null)
         Mockito.`when`(expertSearchService.findByOrcidId("0000-0001-2345-6789", ExpertIndexLevel.CANDIDATE))
             .thenReturn(sparseExpert)
@@ -285,7 +285,7 @@ class ManualExpertMailServiceGateTest {
                 subject = "Intro Subject",
                 body = "Body",
                 mailType = "INTRODUCTION",
-                rawTexts = listOf("Subject: \${recentWorkTitle|Untitled}")
+                rawTexts = listOf("Subject: \${recentWorkTitle}")
             )
         )
         Mockito.`when`(mailComposeTemplateService.effectiveRequiredKeys(10L))
