@@ -119,7 +119,7 @@
 ## 现状审计
 
 ### `expert_material_status` 与新状态 API
-- Schema/mapping：V111 的旧代码 CHECK；计划 02 的 V128 增加五个独立 `REQ_*` 代码并提供新 GET/PUT。UI 不直接读写 MySQL。
+- Schema/mapping：V111 的旧代码 CHECK；计划 02 的 V129 增加五个独立 `REQ_*` 代码并提供新 GET/PUT。UI 不直接读写 MySQL。
 - Write paths：旧 `ExpertMaterialService.updateStatus` 保存旧 7；计划 02 的 `updateRequestStatus` 保存新 5；UI 的唯一新状态写是 `app.js:saveExpertMaterialStatus` 改调新 PUT。弹窗确认零状态写。
 - Read paths：`app.js:loadContactDetail` 原来误读 `/materials`；本计划改新 GET。`mailbox-chat.js` 弹窗每次打开也读新 GET；`ExpertMaterialService.renderPendingMaterials`/`RagProcessContextResolver` 只读旧代码，不受 UI 影响。
 - Interaction points：操作栏 PUT → 再次打开弹窗 GET 应反映最新状态；状态 GET → 弹窗过滤 → 富文本草稿 → 既有发送入口。来源：计划 02 的 I-1/I-4。

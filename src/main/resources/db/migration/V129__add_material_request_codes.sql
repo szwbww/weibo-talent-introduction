@@ -1,5 +1,10 @@
 -- ============================================================================
--- V128 expert_material_status 目录代码域扩展（fast-p 02 材料索取五项）
+-- V129 expert_material_status 目录代码域扩展（fast-p 02 材料索取五项）
+--
+-- 版本号说明：本迁移原为 V128，与并行合并的 batch-research-direction-filter 分支的
+-- V128__add_research_direction_filter_to_batch_send_task_config.sql 撞号；后者已于
+-- 2026-09-18 10:57 应用到生产（multi_ai_kit_schema_history V128 = 4521c9c8…），
+-- 故本文件改号 V129，内容不变。
 --
 -- 只替换 chk_expert_material_code：
 --   * 原样保留 V111 的旧 7 代码（CV / PASSPORT / DEGREE / EMPLOYMENT /

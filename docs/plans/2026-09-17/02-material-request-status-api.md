@@ -12,13 +12,13 @@
 
 ### Invariant I-1：新旧状态隔离
 - Rule：新目录代码严格为 `REQ_PUBLICATIONS, REQ_PROJECTS, REQ_PATENTS, REQ_AWARDS, REQ_DEGREES`，按此顺序返回；旧 7 代码与已有行原样保留。新旧目录均使用同一稀疏表，但从不互相推断状态。
-- Applies to：V128 约束、`ExpertMaterialService` 新读写、旧 `updateStatus` 与 `renderPendingMaterials`。
+- Applies to：V129 约束、`ExpertMaterialService` 新读写、旧 `updateStatus` 与 `renderPendingMaterials`。
 - Violation consequence：旧「出版清单已提供」可能误判为新「代表性论文副本已提供」，或旧 `CV` 状态丢失导致 RAG 错索简历。
 - 来源：original；`RagProcessContextResolver.kt:31` 已复核旧 `CV` 读取。
 
 ### Invariant I-2：三态稀疏语义
 - Rule：新 5 项缺行 = `PENDING`；`PROVIDED/DECLINED` 各存一行；改回 `PENDING` 删除该行。数据库 CHECK 仍只允许两种存储状态，唯一键仍为 `(expert_contact_id, material_code)`。
-- Applies to：新 PUT、复用的状态保存分支、V128。
+- Applies to：新 PUT、复用的状态保存分支、V129。
 - Violation consequence：状态重置失败或同一材料出现两份状态。
 - 来源：V111、`ExpertMaterialService.kt:70-122` 现有语义。
 
@@ -38,9 +38,9 @@
 
 ### MySQL `expert_material_status`
 - Schema/mapping：`V111__create_expert_material_status.sql:7-20`：主键、contact 外键、代码 CHECK 固定旧 7 项、状态 CHECK 仅 `PROVIDED/DECLINED`、contact+code 唯一键、时间列；不建初始状态行。`ExpertMaterialStatusRecord.kt:11-20` 字段与表一致。
-- Write paths（`rg 'expert_material_status|ExpertMaterialStatusRepository|findAllByExpertContactId|findByExpertContactIdAndMaterialCode'` 对 main/migration/scripts 复核）：① V111 建表/约束，无数据行；② `ExpertMaterialService.updateStatus:89-122` 经仓储 `save` 或 `deleteById` 写旧 7 状态；③ 本计划新增 `updateRequestStatus` 经同一私有保存分支写新 5；④ V128 只扩大代码 CHECK，不删/改行。没有发现其它对该表的 DML 脚本或服务写路径。
+- Write paths（`rg 'expert_material_status|ExpertMaterialStatusRepository|findAllByExpertContactId|findByExpertContactIdAndMaterialCode'` 对 main/migration/scripts 复核）：① V111 建表/约束，无数据行；② `ExpertMaterialService.updateStatus:89-122` 经仓储 `save` 或 `deleteById` 写旧 7 状态；③ 本计划新增 `updateRequestStatus` 经同一私有保存分支写新 5；④ V129 只扩大代码 CHECK，不删/改行。没有发现其它对该表的 DML 脚本或服务写路径。
 - Read paths：① `ExpertMaterialService.listMaterials:70-81` 按旧目录返回七项；② `ExpertMaterialService.renderPendingMaterials:130-138` 只按旧目录组装编号；③ `MailVariableService:158,274-277` 将②注入 `${pendingExpertMaterials}`；④ `RagProcessContextResolver:31-49` 直接读取 `CV`；⑤ 本计划新 GET 按新目录返回五项。旧 `ExpertMaterialController` 查的是 `expert_document`/附件，不读这张状态表。
-- Interaction points：新 PUT → 新 GET → 操作栏与弹窗；旧 PUT → 旧变量和 RAG 保持原值；V128 CHECK → 新 PUT 可写项目/奖项且旧行仍合法。
+- Interaction points：新 PUT → 新 GET → 操作栏与弹窗；旧 PUT → 旧变量和 RAG 保持原值；V129 CHECK → 新 PUT 可写项目/奖项且旧行仍合法。
 
 ### HTTP 路由
 - `ExpertContactManagementController.kt:243-253` 的旧 `listMaterials` 已去掉 `@GetMapping`，仅留直接调用方法；旧 PUT `/materials/{materialCode}` 仍在。
@@ -49,7 +49,7 @@
 ## 实现方案
 
 ### T1：数据库代码域扩展（I-1、I-2）
-- 文件：`src/main/resources/db/migration/V128__add_material_request_codes.sql`。
+- 文件：`src/main/resources/db/migration/V129__add_material_request_codes.sql`。
 - 新迁移只替换 `chk_expert_material_code`，允许 V111 旧 7 代码 + 上述 `REQ_*` 5 代码；不得改唯一键、状态 CHECK 或历史数据。当前最高迁移为 `V127__add_outbound_attachments_snapshot.sql`（`rg --files ... | sort -V`）。
 - 研究门禁：在项目 MySQL Flyway 集成测试里实际执行新迁移并检查新旧 12 代码、非法代码拒绝；若数据库方言的 CHECK 删除语法不符，先调整此迁移并重跑，不直接部署。
 
@@ -66,13 +66,13 @@
 
 ### T3：针对性验证（I-1 至 I-4）
 - 文件：`src/test/kotlin/com/weibo/talentintroduction/campaign/service/ExpertMaterialRequestServiceTest.kt`、`src/test/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementControllerTest.kt`、`src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt`。
-- 覆盖缺行五项、逐项转换/删除、非法 code/status 无写、旧 `CV`/旧 7 目录不变、GET/PUT 路由契约、V128 CHECK 实施。现有 Controller 测试是直接调用方法的单测；新路由须在该文件加 `MockMvcBuilders.standaloneSetup(controller)` 的 GET/PUT 路径与 JSON 断言，不能以直接方法调用冒充 HTTP 映射验证。不得把上传文件分页对象作为五项状态测试数据。
+- 覆盖缺行五项、逐项转换/删除、非法 code/status 无写、旧 `CV`/旧 7 目录不变、GET/PUT 路由契约、V129 CHECK 实施。现有 Controller 测试是直接调用方法的单测；新路由须在该文件加 `MockMvcBuilders.standaloneSetup(controller)` 的 GET/PUT 路径与 JSON 断言，不能以直接方法调用冒充 HTTP 映射验证。不得把上传文件分页对象作为五项状态测试数据。
 
 ## 变更文件清单
 
 | # | 文件 | 变更 |
 |---|---|---|
-| 1 | `src/main/resources/db/migration/V128__add_material_request_codes.sql` | 扩展 CHECK，零数据改写 |
+| 1 | `src/main/resources/db/migration/V129__add_material_request_codes.sql` | 扩展 CHECK，零数据改写 |
 | 2 | `src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertMaterialService.kt` | 新五项目录及状态读写 |
 | 3 | `src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt` | 新独立 GET/PUT |
 | 4 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ExpertMaterialRequestServiceTest.kt` | 新状态服务测试 |
@@ -93,7 +93,7 @@
 ## 人工验收清单
 
 ### A-1：初始五项
-- 前置条件：测试环境已执行 V128；选择一个有专家联系记录、从未设置 `REQ_*` 的 contactId；用登录会话访问 API。
+- 前置条件：测试环境已执行 V129；选择一个有专家联系记录、从未设置 `REQ_*` 的 contactId；用登录会话访问 API。
 - 操作步骤：1. GET `/api/expert-contacts/{contactId}/material-requests`。
 - 预期结果：HTTP 200、五项顺序为代表性论文/科研项目/专利/荣誉奖项/学位，五项均为 `PENDING`，正文分别等于 T2 所列英文。
 - 覆盖：I-1、I-3、需求结果 1。
@@ -121,3 +121,4 @@
 ## 修正记录
 
 - A1（`docs/plans/fast/material-request/ledger.md`）：T2 在 `ExpertContactManagementController.kt` 新增两个路由方法（含 1 个 import，共 14 行）后，`OperatorStatusWriteSeamGuardTest.kt:69` 钉死的 `NoiseSite(ExpertContactManagementController.kt, 564, "operatorStatus = operatorStatus")` 位移到 578，守卫测试报「排除名单已失效」。按 K-line-number-guard-breaks-on-any-insertion，将该守卫文件列入授权（第 7 个），仅更新被移动的行号 564→578，路径与片段文字不变；不新增行为、不改断言语义。审批：HUMAN:2026-09-18T09:12+08:00。
+- A2（生产发布阻断修复，2026-09-18）：本计划的迁移文件 `V128__add_material_request_codes.sql` 改号为 `V129__add_material_request_codes.sql`，SQL 内容不变。原因：并行合并的 `docs/plans/2026-09-18/batch-research-direction-filter.md` 使用同一版本号 V128，其文件 `V128__add_research_direction_filter_to_batch_send_task_config.sql`（sha256 `4521c9c8…`）已于 2026-09-18 10:57 应用到生产（release `815687aa`，`multi_ai_kit_schema_history` V128 行已占用），HEAD 因此出现重复 V128，发布在迁移校验阶段以 `migration checksum mismatch: V128` 中止。同步改动：`FlywayMigrationIntegrationTest.kt` 的 15 处「迁移到最新」断言与 2 个用例名 128→129。本计划与 03 的文档引用同步为 V129；`docs/plans/fast/material-request/children/02-status-api/` 下的执行/校验日志仍按原 V128 记录，不改写。审批：HUMAN:2026-09-18（发布任务内确认「重命名为 V129 + 提交 + 重新发布」）。
