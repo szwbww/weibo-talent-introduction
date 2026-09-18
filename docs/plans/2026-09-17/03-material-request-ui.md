@@ -265,8 +265,10 @@ return `
 | 4 | `src/main/resources/static/index.html` | 11 个静态资源同键 bump |
 | 5 | `src/test/js/contactHeadLayout.test.js` | 五项操作栏与接口回归 |
 | 6 | `src/test/js/materialRequestIntegration.test.js` | 新交互集成用例 |
+| 7 | `src/test/js/mailboxOutboundAttachments.test.js` | A2 扩权：工具栏枚举断言加入新入口 |
+| 8 | `src/test/js/meetingConfirmationIntegration.test.js` | A2 扩权：`tools.length` 与相邻索引断言 |
 
-共 6 文件、1 个前端子系统。现有 `app.js`/`index.html`/`styles.css` 在编写计划时已有用户改动；执行仅基于当前内容增量编辑，不覆盖其它差异。
+共 8 文件（A2 将第 7、8 个列入授权）、1 个前端子系统。现有 `app.js`/`index.html`/`styles.css` 在编写计划时已有用户改动；执行仅基于当前内容增量编辑，不覆盖其它差异。
 
 ## 验收标准
 
@@ -312,3 +314,7 @@ return `
 - 覆盖：S-1、S-2、I-1、I-5、必须保持上传/会议。
 
 人工验收开始时再从此节导出 `03-material-request-ui-acceptance.md`，现在不创建。
+
+## 修正记录
+
+- A2（`docs/plans/fast/material-request/ledger.md`）：S-2 要求「材料索取」入口位于 `.mc-editor-tools` 内且处于会议按钮与跟进按钮之间，而两份未授权测试把该工具栏当作封闭列表断言（`mailboxOutboundAttachments.test.js:1559` 的 `deepStrictEqual` 列表、`meetingConfirmationIntegration.test.js:1425` 的 `tools.length` 与相邻索引），二者又都在本计划的定向命令集内，因此不扩权则该命令必红。将这 2 份测试列入授权（第 7、8 个），只改断言以反映新增入口，不改变 S-2 的 DOM 契约与任何生产语义。审批：HUMAN:2026-09-18T09:40+08:00。
