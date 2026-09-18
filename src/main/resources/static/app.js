@@ -8042,7 +8042,7 @@ async function saveExpertMaterialStatus(button) {
     const items = wrapper.querySelectorAll(".dropdown-item");
     items.forEach((item) => { item.disabled = true; });
     try {
-        const materials = await api(`/api/expert-contacts/${contactId}/materials/${materialCode}`, {
+        const materials = await api(`/api/expert-contacts/${contactId}/material-requests/${materialCode}`, {
             method: "PUT",
             body: JSON.stringify({ status })
         });
@@ -8060,7 +8060,7 @@ async function loadContactDetail(contactId) {
         loadMailSendOptions(),
         api(`/api/expert-contacts/${contactId}/documents`).catch(() => []),
         api(`/api/operator-action-logs?expertContactId=${contactId}&pageSize=50&pageOffset=0`).catch(() => ({ records: [] })),
-        api(`/api/expert-contacts/${contactId}/materials`).catch((error) => {
+        api(`/api/expert-contacts/${contactId}/material-requests`).catch((error) => {
             showStatus("材料状态加载失败: " + error.message, "error");
             return null;
         }),

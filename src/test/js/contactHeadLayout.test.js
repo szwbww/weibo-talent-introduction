@@ -311,15 +311,14 @@ describe("contact head layout C (P2 S-8)", () => {
 });
 
 // ── plan 02: expert material tags (I2-1..I2-8, S2-1..S2-4) ──
-
+// plan 03（I-1）：操作栏数据源改为 02 的五项 material-requests 接口。夹具逐字沿用
+// 02 记录的真实响应形状（含 requestText），据此证明该行只显示中文短标签。
 const MATERIAL_ITEMS = [
-    { code: "CV", label: "简历", status: "PROVIDED" },
-    { code: "PASSPORT", label: "护照", status: "PENDING" },
-    { code: "DEGREE", label: "学位", status: "DECLINED" },
-    { code: "EMPLOYMENT", label: "工作", status: "PENDING" },
-    { code: "PUBLICATIONS", label: "出版", status: "PROVIDED" },
-    { code: "PATENTS", label: "专利", status: "PENDING" },
-    { code: "RESEARCH", label: "研究", status: "DECLINED" }
+    { code: "REQ_PUBLICATIONS", label: "代表性论文", status: "PROVIDED", requestText: "Copies of your representative publications" },
+    { code: "REQ_PROJECTS", label: "科研项目", status: "PENDING", requestText: "Supporting documents for research projects" },
+    { code: "REQ_PATENTS", label: "专利", status: "DECLINED", requestText: "Patent certificates" },
+    { code: "REQ_AWARDS", label: "荣誉奖项", status: "PENDING", requestText: "Certificates of honors and awards" },
+    { code: "REQ_DEGREES", label: "学位", status: "PENDING", requestText: "Bachelor’s, master’s, and doctoral degree certificates" }
 ];
 
 function extractMaterialStateMap() {
@@ -335,14 +334,16 @@ describe("expert material tags (plan 02)", () => {
         const headerEnd = fnSource.indexOf("const banner = renderManualAttentionBanner(contact);");
         const headerTemplate = fnSource.slice(headerStart, headerEnd);
 
-        const materialsFetch = fnSource.indexOf("/api/expert-contacts/${contactId}/materials");
-        assert.ok(materialsFetch !== -1, "loadContactDetail must request the materials endpoint");
+        const materialsFetch = fnSource.indexOf("/api/expert-contacts/${contactId}/material-requests");
+        assert.ok(materialsFetch !== -1, "loadContactDetail must request the five-item material-requests endpoint");
         assert.ok(fnSource.indexOf("showStatus(\"材料状态加载失败: \" + error.message, \"error\")") > materialsFetch,
             "materials fetch must carry its own catch that shows one load-failure status");
         assert.ok(fnSource.includes("renderExpertMaterialRow(materials, contact.id)"),
             "loadContactDetail must render the material row from the fetched array");
         assert.ok(fnSource.includes('Array.isArray(materials) ? renderExpertMaterialRow(materials, contact.id) : ""'),
             "material row must be guarded by Array.isArray so failures render nothing");
+        assert.ok(!fnSource.includes("/materials"),
+            "loadContactDetail must never read the /materials upload-paging endpoint (I-1)");
         assert.ok(headerTemplate.indexOf('id="contactHeadMoreRow"') !== -1, "header template must keep contactHeadMoreRow");
         assert.ok(headerTemplate.indexOf("renderExpertMaterialRow(materials, contact.id)") > headerTemplate.indexOf('id="contactHeadMoreRow"'),
             "material row must be placed after contactHeadMoreRow");
@@ -354,15 +355,15 @@ describe("expert material tags (plan 02)", () => {
         assert.ok(paStart !== -1, "loadContactDetail must use Promise.all");
         const paEnd = fnSource.indexOf("]);", paStart) + 3;
         const promiseAllExpr = fnSource.slice(paStart, paEnd);
-        assert.ok(promiseAllExpr.includes("/api/expert-contacts/${contactId}/materials"),
-            "materials must be part of the parallel load");
+        assert.ok(promiseAllExpr.includes("/api/expert-contacts/${contactId}/material-requests"),
+            "material-requests must be part of the parallel load");
 
         const calls = [];
         const sandbox = {
             contactId: 7,
             api: async (url) => {
                 calls.push(url);
-                if (url.endsWith("/materials")) throw new Error("materials down");
+                if (url.endsWith("/material-requests")) throw new Error("materials down");
                 if (url.includes("/documents")) return [];
                 if (url.includes("/operator-action-logs")) return { records: [] };
                 return { contact: { id: 7, expertName: "X" } };
@@ -376,13 +377,13 @@ describe("expert material tags (plan 02)", () => {
 
         assert.strictEqual(detail.contact.id, 7, "detail must still resolve when materials fails");
         assert.strictEqual(materials, null, "failed materials must resolve to null");
-        assert.ok(calls.includes("/api/expert-contacts/7/materials"), "materials endpoint must be called");
+        assert.ok(calls.includes("/api/expert-contacts/7/material-requests"), "material-requests endpoint must be called");
         assert.ok(calls.includes("status:材料状态加载失败: materials down:error"), "one load-failure status must be shown");
         const statusCalls = calls.filter((c) => typeof c === "string" && c.startsWith("status:"));
         assert.strictEqual(statusCalls.length, 1, "exactly one error status for the materials failure");
     });
 
-    it("renderExpertMaterialRow renders exactly 7 ordered Chinese tags with tri-state visuals (I2-1/I2-4/S2-1/S2-2/S2-3)", () => {
+    it("renderExpertMaterialRow renders exactly 5 ordered Chinese tags with tri-state visuals (I-1/S-1)", () => {
         const sandbox = {
             escapeHtml: (v) => String(v == null ? "" : v)
         };
@@ -391,15 +392,17 @@ describe("expert material tags (plan 02)", () => {
 
         const html = sandbox.renderExpertMaterialRow(MATERIAL_ITEMS, 42);
 
-        // I2-1: exactly 7 tags, no 8th, no English request body
-        assert.strictEqual((html.match(/class="expert-material-tag is-/g) || []).length, 7, "exactly 7 material tags");
-        assert.ok(!html.includes("Your latest English"), "English request text must not be rendered");
+        // I-1/S-1: exactly the five API items, no 6th tag, no English request body on this row
+        assert.strictEqual((html.match(/class="expert-material-tag is-/g) || []).length, 5, "exactly 5 material tags");
+        MATERIAL_ITEMS.forEach((item) => {
+            assert.ok(!html.includes(item.requestText), `API requestText must never reach the action row: ${item.code}`);
+        });
         assert.ok(!html.includes("requestText"), "request text key must not be rendered");
         assert.ok(!html.includes("编辑材料"), "no edit-materials button allowed");
         assert.ok(!html.includes("保存材料"), "no save-materials button allowed");
 
-        // order follows the API array: 简历 护照 学位 工作 出版 专利 研究
-        const order = ["简历", "护照", "学位", "工作", "出版", "专利", "研究"];
+        // order follows the API array: 代表性论文 科研项目 专利 荣誉奖项 学位
+        const order = ["代表性论文", "科研项目", "专利", "荣誉奖项", "学位"];
         const positions = order.map((label) => html.indexOf(">" + label + "<"));
         for (let i = 0; i < positions.length; i++) {
             assert.ok(positions[i] !== -1, order[i] + " tag must exist");
@@ -413,30 +416,34 @@ describe("expert material tags (plan 02)", () => {
             "材料 label must precede the tag container");
         assert.ok(html.includes('class="expert-material-tags" aria-label="专家材料状态"'), "tag container must carry the aria label");
 
-        // I2-4 tri-state visuals, one per state
-        const cvIdx = html.indexOf('data-material-code="CV"');
-        const cvTag = html.slice(cvIdx - 220, cvIdx + 320);
-        assert.ok(cvTag.includes('class="expert-material-tag is-provided"'), "PROVIDED must render is-provided");
-        assert.ok(cvTag.includes('expert-material-tag-mark" aria-hidden="true">✓</span>'), "PROVIDED must render the ✓ mark");
-        assert.ok(cvTag.includes('aria-label="简历：已提供，点击修改"'), "aria-label must carry Chinese material and status");
+        // I2-4 tri-state visuals, one per state（按 tag 切块，避免相邻标签窗口互相污染）
+        const chunks = html.split('<span class="dropdown">').slice(1);
+        const chunkFor = (code) => {
+            const chunk = chunks.find((part) => part.includes(`data-material-code="${code}"`));
+            assert.ok(chunk, `${code} tag must exist`);
+            return chunk;
+        };
 
-        const passportIdx = html.indexOf('data-material-code="PASSPORT"');
-        const passportTag = html.slice(passportIdx - 220, passportIdx + 320);
-        assert.ok(passportTag.includes('class="expert-material-tag is-pending"'), "PENDING must render is-pending");
-        assert.ok(!passportTag.includes("expert-material-tag-mark"), "PENDING must not render a mark");
-        assert.ok(passportTag.includes('aria-label="护照：待提供，点击修改"'), "PENDING aria-label must be 待提供");
+        const publicationsTag = chunkFor("REQ_PUBLICATIONS");
+        assert.ok(publicationsTag.includes('class="expert-material-tag is-provided"'), "PROVIDED must render is-provided");
+        assert.ok(publicationsTag.includes('expert-material-tag-mark" aria-hidden="true">✓</span>'), "PROVIDED must render the ✓ mark");
+        assert.ok(publicationsTag.includes('aria-label="代表性论文：已提供，点击修改"'), "aria-label must carry Chinese material and status");
 
-        const degreeIdx = html.indexOf('data-material-code="DEGREE"');
-        const degreeTag = html.slice(degreeIdx - 220, degreeIdx + 320);
-        assert.ok(degreeTag.includes('class="expert-material-tag is-declined"'), "DECLINED must render is-declined");
-        assert.ok(degreeTag.includes('expert-material-tag-mark" aria-hidden="true">⊘</span>'), "DECLINED must render the ⊘ mark");
-        assert.ok(degreeTag.includes('aria-label="学位：暂不愿提供，点击修改"'), "DECLINED aria-label must be 暂不愿提供");
+        const projectsTag = chunkFor("REQ_PROJECTS");
+        assert.ok(projectsTag.includes('class="expert-material-tag is-pending"'), "PENDING must render is-pending");
+        assert.ok(!projectsTag.includes("expert-material-tag-mark"), "PENDING must not render a mark");
+        assert.ok(projectsTag.includes('aria-label="科研项目：待提供，点击修改"'), "PENDING aria-label must be 待提供");
+
+        const patentsTag = chunkFor("REQ_PATENTS");
+        assert.ok(patentsTag.includes('class="expert-material-tag is-declined"'), "DECLINED must render is-declined");
+        assert.ok(patentsTag.includes('expert-material-tag-mark" aria-hidden="true">⊘</span>'), "DECLINED must render the ⊘ mark");
+        assert.ok(patentsTag.includes('aria-label="专利：暂不愿提供，点击修改"'), "DECLINED aria-label must be 暂不愿提供");
 
         // S2-3: each tag has exactly the three fixed menu items
-        assert.strictEqual((html.match(/data-material-action="set-status"/g) || []).length, 21, "7 tags x 3 status items");
-        assert.strictEqual((html.match(/>待提供</g) || []).length, 7, "待提供 menu item in every tag");
-        assert.strictEqual((html.match(/>✓ 已提供</g) || []).length, 7, "✓ 已提供 menu item in every tag");
-        assert.strictEqual((html.match(/>⊘ 暂不愿提供</g) || []).length, 7, "⊘ 暂不愿提供 menu item in every tag");
+        assert.strictEqual((html.match(/data-material-action="set-status"/g) || []).length, 15, "5 tags x 3 status items");
+        assert.strictEqual((html.match(/>待提供</g) || []).length, 5, "待提供 menu item in every tag");
+        assert.strictEqual((html.match(/>✓ 已提供</g) || []).length, 5, "✓ 已提供 menu item in every tag");
+        assert.strictEqual((html.match(/>⊘ 暂不愿提供</g) || []).length, 5, "⊘ 暂不愿提供 menu item in every tag");
 
         // I2-6/S2-1: material DOM uses data-material-action only, no inline styles
         assert.ok(!html.includes("data-action="), "material DOM must never use the generic data-action attribute");
@@ -455,7 +462,7 @@ describe("expert material tags (plan 02)", () => {
             { disabled: false, isConnected: true },
             { disabled: false, isConnected: true }
         ];
-        const tag = { dataset: { materialCode: "CV" } };
+        const tag = { dataset: { materialCode: "REQ_PUBLICATIONS" } };
         const row = { dataset: { contactId: "7" }, outerHTML: "old-row" };
         const wrapper = {
             querySelector: (sel) => (sel === ".expert-material-tag" ? tag : null),
@@ -479,16 +486,17 @@ describe("expert material tags (plan 02)", () => {
         resolveApi(MATERIAL_ITEMS);
         await pending;
 
-        assert.strictEqual(captured.url, "/api/expert-contacts/7/materials/CV", "PUT URL must be exact");
+        assert.strictEqual(captured.url, "/api/expert-contacts/7/material-requests/REQ_PUBLICATIONS", "PUT URL must be exact");
         assert.strictEqual(captured.options.method, "PUT", "method must be PUT");
         assert.deepStrictEqual(JSON.parse(captured.options.body), { status: "PROVIDED" }, "body must be the raw status");
         assert.ok(row.outerHTML.includes('id="expertMaterialRow"'), "success must replace the row with the full render");
-        assert.strictEqual((row.outerHTML.match(/class="expert-material-tag is-/g) || []).length, 7,
-            "replaced row must re-render all 7 tags from the PUT response");
+        assert.strictEqual((row.outerHTML.match(/class="expert-material-tag is-/g) || []).length, 5,
+            "replaced row must re-render all 5 tags from the PUT response");
         assert.strictEqual(statusCalls, 0, "success must never call showStatus");
 
         const saveSource = extractFn("saveExpertMaterialStatus");
         assert.ok(!saveSource.includes("showStatus"), "saveExpertMaterialStatus itself must not show success status");
+        assert.ok(!saveSource.includes("/materials"), "saveExpertMaterialStatus must use the material-requests route only (I-1)");
     });
 
     it("saveExpertMaterialStatus keeps old DOM and restores buttons on failure (I2-3)", async () => {
@@ -503,7 +511,7 @@ describe("expert material tags (plan 02)", () => {
             { disabled: false, isConnected: true },
             { disabled: false, isConnected: true }
         ];
-        const tag = { dataset: { materialCode: "CV" } };
+        const tag = { dataset: { materialCode: "REQ_PUBLICATIONS" } };
         const row = { dataset: { contactId: "7" }, outerHTML: "old-row" };
         const wrapper = {
             querySelector: (sel) => (sel === ".expert-material-tag" ? tag : null),

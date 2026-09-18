@@ -502,6 +502,7 @@
                 summaryEpoch: -1
             },
             followup: { open: false, targetKey: null, selectedId: null, selectedCopy: null, trigger: null },
+            materialRequest: { open: false, identity: null, items: [], seq: 0, trigger: null },
             popoverOpen: false,
             loadOlderBusy: false,
             pendingPrompt: null,
@@ -1606,6 +1607,7 @@
         function teardownConversationSubViews() {
             closeManageOverlay({ restoreFocus: false });
             closeFollowUpDialog({ restoreFocus: false });
+            closeMaterialRequestDialog({ restoreFocus: false });
             if (instance.workbench.instance) {
                 try { instance.workbench.instance.unmount(); } catch (e) { /* noop */ }
                 instance.workbench.instance = null;
@@ -2785,6 +2787,11 @@
                 `<span class="${mcCls("icon")}" aria-hidden="true">▦</span>会议确认</button>`;
         }
 
+        // S-2：材料索取入口复用 `.button`，固定位于会议按钮之后、跟进按钮之前。
+        function materialRequestTriggerHtml() {
+            return `<button class="button material-request-trigger" type="button" data-action="mc-open-material-request">材料索取</button>`;
+        }
+
         // I-2：草稿卡时间改由 preview 的真实 UTC 值经统一中文北京 formatter 显示
         // （宿主 formatBeijingMeetingRange）；不再回显 input.zoneId 的 IANA 串或英文日期。
         function meetingCardMetaText(meeting) {
@@ -2851,6 +2858,8 @@
                 editorContent = escapeText(editorText);
             }
             const meetingTrigger = ui ? meetingTriggerHtml() : "";
+            // S-2：材料索取紧随会议按钮之后，仍在跟进按钮之前。
+            const materialTrigger = ui ? materialRequestTriggerHtml() : "";
             // S-1：跟进按钮只在当前专家确有成功发件时渲染，固定紧随既有会议按钮之后，
             // class 严格为 button（不新增按钮 class、不改会议按钮顺序）。
             const followUpButton = Number(instance.selectedSummary && instance.selectedSummary.sentCount) > 0
@@ -2873,7 +2882,7 @@
                         <button class="button" type="button" data-action="mc-rich-command" data-command="createLink">链接</button>
                         <button class="button outbound-upload" type="button" data-action="mc-upload-attachment" title="上传附件" aria-label="上传附件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l10.6-10.6a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l9.19-9.19"/></svg></button>
                         <input type="file" data-role="outbound-file-input" multiple hidden>
-                        ${meetingTrigger}${followUpButton}
+                        ${meetingTrigger}${materialTrigger}${followUpButton}
                     </div>
                     <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorContent}</div>
                     ${anchorNote}
@@ -3056,8 +3065,9 @@
                 instance.conversation.contact = loaded;
                 instance.manage.open = true;
                 instance.manage.trigger = trigger;
-                // 唯一 portal 只承载一个 overlay：管理面板打开前关闭跟进弹窗（不触碰草稿状态）。
+                // 唯一 portal 只承载一个 overlay：管理面板打开前关闭跟进弹窗与材料索取（不触碰草稿状态）。
                 closeFollowUpDialog({ restoreFocus: false });
+                closeMaterialRequestDialog({ restoreFocus: false });
                 const root = ensurePortalRoot();
                 if (!root) {
                     hostShowStatus("管理面板挂载失败", "error");
@@ -4061,6 +4071,7 @@
             if (!key) return;
             // 唯一 portal 只承载一个 overlay：先关管理面板，避免互相覆盖后状态失同步。
             closeManageOverlay({ restoreFocus: false });
+            closeMaterialRequestDialog({ restoreFocus: false });
             const root = ensurePortalRoot();
             if (!root) {
                 hostShowStatus("跟进邮件面板挂载失败", "error");
@@ -4196,6 +4207,288 @@
                 if (trigger && typeof trigger.focus === "function") trigger.focus();
             }
             instance.followup.trigger = null;
+        }
+
+        // --------------------------------------------------------------
+        // 材料索取（fast-p 03 · I-2..I-4/S-2）：工具栏入口 → 原生 dialog 选择五项 →
+        // 固定英文引言 + 无编号项目符号追加到当前人工草稿。只读 02 的五项接口、
+        // 只写当前草稿；不改材料状态、不发邮件、不碰主题/QA/会议快照/附件。
+        // --------------------------------------------------------------
+
+        const MATERIAL_REQUEST_LEAD = "To proceed, please provide the following supporting materials:";
+
+        // 状态说明的中文短标签与操作栏同一语义（S-1）；英文正文只取响应 requestText。
+        const MATERIAL_REQUEST_STATE_LABELS = {
+            PENDING: "待提供",
+            PROVIDED: "已提供",
+            DECLINED: "暂不愿提供"
+        };
+
+        function materialRequestTriggerHtml() {
+            return `<button class="button material-request-trigger" type="button" data-action="mc-open-material-request">材料索取</button>`;
+        }
+
+        function materialRequestDialogEl() {
+            const root = instance.elements.portalRoot;
+            if (!root || !root.querySelector) return null;
+            return root.querySelector(".material-request-dialog") || null;
+        }
+
+        function materialRequestOptionInputs(dialog) {
+            const node = dialog || materialRequestDialogEl();
+            if (!node || typeof node.querySelectorAll !== "function") return [];
+            return Array.prototype.slice.call(node.querySelectorAll(".material-request-option input"));
+        }
+
+        function materialRequestDialogHtml() {
+            return `
+                <dialog class="material-request-dialog" aria-labelledby="materialRequestTitle">
+                    <header class="material-request-head">
+                        <h2 id="materialRequestTitle">选择需要提供的材料</h2>
+                        <button class="material-request-close" type="button" data-action="mc-close-material-request" aria-label="关闭材料索取">×</button>
+                    </header>
+                    <div class="material-request-body">
+                        <p class="material-request-error" role="alert" hidden></p>
+                        <p class="material-request-heading">材料 <span data-role="material-request-count">已选 0 项</span></p>
+                        <div class="material-request-options"></div>
+                        <p class="material-request-heading">正文预览</p>
+                        <div class="material-request-paper" aria-live="polite">
+                            <p>${escapeText(MATERIAL_REQUEST_LEAD)}</p>
+                            <ul data-role="material-request-preview-list"></ul>
+                        </div>
+                    </div>
+                    <footer class="material-request-actions">
+                        <button class="button" type="button" data-action="mc-close-material-request">取消</button>
+                        <button class="button primary" type="button" data-action="mc-apply-material-request" disabled>确认并填入回复</button>
+                    </footer>
+                </dialog>`;
+        }
+
+        /** I-3：打开时捕获的会话身份（owner/contact/target/编辑器 revision）。 */
+        function materialRequestIdentity() {
+            const contactId = Number(instance.selectedContactId);
+            return {
+                ownerKey: conversationCacheKey(instance.user, instance.conversation.accountScope || "", contactId),
+                contactId,
+                targetKey: currentTargetKey(),
+                editorRevision: Number(instance.meeting.editorRevision)
+            };
+        }
+
+        function materialRequestIdentityMatches(captured) {
+            if (!captured) return false;
+            const now = materialRequestIdentity();
+            return now.ownerKey === captured.ownerKey
+                && now.contactId === captured.contactId
+                && now.targetKey === captured.targetKey
+                && now.editorRevision === captured.editorRevision;
+        }
+
+        function setMaterialRequestError(message) {
+            const dialog = materialRequestDialogEl();
+            const node = dialog ? dialog.querySelector(".material-request-error") : null;
+            if (!node) return;
+            if (message) {
+                node.textContent = String(message);
+                node.hidden = false;
+            } else {
+                node.textContent = "";
+                node.hidden = true;
+            }
+        }
+
+        /** 每项一个 checkbox：仅 PENDING 可勾且默认勾选；label/requestText 只作文本节点（I-4）。 */
+        function renderMaterialRequestOptions(items) {
+            const dialog = materialRequestDialogEl();
+            const container = dialog ? dialog.querySelector(".material-request-options") : null;
+            const doc = docRoot();
+            if (!container || !doc) return;
+            container.innerHTML = "";
+            const list = Array.isArray(items) ? items : [];
+            list.forEach((item, index) => {
+                const status = String(item.status || "PENDING");
+                const selectable = status === "PENDING";
+                const label = doc.createElement("label");
+                label.className = "material-request-option";
+                const input = doc.createElement("input");
+                input.setAttribute("type", "checkbox");
+                input.setAttribute("aria-label", String(item.label == null ? "" : item.label));
+                input.dataset.materialIndex = String(index);
+                input.checked = selectable;
+                input.disabled = !selectable;
+                const name = doc.createElement("span");
+                name.textContent = String(item.label == null ? "" : item.label);
+                const state = doc.createElement("small");
+                state.textContent = MATERIAL_REQUEST_STATE_LABELS[status] || status;
+                label.appendChild(input);
+                label.appendChild(name);
+                label.appendChild(state);
+                container.appendChild(label);
+            });
+            renderMaterialRequestPreview();
+        }
+
+        /** 选中项严格按接口目录顺序（DOM 顺序即目录顺序），只取本次勾选的项（I-2）。 */
+        function selectedMaterialRequestItems() {
+            const items = instance.materialRequest.items || [];
+            return materialRequestOptionInputs()
+                .filter((input) => input.checked === true)
+                .map((input) => {
+                    const index = Number(input.dataset ? input.dataset.materialIndex : NaN);
+                    return Number.isInteger(index) ? items[index] : null;
+                })
+                .filter((item) => !!item);
+        }
+
+        function renderMaterialRequestPreview() {
+            const dialog = materialRequestDialogEl();
+            if (!dialog) return;
+            const selected = selectedMaterialRequestItems();
+            const count = dialog.querySelector('[data-role="material-request-count"]');
+            if (count) count.textContent = `已选 ${selected.length} 项`;
+            const list = dialog.querySelector('[data-role="material-request-preview-list"]');
+            const doc = docRoot();
+            if (list && doc) {
+                list.innerHTML = "";
+                selected.forEach((item) => {
+                    const li = doc.createElement("li");
+                    li.textContent = String(item.requestText == null ? "" : item.requestText);
+                    list.appendChild(li);
+                });
+            }
+            const apply = dialog.querySelector('[data-action="mc-apply-material-request"]');
+            if (apply) apply.disabled = selected.length === 0;
+        }
+
+        async function openMaterialRequestDialog() {
+            if (instance.manual.mode !== "inbound" || !currentTargetKey()) return;
+            const composeEl = manualComposeEl();
+            const inputs = manualInputs(composeEl);
+            if (!inputs) return;
+            // open 前先保存当前编辑器值；捕获 owner/contact/target/editorRevision（I-3）
+            saveDraftFromInputs();
+            const identity = materialRequestIdentity();
+            if (!identity.targetKey) return;
+            // 唯一 portal 只承载一个 overlay：先关管理面板与跟进弹窗，避免状态失同步。
+            closeManageOverlay({ restoreFocus: false });
+            closeFollowUpDialog({ restoreFocus: false });
+            const root = ensurePortalRoot();
+            if (!root) {
+                hostShowStatus("材料索取面板挂载失败", "error");
+                return;
+            }
+            const seq = instance.materialRequest.seq + 1;
+            instance.materialRequest.open = true;
+            instance.materialRequest.seq = seq;
+            instance.materialRequest.identity = identity;
+            instance.materialRequest.items = [];
+            instance.materialRequest.trigger = host.querySelector
+                ? host.querySelector('[data-action="mc-open-material-request"]')
+                : null;
+            root.innerHTML = materialRequestDialogHtml();
+            const dialog = materialRequestDialogEl();
+            if (!dialog) return;
+            if (typeof dialog.showModal === "function") {
+                try {
+                    dialog.showModal();
+                } catch (e) {
+                    dialog.setAttribute("open", "");
+                }
+            } else {
+                dialog.setAttribute("open", "");
+            }
+            renderMaterialRequestOptions([]);
+            // I-2：每次打开都为当前 contact 重读五项；不做任何本地缓存复用。
+            let data = null;
+            let failure = "";
+            try {
+                data = await hostApi()(`/api/expert-contacts/${identity.contactId}/material-requests`);
+            } catch (e) {
+                failure = e && e.message ? e.message : "";
+            }
+            // 迟到响应：目标切换、弹窗关闭或身份/revision 变化一律不写（I-3）。
+            if (instance.disposed || !instance.materialRequest.open || instance.materialRequest.seq !== seq) return;
+            if (!materialRequestIdentityMatches(instance.materialRequest.identity)) {
+                closeMaterialRequestDialog({ restoreFocus: false });
+                return;
+            }
+            if (failure || !Array.isArray(data)) {
+                instance.materialRequest.items = [];
+                renderMaterialRequestOptions([]);
+                setMaterialRequestError("材料状态加载失败: " + (failure || "响应格式异常"));
+                return;
+            }
+            instance.materialRequest.items = data;
+            renderMaterialRequestOptions(data);
+        }
+
+        /** I-3/I-4：确认只把本次选中项追加到当前编辑器，并走既有编辑器输入入口保存。 */
+        function applyMaterialRequestFromDialog() {
+            const dialog = materialRequestDialogEl();
+            if (!dialog || !instance.materialRequest.open) return false;
+            if (!materialRequestIdentityMatches(instance.materialRequest.identity)) {
+                closeMaterialRequestDialog({ restoreFocus: false });
+                return false;
+            }
+            const selected = selectedMaterialRequestItems();
+            if (!selected.length) return false;
+            const composeEl = manualComposeEl();
+            const inputs = manualInputs(composeEl);
+            const doc = docRoot();
+            if (!inputs || !doc) return false;
+            const lead = doc.createElement("p");
+            lead.textContent = MATERIAL_REQUEST_LEAD;
+            const list = doc.createElement("ul");
+            selected.forEach((item) => {
+                const li = doc.createElement("li");
+                li.textContent = String(item.requestText == null ? "" : item.requestText);
+                list.appendChild(li);
+            });
+            inputs.editor.appendChild(lead);
+            inputs.editor.appendChild(list);
+            // 只走既有保存入口（主题/QA/会议快照/附件原样保留），不发任何请求。
+            handleManualComposeInput(inputs.editor);
+            closeMaterialRequestDialog({ restoreFocus: false });
+            if (typeof inputs.editor.focus === "function") inputs.editor.focus();
+            return true;
+        }
+
+        /** 只关闭弹窗：不触碰草稿、材料状态、主题、QA、会议快照或附件（I-2）。 */
+        function closeMaterialRequestDialog(options) {
+            const opts = options || {};
+            const wasOpen = instance.materialRequest.open;
+            instance.materialRequest.open = false;
+            // 使在途 GET 失效（迟到响应不得再渲染/填入）
+            instance.materialRequest.seq += 1;
+            instance.materialRequest.identity = null;
+            instance.materialRequest.items = [];
+            const dialog = materialRequestDialogEl();
+            if (dialog) {
+                if (typeof dialog.close === "function") {
+                    try {
+                        dialog.close();
+                    } catch (e) { /* noop */ }
+                }
+                if (dialog.hasAttribute && dialog.hasAttribute("open")) dialog.removeAttribute("open");
+            }
+            const root = instance.elements.portalRoot;
+            if (root) root.innerHTML = "";
+            if (wasOpen && opts.restoreFocus !== false) {
+                const trigger = instance.materialRequest.trigger;
+                if (trigger && typeof trigger.focus === "function") trigger.focus();
+            }
+            instance.materialRequest.trigger = null;
+        }
+
+        function onMaterialRequestOptionChange(event) {
+            if (instance.disposed) return;
+            const target = event ? event.target : null;
+            const dialog = materialRequestDialogEl();
+            if (!dialog || !target || typeof dialog.contains !== "function" || !dialog.contains(target)) return;
+            const tag = target.tagName ? String(target.tagName).toLowerCase() : "";
+            if (tag !== "input") return;
+            setMaterialRequestError("");
+            renderMaterialRequestPreview();
         }
 
         // --------------------------------------------------------------
@@ -4393,6 +4686,7 @@
             if (String(prevAccount || "") === String(nextAccount || "")) return;
             // 跟进候选绑定账号范围：范围变化即关闭弹窗（草稿缓存不清，I-7）。
             closeFollowUpDialog({ restoreFocus: false });
+            closeMaterialRequestDialog({ restoreFocus: false });
             teardownMeetingViews();
         }
 
@@ -5202,6 +5496,10 @@
                 openMeetingDialog();
                 return;
             }
+            if (action === "mc-open-material-request") {
+                openMaterialRequestDialog();
+                return;
+            }
             if (action === "mc-open-followup") {
                 openFollowUpDialog();
                 return;
@@ -5292,10 +5590,23 @@
                 applyFollowUpFromDialog();
                 return;
             }
+            if (action === "mc-close-material-request") {
+                closeMaterialRequestDialog({ restoreFocus: true });
+                return;
+            }
+            if (action === "mc-apply-material-request") {
+                applyMaterialRequestFromDialog();
+                return;
+            }
         }
 
         function onPortalKeyDown(event) {
             if (instance.disposed) return;
+            if (event.key === "Escape" && instance.materialRequest.open) {
+                event.preventDefault();
+                closeMaterialRequestDialog({ restoreFocus: true });
+                return;
+            }
             if (event.key === "Escape" && instance.followup.open) {
                 event.preventDefault();
                 closeFollowUpDialog({ restoreFocus: true });
@@ -5563,6 +5874,7 @@
             bindFilterEvents();
             ensurePortalRoot();
             listenPortal("click", onClickPortal);
+            listenPortal("change", onMaterialRequestOptionChange);
             listenPortal("keydown", onPortalKeyDown);
             bindDetails(host);
             setRefined(true);
