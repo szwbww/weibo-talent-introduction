@@ -12,8 +12,8 @@
 - Fast-p handoff: docs/plans/fast/university-email-template-main/human-review-handoff.md (sha256 bdd20bc2714f05a6cf7b0a0c9365c1b126051ea77ce03284d3ee4b9d64ebf033)
 - Master base: 7f7b3a821f09d4255dc735c1e7b96eacf9c32164
 - Final code head: 2541ef8f91411a086ca0cda30cf796ed3b155cc4
-- Evidence parent before next commit: 4bf51ad1a3ac34483731ff2b86e185d36691cb0f
-- Previous evidence commit: 4bf51ad1a3ac34483731ff2b86e185d36691cb0f
+- Evidence parent before next commit: 7251f27f72087a3b029d28b8c1b0edc036d04293
+- Previous evidence commit: 7251f27f72087a3b029d28b8c1b0edc036d04293
 - Branch: fast/university-email-template-main
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-university-email-template-main
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
@@ -30,4 +30,4 @@
 - Repair code head: 2541ef8f91411a086ca0cda30cf796ed3b155cc4
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Human must run manual acceptance (master A-1..A-4, child1 A-1..A-4, child2 A-1..A-3) at boundary 2541ef8f91411a086ca0cda30cf796ed3b155cc4 and report per-item results plus sign-off
+- Blocker/next action: Human must run master manual acceptance A-1..A-4 at boundary 2541ef8f91411a086ca0cda30cf796ed3b155cc4 and report per-item results plus sign-off
