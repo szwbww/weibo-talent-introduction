@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-09-18/00-university-email-template-main.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
 - Master plan: docs/plans/2026-09-18/00-university-email-template-main.md (sha256 411628a2d0106a44ba725467edfdf518fbb0a0eb6c3b5e5753dbf6a676f2b60e)
 - Governing master identity: sha256 411628a2d0106a44ba725467edfdf518fbb0a0eb6c3b5e5753dbf6a676f2b60e; commit d51c89105fb5a1f3cf6a1d3a3d71612b8898fc07
 - Invoked master identity: SAME (sha256 411628a2d0106a44ba725467edfdf518fbb0a0eb6c3b5e5753dbf6a676f2b60e)
@@ -11,23 +11,23 @@
 - Fast-p ledger: docs/plans/fast/university-email-template-main/ledger.md (sha256 cb1dce65e78b1171d2f59b323ce823fcb4ddd3cd3259e47616991fe5eed5f886)
 - Fast-p handoff: docs/plans/fast/university-email-template-main/human-review-handoff.md (sha256 bdd20bc2714f05a6cf7b0a0c9365c1b126051ea77ce03284d3ee4b9d64ebf033)
 - Master base: 7f7b3a821f09d4255dc735c1e7b96eacf9c32164
-- Final code head: decdb28dfe6431c9f238b76fa64fc9a1aad7939e
-- Evidence parent before next commit: 066c741365a6ae8546ed3011cfa67d4f6cb7dfb8
-- Previous evidence commit: N/A
+- Final code head: 2541ef8f91411a086ca0cda30cf796ed3b155cc4
+- Evidence parent before next commit: 4bf51ad1a3ac34483731ff2b86e185d36691cb0f
+- Previous evidence commit: 4bf51ad1a3ac34483731ff2b86e185d36691cb0f
 - Branch: fast/university-email-template-main
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-university-email-template-main
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
 - Discovery evidence: SELECTED; exactly one registered worktree; fast-p ledger/handoff READY_FOR_HUMAN_REVIEW; 2 terminal children; valid base/code ancestry.
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_reviewer
+- Reviewer: AggregateReviewerEpoch2
 - Reviewer attempt: 1
-- Machine result: FAIL
-- Machine report epoch: docs/plans/review/university-email-template-main/machine-verification.md#epoch-1
-- Repair artifact: docs/plans/fix/00-university-email-template-main/repair.md (sha256 25a2607267d48e8e7f1da86aa0c27dd03e5146c4fce3451b9dba86d73fc8184a), DRAFT_READY
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Machine result: PASS
+- Machine report epoch: docs/plans/review/university-email-template-main/machine-verification.md#epoch-2
+- Repair artifact: docs/plans/fix/00-university-email-template-main/repair.md (sha256 25a2607267d48e8e7f1da86aa0c27dd03e5146c4fce3451b9dba86d73fc8184a), executed under amendment A1
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: human-originated `$execute-p .../docs/plans/fix/00-university-email-template-main/repair.md` invocation 2026-09-18; amendment A1 approved by human instruction `授权 继续` 2026-09-18
+- Repair executor: Main (omp session, controller context)
+- Repair code head: 2541ef8f91411a086ca0cda30cf796ed3b155cc4
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Await explicit $execute-p approval for the recorded repair artifact.
+- Blocker/next action: Human must run manual acceptance (master A-1..A-4, child1 A-1..A-4, child2 A-1..A-3) at boundary 2541ef8f91411a086ca0cda30cf796ed3b155cc4 and report per-item results plus sign-off
