@@ -18333,18 +18333,28 @@ function meetingCalendarSafeLink(value) {
 // ── 渲染（S-2 DOM 合同：骨架常量为逐字文本，动态文本一律 textContent） ────
 
 const MEETING_CALENDAR_CHROME_HTML =
-    '<div class="calendar-toolbar"><h2 data-role="calendar-month"></h2><div class="calendar-actions">'
-    + '<button class="button" data-calendar-action="previous">上月</button>'
+    '<div class="calendar-overview">'
+    + '<div class="calendar-metric"><span class="calendar-overview-icon" aria-hidden="true">▦</span><div>本月会议<strong><span data-role="month-count">—</span><small>场</small></strong></div></div>'
+    + '<div class="calendar-metric"><i class="calendar-dot" aria-hidden="true"></i><div>待召开<strong><span data-role="upcoming-count">—</span><small>场</small></strong></div></div>'
+    + '<div class="calendar-metric"><i class="calendar-dot green" aria-hidden="true"></i><div>今日会议<strong><span data-role="today-count">—</span><small>场</small></strong></div></div>'
+    + '<p>支持邮件邀请与手动新增排期<br><span>时间统一显示为北京时间（UTC+08:00）</span></p></div>'
+    + '<div class="calendar-layout"><section class="calendar-panel" aria-label="会议排期">'
+    + '<div class="calendar-toolbar"><div class="calendar-month-controls"><h2 data-role="calendar-month"></h2>'
+    + '<button class="button" data-calendar-action="previous" aria-label="上个月">‹</button>'
+    + '<button class="button" data-calendar-action="next" aria-label="下个月">›</button>'
     + '<button class="button" data-calendar-action="today">今天</button>'
-    + '<button class="button" data-calendar-action="next">下月</button>'
-    + '<button class="button" data-calendar-action="month" aria-pressed="true">月历</button>'
-    + '<button class="button" data-calendar-action="list" aria-pressed="false">列表</button>'
-    + '<label><input type="checkbox" data-role="show-cancelled">显示已取消</label>'
-    + '<button class="button primary" data-calendar-action="create">新增排期</button>'
+    + '</div><div class="calendar-actions"><button class="button primary" data-calendar-action="create">＋ 手动新增排期</button>'
+    + '<div class="calendar-segmented" role="group" aria-label="日历显示方式">'
+    + '<button class="button" data-calendar-action="month" aria-pressed="true">月视图</button>'
+    + '<button class="button" data-calendar-action="list" aria-pressed="false">排期列表</button></div>'
     + '</div></div>'
-    + '<p class="calendar-note" data-role="calendar-status" role="status"></p>'
+    + '<div class="calendar-filter-bar"><p class="calendar-note" data-role="calendar-status" role="status"></p>'
+    + '<label class="checkbox-row"><input type="checkbox" data-role="show-cancelled">显示已取消排期</label></div>'
     + '<div class="calendar-scroll"><div class="calendar-grid" data-role="calendar-grid"></div></div>'
-    + '<div class="calendar-list" data-role="calendar-list" hidden></div>';
+    + '<div class="calendar-list" data-role="calendar-list" hidden></div>'
+    + '<div class="calendar-footer"><span><i class="calendar-dot" aria-hidden="true"></i>已有排期</span><span>点击会议查看详情或修改日期</span></div></section>'
+    + '<aside class="calendar-agenda"><h2>本月会议安排</h2><div data-role="calendar-agenda"></div>'
+    + '<p class="calendar-agenda-note">排期与收发件箱同步</p></aside></div>';
 
 // 日期格骨架：格内先放日期号，再循环追加事件按钮骨架（S-2 数据循环只重复同一骨架）。
 const MEETING_CALENDAR_DAY_OPEN =
@@ -18427,8 +18437,58 @@ function renderMeetingCalendarList(listEl, events) {
 function meetingCalendarStatusText() {
     if (meetingCalendarState.loading) return "排期加载中…";
     if (meetingCalendarState.error) return "排期加载失败";
-    const count = (meetingCalendarState.events || []).length;
+    const count = meetingCalendarMonthEvents(meetingCalendarState.events).length;
     return `${meetingCalendarMonthLabel()}共 ${count} 场排期${meetingCalendarState.showCancelled ? "（含已取消）" : ""}`;
+}
+
+/** 网格含相邻月份；月统计、列表与侧栏只取和当前北京月份相交的排期。 */
+function meetingCalendarMonthEvents(events, anchor) {
+    const month = anchor || meetingCalendarMonthAnchor();
+    const from = Date.UTC(month.year, month.month - 1, 1) - MEETING_CALENDAR_OFFSET_MS;
+    const to = Date.UTC(month.year, month.month, 1) - MEETING_CALENDAR_OFFSET_MS;
+    return (events || []).filter((event) => Date.parse(event.startUtc) < to && Date.parse(event.endUtc) > from)
+        .slice().sort((a, b) => Date.parse(a.startUtc) - Date.parse(b.startUtc));
+}
+
+function meetingCalendarOverview(events, now) {
+    const instant = now || new Date();
+    const today = meetingCalendarBeijingParts(instant).dateKey;
+    const active = (events || []).filter((event) => !meetingCalendarIsCancelled(event));
+    return {
+        month: active.length,
+        upcoming: active.filter((event) => Date.parse(event.startUtc) > instant.getTime()).length,
+        today: active.filter((event) => {
+            const start = meetingCalendarBeijingParts(event.startUtc);
+            const end = meetingCalendarBeijingParts(new Date(Date.parse(event.endUtc) - 1));
+            return start && end && start.dateKey <= today && end.dateKey >= today;
+        }).length
+    };
+}
+
+function renderMeetingCalendarOverview(root, events) {
+    const counts = meetingCalendarOverview(events);
+    ["month", "upcoming", "today"].forEach((key) => {
+        const el = root.querySelector(`[data-role="${key}-count"]`);
+        if (el) el.textContent = meetingCalendarState.loading || meetingCalendarState.error ? "—" : String(counts[key]);
+    });
+    const agenda = root.querySelector('[data-role="calendar-agenda"]');
+    if (!agenda) return;
+    if (meetingCalendarState.loading || meetingCalendarState.error || !events.length) {
+        agenda.innerHTML = '<p class="calendar-agenda-empty"></p>';
+        agenda.querySelector("p").textContent = meetingCalendarState.loading ? "排期加载中…"
+            : meetingCalendarState.error ? "排期加载失败，请刷新重试" : "本月暂无会议安排";
+        return;
+    }
+    agenda.innerHTML = '<article class="calendar-agenda-card"><time></time><h3></h3><p></p><button class="button" data-event-id=""></button></article>'.repeat(events.length);
+    agenda.querySelectorAll(".calendar-agenda-card").forEach((card, index) => {
+        const event = events[index];
+        card.querySelector("time").textContent = meetingCalendarEventTimeText(event, "list");
+        card.querySelector("h3").textContent = meetingCalendarEventExpertLabel(event);
+        card.querySelector("p").textContent = "北京时间（UTC+08:00）";
+        const button = card.querySelector("button");
+        button.setAttribute("data-event-id", String(event.id));
+        button.textContent = meetingCalendarIsCancelled(event) ? "已取消 · 查看详情" : "变更日期 ↗";
+    });
 }
 
 function renderMeetingCalendar() {
@@ -18454,8 +18514,10 @@ function renderMeetingCalendar() {
     const gridEl = root.querySelector('[data-role="calendar-grid"]');
     const listEl = root.querySelector('[data-role="calendar-list"]');
     meetingCalendarSetHidden(listEl, monthView);
+    const monthEvents = meetingCalendarMonthEvents(meetingCalendarState.events);
+    renderMeetingCalendarOverview(root, monthEvents);
     if (monthView) renderMeetingCalendarGrid(gridEl, meetingCalendarGridCells(), meetingCalendarState.events);
-    else renderMeetingCalendarList(listEl, meetingCalendarState.events);
+    else renderMeetingCalendarList(listEl, monthEvents);
 }
 
 /** I-1/I-3：进入 Tab 或写成功后才回读；旧响应按 seq 丢弃。 */

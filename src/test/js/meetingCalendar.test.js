@@ -79,6 +79,8 @@ const CALENDAR_FUNCTIONS = [
     "meetingCalendarEventDateSpan",
     "meetingCalendarEventsByDate",
     "meetingCalendarIsCancelled",
+    "meetingCalendarMonthEvents",
+    "meetingCalendarOverview",
     "meetingCalendarEventExpertLabel",
     "meetingCalendarEventTimeText",
     "meetingCalendarSafeLink",
@@ -390,10 +392,16 @@ describe("I-1/I-4: API adapter 分页、摘要与外链白名单", () => {
 });
 
 describe("S-2: 渲染骨架常量", () => {
-    it("toolbar/status/列表容器骨架与计划逐字一致", () => {
+    it("预览对齐后的 toolbar 保留全部操作、统计栏及会议侧栏", () => {
         const { sandbox } = createSandbox();
         const chrome = vm.runInContext("MEETING_CALENDAR_CHROME_HTML", sandbox);
-        assert.ok(chrome.includes(BRIEF_S2_DOM[0]), "toolbar 骨架必须逐字");
+        ["previous", "next", "today", "create", "month", "list"].forEach((action) => {
+            assert.strictEqual(countOccurrences(chrome, `data-calendar-action="${action}"`), 1);
+        });
+        ["month-count", "upcoming-count", "today-count", "calendar-agenda", "show-cancelled"].forEach((role) => {
+            assert.strictEqual(countOccurrences(chrome, `data-role="${role}"`), 1);
+        });
+        assert.ok(chrome.includes('class="checkbox-row"'));
         assert.ok(chrome.includes(BRIEF_S2_DOM[1]), "status 骨架必须逐字");
         assert.ok(chrome.includes('<div class="calendar-scroll"><div class="calendar-grid" data-role="calendar-grid"></div></div>'),
             "月历滚动容器必须存在（日期格由渲染期填充）");
@@ -413,6 +421,27 @@ describe("S-2: 渲染骨架常量", () => {
         [dayOpen, eventSkeleton].forEach((skeleton) => {
             assert.ok(!/\d{4}-\d{2}-\d{2}/.test(skeleton), "骨架不得硬编码样例日期");
             assert.ok(!skeleton.includes("style="), "骨架不得使用 inline style");
+        });
+    });
+});
+
+describe("预览对齐：真实排期统计", () => {
+    it("北京月份交界只计相交排期，取消项不影响有效统计，午夜结束不多算一天", () => {
+        const { sandbox } = createSandbox();
+        const result = vm.runInContext(`(() => {
+            const events = [
+                { id: 1, startUtc: '2026-08-31T15:00:00Z', endUtc: '2026-08-31T16:00:00Z' },
+                { id: 2, startUtc: '2026-08-31T15:30:00Z', endUtc: '2026-08-31T16:30:00Z' },
+                { id: 3, startUtc: '2026-09-17T01:00:00Z', endUtc: '2026-09-17T02:00:00Z' },
+                { id: 4, startUtc: '2026-09-17T03:00:00Z', endUtc: '2026-09-17T04:00:00Z', status: 'CANCELLED' },
+                { id: 5, startUtc: '2026-09-30T16:00:00Z', endUtc: '2026-09-30T17:00:00Z' },
+                { id: 6, startUtc: '2026-09-16T15:00:00Z', endUtc: '2026-09-16T16:00:00Z' }
+            ];
+            const month = meetingCalendarMonthEvents(events.reverse(), { year: 2026, month: 9 });
+            return { ids: month.map(e => e.id), counts: meetingCalendarOverview(month, new Date('2026-09-17T00:00:00Z')) };
+        })()`, sandbox);
+        assert.deepStrictEqual(JSON.parse(JSON.stringify(result)), {
+            ids: [2, 6, 3, 4], counts: { month: 3, upcoming: 1, today: 1 }
         });
     });
 });
