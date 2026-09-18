@@ -198,3 +198,70 @@ test at src/test/js/meetingConfirmationIntegration.test.js:1420:5
 
 - **PLAN_CONFLICT.** Ask the human/controller to authorize, by amending child 03's change list, the assertion-only update of `src/test/js/mailboxOutboundAttachments.test.js` (toolbar list gains `mc-open-material-request` before `mc-open-followup`) and `src/test/js/meetingConfirmationIntegration.test.js` (`tools.length` 7 → 8, `tools[6]` → `mc-open-material-request`, new `tools[7]` → `mc-open-followup`).
 - After that authorization, re-run the brief's required command set plus the full suite; expect `tests 1003 / pass 1003 / fail 0` (990 baseline + 13 new) and `git diff --check` clean, then hand the child to `verify-p`.
+
+---
+
+# 03-ui — Epoch 2 (A2 amendment applied)
+
+Recorded by: Implementer03b (fast-p child 03 implementer, epoch 2)
+Date: 2026-09-18 (Asia/Shanghai)
+Append-only: nothing above this line was modified.
+
+## Execution result: READY_FOR_VERIFICATION
+
+- Plan (canonical): `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-material-request/docs/plans/2026-09-17/03-material-request-ui.md`
+- Plan SHA-256: `4fc501af859b17476e80a50505f88f026710bb9ab19e50e329885f321d7db251` (carries the A2 `## 修正记录` entry: "A2 … 将这 2 份测试列入授权（第 7、8 个）… 审批：HUMAN:2026-09-18T09:40+08:00")
+- Authoritative child brief: `docs/plans/fast/material-request/children/03-ui/brief.md`, SHA-256 `050aedf7b76600ab89dea3777e3bcaef0b3ff8c28c6e795e160827a93451ac48` (now lists 8 authorized files, #7/#8 flagged "A2")
+- Master plan: `docs/plans/2026-09-17/00-material-request-master.md`, SHA-256 `81b9c1171e70cab9328626ad23aaf34072853f7a7a1fdb076f7f08316e7fb03d` (unchanged)
+- Ledger: `docs/plans/fast/material-request/ledger.md`, SHA-256 `efdccb327db7923ad24643d5ce5f039cd1c47aaee1ac789abf5cdff35e1a5dfd`
+- Execution ID: `docs/plans/2026-09-17/03-material-request-ui.md@4fc501af859b17476e80a50505f88f026710bb9ab19e50e329885f321d7db251`
+- Execution epoch: RESUME (epoch 1 = `ee9cc36`, result PLAN_CONFLICT; epoch 2 = this section)
+- Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-material-request`
+- Target branch: `fast/material-request`
+- Pre-execution HEAD (epoch 1 evidence/pause commit): `dcd5a20ca9921ba4ae9dee1913cdb13322a71f34`
+- Implementation commit (this epoch): `75628fb9ae6201e7aa2c26f3dcb880dde8faa9ab` — parent `dcd5a20`; exactly the two A2 test files
+- Epoch 1 implementation commit `ee9cc36cf0536894e6b46aeac3ca98125b16cde4` untouched (no amend/rebase/reset)
+- Evidence HEAD: N/A — this report is the separate evidence artifact and is intentionally **not** part of the implementation commit (`git show --name-only HEAD` below lists only the two test files)
+
+## Scope of this epoch
+
+Changed **only** the two files added by amendment A2; no production file, no other test, no migration, no plan/ledger edit:
+
+| File | Change | Lines |
+|---|---|---|
+| `src/test/js/mailboxOutboundAttachments.test.js` | `.mc-editor-tools button[data-action]` `deepStrictEqual` list gains `mc-open-material-request` between `mc-open-meeting` and `mc-open-followup`; the adjacent assertion message now reads `工具栏顺序必须是 B/I/列表/链接/回形针/会议确认/材料索取/跟进` (it is the enumeration's own description) | 2 (1 `+/-`, 1 `+/-`) |
+| `src/test/js/meetingConfirmationIntegration.test.js` | `tools.length` 7 → 8; `tools[6]` expected `mc-open-meeting`-adjacent entry now `mc-open-material-request`; new `tools[7]` expected `mc-open-followup`; the leading comment extended to `fast-p 07（I-5/S-1）+ fast-p 03（S-2）` | 3 |
+
+`git diff dcd5a20..75628fb --stat` → `2 files changed, 6 insertions(+), 5 deletions(-)`. No assertion was weakened, skipped or deleted; no other expectation in either file was touched (the four `[data-command]` filter assertions, the `:empty` attachment-container checks, the file-tail CSS pin and the "组件缺席" path all remain byte-identical).
+
+## Commands (this epoch, run after the two edits; `node v25.7.0`)
+
+| # | Command (exact, in the target worktree) | Exit | Counts |
+|---|---|---|---|
+| 1 | `node --test src/test/js/mailboxOutboundAttachments.test.js src/test/js/meetingConfirmationIntegration.test.js` | **0** | `tests 51 / suites 14 / pass 51 / fail 0 / duration_ms 432` |
+| 2 | `node --test src/test/js/contactHeadLayout.test.js src/test/js/materialRequestIntegration.test.js src/test/js/mailboxChatStyle.test.js src/test/js/meetingConfirmationIntegration.test.js src/test/js/mailboxOutboundAttachments.test.js` | **0** | `tests 104 / suites 26 / pass 104 / fail 0 / duration_ms 452` |
+| 3 | `node --test src/test/js/*.test.js` | **0** | `tests 1003 / suites 196 / pass 1003 / fail 0 / cancelled 0 / skipped 0 / todo 0 / duration_ms 2426` — 990 recorded baseline + 13 new `materialRequestIntegration` cases, all green |
+| 4a | `node --check src/main/resources/static/app.js` | **0** | no output |
+| 4b | `node --check src/main/resources/static/mailbox-chat.js` | **0** | no output |
+| 5 | `git diff --check` | **0** | no output (no whitespace/conflict markers) |
+| 6 | `git -c user.name=omp -c user.email=omp@local commit -m "feat(fast-p): implement 03-ui" -- <the two test files>` | **0** | `[fast/material-request 75628fb] feat(fast-p): implement 03-ui — 2 files changed, 6 insertions(+), 5 deletions(-)` |
+
+Acceptance deltas vs. the epoch 1 PLAN_CONFLICT record: command 2 went `104 / 102 pass / 2 fail` → **`104 / 104 pass / 0 fail`**; command 3 went `1003 / 1001 pass / 2 fail` → **`1003 / 1003 pass / 0 fail`**. The two recorded failures (out-of-list toolbar enumerations) are exactly the two assertions amended here; no other test changed state.
+
+Ordering note: the commit (command 6) is a pathspec-limited commit of already-verified bytes; no source file was modified after command 3, so the green suite above is the post-change state that was committed.
+
+## Contract compliance (A2 / S-2)
+
+- Toolbar order asserted end-to-end as `B / I / 列表 / 链接 / 回形针 / 会议确认 / 材料索取 / 跟进` in both files — matching S-2 ("the `材料索取` trigger is a `.button.material-request-trigger` placed between the meeting trigger and the follow-up button inside `.mc-editor-tools`") and the plan's 验收标准 ("触发按钮位于会议与跟进之间").
+- `docs/plans/fast/**` excluded from the commit (pathspec-limited commit; `git show --name-only HEAD` lists only the two test files). This report stays uncommitted for the controller.
+- No history rewrite: `git log --oneline -3` → `75628fb (this epoch) → dcd5a20 → 4f4eaf7 (A2)`, with `ee9cc36` still present as the epoch 1 implementation commit and reachable.
+
+## Remaining concerns
+
+1. The two amended test files still enumerate the toolbar as a **closed list**; any future fifth entry in `.mc-editor-tools` will break them again — that is intentional per S-2 and out of scope here (no container-query refactor authorized).
+2. Inherited and untouched: the plan prose's stale pre-change cache key (epoch 1 concern 2, now `20260918-material-request-ui` in `index.html`), the child-02 `V124` opt-in migration failure and its guard-test comment drift (O-3), and the missing runnable MySQL environment for human acceptance A-1…A-5 (`mvn spring-boot:run` / `flyway-mysql` test-scoped). None is affected by this epoch's two assertion edits.
+3. No scratch artifacts were created inside the worktree this epoch; the only working-tree change left is this appended report.
+
+## Next Action
+
+- Hand child 03 to `verify-p` / the controller: `75628fb` on top of `ee9cc36` implements the full plan; the brief's required command set is green (commands 1–5 above, all exit 0) and the full JS suite reports `tests 1003 / pass 1003 / fail 0`.
