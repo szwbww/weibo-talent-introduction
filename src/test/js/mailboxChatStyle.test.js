@@ -24,6 +24,14 @@ const indexSource = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
 
 const TARGET_CSS = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-09", "mailbox-refinement-evidence", "mailbox-chat.target.css");
 
+// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+const CACHE_KEY = (() => {
+    const match = indexSource.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 describe("S-6: 落地 CSS 与 02 evidence 逐字一致", () => {
     it("mailbox-chat.css 与 evidence/mailbox-chat.target.css 字节一致", () => {
         const expected = fs.readFileSync(TARGET_CSS, "utf-8");
@@ -92,7 +100,7 @@ describe("收发件箱静态资源版本", () => {
     it("正文行距更新必须刷新 mailbox-chat.css 缓存版本", () => {
         assert.match(
             indexSource,
-            /href="mailbox-chat\.css\?v=20260917-calendar-layout-align"/,
+            new RegExp('href="mailbox-chat\\.css\\?v=' + escapeRegExp(CACHE_KEY) + '"'),
             "CSS 版本号必须随正文样式更新，避免浏览器继续使用旧行距"
         );
     });

@@ -2,7 +2,7 @@
 
 // 计划 05（c6）改写 —— 只保留三组断言（G-7）：
 // 1) I-24 挂载契约（window.TrustReplyWorkbench.mount / instance.unmount / options 键集合不变）；
-// 2) G-5 11 个缓存资源同值（20260917-calendar-layout-align）；
+// 2) G-5 11 个缓存资源同值（index.html 的 styles.css?v= 键）；
 // 3) I-25 unmount 语义：abort 全部在途请求、解绑全部监听器、late response 不写宿主。
 
 const fs = require("fs");
@@ -19,7 +19,12 @@ const source = fs.readFileSync(workbenchPath, "utf-8");
 const appSource = fs.readFileSync(appPath, "utf-8");
 const indexSource = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260917-calendar-layout-align";
+// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+const CACHE_KEY = (() => {
+    const match = indexSource.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
 // I-24：options 键集合（顺序无关）—— 两个宿主与运行时都不得改名/改必填性。
 const OPTION_KEYS = ["mode", "source", "contextPath", "autoBootstrap", "onUnauthorized", "onChange", "onComplete"];
 
@@ -172,7 +177,7 @@ describe("shared trust reply workbench mount contract (计划 05 改写)", () =>
         assert.ok(!/src="\/trust-reply-workbench\.js/.test(indexSource), "script include must stay context-relative");
     });
 
-    it("G-5: the eleven cache-busted assets share one key (20260917-calendar-layout-align)", () => {
+    it(`G-5: the eleven cache-busted assets share one key (${CACHE_KEY})`, () => {
         const keys = [...indexSource.matchAll(/\?v=([0-9a-z-]+)/g)].map((match) => match[1]);
         assert.strictEqual(keys.length, 11, "index.html must carry exactly eleven cache-busted asset URLs");
         assert.strictEqual(new Set(keys).size, 1, "all eleven keys must share one value");

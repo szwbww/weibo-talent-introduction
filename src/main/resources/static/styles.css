@@ -11256,6 +11256,39 @@ body.preview-available:not(.preview-docked) .preview-rail {
 @media(max-width:1200px){.calendar-root .calendar-layout{grid-template-columns:minmax(0,1fr) 250px}.calendar-root .calendar-overview{gap:22px}.calendar-root .calendar-metric{min-width:125px}.calendar-root .calendar-toolbar{padding:16px 12px}.calendar-root .calendar-month-controls h2{font-size:18px;margin-right:5px}}
 @media(max-width:900px){.calendar-root .calendar-layout{grid-template-columns:minmax(0,1fr)}.calendar-root .calendar-overview>p{display:none}.calendar-root .calendar-agenda{display:none}}
 @media(max-width:600px){.calendar-root .calendar-overview{padding:16px;gap:20px;justify-content:space-between}.calendar-root .calendar-metric{min-width:0;gap:7px;font-size:11px}.calendar-root .calendar-overview-icon{display:none}.calendar-root .calendar-metric strong{font-size:23px}.calendar-root .calendar-toolbar{gap:12px}.calendar-root .calendar-filter-bar{padding:8px 12px;flex-wrap:wrap}.calendar-root .calendar-footer{flex-wrap:wrap}}
+/* Manual material request: mailbox composer only. */
+.mail-chat .button.material-request-trigger{color:#1e40af;border-color:#b8cef5;background:#eef4ff;gap:7px;margin-left:3px}
+.mail-chat .button.material-request-trigger:hover{background:#e5eeff;border-color:#93b4ec}
+.mail-chat .button.material-request-trigger:active{background:#dbeafe}
+.mail-chat .button.material-request-trigger:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.material-request-dialog{margin:auto;inset:0;width:min(740px,calc(100vw - 40px));max-height:calc(100dvh - 40px);padding:0;border:1px solid #d5dfed;border-radius:14px;background:#fff;color:#334155;font-family:var(--font-body);font-size:12px;line-height:1.6;box-shadow:0 24px 100px #172c473d;overflow:auto;overscroll-behavior:contain}
+.material-request-dialog::backdrop{background:#182a464f;backdrop-filter:blur(2px)}
+.material-request-dialog *{box-sizing:border-box}
+.material-request-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:18px 22px;border-bottom:1px solid #e2e8f0;background:#fff}
+.material-request-head h2{margin:0;font-size:18px;font-weight:600;color:#334155;line-height:1.4}
+.material-request-close{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:0;border-radius:5px;background:transparent;color:#91a1b7;font:inherit;font-size:21px;cursor:pointer}
+.material-request-close:hover{background:#edf3ff;color:#2451b9}
+.material-request-close:active{background:#dbeafe}
+.material-request-body{padding:20px 22px}
+.material-request-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 0 12px;color:#52647e;font-weight:600}
+.material-request-options{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 22px}
+.material-request-option{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid #d8e1ee;border-radius:8px;background:#fff;color:#334155;cursor:pointer}
+.material-request-option:hover{border-color:#93b4ec}
+.material-request-option:active{background:#eaf1ff}
+.material-request-option:has(input:checked){border-color:#3b82f6;background:#eff5ff;color:#1e40af}
+.material-request-option:has(input:disabled){background:#f1f5f9;color:#94a3b8;cursor:not-allowed}
+.material-request-option input{margin:0;accent-color:#1e40af}
+.material-request-option small{font-size:11px;color:inherit}
+.material-request-paper{padding:18px;border:1px solid #dce4ef;border-radius:9px;background:#f8faff;color:#334155;font-size:13px;line-height:1.85;overflow-wrap:anywhere}
+.material-request-paper p{margin:0}
+.material-request-paper ul{margin:12px 0 0;padding-left:24px}
+.material-request-paper li+li{margin-top:10px}
+.material-request-error{margin:0 0 12px;padding:9px 11px;border:1px solid #fecdd3;border-radius:7px;background:#fff1f2;color:#be123c}
+.material-request-actions{display:flex;justify-content:flex-end;gap:9px;padding:16px 22px;border-top:1px solid #e2e8f0;background:#fff}
+.material-request-dialog :is(button,input):focus-visible,.mail-chat .material-request-trigger:focus-visible{outline:2px solid #82a8e8;outline-offset:2px}
+.material-request-dialog .button:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+@media(max-width:760px){.material-request-dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}.material-request-head,.material-request-body,.material-request-actions{padding:14px}}
+@media(prefers-reduced-motion:reduce){.material-request-dialog *,.mail-chat .material-request-trigger{transition:none!important}}
 
 /* meeting-mail-07: outbound files */
 .outbound-upload{width:32px;min-width:32px;padding:0}

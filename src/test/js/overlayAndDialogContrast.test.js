@@ -19,7 +19,12 @@ const indexPath = path.join(root, "index.html");
 const styles = fs.readFileSync(stylesPath, "utf-8");
 const html = fs.readFileSync(indexPath, "utf-8");
 
-const CACHE_KEY = "20260917-calendar-layout-align";
+// I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+const CACHE_KEY = (() => {
+    const match = html.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
 
 function stripWs(text) {
     return text.replace(/\s+/g, " ").trim();
