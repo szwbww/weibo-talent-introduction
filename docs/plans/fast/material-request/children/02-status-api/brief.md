@@ -2,12 +2,12 @@
 
 - Worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-material-request`
 - Branch: `fast/material-request`
-- `child_base_sha`: supplied at dispatch time (child 01's terminal code head)
+- `child_base_sha`: `535f76f3bcbee243ae5bef09686bbe57921075e7` (child 01 terminal code head)
 - Approved plan (complete contract): `docs/plans/2026-09-17/02-material-request-status-api.md`
 - Master plan cross-plan constraints: `docs/plans/2026-09-17/00-material-request-master.md`
 - Execution report to write: `docs/plans/fast/material-request/children/02-status-api/execution.md`
 
-## Authorized files (exactly these six)
+## Authorized files (exactly these seven; #7 added by amendment A1)
 
 1. `src/main/resources/db/migration/V128__add_material_request_codes.sql`
 2. `src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertMaterialService.kt`
@@ -15,6 +15,7 @@
 4. `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ExpertMaterialRequestServiceTest.kt`
 5. `src/test/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementControllerTest.kt`
 6. `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt`
+7. `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` — A1: line-number-only correction of the pinned site `ExpertContactManagementController.kt` 564 → 578 inside `EXCLUDED_NOISE_SITES` (path and fragment text unchanged; no new assertion, no behavioural change).
 
 Do not modify `MailVariableService.kt`, `RagProcessContextResolver.kt`, `document/controller/ExpertMaterialController.kt`, any static resource, any frontend test, or any other file. Do not touch the fast-p ledger or other children's artifacts.
 
