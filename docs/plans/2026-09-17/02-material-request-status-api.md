@@ -78,8 +78,9 @@
 | 4 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ExpertMaterialRequestServiceTest.kt` | 新状态服务测试 |
 | 5 | `src/test/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementControllerTest.kt` | 新路由/委托测试 |
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` | 新旧代码约束测试 |
+| 7 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | A1 扩权：仅行号 564→578 |
 
-共 6 文件，1 个后端状态子系统；`MailVariableService.kt`、RAG 和上传文档 API 明确不修改。
+共 7 文件（A1 将第 7 个列入授权），1 个后端状态子系统；`MailVariableService.kt`、RAG 和上传文档 API 明确不修改。
 
 ## 验收标准
 
@@ -116,3 +117,7 @@
 - 覆盖：I-4、必须保持项。
 
 人工验收开始时再导出本节勾选文件；本轮不生成。
+
+## 修正记录
+
+- A1（`docs/plans/fast/material-request/ledger.md`）：T2 在 `ExpertContactManagementController.kt` 新增两个路由方法（含 1 个 import，共 14 行）后，`OperatorStatusWriteSeamGuardTest.kt:69` 钉死的 `NoiseSite(ExpertContactManagementController.kt, 564, "operatorStatus = operatorStatus")` 位移到 578，守卫测试报「排除名单已失效」。按 K-line-number-guard-breaks-on-any-insertion，将该守卫文件列入授权（第 7 个），仅更新被移动的行号 564→578，路径与片段文字不变；不新增行为、不改断言语义。审批：HUMAN:2026-09-18T09:12+08:00。
