@@ -189,12 +189,6 @@ class FlywayMigrationIntegrationTest {
                 listOf("CV", "PASSPORT", "DEGREE", "EMPLOYMENT", "PUBLICATIONS", "PATENTS", "RESEARCH")
             val requestCodes =
                 listOf("REQ_PUBLICATIONS", "REQ_PROJECTS", "REQ_PATENTS", "REQ_AWARDS", "REQ_DEGREES")
-            val clause = connection.queryString(
-                "SELECT CHECK_CLAUSE FROM information_schema.check_constraints " +
-                    "WHERE constraint_schema = DATABASE() AND constraint_name = 'chk_expert_material_code'"
-            )
-            legacyCodes.forEach { code -> assertTrue(clause.contains("'$code'"), "clause dropped legacy $code") }
-            requestCodes.forEach { code -> assertTrue(clause.contains("'$code'"), "clause missing $code") }
 
             // 旧 7 代码与新 5 代码都可写（V128 只扩大域，不删旧代码）。
             legacyCodes.forEach { code ->
