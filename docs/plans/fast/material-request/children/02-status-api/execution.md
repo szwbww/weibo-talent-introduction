@@ -337,3 +337,86 @@ Epoch 2 touched **no** `src/main` byte and no route (`git diff 5aaa801..HEAD` = 
   1. the one-line **test-assertion repair** in authorized file #6 `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` (normalize `CHECK_CLAUSE` before the `contains` checks, or rely on the behavioural inserts) — child 02's own new test, no production-code change; and
   2. the disposition of the **pre-existing** `V124` FK error (fix it in a repo-level/other child's scope, or record it as a known-red opt-in-group test).
 - After 1, re-run `mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true -Dapi.version=1.44` (expect `Failures: 0` and only the pre-existing `V124` error) plus `mvn test -Dtest=OperatorStatusWriteSeamGuardTest`; then hand the child to `verify-p`.
+
+---
+
+# Epoch 3
+
+Recorded by: Implementer02c (fast-p child 02 implementer, execution epoch 3 / human-arbitrated repair round 1)
+Date: 2026-09-18 (Asia/Shanghai)
+
+- Worktree / branch: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-material-request` @ `fast/material-request`
+- Base of this epoch: pause commit `24f2dde2df36ea35e2f14630ab83386f50ec479d` (child code head `71e587477e0b2defb9775042ae8e9cee03365321`)
+- Authority: human arbitration 2026-09-18 (this session), following verifier `LightVerifier02`'s **PAUSE** on gate 3 — the behavioural-probe option was chosen over the `CHECK_CLAUSE` normalization option. Recorded in `fix-log.md` → `## Epoch 3 — Round 1/3`.
+- Epochs 1 and 2 are preserved verbatim above (this file is append-only).
+
+## Epoch 3 result: FIXED
+
+Applied exactly the arbitrated correction to child 02's own migration test: the two `clause.contains("'$code'")` loops and the `information_schema.CHECK_CLAUSE` query that only they used are deleted; every other assertion in that test is byte-identical. The migration-IT group now reports `Failures: 0` with only the pre-existing `V124` FK error remaining, the full suite is BUILD SUCCESS, and `git diff --check` is clean.
+
+## Change — one authorized file, six deleted lines
+
+File: `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` (authorized file #6), test `V128 widens the material code check to twelve codes without touching stored rows`.
+
+```diff
+@@ -189,12 +189,6 @@ class FlywayMigrationIntegrationTest {
+             val requestCodes =
+                 listOf("REQ_PUBLICATIONS", "REQ_PROJECTS", "REQ_PATENTS", "REQ_AWARDS", "REQ_DEGREES")
+-            val clause = connection.queryString(
+-                "SELECT CHECK_CLAUSE FROM information_schema.check_constraints " +
+-                    "WHERE constraint_schema = DATABASE() AND constraint_name = 'chk_expert_material_code'"
+-            )
+-            legacyCodes.forEach { code -> assertTrue(clause.contains("'$code'"), "clause dropped legacy $code") }
+-            requestCodes.forEach { code -> assertTrue(clause.contains("'$code'"), "clause missing $code") }
+
+             // 旧 7 代码与新 5 代码都可写（V128 只扩大域，不删旧代码）。
+             legacyCodes.forEach { code ->
+```
+
+- `git diff --stat` = `1 file changed, 6 deletions(-)`; no insertion.
+- Retained unchanged: `legacyCodes` / `requestCodes` (still drive the insert loops), the `Connection.queryString` helper (used by ~30 other assertions of the same file), and every other assertion of the test — `migrateToV23AndSeedBase()`, `targetSchemaVersion == "128"`, pre-insert `COUNT(*) == 0`, the `chk_expert_material_code` / `chk_expert_material_status` / `uk_expert_material_contact_code` existence checks, the 7 + 5 inserts, `COUNT(*) == 12`, the `REQ_UNKNOWN` / `PENDING` / duplicate-row rejections, and the closing `COUNT(*) == 12`.
+- Rationale (arbitrated): MySQL renders `CHECK_CLAUSE` with a charset introducer and backslash-escaped literals (`_utf8mb4\'CV\'`), so the substring `'CV'` is absent from a clause that does contain `CV` — the assertion tested MySQL's renderer, not the constraint domain. The behavioural probes that remain prove the same domain on a real MySQL 8.0.36: all 12 required codes accepted, `REQ_UNKNOWN` rejected, `PENDING` rejected, duplicate `(1,'REQ_DEGREES')` rejected, `COUNT(*) == 12` before and after — the stronger oracle, and exactly what T3/验收标准 ("V128 CHECK 实施") demands.
+
+## Commands (JDK 11)
+
+`JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home` → `openjdk 11.0.15 (Zulu11.56+19-CA)`, confirmed with `$JAVA_HOME/bin/java -version` in this epoch.
+
+| # | Command (exact) | Exit | Result | Counts / timing |
+|---|---|---|---|---|
+| 1 | `MAVEN_OPTS=-Dapi.version=1.44 mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true` | **1** | **environment red — group did NOT start** | `Tests run: 1, Failures: 0, Errors: 1`, `IllegalStateException: Docker is required for Flyway migration tests`; all strategies `Status 400: client version 1.32 is too old … minimum 1.40`; `Total time: 01:39 min`; log `/tmp/e3_migration_it.log` |
+| 1b | `MAVEN_OPTS=-Dapi.version=1.44 mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true -Dapi.version=1.44` | **1** | **target state reached**: only the pre-existing V124 error | `Tests run: 24, Failures: 0, Errors: 1, Skipped: 0`; container `mysql:8.0.36` started, Flyway `Successfully applied 104 migrations … now at version v128`; `V128 …` testcase present with no failure/error child (`time="9.155"`); sole red `V124 allows material attached promotion audit trigger:291->execute:1274 » SQLIntegrityConstraintViolation … fk_eap_contact`; `Total time: 04:58 min`; log `/tmp/e3_migration_it_retry.log` |
+| 2 | `mvn test` | **0** | **PASS** (`BUILD SUCCESS`) | `Tests run: 3465, Failures: 0, Errors: 0, Skipped: 13`; `OperatorStatusWriteSeamGuardTest` 1/1; `FlywayMigrationIntegrationTest` skipped (opt-in flag absent); JS gate `node --test src/test/js/*.test.js` → `tests 990 / pass 990 / fail 0`; `Total time: 03:12 min` (finished `2026-09-18T10:11:09+08:00`); log `/tmp/e3_full.log` |
+| 3 | `git diff --check` | **0** | **PASS** | no output (no whitespace/conflict errors) |
+
+### Command 1 — why the env-only form still cannot start the group
+
+`MAVEN_OPTS` sets system properties on the **Maven** JVM only; surefire's forked test JVM does not inherit them (it does inherit `-D` user properties passed on the Maven command line). Testcontainers 1.19.8's shaded docker-java reads `api.version` from the system property / docker-properties key, not from any `DOCKER_API_VERSION` env key (verifier record **O-2**; epoch 2's constant-pool oracle). Hence attempt 1 negotiated client API 1.32 and every strategy failed the server's ≥1.40 minimum, while attempt 1b — identical plus `-Dapi.version=1.44` — started the container and ran all 24 tests. The working invocation is the epoch-2/verifier form; the env-var-only form is recorded here so the runbook gap stays visible.
+
+### Command 1b — the two reds, separated
+
+- **Child 02's `V128 …` test: now GREEN.** Epoch 2's `Failures: 1` (line 196 `clause dropped legacy CV ==> expected: <true> but was: <false>`) is gone: `Failures: 0`, and the surefire XML `<testcase name="V128 widens the material code check to twelve codes without touching stored rows" … time="9.155"/>` carries no `<failure>`/`<error>` child. The behavioural probes that previously never executed (the failing assertion preceded them) now run and pass.
+- **`V124 allows material attached promotion audit trigger`: pre-existing, out of scope.** `SQLIntegrityConstraintViolationException … CONSTRAINT fk_eap_contact FOREIGN KEY (expert_contact_id) REFERENCES expert_contact (id)` at `:291->execute:1274`. Reproduced untouched at `child_base_sha` `535f76f` (23 tests, 0 failures, **1 error, same test, same FK** — epoch-2 scratch-clone run, independently re-reproduced by `LightVerifier02`). This epoch's change cannot reach it: the only edit is six deleted lines inside a different test method, and V124's INSERT / FK / migration set are untouched. It was neither repaired nor attributed to child 02. Note the `:297`/`:233` line drift is itself an artifact of the intra-file line numbering (V124 sits *after* the V128 test), not of V124's content.
+
+## Commit
+
+- Commit: **`4a91a6135c031cc60fd8091b1fe8ae61f77c4a2b`** — `fix(fast-p): repair 02-status-api round 1`, created with `git -c user.name=omp -c user.email=omp@local commit`.
+- Content: **one file** — `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` (`1 file changed, 6 deletions(-)`).
+- Parent: `24f2dde` (pause). No history rewritten, nothing pushed, merged, rebased, amended, squashed or deleted.
+- `docs/plans/fast/**` deliberately **excluded** from the implementation commit (controller commits evidence separately).
+- The child's authorized seven-file set now spans `5aaa801` (six files) + `71e5874` (A1 guard pin) + `4a91a61` (this repair); `git diff --name-only 535f76f..4a91a61 -- src` is exactly the authorized 7-path list. `git status --porcelain` after the commit listed only the two `docs/plans/fast/**` evidence files.
+
+## Interface record for child 03 — unchanged
+
+Epoch 3 touched no `src/main` byte and no route, no DTO and no catalogue string; the epoch-1 live contract record stands verbatim: `GET /api/expert-contacts/{contactId}/material-requests` → `200`, 5-element array, field order `[{code,label,status,requestText}]`; `PUT …/material-requests/{code}` body `{"status":"PENDING"|"PROVIDED"|"DECLINED"}` → `200`, same array; codes in order `REQ_PUBLICATIONS, REQ_PROJECTS, REQ_PATENTS, REQ_AWARDS, REQ_DEGREES`; labels `代表性论文、科研项目、专利、荣誉奖项、学位`; the five English `requestText` values verbatim (U+2019 in #5); legacy `GET /materials` still returns the `ExpertMaterialPage` object and legacy `PUT /materials/{materialCode}` still the 7-item array.
+
+## Remaining concerns (epoch 3)
+
+1. **Pre-existing `V124` FK error still reds the opt-in migration group repo-wide.** Reproduced at `child_base_sha`; it had never been runnable on this machine before child 02. Needs an owner decision outside child 02's scope (e.g. seed the base contact before the insert). Must not be attributed to child 02; `-DmigrationIt=true` cannot be fully green until it is owned.
+2. **Runbook gap (O-2):** the migration group is startable only with `-Dapi.version=1.44` as a **Maven command-line** system property (not `DOCKER_API_VERSION`, not `MAVEN_OPTS` alone). Any future runbook/brief line prescribing the env-var form should be corrected.
+3. **O-3 stale comment (not fixed):** `OperatorStatusWriteSeamGuardTest.kt:67-68` still says `使 :549 偏移至 :564` while the A1 pin is 578. Documentation-only drift; A1 authorized exactly the number, and this epoch's mandate was the test assertion only.
+4. Epoch-1/2 concerns unchanged and still open: human acceptance A-1…A-4 need a deployed environment (`mvn spring-boot:run` cannot serve MySQL 8 as the repo stands — `flyway-mysql` is test-scoped); child 03 must consume the recorded `requestText` verbatim (U+2019).
+5. Scratch artifacts outside the repo: logs `/tmp/e3_migration_it.log`, `/tmp/e3_migration_it_retry.log`, `/tmp/e3_full.log`; testcontainers MySQL/ryuk containers are reaped by ryuk; epoch-1's `fast02-mysql` container remains as documented above.
+
+## Next Action (epoch 3)
+
+- **FIXED.** Hand back to `verify-p` (round 1 re-verification): the in-scope red is repaired, `mvn test -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true -Dapi.version=1.44` reports `Failures: 0` with only the pre-existing `V124` error, `mvn test` is BUILD SUCCESS (3465/0/0/13), and `git diff --check` is clean.
