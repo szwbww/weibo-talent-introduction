@@ -265,3 +265,7 @@ Ordering note: the commit (command 6) is a pathspec-limited commit of already-ve
 ## Next Action
 
 - Hand child 03 to `verify-p` / the controller: `75628fb` on top of `ee9cc36` implements the full plan; the brief's required command set is green (commands 1–5 above, all exit 0) and the full JS suite reports `tests 1003 / pass 1003 / fail 0`.
+
+## Finalization Note (controller)
+
+- Canonicalization round: the run's finalization validator required this child's evidence commit to record all three logs. Commit `d83d777afd2c157b3f0960c57978d69e5ac9a16c` recorded the appended `LightVerifier03b` report and the no-repair-rounds `fix-log.md` entry; this note makes `execution.md` part of the same evidence boundary. No product, test or plan file changed and no prior text was edited.

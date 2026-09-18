@@ -43,3 +43,7 @@ Verifier: LightVerifier03b
 
 ### Required Action
 - COMPLETE_CHILD
+
+## Finalization Note (controller)
+
+- Appended for the finalization evidence boundary only; the verdict above is unchanged and remains the terminal light result for this child.
