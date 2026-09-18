@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-17/00-material-request-master.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-09-17/00-material-request-master.md (commit 44136f5dc7bbf94f429afa72c55242c5137d7f4f)
+- Governing master identity: sha256 81b9c1171e70cab9328626ad23aaf34072853f7a7a1fdb076f7f08316e7fb03d; recorded commit 44136f5dc7bbf94f429afa72c55242c5137d7f4f
+- Invoked master identity: SAME (sha256 81b9c1171e70cab9328626ad23aaf34072853f7a7a1fdb076f7f08316e7fb03d)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: A1 `docs/plans/2026-09-17/02-material-request-status-api.md` (recorded); A2 `docs/plans/2026-09-17/03-material-request-ui.md` (recorded)
+- Fast-p ledger: docs/plans/fast/material-request/ledger.md
+- Fast-p handoff: docs/plans/fast/material-request/human-review-handoff.md
+- Master base: 7f7b3a821f09d4255dc735c1e7b96eacf9c32164
+- Final code head: 75628fb9ae6201e7aa2c26f3dcb880dde8faa9ab
+- Evidence parent before next commit: e7960c7bc2971d51001722262689d9bcfca34806
+- Previous evidence commit: N/A
+- Branch: fast/material-request
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-material-request
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: exact discovery command was issued against registered worktrees; retained candidate identities independently confirmed: branch/worktree, READY_FOR_HUMAN_REVIEW ledger/handoff, three terminal children, base/code ancestry, and consistent master identity.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: docs/plans/review/material-request/machine-verification.md#epoch-1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: human executes A-1 through A-4 and explicitly signs off boundary 75628fb9ae6201e7aa2c26f3dcb880dde8faa9ab
