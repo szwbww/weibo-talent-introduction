@@ -1421,12 +1421,13 @@ describe("fast-p 04: 组件门禁与 S-3 人工回复区（trigger/附件卡）"
         const ctx = await bootMeetingA();
         const compose = ctx.host.querySelector('[data-role="manual-compose"]');
         const tools = compose.querySelector('.mc-editor-tools').querySelectorAll("button");
-        // fast-p 07（I-5/S-1）：工具栏顺序 B/I/列表/链接/回形针/会议确认/跟进。
-        assert.strictEqual(tools.length, 7);
+        // fast-p 07（I-5/S-1）+ fast-p 03（S-2）：工具栏顺序 B/I/列表/链接/回形针/会议确认/材料索取/跟进。
+        assert.strictEqual(tools.length, 8);
         assert.strictEqual(tools[4].getAttribute("data-action"), "mc-upload-attachment", "回形针紧随链接之后");
         assert.strictEqual(tools[4].textContent.trim(), "", "附件入口只有图标");
         assert.strictEqual(tools[5].getAttribute("data-action"), "mc-open-meeting");
-        assert.strictEqual(tools[6].getAttribute("data-action"), "mc-open-followup");
+        assert.strictEqual(tools[6].getAttribute("data-action"), "mc-open-material-request");
+        assert.strictEqual(tools[7].getAttribute("data-action"), "mc-open-followup");
         const editor = compose.querySelector('[aria-label="人工回复正文"]');
         const container = compose.querySelector('[data-role="meeting-attachment"]');
         const footer = compose.querySelector(".mc-compose-footer");

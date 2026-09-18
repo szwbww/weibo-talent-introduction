@@ -1559,8 +1559,8 @@ describe("fast-p 07 · I-1/S-1: 仅回形针入口与隐藏 file input", () => {
         assert.deepStrictEqual(
             tools.map((node) => node.getAttribute("data-action")),
             ["mc-rich-command", "mc-rich-command", "mc-rich-command", "mc-rich-command",
-                "mc-upload-attachment", "mc-open-meeting", "mc-open-followup"],
-            "工具栏顺序必须是 B/I/列表/链接/回形针/会议确认/跟进"
+                "mc-upload-attachment", "mc-open-meeting", "mc-open-material-request", "mc-open-followup"],
+            "工具栏顺序必须是 B/I/列表/链接/回形针/会议确认/材料索取/跟进"
         );
         assert.deepStrictEqual(
             tools.slice(0, 4).map((node) => node.getAttribute("data-command")),
