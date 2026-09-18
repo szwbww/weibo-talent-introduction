@@ -2,14 +2,14 @@
 
 - Worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-material-request`
 - Branch: `fast/material-request`
-- `child_base_sha`: supplied at dispatch time (child 02's terminal code head)
+- `child_base_sha`: `4a91a6135c031cc60fd8091b1fe8ae61f77c4a2b` (child 02 terminal code head)
 - Approved plan (complete contract): `docs/plans/2026-09-17/03-material-request-ui.md`
 - Master plan cross-plan constraints: `docs/plans/2026-09-17/00-material-request-master.md`
 - Child 02 observed API contract: `docs/plans/fast/material-request/children/02-status-api/execution.md` (authoritative for the live response shape and the five English `requestText` values)
 - Child 01 result: the nine JS cache-key fixtures now derive the key from `index.html`, so the child 03 key bump is permitted.
 - Execution report to write: `docs/plans/fast/material-request/children/03-ui/execution.md`
 
-## Authorized files (exactly these six)
+## Authorized files (exactly these eight; #7 and #8 added by amendment A2)
 
 1. `src/main/resources/static/app.js`
 2. `src/main/resources/static/mailbox-chat.js`
@@ -17,6 +17,8 @@
 4. `src/main/resources/static/index.html`
 5. `src/test/js/contactHeadLayout.test.js`
 6. `src/test/js/materialRequestIntegration.test.js`
+7. `src/test/js/mailboxOutboundAttachments.test.js` — A2: assertion-only update so the enumerated `.mc-editor-tools` list includes the new `mc-open-material-request` trigger.
+8. `src/test/js/meetingConfirmationIntegration.test.js` — A2: assertion-only update of `tools.length` (7 → 8) and the adjacent index expectations for the new trigger and the follow-up button.
 
 Do not modify `mailbox-chat.css`, `meeting-confirmation.*`, any Kotlin source, any migration, or any other test file. Do not touch the fast-p ledger or other children's artifacts.
 
