@@ -70,7 +70,7 @@
 .calendar-event[data-cancelled=true]{border-color:#dce4ef;background:#f1f5f9;color:#64748b}
 .calendar-list{display:flex;flex-direction:column;gap:8px}
 .calendar-summary{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px;color:#1e40af;font-size:12px}
-.calendar-dialog{width:min(640px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px;border:1px solid #dce4ef;border-radius:18px;background:#fff;color:#334155;overflow:auto;box-shadow:0 24px 64px rgba(15,23,42,.2)}
+.calendar-dialog{inset:0;margin:auto;width:min(640px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px;border:1px solid #dce4ef;border-radius:18px;background:#fff;color:#334155;overflow:auto;box-shadow:0 24px 64px rgba(15,23,42,.2)}
 .calendar-dialog::backdrop{background:rgba(15,23,42,.35)}
 .calendar-form{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
 .calendar-field{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:12px;color:#64748b}
@@ -186,3 +186,8 @@
 - 操作步骤：1.翻9月与10月月历。2.切列表、打开弹窗，用Tab/Escape操作。3.断网刷新邮箱摘要和日历。
 - 预期结果：两个日期格均能找到该会；无英文时间；按钮32px、蓝色#1e40af、表单边框#dce4ef、圆角7px；焦点蓝框2px；小屏月历内部横滚不撑宽页面；断网显示错误，不伪造空列表。
 - 覆盖：I-2/I-4/I-5；S-1～S-3；IP-5。
+
+## 修正记录
+
+- 2026-09-21：`.calendar-dialog` 规则由 `width:min(...)` 改为 `inset:0;margin:auto;width:min(...)`，与本计划及 `docs/plans/fast/meeting-mail-master/children/03-calendar-ui/brief.md` 的 CSS 围栏同步。理由：已落地的 `styles.css:11195` 在使用 `width`/`max-height` 的 `<dialog>` 上显式声明 `inset:0;margin:auto` 以保证居中，该值随快照提交 `d2a7f65` 进入 HEAD 但从未记入任何计划，导致 `src/test/js/meetingCalendar.test.js:189`（`stylesSource.includes(briefCss)` 逐字契约）在 HEAD 恒红、`mvn test` 失败并阻塞 `publish_feature` 构建阶段。本次选择修订计划文本以匹配线上 CSS（不改任何生产字节），而非回退 CSS（会改动已上线样式）或跳过 JS 用例（会降低发布门禁）。原漂移由 `docs/plans/fast/manual-expert-material-upload-main/children/frontend/verify-log.md` 的 O-2 首次记录。
+

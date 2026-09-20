@@ -70,7 +70,7 @@
 .calendar-event[data-cancelled=true]{border-color:#dce4ef;background:#f1f5f9;color:#64748b}
 .calendar-list{display:flex;flex-direction:column;gap:8px}
 .calendar-summary{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:8px;color:#1e40af;font-size:12px}
-.calendar-dialog{width:min(640px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px;border:1px solid #dce4ef;border-radius:18px;background:#fff;color:#334155;overflow:auto;box-shadow:0 24px 64px rgba(15,23,42,.2)}
+.calendar-dialog{inset:0;margin:auto;width:min(640px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:24px;border:1px solid #dce4ef;border-radius:18px;background:#fff;color:#334155;overflow:auto;box-shadow:0 24px 64px rgba(15,23,42,.2)}
 .calendar-dialog::backdrop{background:rgba(15,23,42,.35)}
 .calendar-form{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
 .calendar-field{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:12px;color:#64748b}
