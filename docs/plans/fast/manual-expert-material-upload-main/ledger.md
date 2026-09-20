@@ -35,7 +35,7 @@ uncommitted SharePoint file-card WIP (`app.js`, `index.html`, `mailbox-chat.js`,
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | backend | docs/plans/2026-09-20/manual-expert-material-upload-backend.md | commit:d2a7f65ecbc46b5165863dfcab94ae5972f50605 | none | 1 | LIGHT_PASS_WITH_NOTES | d2a7f65ecbc46b5165863dfcab94ae5972f50605 | 80beb2bddfc77f8f65f8c51446c9a6c14f2e10df | 0 | — | 80beb2bddfc77f8f65f8c51446c9a6c14f2e10df | — | Implementer BackendImplementer; verifier BackendLightVerifier; 5 RECORD_ONLY (O-1..O-5). |
-| frontend | docs/plans/2026-09-20/manual-expert-material-upload-frontend.md | commit:d2a7f65ecbc46b5165863dfcab94ae5972f50605 | backend | 1 | PENDING | 80beb2bddfc77f8f65f8c51446c9a6c14f2e10df | — | 0 | — | — | — | Base is the backend child's terminal Code head (master plan Invariant I-1). |
+| frontend | docs/plans/2026-09-20/manual-expert-material-upload-frontend.md | commit:d2a7f65ecbc46b5165863dfcab94ae5972f50605 | backend | 1 | LIGHT_PASS_WITH_NOTES | 80beb2bddfc77f8f65f8c51446c9a6c14f2e10df | 5f4967b8d5f94663266c095e6a2e9ec69f570505 | 0 | — | 5f4967b8d5f94663266c095e6a2e9ec69f570505 | — | Implementer FrontendImplementer; verifier FrontendLightVerifier; 3 RECORD_ONLY (O-1..O-3); JS suite 1035/1034/1 with the single red pre-existing. |
 
 ## Amendments
 
