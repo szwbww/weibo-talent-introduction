@@ -24,6 +24,7 @@ import com.weibo.talentintroduction.expert.service.EmailValidationService
 import com.weibo.talentintroduction.expert.service.ExpertIdGenerator
 import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
+import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor
@@ -62,6 +63,7 @@ class ExpertDiscoveryService(
     private val expertIndexService: ExpertIndexService,
     private val revalidationService: ExpertRevalidationService,
     private val expertSearchService: ExpertSearchService,
+    private val expertClassificationService: ExpertClassificationService,
     private val restTemplate: RestTemplate,
     private val esProperties: ElasticsearchProperties,
     private val discoveryProperties: ExpertDiscoveryProperties,
@@ -948,7 +950,7 @@ class ExpertDiscoveryService(
                             val profile = profilesByOrcid[orcidId] ?: continue
                             when (val outcome = outcomes[orcidId] ?: EnrichmentOutcome.NotFound) {
                                 is EnrichmentOutcome.Success -> {
-                                    if (updateExpertAcademicFields(profile.orcidId, outcome.data)) {
+                                    if (updateExpertAcademicFields(profile, outcome.data)) {
                                         enriched++
                                     } else {
                                         failed++
@@ -1121,7 +1123,8 @@ class ExpertDiscoveryService(
         }
     }
 
-    private fun updateExpertAcademicFields(orcidId: String, enrichment: AuthorEnrichment): Boolean {
+    private fun updateExpertAcademicFields(profile: ExpertProfile, enrichment: AuthorEnrichment): Boolean {
+        val orcidId = profile.orcidId
         val now = LocalDateTime.now().format(dateFormatter)
         var candidateUpdated = false
         val doc = mutableMapOf<String, Any?>(
@@ -1140,6 +1143,19 @@ class ExpertDiscoveryService(
         enrichment.institutionType?.let { doc["institutionType"] = it }
         // I1-3: null 时不写入该键，避免覆盖发现时的真实值；I1-4: 非 null 时无条件覆盖。
         enrichment.lastPublicationYear?.let { doc["lastPublicationYear"] = it }
+        val enrichedProfile = profile.copy(
+            hIndex = enrichment.hIndex ?: profile.hIndex,
+            citationCount = enrichment.citationCount ?: profile.citationCount,
+            worksCount = enrichment.worksCount ?: profile.worksCount,
+            researchFields = enrichment.topics?.takeIf { it.isNotEmpty() }?.joinToString(", ")
+                ?: profile.researchFields,
+            recentWorkTitles = enrichment.recentWorkTitles?.takeIf { it.isNotEmpty() }
+                ?: profile.recentWorkTitles,
+            patentTitles = enrichment.patentTitles?.takeIf { it.isNotEmpty() } ?: profile.patentTitles,
+            disciplineCategory = enrichment.disciplineCategory ?: profile.disciplineCategory,
+            lastPublicationYear = enrichment.lastPublicationYear ?: profile.lastPublicationYear
+        )
+        doc["expertClassification"] = expertClassificationService.classify(enrichedProfile)
         val updateBody = mapOf("doc" to doc)
         for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
             if (!documentExistsInIndex(level, orcidId)) continue

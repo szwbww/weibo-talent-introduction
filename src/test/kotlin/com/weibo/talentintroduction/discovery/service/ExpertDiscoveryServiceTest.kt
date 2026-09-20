@@ -18,6 +18,7 @@ import com.weibo.talentintroduction.expert.service.CandidateEligibilityService
 import com.weibo.talentintroduction.expert.service.EmailValidationService
 import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
+import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ScrollExpertsMockHelper
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
@@ -58,6 +59,7 @@ class ExpertDiscoveryServiceTest {
     private lateinit var indexWriterService: ExpertIndexWriterService
     private lateinit var indexService: ExpertIndexService
     private lateinit var expertSearchService: ExpertSearchService
+    private val expertClassificationService = ExpertClassificationService()
     private lateinit var restTemplate: RestTemplate
     private lateinit var progressStore: TaskProgressStore
     private lateinit var cursorRepository: DiscoverySourceCursorRepository
@@ -130,7 +132,7 @@ class ExpertDiscoveryServiceTest {
             europePmc, openAlexProvider, crossrefProvider, arxivProvider,
             pmcOaProvider, orcidProvider, coreProvider,
             emailValidationService, eligibilityService,
-            indexWriterService, indexService, revalidationService, expertSearchService, restTemplate, esProperties,
+            indexWriterService, indexService, revalidationService, expertSearchService, expertClassificationService, restTemplate, esProperties,
             props, openAlexProps, objectMapper, progressStore, cursorRepository, executor,
             europePmcProps
         )
@@ -1332,6 +1334,49 @@ class ExpertDiscoveryServiceTest {
         @Suppress("UNCHECKED_CAST")
         val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
         assertFalse(doc.containsKey("institutionType"))
+    }
+
+    @Test
+    fun `enrichExistingExperts writes classification from enriched academic fields`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val expert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-CLASSIFY", email = "classify@example.com",
+            givenNames = "Test", familyNames = "Classify",
+            country = "US", keyword = null, employment = null
+        )
+        val enrichment = AuthorEnrichment(
+            hIndex = 24, citationCount = 100, worksCount = 25,
+            topics = listOf("Quantum computing"),
+            recentWorkTitles = listOf("Novel quantum algorithms"),
+            lastPublicationYear = 2026
+        )
+
+        ScrollExpertsMockHelper.stubSearchAfterExpertsFiltered(expertSearchService, listOf(listOf(expert)))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 1L, 1L)
+        Mockito.doReturn(mapOf("0000-CLASSIFY" to EnrichmentOutcome.Success(enrichment)))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList())
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(), Mockito.eq(HttpMethod.POST), Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        svc.enrichExistingExperts()
+
+        @Suppress("UNCHECKED_CAST")
+        val entityCaptor = ArgumentCaptor.forClass(HttpEntity::class.java) as ArgumentCaptor<HttpEntity<*>>
+        Mockito.verify(restTemplate, Mockito.atLeastOnce()).exchange(
+            Mockito.contains("/_update/"), Mockito.eq(HttpMethod.POST), entityCaptor.capture(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
+        val classification = doc["expertClassification"]
+            as com.weibo.talentintroduction.expert.domain.ExpertClassification
+        assertEquals(com.weibo.talentintroduction.expert.domain.ExpertType.ACADEMIC_RND, classification.type)
     }
 
     @Test
