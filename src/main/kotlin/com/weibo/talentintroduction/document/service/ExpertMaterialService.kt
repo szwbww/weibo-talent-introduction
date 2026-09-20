@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.config.MailAttachmentStorageProperties
 import com.weibo.talentintroduction.document.domain.DocumentStatus
 import com.weibo.talentintroduction.document.domain.ExpertDocument
 import com.weibo.talentintroduction.document.repository.ExpertDocumentRepository
+import com.weibo.talentintroduction.document.repository.ManualExpertMaterialUploadRepository
 import com.weibo.talentintroduction.mail.domain.MailAttachment
 import com.weibo.talentintroduction.mail.domain.MailAttachmentTransfer
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
@@ -55,7 +56,11 @@ class ExpertMaterialService(
     private val mailAttachmentTransferRepository: MailAttachmentTransferRepository,
     private val attachmentTransferService: AttachmentTransferService,
     private val mailAttachmentService: MailAttachmentService,
-    private val jdbc: NamedParameterJdbcTemplate
+    private val jdbc: NamedParameterJdbcTemplate,
+    // 手动材料 owner 解析（V130）：manual_upload_id → manual_expert_material_upload.expert_contact_id。
+    // 可空默认值只让既有 9 参直接构造的单元测试零改动；Spring 运行时完整注入，
+    // 材料列表的来源/上传者走 SQL 投影而不是本仓库。
+    private val manualUploadRepository: ManualExpertMaterialUploadRepository? = null
 ) {
 
     // ------------------------------------------------------------------
@@ -66,6 +71,7 @@ class ExpertMaterialService(
      * 附件唯一 owner 的联系人 id：
      * - mail_record owner → record.expert_contact_id；
      * - processing owner → processing.expert_contact_id（未绑定来信返回 null）；
+     * - manual owner（V130）→ upload.expert_contact_id；
      * - 无 owner / owner 行缺失 → null。
      * 仅用于归属核验；不读取本地文件。
      */
@@ -81,7 +87,16 @@ class ExpertMaterialService(
                 .orElse(null)
                 ?.expertContactId
         }
-        error("Attachment $attachmentId has no owner (mail_record_id and inbound_processing_id both null)")
+        if (attachment.manualUploadId != null) {
+            return manualUploadRepository
+                ?.findById(attachment.manualUploadId)
+                ?.orElse(null)
+                ?.expertContactId
+        }
+        error(
+            "Attachment $attachmentId has no owner (mail_record_id, inbound_processing_id " +
+                "and manual_upload_id are all null)"
+        )
     }
 
     /**
@@ -201,6 +216,7 @@ class ExpertMaterialService(
             attachmentCreatedAt = rs.getTimestampOrNull("attachment_created_at"),
             mailRecordId = rs.getLongOrNull("mail_record_id"),
             attachmentInboundProcessingId = rs.getLongOrNull("attachment_inbound_processing_id"),
+            manualUploadId = rs.getLongOrNull("manual_upload_id"),
             transferId = rs.getLongOrNull("transfer_id"),
             transferState = rs.getString("transfer_state"),
             transferInboundProcessingId = rs.getLongOrNull("transfer_inbound_processing_id"),
@@ -217,7 +233,10 @@ class ExpertMaterialService(
             mrAccountCode = rs.getString("mr_account_code"),
             mrDirection = rs.getString("mr_direction"),
             mrMessageId = rs.getString("mr_message_id"),
-            mrExpertContactId = rs.getLongOrNull("mr_expert_contact_id")
+            mrExpertContactId = rs.getLongOrNull("mr_expert_contact_id"),
+            muExpertContactId = rs.getLongOrNull("mu_expert_contact_id"),
+            muUploadedBy = rs.getString("mu_uploaded_by"),
+            muCreatedAt = rs.getTimestampOrNull("mu_created_at")
         )
     }
 
@@ -321,6 +340,7 @@ class ExpertMaterialService(
     ): ResolvedMaterial {
         val contentType = resolveContentType(row)
         val ownerValid = when {
+            row.manualUploadId != null -> row.muExpertContactId == contactId
             row.attachmentInboundProcessingId != null ->
                 row.pExpertContactId == null || row.pExpertContactId == contactId
             row.mailRecordId != null -> row.mrExpertContactId == contactId
@@ -391,6 +411,9 @@ class ExpertMaterialService(
 
     /**
      * 精确来源解析（I-2）：
+     * 0. manual owner（V130）→ 固定 MANUAL_UPLOAD 来源（id=contactId、subject=手动上传、
+     *    receivedAt=上传时间、uploadedBy=会话用户名、accountCode=null）；manual 行归属
+     *    不是本专家时显式拒绝（来源待核对，不猜）；
      * 1. transfer.inbound_processing_id 桥接（新附件）；
      * 2. attachment.inbound_processing_id 直接 owner（旧 processing 附件）；
      * 3. 旧 mailRecord owner：同账号/同专家/INBOUND/非空 messageId 唯一候选
@@ -403,6 +426,22 @@ class ExpertMaterialService(
         row: MaterialRow,
         candidates: List<ProcessingCandidateRow>
     ): SourceResolution {
+        if (row.manualUploadId != null) {
+            if (row.muExpertContactId != contactId) {
+                return SourceResolution(null, refused = true)
+            }
+            return SourceResolution(
+                MaterialSource(
+                    type = SOURCE_TYPE_MANUAL_UPLOAD,
+                    id = contactId,
+                    subject = MANUAL_UPLOAD_SOURCE_SUBJECT,
+                    receivedAt = row.muCreatedAt,
+                    accountCode = null,
+                    uploadedBy = row.muUploadedBy
+                ),
+                refused = false
+            )
+        }
         val processingId = row.transferInboundProcessingId ?: row.attachmentInboundProcessingId
         if (processingId != null) {
             val otherContact = row.pExpertContactId != null && row.pExpertContactId != contactId
@@ -752,6 +791,10 @@ class ExpertMaterialService(
         const val MAX_PAGE_SIZE = 100
         const val SOURCE_TYPE_INBOUND_PROCESSING = "INBOUND_PROCESSING"
         const val SOURCE_TYPE_MAIL_RECORD = "MAIL_RECORD"
+        const val SOURCE_TYPE_MANUAL_UPLOAD = "MANUAL_UPLOAD"
+
+        /** 手动材料来源的固定 subject（I-5）：来源列表显示「手动上传」而不是服务器路径。 */
+        const val MANUAL_UPLOAD_SOURCE_SUBJECT = "手动上传"
         const val SOURCE_AMBIGUOUS_CODE = "SOURCE_AMBIGUOUS"
         const val SOURCE_AMBIGUOUS_MESSAGE = "来源待核对"
         const val STATE_SOURCE_UNAVAILABLE = MailAttachmentTransfer.STATE_SOURCE_UNAVAILABLE
@@ -764,7 +807,11 @@ class ExpertMaterialService(
             MailAttachmentTransfer.STATE_FAILED,
             MailAttachmentTransfer.STATE_SOURCE_UNAVAILABLE
         )
-        val SOURCE_TYPES = setOf(SOURCE_TYPE_INBOUND_PROCESSING, SOURCE_TYPE_MAIL_RECORD)
+        val SOURCE_TYPES = setOf(
+            SOURCE_TYPE_INBOUND_PROCESSING,
+            SOURCE_TYPE_MAIL_RECORD,
+            SOURCE_TYPE_MANUAL_UPLOAD
+        )
 
         /** 09 AI 选件默认文档类型（与旧 AI_ANALYSIS_DEFAULT_TYPES 一致）。 */
         val DEFAULT_ANALYSIS_DOCUMENT_TYPES = setOf("CV", "PHD_DEGREE", "MASTER_DEGREE", "BACHELOR_DEGREE")
@@ -781,6 +828,7 @@ class ExpertMaterialService(
                    a.created_at AS attachment_created_at,
                    a.mail_record_id AS mail_record_id,
                    a.inbound_processing_id AS attachment_inbound_processing_id,
+                   a.manual_upload_id AS manual_upload_id,
                    t.id AS transfer_id,
                    t.state AS transfer_state,
                    t.inbound_processing_id AS transfer_inbound_processing_id,
@@ -797,12 +845,16 @@ class ExpertMaterialService(
                    mr.sender_account_code AS mr_account_code,
                    mr.direction AS mr_direction,
                    mr.message_id AS mr_message_id,
-                   mr.expert_contact_id AS mr_expert_contact_id
+                   mr.expert_contact_id AS mr_expert_contact_id,
+                   mu.expert_contact_id AS mu_expert_contact_id,
+                   mu.uploaded_by AS mu_uploaded_by,
+                   mu.created_at AS mu_created_at
               FROM expert_document d
               JOIN mail_attachment a ON a.id = d.mail_attachment_id
               LEFT JOIN mail_attachment_transfer t ON t.attachment_id = a.id
               LEFT JOIN inbound_mail_processing p ON p.id = COALESCE(t.inbound_processing_id, a.inbound_processing_id)
               LEFT JOIN mail_record mr ON mr.id = a.mail_record_id
+              LEFT JOIN manual_expert_material_upload mu ON mu.id = a.manual_upload_id
              WHERE d.expert_contact_id = :contactId
         """
 
@@ -853,13 +905,18 @@ data class ReadyFile(
     val path: Path
 )
 
-/** 材料来源消息。type/id 为空表示来源待核对（歧义拒绝），不猜测。 */
+/**
+ * 材料来源（I-5）。type/id 为空表示来源待核对（歧义拒绝），不猜测。
+ * [uploadedBy] 只在手动上传（`MANUAL_UPLOAD`）来源下非空，值恒为服务端会话用户名；
+ * 邮件来源显式保持 null（不改既有字段语义）。
+ */
 data class MaterialSource(
     val type: String?,
     val id: Long?,
     val subject: String?,
     val receivedAt: LocalDateTime?,
-    val accountCode: String?
+    val accountCode: String?,
+    val uploadedBy: String? = null
 )
 
 data class MaterialItemError(
@@ -968,7 +1025,11 @@ internal data class MaterialRow(
     val mrAccountCode: String?,
     val mrDirection: String?,
     val mrMessageId: String?,
-    val mrExpertContactId: Long?
+    val mrExpertContactId: Long?,
+    val manualUploadId: Long? = null,
+    val muExpertContactId: Long? = null,
+    val muUploadedBy: String? = null,
+    val muCreatedAt: LocalDateTime? = null
 )
 
 internal data class ProcessingCandidateRow(

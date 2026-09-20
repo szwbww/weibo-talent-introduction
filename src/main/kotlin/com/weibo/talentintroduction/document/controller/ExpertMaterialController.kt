@@ -4,10 +4,13 @@ import com.weibo.talentintroduction.auth.config.AuthSessionKeys
 import com.weibo.talentintroduction.document.service.AttachmentTransferQueueFullException
 import com.weibo.talentintroduction.document.service.ExpertMaterialPage
 import com.weibo.talentintroduction.document.service.ExpertMaterialService
+import com.weibo.talentintroduction.document.service.ManualExpertMaterialUploadResponse
+import com.weibo.talentintroduction.document.service.ManualExpertMaterialUploadService
 import com.weibo.talentintroduction.document.service.MaterialNotReadyException
 import com.weibo.talentintroduction.document.service.MaterialTransferBatchResponse
 import com.weibo.talentintroduction.document.service.ReconcileResult
 import com.weibo.talentintroduction.mail.controller.MailboxAttachmentController
+import com.weibo.talentintroduction.mail.service.OutboundAttachmentException
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
 import org.springframework.http.HttpStatus
@@ -21,12 +24,17 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.multipart.MultipartFile
 import javax.servlet.http.HttpServletRequest
 
 @RestController
 @RequestMapping("/api/expert-contacts/{contactId}/materials")
 class ExpertMaterialController(
-    private val service: ExpertMaterialService
+    private val service: ExpertMaterialService,
+    // 手动材料上传（V130）：可空默认值只让既有直接构造（standalone / @WebMvcTest 切片）
+    // 零改动；Spring 运行时按主构造器完整注入，端点入口显式拒绝未接线的情况，
+    // 绝不静默放行（与 OutboundAttachmentController 同款先例）。
+    private val uploadService: ManualExpertMaterialUploadService? = null
 ) {
     /**
      * GET 绝无 IMAP/下载入队/审核写：只做参数化只读查询 + 本地文件核验。
@@ -57,6 +65,36 @@ class ExpertMaterialController(
             ?: throw IllegalArgumentException("未登录")
         val response = service.requestTransfers(contactId, request.attachmentIds, username)
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response)
+    }
+
+    /**
+     * 手动材料上传（V130/I-2）：一次请求一个文件，成功 201。
+     *
+     * 身份只取会话 `AuthSessionKeys.USERNAME`（不接受客户端 uploadedBy）；未登录在到达本
+     * controller 之前由 AuthInterceptor 固定 401。multipart 解析期超限由容器抛
+     * `MaxUploadSizeExceededException` → `GlobalExceptionHandler` 固定 413；业务上限
+     * 104857600 字节由服务按实际读入字节计数后抛 `OutboundAttachmentException.payloadTooLarge`
+     * （同样 413 + `code=PAYLOAD_TOO_LARGE`，且响应不含任何磁盘路径）。`file` 字段用
+     * `required = false` 自行判缺：缺失返回 400 业务文案，而不是让
+     * `MissingServletRequestPartException` 落到通用 catch(Exception) → 500。
+     */
+    @PostMapping("/uploads")
+    fun uploadMaterial(
+        @PathVariable contactId: Long,
+        @RequestParam(name = "file", required = false) file: MultipartFile?,
+        servletRequest: HttpServletRequest
+    ): ResponseEntity<ManualExpertMaterialUploadResponse> {
+        val session = servletRequest.getSession(false)
+        val username = session?.getAttribute(AuthSessionKeys.USERNAME) as? String
+            ?: throw IllegalArgumentException("未登录")
+        val upload = uploadService
+            ?: throw IllegalStateException("手动材料上传服务未接线")
+        // 0 字节文件是合法材料，因此只判字段缺失，不判 part 是否为空。
+        val part = file ?: throw OutboundAttachmentException.badRequest("缺少 multipart 字段 file")
+        val response = part.inputStream.use { stream ->
+            upload.upload(contactId, username, part.originalFilename, part.contentType, stream)
+        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(response)
     }
 
     /** 显式历史修复：dryRun 只返回候选不写库；apply 幂等补缺 ExpertDocument。 */

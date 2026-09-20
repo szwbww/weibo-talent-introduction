@@ -13,12 +13,16 @@ spring:
     placeholder-replacement: false
   servlet:
     multipart:
-      # 04 通用附件上传：单请求一个原件。max-file-size 与
-      # OutboundAttachmentModels.MAX_FILE_BYTES 同为 10MiB（Spring DataSize 的 MB = 1024^2），
-      # max-request-size 留 multipart 边界/头部空间；超限由容器抛
-      # MaxUploadSizeExceededException，经 GlobalExceptionHandler 固定 413。
-      max-file-size: 10MB
-      max-request-size: 11MB
+      # 共享 multipart parser ceiling（I-4）：这是**容器前置保护**，不是业务上限。
+      # 手动材料（V130）业务上限精确为 100 * 1024 * 1024 = 104857600 字节，由
+      # ManualExpertMaterialUploadService 按实际读入字节计数裁决；Spring DataSize 的
+      # MB = 1024^2，故 max-file-size 100MB 恰好等于该业务上限，max-request-size 101MB
+      # 只留 multipart 边界/头部空间。解析期超限由容器抛 MaxUploadSizeExceededException，
+      # 经 GlobalExceptionHandler 固定 413（code=PAYLOAD_TOO_LARGE）。
+      # 旧「人工回复通用附件」服务仍以自己的 MAX_FILE_BYTES = 10 MiB 常量二次拒绝
+      # （OutboundAttachmentServiceTest 守住），提高本上限不会放宽其业务限制。
+      max-file-size: 100MB
+      max-request-size: 101MB
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}
