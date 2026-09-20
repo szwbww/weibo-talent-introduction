@@ -97,3 +97,102 @@ No product code was modified.
 | frontend O-1 CSS insertion position | I-6 | RECORD_ONLY | Required focused UI/cache tests pass; no product path exceeds the two child allowlists. |
 | frontend O-2 calendar CSS red | I-8 | RECORD_ONLY | Same pre-existing `meetingCalendar.test.js:188` failure in fresh full Node run. |
 | frontend O-3 additive test stubs | I-3 | RECORD_ONLY | Targeted shared/style/SharePoint Node suite: 39/39 pass. |
+
+## Epoch 2 — 2026-09-20T09:04:35Z
+
+- Master plan: `docs/plans/2026-09-20/00-manual-expert-material-upload-main.md` (sha256 `402676caa56035706601113d0b690d6d5b5d29617aef0d01cabbfb328379b4a5`)
+- Governing master identity: sha256 `402676caa56035706601113d0b690d6d5b5d29617aef0d01cabbfb328379b4a5`; recorded commit `d2a7f65ecbc46b5165863dfcab94ae5972f50605`
+- Master identity state: CONSISTENT; invoked identity SAME; amendments N/A
+- Boundary: `d2a7f65ecbc46b5165863dfcab94ae5972f50605..5f4967b8d5f94663266c095e6a2e9ec69f570505`
+- Reviewer: `/root/aggregate_reviewer`
+- Result: BLOCKED
+- Convergence: BLOCKED
+- Repair artifact/result: N/A; repair-p is not eligible
+
+### Required Commands — Fresh
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=ManualExpertMaterialUploadFlowTest,ExpertMaterialServiceTest,ExpertDocumentBrowseServiceTest,DocumentTextExtractorTest,OperatorStatusReconcileServiceTest,OutboundAttachmentServiceTest test` | exit 1; RECORD_ONLY Node gate | Selected Surefire: 107 tests, 0 failures/errors/skips. Maven fails only at `node-test`: 1035 tests, 1034 pass, 1 baseline calendar failure. |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -DmigrationIt=true -Dtest=FlywayMigrationIntegrationTest test` | exit 1; BLOCKED | 1 test, 0 failures, 1 error; Testcontainers Docker client API 1.32 is below engine minimum 1.40. |
+| `node --check src/main/resources/static/expert-materials.js` | exit 0 | PASS. |
+| `node --test src/test/js/expertMaterialsShared.test.js src/test/js/expertMaterialsStyle.test.js src/test/js/sharepointFileCardDisplay.test.js` | exit 0 | 39 tests, 39 pass, 0 fail. |
+| `node --test src/test/js/*.test.js` | exit 1; RECORD_ONLY | 1035 tests, 1034 pass, 1 fail: `meetingCalendar.test.js:188`. |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test` | exit 1; RECORD_ONLY Node gate | Surefire: 3503 tests, 0 failures/errors, 13 skipped; only failing Maven step `node-test`, same 1034/1035 Node result. |
+| `git diff --check` | exit 0 | PASS. |
+
+### Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| I-1 sequential execution | PASS | Ledger records backend `d2a7f65..80beb2b`, then frontend `80beb2b..5f4967b`; both terminal LIGHT_PASS_WITH_NOTES. |
+| I-2 HTTP contract | PASS | `ExpertMaterialController.kt:81-105`; frontend FormData and `headers:{}` are covered by focused Node 39/39. |
+| I-3 authoritative GET/store contract | PASS | `ExpertMaterialService.kt:803-857`; frontend success refreshes via GET only; focused Node passes. |
+| I-4 exact 104857600-byte boundary | PASS | `ManualExpertMaterialUploadService.kt:177-229`; target Java reports include 13 flow tests green; old outbound suite has 28 green. |
+| I-5 owner/mail isolation/path safety | PASS static/unit; migration runtime BLOCKED | V130 lines 24-67; upload transaction `ManualExpertMaterialUploadService.kt:102-145`; scoped resolver/source path in `ExpertMaterialService.kt:107-120,803-857`. |
+| I-6 scope boundary | PASS | Exactly 10 backend plus 6 frontend allowlisted product/test files; no extra product path. |
+| I-7 cache/release/rollback | PASS static; manual pending | 11 cache keys unified; release/rollback remains A-8 manual. |
+| I-8 combined gates | BLOCKED | Focused gates and diff check pass; migration IT has no Docker-compatible environment evidence. Full Node/Maven red is established unrelated baseline and remains RECORD_ONLY. |
+
+### Cross-Child Assessment
+
+| Boundary | Verdict | Evidence |
+|---|---|---|
+| Backend → frontend ordering | PASS | Frontend base is backend implementation head `80beb2b`. |
+| Endpoint/part/status | PASS | Backend and frontend match `POST /api/expert-contacts/{contactId}/materials/uploads`, multipart `file`, HTTP 201, and empty JSON-header override. |
+| POST → authoritative GET | PASS | Successful upload calls `fetchPage`; no direct material-row insertion. |
+| Source DTO → UI source filter/label | PASS | One `MANUAL_UPLOAD:contactId` source, labeled `手动上传`. |
+| Capacity/old outbound isolation | PASS | Streamed 100 MiB limit and old outbound tests have fresh directed Java evidence. |
+| Ownership/security/read path | PASS static/unit; migration runtime BLOCKED | Owner/write/read chains align; migration IT cannot reach Docker. |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | PERSISTENT / BLOCKED, narrowed | Epoch 1 had no Maven completions. Targeted/full Maven now complete and Java-green; migration remains blocked by Docker API incompatibility. |
+| O-1 | PERSISTENT / RECORD_ONLY | Full Node remains 1034/1035; `meetingCalendar.test.js:188` predates frontend child base. |
+| backend O-2 | BLOCKED evidence / RECORD_ONLY | Exact migration command stops before V124 on Docker API mismatch. |
+| backend O-3 | PERSISTENT / RECORD_ONLY | Fresh Testcontainers failure: client API 1.32, engine minimum 1.40. |
+| backend O-4, O-5 | RECORD_ONLY | Full-context smoke/manual gap; move-failure injection is not mandatory. |
+| frontend O-1 | RECORD_ONLY | CSS placement has no authorized non-regressive repair; focused CSS tests pass. |
+| frontend O-2 | PERSISTENT / RECORD_ONLY | Fresh full Node repeats baseline calendar assertion. |
+| frontend O-3 | RECORD_ONLY | Additive stubs; focused suite 39/39 passes. |
+
+### Findings
+
+#### P1
+
+- N/A
+
+#### P2
+
+- N/A
+
+#### Observations
+
+- Full Node/Maven failures are solely the pre-existing calendar CSS assertion, not this boundary.
+- Required migration IT cannot run on this host: Testcontainers/docker-java API `1.32` is below Docker engine minimum `1.40`.
+
+### Evidence Boundaries
+
+- No fresh migration verification of V130 against Docker/MySQL.
+- Manual A-1 through A-8 remain pending.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| backend O-1 cache-key Node red | I-8 | RECORD_ONLY | Full Node fresh: 1034/1035; remaining calendar failure already existed at frontend base; 16 original cache-key failures resolved. |
+| backend O-2 V124 migration IT | I-5, I-8 | BLOCKED evidence / RECORD_ONLY | Exact migration command fails before V124 on Docker API mismatch. |
+| backend O-3 Docker API incompatibility | I-8 | PERSISTENT / RECORD_ONLY | Fresh Testcontainers error: client API 1.32, engine minimum 1.40. |
+| backend O-4 no live/full-context smoke | I-5 | RECORD_ONLY | Static/runtime unit paths inspected; A-1 manual E2E remains pending. |
+| backend O-5 no move-failure injection | I-2 | RECORD_ONLY | Not an enumerated mandatory injection; temp cleanup/static ordering inspected; target flow suite green. |
+| frontend O-1 CSS physical insertion position | I-6 | RECORD_ONLY | Focused CSS tests pass; product boundary is within child allowlists; no authorized non-regressive repair. |
+| frontend O-2 calendar CSS red | I-8 | PERSISTENT / RECORD_ONLY | Fresh full Node reproduces `meetingCalendar.test.js:188` baseline failure. |
+| frontend O-3 additive test stubs | I-3 | RECORD_ONLY | Focused shared/style/SharePoint suite: 39/39 pass; no weakened assertion evidenced. |
+
+### Next Action
+
+- Provide a Docker/Testcontainers-compatible environment, rerun the exact migration command, then rerun aggregate `verify-p`.
+
+No product code was modified.
