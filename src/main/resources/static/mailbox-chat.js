@@ -2044,6 +2044,13 @@
             return (cleaned.trim() ? cleaned : raw).trim();
         }
 
+        function messageDisplayHtml(text) {
+            if (typeof global.renderMailBody === "function") {
+                return global.renderMailBody(text, true);
+            }
+            return escapeText(text);
+        }
+
         function translationState(key, bodyText) {
             const state = instance.translations.get(key);
             if (!state) {
@@ -2098,7 +2105,7 @@
                 : `${direction === "OUTBOUND" ? "发出邮件" : "往来邮件"} · ${timePart(message.eventAt)}${account ? ` · ${escapeText(account)}` : ""}`;
             const subject = message.subject || "(无主题)";
             const displayBody = messageDisplayText(message);
-            const bodyHtml = displayBody ? `<div class="mc-body">${escapeText(displayBody)}</div>` : "";
+            const bodyHtml = displayBody ? `<div class="mc-body">${messageDisplayHtml(displayBody)}</div>` : "";
             const sentMeetingHtml = sentMeetingAttachmentHtml(message);
             // fast-p 07（I-4）：已发通用附件只消费 06 的 outboundAttachments 快照。
             const sentOutboundFilesHtml = outboundSentFilesHtml(message);

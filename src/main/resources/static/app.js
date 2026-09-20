@@ -1580,6 +1580,41 @@ function escapeHtml(value) {
         .replaceAll("'", "&#039;");
 }
 
+const MICROSOFT_FILE_CARD = /\u200B?\[https:\/\/res\.public\.onecdn\.static\.microsoft\/assets\/fluentui-resources\/1\.1\.0\/app-min\/assets\/item-types\/24\/[a-z0-9_-]+\.png\]([^\r\n<>]{1,255})<(https:\/\/[^\s<>]+)>\u200B?/gi;
+const SHAREPOINT_FILE_URL = /^https:\/\/(?:[a-z0-9-]+\.)+sharepoint\.com(?:\/|$)/i;
+
+function isSharePointFileUrl(url) {
+    return SHAREPOINT_FILE_URL.test(String(url ?? ""));
+}
+
+function extractMailExternalFileCards(text) {
+    const links = [];
+    const seenUrls = new Set();
+    const body = String(text ?? "").replace(MICROSOFT_FILE_CARD, (card, rawName, rawUrl) => {
+        const name = String(rawName ?? "").trim();
+        const url = String(rawUrl ?? "");
+        if (!name || !isSharePointFileUrl(url)) return card;
+        if (!seenUrls.has(url)) {
+            seenUrls.add(url);
+            links.push({ name, url });
+        }
+        return "";
+    });
+    return { body, links };
+}
+
+function renderMailBody(text, externalFileLinks = false) {
+    if (!externalFileLinks) return escapeHtml(text);
+    const extracted = extractMailExternalFileCards(text);
+    const linksHtml = extracted.links.map(({ name, url }) => `
+        <div class="mail-external-file-links">
+            <span>附件链接：</span>
+            <a class="mail-external-file-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(name)}</a>
+        </div>
+    `).join("");
+    return `${escapeHtml(extracted.body)}${linksHtml}`;
+}
+
 // P3 (I-1): mirrors GroundedAutoReplyDecisionService.buildReplySubject —
 // trim; blank -> "Re:"; already "Re:"-prefixed (case-insensitive) -> as is;
 // otherwise "Re: " + subject. I-2: cap at 255 so the server's length guard
@@ -1615,7 +1650,7 @@ function translatableBody(text, opts = {}) {
     const encoded = encodeTranslateSrc(srcRaw);
     return `
         <div class="translatable-body-block">
-            <div class="pre translatable-body" data-translate-src="${encoded}">${escapeHtml(display)}</div>
+            <div class="pre translatable-body" data-translate-src="${encoded}">${renderMailBody(display, opts.externalFileLinks === true)}</div>
             <button class="btn-translate" type="button">🌐 翻译为中文</button>
             <div class="translation-text pre" hidden></div>
         </div>
@@ -4093,7 +4128,7 @@ function renderAiTrainingMailDetail(mail) {
         <div class="ai-training-detail-subject">${escapeHtml(mail.subject || "无主题")}</div>
         ${(expertTags || inboundTags) ? `<div class="ai-training-mail-item-tags">${expertTags}${inboundTags}</div>` : ""}
         <div class="ai-training-detail-body">
-            ${translatableBody(mail.body || "", { emptyLabel: "无正文" })}
+            ${translatableBody(mail.body || "", { emptyLabel: "无正文", externalFileLinks: true })}
         </div>
     `;
 }
@@ -7817,8 +7852,9 @@ function pickTranslateSrc(mail) {
 function renderMailItem(mail) {
     const direction = mail.direction.toLowerCase();
     const body = mail.body || "";
-    const compactBody = compactText(body);
-    const shouldCollapse = body.trim().length > compactBody.length;
+    const extractedFileCards = extractMailExternalFileCards(body);
+    const compactBody = compactText(extractedFileCards.body);
+    const shouldCollapse = extractedFileCards.links.length > 0 || body.trim().length > compactBody.length;
 
     // Choose appropriate SVG icon
     const isOutbound = mail.direction === "OUTBOUND";
@@ -7848,7 +7884,7 @@ function renderMailItem(mail) {
             ${shouldCollapse ? `
                 <details class="mail-body-detail">
                     <summary>查看完整正文</summary>
-                    ${translatableBody(body, { translateSrc: pickTranslateSrc(mail) })}
+                    ${translatableBody(body, { translateSrc: pickTranslateSrc(mail), externalFileLinks: true })}
                 </details>
             ` : ""}
         </article>
@@ -10906,7 +10942,7 @@ async function showMailDetail(source, id) {
                 </div>` : ""}
                 <div class="detail-section">
                     <h3>正文</h3>
-                    ${translatableBody(body, { emptyLabel: "无正文" })}
+                    ${translatableBody(body, { emptyLabel: "无正文", externalFileLinks: true })}
                 </div>
             </div>
         `;
@@ -11484,7 +11520,7 @@ async function showUnmatchedDetail(id) {
                     <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
                 </summary>
                 <div class="reply-workflow-content mail-body-content">
-                ${translatableBody(record.body)}
+                ${translatableBody(record.body, { externalFileLinks: true })}
                 </div>
             </details>` : ""}
 
@@ -11497,7 +11533,7 @@ async function showUnmatchedDetail(id) {
                     <span class="reply-workflow-chevron" aria-hidden="true">⌄</span>
                 </summary>
                 <div class="reply-workflow-content mail-body-content">
-                ${translatableBody(record.cleanedBody)}
+                ${translatableBody(record.cleanedBody, { externalFileLinks: true })}
                 </div>
             </details>` : ""}
 
@@ -15383,7 +15419,7 @@ function renderInboundThread(threadData) {
                     ${currentBadge}
                 </div>
                 <div class="inbound-thread-bubble-meta">${escapeHtml(directionLabel)} · ${escapeHtml(timeStr)}</div>
-                <div class="inbound-thread-bubble-body">${translatableBody(msg.body || "", { emptyLabel: "(无正文)" })}</div>
+                <div class="inbound-thread-bubble-body">${translatableBody(msg.body || "", { emptyLabel: "(无正文)", externalFileLinks: true })}</div>
                 ${renderInboundThreadBubbleTags(msg)}
             </div>
         `;

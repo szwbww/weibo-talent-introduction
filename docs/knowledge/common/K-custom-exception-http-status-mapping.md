@@ -1,9 +1,9 @@
 ---
 id: K-custom-exception-http-status-mapping
 domain: common
-created: 2026-08-10
-last_used: 2026-08-20
-hit_count: 3
+created: 2026-09-16
+last_used: 2026-09-20
+hit_count: 5
 source: create-p:sender-binding-02-send-path-consistency
 severity: P1
 ---
@@ -48,5 +48,8 @@ severity: P1
 仓库先例：`AnalysisFailedException`（`document/service/AnalysisFailedException.kt:3`，
 `: RuntimeException`）+ `GlobalExceptionHandler.kt:26-28`。
 注意：**仓库内无任何测试断言过「专用 handler 确实被选中」**
+（以下为2026-08-20的历史检索结论，不作为永久事实。）
 （`grep -rln GlobalExceptionHandler src/test/kotlin` 只有两个 `@WebMvcTest` 类，
 断言的是业务码不是 handler 选择），所以新增此类映射时要用一次真实 HTTP 实测兜底。
+
+2026-09-16复核：通用catch仍在GlobalExceptionHandler.kt:65；MeetingConfirmationController.kt:23也明确说明ResponseStatusException会被映射500。已有ManualSendSafetyBlockedHandlerTest直接调用handler，但不等于真实HTTP分派测试。新业务需要409/413时须专用映射＋MockMvc/实际HTTP验证；multipart超限可能发生在选定controller之前，不应仅依赖controller局部handler。

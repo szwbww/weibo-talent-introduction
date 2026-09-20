@@ -152,6 +152,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 
 - 删除 UI 功能（DOM / 端点 / 表格列）必须同步删除或改写直接断言它们的契约测试，并把这些测试文件列入变更文件清单；漏掉会让全量测试持续失败并阻塞发布。(K-ui-removal-retires-obsolete-contract-tests)
 - 前端测试用 `extractFn` + DOM stub，`document.getElementById` 永远返回 stub，因此真实 `index.html` 里 DOM 已删除时测试仍全绿而函数在生产中静默短路；新增「按 id 取元素再写入」的渲染函数时，测试中必须额外断言该 id 出现在 `index.html` 源文本里。(K-dom-stub-tests-hide-dangling-refs)
+- `setView`会对`.nav-tab`执行页面切换：新增非view的全局按钮须用独立class；顶栏1100px换行由topnav/nav-tabs两组媒体规则共同触发。(K-topnav-global-control-is-not-nav-tab)
 ---
 
 # 项目元信息（供 multi-ai-kit 使用）

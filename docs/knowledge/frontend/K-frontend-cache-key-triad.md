@@ -1,9 +1,9 @@
 ---
 id: K-frontend-cache-key-triad
 domain: frontend
-created: 2026-09-14
-last_used: 2026-09-14
-hit_count: 19
+created: 2026-09-20
+last_used: 2026-09-20
+hit_count: 24
 source: create-p:v6-topnav-glass-navy-restyle
 severity: P1
 ---
@@ -53,3 +53,8 @@ bump 前后各跑一次：bump 前的结果就是必须同步的文件全集；b
 - `trustReplyWorkbenchSharedMount.test.js`
 
 当前发布契约是 4 个 CSS 与 5 个 JS 同键；`task-modal-runtime.js` 不带键。数量仍只是快照，每次变更继续按 `index.html` 的当前键反查。
+
+2026-09-16复核：当前键已为`20260914-followup-email`，仍命中上述9份测试。
+`meetingConfirmationAssets.test.js`和`trustReplyWorkbenchSharedMount.test.js`还精确断言资源总数为9；新增script/link时须同步数量、名字与顺序断言，不能只换版本字符串。本次会议日历计划复用app.js，不新增资源。
+
+2026-09-20 复核：`index.html` 已扩为 5 个 CSS + 6 个 JS，共 11 个版本化资源；大多数测试改为从 `styles.css?v=` 派生键。当前工作树因 SharePoint 文件卡 WIP 暂时存在 20260918/20260919 两组键，不能把这个分裂状态当发布契约。执行静态资源计划时仍须先读当前 diff，再统一全部 11 项；当前唯一额外写死键的是 `sharepointFileCardDisplay.test.js`，应改为派生而不是继续扩散字面量。

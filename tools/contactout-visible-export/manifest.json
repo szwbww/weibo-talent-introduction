@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "ContactOut 已显示邮箱采集",
+  "version": "1.5.5",
+  "description": "联网查询企业、通用打分并选择人才门槛；采集已显示完整邮箱。",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://contactout.com/*", "https://*.contactout.com/*", "https://api.deepseek.com/*", "https://api.tavily.com/*"],
+  "content_scripts": [{
+    "matches": ["https://contactout.com/*", "https://*.contactout.com/*"],
+    "js": ["core.js", "collector.js", "autopilot.js"],
+    "run_at": "document_idle"
+  }],
+  "action": { "default_popup": "popup.html", "default_title": "采集已显示邮箱" }
+}

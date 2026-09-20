@@ -2,8 +2,8 @@
 id: K-meeting-confirmation-generic-template-boundary
 domain: mail
 created: 2026-09-10
-last_used: 2026-09-10
-hit_count: 1
+last_used: 2026-09-17
+hit_count: 3
 source: create-p:meeting-confirmation-template-timezone-repair
 severity: P1
 ---
