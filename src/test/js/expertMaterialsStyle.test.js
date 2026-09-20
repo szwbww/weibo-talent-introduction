@@ -23,6 +23,7 @@ const componentSource = fs.readFileSync(path.join(ROOT, "expert-materials.js"), 
 
 const PLAN_08 = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-07", "08-shared-materials-frontend.md");
 const STYLE_CONTRACT = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-07", "ui-style-contract.md");
+const FRONTEND_PLAN = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-20", "manual-expert-material-upload-frontend.md");
 
 const STORAGE_STATES = ["METADATA_ONLY", "QUEUED", "DOWNLOADING", "STORED", "FAILED", "SOURCE_UNAVAILABLE"];
 
@@ -41,6 +42,20 @@ function extractS1Css(planPath) {
     throw new Error(`S-1 CSS block not found in ${planPath}`);
 }
 
+// 手动上传子计划（2026-09-20）的 S-1/S-2 代码块。代码围栏在计划里带 2 空格列表
+// 缩进，围栏内容按原文（含缩进）逐字追加，故这里取原文、不做任何归一化。
+function extractManualUploadCss(firstLine) {
+    const text = fs.readFileSync(FRONTEND_PLAN, "utf-8");
+    const blocks = [...text.matchAll(/```css\r?\n([\s\S]*?)\n[ \t]*```/g)].map((match) => match[1]);
+    for (const block of blocks) {
+        if (block.trimStart().startsWith(firstLine)) return block;
+    }
+    throw new Error(`CSS block starting with ${firstLine} not found in ${FRONTEND_PLAN}`);
+}
+
+const S1_UPLOAD_CSS = extractManualUploadCss(".expert-materials .em-material-actions {");
+const S2_UPLOAD_CSS = extractManualUploadCss(".em-upload-dialog {");
+
 // ════════════════════════════════════════════════════════════════════════
 // 真实 DOM 能力的最小树（专供渲染 + 遍历；与共享测试同一语义，独立副本）
 // ════════════════════════════════════════════════════════════════════════
@@ -49,6 +64,14 @@ class MiniEvent {
     constructor(type) {
         this.type = type;
         this.target = null;
+        this.defaultPrevented = false;
+        this.propagationStopped = false;
+    }
+    preventDefault() {
+        this.defaultPrevented = true;
+    }
+    stopPropagation() {
+        this.propagationStopped = true;
     }
 }
 
@@ -250,6 +273,18 @@ class MiniElement {
     querySelector(selector) {
         return this.querySelectorAll(selector)[0] || null;
     }
+    matches(selector) {
+        return this.matchesTokens(this, this.parseTokens(selector));
+    }
+    closest(selector) {
+        const tokens = this.parseTokens(selector);
+        let node = this;
+        while (node && node.nodeType === 1) {
+            if (this.matchesTokens(node, tokens)) return node;
+            node = node.parentNode;
+        }
+        return null;
+    }
     querySelectorAll(selector) {
         const tokens = this.parseTokens(selector);
         const out = [];
@@ -277,6 +312,7 @@ class MiniElement {
         let node = this;
         while (node && node.nodeType === 1) {
             for (const fn of node.listeners.get(event.type) || []) fn(event);
+            if (event.propagationStopped) break;
             node = node.parentNode;
         }
         return true;
@@ -350,11 +386,26 @@ class FakeServer {
     constructor() {
         this.catalog = CATALOG.map((item) => Object.assign({}, item));
         this.gets = 0;
+        this.urls = [];
+        this.uploads = [];
     }
     apiAdapter() {
         const server = this;
-        return async function api(url) {
+        return async function api(url, options) {
+            const opts = options || {};
+            if (opts.method === "POST") {
+                const parts = opts.body && Array.isArray(opts.body.entries) ? opts.body.entries : [];
+                const file = parts.length === 1 ? parts[0].value : null;
+                server.uploads.push({ url, partNames: parts.map((part) => part.name), file, headers: opts.headers });
+                if (file && String(file.name).includes("fail")) {
+                    const error = new Error("服务器拒绝了该文件");
+                    error.status = 500;
+                    throw error;
+                }
+                return { attachmentId: 999, documentId: 998, fileName: file ? file.name : "x", storageState: "STORED" };
+            }
             server.gets += 1;
+            server.urls.push(String(url));
             const qIndex = url.indexOf("?");
             const params = new URLSearchParams(qIndex === -1 ? "" : url.slice(qIndex + 1));
             const page = Number(params.get("page") || "0");
@@ -366,15 +417,37 @@ class FakeServer {
     }
 }
 
+/** FormData stub：与共享测试同语义，只记录 append 的字段名与值。 */
+class MiniFormData {
+    constructor() {
+        this.entries = [];
+    }
+    append(name, value) {
+        this.entries.push({ name, value });
+    }
+}
+
 function loadComponent(server) {
     const doc = new MiniDocument();
-    const sandbox = { document: doc, URLSearchParams, AbortController, setTimeout, clearTimeout, console };
+    const sandbox = {
+        document: doc,
+        URLSearchParams,
+        AbortController,
+        FormData: MiniFormData,
+        setTimeout,
+        clearTimeout,
+        console
+    };
     sandbox.window = sandbox;
     sandbox.globalThis = sandbox;
     vm.createContext(sandbox);
     vm.runInContext(componentSource, sandbox, { filename: "expert-materials.js" });
     sandbox.ExpertMaterials.configure({ api: server.apiAdapter(), contextPath: "", pollMs: 2000 });
     return { sandbox, doc };
+}
+
+function click(el) {
+    el.dispatchEvent(new MiniEvent("click"));
 }
 
 function walkTree(node, fn) {
@@ -516,6 +589,269 @@ describe("S-1: DOM 白名单 —— 渲染产物 class/id/inline-style 全量核
             assert.ok(strong.getAttribute("title") === fileName, "title 与文本同为完整文件名");
             const checkbox = row.querySelector("input[type=checkbox]");
             assert.ok(checkbox.getAttribute("aria-label").includes(fileName), "checkbox 可访问名称包含完整文件名");
+        } finally {
+            sandbox.ExpertMaterials.unmountHostsIn(host);
+            await flush();
+        }
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// 手动上传（子计划 2026-09-20 · S-1/S-2/S-3）
+// ════════════════════════════════════════════════════════════════════════
+
+const UPLOAD_STATES = ["pending", "uploading", "success", "failed", "blocked"];
+const UPLOAD_ACTIONS = ["close", "cancel", "start", "remove"];
+
+function openUploadDialog(host) {
+    const trigger = host.querySelector('[data-action="manual-upload"]');
+    assert.ok(trigger, "材料 header 必须有手动上传入口");
+    click(trigger);
+    return host.querySelector(".em-upload-dialog");
+}
+
+function chooseFiles(dialog, files) {
+    const input = dialog.querySelector('.em-upload-picker input[type="file"]');
+    input.files = files;
+    input.fire("change");
+    return input;
+}
+
+function uploadRowStates(dialog) {
+    return dialog.querySelectorAll(".em-upload-row").map((row) => row.getAttribute("data-upload-state"));
+}
+
+function collectClasses(root) {
+    const used = new Set();
+    const ids = [];
+    const inlineStyles = [];
+    walkTree(root, (node) => {
+        if (node.nodeType !== 1) return;
+        node._classes.forEach((cls) => used.add(cls));
+        if (node.hasAttribute("id")) ids.push(node.getAttribute("id"));
+        if (node.hasAttribute("style")) inlineStyles.push(node.tagName);
+    });
+    return { used, ids, inlineStyles };
+}
+
+function declaredClasses() {
+    const classes = new Set();
+    for (const source of [cssSource, stylesSource]) {
+        for (const match of source.matchAll(/\.([A-Za-z][A-Za-z0-9_-]*)/g)) classes.add(match[1]);
+    }
+    return classes;
+}
+
+describe("S-1/S-2: 手动上传 CSS 逐字追加（I-7）", () => {
+    it("S-1 与 S-2 代码块逐字出现在 styles.css，顺序 S-1 → S-2，且既有末尾块仍在最后", () => {
+        assert.ok(stylesSource.includes(S1_UPLOAD_CSS), "S-1 必须逐字追加到 styles.css");
+        assert.ok(stylesSource.includes(S2_UPLOAD_CSS), "S-2 必须逐字追加到 styles.css");
+        const s1At = stylesSource.indexOf(S1_UPLOAD_CSS);
+        const s2At = stylesSource.indexOf(S2_UPLOAD_CSS);
+        assert.ok(s2At > s1At, "S-2 必须在 S-1 之后");
+        assert.ok(/^\s*$/.test(stylesSource.slice(s1At + S1_UPLOAD_CSS.length, s2At)), "S-1 与 S-2 之间只允许空白");
+        // 仓库既有契约（materialRequestIntegration）：新块不得占据 styles.css 末尾，
+        // meeting-mail-07 的 outbound 块必须仍是最后一块。
+        const outboundAt = stylesSource.indexOf("/* meeting-mail-07: outbound files */");
+        assert.ok(outboundAt > s2At, "新块必须插在既有末尾块之前");
+        assert.ok(!stylesSource.endsWith(S2_UPLOAD_CSS), "S-2 不得追加到 styles.css 末尾");
+    });
+
+    it("复用规则未被就地修改：.button 族与 .modal-close-btn 保持既有定义", () => {
+        for (const selector of [".button", ".button.primary", ".button.secondary", ".button.small", ".modal-close-btn"]) {
+            const pattern = new RegExp("^" + selector.replace(/\./g, "\\.") + " \\{$", "m");
+            assert.match(stylesSource, pattern, `${selector} 既有规则必须保留`);
+        }
+        assert.ok(!S1_UPLOAD_CSS.includes(".button"), "S-1 不得重定义共享按钮");
+        assert.ok(!S2_UPLOAD_CSS.includes(".button {"), "S-2 不得重定义共享按钮");
+        assert.ok(!S2_UPLOAD_CSS.includes(".modal-close-btn"), "S-2 不得重定义右上关闭按钮");
+    });
+
+    it("dialog 实色白底、状态色与响应式规则逐字存在", () => {
+        assert.ok(S2_UPLOAD_CSS.includes("background: #fff;"), "dialog 必须实色 #fff（禁止半透明 panel token）");
+        assert.ok(!S2_UPLOAD_CSS.includes("--panel-bg"), "禁止半透明 --panel-bg");
+        assert.ok(stylesSource.includes('.em-upload-row[data-upload-state="success"] .em-upload-state'), "success 状态色规则");
+        assert.ok(stylesSource.includes('.em-upload-row[data-upload-state="failed"] .em-upload-state'), "failed 状态色规则");
+        assert.ok(stylesSource.includes('.em-upload-row[data-upload-state="blocked"] .em-upload-state'), "blocked 状态色规则");
+        assert.ok(stylesSource.includes("@media (prefers-reduced-motion: reduce)"), "reduced-motion 规则");
+        assert.ok(stylesSource.includes(".em-upload-dialog::backdrop"), "backdrop 规则");
+        assert.ok(stylesSource.includes(".em-upload-dialog :is(button, input):focus-visible"), "焦点轮廓规则");
+    });
+});
+
+describe("S-1/S-2: 手动上传入口与 dialog 渲染契约", () => {
+    it("inline/drawer 各一个入口并保留既有 AI/关闭按钮；selectionOnly 无入口", async () => {
+        const server = new FakeServer();
+        const { sandbox, doc } = loadComponent(server);
+        const inlineHost = doc.createElement("div");
+        doc.root.appendChild(inlineHost);
+        const drawerHost = doc.createElement("div");
+        doc.root.appendChild(drawerHost);
+        const pickerHost = doc.createElement("div");
+        doc.root.appendChild(pickerHost);
+        try {
+            sandbox.ExpertMaterials.mount({ host: inlineHost, contactId: 1, mode: "inline" });
+            await flush();
+            sandbox.ExpertMaterials.mount({ host: drawerHost, contactId: 1, mode: "drawer" });
+            await flush();
+            sandbox.ExpertMaterials.mount({ host: pickerHost, contactId: 1, mode: "selectionOnly" });
+            await flush();
+
+            const inlineActions = inlineHost.querySelector(".expert-materials header .em-material-actions");
+            assert.ok(inlineActions, "inline 必须渲染 .em-material-actions");
+            assert.deepStrictEqual(inlineActions.children.map((child) => child.textContent), ["手动上传", "AI 智能分析"]);
+            const uploadBtn = inlineActions.children[0];
+            assert.ok(uploadBtn._classes.has("button") && uploadBtn._classes.has("small") && uploadBtn._classes.has("primary"),
+                "手动上传按钮复用 .button.small.primary");
+
+            const drawerActions = drawerHost.querySelector("dialog.em-drawer .em-material-actions");
+            assert.ok(drawerActions, "drawer 必须同样渲染动作组");
+            assert.deepStrictEqual(drawerActions.children.map((child) => child.textContent), ["手动上传", "关闭"]);
+
+            assert.strictEqual(pickerHost.querySelector('[data-action="manual-upload"]'), null, "selectionOnly 无上传入口");
+            assert.strictEqual(pickerHost.querySelector(".em-material-actions"), null, "selectionOnly 不渲染动作组");
+        } finally {
+            sandbox.ExpertMaterials.unmountHostsIn(inlineHost);
+            sandbox.ExpertMaterials.unmountHostsIn(drawerHost);
+            sandbox.ExpertMaterials.unmountHostsIn(pickerHost);
+            await flush();
+        }
+    });
+
+    it("dialog 结构/文案/状态白名单：无 id、无 inline style、全部 class 已声明、状态取值合法", async () => {
+        const server = new FakeServer();
+        const { sandbox, doc } = loadComponent(server);
+        const host = doc.createElement("div");
+        doc.root.appendChild(host);
+        try {
+            sandbox.ExpertMaterials.mount({ host, contactId: 1, mode: "inline" });
+            await flush();
+            const dialog = openUploadDialog(host);
+            assert.ok(dialog, "点击入口必须创建 .em-upload-dialog");
+            const input = chooseFiles(dialog, [
+                { name: "成功.pdf", size: 1024 },
+                { name: "fail.pdf", size: 2048 },
+                { name: "超限.pdf", size: 104857601 }
+            ]);
+            assert.strictEqual(input.value, "", "选择后清空 input.value 以允许重复选择同一文件");
+            assert.deepStrictEqual(uploadRowStates(dialog), ["pending", "pending", "blocked"]);
+
+            click(dialog.querySelector('[data-upload-action="start"]'));
+            await flush();
+            await flush();
+            assert.deepStrictEqual(uploadRowStates(dialog), ["success", "failed", "blocked"]);
+            assert.strictEqual(dialog.querySelector(".em-upload-summary").textContent, "上传成功，材料列表已刷新");
+            chooseFiles(dialog, [{ name: "待上传.pdf", size: 512 }]);
+            assert.deepStrictEqual(uploadRowStates(dialog), ["success", "failed", "blocked", "pending"]);
+            assert.strictEqual(dialog.querySelector(".em-upload-summary").textContent, "已选择 4 个文件");
+
+            // S-2 结构与文案（逐字）
+            assert.strictEqual(dialog.querySelector(".em-upload-title h3").textContent, "手动上传材料");
+            assert.strictEqual(dialog.querySelector(".em-upload-subtitle").textContent, "上传后直接存入服务器，无需再次获取");
+            assert.strictEqual(dialog.querySelector(".em-upload-picker > span").textContent, "选择文件");
+            assert.strictEqual(dialog.querySelector(".em-upload-picker input").getAttribute("multiple"), "", "文件选择器允许多选");
+            assert.strictEqual(dialog.querySelector(".em-upload-limit").textContent, "支持多选；单个文件不超过 100 MB，将按顺序上传。");
+            assert.strictEqual(dialog.querySelector(".em-upload-queue").getAttribute("aria-live"), "polite", "队列 aria-live");
+            assert.strictEqual(dialog.querySelector(".em-upload-error").getAttribute("role"), "alert", "错误区 role=alert");
+            const closeBtn = dialog.querySelector('[data-upload-action="close"]');
+            assert.strictEqual(closeBtn.textContent, "×");
+            assert.ok(closeBtn._classes.has("modal-close-btn"), "关闭按钮复用 .modal-close-btn");
+            const actionButtons = dialog.querySelectorAll(".em-upload-actions button");
+            assert.deepStrictEqual(actionButtons.map((btn) => btn.textContent), ["取消", "重试失败项"]);
+            assert.ok(actionButtons[0]._classes.has("secondary") && actionButtons[1]._classes.has("primary"),
+                "主/次按钮复用 .button.primary/.button.secondary");
+            assert.strictEqual(dialog.querySelectorAll(".em-upload-row")[1].querySelector(".em-upload-state").textContent, "服务器拒绝了该文件");
+            assert.strictEqual(dialog.querySelectorAll(".em-upload-row")[2].querySelector(".em-upload-state").textContent, "超过 100 MB，未上传");
+            assert.strictEqual(dialog.querySelectorAll(".em-upload-row")[0].querySelector(".em-upload-progress").hasAttribute("hidden"), true,
+                "落定行不显示 progress");
+
+            // class / id / inline style 全量核对（含 dialog 子树）
+            const { used, ids, inlineStyles } = collectClasses(host);
+            const declared = declaredClasses();
+            assert.deepStrictEqual([...used].filter((cls) => !declared.has(cls)).sort(), [],
+                "上传 dialog 的每个 class 都必须在 expert-materials.css 或 styles.css 中声明");
+            assert.deepStrictEqual(ids, [], "上传 dialog 不得使用元素 id");
+            assert.deepStrictEqual(inlineStyles, [], "上传 dialog 不得使用 inline style");
+
+            const states = new Set();
+            const actions = [];
+            walkTree(host, (node) => {
+                if (node.nodeType !== 1) return;
+                const state = node.getAttribute("data-upload-state");
+                if (state) states.add(state);
+                const action = node.getAttribute("data-upload-action");
+                if (action) actions.push(action);
+            });
+            for (const state of states) assert.ok(UPLOAD_STATES.includes(state), `未知 data-upload-state: ${state}`);
+            for (const action of actions) assert.ok(UPLOAD_ACTIONS.includes(action), `未知 data-upload-action: ${action}`);
+            assert.ok(actions.includes("close") && actions.includes("cancel") && actions.includes("start") && actions.includes("remove"),
+                "四类 data-upload-action 齐备");
+            assert.ok(server.uploads.every((upload) => upload.partNames.length === 1 && upload.partNames[0] === "file"),
+                "一请求一文件：每次 FormData 只含 file");
+        } finally {
+            sandbox.ExpertMaterials.unmountHostsIn(host);
+            await flush();
+        }
+    });
+});
+
+describe("S-3: 材料说明与来源筛选文案", () => {
+    it("policy 逐字、来源筛选 aria-label/全部来源、MANUAL_UPLOAD 行与单选项、query 成对", async () => {
+        const server = new FakeServer();
+        const manual = {
+            attachmentId: 1,
+            documentId: 11,
+            source: { type: "MANUAL_UPLOAD", id: 1, subject: "手动上传", receivedAt: "2026-09-20T14:17:40", accountCode: null, uploadedBy: "op1" },
+            fileName: "cv.pdf",
+            contentType: "application/pdf",
+            documentType: "CV",
+            documentStatus: "PENDING_REVIEW",
+            actualSize: 6,
+            encodedSize: null,
+            storageState: "STORED",
+            bytesDownloaded: 0,
+            error: null,
+            canFetch: false,
+            canDownload: true,
+            canPreview: true,
+            analysisSupported: true,
+            canAnalyze: true,
+            downloadUrl: "/api/expert-contacts/1/attachments/1/download",
+            previewUrl: "/api/expert-contacts/1/attachments/1/preview"
+        };
+        const manual2 = Object.assign({}, manual, { attachmentId: 2, documentId: 12, fileName: "cv2.pdf" });
+        const mail = Object.assign({}, CATALOG[0], { attachmentId: 3, documentId: 13 });
+        server.catalog = [manual, manual2, mail];
+
+        const { sandbox, doc } = loadComponent(server);
+        const host = doc.createElement("div");
+        doc.root.appendChild(host);
+        try {
+            sandbox.ExpertMaterials.mount({ host, contactId: 1, mode: "inline" });
+            await flush();
+
+            assert.strictEqual(host.querySelector(".em-policy").textContent,
+                "检查回复只登记附件信息；点击“获取到服务器”下载邮件附件。手动上传成功后直接保存到服务器。");
+
+            const sourceSelect = host.querySelector('.em-filters select[aria-label="材料来源"]');
+            assert.ok(sourceSelect, "来源筛选 aria-label 为材料来源");
+            assert.deepStrictEqual(sourceSelect.children.map((option) => option.textContent),
+                ["全部来源", "手动上传", CATALOG[0].source.subject]);
+            assert.strictEqual(sourceSelect.children.filter((option) => option.textContent === "手动上传").length, 1,
+                "同一专家只生成一个手动上传选项");
+            assert.deepStrictEqual(sourceSelect.children.map((option) => option.getAttribute("value")),
+                ["", "MANUAL_UPLOAD:1", `INBOUND_PROCESSING:${CATALOG[0].source.id}`]);
+
+            const rows = host.querySelectorAll(".em-row");
+            assert.strictEqual(rows[0].querySelectorAll(".em-file small")[1].textContent, "手动上传 · op1 · 2026-09-20 14:17");
+            assert.strictEqual(rows[2].querySelectorAll(".em-file small")[1].textContent,
+                `${CATALOG[0].source.subject} · 2026-09-07 14:42`, "邮件来源文案不变");
+
+            sourceSelect.value = "MANUAL_UPLOAD:1";
+            sourceSelect.fire("change");
+            await flush();
+            assert.ok(server.urls[server.urls.length - 1].includes("source=MANUAL_UPLOAD&sourceId=1"),
+                "source query 成对发出");
         } finally {
             sandbox.ExpertMaterials.unmountHostsIn(host);
             await flush();

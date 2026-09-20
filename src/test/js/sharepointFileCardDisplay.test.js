@@ -10,6 +10,13 @@ const stylesCss = fs.readFileSync(path.join(staticDir, "styles.css"), "utf-8");
 const mailboxChatJs = fs.readFileSync(path.join(staticDir, "mailbox-chat.js"), "utf-8");
 const indexHtml = fs.readFileSync(path.join(staticDir, "index.html"), "utf-8");
 
+// I-7：版本键的唯一来源是 index.html 的 styles.css?v=<key>；本文件不得写死历史键。
+const CACHE_KEY = (() => {
+    const match = indexHtml.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
+
 function sourceThrough(name) {
     const start = appJs.indexOf(`function ${name}(`);
     if (start < 0) throw new Error(`Could not find function ${name}`);
@@ -103,7 +110,10 @@ describe("SharePoint 文件卡展示", () => {
     it("邮件箱聊天视图复用安全的文件卡展示并更新缓存版本", () => {
         assert.match(mailboxChatJs, /function messageDisplayHtml\(text\)[\s\S]*global\.renderMailBody\(text, true\)/);
         assert.match(mailboxChatJs, /mc-body">\$\{messageDisplayHtml\(displayBody\)\}/);
-        assert.match(indexHtml, /mailbox-chat\.js\?v=20260919-sharepoint-file-card-display/);
+        assert.ok(indexHtml.includes(`mailbox-chat.js?v=${CACHE_KEY}`),
+            `mailbox-chat.js 必须与 styles.css 使用同一缓存键 ${CACHE_KEY}`);
+        assert.ok(!indexHtml.includes("20260919-sharepoint-file-card-display"),
+            "旧的 SharePoint 专用缓存键必须 0 命中 index.html");
     });
 
     it("链接样式遵守现有正文主色契约", () => {

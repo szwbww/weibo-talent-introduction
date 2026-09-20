@@ -11302,6 +11302,238 @@ body.preview-available:not(.preview-docked) .preview-rail {
 @media(max-width:760px){.material-request-dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}.material-request-head,.material-request-body,.material-request-actions{padding:14px}}
 @media(prefers-reduced-motion:reduce){.material-request-dialog *,.mail-chat .material-request-trigger{transition:none!important}}
 
+/* manual-material-upload-10: S-1/S-2（逐字复制自前端子计划样式契约） */
+  .expert-materials .em-material-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 8px;
+  }
+
+  @media (max-width: 760px) {
+      .expert-materials .em-material-actions {
+          width: 100%;
+      }
+  }
+
+  .em-upload-dialog {
+      width: min(640px, calc(100vw - 32px));
+      max-width: none;
+      max-height: calc(100dvh - 32px);
+      margin: auto;
+      padding: 0;
+      border: 1px solid #dce4ef;
+      border-radius: 14px;
+      background: #fff;
+      color: #475569;
+      font-size: 12px;
+      line-height: 1.5;
+      box-shadow: 0 24px 64px rgba(15, 23, 42, 0.2);
+      overflow: hidden;
+  }
+
+  .em-upload-dialog::backdrop {
+      background: rgba(15, 23, 42, 0.35);
+  }
+
+  .em-upload-dialog[open] {
+      display: flex;
+      flex-direction: column;
+  }
+
+  .em-upload-dialog * {
+      box-sizing: border-box;
+  }
+
+  .em-upload-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 16px 18px;
+      border-bottom: 1px solid #e2e8f0;
+  }
+
+  .em-upload-title {
+      min-width: 0;
+      margin-right: auto;
+  }
+
+  .em-upload-title h3 {
+      margin: 0;
+      color: #334155;
+      font-size: 14px;
+      font-weight: 600;
+  }
+
+  .em-upload-subtitle {
+      display: block;
+      margin-top: 3px;
+      color: #64748b;
+      font-size: 11px;
+  }
+
+  .em-upload-body {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 0;
+      padding: 16px 18px;
+      overflow: auto;
+  }
+
+  .em-upload-picker {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px;
+      border: 1px dashed #93b4ec;
+      border-radius: 7px;
+      background: #eff5ff;
+      color: #475569;
+  }
+
+  .em-upload-picker > span {
+      flex: none;
+      font-weight: 600;
+  }
+
+  .em-upload-picker input {
+      min-width: 0;
+      max-width: 100%;
+      color: #475569;
+      font: inherit;
+  }
+
+  .em-upload-limit {
+      color: #64748b;
+      font-size: 11px;
+  }
+
+  .em-upload-queue {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+  }
+
+  .em-upload-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid #e2e8f0;
+      border-radius: 7px;
+      background: #f8faff;
+  }
+
+  .em-upload-file {
+      min-width: 0;
+  }
+
+  .em-upload-file strong {
+      display: block;
+      overflow: hidden;
+      color: #334155;
+      font-size: 12px;
+      font-weight: 500;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+  }
+
+  .em-upload-file small {
+      display: block;
+      margin-top: 2px;
+      color: #64748b;
+      font-size: 11px;
+  }
+
+  .em-upload-progress {
+      grid-column: 1 / -1;
+      width: 100%;
+      height: 5px;
+      margin: 0;
+      accent-color: #3b82f6;
+  }
+
+  .em-upload-state {
+      grid-column: 1 / -1;
+      color: #64748b;
+      font-size: 11px;
+  }
+
+  .em-upload-row[data-upload-state="success"] .em-upload-state {
+      color: #059669;
+  }
+
+  .em-upload-row[data-upload-state="failed"] .em-upload-state,
+  .em-upload-row[data-upload-state="blocked"] .em-upload-state {
+      color: #be123c;
+  }
+
+  .em-upload-error {
+      padding: 10px 12px;
+      border: 1px solid #fecdd3;
+      border-radius: 7px;
+      background: #fff1f2;
+      color: #be123c;
+  }
+
+  .em-upload-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 18px;
+      border-top: 1px solid #e2e8f0;
+      background: #eff5ff;
+  }
+
+  .em-upload-summary {
+      margin-right: auto;
+      color: #64748b;
+      font-size: 11px;
+  }
+
+  .em-upload-dialog :is(button, input):focus-visible {
+      outline: 2px solid #3b82f6;
+      outline-offset: 2px;
+  }
+
+  .em-upload-dialog :is(button, input):disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+  }
+
+  .em-upload-dialog [hidden] {
+      display: none !important;
+  }
+
+  @media (max-width: 760px) {
+      .em-upload-dialog {
+          width: calc(100vw - 16px);
+          max-height: calc(100dvh - 16px);
+      }
+
+      .em-upload-picker,
+      .em-upload-actions {
+          align-items: stretch;
+          flex-direction: column;
+      }
+
+      .em-upload-summary {
+          margin-right: 0;
+      }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+      .em-upload-dialog * {
+          transition: none !important;
+      }
+  }
+
 /* meeting-mail-07: outbound files */
 .outbound-upload{width:32px;min-width:32px;padding:0}
 .outbound-upload svg{width:16px;height:16px;display:block;flex:none}

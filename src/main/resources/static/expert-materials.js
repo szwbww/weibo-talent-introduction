@@ -28,9 +28,17 @@
  *   程序化走共享 store 的获取提交与选择替换（同 epoch/轮询/视图同步）；
  *   requestTransfers 复用既有的提交/错误/提交后刷新语义并返回服务端响应。
  *
+ * 子计划 10 扩展（手动上传，S-1/S-2/S-3）：
+ * - inline/drawer 的 header 动作组新增“手动上传”入口（selectionOnly 不渲染动作组）；
+ *   dialog 队列按选择顺序严格串行、一请求一文件（FormData 只含 file 字段 +
+ *   headers:{}），100 MiB 仅前端预检，后端 413 仍以服务端 message 落在队列行；
+ * - 至少一项成功后把 store.page 置 0 并复用既有 GET 刷新（绝不伪造材料行、绝不另建
+ *   第二个 store），失败项可见可重试、成功项立即释放 File 引用；
+ * - source.type=MANUAL_UPLOAD 的行来源与筛选项固定“手动上传”，与既有来源并存。
+ *
  * API 由宿主（app.js）经 ExpertMaterials.configure({ api, contextPath, labels })
  * 注入；URL 保留 /talent 上下文由 contextPath 提供。样式见
- * expert-materials.css（S-1 契约逐字复制）。
+ * expert-materials.css（S-1 契约逐字复制）+ styles.css（S-1/S-2 追加块）。
  */
 (function (global) {
     "use strict";
@@ -39,6 +47,14 @@
     const MAX_TRANSFER_IDS = 500;
     const DEFAULT_POLL_MS = 2000;
     const DEFAULT_DEBOUNCE_MS = 300;
+
+    // 手动上传：业务上限唯一实值是 104857600 字节，前端 file.size 只是预检，
+    // 后端 413 才是最终裁决（I-2/I-4）。
+    const MAX_MANUAL_MATERIAL_BYTES = 100 * 1024 * 1024;
+    const MANUAL_UPLOAD_SOURCE_TYPE = "MANUAL_UPLOAD";
+    const MANUAL_UPLOAD_SOURCE_LABEL = "手动上传";
+    const MANUAL_UPLOAD_TOO_LARGE = "超过 100 MB，未上传";
+    const MANUAL_UPLOAD_DONE = "上传成功，材料列表已刷新";
 
     const STORAGE_STATE_LABELS = {
         METADATA_ONLY: "仅文件信息",
@@ -202,6 +218,8 @@
     function disposeView(view) {
         if (view.disposed) return;
         view.disposed = true;
+        // 上传 dialog 挂在 host 上（section 之外），释放视图时必须同时清掉它的 DOM 与 File 引用。
+        cleanupManualUpload(view, view.upload);
         view.handlers.forEach(([target, type, fn]) => {
             try { target.removeEventListener(type, fn); } catch (e) { /* noop */ }
         });
@@ -438,6 +456,313 @@
     }
 
     // ------------------------------------------------------------------
+    // 手动上传（S-1/S-2/S-3）—— 队列只存在于 dialog，结果只经共享 GET 进列表
+    // ------------------------------------------------------------------
+
+    /** 队列项：pending/uploading/success/failed/blocked（blocked=客户端超限，不可重试）。 */
+    function makeManualEntry(file) {
+        const size = Number(file && file.size) || 0;
+        const tooLarge = size > MAX_MANUAL_MATERIAL_BYTES;
+        return {
+            file: tooLarge ? null : (file || null),
+            name: (file && file.name) ? String(file.name) : "未命名文件",
+            size,
+            state: tooLarge ? "blocked" : "pending",
+            error: tooLarge ? MANUAL_UPLOAD_TOO_LARGE : ""
+        };
+    }
+
+    function uploadStateText(entry) {
+        if (entry.state === "uploading") return "正在上传";
+        if (entry.state === "success") return "上传成功";
+        if (entry.state === "failed") return entry.error || "上传失败，请重试";
+        if (entry.state === "blocked") return entry.error || MANUAL_UPLOAD_TOO_LARGE;
+        return "待上传";
+    }
+
+    function manualEntryRemovable(entry) {
+        return entry.state === "pending" || entry.state === "failed" || entry.state === "blocked";
+    }
+
+    /**
+     * 一文件一请求：FormData 只追加字段名 file，headers:{} 整体覆盖宿主默认
+     * JSON Content-Type，由浏览器生成 multipart boundary（I-1）。
+     */
+    function uploadManualMaterial(store, entry) {
+        const form = new FormData();
+        form.append("file", entry.file);
+        return cfg.api(`/api/expert-contacts/${store.contactId}/materials/uploads`, {
+            method: "POST",
+            headers: {},
+            body: form
+        });
+    }
+
+    function buildManualUploadDialog(ctx) {
+        const dialog = el("dialog", "em-upload-dialog", { "aria-label": "手动上传材料" });
+
+        const head = el("div", "em-upload-head");
+        const title = el("div", "em-upload-title");
+        const heading = el("h3");
+        text(heading, "手动上传材料");
+        const subtitle = el("span", "em-upload-subtitle");
+        text(subtitle, "上传后直接存入服务器，无需再次获取");
+        title.appendChild(heading);
+        title.appendChild(subtitle);
+        const closeBtn = el("button", "modal-close-btn", {
+            type: "button",
+            "data-upload-action": "close",
+            "aria-label": "关闭"
+        });
+        text(closeBtn, "×");
+        head.appendChild(title);
+        head.appendChild(closeBtn);
+        dialog.appendChild(head);
+
+        const body = el("div", "em-upload-body");
+        const picker = el("label", "em-upload-picker");
+        const pickerLabel = el("span");
+        text(pickerLabel, "选择文件");
+        const input = el("input", null, { type: "file", multiple: "" });
+        picker.appendChild(pickerLabel);
+        picker.appendChild(input);
+        body.appendChild(picker);
+        const limit = el("div", "em-upload-limit");
+        text(limit, "支持多选；单个文件不超过 100 MB，将按顺序上传。");
+        body.appendChild(limit);
+        const queue = el("div", "em-upload-queue", { "aria-live": "polite" });
+        body.appendChild(queue);
+        const errorBox = el("div", "em-upload-error", { role: "alert", hidden: "" });
+        body.appendChild(errorBox);
+        dialog.appendChild(body);
+
+        const actions = el("div", "em-upload-actions");
+        const summary = el("span", "em-upload-summary");
+        const cancelBtn = el("button", "button secondary", { type: "button", "data-upload-action": "cancel" });
+        text(cancelBtn, "取消");
+        const startBtn = el("button", "button primary", { type: "button", "data-upload-action": "start" });
+        text(startBtn, "开始上传");
+        actions.appendChild(summary);
+        actions.appendChild(cancelBtn);
+        actions.appendChild(startBtn);
+        dialog.appendChild(actions);
+
+        ctx.nodes = { dialog, input, queue, errorBox, summary, cancelBtn, startBtn, closeBtn };
+        return dialog;
+    }
+
+    function buildManualUploadRow(ctx, entry) {
+        const row = el("div", "em-upload-row", { "data-upload-state": entry.state });
+        const file = el("div", "em-upload-file");
+        const name = el("strong", null, { title: entry.name });
+        text(name, entry.name);
+        const size = el("small");
+        text(size, cfg.labels.fileSize(entry.size));
+        file.appendChild(name);
+        file.appendChild(size);
+        row.appendChild(file);
+
+        const removeBtn = el("button", "button small", { type: "button", "data-upload-action": "remove" });
+        text(removeBtn, "移除");
+        removeBtn.disabled = !!ctx.running || !manualEntryRemovable(entry);
+        row.appendChild(removeBtn);
+
+        // 原生不确定进度：uploading 行显示无 value 的 progress，绝不伪造百分比。
+        const progress = el("progress", "em-upload-progress", { hidden: "" });
+        if (entry.state === "uploading") progress.removeAttribute("hidden");
+        row.appendChild(progress);
+
+        const state = el("span", "em-upload-state");
+        text(state, uploadStateText(entry));
+        row.appendChild(state);
+        return row;
+    }
+
+    function renderManualUploadDialog(ctx) {
+        if (!ctx.nodes) return;
+        const nodes = ctx.nodes;
+        const running = !!ctx.running;
+        nodes.input.disabled = running;
+        nodes.cancelBtn.disabled = running;
+        nodes.closeBtn.disabled = running;
+        nodes.queue.textContent = "";
+        ctx.entries.forEach((entry) => {
+            nodes.queue.appendChild(buildManualUploadRow(ctx, entry));
+        });
+        const retryable = ctx.entries.filter((entry) => entry.state === "failed").length;
+        const actionable = ctx.entries.filter((entry) => entry.state === "pending" || entry.state === "failed").length;
+        nodes.startBtn.disabled = running || actionable === 0;
+        text(nodes.startBtn, running
+            ? `正在上传 ${ctx.progress.done}/${ctx.progress.total}`
+            : (retryable > 0 ? "重试失败项" : "开始上传"));
+        if (running) {
+            text(nodes.summary, `正在上传 ${ctx.progress.done}/${ctx.progress.total}`);
+        } else if (ctx.notice) {
+            text(nodes.summary, ctx.notice);
+        } else {
+            text(nodes.summary, `已选择 ${ctx.entries.length} 个文件`);
+        }
+        if (ctx.error) {
+            nodes.errorBox.hidden = false;
+            text(nodes.errorBox, ctx.error);
+        } else {
+            nodes.errorBox.hidden = true;
+            text(nodes.errorBox, "");
+        }
+    }
+
+    function addSelectedFiles(ctx, input) {
+        const files = input && input.files ? Array.prototype.slice.call(input.files) : [];
+        if (files.length === 0) return;
+        files.forEach((file) => ctx.entries.push(makeManualEntry(file)));
+        // 清空 value 以便再次选择同一个文件。
+        try { input.value = ""; } catch (e) { /* noop */ }
+        ctx.notice = "";
+        ctx.error = "";
+        renderManualUploadDialog(ctx);
+    }
+
+    function removeManualEntry(ctx, row) {
+        const queue = ctx.nodes && ctx.nodes.queue;
+        const index = queue ? Array.prototype.indexOf.call(queue.children, row) : -1;
+        const entry = index >= 0 ? ctx.entries[index] : null;
+        if (!entry || !manualEntryRemovable(entry)) return;
+        entry.file = null;
+        ctx.entries.splice(index, 1);
+        ctx.notice = "";
+        renderManualUploadDialog(ctx);
+    }
+
+    async function runManualUploadQueue(store, ctx) {
+        if (ctx.running) return;
+        const targets = ctx.entries.filter((entry) => entry.state === "pending" || entry.state === "failed");
+        if (targets.length === 0) return;
+        ctx.running = true;
+        ctx.notice = "";
+        ctx.error = "";
+        ctx.progress = { done: 0, total: targets.length };
+        renderManualUploadDialog(ctx);
+        let successCount = 0;
+        try {
+            for (const entry of targets) {
+                entry.state = "uploading";
+                renderManualUploadDialog(ctx);
+                try {
+                    await uploadManualMaterial(store, entry);
+                    // 成功：立即释放 File 引用，失败项继续处理后续（I-4）。
+                    entry.state = "success";
+                    entry.error = "";
+                    entry.file = null;
+                    successCount += 1;
+                } catch (err) {
+                    entry.state = "failed";
+                    entry.error = (err && err.message) ? String(err.message) : "上传失败，请重试";
+                }
+                ctx.progress.done += 1;
+                renderManualUploadDialog(ctx);
+            }
+            if (successCount > 0) {
+                // 只经既有共享 store 的 GET 刷新：回到第 1 页，保留 selection 与现有筛选。
+                store.page = 0;
+                await fetchPage(store, { page: 0, reason: "manual-upload" });
+                ctx.notice = MANUAL_UPLOAD_DONE;
+            }
+        } catch (err) {
+            // 逐项请求已各自处理；能走到这里的只有逐项之外的意外错误，仍必须可见。
+            ctx.error = (err && err.message) ? String(err.message) : "上传失败，请重试";
+        } finally {
+            ctx.running = false;
+            renderManualUploadDialog(ctx);
+        }
+    }
+
+    function cleanupManualUpload(view, ctx) {
+        if (!ctx) return;
+        if (ctx.nodes && ctx.nodes.dialog && ctx.nodes.dialog.parentNode) {
+            ctx.nodes.dialog.parentNode.removeChild(ctx.nodes.dialog);
+        }
+        ctx.entries.forEach((entry) => { entry.file = null; });
+        ctx.entries = [];
+        ctx.nodes = null;
+        if (view && view.upload === ctx) view.upload = null;
+    }
+
+    function closeManualUploadDialog(view, ctx) {
+        const dialog = ctx && ctx.nodes && ctx.nodes.dialog;
+        if (dialog && typeof dialog.close === "function") {
+            dialog.close(); // 原生 close 事件同样走 cleanup（幂等）
+        }
+        cleanupManualUpload(view, ctx);
+    }
+
+    function bindManualUploadDialog(store, view, ctx) {
+        const dialog = ctx.nodes.dialog;
+        dialog.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!target || !target.closest) return;
+            const actionEl = target.closest("[data-upload-action]");
+            if (!actionEl) return;
+            // 上传中：关闭/取消/移除/开始一律不响应（关闭绝不冒充取消在途请求）。
+            if (ctx.running) return;
+            const action = actionEl.getAttribute("data-upload-action");
+            if (action === "close" || action === "cancel") {
+                closeManualUploadDialog(view, ctx);
+                return;
+            }
+            if (action === "remove") {
+                removeManualEntry(ctx, actionEl.closest ? actionEl.closest(".em-upload-row") : null);
+                return;
+            }
+            if (action === "start") {
+                runManualUploadQueue(store, ctx);
+            }
+        });
+        dialog.addEventListener("change", (event) => {
+            if (!ctx.nodes || event.target !== ctx.nodes.input) return;
+            if (ctx.running) return;
+            addSelectedFiles(ctx, event.target);
+        });
+        dialog.addEventListener("cancel", (event) => {
+            // Esc：上传中拦截，落定后恢复。
+            if (ctx.running) {
+                event.preventDefault();
+                return;
+            }
+            closeManualUploadDialog(view, ctx);
+        });
+        dialog.addEventListener("close", () => {
+            cleanupManualUpload(view, ctx);
+        });
+    }
+
+    /** 重复点击只复用同一个 dialog（showModal/focus），不创建第二个。 */
+    function openManualUploadDialog(store, view) {
+        let ctx = view.upload;
+        if (ctx && ctx.nodes && ctx.nodes.dialog && ctx.nodes.dialog.parentNode) {
+            if (typeof ctx.nodes.dialog.focus === "function") ctx.nodes.dialog.focus();
+            if (typeof ctx.nodes.dialog.showModal === "function") ctx.nodes.dialog.showModal();
+            return ctx;
+        }
+        ctx = {
+            nodes: null,
+            entries: [],
+            running: false,
+            notice: "",
+            error: "",
+            progress: { done: 0, total: 0 }
+        };
+        view.upload = ctx;
+        const dialog = buildManualUploadDialog(ctx);
+        bindManualUploadDialog(store, view, ctx);
+        view.host.appendChild(dialog);
+        renderManualUploadDialog(ctx);
+        if (typeof dialog.showModal === "function") {
+            dialog.showModal();
+        }
+        return ctx;
+    }
+
+    // ------------------------------------------------------------------
     // 渲染骨架（每个 view 一次；轮询/翻页不重建骨架）
     // ------------------------------------------------------------------
 
@@ -452,25 +777,36 @@
         text(count, "");
         title.appendChild(count);
         header.appendChild(title);
-        if (view.mode === "drawer") {
-            const closeBtn = el("button", "button", { type: "button", "data-action": "close" });
-            text(closeBtn, "关闭");
-            header.appendChild(closeBtn);
-        } else if (view.mode === "inline") {
-            // 内嵌于专家详情：header 右侧保留既有「AI 智能分析」入口；
-            // 动作仍由 app.js 在 #contactDetail 的既有委托处理（09 桥接改造同入口）。
-            const aiBtn = el("button", "button small primary", {
+        // S-1：动作组只在材料管理模式（inline/drawer）渲染；selectionOnly 不出现上传入口。
+        if (view.mode !== "selectionOnly") {
+            const actions = el("div", "em-material-actions");
+            const uploadBtn = el("button", "button small primary", {
                 type: "button",
-                "data-action": "open-ai-analysis",
-                "data-contact-id": String(store.contactId)
+                "data-action": "manual-upload"
             });
-            text(aiBtn, "AI 智能分析");
-            header.appendChild(aiBtn);
+            text(uploadBtn, "手动上传");
+            actions.appendChild(uploadBtn);
+            if (view.mode === "drawer") {
+                const closeBtn = el("button", "button", { type: "button", "data-action": "close" });
+                text(closeBtn, "关闭");
+                actions.appendChild(closeBtn);
+            } else {
+                // 内嵌于专家详情：header 右侧保留既有「AI 智能分析」入口；
+                // 动作仍由 app.js 在 #contactDetail 的既有委托处理（09 桥接改造同入口）。
+                const aiBtn = el("button", "button small primary", {
+                    type: "button",
+                    "data-action": "open-ai-analysis",
+                    "data-contact-id": String(store.contactId)
+                });
+                text(aiBtn, "AI 智能分析");
+                actions.appendChild(aiBtn);
+            }
+            header.appendChild(actions);
         }
         section.appendChild(header);
 
         const policy = el("p", "em-policy");
-        text(policy, "检查回复只登记附件信息。查看清单不会获取文件；点击“获取到服务器”后开始下载。");
+        text(policy, "检查回复只登记附件信息；点击“获取到服务器”下载邮件附件。手动上传成功后直接保存到服务器。");
         section.appendChild(policy);
 
         const stats = el("div", "em-stats", { "aria-label": "全部资料统计" });
@@ -494,7 +830,7 @@
 
         const filters = el("div", "em-filters");
         const search = el("input", null, { type: "search", "aria-label": "搜索文件名", placeholder: "搜索文件名" });
-        const sourceSelect = el("select", null, { "aria-label": "来源来信" });
+        const sourceSelect = el("select", null, { "aria-label": "材料来源" });
         const stateSelect = el("select", null, { "aria-label": "存储状态" });
         rebuildSourceOptions(store, sourceSelect);
         rebuildStateOptions(stateSelect, store.state);
@@ -606,11 +942,15 @@
         const current = select.value;
         select.textContent = "";
         const all = el("option", null, { value: "" });
-        text(all, "全部来信");
+        text(all, "全部来源");
         select.appendChild(all);
         store.seenSources.forEach((source) => {
             const option = el("option", null, { value: `${source.type}:${source.id}` });
-            text(option, source.subject || "来信");
+            // 同一专家全部手动材料共用一个 source（type=MANUAL_UPLOAD, id=contactId），
+            // 因此只生成一个固定文案的选项（I-5）。
+            text(option, source.type === MANUAL_UPLOAD_SOURCE_TYPE
+                ? MANUAL_UPLOAD_SOURCE_LABEL
+                : (source.subject || "来信"));
             select.appendChild(option);
         });
         if (current) select.value = current;
@@ -642,7 +982,13 @@
         const src = item && item.source;
         if (!src) return "来源待核对";
         const pieces = [];
-        if (src.subject) pieces.push(src.subject);
+        if (src.type === MANUAL_UPLOAD_SOURCE_TYPE) {
+            // I-5：手动来源固定三段式，缺上传者则省略该段；不展示后端 subject。
+            pieces.push(MANUAL_UPLOAD_SOURCE_LABEL);
+            if (src.uploadedBy) pieces.push(String(src.uploadedBy));
+        } else if (src.subject) {
+            pieces.push(src.subject);
+        }
         const time = fmtDateTime(src.receivedAt);
         if (time) pieces.push(time);
         return pieces.length ? pieces.join(" · ") : "来源待核对";
@@ -1042,6 +1388,12 @@
             const actionEl = target.closest("[data-action]");
             if (!actionEl) return;
             const action = actionEl.getAttribute("data-action");
+            if (action === "manual-upload") {
+                // 由本组件消费：阻止事件继续冒泡到宿主（app.js 只处理 open-ai-analysis）。
+                event.stopPropagation();
+                openManualUploadDialog(store, view);
+                return;
+            }
             if (action === "close") {
                 if (view.dialog && typeof view.dialog.close === "function") {
                     view.dialog.close();
@@ -1208,6 +1560,7 @@
             elements: null,
             root: null,
             dialog: null,
+            upload: null,
             unmount() {
                 if (view.disposed) return;
                 if (view.root && view.root.parentNode) {
