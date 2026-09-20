@@ -85,6 +85,93 @@ Identity: governing/invoked master SHA-256 `402676caa56035706601113d0b690d6d5b5d
 
 No product code was modified.
 
+## Epoch 3 — 2026-09-20T09:33:40Z
+
+- Master plan: `docs/plans/2026-09-20/00-manual-expert-material-upload-main.md` (sha256 `402676caa56035706601113d0b690d6d5b5d29617aef0d01cabbfb328379b4a5`)
+- Governing master identity: sha256 `402676caa56035706601113d0b690d6d5b5d29617aef0d01cabbfb328379b4a5`; recorded commit `d2a7f65ecbc46b5165863dfcab94ae5972f50605`
+- Master identity state: CONSISTENT
+- Approved amendment: A-01, `docs/plans/2026-09-20/00-manual-expert-material-upload-main-amendment-01.md` (commit `dd173172c1d92a6c371bcc4f41780447a27e7bbd`); master I-8 migration command only; human approval `批准` on 2026-09-20
+- Boundary: `d2a7f65ecbc46b5165863dfcab94ae5972f50605..5f4967b8d5f94663266c095e6a2e9ec69f570505`
+- Reviewer: `/root/aggregate_reviewer_amended`
+- Result: PASS
+- Convergence: PROGRESSING
+- Repair artifact/result: N/A; repair-p returned NO_ACTION
+
+### Required Commands — Fresh
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=ManualExpertMaterialUploadFlowTest,ExpertMaterialServiceTest,ExpertDocumentBrowseServiceTest,DocumentTextExtractorTest,OperatorStatusReconcileServiceTest,OutboundAttachmentServiceTest test` | exit 1; RECORD_ONLY Node gate | Selected Surefire: 107 tests, 0 failures/errors/skips; Maven fails only at node-test: 1035 tests, 1034 pass, one baseline calendar failure. |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -DmigrationIt=true -DargLine="-Dapi.version=1.43" -DskipNodeTests=true -Dtest='FlywayMigrationIntegrationTest#V130*' test` | exit 0 | A-01 compatibility command; `FlywayMigrationIntegrationTest#V130*`: 1/1 pass; migrated to V130. |
+| `node --check src/main/resources/static/expert-materials.js` | exit 0 | PASS. |
+| `node --test src/test/js/expertMaterialsShared.test.js src/test/js/expertMaterialsStyle.test.js src/test/js/sharepointFileCardDisplay.test.js` | exit 0 | 39/39 pass. |
+| `node --test src/test/js/*.test.js` | exit 1; RECORD_ONLY | 1034/1035 pass; sole failure `meetingCalendar.test.js:188`, predating the frontend child base. |
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test` | exit 1; RECORD_ONLY Node gate | Surefire: 3503 tests, 0 failures/errors, 13 skipped; only failing Maven step is the same node-test result. |
+| `git diff --check` | exit 0 | PASS. |
+
+### Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| I-1 sequential execution | PASS | Backend then frontend terminal child order is recorded. |
+| I-2 HTTP contract | PASS | `ExpertMaterialController.kt:81-97`; `expert-materials.js:491-498`; focused Node PASS. |
+| I-3 authoritative GET/store contract | PASS | `ExpertMaterialService.kt:429-443`; `expert-materials.js:664-668`; focused Node PASS. |
+| I-4 exact 104857600-byte boundary | PASS | `ManualExpertMaterialUploadService.kt:167-197,224-229`; `application.yml:14-25`; directed Java PASS. |
+| I-5 owner/mail isolation/path safety | PASS | V130 SQL:24-67; atomic write `ManualExpertMaterialUploadService.kt:102-145`; owner/read scope `ExpertMaterialService.kt:78-119,343,429-443`; V130 and directed Java PASS. |
+| I-6 scope boundary | PASS | Exactly 16 product/test paths: backend 10 plus frontend 6 allowlists; later changes are plans/review evidence only. |
+| I-7 cache/release/rollback | PASS static; manual pending | 11 unified cache keys; focused cache/SharePoint tests PASS; release drill stays A-8. |
+| I-8 combined gates | PASS | Fresh gates completed; sole known baseline calendar red is RECORD_ONLY. |
+| I-A1 environment compatibility replacement | PASS | Exact A-01 V130 command exit 0; 1/1 V130 test passes. |
+| I-A2 non-expansion of amendment | PASS | Only migration command replaced; all other gates ran; master A-1 through A-8 remain pending. |
+
+### Cross-Child Assessment
+
+| Boundary | Verdict | Evidence |
+|---|---|---|
+| Backend → frontend ordering | PASS | Frontend base follows backend implementation head. |
+| Endpoint/part/status | PASS | Backend/frontend agree on endpoint, multipart `file`, 201, and `headers:{}`. |
+| POST → authoritative GET | PASS | Successful upload refreshes with GET only; no direct material-row insertion. |
+| Source DTO → UI source filter/label | PASS | Manual source resolves as `MANUAL_UPLOAD:contactId`, labeled `手动上传`. |
+| Capacity/old outbound isolation | PASS | Streamed 100 MiB limit and old outbound directed tests pass. |
+| Ownership/security/read path | PASS | V130 migration and directed Java tests cover the owner/write/read chain. |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | A-01 Docker API 1.43 command completed V130 successfully. |
+| O-1 aggregate/calendar | PERSISTENT / RECORD_ONLY | 1034/1035 Node; present at frontend child base. |
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| backend O-1 cache-key Node red | I-8 | RECORD_ONLY | Original cache-key failures resolved; only unrelated calendar baseline remains. |
+| backend O-2 V124 migration | I-5, I-8 | RECORD_ONLY | A-01 narrows the migration gate to V130 only. |
+| backend O-3 Docker API 1.32/1.40 | I-8 | Historical, superseded | A-01 API 1.43 command passes. |
+| backend O-4 no live/full-context smoke | I-5 | RECORD_ONLY | Manual E2E remains pending. |
+| backend O-5 no move-failure injection | I-2 | RECORD_ONLY | Not mandatory; cleanup path and target flow tests pass. |
+| frontend O-1 CSS placement | I-6 | RECORD_ONLY | Allowlist is respected; focused CSS tests pass; no authorized non-regressive change. |
+| frontend O-2 calendar CSS red | I-8 | PERSISTENT / RECORD_ONLY | Present before frontend child boundary. |
+| frontend O-3 additive stubs | I-3 | RECORD_ONLY | Focused 39/39 suite; no weakened assertion evidenced. |
+
+### Findings
+
+#### P1
+
+- N/A
+
+#### P2
+
+- N/A
+
+### Evidence Boundaries
+
+- Manual A-1 through A-8 remain pending.
+- The full Node/Maven nonzero result is the known pre-existing `meetingCalendar.test.js:188` calendar CSS assertion; it is not in this product boundary.
+
+No product code was modified.
+
 ### Fast-P RECORD_ONLY Re-evaluation
 
 | Source item | Master requirement | Result | Evidence |
