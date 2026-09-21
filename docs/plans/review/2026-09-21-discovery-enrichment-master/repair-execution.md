@@ -142,3 +142,69 @@ The plan's clause 5 returns to the already authorized `review-fast-p` aggregate 
 - Plan identity re-checked after the commit: `sha256:c337c37f5f511d69e892e3a3e45c10b7e6a003f5e39ca1258861c1760e42deeb` (unchanged).
 - Worktree identity re-checked: same root/branch/Git dir; `ebd16aca` is the branch HEAD.
 - No mail sent, no ES/DB state written outside tests, no migration/mapping touched, no API key read, logged or printed.
+
+---
+
+# Epoch 3 — `fix(discovery): enforce fulltext deadline` (trickling bodies + atomic dispatch)
+
+## Identity (epoch 3)
+
+- Approval source: HUMAN invocation `$execute-p …/docs/plans/fix/00-discovery-enrichment-master/repair.md` (2026-09-22, third invocation) — same declared path, **new content**, matching the plan's "Review-Fast-P Execution Handoff" clause.
+- Repair plan identity: `docs/plans/fix/00-discovery-enrichment-master/repair.md` @ `sha256:2105d2c6d899b4a4dbb23730cb49073962b61e9826e54698a81067845ca3d961` (8,324 bytes) — replaced epoch-2's `c337c37f…`; recomputed unchanged before and after execution. Epochs 1–2 evidence above stays historical.
+- Aggregate verification that produced this plan: aggregate epoch 3 re-review — `V-1`–`V-3` resolved; **`V-4` persistent** (per-read socket timeout ≠ cumulative body lifetime; preflight→dispatch not atomic).
+- Executor: `Main` (omp controller session, single execution context; no delegated writer).
+- Target worktree / branch / Git dir / worktree ID: unchanged.
+- Pre-execution code SHA: `52d22cc74abf811cbaec38de2791af53e8491cc9`
+- Post-execution code SHA: `276cf733326a204a70b061ecda01072960eedaf2` (`fix(discovery): enforce fulltext deadline`, 9 of the 10 authorized files, +398/−44)
+- Implementation boundary: `52d22cc74abf811cbaec38de2791af53e8491cc9..276cf733326a204a70b061ecda01072960eedaf2`
+
+## V-4 residual → R-1
+
+| Requirement | What changed | Evidence |
+|---|---|---|
+| A response that trickles bytes below the socket read timeout must still end at the one absolute deadline — including work Spring does on its own | `BoundedFulltextHttp.bounded(...)` now builds a `DeadlineBoundedRequestFactory` whose `createRequest` wraps the request/response: `getBody()` returns a `DeadlineBoundedInputStream` that checks the absolute deadline before **and** after every read, **and `close()` performs its own deadline-bounded drain** instead of letting `SimpleClientHttpResponse.close()` drain the raw stream unbounded for connection reuse (that drain was the real hang: `StreamUtils.drain` on the raw stream blocked forever against a trickling peer). `deadlineBoundedStream(...)` exposes the wrapper for direct testing. | Root-caused with a JVM thread dump (blocked stack: `StreamUtils.drain` ← `SimpleClientHttpResponse.close` ← `RestTemplate.doExecute`). `RestTemplateConfigTest` trickle case now ends in budget with 1 accepted connection (was 843 s); `EuropePmcDataSourceTest` trickling XML 1.9 s (was 817 s) |
+| The whole chain reports the existing `TIMEOUT` category when the budget cuts the body | `PdfEmailExtractor.classifyDownloadFailure` maps the bounded-client body abort to the same existing `TIMEOUT` bucket as its own per-chunk check (previously it fell into `NETWORK_ERROR`). | `PdfEmailExtractorTest` + `OpenAlexDataSourceTest` trickle cases assert `TIMEOUT` (were `NETWORK_ERROR`) |
+| Expiry immediately before dispatch must not dispatch (atomic handoff) | `BoundedFulltextHttp.getForObject`/`execute` call `requirePositiveBudget(deadline)`, throwing `NoRemainingBudgetException` when no positive budget remains; `UnpaywallClient` additionally re-checks immediately before dispatch; `PdfEmailExtractor` refuses the download with `requestIssued = false`. | `RestTemplateConfigTest` "no request is dispatched…" (0 connections); `UnpaywallClientTest` "no lookup is dispatched…" (0 connections) |
+| One deadline across XML / lookup / URL, no later stage after expiry | Unchanged contract from epoch 2, now enforced through completion of each body read. | `OpenAlexDataSourceTest` 63/0/0 incl. the trickle end-to-end case (TIMEOUT, 1 request, `verifyNoInteractions(pdfExtractor)`-style no-lookup assertion) |
+
+## Changed files (9 of the 10 authorized; `OpenAlexDataSource.kt` needed no change this epoch)
+
+| File | Purpose |
+|---|---|
+| `src/main/kotlin/.../config/RestTemplateConfig.kt` | Deadline-bounded request factory/bodies, bounded close-drain, `NoRemainingBudgetException`, atomic dispatch guard, `deadlineBoundedStream` |
+| `src/main/kotlin/.../discovery/service/EuropePmcDataSource.kt` | Typed XML fetch result consumed with the bounded client |
+| `src/main/kotlin/.../discovery/service/UnpaywallClient.kt` | Budget-bounded delay/lookup + pre-dispatch guard |
+| `src/main/kotlin/.../discovery/service/PdfEmailExtractor.kt` | Per-chunk absolute-deadline checks, pre-dispatch refusal, body-abort classified as `TIMEOUT` |
+| `src/test/kotlin/.../config/RestTemplateConfigTest.kt` | Bounded-client contract, `SlowHttpServer` (now with a `TRICKLE_BODY` mode), trickle + dispatch-guard + bounded-stream cases |
+| `src/test/kotlin/.../discovery/service/EuropePmcDataSourceTest.kt` | Trickling XML → `TIMEOUT` in budget |
+| `src/test/kotlin/.../discovery/service/UnpaywallClientTest.kt` | Trickling lookup bounded; no dispatch with no budget |
+| `src/test/kotlin/.../discovery/service/PdfEmailExtractorTest.kt` | Trickling body → `TIMEOUT`; pass-through executor updated to the new seam |
+| `src/test/kotlin/.../discovery/service/OpenAlexDataSourceTest.kt` | Trickle end-to-end (no later lookup); pass-through executor updated |
+
+## Commands (fresh in this invocation, JDK 11)
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `mvn test -Dtest=OpenAlexRequestPolicyTest,RestTemplateConfigTest` | exit 0 · 30 / 0 F / 0 E (2.0 s, was 845 s) |
+| 2 | `mvn test -Dtest=ExpertDiscoveryServiceTest,ExpertAcademicEnrichmentWorkerTest,ExpertDiscoveryControllerTest` | exit 0 · 148 / 0 F / 0 E |
+| 3 | `mvn test -Dtest=TaskExecutionSummaryExtractorTest,ExpertAcademicEnrichmentWorkerTest,ExpertDiscoveryControllerTest` | exit 0 · 47 / 0 F / 0 E |
+| 4 | `mvn test -Dtest=OpenAlexDataSourceTest,PdfEmailExtractorTest,ExpertDiscoveryServiceTest,UnpaywallClientTest` | exit 0 · 225 / 0 F / 0 E |
+| 5 | `node --test src/test/js/*.test.js` | exit 0 · 1037 pass / 0 fail |
+| 6 | `DOCKER_HOST=… mvn test -Dapi.version=1.40` | exit 0 · **3711 / 0 F / 0 E / 13 skipped**, BUILD SUCCESS, zero `[ERROR]` lines |
+| extra | `mvn test -Dtest=EuropePmcDataSourceTest,UnpaywallClientTest` | exit 0 · 41 / 0 F / 0 E / 1 pre-existing skip (1.9 s, was 817 s) |
+| extra | `… -DmigrationIt=true` (epoch 1) | exit 1 · sole error = pre-existing `FlywayMigrationIntegrationTest.V124` FK fixture; V131 coverage 18/0/0 |
+
+## Deviations (epoch 3)
+
+- **Bounded close-drain.** The bounded client no longer lets Spring drain the raw response stream on close: it drains through the deadline-bounded stream instead and closes the raw stream when the deadline wins. When the body drains inside the budget, connection reuse is unchanged; when it cannot, the connection is discarded rather than blocking the caller. Diagnosed from a thread dump (`StreamUtils.drain` inside `SimpleClientHttpResponse.close`), which is why the first trickle attempt took 843 s before being fixed.
+- **Seam signature.** `BoundedHttpExecutor` now takes an absolute `deadline: Instant?` instead of a pre-computed `remainingMs`, so the preflight→dispatch window cannot silently consume budget; the two test pass-through implementations were updated accordingly (both authorized files).
+- **`OpenAlexDataSource.kt` untouched this epoch** — its epoch-2 "lookup cut short ⇒ TIMEOUT, no later download" rule already covers the trickle path, proven by the new end-to-end trickle case.
+- Carried over from epochs 1–2: frontend cache-key triad not bumped (`index.html` outside the authorized files); `FlywayMigrationIntegrationTest.V124` pre-existing red only under `-DmigrationIt=true`.
+- No file outside the authorized list; no plan edited; nothing pushed, merged, rebased, amended or squashed.
+
+## Clean-state evidence (epoch 3)
+
+- `git status --porcelain`: empty immediately before and after `276cf733`.
+- Plan identity re-checked after the commit: `sha256:2105d2c6d899b4a4dbb23730cb49073962b61e9826e54698a81067845ca3d961` (unchanged).
+- Worktree identity re-checked: same root/branch/Git dir; `276cf733` is the branch HEAD.
+- No mail sent, no ES/DB state written outside tests, no migration/mapping touched, no API key read, logged or printed.
