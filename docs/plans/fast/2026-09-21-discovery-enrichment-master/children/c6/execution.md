@@ -1,0 +1,73 @@
+## Execution Result: READY_FOR_VERIFICATION
+
+Plan: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-21-discovery-enrichment-master/docs/plans/2026-09-21/06-targeted-enrichment.md
+Plan SHA-256: 2b2cd63b37a24c2e666e614674ff0754254e9b38aa5a01bb33df039ce0ce3706
+Execution ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-21-discovery-enrichment-master/docs/plans/2026-09-21/06-targeted-enrichment.md@2b2cd63b37a24c2e666e614674ff0754254e9b38aa5a01bb33df039ce0ce3706
+Execution epoch: NEW (no prior execution evidence for this EXECUTION_ID; c6 was `PENDING` in the ledger)
+Approval basis: fast-p child c6 brief (docs/plans/fast/2026-09-21-discovery-enrichment-master/children/c6/brief.md), which authorizes this child's implementation on branch `fast/2026-09-21-discovery-enrichment-master` on top of c1–c5
+Executor: C6Implementer
+Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-21-discovery-enrichment-master
+Target branch: fast/2026-09-21-discovery-enrichment-master
+Worktree ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-21-discovery-enrichment-master@fast/2026-09-21-discovery-enrichment-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-2026-09-21-discovery-enrichment-master
+Pre-execution code SHA: 1ba685217a166628968a798450ff203191ead79c (c5 code head per the ledger); pre-execution HEAD was 04cd01039f71e157ab5c25bafe959551a4f2e3c3 (c5 light-verification docs commit, no code delta)
+Post-execution code SHA: 16647117f7f7f7e7d1a66f35524900f0ea431e0d
+Evidence HEAD: N/A (the plan requires one product commit and no separate evidence commit)
+Implementation boundary: 04cd010..1664711 (code base 1ba6852)
+
+### Task Status
+
+| Requirement | Status | Files | Evidence |
+|---|---|---|---|
+| Task 1 — 补全共享核心 (I-1, I-3): `enrichProfiles(profiles, requestKind)` + author-ID batch query + batch ≤100 distinct identities + EMAIL-* never used as ORCID + results keyed by real `esDocId` + unified single/batch works/patents switches (no unconditional patents on the single path) | IMPLEMENTED | `ExpertDiscoveryService.kt`, `OpenAlexDataSource.kt` | `enrichProfiles` (ExpertDiscoveryService.kt:1560-1606) groups by `trustedOpenAlexAuthorId` → `trustedOrcid` → `NoId`; `enrichIdentityGroups` (1608-1645) chunks at `enrichmentBatchSize().coerceIn(1, 100)` and calls `batchEnrichByAuthorIds` / `batchEnrichByOrcids` with `RequestKind`; `batchEnrichByAuthorIds` (OpenAlexDataSource.kt:302-307) and the shared `batchEnrichIdentities` (319-389); `parseAuthorEnrichment` (420-448) now gates works+patents on `fetchWorksEnabled`/`fetchPatentsEnabled` for BOTH paths. Tests: `enrichProfiles prefers the trusted author id and keys results by the real esDocId (I-1)`, `enrichProfiles splits more than 100 identities into bounded mixed batches (V-1)` (100/100/1), `batchEnrichByAuthorIds queries by author id and only maps canonical ids (I-1)`, `batchEnrichByAuthorIds never attributes a non-canonical response id (I-1)`, `enrichAuthor uses the same titles switches as the batch path (V-3)`, `enrichAuthor fetches recent works only when the switch is on (V-3)` |
+| Task 1 — 学术完成语义 (I-3): base facts hIndex/citationCount/worksCount/research direction/discipline/last publication year; latest-3 titles separately retryable; empty result ≠ request failure; patents stay off | IMPLEMENTED | `OpenAlexDataSource.kt`, `ExpertDiscoveryService.kt` | `AuthorEnrichment` gained no non-fact field; `EnrichmentOutcome.Success(data, titlesFailed)` (OpenAlexDataSource.kt:477-486) + `TitlesFetch` (488-499) keep "request failed" apart from "no works"; `enrichProfiles` maps `titlesFailed` → `Partial`. Tests: `enrichProfiles reports Partial when the optional recent-titles fetch fails and Success after recovery (I-3)`, `batchEnrichByOrcids keeps base facts usable when the titles call fails (I-3)`, `batchEnrichByOrcids treats an empty titles result as success not failure (I-3)`, strengthened `batchEnrichByOrcids keeps base Success when works fetch is rate limited` (+`assertTrue(first.titlesFailed)`), `enrichAuthor fetches recent works only when the switch is on (V-3)` (patents null with patents off) |
+| Task 2 — 三层局部更新 (I-2): `updateExpertAcademicFields` stays the only academic write point, partial `_update` by real `_id` per existing layer, 404 skipped, non-404 retryable, per-layer result instead of `candidateUpdated`, null facts never overwrite, never touches name/email/affiliation/operator status, never creates a missing APPLICATION | IMPLEMENTED | `ExpertDiscoveryService.kt` | `updateExpertAcademicFields` (1448-1491) returns `LayerUpdateResult`; `updateAcademicFieldsInLayer` (1493-1526) = HEAD (404 → `ABSENT`, other failures → `FAILED`) + `_update`; null-valued facts (`hIndex`/`citationCount`/`worksCount`/…) are omitted from the update body. Tests: `enrichExistingExperts counts a RAW-only update as success (I-2)` (defect reproduced pre-fix, see Deviations), `enrichProfiles reports per-layer results without creating a missing layer (V-2, I-2)`, `enrichProfiles reports Partial when an existing layer write fails (V-2, I-2)`, `enrichProfiles never writes null facts over existing values (I-2)`, `enrichExistingExperts counts a partially written expert as failed (I-2)` |
+| Task 2 — 晋升保持门禁 (I-4): targeted RAW revalidation reusing the current email/eligibility/classification gates; candidate created only when neither CANDIDATE nor APPLICATION exists; already-applied experts never re-candidated; no auto-demotion; promotion reads the newest RAW source | IMPLEMENTED | `ExpertRevalidationService.kt`, `ExpertSearchService.kt` | `revalidateEnrichedRaw(docId): PromotionOutcome` (308-346) → `AlreadyPresent` on existing APPLICATION or CANDIDATE, then latest RAW via `findByDocumentIds(RAW, [docId])`, then `evaluateRawPromotionGate` (267-292, the single gate implementation now also used by `promoteEligibleRawExperts`), then `promoteRawToCandidate` (re-reads RAW at write time). `findByDocumentIds` (ExpertSearchService.kt:850-869) reads by real `_id` through `_mget` and reuses `toExpertProfile`. Tests: 8 new `revalidateEnrichedRaw …` cases (AlreadyPresent ×2, newest-RAW promotion, ineligible rejection with `verify(...never()).classify(raw)`, classification gate, RawMissing, ExistenceCheckFailed, WriteFailed) + `findByDocumentIds reads by real _id through _mget and skips missing documents (I-1)`, `findByDocumentIds makes no request for an empty or blank id list (I-1)` |
+| Downstream interfaces kept exact | IMPLEMENTED | all 4 production files | `ProfileEnrichmentOutcome` variants exactly `Success, Partial, Deferred, NotFound, NoId, RetryableError` (ExpertDiscoveryService.kt:1913-1950); `enrichProfiles(profiles, requestKind)` and `findByDocumentIds(level, ids)` keep plan names/shapes; `LayerUpdateResult` (1891-1912) is a plain 3-field data class over `LayerUpdateStatus` (no derived getters, so `result_json` round-trips on the three stable field names); `revalidateEnrichedRaw(docId): PromotionOutcome` with `AlreadyPresent` semantics (ExpertRevalidationService.kt:347-365); no parallel enrichment field set — writers/readers still use the same academic fields (`sourceFields()`/`toExpertProfile` untouched) |
+| M-2 manual entry + three scopes still work through the same core | IMPLEMENTED | `ExpertDiscoveryService.kt` | `enrichExistingExperts(scope)` keeps its filters/progress/token usage and now delegates per-chunk work to `enrichProfiles(..., RequestKind.HISTORY_ENRICHMENT)`; the three scopes' filter assertions and the progress-store contract still pass (`enrichExistingExperts uses frozen cutoff and excludes EMAIL- in filters`, `… INSTITUTION_TYPE_BACKFILL …`, `… LAST_PUBLICATION_YEAR_BACKFILL …`, `getEnrichmentStats …` — all green) |
+| M-5 / M-1 / M-3 / M-4 (no paid API, no key, no applied migration, no mail, no overwrite of operator data, default R&D scope) | IMPLEMENTED (unchanged) | — | No new dependency, no migration, no ES mapping change, no new job table; the academic write body still contains only academic keys + `updatedAt`/`enrichedAt`/`enrichmentSource`/`expertClassification`; `EMAIL-*` stays excluded from enrichment filters |
+
+### Commands
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=ExpertDiscoveryServiceTest,OpenAlexDataSourceTest,ExpertRevalidationServiceTest,ExpertSearchServiceTest,OperatorStatusWriteSeamGuardTest` | PASS | exit 0 / `BUILD SUCCESS`, freshly run after the final implementation state (surefire reports written 2026-09-21 13:23:52 +0800): `Tests run: 243, Failures: 0, Errors: 0, Skipped: 0` = ExpertDiscoveryServiceTest 98 + OpenAlexDataSourceTest 48 + ExpertRevalidationServiceTest 27 + ExpertSearchServiceTest 69 + OperatorStatusWriteSeamGuardTest 1. The same invocation also ran the test-phase JS (`node --test`) regression: `tests 1035, pass 1035, fail 0` |
+| Pre-fix reproduction (same command, `-Dtest=ExpertDiscoveryServiceTest#enrichExistingExperts counts a RAW-only update as success (I-2)`, implementation files temporarily reverted to HEAD via `git stash`) | FAIL (expected) | `AssertionFailedError: RAW-only 补全成功不得误报失败 ==> expected: <1> but was: <0>` — the I-2 defect (RAW-only success reported as failure) is reproducible against the pre-change code and green after the fix |
+| `python3 /Users/lukai/.agents/skills/execute-p/scripts/plan_identity.py …/06-targeted-enrichment.md` / `worktree_identity.py …` | PASS | plan SHA-256 rechecked unchanged after execution; worktree root/branch/git-dir match the target; commit reachable from the target branch |
+
+### Changed Files
+
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt` — targeted enrichment core (`enrichProfiles` + identity grouping + per-layer `LayerUpdateResult` write path), `enrichExistingExperts` rewired onto the core with an honest budget-deferral terminal state, new `ProfileEnrichmentOutcome`/`LayerUpdateResult`/`LayerUpdateStatus` contract types.
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt` — new `batchEnrichByAuthorIds` sharing one batch implementation with `batchEnrichByOrcids`; unified/switch-gated recent-works and patent title fetch with an explicit `titlesFailed` flag; single-author path returns `EnrichmentOutcome` so 404 and retryable failures stay apart.
+- `src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt` — `findByDocumentIds(level, ids)` `_mget` lookup by real `_id` (added below the pin-guarded region; the seam-guard pin at line 498 is untouched).
+- `src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt` — `RawPromotionGate` extraction (single email/eligibility/classification gate), `revalidateEnrichedRaw`, new `PromotionOutcome` type.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt` — 10 new c6 tests + legacy enrichment stubs/verifies moved to the `RequestKind`-carrying overload + the pre-fix reproduction test.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt` — 6 new tests (author-ID batch mapping, switch parity, titles failure/empty semantics, 404 vs retryable) + one strengthened existing assertion.
+- `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt` — 8 new `revalidateEnrichedRaw` tests.
+- `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt` — 2 new `findByDocumentIds` tests.
+
+Nothing outside the 8 authorized files changed; `OperatorStatusWriteSeamGuardTest.kt` needed no line-number pin update (its `ExpertSearchService.kt` pin at line 498 keeps asserting the same snippet) and `docs/plans/fast/**` is excluded from the commit.
+
+### Deviations
+
+- **Legacy test stubs moved to the two-arg `batchEnrichByOrcids(List, RequestKind)` overload** (ExpertDiscoveryServiceTest only). c1 requires the enrichment entry to name its `RequestKind`, so `enrichExistingExperts` no longer calls the one-arg legacy overload; the assertions still cover the same request boundary (chunk sizes, call counts, `RateLimited` retry rounds). No assertion was weakened or deleted — `Mockito.verify(..., never())` sites were moved to the new overload rather than dropped.
+- **`EnrichmentResult` gained `budgetDeferred`** (defaulted) and `taskFinalStatus` maps it to `PARTIAL_SUCCESS`. The plan/child contract only fixes `ProfileEnrichmentOutcome`, but c1's "deferred must not surface as a retryable error" needs the manual entry to stop honestly instead of reporting `FAILED`; `failureReasons["BUDGET_DEFERRED"]` records the cause. Additive and defaulted, so existing construction sites/tests are unaffected.
+- **`EnrichmentOperationOutcome` payload fields** (`Partial.recentWorksFailed`, `Deferred.resetAt`, `RetryableError.retryAfterMs/rateLimited`) are additive payloads on the six fixed variants; the variant set and names are exactly as contracted.
+- **`updateExpertAcademicFields` no longer writes `null` for `hIndex`/`citationCount`** — the pre-change body carried `hIndex: null` when OpenAlex returned no metric, which an ES `_update` applies as an erasure. I-2's "null facts must not overwrite existing values" requires the keys to be absent; covered by `enrichProfiles never writes null facts over existing values (I-2)`.
+- **`findByDocumentIds` uses `POST /_mget` with per-document `_index`/`_id`/`_source`** (plan text says "`_mget` and reuse `toExpertProfile`"); no other interpretation of the contract bytes was available.
+- The `enrichProfiles`/`_mget`/gate details above are the only places where the approved bytes did not spell out a mechanism; no new behavioral decision outside the plan's invariants was required, so no `PLAN_CONFLICT`.
+
+### Freshness
+
+- Plan identity rechecked: YES (`2b2cd63b…3706`, unchanged after execution)
+- Worktree identity rechecked: YES (root/branch/git-dir re-verified with `--expect-*` before `git add`/`git commit`)
+- Reported commits reachable from target branch: YES (`git merge-base --is-ancestor HEAD fast/2026-09-21-discovery-enrichment-master`)
+- Required commands run this invocation: YES (final directed command after the final implementation state; the pre-fix reproduction run was executed against the reverted implementation files)
+- Historical evidence used only as baseline: YES (the c1–c5 green runs were not reused as this child's evidence)
+
+### Remaining Blocker
+
+- None.
+
+### Next Action
+
+- READY_FOR_VERIFICATION → run `verify-p`
