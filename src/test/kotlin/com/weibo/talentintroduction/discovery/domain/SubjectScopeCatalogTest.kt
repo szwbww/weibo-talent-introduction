@@ -13,9 +13,28 @@ class SubjectScopeCatalogTest {
             assertEquals(emptyList<String>(), SubjectScopeCatalog.openAlexFilterParts(scope))
             assertEquals(emptyList<String>(), SubjectScopeCatalog.arxivCategories(scope))
             assertEquals(emptyList<String>(), SubjectScopeCatalog.coreKeywords(scope))
+            assertEquals(emptyList<String>(), SubjectScopeCatalog.orcidSeedKeywords(scope))
             assertEquals(emptyList<String>(), SubjectScopeCatalog.crossrefQueries(scope))
             assertEquals(emptySet<String>(), SubjectScopeCatalog.excludedSources(scope))
         }
+    }
+
+    @Test
+    fun `coreKeywords RND_TARGET is the locked six R&D topics`() {
+        // I-3：CORE 查询的主题词来自目录唯一来源；逐字锚定，防止主题漂移无人察觉。
+        assertEquals(
+            listOf("engineering", "materials", "computer science", "chemical", "energy", "physics"),
+            SubjectScopeCatalog.coreKeywords(SubjectScopeCatalog.RND_TARGET)
+        )
+    }
+
+    @Test
+    fun `orcidSeedKeywords RND_TARGET is the locked six R&D topics`() {
+        // I-2/I-3：ORCID 的关键词字段种子同样只有六类研发范围，逐一字锚定。
+        assertEquals(
+            listOf("engineering", "materials", "computer science", "chemical", "energy", "physics"),
+            SubjectScopeCatalog.orcidSeedKeywords(SubjectScopeCatalog.RND_TARGET)
+        )
     }
 
     @Test
@@ -58,6 +77,8 @@ class SubjectScopeCatalogTest {
                 "arxivCategories must have a branch for scope '$scope'")
             assertTrue(SubjectScopeCatalog.coreKeywords(scope).isNotEmpty(),
                 "coreKeywords must have a branch for scope '$scope'")
+            assertTrue(SubjectScopeCatalog.orcidSeedKeywords(scope).isNotEmpty(),
+                "orcidSeedKeywords must have a branch for scope '$scope'")
             assertTrue(SubjectScopeCatalog.crossrefQueries(scope).isNotEmpty(),
                 "crossrefQueries must have a branch for scope '$scope'")
             assertTrue(SubjectScopeCatalog.excludedSources(scope).isNotEmpty(),

@@ -1,11 +1,13 @@
 package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.config.CoreProperties
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
 import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
 import com.weibo.talentintroduction.config.OpenAlexProperties
+import com.weibo.talentintroduction.config.OrcidProperties
 import com.weibo.talentintroduction.config.DiscoveryExecutorConfig
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
@@ -248,6 +250,84 @@ class ExpertDiscoveryServiceTest {
         // 不 stub searchPapers：Mockito 返回 null，discoverFromSource 以 batch == null 空批次退出，
         // bySource 条目仍会创建 —— 这足以验证 resolveEnabledSources 的启用集合。
     }
+
+    /**
+     * ORCID 双入口 stub（c4）：
+     * - 发现循环走分页视图 [OrcidDataSource.searchOrcidPage]：首页返回给定封装，随后返回空页；
+     * - 「按 orcid 反查邮箱」仍走记录视图 [OrcidDataSource.searchOrcidRecords]（保持改动前行为）。
+     */
+    private fun stubOrcid(
+        orcid: OrcidDataSource,
+        records: List<OrcidDataSource.OrcidRecord>,
+        nextCursor: String? = null
+    ) {
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, records)
+        Mockito.doReturn(OrcidDataSource.OrcidSearchPage(records, nextCursor, records.size))
+            .doReturn(OrcidDataSource.OrcidSearchPage(emptyList(), null, 0))
+            .`when`(orcid).searchOrcidPage(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+    }
+
+    /** 真实 CORE 数据源 + 记录每次请求 body 的 RestTemplate（断在请求边界，而非内部调用）。 */
+    private class StubCore(vararg responses: String, maxPapersPerSource: Int) {
+        val requests = mutableListOf<Map<*, *>>()
+        val source: CoreDataSource
+
+        init {
+            val mapper = ObjectMapper()
+            val template = Mockito.mock(RestTemplate::class.java)
+            var index = 0
+            Mockito.doAnswer { invocation ->
+                val entity = invocation.getArgument<Any>(2) as HttpEntity<*>
+                requests.add(entity.body as Map<*, *>)
+                val body = responses[minOf(index, responses.size - 1)]
+                index++
+                ResponseEntity.ok(mapper.readTree(body))
+            }.`when`(template).exchange(
+                Mockito.anyString(), Mockito.eq(HttpMethod.POST), Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+            source = CoreDataSource(
+                template, CoreProperties(enabled = true, apiKey = "test-key", requestDelayMs = 0,
+                    maxPapersPerSource = maxPapersPerSource),
+                PlainTextEmailExtractor(), Mockito.mock(PdfEmailExtractor::class.java)
+            )
+        }
+    }
+
+    /** CORE 一页响应：[rawCount] 条结果（无 fullText，不会产出邮箱），[totalHits] 是供应商总命中数。 */
+    private fun coreWorksBody(rawCount: Int, totalHits: Long): String {
+        val root = objectMapper.createObjectNode()
+        root.put("totalHits", totalHits)
+        val results = root.putArray("results")
+        for (i in 1..rawCount) {
+            val node = results.addObject()
+            node.put("doi", "10.1234/core.$i")
+            node.put("title", "CORE Paper $i")
+            node.put("yearPublished", 2020)
+        }
+        return objectMapper.writeValueAsString(root)
+    }
+
+    /** ORCID 一页响应：[rawCount] 条原始记录，只有第一条带公开邮箱（可选）。 */
+    private fun orcidPageBody(rawCount: Int, publicEmail: String? = null): String {
+        val root = objectMapper.createObjectNode()
+        val results = root.putArray("expanded-result")
+        for (i in 1..rawCount) {
+            val node = results.addObject()
+            node.put("orcid-id", "0000-0001-%04d".format(i))
+            node.put("given-names", "Test")
+            node.put("family-names", "Expert$i")
+            val emails = node.putArray("email")
+            if (i == 1 && publicEmail != null) emails.add(publicEmail)
+            node.putArray("institution-name").add("Test University")
+        }
+        return objectMapper.writeValueAsString(root)
+    }
+
+    private fun urlStart(url: String): String = url.substringAfter("&start=").substringBefore("&")
+
+    private fun urlQuery(url: String): String =
+        java.net.URLDecoder.decode(url.substringAfter("?q=").substringBefore("&"), "UTF-8")
 
     @Test
     fun `resolveEnabledSources excludes EUROPE_PMC when disabled even with empty sources`() {
@@ -720,7 +800,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
             emails = listOf("test$it@example.com"), institutionName = "Univ", country = null
         )}
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, records)
+        stubOrcid(orcid, records)
 
         for (i in 1..10) {
             DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test$i@example.com", EmailValidationResult(2, true))
@@ -757,7 +837,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
             emails = listOf("test$it@example.com"), institutionName = "Univ", country = null
         )}
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, records)
+        stubOrcid(orcid, records)
 
         for (i in 1..5) {
             DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test$i@example.com", EmailValidationResult(2, true))
@@ -795,7 +875,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
             emails = listOf("test$it@example.com"), institutionName = "Univ", country = null
         )}
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, records)
+        stubOrcid(orcid, records)
 
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test1@example.com", EmailValidationResult(0, false))
         for (i in 2..5) {
@@ -848,7 +928,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-000$it", givenNames = "O", familyNames = "$it",
             emails = listOf("or$it@univ.edu"), institutionName = "Univ", country = null
         )}
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, orcidRecords)
+        stubOrcid(orcid, orcidRecords)
         for (i in 1..10) {
             DiscoveryMockHelper.stubValidateEmail(emailValidationService, "or$i@univ.edu", EmailValidationResult(2, true))
         }
@@ -883,7 +963,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
             emails = listOf("test$it@example.com"), institutionName = "Univ", country = null
         )}
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, records)
+        stubOrcid(orcid, records)
 
         for (i in 1..10) {
             DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test$i@example.com", EmailValidationResult(2, true))
@@ -1664,7 +1744,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
             emails = listOf("test@example.com"), institutionName = "Univ", country = null
         )
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        stubOrcid(orcid, listOf(record))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsRawDocGet(restTemplate)
 
@@ -1699,7 +1779,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-0009-other", givenNames = "Other", familyNames = "Person",
             emails = listOf("other@example.com"), institutionName = "OtherUniv", country = null
         )
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(mismatchedRecord))
+        stubOrcid(orcid, listOf(mismatchedRecord))
 
         svc.discover(PaperSearchCriteria(), "TEST")
 
@@ -1734,7 +1814,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
             emails = listOf("test@example.com"), institutionName = "Univ", country = null
         )
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        stubOrcid(orcid, listOf(record))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
 
         svc.discover(PaperSearchCriteria(), "TEST")
@@ -1762,7 +1842,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
             emails = listOf("test@example.com"), institutionName = "Univ", country = null
         )
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        stubOrcid(orcid, listOf(record))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
         DiscoveryMockHelper.stubEsRawDocGet(restTemplate)
@@ -1795,7 +1875,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
             emails = listOf("test@example.com"), institutionName = "Univ", country = null
         )
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        stubOrcid(orcid, listOf(record))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
 
@@ -1824,7 +1904,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "https://orcid.org/0000-0001-2345", givenNames = "Test", familyNames = "User",
             emails = listOf("test@example.com"), institutionName = "Univ", country = null
         )
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(matchedRecord))
+        stubOrcid(orcid, listOf(matchedRecord))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
 
         svc.discover(PaperSearchCriteria(), "TEST")
@@ -1853,7 +1933,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
             emails = listOf("invalid@tmp.com", "valid@uni.edu"), institutionName = "Univ", country = null
         )
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        stubOrcid(orcid, listOf(record))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "invalid@tmp.com", EmailValidationResult(0, false))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "valid@uni.edu", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
@@ -1884,7 +1964,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
             emails = listOf("test@example.com"), institutionName = "Univ", country = null
         )
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        stubOrcid(orcid, listOf(record))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
 
@@ -1914,7 +1994,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-0001-raw", givenNames = "Test", familyNames = "User",
             emails = listOf("test@example.com"), institutionName = "Univ", country = null
         )
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(record))
+        stubOrcid(orcid, listOf(record))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsRawUpdate(restTemplate)
         DiscoveryMockHelper.stubEsRawDocGet(restTemplate)
@@ -1946,7 +2026,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "https://orcid.org/0000-0001-2345", givenNames = "Test", familyNames = "User",
             emails = listOf("test@example.com"), institutionName = "Univ", country = null
         )
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(matchedRecord))
+        stubOrcid(orcid, listOf(matchedRecord))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
 
         svc.discover(PaperSearchCriteria(), "TEST")
@@ -1974,7 +2054,7 @@ class ExpertDiscoveryServiceTest {
             orcidId = "0000-0001-2345", givenNames = "Test", familyNames = "User",
             emails = listOf("test@example.com"), institutionName = "Univ", country = null
         )
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, listOf(matchedRecord))
+        stubOrcid(orcid, listOf(matchedRecord))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test@example.com", EmailValidationResult(2, true))
 
         svc.discover(PaperSearchCriteria(), "TEST")
@@ -2176,7 +2256,7 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubOrcidSourceName(orcid)
         DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 25)
         Mockito.doThrow(ResourceAccessException("TLS handshake failed"))
-            .`when`(orcid).searchOrcidRecords(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+            .`when`(orcid).searchOrcidPage(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
         DiscoveryMockHelper.stubSearchPapersThrows(europePmc, ResourceAccessException("TLS handshake failed"))
 
         val result = svc.discover(PaperSearchCriteria(), "TEST")
@@ -2204,7 +2284,7 @@ class ExpertDiscoveryServiceTest {
                 emails = listOf("test$it@example.com"), institutionName = "Univ", country = null
             )
         }
-        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, records)
+        stubOrcid(orcid, records)
         for (i in 1..2) {
             DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test$i@example.com", EmailValidationResult(2, true))
         }
@@ -2517,5 +2597,183 @@ class ExpertDiscoveryServiceTest {
         assertEquals(maxAuthors, serialSource.fulltextAttempted)
         assertEquals(serialSource.fulltextAttempted, parallelSource.fulltextAttempted)
         assertTrue(serialSource.papersSearched < batchSize)
+    }
+
+    // ---------------- c4: CORE offset 分页与 ORCID 原始记录翻页 ----------------
+
+    private fun c4Props() = ExpertDiscoveryProperties(
+        enabled = true, maxPapersPerRun = 1_000, maxAuthorsPerRun = 1_000
+    )
+
+    @Test
+    fun `CORE resumes from the persisted shard offset instead of restarting at page one`() {
+        // V-1：跨运行续 offset。改动前 CORE 的 scrollId 不持久化，每次运行都从首批重来。
+        val criteria = PaperSearchCriteria(
+            pageSize = 100, publicationYearFrom = 2020, publicationYearTo = 2026,
+            subjectScope = SubjectScopeCatalog.RND_TARGET, sources = listOf("CORE")
+        )
+        stubStoredCheckpoint("CORE", "0|2020|100", criteria)
+        val core = StubCore(coreWorksBody(rawCount = 100, totalHits = 5_000), maxPapersPerSource = 100)
+        Mockito.doReturn(core.source).`when`(coreProvider).getIfAvailable()
+
+        val (result, saved) = runAndCapture(createService(c4Props()), criteria)
+
+        assertEquals(1, core.requests.size, "本源限额用尽即停，只应发出进入该页的一次请求")
+        assertEquals(100, core.requests.single()["offset"], "续跑必须从检查点 offset=100 开始，不能再发 offset=0")
+        val checkpoint = decodedCheckpoint(savedCheckpoints(saved, "CORE").last())
+        assertEquals("0|2020|200", checkpoint.cursor, "页满按原始返回条数推进并落盘")
+        assertEquals(CheckpointState.ACTIVE, checkpoint.state)
+        assertEquals(100, result.stats.bySource["CORE"]?.papersSearched)
+    }
+
+    @Test
+    fun `CORE records WINDOW_LIMIT and rotates the shard at the vendor offset window`() {
+        // V-1/I-4：到 9000 记录窗口限制 —— 该分片停止、切下一分片、WINDOW_LIMIT 落进来源明细，
+        // 既不冒充穷尽也不继续递增 offset。
+        val criteria = PaperSearchCriteria(
+            pageSize = 100, publicationYearFrom = 2020, publicationYearTo = 2021,
+            subjectScope = SubjectScopeCatalog.RND_TARGET, sources = listOf("CORE")
+        )
+        stubStoredCheckpoint("CORE", "0|2020|9000", criteria)
+        val core = StubCore(coreWorksBody(rawCount = 100, totalHits = 500_000), maxPapersPerSource = 100)
+        Mockito.doReturn(core.source).`when`(coreProvider).getIfAvailable()
+
+        val (result, saved) = runAndCapture(createService(c4Props()), criteria)
+
+        assertEquals(1, core.requests.size, "分片到界后不得再对该分片发请求")
+        assertEquals(9000, core.requests.single()["offset"])
+        val checkpoint = decodedCheckpoint(savedCheckpoints(saved, "CORE").last())
+        assertEquals("0|2021|0", checkpoint.cursor, "窗口分片停止后游标切到下一分片")
+        assertEquals(CheckpointState.ACTIVE, checkpoint.state)
+
+        val coreStats = result.stats.bySource["CORE"]
+        assertEquals(1, coreStats?.failureReasons?.get(DiscoveryStopReason.WINDOW_LIMIT),
+            "WINDOW_LIMIT 必须以来源明细形式记录")
+        assertEquals(DiscoveryStopReason.SOURCE_LIMIT, coreStats?.stopReason)
+        assertTrue(coreStats?.pendingWork == true, "窗口分片已切走，仍有可续跑工作，不能标记为已穷尽")
+    }
+
+    @Test
+    fun `CORE sends the catalogue topics with explicit parentheses and keeps operator keywords`() {
+        // V-3/I-3：默认研发范围下发的主题词带显式括号 OR；人工关键词不被覆盖。
+        val criteria = PaperSearchCriteria(
+            pageSize = 100, subjectScope = SubjectScopeCatalog.RND_TARGET, sources = listOf("CORE")
+        )
+        val core = StubCore(coreWorksBody(rawCount = 1, totalHits = 1), maxPapersPerSource = 100)
+        Mockito.doReturn(core.source).`when`(coreProvider).getIfAvailable()
+
+        runAndCapture(createService(c4Props()), criteria)
+
+        assertEquals(
+            "(engineering OR materials OR computer science OR chemical OR energy OR physics) AND yearPublished=2020",
+            core.requests.first()["q"]
+        )
+        assertTrue(core.requests.all { (it["q"] as String).contains("engineering OR materials") },
+            "每个年份分片都必须带同一组显式括号 OR 主题词")
+
+        val manualCriteria = criteria.copy(keywords = listOf("perovskite solar cell"))
+        val manualCore = StubCore(coreWorksBody(rawCount = 1, totalHits = 1), maxPapersPerSource = 100)
+        Mockito.doReturn(manualCore.source).`when`(coreProvider).getIfAvailable()
+
+        runAndCapture(createService(c4Props()), manualCriteria)
+
+        assertEquals("(perovskite solar cell) AND yearPublished=2020", manualCore.requests.first()["q"])
+    }
+
+    @Test
+    fun `CORE query shards per year use independent checkpoints`() {
+        // V-1：查询年份变更用独立检查点，互不覆盖。
+        val criteria2020 = PaperSearchCriteria(
+            pageSize = 100, publicationYearFrom = 2020, publicationYearTo = 2020,
+            subjectScope = SubjectScopeCatalog.RND_TARGET, sources = listOf("CORE")
+        )
+        val criteria2021 = criteria2020.copy(publicationYearFrom = 2021, publicationYearTo = 2021)
+        installInMemoryCursorStore()
+        val core = StubCore(
+            coreWorksBody(rawCount = 100, totalHits = 5_000),
+            coreWorksBody(rawCount = 100, totalHits = 5_000),
+            maxPapersPerSource = 100
+        )
+        Mockito.doReturn(core.source).`when`(coreProvider).getIfAvailable()
+
+        val svc = createService(c4Props())
+        svc.discover(criteria2020, "TEST")
+        svc.discover(criteria2021, "TEST")
+
+        assertEquals("0|2020|100", storedCheckpointFor("CORE", criteria2020).cursor)
+        assertEquals("0|2021|100", storedCheckpointFor("CORE", criteria2021).cursor,
+            "另一年份的检查点必须写在独立 key 上")
+        assertNotEquals(
+            DiscoveryCheckpointCodec.sourceKey("CORE", criteria2020),
+            DiscoveryCheckpointCodec.sourceKey("CORE", criteria2021)
+        )
+        assertEquals("2020", (core.requests[0]["q"] as String).substringAfter("yearPublished="))
+        assertEquals("2021", (core.requests[1]["q"] as String).substringAfter("yearPublished="))
+    }
+
+    @Test
+    fun `ORCID pages past a whole page without public emails and still acquires the next page expert`() {
+        // V-2/I-2：首页 100 条无公开邮箱、次页 1 条有公开邮箱 —— 必须覆盖两页并最终收录 1 人。
+        val criteria = PaperSearchCriteria(
+            pageSize = 100, subjectScope = SubjectScopeCatalog.RND_TARGET, sources = listOf("ORCID")
+        )
+        val template = Mockito.mock(RestTemplate::class.java)
+        val urls = mutableListOf<String>()
+        Mockito.doAnswer { invocation ->
+            val url = invocation.getArgument<String>(0)
+            urls.add(url)
+            objectMapper.readTree(
+                when {
+                    url.contains("start=0") && urlQuery(url) == "keyword:\"engineering\"" -> orcidPageBody(rawCount = 100)
+                    url.contains("start=100") -> orcidPageBody(rawCount = 1, publicEmail = "found@ox.ac.uk")
+                    else -> """{"expanded-result": []}"""
+                }
+            )
+        }.`when`(template).getForObject(
+            Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        Mockito.doReturn(OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0)))
+            .`when`(orcidProvider).getIfAvailable()
+
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "found@ox.ac.uk", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val (result, saved) = runAndCapture(createService(c4Props()), criteria)
+
+        assertEquals(1, result.stats.bySource["ORCID"]?.indexed, "次页的 1 位专家必须被收录")
+        assertEquals(1, result.stats.bySource["ORCID"]?.papersSearched)
+        assertEquals(listOf("0", "100"), urls.take(2).map { urlStart(it) },
+            "整页无公开邮箱后 offset 必须继续前进到 100")
+        assertEquals("keyword:\"engineering\"", urlQuery(urls[0]))
+        assertEquals("keyword:\"engineering\"", urlQuery(urls[1]))
+        assertEquals(
+            listOf("keyword:\"materials\"", "keyword:\"computer science\"", "keyword:\"chemical\"",
+                "keyword:\"energy\"", "keyword:\"physics\""),
+            urls.drop(2).map { urlQuery(it) },
+            "主题分片用尽后必须切到下一个主题分片（而非停在原地）"
+        )
+        assertTrue(urls.drop(2).all { urlStart(it) == "0" }, "每个新分片都从 offset=0 开始")
+        assertEquals(urls.size, result.stats.bySource["ORCID"]?.apiRequests)
+        assertEquals(CheckpointState.EXHAUSTED, decodedCheckpoint(savedCheckpoints(saved, "ORCID").last()).state,
+            "全部分片遍历完才判穷尽，下一个扫描周期可重开")
+    }
+
+    @Test
+    fun `ORCID skips without a request when no keyword and no scope seed exist`() {
+        // V-2：空关键词 + 无 scope = 明确跳过（不发请求），不谎报失败。
+        val criteria = PaperSearchCriteria(pageSize = 100, sources = listOf("ORCID"))
+        val template = Mockito.mock(RestTemplate::class.java)
+        Mockito.doReturn(OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0)))
+            .`when`(orcidProvider).getIfAvailable()
+
+        val result = createService(c4Props()).discover(criteria, "TEST")
+
+        Mockito.verify(template, Mockito.never())
+            .getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        assertEquals(0, result.stats.bySource["ORCID"]?.papersSearched)
+        assertEquals(0, result.stats.sourceFailures, "跳过不是失败")
     }
 }

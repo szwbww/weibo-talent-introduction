@@ -497,8 +497,15 @@ class ExpertDiscoveryService(
             sourceStats.apiRequests++
 
             var batch: PaperSearchResult? = null
+            var corePage: CoreDataSource.CoreSearchPage? = null
             try {
-                batch = source.searchPapers(runCriteria.copy(cursor = cursor))
+                if (source is CoreDataSource) {
+                    // I-1/I-4: CORE 走 offset 分片协议；分片触达供应商窗口必须显式记录，不能当成穷尽。
+                    corePage = source.searchCorePage(runCriteria.copy(cursor = cursor))
+                    batch = corePage?.result
+                } else {
+                    batch = source.searchPapers(runCriteria.copy(cursor = cursor))
+                }
             } catch (e: OpenAlexBudgetDeferredException) {
                 // 额度延期不是搜索失败：保留进入该页的 cursor，也绝不置 exhausted。
                 log.warn("[{}] 额度延期至 {}，保留进入该页的游标 {}", source.sourceName, e.resetAt,
@@ -528,6 +535,14 @@ class ExpertDiscoveryService(
                 log.error("[{}] 搜索失败: {}", source.sourceName, e.message)
                 stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
+            }
+
+            if (corePage?.windowLimit == true) {
+                // I-4: 分片窗口边界是一次显式事件（不是失败、也不是穷尽）。游标已切到下一分片，
+                // 未覆盖尾部只记录不冒充覆盖；该分片不再发出任何 offset 请求。
+                sourceStats.failureReasons.merge(DiscoveryStopReason.WINDOW_LIMIT, 1) { a, b -> a + b }
+                log.warn("[{}] 分片触达供应商窗口，未覆盖尾部 {} 条（已切下一分片）",
+                    source.sourceName, corePage.uncoveredTail)
             }
 
             if (batch == null || batch.papers.isEmpty()) {
@@ -659,8 +674,10 @@ class ExpertDiscoveryService(
     }
 
     /**
-     * I-1: ORCID 分页同样只在完整消费一页后推进 offset；部分页、取消与失败保留进入该页的 offset；
-     * 空页即穷尽，EXHAUSTED 允许下一个扫描周期重开（c4 在此之上换成分片 offset envelope）。
+     * I-1/I-2: ORCID 分页只在完整消费一页后推进游标；部分页、取消与失败保留进入该页的 offset。
+     * 推进量由 [OrcidDataSource.searchOrcidPage] 按原始返回条数算出，因此「一整页都没有公开邮箱」
+     * 也会前进而不是原地打转；只有所有主题分片遍历完（`nextCursor == null`）才判穷尽，
+     * EXHAUSTED 允许下一个扫描周期重开并靠去重避免重复收录。
      */
     private fun discoverFromOrcid(criteria: PaperSearchCriteria, stats: DiscoveryStats): SourceRunOutcome? {
         val orcid = orcidProvider.getIfAvailable() ?: return null
@@ -720,19 +737,28 @@ class ExpertDiscoveryService(
 
             sourceStats.apiRequests++
 
-            val records = try {
-                orcid.searchOrcidRecords(criteria.copy(cursor = cursor))
+            val page = try {
+                orcid.searchOrcidPage(criteria.copy(cursor = cursor))
             } catch (e: Exception) {
                 recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
                 log.error("[{}] 搜索失败: {}", orcid.sourceName, e.message)
                 stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
             }
+            val records = page.records
             if (records.isEmpty()) {
-                // V-2: 无记录即穷尽。
-                stopReason = DiscoveryStopReason.EXHAUSTED
-                exhausted = true
-                break
+                val next = page.nextCursor
+                if (next == null) {
+                    // I-2/V-2: 只有「原始返回为 0 且没有下一分片」才算穷尽；
+                    // 一整页都没有公开邮箱时 nextCursor 仍会前进，必须继续翻页而不是停在原地。
+                    stopReason = DiscoveryStopReason.EXHAUSTED
+                    exhausted = true
+                    break
+                }
+                // I-2: 无公开邮箱的整页按原始条数推进 offset/分片后继续。
+                cursor = next
+                persistCheckpoint(next, DiscoveryStopReason.EMPTY_PAGE, false)
+                continue
             }
             batchNumber++
 
@@ -826,8 +852,14 @@ class ExpertDiscoveryService(
                     orcid.sourceName, batchNumber, rawWriteFailedInPage)
             }
             if (pageFullyConsumed && rawWriteFailedInPage == 0) {
-                cursor = (cursor?.toIntOrNull()?.plus(records.size))?.toString()
-                persistCheckpoint(cursor, DiscoveryStopReason.PAGE_CONSUMED, false)
+                // I-2: 推进量由数据源按原始返回条数算好（不受邮箱过滤影响），这里只搬运它的游标。
+                cursor = page.nextCursor
+                persistCheckpoint(
+                    cursor,
+                    if (cursor == null) DiscoveryStopReason.EXHAUSTED else DiscoveryStopReason.PAGE_CONSUMED,
+                    cursor == null
+                )
+                if (exhausted) break
             } else {
                 // I-1: 部分页或页内 RAW 持久化未完成都保留进入该页的 offset，绝不跳过未消费记录。
                 persistCheckpoint(
@@ -1622,6 +1654,12 @@ object DiscoveryStopReason {
     const val PAGE_CONSUMED = "PAGE_CONSUMED"
     const val EMPTY_PAGE = "EMPTY_PAGE"
     const val RAW_WRITE_INCOMPLETE = "RAW_WRITE_INCOMPLETE"
+
+    /**
+     * I-4: 分片触达供应商分页窗口（CORE offset 9000 / ORCID start 9999）。这是「该分片停止」，
+     * 既不是搜索失败也不是穷尽：游标切到下一分片，未覆盖尾部只在日志与 failureReasons 里记录。
+     */
+    const val WINDOW_LIMIT = "WINDOW_LIMIT"
 }
 
 enum class EnrichmentScope { DEFAULT, INSTITUTION_TYPE_BACKFILL, LAST_PUBLICATION_YEAR_BACKFILL }

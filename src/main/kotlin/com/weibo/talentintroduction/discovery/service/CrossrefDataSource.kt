@@ -38,14 +38,16 @@ class CrossrefDataSource(
     override val maxPapersPerSource get() = properties.maxPapersPerSource
 
     override fun searchPapers(criteria: PaperSearchCriteria): PaperSearchResult {
-        // I-3: 操作端关键词永远优先；没有关键词时才用目录里的研发主题词，
+        // I-3: 操作端关键词永远优先，并且保持改动前的 `query` 参数不变；
+        // 没有关键词时才用目录里的研发主题词，走 `query.bibliographic`（检索文献题录字段，降低噪音）。
         // scope 为 null/未知时目录返回空列表，保持改动前的「无 query 参数」行为。
-        val keywordQuery = if (criteria.keywords.isNotEmpty()) {
-            criteria.keywords.joinToString(" ") { it }
-        } else {
+        val operatorKeyword = criteria.keywords.takeIf { it.isNotEmpty() }?.joinToString(" ")
+        val topicSeed = if (operatorKeyword == null) {
             SubjectScopeCatalog.crossrefQueries(criteria.subjectScope)
                 .takeIf { it.isNotEmpty() }
                 ?.joinToString(" ")
+        } else {
+            null
         }
 
         val filterParts = mutableListOf<String>()
@@ -60,7 +62,8 @@ class CrossrefDataSource(
         // 远端收到字面 %3A/%2C 后返回 400（2026-09-21 生产故障根因）。
         // URLEncoder 的 form 语义与 Crossref（servlet 侧）的解码互逆：空格→`+`、`+`→`%2B`、`:`→`%3A`、`%`→`%25`。
         val builder = UriComponentsBuilder.fromHttpUrl("${properties.baseUrl}/works")
-        if (keywordQuery != null) builder.queryParam("query", encodeComponent(keywordQuery))
+        if (operatorKeyword != null) builder.queryParam("query", encodeComponent(operatorKeyword))
+        if (topicSeed != null) builder.queryParam("query.bibliographic", encodeComponent(topicSeed))
         builder.queryParam("filter", encodeComponent(filter))
         builder.queryParam("rows", encodeComponent(criteria.pageSize.toString()))
         builder.queryParam("cursor", encodeComponent(criteria.cursor ?: "*"))

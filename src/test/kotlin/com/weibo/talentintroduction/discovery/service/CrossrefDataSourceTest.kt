@@ -90,24 +90,28 @@ class CrossrefDataSourceTest {
     }
 
     @Test
-    fun `searchPapers uses the catalogue topic queries when no keyword is given`() {
-        // I-3：默认研发检索必须带目录主题词，而不是下发 filter-only 的全领域查询。
+    fun `searchPapers uses the catalogue topic seeds as query bibliographic when no keyword is given`() {
+        // I-3: 默认研发检索必须带目录主题词（走 query.bibliographic 题录字段降低噪音），
+        // 而不是下发 filter-only 的全领域查询。
         val uri = searchUri(PaperSearchCriteria(subjectScope = SubjectScopeCatalog.RND_TARGET))
         val params = decodedParams(uri)
 
         assertEquals(
             SubjectScopeCatalog.crossrefQueries(SubjectScopeCatalog.RND_TARGET).joinToString(" "),
-            params["query"]
+            params["query.bibliographic"]
         )
+        assertFalse(params.containsKey("query"), "主题种子不得同时下发自由文本 query")
     }
 
     @Test
-    fun `searchPapers lets the operator keyword win over the catalogue topic queries`() {
+    fun `searchPapers lets the operator keyword win over the catalogue topic seeds`() {
         val uri = searchUri(
             PaperSearchCriteria(keywords = listOf("perovskite solar cell"), subjectScope = SubjectScopeCatalog.RND_TARGET)
         )
+        val params = decodedParams(uri)
 
-        assertEquals("perovskite solar cell", decodedParams(uri)["query"])
+        assertEquals("perovskite solar cell", params["query"], "人工关键词保持改动前的 query 参数")
+        assertFalse(params.containsKey("query.bibliographic"), "人工关键词不被目录主题覆盖")
     }
 
     @Test

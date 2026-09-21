@@ -32,11 +32,18 @@ object SubjectScopeCatalog {
     private val RND_TARGET_ARXIV_CATEGORIES = listOf("cs", "eess", "cond-mat", "physics")
 
     /**
-     * RND_TARGET 的主题词（可喂给 CORE `q`）。
-     * 注意：本轮有意不接线 —— CORE 的 `q` 参数是 AND 拼接（CoreDataSource.kt:48-49），
-     * 把多个主题词以 OR 语义塞进去需要改写查询构造，风险与收益不匹配；先在目录中声明，留待后续。
+     * RND_TARGET 的主题词（喂给 CORE `q`）。
+     * CORE 侧把六个主题词用**显式括号 OR** 合并后与单年份 AND（CoreDataSource.buildQuery），
+     * 不再走改动前的 AND 拼接；手动关键词仍然优先且保持 AND 语义。
      */
     private val RND_TARGET_CORE_KEYWORDS =
+        listOf("engineering", "materials", "computer science", "chemical", "energy", "physics")
+
+    /**
+     * RND_TARGET 的 ORCID 主题种子（喂给 ORCID `keyword` 公开研究关键词字段，每个种子一个检索分片）。
+     * 与 CORE 同六个研发类别；只作检索约束，不参与任何国籍/机构判定（I-3）。
+     */
+    private val RND_TARGET_ORCID_KEYWORDS =
         listOf("engineering", "materials", "computer science", "chemical", "energy", "physics")
 
     /**
@@ -62,9 +69,18 @@ object SubjectScopeCatalog {
         else -> emptyList()
     }
 
-    /** 返回可喂给 CORE `q` 的主题词；null 或未知 scope 返回空列表（I4-2）。本轮不接线（见 RND_TARGET_CORE_KEYWORDS 注释）。 */
+    /** 返回可喂给 CORE `q` 的主题词；null 或未知 scope 返回空列表（I4-2）。c4 起由 CoreDataSource 接线。 */
     fun coreKeywords(scope: String?): List<String> = when (scope) {
         RND_TARGET -> RND_TARGET_CORE_KEYWORDS
+        else -> emptyList()
+    }
+
+    /**
+     * 返回可喂给 ORCID `keyword` 字段的主题种子；null 或未知 scope 返回空列表（I-2/I-3）。
+     * 空列表是「没有可用主题种子」的唯一信号：调用方不得把它翻译成通配查询。
+     */
+    fun orcidSeedKeywords(scope: String?): List<String> = when (scope) {
+        RND_TARGET -> RND_TARGET_ORCID_KEYWORDS
         else -> emptyList()
     }
 
