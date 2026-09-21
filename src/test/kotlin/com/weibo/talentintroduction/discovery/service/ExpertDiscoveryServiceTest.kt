@@ -4,9 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
+import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
 import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.config.DiscoveryExecutorConfig
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
+import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
+import com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
@@ -30,6 +33,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -39,7 +43,9 @@ import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpMethod
 import org.springframework.http.ResponseEntity
+import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestTemplate
+import java.time.Instant
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executor
@@ -143,6 +149,97 @@ class ExpertDiscoveryServiceTest {
             title = title, pubYear = pubYear, journal = "Nature",
             authors = listOf(PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK")),
             source = "EUROPE_PMC")
+
+    /** 内存游标表：读得到本轮写入，可断言最终落盘的检查点。 */
+    private val storedCheckpoints = mutableMapOf<String, DiscoverySourceCursor>()
+    private var cursorStoreInstalled = false
+
+    private fun installInMemoryCursorStore() {
+        if (cursorStoreInstalled) return
+        cursorStoreInstalled = true
+        Mockito.doAnswer { invocation ->
+            val entity = invocation.getArgument(0) as DiscoverySourceCursor
+            storedCheckpoints[entity.sourceName] = entity
+            entity
+        }.`when`(cursorRepository).save(Mockito.any(DiscoverySourceCursor::class.java))
+        Mockito.doAnswer { invocation ->
+            storedCheckpoints[invocation.getArgument<String>(0)]
+        }.`when`(cursorRepository).findBySourceName(Mockito.anyString())
+    }
+
+    /** 预置一行 v2 检查点；未预置的 key 视为无检查点。 */
+    private fun stubStoredCheckpoint(
+        sourceName: String,
+        cursor: String?,
+        criteria: PaperSearchCriteria = PaperSearchCriteria(),
+        exhausted: Boolean = false
+    ) {
+        installInMemoryCursorStore()
+        val key = DiscoveryCheckpointCodec.sourceKey(sourceName, criteria)
+        storedCheckpoints[key] = DiscoverySourceCursor(
+            id = 1L,
+            sourceName = key,
+            cursorValue = DiscoveryCheckpointCodec.encode(cursor, exhausted)
+        )
+    }
+
+    /** 本轮运行结束时该 key 落盘的检查点。 */
+    private fun storedCheckpoint(key: String): SourceCheckpoint {
+        val entry = storedCheckpoints[key]
+        assertNotNull(entry, "没有为 key=$key 落盘任何检查点")
+        return decodedCheckpoint(entry!!)
+    }
+
+    /** 该来源本轮最终落盘的行（持久化边界证据）。 */
+    private fun storedRowFor(
+        sourceName: String,
+        criteria: PaperSearchCriteria = PaperSearchCriteria()
+    ): DiscoverySourceCursor {
+        val key = DiscoveryCheckpointCodec.sourceKey(sourceName, criteria)
+        val entry = storedCheckpoints[key]
+        assertNotNull(entry, "没有为 key=$key 落盘任何检查点")
+        return entry!!
+    }
+
+    private fun storedCheckpointFor(
+        sourceName: String,
+        criteria: PaperSearchCriteria = PaperSearchCriteria()
+    ): SourceCheckpoint = decodedCheckpoint(storedRowFor(sourceName, criteria))
+
+    /**
+     * 用 Answer 记录该来源真实收到的请求条件并返回固定结果。
+     * Kotlin 声明的非空参数上 Mockito.any()/ArgumentCaptor.capture() 会插入空检查，故必须用 Answer。
+     */
+    private fun stubAndRecordRequests(
+        source: AcademicDataSource,
+        result: PaperSearchResult
+    ): MutableList<PaperSearchCriteria> {
+        val seen = mutableListOf<PaperSearchCriteria>()
+        Mockito.doAnswer { invocation ->
+            seen.add(invocation.getArgument(0) as PaperSearchCriteria)
+            result
+        }.`when`(source).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        return seen
+    }
+
+    private fun runAndCapture(
+        svc: ExpertDiscoveryService,
+        criteria: PaperSearchCriteria = PaperSearchCriteria()
+    ): Pair<DiscoveryResult, List<DiscoverySourceCursor>> {
+        val captor = ArgumentCaptor.forClass(DiscoverySourceCursor::class.java)
+        val result = svc.discover(criteria, "TEST")
+        Mockito.verify(cursorRepository, Mockito.atLeastOnce()).save(captor.capture())
+        return result to captor.allValues
+    }
+
+    private fun savedCheckpoints(saved: List<DiscoverySourceCursor>, sourceName: String): List<DiscoverySourceCursor> =
+        saved.filter { it.sourceName.startsWith("$sourceName:v2:") }
+
+    private fun decodedCheckpoint(entry: DiscoverySourceCursor): SourceCheckpoint {
+        val decoded = DiscoveryCheckpointCodec.decode(entry.cursorValue)
+        assertNotNull(decoded, "saved value must be a v2 envelope, was '${entry.cursorValue}'")
+        return decoded!!
+    }
 
     private fun stubSource(source: AcademicDataSource, name: String) {
         Mockito.doReturn(name).`when`(source).sourceName
@@ -1887,7 +1984,7 @@ class ExpertDiscoveryServiceTest {
 
     @Test
     fun `partial batch does not advance cursor to nextCursor`() {
-        // P1-1: 数据源返回 3 篇且 maxPapersPerRun=1，断言保存的游标不等于 batch.nextCursor
+        // P1-1: 数据源返回 3 篇且 maxPapersPerRun=1，断言保存的检查点不等于 batch.nextCursor
         val limitedProperties = ExpertDiscoveryProperties(enabled = true, maxPapersPerRun = 1, maxAuthorsPerRun = 200)
         val svc = createService(limitedProperties)
         val papers = (1..3).map { paper("PMC$it", "Paper $it") }
@@ -1895,16 +1992,14 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, batchNextCursor, 3))
         DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
 
-        val captor = ArgumentCaptor.forClass(com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor::class.java)
+        val (result, saved) = runAndCapture(svc)
 
-        svc.discover(PaperSearchCriteria(), "TEST")
-
-        // 验证 EUROPE_PMC 的 cursorValue 不等于 batch.nextCursor；ORCID 也会保存游标
-        Mockito.verify(cursorRepository, Mockito.atLeastOnce()).save(captor.capture())
-        val savedCursor = captor.allValues.single { it.sourceName == "EUROPE_PMC" }
-        assertNotEquals(batchNextCursor, savedCursor.cursorValue,
+        val decoded = decodedCheckpoint(savedCheckpoints(saved, "EUROPE_PMC").last())
+        assertNotEquals(batchNextCursor, decoded.cursor,
             "Partial batch must NOT save nextCursor='$batchNextCursor'; " +
-            "saved cursor was '${savedCursor.cursorValue}' which would skip unprocessed papers")
+            "saved cursor was '${decoded.cursor}' which would skip unprocessed papers")
+        assertNull(decoded.cursor, "部分页必须保留进入该页的 cursor（本用例进入该页时为 null）")
+        assertEquals(1, result.stats.pendingSources, "部分页意味着仍有可续跑工作")
     }
 
     @Test
@@ -1918,14 +2013,265 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, batchNextCursor, 5))
         DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
 
-        val captor = ArgumentCaptor.forClass(com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor::class.java)
+        val (result, saved) = runAndCapture(svc)
+
+        val decoded = decodedCheckpoint(savedCheckpoints(saved, "EUROPE_PMC").last())
+        assertNotEquals(batchNextCursor, decoded.cursor,
+            "When sourceLimit causes partial batch, cursor must not advance to '$batchNextCursor'")
+        assertNull(decoded.cursor)
+        assertEquals(1, result.stats.pendingSources)
+    }
+
+    @Test
+    fun `first page TLS failure keeps the entering cursor`() {
+        // V-1: 原 cursor=C7，第一请求 TLS 失败后仍保存 C7
+        val svc = createService()
+        val criteria = PaperSearchCriteria()
+        stubStoredCheckpoint("EUROPE_PMC", "C7", criteria)
+        DiscoveryMockHelper.stubSearchPapersThrows(europePmc, ResourceAccessException("TLS handshake failed"))
+
+        val (result, saved) = runAndCapture(svc, criteria)
+
+        val decoded = storedCheckpointFor("EUROPE_PMC", criteria)
+        assertEquals("C7", decoded.cursor, "首请求失败必须保留进入该页的 cursor")
+        assertFalse(decoded.exhausted, "TLS 失败绝不等于穷尽")
+        assertEquals(0L, storedRowFor("EUROPE_PMC", criteria).papersProcessedTotal, "首请求失败没有消费任何页")
+        assertEquals(1, savedCheckpoints(saved, "EUROPE_PMC").size, "首请求就失败，只有运行结束那一次落盘")
+        assertEquals(1, result.stats.sourceFailures, "I-4: 终止性源错误必须计入 failure_count")
+        assertTrue(result.taskFailureCount > 0, "V-3: 故障下 failure_count 非 0")
+        assertEquals("FAILED", result.taskFinalStatus, "V-3: 唯一启用来源全失败即 FAILED")
+        assertEquals(DiscoveryStopReason.SEARCH_FAILED, result.stats.bySource["EUROPE_PMC"]?.stopReason)
+    }
+
+    @Test
+    fun `second page failure resumes at the second page entry and persists at the page boundary`() {
+        // V-1: 第二页失败只回到第二页；I-1: 完整消费第一页后立即落盘
+        val svc = createService()
+        val criteria = PaperSearchCriteria()
+        stubStoredCheckpoint("EUROPE_PMC", "C1", criteria)
+        val page1 = (1..2).map { paper("PMC$it", "Paper $it") }
+        Mockito.doReturn(PaperSearchResult(page1, "C2", 4))
+            .doThrow(ResourceAccessException("TLS handshake failed"))
+            .`when`(europePmc).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
+
+        val (result, saved) = runAndCapture(svc, criteria)
+
+        val entries = savedCheckpoints(saved, "EUROPE_PMC")
+        assertTrue(entries.size >= 2,
+            "完整消费第一页后必须立即落盘，再进入第二页请求；实际落盘 ${entries.size} 次")
+        val firstEntry = decodedCheckpoint(entries.first())
+        assertEquals("C2", firstEntry.cursor, "第一页消费完立刻把第二页入口写进检查点")
+        assertFalse(firstEntry.exhausted)
+        val decoded = storedCheckpointFor("EUROPE_PMC", criteria)
+        assertEquals("C2", decoded.cursor, "第二页失败后必须停在第二页入口，不能清空游标")
+        assertFalse(decoded.exhausted)
+        assertEquals(2L, storedRowFor("EUROPE_PMC", criteria).papersProcessedTotal, "只累计第一页消费的 2 篇")
+        assertEquals(2, result.stats.totalPapers)
+        assertEquals(1, result.stats.sourceFailures)
+    }
+
+    @Test
+    fun `empty page with next cursor keeps paging`() {
+        // V-2: 过滤后空页且 nextCursor!=null 必须继续翻页
+        val svc = createService()
+        installInMemoryCursorStore()
+        DiscoveryMockHelper.stubSearchPapersSequence(
+            europePmc,
+            PaperSearchResult(emptyList(), "E2", 0),
+            PaperSearchResult((1..2).map { paper("PMC$it", "Paper $it") }, null, 2)
+        )
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        assertEquals(2, result.stats.totalPapers, "空页带 nextCursor 时必须继续翻页到下一批记录")
+        val decoded = storedCheckpointFor("EUROPE_PMC")
+        assertTrue(decoded.exhausted, "翻到底才记为 EXHAUSTED")
+        assertNull(decoded.cursor)
+        assertEquals(0, result.stats.pendingSources)
+    }
+
+    @Test
+    fun `empty result without cursor is exhausted not a failure`() {
+        // V-2/V-3: 无记录且无 cursor 才判穷尽；真实空结果 = SUCCESS
+        val svc = createService()
+        installInMemoryCursorStore()
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(emptyList(), null, 0))
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        val decoded = storedCheckpointFor("EUROPE_PMC")
+        assertTrue(decoded.exhausted)
+        assertNull(decoded.cursor)
+        assertEquals(0, result.stats.sourceFailures)
+        assertEquals(0, result.taskFailureCount)
+        assertEquals("SUCCESS", result.taskFinalStatus)
+    }
+
+    @Test
+    fun `different keywords persist to different checkpoint keys`() {
+        // V-2 / A-3: 不同关键词不共用检查点
+        val svc = createService()
+        installInMemoryCursorStore()
+        val criteriaA = PaperSearchCriteria(keywords = listOf("keyword-A"))
+        val criteriaB = PaperSearchCriteria(keywords = listOf("keyword-B"))
+        val keyA = DiscoveryCheckpointCodec.sourceKey("EUROPE_PMC", criteriaA)
+        val keyB = DiscoveryCheckpointCodec.sourceKey("EUROPE_PMC", criteriaB)
+        assertNotEquals(keyA, keyB)
+        assertTrue(keyA.length <= 50 && keyB.length <= 50, "I-2: key 必须放下 VARCHAR(50)")
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(emptyList(), null, 0))
+
+        svc.discover(criteriaA, "TEST")
+        val stateA = storedCheckpoint(keyA)
+        svc.discover(criteriaB, "TEST")
+
+        assertTrue(storedCheckpoints.containsKey(keyA), "关键词 A 的检查点必须写在自己的 key 上")
+        assertTrue(storedCheckpoints.containsKey(keyB), "关键词 B 的检查点必须写在自己的 key 上")
+        assertEquals(stateA, storedCheckpoint(keyA), "运行 B 不得改写 A 的检查点")
+    }
+
+    @Test
+    fun `legacy plain source name rows stay untouched and are never adopted`() {
+        // I-2: 旧条件写下的历史行只作备份，不静默挪用
+        val svc = createService()
+        installInMemoryCursorStore()
+        storedCheckpoints["EUROPE_PMC"] = DiscoverySourceCursor(
+            id = 9L, sourceName = "EUROPE_PMC", cursorValue = "LEGACY-C7"
+        )
+        val seen = stubAndRecordRequests(europePmc, PaperSearchResult(emptyList(), null, 0))
 
         svc.discover(PaperSearchCriteria(), "TEST")
 
-        Mockito.verify(cursorRepository, Mockito.atLeastOnce()).save(captor.capture())
-        val savedCursor = captor.allValues.single { it.sourceName == "EUROPE_PMC" }
-        assertNotEquals(batchNextCursor, savedCursor.cursorValue,
-            "When sourceLimit causes partial batch, cursor must not advance to '$batchNextCursor'")
+        assertTrue(seen.isNotEmpty(), "来源必须被请求过")
+        assertNull(seen.first().cursor, "旧 source_name 行的游标不得被挪用")
+        assertEquals("LEGACY-C7", storedCheckpoints["EUROPE_PMC"]?.cursorValue, "旧行不得被改写，只作备份")
+        assertTrue(
+            storedCheckpoints.keys.any { it.startsWith("EUROPE_PMC:v2:") },
+            "本次运行的检查点必须写在自己的 v2 key 上"
+        )
+    }
+
+    @Test
+    fun `v2 key holding a legacy raw cursor value is not adopted`() {
+        // I-2: 无法解码的值一律按「无检查点」处理
+        val svc = createService()
+        val criteria = PaperSearchCriteria()
+        val key = DiscoveryCheckpointCodec.sourceKey("EUROPE_PMC", criteria)
+        installInMemoryCursorStore()
+        storedCheckpoints[key] = DiscoverySourceCursor(id = 3L, sourceName = key, cursorValue = "C7")
+        val seen = stubAndRecordRequests(europePmc, PaperSearchResult(emptyList(), null, 0))
+
+        svc.discover(criteria, "TEST")
+
+        assertTrue(seen.isNotEmpty(), "来源必须被请求过")
+        assertNull(seen.first().cursor, "裸游标值不是 v2 envelope，不得作为检查点使用")
+    }
+
+    @Test
+    fun `V-3 all attempted sources failing yields FAILED with non-zero source failures`() {
+        val svc = createService()
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 25)
+        Mockito.doThrow(ResourceAccessException("TLS handshake failed"))
+            .`when`(orcid).searchOrcidRecords(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        DiscoveryMockHelper.stubSearchPapersThrows(europePmc, ResourceAccessException("TLS handshake failed"))
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        assertEquals(2, result.stats.attemptedSources)
+        assertEquals(2, result.stats.failedSources)
+        assertEquals(2, result.stats.sourceFailures)
+        assertEquals(2, result.taskFailureCount, "failure_count 增加终止性源错误数量")
+        assertEquals("FAILED", result.taskFinalStatus)
+    }
+
+    @Test
+    fun `V-3 one failed source plus one healthy source yields PARTIAL_SUCCESS`() {
+        val svc = createService()
+        DiscoveryMockHelper.stubSearchPapersThrows(europePmc, ResourceAccessException("TLS handshake failed"))
+
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        DiscoveryMockHelper.stubOrcidRecordToAuthorEmails(orcid)
+        DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 25)
+        val records = (1..2).map {
+            OrcidDataSource.OrcidRecord(
+                orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
+                emails = listOf("test$it@example.com"), institutionName = "Univ", country = null
+            )
+        }
+        DiscoveryMockHelper.stubOrcidSearchRecords(orcid, records)
+        for (i in 1..2) {
+            DiscoveryMockHelper.stubValidateEmail(emailValidationService, "test$i@example.com", EmailValidationResult(2, true))
+        }
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        assertEquals(2, result.stats.attemptedSources)
+        assertEquals(1, result.stats.failedSources)
+        assertEquals(2, result.stats.indexed, "健康来源仍然产出专家")
+        assertEquals("PARTIAL_SUCCESS", result.taskFinalStatus)
+    }
+
+    @Test
+    fun `budget deferred stop keeps the entering cursor and is not a search failure`() {
+        // c1 契约: 额度延期是配额停止原因，不是搜索失败，也不清空进度
+        val svc = createService()
+        val criteria = PaperSearchCriteria()
+        stubStoredCheckpoint("OPENALEX", "C7", criteria)
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        Mockito.doReturn("OPENALEX").`when`(openAlex).sourceName
+        Mockito.doReturn("FULLTEXT_XML").`when`(openAlex).emailExtractionMethod
+        Mockito.doReturn(100).`when`(openAlex).maxPapersPerSource
+        Mockito.doThrow(OpenAlexBudgetDeferredException(Instant.parse("2026-09-22T00:00:00Z")))
+            .`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        val decoded = storedCheckpointFor("OPENALEX", criteria)
+        assertEquals("C7", decoded.cursor, "额度延期必须保留进入该页的 cursor")
+        assertFalse(decoded.exhausted, "额度延期绝不置 exhausted")
+        assertEquals(0, result.stats.sourceFailures, "额度延期不计入 failure_count")
+        assertEquals(1, result.stats.pendingSources)
+        assertEquals("PARTIAL_SUCCESS", result.taskFinalStatus)
+        assertEquals(DiscoveryStopReason.BUDGET_DEFERRED, result.stats.bySource["OPENALEX"]?.stopReason)
+    }
+
+    @Test
+    fun `page with failed RAW persistence keeps the entering cursor for replay`() {
+        // I-1: 未完成 RAW 持久化的页不得推进检查点
+        val svc = createService()
+        val criteria = PaperSearchCriteria()
+        stubStoredCheckpoint("EUROPE_PMC", "C1", criteria)
+        val page = (1..2).map { paper("PMC$it", "Paper $it") }
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(page, "C2", 4))
+        DiscoveryMockHelper.stubExtractAuthorEmails(
+            europePmc, listOf(AuthorEmail("rawfail@example.com", "A", "B", false, null, "0000-0009"))
+        )
+        DiscoveryMockHelper.stubValidateEmail(
+            emailValidationService, "rawfail@example.com", EmailValidationResult(2, true)
+        )
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, false)
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        val decoded = storedCheckpointFor("EUROPE_PMC", criteria)
+        assertEquals("C1", decoded.cursor, "页内 RAW 写入失败时不得把检查点推进到 nextCursor")
+        assertFalse(decoded.exhausted)
+        assertEquals(2, result.stats.rawWriteFailed)
+        assertEquals(1, result.stats.pendingSources)
+        assertEquals(DiscoveryStopReason.RAW_WRITE_INCOMPLETE, result.stats.bySource["EUROPE_PMC"]?.stopReason)
     }
 
     @Test

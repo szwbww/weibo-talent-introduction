@@ -4,10 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
+import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
 import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryStats
+import com.weibo.talentintroduction.discovery.domain.DiscoveryTerminalStatus
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
@@ -78,46 +80,86 @@ class ExpertDiscoveryService(
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
-    /** Sources whose cursors expire between runs (e.g. ES scroll context) */
-    private val nonPersistableCursorSources = setOf("CORE")
+    /**
+     * 游标会在两次运行之间失效（例如 ES/搜索服务端 scroll context）因而不得持久化的来源。
+     *
+     * DP-4：CORE 已不在此集合内 —— c4 通过 [DiscoveryCheckpointCodec] 为它持久化稳定的 offset
+     * envelope。该扩展点保留为显式接缝，且必须保持 CORE 不被重新加入。
+     */
+    private val nonPersistableCursorSources: Set<String> = emptySet()
 
-    private fun loadSourceCursor(sourceName: String): String? {
-        if (sourceName in nonPersistableCursorSources) return null
-        return try {
-            cursorRepository.findBySourceName(sourceName)?.cursorValue
+    /**
+     * I-2: 只读本次查询条件对应的 v2 key。旧条件写下的历史行（裸 source_name）不会被挪用，
+     * 继续留在表中作备份；行存在但值不是本版本 envelope 时同样按「无检查点」处理。
+     */
+    private fun loadSourceCheckpoint(sourceName: String, criteria: PaperSearchCriteria): SourceCheckpoint {
+        if (sourceName in nonPersistableCursorSources) return SourceCheckpoint.EMPTY
+        val key = DiscoveryCheckpointCodec.sourceKey(sourceName, criteria)
+        val stored = try {
+            cursorRepository.findBySourceName(key)?.cursorValue
         } catch (e: Exception) {
-            log.warn("Failed to load cursor for {}: {}", sourceName, e.message)
-            null
+            log.warn("Failed to load checkpoint for {} ({}): {}", sourceName, key, e.message)
+            return SourceCheckpoint.EMPTY
         }
+        if (stored == null) return SourceCheckpoint.EMPTY
+        val decoded = DiscoveryCheckpointCodec.decode(stored)
+        if (decoded == null) {
+            log.warn(
+                "[{}] 检查点 {} 的值不是 {} envelope，按无检查点处理（旧值保留作备份）",
+                sourceName, key, DiscoveryCheckpointCodec.QUERY_VERSION
+            )
+            return SourceCheckpoint.EMPTY
+        }
+        return decoded
     }
 
-    private fun saveSourceCursor(sourceName: String, cursorValue: String?, papersInRun: Int) {
+    /**
+     * I-1/I-2: 在安全边界写入检查点。[papersDelta] 是本次调用新增的处理量，累计进
+     * `papers_processed_total`（该列只是计数，绝不用于反推恢复位置）。
+     */
+    private fun persistSourceCheckpoint(
+        sourceName: String,
+        criteria: PaperSearchCriteria,
+        resumeCursor: String?,
+        exhausted: Boolean,
+        papersDelta: Int
+    ) {
         if (sourceName in nonPersistableCursorSources) return
+        val key = DiscoveryCheckpointCodec.sourceKey(sourceName, criteria)
+        val cursorValue = DiscoveryCheckpointCodec.encode(resumeCursor, exhausted)
         try {
             val now = LocalDateTime.now()
-            val existing = cursorRepository.findBySourceName(sourceName)
+            val existing = cursorRepository.findBySourceName(key)
             val entity = if (existing != null) {
                 existing.copy(
                     cursorValue = cursorValue,
-                    papersProcessedTotal = existing.papersProcessedTotal + papersInRun,
+                    papersProcessedTotal = existing.papersProcessedTotal + papersDelta,
                     lastRunAt = now,
                     updatedAt = now
                 )
             } else {
                 DiscoverySourceCursor(
-                    sourceName = sourceName,
+                    sourceName = key,
                     cursorValue = cursorValue,
-                    papersProcessedTotal = papersInRun.toLong(),
+                    papersProcessedTotal = papersDelta.toLong(),
                     lastRunAt = now,
                     updatedAt = now
                 )
             }
             cursorRepository.save(entity)
-            log.info("[{}] 游标已保存: cursor={}, 累计论文={}", sourceName,
-                cursorValue?.take(30) ?: "null(已穷尽)", entity.papersProcessedTotal)
+            log.info(
+                "[{}] 检查点已保存: key={}, state={}, cursor={}, 本次新增处理 {}",
+                sourceName, key, if (exhausted) CheckpointState.EXHAUSTED else CheckpointState.ACTIVE,
+                resumeCursor?.take(30) ?: "null", papersDelta
+            )
         } catch (e: Exception) {
-            log.warn("Failed to save cursor for {}: {}", sourceName, e.message)
+            log.warn("Failed to save checkpoint for {} ({}): {}", sourceName, key, e.message)
         }
+    }
+
+    private fun recordTerminalSourceFailure(sourceStats: SourceStats, reason: String) {
+        sourceStats.failureReasons.merge(reason, 1) { a, b -> a + b }
+        sourceStats.sourceFailureCount++
     }
 
     private enum class DedupResult { EXISTS, NOT_FOUND, ERROR }
@@ -179,17 +221,27 @@ class ExpertDiscoveryService(
                 "filterReasons" to snapshotFilterReasons(ss),
                 "failureReasons" to snapshotFailureReasons(ss),
                 "elapsedMs" to ss.elapsedMs,
-                "apiRequests" to ss.apiRequests
+                "apiRequests" to ss.apiRequests,
+                "pendingWork" to ss.pendingWork,
+                "sourceFailureCount" to ss.sourceFailureCount,
+                "stopReason" to (ss.stopReason ?: "")
             )
         }
         return bySource
     }
 
-    private fun buildSummaryText(stats: DiscoveryStats, totalElapsed: Long): String {
+    private fun buildSummaryText(stats: DiscoveryStats, totalElapsed: Long, terminalStatus: String): String {
         val sourceSummaries = stats.bySource.map { (name, ss) ->
             "$name 收录 ${ss.indexed}/晋升 ${ss.promoted}"
         }.joinToString(", ")
-        return "发现任务完成: 总耗时 ${totalElapsed}ms | 各平台: $sourceSummaries | 合计: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}"
+        // I-4: 源终止失败与按专家计的失败分开说明，不把重试或整源失败算成失败专家数。
+        val sourceFailureSegment = if (stats.sourceFailures > 0) {
+            " | 源终止失败 ${stats.sourceFailures}/${stats.attemptedSources} 个来源(不计入专家失败)"
+        } else {
+            ""
+        }
+        return "发现任务完成[$terminalStatus]: 总耗时 ${totalElapsed}ms | 各平台: $sourceSummaries | " +
+            "合计: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}$sourceFailureSegment"
     }
 
     private fun buildProgressDetails(stats: DiscoveryStats, sourceName: String? = null, method: String? = null): Map<String, Any> {
@@ -235,6 +287,8 @@ class ExpertDiscoveryService(
         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
         val sources = resolveEnabledSources(criteria)
         val startTime = System.currentTimeMillis()
+        // I-3: 结果与进度共用的终态；仅在正常路径赋值（异常路径由 catch 记录 FAILED 后重抛）。
+        var terminalStatusOfRun = DiscoveryTerminalStatus.SUCCESS
 
         log.info("发现任务启动: 启用平台=${sources.map { it.sourceName }}, 关键词=${criteria.keywords}, " +
             "年份=${criteria.publicationYearFrom}-${criteria.publicationYearTo}, " +
@@ -272,58 +326,61 @@ class ExpertDiscoveryService(
                 if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
                 if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) break
 
-                val savedCursor = loadSourceCursor(source.sourceName)
-                val sourceCriteria = if (savedCursor != null) criteria.copy(cursor = savedCursor) else criteria
-                if (savedCursor != null) {
-                    log.info("[{}] 从上次游标继续: {}", source.sourceName, savedCursor.take(50))
-                }
-                val finalCursor = discoverFromSource(source, sourceCriteria, stats)
-                val sourceStats = stats.bySource[source.sourceName]
-                saveSourceCursor(source.sourceName, finalCursor, sourceStats?.papersSearched ?: 0)
+                val outcome = discoverFromSource(source, criteria, stats)
+                log.info("[{}] 本次运行结束: stopReason={}, exhausted={}, resumeCursor={}",
+                    source.sourceName, outcome.stopReason, outcome.exhausted,
+                    outcome.resumeCursor?.take(50) ?: "null")
             }
 
-            val orcidSavedCursor = loadSourceCursor("ORCID")
-            val orcidCriteria = if (orcidSavedCursor != null) criteria.copy(cursor = orcidSavedCursor) else criteria
-            val orcidFinalCursor = discoverFromOrcid(orcidCriteria, stats)
-            val orcidStats = stats.bySource["ORCID"]
-            saveSourceCursor("ORCID", orcidFinalCursor, orcidStats?.papersSearched ?: 0)
+            discoverFromOrcid(criteria, stats)
             stats.refreshGlobalCounts()
 
             val totalElapsed = System.currentTimeMillis() - startTime
+            val wasCancelled = progressStore.isCancelled("EXPERT_DISCOVERY")
+            // I-3: 结果与进度共用同一个终态决策函数。
+            terminalStatusOfRun = DiscoveryTerminalStatus.decide(
+                cancelled = wasCancelled,
+                attemptedSources = stats.attemptedSources,
+                failedSources = stats.failedSources,
+                pendingWork = stats.pendingSources > 0
+            )
             val details = buildProgressDetails(stats).toMutableMap()
-            details["summaryText"] = buildSummaryText(stats, totalElapsed)
+            details["terminalStatus"] = terminalStatusOfRun
+            details["summaryText"] = buildSummaryText(stats, totalElapsed, terminalStatusOfRun)
 
-            if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
+            if (wasCancelled) {
                 log.info("发现任务取消: 论文=${stats.totalPapers}, 收录=${stats.indexed}, 晋升=${stats.promoted}")
                 progressStore.update("EXPERT_DISCOVERY", TaskProgress(
-                    taskType = "EXPERT_DISCOVERY", status = "CANCELLED",
+                    taskType = "EXPERT_DISCOVERY",
+                    status = DiscoveryTerminalStatus.toProgressStatus(terminalStatusOfRun),
                     batchNumber = -1, processedCount = stats.totalPapers.toLong(),
                     totalCount = stats.totalPapers.toLong(),
-                    message = "已取消: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}",
+                    message = buildProgressMessage(terminalStatusOfRun, stats),
                     details = details, errors = snapshotErrors(stats)
                 ), execId)
-                val cancelSummary = buildSummaryText(stats, totalElapsed)
-                return DiscoveryResult(triggeredBy, stats, wasCancelled = true, summaryText = cancelSummary)
+                return DiscoveryResult(triggeredBy, stats, wasCancelled = true, summaryText = details["summaryText"] as String)
             }
 
             val totalValidEmails = stats.bySource.values.sumOf { it.emailsValid }
             val sourceSummaries = stats.bySource.map { (name, ss) -> "$name 收录 ${ss.indexed}/晋升 ${ss.promoted}" }.joinToString(", ")
-            log.info("发现任务完成: 总耗时 ${totalElapsed}ms | 各平台: $sourceSummaries | " +
+            log.info("发现任务完成[$terminalStatusOfRun]: 总耗时 ${totalElapsed}ms | 各平台: $sourceSummaries | " +
                 "合计: 论文 ${stats.totalPapers}, 作者候选 ${stats.totalAuthors}, " +
-                "邮箱有效 $totalValidEmails (无效 ${stats.emailRejected}), 收录 ${stats.indexed}, 晋升 ${stats.promoted}")
+                "邮箱有效 $totalValidEmails (无效 ${stats.emailRejected}), 收录 ${stats.indexed}, 晋升 ${stats.promoted}, " +
+                "源终止失败 ${stats.sourceFailures}, 待续跑来源 ${stats.pendingSources}")
 
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
-                taskType = "EXPERT_DISCOVERY", status = "COMPLETED",
+                taskType = "EXPERT_DISCOVERY",
+                status = DiscoveryTerminalStatus.toProgressStatus(terminalStatusOfRun),
                 batchNumber = -1, processedCount = stats.totalPapers.toLong(),
                 totalCount = stats.totalPapers.toLong(),
-                message = "完成: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}",
+                message = buildProgressMessage(terminalStatusOfRun, stats),
                 details = details, errors = snapshotErrors(stats)
             ), execId)
         } catch (e: Exception) {
             stats.refreshGlobalCounts()
             val totalElapsed = System.currentTimeMillis() - startTime
             val details = buildProgressDetails(stats).toMutableMap()
-            details["summaryText"] = buildSummaryText(stats, totalElapsed)
+            details["summaryText"] = buildSummaryText(stats, totalElapsed, DiscoveryTerminalStatus.FAILED)
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                 taskType = "EXPERT_DISCOVERY", status = "FAILED",
                 batchNumber = -1, processedCount = stats.totalPapers.toLong(), totalCount = 0,
@@ -332,71 +389,166 @@ class ExpertDiscoveryService(
             ), execId)
             throw e
         }
+        stats.refreshGlobalCounts()
         val finalElapsed = System.currentTimeMillis() - startTime
-        return DiscoveryResult(triggeredBy, stats, summaryText = buildSummaryText(stats, finalElapsed))
+        return DiscoveryResult(
+            triggeredBy, stats,
+            summaryText = buildSummaryText(stats, finalElapsed, terminalStatusOfRun)
+        )
+    }
+
+    /** I-3/I-4: 面向操作端的终态说明，源失败单独说明，不与专家级失败混在一起。 */
+    private fun buildProgressMessage(terminalStatus: String, stats: DiscoveryStats): String {
+        val sourceFailureSegment = if (stats.sourceFailures > 0) {
+            "，源终止失败 ${stats.sourceFailures}/${stats.attemptedSources} 个来源"
+        } else ""
+        val pendingSegment = if (stats.pendingSources > 0) {
+            "，待续跑来源 ${stats.pendingSources}"
+        } else ""
+        return when (terminalStatus) {
+            DiscoveryTerminalStatus.CANCELLED ->
+                "已取消: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}"
+            DiscoveryTerminalStatus.FAILED ->
+                "失败: 全源搜索失败$sourceFailureSegment, 论文 ${stats.totalPapers}, 收录 ${stats.indexed}"
+            DiscoveryTerminalStatus.PARTIAL_SUCCESS ->
+                "部分成功: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}" +
+                    sourceFailureSegment + pendingSegment
+            else ->
+                "完成: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}"
+        }
     }
 
     private fun getSourceLimit(source: AcademicDataSource): Int {
         return source.maxPapersPerSource
     }
 
-    private fun discoverFromSource(source: AcademicDataSource, criteria: PaperSearchCriteria, stats: DiscoveryStats): String? {
+    /**
+     * I-1: 单来源运行。每一完整消费页后立即持久化 next cursor；首请求失败、部分页、取消与预算停止
+     * 都保留进入该页的 cursor；异常与额度延期绝不产出 `exhausted = true`。
+     */
+    private fun discoverFromSource(
+        source: AcademicDataSource,
+        criteria: PaperSearchCriteria,
+        stats: DiscoveryStats
+    ): SourceRunOutcome {
         val sourceStats = stats.getOrCreateSourceStats(source.sourceName, source.emailExtractionMethod)
         val sourceStartTime = System.currentTimeMillis()
         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
         val sourceLimit = getSourceLimit(source)
 
+        val checkpoint = loadSourceCheckpoint(source.sourceName, criteria)
+        // I-2: 检查点是游标权威；EXHAUSTED 表示本次扫描周期从头重开，
+        // 调用方显式给出的 cursor 只在本次运行起点生效（保持既有入口行为）。
+        val enteringCursor: String? = if (checkpoint.exhausted) {
+            criteria.cursor
+        } else {
+            checkpoint.cursor ?: criteria.cursor
+        }
+        if (enteringCursor != null) {
+            log.info("[{}] 从上次检查点继续: {}", source.sourceName, enteringCursor.take(50))
+        } else if (checkpoint.exhausted) {
+            log.info("[{}] 上次已穷尽，本次扫描周期从头重开", source.sourceName)
+        }
+
         log.info("[{}] 开始: 方式={}, 本源限额={}", source.sourceName, source.emailExtractionMethod, sourceLimit)
 
-        var cursor: String? = criteria.cursor
-        var lastNextCursor: String? = null
+        val runCriteria = if (enteringCursor != null) criteria.copy(cursor = enteringCursor) else criteria
+        var cursor: String? = enteringCursor
+        // I-1: 可安全续跑的位置。进入某页失败时保持该页入口值，绝不用 null 覆盖已有进度。
+        var resumeCursor: String? = enteringCursor
+        var persistedPapers = 0
         var batchNumber = 0
         var sourcePapersProcessed = 0
         var consecutiveFailures = 0
         var circuitBreakerTripped = false
+        var exhausted = false
+        var stopReason = DiscoveryStopReason.EXHAUSTED
 
-        do {
+        /** 在页边界（或运行结束时）落盘检查点；delta 保证 papers_processed_total 不重复计数。 */
+        fun persistCheckpoint(nextCursor: String?, reason: String, pageExhausted: Boolean) {
+            val delta = sourceStats.papersSearched - persistedPapers
+            persistSourceCheckpoint(source.sourceName, criteria, nextCursor, pageExhausted, delta)
+            persistedPapers = sourceStats.papersSearched
+            resumeCursor = nextCursor
+            exhausted = pageExhausted
+            stopReason = reason
+        }
+
+        while (true) {
             if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
                 log.info("[{}] 已取消, 当前批次={}", source.sourceName, batchNumber)
+                stopReason = DiscoveryStopReason.CANCELLED
                 break
             }
             stats.refreshGlobalCounts()
-            if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) break
-            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
-            if (sourcePapersProcessed >= sourceLimit) break
+            if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) {
+                stopReason = DiscoveryStopReason.GLOBAL_PAPER_LIMIT
+                break
+            }
+            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+                stopReason = DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT
+                break
+            }
+            if (sourcePapersProcessed >= sourceLimit) {
+                stopReason = DiscoveryStopReason.SOURCE_LIMIT
+                break
+            }
 
             sourceStats.apiRequests++
 
             var batch: PaperSearchResult? = null
             try {
-                batch = source.searchPapers(criteria.copy(cursor = cursor))
+                batch = source.searchPapers(runCriteria.copy(cursor = cursor))
+            } catch (e: OpenAlexBudgetDeferredException) {
+                // 额度延期不是搜索失败：保留进入该页的 cursor，也绝不置 exhausted。
+                log.warn("[{}] 额度延期至 {}，保留进入该页的游标 {}", source.sourceName, e.resetAt,
+                    resumeCursor?.take(50) ?: "null")
+                stopReason = DiscoveryStopReason.BUDGET_DEFERRED
+                break
             } catch (e: HttpStatusCodeException) {
                 val code = e.statusCode.value()
                 if (code == 429 || code == 503) {
                     consecutiveFailures++
                     sourceStats.failureReasons.merge("RATE_LIMITED", 1) { a, b -> a + b }
                     if (consecutiveFailures >= 5) {
-                        sourceStats.failureReasons["CIRCUIT_BREAKER"] = 1
                         circuitBreakerTripped = true
+                        recordTerminalSourceFailure(sourceStats, "CIRCUIT_BREAKER")
                         log.warn("[{}] 连续 5 次限流/不可用，熔断", source.sourceName)
+                        stopReason = DiscoveryStopReason.CIRCUIT_BREAKER
                         break
                     }
                     Thread.sleep(1000)
                     continue
                 }
-                sourceStats.failureReasons.merge("SEARCH_FAILED", 1) { a, b -> a + b }
+                recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
+                stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
             } catch (e: Exception) {
-                sourceStats.failureReasons.merge("SEARCH_FAILED", 1) { a, b -> a + b }
+                recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
                 log.error("[{}] 搜索失败: {}", source.sourceName, e.message)
+                stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
             }
-            if (batch == null || batch.papers.isEmpty()) break
+
+            if (batch == null || batch.papers.isEmpty()) {
+                val next = batch?.nextCursor
+                if (next == null) {
+                    // V-2: 无记录且无 nextCursor 才判穷尽。
+                    stopReason = DiscoveryStopReason.EXHAUSTED
+                    exhausted = true
+                    break
+                }
+                // V-2: 过滤后空页只要还有 nextCursor 就继续翻页。
+                cursor = next
+                persistCheckpoint(next, DiscoveryStopReason.EMPTY_PAGE, false)
+                continue
+            }
             consecutiveFailures = 0
             batchNumber++
 
             val papersBefore = sourceStats.papersSearched
             val indexedBefore = sourceStats.indexed
+            val rawWriteFailedBefore = sourceStats.rawWriteFailed
             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             var limitReached = false
@@ -415,9 +567,20 @@ class ExpertDiscoveryService(
                 consumeOutcome(paper, extraction, source, stats, sourceStats)
             }
 
-            // I-4: 只有当批次全量处理完毕才推进游标；部分批次保持上一完整批次游标
-            if (!limitReached) {
-                lastNextCursor = batch.nextCursor
+            // I-1: 完整消费页 = 页内全部论文处理完且 RAW 持久化未失败；有失败则保留进入该页的 cursor 以便重放。
+            val rawWriteFailedInPage = sourceStats.rawWriteFailed - rawWriteFailedBefore
+            if (rawWriteFailedInPage > 0) {
+                log.warn("[{}] 批次 {} 内有 {} 篇 RAW 写入失败，保留进入该页的 cursor 以便重放",
+                    source.sourceName, batchNumber, rawWriteFailedInPage)
+            }
+            if (!limitReached && rawWriteFailedInPage == 0) {
+                val nextCursor = batch.nextCursor
+                // 没有下一页即穷尽；完整消费的页在进入下一页前立即落盘。
+                persistCheckpoint(
+                    nextCursor,
+                    if (nextCursor == null) DiscoveryStopReason.EXHAUSTED else DiscoveryStopReason.PAGE_CONSUMED,
+                    nextCursor == null
+                )
             }
 
             val batchProcessed = sourceStats.papersSearched - papersBefore
@@ -451,12 +614,28 @@ class ExpertDiscoveryService(
                 batchRejectReasons = batchRejectReasons
             ), execId)
 
-            if (limitReached || circuitBreakerTripped) break
-            cursor = batch?.nextCursor
-        } while (cursor != null)
+            if (rawWriteFailedInPage > 0) {
+                stopReason = DiscoveryStopReason.RAW_WRITE_INCOMPLETE
+                break
+            }
+            if (limitReached || circuitBreakerTripped) {
+                stopReason = if (circuitBreakerTripped) {
+                    DiscoveryStopReason.CIRCUIT_BREAKER
+                } else {
+                    DiscoveryStopReason.PAGE_PARTIAL
+                }
+                break
+            }
+            if (exhausted) break
+            cursor = batch.nextCursor
+        }
 
         val elapsed = System.currentTimeMillis() - sourceStartTime
         sourceStats.elapsedMs = elapsed
+        // I-1: 运行结束时落盘终止状态；失败/部分页/取消都停在 resumeCursor（进入该页的位置）。
+        persistCheckpoint(resumeCursor, stopReason, exhausted)
+        sourceStats.pendingWork = !exhausted
+        sourceStats.stopReason = stopReason
 
         log.info("[{}] 完成: 耗时 ${elapsed}ms, API请求 ${sourceStats.apiRequests} 次 | " +
             "漏斗: 搜索 ${sourceStats.papersSearched} → 尝试全文 ${sourceStats.fulltextAttempted} → 获全文 ${sourceStats.fulltextObtained}" +
@@ -476,10 +655,14 @@ class ExpertDiscoveryService(
             sourceStats.indexed, sourceStats.promoted,
             sourceStats.filtered)
 
-        return lastNextCursor
+        return SourceRunOutcome(resumeCursor, exhausted, stopReason)
     }
 
-    private fun discoverFromOrcid(criteria: PaperSearchCriteria, stats: DiscoveryStats): String? {
+    /**
+     * I-1: ORCID 分页同样只在完整消费一页后推进 offset；部分页、取消与失败保留进入该页的 offset；
+     * 空页即穷尽，EXHAUSTED 允许下一个扫描周期重开（c4 在此之上换成分片 offset envelope）。
+     */
+    private fun discoverFromOrcid(criteria: PaperSearchCriteria, stats: DiscoveryStats): SourceRunOutcome? {
         val orcid = orcidProvider.getIfAvailable() ?: return null
         if (criteria.sources.isNotEmpty() && !criteria.sources.contains(orcid.sourceName)) return null
 
@@ -487,36 +670,75 @@ class ExpertDiscoveryService(
         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
         val sourceStartTime = System.currentTimeMillis()
 
+        val checkpoint = loadSourceCheckpoint(orcid.sourceName, criteria)
+        val enteringCursor: String? = if (checkpoint.exhausted) {
+            criteria.cursor
+        } else {
+            checkpoint.cursor ?: criteria.cursor
+        }
+        if (enteringCursor != null) {
+            log.info("[{}] 从上次检查点继续: offset={}", orcid.sourceName, enteringCursor)
+        } else if (checkpoint.exhausted) {
+            log.info("[{}] 上次已穷尽，本次扫描周期从头重开", orcid.sourceName)
+        }
+
         log.info("[{}] 开始: 方式=API_FIELD", orcid.sourceName)
 
         val orcidLimit = orcid.maxRecordsPerRun
-        var cursor: String? = criteria.cursor ?: "0"
+        var cursor: String? = enteringCursor ?: "0"
+        var resumeCursor: String? = enteringCursor
+        var persistedRecords = 0
         var batchNumber = 0
         var recordsProcessed = 0
+        var exhausted = false
+        var stopReason = DiscoveryStopReason.EXHAUSTED
 
-        do {
+        fun persistCheckpoint(nextOffset: String?, reason: String, pageExhausted: Boolean) {
+            val delta = sourceStats.papersSearched - persistedRecords
+            persistSourceCheckpoint(orcid.sourceName, criteria, nextOffset, pageExhausted, delta)
+            persistedRecords = sourceStats.papersSearched
+            resumeCursor = nextOffset
+            exhausted = pageExhausted
+            stopReason = reason
+        }
+
+        while (true) {
             if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
                 log.info("[{}] 已取消", orcid.sourceName)
-                return cursor
+                stopReason = DiscoveryStopReason.CANCELLED
+                break
             }
             stats.refreshGlobalCounts()
-            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
-            if (recordsProcessed >= orcidLimit) break
+            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+                stopReason = DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT
+                break
+            }
+            if (recordsProcessed >= orcidLimit) {
+                stopReason = DiscoveryStopReason.SOURCE_LIMIT
+                break
+            }
 
             sourceStats.apiRequests++
 
             val records = try {
                 orcid.searchOrcidRecords(criteria.copy(cursor = cursor))
             } catch (e: Exception) {
-                sourceStats.failureReasons.merge("SEARCH_FAILED", 1) { a, b -> a + b }
+                recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
                 log.error("[{}] 搜索失败: {}", orcid.sourceName, e.message)
+                stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
             }
-            if (records.isEmpty()) break
+            if (records.isEmpty()) {
+                // V-2: 无记录即穷尽。
+                stopReason = DiscoveryStopReason.EXHAUSTED
+                exhausted = true
+                break
+            }
             batchNumber++
 
             val indexedBefore = sourceStats.indexed
             val recordsProcessedBeforeBatch = recordsProcessed
+            val rawWriteFailedBefore = sourceStats.rawWriteFailed
             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             for (record in records) {
@@ -597,11 +819,35 @@ class ExpertDiscoveryService(
                 batchRejectReasons = batchRejectReasons
             ), execId)
 
-            cursor = (cursor?.toIntOrNull()?.plus(records.size))?.toString()
-        } while (cursor != null)
+            val pageFullyConsumed = recordsProcessed - recordsProcessedBeforeBatch == records.size
+            val rawWriteFailedInPage = sourceStats.rawWriteFailed - rawWriteFailedBefore
+            if (rawWriteFailedInPage > 0) {
+                log.warn("[{}] 批次 {} 内有 {} 条记录 RAW 写入失败，保留进入该页的 offset 以便重放",
+                    orcid.sourceName, batchNumber, rawWriteFailedInPage)
+            }
+            if (pageFullyConsumed && rawWriteFailedInPage == 0) {
+                cursor = (cursor?.toIntOrNull()?.plus(records.size))?.toString()
+                persistCheckpoint(cursor, DiscoveryStopReason.PAGE_CONSUMED, false)
+            } else {
+                // I-1: 部分页或页内 RAW 持久化未完成都保留进入该页的 offset，绝不跳过未消费记录。
+                persistCheckpoint(
+                    resumeCursor,
+                    if (rawWriteFailedInPage > 0) {
+                        DiscoveryStopReason.RAW_WRITE_INCOMPLETE
+                    } else {
+                        DiscoveryStopReason.PAGE_PARTIAL
+                    },
+                    false
+                )
+                break
+            }
+        }
 
         val elapsed = System.currentTimeMillis() - sourceStartTime
         sourceStats.elapsedMs = elapsed
+        persistCheckpoint(resumeCursor, stopReason, exhausted)
+        sourceStats.pendingWork = !exhausted
+        sourceStats.stopReason = stopReason
 
         log.info("[{}] 完成: 耗时 ${elapsed}ms | " +
             "漏斗: 记录 ${recordsProcessed} → 邮箱 ${sourceStats.authorsExtracted}" +
@@ -615,7 +861,7 @@ class ExpertDiscoveryService(
             sourceStats.indexed, sourceStats.duplicates,
             sourceStats.indexed, sourceStats.promoted, sourceStats.filtered)
 
-        return cursor
+        return SourceRunOutcome(resumeCursor, exhausted, stopReason)
     }
 
     private fun buildOrcidProfile(record: OrcidDataSource.OrcidRecord, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {
@@ -1347,6 +1593,35 @@ class ExpertDiscoveryService(
             attemptedCount < limit
         }
     }
+}
+
+/**
+ * I-1: 单来源一次运行的结果。[resumeCursor] 是可以安全续跑的游标（首请求失败/部分页/取消/预算停止
+ * 时保持进入该页的值）；[exhausted] 只在把来源翻到底时为 true；[stopReason] 见 [DiscoveryStopReason]。
+ *
+ * c4 的 CORE/ORCID 分页继续使用本类型，异常分支只允许产出 failed/deferred 结果，绝不产出
+ * `exhausted = true`。
+ */
+data class SourceRunOutcome(
+    val resumeCursor: String?,
+    val exhausted: Boolean,
+    val stopReason: String
+)
+
+/** I-1: 单来源运行的停止原因，与主方案「每种约束各自给原因」对齐。 */
+object DiscoveryStopReason {
+    const val EXHAUSTED = "EXHAUSTED"
+    const val SEARCH_FAILED = "SEARCH_FAILED"
+    const val BUDGET_DEFERRED = "BUDGET_DEFERRED"
+    const val CIRCUIT_BREAKER = "CIRCUIT_BREAKER"
+    const val CANCELLED = "CANCELLED"
+    const val GLOBAL_PAPER_LIMIT = "GLOBAL_PAPER_LIMIT"
+    const val GLOBAL_AUTHOR_LIMIT = "GLOBAL_AUTHOR_LIMIT"
+    const val SOURCE_LIMIT = "SOURCE_LIMIT"
+    const val PAGE_PARTIAL = "PAGE_PARTIAL"
+    const val PAGE_CONSUMED = "PAGE_CONSUMED"
+    const val EMPTY_PAGE = "EMPTY_PAGE"
+    const val RAW_WRITE_INCOMPLETE = "RAW_WRITE_INCOMPLETE"
 }
 
 enum class EnrichmentScope { DEFAULT, INSTITUTION_TYPE_BACKFILL, LAST_PUBLICATION_YEAR_BACKFILL }

@@ -15,7 +15,15 @@ data class DiscoveryStats(
     val filterReasons: MutableMap<String, Int> = mutableMapOf(),
     val errors: MutableList<String> = mutableListOf(),
     val bySource: MutableMap<String, SourceStats> = mutableMapOf(),
-    var globalBatchSeq: Int = 0
+    var globalBatchSeq: Int = 0,
+    /** I-3: 本次任务真正启动过运行的来源数量（每个 bySource 条目对应一个已尝试来源）。 */
+    var attemptedSources: Int = 0,
+    /** I-3: 以终止性搜索错误结束的来源数量，用于区分「部分来源成功」与「全源失败」。 */
+    var failedSources: Int = 0,
+    /** I-4: 终止性源错误次数；计入 failure_count，但不代表某位专家失败。 */
+    var sourceFailures: Int = 0,
+    /** I-3: 未穷尽、仍有可续跑工作的来源数量（预算/时长/限额导致的提前结束）。 */
+    var pendingSources: Int = 0
 ) {
     fun nextBatchSeq(): Int = ++globalBatchSeq
 
@@ -35,6 +43,10 @@ data class DiscoveryStats(
         promotionFailed = bySource.values.sumOf { it.promotionFailed }
         filtered = bySource.values.sumOf { it.filtered }
         dedupErrors = bySource.values.sumOf { it.dedupErrors }
+        attemptedSources = bySource.size
+        failedSources = bySource.values.count { it.sourceFailureCount > 0 }
+        sourceFailures = bySource.values.sumOf { it.sourceFailureCount }
+        pendingSources = bySource.values.count { it.pendingWork }
         filterReasons.clear()
         bySource.values.forEach { sourceStats ->
             sourceStats.filterReasons.forEach { (reason, count) ->
