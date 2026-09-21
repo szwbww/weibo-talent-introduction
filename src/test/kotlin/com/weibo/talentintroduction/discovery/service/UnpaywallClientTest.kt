@@ -3,8 +3,10 @@ package com.weibo.talentintroduction.discovery.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.UnpaywallProperties
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.web.client.RestTemplate
@@ -109,6 +111,38 @@ class UnpaywallClientTest {
         Mockito.doReturn(mapper.readTree(mapper.writeValueAsString(response)))
             .`when`(restTemplate).getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
 
+        assertEquals(listOf("https://repo.example/ok.pdf"), client.findPdfUrls("10.1234/test"))
+    }
+
+    @Test
+    fun `findPdfUrls skips delay and request once the shared deadline expired (R-4, V-4)`() {
+        // V-4：Unpaywall 阶段过去不在共享总时限内 —— 时限已过时连礼貌延迟与查询都不发。
+        val properties = UnpaywallProperties(email = "test@example.com", requestDelayMs = 5_000)
+        val client = UnpaywallClient(restTemplate, properties)
+        var requested = false
+        Mockito.doAnswer { _: org.mockito.invocation.InvocationOnMock ->
+            requested = true
+            mapper.readTree("{}")
+        }.`when`(restTemplate).getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+
+        val startedAt = System.nanoTime()
+        val urls = client.findPdfUrls("10.1234/test", java.time.Instant.now().minusSeconds(1))
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+
+        assertEquals(emptyList<String>(), urls)
+        assertFalse(requested, "过期的共享时限下不得发出 Unpaywall 查询")
+        assertTrue(elapsedMs < 5_000, "过期时不得再睡礼貌延迟（实际 ${elapsedMs}ms）")
+    }
+
+    @Test
+    fun `findPdfUrls with no shared deadline keeps the previous behaviour (R-4 compatibility)`() {
+        val properties = UnpaywallProperties(email = "test@example.com", requestDelayMs = 0)
+        val client = UnpaywallClient(restTemplate, properties)
+        val response = mapOf("best_oa_location" to mapOf("url_for_pdf" to "https://repo.example/ok.pdf"))
+        Mockito.doReturn(mapper.readTree(mapper.writeValueAsString(response)))
+            .`when`(restTemplate).getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+
+        assertEquals(listOf("https://repo.example/ok.pdf"), client.findPdfUrls("10.1234/test", null))
         assertEquals(listOf("https://repo.example/ok.pdf"), client.findPdfUrls("10.1234/test"))
     }
 }

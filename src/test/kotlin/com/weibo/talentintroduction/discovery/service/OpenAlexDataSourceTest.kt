@@ -783,7 +783,7 @@ class OpenAlexDataSourceTest {
                 listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001-2345-6789")),
                 "SEARCH_FIELD", null
             )
-        ).`when`(europePmc).extractAuthorEmails(paper)
+        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
 
         val outcome = dataSource.extractAuthorEmails(paper)
 
@@ -806,7 +806,7 @@ class OpenAlexDataSourceTest {
                 listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001-2345-6789")),
                 "SEARCH_FIELD", null
             )
-        ).`when`(europePmc).extractAuthorEmails(paper)
+        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
 
         val outcome = dataSource.extractAuthorEmails(paper)
 
@@ -829,7 +829,7 @@ class OpenAlexDataSourceTest {
                 ),
                 "SEARCH_FIELD", null
             )
-        ).`when`(europePmc).extractAuthorEmails(paper)
+        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
 
         val outcome = dataSource.extractAuthorEmails(paper)
 
@@ -892,7 +892,7 @@ class OpenAlexDataSourceTest {
         assertEquals("john.smith@oxford.ac.uk", outcome.emails.single().email)
         assertEquals("A5023888391", outcome.emails.single().openAlexAuthorId)
         assertEquals(2, outcome.httpRequests, "1 篇论文 2 次下载尝试：论文计数仍是 1，尝试次数单独计")
-        Mockito.verify(unpaywallClient, Mockito.never()).findPdfUrls(Mockito.anyString())
+        Mockito.verify(unpaywallClient, Mockito.never()).findPdfUrls(Mockito.anyString(), Mockito.any())
     }
 
     @Test
@@ -945,7 +945,7 @@ class OpenAlexDataSourceTest {
 
         dataSource.extractAuthorEmails(openAlexPaper(downloadUrl = primary, doi = "10.1/x"))
 
-        Mockito.verify(unpaywallClient, Mockito.never()).findPdfUrls(Mockito.anyString())
+        Mockito.verify(unpaywallClient, Mockito.never()).findPdfUrls(Mockito.anyString(), Mockito.any())
 
         // 首选失效且没有其他 OA 地址时才问 Unpaywall，并把它给出的开放位置当作下一个候选。
         Mockito.doReturn(true).`when`(unpaywallClient).isConfigured()
@@ -953,13 +953,13 @@ class OpenAlexDataSourceTest {
             primary to failedDownload("PDF_DOWNLOAD_FAILED", "HTTP_404"),
             unpaywallUrl to successfulDownload("john.smith@oxford.ac.uk")
         )
-        Mockito.doReturn(listOf(unpaywallUrl)).`when`(unpaywallClient).findPdfUrls("10.1/x")
+        Mockito.doReturn(listOf(unpaywallUrl)).`when`(unpaywallClient).findPdfUrls(eqValue("10.1/x"), Mockito.any())
 
         val outcome = dataSource.extractAuthorEmails(openAlexPaper(downloadUrl = primary, doi = "10.1/x"))
 
         assertEquals("john.smith@oxford.ac.uk", outcome.emails.single().email)
         assertEquals(3, outcome.httpRequests, "2 次下载尝试 + 1 次 Unpaywall 查询")
-        Mockito.verify(unpaywallClient, Mockito.times(1)).findPdfUrls("10.1/x")
+        Mockito.verify(unpaywallClient, Mockito.times(1)).findPdfUrls(eqValue("10.1/x"), Mockito.any())
     }
 
     @Test
@@ -974,6 +974,70 @@ class OpenAlexDataSourceTest {
         assertEquals("TIMEOUT", outcome.downloadFailureCategory)
         assertEquals(false, outcome.fulltextObtained)
         assertEquals(0, outcome.httpRequests)
+        Mockito.verifyNoInteractions(pdfExtractor)
+    }
+
+    @Test
+    fun `the XML stage shares the same per-paper deadline and no later stage runs after expiry (R-4, V-4)`() {
+        // V-4：XML 阶段以前完全不受共享总时限约束。现在它必须拿到同一个 deadline；时限已过时
+        // 连 URL 下载和 Unpaywall 查询都不能再发生（整篇按既有 TIMEOUT 类别收口）。
+        val author = PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK", true, openAlexAuthorId = "A5023888391")
+        val paper = pmcPaper(listOf(author)).copy(
+            doi = "10.1/x", downloadUrl = "https://primary.example/paper.pdf"
+        )
+        val fixedDeadline = Instant.parse("2026-09-21T02:41:17Z")
+        val xmlDeadlines = mutableListOf<Instant>()
+        Mockito.doAnswer { invocation: InvocationOnMock ->
+            xmlDeadlines += invocation.getArgument<Instant>(1)
+            EmailExtractionOutcome(
+                emptyList(), "FULLTEXT_XML", "FULLTEXT_FETCH_FAILED", httpRequests = 0,
+                fulltextObtained = false, downloadFailureCategory = "TIMEOUT"
+            )
+        }.`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
+
+        val outcome = dataSource.extractAuthorEmails(paper, fixedDeadline)
+
+        assertEquals(listOf(fixedDeadline), xmlDeadlines, "XML 阶段必须拿到同一个单篇共享 deadline")
+        assertEquals("TIMEOUT", outcome.downloadFailureCategory)
+        assertEquals(0, outcome.httpRequests)
+        Mockito.verifyNoInteractions(pdfExtractor)
+        Mockito.verify(unpaywallClient, Mockito.never()).findPdfUrls(Mockito.anyString(), Mockito.any())
+    }
+
+    @Test
+    fun `the unpaywall lookup receives the same per-paper deadline as the downloads (R-4, V-4)`() {
+        val primary = "https://primary.example/gone.pdf"
+        val unpaywallUrl = "https://unpaywall.example/copy.pdf"
+        val fixedDeadline = Instant.parse("2099-01-01T00:00:00Z")
+        Mockito.doReturn(true).`when`(unpaywallClient).isConfigured()
+        val lookupDeadlines = mutableListOf<Instant>()
+        Mockito.doAnswer { invocation: InvocationOnMock ->
+            lookupDeadlines += invocation.getArgument<Instant>(1)
+            listOf(unpaywallUrl)
+        }.`when`(unpaywallClient).findPdfUrls(Mockito.anyString(), Mockito.any())
+        stubDownloads(
+            primary to failedDownload("PDF_DOWNLOAD_FAILED", "HTTP_404"),
+            unpaywallUrl to successfulDownload("john.smith@oxford.ac.uk")
+        )
+
+        val outcome = dataSource.extractAuthorEmails(
+            openAlexPaper(downloadUrl = primary, doi = "10.1/x"), fixedDeadline
+        )
+
+        assertEquals("john.smith@oxford.ac.uk", outcome.emails.single().email)
+        assertEquals(listOf(fixedDeadline), lookupDeadlines, "Unpaywall 阶段拿到的是同一个共享 deadline")
+        assertTrue(downloadDeadlines.all { it == fixedDeadline }, "URL 阶段同样只用这一个 deadline")
+    }
+
+    @Test
+    fun `an expired budget issues no unpaywall lookup at all (R-4, V-4)`() {
+        Mockito.doReturn(true).`when`(unpaywallClient).isConfigured()
+
+        val outcome = dataSource.extractAuthorEmails(openAlexPaper(doi = "10.1/x"), Instant.now().minusSeconds(1))
+
+        assertEquals("TIMEOUT", outcome.downloadFailureCategory)
+        assertEquals(0, outcome.httpRequests)
+        Mockito.verify(unpaywallClient, Mockito.never()).findPdfUrls(Mockito.anyString(), Mockito.any())
         Mockito.verifyNoInteractions(pdfExtractor)
     }
 
@@ -1060,6 +1124,9 @@ class OpenAlexDataSourceTest {
         assertTrue(outcome.emails.all { it.orcidId == null && it.openAlexAuthorId == null }, "备用版本的同名歧义不得被当身份")
         assertEquals(2, outcome.httpRequests)
     }
+
+    /** Mockito 的 eq(any) 返回 null，Kotlin 非空参数会触发空检查 —— 用真实值兜底（本仓库既有习惯）。 */
+    private fun <T : Any> eqValue(value: T): T = Mockito.eq(value) ?: value
 
     private fun openAlexPaper(
         downloadUrl: String? = null,

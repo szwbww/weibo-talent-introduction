@@ -77,7 +77,8 @@ function createSandbox({ apiImpl, stateOverrides, elementsOverrides }) {
     for (const name of [
         "escapeHtml", "badge", "labelStatus", "renderTaskPager",
         "loadTaskTypeOptions", "loadTasks", "renderTaskDetailRawBlocks", "toggleTaskDetail",
-        "normalizeDiscoveryResultSummary", "renderDiscoverySummaryText", "renderBySourceTable"
+        "normalizeDiscoveryResultSummary", "renderDiscoverySummaryText", "renderBySourceTable",
+        "isEnrichmentBySource", "renderEnrichmentSourceTable", "normalizeEnrichmentResultSummary"
     ]) {
         vm.runInContext(extractFn(name), sandbox);
     }
@@ -191,6 +192,54 @@ describe("task records semantics (b2)", () => {
         assert.ok(detailRow.innerHTML.includes(notice), "truncation notice must be present when rawTruncated");
         assert.ok(detailRow.innerHTML.indexOf(notice) > detailRow.innerHTML.indexOf('<div class="pre">'),
             "notice must come after a pre block");
+    });
+
+    it("V-2/R-2: automatic enrichment details render enrichment stages, not discovery zeros", async () => {
+        // 08 自动批次落的是 claimed/succeeded/pending/unmatched/failed + bySource（补全阶段），
+        // 不是发现漏斗；按发现列渲染会让每个来源显示成一排 0。
+        const automaticSummary = JSON.stringify({
+            claimed: 3, succeeded: 1, pending: 1, unmatched: 1, failed: 0,
+            bySource: { OPENALEX: { enqueued: 3, succeeded: 1, pending: 1, unmatched: 1, failed: 0 } }
+        });
+        let detailRow = null;
+        const { sandbox } = createSandbox({
+            apiImpl: async (url) => {
+                if (url === "/api/task-executions/42/detail") {
+                    return { rawRequestPayload: null, rawResultSummary: automaticSummary, rawTruncated: false };
+                }
+                return null;
+            }
+        });
+        const row = {
+            dataset: { taskId: "42", taskType: "EXPERT_ENRICHMENT" },
+            nextElementSibling: null,
+            after: (el) => { detailRow = el; }
+        };
+        await sandbox.toggleTaskDetail(row);
+
+        assert.ok(detailRow, "detail row must be inserted");
+        const rendered = detailRow.innerHTML;
+        for (const header of ["平台", "入队", "成功", "待补", "未匹配", "失败"]) {
+            assert.ok(rendered.includes(`>${header}</th>`), `enrichment stage column must be rendered: ${header}`);
+        }
+        assert.ok(!rendered.includes(">论文</th>"), "discovery columns must not be used for automatic enrichment");
+        assert.ok(rendered.includes(">3</td>") && rendered.includes(">0</td>"),
+            "rendered values must be the real per-stage counts (enqueued=3, failed=0)");
+        assert.ok(rendered.includes(`<div class="pre">${sandbox.escapeHtml(automaticSummary)}</div>`),
+            "the raw result summary stays visible below the stage table");
+    });
+
+    it("V-2/R-2: the shared bySource renderer keeps the discovery table for discovery run data", () => {
+        // 反向断言：同一入口对发现漏斗数据仍渲染「论文/收录」列，形状识别不会把两者混在一起。
+        const { sandbox } = createSandbox({ apiImpl: async () => null });
+        const container = { innerHTML: "" };
+        sandbox.renderBySourceTable(
+            { OPENALEX: { papersSearched: 25, authorsExtracted: 9, emailsValid: 3, indexed: 1, promoted: 1 } },
+            container
+        );
+        assert.ok(container.innerHTML.includes(">论文</th>") && container.innerHTML.includes(">收录</th>"),
+            "discovery bySource must keep the discovery columns");
+        assert.ok(!container.innerHTML.includes(">入队</th>"), "discovery bySource must not render enrichment columns");
     });
 
     it("S1-1: task type dropdown keeps the placeholder option and preserves selection", async () => {

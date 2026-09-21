@@ -494,6 +494,45 @@ class EuropePmcDataSourceTest {
     }
 
     @Test
+    fun `extractAuthorEmails issues no XML request once the shared deadline expired (R-4, V-4)`() {
+        // V-4：XML 阶段过去不在共享总时限内 —— 现在时限已过就一个请求都不发，并按既有 TIMEOUT 类别收口。
+        val restTemplate = Mockito.mock(RestTemplate::class.java)
+        val server = MockRestServiceServer.createServer(restTemplate)
+        val dataSource = EuropePmcDataSource(restTemplate, properties)
+
+        val outcome = dataSource.extractAuthorEmails(
+            PaperMetadata(
+                pmcId = "PMC9876543", pmid = "1", doi = "10.0/x", title = "T", pubYear = 2024,
+                journal = "J", authors = emptyList(), source = "EUROPE_PMC"
+            ),
+            java.time.Instant.now().minusSeconds(1)
+        )
+
+        assertEquals("FULLTEXT_FETCH_FAILED", outcome.failureReason)
+        assertEquals("TIMEOUT", outcome.downloadFailureCategory)
+        assertEquals(0, outcome.httpRequests)
+        assertTrue(outcome.emails.isEmpty())
+        server.verify() // 服务端一次请求都没收到
+    }
+
+    @Test
+    fun `extractAuthorEmails with a live deadline still fetches the XML (R-4 compatibility)`() {
+        // 反向断言：另一个入口（传 null）与未过期时限的行为完全不变。
+        val restTemplate = Mockito.mock(RestTemplate::class.java)
+        Mockito.`when`(
+            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+        ).thenReturn(null)
+        val dataSource = EuropePmcDataSource(restTemplate, properties)
+        val paper = PaperMetadata(
+            pmcId = "PMC9876543", pmid = "1", doi = "10.0/x", title = "T", pubYear = 2024,
+            journal = "J", authors = emptyList(), source = "EUROPE_PMC"
+        )
+
+        assertEquals(1, dataSource.extractAuthorEmails(paper, java.time.Instant.now().plusSeconds(30)).httpRequests)
+        assertEquals(1, dataSource.extractAuthorEmails(paper).httpRequests)
+    }
+
+    @Test
     fun `extractAuthorEmails returns NO_EMAIL_IN_FULLTEXT when XML has no email`() {
         val restTemplate = Mockito.mock(RestTemplate::class.java)
         val dataSource = EuropePmcDataSource(restTemplate, properties)

@@ -221,8 +221,13 @@ class CrossrefDataSourceTest {
         Mockito.doReturn(mapper.readTree(mapper.writeValueAsString(unpaywallResponse)))
             .`when`(restTemplate).getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
 
+        // R-1（V-1）：c10 之后 JVM 签名是 5 个参数（末两个带默认值的 deadline / 响应头回调），
+        // 只写 3 个 matcher 会留下未完成的 Mockito 状态并污染后续用例；三个调用点都按真实签名的
+        // 全部参数打桩，断言（委托结果与失败原因）保持原样。
         Mockito.doReturn(EmailExtractionOutcome(emptyList(), "PDF_PARSE", "NO_EMAIL_IN_TEXT"))
-            .`when`(pdfExtractor).extract(Mockito.anyString(), Mockito.anyList(), Mockito.anyString())
+            .`when`(pdfExtractor).extract(
+                Mockito.anyString(), Mockito.anyList(), Mockito.anyString(), Mockito.any(), Mockito.any()
+            )
 
         val dataSource = CrossrefDataSource(
             restTemplate, properties, UnpaywallClient(restTemplate, unpaywallProperties), pdfExtractor

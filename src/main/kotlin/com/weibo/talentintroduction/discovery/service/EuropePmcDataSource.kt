@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
 import org.springframework.web.util.UriComponentsBuilder
 import java.net.URI
+import java.time.Instant
 
 @Service
 class EuropePmcDataSource(
@@ -96,7 +97,17 @@ class EuropePmcDataSource(
         }
     }
 
-    override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome {
+    override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome =
+        extractAuthorEmails(paper, null)
+
+    /**
+     * R-4（V-4）：带共享剩余时限的 XML 阶段入口（OpenAlex 全文回退链传入单篇总时限）。
+     *
+     * 时限已过时**一个请求都不发**，并按既有的 `TIMEOUT` 类别上报（不是新的失败类别、也不是
+     * `FULLTEXT_FETCH_FAILED`）—— 调用方据此停止后续 URL / Unpaywall 阶段。
+     * 传 `null` 时行为与原来的 [extractAuthorEmails] 完全一致。
+     */
+    fun extractAuthorEmails(paper: PaperMetadata, deadline: Instant?): EmailExtractionOutcome {
         if (!properties.enabled) {
             return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "SOURCE_DISABLED")
         }
@@ -120,6 +131,15 @@ class EuropePmcDataSource(
         val pmcId = paper.pmcId
         if (pmcId == null) {
             return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_PMC_ID")
+        }
+
+        if (deadline != null && !Instant.now().isBefore(deadline)) {
+            log.debug("[{}] shared fulltext deadline expired before the XML stage for {}", sourceName, pmcId)
+            return EmailExtractionOutcome(
+                emptyList(), emailExtractionMethod, "FULLTEXT_FETCH_FAILED",
+                httpRequests = 0, fulltextObtained = false,
+                downloadFailureCategory = FULLTEXT_FAILURE_TIMEOUT
+            )
         }
 
         val xml = fetchFullTextXml(pmcId)

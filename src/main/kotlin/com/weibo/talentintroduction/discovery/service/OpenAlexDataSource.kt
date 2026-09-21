@@ -97,7 +97,9 @@ class OpenAlexDataSource(
         var lastFailure: EmailExtractionOutcome? = null
 
         if (paper.pmcId != null) {
-            val europePmcOutcome = europePmc.extractAuthorEmails(paper)
+            // R-4（V-4）：XML 阶段也在同一个共享总时限内 —— 时限已过就整段按 TIMEOUT 收口
+            // （0 次请求），不再接着走 URL / Unpaywall。
+            val europePmcOutcome = europePmc.extractAuthorEmails(paper, deadline)
             // I-2: PMC/JATS 是另一来源的提取结果，姓名/邮箱相似都不算证据 ——
             // 只有 ORCID 精确等值到一个唯一作者时才允许补接该作者的 OpenAlex ID。
             val xmlOutcome = europePmcOutcome.copy(
@@ -127,8 +129,14 @@ class OpenAlexDataSource(
                 unpaywallConsulted = true
                 val doi = paper.doi
                 if (doi != null && unpaywallClient.isConfigured()) {
+                    // R-4（V-4）：Unpaywall 查询也是这一篇的全文阶段，同样受共享总时限约束；
+                    // 时限已过就不再发这次查询，并按已有的 TIMEOUT 类别收口。
+                    if (deadlineExpired(deadline)) {
+                        if (lastFailure == null) lastFailure = timeoutOutcome()
+                        break
+                    }
                     requests++
-                    unpaywallClient.findPdfUrls(doi).mapNotNullTo(queue) { publicFulltextUrl(it) }
+                    unpaywallClient.findPdfUrls(doi, deadline).mapNotNullTo(queue) { publicFulltextUrl(it) }
                 }
                 if (queue.isEmpty()) break
             }

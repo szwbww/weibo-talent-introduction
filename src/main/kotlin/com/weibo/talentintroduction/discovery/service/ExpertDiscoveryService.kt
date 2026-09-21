@@ -36,6 +36,7 @@ import com.weibo.talentintroduction.expert.service.PromotionOutcome
 import com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor
 import com.weibo.talentintroduction.discovery.domain.resolvedFulltextObtained
 import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
+import com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
@@ -84,6 +85,11 @@ class ExpertDiscoveryService(
      * 也由本 service 的批次核心领取到期任务。c8 不直接读写任务表。
      */
     private val enrichmentJobService: ExpertAcademicEnrichmentJobService,
+    /**
+     * R-3（V-3）：只给 [hasDueEnrichmentJobs] 的**只读**到期探针用 —— 不改任何列、不写进度日志。
+     * 任务生命周期仍只经 [enrichmentJobService]（领取/终态/CAS）写入。
+     */
+    private val enrichmentJobRepository: ExpertAcademicEnrichmentJobRepository,
     @Qualifier("discoveryFetchExecutor")
     private val discoveryFetchExecutor: Executor,
     private val europePmcProperties: EuropePmcProperties
@@ -1736,6 +1742,28 @@ class ExpertDiscoveryService(
             wasCancelled = batch.cancelled,
             budgetDeferred = batch.budgetDeferred
         )
+    }
+
+    /**
+     * R-3（V-3）：只读的「有没有到期任务」探针 —— 不领取、不改任何列、不写进度日志。
+     *
+     * worker 每 30 秒检查一次；如果空转也先拿任务锁（`tryStartWithToken` 会落一条
+     * `execution_id` 为负的孤儿进度行），清理内存后就会留下一次「中断/失败」的假生命周期证据。
+     * 用本探针在拿锁前短路，空转不再产生任何任务记录/进度行。
+     *
+     * 到期判定谓词与 [claimDueEnrichmentJobs] 完全一致（同一份 `findDueCandidates`），只读一次；
+     * 真正的领取仍在拿锁后按同一谓词重新求值，所以这里只决定「要不要开始」，
+     * 不影响互斥、尾批、租约恢复与崩溃后重领。
+     */
+    fun hasDueEnrichmentJobs(): Boolean {
+        if (openAlexProvider.getIfAvailable() == null) return false
+        return try {
+            enrichmentJobRepository.findDueCandidates(1, LocalDateTime.now()).isNotEmpty()
+        } catch (e: Exception) {
+            // 探针失败按「有活」处理：宁可多拿一次锁空跑一批，也不能让到期任务被探针饿死。
+            log.warn("补全到期探针失败，按存在到期任务处理: {}", e.message)
+            true
+        }
     }
 
     /**

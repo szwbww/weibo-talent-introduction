@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.task.service
 
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.task.domain.TaskExecution
 import com.weibo.talentintroduction.task.domain.TaskTypeCatalog
@@ -99,15 +100,7 @@ class TaskExecutionSummaryExtractor(
                     totalPassed = root.path("successAccountCount").asLong(0),
                     totalRejected = root.path("failedAccountCount").asLong(0)
                 )
-                "EXPERT_ENRICHMENT" -> {
-                    val enriched = root.path("enriched").asLong(0)
-                    val failed = root.path("failed").asLong(0)
-                    ExecutionTotals(
-                        totalProcessed = enriched + failed,
-                        totalPassed = enriched,
-                        totalRejected = failed
-                    )
-                }
+                "EXPERT_ENRICHMENT" -> enrichmentTotals(root)
                 "TASK_AUDIT_RETENTION" -> {
                     val progressLogDeleted = root.path("progressLogDeleted").asLong(0)
                     val executionDeleted = root.path("executionDeleted").asLong(0)
@@ -124,6 +117,35 @@ class TaskExecutionSummaryExtractor(
             log.warn("Failed to parse resultSummary for executionId={} taskType={}: {}", executionId, taskType, e.message)
             ExecutionTotals()
         }
+    }
+
+    /**
+     * R-2（V-2）：`EXPERT_ENRICHMENT` 一个 summaryRule 覆盖两种真实 JSON 形状 ——
+     * 08 自动 worker 落的是 `AutoEnrichmentBatchResult`（根级 `claimed/succeeded/pending/unmatched/failed`），
+     * 人工回填仍是 `enriched/failed`。只认后者会让每次自动批次在列表/详情里显示「0 通过」，
+     * 于是这里两种都如实折算：处理数=claimed（人工=成功+失败）、通过数=succeeded（人工=enriched）、
+     * 未完成/未匹配/失败之和进 totalRejected。计数口径不叠加发现数（I-4）。
+     */
+    private fun enrichmentTotals(root: JsonNode): ExecutionTotals {
+        if (root.has("claimed")) {
+            val claimed = root.path("claimed").asLong(0)
+            val succeeded = root.path("succeeded").asLong(0)
+            val unfinished = root.path("pending").asLong(0) +
+                root.path("unmatched").asLong(0) +
+                root.path("failed").asLong(0)
+            return ExecutionTotals(
+                totalProcessed = claimed,
+                totalPassed = succeeded,
+                totalRejected = unfinished
+            )
+        }
+        val enriched = root.path("enriched").asLong(0)
+        val failed = root.path("failed").asLong(0)
+        return ExecutionTotals(
+            totalProcessed = enriched + failed,
+            totalPassed = enriched,
+            totalRejected = failed
+        )
     }
 
     /**
@@ -163,8 +185,9 @@ class TaskExecutionSummaryExtractor(
                         rejected = details.path("failedAccountCount").asLong(0)
                     }
                     "EXPERT_ENRICHMENT" -> {
-                        passed = details.path("enriched").asLong(0)
-                        rejected = details.path("failed").asLong(0)
+                        val totals = enrichmentTotals(details)
+                        passed = totals.totalPassed
+                        rejected = totals.totalRejected
                     }
                     else -> {
                         passed = 0; rejected = 0

@@ -35,6 +35,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.PromotionOutcome
 import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
+import com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -84,6 +85,7 @@ class ExpertDiscoveryServiceTest {
     private lateinit var progressStore: TaskProgressStore
     private lateinit var cursorRepository: DiscoverySourceCursorRepository
     private lateinit var enrichmentJobService: ExpertAcademicEnrichmentJobService
+    private lateinit var enrichmentJobRepository: ExpertAcademicEnrichmentJobRepository
     private val discoveryProperties = ExpertDiscoveryProperties(
         enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 200
     )
@@ -101,6 +103,9 @@ class ExpertDiscoveryServiceTest {
     )
 
     private fun <T : Any> eqValue(value: T): T = Mockito.eq(value) ?: value
+
+    /** 同上：any(Class) 返回 null，非空 LocalDateTime 参数需要真实值兜底。 */
+    private fun anyDateTime(): LocalDateTime = Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
 
     @BeforeEach
     fun setUp() {
@@ -127,6 +132,7 @@ class ExpertDiscoveryServiceTest {
         progressStore = Mockito.mock(TaskProgressStore::class.java)
         cursorRepository = Mockito.mock(DiscoverySourceCursorRepository::class.java)
         enrichmentJobService = Mockito.mock(ExpertAcademicEnrichmentJobService::class.java)
+        enrichmentJobRepository = Mockito.mock(ExpertAcademicEnrichmentJobRepository::class.java)
 
         DiscoveryMockHelper.stubSourceInfo(europePmc)
         Mockito.doReturn(null).`when`(openAlexProvider).getIfAvailable()
@@ -155,8 +161,8 @@ class ExpertDiscoveryServiceTest {
             pmcOaProvider, orcidProvider, coreProvider,
             emailValidationService, eligibilityService,
             indexWriterService, indexService, revalidationService, expertSearchService, expertClassificationService, restTemplate, esProperties,
-            props, openAlexProps, objectMapper, progressStore, cursorRepository, enrichmentJobService, executor,
-            europePmcProps
+            props, openAlexProps, objectMapper, progressStore, cursorRepository, enrichmentJobService,
+            enrichmentJobRepository, executor, europePmcProps
         )
     }
 
@@ -1268,6 +1274,54 @@ class ExpertDiscoveryServiceTest {
         val result = svc.enrichExistingExperts()
         assertEquals(5, result.enriched)
         assertEquals(0, result.failed)
+    }
+
+    @Test
+    fun `hasDueEnrichmentJobs 只读探针不领取、不推进、不写任何任务状态 (R-3, V-3)`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val due = ExpertAcademicEnrichmentJob(
+            id = 5L, expertDocId = "A-1", source = "OPENALEX",
+            status = ExpertAcademicEnrichmentJob.STATUS_PENDING, attempts = 0,
+            nextAttemptAt = LocalDateTime.now().minusMinutes(1)
+        )
+        Mockito.doReturn(listOf(due)).`when`(enrichmentJobRepository)
+            .findDueCandidates(eqValue(1), anyDateTime())
+
+        assertTrue(svc.hasDueEnrichmentJobs(), "有到期任务时探针为真")
+
+        // 只读：不写租约、不改状态、也不经 07 的领取入口
+        Mockito.verify(enrichmentJobRepository, Mockito.never()).claimById(
+            Mockito.anyLong(), Mockito.anyString(), anyDateTime(),
+            anyDateTime()
+        )
+        Mockito.verify(enrichmentJobService, Mockito.never())
+            .claimDue(Mockito.anyInt(), anyDateTime())
+        Mockito.verify(enrichmentJobRepository, Mockito.never())
+            .insertIfAbsent(Mockito.anyString(), Mockito.anyString(), Mockito.any(), anyDateTime())
+    }
+
+    @Test
+    fun `hasDueEnrichmentJobs 在没有 OpenAlex 或没有到期任务时为假且不落任何领取动作 (R-3, V-3)`() {
+        val withoutOpenAlex = createService()
+        assertFalse(withoutOpenAlex.hasDueEnrichmentJobs(), "OpenAlex 未启用时不存在可领取的任务")
+        Mockito.verify(enrichmentJobRepository, Mockito.never())
+            .findDueCandidates(Mockito.anyInt(), anyDateTime())
+
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        Mockito.doReturn(emptyList<ExpertAcademicEnrichmentJob>()).`when`(enrichmentJobRepository)
+            .findDueCandidates(eqValue(1), anyDateTime())
+
+        assertFalse(svc.hasDueEnrichmentJobs(), "没有到期任务时探针为假")
+
+        Mockito.verify(enrichmentJobRepository, Mockito.never())
+            .claimById(Mockito.anyLong(), Mockito.anyString(), anyDateTime(),
+                anyDateTime())
+        Mockito.verify(enrichmentJobService, Mockito.never())
+            .claimDue(Mockito.anyInt(), anyDateTime())
     }
 
     @Test
@@ -3368,7 +3422,7 @@ class ExpertDiscoveryServiceTest {
     // c8（08）：RAW 先落地再入队 / 自动与人工共用的补全批次
     // ------------------------------------------------------------------
 
-    private fun anyLocalDateTime(): LocalDateTime = Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+    private fun anyLocalDateTime(): LocalDateTime = anyDateTime() ?: LocalDateTime.now()
 
     private fun anyOutcome(): ProfileEnrichmentOutcome =
         Mockito.any(ProfileEnrichmentOutcome::class.java) ?: ProfileEnrichmentOutcome.NoId

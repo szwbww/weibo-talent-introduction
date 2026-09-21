@@ -1411,9 +1411,49 @@ async function fetchRunList(taskType, generation) {
     } catch (e) { /* 静默 */ }
 }
 
+/**
+ * I-5（R-2/V-2）：`bySource` 有两种真实形状 —— 发现漏斗（论文/邮箱/收录/晋升…）与补全阶段
+ * （入队/成功/待补/未匹配/失败）。08 的自动补全批次写的是后者；若按发现列渲染，整张表会显示成
+ * 一排 0，看起来像「一篇都没抓到」。先按字段形状识别，再选对应表头。
+ */
+function isEnrichmentBySource(bySource) {
+    return Object.values(bySource || {}).some((stats) =>
+        stats && typeof stats === "object" && ("enqueued" in stats || "succeeded" in stats));
+}
+
+function renderEnrichmentSourceTable(bySource, container) {
+    const rows = Object.entries(bySource).map(([name, stats]) => `
+            <tr>
+                <td style="padding:3px 8px;">${escapeHtml(name)}</td>
+                <td style="padding:3px 8px;">${stats.enqueued || 0}</td>
+                <td style="padding:3px 8px;">${stats.succeeded || 0}</td>
+                <td style="padding:3px 8px;">${stats.pending || 0}</td>
+                <td style="padding:3px 8px;">${stats.unmatched || 0}</td>
+                <td style="padding:3px 8px;">${stats.failed || 0}</td>
+            </tr>
+        `).join("");
+    container.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead><tr style="background:var(--panel-bg);border-bottom:1px solid var(--panel-border);">
+                <th style="padding:4px 8px;text-align:left;">平台</th>
+                <th style="padding:4px 8px;text-align:left;">入队</th>
+                <th style="padding:4px 8px;text-align:left;">成功</th>
+                <th style="padding:4px 8px;text-align:left;">待补</th>
+                <th style="padding:4px 8px;text-align:left;">未匹配</th>
+                <th style="padding:4px 8px;text-align:left;">失败</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+    `;
+}
+
 function renderBySourceTable(bySource, container) {
     if (!bySource || Object.keys(bySource).length === 0) {
         container.innerHTML = "";
+        return;
+    }
+    if (isEnrichmentBySource(bySource)) {
+        renderEnrichmentSourceTable(bySource, container);
         return;
     }
     const rows = Object.entries(bySource).map(([name, stats]) => {
@@ -10611,6 +10651,23 @@ function renderDiscoverySummaryText(summaryText) {
     return `<div style="margin-top:6px;font-size:11px;color:var(--text-muted);">${escapeHtml(summaryText)}</div>`;
 }
 
+/**
+ * I-5（R-2/V-2）：自动补全批次的 `result_summary` 是根级 JSON（claimed/succeeded/pending/
+ * unmatched/failed + bySource），不像发现结果那样包在 `stats` 里；这里两种都接受，解析失败返回 null
+ * （调用方退回原来的 pre 原文块，不隐藏证据）。
+ */
+function normalizeEnrichmentResultSummary(resultSummary) {
+    if (!resultSummary) return null;
+    let summary;
+    try {
+        summary = typeof resultSummary === "string" ? JSON.parse(resultSummary) : resultSummary;
+    } catch (e) {
+        return null;
+    }
+    if (!summary || typeof summary !== "object") return null;
+    return summary.stats && typeof summary.stats === "object" ? summary.stats : summary;
+}
+
 async function loadTaskTypeOptions() {
     const options = await api("/api/task-executions/task-types");
     if (!Array.isArray(options)) return;
@@ -10747,6 +10804,16 @@ async function toggleTaskDetail(row) {
         if (data && data.summaryText) {
             contentHtml += renderDiscoverySummaryText(data.summaryText);
         }
+    } else if (taskType === "EXPERT_ENRICHMENT" && detail && detail.rawResultSummary) {
+        // I-5（R-2/V-2）：自动补全批次的逐源阶段计数（入队/成功/待补/未匹配/失败）按阶段表渲染，
+        // 而不是当成发现漏斗显示一排 0；原文 pre 块保留在下方。
+        const enrichmentSummary = normalizeEnrichmentResultSummary(detail.rawResultSummary);
+        if (enrichmentSummary && enrichmentSummary.bySource) {
+            const container = document.createElement("div");
+            renderBySourceTable(enrichmentSummary.bySource, container);
+            contentHtml = container.innerHTML;
+        }
+        contentHtml += renderTaskDetailRawBlocks(detail);
     } else if (detail) {
         contentHtml = renderTaskDetailRawBlocks(detail);
     }

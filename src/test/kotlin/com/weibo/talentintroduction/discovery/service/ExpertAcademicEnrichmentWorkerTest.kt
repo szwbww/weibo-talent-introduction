@@ -46,6 +46,8 @@ class ExpertAcademicEnrichmentWorkerTest {
             runnable.run()
             null
         }.`when`(autoEnrichmentExecutor).execute(Mockito.any(Runnable::class.java))
+        // R-3（V-3）：默认「有到期任务」，进入取锁/领取流程；空闲探针的用例自行改写为 false。
+        Mockito.doReturn(true).`when`(discoveryService).hasDueEnrichmentJobs()
     }
 
     private fun worker(props: ExpertDiscoveryProperties = enabledProperties) = ExpertAcademicEnrichmentWorker(
@@ -124,6 +126,25 @@ class ExpertAcademicEnrichmentWorkerTest {
         assertTrue(execution.resultSummary!!.contains("EUROPE_PMC"))
         // 批次结束后释放锁，后续 tick（或人工入口）可再次获取
         Mockito.verify(progressStore).clearExecutionContext("EXPERT_ENRICHMENT", 7L)
+    }
+
+    @Test
+    fun `空闲检查（没有到期任务）不建任务记录也不写进度日志`() {
+        // R-3（V-3）：空转的一次检查只做只读探针 —— 不取任务锁（tryStartWithToken 会落孤儿进度行）、
+        // 不建 task_execution、不进专用线程。
+        Mockito.doReturn(false).`when`(discoveryService).hasDueEnrichmentJobs()
+
+        worker().processDueEnrichmentJobs()
+
+        Mockito.verify(discoveryService).hasDueEnrichmentJobs()
+        Mockito.verify(progressStore, Mockito.never())
+            .tryStartWithToken(Mockito.anyString(), anyTaskProgress())
+        Mockito.verify(progressStore, Mockito.never())
+            .update(Mockito.anyString(), anyTaskProgress(), Mockito.any())
+        Mockito.verify(progressStore, Mockito.never()).clear(Mockito.anyString())
+        Mockito.verify(discoveryService, Mockito.never()).claimDueEnrichmentJobs(Mockito.anyInt())
+        Mockito.verify(autoEnrichmentExecutor, Mockito.never()).execute(Mockito.any(Runnable::class.java))
+        Mockito.verify(repository, Mockito.never()).save(Mockito.any(TaskExecution::class.java))
     }
 
     @Test

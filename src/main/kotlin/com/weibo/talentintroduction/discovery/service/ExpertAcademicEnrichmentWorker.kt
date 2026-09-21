@@ -47,6 +47,14 @@ class ExpertAcademicEnrichmentWorker(
     fun processDueEnrichmentJobs() {
         if (!discoveryProperties.autoEnrichmentEnabled) return
 
+        // R-3（V-3）：先做一次只读到期探针。空转也要拿任务锁的话，tryStartWithToken 会落一条
+        // execution_id 为负的孤儿进度行，内存被清理后就表现为一次「中断/失败」的执行。
+        // 探针命中才进入原来的取锁 → 领取流程，互斥/尾批/租约恢复语义完全不变。
+        if (!discoveryService.hasDueEnrichmentJobs()) {
+            log.debug("没有到期的补全任务，本次检查不建任务记录也不写进度")
+            return
+        }
+
         val (started, pendingToken) = progressStore.tryStartWithToken(TASK_TYPE, TaskProgress(
             taskType = TASK_TYPE, status = "RUNNING",
             batchNumber = 0, processedCount = 0, totalCount = 0, message = "补全 worker 检查待补任务..."

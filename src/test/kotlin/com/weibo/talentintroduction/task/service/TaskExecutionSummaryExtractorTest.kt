@@ -91,6 +91,31 @@ class TaskExecutionSummaryExtractorTest {
         assertEquals(ExecutionTotals(totalProcessed = 13, totalPassed = 12, totalRejected = 1), totals)
     }
 
+    @Test
+    fun `EXPERT_ENRICHMENT resultSummary maps the automatic batch shape (R-2, V-2)`() {
+        // 08 自动 worker 写的是 claimed/succeeded/pending/unmatched/failed —— 只认 enriched/failed
+        // 会让自动批次显示「0 通过」。未完成（待补/未匹配/失败）都计入未通过。
+        val summary = """{"claimed":3,"succeeded":1,"pending":1,"unmatched":1,"failed":0,
+            "bySource":{"OPENALEX":{"enqueued":3,"succeeded":1,"pending":1,"unmatched":1,"failed":0}}}"""
+        val totals = extractor.extract("EXPERT_ENRICHMENT", execution(16, "EXPERT_ENRICHMENT", summary))
+        assertEquals(ExecutionTotals(totalProcessed = 3, totalPassed = 1, totalRejected = 2), totals)
+    }
+
+    @Test
+    fun `EXPERT_ENRICHMENT automatic details in the progress log map the same way (R-2, V-2)`() {
+        val running = execution(17, "EXPERT_ENRICHMENT", null, status = "RUNNING")
+        val log = com.weibo.talentintroduction.task.domain.TaskProgressLog(
+            id = 30L, taskType = "EXPERT_ENRICHMENT", taskExecutionId = 17L,
+            batchNumber = 1, status = "RUNNING", processedCount = 3, totalCount = 3,
+            detailsJson = """{"claimed":3,"succeeded":2,"pending":0,"unmatched":1,"failed":0}"""
+        )
+        Mockito.`when`(progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(17L)).thenReturn(log)
+
+        val totals = extractor.extract("EXPERT_ENRICHMENT", running)
+
+        assertEquals(ExecutionTotals(totalProcessed = 3, totalPassed = 2, totalRejected = 1), totals)
+    }
+
     // ---- I1-3 第 ② 级：RUNNING（resultSummary=null）走最新 progress_log.detailsJson ----
 
     @Test

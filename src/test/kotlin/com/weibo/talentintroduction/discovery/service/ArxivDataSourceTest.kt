@@ -258,8 +258,11 @@ class ArxivDataSourceTest {
 
     @Test
     fun `extractAuthorEmails delegates to PDF extractor`() {
+        // R-1（V-1）：与 Crossref 用例同理 —— 按 c10 的 5 参数 JVM 签名打桩，委托断言保持原样。
         Mockito.doReturn(EmailExtractionOutcome(emptyList(), "PDF_PARSE", "NO_EMAIL_IN_TEXT"))
-            .`when`(pdfExtractor).extract(Mockito.anyString(), Mockito.anyList(), Mockito.anyString())
+            .`when`(pdfExtractor).extract(
+                Mockito.anyString(), Mockito.anyList(), Mockito.anyString(), Mockito.any(), Mockito.any()
+            )
 
         val paper = PaperMetadata(null, null, "arXiv:2401.00001", "Test", 2024, null, emptyList(), "ARXIV")
         val result = harness().dataSource.extractAuthorEmails(paper)
