@@ -203,6 +203,11 @@ talent-introduction:
       enrichment-max-backoff-ms: ${OPENALEX_ENRICHMENT_MAX_BACKOFF_MS:1800000}
       fetch-works-enabled: ${OPENALEX_FETCH_WORKS_ENABLED:false}
       fetch-patents-enabled: ${OPENALEX_FETCH_PATENTS_ENABLED:false}
+      api-key: ${OPENALEX_API_KEY:}
+      max-requests-per-second: ${OPENALEX_MAX_REQUESTS_PER_SECOND:5.0}
+      new-enrichment-reserve-ratio: ${OPENALEX_NEW_ENRICHMENT_RESERVE_RATIO:0.2}
+      daily-budget-usd: ${OPENALEX_DAILY_BUDGET_USD:0}
+      rate-limit-backoff-max-ms: ${OPENALEX_RATE_LIMIT_BACKOFF_MAX_MS:60000}
     crossref:
       enabled: ${CROSSREF_ENABLED:true}
       base-url: ${CROSSREF_BASE_URL:https://api.crossref.org}

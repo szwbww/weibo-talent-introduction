@@ -1,7 +1,11 @@
 package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
 import com.weibo.talentintroduction.config.OpenAlexProperties
+import com.weibo.talentintroduction.config.OpenAlexRequestPolicy
+import com.weibo.talentintroduction.config.Permit
+import com.weibo.talentintroduction.config.RequestKind
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
@@ -11,6 +15,8 @@ import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpStatusCodeException
@@ -22,7 +28,8 @@ class OpenAlexDataSource(
     @Qualifier("openAlexRestTemplate") private val restTemplate: RestTemplate,
     private val properties: OpenAlexProperties,
     private val europePmc: EuropePmcDataSource,
-    private val pdfEmailExtractor: PdfEmailExtractor
+    private val pdfEmailExtractor: PdfEmailExtractor,
+    private val requestPolicy: OpenAlexRequestPolicy = OpenAlexRequestPolicy(properties)
 ) : AcademicDataSource {
 
     private val log = LoggerFactory.getLogger(OpenAlexDataSource::class.java)
@@ -41,12 +48,33 @@ class OpenAlexDataSource(
 
         val response = try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            restTemplate.getForObject(url, JsonNode::class.java)
+            getJson(RequestKind.DISCOVERY, url)
         } catch (e: Exception) {
             log.error("OpenAlex search failed: {}", e.message)
             throw e
         }
         return parseResponse(response)
+    }
+
+    /**
+     * Every OpenAlex HTTP call passes through the shared [OpenAlexRequestPolicy]: the caller names its [RequestKind]
+     * explicitly, the request slot and its estimated cost are reserved before the call, and the real quota headers
+     * reconcile the budget right after. A deferred budget raises [OpenAlexBudgetDeferredException] instead of calling.
+     */
+    private fun getJson(kind: RequestKind, url: String): JsonNode? {
+        val permit = requestPolicy.beforeRequest(kind)
+        if (permit is Permit.Deferred) throw OpenAlexBudgetDeferredException(permit.resetAt)
+        val response = try {
+            restTemplate.exchange(url, HttpMethod.GET, null, JsonNode::class.java)
+        } catch (e: HttpStatusCodeException) {
+            requestPolicy.recordResponse(e.responseHeaders ?: HttpHeaders())
+            throw e
+        } catch (e: Exception) {
+            requestPolicy.recordResponse(HttpHeaders())
+            throw e
+        }
+        requestPolicy.recordResponse(response?.headers ?: HttpHeaders())
+        return response?.body
     }
 
     override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome {
@@ -111,13 +139,19 @@ class OpenAlexDataSource(
         return PaperSearchResult(papers, nextCursor, totalResults)
     }
 
-    fun enrichAuthor(openAlexAuthorId: String): AuthorEnrichment? {
+    /** Legacy entry point: the existing backfill callers are history enrichment (lowest priority). */
+    fun enrichAuthor(openAlexAuthorId: String): AuthorEnrichment? =
+        enrichAuthor(openAlexAuthorId, RequestKind.HISTORY_ENRICHMENT)
+
+    fun enrichAuthor(openAlexAuthorId: String, kind: RequestKind): AuthorEnrichment? {
         val url = "${properties.baseUrl}/authors/$openAlexAuthorId" +
             if (properties.politeEmail.isNotBlank()) "?mailto=${properties.politeEmail}" else ""
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            val response = restTemplate.getForObject(url, JsonNode::class.java) ?: return null
-            parseAuthorEnrichmentFromNode(response, fetchWorksAndPatents = true)
+            val response = getJson(kind, url) ?: return null
+            parseAuthorEnrichmentFromNode(response, fetchWorksAndPatents = true, kind = kind)
+        } catch (e: OpenAlexBudgetDeferredException) {
+            throw e
         } catch (e: HttpStatusCodeException) {
             val code = e.statusCode.value()
             if (code == 429 || code == 503) throw e
@@ -129,15 +163,17 @@ class OpenAlexDataSource(
         }
     }
 
-    private fun fetchRecentWorks(worksUrl: String, limit: Int): List<String>? {
+    private fun fetchRecentWorks(worksUrl: String, limit: Int, kind: RequestKind): List<String>? {
         val url = "$worksUrl?sort=publication_year:desc&per_page=$limit&select=title,publication_year" +
             if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            val response = restTemplate.getForObject(url, JsonNode::class.java) ?: return null
+            val response = getJson(kind, url) ?: return null
             response.path("results")
                 .mapNotNull { it.path("title").asText(null)?.takeIf { title -> title.isNotBlank() } }
                 .takeIf { it.isNotEmpty() }
+        } catch (e: OpenAlexBudgetDeferredException) {
+            throw e
         } catch (e: HttpStatusCodeException) {
             val code = e.statusCode.value()
             if (code == 429 || code == 503) throw e
@@ -149,15 +185,17 @@ class OpenAlexDataSource(
         }
     }
 
-    private fun fetchPatents(worksUrl: String, limit: Int): List<String>? {
+    private fun fetchPatents(worksUrl: String, limit: Int, kind: RequestKind): List<String>? {
         val url = "$worksUrl?filter=type:patent&per_page=$limit&select=title,publication_year" +
             if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            val response = restTemplate.getForObject(url, JsonNode::class.java) ?: return null
+            val response = getJson(kind, url) ?: return null
             response.path("results")
                 .mapNotNull { it.path("title").asText(null)?.takeIf { title -> title.isNotBlank() } }
                 .takeIf { it.isNotEmpty() }
+        } catch (e: OpenAlexBudgetDeferredException) {
+            throw e
         } catch (e: HttpStatusCodeException) {
             val code = e.statusCode.value()
             if (code == 429 || code == 503) throw e
@@ -169,26 +207,36 @@ class OpenAlexDataSource(
         }
     }
 
-    fun enrichAuthorByOrcid(orcid: String): AuthorEnrichment? {
-        return when (val outcome = enrichAuthorByOrcidWithReason(orcid)) {
+    /** Legacy entry point: history enrichment (lowest priority). */
+    fun enrichAuthorByOrcid(orcid: String): AuthorEnrichment? =
+        enrichAuthorByOrcid(orcid, RequestKind.HISTORY_ENRICHMENT)
+
+    fun enrichAuthorByOrcid(orcid: String, kind: RequestKind): AuthorEnrichment? {
+        return when (val outcome = enrichAuthorByOrcidWithReason(orcid, kind)) {
             is EnrichmentOutcome.Success -> outcome.data
             else -> null
         }
     }
 
-    fun enrichAuthorByOrcidWithReason(orcid: String): EnrichmentOutcome {
+    /** Legacy entry point: history enrichment (lowest priority). */
+    fun enrichAuthorByOrcidWithReason(orcid: String): EnrichmentOutcome =
+        enrichAuthorByOrcidWithReason(orcid, RequestKind.HISTORY_ENRICHMENT)
+
+    fun enrichAuthorByOrcidWithReason(orcid: String, kind: RequestKind): EnrichmentOutcome {
         val searchUrl = "${properties.baseUrl}/authors?filter=orcid:$orcid" +
             if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            val searchResponse = restTemplate.getForObject(searchUrl, JsonNode::class.java)
+            val searchResponse = getJson(kind, searchUrl)
             val authorId = searchResponse?.path("results")?.get(0)?.path("id")?.asText(null)
                 ?.removePrefix("https://openalex.org/")
             if (authorId == null) {
                 return EnrichmentOutcome.NotFound
             }
-            val enrichment = enrichAuthor(authorId)
+            val enrichment = enrichAuthor(authorId, kind)
             if (enrichment != null) EnrichmentOutcome.Success(enrichment) else EnrichmentOutcome.NotFound
+        } catch (e: OpenAlexBudgetDeferredException) {
+            throw e
         } catch (e: HttpStatusCodeException) {
             val code = e.statusCode.value()
             if (code == 429 || code == 503) {
@@ -203,7 +251,11 @@ class OpenAlexDataSource(
         }
     }
 
-    fun batchEnrichByOrcids(orcids: List<String>): Map<String, EnrichmentOutcome> {
+    /** Legacy entry point: history enrichment (lowest priority). */
+    fun batchEnrichByOrcids(orcids: List<String>): Map<String, EnrichmentOutcome> =
+        batchEnrichByOrcids(orcids, RequestKind.HISTORY_ENRICHMENT)
+
+    fun batchEnrichByOrcids(orcids: List<String>, kind: RequestKind): Map<String, EnrichmentOutcome> {
         if (orcids.isEmpty()) return emptyMap()
 
         val filterValue = orcids.joinToString("|")
@@ -211,7 +263,9 @@ class OpenAlexDataSource(
             if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
 
         val response = try {
-            restTemplate.getForObject(url, JsonNode::class.java)
+            getJson(kind, url)
+        } catch (e: OpenAlexBudgetDeferredException) {
+            throw e
         } catch (e: HttpStatusCodeException) {
             val code = e.statusCode.value()
             if (code == 429 || code == 503) {
@@ -247,7 +301,7 @@ class OpenAlexDataSource(
         for ((index, entry) in foundEntries.withIndex()) {
             val (orcid, node) = entry
             val worksApiUrl = node.path("works_api_url").asText(null)
-            val baseEnrichment = parseAuthorEnrichmentFromNode(node, fetchWorksAndPatents = false)
+            val baseEnrichment = parseAuthorEnrichmentFromNode(node, fetchWorksAndPatents = false, kind = kind)
 
             if (!needsWorksOrPatents || worksApiUrl == null) {
                 results[orcid] = EnrichmentOutcome.Success(baseEnrichment)
@@ -255,11 +309,13 @@ class OpenAlexDataSource(
             }
 
             try {
-                val recentWorkTitles = if (properties.fetchWorksEnabled) fetchRecentWorks(worksApiUrl, 3) else null
-                val patentTitles = if (properties.fetchPatentsEnabled) fetchPatents(worksApiUrl, 3) else null
+                val recentWorkTitles = if (properties.fetchWorksEnabled) fetchRecentWorks(worksApiUrl, 3, kind) else null
+                val patentTitles = if (properties.fetchPatentsEnabled) fetchPatents(worksApiUrl, 3, kind) else null
                 results[orcid] = EnrichmentOutcome.Success(
                     baseEnrichment.copy(recentWorkTitles = recentWorkTitles, patentTitles = patentTitles)
                 )
+            } catch (e: OpenAlexBudgetDeferredException) {
+                throw e
             } catch (e: HttpStatusCodeException) {
                 val code = e.statusCode.value()
                 if (code == 429 || code == 503) {
@@ -280,7 +336,11 @@ class OpenAlexDataSource(
         return orcids.associateWith { results[it] ?: EnrichmentOutcome.NotFound }
     }
 
-    private fun parseAuthorEnrichmentFromNode(node: JsonNode, fetchWorksAndPatents: Boolean): AuthorEnrichment {
+    private fun parseAuthorEnrichmentFromNode(
+        node: JsonNode,
+        fetchWorksAndPatents: Boolean,
+        kind: RequestKind
+    ): AuthorEnrichment {
         val topicsNode = node.path("topics").takeIf { it.isArray }
         val topics = topicsNode
             ?.sortedByDescending { it.path("count").asInt(0) }
@@ -292,8 +352,8 @@ class OpenAlexDataSource(
         val institutionType = node.path("last_known_institutions").firstOrNull()
             ?.path("type")?.asText(null)?.takeIf { it.isNotBlank() }
         val worksUrl = node.path("works_api_url").asText(null)
-        val recentWorkTitles = if (fetchWorksAndPatents && worksUrl != null) fetchRecentWorks(worksUrl, limit = 3) else null
-        val patentTitles = if (fetchWorksAndPatents && worksUrl != null) fetchPatents(worksUrl, limit = 3) else null
+        val recentWorkTitles = if (fetchWorksAndPatents && worksUrl != null) fetchRecentWorks(worksUrl, 3, kind) else null
+        val patentTitles = if (fetchWorksAndPatents && worksUrl != null) fetchPatents(worksUrl, 3, kind) else null
         // I1-1/I1-2：取 works_count > 0 的最大 year；数组顺序不可依赖（CP-1 实测为升序）。
         // I1-3：无该键、空数组、或全部 works_count = 0 时为 null。
         val lastPublicationYear = node.path("counts_by_year")

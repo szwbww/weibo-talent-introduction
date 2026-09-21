@@ -1,7 +1,12 @@
 package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
 import com.weibo.talentintroduction.config.OpenAlexProperties
+import com.weibo.talentintroduction.config.OpenAlexRequestPolicy
+import com.weibo.talentintroduction.config.Permit
+import com.weibo.talentintroduction.config.PolicyTimeSource
+import com.weibo.talentintroduction.config.RequestKind
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -12,11 +17,15 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpServerErrorException
 import org.springframework.web.client.RestTemplate
+import java.time.Instant
 
 class OpenAlexDataSourceTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
@@ -29,7 +38,22 @@ class OpenAlexDataSourceTest {
         requestDelayMs = 0
     )
     private val mapper = ObjectMapper()
-    private val dataSource = OpenAlexDataSource(restTemplate, properties, europePmc, pdfExtractor)
+
+    /** Keeps the shared quota policy off the wall clock so no test pays a real rate-limit sleep. */
+    private class TestTimeSource : PolicyTimeSource {
+        private var nanos: Long = 0
+
+        override fun now(): Instant = Instant.parse("2026-09-21T02:41:17Z")
+
+        override fun nanoTime(): Long = nanos
+
+        override fun sleep(ms: Long) {
+            nanos += ms * 1_000_000L
+        }
+    }
+
+    private val policy = OpenAlexRequestPolicy(properties, TestTimeSource())
+    private val dataSource = OpenAlexDataSource(restTemplate, properties, europePmc, pdfExtractor, policy)
 
     @Test
     fun `searchPapers parses OpenAlex works response`() {
@@ -38,8 +62,8 @@ class OpenAlexDataSourceTest {
         val response = mapper.readTree(sampleJson)
 
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
-        ).thenReturn(response)
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(response))
 
         val criteria = PaperSearchCriteria(keywords = listOf("deep learning"))
         val result = dataSource.searchPapers(criteria)
@@ -77,8 +101,8 @@ class OpenAlexDataSourceTest {
         val response = mapper.readTree(sampleJson)
 
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
-        ).thenReturn(response)
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(response))
 
         val result = dataSource.enrichAuthor("A1234567")
         assertNotNull(result)
@@ -139,10 +163,10 @@ class OpenAlexDataSourceTest {
         val urlCaptor = mutableListOf<String>()
 
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         ).thenAnswer { invocation ->
             urlCaptor.add(invocation.arguments[0] as String)
-            response
+            ResponseEntity.ok(response)
         }
 
         val criteria = PaperSearchCriteria(
@@ -166,10 +190,10 @@ class OpenAlexDataSourceTest {
         val urlCaptor = mutableListOf<String>()
 
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         ).thenAnswer { invocation ->
             urlCaptor.add(invocation.arguments[0] as String)
-            response
+            ResponseEntity.ok(response)
         }
 
         val criteria = PaperSearchCriteria(
@@ -196,10 +220,10 @@ class OpenAlexDataSourceTest {
         val urlCaptor = mutableListOf<String>()
 
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         ).thenAnswer { invocation ->
             urlCaptor.add(invocation.arguments[0] as String)
-            response
+            ResponseEntity.ok(response)
         }
 
         val criteria = PaperSearchCriteria(
@@ -222,7 +246,7 @@ class OpenAlexDataSourceTest {
     @Test
     fun `searchPapers handles API error gracefully`() {
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         ).thenThrow(RuntimeException("API unavailable"))
 
         org.junit.jupiter.api.Assertions.assertThrows(RuntimeException::class.java) { dataSource.searchPapers(PaperSearchCriteria()) }
@@ -231,7 +255,7 @@ class OpenAlexDataSourceTest {
     @Test
     fun `enrichAuthorByOrcidWithReason returns RateLimited on HTTP 429`() {
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         ).thenThrow(
             HttpClientErrorException.create(
                 HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", HttpHeaders(), ByteArray(0), null
@@ -245,7 +269,7 @@ class OpenAlexDataSourceTest {
     @Test
     fun `enrichAuthorByOrcidWithReason returns ApiError on HTTP 500`() {
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         ).thenThrow(
             HttpServerErrorException.create(
                 HttpStatus.INTERNAL_SERVER_ERROR, "Server Error", HttpHeaders(), ByteArray(0), null
@@ -259,7 +283,7 @@ class OpenAlexDataSourceTest {
     @Test
     fun `enrichAuthor rethrows 429 instead of returning null`() {
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         ).thenThrow(
             HttpClientErrorException.create(
                 HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", HttpHeaders(), ByteArray(0), null
@@ -311,8 +335,8 @@ class OpenAlexDataSourceTest {
             }
         """.trimIndent()
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
-        ).thenReturn(mapper.readTree(batchJson))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree(batchJson)))
 
         val orcids = listOf("0000-0001", "0000-0002", "0000-0003", "0000-0004", "0000-0005")
         val outcomes = dataSource.batchEnrichByOrcids(orcids)
@@ -336,7 +360,7 @@ class OpenAlexDataSourceTest {
     @Test
     fun `batchEnrichByOrcids returns RateLimited for all orcids on HTTP 429`() {
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         ).thenThrow(
             HttpClientErrorException.create(
                 HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", HttpHeaders(), ByteArray(0), null
@@ -367,13 +391,15 @@ class OpenAlexDataSourceTest {
             }
         """.trimIndent()
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
-        ).thenReturn(mapper.readTree(batchJson))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree(batchJson)))
 
         dataSource.batchEnrichByOrcids(listOf("0000-0001"))
 
-        Mockito.verify(restTemplate, Mockito.times(1)).getForObject(
+        Mockito.verify(restTemplate, Mockito.times(1)).exchange(
             Mockito.anyString(),
+            Mockito.eq(HttpMethod.GET),
+            Mockito.nullable(HttpEntity::class.java),
             Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
         )
     }
@@ -384,7 +410,8 @@ class OpenAlexDataSourceTest {
             restTemplate,
             properties.copy(fetchWorksEnabled = true),
             europePmc,
-            pdfExtractor
+            pdfExtractor,
+            policy
         )
         val batchJson = """
             {
@@ -405,18 +432,20 @@ class OpenAlexDataSourceTest {
             {"results":[{"title":"Recent Paper"}]}
         """.trimIndent()
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.contains("/authors?"), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
-        ).thenReturn(mapper.readTree(batchJson))
+            restTemplate.exchange(Mockito.contains("/authors?"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree(batchJson)))
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.contains("/works?"), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
-        ).thenReturn(mapper.readTree(worksJson))
+            restTemplate.exchange(Mockito.contains("/works?"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree(worksJson)))
 
         val outcomes = worksEnabledSource.batchEnrichByOrcids(listOf("0000-0001"))
 
         val success = outcomes["0000-0001"] as EnrichmentOutcome.Success
         assertEquals(listOf("Recent Paper"), success.data.recentWorkTitles)
-        Mockito.verify(restTemplate, Mockito.times(2)).getForObject(
+        Mockito.verify(restTemplate, Mockito.times(2)).exchange(
             Mockito.anyString(),
+            Mockito.eq(HttpMethod.GET),
+            Mockito.nullable(HttpEntity::class.java),
             Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
         )
     }
@@ -513,8 +542,8 @@ class OpenAlexDataSourceTest {
 
     private fun stubAuthorEnrichment(json: String) {
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
-        ).thenReturn(mapper.readTree(json))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree(json)))
     }
 
     @Test
@@ -523,7 +552,8 @@ class OpenAlexDataSourceTest {
             restTemplate,
             properties.copy(fetchWorksEnabled = true),
             europePmc,
-            pdfExtractor
+            pdfExtractor,
+            policy
         )
         val batchJson = """
             {
@@ -549,10 +579,10 @@ class OpenAlexDataSourceTest {
             }
         """.trimIndent()
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.contains("/authors?"), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
-        ).thenReturn(mapper.readTree(batchJson))
+            restTemplate.exchange(Mockito.contains("/authors?"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree(batchJson)))
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.contains("/works?"), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+            restTemplate.exchange(Mockito.contains("/works?"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         ).thenThrow(
             HttpClientErrorException.create(
                 HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", HttpHeaders(), ByteArray(0), null
@@ -696,7 +726,68 @@ class OpenAlexDataSourceTest {
 
     private fun stubWorksResponse(json: String) {
         Mockito.`when`(
-            restTemplate.getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
-        ).thenReturn(mapper.readTree(json))
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree(json)))
+    }
+
+    private fun stubJsonWithHeaders(json: String, headers: HttpHeaders) {
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity(mapper.readTree(json), headers, HttpStatus.OK))
+    }
+
+    /** Spends budget through the policy exactly like a real caller: reserve a slot, then reconcile the response. */
+    private fun consumeCredits(requests: Int) {
+        repeat(requests) {
+            assertEquals(Permit.Allowed, policy.beforeRequest(RequestKind.DISCOVERY))
+            policy.recordResponse(HttpHeaders())
+        }
+    }
+
+    @Test
+    fun `searchPapers marks DISCOVERY and reconciles the real quota headers (I-2)`() {
+        val headers = HttpHeaders()
+        headers.set(OpenAlexRequestPolicy.REMAINING_HEADER, "989")
+        headers.set(OpenAlexRequestPolicy.LIMIT_HEADER, "1000")
+        headers.set(OpenAlexRequestPolicy.CREDITS_USED_HEADER, "1")
+        headers.set(OpenAlexRequestPolicy.RESET_HEADER, "76723")
+        stubJsonWithHeaders("""{"meta":{"count":0,"next_cursor":null},"results":[]}""", headers)
+
+        dataSource.searchPapers(PaperSearchCriteria())
+
+        assertEquals(989, policy.remainingCredits())
+        assertEquals(1, policy.listRequestCount())
+    }
+
+    @Test
+    fun `discovery defers on the reserved share while new-expert enrichment still runs (I-3, V-3)`() {
+        consumeCredits(800)
+        val enrichmentJson = """{"works_count":4,"cited_by_count":9,"summary_stats":{"h_index":3},"topics":[]}"""
+        stubAuthorEnrichment(enrichmentJson)
+
+        // New-expert enrichment is the only consumer allowed inside the reserved 20%.
+        assertEquals(3, dataSource.enrichAuthor("A1", RequestKind.NEW_ENRICHMENT)!!.hIndex)
+
+        val deferred = assertThrows(OpenAlexBudgetDeferredException::class.java) {
+            dataSource.searchPapers(PaperSearchCriteria())
+        }
+        assertEquals(Instant.parse("2026-09-22T00:00:00Z"), deferred.resetAt)
+
+        // Legacy backfill callers are history enrichment: lowest priority, never inside the reserve.
+        assertThrows(OpenAlexBudgetDeferredException::class.java) { dataSource.enrichAuthor("A1") }
+        assertThrows(OpenAlexBudgetDeferredException::class.java) { dataSource.batchEnrichByOrcids(listOf("0000-0001")) }
+    }
+
+    @Test
+    fun `a failed call releases its reservation without counting a call (I-2)`() {
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenThrow(RuntimeException("network down"))
+
+        assertThrows(RuntimeException::class.java) { dataSource.searchPapers(PaperSearchCriteria()) }
+
+        assertEquals(999, policy.remainingCredits())
+        assertEquals(0, policy.listRequestCount())
+        assertEquals(Permit.Allowed, policy.beforeRequest(RequestKind.NEW_ENRICHMENT))
     }
 }
