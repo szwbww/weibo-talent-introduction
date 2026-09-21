@@ -1,6 +1,9 @@
 package com.weibo.talentintroduction.discovery.service
 
+import com.weibo.talentintroduction.config.BoundedFulltextHttp
+import com.weibo.talentintroduction.config.BoundedHttpExecutor
 import com.weibo.talentintroduction.config.PdfExtractionProperties
+import com.weibo.talentintroduction.config.SlowHttpServer
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -31,7 +34,22 @@ class PdfEmailExtractorTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
     private val plainTextExtractor = PlainTextEmailExtractor()
     private val properties = PdfExtractionProperties()
-    private val extractor = PdfEmailExtractor(restTemplate, plainTextExtractor, properties)
+    /**
+     * 既有单元测试用 mock [RestTemplate] 直接打桩 `execute`，因此让执行器原样委托给它；
+     * 真正「在飞」的连接/响应头/响应体约束由本文件末尾基于 [BoundedFulltextHttp] 的用例覆盖。
+     */
+    private val passThroughBoundedHttp = object : BoundedHttpExecutor {
+        override fun <T> execute(
+            base: RestTemplate,
+            uri: URI,
+            connectCapMs: Long,
+            readCapMs: Long,
+            remainingMs: Long,
+            responseExtractor: ResponseExtractor<T>
+        ): T? = base.execute(uri, HttpMethod.GET, null, responseExtractor)
+    }
+
+    private val extractor = PdfEmailExtractor(restTemplate, plainTextExtractor, properties, passThroughBoundedHttp)
 
     @Test
     fun `extracts emails from standard PDF`() {
@@ -135,7 +153,8 @@ class PdfEmailExtractorTest {
         val disabledExtractor = PdfEmailExtractor(
             restTemplate,
             plainTextExtractor,
-            PdfExtractionProperties(htmlFallbackEnabled = false)
+            PdfExtractionProperties(htmlFallbackEnabled = false),
+            passThroughBoundedHttp
         )
         val html = "<html><body>jane@uni.edu</body></html>".toByteArray()
         stubPdfDownload(html, MediaType.TEXT_HTML)
@@ -167,7 +186,7 @@ class PdfEmailExtractorTest {
     @Test
     fun `retries download when body read throws recoverable IO then succeeds with HTML`() {
         val retryProperties = PdfExtractionProperties(maxRetries = 2, retryBackoffMs = 0)
-        val retryExtractor = PdfEmailExtractor(restTemplate, plainTextExtractor, retryProperties)
+        val retryExtractor = PdfEmailExtractor(restTemplate, plainTextExtractor, retryProperties, passThroughBoundedHttp)
         val html = "<html><body>retry@test.edu</body></html>".toByteArray()
         var executeCount = 0
 
@@ -205,7 +224,7 @@ class PdfEmailExtractorTest {
     @Test
     fun `does not retry download for non recoverable HTTP error`() {
         val retryProperties = PdfExtractionProperties(maxRetries = 2, retryBackoffMs = 0)
-        val retryExtractor = PdfEmailExtractor(restTemplate, plainTextExtractor, retryProperties)
+        val retryExtractor = PdfEmailExtractor(restTemplate, plainTextExtractor, retryProperties, passThroughBoundedHttp)
 
         Mockito.doThrow(RuntimeException("404 Not Found"))
             .`when`(restTemplate).execute(
@@ -495,5 +514,50 @@ class PdfEmailExtractorTest {
             Mockito.any(),
             Mockito.any(ResponseExtractor::class.java)
         )
+    }
+
+@Test
+    fun `a response header that never arrives is cut off by the remaining budget (R-1, V-4)`() {
+        // V-4：连接超时与响应头读取此前不受单篇共享预算约束（mock 用例证明不了这一点，这里用真 client + 挂起服务端）。
+        SlowHttpServer(SlowHttpServer.Mode.ACCEPT_ONLY).use { server ->
+            val boundedExtractor = PdfEmailExtractor(
+                RestTemplate(), plainTextExtractor,
+                PdfExtractionProperties(downloadTimeoutMs = 30_000, maxRetries = 0),
+                BoundedFulltextHttp
+            )
+            val startedAt = System.nanoTime()
+
+            val outcome = boundedExtractor.extract(
+                "http://127.0.0.1:${server.port}/paper.pdf", emptyList(), "TEST", Instant.now().plusMillis(400)
+            )
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertEquals("PDF_DOWNLOAD_FAILED", outcome.failureReason)
+            assertEquals("TIMEOUT", outcome.downloadFailureCategory)
+            assertEquals(false, outcome.fulltextObtained)
+            assertTrue(elapsedMs < 5_000, "剩余预算 400ms 内必须结束（实际 ${elapsedMs}ms）")
+            assertEquals(1, server.acceptedCount, "有界 client 只发一次请求，不留孤儿重试")
+        }
+    }
+
+    @Test
+    fun `a stalled response body is cut off by the remaining budget (R-1, V-4)`() {
+        SlowHttpServer(SlowHttpServer.Mode.HEADERS_THEN_STALL, bodyPrefix = "%PDF-1.4".toByteArray()).use { server ->
+            val boundedExtractor = PdfEmailExtractor(
+                RestTemplate(), plainTextExtractor,
+                PdfExtractionProperties(downloadTimeoutMs = 30_000, maxRetries = 0),
+                BoundedFulltextHttp
+            )
+            val startedAt = System.nanoTime()
+
+            val outcome = boundedExtractor.extract(
+                "http://127.0.0.1:${server.port}/paper.pdf", emptyList(), "TEST", Instant.now().plusMillis(400)
+            )
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertEquals("TIMEOUT", outcome.downloadFailureCategory)
+            assertEquals(false, outcome.fulltextObtained)
+            assertTrue(elapsedMs < 5_000, "响应体挂起时也必须在剩余预算内结束（实际 ${elapsedMs}ms）")
+        }
     }
 }

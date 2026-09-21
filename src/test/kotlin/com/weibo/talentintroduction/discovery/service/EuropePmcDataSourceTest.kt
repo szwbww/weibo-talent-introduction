@@ -22,6 +22,7 @@ import org.springframework.test.web.client.match.MockRestRequestMatchers
 import org.springframework.test.web.client.response.MockRestResponseCreators
 import org.springframework.web.client.RestTemplate
 import java.net.URI
+import com.weibo.talentintroduction.config.SlowHttpServer
 
 class EuropePmcDataSourceTest {
     private val mapper = ObjectMapper()
@@ -717,5 +718,35 @@ class EuropePmcDataSourceTest {
         assertTrue(result.papers.isNotEmpty(), "Should return at least one paper")
         assertNotNull(result.papers[0].pmcId, "Paper should have pmcId")
         assertNotNull(result.nextCursor, "Should have next cursor for pagination")
+    }
+
+@Test
+    fun `a slow XML response ends as TIMEOUT within the shared budget (R-1, V-4)`() {
+        // V-4：XML 阶段过去只是「发请求前看一眼 deadline」；现在真实请求的连接/读取超时也被剩余预算收紧，
+        // 并且重试在预算耗尽后不再发第二次请求。
+        SlowHttpServer(SlowHttpServer.Mode.ACCEPT_ONLY).use { server ->
+            val props = EuropePmcProperties(
+                baseUrl = "http://127.0.0.1:${server.port}", requestDelayMs = 0, enabled = true,
+                connectTimeoutMs = 30_000, readTimeoutMs = 30_000, maxRetries = 2, retryBackoffMs = 50
+            )
+            val dataSource = EuropePmcDataSource(RestTemplate(), props)
+            val startedAt = System.nanoTime()
+
+            val outcome = dataSource.extractAuthorEmails(
+                PaperMetadata(
+                    pmcId = "PMC9876543", pmid = "1", doi = "10.0/x", title = "T", pubYear = 2024,
+                    journal = "J", authors = emptyList(), source = "EUROPE_PMC"
+                ),
+                java.time.Instant.now().plusMillis(400)
+            )
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertEquals("FULLTEXT_FETCH_FAILED", outcome.failureReason)
+            assertEquals("TIMEOUT", outcome.downloadFailureCategory)
+            assertEquals(1, outcome.httpRequests, "只有一次被预算截断的真实请求；重试被剩余预算挡住")
+            assertTrue(outcome.emails.isEmpty())
+            assertTrue(elapsedMs < 5_000, "剩余预算 400ms + 一次退避内必须结束（实际 ${elapsedMs}ms）")
+            assertEquals(1, server.acceptedCount)
+        }
     }
 }

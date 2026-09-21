@@ -137,6 +137,12 @@ class OpenAlexDataSource(
                     }
                     requests++
                     unpaywallClient.findPdfUrls(doi, deadline).mapNotNullTo(queue) { publicFulltextUrl(it) }
+                    // R-1（V-4）：查询被共享预算截断（客户端按剩余时间中止）且没拿到地址 → 按 TIMEOUT 收口，
+                    // 不再对同一篇发起后续下载。
+                    if (queue.isEmpty() && deadlineExpired(deadline)) {
+                        if (lastFailure == null) lastFailure = timeoutOutcome()
+                        break
+                    }
                 }
                 if (queue.isEmpty()) break
             }

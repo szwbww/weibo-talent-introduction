@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.discovery.service
 
+import com.weibo.talentintroduction.config.BoundedHttpExecutor
 import com.weibo.talentintroduction.config.FetchRetry
+import com.weibo.talentintroduction.config.PDF_DOWNLOAD_CONNECT_TIMEOUT_MS
 import com.weibo.talentintroduction.config.PdfExtractionProperties
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
@@ -10,7 +12,6 @@ import org.apache.pdfbox.text.PDFTextStripper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpHeaders
-import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
 import org.springframework.web.client.HttpStatusCodeException
@@ -28,7 +29,12 @@ class PdfEmailExtractor(
     @Qualifier("pdfDownloadRestTemplate")
     private val restTemplate: RestTemplate,
     private val plainTextExtractor: PlainTextEmailExtractor,
-    private val properties: PdfExtractionProperties
+    private val properties: PdfExtractionProperties,
+    /**
+     * R-1（V-4）：把剩余预算变成一次尝试的连接/读取超时的执行器（生产实现是
+     * [com.weibo.talentintroduction.config.BoundedFulltextHttp]，由 `boundedHttpExecutor` bean 注入）。
+     */
+    private val boundedHttp: BoundedHttpExecutor
 ) {
     private val log = LoggerFactory.getLogger(PdfEmailExtractor::class.java)
     private val magicBytes = byteArrayOf(0x25, 0x50, 0x44, 0x46)
@@ -190,7 +196,13 @@ class PdfEmailExtractor(
         deadline: Instant?,
         onResponseHeaders: ((HttpHeaders) -> Unit)?
     ): DownloadedContent {
-        return restTemplate.execute(uri, HttpMethod.GET, null) { response ->
+        // R-1（V-4）：连接与响应头读取都在同一个剩余预算内 —— 有界 client 的连接/读取超时都取
+        // min(既有配置, 剩余预算)，响应体读取仍由下面的分片 deadline 检查把关，两处都不重新计时。
+        val remainingMs = com.weibo.talentintroduction.config.BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+        return boundedHttp.execute<DownloadedContent>(
+            restTemplate, uri,
+            PDF_DOWNLOAD_CONNECT_TIMEOUT_MS, properties.downloadTimeoutMs, remainingMs
+        ) { response ->
             onResponseHeaders?.invoke(response.headers)
             val contentType = response.headers.contentType
             val isPdfContentType = contentType != null &&

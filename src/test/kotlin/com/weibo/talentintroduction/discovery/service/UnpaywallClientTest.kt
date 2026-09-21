@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.web.client.RestTemplate
+import com.weibo.talentintroduction.config.SlowHttpServer
 
 class UnpaywallClientTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
@@ -144,5 +145,24 @@ class UnpaywallClientTest {
 
         assertEquals(listOf("https://repo.example/ok.pdf"), client.findPdfUrls("10.1234/test", null))
         assertEquals(listOf("https://repo.example/ok.pdf"), client.findPdfUrls("10.1234/test"))
+    }
+
+@Test
+    fun `a slow lookup is cut off by the shared budget and yields no candidates (R-1, V-4)`() {
+        // V-4：Unpaywall 走的是没有配置超时的通用 client，此前查询可以无限等待；现在受单篇共享预算约束。
+        SlowHttpServer(SlowHttpServer.Mode.ACCEPT_ONLY).use { server ->
+            val properties = UnpaywallProperties(
+                baseUrl = "http://127.0.0.1:${server.port}", email = "test@example.com", requestDelayMs = 0
+            )
+            val client = UnpaywallClient(RestTemplate(), properties)
+            val startedAt = System.nanoTime()
+
+            val urls = client.findPdfUrls("10.1234/test", java.time.Instant.now().plusMillis(400))
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertEquals(emptyList<String>(), urls)
+            assertTrue(elapsedMs < 5_000, "剩余预算 400ms 内必须结束（实际 ${elapsedMs}ms）")
+            assertEquals(1, server.acceptedCount, "只发一次查询，不留孤儿重试")
+        }
     }
 }

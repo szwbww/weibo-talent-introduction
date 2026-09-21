@@ -37,6 +37,8 @@ import org.springframework.web.client.ResponseExtractor
 import org.springframework.web.client.RestTemplate
 import java.net.URI
 import java.time.Instant
+import com.weibo.talentintroduction.config.SlowHttpServer
+import com.weibo.talentintroduction.config.UnpaywallProperties
 
 class OpenAlexDataSourceTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
@@ -1089,7 +1091,20 @@ class OpenAlexDataSourceTest {
     fun `a fallback pdf never attaches an identity when the authors are ambiguous (V-1, I-2)`() {
         // 端到端：首选 404、备用 PDF 真的被解析，但同名歧义下不得附带任何学术身份。
         val downloadRestTemplate = Mockito.mock(RestTemplate::class.java)
-        val realExtractor = PdfEmailExtractor(downloadRestTemplate, PlainTextEmailExtractor(), PdfExtractionProperties())
+        val realExtractor = PdfEmailExtractor(
+            downloadRestTemplate, PlainTextEmailExtractor(), PdfExtractionProperties(),
+            // 该用例直接给 mock RestTemplate 打桩 execute：执行器原样委托，行为与既有断言一致。
+            object : com.weibo.talentintroduction.config.BoundedHttpExecutor {
+                override fun <T> execute(
+                    base: RestTemplate,
+                    uri: URI,
+                    connectCapMs: Long,
+                    readCapMs: Long,
+                    remainingMs: Long,
+                    responseExtractor: org.springframework.web.client.ResponseExtractor<T>
+                ): T? = base.execute(uri, org.springframework.http.HttpMethod.GET, null, responseExtractor)
+            }
+        )
         val chainDataSource = OpenAlexDataSource(
             restTemplate, properties, europePmc, realExtractor, unpaywallClient, policy
         )
@@ -1442,5 +1457,30 @@ class OpenAlexDataSourceTest {
         )
 
         assertEquals(EnrichmentOutcome.NotFound, dataSource.enrichAuthorByOrcidWithReason("0000-0001"))
+    }
+
+@Test
+    fun `a lookup cut short by the shared budget reports TIMEOUT and starts no download (R-1, V-4)`() {
+        // 整条链的端到端证据：没有可用 OA 地址、只能问 Unpaywall，而这次查询被同一个 90 秒预算截断 ——
+        // 结果按既有 TIMEOUT 类别上报，且不会对同一篇再发起任何下载。
+        SlowHttpServer(SlowHttpServer.Mode.ACCEPT_ONLY).use { server ->
+            val realUnpaywall = UnpaywallClient(
+                RestTemplate(),
+                UnpaywallProperties(
+                    baseUrl = "http://127.0.0.1:${server.port}", email = "test@example.com", requestDelayMs = 0
+                )
+            )
+            val chain = OpenAlexDataSource(restTemplate, properties, europePmc, pdfExtractor, realUnpaywall, policy)
+            val startedAt = System.nanoTime()
+
+            val outcome = chain.extractAuthorEmails(openAlexPaper(doi = "10.1/x"), Instant.now().plusMillis(400))
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertEquals("TIMEOUT", outcome.downloadFailureCategory)
+            assertEquals(1, outcome.httpRequests, "1 次 Unpaywall 查询（被共享预算截断）")
+            Mockito.verifyNoInteractions(pdfExtractor)
+            assertTrue(elapsedMs < 5_000, "剩余预算 400ms 内必须结束（实际 ${elapsedMs}ms）")
+            assertEquals(1, server.acceptedCount)
+        }
     }
 }

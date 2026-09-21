@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.weibo.talentintroduction.config.BoundedFulltextHttp
 import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.config.FetchRetry
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
@@ -66,20 +67,53 @@ class EuropePmcDataSource(
             log.debug("Europe PMC data source is disabled, returning null")
             return null
         }
+        return (fetchFullTextXml(pmcId, null) as? XmlFetchResult.Bytes)?.payload
+    }
+
+    /** R-1（V-4）：XML 抓取结果 —— 区分「没取到内容」与「预算已尽、根本没发请求」，计数因此不会撒谎。 */
+    private sealed class XmlFetchResult {
+        class Bytes(val payload: ByteArray) : XmlFetchResult()
+        class Failed(val requestsIssued: Int) : XmlFetchResult()
+        class BudgetExhausted(val requestsIssued: Int) : XmlFetchResult()
+    }
+
+    /**
+     * R-1（V-4）：XML 阶段在**同一个**单篇共享预算内完成 —— 已过期不发请求；真实请求的连接/读取超时
+     * 取 `min(既有配置, 当时剩余预算)`，所以一个慢响应（连接、响应头或响应体）都只会被截断到剩余预算，
+     * 不会把调用方拖过总时限；重试前同样重新判断预算，过期即停手（不再发多余请求）。
+     */
+    private fun fetchFullTextXml(pmcId: String, deadline: Instant?): XmlFetchResult {
         val url = "${properties.baseUrl}/$pmcId/fullTextXML"
+        var requestsIssued = 0
         return try {
             if (properties.requestDelayMs > 0) {
+                val remaining = BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+                if (remaining != BoundedFulltextHttp.UNBOUNDED_REMAINING_MS && remaining <= properties.requestDelayMs) {
+                    return XmlFetchResult.BudgetExhausted(requestsIssued)
+                }
                 Thread.sleep(properties.requestDelayMs)
             }
-            FetchRetry.retryOnRecoverableIo(
+            val payload = FetchRetry.retryOnRecoverableIo<ByteArray?>(
                 maxRetries = properties.maxRetries,
                 initialBackoffMs = properties.retryBackoffMs
             ) {
-                restTemplate.getForObject(url, ByteArray::class.java)
+                val remaining = BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+                if (remaining <= 0L) return@retryOnRecoverableIo null
+                requestsIssued++
+                BoundedFulltextHttp.getForObject(
+                    restTemplate, url, ByteArray::class.java,
+                    properties.connectTimeoutMs.toLong(), properties.readTimeoutMs.toLong(), remaining
+                )
             }
+            if (payload == null) XmlFetchResult.BudgetExhausted(requestsIssued) else XmlFetchResult.Bytes(payload)
         } catch (e: Exception) {
             log.debug("Failed to fetch full text XML for {}: {}", pmcId, e.message)
-            null
+            val expired = deadline != null && !Instant.now().isBefore(deadline)
+            if (expired) {
+                XmlFetchResult.BudgetExhausted(requestsIssued)
+            } else {
+                XmlFetchResult.Failed(requestsIssued.coerceAtLeast(1))
+            }
         }
     }
 
@@ -142,9 +176,17 @@ class EuropePmcDataSource(
             )
         }
 
-        val xml = fetchFullTextXml(pmcId)
-        if (xml == null) {
-            return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "FULLTEXT_FETCH_FAILED", httpRequests = 1)
+        val xml = when (val fetched = fetchFullTextXml(pmcId, deadline)) {
+            is XmlFetchResult.Bytes -> fetched.payload
+            is XmlFetchResult.BudgetExhausted -> return EmailExtractionOutcome(
+                emptyList(), emailExtractionMethod, "FULLTEXT_FETCH_FAILED",
+                httpRequests = fetched.requestsIssued, fulltextObtained = false,
+                downloadFailureCategory = FULLTEXT_FAILURE_TIMEOUT
+            )
+            is XmlFetchResult.Failed -> return EmailExtractionOutcome(
+                emptyList(), emailExtractionMethod, "FULLTEXT_FETCH_FAILED",
+                httpRequests = fetched.requestsIssued, fulltextObtained = false
+            )
         }
 
         return try {

@@ -1,22 +1,101 @@
 package com.weibo.talentintroduction.config
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.boot.web.client.RestTemplateBuilder
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.client.ClientHttpRequestInterceptor
+import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.test.web.client.MockRestServiceServer
 import org.springframework.test.web.client.match.MockRestRequestMatchers.anything
 import org.springframework.test.web.client.match.MockRestRequestMatchers.header
 import org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist
 import org.springframework.test.web.client.response.MockRestResponseCreators.withStatus
+import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestTemplate
+import java.net.ServerSocket
+import java.net.Socket
+import java.util.Collections
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class RestTemplateConfigTest {
     private val config = RestTemplateConfig()
+
+    @Test
+    fun `bounded client narrows connect and read timeouts to the remaining budget and never widens them (R-1, V-4)`() {
+        val base = config.restTemplate()
+
+        val bounded = BoundedFulltextHttp.bounded(base, connectCapMs = 5_000, readCapMs = 30_000, remainingMs = 400)
+
+        assertNotSame(base, bounded, "剩余预算更紧时必须换用有界 client")
+        val factory = bounded.requestFactory as SimpleClientHttpRequestFactory
+        assertEquals(400, timeoutField(factory, "connectTimeout"))
+        assertEquals(400, timeoutField(factory, "readTimeout"))
+        // 只可能收紧：配置上限小于剩余预算时按配置值，0 也不退化成「无限等待」
+        assertEquals(400, BoundedFulltextHttp.effectiveTimeoutMs(5_000, 400))
+        assertEquals(5_000, BoundedFulltextHttp.effectiveTimeoutMs(5_000, 600_000))
+        assertEquals(1, BoundedFulltextHttp.effectiveTimeoutMs(5_000, 0))
+    }
+
+    @Test
+    fun `an unbounded budget returns the original client untouched (R-1 compatibility)`() {
+        val base = config.restTemplate()
+
+        assertSame(base, BoundedFulltextHttp.bounded(base, 5_000, 30_000, BoundedFulltextHttp.UNBOUNDED_REMAINING_MS))
+        assertSame(
+            base,
+            BoundedFulltextHttp.bounded(base, Long.MAX_VALUE, Long.MAX_VALUE, BoundedFulltextHttp.UNBOUNDED_REMAINING_MS)
+        )
+        assertTrue(BoundedFulltextHttp.remainingMsOrUnbounded(null) == BoundedFulltextHttp.UNBOUNDED_REMAINING_MS)
+    }
+
+    @Test
+    fun `the bounded client keeps converters, the error handler and non-retry interceptors (R-1 compatibility)`() {
+        val base = config.openAlexRestTemplate(OpenAlexProperties(apiKey = "k"), RestTemplateBuilder())
+
+        val bounded = BoundedFulltextHttp.bounded(base, connectCapMs = 5_000, readCapMs = 30_000, remainingMs = 250)
+
+        assertEquals(base.messageConverters.size, bounded.messageConverters.size)
+        assertSame(base.errorHandler, bounded.errorHandler)
+        assertTrue(bounded.interceptors.any { it is OpenAlexAuthInterceptor }, "认证拦截器必须保留")
+        assertFalse(
+            bounded.interceptors.any { it is RetryingClientHttpRequestInterceptor },
+            "预算被压缩时不得再叠内层重试，否则一次尝试的重试会把调用方拖过总时限"
+        )
+    }
+
+    @Test
+    fun `a response header that never arrives is aborted by the remaining budget (R-1, V-4)`() {
+        SlowHttpServer(SlowHttpServer.Mode.ACCEPT_ONLY).use { server ->
+            val base = config.restTemplate()
+            val startedAt = System.nanoTime()
+
+            assertThrows(ResourceAccessException::class.java) {
+                BoundedFulltextHttp.getForObject(
+                    base, "http://127.0.0.1:${server.port}/slow", com.fasterxml.jackson.databind.JsonNode::class.java,
+                    connectCapMs = 5_000, readCapMs = 30_000, remainingMs = 400
+                )
+            }
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertTrue(elapsedMs < 5_000, "剩余预算 400ms 内必须结束（实际 ${elapsedMs}ms）")
+            assertEquals(1, server.acceptedCount, "有界 client 只发一次请求，不留孤儿重试")
+        }
+    }
+
+    private fun timeoutField(factory: SimpleClientHttpRequestFactory, name: String): Int {
+        val field = SimpleClientHttpRequestFactory::class.java.getDeclaredField(name)
+        field.isAccessible = true
+        return (field.get(factory) as Number).toInt()
+    }
 
     @Test
     fun `shared restTemplate has no interceptors`() {
@@ -133,5 +212,81 @@ class RestTemplateConfigTest {
     fun `openAlexRequestPolicy bean uses the configured budget and key (I-2)`() {
         assertEquals(1_000, config.openAlexRequestPolicy(OpenAlexProperties()).remainingCredits())
         assertEquals(10_000, config.openAlexRequestPolicy(OpenAlexProperties(apiKey = "k")).remainingCredits())
+    }
+}
+
+/**
+ * R-1（V-4）：受控慢响应服务器 —— 证明**已经在飞**的连接、响应头与响应体读取都受剩余预算约束。
+ *
+ * 端口由系统分配；[acceptedCount] 用来断言「预算耗尽后不再发出后续请求 / 不留孤儿重试」。
+ * 线程都是 daemon，关闭后不影响 JVM 退出。
+ */
+internal class SlowHttpServer(
+    private val mode: Mode = Mode.ACCEPT_ONLY,
+    private val bodyPrefix: ByteArray = ByteArray(0)
+) : AutoCloseable {
+
+    enum class Mode {
+        /** 接受连接但一个字节都不回：连接成功、响应头永不返回。 */
+        ACCEPT_ONLY,
+
+        /** 回 200 与响应头（声明较大 Content-Length）后停住：响应体读取中途挂起。 */
+        HEADERS_THEN_STALL
+    }
+
+    private val server = ServerSocket(0)
+    private val closed = AtomicBoolean(false)
+    private val accepted = AtomicInteger(0)
+
+    val port: Int get() = server.localPort
+    val acceptedCount: Int get() = accepted.get()
+
+    init {
+        val acceptor = Thread {
+            while (!closed.get()) {
+                val socket = try {
+                    server.accept()
+                } catch (e: Exception) {
+                    return@Thread
+                }
+                accepted.incrementAndGet()
+                val worker = Thread { serve(socket) }
+                worker.isDaemon = true
+                worker.start()
+            }
+        }
+        acceptor.isDaemon = true
+        acceptor.start()
+    }
+
+    private fun serve(socket: Socket) {
+        try {
+            socket.use { s ->
+                val reader = s.getInputStream().bufferedReader(Charsets.ISO_8859_1)
+                var line = reader.readLine()
+                while (line != null && line.isNotEmpty()) line = reader.readLine()
+                if (mode == Mode.HEADERS_THEN_STALL) {
+                    val out = s.getOutputStream()
+                    out.write(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/pdf\r\nContent-Length: 1048576\r\n\r\n"
+                            .toByteArray(Charsets.ISO_8859_1)
+                    )
+                    if (bodyPrefix.isNotEmpty()) out.write(bodyPrefix)
+                    out.flush()
+                }
+                while (!closed.get()) Thread.sleep(20)
+            }
+        } catch (e: Exception) {
+            // 客户端超时/断开：服务端线程结束即可
+        }
+    }
+
+    override fun close() {
+        closed.set(true)
+        try {
+            server.close()
+        } catch (e: Exception) {
+            // 已经关闭
+        }
     }
 }

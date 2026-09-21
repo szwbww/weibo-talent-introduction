@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.weibo.talentintroduction.config.BoundedFulltextHttp
 import com.weibo.talentintroduction.config.UnpaywallProperties
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
@@ -39,12 +40,25 @@ class UnpaywallClient(
 
         val url = "${properties.baseUrl}/$doi?email=${properties.email}"
         return try {
-            if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
+            if (properties.requestDelayMs > 0) {
+                val remaining = BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+                if (remaining != BoundedFulltextHttp.UNBOUNDED_REMAINING_MS && remaining <= properties.requestDelayMs) {
+                    log.debug("Unpaywall lookup skipped for {}: remaining fulltext budget is shorter than the delay", doi)
+                    return emptyList()
+                }
+                Thread.sleep(properties.requestDelayMs)
+            }
             if (deadlineExpired(deadline)) {
                 log.debug("Unpaywall lookup skipped for {}: shared fulltext deadline expired during the delay", doi)
                 return emptyList()
             }
-            val response = restTemplate.getForObject(url, JsonNode::class.java) ?: return emptyList()
+            // R-1（V-4）：这次查询同样受单篇共享预算约束 —— 连接与读取超时都取 min(既有配置, 剩余预算)。
+            // 通用 client 本身没有配置超时，所以这里只可能变紧：正常（无 deadline）调用走原 client，行为不变。
+            val response = BoundedFulltextHttp.getForObject(
+                restTemplate, url, JsonNode::class.java,
+                UNPAYWALL_CONNECT_TIMEOUT_CAP_MS, UNPAYWALL_READ_TIMEOUT_CAP_MS,
+                BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+            ) ?: return emptyList()
             val urls = LinkedHashSet<String>()
             publicFulltextUrl(response.path("best_oa_location").path("url_for_pdf").asText(null))?.let(urls::add)
 
@@ -64,4 +78,13 @@ class UnpaywallClient(
     /** R-4（V-4）：`null` 表示调用方没有共享时限（保持原有行为）。 */
     private fun deadlineExpired(deadline: Instant?): Boolean =
         deadline != null && !Instant.now().isBefore(deadline)
+
+    private companion object {
+        /**
+         * R-1（V-4）：Unpaywall 走的是通用 client，它今天没有配置任何超时。这里给「既有配置」取
+         * 「不限」这个事实上限，意味着有界 client 只会把超时**收紧**到剩余预算，绝不新增/放宽超时。
+         */
+        const val UNPAYWALL_CONNECT_TIMEOUT_CAP_MS: Long = BoundedFulltextHttp.UNBOUNDED_REMAINING_MS
+        const val UNPAYWALL_READ_TIMEOUT_CAP_MS: Long = BoundedFulltextHttp.UNBOUNDED_REMAINING_MS
+    }
 }
