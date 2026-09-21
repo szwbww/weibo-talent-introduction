@@ -56,10 +56,10 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
-    fun `fresh database migrates through V130`() {
+    fun `fresh database migrates through V131`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("130", flyway.migrate().targetSchemaVersion)
+        assertEquals("131", flyway.migrate().targetSchemaVersion)
     }
 
     @Test
@@ -133,7 +133,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：outbound_attachments_json LONGTEXT NULL（I-1 唯一 absence 形态）。
             assertTrue(connection.columnExists("mail_record", "outbound_attachments_json"))
@@ -175,7 +175,7 @@ class FlywayMigrationIntegrationTest {
     @Test
     fun `V129 widens the material code check to twelve codes without touching stored rows`() {
         migrateToV23AndSeedBase()
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 零数据改写：V129 不建初始行。
             assertEquals(0L, connection.queryLong("SELECT COUNT(*) FROM expert_material_status"))
@@ -272,7 +272,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 新表列/索引/外键契约。
             assertTrue(connection.tableExists("manual_expert_material_upload"))
@@ -429,6 +429,130 @@ class FlywayMigrationIntegrationTest {
     }
 
     @Test
+    fun `V131 creates the enrichment job table on a V130 database leaving existing contacts untouched`() {
+        // A-3/I-4：库停在 V130（含原有联系人）再升到 V131；新表存在、历史行不变、迁移记录只新增一个版本。
+        migrateToV23AndSeedBase()
+        assertEquals("130", flyway(MigrationVersion.fromVersion("130")).migrate().targetSchemaVersion)
+        val contactsBefore = connection().use { connection ->
+            assertFalse(connection.tableExists("expert_academic_enrichment_job"))
+            connection.queryLong("SELECT COUNT(*) FROM expert_contact")
+        }
+        val historyBefore = connection().use { it.queryLong("SELECT COUNT(*) FROM flyway_schema_history") }
+
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
+
+        connection().use { connection ->
+            assertTrue(connection.tableExists("expert_academic_enrichment_job"))
+            assertEquals(contactsBefore, connection.queryLong("SELECT COUNT(*) FROM expert_contact"))
+            assertEquals(
+                historyBefore + 1,
+                connection.queryLong("SELECT COUNT(*) FROM flyway_schema_history")
+            )
+
+            // 列契约（I-1/I-2/I-3）：字段名就是持久化契约，08 消费同一组名字。
+            listOf(
+                "id" to "bigint",
+                "expert_doc_id" to "varchar",
+                "source" to "varchar",
+                "discovery_execution_id" to "bigint",
+                "status" to "varchar",
+                "attempts" to "int",
+                "next_attempt_at" to "datetime",
+                "lease_token" to "varchar",
+                "lease_until" to "datetime",
+                "last_error" to "varchar",
+                "result_json" to "text",
+                "created_at" to "datetime",
+                "updated_at" to "datetime"
+            ).forEach { (column, dataType) ->
+                assertEquals(
+                    dataType,
+                    connection.queryString(columnMeta("expert_academic_enrichment_job", column, "DATA_TYPE")),
+                    column
+                )
+            }
+            // 审计归属列必须可空且无外键（task_execution 有保留期清理）。
+            assertEquals(
+                "YES",
+                connection.queryString(
+                    columnMeta("expert_academic_enrichment_job", "discovery_execution_id", "IS_NULLABLE")
+                )
+            )
+            assertEquals(
+                "1000",
+                connection.queryString(
+                    columnMeta("expert_academic_enrichment_job", "last_error", "CHARACTER_MAXIMUM_LENGTH")
+                )
+            )
+            assertEquals(
+                0L,
+                connection.queryLong(
+                    "SELECT COUNT(*) FROM information_schema.table_constraints " +
+                        "WHERE constraint_schema = DATABASE() " +
+                        "AND table_name = 'expert_academic_enrichment_job' " +
+                        "AND constraint_type = 'FOREIGN KEY'"
+                )
+            )
+
+            // 唯一键（同专家永远一行）+ 队列索引 (status, next_attempt_at, id) + 状态域 CHECK。
+            assertTrue(
+                connection.indexExists("expert_academic_enrichment_job", "uk_expert_academic_enrichment_job_doc")
+            )
+            assertTrue(
+                connection.indexExists("expert_academic_enrichment_job", "idx_expert_academic_enrichment_job_due")
+            )
+            assertTrue(
+                connection.checkConstraintExists(
+                    "expert_academic_enrichment_job",
+                    "chk_expert_academic_enrichment_job_status"
+                )
+            )
+
+            connection.execute(
+                """
+                INSERT INTO expert_academic_enrichment_job
+                    (expert_doc_id, source, status, attempts, next_attempt_at, created_at, updated_at)
+                VALUES ('0000-0002-1825-009X', 'openalex', 'PENDING', 0,
+                        '2026-09-21 10:00:00', '2026-09-21 10:00:00', '2026-09-21 10:00:00')
+                """
+            )
+            // 重复 doc_id 直接被拒（入队幂等的前提）。
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    """
+                    INSERT INTO expert_academic_enrichment_job
+                        (expert_doc_id, source, status, attempts, next_attempt_at, created_at, updated_at)
+                    VALUES ('0000-0002-1825-009X', 'orcid', 'PENDING', 0,
+                            '2026-09-21 10:00:00', '2026-09-21 10:00:00', '2026-09-21 10:00:00')
+                    """
+                )
+            }
+            // 大小写不同的 ES _id 是两个文档（列级 utf8mb4_bin），唯一键不得把它们合并。
+            connection.execute(
+                """
+                INSERT INTO expert_academic_enrichment_job
+                    (expert_doc_id, source, status, attempts, next_attempt_at, created_at, updated_at)
+                VALUES ('0000-0002-1825-009x', 'openalex', 'PENDING', 0,
+                        '2026-09-21 10:00:00', '2026-09-21 10:00:00', '2026-09-21 10:00:00')
+                """
+            )
+            assertEquals(2L, connection.queryLong("SELECT COUNT(*) FROM expert_academic_enrichment_job"))
+            // 状态域之外的值被拒（MySQL 8 真实生效）。
+            assertThrows(SQLException::class.java) {
+                connection.execute(
+                    """
+                    INSERT INTO expert_academic_enrichment_job
+                        (expert_doc_id, source, status, attempts, next_attempt_at, created_at, updated_at)
+                    VALUES ('0000-0002-1825-009Y', 'openalex', 'DONE', 0,
+                            '2026-09-21 10:00:00', '2026-09-21 10:00:00', '2026-09-21 10:00:00')
+                    """
+                )
+            }
+            assertEquals(2L, connection.queryLong("SELECT COUNT(*) FROM expert_academic_enrichment_job"))
+        }
+    }
+
+    @Test
     fun `V123 adds nullable calendar attachment json column leaving history null`() {
         migrateToV23AndSeedBase()
         // V123 之前的旧行：无该列，随迁移升到最新版本。
@@ -444,7 +568,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：calendar_attachment_json LONGTEXT NULL（I-1 唯一 absence 形态）。
             assertTrue(connection.columnExists("mail_record", "calendar_attachment_json"))
@@ -479,7 +603,7 @@ class FlywayMigrationIntegrationTest {
     fun `V124 allows material attached promotion audit trigger`() {
         val flyway = flyway()
         flyway.clean()
-        assertEquals("130", flyway.migrate().targetSchemaVersion)
+        assertEquals("131", flyway.migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals("32", connection.queryString(
                 "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.columns " +
@@ -590,7 +714,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(1L, connection.queryLong(
                 "SELECT COUNT(*) FROM mail_sender_account " +
@@ -697,7 +821,7 @@ class FlywayMigrationIntegrationTest {
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
         }
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_record", "mail_send_attempt_id"))
             assertTrue(connection.tableExists("batch_send_setting"))
@@ -713,7 +837,7 @@ class FlywayMigrationIntegrationTest {
         connection().use { connection ->
             assertFalse(connection.tableExists("admin_user"))
         }
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("admin_user"))
             assertTrue(connection.columnExists("admin_user", "username"))
@@ -748,7 +872,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals(101L, connection.queryLong(
                 "SELECT mail_send_attempt_id FROM mail_record WHERE id = 201"
@@ -794,7 +918,7 @@ class FlywayMigrationIntegrationTest {
         }
 
         flyway().repair()
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.columnExists("mail_send_attempt", "quota_counted"))
         }
@@ -870,7 +994,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 历史值原样保留（I-2/I-3），document_status 迁移前后不变。
             assertEquals(12345L, connection.queryLong(
@@ -986,7 +1110,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("mail_attachment_transfer"))
             listOf(
@@ -1131,7 +1255,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 列契约：uid_validity BIGINT NOT NULL DEFAULT 0
             assertTrue(connection.columnExists("inbound_mail_processing", "uid_validity"))
@@ -1221,7 +1345,7 @@ class FlywayMigrationIntegrationTest {
             assertFalse(connection.tableExists("expert_follow"))
         }
 
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_follow"))
             listOf("username", "expert_contact_id", "created_at").forEach { column ->
@@ -1398,7 +1522,7 @@ class FlywayMigrationIntegrationTest {
             )
         }
 
-        assertEquals("130", flyway().migrate().targetSchemaVersion)
+        assertEquals("131", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             // 头不被覆盖：名称/主题/禁用状态原样；不新增任何块（禁止为原有模板删块/加块）。
             assertEquals(1L, connection.queryLong(
