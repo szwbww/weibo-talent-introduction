@@ -88,3 +88,89 @@ The reviewer inspected the complete 51-file product/test boundary. No product co
 - Live API quota and production behavior were not exercised.
 - Manual A-1 through A-6 remain pending human-only evidence.
 - Verified failure is INITIAL. `repair-p` produced one bounded repair plan covering only V-1 through V-4. No repair execution is authorized until explicit human invocation of the exact `execute-p` path.
+
+## Epoch 2 — 2026-09-21T13:29:37Z
+
+- Master plan: `docs/plans/2026-09-21/00-discovery-enrichment-master.md` (sha256 `b71e3a5c2af7f3b7e2a5a659f7fcab49f81816978e767a7c4d64aec1474ad837`)
+- Governing master identity: sha256 `b71e3a5c2af7f3b7e2a5a659f7fcab49f81816978e767a7c4d64aec1474ad837`; commit `831e6604cf97e7acba005d8f00827659b49ce010`; identity state `CONSISTENT`; amendments N/A.
+- Boundary: `f0c41271fc56d7455e14d28a71d563a5341dfdeb..7312143c484fe00162c8f602b9295f3029ce5588`; post-repair `cd39503b7d6dc0d3fa12a02a226e6995bd2910e7..7312143c484fe00162c8f602b9295f3029ce5588`.
+- Reviewer: `/root/aggregate_rereviewer` (fresh; created after repair commit; no inherited execution context).
+- Result: FAIL
+- Convergence: PROGRESSING
+- Repair artifact/result: `docs/plans/fix/00-discovery-enrichment-master/repair.md` — DRAFT_READY, V-4 only.
+- Repair evidence: DURABLE_HANDOFF at `docs/plans/review/2026-09-21-discovery-enrichment-master/repair-execution.md`; approved through the recorded human `$execute-p` invocation; executor `Main`.
+
+### Fresh Command Evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| c1 OpenAlex policy/config | PASS | exit 0; 23/0/0 |
+| c2 checkpoint/result/service | PASS | exit 0; 138/0/0 |
+| c3 Crossref/arXiv/scope | PASS | exit 0; 37/0/0 |
+| c4 CORE/ORCID/scope | PASS | exit 0; 32/0/0 |
+| c5 revalidation/search/ORCID | PASS | exit 0; 105/0/0 |
+| c6 discovery/worker/controller | PASS | exit 0; 148/0/0 |
+| c7 Flyway/job integration | FAIL — baseline | exit 1; 44 run; V131 job tests 18/0/0; only unchanged V124 FK fixture error |
+| c8 summary/worker/controller | PASS | exit 0; 47/0/0 |
+| c9 discovery/controller/scope | PASS | exit 0; 145/0/0 |
+| c10 fulltext | PASS | exit 0; 217/0/0 |
+| `node --test src/test/js/*.test.js` | PASS | 1037 pass, 0 fail |
+| Full Maven | FAIL — unrelated observation | exit 1; 3694 run, 1 failure, 0 errors, 13 skipped; unchanged 1Hz `UnmatchedInboundAiReplyTurnKnowledgeTest` assertion expected 1, got 2 |
+
+### Master Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| R-1 OpenAlex auth/budget | PASS | c1 green; trusted-origin auth/policy remains. |
+| R-2 recoverable discovery | PASS | c2–c4 green; checkpoint/status/source paging evidence. |
+| R-3 auto enrichment | PASS | c6/c8 green; V-2/V-3 resolved. |
+| R-4 trusted identity | PASS | c5 green. |
+| R-5 fair throughput | PASS | c9 green. |
+| R-6 bounded fulltext | FAIL | V-4 persistent: active XML/Unpaywall calls can exceed the shared 90-second deadline. |
+| M-1 email/dedup/gates/no mail | PASS | No repair-boundary changes to those paths. |
+| M-2 manual enrichment/retry | PASS | c6/c8 green. |
+| M-3 preserve profile/operations | PASS | c5/c6 green. |
+| M-4 default R&D scope/exclusions | PASS | c3/c4/c9 green. |
+| M-5 free/no key exposure/migrations | PASS | No introduced paid/key/migration behavior; literal config-key note remains excluded. |
+| I-1 separate budgets | PASS | c1/c9 green. |
+| I-2 persist before advance/replay | PASS | c2 green. |
+| I-3 true identity/document IDs | PASS | c5 green. |
+| I-4 three-layer write contract | PASS | c6/c8 green. |
+| I-5 honest lifecycle/statistics | PASS | V-2/V-3 repaired; c6/c8/JS green. |
+| I-6 scope/cost containment | PASS | No scope/cost expansion. |
+| 10/I-1 total fulltext deadline | FAIL | V-4. |
+| Full Maven mandatory gate | FAIL | One unrelated flaky timing assertion. |
+| A-1–A-6 | PENDING | Human-only; not simulated. |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | c3 37/0/0; full JVM mock signature fixed. |
+| V-2 | RESOLVED | c8 47/0/0; JS 1037/0; automatic totals/stages render correctly. |
+| V-3 | RESOLVED | c6/c8 green; empty tick due-work probe precedes progress lock. |
+| V-4 | PERSISTENT | `EuropePmcDataSource.kt:145` and `UnpaywallClient.kt:47` issue blocking calls without remaining-time enforcement; unqualified `RestTemplateConfig.kt:47` has no timeout. |
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| c1 O-1 | I-1 | Resolved | c10 wires fulltext quota response recording. |
+| c2 O-1 | I-5 | Non-blocking | No proven source-level mandatory violation. |
+| c3 O-1..O-3 | R-2/M-4 | Non-blocking | Pre-existing/compatibility/deviation notes. |
+| c4 O-1..O-4 | R-2/I-5 | Non-blocking | No new master violation proven. |
+| c6 O-1 | I-4 | Non-blocking | No demonstrated gate regression. |
+| c7 O-1 | I-5 | Baseline | V124 fixture reproduced. |
+| c7 O-2 | I-5 | Non-blocking | Same local-time convention on read/write. |
+| c8 O-1 | I-5 | Resolved | V-2. |
+| c8 O-2 | I-5 | Resolved | V-3. |
+| c9 O-1 | M-5 | Non-blocking | Pre-existing, outside repair boundary. |
+| c10 O-1..O-3 | R-6/I-1 | Non-blocking | URL-cap interpretation/procedural or telemetry notes. |
+| c10 O-4 | R-6 | Persistent | V-4. |
+
+### Boundaries and Next State
+
+- Live quota/production behavior was not exercised.
+- Manual A-1 through A-6 remain pending human-only evidence.
+- Full Maven is red only on the unrelated timing flake; c7 is red only on the base-reproduced V124 fixture.
+- No product code was modified by this review. `repair-p` produced the one bounded V-4 repair plan; execution requires explicit human invocation of its exact `execute-p` path.
