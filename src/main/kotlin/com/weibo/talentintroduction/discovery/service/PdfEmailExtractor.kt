@@ -171,6 +171,10 @@ class PdfEmailExtractor(
                 is SocketTimeoutException -> timedOut = true
                 is SSLException, is CertificateException -> tlsFailure = true
                 is FulltextDeadlineExceededException -> timedOut = true
+                // R-1（V-4）：有界 client 在**绝对** deadline 处截断响应体时抛的类型（含 close() 排空阶段），
+                // 必须与「本下载自己的分片检查」归入同一个既有 TIMEOUT 类别，不能落进 NETWORK_ERROR。
+                is com.weibo.talentintroduction.config.BoundedFulltextHttp.FulltextBodyDeadlineExceededException ->
+                    timedOut = true
             }
             current = current.cause
         }
@@ -198,10 +202,13 @@ class PdfEmailExtractor(
     ): DownloadedContent {
         // R-1（V-4）：连接与响应头读取都在同一个剩余预算内 —— 有界 client 的连接/读取超时都取
         // min(既有配置, 剩余预算)，响应体读取仍由下面的分片 deadline 检查把关，两处都不重新计时。
-        val remainingMs = com.weibo.talentintroduction.config.BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+        // R-1（V-4）：dispatch 前再判一次 —— 预算已尽就不发这次请求（0 请求，不是「发出去再超时」）。
+        if (com.weibo.talentintroduction.config.BoundedFulltextHttp.remainingMsOrUnbounded(deadline) <= 0L) {
+            throw FulltextDeadlineExceededException(requestIssued = false)
+        }
         return boundedHttp.execute<DownloadedContent>(
             restTemplate, uri,
-            PDF_DOWNLOAD_CONNECT_TIMEOUT_MS, properties.downloadTimeoutMs, remainingMs
+            PDF_DOWNLOAD_CONNECT_TIMEOUT_MS, properties.downloadTimeoutMs, deadline
         ) { response ->
             onResponseHeaders?.invoke(response.headers)
             val contentType = response.headers.contentType
@@ -213,10 +220,12 @@ class PdfEmailExtractor(
             val buffer = java.io.ByteArrayOutputStream()
             val chunk = ByteArray(8192)
             var totalRead = 0L
-            var chunksSinceDeadlineCheck = 0
 
             response.body.use { input ->
                 while (true) {
+                    // R-1（V-4）：每次分片读取前后都对照绝对时限 —— 服务端只要在单次读超时前吐一点数据
+                    // 就能让「按次读超时」永远不到期，因此这里必须按绝对 deadline 截断。
+                    if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
                     val n = input.read(chunk)
                     if (n == -1) break
                     totalRead += n
@@ -224,12 +233,7 @@ class PdfEmailExtractor(
                         throw PdfTooLargeException()
                     }
                     buffer.write(chunk, 0, n)
-                    if (++chunksSinceDeadlineCheck >= DEADLINE_CHECK_INTERVAL_CHUNKS) {
-                        chunksSinceDeadlineCheck = 0
-                        if (deadlineExpired(deadline)) {
-                            throw FulltextDeadlineExceededException(requestIssued = true)
-                        }
-                    }
+                    if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
                 }
             }
 
@@ -370,7 +374,5 @@ private class PdfTooLargeException : RuntimeException()
 private class FulltextDeadlineExceededException(val requestIssued: Boolean) :
     RuntimeException("fulltext deadline exceeded")
 
-/** c10（I-1）：为省掉每次 8KB 读取的时钟读取，每 64 个分片（512KB）检查一次共享 deadline。 */
-private const val DEADLINE_CHECK_INTERVAL_CHUNKS = 64
 
 private fun deadlineExpired(deadline: Instant?): Boolean = deadline != null && !Instant.now().isBefore(deadline)

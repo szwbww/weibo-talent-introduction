@@ -39,12 +39,21 @@ class PdfEmailExtractorTest {
      * 真正「在飞」的连接/响应头/响应体约束由本文件末尾基于 [BoundedFulltextHttp] 的用例覆盖。
      */
     private val passThroughBoundedHttp = object : BoundedHttpExecutor {
+        override fun <T : Any> getForObject(
+            base: RestTemplate,
+            url: String,
+            responseType: Class<T>,
+            connectCapMs: Long,
+            readCapMs: Long,
+            deadline: Instant?
+        ): T? = base.getForObject(url, responseType)
+
         override fun <T> execute(
             base: RestTemplate,
             uri: URI,
             connectCapMs: Long,
             readCapMs: Long,
-            remainingMs: Long,
+            deadline: Instant?,
             responseExtractor: ResponseExtractor<T>
         ): T? = base.execute(uri, HttpMethod.GET, null, responseExtractor)
     }
@@ -558,6 +567,27 @@ class PdfEmailExtractorTest {
             assertEquals("TIMEOUT", outcome.downloadFailureCategory)
             assertEquals(false, outcome.fulltextObtained)
             assertTrue(elapsedMs < 5_000, "响应体挂起时也必须在剩余预算内结束（实际 ${elapsedMs}ms）")
+        }
+    }
+
+@Test
+    fun `a trickling PDF body is cut off at the absolute deadline (R-1, V-4)`() {
+        SlowHttpServer(SlowHttpServer.Mode.TRICKLE_BODY, trickleIntervalMs = 20).use { server ->
+            val boundedExtractor = PdfEmailExtractor(
+                RestTemplate(), plainTextExtractor,
+                PdfExtractionProperties(downloadTimeoutMs = 30_000, maxRetries = 0),
+                BoundedFulltextHttp
+            )
+            val startedAt = System.nanoTime()
+
+            val outcome = boundedExtractor.extract(
+                "http://127.0.0.1:${server.port}/paper.pdf", emptyList(), "TEST", Instant.now().plusMillis(500)
+            )
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertEquals("TIMEOUT", outcome.downloadFailureCategory)
+            assertEquals(false, outcome.fulltextObtained)
+            assertTrue(elapsedMs < 5_000, "500ms 预算内必须结束（实际 ${elapsedMs}ms）")
         }
     }
 }

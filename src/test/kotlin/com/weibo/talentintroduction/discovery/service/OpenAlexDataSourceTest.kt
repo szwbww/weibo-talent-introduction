@@ -39,6 +39,7 @@ import java.net.URI
 import java.time.Instant
 import com.weibo.talentintroduction.config.SlowHttpServer
 import com.weibo.talentintroduction.config.UnpaywallProperties
+import com.weibo.talentintroduction.config.BoundedFulltextHttp
 
 class OpenAlexDataSourceTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
@@ -1095,12 +1096,21 @@ class OpenAlexDataSourceTest {
             downloadRestTemplate, PlainTextEmailExtractor(), PdfExtractionProperties(),
             // 该用例直接给 mock RestTemplate 打桩 execute：执行器原样委托，行为与既有断言一致。
             object : com.weibo.talentintroduction.config.BoundedHttpExecutor {
+                override fun <T : Any> getForObject(
+                    base: RestTemplate,
+                    url: String,
+                    responseType: Class<T>,
+                    connectCapMs: Long,
+                    readCapMs: Long,
+                    deadline: Instant?
+                ): T? = base.getForObject(url, responseType)
+
                 override fun <T> execute(
                     base: RestTemplate,
                     uri: URI,
                     connectCapMs: Long,
                     readCapMs: Long,
-                    remainingMs: Long,
+                    deadline: Instant?,
                     responseExtractor: org.springframework.web.client.ResponseExtractor<T>
                 ): T? = base.execute(uri, org.springframework.http.HttpMethod.GET, null, responseExtractor)
             }
@@ -1481,6 +1491,32 @@ class OpenAlexDataSourceTest {
             Mockito.verifyNoInteractions(pdfExtractor)
             assertTrue(elapsedMs < 5_000, "剩余预算 400ms 内必须结束（实际 ${elapsedMs}ms）")
             assertEquals(1, server.acceptedCount)
+        }
+    }
+
+@Test
+    fun `a trickling OA download stops at the deadline and starts no lookup (R-1, V-4)`() {
+        // 端到端：URL 阶段被绝对 deadline 截断后，同一篇不再问 Unpaywall（阶段顺序与「不留后续阶段」都在这里被证明）。
+        SlowHttpServer(SlowHttpServer.Mode.TRICKLE_BODY, trickleIntervalMs = 20).use { server ->
+            val realExtractor = PdfEmailExtractor(
+                RestTemplate(), PlainTextEmailExtractor(),
+                PdfExtractionProperties(downloadTimeoutMs = 30_000, maxRetries = 0),
+                BoundedFulltextHttp
+            )
+            val chain = OpenAlexDataSource(restTemplate, properties, europePmc, realExtractor, unpaywallClient, policy)
+            Mockito.doReturn(true).`when`(unpaywallClient).isConfigured()
+            val startedAt = System.nanoTime()
+
+            val outcome = chain.extractAuthorEmails(
+                openAlexPaper(downloadUrl = "http://127.0.0.1:${server.port}/paper.pdf", doi = "10.1/x"),
+                Instant.now().plusMillis(500)
+            )
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertEquals("TIMEOUT", outcome.downloadFailureCategory)
+            assertEquals(1, outcome.httpRequests)
+            Mockito.verify(unpaywallClient, Mockito.never()).findPdfUrls(Mockito.anyString(), Mockito.any())
+            assertTrue(elapsedMs < 5_000, "500ms 预算内必须结束（实际 ${elapsedMs}ms）")
         }
     }
 }

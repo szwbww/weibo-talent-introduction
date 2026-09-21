@@ -25,6 +25,7 @@ import java.net.Socket
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import org.springframework.http.client.ClientHttpResponse
 
 class RestTemplateConfigTest {
     private val config = RestTemplateConfig()
@@ -33,12 +34,16 @@ class RestTemplateConfigTest {
     fun `bounded client narrows connect and read timeouts to the remaining budget and never widens them (R-1, V-4)`() {
         val base = config.restTemplate()
 
-        val bounded = BoundedFulltextHttp.bounded(base, connectCapMs = 5_000, readCapMs = 30_000, remainingMs = 400)
+        val bounded = BoundedFulltextHttp.bounded(
+            base, connectCapMs = 5_000, readCapMs = 30_000, deadline = java.time.Instant.now().plusMillis(400)
+        )
 
         assertNotSame(base, bounded, "剩余预算更紧时必须换用有界 client")
         val factory = bounded.requestFactory as SimpleClientHttpRequestFactory
-        assertEquals(400, timeoutField(factory, "connectTimeout"))
-        assertEquals(400, timeoutField(factory, "readTimeout"))
+        // 剩余预算是从绝对 deadline 现算的，毫秒取整可能少 1ms；这里断言「不超过预算且两项一致」。
+        val connectTimeout = timeoutField(factory, "connectTimeout")
+        assertEquals(connectTimeout, timeoutField(factory, "readTimeout"))
+        assertTrue(connectTimeout in 300..400, "生效超时必须落在剩余预算内（实际 ${connectTimeout}ms）")
         // 只可能收紧：配置上限小于剩余预算时按配置值，0 也不退化成「无限等待」
         assertEquals(400, BoundedFulltextHttp.effectiveTimeoutMs(5_000, 400))
         assertEquals(5_000, BoundedFulltextHttp.effectiveTimeoutMs(5_000, 600_000))
@@ -49,10 +54,11 @@ class RestTemplateConfigTest {
     fun `an unbounded budget returns the original client untouched (R-1 compatibility)`() {
         val base = config.restTemplate()
 
-        assertSame(base, BoundedFulltextHttp.bounded(base, 5_000, 30_000, BoundedFulltextHttp.UNBOUNDED_REMAINING_MS))
+        assertSame(base, BoundedFulltextHttp.bounded(base, 5_000, 30_000, null))
+        assertSame(base, BoundedFulltextHttp.bounded(base, Long.MAX_VALUE, Long.MAX_VALUE, null))
         assertSame(
             base,
-            BoundedFulltextHttp.bounded(base, Long.MAX_VALUE, Long.MAX_VALUE, BoundedFulltextHttp.UNBOUNDED_REMAINING_MS)
+            BoundedFulltextHttp.bounded(base, 5_000, 30_000, java.time.Instant.now().plusSeconds(3_600))
         )
         assertTrue(BoundedFulltextHttp.remainingMsOrUnbounded(null) == BoundedFulltextHttp.UNBOUNDED_REMAINING_MS)
     }
@@ -61,7 +67,9 @@ class RestTemplateConfigTest {
     fun `the bounded client keeps converters, the error handler and non-retry interceptors (R-1 compatibility)`() {
         val base = config.openAlexRestTemplate(OpenAlexProperties(apiKey = "k"), RestTemplateBuilder())
 
-        val bounded = BoundedFulltextHttp.bounded(base, connectCapMs = 5_000, readCapMs = 30_000, remainingMs = 250)
+        val bounded = BoundedFulltextHttp.bounded(
+            base, connectCapMs = 5_000, readCapMs = 30_000, deadline = java.time.Instant.now().plusMillis(250)
+        )
 
         assertEquals(base.messageConverters.size, bounded.messageConverters.size)
         assertSame(base.errorHandler, bounded.errorHandler)
@@ -80,8 +88,8 @@ class RestTemplateConfigTest {
 
             assertThrows(ResourceAccessException::class.java) {
                 BoundedFulltextHttp.getForObject(
-                    base, "http://127.0.0.1:${server.port}/slow", com.fasterxml.jackson.databind.JsonNode::class.java,
-                    connectCapMs = 5_000, readCapMs = 30_000, remainingMs = 400
+                    base, "http://127.0.0.1:${server.port}/slow", ByteArray::class.java,
+                    connectCapMs = 5_000, readCapMs = 30_000, deadline = java.time.Instant.now().plusMillis(400)
                 )
             }
 
@@ -213,6 +221,75 @@ class RestTemplateConfigTest {
         assertEquals(1_000, config.openAlexRequestPolicy(OpenAlexProperties()).remainingCredits())
         assertEquals(10_000, config.openAlexRequestPolicy(OpenAlexProperties(apiKey = "k")).remainingCredits())
     }
+
+@Test
+    fun `a trickling response body is cut off at the absolute deadline, not per read (R-1, V-4)`() {
+        // V-4 的残余形态：单次 socket 读超时挡不住「每次都在超时前吐一点」的服务端。
+        SlowHttpServer(SlowHttpServer.Mode.TRICKLE_BODY, trickleIntervalMs = 20).use { server ->
+            val base = config.restTemplate()
+            val startedAt = System.nanoTime()
+
+            val thrown = assertThrows(Exception::class.java) {
+                BoundedFulltextHttp.getForObject(
+                    base, "http://127.0.0.1:${server.port}/trickle", ByteArray::class.java,
+                    connectCapMs = 5_000, readCapMs = 30_000, deadline = java.time.Instant.now().plusMillis(500)
+                )
+            }
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertTrue(
+                generateSequence(thrown as Throwable?) { it.cause }
+                    .any { it is BoundedFulltextHttp.FulltextBodyDeadlineExceededException },
+                "细水长流的响应体必须按绝对 deadline 截断（实际异常：${thrown}）"
+            )
+            assertTrue(elapsedMs < 5_000, "500ms 预算内必须结束（实际 ${elapsedMs}ms）")
+            assertEquals(1, server.acceptedCount)
+        }
+    }
+
+    @Test
+    fun `no request is dispatched when no positive budget remains (R-1, V-4)`() {
+        // preflight 判定与真正 dispatch 之间的原子补位：0 预算绝不发出请求（本地服务端 0 次连接）。
+        SlowHttpServer(SlowHttpServer.Mode.ACCEPT_ONLY).use { server ->
+            val base = config.restTemplate()
+
+            assertThrows(BoundedFulltextHttp.NoRemainingBudgetException::class.java) {
+                BoundedFulltextHttp.getForObject(
+                    base, "http://127.0.0.1:${server.port}/never", ByteArray::class.java,
+                    connectCapMs = 5_000, readCapMs = 30_000, deadline = java.time.Instant.now()
+                )
+            }
+
+            assertEquals(0, server.acceptedCount, "预算为 0 时不得 dispatch")
+        }
+    }
+
+    @Test
+    fun `the bounded body stream stops a chunk stream at the deadline (R-1, V-4)`() {
+        val deadline = java.time.Instant.now().plusMillis(600)
+        val chunks = AtomicInteger(0)
+        val delegate = object : java.io.InputStream() {
+            override fun read(): Int = throw UnsupportedOperationException()
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                chunks.incrementAndGet()
+                Thread.sleep(20)
+                java.util.Arrays.fill(b, off, off + 32, 'x'.code.toByte())
+                return 32
+            }
+        }
+        val body = BoundedFulltextHttp.deadlineBoundedStream(delegate, deadline)
+        val startedAt = System.nanoTime()
+
+        assertThrows(BoundedFulltextHttp.FulltextBodyDeadlineExceededException::class.java) {
+            while (true) {
+                if (body.read(ByteArray(32)) == -1) break
+            }
+        }
+
+        val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+        assertTrue(chunks.get() >= 3, "应该在 deadline 之前读到若干分片（实际 ${chunks.get()}）")
+        assertTrue(elapsedMs < 5_000, "600ms 预算内必须结束（实际 ${elapsedMs}ms）")
+    }
 }
 
 /**
@@ -223,7 +300,8 @@ class RestTemplateConfigTest {
  */
 internal class SlowHttpServer(
     private val mode: Mode = Mode.ACCEPT_ONLY,
-    private val bodyPrefix: ByteArray = ByteArray(0)
+    private val bodyPrefix: ByteArray = ByteArray(0),
+    private val trickleIntervalMs: Long = 30
 ) : AutoCloseable {
 
     enum class Mode {
@@ -231,7 +309,13 @@ internal class SlowHttpServer(
         ACCEPT_ONLY,
 
         /** 回 200 与响应头（声明较大 Content-Length）后停住：响应体读取中途挂起。 */
-        HEADERS_THEN_STALL
+        HEADERS_THEN_STALL,
+
+        /**
+         * 回头部后每 [trickleIntervalMs] 毫秒吐一小段数据：每次 socket 读都能及时返回（永远不触发
+         * 单次读超时），但整个响应体可以无限期地「细水长流」下去。
+         */
+        TRICKLE_BODY
     }
 
     private val server = ServerSocket(0)
@@ -265,6 +349,20 @@ internal class SlowHttpServer(
                 val reader = s.getInputStream().bufferedReader(Charsets.ISO_8859_1)
                 var line = reader.readLine()
                 while (line != null && line.isNotEmpty()) line = reader.readLine()
+                if (mode == Mode.TRICKLE_BODY) {
+                    val out = s.getOutputStream()
+                    out.write(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/xml\r\nContent-Length: 1048576\r\n\r\n"
+                            .toByteArray(Charsets.ISO_8859_1)
+                    )
+                    out.flush()
+                    val payload = ByteArray(32) { 'x'.code.toByte() }
+                    while (!closed.get()) {
+                        out.write(payload)
+                        out.flush()
+                        Thread.sleep(trickleIntervalMs)
+                    }
+                }
                 if (mode == Mode.HEADERS_THEN_STALL) {
                     val out = s.getOutputStream()
                     out.write(
@@ -289,4 +387,5 @@ internal class SlowHttpServer(
             // 已经关闭
         }
     }
+
 }

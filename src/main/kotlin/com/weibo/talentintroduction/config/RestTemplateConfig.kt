@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpRequest
+import org.springframework.http.client.ClientHttpRequest
 import org.springframework.http.client.ClientHttpRequestExecution
 import org.springframework.http.client.ClientHttpRequestInterceptor
 import org.springframework.http.client.ClientHttpResponse
@@ -141,15 +142,26 @@ class RestTemplateConfig {
  */
 interface BoundedHttpExecutor {
     /**
-     * 在剩余预算内执行**一次** HTTP GET。连接与读取超时都取 `min(既有配置上限, remainingMs)`，
-     * 因此只会更短；`remainingMs >=` 两项上限时必须原样使用 [base]（未过期 / 无共享时限的调用方行为不变）。
+     * 在单篇共享预算内执行**一次** GET：连接/读取超时取 `min(既有配置上限, 剩余预算)`（只会更短），
+     * 响应体也在同一绝对 [deadline] 内读完。预算不是正数时**绝不 dispatch**。
+     * [deadline] 为 `null`（没有共享时限）或剩余预算不紧于配置时，行为与直接使用 [base] 完全一致。
      */
+    fun <T : Any> getForObject(
+        base: RestTemplate,
+        url: String,
+        responseType: Class<T>,
+        connectCapMs: Long,
+        readCapMs: Long,
+        deadline: Instant?
+    ): T?
+
+    /** 同上，但由调用方自己决定如何消费响应（流式读取等）。 */
     fun <T> execute(
         base: RestTemplate,
         uri: URI,
         connectCapMs: Long,
         readCapMs: Long,
-        remainingMs: Long,
+        deadline: Instant?,
         responseExtractor: ResponseExtractor<T>
     ): T?
 }
@@ -159,8 +171,20 @@ object BoundedFulltextHttp : BoundedHttpExecutor {
     /** 没有共享时限（deadline 为 null）时使用的「不限」预算：此时 [bounded] 直接返回原 client。 */
     const val UNBOUNDED_REMAINING_MS: Long = Long.MAX_VALUE
 
+    /**
+     * R-1（V-4）：preflight 与「真正发请求」之间的原子补位 —— 剩余预算不是正数时**绝不 dispatch**，
+     * 因此不可能出现「刚判定已过期、却又用一个 1 毫秒 client 把请求发出去」的越界请求。
+     */
+    class NoRemainingBudgetException : IllegalStateException("fulltext budget exhausted before dispatch")
+
+    /** R-1（V-4）：响应体读取越过绝对时限（服务端细水长流式响应也会被截断）。 */
+    class FulltextBodyDeadlineExceededException : IllegalStateException("fulltext body exceeded the shared deadline")
+
     /** 0 毫秒在 JDK 客户端里表示「无限等待」，因此生效超时至少 1 毫秒。 */
     private const val MIN_TIMEOUT_MS = 1L
+
+    /** 关闭时排空响应体用的缓冲区大小（排空同样受绝对 deadline 约束）。 */
+    private const val DRAIN_BUFFER_BYTES = 8192
 
     /** deadline 为 null → [UNBOUNDED_REMAINING_MS]；已过期 → 0。 */
     fun remainingMsOrUnbounded(deadline: Instant?): Long =
@@ -173,14 +197,22 @@ object BoundedFulltextHttp : BoundedHttpExecutor {
 
     /**
      * 剩余预算不紧于任何一项配置时返回**同一个** client 实例（零分配、零行为变化）；
-     * 否则返回一个一次性的有界 client：连接/读取超时都不超过剩余预算。
+     * 否则返回一个一次性的有界 client。
+     *
+     * 有界 client 的连接/读取超时都不超过剩余预算，并且它包装了响应体流：**每一次分片读取前后**都对照
+     * 绝对 [deadline]（见 [DeadlineBoundedInputStream]）。单次读超时只能约束「一次阻塞读取」，
+     * 服务端只要在每次读超时前吐一点数据就能让转换器（`getForObject(..., Xxx::class.java)`）永远读不完；
+     * 包装流把这条细水长流也截断在总时限上。预算被压缩时不再挂 [RetryingClientHttpRequestInterceptor]：
+     * 这时候连一次尝试的预算都不够，再叠内层重试就会越过总时限（外层 `FetchRetry` 也会逐次重判 deadline）。
      */
-    fun bounded(base: RestTemplate, connectCapMs: Long, readCapMs: Long, remainingMs: Long): RestTemplate {
+    fun bounded(base: RestTemplate, connectCapMs: Long, readCapMs: Long, deadline: Instant?): RestTemplate {
+        val remainingMs = remainingMsOrUnbounded(deadline)
         if (remainingMs >= connectCapMs && remainingMs >= readCapMs) return base
-        val factory = SimpleClientHttpRequestFactory().apply {
-            setConnectTimeout(effectiveTimeoutMs(connectCapMs, remainingMs))
-            setReadTimeout(effectiveTimeoutMs(readCapMs, remainingMs))
-        }
+        val factory = DeadlineBoundedRequestFactory(
+            connectTimeoutMs = effectiveTimeoutMs(connectCapMs, remainingMs),
+            readTimeoutMs = effectiveTimeoutMs(readCapMs, remainingMs),
+            deadline = deadline
+        )
         val bounded = RestTemplate(factory)
         bounded.messageConverters.clear()
         bounded.messageConverters.addAll(base.messageConverters)
@@ -189,24 +221,115 @@ object BoundedFulltextHttp : BoundedHttpExecutor {
         return bounded
     }
 
-    fun <T : Any> getForObject(
+    override fun <T : Any> getForObject(
         base: RestTemplate,
         url: String,
         responseType: Class<T>,
         connectCapMs: Long,
         readCapMs: Long,
-        remainingMs: Long
-    ): T? = bounded(base, connectCapMs, readCapMs, remainingMs).getForObject(url, responseType)
+        deadline: Instant?
+    ): T? {
+        requirePositiveBudget(deadline)
+        return bounded(base, connectCapMs, readCapMs, deadline).getForObject(url, responseType)
+    }
 
     override fun <T> execute(
         base: RestTemplate,
         uri: URI,
         connectCapMs: Long,
         readCapMs: Long,
-        remainingMs: Long,
+        deadline: Instant?,
         responseExtractor: ResponseExtractor<T>
-    ): T? = bounded(base, connectCapMs, readCapMs, remainingMs)
-        .execute(uri, HttpMethod.GET, null, responseExtractor)
+    ): T? {
+        requirePositiveBudget(deadline)
+        return bounded(base, connectCapMs, readCapMs, deadline)
+            .execute(uri, HttpMethod.GET, null, responseExtractor)
+    }
+
+    /** R-1（V-4）：把任意响应体流包成「绝对 [deadline] 内可读」的流（有界 client 内部使用，测试直接验证它）。 */
+    fun deadlineBoundedStream(delegate: java.io.InputStream, deadline: Instant?): java.io.InputStream =
+        DeadlineBoundedInputStream(delegate, deadline)
+
+    /** R-1（V-4）：dispatch 前的最后一次判定，0 或负预算一律不发请求。 */
+    private fun requirePositiveBudget(deadline: Instant?) {
+        if (remainingMsOrUnbounded(deadline) <= 0L) throw NoRemainingBudgetException()
+    }
+
+    /** 只把「响应体流」包上绝对 deadline，其余客户端行为（超时、转换器、错误处理）保持不变。 */
+    private class DeadlineBoundedRequestFactory(
+        connectTimeoutMs: Int,
+        readTimeoutMs: Int,
+        private val deadline: Instant?
+    ) : SimpleClientHttpRequestFactory() {
+
+        init {
+            setConnectTimeout(connectTimeoutMs)
+            setReadTimeout(readTimeoutMs)
+        }
+
+        override fun createRequest(uri: URI, httpMethod: HttpMethod): ClientHttpRequest {
+            val delegate = super.createRequest(uri, httpMethod)
+            return object : ClientHttpRequest by delegate {
+                override fun execute(): ClientHttpResponse {
+                    val response = delegate.execute()
+                    return object : ClientHttpResponse by response {
+                        override fun getBody(): java.io.InputStream =
+                            DeadlineBoundedInputStream(response.body, deadline)
+
+                        /**
+                         * R-1（V-4）：Spring 的 `SimpleClientHttpResponse.close()` 会用**无界的原流**把剩余响应体
+                         * 排空，好把连接还给连接池 —— 遇到细水长流的服务端，这一步同样等于无限等待（调用方已经
+                         * 拿到结果也回不去）。这里改成同样受绝对 [deadline] 约束的排空：能在时限内排空就照旧复用
+                         * 连接，排不空就直接关掉原流、放弃本次复用。
+                         */
+                        override fun close() {
+                            try {
+                                val bounded = DeadlineBoundedInputStream(response.body, deadline)
+                                val sink = ByteArray(DRAIN_BUFFER_BYTES)
+                                while (bounded.read(sink) != -1) {
+                                    // 排空剩余响应体（丢弃），只是为了让连接可复用
+                                }
+                                response.close()
+                            } catch (e: Exception) {
+                                runCatching { response.body.close() }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** R-1（V-4）：每次读取前后对照绝对 deadline —— 细水长流也读不过总时限。 */
+    private class DeadlineBoundedInputStream(
+        private val delegate: java.io.InputStream,
+        private val deadline: Instant?
+    ) : java.io.InputStream() {
+
+        override fun read(): Int {
+            checkDeadline()
+            val value = delegate.read()
+            checkDeadline()
+            return value
+        }
+
+        override fun read(b: ByteArray, off: Int, len: Int): Int {
+            checkDeadline()
+            val count = delegate.read(b, off, len)
+            checkDeadline()
+            return count
+        }
+
+        override fun available(): Int = delegate.available()
+
+        override fun close() = delegate.close()
+
+        private fun checkDeadline() {
+            if (deadline != null && !Instant.now().isBefore(deadline)) {
+                throw FulltextBodyDeadlineExceededException()
+            }
+        }
+    }
 }
 
 /**

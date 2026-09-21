@@ -52,12 +52,17 @@ class UnpaywallClient(
                 log.debug("Unpaywall lookup skipped for {}: shared fulltext deadline expired during the delay", doi)
                 return emptyList()
             }
-            // R-1（V-4）：这次查询同样受单篇共享预算约束 —— 连接与读取超时都取 min(既有配置, 剩余预算)。
-            // 通用 client 本身没有配置超时，所以这里只可能变紧：正常（无 deadline）调用走原 client，行为不变。
+            // R-1（V-4）：这次查询同样受单篇共享预算约束 —— 连接与读取超时都取 min(既有配置, 剩余预算)，
+            // 响应体也在绝对时限内读完（细水长流的 JSON 同样会被截断）。通用 client 今天没有配置超时，
+            // 所以这里只可能变紧：正常（无 deadline）调用走原 client，行为不变。
+            val remainingMs = BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+            if (remainingMs <= 0L) {
+                log.debug("Unpaywall lookup skipped for {}: no positive fulltext budget left before dispatch", doi)
+                return emptyList()
+            }
             val response = BoundedFulltextHttp.getForObject(
                 restTemplate, url, JsonNode::class.java,
-                UNPAYWALL_CONNECT_TIMEOUT_CAP_MS, UNPAYWALL_READ_TIMEOUT_CAP_MS,
-                BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
+                UNPAYWALL_CONNECT_TIMEOUT_CAP_MS, UNPAYWALL_READ_TIMEOUT_CAP_MS, deadline
             ) ?: return emptyList()
             val urls = LinkedHashSet<String>()
             publicFulltextUrl(response.path("best_oa_location").path("url_for_pdf").asText(null))?.let(urls::add)

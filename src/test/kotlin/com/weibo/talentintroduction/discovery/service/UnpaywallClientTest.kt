@@ -165,4 +165,35 @@ class UnpaywallClientTest {
             assertEquals(1, server.acceptedCount, "只发一次查询，不留孤儿重试")
         }
     }
+
+@Test
+    fun `a trickling lookup body is cut off at the shared deadline (R-1, V-4)`() {
+        SlowHttpServer(SlowHttpServer.Mode.TRICKLE_BODY, trickleIntervalMs = 20).use { server ->
+            val properties = UnpaywallProperties(
+                baseUrl = "http://127.0.0.1:${server.port}", email = "test@example.com", requestDelayMs = 0
+            )
+            val client = UnpaywallClient(RestTemplate(), properties)
+            val startedAt = System.nanoTime()
+
+            val urls = client.findPdfUrls("10.1234/test", java.time.Instant.now().plusMillis(500))
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertEquals(emptyList<String>(), urls)
+            assertTrue(elapsedMs < 5_000, "500ms 预算内必须结束（实际 ${elapsedMs}ms）")
+            assertEquals(1, server.acceptedCount)
+        }
+    }
+
+    @Test
+    fun `no lookup is dispatched when no positive budget remains (R-1, V-4)`() {
+        SlowHttpServer(SlowHttpServer.Mode.ACCEPT_ONLY).use { server ->
+            val properties = UnpaywallProperties(
+                baseUrl = "http://127.0.0.1:${server.port}", email = "test@example.com", requestDelayMs = 0
+            )
+            val client = UnpaywallClient(RestTemplate(), properties)
+
+            assertEquals(emptyList<String>(), client.findPdfUrls("10.1234/test", java.time.Instant.now()))
+            assertEquals(0, server.acceptedCount, "预算已尽时不得 dispatch")
+        }
+    }
 }

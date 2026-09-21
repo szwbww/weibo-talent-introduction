@@ -749,4 +749,31 @@ class EuropePmcDataSourceTest {
             assertEquals(1, server.acceptedCount)
         }
     }
+
+@Test
+    fun `a trickling XML body is cut off at the shared deadline (R-1, V-4)`() {
+        // V-4 残余形态：服务端每次都在读超时前吐一点数据 —— 只有绝对 deadline 能截断它。
+        SlowHttpServer(SlowHttpServer.Mode.TRICKLE_BODY, trickleIntervalMs = 20).use { server ->
+            val props = EuropePmcProperties(
+                baseUrl = "http://127.0.0.1:${server.port}", requestDelayMs = 0, enabled = true,
+                connectTimeoutMs = 30_000, readTimeoutMs = 30_000, maxRetries = 2, retryBackoffMs = 50
+            )
+            val dataSource = EuropePmcDataSource(RestTemplate(), props)
+            val startedAt = System.nanoTime()
+
+            val outcome = dataSource.extractAuthorEmails(
+                PaperMetadata(
+                    pmcId = "PMC9876543", pmid = "1", doi = "10.0/x", title = "T", pubYear = 2024,
+                    journal = "J", authors = emptyList(), source = "EUROPE_PMC"
+                ),
+                java.time.Instant.now().plusMillis(500)
+            )
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertEquals("TIMEOUT", outcome.downloadFailureCategory)
+            assertEquals(1, outcome.httpRequests, "只有一次被预算截断的请求；细水长流的重试也被预算挡住")
+            assertTrue(elapsedMs < 5_000, "500ms 预算内必须结束（实际 ${elapsedMs}ms）")
+            assertEquals(1, server.acceptedCount)
+        }
+    }
 }

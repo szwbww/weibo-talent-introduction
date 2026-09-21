@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
 import org.springframework.web.util.UriComponentsBuilder
-import java.net.URI
 import java.time.Instant
 
 @Service
@@ -100,9 +99,11 @@ class EuropePmcDataSource(
                 val remaining = BoundedFulltextHttp.remainingMsOrUnbounded(deadline)
                 if (remaining <= 0L) return@retryOnRecoverableIo null
                 requestsIssued++
+                // R-1（V-4）：连接/读取超时取 min(既有配置, 剩余预算)，响应体也在同一个绝对 deadline
+                // 内读完 —— 细水长流的 XML 会被截断，而不是永远读下去。
                 BoundedFulltextHttp.getForObject(
                     restTemplate, url, ByteArray::class.java,
-                    properties.connectTimeoutMs.toLong(), properties.readTimeoutMs.toLong(), remaining
+                    properties.connectTimeoutMs.toLong(), properties.readTimeoutMs.toLong(), deadline
                 )
             }
             if (payload == null) XmlFetchResult.BudgetExhausted(requestsIssued) else XmlFetchResult.Bytes(payload)
