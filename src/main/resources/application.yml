@@ -220,7 +220,8 @@ talent-introduction:
       request-delay-ms: ${UNPAYWALL_REQUEST_DELAY_MS:200}
     arxiv:
       enabled: ${ARXIV_ENABLED:true}
-      base-url: ${ARXIV_BASE_URL:http://export.arxiv.org/api}
+      # I-2: 官方 http 入口实测返回 301 空体；此默认值覆盖 ArxivProperties 的默认值，两处必须同为 https。
+      base-url: ${ARXIV_BASE_URL:https://export.arxiv.org/api}
       request-delay-ms: ${ARXIV_REQUEST_DELAY_MS:3000}
       max-papers-per-source: ${ARXIV_MAX_PAPERS:800}
     pdf-extraction:

@@ -39,6 +39,17 @@ object SubjectScopeCatalog {
     private val RND_TARGET_CORE_KEYWORDS =
         listOf("engineering", "materials", "computer science", "chemical", "energy", "physics")
 
+    /**
+     * RND_TARGET 的主题词（可喂给 Crossref `query`）。
+     * Crossref REST API 没有学科过滤器，`query` 是相关性排序的自由文本检索，
+     * 多个主题词以空格拼接即等价于「这些主题词之一」，用于让默认研发检索带上领域指向，
+     * 而不是无条件下发 filter-only 全领域抓取（I-3）。操作端关键词仍然优先，见 CrossrefDataSource。
+     * 顺序与内容逐字锚定在 SubjectScopeCatalogTest。
+     */
+    private val RND_TARGET_CROSSREF_QUERIES = listOf(
+        "engineering", "materials science", "computer science", "chemical engineering", "energy", "physics"
+    )
+
     /** 返回追加到 OpenAlex `buildFilter` `parts` 的片段列表；null 或未知 scope 返回空列表（I4-2）。 */
     fun openAlexFilterParts(scope: String?): List<String> = when (scope) {
         RND_TARGET -> listOf("primary_topic.field.id:${RND_TARGET_OPENALEX_FIELD_IDS.joinToString("|")}")
@@ -54,6 +65,15 @@ object SubjectScopeCatalog {
     /** 返回可喂给 CORE `q` 的主题词；null 或未知 scope 返回空列表（I4-2）。本轮不接线（见 RND_TARGET_CORE_KEYWORDS 注释）。 */
     fun coreKeywords(scope: String?): List<String> = when (scope) {
         RND_TARGET -> RND_TARGET_CORE_KEYWORDS
+        else -> emptyList()
+    }
+
+    /**
+     * 返回可喂给 Crossref `query` 的主题词；null 或未知 scope 返回空列表（I-3/I4-2）。
+     * 空列表是「保持改动前的无 query 行为」的唯一信号，调用方不得把空列表翻译成 `all:*` 之类的新查询。
+     */
+    fun crossrefQueries(scope: String?): List<String> = when (scope) {
+        RND_TARGET -> RND_TARGET_CROSSREF_QUERIES
         else -> emptyList()
     }
 

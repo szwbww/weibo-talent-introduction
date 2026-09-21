@@ -13,8 +13,18 @@ class SubjectScopeCatalogTest {
             assertEquals(emptyList<String>(), SubjectScopeCatalog.openAlexFilterParts(scope))
             assertEquals(emptyList<String>(), SubjectScopeCatalog.arxivCategories(scope))
             assertEquals(emptyList<String>(), SubjectScopeCatalog.coreKeywords(scope))
+            assertEquals(emptyList<String>(), SubjectScopeCatalog.crossrefQueries(scope))
             assertEquals(emptySet<String>(), SubjectScopeCatalog.excludedSources(scope))
         }
+    }
+
+    @Test
+    fun `crossrefQueries RND_TARGET is the locked topic list`() {
+        // Crossref 没有学科过滤器，默认研发检索只能靠主题词收窄；逐字锚定，防止日后的主题漂移无人察觉。
+        assertEquals(
+            listOf("engineering", "materials science", "computer science", "chemical engineering", "energy", "physics"),
+            SubjectScopeCatalog.crossrefQueries(SubjectScopeCatalog.RND_TARGET)
+        )
     }
 
     @Test
@@ -48,6 +58,8 @@ class SubjectScopeCatalogTest {
                 "arxivCategories must have a branch for scope '$scope'")
             assertTrue(SubjectScopeCatalog.coreKeywords(scope).isNotEmpty(),
                 "coreKeywords must have a branch for scope '$scope'")
+            assertTrue(SubjectScopeCatalog.crossrefQueries(scope).isNotEmpty(),
+                "crossrefQueries must have a branch for scope '$scope'")
             assertTrue(SubjectScopeCatalog.excludedSources(scope).isNotEmpty(),
                 "excludedSources must have a branch for scope '$scope'")
         }

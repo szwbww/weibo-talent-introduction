@@ -7,10 +7,12 @@ import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
+import org.springframework.web.util.UriComponentsBuilder
 import java.net.URLEncoder
 
 @Service
@@ -36,10 +38,14 @@ class CrossrefDataSource(
     override val maxPapersPerSource get() = properties.maxPapersPerSource
 
     override fun searchPapers(criteria: PaperSearchCriteria): PaperSearchResult {
+        // I-3: 操作端关键词永远优先；没有关键词时才用目录里的研发主题词，
+        // scope 为 null/未知时目录返回空列表，保持改动前的「无 query 参数」行为。
         val keywordQuery = if (criteria.keywords.isNotEmpty()) {
             criteria.keywords.joinToString(" ") { it }
         } else {
-            null
+            SubjectScopeCatalog.crossrefQueries(criteria.subjectScope)
+                .takeIf { it.isNotEmpty() }
+                ?.joinToString(" ")
         }
 
         val filterParts = mutableListOf<String>()
@@ -49,22 +55,23 @@ class CrossrefDataSource(
 
         val filter = filterParts.joinToString(",")
 
-        val urlBuilder = StringBuilder("${properties.baseUrl}/works")
-        val params = mutableListOf<String>()
-        if (keywordQuery != null) {
-            params.add("query=${URLEncoder.encode(keywordQuery, "UTF-8")}")
-        }
-        params.add("filter=${URLEncoder.encode(filter, "UTF-8")}")
-        params.add("rows=${criteria.pageSize}")
-        params.add("cursor=${criteria.cursor ?: "*"}")
+        // I-1/V-1: 每个参数按组件编码恰好一次，随后以「已编码」状态交给 UriComponentsBuilder，
+        // 最后只把 URI 对象交给 RestTemplate。绝不能预编码后走 String 重载：那会把 `%` 当模板再编码一次，
+        // 远端收到字面 %3A/%2C 后返回 400（2026-09-21 生产故障根因）。
+        // URLEncoder 的 form 语义与 Crossref（servlet 侧）的解码互逆：空格→`+`、`+`→`%2B`、`:`→`%3A`、`%`→`%25`。
+        val builder = UriComponentsBuilder.fromHttpUrl("${properties.baseUrl}/works")
+        if (keywordQuery != null) builder.queryParam("query", encodeComponent(keywordQuery))
+        builder.queryParam("filter", encodeComponent(filter))
+        builder.queryParam("rows", encodeComponent(criteria.pageSize.toString()))
+        builder.queryParam("cursor", encodeComponent(criteria.cursor ?: "*"))
         if (properties.politeEmail.isNotBlank()) {
-            params.add("mailto=${URLEncoder.encode(properties.politeEmail, "UTF-8")}")
+            builder.queryParam("mailto", encodeComponent(properties.politeEmail))
         }
-        urlBuilder.append("?").append(params.joinToString("&"))
+        val uri = builder.build(true).toUri()
 
         val response = try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            restTemplate.getForObject(urlBuilder.toString(), JsonNode::class.java)
+            restTemplate.getForObject(uri, JsonNode::class.java)
         } catch (e: Exception) {
             log.error("Crossref search failed: {}", e.message)
             throw e
@@ -72,6 +79,9 @@ class CrossrefDataSource(
 
         return parseResponse(response)
     }
+
+    /** I-1：单个查询参数值的唯一编码点。调用方不得再编码，也不得把结果拼进 URI 模板字符串。 */
+    private fun encodeComponent(value: String): String = URLEncoder.encode(value, "UTF-8")
 
     override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome {
         val doi = paper.doi
