@@ -179,23 +179,16 @@ class PdfEmailExtractor(
         }
 
         return emails.map { email ->
-            val localPart = email.substringBefore("@").lowercase()
-            val matchedAuthor = knownAuthors.firstOrNull { author ->
-                val family = author.familyNames?.lowercase()?.takeIf { it.isNotBlank() } ?: return@firstOrNull false
-                val given = author.givenNames?.lowercase()?.takeIf { it.isNotBlank() } ?: ""
-                localPart.contains(family) || (given.isNotBlank() && localPart.contains(given)) ||
-                    localPart.contains(family.take(1)) || (given.isNotBlank() && localPart.contains(given.take(1)))
-            }
-            if (matchedAuthor != null) {
-                AuthorEmail(email, matchedAuthor.givenNames, matchedAuthor.familyNames,
-                    matchedAuthor.isCorresponding, matchedAuthor.affiliation, matchedAuthor.orcidId,
-                    matchedAuthor.institutionType)
-            } else if (knownAuthors.size == 1 && emails.size == 1) {
-                val sole = knownAuthors[0]
-                AuthorEmail(email, sole.givenNames, sole.familyNames,
-                    sole.isCorresponding, sole.affiliation, sole.orcidId, sole.institutionType)
-            } else {
+            val verified = verifiedAuthorFor(email, knownAuthors, emails.size)
+            if (verified == null) {
                 AuthorEmail(email, null, null, false, null, null)
+            } else {
+                AuthorEmail(
+                    email = email, givenNames = verified.givenNames, familyNames = verified.familyNames,
+                    isCorresponding = verified.isCorresponding, affiliation = verified.affiliation,
+                    orcidId = verified.orcidId, institutionType = verified.institutionType,
+                    openAlexAuthorId = verified.openAlexAuthorId
+                )
             }
         }.also { results ->
             val unmatched = knownAuthors.filter { author ->
@@ -207,5 +200,32 @@ class PdfEmailExtractor(
         }
     }
 }
+
+/**
+ * I-2: 文本挖掘出来的邮箱只有在本地部分同时含「姓」与「名」（完整姓名组合）时才算强证据。
+ * 首字母、单姓、单名都不足以绑定学术身份 —— 曾用 `localPart.contains(family.take(1))` 兜底，
+ * 会把甲的邮箱绑到乙的 ORCID/作者ID 上。
+ */
+internal fun hasStrongEmailNameEvidence(email: String, author: PaperAuthor): Boolean {
+    val localPart = normalizeNameToken(email.substringBefore("@")) ?: return false
+    val family = normalizeNameToken(author.familyNames) ?: return false
+    val given = normalizeNameToken(author.givenNames) ?: return false
+    return localPart.contains(family) && localPart.contains(given)
+}
+
+/**
+ * I-2: 邮箱 → 作者的唯一归属。多个作者同时命中（共享首字母、同名、姓氏子串）或证据不足时返回 null：
+ * 调用方保留邮箱线索，但不携带任何学术身份。唯一作者且唯一邮箱是明确无歧义、允许的归属。
+ */
+internal fun verifiedAuthorFor(email: String, authors: List<PaperAuthor>, emailCount: Int): PaperAuthor? {
+    val matches = authors.filter { hasStrongEmailNameEvidence(email, it) }
+    return matches.singleOrNull() ?: authors.singleOrNull()?.takeIf { emailCount == 1 }
+}
+
+/** 姓名/邮箱本地部分的比较单位：小写字母数字，且至少两个字符（单字符姓名不构成证据）。 */
+private const val MIN_NAME_TOKEN_LENGTH = 2
+
+private fun normalizeNameToken(value: String?): String? =
+    value?.lowercase()?.filter { it.isLetterOrDigit() }?.takeIf { it.length >= MIN_NAME_TOKEN_LENGTH }
 
 private class PdfTooLargeException : RuntimeException()

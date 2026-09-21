@@ -7,6 +7,10 @@ import com.weibo.talentintroduction.config.OpenAlexRequestPolicy
 import com.weibo.talentintroduction.config.Permit
 import com.weibo.talentintroduction.config.PolicyTimeSource
 import com.weibo.talentintroduction.config.RequestKind
+import com.weibo.talentintroduction.discovery.domain.AuthorEmail
+import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
+import com.weibo.talentintroduction.discovery.domain.PaperAuthor
+import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -723,6 +727,107 @@ class OpenAlexDataSourceTest {
         )
         assertNull(dataSource.enrichAuthor("A1")!!.institutionType)
     }
+
+    @Test
+    fun `searchPapers keeps the OpenAlex author id of every authorship (I-1)`() {
+        // I-1: 作者 ID 随作者对象保留（规范为 A+数字），但绝不参与 ES _id / orcidId 语义。
+        stubWorksResponse(
+            """
+            {
+              "meta": {"count": 1, "next_cursor": null},
+              "results": [{
+                "id": "https://openalex.org/W1",
+                "authorships": [
+                  {"author": {"id": "https://openalex.org/A5023888391", "display_name": "John Smith",
+                              "orcid": "https://orcid.org/0000-0001-2345-6789"},
+                   "institutions": [{"display_name": "University of Oxford", "type": "education"}],
+                   "is_corresponding": true},
+                  {"author": {"id": "A5086928770", "display_name": "Alice Jones"}, "institutions": []},
+                  {"author": {"id": "https://openalex.org/W9", "display_name": "Bob NoId"}, "institutions": []}
+                ]
+              }]
+            }
+            """.trimIndent()
+        )
+
+        val authors = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors
+
+        assertEquals("A5023888391", authors[0].openAlexAuthorId)
+        assertEquals("A5086928770", authors[1].openAlexAuthorId)
+        assertNull(authors[2].openAlexAuthorId, "非 A+数字 的 ID 不得被当作者身份保留")
+    }
+
+    @Test
+    fun `PMC extraction attaches the OpenAlex author id on an exact ORCID match (I-2)`() {
+        val paper = pmcPaper(
+            listOf(
+                PaperAuthor("John", "Smith", "0000-0001-2345-6789", "Oxford, UK", true,
+                    openAlexAuthorId = "A5023888391")
+            )
+        )
+        Mockito.doReturn(
+            EmailExtractionOutcome(
+                listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001-2345-6789")),
+                "SEARCH_FIELD", null
+            )
+        ).`when`(europePmc).extractAuthorEmails(paper)
+
+        val outcome = dataSource.extractAuthorEmails(paper)
+
+        assertEquals("FULLTEXT_XML", outcome.methodUsed)
+        assertEquals("A5023888391", outcome.emails.single().openAlexAuthorId)
+    }
+
+    @Test
+    fun `PMC extraction does not attach the author id when several authors share the ORCID (I-2)`() {
+        val paper = pmcPaper(
+            listOf(
+                PaperAuthor("John", "Smith", "0000-0001-2345-6789", "Oxford, UK", true,
+                    openAlexAuthorId = "A5023888391"),
+                PaperAuthor("Johnny", "Smith", "0000-0001-2345-6789", "Cambridge, UK", false,
+                    openAlexAuthorId = "A5086928770")
+            )
+        )
+        Mockito.doReturn(
+            EmailExtractionOutcome(
+                listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001-2345-6789")),
+                "SEARCH_FIELD", null
+            )
+        ).`when`(europePmc).extractAuthorEmails(paper)
+
+        val outcome = dataSource.extractAuthorEmails(paper)
+
+        assertNull(outcome.emails.single().openAlexAuthorId, "ORCID 命中多个不同作者 ID 时不得任选一个")
+    }
+
+    @Test
+    fun `PMC extraction does not attach the author id without a matching ORCID (I-2)`() {
+        val paper = pmcPaper(
+            listOf(
+                PaperAuthor("John", "Smith", "0000-0001-2345-6789", "Oxford, UK", true,
+                    openAlexAuthorId = "A5023888391")
+            )
+        )
+        Mockito.doReturn(
+            EmailExtractionOutcome(
+                listOf(
+                    AuthorEmail("alice@oxford.ac.uk", "Alice", "Jones", false, null, null),
+                    AuthorEmail("carol@oxford.ac.uk", "Carol", "King", false, null, "0000-9999-9999-9999")
+                ),
+                "SEARCH_FIELD", null
+            )
+        ).`when`(europePmc).extractAuthorEmails(paper)
+
+        val outcome = dataSource.extractAuthorEmails(paper)
+
+        assertEquals(2, outcome.emails.size)
+        assertTrue(outcome.emails.all { it.openAlexAuthorId == null }, "无 ORCID 或 ORCID 不匹配时不得补接作者 ID")
+    }
+
+    private fun pmcPaper(authors: List<PaperAuthor>) = PaperMetadata(
+        pmcId = "PMC9876543", pmid = null, doi = null, title = "Test", pubYear = 2024,
+        journal = null, authors = authors, source = "OPENALEX"
+    )
 
     private fun stubWorksResponse(json: String) {
         Mockito.`when`(

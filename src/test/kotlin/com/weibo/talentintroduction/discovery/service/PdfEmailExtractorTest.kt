@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.config.PdfExtractionProperties
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -261,6 +262,96 @@ class PdfEmailExtractorTest {
 
         assertEquals("PDF_PARSE", result.methodUsed)
         assertTrue(result.emails.isNotEmpty())
+    }
+
+    @Test
+    fun `does not attach identity when two authors share the email initial and surname (I-2)`() {
+        // I-2: 首字母命中不是身份依据 —— 甲的邮箱不得绑上乙的 ORCID/作者ID。
+        val html = "<html><body>Contact: jsmith@ox.ac.uk</body></html>".toByteArray()
+        stubPdfDownload(html, MediaType.TEXT_HTML)
+        val authors = listOf(
+            PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK", true, openAlexAuthorId = "A5023888391"),
+            PaperAuthor("James", "Smith", "0000-0002", "Cambridge, UK", false, openAlexAuthorId = "A5086928770")
+        )
+
+        val result = extractor.extract("http://example.com/landing", authors, "TEST")
+
+        val email = result.emails.single()
+        assertEquals("jsmith@ox.ac.uk", email.email)
+        assertNull(email.givenNames)
+        assertNull(email.familyNames)
+        assertNull(email.orcidId)
+        assertNull(email.openAlexAuthorId)
+    }
+
+    @Test
+    fun `does not attach identity when two authors share the same full name (I-2)`() {
+        val html = "<html><body>Contact: john.smith@ox.ac.uk</body></html>".toByteArray()
+        stubPdfDownload(html, MediaType.TEXT_HTML)
+        val authors = listOf(
+            PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK", true, openAlexAuthorId = "A5023888391"),
+            PaperAuthor("John", "Smith", "0000-0002", "Cambridge, UK", false, openAlexAuthorId = "A5086928770")
+        )
+
+        val result = extractor.extract("http://example.com/landing", authors, "TEST")
+
+        val email = result.emails.single()
+        assertNull(email.givenNames)
+        assertNull(email.familyNames)
+        assertNull(email.orcidId)
+        assertNull(email.openAlexAuthorId)
+    }
+
+    @Test
+    fun `does not attach identity on a surname-substring collision (I-2)`() {
+        // 两个作者的姓名都被 weilian 命中（li ⊂ lian）——本地部分无法唯一定位，保留邮箱但不带身份。
+        val html = "<html><body>Contact: weilian@ox.ac.uk</body></html>".toByteArray()
+        stubPdfDownload(html, MediaType.TEXT_HTML)
+        val authors = listOf(
+            PaperAuthor("Wei", "Li", null, "Oxford, UK", false, openAlexAuthorId = "A111"),
+            PaperAuthor("Wei", "Lian", null, "Cambridge, UK", false, openAlexAuthorId = "A222")
+        )
+
+        val result = extractor.extract("http://example.com/landing", authors, "TEST")
+
+        val email = result.emails.single()
+        assertNull(email.familyNames)
+        assertNull(email.openAlexAuthorId)
+    }
+
+    @Test
+    fun `binds the unique full-name combination and carries the author identity (I-2)`() {
+        val html = "<html><body>Contact: jane.doe@university.edu</body></html>".toByteArray()
+        stubPdfDownload(html, MediaType.TEXT_HTML)
+        val authors = listOf(
+            PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK", true, openAlexAuthorId = "A5023888391"),
+            PaperAuthor("Jane", "Doe", "0000-0002", "Cambridge, UK", true, openAlexAuthorId = "A5086928770")
+        )
+
+        val result = extractor.extract("http://example.com/landing", authors, "TEST")
+
+        val email = result.emails.single()
+        assertEquals("Jane", email.givenNames)
+        assertEquals("Doe", email.familyNames)
+        assertEquals("0000-0002", email.orcidId)
+        assertEquals("A5086928770", email.openAlexAuthorId)
+    }
+
+    @Test
+    fun `keeps the sole-author sole-email attribution (I-2)`() {
+        val html = "<html><body>Contact: single.author@uni.edu</body></html>".toByteArray()
+        stubPdfDownload(html, MediaType.TEXT_HTML)
+        val authors = listOf(
+            PaperAuthor("Single", "Author", "0000-0009", "Some Lab", true, openAlexAuthorId = "A999")
+        )
+
+        val result = extractor.extract("http://example.com/landing", authors, "TEST")
+
+        val email = result.emails.single()
+        assertEquals("Single", email.givenNames)
+        assertEquals("Author", email.familyNames)
+        assertEquals("0000-0009", email.orcidId)
+        assertEquals("A999", email.openAlexAuthorId)
     }
 
     private fun readPdfFixture(path: String): ByteArray {

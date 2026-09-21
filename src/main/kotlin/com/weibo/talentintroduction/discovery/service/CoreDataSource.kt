@@ -179,15 +179,18 @@ class CoreDataSource(
     private fun associateEmails(emails: List<String>, authors: List<PaperAuthor>): List<AuthorEmail> {
         val uniqueEmails = emails.distinct()
         return uniqueEmails.map { email ->
-            val localPart = email.substringBefore("@").lowercase()
-            val matched = authors.firstOrNull { author ->
-                val family = author.familyNames?.lowercase()?.takeIf { it.isNotBlank() } ?: return@firstOrNull false
-                val given = author.givenNames?.lowercase()?.takeIf { it.isNotBlank() } ?: ""
-                localPart.contains(family) || (given.isNotBlank() && localPart.contains(given)) || localPart.contains(family.take(1))
+            // I-2: CORE 全文本与 PDF 走同一条强证据规则 —— 歧义时保留邮箱线索，但不携带学术身份。
+            val verified = verifiedAuthorFor(email, authors, uniqueEmails.size)
+            if (verified == null) {
+                AuthorEmail(email, null, null, false, null, null)
+            } else {
+                AuthorEmail(
+                    email = email, givenNames = verified.givenNames, familyNames = verified.familyNames,
+                    isCorresponding = verified.isCorresponding, affiliation = verified.affiliation,
+                    orcidId = verified.orcidId, institutionType = verified.institutionType,
+                    openAlexAuthorId = verified.openAlexAuthorId
+                )
             }
-            if (matched != null) AuthorEmail(email, matched.givenNames, matched.familyNames, matched.isCorresponding, matched.affiliation, matched.orcidId)
-            else if (authors.size == 1 && uniqueEmails.size == 1) AuthorEmail(email, authors[0].givenNames, authors[0].familyNames, authors[0].isCorresponding, authors[0].affiliation, authors[0].orcidId)
-            else AuthorEmail(email, null, null, false, null, null)
         }
     }
 

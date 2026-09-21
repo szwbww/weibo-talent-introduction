@@ -470,6 +470,117 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `discover merges the OpenAlex author id into externalIds without dropping the import ids (I-1, I-3)`() {
+        // I-1/I-3: 作者 ID 只是 externalIds 的一个子键 —— 主键仍是 ORCID，其他导入 ID 一个都不能丢。
+        val svc = createService()
+        val p1 = paper("PMC1", "Test Paper")
+
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001",
+                openAlexAuthorId = "A5023888391")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val capturedIds = mutableListOf<String>()
+        val capturedMaps = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            capturedIds.add(invocation.getArgument(0))
+            @Suppress("UNCHECKED_CAST")
+            capturedMaps.add(invocation.getArgument(1) as Map<String, Any?>)
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        assertEquals("0000-0001", capturedIds.single(), "有 ORCID 时 ES 主键必须仍是 ORCID")
+        assertEquals(
+            mapOf(
+                "pmcId" to "PMC1", "doi" to "10.0/PMC1", "pmid" to "pmid-PMC1",
+                "orcid" to "0000-0001", "openAlexAuthorId" to "A5023888391"
+            ),
+            capturedMaps.single()["externalIds"] as Map<*, *>
+        )
+    }
+
+    @Test
+    fun `discover keeps the EMAIL-* primary key and promotes the author id to CANDIDATE (V-1)`() {
+        // V-1: 有作者 ID 无 ORCID 仍存 EMAIL-* 主键；子键随整份文档晋升后仍在。
+        val svc = createService()
+        val p1 = paper("PMC1", "Test Paper")
+
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(AuthorEmail("no-orcid@oxford.ac.uk", "No", "Orcid", false, "Some Lab", null,
+                openAlexAuthorId = "A5086928770")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "no-orcid@oxford.ac.uk", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val capturedIds = mutableListOf<String>()
+        val capturedMaps = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            capturedIds.add(invocation.getArgument(0))
+            @Suppress("UNCHECKED_CAST")
+            capturedMaps.add(invocation.getArgument(1) as Map<String, Any?>)
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+
+        val candidateDocs = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            val entity = invocation.getArgument<HttpEntity<*>>(2)
+            @Suppress("UNCHECKED_CAST")
+            candidateDocs.add(entity.body as Map<String, Any?>)
+            ResponseEntity.ok(objectMapper.createObjectNode())
+        }.`when`(restTemplate).exchange(
+            Mockito.contains("orcid_info_candidate/_doc/"), Mockito.eq(HttpMethod.PUT), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        assertEquals(1, result.stats.promoted, "资格通过后必须真的晋升，否则下面的 CANDIDATE 断言会漏掉")
+        assertTrue(capturedIds.single().startsWith("EMAIL-"), "无 ORCID 时主键必须是 EMAIL-*")
+        val rawIds = capturedMaps.single()["externalIds"] as Map<*, *>
+        assertEquals("A5086928770", rawIds["openAlexAuthorId"])
+        assertFalse(rawIds.containsKey("orcid"), "没有 ORCID 就不得凭空写一个")
+
+        val candidateIds = candidateDocs.single()["externalIds"] as Map<*, *>
+        assertEquals("A5086928770", candidateIds["openAlexAuthorId"], "晋升 CANDIDATE 后子键必须仍在")
+    }
+
+    @Test
+    fun `discover never stores a non-canonical author id in externalIds (I-1)`() {
+        // I-1 的下游契约：externalIds.openAlexAuthorId 只能是 A+数字；其他形状一律不写。
+        val svc = createService()
+        val p1 = paper("PMC1", "Test Paper")
+
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", null,
+                openAlexAuthorId = "https://openalex.org/W1234567")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+
+        val capturedMaps = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            capturedMaps.add(invocation.getArgument<Any>(1) as Map<String, Any?>)
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        val externalIds = capturedMaps.single()["externalIds"] as Map<*, *>
+        assertFalse(externalIds.containsKey("openAlexAuthorId"), "非 A+数字 的作者 ID 不得入库")
+        assertEquals("PMC1", externalIds["pmcId"])
+    }
+
+    @Test
     fun `discover counts papers without emails`() {
         val svc = createService()
         val p1 = paper("PMC1", "Test").copy(pmcId = null)

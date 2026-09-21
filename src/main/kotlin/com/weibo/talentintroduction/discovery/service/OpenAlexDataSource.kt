@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.config.OpenAlexRequestPolicy
 import com.weibo.talentintroduction.config.Permit
 import com.weibo.talentintroduction.config.RequestKind
+import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
@@ -80,13 +81,35 @@ class OpenAlexDataSource(
     override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome {
         if (paper.pmcId != null) {
             val europePmcOutcome = europePmc.extractAuthorEmails(paper)
-            return europePmcOutcome.copy(methodUsed = "FULLTEXT_XML")
+            // I-2: PMC/JATS 是另一来源的提取结果，姓名/邮箱相似都不算证据 ——
+            // 只有 ORCID 精确等值到一个唯一作者时才允许补接该作者的 OpenAlex ID。
+            return europePmcOutcome.copy(
+                emails = europePmcOutcome.emails.map { it.copy(openAlexAuthorId = verifiedAuthorIdByOrcid(it, paper.authors)) },
+                methodUsed = "FULLTEXT_XML"
+            )
         }
         if (paper.downloadUrl != null) {
             val result = pdfEmailExtractor.extract(paper.downloadUrl, paper.authors, sourceName)
             return result.copy(methodUsed = "PDF_PARSE")
         }
         return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_PMC_ID")
+    }
+
+    /**
+     * I-2: 只有「提取出的邮箱带 ORCID，且该 ORCID 精确等值到唯一一个带作者 ID 的作者」才返回该 ID。
+     * ORCID 缺失、不匹配，或同一 ORCID 对应多个不同作者 ID 时一律返回 null（不猜）。
+     */
+    private fun verifiedAuthorIdByOrcid(email: AuthorEmail, authors: List<PaperAuthor>): String? {
+        val orcid = normalizeOrcid(email.orcidId) ?: return null
+        return authors.mapNotNull { author ->
+            if (normalizeOrcid(author.orcidId) != orcid) return@mapNotNull null
+            normalizeOpenAlexAuthorId(author.openAlexAuthorId)
+        }.distinct().singleOrNull()
+    }
+
+    private fun normalizeOrcid(raw: String?): String? {
+        val bare = raw?.trim()?.removePrefix("https://orcid.org/")?.removePrefix("http://orcid.org/")?.trim()
+        return bare?.takeIf { it.isNotEmpty() }?.lowercase()
     }
 
     private fun buildFilter(criteria: PaperSearchCriteria): String {
@@ -127,7 +150,8 @@ class OpenAlexDataSource(
                         givenNames = nameParts.getOrNull(0), familyNames = nameParts.getOrNull(1),
                         orcidId = orcid, affiliation = institution?.path("display_name")?.asText(null),
                         isCorresponding = authorship.path("is_corresponding").asBoolean(false),
-                        institutionType = institutionType
+                        institutionType = institutionType,
+                        openAlexAuthorId = normalizeOpenAlexAuthorId(author.path("id").asText(null))
                     )
                 }
                 PaperMetadata(pmcId = pmcId, pmid = pmid, doi = doi,
@@ -387,6 +411,17 @@ class OpenAlexDataSource(
         return if (stem >= humanities) "STEM" else "HUMANITIES"
     }
 }
+
+/**
+ * I-1: OpenAlex 作者 ID 的规范形式是 `A` + 数字（API 返回 `https://openalex.org/A123…`）。
+ * 其他形状的值不是可信作者身份：既不写 externalIds，也不参与任何主键/文档定位。
+ */
+internal fun normalizeOpenAlexAuthorId(raw: String?): String? {
+    val bare = raw?.trim()?.removePrefix("https://openalex.org/")?.removePrefix("http://openalex.org/")?.trim()
+    return bare?.takeIf { OPENALEX_AUTHOR_ID_PATTERN.matches(it) }
+}
+
+private val OPENALEX_AUTHOR_ID_PATTERN = Regex("A\\d+")
 
 sealed class EnrichmentOutcome {
     data class Success(val data: AuthorEnrichment) : EnrichmentOutcome()

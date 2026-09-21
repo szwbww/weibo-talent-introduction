@@ -1485,6 +1485,9 @@ class ExpertDiscoveryService(
         paper.doi?.let { ids["doi"] = it }
         paper.pmid?.let { ids["pmid"] = it }
         authorEmail.orcidId?.let { ids["orcid"] = it }
+        // I-1/I-3: 作者 ID 只是 externalIds 的一个子键（合并写入，不覆盖其他导入 ID），
+        // 也绝不参与 ES _id：无 ORCID 的专家主键仍是 EMAIL-*。
+        normalizeOpenAlexAuthorId(authorEmail.openAlexAuthorId)?.let { ids["openAlexAuthorId"] = it }
         return if (ids.isEmpty()) null else objectMapper.writeValueAsString(ids)
     }
 

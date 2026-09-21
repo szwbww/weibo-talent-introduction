@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.discovery.service
 
 import com.weibo.talentintroduction.config.CoreProperties
+import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -218,6 +219,64 @@ class CoreDataSourceTest {
         val result = dataSource.extractAuthorEmails(paper)
         assertEquals("NO_FULLTEXT", result.failureReason)
     }
+
+    @Test
+    fun `extractAuthorEmails does not bind identity on a first-initial match (I-2)`() {
+        // I-2: CORE 全文本里的 jsmith 无法区分两位 Smith —— 不得把某一人的 ORCID/作者ID 绑上去。
+        val paper = corePaper(
+            "Contact: jsmith@ox.ac.uk",
+            listOf(
+                PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK", true, openAlexAuthorId = "A5023888391"),
+                PaperAuthor("James", "Smith", "0000-0002", "Cambridge, UK", false, openAlexAuthorId = "A5086928770")
+            )
+        )
+
+        val email = dataSource.extractAuthorEmails(paper).emails.single()
+
+        assertEquals("jsmith@ox.ac.uk", email.email)
+        assertNull(email.givenNames)
+        assertNull(email.familyNames)
+        assertNull(email.orcidId)
+        assertNull(email.openAlexAuthorId)
+    }
+
+    @Test
+    fun `extractAuthorEmails binds the unique full-name combination (I-2)`() {
+        val paper = corePaper(
+            "Contact: jane.doe@univ.edu",
+            listOf(
+                PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK", true, openAlexAuthorId = "A5023888391"),
+                PaperAuthor("Jane", "Doe", "0000-0002", "Cambridge, UK", true, openAlexAuthorId = "A5086928770")
+            )
+        )
+
+        val email = dataSource.extractAuthorEmails(paper).emails.single()
+
+        assertEquals("Jane", email.givenNames)
+        assertEquals("Doe", email.familyNames)
+        assertEquals("0000-0002", email.orcidId)
+        assertEquals("A5086928770", email.openAlexAuthorId)
+    }
+
+    @Test
+    fun `extractAuthorEmails keeps the sole-author sole-email attribution (I-2)`() {
+        val paper = corePaper(
+            "Contact: single.author@uni.edu",
+            listOf(PaperAuthor("Single", "Author", "0000-0009", "Some Lab", true, openAlexAuthorId = "A999"))
+        )
+
+        val email = dataSource.extractAuthorEmails(paper).emails.single()
+
+        assertEquals("Single", email.givenNames)
+        assertEquals("Author", email.familyNames)
+        assertEquals("0000-0009", email.orcidId)
+        assertEquals("A999", email.openAlexAuthorId)
+    }
+
+    private fun corePaper(fullText: String, authors: List<PaperAuthor>) =
+        com.weibo.talentintroduction.discovery.domain.PaperMetadata(
+            null, null, "10.1234/test", "Test Title", 2024, null, authors, "CORE", fullText = fullText
+        )
 
     @Test
     fun `searchPapers handles error gracefully`() {
