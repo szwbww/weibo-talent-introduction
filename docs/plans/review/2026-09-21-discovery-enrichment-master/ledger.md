@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-09-21/00-discovery-enrichment-master.md
 
 - Status: REPAIR_PLAN_READY
-- Review epoch: 2
+- Review epoch: 3
 - Master plan: docs/plans/2026-09-21/00-discovery-enrichment-master.md (sha256 b71e3a5c2af7f3b7e2a5a659f7fcab49f81816978e767a7c4d64aec1474ad837)
 - Governing master identity: sha256 b71e3a5c2af7f3b7e2a5a659f7fcab49f81816978e767a7c4d64aec1474ad837; commit 831e6604cf97e7acba005d8f00827659b49ce010
 - Invoked master identity: SAME (sha256 b71e3a5c2af7f3b7e2a5a659f7fcab49f81816978e767a7c4d64aec1474ad837)
@@ -11,23 +11,23 @@
 - Fast-p ledger: docs/plans/fast/2026-09-21-discovery-enrichment-master/ledger.md (sha256 ef3623cb0cc408aa658ee480421064a7a810a8e1011be62e929711fee388cc09)
 - Fast-p handoff: docs/plans/fast/2026-09-21-discovery-enrichment-master/human-review-handoff.md (sha256 197c1b1a8123a7cb0f3ea2ca095ce1c2e77d850d89728ec501e84bee943b124b)
 - Master base: f0c41271fc56d7455e14d28a71d563a5341dfdeb
-- Final code head: 7312143c484fe00162c8f602b9295f3029ce5588
-- Evidence parent before next commit: 121d7c44d06b074cc872eb854b0425ebec784a5c
-- Previous evidence commit: 121d7c44d06b074cc872eb854b0425ebec784a5c
+- Final code head: ebd16aca1788056236fe9b6bf686f9972bacc173
+- Evidence parent before next commit: 5ffce35cb5448bd4267a0e5c2435f5990347c7c3
+- Previous evidence commit: 5ffce35cb5448bd4267a0e5c2435f5990347c7c3
 - Branch: fast/2026-09-21-discovery-enrichment-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-21-discovery-enrichment-master
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
 - Discovery evidence: SELECTED; 10 terminal children; base and final-code ancestry valid; invoked/worktree master hashes equal.
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_rereviewer (fresh; created after repair commit; no inherited implementation or light-verification conversation)
+- Reviewer: /root/final_aggregate_reviewer (fresh; created after ebd16aca; no inherited implementation or light-verification conversation)
 - Reviewer attempt: 1
 - Machine result: FAIL
-- Machine report epoch: docs/plans/review/2026-09-21-discovery-enrichment-master/machine-verification.md#epoch-2
+- Machine report epoch: docs/plans/review/2026-09-21-discovery-enrichment-master/machine-verification.md#epoch-3
 - Repair artifact: docs/plans/fix/00-discovery-enrichment-master/repair.md
 - Repair evidence mode: DURABLE_HANDOFF
-- Repair approval source: HUMAN invocation `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-21-discovery-enrichment-master/docs/plans/fix/00-discovery-enrichment-master/repair.md` (2026-09-21), recorded in repair-execution.md
+- Repair approval source: HUMAN invocation `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-21-discovery-enrichment-master/docs/plans/fix/00-discovery-enrichment-master/repair.md` (2026-09-21, epoch 2), recorded in repair-execution.md
 - Repair executor: Main
-- Repair code head: 7312143c484fe00162c8f602b9295f3029ce5588
+- Repair code head: ebd16aca1788056236fe9b6bf686f9972bacc173
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Human approval is required to execute docs/plans/fix/00-discovery-enrichment-master/repair.md for V-4.
+- Blocker/next action: Human approval is required to execute docs/plans/fix/00-discovery-enrichment-master/repair.md (sha256 2105d2c6d899b4a4dbb23730cb49073962b61e9826e54698a81067845ca3d961) for persistent V-4.

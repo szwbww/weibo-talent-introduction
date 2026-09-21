@@ -2,18 +2,18 @@
 
 Status: DRAFT — HUMAN APPROVAL REQUIRED
 Baseline plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-21-discovery-enrichment-master/docs/plans/2026-09-21/00-discovery-enrichment-master.md` (sha256 `b71e3a5c2af7f3b7e2a5a659f7fcab49f81816978e767a7c4d64aec1474ad837`)
-Verification report: aggregate epoch 2 re-review, V-4 persistent; V-1–V-3 resolved
-Implementation boundary: reviewed master code `f0c41271fc56d7455e14d28a71d563a5341dfdeb..7312143c484fe00162c8f602b9295f3029ce5588`; post-repair delta `cd39503b7d6dc0d3fa12a02a226e6995bd2910e7..7312143c484fe00162c8f602b9295f3029ce5588`
+Verification report: aggregate epoch 3 re-review, V-4 persistent; V-1–V-3 resolved
+Implementation boundary: reviewed master code `f0c41271fc56d7455e14d28a71d563a5341dfdeb..ebd16aca1788056236fe9b6bf686f9972bacc173`; latest repair delta `1c4d7c12c02ae93532840a17c71b4d2b7903a3e2..ebd16aca1788056236fe9b6bf686f9972bacc173`
 
 ## Objective
 
-Make the entire OpenAlex fulltext chain return or terminate at its one 90-second per-paper deadline, including an in-flight PMC XML, PDF/HTML, or Unpaywall HTTP operation.
+Make the entire OpenAlex fulltext chain return or terminate at its one 90-second per-paper deadline, including a response that trickles bytes below a socket read timeout and expiry immediately before dispatch.
 
 ## Findings in Scope
 
 | Finding | Severity | Requirement | Root Cause |
 |---|---|---|---|
-| V-4 | P1 | R-6; 10/I-1: one paper's fulltext chain has a total 90-second bound | The repair propagates an `Instant` and checks it before XML/Unpaywall work, but neither HTTP client receives the remaining timeout or a cancellation boundary. `EuropePmcDataSource.fetchFullTextXml` and `UnpaywallClient.getForObject` may remain blocked after expiry; Unpaywall receives the unqualified `RestTemplate`, which has no configured read timeout. |
+| V-4 | P1 | R-6; 10/I-1: one paper's fulltext chain has a total 90-second bound | The new `SimpleClientHttpRequestFactory` read timeout bounds one blocking socket read, not cumulative response-body lifetime. XML bytes and Unpaywall JSON may therefore trickle forever by emitting data before each read timeout. `UnpaywallClient` can also cross expiry after preflight: `remainingMs=0` becomes a 1-ms client and still dispatches. |
 
 ## Findings Excluded
 
@@ -51,10 +51,10 @@ Make the entire OpenAlex fulltext chain return or terminate at its one 90-second
 ### R-1: Bound every blocking fulltext stage by remaining time
 
 - Resolves: V-4.
-- Root cause: deadline propagation is only a preflight guard for XML and Unpaywall; the underlying blocking client call has no remaining-time enforcement.
+- Root cause: a per-read socket timeout plus preflight guards is not an absolute deadline, and the expiry-to-dispatch handoff is not atomic.
 - Files: exactly the Authorized Files above.
-- Change: apply the single remaining deadline to connection, response/header, delay, and body-read work for PMC XML, OA URL, and Unpaywall. On expiry, cancel/terminate the active operation as safely supported and return the existing timeout result; do not launch a later stage.
-- Regression test: controlled slow XML, lookup, connection/header, and body responses each complete as timeout within one shared budget; no later URL/lookup request occurs; normal fallback remains deduplicated and capped.
+- Change: make XML/JSON/PDF request-and-body work observe the one absolute remaining deadline through completion and refuse dispatch if no positive budget remains immediately before it. On expiry cancel/terminate active work with the existing timeout result; do not launch a later stage.
+- Regression test: controlled XML/lookup servers trickle headers/body data below socket read timeout; each returns timeout within the shared budget with no retry/next stage. A synchronized expiry-before-dispatch case records zero requests; normal fallback remains deduplicated and capped.
 - Existing verification: c1, c6, c8, c10, JS, and full Maven commands below.
 - Must not change: normal `null`/non-expired caller behavior; stage order; timeout category; retry/cost/scope limits.
 - Prohibited: per-stage budget reset; orphaned uncancelled workers/requests; increased timeouts/concurrency/size/page limits; test suppression.
@@ -70,8 +70,8 @@ Make the entire OpenAlex fulltext chain return or terminate at its one 90-second
 
 ## Completion Criteria
 
-- V-4 is resolved with elapsed-time regression tests covering in-flight XML, lookup, and URL operations.
-- No fulltext stage starts after the one per-paper deadline, and active work does not make the caller exceed it.
+- V-4 is resolved with elapsed-time regression tests covering stalled and trickling XML, lookup, and URL operations.
+- No fulltext stage starts after the one per-paper deadline, including the preflight-to-dispatch boundary, and active work does not make the caller exceed it.
 - Changed files stay inside Authorized Files.
 - Fresh required commands report no introduced failure; record V124 separately if it persists only in migration IT.
 

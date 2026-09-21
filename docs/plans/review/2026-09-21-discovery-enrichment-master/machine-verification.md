@@ -174,3 +174,82 @@ The reviewer inspected the complete 51-file product/test boundary. No product co
 - Manual A-1 through A-6 remain pending human-only evidence.
 - Full Maven is red only on the unrelated timing flake; c7 is red only on the base-reproduced V124 fixture.
 - No product code was modified by this review. `repair-p` produced the one bounded V-4 repair plan; execution requires explicit human invocation of its exact `execute-p` path.
+
+## Epoch 3 — 2026-09-21
+
+- Master plan: `docs/plans/2026-09-21/00-discovery-enrichment-master.md` (sha256 `b71e3a5c2af7f3b7e2a5a659f7fcab49f81816978e767a7c4d64aec1474ad837`)
+- Governing master identity: worktree sha256 `b71e3a5c2af7f3b7e2a5a659f7fcab49f81816978e767a7c4d64aec1474ad837`; recorded commit `831e6604cf97e7acba005d8f00827659b49ce010`; invoked identity same; state `CONSISTENT`; amendments N/A.
+- Boundary: `f0c41271fc56d7455e14d28a71d563a5341dfdeb..ebd16aca1788056236fe9b6bf686f9972bacc173`; post-repair delta `1c4d7c12c02ae93532840a17c71b4d2b7903a3e2..ebd16aca1788056236fe9b6bf686f9972bacc173` stays inside the ten Authorized Files in repair `sha256:2105d2c6d899b4a4dbb23730cb49073962b61e9826e54698a81067845ca3d961`.
+- Reviewer: `/root/final_aggregate_reviewer` (fresh, created after the repair code commit, with no inherited implementation/light-verification context).
+- Result: `FAIL`; convergence: `PROGRESSING`.
+- Repair artifact/result: `docs/plans/fix/00-discovery-enrichment-master/repair.md` — `DRAFT_READY`, V-4 only.
+- Post-repair evidence: `DURABLE_HANDOFF`; approved repair execution recorded in `docs/plans/review/2026-09-21-discovery-enrichment-master/repair-execution.md`; executor `Main`.
+
+### Fresh Command Evidence
+
+| Command/group | Result | Evidence |
+|---|---|---|
+| c1 Java 11 policy/config/fulltext | PASS | 89 run, 0 failures, 0 errors |
+| c2 Java 11 checkpoint/result | PASS | 138 run, 0 failures, 0 errors |
+| c3 Java 11 Crossref/arXiv/scope | PASS | 37 run, 0 failures, 0 errors |
+| c4 Java 11 CORE/ORCID/scope | PASS | 165 run, 0 failures, 0 errors |
+| c5 Java 11 revalidation/search | PASS | 228 run, 0 failures, 0 errors |
+| c6 Java 11 discovery/revalidation | PASS | 280 run, 0 failures, 0 errors |
+| c7 MySQL/Flyway | baseline error | 44 run; V131 repository/service 18 run, 0 failures, 0 errors; base-equivalent V124 FK fixture error |
+| c8 Java 11 discovery/worker/controller | PASS | 148 run, 0 failures, 0 errors |
+| c9 Java 11 discovery/scheduler | PASS | 129 run, 0 failures, 0 errors |
+| c10 Java 11 fulltext | PASS | 221 run, 0 failures, 0 errors |
+| `node --test src/test/js/*.test.js` | PASS | 1,037 pass, 0 fail |
+| Full Java 11 Maven with OrbStack | unrelated error | 3,718 run, 0 failures, 1 error, 13 skipped; pre-existing `MailComposeTemplateBlockRepositoryIT` missing `${senderEmail}` Flyway placeholder |
+
+### Master Contract Matrix
+
+| Contract | Verdict | Evidence |
+|---|---|---|
+| R-1 / I-1 OpenAlex auth, budget, separate accounting | PASS | c1 green; policy/config tests |
+| R-2 / I-2 recoverable discovery | PASS | c2–c4 green; checkpoint/paging tests |
+| R-3 / I-4 / I-5 automatic enrichment and honest status | PASS | c6/c8 green; worker probe and summaries |
+| R-4 / I-3 trusted identity | PASS | c5/c6 green |
+| R-5 throughput/fairness | PASS | c9 green |
+| R-6 / 10-I-1 fulltext absolute deadline | FAIL | V-4 persistent |
+| M-1 through M-5 | PASS | No mail, identity, scope, paid API, or applied-migration regression |
+| I-6 scope/cost containment | PASS | Boundary stays inside child-plan scopes |
+| V131 MySQL persistence | PASS | Repository/service integration 18 green |
+| Full Maven required gate | unrelated error | Missing `senderEmail` placeholder outside boundary |
+| A-1 through A-6 | PENDING | Human-only; not simulated |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | c3 remains 37/0/0 |
+| V-2 | RESOLVED | c8 and JS green |
+| V-3 | RESOLVED | Idle due-work probe remains green |
+| V-4 | PERSISTENT | `RestTemplateConfig.kt:178-209`, `EuropePmcDataSource.kt:96-108`, `UnpaywallClient.kt:51-61` |
+
+### P1 Finding
+
+- **V-4 PERSISTENT** — `SimpleClientHttpRequestFactory` read timeout limits one blocking read, not total response lifetime. XML and Unpaywall JSON can trickle bytes before each read timeout and exceed the shared absolute deadline. `UnpaywallClient` also permits a post-preflight expiry race: zero remaining time becomes a 1-ms client and may still dispatch. This violates R-6/10-I-1.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result |
+|---|---|---|
+| c1 O-1 | I-1 | RESOLVED |
+| c2 O-1 | I-5 | Non-blocking |
+| c3 O-1..O-3 | R-2/M-4 | Non-blocking |
+| c4 O-1..O-4 | R-2/I-5 | Non-blocking |
+| c6 O-1 | I-4 | Non-blocking |
+| c7 O-1 | I-5 | Baseline V124 fixture |
+| c7 O-2 | I-5 | Non-blocking |
+| c8 O-1/O-2 | I-5 | RESOLVED |
+| c9 O-1 | M-5 | Non-blocking |
+| c10 O-1..O-3 | R-6/I-1 | Non-blocking |
+| c10 O-4 | R-6 | V-4 persistent |
+
+### Boundaries and Next State
+
+- Live quota and manual A-1 through A-6 were not run.
+- Full Maven's sole error and the c7 V124 error are base/unrelated observations, not repair scope.
+- `repair-p` updated only `docs/plans/fix/00-discovery-enrichment-master/repair.md`; no product code, test, review evidence, index, branch, or commit was modified by the reviewer.
+- Verification result `FAIL/PROGRESSING`; repair planning `DRAFT_READY`. Human approval of that exact repair artifact is required before execution.
