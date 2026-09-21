@@ -19,6 +19,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+import com.weibo.talentintroduction.discovery.domain.SourceUnit
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.expert.domain.EmailValidationResult
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
@@ -56,6 +57,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestTemplate
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -372,7 +374,12 @@ class ExpertDiscoveryServiceTest {
         Mockito.doReturn(pmcOa).`when`(pmcOaProvider).getIfAvailable()
         Mockito.doReturn(core).`when`(coreProvider).getIfAvailable()
 
-        val svc = createService()
+        // c9：六源基础份额合计 = 100 + 5×10 = 150，run 级目标必须能覆盖它，否则启动校验拒绝。
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 1_000, maxAuthorsPerRun = 1_000, includeRawScan = false
+            )
+        )
         val result = svc.discover(PaperSearchCriteria(), "TEST")
 
         val sourceNames = result.stats.bySource.keys
@@ -625,15 +632,27 @@ class ExpertDiscoveryServiceTest {
 
     @Test
     fun `discover respects maxPapersPerRun limit`() {
-        val limitedProperties = ExpertDiscoveryProperties(enabled = true, maxPapersPerRun = 2, maxAuthorsPerRun = 100)
+        // c9（I-1）: run 级目标（200）与单页（100）是两件事 —— 目标覆盖两源各一页，
+        // 而不是「只处理 100 篇」。到界按全局 cap 命名，不算来源失败。
+        val limitedProperties = ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 200, maxAuthorsPerRun = 2_000, includeRawScan = false
+        )
         val svc = createService(limitedProperties)
-        val papers = (1..5).map { paper("PMC$it", "Paper $it") }
-        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, 5))
-        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        stubSource(openAlex, "OPENALEX")
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val epmcRequests = stubPaperSourceRuns(europePmc, 500, pageOf(100, "NEXT-EPMC"))
+        stubPaperSourceRuns(openAlex, 500, pageOf(100, "NEXT-OPENALEX", offset = 100))
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
-        assertEquals(2, result.stats.totalPapers)
-        assertEquals(2, result.stats.noEmailPapers)
+        val result = svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false)
+
+        assertEquals(200, result.stats.totalPapers)
+        assertEquals(100, result.stats.bySource["EUROPE_PMC"]?.papersSearched)
+        assertEquals(100, result.stats.bySource["OPENALEX"]?.papersSearched)
+        assertEquals(1, epmcRequests.size, "全局 cap 到界即停，不再发第二次请求")
+        assertEquals(DiscoveryStopReason.GLOBAL_PAPER_LIMIT, result.stats.bySource["EUROPE_PMC"]?.stopReason)
+        assertEquals(2, result.stats.pendingSources, "全局 cap 停止仍有可续跑工作")
+        assertEquals(200, result.stats.noEmailPapers)
     }
 
     @Test
@@ -2189,21 +2208,27 @@ class ExpertDiscoveryServiceTest {
 
     @Test
     fun `partial batch does not advance cursor to nextCursor`() {
-        // P1-1: 数据源返回 3 篇且 maxPapersPerRun=1，断言保存的检查点不等于 batch.nextCursor
-        val limitedProperties = ExpertDiscoveryProperties(enabled = true, maxPapersPerRun = 1, maxAuthorsPerRun = 200)
+        // P1-1 + c9：run 级额度（150）不是整页倍数时，第二页只消费一半，
+        // 检查点必须停在进入第二页的 cursor，绝不能跳到第三页（也不得跳过未处理论文）。
+        val limitedProperties = ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 150, maxAuthorsPerRun = 2_000, includeRawScan = false
+        )
         val svc = createService(limitedProperties)
-        val papers = (1..3).map { paper("PMC$it", "Paper $it") }
-        val batchNextCursor = "page2-cursor"
-        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, batchNextCursor, 3))
+        val page1 = pageOf(100, "C2")
+        val page2 = pageOf(100, "C3", offset = 100)
+        installInMemoryCursorStore()
+        Mockito.doReturn(page1).doReturn(page2)
+            .`when`(europePmc).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
         DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
 
         val (result, saved) = runAndCapture(svc)
 
         val decoded = decodedCheckpoint(savedCheckpoints(saved, "EUROPE_PMC").last())
-        assertNotEquals(batchNextCursor, decoded.cursor,
-            "Partial batch must NOT save nextCursor='$batchNextCursor'; " +
-            "saved cursor was '${decoded.cursor}' which would skip unprocessed papers")
-        assertNull(decoded.cursor, "部分页必须保留进入该页的 cursor（本用例进入该页时为 null）")
+        assertNotEquals("C3", decoded.cursor,
+            "额度到界导致的半页必须保留进入该页的 cursor，否则会跳过未处理论文")
+        assertEquals("C2", decoded.cursor, "第二页消费一半，续跑从第二页入口开始")
+        assertEquals(150, result.stats.totalPapers)
+        assertEquals(150L, storedRowFor("EUROPE_PMC").papersProcessedTotal)
         assertEquals(1, result.stats.pendingSources, "部分页意味着仍有可续跑工作")
     }
 
@@ -2429,7 +2454,12 @@ class ExpertDiscoveryServiceTest {
     @Test
     fun `budget deferred stop keeps the entering cursor and is not a search failure`() {
         // c1 契约: 额度延期是配额停止原因，不是搜索失败，也不清空进度
-        val svc = createService()
+        // c9：两个启用来源（EPMC + OpenAlex）各一页基础份额需要 ≥200 的 run 级目标。
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+            )
+        )
         val criteria = PaperSearchCriteria()
         stubStoredCheckpoint("OPENALEX", "C7", criteria)
         val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
@@ -2481,8 +2511,9 @@ class ExpertDiscoveryServiceTest {
 
     @Test
     fun `batch numbers are globally unique and monotonic across sources`() {
+        // c9：run 级目标必须覆盖两个来源的基础份额（各一页 = 200），否则启动校验会拒绝该配置。
         val props = ExpertDiscoveryProperties(
-            enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 200, includeRawScan = false
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 200, includeRawScan = false
         )
         val svc = createService(props)
 
@@ -2541,6 +2572,8 @@ class ExpertDiscoveryServiceTest {
                 includeRawScan = false,
                 fetchConcurrency = concurrency
             )
+            // c9：run 级目标必须覆盖本人来源的基础份额，因此本源上限同页大小取 paperCount。
+            DiscoveryMockHelper.stubMaxPapersPerSource(europePmc, paperCount)
             val executor: Executor = if (concurrency <= 1) Executor { it.run() } else Executors.newFixedThreadPool(concurrency)
             val svc = createService(props, executor)
 
@@ -2603,6 +2636,8 @@ class ExpertDiscoveryServiceTest {
         fun runDiscovery(executor: java.util.concurrent.Executor): com.weibo.talentintroduction.discovery.domain.DiscoveryStats {
             setUp()
             val svc = createService(props, executor)
+            // c9：run 级目标必须覆盖本人来源的基础份额，因此本源上限同页大小取 paperCount。
+            DiscoveryMockHelper.stubMaxPapersPerSource(europePmc, paperCount)
             DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, paperCount.toLong()))
             val outcomes = papers.mapIndexed { index, _ ->
                 if (index % 2 == 0) {
@@ -2651,6 +2686,8 @@ class ExpertDiscoveryServiceTest {
         fun runDiscovery(executor: Executor): com.weibo.talentintroduction.discovery.domain.DiscoveryStats {
             setUp()
             val svc = createService(props, executor)
+            // c9：全局上限 2 必须覆盖本人来源的基础份额，故本源上限同为 2（页内 5 篇只消费 2 篇）。
+            DiscoveryMockHelper.stubMaxPapersPerSource(europePmc, maxPapers)
             DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, batchSize.toLong()))
             DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
             return svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false).stats
@@ -3522,6 +3559,277 @@ class ExpertDiscoveryServiceTest {
 
         assertTrue(ex.message!!.contains("RAW 文档读取失败"))
         Mockito.verify(enrichmentJobService, Mockito.never()).complete(Mockito.anyLong(), Mockito.anyString(), anyOutcome())
+    }
+
+    // ---------------- c9: 运行级公平额度、全局上限与时间预算 ----------------
+
+    /** c9：模拟论文源的运行级配置（本源上限）+ 记录每次真实请求条件的固定页。 */
+    private fun stubPaperSourceRuns(
+        source: AcademicDataSource,
+        cap: Int,
+        page: PaperSearchResult
+    ): MutableList<PaperSearchCriteria> {
+        DiscoveryMockHelper.stubMaxPapersPerSource(source, cap)
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(source, "NO_EMAIL_IN_FULLTEXT")
+        return stubAndRecordRequests(source, page)
+    }
+
+    /** c9：一页 [count] 篇（[offset] 让各来源的 paperId 不互相覆盖），[nextCursor] 为 null 表示该来源穷尽。 */
+    private fun pageOf(count: Int, nextCursor: String?, offset: Int = 0): PaperSearchResult =
+        PaperSearchResult(
+            (1..count).map { paper("PMC${offset + it}", "Paper ${offset + it}") },
+            nextCursor,
+            count.toLong()
+        )
+
+    /** c9：四个启用论文源（EPMC 恒在），本源上限给定，且都返回同一种页。 */
+    private fun enableFourPaperSources(
+        cap: Int,
+        page: PaperSearchResult
+    ): Map<String, MutableList<PaperSearchCriteria>> {
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        val crossref = Mockito.mock(CrossrefDataSource::class.java)
+        val arxiv = Mockito.mock(ArxivDataSource::class.java)
+        stubSource(openAlex, "OPENALEX")
+        stubSource(crossref, "CROSSREF")
+        stubSource(arxiv, "ARXIV")
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        Mockito.doReturn(crossref).`when`(crossrefProvider).getIfAvailable()
+        Mockito.doReturn(arxiv).`when`(arxivProvider).getIfAvailable()
+        return mapOf(
+            "EUROPE_PMC" to stubPaperSourceRuns(europePmc, cap, page),
+            "OPENALEX" to stubPaperSourceRuns(openAlex, cap, page),
+            "CROSSREF" to stubPaperSourceRuns(crossref, cap, page),
+            "ARXIV" to stubPaperSourceRuns(arxiv, cap, page)
+        )
+    }
+
+    private val fourSourceCriteria =
+        PaperSearchCriteria(sources = listOf("EUROPE_PMC", "OPENALEX", "CROSSREF", "ARXIV"))
+
+    @Test
+    fun `公平额度：全局上限恰好覆盖各来源一页时每源各发一次请求（I-1 I-2）`() {
+        // A-1 等价：globalCap=400 = 四源各一页 100；不是第一个来源独占 400。
+        val props = ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 400, maxAuthorsPerRun = 2_000, includeRawScan = false
+        )
+        val svc = createService(props)
+        val requests = enableFourPaperSources(cap = 200, page = pageOf(100, "NEXT"))
+        val captured = mutableListOf<TaskProgress>()
+        DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
+
+        val result = svc.discover(fourSourceCriteria, "TEST", includeRawScan = false)
+
+        assertEquals(400, result.stats.totalPapers, "运行级目标 400 与单页 100 是两件事（I-1）")
+        assertEquals(100, result.stats.bySource["OPENALEX"]?.papersSearched, "主源必须让出后来源的基础份额")
+        requests.forEach { (name, seen) ->
+            assertEquals(1, seen.size, "$name 必须恰好发出进入第一页的一次请求")
+            assertEquals(100, result.stats.bySource[name]?.papersSearched, "$name 的基础份额是一页")
+            assertEquals(100, result.stats.bySource[name]?.runBudget, "$name 的 run 额度必须是 min(cap, 全局剩余-保留)")
+        }
+        // 报告边界：run 额度与计量单位进既有进度 details（不加列、不改前端）
+        val lastDetails = captured.last { it.details?.containsKey("bySource") == true }.details!!
+        @Suppress("UNCHECKED_CAST")
+        val reported = lastDetails["bySource"] as Map<String, Map<String, Any>>
+        assertEquals(100, reported["OPENALEX"]?.get("runBudget"))
+        assertEquals(SourceUnit.PAPER.name, reported["OPENALEX"]?.get("unit"))
+        assertEquals(0, result.stats.sourceFailures)
+    }
+
+    @Test
+    fun `穷尽来源释放的剩余额度由后来源在各自上限内用尽（I-2）`() {
+        val props = ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 400, maxAuthorsPerRun = 2_000, includeRawScan = false
+        )
+        val svc = createService(props)
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        val crossref = Mockito.mock(CrossrefDataSource::class.java)
+        val arxiv = Mockito.mock(ArxivDataSource::class.java)
+        stubSource(openAlex, "OPENALEX")
+        stubSource(crossref, "CROSSREF")
+        stubSource(arxiv, "ARXIV")
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        Mockito.doReturn(crossref).`when`(crossrefProvider).getIfAvailable()
+        Mockito.doReturn(arxiv).`when`(arxivProvider).getIfAvailable()
+        // EPMC 只有 40 篇且无下一页 = 真实穷尽，释放 60 篇基础份额给后来源。
+        stubPaperSourceRuns(europePmc, 200, pageOf(40, null))
+        val openAlexRequests = stubPaperSourceRuns(openAlex, 200, pageOf(100, "NEXT-OPENALEX", offset = 100))
+        stubPaperSourceRuns(crossref, 200, pageOf(100, "NEXT-CROSSREF", offset = 200))
+        stubPaperSourceRuns(arxiv, 200, pageOf(100, "NEXT-ARXIV", offset = 300))
+
+        val result = svc.discover(fourSourceCriteria, "TEST", includeRawScan = false)
+
+        assertEquals(400, result.stats.totalPapers, "释放的额度必须被用尽，且不得越过全局上限")
+        assertEquals(40, result.stats.bySource["EUROPE_PMC"]?.papersSearched)
+        assertEquals(DiscoveryStopReason.EXHAUSTED, result.stats.bySource["EUROPE_PMC"]?.stopReason)
+        assertEquals(160, result.stats.bySource["OPENALEX"]?.runBudget, "释放的 60 篇进入同一次运行的后来源配额")
+        assertEquals(160, result.stats.bySource["OPENALEX"]?.papersSearched)
+        assertEquals(2, openAlexRequests.size, "160 篇 = 一页 + 半页，半页不推进游标")
+        assertEquals(100, result.stats.bySource["CROSSREF"]?.papersSearched, "后来源仍拿到基础份额")
+        assertEquals(100, result.stats.bySource["ARXIV"]?.papersSearched)
+        assertEquals(
+            DiscoveryStopReason.GLOBAL_PAPER_LIMIT,
+            result.stats.bySource["ARXIV"]?.stopReason,
+            "全局 cap 到界必须自己命名，不能算成来源失败"
+        )
+    }
+
+    @Test
+    fun `全局上限不足各来源基础份额时启动校验失败且不发任何请求（I-1）`() {
+        val props = ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        )
+        val svc = createService(props)
+        val requests = enableFourPaperSources(cap = 200, page = pageOf(100, "NEXT"))
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            svc.discover(fourSourceCriteria, "TEST", includeRawScan = false)
+        }
+
+        assertTrue(error.message!!.contains("EXPERT_DISCOVERY_MAX_PAPERS"),
+            "配置错误必须指向可调旋钮：${error.message}")
+        assertTrue(error.message!!.contains("400"), "必须报出各来源基础份额合计：${error.message}")
+        requests.forEach { (name, seen) -> assertTrue(seen.isEmpty(), "$name 在启动校验失败时不得发请求") }
+        Mockito.verify(cursorRepository, Mockito.never()).save(Mockito.any(DiscoverySourceCursor::class.java))
+    }
+
+    @Test
+    fun `手动只选 arXiv 时全额使用自身额度且不碰 OpenAlex（I-2 V-2）`() {
+        val props = ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 400, maxAuthorsPerRun = 2_000, includeRawScan = false
+        )
+        val svc = createService(props)
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        stubSource(openAlex, "OPENALEX")
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val openAlexRequests = stubPaperSourceRuns(openAlex, 200, pageOf(100, "NEXT-OPENALEX"))
+        val arxiv = Mockito.mock(ArxivDataSource::class.java)
+        stubSource(arxiv, "ARXIV")
+        Mockito.doReturn(arxiv).`when`(arxivProvider).getIfAvailable()
+        val arxivRequests = stubPaperSourceRuns(arxiv, 2_000, pageOf(100, "NEXT-ARXIV"))
+
+        val result = svc.discover(PaperSearchCriteria(sources = listOf("ARXIV")), "TEST", includeRawScan = false)
+
+        assertEquals(setOf("ARXIV"), result.stats.bySource.keys, "人工少源任务只分配所选来源")
+        assertEquals(400, result.stats.bySource["ARXIV"]?.runBudget)
+        assertEquals(400, result.stats.bySource["ARXIV"]?.papersSearched, "手选单源不受其他来源保留份额影响")
+        assertEquals(4, arxivRequests.size)
+        assertTrue(openAlexRequests.isEmpty(), "未被选中的 OpenAlex 不得发出任何请求")
+    }
+
+    @Test
+    fun `时间预算到点停在进入页并记录 TIME_BUDGET（I-3）`() {
+        val props = ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 1_000, maxAuthorsPerRun = 2_000,
+            includeRawScan = false, timeBudget = Duration.ofMillis(1_000)
+        )
+        val svc = createService(props)
+        val criteria = PaperSearchCriteria()
+        stubStoredCheckpoint("EUROPE_PMC", "C1", criteria)
+        val seen = mutableListOf<PaperSearchCriteria>()
+        val page1 = pageOf(100, "C2")
+        val page2 = pageOf(100, "C3", offset = 100)
+        Mockito.doAnswer { invocation ->
+            seen.add(invocation.getArgument(0) as PaperSearchCriteria)
+            // 第二页请求本身耗时超过预算：到点必须停在进入该页的 C2，不得推进到 C3。
+            if (seen.size > 1) Thread.sleep(1_500)
+            if (seen.size == 1) page1 else page2
+        }.`when`(europePmc).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(europePmc, "NO_EMAIL_IN_FULLTEXT")
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        assertEquals(listOf("C1", "C2"), seen.map { it.cursor }, "时间预算到点后不得再发出第三次请求")
+        assertEquals(100, result.stats.totalPapers, "超时那一页不得被算成已消费")
+        val decoded = storedCheckpointFor("EUROPE_PMC", criteria)
+        assertEquals("C2", decoded.cursor, "超时必须停在进入该页的 cursor，绝不推进到 C3")
+        assertFalse(decoded.exhausted, "时间预算不是穷尽")
+        assertEquals(DiscoveryStopReason.TIME_BUDGET, result.stats.bySource["EUROPE_PMC"]?.stopReason)
+        assertEquals(1, result.stats.pendingSources, "时间预算停止仍有可续跑工作")
+    }
+
+    @Test
+    fun `0 的配置不会被当成无限量（I-1）`() {
+        val zeroGlobal = createService(
+            ExpertDiscoveryProperties(enabled = true, maxPapersPerRun = 0, maxAuthorsPerRun = 200, includeRawScan = false)
+        )
+        val globalError = assertThrows(IllegalArgumentException::class.java) {
+            zeroGlobal.discover(PaperSearchCriteria(), "TEST")
+        }
+        assertTrue(globalError.message!!.contains("全局论文上限"), "必须报清楚是哪个旋钮：${globalError.message}")
+
+        val zeroTime = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 400, maxAuthorsPerRun = 200,
+                includeRawScan = false, timeBudget = Duration.ZERO
+            )
+        )
+        val timeError = assertThrows(IllegalArgumentException::class.java) {
+            zeroTime.discover(PaperSearchCriteria(), "TEST")
+        }
+        assertTrue(timeError.message!!.contains("时间预算"), "必须报清楚是哪个旋钮：${timeError.message}")
+        Mockito.verify(europePmc, Mockito.never())
+            .searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+    }
+
+    @Test
+    fun `本源上限为 0 的来源不发请求也不计论文（I-1）`() {
+        val props = ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 400, maxAuthorsPerRun = 2_000, includeRawScan = false
+        )
+        val svc = createService(props)
+        val requests = stubPaperSourceRuns(europePmc, 0, pageOf(1, "NEXT"))
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false)
+
+        assertEquals(0, result.stats.bySource["EUROPE_PMC"]?.runBudget)
+        assertEquals(0, result.stats.totalPapers, "0 不是无限量")
+        assertTrue(requests.isEmpty(), "额度为 0 的来源不得发出请求")
+        assertEquals(DiscoveryStopReason.SOURCE_LIMIT, result.stats.bySource["EUROPE_PMC"]?.stopReason)
+    }
+
+    @Test
+    fun `ORCID 记录与论文数在汇总里分列且限额独立（I-2）`() {
+        val props = ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 400, maxAuthorsPerRun = 200, includeRawScan = false
+        )
+        val svc = createService(props)
+        stubPaperSourceRuns(europePmc, 500, pageOf(2, null))
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        DiscoveryMockHelper.stubOrcidRecordToAuthorEmails(orcid)
+        DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 1_000)
+        val records = (1..3).map {
+            OrcidDataSource.OrcidRecord(
+                orcidId = "0000-000$it", givenNames = "Test", familyNames = "$it",
+                emails = listOf("test$it@example.com"), institutionName = "Univ", country = null
+            )
+        }
+        stubOrcid(orcid, records)
+        for (i in 1..3) {
+            DiscoveryMockHelper.stubValidateEmail(
+                emailValidationService, "test$i@example.com", EmailValidationResult(2, true)
+            )
+        }
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+
+        val result = svc.discover(
+            PaperSearchCriteria(sources = listOf("EUROPE_PMC", "ORCID")), "TEST", includeRawScan = false
+        )
+
+        val orcidStats = result.stats.bySource["ORCID"]!!
+        assertEquals(SourceUnit.RECORD, orcidStats.unit)
+        assertEquals(1_000, orcidStats.runBudget, "ORCID 记录限额独立于论文全局上限，不是 400")
+        assertEquals(3, orcidStats.papersSearched)
+        assertEquals(2, result.stats.bySource["EUROPE_PMC"]?.papersSearched)
+        assertEquals(SourceUnit.PAPER, result.stats.bySource["EUROPE_PMC"]?.unit)
+        val summary = result.summaryText!!
+        assertTrue(summary.contains("论文 2"), "论文数不得混入 ORCID 记录：$summary")
+        assertTrue(summary.contains("ORCID 记录 3"), "ORCID 记录必须单列：$summary")
     }
 
     private fun stubAcademicUpdateOk() {

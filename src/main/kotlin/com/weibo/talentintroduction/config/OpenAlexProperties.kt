@@ -10,7 +10,11 @@ data class OpenAlexProperties(
     val politeEmail: String = "",
     val baseUrl: String = "https://api.openalex.org",
     val requestDelayMs: Long = 100,
-    val maxPapersPerSource: Int = 500,
+    /**
+     * I-1（09）：OpenAlex 的单次运行上限 = 上线目标 10000（与 application.yml 的
+     * `OPENALEX_MAX_PAPERS` 同值）。它是**本源**额度，受全局论文上限与后来源保留份额约束。
+     */
+    val maxPapersPerSource: Int = 10000,
     val connectTimeoutMs: Int = 5000,
     val readTimeoutMs: Int = 15000,
     val enrichmentDelayMs: Long = 300,

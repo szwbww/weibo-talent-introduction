@@ -17,6 +17,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
 import com.weibo.talentintroduction.discovery.domain.SourceStats
+import com.weibo.talentintroduction.discovery.domain.SourceUnit
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
@@ -250,7 +251,9 @@ class ExpertDiscoveryService(
                 "apiRequests" to ss.apiRequests,
                 "pendingWork" to ss.pendingWork,
                 "sourceFailureCount" to ss.sourceFailureCount,
-                "stopReason" to (ss.stopReason ?: "")
+                "stopReason" to (ss.stopReason ?: ""),
+                "runBudget" to ss.runBudget,
+                "unit" to ss.unit.name
             )
         }
         return bySource
@@ -267,7 +270,17 @@ class ExpertDiscoveryService(
             ""
         }
         return "发现任务完成[$terminalStatus]: 总耗时 ${totalElapsed}ms | 各平台: $sourceSummaries | " +
-            "合计: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}$sourceFailureSegment"
+            "合计: ${processedCountsSegment(stats)}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}$sourceFailureSegment"
+    }
+
+    /**
+     * c9（I-1）：`papersSearched` 对 ORCID 的历史语义是「记录数」，不能与论文混称。这里按
+     * [SourceUnit] 把两者分列；没有 ORCID 记录时输出与改动前逐字相同。
+     */
+    private fun processedCountsSegment(stats: DiscoveryStats): String {
+        val paperTotal = stats.bySource.values.filter { it.unit == SourceUnit.PAPER }.sumOf { it.papersSearched }
+        val recordTotal = stats.bySource.values.filter { it.unit == SourceUnit.RECORD }.sumOf { it.papersSearched }
+        return if (recordTotal > 0) "论文 $paperTotal, ORCID 记录 $recordTotal" else "论文 $paperTotal"
     }
 
     private fun buildProgressDetails(stats: DiscoveryStats, sourceName: String? = null, method: String? = null): Map<String, Any> {
@@ -312,13 +325,19 @@ class ExpertDiscoveryService(
         val stats = DiscoveryStats()
         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
         val sources = resolveEnabledSources(criteria)
+        // I-1（09）：启动校验 —— 全局 cap 必须覆盖各启用来源的基础份额，否则直接报配置错误，
+        // 不静默饿死后来源，也不把 0 当成无限量。
+        validateRunQuota(sources, criteria)
+        // I-3（09）：运行级 deadline。请求前与每页内检查，到点按 TIME_BUDGET 停止并保留进入页的检查点。
+        val deadline = Instant.now().plus(discoveryProperties.timeBudget)
         val startTime = System.currentTimeMillis()
         // I-3: 结果与进度共用的终态；仅在正常路径赋值（异常路径由 catch 记录 FAILED 后重抛）。
         var terminalStatusOfRun = DiscoveryTerminalStatus.SUCCESS
 
         log.info("发现任务启动: 启用平台=${sources.map { it.sourceName }}, 关键词=${criteria.keywords}, " +
             "年份=${criteria.publicationYearFrom}-${criteria.publicationYearTo}, " +
-            "全局限额: 论文 ${discoveryProperties.maxPapersPerRun} / 作者 ${discoveryProperties.maxAuthorsPerRun}")
+            "全局限额: 论文 ${discoveryProperties.maxPapersPerRun} / 作者 ${discoveryProperties.maxAuthorsPerRun}, " +
+            "时间预算 ${discoveryProperties.timeBudget}")
 
         try {
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
@@ -346,19 +365,22 @@ class ExpertDiscoveryService(
                 }
             }
 
-            for (source in sources) {
+            for ((index, source) in sources.withIndex()) {
                 if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
                 stats.refreshGlobalCounts()
                 if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
                 if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) break
 
-                val outcome = discoverFromSource(source, criteria, stats)
+                // I-2: 先给每个后来源留一页基础份额，再按来源顺序分配本源的运行额度；
+                // 已穷尽/失效来源没用掉的份额自然留在全局剩余里给后来源复用。
+                val runQuota = allocateSourceQuota(sources, index, criteria.pageSize, papersUsedForGlobalCap(stats))
+                val outcome = discoverFromSource(source, criteria, stats, runQuota, deadline)
                 log.info("[{}] 本次运行结束: stopReason={}, exhausted={}, resumeCursor={}",
                     source.sourceName, outcome.stopReason, outcome.exhausted,
                     outcome.resumeCursor?.take(50) ?: "null")
             }
 
-            discoverFromOrcid(criteria, stats)
+            discoverFromOrcid(criteria, stats, deadline)
             stats.refreshGlobalCounts()
 
             val totalElapsed = System.currentTimeMillis() - startTime
@@ -431,36 +453,113 @@ class ExpertDiscoveryService(
         val pendingSegment = if (stats.pendingSources > 0) {
             "，待续跑来源 ${stats.pendingSources}"
         } else ""
+        // c9（I-1）：论文与 ORCID 记录分列，不把记录数混称论文。
+        val counts = processedCountsSegment(stats)
         return when (terminalStatus) {
             DiscoveryTerminalStatus.CANCELLED ->
-                "已取消: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}"
+                "已取消: $counts, 收录 ${stats.indexed}, 晋升 ${stats.promoted}"
             DiscoveryTerminalStatus.FAILED ->
-                "失败: 全源搜索失败$sourceFailureSegment, 论文 ${stats.totalPapers}, 收录 ${stats.indexed}"
+                "失败: 全源搜索失败$sourceFailureSegment, $counts, 收录 ${stats.indexed}"
             DiscoveryTerminalStatus.PARTIAL_SUCCESS ->
-                "部分成功: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}" +
+                "部分成功: $counts, 收录 ${stats.indexed}, 晋升 ${stats.promoted}" +
                     sourceFailureSegment + pendingSegment
             else ->
-                "完成: 论文 ${stats.totalPapers}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}"
+                "完成: $counts, 收录 ${stats.indexed}, 晋升 ${stats.promoted}"
         }
     }
 
-    private fun getSourceLimit(source: AcademicDataSource): Int {
-        return source.maxPapersPerSource
+    /**
+     * c9（I-1）：启动校验。三类错误都必须在**动手之前**以清晰配置错误暴露，而不是静默饿死后来源
+     * 或把 0 解释成无限量：
+     * 1. 全局论文上限 / 作者防护上限 / 时间预算必须为正数；
+     * 2. 来源上限不得为负；
+     * 3. 全局论文上限必须覆盖各启用来源的基础份额（每源至少一页，`min(pageSize, cap)`）。
+     */
+    private fun validateRunQuota(sources: List<AcademicDataSource>, criteria: PaperSearchCriteria) {
+        val globalCap = discoveryProperties.maxPapersPerRun
+        val authorCap = discoveryProperties.maxAuthorsPerRun
+        val timeBudget = discoveryProperties.timeBudget
+        require(globalCap > 0) {
+            "深度发现配置错误：全局论文上限（EXPERT_DISCOVERY_MAX_PAPERS）必须为正数，当前为 $globalCap。" +
+                "0 表示配置错误而不是无限量。"
+        }
+        require(authorCap > 0) {
+            "深度发现配置错误：作者防护上限（EXPERT_DISCOVERY_MAX_AUTHORS）必须为正数，当前为 $authorCap。" +
+                "0 表示配置错误而不是无限量。"
+        }
+        require(!timeBudget.isZero && !timeBudget.isNegative) {
+            "深度发现配置错误：单次运行的时间预算（EXPERT_DISCOVERY_TIME_BUDGET）必须为正数，当前为 $timeBudget。" +
+                "0 表示配置错误而不是无限量。"
+        }
+        val negative = sources.filter { it.maxPapersPerSource < 0 }
+        require(negative.isEmpty()) {
+            "深度发现配置错误：来源上限不得为负：" +
+                negative.joinToString(", ") { "${it.sourceName}=${it.maxPapersPerSource}" }
+        }
+        val pageSize = pageSizeOf(criteria)
+        val baseShares = sources.sumOf { minOf(pageSize, it.maxPapersPerSource) }
+        require(globalCap >= baseShares) {
+            "深度发现配置错误：全局论文上限 $globalCap 小于各启用来源的基础份额合计 $baseShares" +
+                "（每源至少一页 $pageSize：${sources.joinToString(", ") { "${it.sourceName}=${minOf(pageSize, it.maxPapersPerSource)}" }}）。" +
+                "请提高 EXPERT_DISCOVERY_MAX_PAPERS 或减少本次选择的来源。"
+        }
     }
+
+    /**
+     * c9（I-2）：本源本次运行的额度 = `min(本源上限, 全局剩余 - 后来源保留份额)`。
+     * 后来源保留份额只保底一页（`min(pageSize, cap)`），因此前来源有剩余额度时后来源在本源上限内
+     * 仍可用掉它；反过来任何来源都不可能吃掉后来源的保底份额。返回值可能为 0（本源上限为 0），
+     * 调用方按 0 额度运行 —— 绝不解释成无限量。
+     */
+    private fun allocateSourceQuota(
+        sources: List<AcademicDataSource>,
+        index: Int,
+        pageSize: Int,
+        papersUsed: Int
+    ): Int {
+        val page = pageSize.coerceAtLeast(1)
+        val sourceCap = sources[index].maxPapersPerSource.coerceAtLeast(0)
+        val globalRemaining = (discoveryProperties.maxPapersPerRun - papersUsed).coerceAtLeast(0)
+        val reserveForLater = sources.drop(index + 1)
+            .sumOf { minOf(page, it.maxPapersPerSource.coerceAtLeast(0)) }
+        val available = (globalRemaining - reserveForLater).coerceAtLeast(0)
+        return minOf(sourceCap, available)
+    }
+
+    private fun pageSizeOf(criteria: PaperSearchCriteria): Int = criteria.pageSize.coerceAtLeast(1)
+
+    /**
+     * c9（I-1）：计入全局论文上限的只有论文源。ORCID 走独立的记录限额与作者防护，
+     * 不参与论文额度分配（避免它的记录数挤占论文份额）。
+     */
+    private fun papersUsedForGlobalCap(stats: DiscoveryStats): Int =
+        stats.bySource.values.filter { it.unit == SourceUnit.PAPER }.sumOf { it.papersSearched }
+
+    /** c9（I-3）：运行级时间预算是否已到点。 */
+    private fun timeBudgetReached(deadline: Instant): Boolean = !Instant.now().isBefore(deadline)
 
     /**
      * I-1: 单来源运行。每一完整消费页后立即持久化 next cursor；首请求失败、部分页、取消与预算停止
      * 都保留进入该页的 cursor；异常与额度延期绝不产出 `exhausted = true`。
+     *
+     * c9（I-1/I-2）：[runQuota] 是本次运行分给本源的额度（已含后来源保留份额），它可能小于本源自身上限 ——
+     * 此时到界按全局 cap 命名，而不是谎称本源上限用尽。
+     * c9（I-3）：[deadline] 到点即按 `TIME_BUDGET` 停在进入页，不推进未消费的半页。
      */
     private fun discoverFromSource(
         source: AcademicDataSource,
         criteria: PaperSearchCriteria,
-        stats: DiscoveryStats
+        stats: DiscoveryStats,
+        runQuota: Int,
+        deadline: Instant
     ): SourceRunOutcome {
         val sourceStats = stats.getOrCreateSourceStats(source.sourceName, source.emailExtractionMethod)
         val sourceStartTime = System.currentTimeMillis()
         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
-        val sourceLimit = getSourceLimit(source)
+        val sourceLimit = runQuota.coerceAtLeast(0)
+        // 运行额度小于本源上限 = 本次是全局 cap 在约束本源，停止原因必须按全局 cap 命名。
+        val quotaBoundByGlobalCap = sourceLimit < source.maxPapersPerSource
+        sourceStats.runBudget = sourceLimit
 
         val checkpoint = loadSourceCheckpoint(source.sourceName, criteria)
         // I-2: 检查点是游标权威；EXHAUSTED 表示本次扫描周期从头重开，
@@ -476,7 +575,11 @@ class ExpertDiscoveryService(
             log.info("[{}] 上次已穷尽，本次扫描周期从头重开", source.sourceName)
         }
 
-        log.info("[{}] 开始: 方式={}, 本源限额={}", source.sourceName, source.emailExtractionMethod, sourceLimit)
+        log.info(
+            "[{}] 开始: 方式={}, 本源限额={}, 本次运行额度={}, 全局剩余={}",
+            source.sourceName, source.emailExtractionMethod, source.maxPapersPerSource, sourceLimit,
+            (discoveryProperties.maxPapersPerRun - papersUsedForGlobalCap(stats)).coerceAtLeast(0)
+        )
 
         val runCriteria = if (enteringCursor != null) criteria.copy(cursor = enteringCursor) else criteria
         var cursor: String? = enteringCursor
@@ -516,7 +619,17 @@ class ExpertDiscoveryService(
                 break
             }
             if (sourcePapersProcessed >= sourceLimit) {
-                stopReason = DiscoveryStopReason.SOURCE_LIMIT
+                stopReason = if (quotaBoundByGlobalCap) {
+                    DiscoveryStopReason.GLOBAL_PAPER_LIMIT
+                } else {
+                    DiscoveryStopReason.SOURCE_LIMIT
+                }
+                break
+            }
+            // c9（I-3）：HTTP 请求前的 deadline 检查 —— 到点绝不发下一次请求。
+            if (timeBudgetReached(deadline)) {
+                log.info("[{}] 时间预算到点，停止并发起无请求，保留进入页游标 {}", source.sourceName, resumeCursor?.take(50) ?: "null")
+                stopReason = DiscoveryStopReason.TIME_BUDGET
                 break
             }
 
@@ -594,15 +707,32 @@ class ExpertDiscoveryService(
             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             var limitReached = false
+            // c9（I-3）：页内到点单独标记 —— 半页按「进入该页」落盘，且停止原因必须是 TIME_BUDGET。
+            var timeBudgetExpired = false
+            // c9（I-3）：到界的哪个约束自己命名（全局论文上限 / 作者防护 / 本源额度）。
+            var limitReason: String? = null
             var consumedInBatch = 0
 
             val extractions = parallelExtractOutcomes(batch.papers, source)
             for ((paper, extraction) in extractions) {
                 if (consumedInBatch % 10 == 0 && progressStore.isCancelled("EXPERT_DISCOVERY")) { limitReached = true; break }
+                if (timeBudgetReached(deadline)) { timeBudgetExpired = true; break }
                 stats.refreshGlobalCounts()
-                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) { limitReached = true; break }
-                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) { limitReached = true; break }
-                if (sourcePapersProcessed >= sourceLimit) { limitReached = true; break }
+                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) {
+                    limitReached = true; limitReason = DiscoveryStopReason.GLOBAL_PAPER_LIMIT; break
+                }
+                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+                    limitReached = true; limitReason = DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT; break
+                }
+                if (sourcePapersProcessed >= sourceLimit) {
+                    limitReached = true
+                    limitReason = if (quotaBoundByGlobalCap) {
+                        DiscoveryStopReason.GLOBAL_PAPER_LIMIT
+                    } else {
+                        DiscoveryStopReason.SOURCE_LIMIT
+                    }
+                    break
+                }
                 sourceStats.papersSearched++
                 sourcePapersProcessed++
                 consumedInBatch++
@@ -620,7 +750,7 @@ class ExpertDiscoveryService(
                 log.warn("[{}] 批次 {} 内有 {} 条补全任务入队失败，保留进入该页的 cursor 以便重放补建",
                     source.sourceName, batchNumber, enqueueFailedInPage)
             }
-            if (!limitReached && rawWriteFailedInPage == 0 && enqueueFailedInPage == 0) {
+            if (!limitReached && !timeBudgetExpired && rawWriteFailedInPage == 0 && enqueueFailedInPage == 0) {
                 val nextCursor = batch.nextCursor
                 // 没有下一页即穷尽；完整消费的页在进入下一页前立即落盘。
                 persistCheckpoint(
@@ -669,11 +799,12 @@ class ExpertDiscoveryService(
                 stopReason = DiscoveryStopReason.ENQUEUE_INCOMPLETE
                 break
             }
-            if (limitReached || circuitBreakerTripped) {
-                stopReason = if (circuitBreakerTripped) {
-                    DiscoveryStopReason.CIRCUIT_BREAKER
-                } else {
-                    DiscoveryStopReason.PAGE_PARTIAL
+            if (limitReached || circuitBreakerTripped || timeBudgetExpired) {
+                stopReason = when {
+                    circuitBreakerTripped -> DiscoveryStopReason.CIRCUIT_BREAKER
+                    timeBudgetExpired -> DiscoveryStopReason.TIME_BUDGET
+                    limitReason != null -> limitReason!!
+                    else -> DiscoveryStopReason.PAGE_PARTIAL
                 }
                 break
             }
@@ -715,7 +846,7 @@ class ExpertDiscoveryService(
      * 也会前进而不是原地打转；只有所有主题分片遍历完（`nextCursor == null`）才判穷尽，
      * EXHAUSTED 允许下一个扫描周期重开并靠去重避免重复收录。
      */
-    private fun discoverFromOrcid(criteria: PaperSearchCriteria, stats: DiscoveryStats): SourceRunOutcome? {
+    private fun discoverFromOrcid(criteria: PaperSearchCriteria, stats: DiscoveryStats, deadline: Instant): SourceRunOutcome? {
         val orcid = orcidProvider.getIfAvailable() ?: return null
         if (criteria.sources.isNotEmpty() && !criteria.sources.contains(orcid.sourceName)) return null
 
@@ -738,6 +869,9 @@ class ExpertDiscoveryService(
         log.info("[{}] 开始: 方式=API_FIELD", orcid.sourceName)
 
         val orcidLimit = orcid.maxRecordsPerRun
+        // c9（I-2）：ORCID 的计量单位是「记录」，限额独立于论文全局 cap，只受作者总数防护约束。
+        sourceStats.unit = SourceUnit.RECORD
+        sourceStats.runBudget = orcidLimit
         var cursor: String? = enteringCursor ?: "0"
         var resumeCursor: String? = enteringCursor
         var persistedRecords = 0
@@ -768,6 +902,12 @@ class ExpertDiscoveryService(
             }
             if (recordsProcessed >= orcidLimit) {
                 stopReason = DiscoveryStopReason.SOURCE_LIMIT
+                break
+            }
+            // c9（I-3）：请求前 deadline 检查 —— 时间预算到点绝不发下一次 ORCID 请求。
+            if (timeBudgetReached(deadline)) {
+                log.info("[{}] 时间预算到点，保留进入页 offset {}", orcid.sourceName, resumeCursor ?: "null")
+                stopReason = DiscoveryStopReason.TIME_BUDGET
                 break
             }
 
@@ -804,8 +944,11 @@ class ExpertDiscoveryService(
             val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
+            // c9（I-3）：页内到点单独标记 —— 部分页按「进入该页」落盘，停止原因按 TIME_BUDGET 命名。
+            var timeBudgetExpired = false
             for (record in records) {
                 if (recordsProcessed >= orcidLimit) break
+                if (timeBudgetReached(deadline)) { timeBudgetExpired = true; break }
                 stats.refreshGlobalCounts()
                 if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
                 sourceStats.papersSearched++
@@ -905,7 +1048,7 @@ class ExpertDiscoveryService(
                 log.warn("[{}] 批次 {} 内有 {} 条补全任务入队失败，保留进入该页的 offset 以便重放补建",
                     orcid.sourceName, batchNumber, enqueueFailedInPage)
             }
-            if (pageFullyConsumed && rawWriteFailedInPage == 0 && enqueueFailedInPage == 0) {
+            if (pageFullyConsumed && !timeBudgetExpired && rawWriteFailedInPage == 0 && enqueueFailedInPage == 0) {
                 // I-2: 推进量由数据源按原始返回条数算好（不受邮箱过滤影响），这里只搬运它的游标。
                 cursor = page.nextCursor
                 persistCheckpoint(
@@ -922,6 +1065,8 @@ class ExpertDiscoveryService(
                         DiscoveryStopReason.RAW_WRITE_INCOMPLETE
                     } else if (enqueueFailedInPage > 0) {
                         DiscoveryStopReason.ENQUEUE_INCOMPLETE
+                    } else if (timeBudgetExpired) {
+                        DiscoveryStopReason.TIME_BUDGET
                     } else {
                         DiscoveryStopReason.PAGE_PARTIAL
                     },
@@ -2219,6 +2364,12 @@ object DiscoveryStopReason {
      * 既不是搜索失败也不是穷尽：游标切到下一分片，未覆盖尾部只在日志与 failureReasons 里记录。
      */
     const val WINDOW_LIMIT = "WINDOW_LIMIT"
+
+    /**
+     * I-3（09）：单次发现的运行级时间预算到点。与额度延期/熔断一样保留进入该页的检查点，
+     * 不把未消费的半页当成已消费，也绝不置 `exhausted`。
+     */
+    const val TIME_BUDGET = "TIME_BUDGET"
 }
 
 /**

@@ -176,10 +176,15 @@ talent-introduction:
   expert-discovery:
     enabled: ${EXPERT_DISCOVERY_ENABLED:true}
     cron: ${EXPERT_DISCOVERY_CRON:0 0 2 * * ?}
-    max-papers-per-run: ${EXPERT_DISCOVERY_MAX_PAPERS:5000}
+    # c9（I-1）: 运行级上限与单批/单页解耦 —— 全部论文源合计 15000、作者 20000。
+    # 论文页 100 与补全批量 100 只是每批大小，不是每日总量；启动校验会要求全局上限
+    # 至少覆盖各启用来源的一页，否则拒绝启动（0 不是无限量）。
+    max-papers-per-run: ${EXPERT_DISCOVERY_MAX_PAPERS:15000}
     max-authors-per-run: ${EXPERT_DISCOVERY_MAX_AUTHORS:20000}
     include-raw-scan: ${EXPERT_DISCOVERY_INCLUDE_RAW_SCAN:false}
     fetch-concurrency: ${EXPERT_DISCOVERY_FETCH_CONCURRENCY:4}
+    # c9（I-3）: 单次发现的时间预算；到点按 TIME_BUDGET 停止并保留进入当前页的检查点。
+    time-budget: ${EXPERT_DISCOVERY_TIME_BUDGET:4h}
     # I-2: 发现后自动补全默认关闭，验收后在服务器开启；批次上限 100（只是一批，不是每日总量）。
     auto-enrichment-enabled: ${EXPERT_DISCOVERY_AUTO_ENRICHMENT_ENABLED:false}
     auto-enrichment-batch-size: ${EXPERT_DISCOVERY_AUTO_ENRICHMENT_BATCH_SIZE:100}
@@ -197,7 +202,8 @@ talent-introduction:
       polite-email: ${OPENALEX_POLITE_EMAIL:wuwei@qftechtalent.com}
       base-url: ${OPENALEX_BASE_URL:https://api.openalex.org}
       request-delay-ms: ${OPENALEX_REQUEST_DELAY_MS:100}
-      max-papers-per-source: ${OPENALEX_MAX_PAPERS:2500}
+      # c9（I-1）: 上线目标 10000（主方案建议值）；与 OpenAlexProperties 的默认值保持同值。
+      max-papers-per-source: ${OPENALEX_MAX_PAPERS:10000}
       connect-timeout-ms: ${OPENALEX_CONNECT_TIMEOUT_MS:5000}
       read-timeout-ms: ${OPENALEX_READ_TIMEOUT_MS:15000}
       enrichment-delay-ms: ${OPENALEX_ENRICHMENT_DELAY_MS:300}
@@ -216,7 +222,8 @@ talent-introduction:
       base-url: ${CROSSREF_BASE_URL:https://api.crossref.org}
       polite-email: ${CROSSREF_POLITE_EMAIL:wuwei@qftechtalent.com}
       request-delay-ms: ${CROSSREF_REQUEST_DELAY_MS:200}
-      max-papers-per-source: ${CROSSREF_MAX_PAPERS:300}
+      # c9（I-1）: 单源上限 1000（CrossrefProperties 的 Kotlin 默认值更保守，生产以本行为准）。
+      max-papers-per-source: ${CROSSREF_MAX_PAPERS:1000}
     unpaywall:
       base-url: ${UNPAYWALL_BASE_URL:https://api.unpaywall.org/v2}
       email: ${UNPAYWALL_EMAIL:wuwei@qftechtalent.com}
@@ -226,7 +233,8 @@ talent-introduction:
       # I-2: 官方 http 入口实测返回 301 空体；此默认值覆盖 ArxivProperties 的默认值，两处必须同为 https。
       base-url: ${ARXIV_BASE_URL:https://export.arxiv.org/api}
       request-delay-ms: ${ARXIV_REQUEST_DELAY_MS:3000}
-      max-papers-per-source: ${ARXIV_MAX_PAPERS:800}
+      # c9（I-1）: 单源上限 2000（ArxivProperties 的 Kotlin 默认值更保守，生产以本行为准）。
+      max-papers-per-source: ${ARXIV_MAX_PAPERS:2000}
     pdf-extraction:
       max-pdf-size-bytes: ${PDF_MAX_SIZE:10485760}
       download-timeout-ms: ${PDF_DOWNLOAD_TIMEOUT_MS:60000}
@@ -250,7 +258,8 @@ talent-introduction:
       base-url: ${CORE_BASE_URL:https://api.core.ac.uk/v3}
       api-key: ${CORE_API_KEY:ZoMR12vcSKhDsnfuHbCjEUpr3gw74BQO}
       request-delay-ms: ${CORE_REQUEST_DELAY_MS:600}
-      max-papers-per-source: ${CORE_MAX_PAPERS:500}
+      # c9（I-1）: 单源上限 1000（CoreProperties 的 Kotlin 默认值更保守，生产以本行为准）。
+      max-papers-per-source: ${CORE_MAX_PAPERS:1000}
 
 server:
   port: ${SERVER_PORT:8080}
