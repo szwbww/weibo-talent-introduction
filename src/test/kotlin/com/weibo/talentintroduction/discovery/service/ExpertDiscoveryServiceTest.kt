@@ -14,14 +14,17 @@ import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
+import com.weibo.talentintroduction.discovery.domain.ExpertAcademicEnrichmentJob
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.expert.domain.EmailValidationResult
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.CandidateEligibilityService
 import com.weibo.talentintroduction.expert.service.EmailValidationService
+import com.weibo.talentintroduction.expert.service.ExpertIdGenerator
 import com.weibo.talentintroduction.expert.service.ExpertIndexService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertClassificationService
@@ -29,6 +32,7 @@ import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ScrollExpertsMockHelper
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
+import com.weibo.talentintroduction.expert.service.PromotionOutcome
 import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -39,6 +43,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
@@ -48,10 +53,12 @@ import org.springframework.http.HttpEntity
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
+import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestTemplate
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -74,6 +81,7 @@ class ExpertDiscoveryServiceTest {
     private lateinit var restTemplate: RestTemplate
     private lateinit var progressStore: TaskProgressStore
     private lateinit var cursorRepository: DiscoverySourceCursorRepository
+    private lateinit var enrichmentJobService: ExpertAcademicEnrichmentJobService
     private val discoveryProperties = ExpertDiscoveryProperties(
         enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 200
     )
@@ -116,6 +124,7 @@ class ExpertDiscoveryServiceTest {
         restTemplate = Mockito.mock(RestTemplate::class.java)
         progressStore = Mockito.mock(TaskProgressStore::class.java)
         cursorRepository = Mockito.mock(DiscoverySourceCursorRepository::class.java)
+        enrichmentJobService = Mockito.mock(ExpertAcademicEnrichmentJobService::class.java)
 
         DiscoveryMockHelper.stubSourceInfo(europePmc)
         Mockito.doReturn(null).`when`(openAlexProvider).getIfAvailable()
@@ -144,7 +153,7 @@ class ExpertDiscoveryServiceTest {
             pmcOaProvider, orcidProvider, coreProvider,
             emailValidationService, eligibilityService,
             indexWriterService, indexService, revalidationService, expertSearchService, expertClassificationService, restTemplate, esProperties,
-            props, openAlexProps, objectMapper, progressStore, cursorRepository, executor,
+            props, openAlexProps, objectMapper, progressStore, cursorRepository, enrichmentJobService, executor,
             europePmcProps
         )
     }
@@ -3216,6 +3225,303 @@ class ExpertDiscoveryServiceTest {
             Mockito.contains("/_update/"), Mockito.eq(HttpMethod.POST), Mockito.any(),
             Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
         )
+    }
+
+    // ------------------------------------------------------------------
+    // c8（08）：RAW 先落地再入队 / 自动与人工共用的补全批次
+    // ------------------------------------------------------------------
+
+    private fun anyLocalDateTime(): LocalDateTime = Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.now()
+
+    private fun anyOutcome(): ProfileEnrichmentOutcome =
+        Mockito.any(ProfileEnrichmentOutcome::class.java) ?: ProfileEnrichmentOutcome.NoId
+
+    private fun enrichmentJob(
+        id: Long,
+        docId: String,
+        source: String,
+        leaseToken: String,
+        attempts: Int = 0
+    ) = ExpertAcademicEnrichmentJob(
+        id = id,
+        expertDocId = docId,
+        source = source,
+        discoveryExecutionId = 42L,
+        status = ExpertAcademicEnrichmentJob.STATUS_RUNNING,
+        attempts = attempts,
+        nextAttemptAt = LocalDateTime.now(),
+        leaseToken = leaseToken,
+        leaseUntil = LocalDateTime.now().plusMinutes(10)
+    )
+
+    /** RAW 层对所有文档存在；CANDIDATE 层只对 [candidateDocs] 中的文档存在；APPLICATION 恒不存在。 */
+    private fun stubLayerPresence(candidateDocs: Set<String> = emptySet()) {
+        Mockito.doAnswer { invocation ->
+            val url = invocation.getArgument(0) as String
+            val exists = when {
+                url.contains("/orcid_info_candidate/_doc/") -> candidateDocs.any { url.endsWith(it) }
+                url.contains("/orcid_info_application/_doc/") -> false
+                url.contains("/orcid_info/_doc/") -> true
+                else -> false
+            }
+            if (exists) ResponseEntity.ok().build<Void>() else throw HttpClientErrorException(HttpStatus.NOT_FOUND)
+        }.`when`(restTemplate).exchange(
+            Mockito.anyString(), Mockito.eq(HttpMethod.HEAD), Mockito.any(),
+            Mockito.eq(Void::class.java)
+        )
+    }
+
+    /** 让去重命中返回匹配文档的真实 `_id`（I-1 的补建任务依据）。 */
+    private fun stubDedupHit(docId: String) {
+        val body = objectMapper.readTree("""{"hits":{"total":{"value":1},"hits":[{"_id":"$docId"}]}}""")
+        Mockito.doReturn(ResponseEntity.ok(body) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+    }
+
+    @Test
+    fun `论文路径在 RAW 落库成功后按真实 _id 入队并带上发现执行 id（I-1 I-4）`() {
+        val svc = createService()
+        DiscoveryMockHelper.stubSearchPapers(
+            europePmc, PaperSearchResult(listOf(paper("PMC1", "Paper 1")), null, 1)
+        )
+        DiscoveryMockHelper.stubExtractAuthorEmails(
+            europePmc, listOf(AuthorEmail("enqueue@example.com", "A", "B", false, null, "0000-0007"))
+        )
+        DiscoveryMockHelper.stubValidateEmail(
+            emailValidationService, "enqueue@example.com", EmailValidationResult(2, true)
+        )
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        Mockito.doReturn(77L).`when`(progressStore).getCurrentExecutionId("EXPERT_DISCOVERY")
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false)
+
+        assertEquals(1, result.stats.indexed)
+        assertEquals(0, result.stats.duplicates)
+        Mockito.verify(enrichmentJobService).enqueue(eqValue("0000-0007"), eqValue("EUROPE_PMC"), eqValue(77L))
+    }
+
+    @Test
+    fun `ORCID 路径在 RAW 落库成功后按真实 _id 入队（I-1）`() {
+        val svc = createService()
+        val orcid = Mockito.mock(OrcidDataSource::class.java)
+        Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubOrcidSourceName(orcid)
+        DiscoveryMockHelper.stubOrcidRecordToAuthorEmails(orcid)
+        DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 10)
+        stubOrcid(
+            orcid,
+            listOf(
+                OrcidDataSource.OrcidRecord(
+                    orcidId = "0000-0005", givenNames = "Test", familyNames = "User",
+                    emails = listOf("orcid-job@example.com"), institutionName = "Univ", country = null
+                )
+            )
+        )
+        DiscoveryMockHelper.stubValidateEmail(
+            emailValidationService, "orcid-job@example.com", EmailValidationResult(2, true)
+        )
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        Mockito.doReturn(77L).`when`(progressStore).getCurrentExecutionId("EXPERT_DISCOVERY")
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false)
+
+        assertEquals(1, result.stats.bySource["ORCID"]?.indexed)
+        Mockito.verify(enrichmentJobService).enqueue(eqValue("0000-0005"), eqValue("ORCID"), eqValue(77L))
+    }
+
+    @Test
+    fun `补全入队失败保留当前页，重放按匹配 _id 补建任务且只新增 1 人（I-1）`() {
+        // I-1 缺陷复现：RAW 已落库但入队失败时，旧实现既没有任务也不保留页（跨 ES/MySQL 崩溃窗口漏任务）。
+        val criteria = PaperSearchCriteria()
+        val first = createService()
+        stubStoredCheckpoint("EUROPE_PMC", "C1", criteria)
+        val page = PaperSearchResult(listOf(paper("PMC1", "Paper 1")), "C2", 4)
+        DiscoveryMockHelper.stubSearchPapersSequence(europePmc, page, PaperSearchResult(emptyList(), null, 4))
+        DiscoveryMockHelper.stubExtractAuthorEmails(
+            europePmc, listOf(AuthorEmail("replay@example.com", "A", "B", false, null, null))
+        )
+        DiscoveryMockHelper.stubValidateEmail(
+            emailValidationService, "replay@example.com", EmailValidationResult(2, true)
+        )
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        Mockito.doReturn(77L).`when`(progressStore).getCurrentExecutionId("EXPERT_DISCOVERY")
+        Mockito.doThrow(RuntimeException("MySQL down"))
+            .`when`(enrichmentJobService).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+
+        val (firstResult, _) = runAndCapture(first, criteria)
+
+        val writtenDocId = ExpertIdGenerator.generate(null, "replay@example.com")
+        assertEquals(1, firstResult.stats.indexed, "RAW 落库成功：第一轮新增 1 人")
+        assertEquals(0, firstResult.stats.duplicates)
+        assertEquals(
+            DiscoveryStopReason.ENQUEUE_INCOMPLETE,
+            firstResult.stats.bySource["EUROPE_PMC"]?.stopReason,
+            "入队失败必须给出自己的停止原因"
+        )
+        assertEquals(1, firstResult.stats.pendingSources)
+        val afterFailure = storedCheckpointFor("EUROPE_PMC", criteria)
+        assertEquals("C1", afterFailure.cursor, "入队失败不得把检查点推进到 nextCursor")
+        assertFalse(afterFailure.exhausted)
+        // 第一轮确实尝试过用真实 `_id` 入队（失败被记为可重试的持久化缺口）
+        Mockito.verify(enrichmentJobService).enqueue(eqValue(writtenDocId), eqValue("EUROPE_PMC"), eqValue(77L))
+
+        // 重放同一页：已是重复命中 → 只按匹配文档真实 _id 补建任务，不算新增、不重写专家
+        val replay = createService()
+        stubStoredCheckpoint("EUROPE_PMC", "C1", criteria)
+        DiscoveryMockHelper.stubSearchPapersSequence(
+            europePmc, page, PaperSearchResult(emptyList(), null, 4)
+        )
+        DiscoveryMockHelper.stubValidateEmail(
+            emailValidationService, "replay@example.com", EmailValidationResult(2, true)
+        )
+        stubDedupHit(writtenDocId)
+        // 第二轮数据库恢复：同一个幂等入队这次成功
+        Mockito.doNothing().`when`(enrichmentJobService)
+            .enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        Mockito.doReturn(77L).`when`(progressStore).getCurrentExecutionId("EXPERT_DISCOVERY")
+
+        val (replayResult, _) = runAndCapture(replay, criteria)
+
+        assertEquals(0, replayResult.stats.indexed, "重放不得重复计新增")
+        assertEquals(1, replayResult.stats.duplicates)
+        Mockito.verify(enrichmentJobService, Mockito.times(2))
+            .enqueue(eqValue(writtenDocId), eqValue("EUROPE_PMC"), eqValue(77L))
+        assertEquals("C2", storedCheckpointFor("EUROPE_PMC", criteria).cursor, "补建任务成功后检查点才推进")
+    }
+
+    @Test
+    fun `补全批次领取上限钳制到 100 条（I-2）`() {
+        val props = ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 200, autoEnrichmentBatchSize = 500
+        )
+        val svc = createService(props)
+        Mockito.doReturn(Mockito.mock(OpenAlexDataSource::class.java)).`when`(openAlexProvider).getIfAvailable()
+        Mockito.doReturn(emptyList<ExpertAcademicEnrichmentJob>())
+            .`when`(enrichmentJobService).claimDue(Mockito.anyInt(), anyLocalDateTime())
+
+        val claimed = svc.claimDueEnrichmentJobs(props.autoEnrichmentBatchSize)
+
+        assertTrue(claimed.isEmpty(), "配置超上限时也只是一次领取，不是每日总量")
+        Mockito.verify(enrichmentJobService).claimDue(eqValue(100), anyLocalDateTime())
+    }
+
+    @Test
+    fun `OpenAlex 未启用时不领取任何任务（不烧任务重试预算）`() {
+        val svc = createService()
+
+        val claimed = svc.claimDueEnrichmentJobs(100)
+
+        assertTrue(claimed.isEmpty())
+        Mockito.verify(enrichmentJobService, Mockito.never()).claimDue(Mockito.anyInt(), anyLocalDateTime())
+    }
+
+    @Test
+    fun `DISCOVERY_PENDING 领取到期任务，只对成功且 RAW-only 的专家定向复评（I-3 I-4）`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val jobs = listOf(
+            enrichmentJob(1L, "0000-RAWONLY", "EUROPE_PMC", "token-1"),
+            enrichmentJob(2L, "0000-CAND", "ORCID", "token-2")
+        )
+        Mockito.doReturn(jobs).`when`(enrichmentJobService).claimDue(Mockito.anyInt(), anyLocalDateTime())
+        Mockito.doReturn(listOf(c6Expert("0000-RAWONLY", esDocId = "0000-RAWONLY"), c6Expert("0000-CAND", esDocId = "0000-CAND")))
+            .`when`(expertSearchService).findByDocumentIds(eqValue(ExpertIndexLevel.RAW), Mockito.anyList())
+        Mockito.doReturn(
+            mapOf(
+                "0000-RAWONLY" to EnrichmentOutcome.Success(AuthorEnrichment(hIndex = 9, citationCount = 90, worksCount = 4)),
+                "0000-CAND" to EnrichmentOutcome.Success(AuthorEnrichment(hIndex = 5, citationCount = 50, worksCount = 3))
+            )
+        ).`when`(openAlex).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        stubLayerPresence(candidateDocs = setOf("0000-CAND"))
+        stubAcademicUpdateOk()
+        Mockito.doReturn(PromotionOutcome.Promoted)
+            .`when`(revalidationService).revalidateEnrichedRaw(eqValue("0000-RAWONLY"))
+        Mockito.doReturn(true)
+            .`when`(enrichmentJobService).complete(Mockito.anyLong(), Mockito.anyString(), anyOutcome())
+        val captured = mutableListOf<TaskProgress>()
+        DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
+
+        val result = svc.enrichExistingExperts(EnrichmentScope.DISCOVERY_PENDING)
+
+        assertEquals(2, result.enriched)
+        assertEquals(0, result.failed)
+        Mockito.verify(enrichmentJobService).complete(eqValue(1L), eqValue("token-1"), anyOutcome())
+        Mockito.verify(enrichmentJobService).complete(eqValue(2L), eqValue("token-2"), anyOutcome())
+        Mockito.verify(revalidationService, Mockito.times(1)).revalidateEnrichedRaw(eqValue("0000-RAWONLY"))
+        Mockito.verify(revalidationService, Mockito.never()).revalidateEnrichedRaw(eqValue("0000-CAND"))
+
+        // I-4：逐源入队/成功/待补/未匹配计数进既有进度 details
+        val batchProgress = captured.last { it.details?.containsKey("bySource") == true }
+        @Suppress("UNCHECKED_CAST")
+        val bySource = batchProgress.details!!["bySource"] as Map<String, Map<String, Int>>
+        assertEquals(1, bySource["EUROPE_PMC"]?.get("enqueued"))
+        assertEquals(1, bySource["EUROPE_PMC"]?.get("succeeded"))
+        assertEquals(1, bySource["ORCID"]?.get("succeeded"))
+        assertEquals(0, bySource["EUROPE_PMC"]?.get("failed"))
+
+        // 附加计数同时出现在 stats 响应里（历史任务详情仍是当时快照）
+        assertEquals(2, svc.getEnrichmentStats().autoEnrichment?.succeeded)
+    }
+
+    @Test
+    fun `额度延期只把任务记为待补而不算失败（I-2 I-5）`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val job = enrichmentJob(1L, "0000-0001", "OPENALEX", "token-1")
+        Mockito.doReturn(listOf(c6Expert("0000-0001", esDocId = "0000-0001")))
+            .`when`(expertSearchService).findByDocumentIds(eqValue(ExpertIndexLevel.RAW), Mockito.anyList())
+        val resetAt = Instant.parse("2026-09-22T00:00:00Z")
+        Mockito.doThrow(OpenAlexBudgetDeferredException(resetAt))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.NEW_ENRICHMENT))
+        Mockito.doReturn(true)
+            .`when`(enrichmentJobService).complete(Mockito.anyLong(), Mockito.anyString(), anyOutcome())
+
+        val result = svc.processClaimedEnrichmentJobBatch(listOf(job), RequestKind.NEW_ENRICHMENT)
+
+        assertEquals(0, result.succeeded)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.pending, "额度延期是待补，不是失败")
+        assertTrue(result.budgetDeferred)
+        assertEquals(resetAt.toString(), result.deferredUntil)
+        assertEquals("PARTIAL_SUCCESS", result.taskFinalStatus)
+        val captor = ArgumentCaptor.forClass(ProfileEnrichmentOutcome::class.java)
+        Mockito.verify(enrichmentJobService).complete(
+            eqValue(1L), eqValue("token-1"), captor.capture() ?: ProfileEnrichmentOutcome.NoId
+        )
+        val outcome = captor.value
+        assertInstanceOf(ProfileEnrichmentOutcome.Deferred::class.java, outcome)
+        assertEquals(resetAt, (outcome as ProfileEnrichmentOutcome.Deferred).resetAt)
+    }
+
+    @Test
+    fun `RAW 文档整体读不到时不写任何任务终态，任务留给租约恢复（I-2）`() {
+        val svc = createService()
+        Mockito.doReturn(Mockito.mock(OpenAlexDataSource::class.java)).`when`(openAlexProvider).getIfAvailable()
+        val job = enrichmentJob(1L, "0000-0001", "EUROPE_PMC", "token-1")
+        Mockito.doReturn(emptyList<ExpertProfile>())
+            .`when`(expertSearchService).findByDocumentIds(eqValue(ExpertIndexLevel.RAW), Mockito.anyList())
+
+        val ex = assertThrows(IllegalStateException::class.java) {
+            svc.processClaimedEnrichmentJobBatch(listOf(job), RequestKind.NEW_ENRICHMENT)
+        }
+
+        assertTrue(ex.message!!.contains("RAW 文档读取失败"))
+        Mockito.verify(enrichmentJobService, Mockito.never()).complete(Mockito.anyLong(), Mockito.anyString(), anyOutcome())
     }
 
     private fun stubAcademicUpdateOk() {

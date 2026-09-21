@@ -12,6 +12,7 @@ import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryStats
 import com.weibo.talentintroduction.discovery.domain.DiscoveryTerminalStatus
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
+import com.weibo.talentintroduction.discovery.domain.ExpertAcademicEnrichmentJob
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
@@ -30,6 +31,7 @@ import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertClassificationService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
+import com.weibo.talentintroduction.expert.service.PromotionOutcome
 import com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor
 import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
 import org.slf4j.LoggerFactory
@@ -75,12 +77,23 @@ class ExpertDiscoveryService(
     private val objectMapper: ObjectMapper,
     private val progressStore: TaskProgressStore,
     private val cursorRepository: DiscoverySourceCursorRepository,
+    /**
+     * I-1（08）：补全任务的唯一入队入口（07 的存储）；发现只在 RAW 写成功后经它幂等入队，
+     * 也由本 service 的批次核心领取到期任务。c8 不直接读写任务表。
+     */
+    private val enrichmentJobService: ExpertAcademicEnrichmentJobService,
     @Qualifier("discoveryFetchExecutor")
     private val discoveryFetchExecutor: Executor,
     private val europePmcProperties: EuropePmcProperties
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
+    /**
+     * I-4（08）：最近一批自动/待补批次补全的逐源计数（入队/成功/待补/未匹配）。
+     * 只是 `/enrich/stats` 的进程内观测值，任务生命周期的唯一事实仍是 expert_academic_enrichment_job。
+     */
+    private val lastEnrichmentBatch = java.util.concurrent.atomic.AtomicReference<AutoEnrichmentBatchResult?>(null)
 
     /**
      * 游标会在两次运行之间失效（例如 ES/搜索服务端 scroll context）因而不得持久化的来源。
@@ -164,7 +177,18 @@ class ExpertDiscoveryService(
         sourceStats.sourceFailureCount++
     }
 
-    private enum class DedupResult { EXISTS, NOT_FOUND, ERROR }
+    /**
+     * I-1（08）：去重结果必须携带**匹配文档的真实 `_id`** —— 重放/重复发现时要按它补建缺失的补全任务
+     * （[DedupResult.Exists]），绝不用新论文派生的邮箱/姓名/主键去改写已入库专家身份。
+     * [DedupResult.Exists.docId] 只在索引响应里确实带回 `_id` 时非空；读不到时只统计重复、不补建任务。
+     */
+    private sealed class DedupResult {
+        /** RAW 已有该身份：`docId` = 匹配文档的真实 `_id`。 */
+        data class Exists(val docId: String?) : DedupResult()
+
+        object NotFound : DedupResult()
+        object Error : DedupResult()
+    }
 
     private fun snapshotErrors(stats: DiscoveryStats): List<String> {
         return stats.errors.asSequence().map { it.take(500) }.take(100).toList()
@@ -566,6 +590,7 @@ class ExpertDiscoveryService(
             val papersBefore = sourceStats.papersSearched
             val indexedBefore = sourceStats.indexed
             val rawWriteFailedBefore = sourceStats.rawWriteFailed
+            val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             var limitReached = false
@@ -581,16 +606,21 @@ class ExpertDiscoveryService(
                 sourceStats.papersSearched++
                 sourcePapersProcessed++
                 consumedInBatch++
-                consumeOutcome(paper, extraction, source, stats, sourceStats)
+                consumeOutcome(paper, extraction, source, stats, sourceStats, execId)
             }
 
-            // I-1: 完整消费页 = 页内全部论文处理完且 RAW 持久化未失败；有失败则保留进入该页的 cursor 以便重放。
+            // I-1: 完整消费页 = 页内全部论文处理完且 RAW 持久化/补全入队都未失败；任一失败都保留进入该页的 cursor 以便重放。
             val rawWriteFailedInPage = sourceStats.rawWriteFailed - rawWriteFailedBefore
+            val enqueueFailedInPage = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) - enqueueFailedBefore
             if (rawWriteFailedInPage > 0) {
                 log.warn("[{}] 批次 {} 内有 {} 篇 RAW 写入失败，保留进入该页的 cursor 以便重放",
                     source.sourceName, batchNumber, rawWriteFailedInPage)
             }
-            if (!limitReached && rawWriteFailedInPage == 0) {
+            if (enqueueFailedInPage > 0) {
+                log.warn("[{}] 批次 {} 内有 {} 条补全任务入队失败，保留进入该页的 cursor 以便重放补建",
+                    source.sourceName, batchNumber, enqueueFailedInPage)
+            }
+            if (!limitReached && rawWriteFailedInPage == 0 && enqueueFailedInPage == 0) {
                 val nextCursor = batch.nextCursor
                 // 没有下一页即穷尽；完整消费的页在进入下一页前立即落盘。
                 persistCheckpoint(
@@ -633,6 +663,10 @@ class ExpertDiscoveryService(
 
             if (rawWriteFailedInPage > 0) {
                 stopReason = DiscoveryStopReason.RAW_WRITE_INCOMPLETE
+                break
+            }
+            if (enqueueFailedInPage > 0) {
+                stopReason = DiscoveryStopReason.ENQUEUE_INCOMPLETE
                 break
             }
             if (limitReached || circuitBreakerTripped) {
@@ -767,6 +801,7 @@ class ExpertDiscoveryService(
             val indexedBefore = sourceStats.indexed
             val recordsProcessedBeforeBatch = recordsProcessed
             val rawWriteFailedBefore = sourceStats.rawWriteFailed
+            val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             for (record in records) {
@@ -788,16 +823,26 @@ class ExpertDiscoveryService(
                     if (!emailResult.valid) { sourceStats.emailsRejected++; continue }
                     sourceStats.emailsValid++
 
-                    when (existsInRawIndexByEmail(authorEmail.email)) {
-                        DedupResult.EXISTS -> { sourceStats.duplicates++; continue }
-                        DedupResult.ERROR -> { sourceStats.dedupErrors++; continue }
-                        DedupResult.NOT_FOUND -> {}
+                    // I-1（08）：与论文路径对称 —— 重复命中只按匹配文档真实 `_id` 补建缺失任务。
+                    val duplicate = when (val emailDedup = existsInRawIndexByEmail(authorEmail.email)) {
+                        is DedupResult.Exists -> emailDedup
+                        DedupResult.Error -> { sourceStats.dedupErrors++; continue }
+                        DedupResult.NotFound -> null
+                    }
+                    if (duplicate != null) {
+                        sourceStats.duplicates++
+                        duplicate.docId?.let { ensureEnrichmentJob(it, orcid.sourceName, execId, sourceStats) }
+                        continue
                     }
                     if (authorEmail.orcidId != null) {
-                        when (existsInRawIndexByOrcid(authorEmail.orcidId)) {
-                            DedupResult.EXISTS -> { sourceStats.duplicates++; continue }
-                            DedupResult.ERROR -> { sourceStats.dedupErrors++; continue }
-                            DedupResult.NOT_FOUND -> {}
+                        when (val orcidDedup = existsInRawIndexByOrcid(authorEmail.orcidId)) {
+                            is DedupResult.Exists -> {
+                                sourceStats.duplicates++
+                                orcidDedup.docId?.let { ensureEnrichmentJob(it, orcid.sourceName, execId, sourceStats) }
+                                continue
+                            }
+                            DedupResult.Error -> { sourceStats.dedupErrors++; continue }
+                            DedupResult.NotFound -> {}
                         }
                     }
 
@@ -810,6 +855,8 @@ class ExpertDiscoveryService(
                     val profileMap = toIndexMap(profile, null, esDocId, filterResult, rejectReasons)
                     if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
                     sourceStats.indexed++
+                    // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页。
+                    enqueueEnrichmentJob(esDocId, orcid.sourceName, execId, sourceStats)
 
                     if (eligibility.eligible) {
                         if (promoteDiscoveredToCandidate(esDocId, profileMap)) sourceStats.promoted++
@@ -849,11 +896,16 @@ class ExpertDiscoveryService(
 
             val pageFullyConsumed = recordsProcessed - recordsProcessedBeforeBatch == records.size
             val rawWriteFailedInPage = sourceStats.rawWriteFailed - rawWriteFailedBefore
+            val enqueueFailedInPage = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) - enqueueFailedBefore
             if (rawWriteFailedInPage > 0) {
                 log.warn("[{}] 批次 {} 内有 {} 条记录 RAW 写入失败，保留进入该页的 offset 以便重放",
                     orcid.sourceName, batchNumber, rawWriteFailedInPage)
             }
-            if (pageFullyConsumed && rawWriteFailedInPage == 0) {
+            if (enqueueFailedInPage > 0) {
+                log.warn("[{}] 批次 {} 内有 {} 条补全任务入队失败，保留进入该页的 offset 以便重放补建",
+                    orcid.sourceName, batchNumber, enqueueFailedInPage)
+            }
+            if (pageFullyConsumed && rawWriteFailedInPage == 0 && enqueueFailedInPage == 0) {
                 // I-2: 推进量由数据源按原始返回条数算好（不受邮箱过滤影响），这里只搬运它的游标。
                 cursor = page.nextCursor
                 persistCheckpoint(
@@ -863,11 +915,13 @@ class ExpertDiscoveryService(
                 )
                 if (exhausted) break
             } else {
-                // I-1: 部分页或页内 RAW 持久化未完成都保留进入该页的 offset，绝不跳过未消费记录。
+                // I-1: 部分页、页内 RAW 持久化未完成或补全入队未完成都保留进入该页的 offset，绝不跳过未消费记录。
                 persistCheckpoint(
                     resumeCursor,
                     if (rawWriteFailedInPage > 0) {
                         DiscoveryStopReason.RAW_WRITE_INCOMPLETE
+                    } else if (enqueueFailedInPage > 0) {
+                        DiscoveryStopReason.ENQUEUE_INCOMPLETE
                     } else {
                         DiscoveryStopReason.PAGE_PARTIAL
                     },
@@ -943,7 +997,8 @@ class ExpertDiscoveryService(
         extraction: PaperExtraction,
         source: AcademicDataSource,
         stats: DiscoveryStats,
-        sourceStats: SourceStats
+        sourceStats: SourceStats,
+        executionId: Long?
     ) {
         sourceStats.fulltextAttempted++
         if (extraction.extractionError != null) {
@@ -986,16 +1041,26 @@ class ExpertDiscoveryService(
             if (!emailResult.valid) { sourceStats.emailsRejected++; continue }
             sourceStats.emailsValid++
 
-            when (existsInRawIndexByEmail(authorEmail.email)) {
-                DedupResult.EXISTS -> { sourceStats.duplicates++; continue }
-                DedupResult.ERROR -> { sourceStats.dedupErrors++; continue }
-                DedupResult.NOT_FOUND -> {}
+            // I-1（08）：重复命中时只按匹配文档的真实 `_id` 补建缺失任务，不重写整份专家、不算新增。
+            val duplicate = when (val emailDedup = existsInRawIndexByEmail(authorEmail.email)) {
+                is DedupResult.Exists -> emailDedup
+                DedupResult.Error -> { sourceStats.dedupErrors++; continue }
+                DedupResult.NotFound -> null
+            }
+            if (duplicate != null) {
+                sourceStats.duplicates++
+                duplicate.docId?.let { ensureEnrichmentJob(it, source.sourceName, executionId, sourceStats) }
+                continue
             }
             if (authorEmail.orcidId != null) {
-                when (existsInRawIndexByOrcid(authorEmail.orcidId)) {
-                    DedupResult.EXISTS -> { sourceStats.duplicates++; continue }
-                    DedupResult.ERROR -> { sourceStats.dedupErrors++; continue }
-                    DedupResult.NOT_FOUND -> {}
+                when (val orcidDedup = existsInRawIndexByOrcid(authorEmail.orcidId)) {
+                    is DedupResult.Exists -> {
+                        sourceStats.duplicates++
+                        orcidDedup.docId?.let { ensureEnrichmentJob(it, source.sourceName, executionId, sourceStats) }
+                        continue
+                    }
+                    DedupResult.Error -> { sourceStats.dedupErrors++; continue }
+                    DedupResult.NotFound -> {}
                 }
             }
 
@@ -1008,6 +1073,8 @@ class ExpertDiscoveryService(
             val profileMap = toIndexMap(profile, paper, esDocId, filterResult, rejectReasons)
             if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
             sourceStats.indexed++
+            // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页（见 enqueueEnrichmentJob）。
+            enqueueEnrichmentJob(esDocId, source.sourceName, executionId, sourceStats)
 
             if (eligibility.eligible) {
                 if (promoteDiscoveredToCandidate(esDocId, profileMap)) sourceStats.promoted++
@@ -1021,8 +1088,41 @@ class ExpertDiscoveryService(
         }
     }
 
-    private fun processPaper(paper: PaperMetadata, source: AcademicDataSource, stats: DiscoveryStats, sourceStats: SourceStats) {
-        consumeOutcome(paper, extractOutcome(paper, source), source, stats, sourceStats)
+    private fun processPaper(
+        paper: PaperMetadata,
+        source: AcademicDataSource,
+        stats: DiscoveryStats,
+        sourceStats: SourceStats,
+        executionId: Long?
+    ) {
+        consumeOutcome(paper, extractOutcome(paper, source), source, stats, sourceStats, executionId)
+    }
+
+    // ------------------------------------------------------------------
+    // I-1（08）：RAW 先落地再入队
+    // ------------------------------------------------------------------
+
+    /**
+     * 新增专家（RAW 已落库）的补全入队。数据库错误**不吞掉**：计入
+     * [ENRICHMENT_ENQUEUE_FAILED]，让当前页按 [DiscoveryStopReason.ENQUEUE_INCOMPLETE] 保留重放
+     * （重放时该专家已是重复命中，会由 [ensureEnrichmentJob] 补建缺失任务），
+     * 既不假装任务已建、也不推进检查点。
+     */
+    private fun enqueueEnrichmentJob(docId: String, sourceName: String, executionId: Long?, sourceStats: SourceStats) {
+        try {
+            enrichmentJobService.enqueue(docId, sourceName, executionId)
+        } catch (e: Exception) {
+            log.warn("Failed to enqueue academic enrichment job for {} (source={}): {}", docId, sourceName, e.message)
+            sourceStats.failureReasons.merge(ENRICHMENT_ENQUEUE_FAILED, 1) { a, b -> a + b }
+        }
+    }
+
+    /**
+     * 重放/重复发现的补建入口：只幂等入队（07 的存储按 `UNIQUE(expert_doc_id)` 合并，
+     * 可靠身份变更时重开 `UNMATCHED`），绝不重新写整份专家文档。
+     */
+    private fun ensureEnrichmentJob(docId: String, sourceName: String, executionId: Long?, sourceStats: SourceStats) {
+        enqueueEnrichmentJob(docId, sourceName, executionId, sourceStats)
     }
 
     private fun buildProfile(paper: PaperMetadata, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {
@@ -1092,7 +1192,10 @@ class ExpertDiscoveryService(
         val lastPublicationYearPending = expertSearchService.countExperts(
             ExpertIndexLevel.CANDIDATE, buildLastPublicationYearBackfillFilters()
         )
-        return EnrichmentStats(pending, enrichedRecently, total, institutionTypePending, lastPublicationYearPending)
+        return EnrichmentStats(
+            pending, enrichedRecently, total, institutionTypePending, lastPublicationYearPending,
+            autoEnrichment = lastEnrichmentBatch.get()
+        )
     }
 
     private fun buildEnrichmentFilters(cutoff: String): List<Map<String, Any>> {
@@ -1163,13 +1266,18 @@ class ExpertDiscoveryService(
     }
 
     fun enrichExistingExperts(scope: EnrichmentScope = EnrichmentScope.DEFAULT): EnrichmentResult {
-        val taskType = "EXPERT_ENRICHMENT"
+        // I-3/I-4（08）：新增的人工待补重试入口；旧三种 scope 的过滤条件与语义完全不变。
+        if (scope == EnrichmentScope.DISCOVERY_PENDING) return enrichDiscoveryPendingJobs()
+
+        val taskType = EXPERT_ENRICHMENT_TASK_TYPE
         val execId = progressStore.getCurrentExecutionId(taskType)
         val cutoff = LocalDateTime.now().minusDays(30).format(dateFormatter)
         val filters = when (scope) {
             EnrichmentScope.DEFAULT -> buildEnrichmentFilters(cutoff)
             EnrichmentScope.INSTITUTION_TYPE_BACKFILL -> buildInstitutionTypeBackfillFilters()
             EnrichmentScope.LAST_PUBLICATION_YEAR_BACKFILL -> buildLastPublicationYearBackfillFilters()
+            // DISCOVERY_PENDING 不走 CANDIDATE 过滤扫描（已在上方提前返回），这里只是穷尽性占位。
+            EnrichmentScope.DISCOVERY_PENDING -> emptyList()
         }
         val pendingCount = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, filters)
         val rateLimitMode = openAlexProperties.enrichmentRateLimitMode.uppercase(Locale.ROOT)
@@ -1440,6 +1548,233 @@ class ExpertDiscoveryService(
         return EnrichmentResult(enriched, failed, HashMap(failureReasons))
     }
 
+    // ------------------------------------------------------------------
+    // I-2/I-3/I-4（08）：补全队列的批次核心（worker 与人工 DISCOVERY_PENDING 共用同一实现）
+    // ------------------------------------------------------------------
+
+    /**
+     * I-3/I-4（08）：人工 DISCOVERY_PENDING —— 显式重试自动补全队列（PENDING、到点的 RETRY_WAIT、
+     * 租约已过期的 RUNNING）。复用与 worker 相同的「领取 + 批次核心」（06 核心补全 + 逐人终态 +
+     * RAW-only 定向复评），请求口径按人工历史回填取 [RequestKind.HISTORY_ENRICHMENT]；
+     * 不触碰旧三种 scope 的过滤条件，也不会伪造成功/失败计数。
+     */
+    private fun enrichDiscoveryPendingJobs(): EnrichmentResult {
+        val taskType = EXPERT_ENRICHMENT_TASK_TYPE
+        val jobs = claimDueEnrichmentJobs(discoveryProperties.autoEnrichmentBatchSize)
+        if (jobs.isEmpty()) {
+            val reason = if (openAlexProvider.getIfAvailable() == null) "OpenAlex 未启用" else "没有到期任务"
+            progressStore.update(taskType, TaskProgress(
+                taskType = taskType, status = "COMPLETED", batchNumber = -1,
+                processedCount = 0, totalCount = 0, message = "待补重试：$reason，本轮未领取任何任务"
+            ), progressStore.getCurrentExecutionId(taskType))
+            return EnrichmentResult(0, 0)
+        }
+        val batch = processClaimedEnrichmentJobBatch(jobs, RequestKind.HISTORY_ENRICHMENT, taskType)
+        val failureReasons = LinkedHashMap<String, Int>()
+        if (batch.unmatched > 0) failureReasons["ENRICHMENT_UNMATCHED"] = batch.unmatched
+        if (batch.pending > 0) failureReasons["ENRICHMENT_RETRY_WAIT"] = batch.pending
+        if (batch.failed > 0) failureReasons["ENRICHMENT_FAILED"] = batch.failed
+        return EnrichmentResult(
+            enriched = batch.succeeded,
+            failed = batch.failed + batch.unmatched,
+            failureReasons = failureReasons,
+            wasCancelled = batch.cancelled,
+            budgetDeferred = batch.budgetDeferred
+        )
+    }
+
+    /**
+     * I-2（08）：领取至多 [limit] 条**到期**任务（硬上界 [MAX_ENRICHMENT_IDENTITIES_PER_BATCH]：
+     * 100 只是一批，不是每日总量），不处理、不写任务终态。不足上限也照常返回，尾批不等待。
+     *
+     * OpenAlex 未启用时一条都不领（保持任务原状态、不消耗重试预算），也绝不写进度日志 ——
+     * worker 每 30 秒检查一次，空闲/未启用的一次检查不应在任务记录与进度日志里留下噪音。
+     */
+    fun claimDueEnrichmentJobs(limit: Int): List<ExpertAcademicEnrichmentJob> {
+        if (openAlexProvider.getIfAvailable() == null) {
+            log.info("OpenAlex 未启用，本轮不领取补全任务")
+            return emptyList()
+        }
+        // I-2：到期判定与租约写入用同一套朴素本地时钟（与 07 的 next_attempt_at 口径一致）。
+        return enrichmentJobService.claimDue(
+            limit.coerceIn(1, MAX_ENRICHMENT_IDENTITIES_PER_BATCH),
+            LocalDateTime.now()
+        )
+    }
+
+    /**
+     * I-2/I-3/I-4（08）：处理一批已领取的补全任务 —— 复用 06 的 [enrichProfiles] 按真实 `_id` 补全、
+     * 逐人经 07 的 CAS 写终态，并对**成功且 RAW-only** 的专家做定向复评；批次逐源计数写进既有进度 details。
+     *
+     * - 跨进程互斥靠 07 的租约（完成必须匹配 token，旧 token 不写任何列）；进程内互斥由调用方
+     *   （worker / 人工入口）用 [TaskProgressStore.tryStartWithToken] 的同一把锁保证。
+     * - RAW 文档整体读不到（索引/Mapping/ES 异常）时不写任何任务终态：任务保持 `RUNNING`，
+     *   租约到期后可重领，基础设施故障不烧掉任务的重试预算。
+     * - 逐个任务完成前检查取消，取消后剩余任务保持租约未完成（保存未完成状态）。
+     * - [taskType] 只决定进度日志归属；`task_execution` 记录由调用方按自己的 triggerType 写入。
+     */
+    fun processClaimedEnrichmentJobBatch(
+        jobs: List<ExpertAcademicEnrichmentJob>,
+        requestKind: RequestKind,
+        taskType: String = EXPERT_ENRICHMENT_TASK_TYPE
+    ): AutoEnrichmentBatchResult {
+        val claimed = jobs.filter { it.id != null && it.leaseToken != null }
+        if (claimed.isEmpty()) return AutoEnrichmentBatchResult()
+
+        val profiles = expertSearchService.findByDocumentIds(ExpertIndexLevel.RAW, claimed.map { it.expertDocId })
+        if (profiles.isEmpty()) {
+            throw IllegalStateException(
+                "RAW 文档读取失败：${claimed.size} 条补全任务无法定位专家文档，本轮不写任务终态"
+            )
+        }
+        val profilesByDocId = profiles.associateBy { enrichmentDocId(it) }
+        val work = claimed.map { job -> job to profilesByDocId[job.expertDocId] }
+        val outcomes = enrichProfiles(work.mapNotNull { (_, profile) -> profile }, requestKind)
+
+        val counters = BatchCounters()
+        val bySource = LinkedHashMap<String, SourceBucket>()
+        var deferredUntil: String? = null
+        var cancelled = false
+
+        for ((job, profile) in work) {
+            if (progressStore.isCancelled(taskType)) {
+                log.info("补全批次已取消，剩余 {} 条任务保持租约未完成", work.size - counters.enqueued)
+                cancelled = true
+                break
+            }
+            val bucket = bySource.getOrPut(job.source) { SourceBucket() }
+            bucket.enqueued++
+            counters.enqueued++
+            // 文档读不到（ES 查无此 `_id`）：算可重试失败，绝不伪造成功；故障尝试用尽后由 07 记为 FAILED。
+            val outcome = profile?.let { outcomes[enrichmentDocId(it)] } ?: ProfileEnrichmentOutcome.RetryableError()
+            if (outcome is ProfileEnrichmentOutcome.Deferred && deferredUntil == null) {
+                deferredUntil = outcome.resetAt.toString()
+            }
+            if (!enrichmentJobService.complete(job.id!!, job.leaseToken!!, outcome)) {
+                // 租约已被其他 worker 拿走或行不再是 RUNNING：不写任何列，也不计入结果桶。
+                log.warn("补全任务 {} 未写终态：租约已失效或行已非 RUNNING", job.expertDocId)
+                counters.claimLost++
+                continue
+            }
+            when (classifyBatchOutcome(outcome, job.attempts)) {
+                BatchOutcomeBucket.SUCCEEDED -> { counters.succeeded++; bucket.succeeded++ }
+                BatchOutcomeBucket.PENDING -> { counters.pending++; bucket.pending++ }
+                BatchOutcomeBucket.UNMATCHED -> { counters.unmatched++; bucket.unmatched++ }
+                BatchOutcomeBucket.FAILED -> { counters.failed++; bucket.failed++ }
+            }
+            // I-3：只有「成功且 RAW-only」的专家才做定向复评。
+            if (outcome is ProfileEnrichmentOutcome.Success && isRawOnly(outcome.layers)) {
+                counters.revalidated++
+                if (revalidateRawOnlySuccess(job.expertDocId)) counters.promoted++
+            }
+        }
+
+        val result = AutoEnrichmentBatchResult(
+            claimed = counters.enqueued,
+            succeeded = counters.succeeded,
+            pending = counters.pending,
+            unmatched = counters.unmatched,
+            failed = counters.failed,
+            claimLost = counters.claimLost,
+            revalidated = counters.revalidated,
+            promoted = counters.promoted,
+            bySource = bySource.mapValues { (_, bucket) -> bucket.toCounts() },
+            budgetDeferred = deferredUntil != null,
+            deferredUntil = deferredUntil,
+            cancelled = cancelled
+        )
+        recordEnrichmentBatch(taskType, result)
+        return result
+    }
+
+    /**
+     * I-3（08）：定向复评的适用对象 —— 只对**RAW-only**（CANDIDATE/APPLICATION 都不存在）的专家执行，
+     * 已有候选/申请的专家不重建、不降级。
+     */
+    private fun isRawOnly(layers: LayerUpdateResult): Boolean =
+        layers.updatedAnyLayer() &&
+            layers.candidate == LayerUpdateStatus.ABSENT &&
+            layers.application == LayerUpdateStatus.ABSENT
+
+    /**
+     * I-3（08）：补全成功后的定向复评（06 的核心，门禁与候选写入都不变）。
+     * 复评失败不影响已按真实 `_id` 写回的补全事实，也不把补全结果改判为失败。
+     */
+    private fun revalidateRawOnlySuccess(docId: String): Boolean = try {
+        revalidationService.revalidateEnrichedRaw(docId) == PromotionOutcome.Promoted
+    } catch (e: Exception) {
+        log.warn("补全后定向复评失败 {}: {}", docId, e.message)
+        false
+    }
+
+    /** I-4（08）：把一批的逐源计数写进既有进度 details（不加列、不改前端），并留存供 `/enrich/stats` 读取。 */
+    private fun recordEnrichmentBatch(taskType: String, result: AutoEnrichmentBatchResult) {
+        lastEnrichmentBatch.set(result)
+        progressStore.update(taskType, TaskProgress(
+            taskType = taskType,
+            status = if (result.cancelled) "CANCELLED" else "COMPLETED",
+            batchNumber = -1,
+            processedCount = (result.succeeded + result.pending + result.unmatched + result.failed).toLong(),
+            totalCount = result.claimed.toLong(),
+            message = buildEnrichmentBatchMessage(result),
+            details = result.toDetails()
+        ), progressStore.getCurrentExecutionId(taskType))
+    }
+
+    private fun buildEnrichmentBatchMessage(result: AutoEnrichmentBatchResult): String {
+        val deferred = result.deferredUntil?.let { "，额度延期至 $it" } ?: ""
+        return "补全批次: 领取 ${result.claimed}, 成功 ${result.succeeded}, 待补 ${result.pending}, " +
+            "未匹配 ${result.unmatched}, 失败 ${result.failed}$deferred"
+    }
+
+    /**
+     * I-4（08）：把 06 的逐人结果投射成批次结果桶，口径与 07 的状态机一致：
+     * `Success → SUCCEEDED`；`NotFound`/`NoId → UNMATCHED`；`Partial` 与网络/5xx 故障各消耗一次故障尝试，
+     * 达到 [ExpertAcademicEnrichmentJobService.MAX_FAILURE_ATTEMPTS] 即为 `FAILED`，否则 `PENDING`（待重试）；
+     * 额度延期与限流不消耗故障尝试。这里只做计数投射，状态本身由 07 写入。
+     */
+    private fun classifyBatchOutcome(outcome: ProfileEnrichmentOutcome, currentAttempts: Int): BatchOutcomeBucket =
+        when (outcome) {
+            is ProfileEnrichmentOutcome.Success -> BatchOutcomeBucket.SUCCEEDED
+            is ProfileEnrichmentOutcome.Deferred -> BatchOutcomeBucket.PENDING
+            ProfileEnrichmentOutcome.NotFound, ProfileEnrichmentOutcome.NoId -> BatchOutcomeBucket.UNMATCHED
+            is ProfileEnrichmentOutcome.Partial ->
+                if (exhaustsFailureBudget(currentAttempts)) BatchOutcomeBucket.FAILED else BatchOutcomeBucket.PENDING
+            is ProfileEnrichmentOutcome.RetryableError -> when {
+                outcome.rateLimited -> BatchOutcomeBucket.PENDING
+                exhaustsFailureBudget(currentAttempts) -> BatchOutcomeBucket.FAILED
+                else -> BatchOutcomeBucket.PENDING
+            }
+        }
+
+    /** 07 的故障尝试上限对齐：本次完成会把故障尝试 +1，达到上限即 `FAILED`。 */
+    private fun exhaustsFailureBudget(currentAttempts: Int): Boolean =
+        currentAttempts + 1 >= ExpertAcademicEnrichmentJobService.MAX_FAILURE_ATTEMPTS
+
+    /** 批次内累加器（只在本方法的作用域内使用，不进任何持久化契约）。 */
+    private class BatchCounters {
+        var enqueued = 0
+        var succeeded = 0
+        var pending = 0
+        var unmatched = 0
+        var failed = 0
+        var claimLost = 0
+        var revalidated = 0
+        var promoted = 0
+    }
+
+    private class SourceBucket {
+        var enqueued = 0
+        var succeeded = 0
+        var pending = 0
+        var unmatched = 0
+        var failed = 0
+
+        fun toCounts() = AutoEnrichmentSourceCounts(enqueued, succeeded, pending, unmatched, failed)
+    }
+
+    private enum class BatchOutcomeBucket { SUCCEEDED, PENDING, UNMATCHED, FAILED }
+
     /**
      * I-2：学术字段的唯一写入点。按真实 `_id` 对每个已存在层做局部 `_update`：404 跳过、非 404 失败可按层重试；
      * 只写非 null 事实（null 绝不覆盖已有值）并重算分类；不触碰姓名/邮箱/署名机构/运营状态，
@@ -1651,27 +1986,41 @@ class ExpertDiscoveryService(
         return null
     }
 
+    /** I-1（08）：ORCID 就是该文档的真实 `_id`（HEAD 已按它命中），补建任务直接用这个值。 */
     private fun existsInRawIndexByOrcid(orcid: String): DedupResult {
         val url = "${esProperties.baseUrl}/${expertIndexService.indexName(ExpertIndexLevel.RAW)}/_doc/$orcid"
         return try {
             restTemplate.exchange(url, HttpMethod.HEAD, HttpEntity(null, esHeaders()), Void::class.java)
-            DedupResult.EXISTS
+            DedupResult.Exists(orcid)
         } catch (e: HttpClientErrorException) {
-            if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NOT_FOUND else DedupResult.ERROR
-        } catch (e: Exception) { DedupResult.ERROR }
+            if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NotFound else DedupResult.Error
+        } catch (e: Exception) { DedupResult.Error }
     }
 
+    /**
+     * I-1（08）：命中时取回匹配文档的真实 `_id`（`size=1` + 不取 `_source`，命中判据仍是 `total`）。
+     * 只做去重读取，绝不按新论文的身份改写已入库文档；`_id` 读不到时按 [DedupResult.Exists.docId] 为空处理。
+     */
     private fun existsInRawIndexByEmail(email: String): DedupResult {
         val url = "${esProperties.baseUrl}/${expertIndexService.indexName(ExpertIndexLevel.RAW)}/_search"
-        val query = mapOf("query" to mapOf("term" to mapOf("email" to email.lowercase(Locale.ROOT))), "size" to 0)
+        val query = mapOf(
+            "query" to mapOf("term" to mapOf("email" to email.lowercase(Locale.ROOT))),
+            "size" to 1,
+            "_source" to false
+        )
         return try {
             val response = restTemplate.exchange(url, HttpMethod.POST, HttpEntity(query, esHeaders()),
                 com.fasterxml.jackson.databind.JsonNode::class.java).body
-            val total = response?.path("hits")?.path("total")?.path("value")?.asInt(0) ?: 0
-            if (total > 0) DedupResult.EXISTS else DedupResult.NOT_FOUND
+            val hits = response?.path("hits")
+            val total = hits?.path("total")?.path("value")?.asInt(0) ?: 0
+            if (total > 0) {
+                DedupResult.Exists(hits?.path("hits")?.firstOrNull()?.path("_id")?.asText()?.takeIf { it.isNotBlank() })
+            } else {
+                DedupResult.NotFound
+            }
         } catch (e: HttpClientErrorException) {
-            if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NOT_FOUND else DedupResult.ERROR
-        } catch (e: Exception) { DedupResult.ERROR }
+            if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NotFound else DedupResult.Error
+        } catch (e: Exception) { DedupResult.Error }
     }
 
     private fun inferCountryFromAffiliation(affiliation: String?): String? {
@@ -1860,19 +2209,37 @@ object DiscoveryStopReason {
     const val RAW_WRITE_INCOMPLETE = "RAW_WRITE_INCOMPLETE"
 
     /**
+     * I-1（08）：页内 RAW 已落库但补全任务入队未完成（数据库错误）。与 [RAW_WRITE_INCOMPLETE] 一样
+     * 保留进入该页的游标以便重放补建，但原因单独给：两者是不同的持久化缺口。
+     */
+    const val ENQUEUE_INCOMPLETE = "ENQUEUE_INCOMPLETE"
+
+    /**
      * I-4: 分片触达供应商分页窗口（CORE offset 9000 / ORCID start 9999）。这是「该分片停止」，
      * 既不是搜索失败也不是穷尽：游标切到下一分片，未覆盖尾部只在日志与 failureReasons 里记录。
      */
     const val WINDOW_LIMIT = "WINDOW_LIMIT"
 }
 
-enum class EnrichmentScope { DEFAULT, INSTITUTION_TYPE_BACKFILL, LAST_PUBLICATION_YEAR_BACKFILL }
+/**
+ * 人工补全 scope（08 追加 [DISCOVERY_PENDING]）：
+ * - [DEFAULT] / [INSTITUTION_TYPE_BACKFILL] / [LAST_PUBLICATION_YEAR_BACKFILL]：既有历史回填口径，语义不变；
+ * - [DISCOVERY_PENDING]：显式重试自动补全队列里到期/待重试的任务（PENDING、到点的 RETRY_WAIT、
+ *   租约已过期的 RUNNING），与 worker 走同一批次核心。
+ */
+enum class EnrichmentScope { DEFAULT, INSTITUTION_TYPE_BACKFILL, LAST_PUBLICATION_YEAR_BACKFILL, DISCOVERY_PENDING }
 
 /** I-1：无 ORCID 的专家主键前缀 —— 它不是 ORCID，绝不能作为 `filter=orcid:` 的值传给 OpenAlex。 */
 private const val EMAIL_PRIMARY_KEY_PREFIX = "EMAIL-"
 
 /** I-1：OpenAlex 的 `filter=...|...` 每批最多 100 个不同身份。 */
 private const val MAX_ENRICHMENT_IDENTITIES_PER_BATCH = 100
+
+/** I-1（08）：补全入队的失败原因码（与 [DiscoveryStopReason.ENQUEUE_INCOMPLETE] 配对）。 */
+private const val ENRICHMENT_ENQUEUE_FAILED = "ENRICHMENT_ENQUEUE_FAILED"
+
+/** I-4（08）：补全任务的任务类型（worker 与人工入口共用同一把互斥锁）。 */
+const val EXPERT_ENRICHMENT_TASK_TYPE = "EXPERT_ENRICHMENT"
 
 /** I-2：单层学术字段写入结果。 */
 enum class LayerUpdateStatus {
@@ -1937,12 +2304,92 @@ sealed class ProfileEnrichmentOutcome {
     ) : ProfileEnrichmentOutcome()
 }
 
+/**
+ * I-4（08）：单个来源在本批次补全里的计数。四个结果桶与 07 的任务终态同口径
+ * （成功 / 待重试 / 未匹配 / 失败），`enqueued` 是本批为该来源领取处理的任务数。
+ * 这是进度 details 与 `/enrich/stats` 的展示口径，不是任务生命周期的唯一事实（那是任务表本身）。
+ */
+data class AutoEnrichmentSourceCounts(
+    val enqueued: Int = 0,
+    val succeeded: Int = 0,
+    val pending: Int = 0,
+    val unmatched: Int = 0,
+    val failed: Int = 0
+)
+
+/**
+ * I-2/I-4（08）：一批补全的结果 —— 领取了多少、逐源成功/待补/未匹配/失败多少，以及额度延期与取消。
+ * worker 用它写自己的 EXPERT_ENRICHMENT 任务记录（逐源计数放在既有 details/result_summary JSON 里），
+ * `/enrich/stats` 用它展示最近一批；发现成功数与本结果完全无关（不叠加）。
+ */
+data class AutoEnrichmentBatchResult(
+    /** 本批实际交给补全核心的任务数（= 各来源 `enqueued` 之和）。 */
+    val claimed: Int = 0,
+    val succeeded: Int = 0,
+    /** 到点待重试（含额度延期、限流、可重试故障）的任务数。 */
+    val pending: Int = 0,
+    val unmatched: Int = 0,
+    val failed: Int = 0,
+    /** 完成时租约已失效/行不再是 RUNNING 的任务数（不写任何列）。 */
+    val claimLost: Int = 0,
+    /** 达到 06 定向复评条件（成功且 RAW-only）的专家数与其候选晋升数。 */
+    val revalidated: Int = 0,
+    val promoted: Int = 0,
+    val bySource: Map<String, AutoEnrichmentSourceCounts> = emptyMap(),
+    /** OpenAlex 日额度延期：本批没有继续重试，其余来源的发现/补全不受影响。 */
+    val budgetDeferred: Boolean = false,
+    val deferredUntil: String? = null,
+    val cancelled: Boolean = false
+) : TaskExecutionSummaryProvider {
+    override val taskSuccessCount: Int get() = succeeded
+
+    /** 未匹配（无可靠身份/查无作者）与故障失败都算本批未完成的任务。 */
+    override val taskFailureCount: Int get() = failed + unmatched
+
+    override val taskFinalStatus: String?
+        get() = when {
+            cancelled -> "CANCELLED"
+            budgetDeferred || pending > 0 -> "PARTIAL_SUCCESS"
+            else -> null
+        }
+
+    /** I-4：逐源入队/成功/待补/未匹配/失败 —— 只进既有 details/result_summary JSON，不加列也不改前端。 */
+    fun toDetails(): Map<String, Any> {
+        val details = LinkedHashMap<String, Any>()
+        details["claimed"] = claimed
+        details["succeeded"] = succeeded
+        details["pending"] = pending
+        details["unmatched"] = unmatched
+        details["failed"] = failed
+        details["revalidated"] = revalidated
+        details["promoted"] = promoted
+        details["budgetDeferred"] = budgetDeferred
+        if (claimLost > 0) details["claimLost"] = claimLost
+        deferredUntil?.let { details["deferredUntil"] = it }
+        details["bySource"] = bySource.mapValues { (_, counts) ->
+            mapOf(
+                "enqueued" to counts.enqueued,
+                "succeeded" to counts.succeeded,
+                "pending" to counts.pending,
+                "unmatched" to counts.unmatched,
+                "failed" to counts.failed
+            )
+        }
+        return details
+    }
+}
+
 data class EnrichmentStats(
     val pending: Long,
     val enrichedLast30d: Long,
     val total: Long,
     val institutionTypePending: Long,
-    val lastPublicationYearPending: Long
+    val lastPublicationYearPending: Long,
+    /**
+     * I-4（08）：最近一批自动/待补补全的逐源计数（进程内观测值，重启即空）；
+     * 历史任务的详情始终是当时快照，不会被后续补全改写。
+     */
+    val autoEnrichment: AutoEnrichmentBatchResult? = null
 )
 
 data class EnrichmentResult(

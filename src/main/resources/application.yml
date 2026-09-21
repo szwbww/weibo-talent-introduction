@@ -180,6 +180,9 @@ talent-introduction:
     max-authors-per-run: ${EXPERT_DISCOVERY_MAX_AUTHORS:20000}
     include-raw-scan: ${EXPERT_DISCOVERY_INCLUDE_RAW_SCAN:false}
     fetch-concurrency: ${EXPERT_DISCOVERY_FETCH_CONCURRENCY:4}
+    # I-2: 发现后自动补全默认关闭，验收后在服务器开启；批次上限 100（只是一批，不是每日总量）。
+    auto-enrichment-enabled: ${EXPERT_DISCOVERY_AUTO_ENRICHMENT_ENABLED:false}
+    auto-enrichment-batch-size: ${EXPERT_DISCOVERY_AUTO_ENRICHMENT_BATCH_SIZE:100}
     europe-pmc:
       enabled: ${EUROPE_PMC_ENABLED:true}
       base-url: ${EUROPE_PMC_BASE_URL:https://www.ebi.ac.uk/europepmc/webservices/rest}

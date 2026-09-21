@@ -7,6 +7,8 @@ import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryStats
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.service.ArxivDataSource
+import com.weibo.talentintroduction.discovery.service.AutoEnrichmentBatchResult
+import com.weibo.talentintroduction.discovery.service.AutoEnrichmentSourceCounts
 import com.weibo.talentintroduction.discovery.service.CoreDataSource
 import com.weibo.talentintroduction.discovery.service.CrossrefDataSource
 import com.weibo.talentintroduction.discovery.service.EnrichmentResult
@@ -258,6 +260,50 @@ class ExpertDiscoveryControllerTest {
         assertEquals(100, stats.total)
         assertEquals(5, stats.institutionTypePending)
         assertEquals(7, stats.lastPublicationYearPending)
+    }
+
+    @Test
+    fun `getEnrichmentStats carries the per-source counters of the last auto enrichment batch`() {
+        // I-4（08）：附加计数走既有 stats 响应（按来源入队/成功/待补/未匹配），历史任务详情不受影响。
+        Mockito.doReturn(EnrichmentStats(
+            pending = 0, enrichedLast30d = 1, total = 2,
+            institutionTypePending = 0, lastPublicationYearPending = 0,
+            autoEnrichment = AutoEnrichmentBatchResult(
+                claimed = 3, succeeded = 2, pending = 1, unmatched = 0, failed = 0,
+                bySource = mapOf(
+                    "EUROPE_PMC" to AutoEnrichmentSourceCounts(enqueued = 2, succeeded = 2),
+                    "ORCID" to AutoEnrichmentSourceCounts(enqueued = 1, pending = 1)
+                )
+            )
+        )).`when`(discoveryService).getEnrichmentStats()
+
+        val stats = controller.getEnrichmentStats()
+
+        val auto = stats.autoEnrichment
+        assertNotNull(auto)
+        assertEquals(3, auto!!.claimed)
+        assertEquals(2, auto.succeeded)
+        assertEquals(1, auto.pending)
+        assertEquals(2, auto.bySource["EUROPE_PMC"]?.succeeded)
+        assertEquals(1, auto.bySource["ORCID"]?.pending)
+    }
+
+    @Test
+    fun `enrichExperts forwards DISCOVERY_PENDING scope to service`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val taskExecution = invocation.arguments[0] as TaskExecution
+                taskExecution.copy(id = 1L)
+            }
+        Mockito.doReturn(EnrichmentResult(enriched = 2, failed = 0))
+            .`when`(discoveryService).enrichExistingExperts(EnrichmentScope.DISCOVERY_PENDING)
+
+        val result = controller.enrichExperts(EnrichmentScope.DISCOVERY_PENDING)
+
+        assertEquals(HttpStatus.ACCEPTED, result.statusCode)
+        Mockito.verify(discoveryService).enrichExistingExperts(EnrichmentScope.DISCOVERY_PENDING)
     }
 
     @Test
