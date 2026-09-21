@@ -64,4 +64,51 @@ class UnpaywallClientTest {
         val result = client.findPdfUrl("10.1234/test")
         assertNull(result)
     }
+
+    @Test
+    fun `findPdfUrls returns every open location deduplicated with best first (I-1)`() {
+        // c10（I-1）：首选地址失效后回退链要能接着尝试其他开放位置，因此客户端要给出全部去重地址。
+        val properties = UnpaywallProperties(email = "test@example.com", requestDelayMs = 0)
+        val client = UnpaywallClient(restTemplate, properties)
+
+        val response = mapOf(
+            "best_oa_location" to mapOf("url_for_pdf" to "https://repo.example/best.pdf"),
+            "oa_locations" to listOf(
+                mapOf("url_for_pdf" to "https://repo.example/best.pdf"),
+                mapOf("url_for_pdf" to "https://repo.example/second.pdf"),
+                mapOf("url_for_pdf" to "https://repo.example/third.pdf")
+            )
+        )
+        Mockito.doReturn(mapper.readTree(mapper.writeValueAsString(response)))
+            .`when`(restTemplate).getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+
+        assertEquals(
+            listOf(
+                "https://repo.example/best.pdf",
+                "https://repo.example/second.pdf",
+                "https://repo.example/third.pdf"
+            ),
+            client.findPdfUrls("10.1234/test")
+        )
+        assertEquals("https://repo.example/best.pdf", client.findPdfUrl("10.1234/test"))
+    }
+
+    @Test
+    fun `findPdfUrls keeps only public http(s) links (I-1)`() {
+        // c10（I-1）：非公开协议与空值不成其为可下载的开放全文地址，绝不能下发给下载器。
+        val properties = UnpaywallProperties(email = "test@example.com", requestDelayMs = 0)
+        val client = UnpaywallClient(restTemplate, properties)
+
+        val response = mapOf(
+            "best_oa_location" to mapOf("url_for_pdf" to "ftp://repo.example/best.pdf"),
+            "oa_locations" to listOf(
+                mapOf("url_for_pdf" to "https://repo.example/ok.pdf"),
+                mapOf("url_for_pdf" to "")
+            )
+        )
+        Mockito.doReturn(mapper.readTree(mapper.writeValueAsString(response)))
+            .`when`(restTemplate).getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+
+        assertEquals(listOf("https://repo.example/ok.pdf"), client.findPdfUrls("10.1234/test"))
+    }
 }

@@ -13,6 +13,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
+import com.weibo.talentintroduction.discovery.domain.resolvedFulltextObtained
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -22,6 +23,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
+import java.time.Instant
 
 @Service
 @ConditionalOnProperty(prefix = "talent-introduction.expert-discovery.openalex", name = ["enabled"], havingValue = "true")
@@ -30,6 +32,7 @@ class OpenAlexDataSource(
     private val properties: OpenAlexProperties,
     private val europePmc: EuropePmcDataSource,
     private val pdfEmailExtractor: PdfEmailExtractor,
+    private val unpaywallClient: UnpaywallClient,
     private val requestPolicy: OpenAlexRequestPolicy = OpenAlexRequestPolicy(properties)
 ) : AcademicDataSource {
 
@@ -78,22 +81,88 @@ class OpenAlexDataSource(
         return response?.body
     }
 
-    override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome {
+    /**
+     * c10（I-1）：单篇论文的全文回退链。顺序固定为 PMC XML → 首选 OA PDF → 其他去重 OA PDF →
+     * DOI→Unpaywall 开放位置；整篇共享一个 [FULLTEXT_PER_PAPER_DEADLINE_MS] 总时限，URL 侧最多
+     * [MAX_FULLTEXT_ADDRESSES] 个地址（正文里说的「全文地址」就是 URL，PMC XML 按 ID 取，不算地址），
+     * 同一 URL 只尝试一次，Unpaywall 只在前面都没取到内容时才问一次。
+     * 任一地址取到内容（有邮箱或无邮箱）即停手：不再为同一篇发第二轮无效请求。
+     */
+    override fun extractAuthorEmails(paper: PaperMetadata): EmailExtractionOutcome =
+        extractAuthorEmails(paper, Instant.now().plusMillis(FULLTEXT_PER_PAPER_DEADLINE_MS))
+
+    /** 直接传 deadline 的入口：测试用它验证「共享总时限」而不是每个地址各给一份。 */
+    internal fun extractAuthorEmails(paper: PaperMetadata, deadline: Instant): EmailExtractionOutcome {
+        var requests = 0
+        var lastFailure: EmailExtractionOutcome? = null
+
         if (paper.pmcId != null) {
             val europePmcOutcome = europePmc.extractAuthorEmails(paper)
             // I-2: PMC/JATS 是另一来源的提取结果，姓名/邮箱相似都不算证据 ——
             // 只有 ORCID 精确等值到一个唯一作者时才允许补接该作者的 OpenAlex ID。
-            return europePmcOutcome.copy(
+            val xmlOutcome = europePmcOutcome.copy(
                 emails = europePmcOutcome.emails.map { it.copy(openAlexAuthorId = verifiedAuthorIdByOrcid(it, paper.authors)) },
                 methodUsed = "FULLTEXT_XML"
             )
+            requests += xmlOutcome.httpRequests
+            if (xmlOutcome.resolvedFulltextObtained()) return xmlOutcome.copy(httpRequests = requests)
+            // XML 没取到内容才继续回退；取到内容但没有邮箱按 I-3 算成功，不再重复下载。
+            lastFailure = xmlOutcome
         }
-        if (paper.downloadUrl != null) {
-            val result = pdfEmailExtractor.extract(paper.downloadUrl, paper.authors, sourceName)
-            return result.copy(methodUsed = "PDF_PARSE")
+
+        val attemptedUrls = LinkedHashSet<String>()
+        val queue = ArrayDeque<String>()
+        (listOfNotNull(paper.downloadUrl) + paper.candidateDownloadUrls)
+            .mapNotNullTo(queue) { publicFulltextUrl(it) }
+        var unpaywallConsulted = false
+
+        while (attemptedUrls.size < MAX_FULLTEXT_ADDRESSES) {
+            if (deadlineExpired(deadline)) {
+                // I-1：总时限是单篇自己的约束，不是来源耗尽 —— 没有拿到内容时单列 TIMEOUT。
+                if (lastFailure == null) lastFailure = timeoutOutcome()
+                break
+            }
+            if (queue.isEmpty()) {
+                if (unpaywallConsulted) break
+                unpaywallConsulted = true
+                val doi = paper.doi
+                if (doi != null && unpaywallClient.isConfigured()) {
+                    requests++
+                    unpaywallClient.findPdfUrls(doi).mapNotNullTo(queue) { publicFulltextUrl(it) }
+                }
+                if (queue.isEmpty()) break
+            }
+            val url = queue.removeFirst()
+            if (!attemptedUrls.add(url)) continue
+            val outcome = pdfEmailExtractor.extract(url, paper.authors, sourceName, deadline) { headers ->
+                reportOpenAlexQuota(headers)
+            }
+            requests += outcome.httpRequests
+            if (outcome.resolvedFulltextObtained()) return outcome.copy(httpRequests = requests)
+            lastFailure = outcome
         }
+
+        lastFailure?.let { return it.copy(httpRequests = requests) }
+        // 一个地址都没有：保持改动前的语义（下游按 papersSkippedNoId 计数）。
         return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_PMC_ID")
     }
+
+    private fun timeoutOutcome(): EmailExtractionOutcome = EmailExtractionOutcome(
+        emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED", httpRequests = 0,
+        fulltextObtained = false, downloadFailureCategory = FULLTEXT_FAILURE_TIMEOUT
+    )
+
+    /**
+     * c1（O-1）：全文下载在**真正发生的地方**写入共享额度口径 —— 只有响应确实带回 OpenAlex 配额头时才校正。
+     * Bearer 只发给配置的 OpenAlex origin（见 OpenAlexAuthInterceptor），外部开放全文站点的响应没有这些头，
+     * 因此它们的下载不会被误记成 provider 的额度消耗、也不会触发无谓退避；计量内容下载（100 credits/次）则
+     * 会计入 [OpenAlexRequestPolicy.fulltextDownloadCount]，不再是没有生产写入方的死计数器。
+     */
+    private fun reportOpenAlexQuota(headers: HttpHeaders) {
+        if (headers.contains(OpenAlexRequestPolicy.CREDITS_USED_HEADER)) requestPolicy.recordResponse(headers)
+    }
+
+    private fun deadlineExpired(deadline: Instant): Boolean = !Instant.now().isBefore(deadline)
 
     /**
      * I-2: 只有「提取出的邮箱带 ORCID，且该 ORCID 精确等值到唯一一个带作者 ID 的作者」才返回该 ID。
@@ -139,6 +208,14 @@ class OpenAlexDataSource(
                 val pmid = node.path("ids").path("pmid")?.asText(null)
                     ?.removePrefix("https://pubmed.ncbi.nlm.nih.gov/")
                 val pdfUrl = node.path("best_oa_location").path("pdf_url").asText(null)
+                // c10（I-1）：locations 里的开放 PDF 是首选失效时的备用地址；只取 is_oa 的公开 http(s) 地址，
+                // 去掉首选本身与重复项 —— 付费墙与非公开协议不成其为候选。
+                val primaryPdfUrl = publicFulltextUrl(pdfUrl)
+                val otherOaPdfUrls = node.path("locations")
+                    .filter { it.path("is_oa").asBoolean(false) }
+                    .mapNotNull { publicFulltextUrl(it.path("pdf_url").asText(null)) }
+                    .filter { it != primaryPdfUrl }
+                    .distinct()
                 val authors = node.path("authorships").map { authorship ->
                     val author = authorship.path("author")
                     val orcid = author.path("orcid").asText(null)?.removePrefix("https://orcid.org/")
@@ -157,7 +234,8 @@ class OpenAlexDataSource(
                 PaperMetadata(pmcId = pmcId, pmid = pmid, doi = doi,
                     title = node.path("title").asText(""), pubYear = node.path("publication_year").asInt(0),
                     journal = node.path("primary_location").path("source").path("display_name").asText(null),
-                    authors = authors, source = sourceName, downloadUrl = pdfUrl)
+                    authors = authors, source = sourceName, downloadUrl = pdfUrl,
+                    candidateDownloadUrls = otherOaPdfUrls)
             } catch (e: Exception) { log.debug("Failed to parse OpenAlex: {}", e.message); null }
         }
         return PaperSearchResult(papers, nextCursor, totalResults)
@@ -500,6 +578,15 @@ private data class TitlesFetch(val titles: List<String>?, val failed: Boolean) {
 
 /** I-3：最近论文/专利标题的取条数上界。 */
 private const val RECENT_TITLES_LIMIT = 3
+
+/**
+ * c10（I-1）：单篇论文全部全文地址共享的总时限（与尝试上限是两个独立约束，超时按 TIMEOUT 上报，
+ * 不冒充来源耗尽）。I-4：不随本次改动放大，仍按方案给定的 90 秒。
+ */
+internal const val FULLTEXT_PER_PAPER_DEADLINE_MS = 90_000L
+
+/** c10（I-1）：单篇论文最多尝试的全文**地址（URL）**数 —— 第三个失败后不再访问第四个。 */
+internal const val MAX_FULLTEXT_ADDRESSES = 3
 
 data class AuthorEnrichment(
     val hIndex: Int?,

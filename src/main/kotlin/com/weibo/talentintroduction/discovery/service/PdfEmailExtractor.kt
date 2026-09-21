@@ -9,13 +9,19 @@ import org.apache.pdfbox.pdmodel.PDDocument
 import org.apache.pdfbox.text.PDFTextStripper
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
+import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Component
+import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
 import java.io.ByteArrayInputStream
+import java.net.SocketTimeoutException
 import java.net.URI
 import java.nio.charset.StandardCharsets
+import java.security.cert.CertificateException
+import java.time.Instant
+import javax.net.ssl.SSLException
 
 @Component
 class PdfEmailExtractor(
@@ -27,10 +33,21 @@ class PdfEmailExtractor(
     private val log = LoggerFactory.getLogger(PdfEmailExtractor::class.java)
     private val magicBytes = byteArrayOf(0x25, 0x50, 0x44, 0x46)
 
+    /**
+     * c10（I-1/I-3）：单个全文地址的提取。
+     *
+     * [deadline] 是**单篇论文全部全文地址共享**的总时限（不是每个地址各给一份）：进入下载前先看是否已过期，
+     * 流式下载途中每读一段再检查一次，越过即放弃并归入 [FULLTEXT_FAILURE_TIMEOUT]，绝不在这里重新计时。
+     * [onResponseHeaders] 让调用方（OpenAlex 全文路径）在下载真正发生时读取 provider 响应头写入共享额度口径。
+     *
+     * 返回值的 [EmailExtractionOutcome.fulltextObtained] 区分「取到内容但没有邮箱」与「根本没取到内容」。
+     */
     fun extract(
         pdfUrl: String,
         knownAuthors: List<PaperAuthor>,
-        sourceName: String
+        sourceName: String,
+        deadline: Instant? = null,
+        onResponseHeaders: ((HttpHeaders) -> Unit)? = null
     ): EmailExtractionOutcome {
         val uri = try {
             URI.create(pdfUrl)
@@ -40,7 +57,8 @@ class PdfEmailExtractor(
                 emails = emptyList(),
                 methodUsed = "PDF_PARSE",
                 failureReason = "PDF_DOWNLOAD_FAILED",
-                httpRequests = 0
+                httpRequests = 0,
+                fulltextObtained = false
             )
         }
 
@@ -49,20 +67,42 @@ class PdfEmailExtractor(
                 maxRetries = properties.maxRetries,
                 initialBackoffMs = properties.retryBackoffMs
             ) {
-                downloadWithStreamLimit(uri)
+                // 重试也不重新计时：共享 deadline 已过期就不再发新的请求。
+                if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = false)
+                downloadWithStreamLimit(uri, deadline, onResponseHeaders)
             }
+        } catch (e: FulltextDeadlineExceededException) {
+            log.debug("[{}] Fulltext download of {} exceeded the shared per-paper deadline", sourceName, pdfUrl)
+            return EmailExtractionOutcome(
+                emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED",
+                httpRequests = if (e.requestIssued) 1 else 0,
+                fulltextObtained = false,
+                downloadFailureCategory = FULLTEXT_FAILURE_TIMEOUT
+            )
         } catch (e: PdfTooLargeException) {
             log.debug("[{}] PDF {} too large", sourceName, pdfUrl)
-            return EmailExtractionOutcome(emptyList(), "PDF_PARSE", "PDF_TOO_LARGE", httpRequests = 1)
+            return EmailExtractionOutcome(
+                emptyList(), "PDF_PARSE", "PDF_TOO_LARGE", httpRequests = 1, fulltextObtained = false
+            )
         } catch (e: Exception) {
             log.debug("[{}] Failed to download PDF {}: {}", sourceName, pdfUrl, e.message)
-            return EmailExtractionOutcome(emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED", httpRequests = 1)
+            return EmailExtractionOutcome(
+                emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED",
+                httpRequests = 1,
+                fulltextObtained = false,
+                downloadFailureCategory = classifyDownloadFailure(e)
+            )
         }
 
         return when (downloaded.kind) {
             ContentKind.PDF -> extractFromPdf(downloaded.bytes, knownAuthors, pdfUrl, sourceName)
             ContentKind.HTML -> extractFromHtml(downloaded.bytes, knownAuthors)
-            ContentKind.OTHER -> EmailExtractionOutcome(emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED", httpRequests = 1)
+            ContentKind.OTHER -> EmailExtractionOutcome(
+                emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED",
+                httpRequests = 1,
+                fulltextObtained = false,
+                downloadFailureCategory = FULLTEXT_FAILURE_INVALID_CONTENT
+            )
         }
     }
 
@@ -76,31 +116,82 @@ class PdfEmailExtractor(
             extractEmailsFromBytes(bytes, knownAuthors)
         } catch (e: Exception) {
             log.debug("[{}] Failed to parse PDF {}: {}", sourceName, pdfUrl, e.message)
-            return EmailExtractionOutcome(emptyList(), "PDF_PARSE", "PDF_PARSE_FAILED", httpRequests = 1)
+            return EmailExtractionOutcome(
+                emptyList(), "PDF_PARSE", "PDF_PARSE_FAILED",
+                httpRequests = 1,
+                fulltextObtained = false,
+                downloadFailureCategory = FULLTEXT_FAILURE_INVALID_CONTENT
+            )
         }
 
         if (emails.isEmpty()) {
-            return EmailExtractionOutcome(emptyList(), "PDF_PARSE", "NO_EMAIL_IN_TEXT", httpRequests = 1)
+            return EmailExtractionOutcome(
+                emptyList(), "PDF_PARSE", "NO_EMAIL_IN_TEXT", httpRequests = 1, fulltextObtained = true
+            )
         }
-        return EmailExtractionOutcome(emails, "PDF_PARSE", null, httpRequests = 1)
+        return EmailExtractionOutcome(emails, "PDF_PARSE", null, httpRequests = 1, fulltextObtained = true)
     }
 
+    /**
+     * I-3（c10）：取到的 HTML 只说明**这个地址返回了可读内容**，并不保证它就是论文全文（可能是落地页/摘要页）：
+     * 因此它计入「获取内容成功」（[EmailExtractionOutcome.fulltextObtained] = true），没有邮箱时单列
+     * `NO_EMAIL_IN_HTML`，绝不与下载失败混为一谈。
+     */
     private fun extractFromHtml(bytes: ByteArray, knownAuthors: List<PaperAuthor>): EmailExtractionOutcome {
         val html = String(bytes, StandardCharsets.UTF_8)
         val text = htmlToVisibleText(html)
         val emails = associateEmailsWithAuthors(text, knownAuthors)
         if (emails.isEmpty()) {
-            return EmailExtractionOutcome(emptyList(), "HTML_FALLBACK", "NO_EMAIL_IN_HTML", httpRequests = 1)
+            return EmailExtractionOutcome(
+                emptyList(), "HTML_FALLBACK", "NO_EMAIL_IN_HTML", httpRequests = 1, fulltextObtained = true
+            )
         }
-        return EmailExtractionOutcome(emails, "HTML_FALLBACK", null, httpRequests = 1)
+        return EmailExtractionOutcome(emails, "HTML_FALLBACK", null, httpRequests = 1, fulltextObtained = true)
     }
 
     private enum class ContentKind { PDF, HTML, OTHER }
 
     private data class DownloadedContent(val bytes: ByteArray, val kind: ContentKind)
 
-    private fun downloadWithStreamLimit(uri: URI): DownloadedContent {
+    /** c10（I-3）：下载失败的低基数分桶，供任务 details_json 统计。 */
+    private fun classifyDownloadFailure(e: Exception): String {
+        var httpStatus: Int? = null
+        var timedOut = false
+        var tlsFailure = false
+        var current: Throwable? = e
+        while (current != null) {
+            when (current) {
+                is HttpStatusCodeException -> httpStatus = current.statusCode.value()
+                is SocketTimeoutException -> timedOut = true
+                is SSLException, is CertificateException -> tlsFailure = true
+                is FulltextDeadlineExceededException -> timedOut = true
+            }
+            current = current.cause
+        }
+        httpStatus?.let { status ->
+            return when {
+                status == 403 -> FULLTEXT_FAILURE_HTTP_403
+                status == 404 -> FULLTEXT_FAILURE_HTTP_404
+                status == 429 -> FULLTEXT_FAILURE_HTTP_429
+                status >= 500 -> FULLTEXT_FAILURE_HTTP_5XX
+                status >= 400 -> FULLTEXT_FAILURE_HTTP_4XX
+                else -> FULLTEXT_FAILURE_NETWORK
+            }
+        }
+        return when {
+            timedOut -> FULLTEXT_FAILURE_TIMEOUT
+            tlsFailure -> FULLTEXT_FAILURE_TLS
+            else -> FULLTEXT_FAILURE_NETWORK
+        }
+    }
+
+    private fun downloadWithStreamLimit(
+        uri: URI,
+        deadline: Instant?,
+        onResponseHeaders: ((HttpHeaders) -> Unit)?
+    ): DownloadedContent {
         return restTemplate.execute(uri, HttpMethod.GET, null) { response ->
+            onResponseHeaders?.invoke(response.headers)
             val contentType = response.headers.contentType
             val isPdfContentType = contentType != null &&
                 (contentType.isCompatibleWith(MediaType.APPLICATION_PDF) ||
@@ -110,6 +201,7 @@ class PdfEmailExtractor(
             val buffer = java.io.ByteArrayOutputStream()
             val chunk = ByteArray(8192)
             var totalRead = 0L
+            var chunksSinceDeadlineCheck = 0
 
             response.body.use { input ->
                 while (true) {
@@ -120,6 +212,12 @@ class PdfEmailExtractor(
                         throw PdfTooLargeException()
                     }
                     buffer.write(chunk, 0, n)
+                    if (++chunksSinceDeadlineCheck >= DEADLINE_CHECK_INTERVAL_CHUNKS) {
+                        chunksSinceDeadlineCheck = 0
+                        if (deadlineExpired(deadline)) {
+                            throw FulltextDeadlineExceededException(requestIssued = true)
+                        }
+                    }
                 }
             }
 
@@ -201,6 +299,32 @@ class PdfEmailExtractor(
     }
 }
 
+/** c10（I-3）：下载失败的低基数类别词汇表（进入任务 details_json 的 failureReasons）。 */
+internal const val FULLTEXT_FAILURE_HTTP_403 = "HTTP_403"
+internal const val FULLTEXT_FAILURE_HTTP_404 = "HTTP_404"
+internal const val FULLTEXT_FAILURE_HTTP_429 = "HTTP_429"
+internal const val FULLTEXT_FAILURE_HTTP_5XX = "HTTP_5XX"
+internal const val FULLTEXT_FAILURE_HTTP_4XX = "HTTP_4XX"
+internal const val FULLTEXT_FAILURE_TLS = "TLS_ERROR"
+internal const val FULLTEXT_FAILURE_TIMEOUT = "TIMEOUT"
+internal const val FULLTEXT_FAILURE_INVALID_CONTENT = "INVALID_CONTENT"
+internal const val FULLTEXT_FAILURE_NETWORK = "NETWORK_ERROR"
+
+/**
+ * c10（I-1）：只有公开 http(s) 链接才是可尝试的开放全文地址 —— 空值、相对地址与 ftp/file 等协议
+ * 一律不成其为候选，调用方也就不会去绕付费墙或验证码。
+ */
+internal fun publicFulltextUrl(raw: String?): String? {
+    val trimmed = raw?.trim().orEmpty()
+    if (trimmed.isEmpty()) return null
+    return try {
+        val scheme = URI.create(trimmed).scheme?.lowercase()
+        if (scheme == "http" || scheme == "https") trimmed else null
+    } catch (e: IllegalArgumentException) {
+        null
+    }
+}
+
 /**
  * I-2: 文本挖掘出来的邮箱只有在本地部分同时含「姓」与「名」（完整姓名组合）时才算强证据。
  * 首字母、单姓、单名都不足以绑定学术身份 —— 曾用 `localPart.contains(family.take(1))` 兜底，
@@ -229,3 +353,12 @@ private fun normalizeNameToken(value: String?): String? =
     value?.lowercase()?.filter { it.isLetterOrDigit() }?.takeIf { it.length >= MIN_NAME_TOKEN_LENGTH }
 
 private class PdfTooLargeException : RuntimeException()
+
+/** c10（I-1）：共享 deadline 过期。[requestIssued] 区分「还没发请求」与「请求已发出、下载中途放弃」。 */
+private class FulltextDeadlineExceededException(val requestIssued: Boolean) :
+    RuntimeException("fulltext deadline exceeded")
+
+/** c10（I-1）：为省掉每次 8KB 读取的时钟读取，每 64 个分片（512KB）检查一次共享 deadline。 */
+private const val DEADLINE_CHECK_INTERVAL_CHUNKS = 64
+
+private fun deadlineExpired(deadline: Instant?): Boolean = deadline != null && !Instant.now().isBefore(deadline)

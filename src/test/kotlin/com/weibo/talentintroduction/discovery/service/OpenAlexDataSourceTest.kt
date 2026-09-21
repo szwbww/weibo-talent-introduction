@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
 import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.config.OpenAlexRequestPolicy
+import com.weibo.talentintroduction.config.PdfExtractionProperties
 import com.weibo.talentintroduction.config.Permit
 import com.weibo.talentintroduction.config.PolicyTimeSource
 import com.weibo.talentintroduction.config.RequestKind
@@ -22,20 +23,28 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
+import org.mockito.invocation.InvocationOnMock
 import org.springframework.http.HttpEntity
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.http.client.ClientHttpResponse
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpServerErrorException
+import org.springframework.web.client.ResponseExtractor
 import org.springframework.web.client.RestTemplate
+import java.net.URI
 import java.time.Instant
 
 class OpenAlexDataSourceTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
     private val europePmc = Mockito.mock(EuropePmcDataSource::class.java)
     private val pdfExtractor = Mockito.mock(PdfEmailExtractor::class.java)
+    private val unpaywallClient = Mockito.mock(UnpaywallClient::class.java)
+    private val downloadAttempts = mutableListOf<String>()
+    private val downloadDeadlines = mutableListOf<Instant>()
     private val properties = OpenAlexProperties(
         enabled = true,
         politeEmail = "",
@@ -58,7 +67,7 @@ class OpenAlexDataSourceTest {
     }
 
     private val policy = OpenAlexRequestPolicy(properties, TestTimeSource())
-    private val dataSource = OpenAlexDataSource(restTemplate, properties, europePmc, pdfExtractor, policy)
+    private val dataSource = OpenAlexDataSource(restTemplate, properties, europePmc, pdfExtractor, unpaywallClient, policy)
 
     @Test
     fun `searchPapers parses OpenAlex works response`() {
@@ -416,6 +425,7 @@ class OpenAlexDataSourceTest {
             properties.copy(fetchWorksEnabled = true),
             europePmc,
             pdfExtractor,
+            unpaywallClient,
             policy
         )
         val batchJson = """
@@ -558,6 +568,7 @@ class OpenAlexDataSourceTest {
             properties.copy(fetchWorksEnabled = true),
             europePmc,
             pdfExtractor,
+            unpaywallClient,
             policy
         )
         val batchJson = """
@@ -826,6 +837,271 @@ class OpenAlexDataSourceTest {
         assertTrue(outcome.emails.all { it.openAlexAuthorId == null }, "无 ORCID 或 ORCID 不匹配时不得补接作者 ID")
     }
 
+    // ------------------------------------------------------------------
+    // c10（I-1/I-2/I-3）：有界回退链与漏斗分层
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `searchPapers keeps the other open pdf locations as fallback candidates (I-1)`() {
+        stubWorksResponse(
+            """
+            {
+              "meta": {"count": 1, "next_cursor": null},
+              "results": [{
+                "id": "https://openalex.org/W1",
+                "best_oa_location": {"is_oa": true, "pdf_url": "https://primary.example/paper.pdf"},
+                "locations": [
+                  {"is_oa": true, "pdf_url": "https://primary.example/paper.pdf"},
+                  {"is_oa": true, "pdf_url": "https://repo.example/copy.pdf"},
+                  {"is_oa": false, "pdf_url": "https://paywall.example/paper.pdf"},
+                  {"is_oa": true, "pdf_url": "https://repo.example/copy.pdf"},
+                  {"is_oa": true, "pdf_url": "ftp://repo.example/copy.pdf"}
+                ],
+                "authorships": []
+              }]
+            }
+            """.trimIndent()
+        )
+
+        val paper = dataSource.searchPapers(PaperSearchCriteria()).papers.single()
+
+        assertEquals("https://primary.example/paper.pdf", paper.downloadUrl)
+        assertEquals(
+            listOf("https://repo.example/copy.pdf"),
+            paper.candidateDownloadUrls,
+            "只保留 is_oa 的公开 http(s) 备用地址，去掉首选本身、付费墙、重复项与非 http 协议"
+        )
+    }
+
+    @Test
+    fun `a dead primary address falls back to the next open pdf and counts one paper once (V-1, I-1, I-3)`() {
+        val primary = "https://primary.example/gone.pdf"
+        val fallback = "https://repo.example/copy.pdf"
+        val author = PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK", true, openAlexAuthorId = "A5023888391")
+        stubDownloads(
+            primary to failedDownload("PDF_DOWNLOAD_FAILED", "HTTP_404"),
+            fallback to successfulDownload("john.smith@oxford.ac.uk", author)
+        )
+
+        val outcome = dataSource.extractAuthorEmails(
+            openAlexPaper(downloadUrl = primary, candidates = listOf(fallback), authors = listOf(author))
+        )
+
+        assertEquals("PDF_PARSE", outcome.methodUsed)
+        assertNull(outcome.failureReason)
+        assertEquals("john.smith@oxford.ac.uk", outcome.emails.single().email)
+        assertEquals("A5023888391", outcome.emails.single().openAlexAuthorId)
+        assertEquals(2, outcome.httpRequests, "1 篇论文 2 次下载尝试：论文计数仍是 1，尝试次数单独计")
+        Mockito.verify(unpaywallClient, Mockito.never()).findPdfUrls(Mockito.anyString())
+    }
+
+    @Test
+    fun `the fallback chain stops after three addresses and shares one deadline (V-1, I-1)`() {
+        val urls = (1..4).map { "https://repo.example/$it.pdf" }
+        stubDownloads(
+            urls[0] to failedDownload("PDF_DOWNLOAD_FAILED", "HTTP_404"),
+            urls[1] to failedDownload("PDF_DOWNLOAD_FAILED", "HTTP_403"),
+            urls[2] to failedDownload("PDF_DOWNLOAD_FAILED", "HTTP_5XX")
+        )
+
+        val outcome = dataSource.extractAuthorEmails(
+            openAlexPaper(downloadUrl = urls[0], candidates = urls.drop(1))
+        )
+
+        assertEquals(3, outcome.httpRequests)
+        assertEquals("PDF_DOWNLOAD_FAILED", outcome.failureReason)
+        assertEquals("HTTP_5XX", outcome.downloadFailureCategory)
+        assertEquals(false, outcome.fulltextObtained)
+        assertEquals(urls.take(3), downloadAttempts, "第三个地址失败后不再访问第四个（访问第四个会直接抛错）")
+        assertEquals(
+            1, downloadDeadlines.distinct().size,
+            "单篇所有地址共享同一个 deadline，不是每个地址各给一份"
+        )
+    }
+
+    @Test
+    fun `a repeated url is attempted only once (V-1)`() {
+        val primary = "https://primary.example/paper.pdf"
+        val second = "https://repo.example/copy.pdf"
+        stubDownloads(
+            primary to failedDownload("PDF_DOWNLOAD_FAILED", "HTTP_404"),
+            second to successfulDownload("john.smith@oxford.ac.uk")
+        )
+
+        val outcome = dataSource.extractAuthorEmails(
+            openAlexPaper(downloadUrl = primary, candidates = listOf(primary, second))
+        )
+
+        assertEquals("john.smith@oxford.ac.uk", outcome.emails.single().email)
+        assertEquals(listOf(primary, second), downloadAttempts, "重复地址只尝试一次")
+        assertEquals(2, outcome.httpRequests)
+    }
+
+    @Test
+    fun `unpaywall is consulted only when the open locations yielded nothing (I-1)`() {
+        val primary = "https://primary.example/paper.pdf"
+        val unpaywallUrl = "https://unpaywall.example/copy.pdf"
+        stubDownloads(primary to successfulDownload("john.smith@oxford.ac.uk"))
+
+        dataSource.extractAuthorEmails(openAlexPaper(downloadUrl = primary, doi = "10.1/x"))
+
+        Mockito.verify(unpaywallClient, Mockito.never()).findPdfUrls(Mockito.anyString())
+
+        // 首选失效且没有其他 OA 地址时才问 Unpaywall，并把它给出的开放位置当作下一个候选。
+        Mockito.doReturn(true).`when`(unpaywallClient).isConfigured()
+        stubDownloads(
+            primary to failedDownload("PDF_DOWNLOAD_FAILED", "HTTP_404"),
+            unpaywallUrl to successfulDownload("john.smith@oxford.ac.uk")
+        )
+        Mockito.doReturn(listOf(unpaywallUrl)).`when`(unpaywallClient).findPdfUrls("10.1/x")
+
+        val outcome = dataSource.extractAuthorEmails(openAlexPaper(downloadUrl = primary, doi = "10.1/x"))
+
+        assertEquals("john.smith@oxford.ac.uk", outcome.emails.single().email)
+        assertEquals(3, outcome.httpRequests, "2 次下载尝试 + 1 次 Unpaywall 查询")
+        Mockito.verify(unpaywallClient, Mockito.times(1)).findPdfUrls("10.1/x")
+    }
+
+    @Test
+    fun `an expired shared deadline prevents any download (I-1)`() {
+        // c10（I-1）：共享总时限是单篇自己的约束，过期即停手并按 TIMEOUT 上报，不是来源耗尽。
+        val outcome = dataSource.extractAuthorEmails(
+            openAlexPaper(downloadUrl = "https://primary.example/paper.pdf"),
+            Instant.now().minusSeconds(1)
+        )
+
+        assertEquals("PDF_DOWNLOAD_FAILED", outcome.failureReason)
+        assertEquals("TIMEOUT", outcome.downloadFailureCategory)
+        assertEquals(false, outcome.fulltextObtained)
+        assertEquals(0, outcome.httpRequests)
+        Mockito.verifyNoInteractions(pdfExtractor)
+    }
+
+    @Test
+    fun `a paper without any address keeps the previous NO_PMC_ID semantics (I-4)`() {
+        val outcome = dataSource.extractAuthorEmails(openAlexPaper())
+
+        assertEquals("NO_PMC_ID", outcome.failureReason)
+        assertEquals(0, outcome.httpRequests)
+        Mockito.verifyNoInteractions(pdfExtractor)
+    }
+
+    @Test
+    fun `a metered fulltext download reports its quota headers to the shared policy (c1 O-1)`() {
+        // c1 的 O-1：fulltextDownloadCount() 之前没有生产写入方 —— 下载真正发生时把 provider 响应头交回 policy。
+        Mockito.doAnswer { invocation: InvocationOnMock ->
+            invocation.getArgument<(HttpHeaders) -> Unit>(4)(
+                HttpHeaders().apply { set(OpenAlexRequestPolicy.CREDITS_USED_HEADER, "100") }
+            )
+            successfulDownload("john.smith@oxford.ac.uk")
+        }.`when`(pdfExtractor).extract(
+            Mockito.anyString(), Mockito.anyList(), Mockito.anyString(), Mockito.any(), Mockito.any()
+        )
+
+        dataSource.extractAuthorEmails(openAlexPaper(downloadUrl = "https://content.openalex.org/works/W1.pdf"))
+
+        assertEquals(1L, policy.fulltextDownloadCount(), "计量内容下载必须计入共享额度，而不是停在死计数器里")
+    }
+
+    @Test
+    fun `an external host without openalex quota headers leaves the shared policy untouched (c1 O-1)`() {
+        // 外部开放全文站点不带 provider 配额头：既不算额度消耗，也不触发无谓退避。
+        Mockito.doAnswer { invocation: InvocationOnMock ->
+            invocation.getArgument<(HttpHeaders) -> Unit>(4)(
+                HttpHeaders().apply { set(HttpHeaders.CONTENT_TYPE, "application/pdf") }
+            )
+            successfulDownload("john.smith@oxford.ac.uk")
+        }.`when`(pdfExtractor).extract(
+            Mockito.anyString(), Mockito.anyList(), Mockito.anyString(), Mockito.any(), Mockito.any()
+        )
+
+        dataSource.extractAuthorEmails(openAlexPaper(downloadUrl = "https://repo.example/copy.pdf"))
+
+        assertEquals(0L, policy.fulltextDownloadCount())
+        assertEquals(0L, policy.listRequestCount())
+    }
+
+    @Test
+    fun `a fallback pdf never attaches an identity when the authors are ambiguous (V-1, I-2)`() {
+        // 端到端：首选 404、备用 PDF 真的被解析，但同名歧义下不得附带任何学术身份。
+        val downloadRestTemplate = Mockito.mock(RestTemplate::class.java)
+        val realExtractor = PdfEmailExtractor(downloadRestTemplate, PlainTextEmailExtractor(), PdfExtractionProperties())
+        val chainDataSource = OpenAlexDataSource(
+            restTemplate, properties, europePmc, realExtractor, unpaywallClient, policy
+        )
+        val primary = "https://primary.example/gone.pdf"
+        val fallback = "https://repo.example/copy.pdf"
+        val pdfBytes = javaClass.classLoader.getResource("pdf/standard.pdf")!!.readBytes()
+        val ambiguousAuthors = listOf(
+            PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK", true, openAlexAuthorId = "A5023888391"),
+            PaperAuthor("John", "Smith", "0000-0002", "Cambridge, UK", false, openAlexAuthorId = "A5086928770")
+        )
+
+        Mockito.doAnswer { invocation: InvocationOnMock ->
+            val uri = invocation.getArgument<URI>(0)
+            if (uri.toString() == primary) throw HttpClientErrorException(HttpStatus.NOT_FOUND)
+            val responseExtractor = invocation.getArgument<ResponseExtractor<*>>(3)
+            val mockResponse = Mockito.mock(ClientHttpResponse::class.java)
+            Mockito.doReturn(HttpHeaders().apply { contentType = MediaType.APPLICATION_PDF })
+                .`when`(mockResponse).headers
+            Mockito.doReturn(java.io.ByteArrayInputStream(pdfBytes)).`when`(mockResponse).body
+            responseExtractor.extractData(mockResponse)
+        }.`when`(downloadRestTemplate).execute(
+            Mockito.any(URI::class.java), Mockito.eq(HttpMethod.GET), Mockito.any(), Mockito.any(ResponseExtractor::class.java)
+        )
+
+        val outcome = chainDataSource.extractAuthorEmails(
+            openAlexPaper(downloadUrl = primary, candidates = listOf(fallback), authors = ambiguousAuthors)
+        )
+
+        assertEquals("PDF_PARSE", outcome.methodUsed)
+        assertNull(outcome.failureReason)
+        assertTrue(outcome.emails.any { it.email == "john.smith@oxford.ac.uk" })
+        assertTrue(outcome.emails.all { it.orcidId == null && it.openAlexAuthorId == null }, "备用版本的同名歧义不得被当身份")
+        assertEquals(2, outcome.httpRequests)
+    }
+
+    private fun openAlexPaper(
+        downloadUrl: String? = null,
+        candidates: List<String> = emptyList(),
+        authors: List<PaperAuthor> = emptyList(),
+        doi: String? = null
+    ) = PaperMetadata(
+        pmcId = null, pmid = null, doi = doi, title = "Test", pubYear = 2024, journal = null,
+        authors = authors, source = "OPENALEX", downloadUrl = downloadUrl, candidateDownloadUrls = candidates
+    )
+
+    private fun failedDownload(reason: String, category: String? = null) = EmailExtractionOutcome(
+        emptyList(), "PDF_PARSE", reason, httpRequests = 1,
+        fulltextObtained = false, downloadFailureCategory = category
+    )
+
+    private fun successfulDownload(email: String, author: PaperAuthor? = null) = EmailExtractionOutcome(
+        listOf(
+            AuthorEmail(
+                email, author?.givenNames, author?.familyNames, false, author?.affiliation,
+                author?.orcidId, author?.institutionType, author?.openAlexAuthorId
+            )
+        ),
+        "PDF_PARSE", null, httpRequests = 1, fulltextObtained = true
+    )
+
+    /**
+     * 记录每次下载尝试（顺序、地址、共享 deadline）并按地址返回结果；没有显式安排的地址一旦被访问即
+     * 让测试失败 —— 这比 verify 更能证明「第四个地址根本没被访问」。
+     */
+    private fun stubDownloads(vararg outcomesByUrl: Pair<String, EmailExtractionOutcome>) {
+        val outcomes = outcomesByUrl.toMap()
+        Mockito.doAnswer { invocation: InvocationOnMock ->
+            val url = invocation.getArgument<String>(0)
+            downloadAttempts += url
+            downloadDeadlines += invocation.getArgument<Instant>(3)
+            outcomes[url] ?: throw AssertionError("unexpected download attempt: $url")
+        }.`when`(pdfExtractor).extract(
+            Mockito.anyString(), Mockito.anyList(), Mockito.anyString(), Mockito.any(), Mockito.any()
+        )
+    }
+
     private fun pmcPaper(authors: List<PaperAuthor>) = PaperMetadata(
         pmcId = "PMC9876543", pmid = null, doi = null, title = "Test", pubYear = 2024,
         journal = null, authors = authors, source = "OPENALEX"
@@ -972,6 +1248,7 @@ class OpenAlexDataSourceTest {
             properties.copy(fetchWorksEnabled = true),
             europePmc,
             pdfExtractor,
+            unpaywallClient,
             policy
         )
         stubAuthorEnrichment(
@@ -999,6 +1276,7 @@ class OpenAlexDataSourceTest {
             properties.copy(fetchWorksEnabled = true),
             europePmc,
             pdfExtractor,
+            unpaywallClient,
             policy
         )
         Mockito.`when`(
@@ -1038,6 +1316,7 @@ class OpenAlexDataSourceTest {
             properties.copy(fetchWorksEnabled = true),
             europePmc,
             pdfExtractor,
+            unpaywallClient,
             policy
         )
         Mockito.`when`(

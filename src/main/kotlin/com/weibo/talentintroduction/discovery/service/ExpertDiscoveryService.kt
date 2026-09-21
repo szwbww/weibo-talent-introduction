@@ -34,6 +34,7 @@ import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.PromotionOutcome
 import com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor
+import com.weibo.talentintroduction.discovery.domain.resolvedFulltextObtained
 import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
@@ -1153,6 +1154,8 @@ class ExpertDiscoveryService(
         }
 
         val outcome = extraction.outcome!!
+        // c10（I-3）：httpRequests 是本次提取真实发出的下载请求数 —— 回退链两次尝试就是 2，
+        // 但论文计数仍只有 1（同一篇绝不因多次回退被当成两篇）。
         sourceStats.apiRequests += outcome.httpRequests
 
         if (outcome.failureReason != null) {
@@ -1160,17 +1163,24 @@ class ExpertDiscoveryService(
             if (outcome.failureReason == "PDF_DOWNLOAD_FAILED") sourceStats.pdfDownloadFailed++
             if (outcome.failureReason == "PDF_PARSE_FAILED") sourceStats.pdfParseFailed++
         }
+        // c10（I-3）：下载失败按低基数类别分桶（HTTP_403/404/429/5XX/4XX、TLS_ERROR、TIMEOUT、
+        // INVALID_CONTENT、NETWORK_ERROR），随 failureReasons 进入任务 details_json。
+        outcome.downloadFailureCategory?.let { category ->
+            sourceStats.failureReasons.merge(category, 1) { a, b -> a + b }
+        }
 
+        // c10（I-3）：适配器显式声明优先，null（旧适配器）按改动前的 failureReason 推导。
+        val contentObtained = outcome.resolvedFulltextObtained()
         if (outcome.emails.isEmpty()) {
             if (outcome.failureReason == "NO_PMC_ID" || outcome.failureReason == "NO_DOI") {
                 sourceStats.papersSkippedNoId++
-            } else if (outcome.failureReason == null ||
-                       outcome.failureReason == "NO_EMAIL_IN_FULLTEXT" ||
-                       outcome.failureReason == "NO_EMAIL_IN_TEXT") {
+            } else if (contentObtained) {
+                // PDF/XML 取到内容但没有邮箱：内容获取成功、无邮箱单列。HTML 也计入这里，
+                // 但取到的 HTML 不保证就是论文全文，故以 NO_EMAIL_IN_HTML 单列原因保留区分度。
                 sourceStats.noEmailInFulltext++
                 sourceStats.fulltextObtained++
             } else {
-                // PDF_DOWNLOAD_FAILED, PDF_PARSE_FAILED, NO_FULLTEXT, etc. — fulltext not obtained
+                // PDF_DOWNLOAD_FAILED, PDF_PARSE_FAILED, NO_FULLTEXT, 超时/超限等 —— fulltext not obtained
             }
             return
         }

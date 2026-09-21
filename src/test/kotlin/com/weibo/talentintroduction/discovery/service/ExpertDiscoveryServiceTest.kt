@@ -930,6 +930,106 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `NO_EMAIL_IN_HTML counts as content obtained and keeps its own reason (I-3)`() {
+        // c10（I-3）：取到 HTML 就是获取内容成功，但仍单列 NO_EMAIL_IN_HTML —— HTML 不保证是论文全文。
+        val svc = createService()
+        val p1 = paper("PMC1", "Test")
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
+            EmailExtractionOutcome(
+                emptyList(), "HTML_FALLBACK", "NO_EMAIL_IN_HTML",
+                httpRequests = 1, fulltextObtained = true
+            ))
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val sourceStats = result.stats.bySource["EUROPE_PMC"]
+        assertEquals(1, sourceStats?.fulltextObtained)
+        assertEquals(1, sourceStats?.noEmailInFulltext)
+        assertEquals(1, sourceStats?.failureReasons?.get("NO_EMAIL_IN_HTML"))
+        assertEquals(0, sourceStats?.pdfDownloadFailed)
+    }
+
+    @Test
+    fun `an explicit not-obtained declaration is not content obtained (I-3)`() {
+        val svc = createService()
+        val p1 = paper("PMC1", "Test")
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
+            EmailExtractionOutcome(emptyList(), "PDF_PARSE", null, httpRequests = 1, fulltextObtained = false))
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val sourceStats = result.stats.bySource["EUROPE_PMC"]
+        assertEquals(0, sourceStats?.fulltextObtained)
+        assertEquals(0, sourceStats?.noEmailInFulltext)
+    }
+
+    @Test
+    fun `an adapter without the declaration keeps the previous derivation (I-4, V-3)`() {
+        // 旧适配器（EuropePMC/CORE/arXiv/Crossref）不声明 fulltextObtained：推导必须与改动前逐字一致。
+        val svc = createService()
+        val p1 = paper("PMC1", "Test")
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
+            EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", null))
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val sourceStats = result.stats.bySource["EUROPE_PMC"]
+        assertEquals(1, sourceStats?.fulltextObtained)
+        assertEquals(1, sourceStats?.noEmailInFulltext)
+    }
+
+    @Test
+    fun `download failure categories reach the per-source details summary (I-3)`() {
+        // c10（I-3）：失败类别要能出现在任务 details_json 的 bySource.failureReasons 里，运营才能按桶看。
+        val svc = createService()
+        val p1 = paper("PMC1", "Test")
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
+            EmailExtractionOutcome(
+                emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED",
+                httpRequests = 1, fulltextObtained = false, downloadFailureCategory = "HTTP_403"
+            ))
+
+        val captured = mutableListOf<TaskProgress>()
+        DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        val sourceDetails = (captured.last().details?.get("bySource") as Map<*, *>)["EUROPE_PMC"] as Map<*, *>
+        val failureReasons = sourceDetails["failureReasons"] as Map<*, *>
+        assertEquals(1, failureReasons["HTTP_403"])
+        assertEquals(1, failureReasons["PDF_DOWNLOAD_FAILED"])
+        assertEquals(1, sourceDetails["pdfDownloadFailed"])
+        assertEquals(0, sourceDetails["fulltextObtained"])
+    }
+
+    @Test
+    fun `one paper with two download attempts counts one paper and two requests (V-1, I-3)`() {
+        // c10（I-1/I-3）：回退两次的同一篇论文只算 1 篇，下载尝试数单独计（这里体现为 httpRequests）。
+        val svc = createService()
+        val p1 = paper("PMC1", "Test")
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
+            EmailExtractionOutcome(
+                listOf(AuthorEmail("a1@example.com", "A", "One", false, null, null)),
+                "PDF_PARSE", null, httpRequests = 2, fulltextObtained = true
+            ))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "a1@example.com", EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val sourceStats = result.stats.bySource["EUROPE_PMC"]
+        assertEquals(1, sourceStats?.papersSearched)
+        assertEquals(1, sourceStats?.fulltextAttempted)
+        assertEquals(1, sourceStats?.fulltextObtained)
+        assertEquals(1, sourceStats?.indexed)
+        assertEquals(3, sourceStats?.apiRequests, "1 次搜索请求 + 2 次下载尝试：同一篇绝不因回退被计成两篇")
+    }
+
+    @Test
     fun `ORCID progress uses same unit for processedCount and totalCount`() {
         val svc = createService(ExpertDiscoveryProperties(enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 200))
         val orcid = Mockito.mock(OrcidDataSource::class.java)

@@ -11,14 +11,21 @@ import org.mockito.Mockito
 import org.mockito.invocation.InvocationOnMock
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpMethod
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.http.client.ClientHttpResponse
+import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.client.HttpServerErrorException
 import org.springframework.web.client.RequestCallback
+import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.ResponseExtractor
 import org.springframework.web.client.RestTemplate
 import java.io.ByteArrayInputStream
+import java.net.SocketTimeoutException
 import java.net.URI
+import java.time.Instant
+import javax.net.ssl.SSLHandshakeException
 
 class PdfEmailExtractorTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
@@ -352,6 +359,121 @@ class PdfEmailExtractorTest {
         assertEquals("Author", email.familyNames)
         assertEquals("0000-0009", email.orcidId)
         assertEquals("A999", email.openAlexAuthorId)
+    }
+
+    @Test
+    fun `HTML without an email counts as content obtained and stays NO_EMAIL_IN_HTML (I-3)`() {
+        // c10（I-3）：取到 HTML 就是「内容已获取」，与下载失败分开；HTML 不保证是论文全文，故单列原因。
+        val html = "<html><body>No contact info here</body></html>".toByteArray()
+        stubPdfDownload(html, MediaType.TEXT_HTML)
+
+        val result = extractor.extract("http://example.com/landing", emptyList(), "TEST")
+
+        assertEquals("HTML_FALLBACK", result.methodUsed)
+        assertEquals("NO_EMAIL_IN_HTML", result.failureReason)
+        assertEquals(true, result.fulltextObtained)
+        assertEquals(1, result.httpRequests)
+    }
+
+    @Test
+    fun `an expired shared deadline issues no download and reports TIMEOUT (I-1)`() {
+        // c10（I-1）：时限是单篇共享的 —— 已过期就一个请求都不发，也不能在这里重新计时。
+        val result = extractor.extract(
+            "http://example.com/paper.pdf", emptyList(), "TEST", Instant.now().minusSeconds(1)
+        )
+
+        assertEquals("PDF_DOWNLOAD_FAILED", result.failureReason)
+        assertEquals("TIMEOUT", result.downloadFailureCategory)
+        assertEquals(false, result.fulltextObtained)
+        assertEquals(0, result.httpRequests)
+        Mockito.verifyNoInteractions(restTemplate)
+    }
+
+    @Test
+    fun `aborts a download that runs past the shared deadline (I-1)`() {
+        // c10（I-1）：下载途中越过 deadline 立即放弃，不把整个响应体读完。
+        var chunksServed = 0
+        Mockito.doAnswer { invocation: InvocationOnMock ->
+            val responseExtractor = invocation.getArgument<ResponseExtractor<*>>(3)
+            val mockResponse = Mockito.mock(ClientHttpResponse::class.java)
+            Mockito.doReturn(HttpHeaders().apply { contentType = MediaType.APPLICATION_PDF })
+                .`when`(mockResponse).headers
+            val slowBody = object : java.io.InputStream() {
+                private var remainingChunks = 200
+
+                override fun read(): Int = throw UnsupportedOperationException("single-byte read")
+
+                override fun read(b: ByteArray, off: Int, len: Int): Int {
+                    if (remainingChunks == 0) return -1
+                    remainingChunks--
+                    chunksServed++
+                    Thread.sleep(5)
+                    java.util.Arrays.fill(b, off, off + minOf(len, 8192), 0x41.toByte())
+                    return minOf(len, 8192)
+                }
+            }
+            Mockito.doReturn(slowBody).`when`(mockResponse).body
+            responseExtractor.extractData(mockResponse)
+        }.`when`(restTemplate).execute(
+            Mockito.any(URI::class.java),
+            Mockito.eq(HttpMethod.GET),
+            Mockito.any(),
+            Mockito.any(ResponseExtractor::class.java)
+        )
+
+        val result = extractor.extract(
+            "http://example.com/slow.pdf", emptyList(), "TEST", Instant.now().plusMillis(20)
+        )
+
+        assertEquals("TIMEOUT", result.downloadFailureCategory)
+        assertEquals(false, result.fulltextObtained)
+        assertEquals(1, result.httpRequests)
+        assertTrue(chunksServed < 200, "越过共享 deadline 后不得继续读完整个响应体")
+    }
+
+    @Test
+    fun `classifies download failures into stable low-cardinality buckets (I-3, V-2)`() {
+        assertEquals("HTTP_403", downloadFailureCategory(HttpClientErrorException(HttpStatus.FORBIDDEN)))
+        assertEquals("HTTP_404", downloadFailureCategory(HttpClientErrorException(HttpStatus.NOT_FOUND)))
+        assertEquals("HTTP_429", downloadFailureCategory(HttpClientErrorException(HttpStatus.TOO_MANY_REQUESTS)))
+        assertEquals("HTTP_5XX", downloadFailureCategory(HttpServerErrorException(HttpStatus.BAD_GATEWAY)))
+        assertEquals("HTTP_4XX", downloadFailureCategory(HttpClientErrorException(HttpStatus.GONE)))
+        assertEquals("TLS_ERROR", downloadFailureCategory(
+            ResourceAccessException("handshake failed", SSLHandshakeException("unable to find valid certification path"))
+        ))
+        assertEquals("TIMEOUT", downloadFailureCategory(
+            ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
+        ))
+        assertEquals("NETWORK_ERROR", downloadFailureCategory(
+            ResourceAccessException("Connection refused", java.net.ConnectException("Connection refused"))
+        ))
+    }
+
+    @Test
+    fun `a rejected download is not content obtained while an email-less PDF is (I-3)`() {
+        stubDownloadFailure(HttpClientErrorException(HttpStatus.FORBIDDEN))
+        val rejected = extractor.extract("http://example.com/blocked.pdf", emptyList(), "TEST")
+        assertEquals(false, rejected.fulltextObtained)
+
+        stubPdfDownload(readPdfFixture("pdf/no_email.pdf"), MediaType.APPLICATION_PDF)
+        val emailLess = extractor.extract("http://example.com/no-email.pdf", emptyList(), "TEST")
+        assertEquals("NO_EMAIL_IN_TEXT", emailLess.failureReason)
+        assertEquals(true, emailLess.fulltextObtained)
+    }
+
+    /** 用同一个 URL 的不同 downloadFailureCategory 断言分类：只需替换 execute 抛出的异常。 */
+    private fun downloadFailureCategory(exception: Exception): String? {
+        stubDownloadFailure(exception)
+        return extractor.extract("http://example.com/paper.pdf", emptyList(), "TEST").downloadFailureCategory
+    }
+
+    private fun stubDownloadFailure(exception: Exception) {
+        Mockito.doThrow(exception).`when`(restTemplate).execute(
+            Mockito.any(URI::class.java),
+            Mockito.eq(HttpMethod.GET),
+            Mockito.any(),
+            Mockito.any(ResponseExtractor::class.java)
+        )
     }
 
     private fun readPdfFixture(path: String): ByteArray {
