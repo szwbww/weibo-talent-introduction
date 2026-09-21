@@ -30,8 +30,8 @@
 
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| c1 | docs/plans/2026-09-21/01-openalex-auth-budget.md | commit:831e6604cf97e7acba005d8f00827659b49ce010 | none | 1 | LIGHT_VERIFYING | f0c41271fc56d7455e14d28a71d563a5341dfdeb | 147dc953a194a27ea73b7934a8e2bc334beca655 | 0 | — | 147dc953a194a27ea73b7934a8e2bc334beca655 | — | OpenAlex Bearer auth + shared request policy/budget |
-| c2 | docs/plans/2026-09-21/02-discovery-checkpoint.md | commit:831e6604cf97e7acba005d8f00827659b49ce010 | c1 | 1 | PENDING | — | — | 0 | — | — | — | Checkpoint safety + honest task status |
+| c1 | docs/plans/2026-09-21/01-openalex-auth-budget.md | commit:831e6604cf97e7acba005d8f00827659b49ce010 | none | 1 | LIGHT_PASS_WITH_NOTES | f0c41271fc56d7455e14d28a71d563a5341dfdeb | 147dc953a194a27ea73b7934a8e2bc334beca655 | 0 | — | 147dc953a194a27ea73b7934a8e2bc334beca655 | a8a7be6f795e1ad2464984675360ffec3f3290c2 | OpenAlex Bearer auth + shared request policy/budget; O-1 (fulltext counter has no production writer yet, deferred to c10) |
+| c2 | docs/plans/2026-09-21/02-discovery-checkpoint.md | commit:831e6604cf97e7acba005d8f00827659b49ce010 | c1 | 1 | LIGHT_VERIFYING | 147dc953a194a27ea73b7934a8e2bc334beca655 | 468df56bf69b4b2f9afc7b4f38ad4791d8331240 | 0 | — | 468df56bf69b4b2f9afc7b4f38ad4791d8331240 | — | Checkpoint safety + honest task status |
 | c3 | docs/plans/2026-09-21/03-crossref-arxiv.md | commit:831e6604cf97e7acba005d8f00827659b49ce010 | c2 | 1 | PENDING | — | — | 0 | — | — | — | Crossref encoding + arXiv HTTPS |
 | c4 | docs/plans/2026-09-21/04-core-orcid-scope.md | commit:831e6604cf97e7acba005d8f00827659b49ce010 | c2,c3 | 1 | PENDING | — | — | 0 | — | — | — | CORE offset pagination, ORCID paging, RND scope |
 | c5 | docs/plans/2026-09-21/05-author-identity.md | commit:831e6604cf97e7acba005d8f00827659b49ce010 | c1 | 1 | PENDING | — | — | 0 | — | — | — | Trusted author identity |
