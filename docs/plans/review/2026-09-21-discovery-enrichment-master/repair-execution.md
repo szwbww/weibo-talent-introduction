@@ -74,3 +74,71 @@
 ## Next step for the reviewer
 
 The plan's clause 5 returns to the already authorized `review-fast-p` aggregate re-review; this invocation did not request it, so execution stops here at `READY_FOR_VERIFICATION` for an independent light/full verification of `cd39503..7312143`.
+
+---
+
+# Epoch 2 — `fix(discovery): enforce fulltext deadline`
+
+## Identity (epoch 2)
+
+- Approval source: HUMAN invocation `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-21-discovery-enrichment-master/docs/plans/fix/00-discovery-enrichment-master/repair.md` (2026-09-21, second invocation) — the same declared path, now carrying **new content**, matching the plan's "Review-Fast-P Execution Handoff" clause.
+- Repair plan identity: `docs/plans/fix/00-discovery-enrichment-master/repair.md` @ `sha256:c337c37f5f511d69e892e3a3e45c10b7e6a003f5e39ca1258861c1760e42deeb` (8,173 bytes) — replaced the epoch-1 identity `sha256:9bfd7110…` (11,621 bytes); recomputed unchanged before and after execution. Same-path new content = new execution epoch; all epoch-1 evidence below stays historical.
+- Aggregate verification that produced this plan: `machine-verification.md` aggregate epoch 2 re-review — `V-1`, `V-2`, `V-3` resolved in `7312143`; `V-4` persistent.
+- Executor: `Main` (omp controller session, single execution context; no delegated writer).
+- Target worktree / branch / Git dir / worktree ID: unchanged from epoch 1 (`fast/2026-09-21-discovery-enrichment-master`).
+- Pre-execution code SHA: `1c4d7c12c02ae93532840a17c71b4d2b7903a3e2`
+- Post-execution code SHA: `ebd16aca1788056236fe9b6bf686f9972bacc173` (`fix(discovery): enforce fulltext deadline`, exactly the 10 authorized files, +505/−17)
+- Implementation boundary: `1c4d7c12c02ae93532840a17c71b4d2b7903a3e2..ebd16aca1788056236fe9b6bf686f9972bacc173`
+
+## V-4 → R-1 (only finding in scope)
+
+| Requirement | What changed | Evidence |
+|---|---|---|
+| One 90-second budget covers connection, response-header and body-read work of PMC XML, OA URL and Unpaywall | `RestTemplateConfig.kt` gains `BoundedHttpExecutor` + `BoundedFulltextHttp`: a one-shot `SimpleClientHttpRequestFactory` whose connect **and** read timeout is `min(client configuration, remaining budget)` — it can only shorten a deadline, and when the budget is not tighter it returns the *same* client instance (ordinary callers unchanged). Under a compressed budget the retry interceptor is not carried over, so one attempt cannot be multiplied past the budget; converters, error handler and other interceptors (e.g. OpenAlex auth) are inherited. `PDF_DOWNLOAD_CONNECT_TIMEOUT_MS` became single-source. | `RestTemplateConfigTest` 14/0/0: timeout narrowing + never-widening, same-instance for an unbounded budget, converter/error-handler/interceptor inheritance, retry-interceptor omission, and a real stalled-header call aborted inside the budget with exactly one accepted connection |
+| In-flight XML request obeys the budget | `EuropePmcDataSource.fetchFullTextXml(pmcId, deadline)` re-evaluates the remaining budget before every attempt (no request once exhausted), runs each attempt through the bounded client, and returns a typed `XmlFetchResult` so the outcome can distinguish "no content" (`FULLTEXT_FETCH_FAILED`, unchanged) from "budget exhausted" (`FULLTEXT_FETCH_FAILED` + existing `TIMEOUT` category, with the truthful request count). | `EuropePmcDataSourceTest` 29/0/0 (1 pre-existing `@Disabled`): slow-XML case ends `TIMEOUT` with `httpRequests = 1` and exactly one accepted connection; live/null-deadline behaviour unchanged |
+| Delay **and** in-flight lookup obey the budget | `UnpaywallClient.findPdfUrls(doi, deadline)` refuses the politeness delay when the remaining budget is shorter, re-checks after the delay, and runs the lookup through the bounded client (the generic client has no configured timeout today, so this only ever tightens; a `null` deadline still uses the original client). | `UnpaywallClientTest` 9/0/0: slow lookup returns no candidates within the budget with one accepted connection; expired-deadline and no-deadline cases unchanged |
+| In-flight PDF/HTML download obeys the budget | `PdfEmailExtractor` performs its streaming `execute` through the injected `BoundedHttpExecutor` (new constructor seam, production bean `boundedHttpExecutor`), so the connect and response-header waits are bounded by the remaining budget while the existing per-chunk deadline check still guards the body read. | `PdfEmailExtractorTest` 29/0/0: stalled-header and stalled-body cases both end `TIMEOUT` inside the budget; the existing mock-based cases keep their pass-through executor so their assertions stay meaningful |
+| No later stage after expiry; one elapsed budget reports `TIMEOUT` | `OpenAlexDataSource` records `TIMEOUT` when the Unpaywall stage is cut short by the shared budget and starts no download afterwards. | `OpenAlexDataSourceTest` 62/0/0, including an end-to-end case with a real `UnpaywallClient` against a stalled server: `TIMEOUT`, 1 request, `verifyNoInteractions(pdfExtractor)`, one accepted connection |
+
+## Changed files (exactly the 10 authorized files)
+
+| File | Purpose |
+|---|---|
+| `src/main/kotlin/.../config/RestTemplateConfig.kt` | `BoundedHttpExecutor` interface, `BoundedFulltextHttp` implementation, `boundedHttpExecutor` bean, `PDF_DOWNLOAD_CONNECT_TIMEOUT_MS` single source |
+| `src/main/kotlin/.../discovery/service/EuropePmcDataSource.kt` | Budget-bounded XML stage + typed fetch result |
+| `src/main/kotlin/.../discovery/service/UnpaywallClient.kt` | Budget-bounded delay and lookup |
+| `src/main/kotlin/.../discovery/service/PdfEmailExtractor.kt` | Bounded streaming download via the injected executor |
+| `src/main/kotlin/.../discovery/service/OpenAlexDataSource.kt` | `TIMEOUT` when the lookup is cut by the shared budget |
+| `src/test/kotlin/.../config/RestTemplateConfigTest.kt` | Bounded-client contract + `SlowHttpServer` helper (shared by the client tests) + stalled-header abort |
+| `src/test/kotlin/.../discovery/service/EuropePmcDataSourceTest.kt` | Slow XML → `TIMEOUT` within budget |
+| `src/test/kotlin/.../discovery/service/UnpaywallClientTest.kt` | Slow lookup → bounded |
+| `src/test/kotlin/.../discovery/service/PdfEmailExtractorTest.kt` | Stalled header / stalled body → bounded; existing cases use a pass-through executor |
+| `src/test/kotlin/.../discovery/service/OpenAlexDataSourceTest.kt` | End-to-end elapsed-budget case |
+
+## Commands (all fresh in this invocation, JDK 11)
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `mvn test -Dtest=OpenAlexRequestPolicyTest,RestTemplateConfigTest` | exit 0 · 27 / 0 F / 0 E |
+| 2 | `mvn test -Dtest=ExpertDiscoveryServiceTest,ExpertAcademicEnrichmentWorkerTest,ExpertDiscoveryControllerTest` | exit 0 · 148 / 0 F / 0 E |
+| 3 | `mvn test -Dtest=TaskExecutionSummaryExtractorTest,ExpertAcademicEnrichmentWorkerTest,ExpertDiscoveryControllerTest` | exit 0 · 47 / 0 F / 0 E |
+| 4 | `mvn test -Dtest=OpenAlexDataSourceTest,PdfEmailExtractorTest,ExpertDiscoveryServiceTest,UnpaywallClientTest` | exit 0 · 221 / 0 F / 0 E |
+| 5 | `node --test src/test/js/*.test.js` | exit 0 · 1037 pass / 0 fail |
+| 6 | `DOCKER_HOST=… mvn test -Dapi.version=1.40` | exit 0 · **3703 / 0 F / 0 E / 13 skipped**, BUILD SUCCESS, zero `[ERROR]` lines |
+| extra | `mvn test -Dtest=EuropePmcDataSourceTest,UnpaywallClientTest` | exit 0 · 38 / 0 F / 0 E / 1 pre-existing skip |
+| extra | `… -DmigrationIt=true` (epoch 1, unchanged) | exit 1 · sole error = pre-existing `FlywayMigrationIntegrationTest.V124` FK fixture; V131 coverage 18/0/0 |
+
+## Deviations (epoch 2)
+
+- **Executor seam.** `PdfEmailExtractor` gained a required fourth constructor parameter (`BoundedHttpExecutor`), supplied in production by the new `boundedHttpExecutor` bean. The three mock-based `PdfEmailExtractorTest` cases and the `OpenAlexDataSourceTest` real-extractor case now pass a pass-through implementation so their existing assertions keep testing what they tested; the in-flight bound is covered by the new real-client cases instead. Without the seam the bounded client would bypass their `RestTemplate` stubs.
+- **Per-read vs total bound.** The remaining budget caps connect, header and each body read. A peer that trickles bytes always just under the read timeout could still keep a body read alive past the deadline for the URL stage; the existing per-512KB deadline check inside `PdfEmailExtractor` bounds that path. XML (`ByteArray`) and Unpaywall (`JsonNode`) responses are fully read under the single bounded timeout.
+- **Retry suppression under a compressed budget.** `BoundedFulltextHttp.bounded` drops `RetryingClientHttpRequestInterceptor` only when the budget is tighter than the client configuration, so one attempt cannot be multiplied past the deadline. Normal (unbounded / not-tighter) callers keep the interceptor untouched.
+- **Frontend cache key** (carried over from epoch 1): `index.html` remains outside the authorized files, so the `?v=…` triad was not bumped.
+- No file outside the authorized list was changed; no plan edited; nothing pushed, merged, rebased, amended or squashed.
+
+## Clean-state evidence (epoch 2)
+
+- `git status --porcelain`: empty immediately before and after `ebd16aca`.
+- Plan identity re-checked after the commit: `sha256:c337c37f5f511d69e892e3a3e45c10b7e6a003f5e39ca1258861c1760e42deeb` (unchanged).
+- Worktree identity re-checked: same root/branch/Git dir; `ebd16aca` is the branch HEAD.
+- No mail sent, no ES/DB state written outside tests, no migration/mapping touched, no API key read, logged or printed.
