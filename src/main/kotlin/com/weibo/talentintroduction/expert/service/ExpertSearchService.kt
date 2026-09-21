@@ -842,6 +842,32 @@ class ExpertSearchService(
         return toExpertProfile(hits[0])
     }
 
+    /**
+     * I-1/I-3：按真实 `_id` 批量读取（`_mget`），结果复用 [toExpertProfile]，因此与列表/详情读到同一批字段。
+     * `orcidId` 只是文档里的一个字段：搜索式 `findByOrcidId` 不能保证命中真实文档，定位一律以 `_id` 为准。
+     * 未命中的 id（`found=false`）不产出条目，也不补空对象；入参为空时不发请求。
+     */
+    fun findByDocumentIds(level: ExpertIndexLevel, ids: List<String>): List<ExpertProfile> {
+        val documentIds = ids.filter { it.isNotBlank() }.distinct()
+        if (documentIds.isEmpty()) return emptyList()
+
+        val index = expertIndexService.indexName(level)
+        val requestBody = mapOf(
+            "docs" to documentIds.map { mapOf("_index" to index, "_id" to it, "_source" to sourceFields()) }
+        )
+
+        val response = restTemplate.exchange(
+            "${properties.baseUrl}/_mget",
+            HttpMethod.POST,
+            HttpEntity(requestBody, headers()),
+            JsonNode::class.java
+        ).body ?: return emptyList()
+
+        return response.path("docs")
+            .filter { it.path("found").asBoolean(false) }
+            .map { toExpertProfile(it) }
+    }
+
     fun countByFieldPresence(
         level: ExpertIndexLevel,
         fields: List<String>,

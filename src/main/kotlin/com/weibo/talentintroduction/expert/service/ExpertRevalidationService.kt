@@ -142,7 +142,6 @@ class ExpertRevalidationService(
         val execId = progressStore.getCurrentExecutionId(taskType)
 
         try {
-            val requireValidEmail = eligibilityFilterService.getCandidateFilter().requireValidEmail
             expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
                 stats.totalHits = totalHits
                 if (progressStore.isCancelled(taskType)) {
@@ -154,58 +153,39 @@ class ExpertRevalidationService(
                 for (profile in batch) {
                     stats.total++
 
-                    val eligibility = eligibilityService.evaluateEligibility(profile)
-                    if (!eligibility.eligible) {
-                        stats.filtered++
-                        for (reason in eligibility.rejectReasons) {
-                            stats.filterReasons.merge(reason, 1) { a, b -> a + b }
-                        }
-                        continue
-                    }
-
-                    // I3-3: 现算，不读 profile.expertClassification（RAW 层几乎恒为 null）。
-                    val classification = expertClassificationService.classify(profile)
-                    // I3-1/I3-5: 宽档——只拒证据充分的两类，UNKNOWN 放行；开关关闭时不拒绝，但下方仍写入。
-                    // I3-2: 被拒不可逆——enrichExistingExperts（ExpertDiscoveryService.kt:845-877）只扫
-                    // CANDIDATE（:850、:877），被挡回 RAW 的文档永不补数据，故只拒证据充分者。
-                    if (expertClassificationProperties.promotionGateEnabled &&
-                        (classification.type == ExpertType.SERVICE_ONLY || classification.type == ExpertType.OUT_OF_SCOPE)
-                    ) {
-                        stats.filtered++
-                        stats.filterReasons.merge("CLASSIFICATION:${classification.type.name}", 1) { a, b -> a + b }
-                        continue
-                    }
-
-                    val exists: Boolean
-                    try {
-                        val docId = profile.esDocId ?: profile.orcidId
-                        exists = expertIndexWriterService.documentExistsInIndex(
-                            ExpertIndexLevel.CANDIDATE, docId
-                        )
-                    } catch (e: Exception) {
-                        stats.existenceCheckFailed++
-                        log.warn("HEAD check failed for candidate {}: {}", profile.orcidId, e.message)
-                        continue
-                    }
-                    if (exists) {
-                        stats.alreadyPromoted++
-                        continue
-                    }
-
-                    if (requireValidEmail) {
-                        val emailResult = emailValidationService.validate(profile.email.orEmpty())
-                        if (!emailResult.valid) {
-                            stats.emailRejected++
-                            stats.filterReasons.merge("EMAIL:${emailResult.rejectReason}", 1) { a, b -> a + b }
+                    when (val gate = evaluateRawPromotionGate(profile)) {
+                        is RawPromotionGate.Rejected -> {
+                            // 既有口径：邮箱拒绝单独计数，其余门禁计入 filtered；原因词汇保持不变。
+                            if (gate.emailRejected) stats.emailRejected++ else stats.filtered++
+                            for (reason in gate.reasons) {
+                                stats.filterReasons.merge(reason, 1) { a, b -> a + b }
+                            }
                             continue
                         }
-                    }
+                        is RawPromotionGate.Passed -> {
+                            val exists: Boolean
+                            try {
+                                val docId = profile.esDocId ?: profile.orcidId
+                                exists = expertIndexWriterService.documentExistsInIndex(
+                                    ExpertIndexLevel.CANDIDATE, docId
+                                )
+                            } catch (e: Exception) {
+                                stats.existenceCheckFailed++
+                                log.warn("HEAD check failed for candidate {}: {}", profile.orcidId, e.message)
+                                continue
+                            }
+                            if (exists) {
+                                stats.alreadyPromoted++
+                                continue
+                            }
 
-                    val success = promoteRawToCandidate(profile, classification)
-                    if (success) {
-                        stats.promoted++
-                    } else {
-                        stats.promotionFailed++
+                            val success = promoteRawToCandidate(profile, gate.classification)
+                            if (success) {
+                                stats.promoted++
+                            } else {
+                                stats.promotionFailed++
+                            }
+                        }
                     }
                 }
                 val batchProcessed = stats.total - processedBefore
@@ -278,4 +258,108 @@ class ExpertRevalidationService(
 
         return expertIndexWriterService.writeCandidateDocument(docId, doc)
     }
+
+    /**
+     * I-4：RAW → CANDIDATE 的门禁唯一实现（邮箱、资格、分类），[promoteEligibleRawExperts] 与
+     * [revalidateEnrichedRaw] 共用，禁止任何一条晋升路径另写一份。
+     * 顺序固定：资格 → 分类（资格不过绝不调分类）→ 邮箱；原因词汇沿用既有 filterReasons。
+     */
+    private fun evaluateRawPromotionGate(profile: ExpertProfile): RawPromotionGate {
+        val eligibility = eligibilityService.evaluateEligibility(profile)
+        if (!eligibility.eligible) {
+            return RawPromotionGate.Rejected(eligibility.rejectReasons)
+        }
+
+        // I3-3: 现算，不读 profile.expertClassification（RAW 层几乎恒为 null）。
+        val classification = expertClassificationService.classify(profile)
+        // I3-1/I3-5: 宽档——只拒证据充分的两类，UNKNOWN 放行；开关关闭时不拒绝，但下方仍写入。
+        // I3-2: 被拒不可逆——补全只扫 CANDIDATE，被挡回 RAW 的文档永不补数据，故只拒证据充分者。
+        if (expertClassificationProperties.promotionGateEnabled &&
+            (classification.type == ExpertType.SERVICE_ONLY || classification.type == ExpertType.OUT_OF_SCOPE)
+        ) {
+            return RawPromotionGate.Rejected(listOf("CLASSIFICATION:${classification.type.name}"))
+        }
+
+        if (eligibilityFilterService.getCandidateFilter().requireValidEmail) {
+            val emailResult = emailValidationService.validate(profile.email.orEmpty())
+            if (!emailResult.valid) {
+                return RawPromotionGate.Rejected(listOf("EMAIL:${emailResult.rejectReason}"), emailRejected = true)
+            }
+        }
+        return RawPromotionGate.Passed(classification)
+    }
+
+    /** I-4：门禁决定。[Rejected.emailRejected] 区分既有 emailRejected 计数与 filtered 计数。 */
+    private sealed class RawPromotionGate {
+        /** 门禁通过，附现算的分类（用于候选文档写入）。 */
+        data class Passed(val classification: ExpertClassification) : RawPromotionGate()
+
+        /** 门禁拒绝：[reasons] 沿用既有 filterReasons 词汇。 */
+        data class Rejected(val reasons: List<String>, val emailRejected: Boolean = false) : RawPromotionGate()
+    }
+
+    /**
+     * I-4：补全后的单人定向复评。补全使 RAW 里的学术事实变化后，用最新 RAW 源重新过一遍当前门禁：
+     * - APPLICATION 或 CANDIDATE 已存在 ⇒ [PromotionOutcome.AlreadyPresent]（已申请者绝不重建候选，
+     *   已有候选者不重复写入，本轮也不自动降级任何既有专家）；
+     * - 否则读最新 RAW（真实 `_id`）→ 现算门禁 → 仅在通过时创建候选；
+     * - 候选正文始终来自写入时刻的最新 RAW 文档（[promoteRawToCandidate] 内部再读一次），旧快照不会覆盖它。
+     */
+    fun revalidateEnrichedRaw(docId: String): PromotionOutcome {
+        require(docId.isNotBlank()) { "docId must not be blank" }
+
+        val alreadyApplied = try {
+            expertIndexWriterService.documentExistsInIndex(ExpertIndexLevel.APPLICATION, docId)
+        } catch (e: Exception) {
+            log.warn("APPLICATION existence check failed for {}: {}", docId, e.message)
+            return PromotionOutcome.ExistenceCheckFailed
+        }
+        if (alreadyApplied) return PromotionOutcome.AlreadyPresent
+
+        val alreadyCandidate = try {
+            expertIndexWriterService.documentExistsInIndex(ExpertIndexLevel.CANDIDATE, docId)
+        } catch (e: Exception) {
+            log.warn("CANDIDATE existence check failed for {}: {}", docId, e.message)
+            return PromotionOutcome.ExistenceCheckFailed
+        }
+        if (alreadyCandidate) return PromotionOutcome.AlreadyPresent
+
+        // I-4：复评对象是最新 RAW 源（按真实 _id 读取），不是调用方手里的旧快照。
+        val raw = expertSearchService.findByDocumentIds(ExpertIndexLevel.RAW, listOf(docId)).firstOrNull()
+            ?: return PromotionOutcome.RawMissing
+
+        when (val gate = evaluateRawPromotionGate(raw)) {
+            is RawPromotionGate.Rejected -> return PromotionOutcome.Rejected(gate.reasons)
+            is RawPromotionGate.Passed ->
+                return if (promoteRawToCandidate(raw, gate.classification)) {
+                    PromotionOutcome.Promoted
+                } else {
+                    PromotionOutcome.WriteFailed
+                }
+        }
+    }
+}
+
+/**
+ * I-4：补全后 RAW 定向复评的结果。跨子计划契约：[AlreadyPresent] 表示 CANDIDATE 或 APPLICATION 已存在，
+ * 调用方（c8）不得再尝试创建候选。
+ */
+sealed class PromotionOutcome {
+    /** CANDIDATE 或 APPLICATION 已存在：不重建、不降级。 */
+    object AlreadyPresent : PromotionOutcome()
+
+    /** 门禁通过并按真实 `_id` 写入候选。 */
+    object Promoted : PromotionOutcome()
+
+    /** RAW 文档不存在或读不到：没有可复评的源。 */
+    object RawMissing : PromotionOutcome()
+
+    /** 门禁拒绝：[reasons] 沿用既有 filterReasons 词汇（"EMAIL:…" / "CLASSIFICATION:…" / 资格原因）。 */
+    data class Rejected(val reasons: List<String>) : PromotionOutcome()
+
+    /** 门禁通过但候选写入失败，可重试。 */
+    object WriteFailed : PromotionOutcome()
+
+    /** CANDIDATE/APPLICATION 存在性检查本身失败：不确定即不创建，可重试。 */
+    object ExistenceCheckFailed : PromotionOutcome()
 }

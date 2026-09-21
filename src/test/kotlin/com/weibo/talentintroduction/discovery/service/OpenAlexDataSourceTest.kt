@@ -14,6 +14,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -599,6 +600,7 @@ class OpenAlexDataSourceTest {
         assertEquals(5, first.data.hIndex)
         assertNull(first.data.recentWorkTitles)
         assertNull(first.data.patentTitles)
+        assertTrue(first.titlesFailed, "限流只影响可单独重试的标题，基础事实仍可用且必须标记标题待重试")
         assertInstanceOf(EnrichmentOutcome.RateLimited::class.java, outcomes["0000-0002"])
     }
 
@@ -894,5 +896,205 @@ class OpenAlexDataSourceTest {
         assertEquals(999, policy.remainingCredits())
         assertEquals(0, policy.listRequestCount())
         assertEquals(Permit.Allowed, policy.beforeRequest(RequestKind.NEW_ENRICHMENT))
+    }
+
+    // ── 子计划 06：按作者 ID 批量补全与可单独重试的附加标题（I-1、I-3、V-3）──
+
+    @Test
+    fun `batchEnrichByAuthorIds queries by author id and only maps canonical ids (I-1)`() {
+        val batchJson = """
+            {
+              "meta": {"count": 3},
+              "results": [
+                {"id": "https://openalex.org/A5023888391", "works_count": 10, "cited_by_count": 100,
+                 "summary_stats": {"h_index": 7}, "topics": []},
+                {"id": "A5086928770", "works_count": 3, "cited_by_count": 9,
+                 "summary_stats": {"h_index": 2}, "topics": []},
+                {"id": "https://openalex.org/W9", "works_count": 1, "cited_by_count": 1,
+                 "summary_stats": {"h_index": 1}, "topics": []}
+              ]
+            }
+        """.trimIndent()
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/authors?filter=openalex:"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree(batchJson)))
+
+        val outcomes = dataSource.batchEnrichByAuthorIds(listOf("A5023888391", "A5086928770", "A999"))
+
+        assertEquals(3, outcomes.size)
+        assertEquals(7, (outcomes["A5023888391"] as EnrichmentOutcome.Success).data.hIndex)
+        assertEquals(2, (outcomes["A5086928770"] as EnrichmentOutcome.Success).data.hIndex)
+        assertEquals(EnrichmentOutcome.NotFound, outcomes["A999"])
+        // 响应里的 W9 不是作者身份：既不给 A999 也不给任何其他身份，绝不错配。
+        Mockito.verify(restTemplate).exchange(
+            Mockito.contains("filter=openalex:A5023888391|A5086928770|A999"),
+            Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `batchEnrichByAuthorIds never attributes a non-canonical response id (I-1)`() {
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/authors?filter=openalex:"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(
+            ResponseEntity.ok(mapper.readTree("""{"results":[{"id":"https://openalex.org/W9","works_count":1}]}"""))
+        )
+
+        val outcomes = dataSource.batchEnrichByAuthorIds(listOf("A5023888391"))
+
+        assertEquals(EnrichmentOutcome.NotFound, outcomes["A5023888391"])
+    }
+
+    @Test
+    fun `enrichAuthor uses the same titles switches as the batch path (V-3)`() {
+        val authorJson = """
+            {"works_count": 2, "cited_by_count": 5, "summary_stats": {"h_index": 2}, "topics": [],
+             "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"}
+        """.trimIndent()
+        stubAuthorEnrichment(authorJson)
+
+        val enrichment = dataSource.enrichAuthor("A1")
+
+        assertNull(enrichment!!.recentWorkTitles)
+        assertNull(enrichment.patentTitles)
+        // 开关全关：单人路径与批量路径一致地只发一次作者请求（取消无条件查专利/论文）。
+        Mockito.verify(restTemplate, Mockito.times(1)).exchange(
+            Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `enrichAuthor fetches recent works only when the switch is on (V-3)`() {
+        val worksEnabledSource = OpenAlexDataSource(
+            restTemplate,
+            properties.copy(fetchWorksEnabled = true),
+            europePmc,
+            pdfExtractor,
+            policy
+        )
+        stubAuthorEnrichment(
+            """{"works_count": 2, "cited_by_count": 5, "summary_stats": {"h_index": 2}, "topics": [],
+                "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"}"""
+        )
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/works?"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree("""{"results":[{"title":"Paper A"}]}""")))
+
+        val enrichment = worksEnabledSource.enrichAuthor("A1")
+
+        assertEquals(listOf("Paper A"), enrichment!!.recentWorkTitles)
+        assertNull(enrichment.patentTitles)
+        Mockito.verify(restTemplate, Mockito.times(2)).exchange(
+            Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `batchEnrichByOrcids keeps base facts usable when the titles call fails (I-3)`() {
+        val worksEnabledSource = OpenAlexDataSource(
+            restTemplate,
+            properties.copy(fetchWorksEnabled = true),
+            europePmc,
+            pdfExtractor,
+            policy
+        )
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/authors?"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(
+            ResponseEntity.ok(
+                mapper.readTree(
+                    """
+                    {
+                      "meta": {"count": 1},
+                      "results": [
+                        {"orcid": "https://orcid.org/0000-0001", "works_count": 10, "cited_by_count": 100,
+                         "summary_stats": {"h_index": 5}, "topics": [],
+                         "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"}
+                      ]
+                    }
+                    """.trimIndent()
+                )
+            )
+        )
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/works?"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenThrow(HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR))
+
+        val outcome = worksEnabledSource.batchEnrichByOrcids(listOf("0000-0001"))["0000-0001"]
+
+        val success = outcome as EnrichmentOutcome.Success
+        assertEquals(5, success.data.hIndex, "标题请求失败不得丢掉基础事实")
+        assertNull(success.data.recentWorkTitles)
+        assertTrue(success.titlesFailed, "标题子请求失败必须可识别（可单独重试）")
+    }
+
+    @Test
+    fun `batchEnrichByOrcids treats an empty titles result as success not failure (I-3)`() {
+        val worksEnabledSource = OpenAlexDataSource(
+            restTemplate,
+            properties.copy(fetchWorksEnabled = true),
+            europePmc,
+            pdfExtractor,
+            policy
+        )
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/authors?"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(
+            ResponseEntity.ok(
+                mapper.readTree(
+                    """
+                    {
+                      "meta": {"count": 1},
+                      "results": [
+                        {"orcid": "https://orcid.org/0000-0001", "works_count": 10, "cited_by_count": 100,
+                         "summary_stats": {"h_index": 5}, "topics": [],
+                         "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"}
+                      ]
+                    }
+                    """.trimIndent()
+                )
+            )
+        )
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/works?"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree("""{"results":[]}""")))
+
+        val success = worksEnabledSource.batchEnrichByOrcids(listOf("0000-0001"))["0000-0001"]
+            as EnrichmentOutcome.Success
+
+        assertNull(success.data.recentWorkTitles)
+        assertFalse(success.titlesFailed, "空结果只是该作者没有作品，不是请求失败")
+    }
+
+    @Test
+    fun `enrichAuthorByOrcidWithReason keeps a 404 not-found apart from a retryable failure (V-3)`() {
+        val searchJson = """{"results":[{"id":"https://openalex.org/A1"}]}"""
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/authors?filter=orcid:"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree(searchJson)))
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/authors/A1"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenThrow(HttpServerErrorException(HttpStatus.INTERNAL_SERVER_ERROR))
+
+        assertInstanceOf(
+            EnrichmentOutcome.ApiError::class.java,
+            dataSource.enrichAuthorByOrcidWithReason("0000-0001"),
+            "服务端/网络失败必须可重试，不能混进「查无此人」"
+        )
+
+        Mockito.reset(restTemplate)
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/authors?filter=orcid:"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(mapper.readTree(searchJson)))
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/authors/A1"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenThrow(
+            HttpClientErrorException.create(HttpStatus.NOT_FOUND, "Not Found", HttpHeaders(), ByteArray(0), null)
+        )
+
+        assertEquals(EnrichmentOutcome.NotFound, dataSource.enrichAuthorByOrcidWithReason("0000-0001"))
     }
 }

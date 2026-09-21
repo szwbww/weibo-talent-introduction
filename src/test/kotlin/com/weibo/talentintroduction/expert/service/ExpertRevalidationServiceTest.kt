@@ -346,4 +346,134 @@ class ExpertRevalidationServiceTest {
         assertEquals(1, result.stats.filterReasons["MISSING_ORCID"])
         verifyNoInteractions(classificationService)
     }
+
+    // ── 子计划 06：补全后 RAW 定向复评（I-4）──
+
+    private fun rawProfile(
+        orcidId: String,
+        esDocId: String,
+        email: String = "user@oxford.ac.uk",
+        country: String = "GB",
+        nationality: String? = null
+    ): ExpertProfile = ExpertProfile(
+        esDocId = esDocId, orcidId = orcidId, email = email, givenNames = "Test", familyNames = "User",
+        country = country, keyword = null, employment = null, nationality = nationality, hIndex = 3
+    )
+
+    @Test
+    fun `revalidateEnrichedRaw returns AlreadyPresent when APPLICATION exists (I-4)`() {
+        `when`(writerService.documentExistsInIndex(ExpertIndexLevel.APPLICATION, "DOC-APP")).thenReturn(true)
+
+        val outcome = serviceWith().revalidateEnrichedRaw("DOC-APP")
+
+        assertEquals(PromotionOutcome.AlreadyPresent, outcome)
+        // 已申请者不重建候选：既不读候选、也不读 RAW、更不写候选。
+        verify(searchService, never()).findByDocumentIds(ExpertIndexLevel.RAW, listOf("DOC-APP"))
+        verify(writerService, never()).readRawDocument("DOC-APP")
+        ScrollExpertsMockHelper.verifyNeverWriteCandidateDocumentWithDocId(writerService, "DOC-APP")
+    }
+
+    @Test
+    fun `revalidateEnrichedRaw returns AlreadyPresent when CANDIDATE already exists (I-4)`() {
+        `when`(writerService.documentExistsInIndex(ExpertIndexLevel.CANDIDATE, "DOC-CAND")).thenReturn(true)
+
+        val outcome = serviceWith().revalidateEnrichedRaw("DOC-CAND")
+
+        assertEquals(PromotionOutcome.AlreadyPresent, outcome)
+        verify(searchService, never()).findByDocumentIds(ExpertIndexLevel.RAW, listOf("DOC-CAND"))
+        ScrollExpertsMockHelper.verifyNeverWriteCandidateDocumentWithDocId(writerService, "DOC-CAND")
+    }
+
+    @Test
+    fun `revalidateEnrichedRaw promotes from the newest RAW source (I-4)`() {
+        val raw = rawProfile("0001", "DOC-3")
+        val cls = classification(ExpertType.UNKNOWN)
+        val node = ObjectMapper().createObjectNode().put("type", "UNKNOWN")
+        `when`(searchService.findByDocumentIds(ExpertIndexLevel.RAW, listOf("DOC-3"))).thenReturn(listOf(raw))
+        `when`(classificationService.classify(raw)).thenReturn(cls)
+        `when`(emailValidationService.validate("user@oxford.ac.uk")).thenReturn(EmailValidationResult(2, true))
+        // 写入时刻读到的最新 RAW 与调用方读到的快照不同：候选正文必须用最新源，旧快照绝不能覆盖它。
+        `when`(writerService.readRawDocument("DOC-3")).thenReturn(
+            mapOf(
+                "orcidId" to "0001", "email" to "user@oxford.ac.uk",
+                "hIndex" to 42, "tags" to listOf("discovered")
+            )
+        )
+        `when`(writerService.classificationNode(cls)).thenReturn(node)
+        ScrollExpertsMockHelper.stubWriteCandidateDocument(writerService, true)
+
+        val outcome = serviceWith().revalidateEnrichedRaw("DOC-3")
+
+        assertEquals(PromotionOutcome.Promoted, outcome)
+        @Suppress("UNCHECKED_CAST")
+        val docCaptor = ArgumentCaptor.forClass(Map::class.java) as ArgumentCaptor<Map<String, Any>>
+        verify(writerService).writeCandidateDocument(
+            eqValue("DOC-3"), captureValue(docCaptor, emptyMap<String, Any>())
+        )
+        assertEquals(42, docCaptor.value["hIndex"], "候选正文必须来自最新 RAW，而不是调用方快照")
+        assertEquals("user@oxford.ac.uk", docCaptor.value["email"])
+    }
+
+    @Test
+    fun `revalidateEnrichedRaw rejects an ineligible RAW and creates no candidate (I-4)`() {
+        val raw = rawProfile("0004", "DOC-4", nationality = "Chinese")
+        `when`(searchService.findByDocumentIds(ExpertIndexLevel.RAW, listOf("DOC-4"))).thenReturn(listOf(raw))
+        `when`(emailValidationService.validate("user@oxford.ac.uk")).thenReturn(EmailValidationResult(2, true))
+
+        val outcome = serviceWith().revalidateEnrichedRaw("DOC-4")
+
+        assertInstanceOf(PromotionOutcome.Rejected::class.java, outcome)
+        assertTrue((outcome as PromotionOutcome.Rejected).reasons.isNotEmpty())
+        // 资格不过绝不调分类、绝不写候选。
+        verify(classificationService, never()).classify(raw)
+        ScrollExpertsMockHelper.verifyNeverWriteCandidateDocumentWithDocId(writerService, "DOC-4")
+    }
+
+    @Test
+    fun `revalidateEnrichedRaw applies the classification gate when enabled (I-4)`() {
+        val raw = rawProfile("0007", "DOC-7")
+        `when`(searchService.findByDocumentIds(ExpertIndexLevel.RAW, listOf("DOC-7"))).thenReturn(listOf(raw))
+        `when`(classificationService.classify(raw)).thenReturn(classification(ExpertType.SERVICE_ONLY))
+
+        val outcome = serviceWith(gateEnabled = true).revalidateEnrichedRaw("DOC-7")
+
+        assertEquals(PromotionOutcome.Rejected(listOf("CLASSIFICATION:SERVICE_ONLY")), outcome)
+        ScrollExpertsMockHelper.verifyNeverWriteCandidateDocumentWithDocId(writerService, "DOC-7")
+    }
+
+    @Test
+    fun `revalidateEnrichedRaw returns RawMissing when RAW does not exist (I-4)`() {
+        `when`(searchService.findByDocumentIds(ExpertIndexLevel.RAW, listOf("DOC-5"))).thenReturn(emptyList())
+
+        val outcome = serviceWith().revalidateEnrichedRaw("DOC-5")
+
+        assertEquals(PromotionOutcome.RawMissing, outcome)
+        ScrollExpertsMockHelper.verifyNeverWriteCandidateDocumentWithDocId(writerService, "DOC-5")
+    }
+
+    @Test
+    fun `revalidateEnrichedRaw fails closed when the existence check errors (I-4)`() {
+        `when`(writerService.documentExistsInIndex(ExpertIndexLevel.APPLICATION, "DOC-6"))
+            .thenThrow(RuntimeException("ES 5xx"))
+
+        val outcome = serviceWith().revalidateEnrichedRaw("DOC-6")
+
+        assertEquals(PromotionOutcome.ExistenceCheckFailed, outcome)
+        ScrollExpertsMockHelper.verifyNeverWriteCandidateDocumentWithDocId(writerService, "DOC-6")
+    }
+
+    @Test
+    fun `revalidateEnrichedRaw reports a candidate write failure (I-4)`() {
+        val raw = rawProfile("0008", "DOC-8")
+        val cls = classification(ExpertType.UNKNOWN)
+        `when`(searchService.findByDocumentIds(ExpertIndexLevel.RAW, listOf("DOC-8"))).thenReturn(listOf(raw))
+        `when`(classificationService.classify(raw)).thenReturn(cls)
+        `when`(emailValidationService.validate("user@oxford.ac.uk")).thenReturn(EmailValidationResult(2, true))
+        `when`(writerService.readRawDocument("DOC-8")).thenReturn(mapOf("orcidId" to "0008"))
+        ScrollExpertsMockHelper.stubWriteCandidateDocument(writerService, false)
+
+        val outcome = serviceWith().revalidateEnrichedRaw("DOC-8")
+
+        assertEquals(PromotionOutcome.WriteFailed, outcome)
+    }
 }

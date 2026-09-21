@@ -2280,4 +2280,57 @@ class ExpertSearchServiceTest {
         val sort = request["sort"] as List<*>
         assertTrue(sort.toString().contains("applicationPromotedAt"), "APPLICATION sort must be applicationPromotedAt: $sort")
     }
+
+    // ── 子计划 06：按真实 _id 批量定位文档（I-1）──
+
+    @Test
+    fun `findByDocumentIds reads by real _id through _mget and skips missing documents (I-1)`() {
+        val body = mapper.readTree(
+            """
+            {
+              "docs": [
+                {"_index": "orcid_info", "_id": "DOC-1", "found": true,
+                 "_source": {"orcidId": "DOC-1", "email": "expert@example.com", "givenNames": "Ada",
+                             "familyNames": "Lovelace", "country": "United Kingdom", "hIndex": 9}},
+                {"_index": "orcid_info", "_id": "DOC-GONE", "found": false}
+              ]
+            }
+            """.trimIndent()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/_mget"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val profiles = service.findByDocumentIds(ExpertIndexLevel.RAW, listOf("DOC-1", "DOC-GONE"))
+
+        assertEquals(1, profiles.size, "found=false 的文档不产出条目")
+        assertEquals("DOC-1", profiles.single().esDocId)
+        assertEquals(9, profiles.single().hIndex)
+        assertEquals("expert@example.com", profiles.single().email)
+
+        val entityCaptor = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/_mget"),
+            eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        val request = entityCaptor.value.body as Map<*, *>
+        val docs = request["docs"] as List<*>
+        assertEquals(listOf("DOC-1", "DOC-GONE"), docs.map { (it as Map<*, *>)["_id"] })
+        assertTrue(docs.all { (it as Map<*, *>)["_index"] == "orcid_info" }, "_index 必须是目标层")
+        assertTrue((docs[0] as Map<*, *>).containsKey("_source"), "复用与列表/详情一致的字段集")
+    }
+
+    @Test
+    fun `findByDocumentIds makes no request for an empty or blank id list (I-1)`() {
+        assertTrue(service.findByDocumentIds(ExpertIndexLevel.RAW, emptyList()).isEmpty())
+        assertTrue(service.findByDocumentIds(ExpertIndexLevel.RAW, listOf("  ")).isEmpty())
+        org.mockito.Mockito.verifyNoInteractions(restTemplate)
+    }
 }

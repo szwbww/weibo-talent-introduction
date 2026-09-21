@@ -167,69 +167,71 @@ class OpenAlexDataSource(
     fun enrichAuthor(openAlexAuthorId: String): AuthorEnrichment? =
         enrichAuthor(openAlexAuthorId, RequestKind.HISTORY_ENRICHMENT)
 
-    fun enrichAuthor(openAlexAuthorId: String, kind: RequestKind): AuthorEnrichment? {
+    fun enrichAuthor(openAlexAuthorId: String, kind: RequestKind): AuthorEnrichment? =
+        (enrichAuthorOutcome(openAlexAuthorId, kind) as? EnrichmentOutcome.Success)?.data
+
+    /**
+     * I-3：单人作者补全的完整结果 —— 保留「基础事实有效、开关控制的最近论文/专利标题子请求失败」
+     * 的细分（[EnrichmentOutcome.Success.titlesFailed]），附加数据可单独重试，不改变基础事实的可用性。
+     * 404/网络错误与限流分开：前者 [EnrichmentOutcome.NotFound]/[EnrichmentOutcome.ApiError]，限流原样抛出。
+     */
+    private fun enrichAuthorOutcome(openAlexAuthorId: String, kind: RequestKind): EnrichmentOutcome {
         val url = "${properties.baseUrl}/authors/$openAlexAuthorId" +
             if (properties.politeEmail.isNotBlank()) "?mailto=${properties.politeEmail}" else ""
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            val response = getJson(kind, url) ?: return null
-            parseAuthorEnrichmentFromNode(response, fetchWorksAndPatents = true, kind = kind)
+            val response = getJson(kind, url) ?: return EnrichmentOutcome.NotFound
+            enrichmentOutcome(response, kind)
         } catch (e: OpenAlexBudgetDeferredException) {
             throw e
         } catch (e: HttpStatusCodeException) {
             val code = e.statusCode.value()
             if (code == 429 || code == 503) throw e
             log.debug("OpenAlex author enrichment failed for {}: {} (HTTP {})", openAlexAuthorId, e.message, code)
-            null
+            // V-3：404 是「查无此人」，其余 HTTP 失败可重试 —— 两者绝不混为一谈。
+            if (code == 404) EnrichmentOutcome.NotFound else EnrichmentOutcome.ApiError("HTTP $code")
         } catch (e: Exception) {
             log.debug("OpenAlex author enrichment failed for {}: {}", openAlexAuthorId, e.message)
-            null
+            EnrichmentOutcome.ApiError(e.message ?: "unknown error")
         }
     }
 
-    private fun fetchRecentWorks(worksUrl: String, limit: Int, kind: RequestKind): List<String>? {
-        val url = "$worksUrl?sort=publication_year:desc&per_page=$limit&select=title,publication_year" +
-            if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
+    /**
+     * I-3：可单独重试的附加标题子请求（最近论文 / 专利共用一套开关与失败语义）。
+     * - [titles] 为 null 且 [failed] = true：这次请求失败，可单独重试，绝不是「该作者没有作品」；
+     * - [titles] 为空列表：请求成功但确实没有作品，不算失败；
+     * - `NOT_REQUESTED`：按开关未请求（不计入失败）。
+     * 限流（429/503）原样抛出，由批量调用方统一降级。
+     */
+    private fun fetchTitles(url: String, kind: RequestKind): TitlesFetch {
+        val fullUrl = url + if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            val response = getJson(kind, url) ?: return null
-            response.path("results")
-                .mapNotNull { it.path("title").asText(null)?.takeIf { title -> title.isNotBlank() } }
-                .takeIf { it.isNotEmpty() }
+            val response = getJson(kind, fullUrl) ?: return TitlesFetch.failed()
+            TitlesFetch.ok(
+                response.path("results")
+                    .mapNotNull { it.path("title").asText(null)?.takeIf { title -> title.isNotBlank() } }
+            )
         } catch (e: OpenAlexBudgetDeferredException) {
             throw e
         } catch (e: HttpStatusCodeException) {
             val code = e.statusCode.value()
             if (code == 429 || code == 503) throw e
-            log.debug("OpenAlex recent works fetch failed for {}: {} (HTTP {})", worksUrl, e.message, code)
-            null
+            log.debug("OpenAlex titles fetch failed for {}: {} (HTTP {})", fullUrl, e.message, code)
+            TitlesFetch.failed()
         } catch (e: Exception) {
-            log.debug("OpenAlex recent works fetch failed for {}: {}", worksUrl, e.message)
-            null
+            log.debug("OpenAlex titles fetch failed for {}: {}", fullUrl, e.message)
+            TitlesFetch.failed()
         }
     }
 
-    private fun fetchPatents(worksUrl: String, limit: Int, kind: RequestKind): List<String>? {
-        val url = "$worksUrl?filter=type:patent&per_page=$limit&select=title,publication_year" +
-            if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
-        return try {
-            if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            val response = getJson(kind, url) ?: return null
-            response.path("results")
-                .mapNotNull { it.path("title").asText(null)?.takeIf { title -> title.isNotBlank() } }
-                .takeIf { it.isNotEmpty() }
-        } catch (e: OpenAlexBudgetDeferredException) {
-            throw e
-        } catch (e: HttpStatusCodeException) {
-            val code = e.statusCode.value()
-            if (code == 429 || code == 503) throw e
-            log.debug("OpenAlex patents fetch failed for {}: {} (HTTP {})", worksUrl, e.message, code)
-            null
-        } catch (e: Exception) {
-            log.debug("OpenAlex patents fetch failed for {}: {}", worksUrl, e.message)
-            null
-        }
-    }
+    /** 最近论文标题：按发表年降序取前 [RECENT_TITLES_LIMIT] 条。 */
+    private fun recentWorksUrl(worksUrl: String): String =
+        "$worksUrl?sort=publication_year:desc&per_page=$RECENT_TITLES_LIMIT&select=title,publication_year"
+
+    /** 专利标题：同样只取标题；专利开关默认关闭，本轮不接入专利数据。 */
+    private fun patentWorksUrl(worksUrl: String): String =
+        "$worksUrl?filter=type:patent&per_page=$RECENT_TITLES_LIMIT&select=title,publication_year"
 
     /** Legacy entry point: history enrichment (lowest priority). */
     fun enrichAuthorByOrcid(orcid: String): AuthorEnrichment? =
@@ -257,8 +259,8 @@ class OpenAlexDataSource(
             if (authorId == null) {
                 return EnrichmentOutcome.NotFound
             }
-            val enrichment = enrichAuthor(authorId, kind)
-            if (enrichment != null) EnrichmentOutcome.Success(enrichment) else EnrichmentOutcome.NotFound
+            // V-3：作者详情请求的 404（查无此人）与可重试失败必须继续分开传递。
+            enrichAuthorOutcome(authorId, kind)
         } catch (e: OpenAlexBudgetDeferredException) {
             throw e
         } catch (e: HttpStatusCodeException) {
@@ -281,11 +283,45 @@ class OpenAlexDataSource(
 
     fun batchEnrichByOrcids(orcids: List<String>, kind: RequestKind): Map<String, EnrichmentOutcome> {
         if (orcids.isEmpty()) return emptyMap()
+        val url = "${properties.baseUrl}/authors?filter=orcid:${orcids.joinToString("|")}" +
+            "&per_page=${orcids.size}" + mailtoSuffix()
+        return batchEnrichIdentities(orcids, url, kind) { node ->
+            node.path("orcid").asText(null)?.removePrefix("https://orcid.org/")
+        }
+    }
 
-        val filterValue = orcids.joinToString("|")
-        val url = "${properties.baseUrl}/authors?filter=orcid:$filterValue&per_page=${orcids.size}" +
-            if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
+    /** Legacy entry point: history enrichment (lowest priority). */
+    fun batchEnrichByAuthorIds(authorIds: List<String>): Map<String, EnrichmentOutcome> =
+        batchEnrichByAuthorIds(authorIds, RequestKind.HISTORY_ENRICHMENT)
 
+    /**
+     * I-1：按可信 OpenAlex 作者 ID 批量查询（`filter=openalex:A…|A…`），用于覆盖「有作者 ID 但没有 ORCID」的人。
+     * 调用方保证每批 ≤100 个不同身份；结果对每个传入身份逐一给出（响应中缺失 = [EnrichmentOutcome.NotFound]）。
+     * 响应里的 `id` 必须经 [normalizeOpenAlexAuthorId] 才是可信作者身份，其他形状绝不参与匹配。
+     */
+    fun batchEnrichByAuthorIds(authorIds: List<String>, kind: RequestKind): Map<String, EnrichmentOutcome> {
+        if (authorIds.isEmpty()) return emptyMap()
+        val url = "${properties.baseUrl}/authors?filter=openalex:${authorIds.joinToString("|")}" +
+            "&per_page=${authorIds.size}" + mailtoSuffix()
+        return batchEnrichIdentities(authorIds, url, kind) { node ->
+            normalizeOpenAlexAuthorId(node.path("id").asText(null))
+        }
+    }
+
+    private fun mailtoSuffix(): String =
+        if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
+
+    /**
+     * 两种身份共用的批量查询：一次请求拿回多个作者，用 [identityOf] 把响应归因回传入身份。
+     * 结果覆盖全部入参（缺失 = NotFound，绝不猜测归属）；限流（429/503）标
+     * [EnrichmentOutcome.RateLimited]，其余 HTTP/网络失败标 [EnrichmentOutcome.ApiError]。
+     */
+    private fun batchEnrichIdentities(
+        identities: List<String>,
+        url: String,
+        kind: RequestKind,
+        identityOf: (JsonNode) -> String?
+    ): Map<String, EnrichmentOutcome> {
         val response = try {
             getJson(kind, url)
         } catch (e: OpenAlexBudgetDeferredException) {
@@ -294,77 +330,61 @@ class OpenAlexDataSource(
             val code = e.statusCode.value()
             if (code == 429 || code == 503) {
                 val retryAfterHeader = e.responseHeaders?.getFirst("Retry-After")
-                val bodyPreview = e.responseBodyAsString.take(500)
                 log.warn(
                     "OpenAlex batch rate limited: status={}, Retry-After={}, body={}",
-                    code, retryAfterHeader, bodyPreview
+                    code, retryAfterHeader, e.responseBodyAsString.take(500)
                 )
-                val retryAfter = retryAfterHeader?.toLongOrNull()?.times(1000)
-                return orcids.associateWith { EnrichmentOutcome.RateLimited(retryAfter) }
+                return identities.associateWith {
+                    EnrichmentOutcome.RateLimited(retryAfterHeader?.toLongOrNull()?.times(1000))
+                }
             }
-            return orcids.associateWith { EnrichmentOutcome.ApiError("HTTP $code") }
+            return identities.associateWith { EnrichmentOutcome.ApiError("HTTP $code") }
         } catch (e: Exception) {
-            return orcids.associateWith { EnrichmentOutcome.ApiError(e.message ?: "unknown") }
+            return identities.associateWith { EnrichmentOutcome.ApiError(e.message ?: "unknown") }
         }
 
         val foundEntries = mutableListOf<Pair<String, JsonNode>>()
         response?.path("results")?.forEach { node ->
-            val orcid = node.path("orcid").asText(null)
-                ?.removePrefix("https://orcid.org/") ?: return@forEach
-            foundEntries += orcid to node
+            val identity = identityOf(node) ?: return@forEach
+            foundEntries += identity to node
         }
 
         val results = mutableMapOf<String, EnrichmentOutcome>()
-        for (orcid in orcids) {
-            if (foundEntries.none { it.first == orcid }) {
-                results[orcid] = EnrichmentOutcome.NotFound
+        for (identity in identities) {
+            if (foundEntries.none { it.first == identity }) {
+                results[identity] = EnrichmentOutcome.NotFound
             }
         }
 
-        val needsWorksOrPatents = properties.fetchWorksEnabled || properties.fetchPatentsEnabled
         for ((index, entry) in foundEntries.withIndex()) {
-            val (orcid, node) = entry
-            val worksApiUrl = node.path("works_api_url").asText(null)
-            val baseEnrichment = parseAuthorEnrichmentFromNode(node, fetchWorksAndPatents = false, kind = kind)
-
-            if (!needsWorksOrPatents || worksApiUrl == null) {
-                results[orcid] = EnrichmentOutcome.Success(baseEnrichment)
-                continue
-            }
-
+            val (identity, node) = entry
             try {
-                val recentWorkTitles = if (properties.fetchWorksEnabled) fetchRecentWorks(worksApiUrl, 3, kind) else null
-                val patentTitles = if (properties.fetchPatentsEnabled) fetchPatents(worksApiUrl, 3, kind) else null
-                results[orcid] = EnrichmentOutcome.Success(
-                    baseEnrichment.copy(recentWorkTitles = recentWorkTitles, patentTitles = patentTitles)
-                )
+                results[identity] = enrichmentOutcome(node, kind)
             } catch (e: OpenAlexBudgetDeferredException) {
                 throw e
             } catch (e: HttpStatusCodeException) {
+                // I-3：限流只影响开关控制的附加标题 —— 基础事实照常返回，其余身份标限流、不再打接口。
+                results[identity] = EnrichmentOutcome.Success(parseAuthorBase(node), titlesFailed = true)
                 val code = e.statusCode.value()
-                if (code == 429 || code == 503) {
-                    val retryAfter = e.responseHeaders?.getFirst("Retry-After")?.toLongOrNull()?.times(1000)
-                    results[orcid] = EnrichmentOutcome.Success(baseEnrichment)
-                    val rateLimited = EnrichmentOutcome.RateLimited(retryAfter)
-                    for (remaining in foundEntries.drop(index + 1)) {
-                        if (remaining.first !in results) {
-                            results[remaining.first] = rateLimited
-                        }
-                    }
-                    break
+                if (code != 429 && code != 503) continue
+                val rateLimited = EnrichmentOutcome.RateLimited(
+                    e.responseHeaders?.getFirst("Retry-After")?.toLongOrNull()?.times(1000)
+                )
+                for (remaining in foundEntries.drop(index + 1)) {
+                    if (remaining.first !in results) results[remaining.first] = rateLimited
                 }
-                results[orcid] = EnrichmentOutcome.Success(baseEnrichment)
+                break
             }
         }
 
-        return orcids.associateWith { results[it] ?: EnrichmentOutcome.NotFound }
+        return identities.associateWith { results[it] ?: EnrichmentOutcome.NotFound }
     }
 
-    private fun parseAuthorEnrichmentFromNode(
-        node: JsonNode,
-        fetchWorksAndPatents: Boolean,
-        kind: RequestKind
-    ): AuthorEnrichment {
+    /**
+     * I-3：基础学术事实 —— hIndex / 引用数 / 论文数 / 研究方向 / 学科 / 最近发表年份。
+     * 全部来自作者节点本身，与论文/专利开关无关，缺失一律为 null（null 不覆盖存量值）。
+     */
+    private fun parseAuthorBase(node: JsonNode): AuthorEnrichment {
         val topicsNode = node.path("topics").takeIf { it.isArray }
         val topics = topicsNode
             ?.sortedByDescending { it.path("count").asInt(0) }
@@ -375,9 +395,6 @@ class OpenAlexDataSource(
         // I5a-3: 数组为空、无 type 键、type 为空串均产出 null。
         val institutionType = node.path("last_known_institutions").firstOrNull()
             ?.path("type")?.asText(null)?.takeIf { it.isNotBlank() }
-        val worksUrl = node.path("works_api_url").asText(null)
-        val recentWorkTitles = if (fetchWorksAndPatents && worksUrl != null) fetchRecentWorks(worksUrl, 3, kind) else null
-        val patentTitles = if (fetchWorksAndPatents && worksUrl != null) fetchPatents(worksUrl, 3, kind) else null
         // I1-1/I1-2：取 works_count > 0 的最大 year；数组顺序不可依赖（CP-1 实测为升序）。
         // I1-3：无该键、空数组、或全部 works_count = 0 时为 null。
         val lastPublicationYear = node.path("counts_by_year")
@@ -389,12 +406,46 @@ class OpenAlexDataSource(
             citationCount = node.path("cited_by_count").let { if (it.isInt) it.asInt() else null },
             worksCount = node.path("works_count").let { if (it.isInt) it.asInt() else null },
             topics = topics,
-            recentWorkTitles = recentWorkTitles,
-            patentTitles = patentTitles,
             disciplineCategory = disciplineCategory,
             institutionType = institutionType,
             lastPublicationYear = lastPublicationYear
         )
+    }
+
+    /**
+     * I-3：基础事实 + 开关控制的最近论文/专利标题。单人与批量共用同一套开关与失败语义：
+     * 关闭的开关不发请求（[TitlesFetch.NOT_REQUESTED]），打开的开关失败只标 [ParsedAuthorEnrichment.titlesFailed]，
+     * 绝不因此丢掉基础事实。
+     */
+    private fun parseAuthorEnrichment(node: JsonNode, kind: RequestKind): ParsedAuthorEnrichment {
+        val base = parseAuthorBase(node)
+        val worksUrl = node.path("works_api_url").asText(null)
+        val recentWorks = if (worksUrl != null && properties.fetchWorksEnabled) {
+            fetchTitles(recentWorksUrl(worksUrl), kind)
+        } else {
+            TitlesFetch.NOT_REQUESTED
+        }
+        val patents = if (worksUrl != null && properties.fetchPatentsEnabled) {
+            fetchTitles(patentWorksUrl(worksUrl), kind)
+        } else {
+            TitlesFetch.NOT_REQUESTED
+        }
+        return ParsedAuthorEnrichment(
+            data = base.copy(
+                recentWorkTitles = recentWorks.titles?.takeIf { it.isNotEmpty() },
+                patentTitles = patents.titles?.takeIf { it.isNotEmpty() }
+            ),
+            titlesFailed = recentWorks.failed || patents.failed
+        )
+    }
+
+    /** 基础事实 + 附加标题的成败标志（I-3：标题可单独重试，空结果不算失败）。 */
+    private data class ParsedAuthorEnrichment(val data: AuthorEnrichment, val titlesFailed: Boolean)
+
+    /** 作者节点 → 结果；限流（429/503）与额度延期照原样抛出，由调用方决定降级方式。 */
+    private fun enrichmentOutcome(node: JsonNode, kind: RequestKind): EnrichmentOutcome {
+        val parsed = parseAuthorEnrichment(node, kind)
+        return EnrichmentOutcome.Success(parsed.data, parsed.titlesFailed)
     }
 
     private fun resolveDisciplineCategory(topicsNode: JsonNode?): String? {
@@ -424,11 +475,31 @@ internal fun normalizeOpenAlexAuthorId(raw: String?): String? {
 private val OPENALEX_AUTHOR_ID_PATTERN = Regex("A\\d+")
 
 sealed class EnrichmentOutcome {
-    data class Success(val data: AuthorEnrichment) : EnrichmentOutcome()
+    /**
+     * 基础事实可用。[titlesFailed] = true 表示开关控制的最近论文/专利标题子请求失败（I-3：可单独重试），
+     * 基础事实不受影响；空结果不算失败。
+     */
+    data class Success(val data: AuthorEnrichment, val titlesFailed: Boolean = false) : EnrichmentOutcome()
     object NotFound : EnrichmentOutcome()
     data class ApiError(val message: String) : EnrichmentOutcome()
     data class RateLimited(val retryAfterMs: Long? = null) : EnrichmentOutcome()
 }
+
+/**
+ * I-3：附加标题子请求的结果 —— 把「请求失败（可重试）」与「请求成功但没有作品」分开：
+ * `titles = null, failed = true` 是失败；`titles = emptyList(), failed = false` 是真实的空结果；
+ * `NOT_REQUESTED` 表示按开关未请求。
+ */
+private data class TitlesFetch(val titles: List<String>?, val failed: Boolean) {
+    companion object {
+        val NOT_REQUESTED = TitlesFetch(null, false)
+        fun ok(titles: List<String>) = TitlesFetch(titles, false)
+        fun failed() = TitlesFetch(null, true)
+    }
+}
+
+/** I-3：最近论文/专利标题的取条数上界。 */
+private const val RECENT_TITLES_LIMIT = 3
 
 data class AuthorEnrichment(
     val hIndex: Int?,

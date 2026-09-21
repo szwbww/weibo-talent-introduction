@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
 import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
 import com.weibo.talentintroduction.config.OpenAlexProperties
+import com.weibo.talentintroduction.config.RequestKind
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryStats
@@ -43,6 +44,7 @@ import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Base64
@@ -1193,12 +1195,14 @@ class ExpertDiscoveryService(
         val failureReasons = mutableMapOf<String, Int>()
         var consecutiveRateLimits = 0
         var circuitBreakerTripped = false
+        // I-5：额度延期是与限流/失败都不同的停止原因，单独记录、单独终态。
+        var budgetDeferred = false
 
         try {
             var batchNumber = 0
             expertSearchService.searchAfterExpertsFiltered(ExpertIndexLevel.CANDIDATE, filters) { batch ->
-                if (circuitBreakerTripped || progressStore.isCancelled(taskType)) {
-                    log.info("Enrichment task cancelled or circuit breaker tripped at batch {}", batchNumber)
+                if (circuitBreakerTripped || budgetDeferred || progressStore.isCancelled(taskType)) {
+                    log.info("Enrichment task cancelled, budget deferred or circuit breaker tripped at batch {}", batchNumber)
                     return@searchAfterExpertsFiltered false
                 }
                 batchNumber++
@@ -1207,47 +1211,72 @@ class ExpertDiscoveryService(
                 val failureReasonsBefore = HashMap(failureReasons)
                 scanned += batch.size
 
-                for (chunk in batch.chunked(openAlexProperties.enrichmentBatchSize)) {
-                    if (circuitBreakerTripped || progressStore.isCancelled(taskType)) break
+                for (chunk in batch.chunked(enrichmentBatchSize())) {
+                    if (circuitBreakerTripped || budgetDeferred || progressStore.isCancelled(taskType)) break
 
-                    val profilesByOrcid = chunk.associateBy { it.orcidId }
-                    var retryOrcids = chunk.map { it.orcidId }
+                    // 只重试真正可重试（限流）的身份：已成功写过的层不会被再次触碰。
+                    var retryChunk = chunk
 
-                    while (retryOrcids.isNotEmpty()) {
-                        if (circuitBreakerTripped || progressStore.isCancelled(taskType)) break
+                    while (retryChunk.isNotEmpty()) {
+                        if (circuitBreakerTripped || budgetDeferred || progressStore.isCancelled(taskType)) break
 
                         if (openAlexProperties.enrichmentDelayMs > 0) {
                             if (sleepInterruptible(taskType, openAlexProperties.enrichmentDelayMs)) break
                         }
 
-                        val outcomes = openAlex.batchEnrichByOrcids(retryOrcids)
-                        val rateLimitedOrcids = outcomes.filterValues { it is EnrichmentOutcome.RateLimited }.keys
+                        val outcomes = enrichProfiles(retryChunk, RequestKind.HISTORY_ENRICHMENT)
+                        val retryable = mutableListOf<ExpertProfile>()
+                        var firstRetryAfterMs: Long? = null
 
-                        for (orcidId in retryOrcids) {
-                            if (orcidId in rateLimitedOrcids) continue
-                            val profile = profilesByOrcid[orcidId] ?: continue
-                            when (val outcome = outcomes[orcidId] ?: EnrichmentOutcome.NotFound) {
-                                is EnrichmentOutcome.Success -> {
-                                    if (updateExpertAcademicFields(profile, outcome.data)) {
-                                        enriched++
-                                    } else {
+                        for (profile in retryChunk) {
+                            val outcome = outcomes[enrichmentDocId(profile)] ?: ProfileEnrichmentOutcome.NotFound
+                            val layers = when (outcome) {
+                                is ProfileEnrichmentOutcome.Success -> outcome.layers
+                                is ProfileEnrichmentOutcome.Partial -> outcome.layers
+                                else -> null
+                            }
+                            if (layers != null) {
+                                // I-2：只要有现存层写入失败就不能算成功；RAW-only 成功必须算成功。
+                                when {
+                                    layers.hasFailedLayer() -> {
                                         failed++
                                         failureReasons.merge("ES_UPDATE_FAILED", 1) { a, b -> a + b }
                                     }
+                                    layers.updatedAnyLayer() -> enriched++
+                                    else -> {
+                                        failed++
+                                        failureReasons.merge("NO_TARGET_LAYER", 1) { a, b -> a + b }
+                                    }
                                 }
-                                is EnrichmentOutcome.NotFound -> {
+                                continue
+                            }
+                            when (outcome) {
+                                is ProfileEnrichmentOutcome.NotFound -> {
                                     failed++
                                     failureReasons.merge("ORCID_NOT_IN_OPENALEX", 1) { a, b -> a + b }
                                 }
-                                is EnrichmentOutcome.ApiError -> {
+                                is ProfileEnrichmentOutcome.NoId -> {
                                     failed++
-                                    failureReasons.merge("OPENALEX_API_ERROR", 1) { a, b -> a + b }
+                                    failureReasons.merge("NO_TRUSTED_IDENTITY", 1) { a, b -> a + b }
                                 }
-                                is EnrichmentOutcome.RateLimited -> Unit
+                                is ProfileEnrichmentOutcome.RetryableError -> {
+                                    if (outcome.rateLimited) {
+                                        retryable += profile
+                                        if (firstRetryAfterMs == null) firstRetryAfterMs = outcome.retryAfterMs
+                                    } else {
+                                        failed++
+                                        failureReasons.merge("OPENALEX_API_ERROR", 1) { a, b -> a + b }
+                                    }
+                                }
+                                is ProfileEnrichmentOutcome.Deferred -> budgetDeferred = true
+                                // Success/Partial 已在上面的 layers 分支处理。
+                                else -> Unit
                             }
                         }
 
-                        if (rateLimitedOrcids.isEmpty()) {
+                        // 额度延期：剩余身份一律标 Deferred，不当作失败、也不再打接口。
+                        if (budgetDeferred) break
+                        if (retryable.isEmpty()) {
                             consecutiveRateLimits = 0
                             break
                         }
@@ -1261,8 +1290,7 @@ class ExpertDiscoveryService(
                             break
                         }
 
-                        val firstRateLimited = outcomes[rateLimitedOrcids.first()] as EnrichmentOutcome.RateLimited
-                        val backoffMs = computeEnrichmentBackoffMs(consecutiveRateLimits, firstRateLimited.retryAfterMs)
+                        val backoffMs = computeEnrichmentBackoffMs(consecutiveRateLimits, firstRetryAfterMs)
                         val processed = enriched + failed
                         log.info("Enrichment: 限流退避 {}ms (第 {} 次)", backoffMs, consecutiveRateLimits)
                         progressStore.update(taskType, TaskProgress(
@@ -1283,7 +1311,7 @@ class ExpertDiscoveryService(
                         ), execId)
 
                         if (sleepInterruptible(taskType, backoffMs)) break
-                        retryOrcids = rateLimitedOrcids.toList()
+                        retryChunk = retryable
                     }
                 }
 
@@ -1309,7 +1337,7 @@ class ExpertDiscoveryService(
                     batchRejected = batchRejected.coerceAtLeast(0),
                     batchRejectReasons = computeBatchRejectReasons(failureReasonsBefore, failureReasons)
                 ), execId)
-                !progressStore.isCancelled(taskType) && !circuitBreakerTripped
+                !progressStore.isCancelled(taskType) && !circuitBreakerTripped && !budgetDeferred
             }
 
             if (progressStore.isCancelled(taskType)) {
@@ -1329,6 +1357,30 @@ class ExpertDiscoveryService(
                     )
                 ), execId)
                 return EnrichmentResult(enriched, failed, HashMap(failureReasons), wasCancelled = true)
+            }
+
+            if (budgetDeferred) {
+                val processed = enriched + failed
+                failureReasons["BUDGET_DEFERRED"] = 1
+                log.info(
+                    "Enrichment stopped by OpenAlex daily budget: enriched={}, failed={}, scanned={}",
+                    enriched, failed, scanned
+                )
+                progressStore.update(taskType, TaskProgress(
+                    taskType = taskType, status = "PARTIAL_SUCCESS",
+                    batchNumber = -1, processedCount = processed.toLong(), totalCount = pendingCount,
+                    message = "OpenAlex 日额度延期，本轮暂停（剩余专家可续跑）: 成功 $enriched, 失败 $failed",
+                    details = mapOf(
+                        "enriched" to enriched,
+                        "failed" to failed,
+                        "scanned" to scanned,
+                        "failureReasons" to HashMap(failureReasons),
+                        "rateLimitWaits" to rateLimitWaits,
+                        "mode" to rateLimitMode,
+                        "budgetDeferred" to true
+                    )
+                ), execId)
+                return EnrichmentResult(enriched, failed, HashMap(failureReasons), budgetDeferred = true)
             }
 
             if (circuitBreakerTripped) {
@@ -1388,30 +1440,22 @@ class ExpertDiscoveryService(
         return EnrichmentResult(enriched, failed, HashMap(failureReasons))
     }
 
-    private fun documentExistsInIndex(level: ExpertIndexLevel, orcidId: String): Boolean {
-        val index = expertIndexService.indexName(level)
-        val url = "${esProperties.baseUrl}/$index/_doc/$orcidId"
-        return try {
-            restTemplate.exchange(url, HttpMethod.HEAD, HttpEntity(null, esHeaders()), Void::class.java)
-            true
-        } catch (e: HttpClientErrorException) {
-            false
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-    private fun updateExpertAcademicFields(profile: ExpertProfile, enrichment: AuthorEnrichment): Boolean {
-        val orcidId = profile.orcidId
+    /**
+     * I-2：学术字段的唯一写入点。按真实 `_id` 对每个已存在层做局部 `_update`：404 跳过、非 404 失败可按层重试；
+     * 只写非 null 事实（null 绝不覆盖已有值）并重算分类；不触碰姓名/邮箱/署名机构/运营状态，
+     * 也绝不创建缺失层（尤其不创建 APPLICATION）。返回逐层结果而不是单一布尔。
+     */
+    private fun updateExpertAcademicFields(profile: ExpertProfile, enrichment: AuthorEnrichment): LayerUpdateResult {
+        val docId = enrichmentDocId(profile)
         val now = LocalDateTime.now().format(dateFormatter)
-        var candidateUpdated = false
         val doc = mutableMapOf<String, Any?>(
-            "hIndex" to enrichment.hIndex,
-            "citationCount" to enrichment.citationCount,
             "updatedAt" to now,
             "enrichedAt" to now,
             "enrichmentSource" to "OPENALEX"
         )
+        // I-2：null 事实不写入（否则 _update 会用 null 擦掉已有指标）。
+        enrichment.hIndex?.let { doc["hIndex"] = it }
+        enrichment.citationCount?.let { doc["citationCount"] = it }
         enrichment.worksCount?.let { doc["worksCount"] = it }
         enrichment.topics?.takeIf { it.isNotEmpty() }?.let { doc["researchFields"] = it.joinToString(", ") }
         enrichment.recentWorkTitles?.takeIf { it.isNotEmpty() }?.let { doc["recentWorkTitles"] = it }
@@ -1435,19 +1479,176 @@ class ExpertDiscoveryService(
         )
         doc["expertClassification"] = expertClassificationService.classify(enrichedProfile)
         val updateBody = mapOf("doc" to doc)
-        for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
-            if (!documentExistsInIndex(level, orcidId)) continue
-            try {
-                val index = expertIndexService.indexName(level)
-                val updateUrl = "${esProperties.baseUrl}/$index/_update/$orcidId"
-                restTemplate.exchange(updateUrl, HttpMethod.POST, HttpEntity(updateBody, esHeaders()),
-                    com.fasterxml.jackson.databind.JsonNode::class.java)
-                if (level == ExpertIndexLevel.CANDIDATE) candidateUpdated = true
-            } catch (e: Exception) {
-                log.warn("Failed to update academic fields for {} in index {}: {}", orcidId, level, e.message)
+        return LayerUpdateResult(
+            raw = updateAcademicFieldsInLayer(ExpertIndexLevel.RAW, docId, updateBody),
+            candidate = updateAcademicFieldsInLayer(ExpertIndexLevel.CANDIDATE, docId, updateBody),
+            application = updateAcademicFieldsInLayer(ExpertIndexLevel.APPLICATION, docId, updateBody)
+        )
+    }
+
+    /**
+     * I-2：单层局部更新。HEAD 404 = 该层本来就没有这份文档（跳过，绝不创建）；其余 HEAD 失败与
+     * `_update` 失败都标 [LayerUpdateStatus.FAILED] 以便按层重试（成功层在重试时不会被再次破坏）。
+     */
+    private fun updateAcademicFieldsInLayer(
+        level: ExpertIndexLevel,
+        docId: String,
+        updateBody: Map<String, Any?>
+    ): LayerUpdateStatus {
+        val index = expertIndexService.indexName(level)
+        try {
+            restTemplate.exchange(
+                "${esProperties.baseUrl}/$index/_doc/$docId", HttpMethod.HEAD, HttpEntity(null, esHeaders()),
+                Void::class.java
+            )
+        } catch (e: HttpClientErrorException) {
+            if (e.statusCode == HttpStatus.NOT_FOUND) return LayerUpdateStatus.ABSENT
+            log.warn("Failed to check academic field target for {} in index {}: {}", docId, level, e.message)
+            return LayerUpdateStatus.FAILED
+        } catch (e: Exception) {
+            log.warn("Failed to check academic field target for {} in index {}: {}", docId, level, e.message)
+            return LayerUpdateStatus.FAILED
+        }
+        return try {
+            restTemplate.exchange(
+                "${esProperties.baseUrl}/$index/_update/$docId", HttpMethod.POST,
+                HttpEntity(updateBody, esHeaders()), com.fasterxml.jackson.databind.JsonNode::class.java
+            )
+            LayerUpdateStatus.UPDATED
+        } catch (e: Exception) {
+            log.warn("Failed to update academic fields for {} in index {}: {}", docId, level, e.message)
+            LayerUpdateStatus.FAILED
+        }
+    }
+
+    /** I-1：定位文档一律用真实 `_id`；缺失时退回既有口径 `orcidId`，API ID 绝不参与定位。 */
+    private fun enrichmentDocId(profile: ExpertProfile): String = profile.esDocId ?: profile.orcidId
+
+    /** I-1：每批最多 100 个不同身份（OpenAlex 的 OR 过滤上限），配置更小时按配置。 */
+    private fun enrichmentBatchSize(): Int =
+        openAlexProperties.enrichmentBatchSize.coerceIn(1, MAX_ENRICHMENT_IDENTITIES_PER_BATCH)
+
+    /**
+     * I-1：可信作者身份只来自 `externalIds.openAlexAuthorId`，并且只接受 `A` + 数字的规范形状。
+     * 任何其他形状（含 `EMAIL-*`、W 前缀、空串）都当作「没有作者 ID」，绝不参与查询或文档定位。
+     */
+    private fun trustedOpenAlexAuthorId(profile: ExpertProfile): String? {
+        val externalIds = profile.externalIds ?: return null
+        val parsed = try {
+            objectMapper.readValue(externalIds, Map::class.java)
+        } catch (e: Exception) {
+            return null
+        }
+        return normalizeOpenAlexAuthorId(parsed["openAlexAuthorId"] as? String)
+    }
+
+    /** I-1：有效 ORCID = 非空且不是 `EMAIL-*` 主键；`EMAIL-*` 绝不能作为 `filter=orcid:` 的值。 */
+    private fun trustedOrcid(profile: ExpertProfile): String? =
+        profile.orcidId.trim().takeIf { it.isNotEmpty() && !it.startsWith(EMAIL_PRIMARY_KEY_PREFIX) }
+
+    /**
+     * I-1/I-3：定向补全共享核心 —— 同一批量核心处理原始库/候选库/申请库中的指定专家。
+     * - 每批最多 [MAX_ENRICHMENT_IDENTITIES_PER_BATCH] 个不同身份；先用可信 `externalIds.openAlexAuthorId`，
+     *   缺失时用有效 ORCID；两者都没有 = [ProfileEnrichmentOutcome.NoId]，不发作者查询；
+     * - `EMAIL-*` 主键绝不当 ORCID 传出去，API ID/ORCID 也绝不替代真实 `_id` 定位文档；
+     * - 结果以真实 `esDocId` 为键，逐人一个结果；
+     * - 额度延期是 [ProfileEnrichmentOutcome.Deferred]（未发请求、不消耗尝试次数），限流/网络失败才是
+     *   [ProfileEnrichmentOutcome.RetryableError]；
+     * - 基础事实写入成功、但开关控制的最近论文/专利标题子请求失败时是 [ProfileEnrichmentOutcome.Partial]。
+     */
+    @JvmOverloads
+    fun enrichProfiles(
+        profiles: List<ExpertProfile>,
+        requestKind: RequestKind = RequestKind.HISTORY_ENRICHMENT
+    ): Map<String, ProfileEnrichmentOutcome> {
+        val outcomes = LinkedHashMap<String, ProfileEnrichmentOutcome>()
+        if (profiles.isEmpty()) return outcomes
+
+        val openAlex = openAlexProvider.getIfAvailable()
+        if (openAlex == null) {
+            // 未启用 OpenAlex：本次无法补全，可等启用后重试（绝不是「查无此人」或「已完成」）。
+            profiles.forEach { outcomes[enrichmentDocId(it)] = ProfileEnrichmentOutcome.RetryableError() }
+            return outcomes
+        }
+
+        val byAuthorId = LinkedHashMap<String, MutableList<ExpertProfile>>()
+        val byOrcid = LinkedHashMap<String, MutableList<ExpertProfile>>()
+        for (profile in profiles) {
+            val authorId = trustedOpenAlexAuthorId(profile)
+            val orcid = trustedOrcid(profile)
+            when {
+                authorId != null -> byAuthorId.getOrPut(authorId) { mutableListOf() }.add(profile)
+                orcid != null -> byOrcid.getOrPut(orcid) { mutableListOf() }.add(profile)
+                else -> outcomes[enrichmentDocId(profile)] = ProfileEnrichmentOutcome.NoId
             }
         }
-        return candidateUpdated
+
+        var deferredResetAt = enrichIdentityGroups(byAuthorId, outcomes, requestKind) { ids, kind ->
+            openAlex.batchEnrichByAuthorIds(ids, kind)
+        }
+        if (deferredResetAt == null) {
+            deferredResetAt = enrichIdentityGroups(byOrcid, outcomes, requestKind) { ids, kind ->
+                openAlex.batchEnrichByOrcids(ids, kind)
+            }
+        }
+        if (deferredResetAt != null) {
+            // I-5：额度耗尽后不再发请求，本轮没得出结论的身份一律标 Deferred（可续跑、不算失败）。
+            for (profile in profiles) {
+                val docId = enrichmentDocId(profile)
+                if (!outcomes.containsKey(docId)) outcomes[docId] = ProfileEnrichmentOutcome.Deferred(deferredResetAt)
+            }
+        }
+        return outcomes
+    }
+
+    /**
+     * 按身份分批查询并写回。[groups] 的键是不同身份，值是该身份对应的全部文档。
+     * 返回非 null 表示额度已耗尽：调用方停止后续查询并把剩余身份标 Deferred。
+     */
+    private fun enrichIdentityGroups(
+        groups: Map<String, MutableList<ExpertProfile>>,
+        outcomes: MutableMap<String, ProfileEnrichmentOutcome>,
+        requestKind: RequestKind,
+        query: (List<String>, RequestKind) -> Map<String, EnrichmentOutcome>
+    ): Instant? {
+        for (chunk in groups.keys.toList().chunked(enrichmentBatchSize())) {
+            val lookup = try {
+                query(chunk, requestKind)
+            } catch (e: OpenAlexBudgetDeferredException) {
+                log.info("OpenAlex budget deferred until {}: {} identities not attempted", e.resetAt, chunk.size)
+                return e.resetAt
+            }
+            for (identity in chunk) {
+                val profiles = groups[identity].orEmpty()
+                when (val found = lookup[identity] ?: EnrichmentOutcome.NotFound) {
+                    is EnrichmentOutcome.Success -> {
+                        for (profile in profiles) {
+                            val layers = updateExpertAcademicFields(profile, found.data)
+                            // I-2/I-3：层写入失败或附加标题子请求失败都只算部分完成，绝不报成整体成功。
+                            val partial = layers.hasFailedLayer() || found.titlesFailed
+                            outcomes[enrichmentDocId(profile)] = if (partial) {
+                                ProfileEnrichmentOutcome.Partial(layers, recentWorksFailed = found.titlesFailed)
+                            } else {
+                                ProfileEnrichmentOutcome.Success(layers)
+                            }
+                        }
+                    }
+                    is EnrichmentOutcome.NotFound ->
+                        profiles.forEach { outcomes[enrichmentDocId(it)] = ProfileEnrichmentOutcome.NotFound }
+                    is EnrichmentOutcome.ApiError ->
+                        profiles.forEach {
+                            outcomes[enrichmentDocId(it)] = ProfileEnrichmentOutcome.RetryableError()
+                        }
+                    is EnrichmentOutcome.RateLimited ->
+                        profiles.forEach {
+                            outcomes[enrichmentDocId(it)] = ProfileEnrichmentOutcome.RetryableError(
+                                retryAfterMs = found.retryAfterMs, rateLimited = true
+                            )
+                        }
+                }
+            }
+        }
+        return null
     }
 
     private fun existsInRawIndexByOrcid(orcid: String): DedupResult {
@@ -1604,7 +1805,7 @@ class ExpertDiscoveryService(
                     val tempProfile = profile.copy(email = "temp@weibo.com")
                     if (eligibilityService.evaluateEligibility(tempProfile).eligible) {
                         val orcidId = profile.orcidId
-                        if (!orcidId.startsWith("EMAIL-") && orcidId.isNotBlank()) {
+                        if (!orcidId.startsWith(EMAIL_PRIMARY_KEY_PREFIX) && orcidId.isNotBlank()) {
                             attemptedCount++
                             val emails = tryGetEmailFromOrcid(orcidId)
                             if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
@@ -1667,6 +1868,75 @@ object DiscoveryStopReason {
 
 enum class EnrichmentScope { DEFAULT, INSTITUTION_TYPE_BACKFILL, LAST_PUBLICATION_YEAR_BACKFILL }
 
+/** I-1：无 ORCID 的专家主键前缀 —— 它不是 ORCID，绝不能作为 `filter=orcid:` 的值传给 OpenAlex。 */
+private const val EMAIL_PRIMARY_KEY_PREFIX = "EMAIL-"
+
+/** I-1：OpenAlex 的 `filter=...|...` 每批最多 100 个不同身份。 */
+private const val MAX_ENRICHMENT_IDENTITIES_PER_BATCH = 100
+
+/** I-2：单层学术字段写入结果。 */
+enum class LayerUpdateStatus {
+    /** 文档存在且局部 `_update` 成功。 */
+    UPDATED,
+    /** HEAD 404：该层本来就没有这份文档，按计划跳过（绝不创建）。 */
+    ABSENT,
+    /** HEAD 非 404 失败或 `_update` 失败：该层可重试。 */
+    FAILED
+}
+
+/**
+ * I-2：三层局部更新的逐层结果。c7 直接把本类型存进 `result_json`，三个字段名即持久化契约。
+ * 判定一律用方法，避免序列化出派生键。
+ */
+data class LayerUpdateResult(
+    val raw: LayerUpdateStatus,
+    val candidate: LayerUpdateStatus,
+    val application: LayerUpdateStatus
+) {
+    /** 至少有一层真实写成功（RAW-only 补全同样算成功）。 */
+    fun updatedAnyLayer(): Boolean =
+        raw == LayerUpdateStatus.UPDATED ||
+            candidate == LayerUpdateStatus.UPDATED ||
+            application == LayerUpdateStatus.UPDATED
+
+    /** 存在「该层本来存在但没写成功」的层：整体只能算部分完成，可按层重试。 */
+    fun hasFailedLayer(): Boolean =
+        raw == LayerUpdateStatus.FAILED ||
+            candidate == LayerUpdateStatus.FAILED ||
+            application == LayerUpdateStatus.FAILED
+}
+
+/**
+ * 定向补全的逐人结果（跨子计划契约：变体名与语义固定，c7 依此持久化任务状态）。
+ * 结果按真实 `esDocId` 为键；`NoId` 与 `NotFound` 都不得伪造成 `Success`。
+ */
+sealed class ProfileEnrichmentOutcome {
+    /** 学术事实已按真实 `_id` 局部写入全部现存层。 */
+    data class Success(val layers: LayerUpdateResult) : ProfileEnrichmentOutcome()
+
+    /**
+     * 基础事实已拿到，但仍有未完成部分：
+     * [layers].[LayerUpdateResult.hasFailedLayer] 表示某现存层没写成功（可按层重试）；
+     * [recentWorksFailed] 表示开关控制的最近论文/专利标题子请求失败（可单独重试，空结果不算失败）。
+     */
+    data class Partial(val layers: LayerUpdateResult, val recentWorksFailed: Boolean) : ProfileEnrichmentOutcome()
+
+    /** OpenAlex 日额度延期：[resetAt] 是额度实际重置时刻；未发请求，重试不消耗故障尝试次数。 */
+    data class Deferred(val resetAt: Instant) : ProfileEnrichmentOutcome()
+
+    /** OpenAlex 明确查无此身份（有 A ID/ORCID 但作者不存在）。 */
+    object NotFound : ProfileEnrichmentOutcome()
+
+    /** 无可靠身份（既无 A ID 也无有效 ORCID）：绝不发作者查询。 */
+    object NoId : ProfileEnrichmentOutcome()
+
+    /** 可重试的失败。[rateLimited] = true 是供应商限流（旧人工入口按 WAIT/ABORT 语义退避重试）。 */
+    data class RetryableError(
+        val retryAfterMs: Long? = null,
+        val rateLimited: Boolean = false
+    ) : ProfileEnrichmentOutcome()
+}
+
 data class EnrichmentStats(
     val pending: Long,
     val enrichedLast30d: Long,
@@ -1680,7 +1950,9 @@ data class EnrichmentResult(
     val failed: Int,
     val failureReasons: Map<String, Int> = emptyMap(),
     val wasCancelled: Boolean = false,
-    val circuitBreakerTripped: Boolean = false
+    val circuitBreakerTripped: Boolean = false,
+    /** I-5：OpenAlex 日额度延期导致本轮提前停止 —— 不是失败，剩余工作可续跑。 */
+    val budgetDeferred: Boolean = false
 ) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = enriched
     override val taskFailureCount: Int get() = failed
@@ -1688,6 +1960,7 @@ data class EnrichmentResult(
         get() = when {
             wasCancelled -> "CANCELLED"
             circuitBreakerTripped -> "FAILED"
+            budgetDeferred -> "PARTIAL_SUCCESS"
             else -> null
         }
 }
