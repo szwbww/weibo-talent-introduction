@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.config.EuropePmcProperties
 import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
+import com.weibo.talentintroduction.config.FulltextRequestGate
 import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
 import com.weibo.talentintroduction.config.OpenAlexProperties
+import com.weibo.talentintroduction.config.PIPELINE_PAGE_SIZE
 import com.weibo.talentintroduction.config.RequestKind
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
@@ -37,6 +39,8 @@ import com.weibo.talentintroduction.discovery.domain.DiscoverySourceCursor
 import com.weibo.talentintroduction.discovery.domain.resolvedFulltextObtained
 import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
 import com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository
+import com.weibo.talentintroduction.discovery.repository.QueueIdentityQuality
+import com.weibo.talentintroduction.discovery.repository.QueueItemUnit
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.beans.factory.annotation.Qualifier
@@ -360,16 +364,7 @@ class ExpertDiscoveryService(
                     message = "正在扫描 RAW 索引并晋升..."
                 ), execId)
                 log.info("开始执行 RAW 晋升扫描与邮箱补全...")
-                try {
-                    revalidationService.promoteEligibleRawExperts()
-                } catch (e: Exception) {
-                    log.warn("Failed to run RAW promotion scan during discovery", e)
-                }
-                try {
-                    backfillRawEmailsAndPromote(100)
-                } catch (e: Exception) {
-                    log.warn("Failed to run RAW email backfill during discovery", e)
-                }
+                runRawScan()
             }
 
             for ((index, source) in sources.withIndex()) {
@@ -1130,6 +1125,53 @@ class ExpertDiscoveryService(
         }
     }
 
+    /** I-7（c2）：RAW 晋升扫描 + 邮箱补全的**唯一**入口（旧 `discover(includeRawScan=true)` 与队列窗口共用同一门禁）。 */
+    fun runRawScan(backfillLimit: Int = 100) {
+        try {
+            revalidationService.promoteEligibleRawExperts()
+        } catch (e: Exception) {
+            log.warn("Failed to run RAW promotion scan during discovery", e)
+        }
+        try {
+            backfillRawEmailsAndPromote(backfillLimit)
+        } catch (e: Exception) {
+            log.warn("Failed to run RAW email backfill during discovery", e)
+        }
+    }
+
+    /** I-4（c2）：消费一条工作时**唯一**的身份构造差异点 —— 论文走 [buildProfile]+论文主键，
+     * ORCID 记录走 [buildOrcidProfile]+ORCID 主键。门禁（邮箱校验/身份去重/资格/RAW 写/晋升/补全入队）
+     * 只有一份实现，论文路径与队列路径共用，绝不复制。
+     */
+    private fun interface ConsumeIdentityFactory {
+        fun create(authorEmail: AuthorEmail, emailVerifiedLevel: Int): ConsumeIdentity
+    }
+
+    private data class ConsumeIdentity(
+        val profile: ExpertProfile,
+        val esDocId: String,
+        /** `toIndexMap` 的论文上下文；ORCID 记录为 null（与旧 ORCID 路径逐字一致）。 */
+        val paper: PaperMetadata?
+    )
+
+    private fun paperIdentityFactory(paper: PaperMetadata): ConsumeIdentityFactory =
+        ConsumeIdentityFactory { authorEmail, emailVerifiedLevel ->
+            ConsumeIdentity(
+                profile = buildProfile(paper, authorEmail, emailVerifiedLevel),
+                esDocId = ExpertIdGenerator.generate(authorEmail.orcidId, authorEmail.email),
+                paper = paper
+            )
+        }
+
+    private fun orcidIdentityFactory(record: OrcidDataSource.OrcidRecord): ConsumeIdentityFactory =
+        ConsumeIdentityFactory { authorEmail, emailVerifiedLevel ->
+            ConsumeIdentity(
+                profile = buildOrcidProfile(record, authorEmail, emailVerifiedLevel),
+                esDocId = ExpertIdGenerator.generate(authorEmail.orcidId ?: record.orcidId, authorEmail.email),
+                paper = null
+            )
+        }
+
     private fun parallelExtractOutcomes(
         papers: List<PaperMetadata>,
         source: AcademicDataSource
@@ -1151,34 +1193,61 @@ class ExpertDiscoveryService(
         stats: DiscoveryStats,
         sourceStats: SourceStats,
         executionId: Long?
-    ) {
-        sourceStats.fulltextAttempted++
+    ): ConsumeOutcomeResult {
         if (extraction.extractionError != null) {
             stats.errors += "[${source.sourceName}] 提取失败: ${extraction.extractionError}"
             sourceStats.failureReasons.merge("EXTRACTION_EXCEPTION", 1) { a, b -> a + b }
-            return
+            return ConsumeOutcomeResult(extractionFailed = true, failureReasons = mapOf("EXTRACTION_EXCEPTION" to 1))
         }
-
         val outcome = extraction.outcome!!
-        // c10（I-3）：httpRequests 是本次提取真实发出的下载请求数 —— 回退链两次尝试就是 2，
-        // 但论文计数仍只有 1（同一篇绝不因多次回退被当成两篇）。
-        sourceStats.apiRequests += outcome.httpRequests
+        return consumeOutcomeInternal(
+            authorEmails = outcome.emails,
+            failureReason = outcome.failureReason,
+            downloadFailureCategory = outcome.downloadFailureCategory,
+            contentObtained = outcome.resolvedFulltextObtained(),
+            httpRequests = outcome.httpRequests,
+            sourceName = source.sourceName,
+            stats = stats,
+            sourceStats = sourceStats,
+            executionId = executionId,
+            identityFactory = paperIdentityFactory(paper)
+        )
+    }
 
-        if (outcome.failureReason != null) {
-            sourceStats.failureReasons.merge(outcome.failureReason, 1) { a, b -> a + b }
-            if (outcome.failureReason == "PDF_DOWNLOAD_FAILED") sourceStats.pdfDownloadFailed++
-            if (outcome.failureReason == "PDF_PARSE_FAILED") sourceStats.pdfParseFailed++
+    /**
+     * I-4：消费（写入/晋升/补全入队）的唯一门禁实现，旧流程与队列共同调用。
+     *
+     * 返回值把旧流程里被吞掉的**可重试写失败**显式表达出来（RAW 写失败、补全入队失败、去重查询失败），
+     * 队列据此不把 job 置为成功；旧流程 [consumeOutcome] 忽略返回值，统计语义逐字不变。
+     */
+    private fun consumeOutcomeInternal(
+        authorEmails: List<AuthorEmail>,
+        failureReason: String?,
+        downloadFailureCategory: String?,
+        contentObtained: Boolean,
+        httpRequests: Int,
+        sourceName: String,
+        stats: DiscoveryStats,
+        sourceStats: SourceStats,
+        executionId: Long?,
+        identityFactory: ConsumeIdentityFactory
+    ): ConsumeOutcomeResult {
+        sourceStats.fulltextAttempted++
+        sourceStats.apiRequests += httpRequests
+
+        if (failureReason != null) {
+            sourceStats.failureReasons.merge(failureReason, 1) { a, b -> a + b }
+            if (failureReason == "PDF_DOWNLOAD_FAILED") sourceStats.pdfDownloadFailed++
+            if (failureReason == "PDF_PARSE_FAILED") sourceStats.pdfParseFailed++
         }
         // c10（I-3）：下载失败按低基数类别分桶（HTTP_403/404/429/5XX/4XX、TLS_ERROR、TIMEOUT、
         // INVALID_CONTENT、NETWORK_ERROR），随 failureReasons 进入任务 details_json。
-        outcome.downloadFailureCategory?.let { category ->
+        downloadFailureCategory?.let { category ->
             sourceStats.failureReasons.merge(category, 1) { a, b -> a + b }
         }
 
-        // c10（I-3）：适配器显式声明优先，null（旧适配器）按改动前的 failureReason 推导。
-        val contentObtained = outcome.resolvedFulltextObtained()
-        if (outcome.emails.isEmpty()) {
-            if (outcome.failureReason == "NO_PMC_ID" || outcome.failureReason == "NO_DOI") {
+        if (authorEmails.isEmpty()) {
+            if (failureReason == "NO_PMC_ID" || failureReason == "NO_DOI") {
                 sourceStats.papersSkippedNoId++
             } else if (contentObtained) {
                 // PDF/XML 取到内容但没有邮箱：内容获取成功、无邮箱单列。HTML 也计入这里，
@@ -1188,58 +1257,83 @@ class ExpertDiscoveryService(
             } else {
                 // PDF_DOWNLOAD_FAILED, PDF_PARSE_FAILED, NO_FULLTEXT, 超时/超限等 —— fulltext not obtained
             }
-            return
+            return ConsumeOutcomeResult(
+                fulltextAttempted = true,
+                fulltextObtained = contentObtained,
+                noEligibleEmail = true,
+                failureReasons = snapshotFailureReasons(sourceStats)
+            )
         }
 
         sourceStats.fulltextObtained++
 
-        for (authorEmail in outcome.emails) {
+        var emailsValid = 0
+        var indexed = 0
+        var duplicates = 0
+        var promoted = 0
+        var rawWriteFailed = false
+        var enqueueFailed = false
+        var dedupFailed = false
+        val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
+
+        for (authorEmail in authorEmails) {
             stats.refreshGlobalCounts()
-            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) return
+            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
             sourceStats.authorsExtracted++
 
             val emailResult = emailValidationService.validate(authorEmail.email)
             if (!emailResult.valid) { sourceStats.emailsRejected++; continue }
             sourceStats.emailsValid++
+            emailsValid++
 
             // I-1（08）：重复命中时只按匹配文档的真实 `_id` 补建缺失任务，不重写整份专家、不算新增。
             val duplicate = when (val emailDedup = existsInRawIndexByEmail(authorEmail.email)) {
                 is DedupResult.Exists -> emailDedup
-                DedupResult.Error -> { sourceStats.dedupErrors++; continue }
+                DedupResult.Error -> { sourceStats.dedupErrors++; dedupFailed = true; continue }
                 DedupResult.NotFound -> null
             }
             if (duplicate != null) {
                 sourceStats.duplicates++
-                duplicate.docId?.let { ensureEnrichmentJob(it, source.sourceName, executionId, sourceStats) }
+                duplicates++
+                duplicate.docId?.let { ensureEnrichmentJob(it, sourceName, executionId, sourceStats) }
                 continue
             }
             if (authorEmail.orcidId != null) {
                 when (val orcidDedup = existsInRawIndexByOrcid(authorEmail.orcidId)) {
                     is DedupResult.Exists -> {
                         sourceStats.duplicates++
-                        orcidDedup.docId?.let { ensureEnrichmentJob(it, source.sourceName, executionId, sourceStats) }
+                        duplicates++
+                        orcidDedup.docId?.let { ensureEnrichmentJob(it, sourceName, executionId, sourceStats) }
                         continue
                     }
-                    DedupResult.Error -> { sourceStats.dedupErrors++; continue }
+                    DedupResult.Error -> { sourceStats.dedupErrors++; dedupFailed = true; continue }
                     DedupResult.NotFound -> {}
                 }
             }
 
-            val profile = buildProfile(paper, authorEmail, emailResult.level)
-            val esDocId = ExpertIdGenerator.generate(authorEmail.orcidId, authorEmail.email)
-            val eligibility = eligibilityService.evaluateEligibility(profile)
+            val identity = identityFactory.create(authorEmail, emailResult.level)
+            val eligibility = eligibilityService.evaluateEligibility(identity.profile)
             val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
             val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
 
-            val profileMap = toIndexMap(profile, paper, esDocId, filterResult, rejectReasons)
-            if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
+            val profileMap = toIndexMap(identity.profile, identity.paper, identity.esDocId, filterResult, rejectReasons)
+            if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+                sourceStats.rawWriteFailed++
+                rawWriteFailed = true
+                continue
+            }
             sourceStats.indexed++
+            indexed++
             // I-1（08）：RAW 落库成功后才入队；入队失败不推进本页（见 enqueueEnrichmentJob）。
-            enqueueEnrichmentJob(esDocId, source.sourceName, executionId, sourceStats)
+            enqueueEnrichmentJob(identity.esDocId, sourceName, executionId, sourceStats)
 
             if (eligibility.eligible) {
-                if (promoteDiscoveredToCandidate(esDocId, profileMap)) sourceStats.promoted++
-                else sourceStats.promotionFailed++
+                if (promoteDiscoveredToCandidate(identity.esDocId, profileMap)) {
+                    sourceStats.promoted++
+                    promoted++
+                } else {
+                    sourceStats.promotionFailed++
+                }
             } else {
                 sourceStats.filtered++
                 for (reason in rejectReasons) {
@@ -1247,6 +1341,21 @@ class ExpertDiscoveryService(
                 }
             }
         }
+
+        enqueueFailed = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) > enqueueFailedBefore
+        return ConsumeOutcomeResult(
+            fulltextAttempted = true,
+            fulltextObtained = true,
+            noEligibleEmail = false,
+            emailsValid = emailsValid,
+            indexedExperts = indexed,
+            duplicateExperts = duplicates,
+            promoted = promoted,
+            rawWriteFailed = rawWriteFailed,
+            enqueueFailed = enqueueFailed,
+            dedupFailed = dedupFailed,
+            failureReasons = snapshotFailureReasons(sourceStats)
+        )
     }
 
     private fun processPaper(
@@ -1258,6 +1367,408 @@ class ExpertDiscoveryService(
     ) {
         consumeOutcome(paper, extractOutcome(paper, source), source, stats, sourceStats, executionId)
     }
+
+    // ------------------------------------------------------------------
+    // c2（I-1/I-2/I-4/I-6）：持久化队列的采集 / 抽取 / 消费接缝
+    //
+    // 这三个方法把「取一页」「抽一条」「消费一条」变成可以分开调用、分开持久化的接缝：
+    // 取数与处理因此彻底解耦（R-1），而门禁（邮箱校验 / 身份去重 / 资格 / RAW 写 / 晋升 /
+    // 补全入队）仍然只有 [consumeOutcomeInternal] 一份实现。
+    // ------------------------------------------------------------------
+
+    /**
+     * I-1/I-6：本查询下**实际参与**的来源名（已启用 + 未被学科范围排除）。
+     * 队列 API 只接受这里返回过的名字，绝不接受任意 source 字符串。
+     */
+    fun queueSourceNames(criteria: PaperSearchCriteria): List<String> {
+        val normalized = queueCriteria(criteria)
+        return resolveEnabledSources(normalized).map { it.sourceName } + orcidQueueSourceNames(normalized)
+    }
+
+    /**
+     * I-1/I-6：ORCID **不在** [resolveEnabledSources] 的论文来源注册表里（它走独立的分页协议），
+     * 因此队列必须显式按同一套规则纳入它：显式指定来源时必须被点名，且不得被学科范围排除。
+     */
+    private fun orcidQueueSourceNames(criteria: PaperSearchCriteria): List<String> {
+        val orcid = orcidProvider.getIfAvailable() ?: return emptyList()
+        if (criteria.sources.isNotEmpty() && !criteria.sources.contains(orcid.sourceName)) return emptyList()
+        if (orcid.sourceName in SubjectScopeCatalog.excludedSources(criteria.subjectScope)) return emptyList()
+        return listOf(orcid.sourceName)
+    }
+
+    /** I-1/I-6：来源名是否是**已校验**的 ORCID（它不在论文来源注册表里，协议也不同）。 */
+    private fun isQueueOrcidSource(criteria: PaperSearchCriteria, sourceName: String): Boolean =
+        orcidQueueSourceNames(queueCriteria(criteria)).contains(sourceName)
+
+    /**
+     * I-1：队列查询的**唯一**规范化入口 —— 固定 `scope=RND_TARGET`（与旧定时运行同一学科范围）、
+     * 清空临时游标。所有 hash / 取数 / 抽取 / 消费都从这里出发，因此 stream 身份与实际查询永不脱节。
+     */
+    private fun queueCriteria(criteria: PaperSearchCriteria): PaperSearchCriteria =
+        criteria.copy(subjectScope = SubjectScopeCatalog.RND_TARGET, cursor = null)
+
+    /**
+     * I-1：某一来源的规范化 query_hash —— 覆盖关键词、机构、国家排除、年份、OA、scope、页大小
+     * 与**本源自己的名字**，与其他 sources 的排列/省略方式无关（sources 恒归一为 `[sourceName]`）。
+     * 同一个来源在不同书写顺序/是否显式列出的条件下得到同一个 hash，因此 stream 身份稳定。
+     */
+    fun queueQueryHash(sourceName: String, criteria: PaperSearchCriteria): String {
+        require(sourceName.isNotBlank()) { "队列来源名不得为空" }
+        val canonical = DiscoveryCheckpointCodec.canonicalCriteria(
+            queueCriteria(criteria).copy(sources = listOf(sourceName))
+        )
+        return sha256Hex(canonical)
+    }
+
+    /**
+     * I-1：旧 v2 消费游标只用于**首次种子**，且只在完整条件可确认匹配时给出。
+     *
+     * 候选是恰好两种旧书写方式：显式单源（`sources=[source]`）与旧定时运行的「全部启用来源」
+     * （`sources=[]`）—— 数据源的查询构造不读 `criteria.sources`，所以这两种书写对**本源**等价。
+     *
+     * - 两条都找不到 → null（无法确认 → 从头保守重放）；
+     * - 任一条是 `EXHAUSTED`（没有游标）→ null：不能把「旧流程已翻到底」当成新流的穷尽，
+     *   否则会静默漏采；
+     * - 两条都存在且游标不同 → null：**禁止挑最大游标**，从头保守重放；
+     * - 结论唯一时才返回该游标。
+     */
+    fun queueLegacySeedCursor(sourceName: String, criteria: PaperSearchCriteria): String? {
+        if (sourceName.isBlank()) return null
+        val normalized = queueCriteria(criteria)
+        val forms = listOf(
+            normalized.copy(sources = listOf(sourceName)),
+            normalized.copy(sources = emptyList())
+        )
+        val checkpoints = forms.mapNotNull { form ->
+            val key = DiscoveryCheckpointCodec.sourceKey(sourceName, form)
+            val stored = try {
+                cursorRepository.findBySourceName(key)?.cursorValue
+            } catch (e: Exception) {
+                log.warn("[{}] 读取旧检查点 {} 失败: {}", sourceName, key, e.message)
+                null
+            } ?: return@mapNotNull null
+            DiscoveryCheckpointCodec.decode(stored) ?: return@mapNotNull null
+        }
+        if (checkpoints.isEmpty()) return null
+        if (checkpoints.any { it.exhausted }) return null
+        val cursors = checkpoints.map { it.cursor }.distinct()
+        if (cursors.size != 1) return null
+        return cursors.first()
+    }
+
+    /**
+     * I-1/I-2/I-6：队列的**单页**采集。每轮每源只取一页（[PIPELINE_PAGE_SIZE] 篇 / 100 条记录），
+     * 不使用 `maxPapersPerSource`/`maxPapersPerRun` 的当日上限（那是旧单次模式的语义）。
+     *
+     * 额度延期（OpenAlex）以 [QueuedSourcePage.deferredUntil] 表达，绝不是失败、也绝不置穷尽；
+     * 取数异常以 [QueuedSourcePage.errorReason] 表达，调用方按来源级错误安排下次尝试。
+     */
+    fun collectQueuePage(
+        sourceName: String,
+        criteria: PaperSearchCriteria,
+        cursor: String?,
+        metadataMaxBytes: Int
+    ): QueuedSourcePage {
+        val orcidSource = if (isQueueOrcidSource(criteria, sourceName)) orcidProvider.getIfAvailable() else null
+        val paperSource = if (orcidSource == null) {
+            resolveEnabledSources(queueCriteria(criteria)).firstOrNull { it.sourceName == sourceName }
+        } else {
+            null
+        }
+        if (orcidSource == null && paperSource == null) {
+            return QueuedSourcePage(
+                sourceName = sourceName, unit = QueueItemUnit.PAPER, items = emptyList(),
+                nextCursor = cursor, exhausted = false, errorReason = QUEUE_SOURCE_NOT_ENABLED
+            )
+        }
+        val unit = if (orcidSource != null) QueueItemUnit.RECORD else QueueItemUnit.PAPER
+        val pageCriteria = queueCriteria(criteria).copy(cursor = cursor, pageSize = PIPELINE_PAGE_SIZE)
+        return try {
+            when {
+                orcidSource != null -> {
+                    val page = orcidSource.searchOrcidPage(pageCriteria)
+                    QueuedSourcePage(
+                        sourceName = sourceName, unit = unit,
+                        items = page.records.map { record ->
+                            envelopeForOrcid(sourceName, record, metadataMaxBytes)
+                        },
+                        nextCursor = page.nextCursor,
+                        exhausted = page.nextCursor == null
+                    )
+                }
+                paperSource is CoreDataSource -> {
+                    val page = paperSource.searchCorePage(pageCriteria)
+                    QueuedSourcePage(
+                        sourceName = sourceName, unit = unit,
+                        items = page.result.papers.map { paper ->
+                            envelopeForPaper(sourceName, paper, metadataMaxBytes)
+                        },
+                        nextCursor = page.result.nextCursor,
+                        exhausted = page.result.nextCursor == null,
+                        windowLimit = page.windowLimit
+                    )
+                }
+                else -> {
+                    val page = requireNotNull(paperSource).searchPapers(pageCriteria)
+                    QueuedSourcePage(
+                        sourceName = sourceName, unit = unit,
+                        items = page.papers.map { paper -> envelopeForPaper(sourceName, paper, metadataMaxBytes) },
+                        nextCursor = page.nextCursor,
+                        exhausted = page.nextCursor == null
+                    )
+                }
+            }
+        } catch (e: OpenAlexBudgetDeferredException) {
+            log.warn("[{}] 队列采集额度延期至 {}：{}", sourceName, e.retryAt, e.reason)
+            QueuedSourcePage(
+                sourceName = sourceName, unit = unit, items = emptyList(),
+                nextCursor = cursor, exhausted = false,
+                deferredUntil = e.retryAt, deferredReason = e.reason.name
+            )
+        } catch (e: Exception) {
+            log.warn("[{}] 队列采集单页失败: {}", sourceName, e.message)
+            QueuedSourcePage(
+                sourceName = sourceName, unit = unit, items = emptyList(),
+                nextCursor = cursor, exhausted = false, errorReason = QUEUE_SEARCH_FAILED
+            )
+        }
+    }
+
+    /**
+     * I-4/I-6：在**队列提取作用域**内抽取一条工作。
+     *
+     * - 作用域由本方法进入/退出（finally），因此每目标域的并发许可只对本队列提取生效；
+     * - 域名许可不可得 → [QueuedItemExtraction.HostBusy]（外层延期，不消耗 attempts）；
+     * - 适配器抛异常 → [QueuedItemExtraction.Failed]（可重试，受 5 次上限约束）；
+     * - 抽取成功（含「确实没有邮箱」）→ [QueuedItemExtraction.Extracted]，结果**可持久化**，
+     *   后续重试直接消费、不再下载；
+     * - 结果超过 `extractionMaxBytes` → [QueuedItemExtraction.TooLarge]（FAILED/EXTRACTION_TOO_LARGE）。
+     */
+    fun extractQueuedItem(
+        envelope: QueuedItemEnvelope,
+        criteria: PaperSearchCriteria,
+        perHostConcurrency: Int,
+        extractionMaxBytes: Int
+    ): QueuedItemExtraction {
+        if (envelope.payloadVersion != QUEUED_PAYLOAD_VERSION_V1) {
+            return QueuedItemExtraction.Failed(QUEUE_UNKNOWN_PAYLOAD_VERSION, retryable = false)
+        }
+        val orcidSource = if (isQueueOrcidSource(criteria, envelope.sourceName)) {
+            orcidProvider.getIfAvailable()
+        } else {
+            null
+        }
+        val paperSource = if (orcidSource == null) {
+            resolveEnabledSources(queueCriteria(criteria)).firstOrNull { it.sourceName == envelope.sourceName }
+        } else {
+            null
+        }
+        if (orcidSource == null && paperSource == null) {
+            return QueuedItemExtraction.Failed(QUEUE_SOURCE_NOT_ENABLED, retryable = false)
+        }
+        val deadline = Instant.now().plusMillis(FulltextRequestGate.PAPER_DEADLINE_MS)
+        return FulltextRequestGate.inQueueExtractionScope(perHostConcurrency, deadline) {
+            try {
+                val outcome = when (envelope.unit) {
+                    QueueItemUnit.RECORD -> {
+                        val orcid = orcidSource
+                            ?: return@inQueueExtractionScope QueuedItemExtraction.Failed(
+                                QUEUE_SOURCE_NOT_ENABLED, retryable = false
+                            )
+                        EmailExtractionOutcome(
+                            emails = orcid.orcidRecordToAuthorEmails(readOrcidRecord(envelope.payloadJson)),
+                            methodUsed = "API_FIELD"
+                        )
+                    }
+                    else -> requireNotNull(paperSource).extractAuthorEmails(readPaper(envelope.payloadJson))
+                }
+                if (FulltextRequestGate.hostBusyInScope()) {
+                    QueuedItemExtraction.HostBusy
+                } else {
+                    val json = objectMapper.writeValueAsString(outcome)
+                    if (utf8Bytes(json) > extractionMaxBytes) {
+                        QueuedItemExtraction.TooLarge
+                    } else {
+                        QueuedItemExtraction.Extracted(
+                            extractionJson = json,
+                            emailsEmpty = outcome.emails.isEmpty(),
+                            httpRequests = outcome.httpRequests,
+                            contentObtained = outcome.resolvedFulltextObtained(),
+                            failureReason = outcome.failureReason
+                        )
+                    }
+                }
+            } catch (e: FulltextRequestGate.HostBusyException) {
+                QueuedItemExtraction.HostBusy
+            } catch (e: Exception) {
+                QueuedItemExtraction.Failed(e.message ?: e.javaClass.simpleName, retryable = true)
+            }
+        }
+    }
+
+    /**
+     * I-4：幂等消费已保存的抽取结果 —— 专家写入仍走原来的门禁与补全入队，
+     * 只有必要写入全部成功（或明确「无合格邮箱」）才返回 `succeeded = true`。
+     *
+     * 计数与门禁使用的 `stats` 是**每次调用的临时对象**：它是门禁的输入（作者防护等），
+     * 不是队列的权威计数（I-8 的计数在 pipeline/stream 行上按终态 CAS 累加）。
+     */
+    fun consumeQueuedItem(
+        envelope: QueuedItemEnvelope,
+        extractionJson: String,
+        executionId: Long?
+    ): QueuedItemConsumption {
+        if (envelope.payloadVersion != QUEUED_PAYLOAD_VERSION_V1) {
+            return QueuedItemConsumption(unrecoverableReason = QUEUE_UNKNOWN_PAYLOAD_VERSION)
+        }
+        val extraction = try {
+            objectMapper.readValue(extractionJson, EmailExtractionOutcome::class.java)
+        } catch (e: Exception) {
+            return QueuedItemConsumption(unrecoverableReason = QUEUE_EXTRACTION_UNREADABLE)
+        }
+        val identityFactory = try {
+            when (envelope.unit) {
+                QueueItemUnit.RECORD -> orcidIdentityFactory(readOrcidRecord(envelope.payloadJson))
+                else -> paperIdentityFactory(readPaper(envelope.payloadJson))
+            }
+        } catch (e: Exception) {
+            return QueuedItemConsumption(unrecoverableReason = QUEUE_PAYLOAD_UNREADABLE)
+        }
+        val stats = DiscoveryStats()
+        val sourceStats = stats.getOrCreateSourceStats(envelope.sourceName, "PIPELINE")
+        val result = consumeOutcomeInternal(
+            authorEmails = extraction.emails,
+            failureReason = extraction.failureReason,
+            downloadFailureCategory = extraction.downloadFailureCategory,
+            contentObtained = extraction.resolvedFulltextObtained(),
+            httpRequests = extraction.httpRequests,
+            sourceName = envelope.sourceName,
+            stats = stats,
+            sourceStats = sourceStats,
+            executionId = executionId,
+            identityFactory = identityFactory
+        )
+        return QueuedItemConsumption(
+            indexedExperts = result.indexedExperts,
+            duplicateExperts = result.duplicateExperts,
+            promoted = result.promoted,
+            emailsValid = result.emailsValid,
+            rawWriteFailed = result.rawWriteFailed,
+            enqueueFailed = result.enqueueFailed,
+            dedupFailed = result.dedupFailed,
+            failureReasons = result.failureReasons
+        )
+    }
+
+    /** I-2：论文条目的身份 + 版本化负载（全文只在**没有可重取地址**时才进负载）。 */
+    private fun envelopeForPaper(
+        sourceName: String,
+        paper: PaperMetadata,
+        metadataMaxBytes: Int
+    ): QueuedItemEnvelope {
+        val publiclyDownloadable = !paper.downloadUrl.isNullOrBlank() || paper.candidateDownloadUrls.isNotEmpty()
+        val embeddedFullText = if (publiclyDownloadable) null else paper.fullText
+        val stored = paper.copy(fullText = embeddedFullText)
+        val payloadJson = objectMapper.writeValueAsString(stored)
+        val bytes = utf8Bytes(payloadJson)
+        val (itemKey, quality) = paperIdentity(paper, payloadJson)
+        return QueuedItemEnvelope(
+            sourceName = sourceName,
+            itemKey = itemKey,
+            identityQuality = quality,
+            unit = QueueItemUnit.PAPER,
+            payloadVersion = QUEUED_PAYLOAD_VERSION_V1,
+            payloadJson = payloadJson,
+            payloadBytes = bytes,
+            publiclyDownloadable = publiclyDownloadable || !embeddedFullText.isNullOrBlank(),
+            rejectReason = if (bytes > metadataMaxBytes) QUEUE_PAYLOAD_TOO_LARGE else null
+        )
+    }
+
+    /** I-2：ORCID 条目的身份 + 版本化负载；键就是完整 ORCID，不做哈希。 */
+    private fun envelopeForOrcid(
+        sourceName: String,
+        record: OrcidDataSource.OrcidRecord,
+        metadataMaxBytes: Int
+    ): QueuedItemEnvelope {
+        val payloadJson = objectMapper.writeValueAsString(record)
+        val bytes = utf8Bytes(payloadJson)
+        val orcid = record.orcidId.trim()
+        return QueuedItemEnvelope(
+            sourceName = sourceName,
+            itemKey = orcid.ifBlank { "RECORD:${sha256Hex(payloadJson)}" },
+            identityQuality = if (orcid.isBlank()) QueueIdentityQuality.PAYLOAD_HASH else QueueIdentityQuality.ORCID,
+            unit = QueueItemUnit.RECORD,
+            payloadVersion = QUEUED_PAYLOAD_VERSION_V1,
+            payloadJson = payloadJson,
+            payloadBytes = bytes,
+            publiclyDownloadable = true,
+            rejectReason = when {
+                orcid.isBlank() -> QUEUE_UNIDENTIFIABLE
+                bytes > metadataMaxBytes -> QUEUE_PAYLOAD_TOO_LARGE
+                else -> null
+            }
+        )
+    }
+
+    /**
+     * I-2：论文工作身份 —— 优先「类型前缀 + 规范化标识的 SHA-256」（DOI/PMCID/PMID），
+     * 没有可靠标识时退化为**规范序列化元数据**的 SHA-256 并标记 `PAYLOAD_HASH`。
+     * 绝不用标题做模糊合并（标题相似的两篇不同论文必须两条）。
+     */
+    private fun paperIdentity(paper: PaperMetadata, payloadJson: String): Pair<String, String> {
+        normalizedDoi(paper.doi)?.let {
+            return "${QueueIdentityQuality.DOI}:${sha256Hex(it)}" to QueueIdentityQuality.DOI
+        }
+        normalizedPmcid(paper.pmcId)?.let {
+            return "${QueueIdentityQuality.PMCID}:${sha256Hex(it)}" to QueueIdentityQuality.PMCID
+        }
+        normalizedPmid(paper.pmid)?.let {
+            return "${QueueIdentityQuality.PMID}:${sha256Hex(it)}" to QueueIdentityQuality.PMID
+        }
+        return "${QueueIdentityQuality.PAYLOAD_HASH}:${sha256Hex(payloadJson)}" to QueueIdentityQuality.PAYLOAD_HASH
+    }
+
+    private fun normalizedDoi(raw: String?): String? {
+        val value = raw?.trim()?.lowercase(Locale.ROOT) ?: return null
+        if (value.isEmpty()) return null
+        return value
+            .removePrefix("https://doi.org/")
+            .removePrefix("http://doi.org/")
+            .removePrefix("https://dx.doi.org/")
+            .removePrefix("doi:")
+            .trim()
+            .ifEmpty { null }
+    }
+
+    private fun normalizedPmcid(raw: String?): String? {
+        val value = raw?.trim()?.uppercase(Locale.ROOT) ?: return null
+        if (value.isEmpty()) return null
+        return if (value.startsWith("PMC")) value else "PMC$value"
+    }
+
+    private fun normalizedPmid(raw: String?): String? {
+        val digits = raw?.trim()?.filter { it.isDigit() } ?: return null
+        return digits.ifEmpty { null }
+    }
+
+    private fun readPaper(payloadJson: String): PaperMetadata =
+        objectMapper.readValue(payloadJson, PaperMetadata::class.java)
+
+    private fun readOrcidRecord(payloadJson: String): OrcidDataSource.OrcidRecord =
+        objectMapper.readValue(payloadJson, OrcidDataSource.OrcidRecord::class.java)
+
+    private fun sha256Hex(value: String): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+        val builder = StringBuilder(digest.size * 2)
+        for (byte in digest) {
+            builder.append(HEX_DIGITS[(byte.toInt() shr 4) and 0x0F])
+            builder.append(HEX_DIGITS[byte.toInt() and 0x0F])
+        }
+        return builder.toString()
+    }
+
+    private fun utf8Bytes(value: String): Long = value.toByteArray(Charsets.UTF_8).size.toLong()
 
     // ------------------------------------------------------------------
     // I-1（08）：RAW 先落地再入队
@@ -2362,6 +2873,145 @@ class ExpertDiscoveryService(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// c2（I-1/I-2/I-4）：持久化队列的对外契约类型
+// ---------------------------------------------------------------------------
+
+/** I-2：负载版本。未知版本**不得消费**（形成可观测失败，绝不按旧/新语义猜测）。 */
+const val QUEUED_PAYLOAD_VERSION_V1: Int = 1
+
+/** I-2/I-5：不可作为正常工作消费的负载原因（形成轻量可观测 FAILED 诊断，绝不静默丢弃）。 */
+const val QUEUE_PAYLOAD_TOO_LARGE: String = "PAYLOAD_TOO_LARGE"
+
+/** I-2：无可靠身份（例如没有 ORCID 的 ORCID 记录）。 */
+const val QUEUE_UNIDENTIFIABLE: String = "UNIDENTIFIABLE"
+
+/** I-6：来源名不在本次启用集合内（拒绝把任意 source 字符串当数据源）。 */
+const val QUEUE_SOURCE_NOT_ENABLED: String = "SOURCE_NOT_ENABLED"
+
+/** I-1/I-6：来源级取数失败（下一次尝试重放同一页，游标不推进）。 */
+const val QUEUE_SEARCH_FAILED: String = "SEARCH_FAILED"
+
+/** I-2：负载版本未知。 */
+const val QUEUE_UNKNOWN_PAYLOAD_VERSION: String = "UNKNOWN_PAYLOAD_VERSION"
+
+/** I-4：抽取结果无法反序列化。 */
+const val QUEUE_EXTRACTION_UNREADABLE: String = "EXTRACTION_UNREADABLE"
+
+/** I-2：元数据负载无法反序列化。 */
+const val QUEUE_PAYLOAD_UNREADABLE: String = "PAYLOAD_UNREADABLE"
+
+/** I-5：抽取结果超过 `extraction-max-bytes`。 */
+const val QUEUE_EXTRACTION_TOO_LARGE: String = "EXTRACTION_TOO_LARGE"
+
+private val HEX_DIGITS = "0123456789abcdef".toCharArray()
+
+/**
+ * I-2：一条队列工作的**完整信封**（身份 + 版本 + 序列化负载 + 字节数 + 可见性）。
+ *
+ * [payloadJson] 就是 `payload_version=1` 的序列化契约（PAPER = `PaperMetadata`，RECORD = ORCID 记录）；
+ * [itemKey] 是队列唯一键的第二段（`UNIQUE(stream_id, item_key)`），[identityQuality] 说明它是怎么来的。
+ */
+data class QueuedItemEnvelope(
+    val sourceName: String,
+    val itemKey: String,
+    val identityQuality: String,
+    /** `PAPER` / `RECORD`（[QueueItemUnit]）。 */
+    val unit: String,
+    val payloadVersion: Int,
+    val payloadJson: String,
+    val payloadBytes: Long,
+    /** I-6：可公开下载（有可重取地址或不需要下载）→ 消费者在来源内优先处理。 */
+    val publiclyDownloadable: Boolean,
+    /** I-2/I-5：非空即本条不能作为正常工作消费，形成轻量 FAILED 诊断。 */
+    val rejectReason: String? = null
+)
+
+/**
+ * I-1/I-6：一次**单页**采集的结果。
+ *
+ * - [nextCursor] 是下一页要用的游标；[exhausted] 只在把来源翻到底时为 true；
+ * - [deferredUntil]/[deferredReason]：额度延期（不是失败，也不是穷尽）；
+ * - [errorReason]：来源级取数失败（调用方按来源安排下次尝试，游标保持进入值）；
+ * - [windowLimit]：CORE 分片触达供应商 offset 窗口（已切下一分片，未覆盖尾部只记录）。
+ */
+data class QueuedSourcePage(
+    val sourceName: String,
+    val unit: String,
+    val items: List<QueuedItemEnvelope>,
+    val nextCursor: String?,
+    val exhausted: Boolean,
+    val deferredUntil: Instant? = null,
+    val deferredReason: String? = null,
+    val errorReason: String? = null,
+    val windowLimit: Boolean = false
+)
+
+/**
+ * I-4/I-6：一条工作的抽取结果。
+ *
+ * - [Extracted] 的 `extractionJson` **非空即可靠**：后续尝试直接消费、不再下载（I-4）；
+ * - [HostBusy] 只延期、绝不消耗 attempts（I-6）；
+ * - [Failed] 是适配器抛出的真实异常：可重试的受 5 次上限与退避约束，不可重试的直接 FAILED；
+ * - [TooLarge] 形成 FAILED/EXTRACTION_TOO_LARGE 诊断，绝不写截断专家。
+ */
+sealed class QueuedItemExtraction {
+    data class Extracted(
+        val extractionJson: String,
+        val emailsEmpty: Boolean,
+        val httpRequests: Int,
+        val contentObtained: Boolean,
+        val failureReason: String?
+    ) : QueuedItemExtraction()
+
+    object HostBusy : QueuedItemExtraction()
+
+    data class Failed(val reason: String, val retryable: Boolean) : QueuedItemExtraction()
+
+    object TooLarge : QueuedItemExtraction()
+}
+
+/**
+ * I-4：消费已保存抽取结果的结果。
+ *
+ * [succeeded] 为 true 只表示「必要写入全部成功，或明确判定没有可收录邮箱」——
+ * 后者可以 `SUCCEEDED` 但新增 0（原始 0 与「写失败」必须可区分）。
+ */
+data class QueuedItemConsumption(
+    val indexedExperts: Int = 0,
+    val duplicateExperts: Int = 0,
+    val promoted: Int = 0,
+    val emailsValid: Int = 0,
+    val rawWriteFailed: Boolean = false,
+    val enqueueFailed: Boolean = false,
+    val dedupFailed: Boolean = false,
+    val failureReasons: Map<String, Int> = emptyMap(),
+    /** 不可恢复的消费失败（未知版本 / 负载不可读）—— job 直接 FAILED 并给出原因。 */
+    val unrecoverableReason: String? = null
+) {
+    val succeeded: Boolean
+        get() = unrecoverableReason == null && !rawWriteFailed && !enqueueFailed && !dedupFailed
+}
+
+/**
+ * I-4（c2）：`consumeOutcome` 的显式结果 —— 队列据它决定 job 终态；旧流程忽略返回值，
+ * 统计语义逐字不变（改动的只是「吞掉的写失败」现在有返回值可观察）。
+ */
+data class ConsumeOutcomeResult(
+    val extractionFailed: Boolean = false,
+    val fulltextAttempted: Boolean = false,
+    val fulltextObtained: Boolean = false,
+    val noEligibleEmail: Boolean = false,
+    val emailsValid: Int = 0,
+    val indexedExperts: Int = 0,
+    val duplicateExperts: Int = 0,
+    val promoted: Int = 0,
+    val rawWriteFailed: Boolean = false,
+    val enqueueFailed: Boolean = false,
+    val dedupFailed: Boolean = false,
+    val failureReasons: Map<String, Int> = emptyMap()
+)
 
 /**
  * I-1: 单来源一次运行的结果。[resumeCursor] 是可以安全续跑的游标（首请求失败/部分页/取消/预算停止

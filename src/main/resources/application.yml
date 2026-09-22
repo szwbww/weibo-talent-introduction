@@ -188,6 +188,25 @@ talent-introduction:
     # I-2: 发现后自动补全默认关闭，验收后在服务器开启；批次上限 100（只是一批，不是每日总量）。
     auto-enrichment-enabled: ${EXPERT_DISCOVERY_AUTO_ENRICHMENT_ENABLED:false}
     auto-enrichment-batch-size: ${EXPERT_DISCOVERY_AUTO_ENRICHMENT_BATCH_SIZE:100}
+    # c2（I-5/I-6/I-7）: 持久化采集队列（取数与处理解耦）。pipeline-enabled 默认 false ——
+    # 生产入口（controller/scheduler）在下一阶段才切换，本阶段只由受控服务调用 launch/tick 验收。
+    # - queue-high/low-water：活跃 job 高/低水位；触达高水位整页不入队、游标不推进，
+    #   必须回落到低水位且字节足够容纳一页才恢复（启动校验 0 < low < high）。
+    # - queue-max-bytes：实际负载 + 在途结果预留的总上限（默认 1 GiB）；启动校验必须至少容一页。
+    # - metadata/extraction-max-bytes：单条元数据/抽取结果上限；超限形成轻量 FAILED 诊断。
+    # - per-host-concurrency：同一目标域（含重定向落点）的最大在飞 HTTP 请求数。
+    # - pipeline-tick：tick 最小间隔；窗口长度沿用上面的 time-budget（4h）。
+    # - pipeline-fetch-concurrency：新队列提取线程数（= 全局最多同时 8 个提取任务）；
+    #   旧 fetch-concurrency / discoveryFetchExecutor 语义逐字不变。
+    pipeline-enabled: ${EXPERT_DISCOVERY_PIPELINE_ENABLED:false}
+    queue-high-water: ${EXPERT_DISCOVERY_QUEUE_HIGH_WATER:20000}
+    queue-low-water: ${EXPERT_DISCOVERY_QUEUE_LOW_WATER:10000}
+    queue-max-bytes: ${EXPERT_DISCOVERY_QUEUE_MAX_BYTES:1073741824}
+    metadata-max-bytes: ${EXPERT_DISCOVERY_METADATA_MAX_BYTES:65536}
+    extraction-max-bytes: ${EXPERT_DISCOVERY_EXTRACTION_MAX_BYTES:32768}
+    per-host-concurrency: ${EXPERT_DISCOVERY_PER_HOST_CONCURRENCY:2}
+    pipeline-tick: ${EXPERT_DISCOVERY_PIPELINE_TICK:30s}
+    pipeline-fetch-concurrency: ${EXPERT_DISCOVERY_PIPELINE_FETCH_CONCURRENCY:8}
     europe-pmc:
       enabled: ${EUROPE_PMC_ENABLED:true}
       base-url: ${EUROPE_PMC_BASE_URL:https://www.ebi.ac.uk/europepmc/webservices/rest}
