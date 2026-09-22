@@ -31,6 +31,8 @@ class OpenAlexRequestPolicyTest {
         override fun now(): Instant = synchronized(this) { current }
 
         override fun sleep(ms: Long) {
+            // 与 Thread.sleep 一致：负等待必须抛 IllegalArgumentException，否则测试无法证明策略不会传入非正值。
+            if (ms < 0L) throw IllegalArgumentException("timeout value is negative")
             synchronized(this) {
                 sleeps += ms
                 current = current.plusMillis(ms)
@@ -611,6 +613,25 @@ class OpenAlexRequestPolicyTest {
         assertEquals(DeferredReason.RATE_LIMIT, (deferred as Permit.Deferred).reason)
         assertEquals(100_000L, Duration.between(recorder.current, deferred.retryAt).toMillis())
         assertTrue(recorder.sleeps.isEmpty(), "超过内联等待上限时必须返回 retryAt 而不是长时间 sleep")
+    }
+
+    @Test
+    fun `a rate-limit rejection whose retryAt already elapsed defers instead of sleeping (I-4)`() {
+        val real = InMemoryOpenAlexBudgetStore()
+        val slot = time.current.plusMillis(200)
+        // 存储往返（锁等待 / 校准 HTTP）耗时超过剩余槽位：reserve 返回的共享 retryAt 在计算等待时已经过去，
+        // 于是 waitMs 为负 —— 修复前会把它交给 Thread.sleep 并抛 IllegalArgumentException。
+        val store = object : OpenAlexBudgetStore by real {
+            override fun reserve(request: BudgetReserveRequest): BudgetReserveResult {
+                time.current = time.current.plusSeconds(5)
+                return BudgetReserveResult.Rejected(DeferredReason.RATE_LIMIT, slot)
+            }
+        }
+        val policy = policy(store = store)
+
+        val deferred = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+        assertEquals(Permit.Deferred(DeferredReason.RATE_LIMIT, slot), deferred)
+        assertTrue(time.sleeps.none { it <= 0L }, "非正等待绝不允许 sleep（实际 ${time.sleeps}）")
     }
 
     /** Delay the policy inserts between two back-to-back requests at the given configured rate. */

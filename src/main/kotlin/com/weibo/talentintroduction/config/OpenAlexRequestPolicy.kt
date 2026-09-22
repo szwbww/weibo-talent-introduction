@@ -857,6 +857,13 @@ class OpenAlexRequestPolicy(
                 is BudgetReserveResult.Rejected -> {
                     if (result.reason == DeferredReason.RATE_LIMIT) {
                         val waitMs = Duration.between(time.now(), result.retryAt).toMillis()
+                        // I-4：槽位/共享冷却可能在存储往返期间已经过去，使 waitMs 非正。绝不能把它交给
+                        // Thread.sleep（负值抛 IllegalArgumentException），而是重读账本重新判断；重试预算
+                        // 耗尽时仍由下方 defer(RATE_LIMIT, retryAt) 兜底，调用方拿到 Deferred 而不是异常。
+                        if (waitMs <= 0L && attempt < MAX_RATE_WAIT_RETRIES) {
+                            attempt++
+                            continue
+                        }
                         if (waitMs <= inlineWaitCapMs() && attempt < MAX_RATE_WAIT_RETRIES) {
                             time.sleep(waitMs)
                             attempt++
