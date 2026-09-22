@@ -2190,8 +2190,11 @@ describe("fast-p 07 · S-1/S-2: 样式与 DOM 合同", () => {
     const stylesSource = fs.readFileSync(path.join(ROOT, "styles.css"), "utf-8");
     const chatCss = fs.readFileSync(path.join(ROOT, "mailbox-chat.css"), "utf-8");
 
-    it("S-2 全文逐字追加到 styles.css 末尾", () => {
-        assert.ok(stylesSource.endsWith(S2_BLOCK), "S-2 必须是 styles.css 的最后一块且逐字一致");
+    it("S-2 全文逐字保留在 styles.css", () => {
+        // 2026-09-22 计划 task-activity-center 的 S-0 要求把新的 task-center 合同块
+        // 追加到 styles.css 末尾，S-2 因此不再居末（其后的 S-0 块不含 .outbound-* 规则）。
+        // 本断言只保留原始意图：S-2 必须逐字仍在文件里。
+        assert.ok(stylesSource.includes(S2_BLOCK), "S-2 必须逐字保留在 styles.css 中");
     });
 
     it("mailbox-chat.css 未被 outbound-* 规则污染（独立边界）", () => {

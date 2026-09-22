@@ -553,7 +553,7 @@ const viewMeta = {
     "meeting-calendar": ["会议日历", "按北京时间的会议排期月历与列表，支持新增、改期与取消。"],
     "inbound-summary": ["来信汇总", "按标签汇总来信、查看往来记录与标签统计。"],
     "ai-training": ["AI 回复训练", "导入提炼 QA、配置提示词与约束，用历史邮件模拟 AI 回复效果。"],
-    tasks: ["任务记录", "查看定时任务、队列消费和失败记录。"]
+    tasks: ["任务记录", "统一查看后台任务进度、执行结果和日志。"]
 };
 
 const statusLabels = {
@@ -753,28 +753,812 @@ function hideProgressBar() {
     setTimeout(() => { bar.hidden = true; }, 2000);
 }
 
+/**
+ * 登录、切回专家列表时的幂等启动点（I-1）。
+ *
+ * 原实现遍历 taskButtonMapping、给第一个 RUNNING/CANCELLING 调用 openTaskModal —— 那是
+ * 自动弹框的真实根因。现在它只启动全站只读观察器：不遍历任务按钮、不创建恢复型旧 watcher、
+ * 不打开任何弹框。手动任务的启动/控制弹框仍由用户主动点击触发（R-1）。
+ */
 async function resumeProgressPollingIfNeeded() {
-    let firstRunningTask = null;
-    for (const taskType of Object.keys(taskButtonMapping)) {
-        try {
-            const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
-            await handleAuthResponse(response);
-            if (response.status === 204 || !response.ok) continue;
-            const progress = await response.json();
-            if (progress.status === "RUNNING" || progress.status === "CANCELLING") {
-                const mapping = taskButtonMapping[taskType];
-                if (mapping) setTaskButtonRunning(mapping.btnId);
-                startTaskWatcher(taskType);
-                if (!firstRunningTask) {
-                    firstRunningTask = { taskType, mapping };
-                }
+    startTaskActivityPolling();
+}
+
+// ── Task activity observer (T-3/T-4, I-1/I-5/I-6/I-7) ───────────────────────────────
+// 自动入口只允许：启动/刷新只读观察器 + 更新任务中心 DOM。禁止 openTaskModal /
+// openTaskLaunchModal / openBatchSendTaskModal，禁止改 currentTaskModal、body.modal-open
+// 或跳转视图（I-1）。
+
+const TASK_ACTIVITY_POLL_INTERVAL_MS = 5000;
+const TASK_ACTIVITY_PAGE_SIZE = 6;
+const TASK_ACTIVITY_LOG_LINE_LIMIT = 50;
+
+/** 触发方式显示固定映射：不能按 taskType 猜触发来源（catalog.group 只是类型分类）。 */
+const taskActivityTriggerLabels = {
+    SCHEDULED: "定时触发",
+    QUEUE: "队列触发",
+    MANUAL: "手动触发",
+    MANUAL_ALL: "手动全量",
+    MANUAL_SELECTIVE: "手动选中"
+};
+
+const TASK_ACTIVITY_NOTE_OK = "后台运行，不影响当前操作 · 约每 5 秒更新 · 按任务记录统计";
+const TASK_ACTIVITY_NOTE_STALE = "更新失败，显示上次结果 · 按任务记录统计";
+
+/** 全部为内存 UI 状态：不写 localStorage，不建通用 store。 */
+const taskActivityState = {
+    timer: null,
+    started: false,
+    inFlight: false,
+    sessionGeneration: 0,
+    listRequestSequence: 0,
+    activePage: 0,
+    lastTotal: null,
+    lastItems: [],
+    lastRenderedTotal: null,
+    firstSnapshotDone: false,
+    stale: false,
+    pendingRefresh: false,
+    detailId: null,
+    detailType: null,
+    detailHasProgressUi: false,
+    detailTerminal: false,
+    detailGeneration: 0
+};
+
+function taskActivityDocumentHidden() {
+    return typeof document !== "undefined" && document.hidden === true;
+}
+
+function taskActivityTriggerLabel(triggerType) {
+    const raw = String(triggerType ?? "");
+    return taskActivityTriggerLabels[raw] || raw;
+}
+
+function formatTaskActivityElapsed(seconds) {
+    const parsed = Number(seconds);
+    const safe = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+    const hours = Math.floor(safe / 3600);
+    const minutes = Math.floor((safe % 3600) / 60);
+    const secs = safe % 60;
+    const mm = String(minutes).padStart(2, "0");
+    const ss = String(secs).padStart(2, "0");
+    return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function taskActivitySafeCount(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) return 0;
+    return Math.floor(parsed);
+}
+
+function taskActivitySafePercentage(value) {
+    if (value == null) return null;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
+function taskActivityExecutionId(value) {
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed) || parsed <= 0) return null;
+    return parsed;
+}
+
+/**
+ * 卡片状态标签：DB 行状态原样经 labelStatus 渲染，只在内存进度也是 CANCELLING 时
+ * 才补充展示"取消中"（I-3）——不把内存状态写回记录状态。
+ */
+function taskActivityStatusLabel(item) {
+    const progress = item.progress && typeof item.progress === "object" ? item.progress : null;
+    if (progress && progress.status === "CANCELLING") return "取消中";
+    return labelStatus(item.status);
+}
+
+function taskActivityCanOpenControl() {
+    return taskActivityState.detailType != null && !!taskButtonMapping[taskActivityState.detailType];
+}
+
+// ── 生命周期 ────────────────────────────────────────────────────────────────────────
+
+/** 幂等启动：重复调用不会产生第二条轮询链（I-5）。 */
+function startTaskActivityPolling() {
+    if (taskActivityState.started) return;
+    taskActivityState.started = true;
+    taskActivityState.sessionGeneration += 1;
+    refreshTaskActivity();
+}
+
+/**
+ * 退出/鉴权失效/强制改密时停止：（I-5）清 timer、generation++ 使迟到响应全部失效、
+ * 清选中详情与计数，且旧 finally 不得重新挂上 timer。
+ */
+function stopTaskActivityPolling() {
+    clearTimeout(taskActivityState.timer);
+    taskActivityState.timer = null;
+    taskActivityState.started = false;
+    taskActivityState.inFlight = false;
+    taskActivityState.pendingRefresh = false;
+    taskActivityState.sessionGeneration += 1;
+    taskActivityState.listRequestSequence += 1;
+    taskActivityState.activePage = 0;
+    taskActivityState.lastTotal = null;
+    taskActivityState.lastItems = [];
+    taskActivityState.lastRenderedTotal = null;
+    taskActivityState.firstSnapshotDone = false;
+    taskActivityState.stale = false;
+    closeTaskActivityDetail();
+    resetTaskActivityDom();
+}
+
+function resetTaskActivityDom() {
+    paintTaskActivityEntryPoints();
+    const countEl = $("#taskActiveCount");
+    if (countEl) countEl.textContent = "—";
+    const updated = $("#taskActiveUpdated");
+    if (updated) {
+        updated.textContent = "正在读取任务状态…";
+        updated.classList.remove("task-center-stale");
+    }
+    const cards = $("#taskActiveCards");
+    if (cards) cards.innerHTML = "";
+    const empty = $("#taskActiveEmpty");
+    if (empty) {
+        empty.hidden = true;
+        empty.textContent = "暂无执行中的任务";
+    }
+    const pager = $("#taskActivePager");
+    if (pager) pager.hidden = true;
+    const hint = $("#taskHistoryRefreshHint");
+    if (hint) hint.hidden = true;
+}
+
+// ── 轮询 ────────────────────────────────────────────────────────────────────────────
+
+function scheduleTaskActivityRefresh(delayMs) {
+    clearTimeout(taskActivityState.timer);
+    taskActivityState.timer = setTimeout(() => {
+        taskActivityState.timer = null;
+        refreshTaskActivity();
+    }, delayMs);
+}
+
+function taskActivityResponseIsCurrent(generation, sequence, page, inTasksView) {
+    if (!taskActivityState.started) return false;
+    if (taskActivityState.sessionGeneration !== generation) return false;
+    if (taskActivityState.listRequestSequence !== sequence) return false;
+    if (inTasksView && (state.view !== "tasks" || taskActivityState.activePage !== page)) return false;
+    return true;
+}
+
+/**
+ * 串行轮询：登录后立即查询，此后每次请求（含详情）结束再挂 5000ms 单个 setTimeout。
+ * 所有显式刷新入口只设置一个 pendingRefresh，由 finally 统一决定"立即补一轮"还是"挂定时器"，
+ * 不允许每个入口各挂一个 timer，也不允许并发请求（I-5）。
+ */
+async function refreshTaskActivity() {
+    if (!taskActivityState.started) return;
+    if (taskActivityState.inFlight) {
+        taskActivityState.pendingRefresh = true;
+        return;
+    }
+    taskActivityState.inFlight = true;
+    const generation = taskActivityState.sessionGeneration;
+    const sequence = ++taskActivityState.listRequestSequence;
+    const inTasksView = state.view === "tasks";
+    const page = inTasksView ? taskActivityState.activePage : 0;
+    // 不在任务页时只取 1 条，用于全局计数；六张卡片不能被这条后台响应替换（I-5）。
+    const size = inTasksView ? TASK_ACTIVITY_PAGE_SIZE : 1;
+    try {
+        const data = await api(`/api/task-executions/active?page=${page}&size=${size}`);
+        if (!taskActivityResponseIsCurrent(generation, sequence, page, inTasksView)) return;
+        applyTaskActivitySnapshot(data, inTasksView);
+        if (inTasksView) await refreshTaskActivityDetailIfNeeded(generation);
+    } catch (e) {
+        // 请求失败保留上次值并标 stale；不置零、不 toast、不并行重试（I-5）。
+        if (taskActivityResponseIsCurrent(generation, sequence, page, inTasksView)) {
+            renderTaskActivityError();
+        }
+    } finally {
+        taskActivityState.inFlight = false;
+        if (taskActivityState.started && taskActivityState.sessionGeneration === generation) {
+            if (taskActivityDocumentHidden()) {
+                // 隐藏页暂停新请求；恢复可见时由 visibilitychange 立即补一轮。
+            } else if (taskActivityState.pendingRefresh) {
+                taskActivityState.pendingRefresh = false;
+                refreshTaskActivity();
+            } else {
+                scheduleTaskActivityRefresh(TASK_ACTIVITY_POLL_INTERVAL_MS);
             }
-        } catch (e) { /* 静默 */ }
+        }
     }
-    if (firstRunningTask && !currentTaskModal) {
-        const { taskType, mapping } = firstRunningTask;
+}
+
+function taskActivityCollectionChanged(previous, items) {
+    if (previous.length !== items.length) return true;
+    for (let index = 0; index < items.length; index += 1) {
+        const before = previous[index];
+        const after = items[index];
+        if (!before || before.id !== after.id || before.status !== after.status) return true;
+    }
+    return false;
+}
+
+function applyTaskActivitySnapshot(data, inTasksView) {
+    const rawTotal = Number(data && data.total);
+    const total = Number.isFinite(rawTotal) && rawTotal > 0 ? Math.floor(rawTotal) : 0;
+    const items = data && Array.isArray(data.items) ? data.items : [];
+    taskActivityState.lastTotal = total;
+    taskActivityState.stale = false;
+    const updated = $("#taskActiveUpdated");
+    if (updated) {
+        updated.textContent = TASK_ACTIVITY_NOTE_OK;
+        updated.classList.remove("task-center-stale");
+    }
+    paintTaskActivityEntryPoints();
+    if (!inTasksView) {
+        // 后台只取 1 条，不能作为卡片集合基线，也不能据此发完成/失败提示（I-7）。
+        taskActivityState.firstSnapshotDone = false;
+        return;
+    }
+    const maxPage = total > 0 ? Math.ceil(total / TASK_ACTIVITY_PAGE_SIZE) - 1 : 0;
+    if (taskActivityState.activePage > maxPage) {
+        // 当前页已被清理：归位到 maxPage 并安排一次新查询，不递归无限重试（I-5）。
+        taskActivityState.activePage = maxPage;
+        taskActivityState.pendingRefresh = true;
+        renderTaskActivityTransientEmpty();
+        return;
+    }
+    const previous = taskActivityState.lastItems;
+    if (taskActivityState.firstSnapshotDone
+        && (taskActivityState.lastRenderedTotal !== total || taskActivityCollectionChanged(previous, items))) {
+        showTaskActivityListHint();
+    }
+    taskActivityState.firstSnapshotDone = true;
+    taskActivityState.lastRenderedTotal = total;
+    taskActivityState.lastItems = items
+        .map((item) => ({
+            id: taskActivityExecutionId(item.id),
+            taskType: String(item.taskType ?? ""),
+            status: String(item.status ?? ""),
+            hasProgressUi: item.hasProgressUi === true,
+            elapsedSeconds: taskActivitySafeCount(item.elapsedSeconds)
+        }))
+        .filter((row) => row.id != null);
+    const countEl = $("#taskActiveCount");
+    if (countEl) countEl.textContent = String(total);
+    if (total === 0) {
+        const cards = $("#taskActiveCards");
+        if (cards) cards.innerHTML = "";
+        const empty = $("#taskActiveEmpty");
+        if (empty) {
+            empty.hidden = false;
+            empty.textContent = "暂无执行中的任务";
+        }
+    } else if (items.length === 0) {
+        renderTaskActivityTransientEmpty();
+    } else {
+        const empty = $("#taskActiveEmpty");
+        if (empty) empty.hidden = true;
+        renderTaskActivityCards(items);
+    }
+    renderTaskActivityPager(total);
+}
+
+function renderTaskActivityTransientEmpty() {
+    // count/items 竞争导致的暂空：不误标"无任务"，下一轮自愈（I-2 交互点 X-2）。
+    const empty = $("#taskActiveEmpty");
+    if (empty) {
+        empty.hidden = false;
+        empty.textContent = "正在刷新任务列表…";
+    }
+}
+
+function renderTaskActivityError() {
+    taskActivityState.stale = true;
+    paintTaskActivityEntryPoints();
+    const updated = $("#taskActiveUpdated");
+    if (updated) {
+        updated.textContent = TASK_ACTIVITY_NOTE_STALE;
+        updated.classList.add("task-center-stale");
+    }
+}
+
+function showTaskActivityListHint() {
+    const hint = $("#taskHistoryRefreshHint");
+    if (hint) hint.hidden = false;
+}
+
+// ── 常驻入口（S-1） ────────────────────────────────────────────────────────────────
+
+function paintTaskActivityEntryPoints() {
+    const total = taskActivityState.lastTotal;
+    const stale = taskActivityState.stale;
+    const hasSnapshot = total != null;
+    const showCount = hasSnapshot && total > 0;
+    const badge = $("#taskActiveNavBadge");
+    if (badge) {
+        badge.hidden = !showCount;
+        if (showCount) {
+            // 旧数不伪装实时：stale 时同时加状态类与完整 aria-label（S-1）。
+            badge.classList.toggle("task-center-stale", stale);
+            badge.setAttribute("aria-label", stale
+                ? `${total} 个任务执行中，上次更新失败，按任务记录统计`
+                : `${total} 个任务执行中，按任务记录统计`);
+        } else {
+            badge.classList.remove("task-center-stale");
+            badge.removeAttribute("aria-label");
+        }
+    }
+    const navCount = $("#taskActiveNavCount");
+    if (navCount) navCount.textContent = showCount ? (total > 99 ? "99+" : String(total)) : "";
+    const globalBtn = $("#taskActiveGlobalBtn");
+    if (globalBtn) {
+        globalBtn.hidden = !(showCount || stale);
+        globalBtn.classList.toggle("task-center-stale", stale);
+    }
+    const globalText = $("#taskActiveGlobalText");
+    if (globalText) {
+        if (stale) {
+            globalText.textContent = showCount ? `${total} 个任务 · 更新失败` : "任务状态不可用";
+        } else {
+            globalText.textContent = showCount ? `${total} 个任务执行中` : "";
+        }
+    }
+}
+
+// ── 卡片与独立分页（S-2） ──────────────────────────────────────────────────────────
+
+function taskActivityCardFields(item, id) {
+    const progress = item.progress && typeof item.progress === "object" ? item.progress : null;
+    const taskTypeLabel = String(item.taskTypeLabel || item.taskType || "");
+    const totalCount = progress ? taskActivitySafeCount(progress.totalCount) : 0;
+    const processedCount = progress ? taskActivitySafeCount(progress.processedCount) : 0;
+    const percentage = progress ? taskActivitySafePercentage(progress.percentage) : null;
+    let message;
+    if (!progress) {
+        // 无实时数据不得猜耗时阈值来标失败，也不得伪造"已中断"（I-3）。
+        message = "记录为执行中，暂无实时进度";
+    } else {
+        const raw = String(progress.message == null ? "" : progress.message).trim();
+        message = raw || "正在执行";
+    }
+    return {
+        progress,
+        taskTypeLabel,
+        statusLabel: taskActivityStatusLabel(item),
+        startedAt: String(item.startedAt == null ? "" : item.startedAt),
+        elapsedText: formatTaskActivityElapsed(item.elapsedSeconds),
+        percentage,
+        message,
+        // 指标只写"已处理 X / Y"，不编造账号数、邮件数或轮次（I-3）。
+        processedText: !progress
+            ? "暂无实时计数"
+            : (totalCount > 0 ? `已处理 ${processedCount} / ${totalCount}` : `已处理 ${processedCount}`),
+        percentageText: percentage == null ? "进度未知" : `${percentage}%`,
+        metricText: item.metricLabel
+            ? `${taskActivitySafeCount(item.successCount)}/${taskActivitySafeCount(item.failureCount)} ${item.metricLabel}`
+            : "— 无统计"
+    };
+}
+
+function taskActivityCardHtml(item, id) {
+    const fields = taskActivityCardFields(item, id);
+    // 进度未知时不渲染进度条（I-8）；已知时用原生 progress.value，不生成 style.width。
+    const progressHtml = fields.percentage == null ? "" :
+        `<progress class="task-center-progress" max="100" value="${fields.percentage}" aria-label="${escapeHtml(fields.taskTypeLabel)}执行进度"></progress>`;
+    return `
+        <div class="task-center-card-top">
+            <span class="task-center-source">${escapeHtml(taskActivityTriggerLabel(item.triggerType))} · <span class="task-center-id">#${id}</span></span>
+            <span class="task-center-pill"><i class="task-center-dot" aria-hidden="true"></i><span>${escapeHtml(fields.statusLabel)}</span></span>
+        </div>
+        <h3>${escapeHtml(fields.taskTypeLabel)}</h3>
+        <div class="task-center-source">开始于 ${escapeHtml(fields.startedAt)} · 已运行 ${escapeHtml(fields.elapsedText)}</div>
+        <p class="task-center-message">${escapeHtml(fields.message)}</p>
+        ${progressHtml}
+        <div class="task-center-progress-text"><span>${escapeHtml(fields.processedText)}</span><strong>${escapeHtml(fields.percentageText)}</strong></div>
+        <div class="task-center-card-footer">
+            <span class="task-center-note">${escapeHtml(fields.metricText)}</span>
+            <button type="button" class="task-center-link" data-task-active-detail="${id}" aria-expanded="false" aria-controls="taskActiveDetail">查看详情 →</button>
+        </div>`;
+}
+
+function syncTaskActivityProgressBar(card, fields) {
+    const existing = card.querySelector("progress.task-center-progress");
+    if (fields.percentage == null) {
+        if (existing) existing.remove();
+        return;
+    }
+    if (!existing) {
+        const bar = document.createElement("progress");
+        bar.className = "task-center-progress";
+        bar.setAttribute("max", "100");
+        bar.setAttribute("aria-label", `${fields.taskTypeLabel}执行进度`);
+        bar.value = fields.percentage;
+        const textRow = card.querySelector(".task-center-progress-text");
+        card.insertBefore(bar, textRow || null);
+        return;
+    }
+    existing.value = fields.percentage;
+    existing.setAttribute("aria-label", `${fields.taskTypeLabel}执行进度`);
+}
+
+/** 复用既有节点更新：只写文本/属性，不重建卡片，也不碰用户的详情按钮（I-5）。 */
+function updateTaskActivityCard(card, item, id) {
+    const fields = taskActivityCardFields(item, id);
+    const statusEl = card.querySelector(".task-center-card-top > .task-center-pill > span");
+    if (statusEl) statusEl.textContent = fields.statusLabel;
+    const titleEl = card.querySelector("h3");
+    if (titleEl) titleEl.textContent = fields.taskTypeLabel;
+    const metaEl = card.querySelector(".task-center-card > .task-center-source");
+    if (metaEl) metaEl.textContent = `开始于 ${fields.startedAt} · 已运行 ${fields.elapsedText}`;
+    const messageEl = card.querySelector(".task-center-message");
+    if (messageEl) messageEl.textContent = fields.message;
+    syncTaskActivityProgressBar(card, fields);
+    const processedEl = card.querySelector(".task-center-progress-text > span");
+    if (processedEl) processedEl.textContent = fields.processedText;
+    const percentEl = card.querySelector(".task-center-progress-text > strong");
+    if (percentEl) percentEl.textContent = fields.percentageText;
+    const metricEl = card.querySelector(".task-center-card-footer > .task-center-note");
+    if (metricEl) metricEl.textContent = fields.metricText;
+    const detailBtn = card.querySelector("button[data-task-active-detail]");
+    if (detailBtn) {
+        detailBtn.setAttribute("aria-expanded", taskActivityState.detailId === id ? "true" : "false");
+    }
+}
+
+function renderTaskActivityCards(items) {
+    const container = $("#taskActiveCards");
+    if (!container) return;
+    const seen = new Set();
+    let anchor = null;
+    items.forEach((item) => {
+        const id = taskActivityExecutionId(item.id);
+        if (id == null) return;
+        const key = String(id);
+        seen.add(key);
+        let card = container.querySelector(`[data-execution-id="${key}"]`);
+        if (!card) {
+            card = document.createElement("article");
+            card.className = "task-center-card";
+            card.dataset.executionId = key;
+            card.innerHTML = taskActivityCardHtml(item, id);
+            const detailBtn = card.querySelector("button[data-task-active-detail]");
+            if (detailBtn) {
+                detailBtn.addEventListener("click", () => openTaskActivityDetail(id));
+            }
+        }
+        updateTaskActivityCard(card, item, id);
+        // 按服务端顺序（started_at DESC, id DESC）保持节点位置；同 id 节点不重建。
+        if (anchor === null) container.insertBefore(card, container.firstChild);
+        else container.insertBefore(card, anchor.nextSibling);
+        anchor = card;
+    });
+    Array.from(container.querySelectorAll(".task-center-card")).forEach((card) => {
+        if (!seen.has(card.dataset.executionId)) card.remove();
+    });
+}
+
+function renderTaskActivityPager(total) {
+    const pager = $("#taskActivePager");
+    const info = $("#taskActivePageInfo");
+    const prev = $("#taskActivePrevPage");
+    const next = $("#taskActiveNextPage");
+    const page = taskActivityState.activePage;
+    const pageCount = total > 0 ? Math.ceil(total / TASK_ACTIVITY_PAGE_SIZE) : 1;
+    if (pager) pager.hidden = total <= 0;
+    if (info) info.textContent = `第 ${page + 1} / ${pageCount} 页 · 共 ${total} 条`;
+    if (prev) prev.disabled = page <= 0;
+    if (next) next.disabled = (page + 1) * TASK_ACTIVITY_PAGE_SIZE >= total;
+}
+
+// ── 页内详情（S-3, I-6/I-7） ───────────────────────────────────────────────────────
+
+function syncTaskActivityDetailButtons() {
+    const container = $("#taskActiveCards");
+    if (!container) return;
+    Array.from(container.querySelectorAll("button[data-task-active-detail]")).forEach((button) => {
+        const id = taskActivityExecutionId(button.dataset.taskActiveDetail);
+        button.setAttribute("aria-expanded", id != null && taskActivityState.detailId === id ? "true" : "false");
+    });
+}
+
+function isCurrentTaskActivityDetail(sessionGeneration, generation, id) {
+    return taskActivityState.started
+        && taskActivityState.sessionGeneration === sessionGeneration
+        && taskActivityState.detailGeneration === generation
+        && taskActivityState.detailId === id
+        && state.view === "tasks";
+}
+
+async function refreshTaskActivityDetail(generation) {
+    const id = taskActivityState.detailId;
+    if (id == null) return;
+    const sessionGeneration = taskActivityState.sessionGeneration;
+    try {
+        const detail = await api(`/api/task-executions/${id}/detail`);
+        if (!isCurrentTaskActivityDetail(sessionGeneration, generation, id)) return;
+        renderTaskActivityDetail(detail);
+    } catch (error) {
+        if (!isCurrentTaskActivityDetail(sessionGeneration, generation, id)) return;
+        taskActivityState.detailTerminal = !!(error && error.status === 404);
+        setTaskActivityDetailStatus(
+            taskActivityState.detailTerminal ? "执行记录不存在或已被清理" : "详情加载失败，请重新选择该任务"
+        );
+    }
+}
+
+/** 详情轮询不新增 interval：由 active tick 收尾时串行补一次（I-6/I-7）。 */
+async function refreshTaskActivityDetailIfNeeded(sessionGeneration) {
+    if (state.view !== "tasks") return;
+    if (taskActivityState.detailId == null) return;
+    if (taskActivityState.detailTerminal) return;
+    await refreshTaskActivityDetail(taskActivityState.detailGeneration);
+}
+
+function setTaskActivityDetailStatus(text) {
+    const status = $("#taskActiveDetailStatus");
+    if (status) status.textContent = text;
+}
+
+function renderTaskActivityDetail(detail) {
+    const id = taskActivityState.detailId;
+    if (id == null) return;
+    const label = String(detail.taskTypeLabel || detail.taskType || "");
+    const title = $("#taskActiveDetailTitle");
+    if (title) title.textContent = `${label} · #${id}`;
+    const running = detail.status === "RUNNING" || detail.status === "CANCELLING";
+    taskActivityState.detailTerminal = !running;
+    const parts = [];
+    if (detail.durationSeconds != null && Number.isFinite(Number(detail.durationSeconds))) {
+        parts.push(`耗时：${formatTaskActivityElapsed(detail.durationSeconds)}`);
+    } else if (running) {
+        // durationSeconds=null 不能显示 0 秒：运行中只展示该卡片的已运行时长（T-4）。
+        const cardItem = (taskActivityState.lastItems || []).find((row) => row.id === id);
+        parts.push(cardItem ? `已运行：${formatTaskActivityElapsed(cardItem.elapsedSeconds)}` : "执行中");
+    }
+    if (detail.startedAt) parts.push(`开始于 ${detail.startedAt}`);
+    if (detail.status === "FAILED") parts.push("错误原因可在下方执行记录查看");
+    const status = $("#taskActiveDetailStatus");
+    if (status) {
+        const tone = detail.status === "SUCCESS" ? "ok" : detail.status === "FAILED" ? "error" : "warn";
+        status.innerHTML = [badge(labelStatus(detail.status), tone)]
+            .concat(parts.map((part) => escapeHtml(part)))
+            .join(" · ");
+    }
+    const body = $("#taskActiveDetailBody");
+    if (body) {
+        body.innerHTML = renderTaskDetailRawBlocks(detail) || '<div class="text-muted">暂无明细</div>';
+    }
+    const logsBtn = $("#taskActiveLoadLogs");
+    if (logsBtn) {
+        // 只有 catalog 声明了进度 UI 的类型才有批次日志可读（I-6）。
+        logsBtn.hidden = !taskActivityState.detailHasProgressUi;
+        if (!logsBtn.hidden) logsBtn.textContent = taskActivityState.detailLogsLoaded ? "刷新批次日志" : "加载批次日志";
+    }
+    const controlBtn = $("#taskActiveOpenControl");
+    if (controlBtn) {
+        // 控制入口只对 taskButtonMapping 已支持的类型显示；hasProgressUi 不意味着已有控制按钮。
+        controlBtn.hidden = !(running && taskActivityCanOpenControl());
+    }
+}
+
+function openTaskActivityDetail(executionId) {
+    const id = taskActivityExecutionId(executionId);
+    if (id == null) return;
+    const item = (taskActivityState.lastItems || []).find((row) => row.id === id) || null;
+    taskActivityState.detailId = id;
+    taskActivityState.detailType = item ? item.taskType : null;
+    taskActivityState.detailHasProgressUi = !!(item && item.hasProgressUi);
+    taskActivityState.detailLogsLoaded = false;
+    taskActivityState.detailTerminal = false;
+    taskActivityState.detailGeneration += 1;
+    const generation = taskActivityState.detailGeneration;
+    const section = $("#taskActiveDetail");
+    if (section) section.hidden = false;
+    const title = $("#taskActiveDetailTitle");
+    if (title) title.textContent = `${item ? item.taskTypeLabel : ""} · #${id}`;
+    setTaskActivityDetailStatus("正在加载执行详情…");
+    const body = $("#taskActiveDetailBody");
+    if (body) body.innerHTML = "";
+    const logs = $("#taskActiveLogs");
+    if (logs) {
+        logs.hidden = true;
+        logs.textContent = "";
+    }
+    const logsBtn = $("#taskActiveLoadLogs");
+    if (logsBtn) logsBtn.hidden = true;
+    const controlBtn = $("#taskActiveOpenControl");
+    if (controlBtn) controlBtn.hidden = true;
+    syncTaskActivityDetailButtons();
+    refreshTaskActivityDetail(generation).catch(() => {});
+}
+
+function closeTaskActivityDetail(options = {}) {
+    const restoreFocus = options.restoreFocus === true;
+    const previousId = taskActivityState.detailId;
+    taskActivityState.detailGeneration += 1;
+    taskActivityState.detailId = null;
+    taskActivityState.detailType = null;
+    taskActivityState.detailHasProgressUi = false;
+    taskActivityState.detailLogsLoaded = false;
+    taskActivityState.detailTerminal = false;
+    const section = $("#taskActiveDetail");
+    if (section) section.hidden = true;
+    const title = $("#taskActiveDetailTitle");
+    if (title) title.textContent = "";
+    setTaskActivityDetailStatus("");
+    const body = $("#taskActiveDetailBody");
+    if (body) body.innerHTML = "";
+    const logs = $("#taskActiveLogs");
+    if (logs) {
+        logs.hidden = true;
+        logs.textContent = "";
+    }
+    const logsBtn = $("#taskActiveLoadLogs");
+    if (logsBtn) logsBtn.hidden = true;
+    const controlBtn = $("#taskActiveOpenControl");
+    if (controlBtn) controlBtn.hidden = true;
+    syncTaskActivityDetailButtons();
+    if (restoreFocus && previousId != null) {
+        const button = $(`#taskActiveCards button[data-task-active-detail="${previousId}"]`);
+        if (button) button.focus();
+    }
+}
+
+/**
+ * 批次日志行时间：纯字符串归一化。**不用** Date.parse 解析无时区的本地时间字符串（T-4）——
+ * app.js 里后声明的 `formatDateTime` 走 `new Date(...)`，无时区输入会被当作本地时间再格式化，
+ * 这里只需要把后端字符串裁成 `yyyy-MM-dd HH:mm:ss`。
+ */
+function taskActivityLogTime(value) {
+    const raw = String(value == null ? "" : value);
+    if (!raw) return "-";
+    return raw.replace("T", " ").replace(/\.\d+$/, "").substring(0, 19);
+}
+
+function renderTaskActivityLogs(logs) {
+    const pre = $("#taskActiveLogs");
+    if (!pre) return;
+    const rows = Array.isArray(logs) ? logs : [];
+    if (rows.length === 0) {
+        pre.hidden = false;
+        pre.textContent = "该执行暂无批次日志";
+        return;
+    }
+    const shown = rows.slice(-TASK_ACTIVITY_LOG_LINE_LIMIT);
+    const lines = shown.map((log) => {
+        const time = taskActivityLogTime(log.createdAt);
+        const batch = log.batchNumber > 0 ? `批次 ${log.batchNumber}` : "批次 -";
+        const status = String(log.status == null ? "" : log.status);
+        const message = String(log.message == null ? "" : log.message);
+        // detailsJson / errorsJson 的全量账号快照不输出到页面（T-4）。
+        return `${time}  ${batch}  ${status}  ${message}`.trimEnd();
+    });
+    if (rows.length > shown.length) {
+        lines.push(`（仅展示最近 ${TASK_ACTIVITY_LOG_LINE_LIMIT} 条批次日志）`);
+    }
+    pre.hidden = false;
+    pre.textContent = lines.join("\n");
+}
+
+async function loadTaskActivityLogs() {
+    const id = taskActivityState.detailId;
+    const taskType = taskActivityState.detailType;
+    if (id == null || !taskType) return;
+    const generation = taskActivityState.detailGeneration;
+    const sessionGeneration = taskActivityState.sessionGeneration;
+    const button = $("#taskActiveLoadLogs");
+    if (button) button.disabled = true;
+    try {
+        // 只在用户点击时拉取一次；不挂到每 5 秒的全局轮询上（T-4）。
+        const logs = await api(`/api/task-progress/${encodeURIComponent(taskType)}/logs?executionId=${id}&batchOnly=true`);
+        if (!isCurrentTaskActivityDetail(sessionGeneration, generation, id)) return;
+        taskActivityState.detailLogsLoaded = true;
+        renderTaskActivityLogs(logs);
+        if (button) button.textContent = "刷新批次日志";
+    } catch (error) {
+        if (!isCurrentTaskActivityDetail(sessionGeneration, generation, id)) return;
+        const pre = $("#taskActiveLogs");
+        if (pre) {
+            pre.hidden = false;
+            pre.textContent = "批次日志加载失败";
+        }
+    } finally {
+        if (button) button.disabled = false;
+    }
+}
+
+/**
+ * 打开既有任务控制弹框前先核对身份（I-6）：重新读一次当前进度，只有正 executionId
+ * 与所选执行相等且仍在运行/取消中，才交给既有 openTaskModal。这不是原子的
+ * compare-and-cancel —— 只保证"打开控制的那一刻"对得上，取消确认与取消语义仍归旧控制系统。
+ */
+async function openTaskActivityControl() {
+    const id = taskActivityState.detailId;
+    const taskType = taskActivityState.detailType;
+    if (id == null || !taskType) return;
+    const mapping = taskButtonMapping[taskType];
+    if (!mapping) return;
+    const button = $("#taskActiveOpenControl");
+    if (button) button.disabled = true;
+    try {
+        const progress = await api(`/api/task-progress/${encodeURIComponent(taskType)}`);
+        if (taskActivityState.detailId !== id || taskActivityState.detailType !== taskType) return;
+        const liveId = progress ? taskActivityExecutionId(progress.executionId) : null;
+        const liveStatus = progress ? String(progress.status == null ? "" : progress.status) : "";
+        if (liveId !== id || (liveStatus !== "RUNNING" && liveStatus !== "CANCELLING")) {
+            setTaskActivityDetailStatus("该执行已结束或已被新执行替代，请刷新记录");
+            return;
+        }
         openTaskModal(taskType, mapping.label, mapping.btnId, { knownActiveAtOpen: true });
+    } catch (error) {
+        if (taskActivityState.detailId !== id) return;
+        setTaskActivityDetailStatus("该执行已结束或已被新执行替代，请刷新记录");
+    } finally {
+        if (button) button.disabled = false;
     }
+}
+
+// ── 事件绑定（在 bindEvents 中调用一次） ───────────────────────────────────────────
+
+function initTaskActivityObserver() {
+    const globalBtn = $("#taskActiveGlobalBtn");
+    if (globalBtn) {
+        globalBtn.addEventListener("click", () => setView("tasks"));
+    }
+    const hint = $("#taskHistoryRefreshHint");
+    if (hint) {
+        hint.addEventListener("click", () => {
+            hint.hidden = true;
+            loadTasks().catch((error) => showStatus(error.message, "error"));
+        });
+    }
+    const activePrev = $("#taskActivePrevPage");
+    if (activePrev) {
+        activePrev.addEventListener("click", () => {
+            if (taskActivityState.activePage <= 0) return;
+            taskActivityState.activePage -= 1;
+            taskActivityState.listRequestSequence += 1;
+            refreshTaskActivity();
+        });
+    }
+    const activeNext = $("#taskActiveNextPage");
+    if (activeNext) {
+        activeNext.addEventListener("click", () => {
+            taskActivityState.activePage += 1;
+            taskActivityState.listRequestSequence += 1;
+            refreshTaskActivity();
+        });
+    }
+    const detailClose = $("#taskActiveDetailClose");
+    if (detailClose) {
+        detailClose.addEventListener("click", () => closeTaskActivityDetail({ restoreFocus: true }));
+    }
+    const loadLogsBtn = $("#taskActiveLoadLogs");
+    if (loadLogsBtn) {
+        loadLogsBtn.addEventListener("click", () => {
+            loadTaskActivityLogs().catch(() => {});
+        });
+    }
+    const controlBtn = $("#taskActiveOpenControl");
+    if (controlBtn) {
+        controlBtn.addEventListener("click", () => {
+            openTaskActivityControl().catch(() => {});
+        });
+    }
+    document.addEventListener("visibilitychange", () => {
+        if (taskActivityDocumentHidden()) {
+            // 隐藏：停掉 pending 的定时器并使 requestSequence 失效，
+            // 保留隐藏前最后有效快照，隐藏期间到达的响应不再写 UI（I-5）。
+            clearTimeout(taskActivityState.timer);
+            taskActivityState.timer = null;
+            taskActivityState.listRequestSequence += 1;
+            taskActivityState.pendingRefresh = false;
+            return;
+        }
+        if (taskActivityState.started) refreshTaskActivity();
+    });
 }
 
 // taskModalGenerationSequence, createTaskModalContext, currentTaskModal,
@@ -1832,6 +2616,16 @@ function setView(view) {
     $("#viewTitle").textContent = viewMeta[view][0];
     $("#viewSubtitle").textContent = viewMeta[view][1];
     refreshCurrentView();
+    // T-3：进入/离开任务页只失效观察器请求版本；手动 watcher 的其余语义不动。
+    if (view === "tasks") {
+        // 进入任务页：后台（size=1）响应即刻作废，按当前 activePage 立即取一次卡片。
+        taskActivityState.listRequestSequence += 1;
+        if (taskActivityState.started) refreshTaskActivity();
+    } else {
+        // 离开任务页：收起页内详情并使详情与列表的迟到响应失效（I-6）。
+        taskActivityState.listRequestSequence += 1;
+        closeTaskActivityDetail();
+    }
     if (view === "contacts") {
         resumeProgressPollingIfNeeded();
     } else {
@@ -12803,7 +13597,12 @@ function bindEvents() {
         if (tab.dataset.view === "mailbox") clearMailboxExpertFocus();
         setView(tab.dataset.view);
     }));
-    $("#refreshBtn").addEventListener("click", refreshCurrentView);
+    $("#refreshBtn").addEventListener("click", () => {
+        refreshCurrentView();
+        // "刷新"同时补一轮运行卡片；查询参数与历史页码不动（T-3）。
+        if (taskActivityState.started) refreshTaskActivity();
+    });
+    initTaskActivityObserver();
     bindMonitoringEvents();
     $("#reloadAccountsBtn").addEventListener("click", loadAccounts);
     $("#newAccountBtn").addEventListener("click", () => fillAccountForm(null, "new"));
@@ -14374,6 +15173,8 @@ function startAuthenticatedApp(username) {
 }
 
 function stopAuthenticatedApp() {
+    // 最前停止观察器：之后到达的 active/详情响应一律失效（I-5）。
+    stopTaskActivityPolling();
     appStarted = false;
     const shell = $(".app-shell");
     if (shell) {

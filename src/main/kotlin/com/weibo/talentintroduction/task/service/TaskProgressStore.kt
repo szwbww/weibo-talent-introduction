@@ -47,6 +47,12 @@ class TaskProgressStore(
         return restoreFromLog(taskType)
     }
 
+    /**
+     * T-1（I-3）：当前进程的内存快照，纯读——不触发 [restoreFromLog]（日志恢复会把历史
+     * RUNNING/CANCELLING 改写成 INTERRUPTED，那不是"此刻在跑"），不写日志、不改取消标记。
+     */
+    fun peek(taskType: String): TaskProgress? = store[taskType]
+
     fun clear(taskType: String) {
         val removed = store.remove(taskType)
         if (removed?.executionId != null) {

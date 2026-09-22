@@ -177,6 +177,10 @@ function createSandbox() {
         stopTaskWatcher: (taskType, restore) => {
             delete sandbox.taskWatchers[taskType];
         },
+        stopTaskActivityPollingCalls: 0,
+        stopTaskActivityPolling: () => {
+            sandbox.stopTaskActivityPollingCalls++;
+        },
         refreshCurrentViewCalled: 0,
         refreshCurrentView: () => {
             sandbox.refreshCurrentViewCalled++;
@@ -242,6 +246,7 @@ function createBootstrapSandbox(authMeResponse) {
     let badgeCalled = 0;
     let resumePollingCalled = 0;
     let refreshViewCalled = 0;
+    let stopActivityPollingCalled = 0;
 
     const elementStore = {
         appShell: { style: { display: "grid" } },
@@ -292,6 +297,9 @@ function createBootstrapSandbox(authMeResponse) {
         showStatus: () => {},
         stopTaskModalPolling: () => {},
         stopTaskWatcher: () => {},
+        // 观察器停止依赖：真实 stopAuthenticatedApp 会调用它；缺这个 stub 会让
+        // 鉴权清理路径直接 ReferenceError，而不是被 typeof 防御掩盖。
+        stopTaskActivityPolling: () => { stopActivityPollingCalled++; },
         clearTimeout: () => {},
         setTimeout: (fn, delay) => 12345,
 
@@ -315,6 +323,7 @@ function createBootstrapSandbox(authMeResponse) {
         _badgeCalled: () => badgeCalled,
         _refreshViewCalled: () => refreshViewCalled,
         _resumePollingCalled: () => resumePollingCalled,
+        _stopTaskActivityPollingCalled: () => stopActivityPollingCalled,
     };
 
     vm.createContext(sandbox);
@@ -437,6 +446,103 @@ describe("auth state machine tests", () => {
 
         assert.strictEqual(sandbox._badgeCalled(), 1, "badge should not reload");
         assert.strictEqual(sandbox._refreshViewCalled(), 1, "view should not reload");
+    });
+});
+
+describe("task activity observer teardown", () => {
+    it("checkAuth unauthenticated clears the observer", async () => {
+        const sandbox = createSandbox();
+        sandbox.authMeResponse = { authenticated: false };
+        sandbox.appStarted = true;
+
+        await sandbox.checkAuth();
+
+        assert.strictEqual(sandbox.stopTaskActivityPollingCalls, 1,
+            "未登录必须清理观察器");
+    });
+
+    it("checkAuth mustChangePassword clears the observer", async () => {
+        const sandbox = createSandbox();
+        sandbox.authMeResponse = { authenticated: true, username: "admin", mustChangePassword: true };
+
+        await sandbox.checkAuth();
+
+        assert.strictEqual(sandbox.stopTaskActivityPollingCalls, 1,
+            "强制改密必须清理观察器");
+    });
+
+    it("handleAuthResponse 401 clears the observer", async () => {
+        const sandbox = createSandbox();
+        sandbox.appStarted = true;
+        sandbox.window.stopAuthenticatedApp = sandbox.stopAuthenticatedApp;
+        const response = { status: 401, clone: () => response };
+
+        try {
+            await sandbox.handleAuthResponse(response);
+            assert.fail("Should throw on 401");
+        } catch (e) {
+            assert.strictEqual(e.message, "UNAUTHORIZED");
+        }
+
+        assert.strictEqual(sandbox.stopTaskActivityPollingCalls, 1,
+            "401 后不得留下活跃观察器");
+    });
+
+    it("handleAuthResponse 403 PASSWORD_CHANGE_REQUIRED clears the observer", async () => {
+        const sandbox = createSandbox();
+        sandbox.appStarted = true;
+        sandbox.window.stopAuthenticatedApp = sandbox.stopAuthenticatedApp;
+        const response = {
+            status: 403,
+            clone: () => response,
+            json: async () => ({ code: "PASSWORD_CHANGE_REQUIRED", message: "first change" })
+        };
+
+        try {
+            await sandbox.handleAuthResponse(response);
+            assert.fail("Should throw on 403");
+        } catch (e) {
+            assert.strictEqual(e.message, "PASSWORD_CHANGE_REQUIRED");
+        }
+
+        assert.strictEqual(sandbox.stopTaskActivityPollingCalls, 1,
+            "强制改密后不得留下活跃观察器");
+    });
+
+    it("explicit stopAuthenticatedApp clears the observer", () => {
+        const sandbox = createSandbox();
+
+        sandbox.stopAuthenticatedApp();
+
+        assert.strictEqual(sandbox.stopTaskActivityPollingCalls, 1);
+    });
+
+    it("unauthenticated bootstrap never starts the observer", async () => {
+        const sandbox = createBootstrapSandbox({ authenticated: false });
+
+        vm.runInContext("bootstrap()", sandbox);
+        await new Promise(r => setTimeout(r, 50));
+
+        assert.strictEqual(sandbox._resumePollingCalled(), 0, "未登录不得启动观察器");
+        assert.strictEqual(sandbox._stopTaskActivityPollingCalled(), 1,
+            "未登录路径必须清理观察器");
+    });
+
+    it("authenticated bootstrap starts the observer once and repeated start keeps it single", async () => {
+        const sandbox = createBootstrapSandbox({
+            authenticated: true, username: "admin", mustChangePassword: false
+        });
+
+        vm.runInContext("bootstrap()", sandbox);
+        await new Promise(r => setTimeout(r, 50));
+
+        assert.strictEqual(sandbox._resumePollingCalled(), 1, "登录后只启动一次观察器");
+        assert.strictEqual(sandbox._stopTaskActivityPollingCalled(), 0, "已登录不得清理观察器");
+
+        vm.runInContext('startAuthenticatedApp("admin")', sandbox);
+
+        assert.strictEqual(sandbox._resumePollingCalled(), 1, "重复 start 不得重启观察器链");
+        assert.strictEqual(sandbox._stopTaskActivityPollingCalled(), 0);
     });
 });
 

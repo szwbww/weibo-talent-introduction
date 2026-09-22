@@ -183,6 +183,27 @@ interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
         offset: Long
     ): List<TaskExecutionListItem>
 
+    // ---- T-1: active-execution observation (I-2/I-4) ----
+    // 只读、有界：不 SELECT *，三个 TEXT 列（request_payload / result_summary / error_message）
+    // 一个都不读——error_message 以 NULL 字面量占位以复用既有投影属性（I-4）。
+
+    @Query(
+        """
+        SELECT id AS id, task_type AS task_type, trigger_type AS trigger_type,
+               status AS status, success_count AS success_count, failure_count AS failure_count,
+               NULL AS error_message,
+               started_at AS started_at, finished_at AS finished_at
+        FROM task_execution
+        WHERE status IN ('RUNNING', 'CANCELLING')
+        ORDER BY started_at DESC, id DESC
+        LIMIT :size OFFSET :offset
+        """
+    )
+    fun findActivePage(size: Int, offset: Long): List<TaskExecutionListItem>
+
+    @Query("SELECT COUNT(*) FROM task_execution WHERE status IN ('RUNNING', 'CANCELLING')")
+    fun countActive(): Long
+
     @Query("SELECT COUNT(*) FROM task_execution")
     fun countAll(): Long
 

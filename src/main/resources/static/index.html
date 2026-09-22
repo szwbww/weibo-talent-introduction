@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260920-manual-material-upload">
-    <link rel="stylesheet" href="expert-materials.css?v=20260920-manual-material-upload">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20260920-manual-material-upload">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20260920-manual-material-upload">
-    <link rel="stylesheet" href="world-clock.css?v=20260920-manual-material-upload">
+    <link rel="stylesheet" href="styles.css?v=20260922-task-activity-center">
+    <link rel="stylesheet" href="expert-materials.css?v=20260922-task-activity-center">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20260922-task-activity-center">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20260922-task-activity-center">
+    <link rel="stylesheet" href="world-clock.css?v=20260922-task-activity-center">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -59,7 +59,7 @@
 </div>
 
 <div class="app-shell" style="display: none;">
-    <header class="topnav">
+    <header class="topnav task-center-nav">
         <div class="brand">
             <div class="brand-mark">
                 <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round">
@@ -140,6 +140,10 @@
                     <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
                 </svg>
                 <span>任务记录</span>
+                <span id="taskActiveNavBadge" class="task-center-pill task-center-nav-count" hidden>
+                    <i class="task-center-dot" aria-hidden="true"></i>
+                    <span id="taskActiveNavCount"></span>
+                </span>
             </button>
         </nav>
         <div class="topnav-side">
@@ -164,7 +168,13 @@
                 <h1 id="viewTitle">邮箱账号</h1>
                 <p id="viewSubtitle">维护发送账号、权重、限额和连通性。</p>
             </div>
-            <div class="topbar-actions">
+            <div class="topbar-actions task-center-actions">
+                <button type="button" id="taskActiveGlobalBtn" class="task-center-pill task-center-global" hidden
+                        title="按任务记录统计；实时进度仅显示与执行 ID 匹配的数据">
+                    <i class="task-center-dot" aria-hidden="true"></i>
+                    <span id="taskActiveGlobalText"></span>
+                    <span aria-hidden="true">↗</span>
+                </button>
                 <button class="button secondary" id="refreshBtn">
                     <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 4px;">
                         <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
@@ -988,6 +998,36 @@
 
         <!-- View 6: Async Task execution log audit -->
         <section class="view" id="view-tasks">
+            <section id="taskActiveSection" aria-labelledby="taskActiveHeading">
+                <div class="task-center-section-head">
+                    <h2 id="taskActiveHeading">正在执行 <span id="taskActiveCount" class="task-center-count">—</span></h2>
+                    <span id="taskActiveUpdated" class="task-center-note" role="status" aria-live="polite">正在读取任务状态…</span>
+                </div>
+                <div id="taskActiveEmpty" class="task-center-empty" hidden>暂无执行中的任务</div>
+                <div id="taskActiveCards" class="task-center-grid"></div>
+                <div id="taskActivePager" class="list-pager" hidden>
+                    <button type="button" class="button small" id="taskActivePrevPage">上一页</button>
+                    <span id="taskActivePageInfo" class="list-pager-info"></span>
+                    <button type="button" class="button small" id="taskActiveNextPage">下一页</button>
+                </div>
+            </section>
+
+            <section id="taskActiveDetail" class="task-center-detail" aria-labelledby="taskActiveDetailTitle" hidden>
+                <div class="task-center-detail-head">
+                    <h2 id="taskActiveDetailTitle"></h2>
+                    <button type="button" id="taskActiveDetailClose" class="task-center-link">收起详情 ↑</button>
+                </div>
+                <div id="taskActiveDetailStatus" class="task-center-note" role="status" aria-live="polite"></div>
+                <div id="taskActiveDetailBody" class="task-center-detail-body"></div>
+                <div class="task-center-detail-actions">
+                    <button type="button" id="taskActiveLoadLogs" class="task-center-link" hidden>加载批次日志</button>
+                    <button type="button" id="taskActiveOpenControl" class="button small secondary" hidden>打开任务控制</button>
+                </div>
+                <pre id="taskActiveLogs" class="task-center-log" hidden></pre>
+            </section>
+
+            <button type="button" id="taskHistoryRefreshHint" class="task-center-link" hidden>任务状态有变化，刷新执行记录</button>
+
             <div class="toolbar">
                 <select id="taskTypeFilter">
                     <option value="">全部自动化任务</option>
@@ -1004,7 +1044,7 @@
             </div>
 
             <section class="panel">
-                <div class="panel-head"><h2>定时任务审计与消费日志 (Spring Job Audit)</h2></div>
+                <div class="panel-head"><h2>执行记录</h2></div>
                 <div class="table-wrap">
                     <table>
                         <thead>
@@ -2125,11 +2165,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260920-manual-material-upload"></script>
-<script src="expert-materials.js?v=20260920-manual-material-upload"></script>
-<script src="meeting-confirmation.js?v=20260920-manual-material-upload"></script>
-<script src="mailbox-chat.js?v=20260920-manual-material-upload"></script>
-<script src="app.js?v=20260920-manual-material-upload"></script>
-<script src="world-clock.js?v=20260920-manual-material-upload"></script>
+<script src="trust-reply-workbench.js?v=20260922-task-activity-center"></script>
+<script src="expert-materials.js?v=20260922-task-activity-center"></script>
+<script src="meeting-confirmation.js?v=20260922-task-activity-center"></script>
+<script src="mailbox-chat.js?v=20260922-task-activity-center"></script>
+<script src="app.js?v=20260922-task-activity-center"></script>
+<script src="world-clock.js?v=20260922-task-activity-center"></script>
 </body>
 </html>
