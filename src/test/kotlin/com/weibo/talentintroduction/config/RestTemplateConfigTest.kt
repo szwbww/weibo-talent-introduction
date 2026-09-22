@@ -56,10 +56,13 @@ class RestTemplateConfigTest {
 
         assertSame(base, BoundedFulltextHttp.bounded(base, 5_000, 30_000, null))
         assertSame(base, BoundedFulltextHttp.bounded(base, Long.MAX_VALUE, Long.MAX_VALUE, null))
-        assertSame(
-            base,
-            BoundedFulltextHttp.bounded(base, 5_000, 30_000, java.time.Instant.now().plusSeconds(3_600))
-        )
+        // R-1（V-4）：预算宽于配置时**不再**返回原 client —— 否则正常 90 秒预算会绕过 body 包装。
+        val wideBudget = BoundedFulltextHttp.bounded(base, 5_000, 30_000, java.time.Instant.now().plusSeconds(3_600))
+        assertNotSame(base, wideBudget, "非空 deadline 一律使用 deadline 包装过的 client")
+        val wideFactory = wideBudget.requestFactory as SimpleClientHttpRequestFactory
+        assertEquals(5_000, timeoutField(wideFactory, "connectTimeout"), "预算宽于配置时超时保持原配置值")
+        assertEquals(30_000, timeoutField(wideFactory, "readTimeout"))
+        assertEquals(base.messageConverters.size, wideBudget.messageConverters.size)
         assertTrue(BoundedFulltextHttp.remainingMsOrUnbounded(null) == BoundedFulltextHttp.UNBOUNDED_REMAINING_MS)
     }
 
@@ -261,6 +264,35 @@ class RestTemplateConfigTest {
             }
 
             assertEquals(0, server.acceptedCount, "预算为 0 时不得 dispatch")
+        }
+    }
+
+    @Test
+    fun `a deadline wider than both socket caps still wraps the body and cuts a trickle (R-1, V-4)`() {
+        // V-4 的第四种形态：deadline（600ms）比两个 socket 上限（100ms/150ms）都宽 —— 早先的实现会
+        // 直接返回原 client，响应体完全没有 deadline 包装，细水长流就能越过绝对时限。
+        SlowHttpServer(SlowHttpServer.Mode.TRICKLE_BODY, trickleIntervalMs = 20).use { server ->
+            val base = config.restTemplate()
+            val deadline = java.time.Instant.now().plusMillis(600)
+            val bounded = BoundedFulltextHttp.bounded(base, connectCapMs = 100, readCapMs = 150, deadline = deadline)
+            assertNotSame(base, bounded, "非空 deadline 必须换用包装过的 client")
+            val startedAt = System.nanoTime()
+
+            val thrown = assertThrows(Exception::class.java) {
+                BoundedFulltextHttp.getForObject(
+                    bounded, "http://127.0.0.1:${server.port}/wide", ByteArray::class.java,
+                    connectCapMs = 100, readCapMs = 150, deadline = deadline
+                )
+            }
+
+            val elapsedMs = (System.nanoTime() - startedAt) / 1_000_000
+            assertTrue(
+                generateSequence(thrown as Throwable?) { it.cause }
+                    .any { it is BoundedFulltextHttp.FulltextBodyDeadlineExceededException },
+                "宽预算下细水长流的响应体也必须按绝对 deadline 截断（实际异常：${thrown}）"
+            )
+            assertTrue(elapsedMs < 5_000, "600ms 预算内必须结束（实际 ${elapsedMs}ms）")
+            assertEquals(1, server.acceptedCount)
         }
     }
 

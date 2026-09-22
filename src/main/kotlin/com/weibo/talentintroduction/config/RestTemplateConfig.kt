@@ -206,8 +206,13 @@ object BoundedFulltextHttp : BoundedHttpExecutor {
      * 这时候连一次尝试的预算都不够，再叠内层重试就会越过总时限（外层 `FetchRetry` 也会逐次重判 deadline）。
      */
     fun bounded(base: RestTemplate, connectCapMs: Long, readCapMs: Long, deadline: Instant?): RestTemplate {
+        // R-1（V-4）：只有「没有共享时限」的调用方才拿原 client。**任何非空 deadline 都必须包住响应体** ——
+        // 早先的「剩余预算不紧于配置就返回原 client」会让正常的 90 秒预算绕过 body 包装，
+        // 于是 Europe PMC（5s/30s 上限）那种「deadline 比 socket 上限宽」的正常情形下，
+        // 细水长流的响应体仍可越过绝对 deadline。
+        if (deadline == null) return base
         val remainingMs = remainingMsOrUnbounded(deadline)
-        if (remainingMs >= connectCapMs && remainingMs >= readCapMs) return base
+        val tightened = remainingMs < connectCapMs || remainingMs < readCapMs
         val factory = DeadlineBoundedRequestFactory(
             connectTimeoutMs = effectiveTimeoutMs(connectCapMs, remainingMs),
             readTimeoutMs = effectiveTimeoutMs(readCapMs, remainingMs),
@@ -217,7 +222,10 @@ object BoundedFulltextHttp : BoundedHttpExecutor {
         bounded.messageConverters.clear()
         bounded.messageConverters.addAll(base.messageConverters)
         bounded.errorHandler = base.errorHandler
-        bounded.interceptors.addAll(base.interceptors.filterNot { it is RetryingClientHttpRequestInterceptor })
+        // 预算宽于配置时超时仍是原配置值，重试语义也照旧；只有预算真的被压缩时才不叠内层重试。
+        bounded.interceptors.addAll(
+            base.interceptors.filterNot { tightened && it is RetryingClientHttpRequestInterceptor }
+        )
         return bounded
     }
 
