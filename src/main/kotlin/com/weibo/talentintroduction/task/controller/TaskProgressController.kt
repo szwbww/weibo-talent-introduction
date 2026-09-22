@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.task.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.discovery.service.DISCOVERY_PIPELINE_TASK_TYPE
+import com.weibo.talentintroduction.discovery.service.DiscoveryPipelineService
 import com.weibo.talentintroduction.task.domain.TaskProgressLog
 import com.weibo.talentintroduction.task.domain.TaskTypeCatalog
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
@@ -28,7 +30,9 @@ class TaskProgressController(
     private val progressStore: TaskProgressStore,
     private val progressLogRepository: TaskProgressLogRepository,
     private val taskExecutionRepository: TaskExecutionRepository,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    /** I-3（c3）：02 协调者；末尾可选参数，既有构造调用逐字兼容（开关关闭时走原进程内取消）。 */
+    private val pipelineService: DiscoveryPipelineService? = null
 ) {
 
     private val log = LoggerFactory.getLogger(TaskProgressController::class.java)
@@ -50,12 +54,46 @@ class TaskProgressController(
     }
 
     @PostMapping("/{taskType}/cancel")
-    fun cancelTask(@PathVariable taskType: String): ResponseEntity<Map<String, String>> {
+    fun cancelTask(@PathVariable taskType: String): ResponseEntity<Map<String, Any>> {
+        // I-3（c3）：新模式下的深度发现取消 = **先**持久化暂停，再请求当前窗口停止；
+        // 窗口间隙没有 RUNNING 记录也必须 200 + PAUSED（不是 409）。其他任务类型保持既有语义。
+        val pipeline = pipelineService?.takeIf { it.enabled }
+        if (pipeline != null && taskType == DISCOVERY_PIPELINE_TASK_TYPE) {
+            return pauseDiscoveryPipeline(pipeline)
+        }
         if (!progressStore.requestCancel(taskType)) {
             return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(mapOf("message" to "没有正在运行的任务或取消请求已处理"))
         }
         return ResponseEntity.ok(mapOf("message" to "已发送取消请求，任务将在当前批次结束后停止"))
+    }
+
+    /**
+     * I-3：`pause()` 幂等且无需存在 RUNNING 的 task_execution；随后只为在途窗口发一次进程内取消请求。
+     * 只停止发现的生产/消费 —— 已独立入队的学术补全有自己的执行器与预算，不在这里取消。
+     */
+    private fun pauseDiscoveryPipeline(pipeline: DiscoveryPipelineService): ResponseEntity<Map<String, Any>> {
+        val paused = try {
+            pipeline.pause()
+        } catch (ex: Exception) {
+            log.warn("深度发现暂停未持久化: {}", ex.message)
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(mapOf("message" to "深度发现暂停未保存成功，请稍后重试"))
+        }
+        // 窗口间隙返回 false 是正常情况（没有在跑的窗口），不影响暂停结论。
+        progressStore.requestCancel(DISCOVERY_PIPELINE_TASK_TYPE)
+        return ResponseEntity.ok(
+            mapOf(
+                "message" to "已暂停深度发现；当前窗口已请求停止，在途结果仍会保存",
+                "state" to paused.state,
+                "phase" to paused.phase,
+                "desiredState" to paused.desiredState,
+                "pipelineId" to paused.pipelineId,
+                "inFlightJobs" to paused.inFlightJobs,
+                "inFlightCollections" to paused.inFlightCollections,
+                "activeJobs" to paused.activeJobs
+            )
+        )
     }
 
     @GetMapping("/{taskType}/logs")

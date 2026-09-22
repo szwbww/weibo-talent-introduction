@@ -787,6 +787,293 @@ const TASK_WATCHER_MAX_INITIAL_204 = 10;
 
 const taskWatchers = {}; // taskType -> watcher state
 
+// ---------------------------------------------------------------------------
+// c3（I-1/I-2/I-3/I-5/I-7）：深度发现连续模式的模式、来源与状态轮询
+// 新模式的数据只用 GET /api/expert-discovery/pipeline（02 的 status），
+// 绝不用旧 task-progress 的最新记录冒充当前流水线。
+// ---------------------------------------------------------------------------
+const DISCOVERY_TASK_TYPE = "EXPERT_DISCOVERY";
+const PIPELINE_STATUS_POLL_MS = 3000;
+const PIPELINE_STATUS_TIMEOUT_MS = 10000;
+const PIPELINE_LAUNCH_TIMEOUT_MS = 15000;
+const DISCOVERY_SOURCE_TIMEOUT_MS = 10000;
+const CONTINUOUS_DISCOVERY_DESC = "持续运行；人工暂停后不会自动恢复。已入队的学术补全可继续。";
+
+// I-6（c3）：只放开「深度发现 ↔ 检查回复」这一对；同类型仍禁止重复，其他组合保持原有互斥。
+const COEXISTING_TASK_TYPES = new Set([DISCOVERY_TASK_TYPE, "CHECK_REPLIES"]);
+
+// I-5（c3）：等待原因文案（服务端 waitTexts 优先，未知值原样显示，绝不因未知而失败）。
+const PIPELINE_WAIT_REASON_TEXTS = {
+    DAILY_BUDGET: "OpenAlex额度已用尽，等待重置",
+    QUEUE_FULL: "队列已满，正在处理已采集论文",
+    RATE_LIMIT: "来源限流，稍后自动重试",
+    ENRICHMENT_RESERVE: "为学术补全保留额度，暂缓消耗",
+    BUDGET_SYNC: "预算数据待同步",
+    OWNER_RECOVERY: "上一个窗口正在收尾，等待释放",
+    SOURCE_ERROR: "部分来源报错，其余来源继续",
+    MANUAL_PAUSE: "已暂停，需手动恢复",
+    WINDOW_END: "本轮窗口已结束，等待下一轮续跑",
+    SOURCE_EXHAUSTED: "所有来源已穷尽"
+};
+
+let discoveryPipelineMode = "LEGACY"; // 最近一次由 GET /pipeline 确认的模式
+let discoveryPipelineRequestInFlight = false;
+// I-7（c3）：来源列表的加载状态 —— 「没选来源」与「没加载成功」必须可区分。
+const discoverySources = { status: "idle", error: null, items: [] };
+
+function isContinuousDiscoveryMode() {
+    return discoveryPipelineMode === "CONTINUOUS";
+}
+
+// S-1（c3）：状态 → 既有状态 class 的唯一映射（不新增颜色、不新增 class）。
+function pipelineStatusClass(state, hasFailures) {
+    if (state === "PAUSED") return "cancelled";
+    if (state === "FAULTED") return "failed";
+    if (state === "DRAINED") return hasFailures ? "failed" : "completed";
+    return "running";
+}
+
+// S-1（c3）：状态名必须同时显示，失败时不把“已排空”渲染成成功。
+function pipelineStatusLabel(state, hasFailures) {
+    if (state === "DRAINED" && hasFailures) return "DRAINED（已排空，存在失败）";
+    return state;
+}
+
+// I-5（c3）：未同步的数据显示“待同步”，绝不填 0。
+function pipelineValue(value) {
+    return value === null || value === undefined ? "待同步" : String(value);
+}
+
+// I-5（c3）：北京时间（UTC+8，无夏令时），确定性格式化，避免依赖运行环境 locale。
+function formatBeijingInstant(value) {
+    if (!value) return null;
+    const ms = Date.parse(value);
+    if (Number.isNaN(ms)) return String(value);
+    const d = new Date(ms + 8 * 3600 * 1000);
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ` +
+        `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+}
+
+// I-5（c3）：预算与队列的真实读数（免费上限 / 官方已用 / 本地预占 / 保护后可用 / 下次 reset）。
+function discoveryBudgetText(budget) {
+    if (!budget) return "OpenAlex：待同步";
+    const synced = budget.lastSyncedAt != null;
+    const reset = formatBeijingInstant(budget.resetAt || budget.retryAt);
+    return "OpenAlex：已用 " + (synced ? pipelineValue(budget.confirmedSpentCredits) : "待同步") +
+        " / 上限 " + pipelineValue(budget.officialLimitCredits) +
+        " credits，本地预占 " + pipelineValue(budget.reservedCredits) +
+        "，保护后可用 " + pipelineValue(budget.effectiveRemainingCredits) +
+        (reset ? "；额度重置 " + reset : "");
+}
+
+// I-5（c3）：连续模式的指标行 —— 只写真实数字，没有“每日总论文数”与假百分比。
+function discoveryPipelineMetricsText(status, envelope) {
+    if (!status) return "已受理，等待执行";
+    const waitTexts = discoveryWaitTexts(status, envelope);
+    const parts = [
+        "论文：在队列 " + pipelineValue(status.queuedPapers) + " / 已处理 " + pipelineValue(status.processedPapers),
+        "ORCID：在队列 " + pipelineValue(status.queuedRecords) + " / 已处理 " + pipelineValue(status.processedRecords),
+        "队列 " + pipelineValue(status.queueDepth),
+        "在途 " + pipelineValue(status.runningJobs),
+        "专家：新增 " + pipelineValue(status.indexedExperts) + " / 重复 " + pipelineValue(status.duplicateExperts),
+        "失败 " + pipelineValue(status.failedItems),
+        discoveryBudgetText(status.budget)
+    ];
+    let text = parts.join("；");
+    if (waitTexts.length > 0) {
+        text += "；等待：" + waitTexts.join("；");
+    }
+    return text;
+}
+
+function discoveryWaitTexts(status, envelope) {
+    const fromServer = envelope && Array.isArray(envelope.waitTexts)
+        ? envelope.waitTexts.filter(t => typeof t === "string" && t.length > 0)
+        : [];
+    if (fromServer.length > 0) return fromServer;
+    const reasons = status && Array.isArray(status.waitReasons) ? status.waitReasons : [];
+    return reasons
+        .map(reason => PIPELINE_WAIT_REASON_TEXTS[reason] || String(reason))
+        .filter(text => text.length > 0);
+}
+
+// I-5（c3）：逐源明细 —— 局部来源错误单列，仍可推进的来源绝不被渲染为全部停止。
+function renderDiscoverySourceDetail(status) {
+    const bySource = $("#taskModalBySource");
+    const content = $("#taskModalBySourceContent");
+    if (!bySource || !content) return;
+    const sources = status && Array.isArray(status.sources) ? status.sources : [];
+    if (sources.length === 0) {
+        bySource.hidden = true;
+        content.innerHTML = "";
+        return;
+    }
+    const rows = sources.map(s => `
+        <tr>
+            <td style="padding:3px 8px;">${escapeHtml(s.source)}</td>
+            <td style="padding:3px 8px;">${escapeHtml(s.cursorState || "-")}</td>
+            <td style="padding:3px 8px;">${escapeHtml(String(s.queuedItems || 0))}</td>
+            <td style="padding:3px 8px;">${escapeHtml(String(s.processedItems || 0))}</td>
+            <td style="padding:3px 8px;">${escapeHtml(String(s.activeJobs || 0))}</td>
+            <td style="padding:3px 8px;">${escapeHtml(String(s.failedJobs || 0))}</td>
+            <td style="padding:3px 8px;">${escapeHtml(String(s.indexedExperts || 0))}</td>
+            <td style="padding:3px 8px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.sourceError || "-")}</td>
+        </tr>
+    `).join("");
+    content.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead><tr style="background:var(--panel-bg);border-bottom:1px solid var(--panel-border);">
+                <th style="padding:4px 8px;text-align:left;">来源</th>
+                <th style="padding:4px 8px;text-align:left;">游标</th>
+                <th style="padding:4px 8px;text-align:left;">在队列</th>
+                <th style="padding:4px 8px;text-align:left;">已处理</th>
+                <th style="padding:4px 8px;text-align:left;">在途</th>
+                <th style="padding:4px 8px;text-align:left;">失败</th>
+                <th style="padding:4px 8px;text-align:left;">新增专家</th>
+                <th style="padding:4px 8px;text-align:left;">来源错误</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+        </table>
+    `;
+    bySource.hidden = false;
+}
+
+/** I-2（c3）：只读一次模式与既有配置；模式判定永远来自这里，而不是请求本身。 */
+async function fetchDiscoveryPipelineInfo() {
+    const body = await api("/api/expert-discovery/pipeline", { timeoutMs: PIPELINE_STATUS_TIMEOUT_MS });
+    discoveryPipelineMode = body && body.mode === "CONTINUOUS" ? "CONTINUOUS" : "LEGACY";
+    return body || { mode: discoveryPipelineMode };
+}
+
+/** I-2/I-5（c3）：把一次 status 快照渲染进既有节点（只用 textContent/hidden/既有状态 class）。 */
+function renderDiscoveryPipelineStatus(status, generation, envelope) {
+    if (!isCurrentTaskModal(DISCOVERY_TASK_TYPE, generation)) return;
+    const modal = currentTaskModal;
+    const state = String((status && status.state) || (status && status.phase) || "QUEUED");
+    const hasFailures = Number((status && status.failedItems) || 0) > 0;
+    if (modal) {
+        modal.pipelineState = state;
+        modal.pipelineDesiredState = status ? status.desiredState : null;
+    }
+    const statusEl = $("#taskModalStatus");
+    if (statusEl) {
+        statusEl.textContent = pipelineStatusLabel(state, hasFailures);
+        statusEl.className = `task-modal-status ${pipelineStatusClass(state, hasFailures)}`;
+    }
+    const percentEl = $("#taskModalPercent");
+    if (percentEl) percentEl.textContent = "持续运行";
+    const messageEl = $("#taskModalMessage");
+    if (messageEl) messageEl.textContent = discoveryPipelineMetricsText(status, envelope);
+    renderDiscoverySourceDetail(status);
+    const cancelBtn = $("#taskModalCancelBtn");
+    if (cancelBtn) {
+        cancelBtn.hidden = false;
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = state === "PAUSED" ? "恢复发现" : "暂停发现";
+    }
+    // I-2（c3）：只有 status 提供的非空 currentExecutionId 才绑定；空值绝不绑定历史最新任务。
+    if (status && status.currentExecutionId != null && modal && modal.executionId !== status.currentExecutionId) {
+        bindTaskModalExecution(DISCOVERY_TASK_TYPE, generation, status.currentExecutionId).catch(() => {});
+    }
+}
+
+/** I-2（c3）：202 受理后的初始呈现 —— “已受理，等待执行”，不是完成。 */
+function applyContinuousLaunch(response, generation) {
+    if (!isCurrentTaskModal(DISCOVERY_TASK_TYPE, generation)) return;
+    if (currentTaskModal) {
+        currentTaskModal.pipelineMode = true;
+        currentTaskModal.pipelineState = (response && (response.state || response.phase)) || "QUEUED";
+    }
+    const statusEl = $("#taskModalStatus");
+    if (statusEl) {
+        const state = (currentTaskModal && currentTaskModal.pipelineState) || "QUEUED";
+        statusEl.textContent = pipelineStatusLabel(state, false);
+        statusEl.className = `task-modal-status ${pipelineStatusClass(state, false)}`;
+    }
+    const messageEl = $("#taskModalMessage");
+    if (messageEl) messageEl.textContent = (response && response.message) || "已受理，等待执行";
+    const cancelBtn = $("#taskModalCancelBtn");
+    if (cancelBtn) {
+        cancelBtn.hidden = false;
+        cancelBtn.disabled = false;
+        cancelBtn.textContent = "暂停发现";
+    }
+    startDiscoveryPipelinePolling(generation);
+}
+
+function stopDiscoveryPipelinePolling(generation) {
+    const modal = currentTaskModal;
+    if (generation !== undefined && (!modal || modal.generation !== generation)) return;
+    if (modal && modal.pipelineTimer) {
+        clearInterval(modal.pipelineTimer);
+        modal.pipelineTimer = null;
+    }
+    if (modal) modal.pipelineRequestInFlight = false;
+}
+
+/**
+ * I-7（c3）：3 秒一次、单次最多一个请求、10 秒超时、generation 校验；
+ * 窗口结束后继续轮询（某个历史窗口的终态不代表流水线结束）。
+ */
+function startDiscoveryPipelinePolling(generation, initialStatus) {
+    stopDiscoveryPipelinePolling();
+    const modal = currentTaskModal;
+    if (!modal || modal.generation !== generation) return;
+    modal.pipelineMode = true;
+    if (initialStatus) renderDiscoveryPipelineStatus(initialStatus, generation, null);
+    const tick = async () => {
+        if (!isCurrentTaskModal(DISCOVERY_TASK_TYPE, generation)) {
+            // 只停自己那一代，绝不碰新弹窗的轮询。
+            stopDiscoveryPipelinePolling(generation);
+            return;
+        }
+        if (modal.pipelineRequestInFlight) return;
+        modal.pipelineRequestInFlight = true;
+        try {
+            const body = await api("/api/expert-discovery/pipeline", { timeoutMs: PIPELINE_STATUS_TIMEOUT_MS });
+            if (!isCurrentTaskModal(DISCOVERY_TASK_TYPE, generation)) return;
+            if (body && body.mode === "CONTINUOUS" && body.status) {
+                renderDiscoveryPipelineStatus(body.status, generation, body);
+            }
+        } catch (e) {
+            // 状态查询失败必须可见（而不是假装空闲），并自动重试。
+            if (isCurrentTaskModal(DISCOVERY_TASK_TYPE, generation)) {
+                const messageEl = $("#taskModalMessage");
+                if (messageEl) messageEl.textContent = "状态查询失败：" + e.message + "；将自动重试";
+            }
+        } finally {
+            modal.pipelineRequestInFlight = false;
+        }
+    };
+    modal.pipelineTimer = setInterval(tick, PIPELINE_STATUS_POLL_MS);
+    tick();
+}
+
+/** I-7（c3）：启动失败（409/503/超时）后回到可重试的配置态，不污染其他弹窗。 */
+function restoreLaunchConfigAfterFailure(generation) {
+    if (!isCurrentTaskModal(DISCOVERY_TASK_TYPE, generation)) return;
+    stopTaskModalPolling();
+    const progressSection = $("#taskModalProgressSection");
+    const configSection = $("#taskModalConfigSection");
+    if (progressSection) progressSection.hidden = true;
+    if (configSection) configSection.hidden = false;
+    const bySource = $("#taskModalBySource");
+    if (bySource) bySource.hidden = true;
+    const cancelBtn = $("#taskModalCancelBtn");
+    if (cancelBtn) {
+        cancelBtn.disabled = false;
+        cancelBtn.hidden = true;
+    }
+    const runBtn = $("#taskLaunchRunBtn");
+    if (runBtn) runBtn.disabled = false;
+    if (currentTaskModal) {
+        currentTaskModal.mode = "CONFIG";
+        currentTaskModal.pipelineMode = false;
+        currentTaskModal.pipelineState = null;
+    }
+}
+
 function isCurrentTaskWatcher(taskType, watcher) {
     return watcher != null && taskWatchers[taskType] === watcher;
 }
@@ -830,6 +1117,13 @@ async function pollTaskWatcher(taskType) {
 
         if (isProgressTerminal(progress.status)) {
             stopTaskWatcher(taskType, true, watcher);
+            // I-2/I-5（c3）：连续模式下单个窗口的终态不是流水线结束 —— 绝不发“专家发现完成”。
+            // typeof 兜底：vm 沙箱单测以函数为单位抽取源码（与 I1-5 同惯例），未注册时视为旧模式。
+            if (taskType === "EXPERT_DISCOVERY"
+                && typeof discoveryPipelineMode !== "undefined"
+                && discoveryPipelineMode === "CONTINUOUS") {
+                return;
+            }
             const mapping = taskButtonMapping[taskType];
             const label = mapping?.label || taskType;
             const meta = getProgressStatusMeta(progress.status);
@@ -903,21 +1197,52 @@ function markTaskWatcherLaunchSucceeded(taskType, capturedGeneration) {
     }
 }
 
-async function progressStoreHasRunningTask() {
+/**
+ * I-6（c3）：运行锁。
+ * - 传入请求任务类型时按**请求任务**判断：同类型仍禁止重复；仅「深度发现 ↔ 检查回复」双向放开；
+ *   其他组合保持原有互斥。
+ * - 传入类型时状态查询失败必须显式抛错（调用方显示并允许重试），绝不当作“所有任务空闲”。
+ * - 不传类型时保持旧语义：任一任务在跑都算忙，查询失败按空闲处理（其他入口不动）。
+ */
+async function progressStoreHasRunningTask(requestedTaskType = null) {
+    let queryFailure = null;
+    let busy = false;
     for (const taskType of Object.keys(taskButtonMapping)) {
-        if (await isTaskRunning(taskType)) return true;
+        let running;
+        try {
+            running = await fetchTaskRunningOrThrow(taskType);
+        } catch (e) {
+            if (!queryFailure) queryFailure = e;
+            continue;
+        }
+        if (!running) continue;
+        if (requestedTaskType && taskType !== requestedTaskType
+            && COEXISTING_TASK_TYPES.has(requestedTaskType) && COEXISTING_TASK_TYPES.has(taskType)) {
+            continue;
+        }
+        busy = true;
     }
-    return false;
+    if (queryFailure && requestedTaskType) {
+        throw new Error("任务状态查询失败：" + (queryFailure.message || "未知原因"));
+    }
+    return busy;
+}
+
+async function fetchTaskRunningOrThrow(taskType) {
+    const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
+    await handleAuthResponse(response);
+    if (response.status === 204) return false;
+    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+    const progress = await response.json();
+    return progress.status === "RUNNING" || progress.status === "CANCELLING";
 }
 
 async function isTaskRunning(taskType) {
     try {
-        const response = await fetch(`${contextPath}/api/task-progress/${taskType}`);
-        await handleAuthResponse(response);
-        if (!response.ok) return false;
-        const progress = await response.json();
-        return progress.status === "RUNNING" || progress.status === "CANCELLING";
-    } catch (e) { return false; }
+        return await fetchTaskRunningOrThrow(taskType);
+    } catch (e) {
+        return false;
+    }
 }
 
 function setTaskButtonRunning(btnId) {
@@ -934,6 +1259,8 @@ function openTaskModal(taskType, label, btnId, options = {}) {
         }
         const launchRequested = options.launchRequested === true;
         const knownActiveAtOpen = options.knownActiveAtOpen === true;
+        // I-5/S-1（c3）：连续模式复用同一批节点，但不显示百分比、不轮询旧 task-progress。
+        const pipelineMode = options.pipelineMode === true;
 
         // 停止旧轮询但不关闭弹窗；停止后台 watcher，由弹窗接管
         stopTaskModalPolling();
@@ -973,16 +1300,23 @@ function openTaskModal(taskType, label, btnId, options = {}) {
         document.body.classList.add("modal-open");
         if (titleEl) titleEl.textContent = label;
         if (statusEl) {
-            statusEl.textContent = "RUNNING";
+            statusEl.textContent = pipelineMode ? "QUEUED" : "RUNNING";
+            // S-1：QUEUED/RUNNING 都复用既有 running 状态 class（不新增 class/颜色）。
             statusEl.className = "task-modal-status running";
         }
-        if (percentEl) percentEl.textContent = "0%";
-        if (fillEl) fillEl.style.width = "0%";
-        if (messageEl) messageEl.textContent = "初始化中...";
+        if (percentEl) percentEl.textContent = pipelineMode ? "持续运行" : "0%";
+        if (fillEl) {
+            // 持续模式没有日总数，隐藏既有进度条；切回旧任务时恢复原显示。
+            if (fillEl.parentElement) fillEl.parentElement.hidden = pipelineMode;
+            fillEl.style.width = "0%";
+        }
+        if (messageEl) messageEl.textContent = pipelineMode ? "已受理，等待执行" : "初始化中...";
         if (cancelBtn) {
             cancelBtn.disabled = false;
             cancelBtn.hidden = false;
-            cancelBtn.textContent = taskType === "EXPERT_ENRICHMENT" ? "暂停" : "取消任务";
+            cancelBtn.textContent = pipelineMode
+                ? "暂停发现"
+                : (taskType === "EXPERT_ENRICHMENT" ? "暂停" : "取消任务");
         }
         if (errorsDiv) errorsDiv.hidden = true;
         if (errorContent) errorContent.textContent = "";
@@ -995,10 +1329,11 @@ function openTaskModal(taskType, label, btnId, options = {}) {
         currentTaskModal = createTaskModalContext(taskType, label, btnId, "PROGRESS");
         currentTaskModal.launchRequested = launchRequested;
         currentTaskModal.knownActiveAtOpen = knownActiveAtOpen;
+        currentTaskModal.pipelineMode = pipelineMode;
         const capturedGeneration = currentTaskModal.generation;
 
-    // 启动进度轮询（每 1s）
-    const progressTimer = setInterval(async () => {
+    // 启动进度轮询（每 1s）—— 连续模式改由 GET /pipeline 轮询，绝不用旧 task 记录冒充流水线状态。
+    const progressTimer = pipelineMode ? null : setInterval(async () => {
         try {
             const url = `${contextPath}/api/task-progress/${taskType}`;
             const progress = await fetchJsonForCurrentTaskModal(taskType, capturedGeneration, url);
@@ -1048,7 +1383,11 @@ function openTaskModal(taskType, label, btnId, options = {}) {
 function closeTaskModal() {
     if (!currentTaskModal) return;
     const taskType = currentTaskModal.taskType;
-    const shouldWatch = shouldStartTaskWatcherOnClose(currentTaskModal);
+    // I-3（c3）：关闭弹窗只停止本弹窗轮询，不是暂停；连续模式的后台窗口由数据库状态继续，
+    // 因此也不启动旧 task-progress watcher（避免把某个窗口的终态当流水线结束）。
+    const shouldWatch = currentTaskModal.pipelineMode === true
+        ? false
+        : shouldStartTaskWatcherOnClose(currentTaskModal);
     const awaitingLaunch = currentTaskModal.mode === "PROGRESS"
         && currentTaskModal.launchRequested
         && currentTaskModal.lastProgressStatus == null
@@ -1070,26 +1409,56 @@ function stopTaskModalPolling() {
         if (currentTaskModal.progressTimer) clearInterval(currentTaskModal.progressTimer);
         if (currentTaskModal.logTimer) clearInterval(currentTaskModal.logTimer);
         if (currentTaskModal.runListTimer) clearInterval(currentTaskModal.runListTimer);
+        if (currentTaskModal.pipelineTimer) clearInterval(currentTaskModal.pipelineTimer);
         currentTaskModal.progressTimer = null;
         currentTaskModal.logTimer = null;
         currentTaskModal.runListTimer = null;
+        currentTaskModal.pipelineTimer = null;
     }
+    discoveryPipelineRequestInFlight = false;
 }
 
 async function handleCancelTask() {
     if (!currentTaskModal) return;
-    if (!confirm("确定要取消正在执行的任务吗？")) return;
     const taskType = currentTaskModal.taskType;
+    const pipelineModal = currentTaskModal.pipelineMode === true;
+    const paused = pipelineModal && currentTaskModal.pipelineState === "PAUSED";
+    // I-3/S-2（c3）：同一个按钮承担暂停/恢复，语义由按钮文本与确认文案表达。
+    const confirmText = pipelineModal
+        ? (paused
+            ? "确定要恢复深度发现吗？将按已保存的条件继续。"
+            : "确定要暂停深度发现吗？人工暂停后不会自动恢复。")
+        : "确定要取消正在执行的任务吗？";
+    if (!confirm(confirmText)) return;
     const cancelBtn = $("#taskModalCancelBtn");
-    cancelBtn.disabled = true;
-    cancelBtn.textContent = "取消中...";
+    const generation = currentTaskModal.generation;
+    if (cancelBtn) {
+        cancelBtn.disabled = true;
+        cancelBtn.textContent = paused ? "恢复中..." : (pipelineModal ? "暂停中..." : "取消中...");
+    }
     try {
-        await api(`/api/task-progress/${taskType}/cancel`, { method: "POST" });
-        showStatus("已发送取消请求", "ok");
+        if (paused) {
+            await api("/api/expert-discovery/pipeline/resume", {
+                method: "POST",
+                timeoutMs: PIPELINE_LAUNCH_TIMEOUT_MS
+            });
+            showStatus("已恢复深度发现", "ok");
+        } else {
+            await api(`/api/task-progress/${taskType}/cancel`, { method: "POST" });
+            showStatus(pipelineModal ? "已发送暂停请求" : "已发送取消请求", "ok");
+        }
     } catch (e) {
-        showStatus("取消失败: " + e.message, "error");
-        cancelBtn.disabled = false;
-        cancelBtn.textContent = "取消任务";
+        const action = paused ? "恢复失败: " : (pipelineModal ? "暂停失败: " : "取消失败: ");
+        showStatus(action + e.message, "error");
+    } finally {
+        if (cancelBtn) {
+            cancelBtn.disabled = false;
+            if (isCurrentTaskModal(taskType, generation)) {
+                cancelBtn.textContent = pipelineModal
+                    ? (currentTaskModal.pipelineState === "PAUSED" ? "恢复发现" : "暂停发现")
+                    : (taskType === "EXPERT_ENRICHMENT" ? "暂停" : "取消任务");
+            }
+        }
     }
 }
 
@@ -1579,10 +1948,25 @@ function focusMailboxProcessingPanel() {
 }
 
 async function api(path, options = {}) {
-    const response = await fetch(`${contextPath}${path}`, {
-        headers: { "Content-Type": "application/json", ...(options.headers || {}) },
-        ...options
-    });
+    // I-7（c3）：可选有限超时 —— 新模式的状态/启动请求必须有出口，旧模式耗时请求照旧不设超时。
+    const { timeoutMs, ...fetchOptions } = options;
+    const controller = timeoutMs ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    let response;
+    try {
+        response = await fetch(`${contextPath}${path}`, {
+            headers: { "Content-Type": "application/json", ...(fetchOptions.headers || {}) },
+            ...fetchOptions,
+            ...(controller ? { signal: controller.signal } : {})
+        });
+    } catch (e) {
+        if (controller && controller.signal.aborted) {
+            throw new Error(`请求超时（${Math.round(timeoutMs / 1000)} 秒）`);
+        }
+        throw e;
+    } finally {
+        if (timer) clearTimeout(timer);
+    }
     await handleAuthResponse(response);
     const text = await response.text();
     const data = text ? JSON.parse(text) : null;
@@ -5917,7 +6301,14 @@ async function handleCheckReplies() {
 
 async function executeCheckReplies() {
     const taskType = "CHECK_REPLIES";
-    const hasRunning = await progressStoreHasRunningTask();
+    let hasRunning;
+    try {
+        // I-6（c3）：检查回复与深度发现允许并存；其余组合保持原有互斥。
+        hasRunning = await progressStoreHasRunningTask(taskType);
+    } catch (e) {
+        showStatus("任务状态检查失败: " + e.message + "，请重试", "error");
+        return;
+    }
     if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
@@ -6182,6 +6573,21 @@ const taskLaunchConfigs = {
         btnId: "discoverBtn",
         showKeyword: true,
         showMaxPromotions: false,
+        /**
+         * I-7/S-2（c3）：来源列表 10 秒超时；加载失败时留在配置区显示“加载失败…请重新打开重试”
+         * 且按钮禁用（不另造重试组件），绝不按空列表静默启动所有默认来源。
+         */
+        preload: async () => {
+            try {
+                await loadDiscoverySources();
+            } catch (e) {
+                return { desc: e.message, canRun: false };
+            }
+            return {
+                desc: isContinuousDiscoveryMode() ? CONTINUOUS_DISCOVERY_DESC : (taskLaunchConfigs.EXPERT_DISCOVERY.desc || ""),
+                canRun: true
+            };
+        },
         run: executeDiscover
     },
     EXPERT_ENRICHMENT: {
@@ -6272,6 +6678,29 @@ async function openTaskLaunchModal(taskType) {
     const filtersRow = $("#taskLaunchFiltersRow");
     filtersRow.hidden = true;
 
+    // I-2/I-7（c3）：深度发现先确定模式与既有配置，再决定展示配置区还是进度区；
+    // 已有配置时直接展示状态（PAUSED 显示“恢复发现”），绝不静默用新条件覆盖旧积压。
+    if (taskType === DISCOVERY_TASK_TYPE) {
+        $("#taskLaunchDesc").textContent = "正在准备任务信息...";
+        runBtn.disabled = true;
+        let info = null;
+        try {
+            info = await fetchDiscoveryPipelineInfo();
+        } catch (e) {
+            $("#taskLaunchDesc").textContent = "加载失败：" + e.message + "；请重新打开弹窗重试";
+            runBtn.disabled = true;
+            return;
+        }
+        if (isContinuousDiscoveryMode() && info.status && info.status.queryHash) {
+            openTaskModal(taskType, config.title, config.btnId, {
+                knownActiveAtOpen: true,
+                pipelineMode: true
+            });
+            startDiscoveryPipelinePolling(currentTaskModal?.generation, info.status);
+            return;
+        }
+    }
+
     let pre = null;
     if (config.preload) {
         $("#taskLaunchDesc").textContent = "正在准备任务信息...";
@@ -6287,6 +6716,7 @@ async function openTaskLaunchModal(taskType) {
             }
         } catch (e) {
             $("#taskLaunchDesc").textContent = "加载任务信息失败: " + e.message;
+            runBtn.disabled = true;
             return;
         }
     }
@@ -6297,14 +6727,13 @@ async function openTaskLaunchModal(taskType) {
     if (config.showMaxPromotions) $("#taskLaunchMaxPromotions").value = "1000";
 
     const sourcesRow = $("#taskLaunchSourcesRow");
-    if (taskType === "EXPERT_DISCOVERY") {
+    if (taskType === DISCOVERY_TASK_TYPE) {
         sourcesRow.hidden = false;
-        fetchSources().catch(() => {});
     } else {
         sourcesRow.hidden = true;
     }
     const advancedRow = $("#taskLaunchAdvancedRow");
-    if (taskType === "EXPERT_DISCOVERY") {
+    if (taskType === DISCOVERY_TASK_TYPE) {
         advancedRow.hidden = false;
         $("#taskLaunchIncludeRawScan").checked = false;
     } else {
@@ -6324,10 +6753,14 @@ async function openTaskLaunchModal(taskType) {
             }
             runBtn.disabled = false;
         }
-        // Toggle view to progress immediately, then run the task
-        $("#taskModalConfigSection").hidden = true;
-        $("#taskModalProgressSection").hidden = false;
-        config.run();
+        // I-7（c3）：先 await 启动函数（它负责读取并冻结选择、决定是否切到进度区）；
+        // 失败路径由启动函数把界面恢复成可重试的配置态。
+        runBtn.disabled = true;
+        try {
+            await config.run();
+        } finally {
+            runBtn.disabled = false;
+        }
     };
 
     $("#taskModalRunBody").innerHTML = `<tr><td colspan="8" class="muted" style="text-align:center;padding:12px;">正在加载最近执行记录...</td></tr>`;
@@ -6603,21 +7036,37 @@ async function executePromoteRaw() {
     }
 }
 
-async function fetchSources() {
+/**
+ * I-7（c3）：来源列表的加载结果必须可区分「没选来源」与「没加载成功」——
+ * 失败时清空残留并记录原因，启动入口据此拒绝按空列表意外启动所有默认来源。
+ */
+async function loadDiscoverySources() {
+    discoverySources.status = "loading";
+    discoverySources.error = null;
     try {
-        const sources = await api(`/api/expert-discovery/sources`);
+        const sources = await api("/api/expert-discovery/sources", { timeoutMs: DISCOVERY_SOURCE_TIMEOUT_MS });
         const container = $("#taskLaunchSources");
-        container.innerHTML = sources.map(s => `
-            <label style="display:flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--panel-border);border-radius:4px;font-size:12px;cursor:pointer;">
-                <input type="checkbox" value="${escapeHtml(s.sourceName)}"
-                    ${s.enabled ? "checked" : "disabled"}
-                    class="source-cb">
-                ${escapeHtml(s.sourceName)}
-                <span class="text-muted" style="font-size:10px;">(${escapeHtml(s.extractionMethod)})</span>
-            </label>
-        `).join("");
+        if (container) {
+            container.innerHTML = sources.map(s => `
+                <label style="display:flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--panel-border);border-radius:4px;font-size:12px;cursor:pointer;">
+                    <input type="checkbox" value="${escapeHtml(s.sourceName)}"
+                        ${s.enabled ? "checked" : "disabled"}
+                        class="source-cb">
+                    ${escapeHtml(s.sourceName)}
+                    <span class="text-muted" style="font-size:10px;">(${escapeHtml(s.extractionMethod)})</span>
+                </label>
+            `).join("");
+        }
+        discoverySources.status = "ready";
+        discoverySources.items = sources;
+        return sources;
     } catch (e) {
-        console.error("Failed to fetch sources:", e);
+        discoverySources.status = "error";
+        discoverySources.error = e.message || "未知原因";
+        discoverySources.items = [];
+        const container = $("#taskLaunchSources");
+        if (container) container.innerHTML = "";
+        throw new Error("来源加载失败：" + discoverySources.error + "；请重新打开弹窗重试");
     }
 }
 
@@ -6628,32 +7077,41 @@ function getSelectedSources() {
 }
 
 async function executeDiscover() {
-    const taskType = "EXPERT_DISCOVERY";
+    const taskType = DISCOVERY_TASK_TYPE;
+    // I-7（c3）：关键词/来源/includeRawScan 在切视图之前读取并冻结（切视图后读到的可能是别的任务的选择）。
     const keywords = ($("#taskLaunchKeywordInput")?.value || "").trim();
-    const hasRunning = await progressStoreHasRunningTask();
+    const selectedSources = getSelectedSources();
+    const includeRawScan = $("#taskLaunchIncludeRawScan")?.checked === true;
+    if (discoverySources.status !== "ready") {
+        // I-7：来源加载失败时禁止按空列表意外启动所有默认来源。
+        showStatus("来源列表未加载成功，请重新打开弹窗后重试", "error");
+        return;
+    }
+    let hasRunning;
+    try {
+        // I-6：按请求任务判断互斥（深度发现与检查回复可并存），状态查询失败必须可见。
+        hasRunning = await progressStoreHasRunningTask(taskType);
+    } catch (e) {
+        showStatus("任务状态检查失败: " + e.message + "，请重试", "error");
+        return;
+    }
     if (hasRunning) {
         showStatus("已有其他任务正在执行中，请等待完成后再启动新任务", "warn");
         return;
     }
-    openTaskModal(taskType, "深度发现（外部数据源）", "discoverBtn", { launchRequested: true });
+    const continuous = isContinuousDiscoveryMode();
+    openTaskModal(taskType, "深度发现（外部数据源）", "discoverBtn", {
+        launchRequested: true,
+        pipelineMode: continuous
+    });
     const capturedGeneration = currentTaskModal?.generation;
     try {
-        const selectedSources = getSelectedSources();
-        const includeRawScan = $("#taskLaunchIncludeRawScan")?.checked === true;
-        let response;
-        if (keywords) {
-            const params = new URLSearchParams();
-            keywords.split(",").map(k => k.trim()).filter(k => k).forEach(k => params.append("keywords", k));
-            if (selectedSources.length > 0) selectedSources.forEach(s => params.append("sources", s));
-            if (includeRawScan) params.append("includeRawScan", "true");
-            response = await api(`/api/expert-discovery/run/by-keyword?${params}`, { method: "POST" });
-        } else {
-            const params = new URLSearchParams();
-            if (includeRawScan) params.append("includeRawScan", "true");
-            const query = params.toString();
-            const url = query ? `/api/expert-discovery/run?${query}` : "/api/expert-discovery/run";
-            const body = selectedSources.length > 0 ? { sources: selectedSources } : {};
-            response = await api(url, { method: "POST", body: JSON.stringify(body), headers: { "Content-Type": "application/json" } });
+        const response = await postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous);
+        if (response && response.mode === "CONTINUOUS") {
+            // I-2：202 只表示已受理 —— 不发完成通知、不据 202 绑定任何历史执行，
+            // 也不交给旧 task-progress watcher（窗口终态不是流水线结束）。
+            applyContinuousLaunch(response, capturedGeneration);
+            return;
         }
         if (response && response.executionId != null) {
             await bindTaskModalExecution(taskType, capturedGeneration, response.executionId);
@@ -6679,17 +7137,64 @@ async function executeDiscover() {
             level: hasFailures ? "warn" : "ok"
         });
     } catch (e) {
-        if (e.message.includes("正在执行中")) {
-            showStatus(e.message, "warn");
-            stopTaskWatcher(taskType, true);
-            return;
-        }
-        showStatus("发现失败: " + e.message, "error");
-        showTaskErrorLog(e.message);
-        stopTaskModalPolling();
-        stopTaskWatcher(taskType, true);
-        hideProgressBar();
+        handleDiscoveryLaunchFailure(e, capturedGeneration, continuous);
     }
+}
+
+/** I-7（c3）：只有新模式（连续）的 POST 有 15 秒超时；旧模式耗时请求沿用原机制。 */
+async function postDiscoveryLaunch(keywords, selectedSources, includeRawScan, continuous) {
+    const timeout = continuous ? { timeoutMs: PIPELINE_LAUNCH_TIMEOUT_MS } : {};
+    if (keywords) {
+        const params = new URLSearchParams();
+        keywords.split(",").map(k => k.trim()).filter(k => k).forEach(k => params.append("keywords", k));
+        if (selectedSources.length > 0) selectedSources.forEach(s => params.append("sources", s));
+        if (includeRawScan) params.append("includeRawScan", "true");
+        return await api(`/api/expert-discovery/run/by-keyword?${params}`, { method: "POST", ...timeout });
+    }
+    const params = new URLSearchParams();
+    if (includeRawScan) params.append("includeRawScan", "true");
+    const query = params.toString();
+    const url = query ? `/api/expert-discovery/run?${query}` : "/api/expert-discovery/run";
+    const body = selectedSources.length > 0 ? { sources: selectedSources } : {};
+    return await api(url, {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        ...timeout
+    });
+}
+
+/** I-7（c3）：启动失败必须可见，并把弹窗还给可重试的配置态。 */
+function handleDiscoveryLaunchFailure(e, generation, continuous) {
+    const message = (e && e.message) || "未知原因";
+    if (e && e.status === 409) {
+        // 不同的查询仍有在手工作：保留配置界面，不覆盖旧的积压条件。
+        restoreLaunchConfigAfterFailure(generation);
+        const descEl = $("#taskLaunchDesc");
+        if (descEl) {
+            descEl.textContent = "该查询与正在运行的深度发现不一致：" + message +
+                "；请调整关键词后重试，或先在进度区暂停现有发现。";
+        }
+        showStatus("深度发现未受理: " + message, "warn");
+        return;
+    }
+    if (continuous) {
+        restoreLaunchConfigAfterFailure(generation);
+        showStatus("深度发现启动失败: " + message, "error");
+        showTaskErrorLog("深度发现启动失败: " + message);
+        return;
+    }
+    const taskType = DISCOVERY_TASK_TYPE;
+    if (message.includes("正在执行中")) {
+        showStatus(message, "warn");
+        stopTaskWatcher(taskType, true);
+        return;
+    }
+    showStatus("发现失败: " + message, "error");
+    showTaskErrorLog(message);
+    stopTaskModalPolling();
+    stopTaskWatcher(taskType, true);
+    hideProgressBar();
 }
 
 async function handleBulkOutreach() {
