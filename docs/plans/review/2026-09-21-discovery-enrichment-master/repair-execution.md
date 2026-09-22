@@ -208,3 +208,45 @@ The plan's clause 5 returns to the already authorized `review-fast-p` aggregate 
 - Plan identity re-checked after the commit: `sha256:2105d2c6d899b4a4dbb23730cb49073962b61e9826e54698a81067845ca3d961` (unchanged).
 - Worktree identity re-checked: same root/branch/Git dir; `276cf733` is the branch HEAD.
 - No mail sent, no ES/DB state written outside tests, no migration/mapping touched, no API key read, logged or printed.
+
+---
+
+# Epoch 4 — `fix(discovery): always wrap fulltext deadline`
+
+## Identity (epoch 4)
+
+- Approval source: HUMAN invocation `$execute-p …/docs/plans/fix/00-discovery-enrichment-master/repair.md` (2026-09-22, fourth invocation) **with the explicit instruction「不要全量测试了 时间太久 就测试修复的点就行」** — same declared path, new content; that instruction narrows the command set (see Deviations).
+- Repair plan identity: `docs/plans/fix/00-discovery-enrichment-master/repair.md` @ `sha256:013b8dbce97c9c9ecde08101f886f0d16c5dc9bdf65dadfa506eca089a6fde2b` (6,878 bytes) — replaced epoch-3's `2105d2c6…`. Epochs 1–3 evidence stays historical.
+- Aggregate verification that produced this plan: aggregate epoch 4 re-review — `V-1`–`V-3` resolved; **`V-4` persistent** (the body wrapper was installed only when the deadline was already tighter than a socket cap, so a fresh 90-second paper deadline bypassed it for Europe PMC / Unpaywall).
+- Executor: `Main` (omp controller session, single execution context; no delegated writer).
+- Pre-execution code SHA: `82072c77b5f665a852418def4f474003e404d15d`
+- Post-execution code SHA: `5d00352bb7859cb2d957636bf1190afdc38922a0` (`fix(discovery): always wrap fulltext deadline`, 2 files, +46/−6)
+- Authorized files: `RestTemplateConfig.kt`, `RestTemplateConfigTest.kt` only.
+
+## V-4 residual → R-1
+
+| Requirement | What changed | Evidence |
+|---|---|---|
+| Every non-null deadline wraps response-body reads, including the normal fresh 90-second budget | `BoundedFulltextHttp.bounded` now returns the original client **only** for `deadline == null`; any non-null deadline builds a `DeadlineBoundedRequestFactory`, whose connect/read timeouts stay at the original caps when the budget is wider (`effectiveTimeoutMs(cap, remaining)` = cap) and narrow when the budget is tighter. Retry suppression is now conditional on the deadline actually being tighter, so a normal budget keeps today's retry semantics. | `RestTemplateConfigTest` 18/0/0: the new "deadline wider than both socket caps still wraps the body and cuts a trickle" case (600 ms deadline vs 100 ms/150 ms caps) ends with `FulltextBodyDeadlineExceededException` inside the budget and exactly 1 accepted connection; the unbounded test now asserts a non-null deadline is never the base client while timeouts stay at 5 s/30 s |
+| `deadline == null` keeps the exact original client and behaviour | Unchanged branch: `if (deadline == null) return base` first | `assertSame(base, bounded(base, 5_000, 30_000, null))` plus the OpenAlex auth/interceptor inheritance case |
+
+## Commands (this invocation, JDK 11, targeted per the human instruction)
+
+| # | Command | Result |
+|---|---|---|
+| 1 | `mvn test -Dtest=RestTemplateConfigTest,OpenAlexRequestPolicyTest,OpenAlexDataSourceTest` | exit 0 · 94 / 0 F / 0 E |
+| 2 | `mvn test -Dtest=OpenAlexDataSourceTest,PdfEmailExtractorTest,ExpertDiscoveryServiceTest,UnpaywallClientTest` | exit 0 · 225 / 0 F / 0 E |
+| 3 | `node --test src/test/js/*.test.js` | exit 0 · 1037 pass / 0 fail |
+| 4 | `DOCKER_HOST=… mvn test -Dapi.version=1.40` (plan command 4) | **NOT RUN** — waived by the explicit human instruction「不要全量测试了 时间太久 就测试修复的点就行」. The last full-suite evidence for this branch is epoch 3 (`3711 / 0 F / 0 E / 13 skipped` at `276cf733`); this epoch's product delta is 12 lines in one config file, whose two consumer-facing behaviours are covered by commands 1–2 (both green, and `OpenAlexDataSourceTest` exercises the real bounded client end to end). |
+
+## Deviations (epoch 4)
+
+- **Full Maven gate waived by the human** (see the command table). No other command in the plan's list was skipped, and no command was replaced by historical output.
+- Retry interception is now suppressed only when the deadline is tighter than the client's configured caps, preserving retry semantics for normal budgets.
+- No file outside the two authorized files; no plan edited; nothing pushed, merged, rebased, amended or squashed.
+
+## Clean-state evidence (epoch 4)
+
+- `git status --porcelain`: empty before and after the product commit.
+- Plan identity re-checked after the commit (unchanged `sha256:013b8dbc…`); worktree identity re-checked (same root/branch/Git dir).
+- No mail sent, no ES/DB state written outside tests, no migration/mapping touched, no API key read, logged or printed.
