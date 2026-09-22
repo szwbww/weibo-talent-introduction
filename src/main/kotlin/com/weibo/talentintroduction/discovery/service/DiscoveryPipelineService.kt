@@ -642,10 +642,13 @@ class DiscoveryPipelineService(
         }
 
         // I-1：来源流按「本源条件」建流；旧 v2 检查点只在条件完全匹配时用于首次种子。
+        // stream 身份取**本来源**的规范化 hash（`queueQueryHash` 内部把 sources 归一为 `[source]`，
+        // 因此与其他 sources 的排列/省略方式无关）；流水线级 `queryHash` 只承担 launch 的
+        // 幂等/冲突身份，不得参与 stream 键，否则 sources 改写会连同 EXHAUSTED 游标一起被遗弃。
         expertDiscoveryService.queueSourceNames(criteria).forEach { source ->
             val stream = repository.ensureStream(
                 pipelineId = PIPELINE_ID,
-                queryHash = queryHash,
+                queryHash = expertDiscoveryService.queueQueryHash(source, criteria),
                 source = source,
                 epoch = STREAM_EPOCH,
                 criteriaJson = initial.criteriaJson,

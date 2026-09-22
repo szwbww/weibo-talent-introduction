@@ -62,6 +62,7 @@ import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
@@ -1047,6 +1048,10 @@ class DiscoveryPipelineServiceTest {
         Mockito.`when`(discovery.queueSourceNames(anyCriteria())).thenAnswer {
             store.streams.values.map { it.source }.distinct().ifEmpty { listOf("OPENALEX") }
         }
+        // I-1：桩服务也必须给出**按来源稳定**的 per-source hash，否则窗口建流与用例预置的流身份对不上。
+        Mockito.`when`(discovery.queueQueryHash(anyText(), anyCriteria())).thenAnswer { invocation ->
+            "qh:" + invocation.getArgument<String>(0)
+        }
         Mockito.`when`(discovery.collectQueuePage(anyText(), anyCriteria(), Mockito.any(), Mockito.anyInt()))
             .thenReturn(QueuedSourcePage("OPENALEX", QueueItemUnit.PAPER, emptyList(), null, true))
         Mockito.`when`(discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
@@ -1127,11 +1132,15 @@ class DiscoveryPipelineServiceTest {
 
     /**
      * I-1：建一个属于**本次查询**的来源流。若尚未 launch 则先 launch，
-     * 保证（query_hash, source）与窗口将要使用的身份完全一致。
+     * 保证（query_hash, source）与窗口将要使用的身份完全一致 —— 即**本来源**的规范化 hash
+     * （窗口同样按 `queueQueryHash(source, criteria)` 建流）。
      */
     private fun streamFor(h: Harness, source: String = "OPENALEX"): InMemoryStream {
         if (h.store.pipeline.queryHash == null) launch(h)
-        return h.store.seedStream(source, requireNotNull(h.store.pipeline.queryHash))
+        val launched = objectMapper.readValue(
+            requireNotNull(h.store.pipeline.criteriaJson), PaperSearchCriteria::class.java
+        )
+        return h.store.seedStream(source, h.discovery.queueQueryHash(source, launched))
     }
 
     private fun runWindow(h: Harness): PipelineWindowResult {
@@ -1151,21 +1160,74 @@ class DiscoveryPipelineServiceTest {
     // ==================================================================
 
     @Test
-    fun `per-source query hash ignores other sources order and omission (I-1)`() {
+    fun `stream identity is the per-source hash, not the pipeline hash (I-1)`() {
         val discovery = realDiscoveryService()
-        val omitted = criteria(sources = emptyList())
-        val ordered = criteria(sources = listOf("OPENALEX", "OPENALEX"))
-        val reordered = criteria(sources = listOf("OPENALEX", "OPENALEX"))
+        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+            PaperSearchResult(listOf(paper(doi = "10.1/a")), null, 1L)
+        )
+        val h = harnessWithRealDiscovery(discovery)
+        val perSource = discovery.queueQueryHash("OPENALEX", criteria())
 
-        val fromOmitted = discovery.queueQueryHash("OPENALEX", omitted)
-        assertEquals(fromOmitted, discovery.queueQueryHash("OPENALEX", ordered), "sources 省略与显式列出必须同 stream")
-        assertEquals(fromOmitted, discovery.queueQueryHash("OPENALEX", reordered), "其他来源排列不得改变本源 stream")
-        assertFalse(fromOmitted == discovery.queueQueryHash("OPENALEX", omitted.copy(pageSize = 50)), "页大小必须参与 hash")
-        assertFalse(fromOmitted == discovery.queueQueryHash("CROSSREF", omitted), "本源名字必须参与 hash")
+        // 本源 hash 的敏感度：本来源自己的名字 / 页大小 / OA 必须参与，其他 sources 的写法不参与。
+        assertEquals(
+            perSource, discovery.queueQueryHash("OPENALEX", criteria(sources = emptyList())),
+            "sources 省略与显式列出必须同 hash"
+        )
+        assertFalse(perSource == discovery.queueQueryHash("CROSSREF", criteria()), "来源名必须参与 hash")
+        assertFalse(perSource == discovery.queueQueryHash("OPENALEX", criteria().copy(pageSize = 50)), "页大小必须参与 hash")
         assertFalse(
-            fromOmitted == discovery.queueQueryHash("OPENALEX", omitted.copy(openAccessOnly = false)),
+            perSource == discovery.queueQueryHash("OPENALEX", criteria().copy(openAccessOnly = false)),
             "OA 条件必须参与 hash"
         )
+
+        // 1) 生产路径建流：sources 显式写出（含一个本期不启用的来源）→ stream 身份必须是**本源** hash。
+        //    取 PMC_OA 是为了让「流水线级 hash」与「本源 hash」真的不同：PMC_OA 无数据源故不建流，
+        //    但它仍进入流水线级条件；本源 OPENALEX 的有效条件两边完全一致。
+        launch(h, criteria(sources = listOf("OPENALEX", "PMC_OA")))
+        runWindow(h)
+        val first = h.store.streams.values.single()
+        val pipelineHashA = h.store.pipeline.queryHash
+        assertEquals(perSource, first.queryHash, "stream 必须按本源规范化 hash 建流")
+        assertNotEquals(pipelineHashA, first.queryHash, "不得把流水线级 hash 当 stream 键")
+        assertEquals(StreamCursorState.EXHAUSTED, first.cursorState)
+        val streamId = first.id
+
+        // 2) 有效同源条件不变、只把 sources 省略 → 必须命中同一条 stream，EXHAUSTED 不得被遗弃重采。
+        clearActiveJobs(h)
+        h.clock.current = h.clock.current.plus(Duration.ofDays(1))
+        launch(h, criteria(sources = emptyList()))
+        assertNotEquals(pipelineHashA, h.store.pipeline.queryHash, "两次 launch 的流水线级身份确实不同")
+        h.store.seedJob(streamId, "KEEP-DISPATCH", nextAttemptAt = h.clock.current.plus(Duration.ofHours(1)))
+        val queuedBeforeSecond = h.store.pipeline.queuedPapers
+        runWindow(h)
+
+        val reused = h.store.streams.values.single()
+        assertEquals(streamId, reused.id, "sources 省略不得新建 stream")
+        assertEquals(perSource, reused.queryHash, "sources 省略必须命中同一本源 hash")
+        assertEquals(StreamCursorState.EXHAUSTED, reused.cursorState, "EXHAUSTED 不因 sources 改写而重置")
+        assertNull(reused.cursorValue, "已穷尽时不带游标；也绝不回到 ACTIVE")
+        assertEquals(queuedBeforeSecond, h.store.pipeline.queuedPapers, "已入队页不得被重头再采一遍")
+
+        // 3) 真正不同的有效条件（页大小）→ 必须得到**另一条** stream。
+        clearActiveJobs(h)
+        val different = criteria(sources = emptyList()).copy(pageSize = 50)
+        launch(h, different)
+        h.store.seedJob(streamId, "KEEP-DISPATCH-2", nextAttemptAt = h.clock.current.plus(Duration.ofHours(1)))
+        runWindow(h)
+
+        assertEquals(2, h.store.streams.values.size, "不同有效条件必须得到不同 stream")
+        val second = h.store.streams.values.first { it.id != streamId }
+        assertEquals(discovery.queueQueryHash("OPENALEX", different), second.queryHash, "新 stream 同样是本源 hash")
+        assertEquals(
+            StreamCursorState.EXHAUSTED, h.store.streams.getValue(streamId).cursorState,
+            "原 stream 的身份与游标不受其他条件影响"
+        )
+    }
+
+    /** 清空活跃工作，让下一次 launch 不被「仍有积压」拒绝（身份断言只看 stream 行）。 */
+    private fun clearActiveJobs(h: Harness) {
+        h.store.jobs.values.forEach { it.status = QueueJobStatus.SUCCEEDED; it.completedAt = h.clock.current }
+        h.store.pipeline.activeCount = 0
     }
 
     @Test
