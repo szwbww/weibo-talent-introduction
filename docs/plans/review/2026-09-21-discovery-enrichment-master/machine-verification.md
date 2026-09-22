@@ -253,3 +253,77 @@ The reviewer inspected the complete 51-file product/test boundary. No product co
 - Full Maven's sole error and the c7 V124 error are base/unrelated observations, not repair scope.
 - `repair-p` updated only `docs/plans/fix/00-discovery-enrichment-master/repair.md`; no product code, test, review evidence, index, branch, or commit was modified by the reviewer.
 - Verification result `FAIL/PROGRESSING`; repair planning `DRAFT_READY`. Human approval of that exact repair artifact is required before execution.
+
+## Epoch 4 — 2026-09-22T01:22:50Z
+
+- Master plan: `docs/plans/2026-09-21/00-discovery-enrichment-master.md` (sha256 `b71e3a5c2af7f3b7e2a5a659f7fcab49f81816978e767a7c4d64aec1474ad837`)
+- Governing master identity: worktree sha256 `b71e3a5c2af7f3b7e2a5a659f7fcab49f81816978e767a7c4d64aec1474ad837`; recorded commit `831e6604cf97e7acba005d8f00827659b49ce010`; invoked identity same; state `CONSISTENT`; amendments N/A.
+- Boundary: `f0c41271fc56d7455e14d28a71d563a5341dfdeb..276cf733326a204a70b061ecda01072960eedaf2`; post-repair delta `52d22cc74abf811cbaec38de2791af53e8491cc..276cf733326a204a70b061ecda01072960eedaf2` changes only nine of the ten repair-authorized files.
+- Reviewer: `/root/aggregate_epoch4_retry` (fresh, created after the repair code commit, with no inherited implementation/light-verification context).
+- Result: `FAIL`; convergence: `PROGRESSING`.
+- Repair artifact/result: `docs/plans/fix/00-discovery-enrichment-master/repair.md` (sha256 `013b8dbce97c9c9ecde08101f886f0d16c5dc9bdf65dadfa506eca089a6fde2b`) — `DRAFT_READY`, V-4 only.
+- Post-repair evidence: `DURABLE_HANDOFF`; approval and executor `Main` are recorded in `docs/plans/review/2026-09-21-discovery-enrichment-master/repair-execution.md`.
+
+### Fresh Command Evidence
+
+| Command/group | Result | Evidence |
+|---|---|---|
+| c1 Java 11 | PASS | exit 0; 93 run, 0 failures, 0 errors |
+| c2 Java 11 | PASS | exit 0; 138 run, 0 failures, 0 errors |
+| c3 Java 11 | PASS | exit 0; 37 run, 0 failures, 0 errors |
+| c4 Java 11 | PASS | exit 0; 165 run, 0 failures, 0 errors |
+| c5 Java 11 | PASS | exit 0; 230 run, 0 failures, 0 errors |
+| c6 Java 11 | PASS | exit 0; 281 run, 0 failures, 0 errors |
+| c7 MySQL/Flyway | baseline-only error | exit 1; 44 run, 0 failures, 1 base-known V124 FK fixture error; V131 repository/service cases: 18 run, 0 failures, 0 errors |
+| c8 Java 11 | PASS | exit 0; 148 run, 0 failures, 0 errors |
+| c9 Java 11 | PASS | exit 0; 129 run, 0 failures, 0 errors |
+| c10 Java 11 | PASS | exit 0; 225 run, 0 failures, 0 errors |
+| `node --test src/test/js/*.test.js` | PASS | exit 0; 1,037 pass, 0 fail |
+| Full Java 11 Maven with OrbStack | PASS | exit 0; BUILD SUCCESS; no failure introduced by this command |
+
+### Master Contract Matrix
+
+| Contract | Verdict | Evidence |
+|---|---|---|
+| R-1 / I-1 OpenAlex auth, budget, separate accounting | PASS | c1 green; auth/policy runtime paths inspected |
+| R-2 / I-2 recoverable discovery | PASS | c2–c4 green; checkpoint/status/paging paths inspected |
+| R-3 / I-4 / I-5 automatic enrichment and honest lifecycle | PASS | c6/c8 green; worker pre-lock due probe and summaries inspected |
+| R-4 / I-3 trusted identity | PASS | c5/c6 green; trusted ID and real ES-ID paths inspected |
+| R-5 throughput/fairness | PASS | c9 green; fair quota/deadline paths inspected |
+| R-6 / 10-I-1 absolute fulltext deadline | FAIL | V-4 remains persistent |
+| M-1 through M-5 | PASS | No introduced mail, identity, scope, paid-key, or migration regression |
+| I-6 scope/cost containment | PASS | Scope/cost containment maintained |
+| V131 MySQL persistence | PASS with baseline observation | V131 coverage green; V124 is base-known |
+| Required full Maven gate | PASS | Fresh command exits 0 |
+| A-1 through A-6 | PENDING | Human-only; not simulated |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | c3: 37 run, 0 failures, 0 errors |
+| V-2 | RESOLVED | c8 and JS gates green |
+| V-3 | RESOLVED | c6/c8 gates green |
+| V-4 | PERSISTENT | `RestTemplateConfig.kt:208-211` returns raw client when remaining deadline is at least both socket caps |
+
+### P1 Finding
+
+- **V-4 PERSISTENT** — A fresh 90-second budget bypasses `DeadlineBoundedInputStream`: `BoundedFulltextHttp.bounded()` returns `base` when `remainingMs >= connectCapMs && remainingMs >= readCapMs`. Europe PMC uses 5s/30s caps, so a trickling XML/JSON/PDF body can exceed the absolute deadline. Existing trickle tests use 400–500ms deadlines and exercise only the wrapped branch. This violates R-6/10-I-1.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result |
+|---|---|---|
+| c1 O-1 | I-1 | Resolved |
+| c2/c3/c4/c6/c9 | Applicable child contract | Non-blocking; pre-existing, deferred, ambiguous, or no confirmed mandatory violation |
+| c7 O-1 | I-5 | Baseline V124 fixture |
+| c7 O-2 | I-5 | Non-blocking |
+| c8 O-1/O-2 | I-5 | Resolved |
+| c10 O-1..O-3 | R-6/I-1 | Non-blocking |
+| c10 O-4 | R-6 | V-4 persistent |
+
+### Boundaries and Next State
+
+- Live quota and manual A-1 through A-6 were not run.
+- `review-p` used `verify-p`; `repair-p` produced the one bounded V-4 repair plan. No product code was modified by the reviewer.
+- Verification result `FAIL/PROGRESSING`; repair planning `DRAFT_READY`. Human approval of the exact repair artifact is required before execution.
