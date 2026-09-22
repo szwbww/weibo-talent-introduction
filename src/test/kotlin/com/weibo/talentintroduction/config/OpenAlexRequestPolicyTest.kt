@@ -1,31 +1,38 @@
 package com.weibo.talentintroduction.config
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.http.HttpHeaders
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
+/**
+ * I-1..I-6：共享预算策略的场景测试。
+ *
+ * 账本用 [InMemoryOpenAlexBudgetStore]（生产 Bean 一律注入 MySQL 账本，见 `RestTemplateConfig`），
+ * 两个 policy 实例共用一个 store 即代表「同一 accountScope 的两个应用实例」。
+ */
 class OpenAlexRequestPolicyTest {
 
     private class FakeTime(
         var current: Instant = Instant.parse("2026-09-21T02:41:17Z")
     ) : PolicyTimeSource {
-        var nanos: Long = 0
         val sleeps = CopyOnWriteArrayList<Long>()
 
         override fun now(): Instant = synchronized(this) { current }
 
-        override fun nanoTime(): Long = synchronized(this) { nanos }
-
         override fun sleep(ms: Long) {
             synchronized(this) {
                 sleeps += ms
-                nanos += ms * 1_000_000L
                 current = current.plusMillis(ms)
             }
         }
@@ -38,22 +45,43 @@ class OpenAlexRequestPolicyTest {
         apiKey: String = "",
         dailyBudgetUsd: Double = 0.0,
         maxRequestsPerSecond: Double = 100.0,
-        reserveRatio: Double = 0.2
+        reserveRatio: Double = 0.2,
+        enabled: Boolean = true,
+        freeBudgetCredits: Long = 10000,
+        rateLimitBackoffMaxMs: Long = 60_000,
+        accountScope: String = "primary",
+        budgetSyncInterval: Duration = Duration.ofSeconds(300)
     ) = OpenAlexProperties(
+        enabled = enabled,
         apiKey = apiKey,
         dailyBudgetUsd = dailyBudgetUsd,
         maxRequestsPerSecond = maxRequestsPerSecond,
-        newEnrichmentReserveRatio = reserveRatio
+        newEnrichmentReserveRatio = reserveRatio,
+        freeBudgetCredits = freeBudgetCredits,
+        rateLimitBackoffMaxMs = rateLimitBackoffMaxMs,
+        accountScope = accountScope,
+        budgetSyncInterval = budgetSyncInterval
     )
 
     private fun policy(
         apiKey: String = "",
         dailyBudgetUsd: Double = 0.0,
         maxRequestsPerSecond: Double = 100.0,
-        reserveRatio: Double = 0.2
+        reserveRatio: Double = 0.2,
+        enabled: Boolean = true,
+        freeBudgetCredits: Long = 10000,
+        rateLimitBackoffMaxMs: Long = 60_000,
+        accountScope: String = "primary",
+        store: OpenAlexBudgetStore = InMemoryOpenAlexBudgetStore(),
+        syncSource: OpenAlexBudgetSyncSource? = null
     ) = OpenAlexRequestPolicy(
-        properties(apiKey, dailyBudgetUsd, maxRequestsPerSecond, reserveRatio),
-        time
+        properties(
+            apiKey, dailyBudgetUsd, maxRequestsPerSecond, reserveRatio, enabled,
+            freeBudgetCredits, rateLimitBackoffMaxMs, accountScope
+        ),
+        time,
+        store,
+        syncSource
     )
 
     private fun quotaHeaders(
@@ -74,13 +102,93 @@ class OpenAlexRequestPolicyTest {
         return headers
     }
 
-    /** Spends the budget the way a real caller does: reserve a slot, then reconcile with the provider cost header. */
+    private val listTarget = "https://api.openalex.org/works?filter=is_oa:true&per_page=100"
+    private val searchTarget = "https://api.openalex.org/works?filter=title_and_abstract.search:alloy"
+    private val singletonTarget = "https://api.openalex.org/authors/A5023888391"
+    private val rateLimitTarget = "https://api.openalex.org/rate-limit"
+
+    /** Spends the budget the way a real caller does: reserve a permit, then reconcile with the provider cost header. */
     private fun consume(policy: OpenAlexRequestPolicy, kind: RequestKind, requests: Int) {
         repeat(requests) {
-            assertEquals(Permit.Allowed, policy.beforeRequest(kind))
-            policy.recordResponse(quotaHeaders())
+            val permit = policy.reserve(kind, Operation.LIST, listTarget)
+            assertTrue(permit is Permit.Allowed, "expected an allowed permit, got $permit")
+            policy.recordResponse((permit as Permit.Allowed).permitId, quotaHeaders())
         }
     }
+
+    // ------------------------------------------------------------------
+    // I-1：操作成本与用途分离
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `operation costs are list 1 search 10 singleton 0 content 100 rate limit 0 (I-1)`() {
+        assertEquals(1L, Operation.LIST.costCredits)
+        assertEquals(10L, Operation.SEARCH.costCredits)
+        assertEquals(0L, Operation.SINGLETON.costCredits)
+        assertEquals(100L, Operation.CONTENT.costCredits)
+        assertEquals(0L, Operation.RATE_LIMIT.costCredits)
+    }
+
+    @Test
+    fun `the declared operation must match the target host and path (I-1)`() {
+        val policy = policy()
+
+        assertTrue(policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Allowed)
+        assertTrue(policy.reserve(RequestKind.DISCOVERY, Operation.SEARCH, searchTarget) is Permit.Allowed)
+        assertTrue(policy.reserve(RequestKind.NEW_ENRICHMENT, Operation.SINGLETON, singletonTarget) is Permit.Allowed)
+        assertTrue(policy.reserve(RequestKind.NEW_ENRICHMENT, Operation.RATE_LIMIT, rateLimitTarget) is Permit.Allowed)
+
+        // 声明与目标不一致一律抛错：绝不按 URL substring 静默推断成本。
+        assertThrows(IllegalStateException::class.java) {
+            policy.reserve(RequestKind.DISCOVERY, Operation.SEARCH, listTarget)
+        }
+        assertThrows(IllegalStateException::class.java) {
+            policy.reserve(RequestKind.DISCOVERY, Operation.LIST, searchTarget)
+        }
+        assertThrows(IllegalStateException::class.java) {
+            policy.reserve(RequestKind.NEW_ENRICHMENT, Operation.LIST, singletonTarget)
+        }
+    }
+
+    @Test
+    fun `metered content downloads are refused and never write a ledger row (I-1)`() {
+        val store = InMemoryOpenAlexBudgetStore()
+        val policy = policy(apiKey = "k", store = store)
+
+        val thrown = assertThrows(OpenAlexContentDisabledException::class.java) {
+            policy.reserve(RequestKind.DISCOVERY, Operation.CONTENT, "https://content.openalex.org/works/W1.pdf")
+        }
+        assertTrue(thrown.message!!.contains("CONTENT"))
+
+        // 模拟的 100-credit Content 调用不产生任何账本行，也不消耗额度。
+        val snapshot = policy.snapshot()
+        assertEquals(0L, snapshot.confirmedSpentCredits)
+        assertEquals(0L, snapshot.reservedCredits)
+        assertEquals(10000L, snapshot.effectiveRemainingCredits)
+    }
+
+    @Test
+    fun `list search and singleton calls are charged 1 10 and 0 credits on the shared ledger (I-1)`() {
+        val policy = policy()
+
+        val list = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) as Permit.Allowed
+        policy.recordResponse(list.permitId, quotaHeaders(creditsUsed = 1))
+        assertEquals(1L, policy.snapshot().confirmedSpentCredits)
+
+        val search = policy.reserve(RequestKind.DISCOVERY, Operation.SEARCH, searchTarget) as Permit.Allowed
+        policy.recordResponse(search.permitId, quotaHeaders(creditsUsed = 10))
+        assertEquals(11L, policy.snapshot().confirmedSpentCredits)
+
+        // SINGLETON 是 0 成本：允许但不产生账本行。
+        val singleton = policy.reserve(RequestKind.NEW_ENRICHMENT, Operation.SINGLETON, singletonTarget) as Permit.Allowed
+        policy.recordResponse(singleton.permitId, HttpHeaders())
+        assertEquals(11L, policy.snapshot().confirmedSpentCredits)
+        assertEquals(0L, policy.snapshot().reservedCredits)
+    }
+
+    // ------------------------------------------------------------------
+    // I-2：账号周期唯一预算与凭证隔离
+    // ------------------------------------------------------------------
 
     @Test
     fun `keyless budget is the 0_10 dollar free budget and is never unlimited (I-2)`() {
@@ -103,6 +211,73 @@ class OpenAlexRequestPolicyTest {
     }
 
     @Test
+    fun `official balance caps the effective limit and never adds the prepaid balance (I-2)`() {
+        // 官方实测：daily_budget 10000 credits、已用 227 → 有效可用最多 9773。
+        val policy = policy(apiKey = "test-key", syncSource = { OpenAlexOfficialBalance(10000, 9773, time.current.plusSeconds(3600)) })
+
+        assertTrue(policy.syncOfficialBudget())
+
+        val snapshot = policy.snapshot()
+        assertEquals(10000L, snapshot.officialLimitCredits)
+        assertEquals(9773L, snapshot.officialRemainingCredits)
+        assertEquals(9773L, snapshot.effectiveRemainingCredits)
+        assertTrue(snapshot.effectiveRemainingCredits <= 9773L)
+
+        // 模拟预付 100：绝不抬高有效额度。
+        policy.recordResponse(quotaHeaders(creditsUsed = 1, remaining = 9772, prepaidRemainingUsd = "100.0"))
+        assertEquals(9772L, policy.remainingCredits())
+    }
+
+    @Test
+    fun `a protected free budget only tightens and a legacy usd cap only tightens (I-2)`() {
+        assertEquals(10_000L, policy(apiKey = "k").remainingCredits())
+        assertEquals(2_000L, policy(apiKey = "k", freeBudgetCredits = 2_000).remainingCredits())
+        // dailyBudgetUsd > 0 折算后只能收紧。
+        assertEquals(500L, policy(apiKey = "k", dailyBudgetUsd = 0.05).remainingCredits())
+        assertEquals(2_000L, policy(apiKey = "k", dailyBudgetUsd = 1.0, freeBudgetCredits = 2_000).remainingCredits())
+        // dailyBudgetUsd = 0 表示采用免费保护默认值，绝不表示无限。
+        assertEquals(10_000L, policy(apiKey = "k", dailyBudgetUsd = 0.0).remainingCredits())
+    }
+
+    @Test
+    fun `negative configuration fails startup (I-2)`() {
+        assertThrows(IllegalArgumentException::class.java) { OpenAlexProperties(dailyBudgetUsd = -0.01) }
+        assertThrows(IllegalArgumentException::class.java) { OpenAlexProperties(freeBudgetCredits = -1L) }
+        assertThrows(IllegalArgumentException::class.java) { OpenAlexProperties(budgetSyncInterval = Duration.ZERO) }
+        assertThrows(IllegalArgumentException::class.java) { OpenAlexProperties(accountScope = " ") }
+    }
+
+    @Test
+    fun `key rotation and a second instance share one account scope without resetting the budget (I-2)`() {
+        val store = InMemoryOpenAlexBudgetStore()
+        val first = policy(apiKey = "key-1", store = store)
+        consume(first, RequestKind.NEW_ENRICHMENT, 100)
+        assertEquals(9900L, first.snapshot().confirmedSpentCredits.let { 10_000L - it })
+
+        // 换 Key 后（同一 accountScope）预算不重置。
+        val rotated = policy(apiKey = "key-2", store = store)
+        assertEquals(9900L, rotated.snapshot().effectiveRemainingCredits)
+        assertEquals(100L, rotated.snapshot().confirmedSpentCredits)
+
+        // 第二个实例（同一 scope）看到的是同一份已用额度，不会各自拿到 10000。
+        val second = policy(apiKey = "key-1", store = store)
+        assertEquals(9900L, second.snapshot().effectiveRemainingCredits)
+    }
+
+    @Test
+    fun `the account scope never derives from the api key (I-2)`() {
+        val store = InMemoryOpenAlexBudgetStore()
+        val policy = policy(apiKey = "super-secret-key", accountScope = "primary", store = store)
+
+        assertEquals("primary", policy.snapshot().accountScope)
+        assertFalse(policy.snapshot().toString().contains("super-secret-key"))
+    }
+
+    // ------------------------------------------------------------------
+    // I-3：预占先于外部请求，乱序响应保守处理
+    // ------------------------------------------------------------------
+
+    @Test
     fun `provider remaining and limit headers cap the configured budget (I-2)`() {
         // Keyed cap is $1 (10,000 credits), but the account is really on the keyless allowance.
         val policy = policy(apiKey = "test-key")
@@ -112,49 +287,70 @@ class OpenAlexRequestPolicyTest {
     }
 
     @Test
-    fun `discovery and history backfill stop at the share reserved for new-expert enrichment (I-3, V-3)`() {
-        val policy = policy()
+    fun `discovery and history backfill stop at the share reserved for new-expert enrichment (I-3, I-5)`() {
+        val store = InMemoryOpenAlexBudgetStore().apply { pendingEnrichmentJobs = 20 }
+        val policy = policy(store = store)
         consume(policy, RequestKind.DISCOVERY, 800)
 
-        // 200 of 1,000 credits left = exactly the reserved 20%: only new-expert enrichment may continue.
+        // 1,000 中的 200 = 保留目标（20%）: only new-expert enrichment may continue.
         assertEquals(200, policy.remainingCredits())
-        assertTrue(policy.beforeRequest(RequestKind.DISCOVERY) is Permit.Deferred)
-        assertTrue(policy.beforeRequest(RequestKind.HISTORY_ENRICHMENT) is Permit.Deferred)
-        assertEquals(Permit.Allowed, policy.beforeRequest(RequestKind.NEW_ENRICHMENT))
+        assertEquals(200L, policy.snapshot().enrichmentReserveCredits)
+        val deferred = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+        assertEquals(Permit.Deferred(DeferredReason.ENRICHMENT_RESERVE, Instant.parse("2026-09-22T00:00:00Z")), deferred)
+        assertEquals(
+            DeferredReason.ENRICHMENT_RESERVE,
+            (policy.reserve(RequestKind.HISTORY_ENRICHMENT, Operation.LIST, listTarget) as Permit.Deferred).reason
+        )
+        assertTrue(policy.reserve(RequestKind.NEW_ENRICHMENT, Operation.LIST, listTarget) is Permit.Allowed)
     }
 
     @Test
-    fun `deferred permit exposes the actual UTC reset (V-2)`() {
+    fun `deferred permit exposes the actual UTC reset (I-4)`() {
         val policy = policy()
-        consume(policy, RequestKind.DISCOVERY, 800)
+        consume(policy, RequestKind.DISCOVERY, 1_000)
 
         val deferred = policy.beforeRequest(RequestKind.DISCOVERY) as Permit.Deferred
-        assertEquals(Instant.parse("2026-09-22T00:00:00Z"), deferred.resetAt)
+        assertEquals(DeferredReason.DAILY_BUDGET, deferred.reason)
+        assertEquals(Instant.parse("2026-09-22T00:00:00Z"), deferred.retryAt)
     }
 
     @Test
-    fun `exhausted day budget defers every consumer without dense retries (I-2, V-2)`() {
+    fun `exhausted day budget defers every consumer without dense retries (I-2, I-4)`() {
         val policy = policy()
         policy.recordResponse(quotaHeaders(remaining = 0, limit = 1_000, resetSeconds = 3_600))
 
-        val reset = Instant.parse("2026-09-21T03:41:17Z")
-        assertEquals(reset, (policy.beforeRequest(RequestKind.DISCOVERY) as Permit.Deferred).resetAt)
-        assertEquals(reset, (policy.beforeRequest(RequestKind.NEW_ENRICHMENT) as Permit.Deferred).resetAt)
-        assertEquals(reset, (policy.beforeRequest(RequestKind.HISTORY_ENRICHMENT) as Permit.Deferred).resetAt)
+        // I-4：retryAt 取**已确认的官方周期** reset，而不是响应头换算出来的未确认时刻。
+        val reset = Instant.parse("2026-09-22T00:00:00Z")
+        assertEquals(reset, (policy.beforeRequest(RequestKind.DISCOVERY) as Permit.Deferred).retryAt)
+        assertEquals(reset, (policy.beforeRequest(RequestKind.NEW_ENRICHMENT) as Permit.Deferred).retryAt)
+        assertEquals(reset, (policy.beforeRequest(RequestKind.HISTORY_ENRICHMENT) as Permit.Deferred).retryAt)
         assertEquals(0, policy.remainingCredits())
         assertTrue(time.sleeps.isEmpty(), "an exhausted budget must not spin or back off, only wait for the reset")
     }
 
     @Test
-    fun `budget is rebuilt after the UTC reset (V-3)`() {
+    fun `an exhausted budget still allows zero cost operations (I-4)`() {
+        val policy = policy()
+        policy.recordResponse(quotaHeaders(remaining = 0, limit = 1_000, resetSeconds = 3_600))
+
+        assertTrue(policy.reserve(RequestKind.NEW_ENRICHMENT, Operation.SINGLETON, singletonTarget) is Permit.Allowed)
+        assertTrue(policy.reserve(RequestKind.NEW_ENRICHMENT, Operation.RATE_LIMIT, rateLimitTarget) is Permit.Allowed)
+        assertTrue(policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Deferred)
+    }
+
+    @Test
+    fun `budget is rebuilt after the UTC reset (I-3)`() {
         val policy = policy()
         policy.recordResponse(quotaHeaders(remaining = 0, limit = 1_000, resetSeconds = 10))
         assertTrue(policy.beforeRequest(RequestKind.DISCOVERY) is Permit.Deferred)
 
         time.current = Instant.parse("2026-09-22T00:00:05Z")
 
-        assertEquals(Permit.Allowed, policy.beforeRequest(RequestKind.DISCOVERY))
-        assertEquals(1_000, policy.remainingCredits())
+        assertTrue(policy.beforeRequest(RequestKind.DISCOVERY) is Permit.Allowed)
+        val snapshot = policy.snapshot()
+        assertEquals(1_000L, snapshot.officialLimitCredits, "新周期重建了额度上限")
+        assertEquals(0L, snapshot.confirmedSpentCredits)
+        assertEquals(1L, snapshot.reservedCredits, "刚放行的请求仍在未结算预占里")
         assertEquals(0, policy.listRequestCount())
     }
 
@@ -170,10 +366,109 @@ class OpenAlexRequestPolicyTest {
     }
 
     @Test
-    fun `request-rate 429 backs off with a bounded delay and recovers after a success (I-2)`() {
+    fun `a settle is applied exactly once even when the response is handled twice (I-3)`() {
+        val policy = policy()
+        val permit = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) as Permit.Allowed
+
+        policy.recordResponse(permit.permitId, quotaHeaders(creditsUsed = 1, remaining = 999))
+        assertEquals(1L, policy.snapshot().confirmedSpentCredits)
+        assertEquals(999L, policy.remainingCredits())
+
+        policy.recordResponse(permit.permitId, quotaHeaders(creditsUsed = 1, remaining = 999))
+        assertEquals(1L, policy.snapshot().confirmedSpentCredits, "重复结算不得重复扣减")
+        assertEquals(0L, policy.snapshot().reservedCredits)
+    }
+
+    @Test
+    fun `a timed out reservation stays unknown and is never refunded (I-3)`() {
+        val policy = policy(apiKey = "k")
+        val permit = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) as Permit.Allowed
+        assertEquals(9999L, policy.remainingCredits())
+
+        policy.recordTimeout(permit.permitId)
+
+        assertEquals(9999L, policy.remainingCredits(), "超时不得立即退还预占")
+        assertEquals(1L, policy.snapshot().reservedCredits)
+        assertEquals(0L, policy.snapshot().confirmedSpentCredits)
+    }
+
+    @Test
+    fun `a lower balance followed by a higher balance never increases availability (I-3)`() {
+        val policy = policy()
+        policy.recordResponse(quotaHeaders(creditsUsed = 1, remaining = 900, limit = 1_000))
+        assertEquals(900L, policy.remainingCredits())
+
+        // 乱序/较旧响应报出更高余额：只收紧，不抬高。
+        policy.recordResponse(quotaHeaders(creditsUsed = 1, remaining = 950, limit = 1_000))
+        assertEquals(900L, policy.remainingCredits())
+        assertEquals(900L, policy.snapshot().officialRemainingCredits)
+    }
+
+    @Test
+    fun `a higher actual cost is charged immediately and blocks the next over budget request (I-3)`() {
+        val policy = policy(dailyBudgetUsd = 0.0011)
+        assertEquals(11L, policy.remainingCredits())
+
+        val permit = policy.reserve(RequestKind.DISCOVERY, Operation.SEARCH, searchTarget) as Permit.Allowed
+        // 估算 10、真实 11：立即追扣，剩余额度按实际成本归零。
+        policy.recordResponse(permit.permitId, quotaHeaders(creditsUsed = 11, remaining = 0))
+
+        assertEquals(11L, policy.snapshot().confirmedSpentCredits)
+        assertEquals(0L, policy.remainingCredits())
+        assertEquals(
+            DeferredReason.DAILY_BUDGET,
+            (policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) as Permit.Deferred).reason
+        )
+    }
+
+    @Test
+    fun `two connections racing for the last ten credits approve at most ten credits in total (I-3)`() {
+        val store = InMemoryOpenAlexBudgetStore()
+        val policy = policy(dailyBudgetUsd = 0.001, reserveRatio = 0.0, store = store)
+        assertEquals(10L, policy.remainingCredits())
+
+        val start = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(11)
+        try {
+            val tasks = (1..10).map {
+                pool.submit<Long> {
+                    start.await()
+                    val permit = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+                    if (permit is Permit.Allowed) {
+                        policy.recordResponse(permit.permitId, quotaHeaders(creditsUsed = 1))
+                        1L
+                    } else {
+                        0L
+                    }
+                }
+            } + pool.submit<Long> {
+                start.await()
+                val permit = policy.reserve(RequestKind.DISCOVERY, Operation.SEARCH, searchTarget)
+                if (permit is Permit.Allowed) {
+                    policy.recordResponse(permit.permitId, quotaHeaders(creditsUsed = 10))
+                    10L
+                } else {
+                    0L
+                }
+            }
+            start.countDown()
+            val approvedCredits = tasks.sumOf { it.get(10, TimeUnit.SECONDS) }
+            assertTrue(approvedCredits <= 10L, "批准的预占总成本必须 ≤ 10（实际 $approvedCredits）")
+            assertTrue(policy.snapshot().confirmedSpentCredits <= 10L)
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // I-4：同步与冷却不能变成长时间阻塞
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `request-rate 429 backs off with a bounded delay and recovers after a success (I-4)`() {
         val policy = policy()
         policy.recordResponse(quotaHeaders(creditsUsed = null, remaining = 500, limit = 1_000, retryAfterSeconds = 3))
-        assertEquals(Permit.Allowed, policy.beforeRequest(RequestKind.DISCOVERY))
+        assertTrue(policy.beforeRequest(RequestKind.DISCOVERY) is Permit.Allowed)
         assertEquals(listOf(3_000L), time.sleeps.toList())
 
         // Retry-After absent: exponential from 1s, doubling, never above the configured cap.
@@ -182,7 +477,7 @@ class OpenAlexRequestPolicyTest {
         repeat(8) {
             policy.recordResponse(quotaHeaders(creditsUsed = null, remaining = 500, limit = 1_000))
             backoff = (backoff * 2).coerceAtMost(60_000)
-            assertEquals(Permit.Allowed, policy.beforeRequest(RequestKind.DISCOVERY))
+            assertTrue(policy.beforeRequest(RequestKind.DISCOVERY) is Permit.Allowed)
             assertEquals(backoff, time.sleeps[observedSleeps], "backoff must grow but stay bounded")
             observedSleeps = time.sleeps.size
         }
@@ -190,9 +485,143 @@ class OpenAlexRequestPolicyTest {
 
         val sleepsBeforeSuccess = time.sleeps.size
         policy.recordResponse(quotaHeaders())
-        assertEquals(Permit.Allowed, policy.beforeRequest(RequestKind.DISCOVERY))
+        assertTrue(policy.beforeRequest(RequestKind.DISCOVERY) is Permit.Allowed)
         assertEquals(10L, time.sleeps.last(), "a successful response must clear the rate-limit backoff")
         assertEquals(sleepsBeforeSuccess + 1, time.sleeps.size)
+    }
+
+    @Test
+    fun `a 429 cooldown is shared by every instance of the same account (I-4)`() {
+        val store = InMemoryOpenAlexBudgetStore()
+        // inlineWaitCapMs = 0 → 冷却只以 Deferred(retryAt) 表达，调用线程绝不等待。
+        val first = policy(store = store, rateLimitBackoffMaxMs = 0)
+        val second = policy(store = store, rateLimitBackoffMaxMs = 0)
+
+        first.recordResponse(quotaHeaders(creditsUsed = null, remaining = 500, limit = 1_000, retryAfterSeconds = 30))
+
+        val deferred = second.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+        assertEquals(
+            Permit.Deferred(DeferredReason.RATE_LIMIT, time.current.plusSeconds(30)),
+            deferred
+        )
+        assertTrue(time.sleeps.isEmpty(), "冷却必须返回 retryAt 而不是睡在调用线程上")
+    }
+
+    @Test
+    fun `a store failure defers metered requests and never falls back to a local budget (I-4)`() {
+        val failing = object : OpenAlexBudgetStore {
+            private fun boom(): Nothing = throw DataAccessResourceFailureException("mysql down")
+            override fun ledger(accountScope: String, configuredFreeLimitCredits: Long, now: Instant) = boom()
+            override fun reserve(request: BudgetReserveRequest): BudgetReserveResult = boom()
+            override fun settle(
+                accountScope: String, permitId: String, actualCredits: Long?, observedRemaining: Long?,
+                observedLimit: Long?, now: Instant
+            ): Boolean = boom()
+            override fun markUnknown(accountScope: String, permitId: String, now: Instant): Boolean = boom()
+            override fun applyCooldown(accountScope: String, notBefore: Instant, now: Instant) = boom()
+            override fun observeProvider(
+                accountScope: String, observedRemaining: Long?, observedLimit: Long?,
+                configuredFreeLimitCredits: Long, now: Instant
+            ) = boom()
+            override fun reconcile(
+                accountScope: String, cycleResetAt: Instant, officialLimitCredits: Long?,
+                officialRemainingCredits: Long, configuredFreeLimitCredits: Long, now: Instant
+            ): Boolean = boom()
+            override fun claimSyncLease(accountScope: String, token: String, now: Instant, leaseUntil: Instant): Boolean = boom()
+            override fun releaseSyncLease(accountScope: String, token: String) = boom()
+            override fun recordNewEnrichmentRequest(accountScope: String, now: Instant) = boom()
+            override fun countUnfinishedEnrichmentJobs(): Long = boom()
+            override fun recentNewEnrichmentCosts(accountScope: String, limit: Int): List<Long> = boom()
+            override fun cleanupClosedCycles(closedBefore: Instant, batchSize: Int): Int = boom()
+        }
+        val policy = policy(store = failing)
+
+        val deferred = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+        assertEquals(DeferredReason.BUDGET_STORE_UNAVAILABLE, (deferred as Permit.Deferred).reason)
+        assertEquals(0L, policy.remainingCredits(), "账本不可用时可用额必须是 0，不能退回本地 10000")
+        assertEquals(DeferredReason.BUDGET_STORE_UNAVAILABLE, policy.snapshot().deferredReason)
+    }
+
+    @Test
+    fun `a failed official sync defers metered requests instead of guessing a balance (I-4)`() {
+        val store = InMemoryOpenAlexBudgetStore()
+        val policy = policy(store = store, syncSource = { null })
+
+        val deferred = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+        assertEquals(DeferredReason.BUDGET_SYNC, (deferred as Permit.Deferred).reason)
+        // 尚未获得可信余额时，0 成本操作照常（不依赖额度）。
+        assertTrue(policy.reserve(RequestKind.NEW_ENRICHMENT, Operation.SINGLETON, singletonTarget) is Permit.Allowed)
+    }
+
+    @Test
+    fun `a confirmed official cycle unlocks metered requests and an expired one forces a new sync (I-4)`() {
+        var resetAt = Instant.parse("2026-09-21T04:00:00Z")
+        val store = InMemoryOpenAlexBudgetStore()
+        val policy = policy(store = store, syncSource = { OpenAlexOfficialBalance(10000, 10000, resetAt) })
+
+        assertTrue(policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Allowed)
+        assertEquals(resetAt, policy.snapshot().resetAt)
+
+        // 官方 reset 到期：必须先确认新周期，未确认前计量请求延期。
+        time.current = resetAt.plusSeconds(1)
+        resetAt = Instant.parse("2026-09-22T04:00:00Z")
+        assertTrue(policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Allowed)
+        assertEquals(resetAt, policy.snapshot().resetAt)
+    }
+
+    @Test
+    fun `a response from before the reset never writes the new cycle (I-3, I-4)`() {
+        var resetAt = Instant.parse("2026-09-21T04:00:00Z")
+        var remaining = 5000L
+        val store = InMemoryOpenAlexBudgetStore()
+        val policy = policy(store = store, syncSource = { OpenAlexOfficialBalance(10000, remaining, resetAt) })
+
+        assertTrue(policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Allowed)
+        assertEquals(5000L, policy.snapshot().officialRemainingCredits)
+        val permit = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) as Permit.Allowed
+
+        // 日切：官方确认新周期（余额重新为 10000）。
+        time.current = resetAt.plusSeconds(1)
+        resetAt = Instant.parse("2026-09-22T04:00:00Z")
+        remaining = 10000L
+        assertTrue(policy.syncOfficialBudget(force = true))
+        assertEquals(10000L, policy.snapshot().officialRemainingCredits)
+
+        // 旧周期的迟到响应（余额 5）只能结算旧行，绝不污染新周期。
+        policy.recordResponse(permit.permitId, quotaHeaders(creditsUsed = 1, remaining = 5))
+
+        val snapshot = policy.snapshot()
+        assertEquals(10000L, snapshot.officialRemainingCredits, "旧响应不得抬高/污染新周期")
+        assertEquals(0L, snapshot.confirmedSpentCredits, "旧周期 permit 只结算旧行")
+        assertEquals(0L, snapshot.reservedCredits)
+    }
+
+    @Test
+    fun `waiting for a rate slot returns retryAt instead of sleeping for minutes (I-4)`() {
+        assertEquals(listOf(200L), slots(5.0))
+        assertEquals(listOf(10L), slots(500.0))
+
+        // 0.01/s = 100 秒槽位，超过内联等待上限 → 只返回 retryAt，绝不睡 100 秒。
+        val recorder = FakeTime()
+        val policy = OpenAlexRequestPolicy(
+            properties(maxRequestsPerSecond = 0.0), recorder, InMemoryOpenAlexBudgetStore()
+        )
+        assertTrue(policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Allowed)
+        val deferred = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+        assertEquals(DeferredReason.RATE_LIMIT, (deferred as Permit.Deferred).reason)
+        assertEquals(100_000L, Duration.between(recorder.current, deferred.retryAt).toMillis())
+        assertTrue(recorder.sleeps.isEmpty(), "超过内联等待上限时必须返回 retryAt 而不是长时间 sleep")
+    }
+
+    /** Delay the policy inserts between two back-to-back requests at the given configured rate. */
+    private fun slots(maxRequestsPerSecond: Double): List<Long> {
+        val recorder = FakeTime()
+        val recorded = OpenAlexRequestPolicy(
+            properties(maxRequestsPerSecond = maxRequestsPerSecond), recorder, InMemoryOpenAlexBudgetStore()
+        )
+        recorded.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+        recorded.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+        return recorder.sleeps.toList()
     }
 
     @Test
@@ -200,22 +629,6 @@ class OpenAlexRequestPolicyTest {
         assertEquals(5.0, policy(maxRequestsPerSecond = 5.0).effectiveMaxRequestsPerSecond)
         assertEquals(100.0, policy(maxRequestsPerSecond = 500.0).effectiveMaxRequestsPerSecond)
         assertEquals(0.01, policy(maxRequestsPerSecond = 0.0).effectiveMaxRequestsPerSecond)
-
-        assertEquals(listOf(200L), slots(5.0))
-        assertEquals(listOf(10L), slots(500.0))
-        assertEquals(listOf(100_000L), slots(0.0))
-    }
-
-    /** Delay the policy inserts between two back-to-back requests at the given configured rate. */
-    private fun slots(maxRequestsPerSecond: Double): List<Long> {
-        val recorder = FakeTime()
-        val recorded = OpenAlexRequestPolicy(
-            OpenAlexProperties(apiKey = "", maxRequestsPerSecond = maxRequestsPerSecond),
-            recorder
-        )
-        recorded.beforeRequest(RequestKind.DISCOVERY)
-        recorded.beforeRequest(RequestKind.DISCOVERY)
-        return recorder.sleeps.toList()
     }
 
     @Test
@@ -226,24 +639,24 @@ class OpenAlexRequestPolicyTest {
 
         assertEquals(1, policy.listRequestCount())
         assertEquals(1, policy.fulltextDownloadCount())
-        // 1,000 - 1 list credit - 100 content credits.
-        assertEquals(899, policy.remainingCredits())
+        // provider 报出的 remaining 已经包含这两次消耗，因此只与本地确认消耗取较小值。
+        assertEquals(900, policy.remainingCredits())
     }
 
     @Test
-    fun `a request without a response releases its reservation and stays conservative (I-2)`() {
+    fun `a request without a response keeps its reservation and stays conservative (I-2)`() {
         val policy = policy()
-        assertEquals(Permit.Allowed, policy.beforeRequest(RequestKind.NEW_ENRICHMENT))
-        assertEquals(1_000, policy.remainingCredits())
-
-        policy.recordResponse(HttpHeaders())
-
+        val permit = policy.beforeRequest(RequestKind.NEW_ENRICHMENT) as Permit.Allowed
         assertEquals(999, policy.remainingCredits())
+
+        policy.recordResponse(permit.permitId, HttpHeaders())
+
+        assertEquals(999, policy.remainingCredits(), "没有响应头时按预占额保守记账，不退款")
         assertEquals(0, policy.listRequestCount())
     }
 
     @Test
-    fun `concurrent callers share one budget and only one is admitted for the last credit (V-2)`() {
+    fun `concurrent callers share one budget and only one is admitted for the last credit (I-3)`() {
         val policy = policy(dailyBudgetUsd = 0.0001, reserveRatio = 0.0)
         assertEquals(1, policy.remainingCredits())
 
@@ -262,5 +675,109 @@ class OpenAlexRequestPolicyTest {
         } finally {
             pool.shutdownNow()
         }
+    }
+
+    // ------------------------------------------------------------------
+    // I-5：补全保留可借用但有依据
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `the enrichment reserve follows the pending work and is released after sixty idle seconds (I-5)`() {
+        val store = InMemoryOpenAlexBudgetStore()
+        val policy = policy(apiKey = "k", store = store)
+
+        // 200 条待补 × 无样本估算 10 = 2000 = 20% 目标，保留区生效。
+        store.pendingEnrichmentJobs = 200
+        assertEquals(2000L, policy.snapshot().enrichmentReserveCredits)
+
+        // 全部补完且 60 秒内没有新的 NEW_ENRICHMENT 请求 → 保留降为 0（空闲额度可借给采集）。
+        store.pendingEnrichmentJobs = 0
+        time.current = time.current.plusSeconds(61)
+        assertEquals(0L, policy.snapshot().enrichmentReserveCredits)
+        consume(policy, RequestKind.DISCOVERY, 9_000)
+        assertEquals(1_000L, policy.remainingCredits(), "没有待补时采集可以借用保留区")
+
+        // 重新入队 → 保留立即恢复（已发出的请求不被撤回）。
+        store.pendingEnrichmentJobs = 200
+        assertEquals(1000L, policy.snapshot().enrichmentReserveCredits, "预留不得超过实际剩余额度")
+        assertEquals(
+            DeferredReason.ENRICHMENT_RESERVE,
+            (policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) as Permit.Deferred).reason
+        )
+        assertTrue(policy.reserve(RequestKind.NEW_ENRICHMENT, Operation.LIST, listTarget) is Permit.Allowed)
+    }
+
+    @Test
+    fun `the enrichment estimate uses the p95 of the last settled new-enrichment costs (I-5)`() {
+        val store = InMemoryOpenAlexBudgetStore()
+        val policy = policy(apiKey = "k", store = store)
+        // 10 次真实成本 30 credits（P95=30）× 3 = 90 估算 → 保留 = min(2000, 20 × 90) = 1800。
+        repeat(10) {
+            val permit = policy.reserve(RequestKind.NEW_ENRICHMENT, Operation.LIST, listTarget) as Permit.Allowed
+            policy.recordResponse(permit.permitId, quotaHeaders(creditsUsed = 30))
+        }
+        store.pendingEnrichmentJobs = 20
+
+        assertEquals(1800L, policy.snapshot().enrichmentReserveCredits)
+    }
+
+    @Test
+    fun `at least one reserved request is kept while the target is sufficient (I-5)`() {
+        val store = InMemoryOpenAlexBudgetStore()
+        val policy = policy(apiKey = "k", store = store)
+
+        // 刚发生过 NEW_ENRICHMENT 请求（60 秒内）但已无待补：仍保留一个 10-credit 请求。
+        val permit = policy.reserve(RequestKind.NEW_ENRICHMENT, Operation.LIST, listTarget) as Permit.Allowed
+        policy.recordResponse(permit.permitId, quotaHeaders(creditsUsed = 1))
+        store.pendingEnrichmentJobs = 0
+
+        assertEquals(10L, policy.snapshot().enrichmentReserveCredits)
+    }
+
+    // ------------------------------------------------------------------
+    // I-6：快照与归档
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `the read-only snapshot carries exactly the downstream fields and no credential (I-6)`() {
+        val policy = policy(apiKey = "super-secret-key")
+        policy.recordResponse(quotaHeaders(creditsUsed = 1, remaining = 999, limit = 1000))
+
+        val snapshot = policy.snapshot()
+        assertEquals("primary", snapshot.accountScope)
+        assertEquals(Instant.parse("2026-09-22T00:00:00Z"), snapshot.resetAt)
+        assertEquals(1000L, snapshot.officialLimitCredits)
+        assertEquals(999L, snapshot.officialRemainingCredits)
+        // 没有 permit 的兼容观察路径只收紧 provider ceiling（provider 的 remaining 已含该次消耗），不重复记账。
+        assertEquals(0L, snapshot.confirmedSpentCredits)
+        assertEquals(0L, snapshot.reservedCredits)
+        assertEquals(999L, snapshot.effectiveRemainingCredits)
+        assertEquals(0L, snapshot.enrichmentReserveCredits)
+        assertNull(snapshot.lastSyncedAt)
+        assertNull(snapshot.deferredReason)
+        assertNull(snapshot.retryAt)
+        assertFalse(snapshot.toString().contains("super-secret-key"))
+    }
+
+    @Test
+    fun `the snapshot reports the last deferral reason and retry time (I-4, I-6)`() {
+        val policy = policy(dailyBudgetUsd = 0.0001, reserveRatio = 0.0)
+        consume(policy, RequestKind.DISCOVERY, 1)
+
+        policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+
+        val snapshot = policy.snapshot()
+        assertEquals(DeferredReason.DAILY_BUDGET, snapshot.deferredReason)
+        assertEquals(Instant.parse("2026-09-22T00:00:00Z"), snapshot.retryAt)
+    }
+
+    @Test
+    fun `closed cycles are archived in bounded batches and active cycles are never cleaned (I-6)`() {
+        val store = InMemoryOpenAlexBudgetStore()
+        val policy = policy(store = store)
+
+        assertEquals(0, policy.cleanupArchivedCycles())
+        assertEquals(Duration.ofDays(7), OpenAlexRequestPolicy.ARCHIVE_RETENTION)
+        assertEquals(1000, OpenAlexRequestPolicy.CLEANUP_BATCH_SIZE)
     }
 }

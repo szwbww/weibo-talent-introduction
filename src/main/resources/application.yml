@@ -217,6 +217,15 @@ talent-introduction:
       new-enrichment-reserve-ratio: ${OPENALEX_NEW_ENRICHMENT_RESERVE_RATIO:0.2}
       daily-budget-usd: ${OPENALEX_DAILY_BUDGET_USD:0}
       rate-limit-backoff-max-ms: ${OPENALEX_RATE_LIMIT_BACKOFF_MAX_MS:60000}
+      # 账号预算（子计划 01 I-2/I-4）：
+      # - account-scope 是**非秘密**的稳定账号标识：同一 API Key 的全部实例共用它，预算才真正共享；
+      #   换 Key 不换 scope（已用额度不重置），换成另一个真实账号才换 scope。绝不能由 Key 明文派生。
+      # - free-budget-credits 是免费消费保护上限：有效免费上限 = min(官方日免费额度, 本值, 旧 daily-budget-usd 折算)，
+      #   预付余额永不加入；daily-budget-usd=0 只表示「采用免费保护默认值」，绝不表示无限。
+      account-scope: ${OPENALEX_ACCOUNT_SCOPE:primary}
+      free-budget-credits: ${OPENALEX_FREE_BUDGET_CREDITS:10000}
+      # - budget-sync-interval：官方 /rate-limit 校准周期（启动/日切/额度不足/异常恢复之外每满该间隔再校准一次）。
+      budget-sync-interval: ${OPENALEX_BUDGET_SYNC_INTERVAL:300s}
     crossref:
       enabled: ${CROSSREF_ENABLED:true}
       base-url: ${CROSSREF_BASE_URL:https://api.crossref.org}

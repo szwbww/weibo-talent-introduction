@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.config
 
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.ConstructorBinding
+import java.time.Duration
 
 @ConstructorBinding
 @ConfigurationProperties(prefix = "talent-introduction.expert-discovery.openalex")
@@ -32,8 +33,36 @@ data class OpenAlexProperties(
     /** I-3: optional daily spend cap in USD; 0 (default) uses the provider free budget (keyed $1, keyless $0.10). */
     val dailyBudgetUsd: Double = 0.0,
     /** I-2: upper bound for the request-rate 429 backoff. */
-    val rateLimitBackoffMaxMs: Long = 60_000
+    val rateLimitBackoffMaxMs: Long = 60_000,
+    /**
+     * I-2：账号的稳定**非秘密**标识。同一 API Key 的全部本系统实例必须使用同一个 scope，
+     * 预算才真正共享；换 Key 不换 scope（额度不会重置），换成另一个真实账号才换 scope。
+     * 它绝不能由 Key 明文派生。
+     */
+    val accountScope: String = "primary",
+    /**
+     * I-2：免费消费保护上限（credits）。有效免费上限 = min(官方日免费额度, 本值, 旧 dailyBudgetUsd 折算)，
+     * 预付余额永不加入。默认 10000 = 当前官方免费账号的日额度。
+     */
+    val freeBudgetCredits: Long = 10000,
+    /** I-4：官方余额校准周期（启动/日切/额度不足/异常恢复之外，每满该间隔重新校准一次）。 */
+    val budgetSyncInterval: Duration = Duration.ofSeconds(300)
 ) {
+    init {
+        require(dailyBudgetUsd >= 0.0) {
+            "talent-introduction.expert-discovery.openalex.daily-budget-usd must not be negative (was $dailyBudgetUsd)"
+        }
+        require(freeBudgetCredits >= 0L) {
+            "talent-introduction.expert-discovery.openalex.free-budget-credits must not be negative (was $freeBudgetCredits)"
+        }
+        require(!budgetSyncInterval.isNegative && !budgetSyncInterval.isZero) {
+            "talent-introduction.expert-discovery.openalex.budget-sync-interval must be positive (was $budgetSyncInterval)"
+        }
+        require(accountScope.isNotBlank()) {
+            "talent-introduction.expert-discovery.openalex.account-scope must not be blank"
+        }
+    }
+
     /** I-1: never log the configuration object with a live key in it. */
     override fun toString(): String =
         "OpenAlexProperties(enabled=$enabled, politeEmail=$politeEmail, baseUrl=$baseUrl, " +
@@ -43,6 +72,8 @@ data class OpenAlexProperties(
             "enrichmentRateLimitMode=$enrichmentRateLimitMode, enrichmentMaxBackoffMs=$enrichmentMaxBackoffMs, " +
             "fetchWorksEnabled=$fetchWorksEnabled, fetchPatentsEnabled=$fetchPatentsEnabled, " +
             "maxRequestsPerSecond=$maxRequestsPerSecond, newEnrichmentReserveRatio=$newEnrichmentReserveRatio, " +
-            "dailyBudgetUsd=$dailyBudgetUsd, rateLimitBackoffMaxMs=$rateLimitBackoffMaxMs, apiKey=" +
+            "dailyBudgetUsd=$dailyBudgetUsd, rateLimitBackoffMaxMs=$rateLimitBackoffMaxMs, " +
+            "accountScope=$accountScope, freeBudgetCredits=$freeBudgetCredits, " +
+            "budgetSyncInterval=$budgetSyncInterval, apiKey=" +
             (if (apiKey.isBlank()) "\"\"" else "\"***\"") + ")"
 }

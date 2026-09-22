@@ -2,8 +2,10 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
+import com.weibo.talentintroduction.config.OpenAlexMeteredDestinations
 import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.config.OpenAlexRequestPolicy
+import com.weibo.talentintroduction.config.Operation
 import com.weibo.talentintroduction.config.Permit
 import com.weibo.talentintroduction.config.RequestKind
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
@@ -50,9 +52,11 @@ class OpenAlexDataSource(
         else url += "&cursor=*"
         if (properties.politeEmail.isNotBlank()) url += "&mailto=${properties.politeEmail}"
 
+        // I-1：关键词/语义搜索 10 credits，纯列表 1 credit —— 由构造方显式声明，再由 policy 校验目标路径。
+        val operation = if (criteria.keywords.isNotEmpty()) Operation.SEARCH else Operation.LIST
         val response = try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            getJson(RequestKind.DISCOVERY, url)
+            getJson(RequestKind.DISCOVERY, operation, url)
         } catch (e: Exception) {
             log.error("OpenAlex search failed: {}", e.message)
             throw e
@@ -62,22 +66,25 @@ class OpenAlexDataSource(
 
     /**
      * Every OpenAlex HTTP call passes through the shared [OpenAlexRequestPolicy]: the caller names its [RequestKind]
-     * explicitly, the request slot and its estimated cost are reserved before the call, and the real quota headers
-     * reconcile the budget right after. A deferred budget raises [OpenAlexBudgetDeferredException] instead of calling.
+     * (purpose) and [Operation] (cost) explicitly, the request slot and its estimated cost are reserved before the
+     * call, and the real quota headers reconcile the budget right after. A deferred budget raises
+     * [OpenAlexBudgetDeferredException] instead of calling; a timeout marks the permit UNKNOWN (never refunded).
+     * Every retry goes through this method again, so a retry reserves a second time (I-1/I-3).
      */
-    private fun getJson(kind: RequestKind, url: String): JsonNode? {
-        val permit = requestPolicy.beforeRequest(kind)
-        if (permit is Permit.Deferred) throw OpenAlexBudgetDeferredException(permit.resetAt)
+    private fun getJson(kind: RequestKind, operation: Operation, url: String): JsonNode? {
+        val permit = requestPolicy.reserve(kind, operation, url)
+        if (permit is Permit.Deferred) throw OpenAlexBudgetDeferredException(permit.reason, permit.retryAt)
+        val permitId = (permit as Permit.Allowed).permitId
         val response = try {
             restTemplate.exchange(url, HttpMethod.GET, null, JsonNode::class.java)
         } catch (e: HttpStatusCodeException) {
-            requestPolicy.recordResponse(e.responseHeaders ?: HttpHeaders())
+            requestPolicy.recordResponse(permitId, e.responseHeaders ?: HttpHeaders())
             throw e
         } catch (e: Exception) {
-            requestPolicy.recordResponse(HttpHeaders())
+            requestPolicy.recordTimeout(permitId)
             throw e
         }
-        requestPolicy.recordResponse(response?.headers ?: HttpHeaders())
+        requestPolicy.recordResponse(permitId, response?.headers ?: HttpHeaders())
         return response?.body
     }
 
@@ -115,7 +122,7 @@ class OpenAlexDataSource(
         val attemptedUrls = LinkedHashSet<String>()
         val queue = ArrayDeque<String>()
         (listOfNotNull(paper.downloadUrl) + paper.candidateDownloadUrls)
-            .mapNotNullTo(queue) { publicFulltextUrl(it) }
+            .mapNotNullTo(queue) { publicCandidateUrl(it) }
         var unpaywallConsulted = false
 
         while (attemptedUrls.size < MAX_FULLTEXT_ADDRESSES) {
@@ -136,7 +143,7 @@ class OpenAlexDataSource(
                         break
                     }
                     requests++
-                    unpaywallClient.findPdfUrls(doi, deadline).mapNotNullTo(queue) { publicFulltextUrl(it) }
+                    unpaywallClient.findPdfUrls(doi, deadline).mapNotNullTo(queue) { publicCandidateUrl(it) }
                     // R-1（V-4）：查询被共享预算截断（客户端按剩余时间中止）且没拿到地址 → 按 TIMEOUT 收口，
                     // 不再对同一篇发起后续下载。
                     if (queue.isEmpty() && deadlineExpired(deadline)) {
@@ -148,9 +155,9 @@ class OpenAlexDataSource(
             }
             val url = queue.removeFirst()
             if (!attemptedUrls.add(url)) continue
-            val outcome = pdfEmailExtractor.extract(url, paper.authors, sourceName, deadline) { headers ->
-                reportOpenAlexQuota(headers)
-            }
+            // I-1 防御：计量主机绝不被下载（候选构建已过滤，这里再挡一次，未来调用方也不会误入）。
+            if (OpenAlexMeteredDestinations.isMetered(url)) continue
+            val outcome = pdfEmailExtractor.extract(url, paper.authors, sourceName, deadline) { }
             requests += outcome.httpRequests
             if (outcome.resolvedFulltextObtained()) return outcome.copy(httpRequests = requests)
             lastFailure = outcome
@@ -167,14 +174,14 @@ class OpenAlexDataSource(
     )
 
     /**
-     * c1（O-1）：全文下载在**真正发生的地方**写入共享额度口径 —— 只有响应确实带回 OpenAlex 配额头时才校正。
-     * Bearer 只发给配置的 OpenAlex origin（见 OpenAlexAuthInterceptor），外部开放全文站点的响应没有这些头，
-     * 因此它们的下载不会被误记成 provider 的额度消耗、也不会触发无谓退避；计量内容下载（100 credits/次）则
-     * 会计入 [OpenAlexRequestPolicy.fulltextDownloadCount]，不再是没有生产写入方的死计数器。
+     * I-1：公开全文候选 = 公开 http(s) 地址，且**不是** OpenAlex 计量主机。
+     *
+     * OpenAlex 的 Content API（`content.openalex.org`，100 credits/次）与 API 本体都不作为全文候选：
+     * 本阶段拒绝新增计量下载，遇到这类地址就跳过、改试已有公开链接（出版社/PMC/仓库）。计量请求一律经
+     * [OpenAlexRequestPolicy.reserve] 的显式操作预占，下载回调不是预占的替代品。
      */
-    private fun reportOpenAlexQuota(headers: HttpHeaders) {
-        if (headers.contains(OpenAlexRequestPolicy.CREDITS_USED_HEADER)) requestPolicy.recordResponse(headers)
-    }
+    private fun publicCandidateUrl(raw: String?): String? =
+        publicFulltextUrl(raw)?.takeIf { !OpenAlexMeteredDestinations.isMetered(it) }
 
     private fun deadlineExpired(deadline: Instant): Boolean = !Instant.now().isBefore(deadline)
 
@@ -224,10 +231,10 @@ class OpenAlexDataSource(
                 val pdfUrl = node.path("best_oa_location").path("pdf_url").asText(null)
                 // c10（I-1）：locations 里的开放 PDF 是首选失效时的备用地址；只取 is_oa 的公开 http(s) 地址，
                 // 去掉首选本身与重复项 —— 付费墙与非公开协议不成其为候选。
-                val primaryPdfUrl = publicFulltextUrl(pdfUrl)
+                val primaryPdfUrl = publicCandidateUrl(pdfUrl)
                 val otherOaPdfUrls = node.path("locations")
                     .filter { it.path("is_oa").asBoolean(false) }
-                    .mapNotNull { publicFulltextUrl(it.path("pdf_url").asText(null)) }
+                    .mapNotNull { publicCandidateUrl(it.path("pdf_url").asText(null)) }
                     .filter { it != primaryPdfUrl }
                     .distinct()
                 val authors = node.path("authorships").map { authorship ->
@@ -272,7 +279,7 @@ class OpenAlexDataSource(
             if (properties.politeEmail.isNotBlank()) "?mailto=${properties.politeEmail}" else ""
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            val response = getJson(kind, url) ?: return EnrichmentOutcome.NotFound
+            val response = getJson(kind, Operation.SINGLETON, url) ?: return EnrichmentOutcome.NotFound
             enrichmentOutcome(response, kind)
         } catch (e: OpenAlexBudgetDeferredException) {
             throw e
@@ -299,7 +306,7 @@ class OpenAlexDataSource(
         val fullUrl = url + if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            val response = getJson(kind, fullUrl) ?: return TitlesFetch.failed()
+            val response = getJson(kind, Operation.LIST, fullUrl) ?: return TitlesFetch.failed()
             TitlesFetch.ok(
                 response.path("results")
                     .mapNotNull { it.path("title").asText(null)?.takeIf { title -> title.isNotBlank() } }
@@ -345,7 +352,7 @@ class OpenAlexDataSource(
             if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            val searchResponse = getJson(kind, searchUrl)
+            val searchResponse = getJson(kind, Operation.LIST, searchUrl)
             val authorId = searchResponse?.path("results")?.get(0)?.path("id")?.asText(null)
                 ?.removePrefix("https://openalex.org/")
             if (authorId == null) {
@@ -415,7 +422,7 @@ class OpenAlexDataSource(
         identityOf: (JsonNode) -> String?
     ): Map<String, EnrichmentOutcome> {
         val response = try {
-            getJson(kind, url)
+            getJson(kind, Operation.LIST, url)
         } catch (e: OpenAlexBudgetDeferredException) {
             throw e
         } catch (e: HttpStatusCodeException) {

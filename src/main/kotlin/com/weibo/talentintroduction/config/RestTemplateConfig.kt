@@ -13,8 +13,11 @@ import org.springframework.http.client.ClientHttpRequestInterceptor
 import org.springframework.http.client.ClientHttpResponse
 import org.springframework.web.client.RestTemplate
 import org.springframework.http.HttpMethod
+import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.ResponseExtractor
 import org.springframework.http.client.SimpleClientHttpRequestFactory
+import org.slf4j.LoggerFactory
+import java.net.HttpURLConnection
 import java.net.URI
 import java.time.Duration
 import java.time.Instant
@@ -108,6 +111,7 @@ class RestTemplateConfig {
         builder
             .setConnectTimeout(Duration.ofMillis(openAlexProperties.connectTimeoutMs.toLong()))
             .setReadTimeout(Duration.ofMillis(openAlexProperties.readTimeoutMs.toLong()))
+            .requestFactory { NoRedirectRequestFactory() }
             .additionalInterceptors(
                 OpenAlexAuthInterceptor(
                     apiKey = openAlexProperties.apiKey,
@@ -123,10 +127,77 @@ class RestTemplateConfig {
     @Bean
     fun boundedHttpExecutor(): BoundedHttpExecutor = BoundedFulltextHttp
 
-    /** I-2: one shared quota/rate authority per JVM, usable from injected and hand-built call sites alike. */
+    /**
+     * I-2/I-4：官方余额校准的取数接缝 —— 唯一实现 [HttpOpenAlexBudgetSyncSource] 走认证 client，
+     * 只读 `/rate-limit` 的额度字段。取数失败一律视为「未获得可信余额」。
+     */
     @Bean
+    fun openAlexBudgetSyncSource(
+        @Qualifier("openAlexRestTemplate") openAlexRestTemplate: RestTemplate,
+        openAlexProperties: OpenAlexProperties
+    ): OpenAlexBudgetSyncSource = HttpOpenAlexBudgetSyncSource(openAlexRestTemplate, openAlexProperties)
+
+    /**
+     * I-2/I-3/I-4：生产预算策略 Bean —— **强制注入共享 JDBC 账本**（[OpenAlexBudgetStore] 的 MySQL 实现）
+     * 与官方校准接缝；两者都是必需依赖，缺失时 Spring 启动直接失败，绝不退回内存额度。
+     */
+    @Bean
+    fun sharedOpenAlexRequestPolicy(
+        openAlexProperties: OpenAlexProperties,
+        budgetStore: OpenAlexBudgetStore,
+        budgetSyncSource: OpenAlexBudgetSyncSource
+    ): OpenAlexRequestPolicy =
+        OpenAlexRequestPolicy(openAlexProperties, PolicyTimeSource.SYSTEM, budgetStore, budgetSyncSource)
+
+    /**
+     * 非 Bean 兼容入口：旧单元测试直接调用它（内存账本、无官方校准）。生产装配一律走
+     * [sharedOpenAlexRequestPolicy]，本方法不参与任何生产装配。
+     */
     fun openAlexRequestPolicy(openAlexProperties: OpenAlexProperties): OpenAlexRequestPolicy =
         OpenAlexRequestPolicy(openAlexProperties)
+}
+
+/**
+ * I-1/I-2：OpenAlex API client **禁止自动重定向**。
+ *
+ * API 端点正常不重定向；一旦出现 3xx，JDK 客户端默认会静默跟随并把认证拦截器已写入的凭证带到新 origin。
+ * 关闭自动跟随让 3xx 变成普通非 2xx 响应（由调用方处理），跨 origin 重定向绝不可能被自动执行。
+ */
+private class NoRedirectRequestFactory : SimpleClientHttpRequestFactory() {
+    /** JDK 客户端对 GET 默认自动跟随重定向（见父类 `prepareConnection`），这里逐请求关掉它。 */
+    override fun prepareConnection(connection: HttpURLConnection, httpMethod: String) {
+        super.prepareConnection(connection, httpMethod)
+        connection.instanceFollowRedirects = false
+    }
+}
+
+/**
+ * I-4：官方 `/rate-limit` 校准取数。
+ *
+ * 分类为 [Operation.RATE_LIMIT]（0 credits，不产生账本行），由校准租约 + 同步间隔节流，不做任何自动重试；
+ * 凭证只由既有认证拦截器发给配置的 OpenAlex origin，响应体只解析额度字段，绝不记录 Key。
+ */
+class HttpOpenAlexBudgetSyncSource(
+    private val restTemplate: RestTemplate,
+    private val properties: OpenAlexProperties
+) : OpenAlexBudgetSyncSource {
+
+    private val log = LoggerFactory.getLogger(HttpOpenAlexBudgetSyncSource::class.java)
+
+    override fun fetchOfficialBalance(): OpenAlexOfficialBalance? {
+        val url = "${properties.baseUrl.trimEnd('/')}/rate-limit"
+        val response = try {
+            restTemplate.exchange(url, HttpMethod.GET, null, com.fasterxml.jackson.databind.JsonNode::class.java)
+        } catch (e: HttpStatusCodeException) {
+            log.warn("OpenAlex /rate-limit returned HTTP {}: {}", e.statusCode.value(), e.message)
+            return null
+        } catch (e: Exception) {
+            log.warn("OpenAlex /rate-limit call failed: {}", e.message)
+            return null
+        }
+        val body = response?.body ?: return null
+        return parseOpenAlexOfficialBalance(body)
+    }
 }
 
 /**
@@ -179,6 +250,17 @@ object BoundedFulltextHttp : BoundedHttpExecutor {
 
     /** R-1（V-4）：响应体读取越过绝对时限（服务端细水长流式响应也会被截断）。 */
     class FulltextBodyDeadlineExceededException : IllegalStateException("fulltext body exceeded the shared deadline")
+
+    /** I-1：重定向落点是 OpenAlex Content/API 计量目的地 —— 绝不跟随（否则会消耗账号额度）。 */
+    class MeteredRedirectException(target: String) :
+        IllegalStateException("refusing to follow a redirect to an OpenAlex metered destination: $target")
+
+    /** I-1：重定向跳数超过 [MAX_REDIRECTS] —— 停止而不是无限跟随。 */
+    class TooManyRedirectsException(target: String) :
+        IllegalStateException("too many redirects while fetching fulltext (last target: $target)")
+
+    /** I-1：手工逐跳跟随的上限。 */
+    const val MAX_REDIRECTS: Int = 5
 
     /** 0 毫秒在 JDK 客户端里表示「无限等待」，因此生效超时至少 1 毫秒。 */
     private const val MIN_TIMEOUT_MS = 1L
@@ -275,35 +357,74 @@ object BoundedFulltextHttp : BoundedHttpExecutor {
             setReadTimeout(readTimeoutMs)
         }
 
+        /** I-1：重定向必须**逐跳**检查，因此关闭 JDK 客户端的自动跟随（GET 默认是跟随），由本工厂手工跟随。 */
+        override fun prepareConnection(connection: HttpURLConnection, httpMethod: String) {
+            super.prepareConnection(connection, httpMethod)
+            connection.instanceFollowRedirects = false
+        }
+
+        /** 一次「原始」请求（不进入重定向循环），用于跟随下一跳。 */
+        private fun rawRequest(uri: URI, httpMethod: HttpMethod): ClientHttpRequest =
+            super.createRequest(uri, httpMethod)
+
         override fun createRequest(uri: URI, httpMethod: HttpMethod): ClientHttpRequest {
             val delegate = super.createRequest(uri, httpMethod)
             return object : ClientHttpRequest by delegate {
+                /**
+                 * I-1：公开全文地址的重定向逐跳检查 —— 每一跳的 Location 都必须是公开 http(s) 地址，
+                 * 指向 OpenAlex Content/API 计量目的地的跳转一律拒绝（绝不为了拿全文而消耗账号额度）。
+                 * 只校验初始 URL 是不够的：计量目标常常正是通过 302 才出现的。
+                 */
                 override fun execute(): ClientHttpResponse {
-                    val response = delegate.execute()
-                    return object : ClientHttpResponse by response {
-                        override fun getBody(): java.io.InputStream =
-                            DeadlineBoundedInputStream(response.body, deadline)
-
-                        /**
-                         * R-1（V-4）：Spring 的 `SimpleClientHttpResponse.close()` 会用**无界的原流**把剩余响应体
-                         * 排空，好把连接还给连接池 —— 遇到细水长流的服务端，这一步同样等于无限等待（调用方已经
-                         * 拿到结果也回不去）。这里改成同样受绝对 [deadline] 约束的排空：能在时限内排空就照旧复用
-                         * 连接，排不空就直接关掉原流、放弃本次复用。
-                         */
-                        override fun close() {
-                            try {
-                                val bounded = DeadlineBoundedInputStream(response.body, deadline)
-                                val sink = ByteArray(DRAIN_BUFFER_BYTES)
-                                while (bounded.read(sink) != -1) {
-                                    // 排空剩余响应体（丢弃），只是为了让连接可复用
-                                }
-                                response.close()
-                            } catch (e: Exception) {
-                                runCatching { response.body.close() }
-                            }
+                    var current = delegate
+                    var hops = 0
+                    while (true) {
+                        val response = current.execute()
+                        val location = response.headers[HttpHeaders.LOCATION]?.firstOrNull()
+                        if (location.isNullOrBlank()) return boundedBody(response)
+                        val target = current.uri.resolve(location)
+                        if (hops++ >= MAX_REDIRECTS) {
+                            drainAndClose(response)
+                            throw TooManyRedirectsException(target.toString())
                         }
+                        if (OpenAlexMeteredDestinations.isMetered(target.toString())) {
+                            drainAndClose(response)
+                            throw MeteredRedirectException(target.toString())
+                        }
+                        drainAndClose(response)
+                        current = rawRequest(target, HttpMethod.GET)
                     }
                 }
+            }
+        }
+
+        private fun boundedBody(response: ClientHttpResponse): ClientHttpResponse =
+            object : ClientHttpResponse by response {
+                override fun getBody(): java.io.InputStream =
+                    DeadlineBoundedInputStream(response.body, deadline)
+
+                /**
+                 * R-1（V-4）：Spring 的 `SimpleClientHttpResponse.close()` 会用**无界的原流**把剩余响应体
+                 * 排空，好把连接还给连接池 —— 遇到细水长流的服务端，这一步同样等于无限等待（调用方已经
+                 * 拿到结果也回不去）。这里改成同样受绝对 [deadline] 约束的排空：能在时限内排空就照旧复用
+                 * 连接，排不空就直接关掉原流、放弃本次复用。
+                 */
+                override fun close() {
+                    drainAndClose(response)
+                }
+            }
+
+        /** 中间跳（3xx）的响应体同样按绝对 deadline 排空，绝不在这里无限等待。 */
+        private fun drainAndClose(response: ClientHttpResponse) {
+            try {
+                val bounded = DeadlineBoundedInputStream(response.body, deadline)
+                val sink = ByteArray(DRAIN_BUFFER_BYTES)
+                while (bounded.read(sink) != -1) {
+                    // 排空剩余响应体（丢弃），只是为了让连接可复用
+                }
+                response.close()
+            } catch (e: Exception) {
+                runCatching { response.body.close() }
             }
         }
     }
