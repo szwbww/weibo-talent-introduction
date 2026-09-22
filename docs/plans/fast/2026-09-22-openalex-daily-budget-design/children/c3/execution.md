@@ -88,3 +88,11 @@
 - Reported commits reachable from target branch: YES（`13b82fde5d74836977d12e97b7f794a98803429d` 为 `fast/2026-09-22-openalex-daily-budget-design` HEAD，父提交 `ee7a45fa`）
 - Required commands run this invocation: YES（5 条必跑 + 1 条额外 MockMvc 上下文命令，均在最终实现状态之后新跑）
 - Historical evidence used only as baseline: YES（`baseline-java.txt`、`children/c1|c2/verify-log.md` 仅用于对比；JS 基线 1037/1037 与本次 1063/1063 的差值恰为新增 26 例）
+
+---
+
+## Controller evidence note (fast-p finalization, 2026-09-23)
+
+No automatic fix round was dispatched for this child (`fix_round = 0`); `fix-log.md` records that. The controller re-recorded this child's evidence commit so that it contains all four required child artifacts, because the first evidence commit `798dd80` predated the empty fix log.
+
+No product, test, plan or verification content above was changed.

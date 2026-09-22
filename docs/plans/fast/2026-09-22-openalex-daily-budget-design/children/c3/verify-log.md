@@ -36,3 +36,7 @@ Verifier: C3Verifier
 
 ### Required Action
 - COMPLETE_CHILD
+
+---
+
+Controller evidence note (fast-p finalization, 2026-09-23): this log is append-only; nothing above was modified. The child's evidence commit was re-recorded to include the required `fix-log.md` artifact (no fix round was dispatched, `fix_round = 0`), so the verdict, gates, notes and `COMPLETE_CHILD` action recorded above are unchanged.
