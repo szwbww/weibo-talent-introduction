@@ -15,6 +15,11 @@ data class MailSenderAccount(
     val senderDisplayName: String?,
     val teamName: String?,
     val countryName: String?,
+    /**
+     * 共享收件箱主账号代码（I-1，V134）：NULL = 本账号独立收件；
+     * 非空只指向单层主账号，不修改 SMTP/IMAP 凭据、enabled 或发信计数。
+     */
+    val inboundMailboxCode: String? = null,
     val smtpHost: String,
     val smtpPort: Int,
     val smtpUsername: String,

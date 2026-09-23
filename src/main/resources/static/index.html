@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260922-discovery-continuous">
-    <link rel="stylesheet" href="expert-materials.css?v=20260922-discovery-continuous">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20260922-discovery-continuous">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20260922-discovery-continuous">
-    <link rel="stylesheet" href="world-clock.css?v=20260922-discovery-continuous">
+    <link rel="stylesheet" href="styles.css?v=20260923-shared-inbox-owner">
+    <link rel="stylesheet" href="expert-materials.css?v=20260923-shared-inbox-owner">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20260923-shared-inbox-owner">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20260923-shared-inbox-owner">
+    <link rel="stylesheet" href="world-clock.css?v=20260923-shared-inbox-owner">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1795,6 +1795,14 @@
                 </fieldset>
             </div>
 
+            <!-- 收件箱归属 -->
+            <fieldset class="form-section">
+                <legend class="form-section-title">收件箱归属</legend>
+                <div class="form-grid-1">
+                    <label>共享收件箱主账号<select name="inboundMailboxCode"><option value="">独立收件箱（本账号）</option></select></label>
+                </div>
+            </fieldset>
+
             <!-- 发送策略 -->
             <fieldset class="form-section">
                 <legend class="form-section-title">发送策略</legend>
@@ -1804,7 +1812,7 @@
                     <label>今日已发 <span class="effective-limit-hint" id="effectiveLimitHint"></span><input name="todaySentCount" type="number" value="0"></label>
                 </div>
                 <label class="checkbox-row">
-                    <input name="enabled" type="checkbox" checked> 开启此发件账号的轮询调度
+                    <input name="enabled" type="checkbox" checked> 启用此账号发信
                 </label>
             </fieldset>
 
@@ -2165,11 +2173,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260922-discovery-continuous"></script>
-<script src="expert-materials.js?v=20260922-discovery-continuous"></script>
-<script src="meeting-confirmation.js?v=20260922-discovery-continuous"></script>
-<script src="mailbox-chat.js?v=20260922-discovery-continuous"></script>
-<script src="app.js?v=20260922-discovery-continuous"></script>
-<script src="world-clock.js?v=20260922-discovery-continuous"></script>
+<script src="trust-reply-workbench.js?v=20260923-shared-inbox-owner"></script>
+<script src="expert-materials.js?v=20260923-shared-inbox-owner"></script>
+<script src="meeting-confirmation.js?v=20260923-shared-inbox-owner"></script>
+<script src="mailbox-chat.js?v=20260923-shared-inbox-owner"></script>
+<script src="app.js?v=20260923-shared-inbox-owner"></script>
+<script src="world-clock.js?v=20260923-shared-inbox-owner"></script>
 </body>
 </html>

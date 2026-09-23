@@ -84,7 +84,16 @@ class MailSenderAccountService(
         require(command.smtpPassword.isNotBlank()) { "smtpPassword is required" }
         require(command.imapPassword.isNotBlank()) { "imapPassword is required" }
 
-        return repository.save(command.toDomain().copy(enabled = false))
+        val inboundMailboxCode = normalizeInboundMailboxCode(command.inboundMailboxCode)
+        requireValidInboundMailbox(
+            accountCode = command.accountCode,
+            inboundMailboxCode = inboundMailboxCode,
+            senderEmail = command.senderEmail
+        )
+
+        return repository.save(
+            command.toDomain().copy(enabled = false, inboundMailboxCode = inboundMailboxCode)
+        )
     }
 
     fun updateAccount(accountCode: String, command: MailSenderAccountUpdateCommand): MailSenderAccount {
@@ -95,6 +104,13 @@ class MailSenderAccountService(
         require(command.todaySentCount <= command.dailySendLimit) {
             "todaySentCount must not exceed dailySendLimit"
         }
+
+        val inboundMailboxCode = normalizeInboundMailboxCode(command.inboundMailboxCode)
+        requireValidInboundMailbox(
+            accountCode = accountCode,
+            inboundMailboxCode = inboundMailboxCode,
+            senderEmail = command.senderEmail
+        )
 
         val smtpPassword = if (command.smtpPassword.isNullOrBlank()) {
             existing.smtpPassword
@@ -122,6 +138,7 @@ class MailSenderAccountService(
                 senderDisplayName = command.senderDisplayName,
                 teamName = command.teamName,
                 countryName = command.countryName,
+                inboundMailboxCode = inboundMailboxCode,
                 smtpHost = command.smtpHost,
                 smtpPort = command.smtpPort,
                 smtpUsername = command.smtpUsername,
@@ -159,6 +176,13 @@ class MailSenderAccountService(
         val account = getAccount(accountCode)
         if (account.accountCode == SIMULATOR_ACCOUNT_CODE) {
             throw IllegalStateException("模拟器账号不可删除")
+        }
+        val children = childrenOf(accountCode)
+        if (children.isNotEmpty()) {
+            throw IllegalStateException(
+                "该账号是 ${children.size} 个账号的共享收件箱主账号，无法删除：" +
+                    children.joinToString("、") { it.accountCode }
+            )
         }
         val accountId = account.id ?: error("Mail sender account id is null: $accountCode")
         if (campaignRepository.existsBySenderAccountId(accountId)) {
@@ -240,6 +264,50 @@ class MailSenderAccountService(
         return account.strategyWeight * remainingRatio
     }
 
+    /**
+     * I-1 单层共享收件箱校验：主账号必须存在、非模拟器、自身为独立收件箱
+     * （inbound_mailbox_code IS NULL），且不得是当前账号；已有关联子账号的主账号
+     * 不能再归属到别的收件箱。`sender_email` 没有全局唯一约束，故按归属组
+     * （主账号代码，或自身账号代码）做大小写无关的邮箱冲突校验。
+     */
+    private fun requireValidInboundMailbox(
+        accountCode: String,
+        inboundMailboxCode: String?,
+        senderEmail: String
+    ) {
+        if (inboundMailboxCode != null) {
+            require(inboundMailboxCode != accountCode) { "共享收件箱主账号不能指向自己：$accountCode" }
+            val children = childrenOf(accountCode)
+            require(children.isEmpty()) {
+                "该账号已是 ${children.size} 个账号的共享收件箱主账号，不能再归属到其他收件箱：" +
+                    children.joinToString("、") { it.accountCode }
+            }
+            val owner = repository.findByAccountCode(inboundMailboxCode)
+                ?: throw IllegalArgumentException("共享收件箱主账号不存在：$inboundMailboxCode")
+            require(owner.accountCode != SIMULATOR_ACCOUNT_CODE) {
+                "模拟器账号不能作为共享收件箱主账号：$inboundMailboxCode"
+            }
+            require(owner.inboundMailboxCode == null) {
+                "共享收件箱只允许单层关联：$inboundMailboxCode 已是 ${owner.inboundMailboxCode} 的收件箱"
+            }
+        }
+        val group = inboundMailboxCode ?: accountCode
+        val email = senderEmail.trim()
+        val conflict = repository.findAllByOrderByAccountCodeAsc().any { candidate ->
+            candidate.accountCode != accountCode &&
+                (candidate.inboundMailboxCode ?: candidate.accountCode) == group &&
+                candidate.senderEmail.trim().equals(email, ignoreCase = true)
+        }
+        require(!conflict) { "同一共享收件箱组内发信邮箱不能重复：$email" }
+    }
+
+    /** 以 accountCode 为共享收件箱主账号的账号（I-1：单层、不级联）。 */
+    private fun childrenOf(accountCode: String): List<MailSenderAccount> =
+        repository.findAllByOrderByAccountCodeAsc().filter { it.inboundMailboxCode == accountCode }
+
+    private fun normalizeInboundMailboxCode(value: String?): String? =
+        value?.trim()?.takeIf { it.isNotEmpty() }
+
     private fun requireConnectivityPassed(accountCode: String) {
         val result = connectivityService.testAccount(accountCode)
         if (!result.passed) {
@@ -275,6 +343,11 @@ data class MailSenderAccountCreateCommand(
     val senderDisplayName: String?,
     val teamName: String?,
     val countryName: String?,
+    /**
+     * 共享收件箱主账号代码（I-1）：null/空 = 独立收件箱（本账号）。
+     * 关联不修改 sender_email、SMTP/IMAP 凭据、enabled 或发信计数。
+     */
+    val inboundMailboxCode: String? = null,
     val smtpHost: String,
     val smtpPort: Int,
     val smtpUsername: String,
@@ -297,6 +370,7 @@ data class MailSenderAccountCreateCommand(
             senderDisplayName = senderDisplayName,
             teamName = teamName,
             countryName = countryName,
+            inboundMailboxCode = inboundMailboxCode,
             smtpHost = smtpHost,
             smtpPort = smtpPort,
             smtpUsername = smtpUsername,
@@ -321,6 +395,8 @@ data class MailSenderAccountUpdateCommand(
     val senderDisplayName: String?,
     val teamName: String?,
     val countryName: String?,
+    /** 共享收件箱主账号代码（I-1）：null/空 = 独立收件箱（本账号）。 */
+    val inboundMailboxCode: String? = null,
     val smtpHost: String,
     val smtpPort: Int,
     val smtpUsername: String,
