@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-22/openalex-daily-budget-design.md
+
+- Status: REPAIR_PLAN_READY
+- Review epoch: 1
+- Master plan: docs/plans/2026-09-22/openalex-daily-budget-design.md (sha256 120646415a1af9aad8c76fcfc7a072a551259df57844dd310bdd20c880e3b47e)
+- Governing master identity: sha256 120646415a1af9aad8c76fcfc7a072a551259df57844dd310bdd20c880e3b47e; recorded commit ee1dfcd5439de54475c12ff51c9c713e984a82ec
+- Invoked master identity: sha256 120646415a1af9aad8c76fcfc7a072a551259df57844dd310bdd20c880e3b47e
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/2026-09-22-openalex-daily-budget-design/ledger.md (sha256 ceee3836ce72992dad559c05c277fe8220b48bca8319c7c8f5be7da21594d96b)
+- Fast-p handoff: docs/plans/fast/2026-09-22-openalex-daily-budget-design/human-review-handoff.md (sha256 9fc305061a31500ef45a335bf73ed054cdf89e3341df8ddf8e37f5f63e747ed8)
+- Master base: e2247680592603b091af791ef3629d70739a015b
+- Final code head: 13b82fde5d74836977d12e97b7f794a98803429d
+- Evidence parent before next commit: a79fbd58bd6b930a3313f67390b07a8df94ba9c6
+- Previous evidence commit: N/A
+- Branch: fast/2026-09-22-openalex-daily-budget-design
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-22-openalex-daily-budget-design
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; 1 candidate; child_count=3; fast_final_code_head=13b82fde5d74836977d12e97b7f794a98803429d; execution_authority=matching READY_FOR_HUMAN_REVIEW fast-p ledger and handoff
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: FAIL
+- Machine report epoch: machine-verification.md#epoch-1
+- Repair artifact: docs/plans/fix/openalex-daily-budget-design/repair.md (sha256 545b8402eb52fce9f0e1947504f2553f784821fd960f3fd828dc21293f9c190d; DRAFT_READY)
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human approval required: $execute-p docs/plans/fix/openalex-daily-budget-design/repair.md
