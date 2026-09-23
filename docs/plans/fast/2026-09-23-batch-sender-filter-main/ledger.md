@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-09-23/00-batch-sender-filter-main.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-09-23/00-batch-sender-filter-main.md (commit a58ce98be8bb828899dd69c7b8a0282cce35eeb1)
 - Amendments: A1, A2, A3, A4, A5, A6
 - Master base: 9237d6f573335d1624217cbc5501f68a6f52b97b
@@ -9,8 +9,8 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-23T10:33:58Z
-- Current child: c2
-- Waiting role: VERIFIER
+- Current child: N/A
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -19,30 +19,33 @@
 ## Baseline
 
 - 授权依据：显式 `$fast-p docs/plans/2026-09-23/00-batch-sender-filter-main.md` 调用（2026-09-23），授权本 master plan 的一次本地 worktree、本地 branch 与本地 commit；不授权 push/merge/rebase/squash/amend/reset/worktree 删除。
-- 首次调用在 `main @ 9237d6f` 上返回 `BLOCKED_PREFLIGHT`：MAIN `G-0`/`M-5` 要求共享收件箱 01（V134）先实施并验证，而仓库最高迁移仍是 V133、共享收件箱 run（`fast/2026-09-23-shared-inbox-master`）的 c1 仍 PENDING。记录见 `docs/plans/fast/2026-09-23-batch-sender-filter-main/preflight-blocked.md`。
-- 人工解除：用户批准「批准改写计划后立即开跑本组」——放弃 V134 先行门槛，本组迁移改用当时下一个空号 V134，前端 02 不再依赖共享收件箱 owner 基线，共享收件箱计划恢复时自行顺延（其计划已有「版本冲突先修订文件名和本文，不能抢号」条款）。该批准即 A1–A3 三行的 `Approval`。
+- 首次调用在 `main @ 9237d6f` 上返回 `BLOCKED_PREFLIGHT`：MAIN `G-0`/`M-5` 要求共享收件箱 01（V134）先实施并验证，而仓库最高迁移仍是 V133、共享收件箱 run（`fast/2026-09-23-shared-inbox-master`）的 c1 仍 PENDING。记录见 `docs/plans/fast/2026-09-23-batch-sender-filter-main/preflight-blocked.md`（含第二次复检）。
+- 人工解除一：用户批准「批准改写计划后立即开跑本组」——放弃等待共享收件箱 run，本组迁移改用当时下一个空号（A1–A3）。
+- 人工解除二：随后发现并行 run 已实现并轻量验证 `V134__shared_inbox_owner.sql`（其 c1、c2 均 LIGHT_PASS），与本组原 V134 重号；Flyway 版本是共享命名空间（同库两个 V134 启动即失败），用户选择「本组改用 V135」，本组让号并保持 V134→V135 顺序、不 rebase 到并行分支（A4–A6）。
 - 计划播种：`c9babae738f0e155301805fc15316a8e9f3d20f9`（`docs(plans): seed batch-sender-filter master and child plans`），三份计划字节与首次 preflight 记录的 sha256 一致；播种不是 amendment。
-- 计划改写：`377a38b91ffd8a0a78815f5ad3041dbc55b2db80`（`docs(plans): amend batch-sender-filter migration order and shared-file gates`），只改 `docs/plans/2026-09-23/` 下三份计划。
-- `MASTER_BASE_SHA` = `9237d6f573335d1624217cbc5501f68a6f52b97b` = `main` HEAD；`fast/2026-09-23-batch-sender-filter-main` 在该 SHA 上创建于专用 worktree。`master_base..child1 Base` 只有两个 plan-only 提交（`c9babae`、`377a38b`），产品代码等同 `main @ 9237d6f`。
+- 计划改写一：`377a38b91ffd8a0a78815f5ad3041dbc55b2db80`（`docs(plans): amend batch-sender-filter migration order and shared-file gates`）。
+- 计划改写二：`a58ce98be8bb828899dd69c7b8a0282cce35eeb1`（`docs(plans): amend batch-sender-filter migration number to V135`）。
+- `MASTER_BASE_SHA` = `9237d6f573335d1624217cbc5501f68a6f52b97b` = `main` HEAD；`fast/2026-09-23-batch-sender-filter-main` 在该 SHA 上创建于专用 worktree。`master_base..c1 Base` 只有三个 plan-only 提交（`c9babae`、`377a38b`、`a58ce98`），产品代码等同 `main @ 9237d6f`。
 - 环境：JDK zulu-11（`/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home`）；Flyway IT 需 Docker（OrbStack Server 29.4.0，`DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock`）。
+- 基线重跑位置：首次基线 Maven 作业在保留 worktree 内被 300s 作业上限打断（无 `MVN_FLYWAY_EXIT` 标记），随后在辅助 detached worktree `/Users/lukai/IdeaProjects/weibo-talent-introduction-baseline-batch-sender-filter`（detached at `377a38b`）完整重跑并把输出写回本 worktree 的 `baseline/mvn.txt`；该辅助 worktree 只用于基线复现，可在人工审阅后删除。
 - 无全系统验证；每个 child 只过四道轻量门禁。
-- 已知外部冲突（已由 A4–A6 仲裁）：本组首次改写曾把迁移号定为 V134；随后发现并行 run `fast/2026-09-23-shared-inbox-master` 已实现并轻量验证 `V134__shared_inbox_owner.sql`（其 c1 LIGHT_PASS、c2 LIGHT_PASS）。Flyway 版本是共享命名空间，同库两个 V134 启动即失败，人工批准本组让号到 V135（保持 V134→V135 顺序）。两分支合入时 `index.html`、`app.js`、`FlywayMigrationIntegrationTest.kt` 三个共享文件需按「方法区分开改」人工解冲突。
+- 已知外部冲突（已由 A4–A6 仲裁，遗留项供人工处理）：两分支合入时 `index.html`、`app.js`、`FlywayMigrationIntegrationTest.kt` 三个共享文件需按「方法区分开改、不整文件覆盖」人工解冲突；本分支的 Flyway 序列含 V135 而无 V134（并行分支持有 V134），合入顺序应为并行分支在前。
 
 ## Baseline Commands
 
 | Command | Exit | Result |
 |---|---|---|
 | `node --check src/main/resources/static/app.js` | 0 | 见 `baseline/js.txt` |
-| `node --test src/test/js/*.test.js` | 0 | 1121 pass / 0 fail（见 `baseline/js.txt`） |
+| `node --test src/test/js/*.test.js` | 0 | 1121 pass / 222 suites / 0 fail（见 `baseline/js.txt`） |
 | `JAVA_HOME=<zulu-11> mvn -B -Dtest=BatchSendTaskConfigServiceTest,BatchSendControlServiceTest,ManualInitialOutreachServiceTest test` | 0 | 208 tests / 0 failures / 0 errors（见 `baseline/mvn.txt`） |
-| `DOCKER_HOST=<orbstack> JAVA_HOME=<zulu-11> mvn -B -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true -Dapi.version=1.40 test` | 1 | 26 tests / 17 failures，全部为 `expected: <131> but was: <133>`；预置红（断言钉旧最高版本 131，仓库实际最高为 V133），本 child 计划要求按实值改到 134（见 `baseline/mvn.txt`） |
+| `DOCKER_HOST=<orbstack> JAVA_HOME=<zulu-11> mvn -B -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true -Dapi.version=1.40 test` | 1 | 26 tests / 17 failures，全部为 `expected: <131> but was: <133>`；预置红（断言钉旧最高版本 131，仓库实际最高为 V133），c1 按 A5 改到 135（见 `baseline/mvn.txt`） |
 
 ## Children
 
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| c1 | docs/plans/2026-09-23/01-batch-sender-filter-backend.md | commit:a58ce98be8bb828899dd69c7b8a0282cce35eeb1 | none | 1 | LIGHT_PASS_WITH_NOTES | 377a38b91ffd8a0a78815f5ad3041dbc55b2db80 | c3f694f | 1 | 248c30a | 248c30a | 47505d3f38d91570d639222d652f3cf1a145e5ba | 实现者 C1Backend（c3f694f，修复 248c30a）；验证者 C1Verifier LIGHT_FAIL/AUTO_FIX（F-1：提交内 Flyway 断言仍为 134）→ C1ReVerifier LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD（F-1 关闭）；O-1..O-4 RECORD_ONLY |
-| c2 | docs/plans/2026-09-23/02-batch-sender-filter-frontend.md | commit:a58ce98be8bb828899dd69c7b8a0282cce35eeb1 | c1 | 1 | LIGHT_PASS_WITH_NOTES | 248c30a | 75cc1714 | 0 | — | 75cc1714 | PLACEHOLDER_E2 | 实现者 C2Frontend（75cc1714）；验证者 C2Verifier LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD，四门全过；RECORD_ONLY：manualDraft.emailDomains 既有误键表达式保持原样、前端去重依赖构造顺序+后端 distinct()、证据提交落在字面边界内 |
+| c1 | docs/plans/2026-09-23/01-batch-sender-filter-backend.md | commit:a58ce98be8bb828899dd69c7b8a0282cce35eeb1 | none | 1 | LIGHT_PASS_WITH_NOTES | 377a38b91ffd8a0a78815f5ad3041dbc55b2db80 | c3f694f4e9a7ef9a32b9b41e914d87fa3fc70cb9 | 1 | 248c30a | 248c30a | 47505d3f38d91570d639222d652f3cf1a145e5ba | 实现者 C1Backend；验证者 C1Verifier 返回 LIGHT_FAIL/AUTO_FIX（F-1：提交内 Flyway 断言仍为 134，工作区已改未提交）→ 修复轮 1（248c30a）→ 复验者 C1ReVerifier 返回 LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD；O-1..O-4 为 RECORD_ONLY；定向 227 tests/0 fail，Flyway IT 27 tests/1 fail+1 error（历史期望） |
+| c2 | docs/plans/2026-09-23/02-batch-sender-filter-frontend.md | commit:a58ce98be8bb828899dd69c7b8a0282cce35eeb1 | c1 | 1 | LIGHT_PASS_WITH_NOTES | 248c30a | 75cc1714611ac085341cf372d28c057bb332796d | 0 | — | 75cc1714611ac085341cf372d28c057bb332796d | 504b5b9f9711a5bda701d2e0d90ed2b1fe5c164c | 实现者 C2Frontend；验证者 C2Verifier 返回 LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD（四门全过，无 AUTO_FIX）；JS 全量 1137 pass/0 fail（基线 1121），`styles.css` 零 diff，11 个缓存键统一为 `20260923-batch-sender-filter`；O-1..O-3 为 RECORD_ONLY |
 
 ## Amendments
 
@@ -61,6 +64,11 @@
 |---|---|---:|---|---|---|---|
 | — | — | — | — | — | — | — |
 
+（无 agent 派发失败：C1Backend、C1Verifier、C1ReVerifier、C2Frontend、C2Verifier 均一次派发成功。）
+
 ## Verification Log
 
-（每个 child 的完整轻量验证报告追加在 `children/<id>/verify-log.md`。）
+每个 child 的完整轻量验证报告在 `children/<id>/verify-log.md`（c1 保留 LIGHT_FAIL 与复验 LIGHT_PASS_WITH_NOTES 两段；c2 为 LIGHT_PASS_WITH_NOTES）。终态：
+
+- c1：`LIGHT_PASS_WITH_NOTES`，Required Action `COMPLETE_CHILD`，boundary `a58ce98..248c30a`，验证者 C1ReVerifier。
+- c2：`LIGHT_PASS_WITH_NOTES`，Required Action `COMPLETE_CHILD`，boundary `248c30a..75cc1714`，验证者 C2Verifier。
