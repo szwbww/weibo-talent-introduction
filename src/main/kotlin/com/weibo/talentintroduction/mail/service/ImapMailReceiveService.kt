@@ -313,6 +313,7 @@ class ImapMailReceiveService(
             body = extracted.bodyText,
             messageId = headers.messageId,
             inReplyTo = headers.inReplyTo,
+            recipientAddresses = parseTopLevelRecipients(headers.to, headers.cc),
             receivedAt = message.receivedDate
                 ?.toInstant()
                 ?.atZone(ZoneId.systemDefault())
@@ -330,7 +331,10 @@ class ImapMailReceiveService(
         val subject: String?,
         val from: String?,
         val messageId: String?,
-        val inReplyTo: String?
+        val inReplyTo: String?,
+        /** I-2：原始顶层收件人头（路由依据；BCC 不会出现在这里）。 */
+        val to: String?,
+        val cc: String?
     )
 
     private fun fetchEnvelopeHeaders(message: Message): EnvelopeHeaders =
@@ -341,8 +345,29 @@ class ImapMailReceiveService(
             subject = MailSubjectDecoder.decode(message.getHeader("Subject")?.firstOrNull()),
             from = message.getHeader("From")?.firstOrNull(),
             messageId = message.getHeader("Message-ID")?.firstOrNull(),
-            inReplyTo = message.getHeader("In-Reply-To")?.firstOrNull()
+            inReplyTo = message.getHeader("In-Reply-To")?.firstOrNull(),
+            // I-2：只读顶层 To/Cc（与 From 同一层头读取路径），不预取完整 MIME；
+            // 解析失败/缺头返回空列表，绝不阻断收信。
+            to = message.getHeader("To")?.firstOrNull(),
+            cc = message.getHeader("Cc")?.firstOrNull()
         )
+
+    /**
+     * I-2：解析原始顶层 `To`/`Cc` 邮箱地址。To 在前、Cc 在后，保持头内出现顺序，
+     * 不做大小写/去重归一（唯一性判定在路由层按组成员做）；非法地址段跳过，
+     * 整段解析失败按空处理——收信绝不因头格式异常而失败。
+     */
+    private fun parseTopLevelRecipients(to: String?, cc: String?): List<String> =
+        listOf(to, cc).flatMap { header ->
+            if (header.isNullOrBlank()) {
+                emptyList()
+            } else {
+                runCatching {
+                    InternetAddress.parse(header, false)
+                        .mapNotNull { address -> address.address?.trim()?.takeIf { it.isNotEmpty() } }
+                }.getOrDefault(emptyList())
+            }
+        }
 
     private fun extractFromHeader(header: String?): String? {
         if (header.isNullOrBlank()) return null

@@ -40,8 +40,14 @@ class MailSenderAccountService(
     fun listEnabledAccounts(): List<MailSenderAccount> =
         repository.findAllByEnabledTrue()
 
+    /**
+     * I-1：物理轮询列表只含独立收件箱主账号（`inbound_mailbox_code IS NULL`）。
+     * 共享组内的别名账号不再进入轮询——同一物理邮箱每次检查只登录一次。
+     * `enabled` 与收信无关，禁用账号照旧返回。
+     */
     fun listAutoReceiveAccounts(): List<MailSenderAccount> =
         repository.findAllByAccountCodeNot(SIMULATOR_ACCOUNT_CODE)
+            .filter { it.inboundMailboxCode == null }
 
     fun getReceiveAccount(accountCode: String): MailSenderAccount {
         val account = repository.findByAccountCode(accountCode)
@@ -53,11 +59,21 @@ class MailSenderAccountService(
     }
 
     fun getAutoReceiveAccount(accountCode: String): MailSenderAccount =
-        getReceiveAccount(accountCode)
+        resolveInboundOwner(getReceiveAccount(accountCode))
+
+    /**
+     * I-1：把逻辑账号解析为其物理收件箱主账号（自身即独立收件箱时原样返回）。
+     * 单层关系由 [requireValidInboundMailbox] 保证，故只跟随一级。
+     */
+    fun resolveInboundOwner(account: MailSenderAccount): MailSenderAccount {
+        val ownerCode = account.inboundMailboxCode ?: return account
+        return repository.findByAccountCode(ownerCode)
+            ?: error("Mail sender account not found: $ownerCode")
+    }
 
     fun getAutoReceiveAccountOrNull(accountCode: String): MailSenderAccount? =
         try {
-            getReceiveAccount(accountCode)
+            getAutoReceiveAccount(accountCode)
         } catch (_: Exception) {
             null
         }

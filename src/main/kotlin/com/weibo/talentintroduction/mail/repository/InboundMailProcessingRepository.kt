@@ -18,17 +18,32 @@ data class SenderAccountLastReceived(
 
 interface InboundMailProcessingRepository : CrudRepository<InboundMailProcessing, Long> {
     /**
-     * 真实远端身份判重（I-1：V120 后唯一键为 account/uid_validity/uid）。
-     * 新写/新收信的判重与代际识别必须使用本 finder，禁止仅按 account+uid 判重。
+     * I-3：新收信的物理身份判重 —— `(mailbox_owner_code, uid_validity, imap_uid)` 是
+     * V134 的唯一物理键（并发兜底），判重一律按物理键，禁止再按逻辑账号判重。
      */
-    fun findBySenderAccountCodeAndUidValidityAndImapUid(
-        senderAccountCode: String,
+    fun findByMailboxOwnerCodeAndUidValidityAndImapUid(
+        mailboxOwnerCode: String,
         uidValidity: Long,
         imapUid: Long
     ): InboundMailProcessing?
 
-    /** 兼容读取：按 account+uid（不含代际）的旧 finder；仅允许旧行代际认领核验/历史读取，不得用于新写判重。 */
-    fun findBySenderAccountCodeAndImapUid(senderAccountCode: String, imapUid: Long): InboundMailProcessing?
+    /**
+     * I-3：组内历史空 owner 行（V134 之前）的严格指纹核验候选 —— 同一物理组的任意逻辑
+     * 账号、`mailbox_owner_code IS NULL` 且同 UID 的行。调用方逐条核验（同 UID 且非空
+     * Message-ID、From、秒级 receivedAt 全吻合才算已处理）；代际未知（0）不得回填。
+     * [senderAccountCodes] 必须非空（组内至少含 owner），空集合会生成非法 `IN ()`。
+     */
+    @Query("""
+        SELECT * FROM inbound_mail_processing
+         WHERE mailbox_owner_code IS NULL
+           AND sender_account_code IN (:senderAccountCodes)
+           AND imap_uid = :imapUid
+        ORDER BY id ASC
+    """)
+    fun findLegacyOwnerlessByGroupAndImapUid(
+        senderAccountCodes: List<String>,
+        imapUid: Long
+    ): List<InboundMailProcessing>
 
     @Modifying
     @Query("""

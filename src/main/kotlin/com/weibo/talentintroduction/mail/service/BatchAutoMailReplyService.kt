@@ -75,7 +75,9 @@ class BatchAutoMailReplyService(
             )
         }
 
-        val accounts = resolvedAccounts.map { it.second!! }
+        // I-1：历史 mail_record 里的逻辑账号先映射为物理 owner，再按 owner 去重——
+        // 同一共享邮箱的多个逻辑账号在一次联系人检查中只登录一次。
+        val accounts = resolvedAccounts.mapNotNull { it.second }.distinctBy { it.accountCode }
 
         val startedAt = System.currentTimeMillis()
         val perAccountResults = pollAccounts(
