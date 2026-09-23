@@ -1197,7 +1197,8 @@ class DiscoveryPipelineServiceTest {
         h.clock.current = h.clock.current.plus(Duration.ofDays(1))
         launch(h, criteria(sources = emptyList()))
         assertNotEquals(pipelineHashA, h.store.pipeline.queryHash, "两次 launch 的流水线级身份确实不同")
-        h.store.seedJob(streamId, "KEEP-DISPATCH", nextAttemptAt = h.clock.current.plus(Duration.ofHours(1)))
+        // I-4/I-7：窗口只在有可跑工作时才派发，因此这里的队列条目必须是**到点**的。
+        h.store.seedJob(streamId, "KEEP-DISPATCH")
         val queuedBeforeSecond = h.store.pipeline.queuedPapers
         runWindow(h)
 
@@ -1212,7 +1213,7 @@ class DiscoveryPipelineServiceTest {
         clearActiveJobs(h)
         val different = criteria(sources = emptyList()).copy(pageSize = 50)
         launch(h, different)
-        h.store.seedJob(streamId, "KEEP-DISPATCH-2", nextAttemptAt = h.clock.current.plus(Duration.ofHours(1)))
+        h.store.seedJob(streamId, "KEEP-DISPATCH-2")
         runWindow(h)
 
         assertEquals(2, h.store.streams.values.size, "不同有效条件必须得到不同 stream")
@@ -1493,7 +1494,9 @@ class DiscoveryPipelineServiceTest {
         stream.nextAttemptAt = null
         Mockito.`when`(h.discovery.extractQueuedItem(anyEnvelope(), anyCriteria(), Mockito.anyInt(), Mockito.anyInt()))
             .thenReturn(QueuedItemExtraction.HostBusy)
-        h.clock.current = h.clock.current.plus(Duration.ofMinutes(10))
+        // I-4/I-7：上一次的来源延期（本用例 fixture 为 3 小时）把唤醒时间推到了未来，这里必须越过它，
+        // 否则 tick 会（正确地）跳过窗口。
+        h.clock.current = h.clock.current.plus(Duration.ofHours(4))
         runWindow(h)
         assertEquals(QueueJobStatus.PENDING, h.store.jobs[job.id]!!.status, "HOST_BUSY 必须退回 PENDING")
         assertEquals(0, h.store.jobs[job.id]!!.attempts, "HOST_BUSY 不得消耗 attempts")
@@ -1731,6 +1734,70 @@ class DiscoveryPipelineServiceTest {
         assertEquals(PipelineTickSkipReason.DRAINED, drained.skipReason)
         h.service.tick()
         assertTrue(h.taskResults.isEmpty(), "已排空且无操作需求时不得循环创建空 task_execution")
+    }
+
+    @Test
+    fun `a fully deferred pipeline opens no window and creates no task record (I-4, I-7)`() {
+        val h = harness()
+        val stream = streamFor(h)
+        // 所有来源都在退避（例如 OpenAlex 额度延期）：唯一来源的下次可尝试时间在未来。
+        val retryAt = h.clock.current.plus(Duration.ofMinutes(5))
+        stream.nextAttemptAt = retryAt
+        stream.sourceError = PipelineWaitReason.DAILY_BUDGET
+
+        val tick = h.service.tick()
+        assertFalse(tick.dispatched, "没有任何可跑工作时不得开窗口")
+        assertEquals(PipelineTickSkipReason.NOT_DUE, tick.skipReason)
+        assertEquals(retryAt, tick.nextWakeAt, "唤醒时间必须是来源真正可尝试的时刻")
+        assertTrue(h.taskResults.isEmpty(), "被延期的来源不得循环创建空 task_execution")
+
+        // 延期不是终态：到点后同一个 tick 必须恢复派发。
+        h.clock.current = retryAt
+        assertTrue(h.service.tick().dispatched, "退避到期后必须恢复派发")
+    }
+
+    @Test
+    fun `a criteria with no enabled source is drained instead of opening empty windows (I-7)`() {
+        val h = harness()
+        Mockito.`when`(h.discovery.queueSourceNames(anyCriteria())).thenReturn(emptyList())
+        launch(h)
+
+        val tick = h.service.tick()
+        assertFalse(tick.dispatched, "没有任何启用来源时不得开窗口")
+        assertEquals(PipelineTickSkipReason.DRAINED, tick.skipReason)
+        h.service.tick()
+        assertTrue(h.taskResults.isEmpty(), "没有启用来源时不得循环创建空 task_execution")
+    }
+
+    @Test
+    fun `a window that drains at the deadline is SUCCESS, not PARTIAL_SUCCESS (I-7, I-8)`() {
+        // 生产里抽取 worker 是**独立线程**：收尾判定读到的 activeCount 仍是 1，随后 worker 才完成，
+        // 因此窗口会在下一轮循环的截止检查处收尾 —— 那时流水线已经排空。这里用单线程池如实复现。
+        val fetch = Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "c3-deadline-fetch").apply { isDaemon = true }
+        }
+        try {
+            val h = harness(fetch = fetch)
+            val stream = streamFor(h)
+            stream.cursorState = StreamCursorState.EXHAUSTED
+            h.store.seedJob(stream.id, "DOI:deadline", extractionJson = "{}")
+            Mockito.`when`(h.discovery.consumeQueuedItem(anyEnvelope(), anyText(), Mockito.any()))
+                .thenAnswer {
+                    // 处理最后一条工作时窗口恰好到点：收尾原因因此是 WINDOW_END，但流水线已经排空。
+                    h.clock.current = h.clock.current.plus(Duration.ofMinutes(2))
+                    QueuedItemConsumption()
+                }
+            launch(h)
+
+            val result = runWindow(h)
+
+            assertEquals(PipelineTerminationReason.WINDOW_END, result.terminationReason)
+            assertTrue(result.drained, "结束时所有来源已穷尽且没有活跃条目")
+            assertEquals(DiscoveryTerminalStatus.SUCCESS, result.taskFinalStatus)
+            assertEquals(PipelinePhase.DRAINED, h.store.pipeline.phase)
+        } finally {
+            fetch.shutdownNow()
+        }
     }
 
     @Test

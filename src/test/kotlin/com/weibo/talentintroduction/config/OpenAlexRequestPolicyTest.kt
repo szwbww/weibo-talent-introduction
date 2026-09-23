@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.config
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -115,7 +116,17 @@ class OpenAlexRequestPolicyTest {
             val permit = policy.reserve(kind, Operation.LIST, listTarget)
             assertTrue(permit is Permit.Allowed, "expected an allowed permit, got $permit")
             policy.recordResponse((permit as Permit.Allowed).permitId, quotaHeaders())
+            // 限速槽位现在以 Deferred(retryAt) 表达（策略绝不 sleep），因此测试自己把时钟推过槽位。
+            time.current = time.current.plusSeconds(1)
         }
+    }
+
+    /** 429 冷却 / 限速槽位：调用方拿到的 Deferred(retryAt) 距当前时刻的毫秒数（策略绝不 sleep）。 */
+    private fun rateLimitRetryDelayMs(policy: OpenAlexRequestPolicy): Long {
+        val deferred = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+        assertTrue(deferred is Permit.Deferred, "expected a deferred permit, got $deferred")
+        assertEquals(DeferredReason.RATE_LIMIT, (deferred as Permit.Deferred).reason)
+        return Duration.between(time.current, deferred.retryAt).toMillis()
     }
 
     // ------------------------------------------------------------------
@@ -470,34 +481,33 @@ class OpenAlexRequestPolicyTest {
     fun `request-rate 429 backs off with a bounded delay and recovers after a success (I-4)`() {
         val policy = policy()
         policy.recordResponse(quotaHeaders(creditsUsed = null, remaining = 500, limit = 1_000, retryAfterSeconds = 3))
-        assertTrue(policy.beforeRequest(RequestKind.DISCOVERY) is Permit.Allowed)
-        assertEquals(listOf(3_000L), time.sleeps.toList())
+        // I-4：官方 Retry-After 原样进入共享冷却，并以 Deferred(retryAt) 交给调用方（策略绝不 sleep）。
+        assertEquals(3_000L, rateLimitRetryDelayMs(policy))
 
         // Retry-After absent: exponential from 1s, doubling, never above the configured cap.
+        // 每轮先越过上一轮冷却，使新一轮退避成为唯一约束（共享冷却只收紧、不提前清除）。
         var backoff = 1_000L
-        var observedSleeps = time.sleeps.size
         repeat(8) {
+            time.current = time.current.plusMillis(60_000)
             policy.recordResponse(quotaHeaders(creditsUsed = null, remaining = 500, limit = 1_000))
             backoff = (backoff * 2).coerceAtMost(60_000)
-            assertTrue(policy.beforeRequest(RequestKind.DISCOVERY) is Permit.Allowed)
-            assertEquals(backoff, time.sleeps[observedSleeps], "backoff must grow but stay bounded")
-            observedSleeps = time.sleeps.size
+            assertEquals(backoff, rateLimitRetryDelayMs(policy), "backoff must grow but stay bounded")
         }
-        assertEquals(60_000L, time.sleeps.last(), "backoff is capped by rate-limit-backoff-max-ms")
+        assertEquals(60_000L, rateLimitRetryDelayMs(policy), "backoff is capped by rate-limit-backoff-max-ms")
 
-        val sleepsBeforeSuccess = time.sleeps.size
+        // 时间越过既有冷却；成功的响应清零本地指数退避（共享冷却只按时间过期，绝不提前清除）。
+        time.current = time.current.plusMillis(120_000)
         policy.recordResponse(quotaHeaders())
-        assertTrue(policy.beforeRequest(RequestKind.DISCOVERY) is Permit.Allowed)
-        assertEquals(10L, time.sleeps.last(), "a successful response must clear the rate-limit backoff")
-        assertEquals(sleepsBeforeSuccess + 1, time.sleeps.size)
+        policy.recordResponse(quotaHeaders(creditsUsed = null, remaining = 500, limit = 1_000))
+        assertEquals(1_000L, rateLimitRetryDelayMs(policy), "a successful response must clear the rate-limit backoff")
+        assertTrue(time.sleeps.isEmpty(), "429 退避只以 Deferred(retryAt) 表达，绝不睡在调用线程上")
     }
 
     @Test
     fun `a 429 cooldown is shared by every instance of the same account (I-4)`() {
         val store = InMemoryOpenAlexBudgetStore()
-        // inlineWaitCapMs = 0 → 冷却只以 Deferred(retryAt) 表达，调用线程绝不等待。
-        val first = policy(store = store, rateLimitBackoffMaxMs = 0)
-        val second = policy(store = store, rateLimitBackoffMaxMs = 0)
+        val first = policy(store = store)
+        val second = policy(store = store)
 
         first.recordResponse(quotaHeaders(creditsUsed = null, remaining = 500, limit = 1_000, retryAfterSeconds = 30))
 
@@ -556,6 +566,33 @@ class OpenAlexRequestPolicyTest {
     }
 
     @Test
+    fun `an untrusted ledger reports a sync-deferred snapshot instead of a usable balance (I-4, I-2)`() {
+        val store = InMemoryOpenAlexBudgetStore()
+        // 官方余额从未确认（取数失败）：本地保护上限绝不是可用余额。
+        val policy = policy(store = store, syncSource = { null })
+
+        val snapshot = policy.snapshot()
+        assertEquals(DeferredReason.BUDGET_SYNC, snapshot.deferredReason)
+        assertNull(snapshot.officialRemainingCredits, "未确认官方余额时不得给出可信剩余额度")
+        assertNotNull(snapshot.retryAt, "延期必须带 retryAt")
+        // 同一状态下的计量请求同样被延期，绝不放行。
+        assertEquals(
+            DeferredReason.BUDGET_SYNC,
+            (policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) as Permit.Deferred).reason
+        )
+
+        // 官方确认新周期之后，快照回到「无延期原因」，数值可供展示。
+        val synced = policy(
+            store = store,
+            syncSource = { OpenAlexOfficialBalance(10000, 9000, time.current.plusSeconds(3600)) }
+        )
+        assertTrue(synced.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Allowed)
+        val trusted = synced.snapshot()
+        assertNull(trusted.deferredReason)
+        assertEquals(9000L, trusted.officialRemainingCredits)
+    }
+
+    @Test
     fun `a confirmed official cycle unlocks metered requests and an expired one forces a new sync (I-4)`() {
         var resetAt = Instant.parse("2026-09-21T04:00:00Z")
         val store = InMemoryOpenAlexBudgetStore()
@@ -599,11 +636,12 @@ class OpenAlexRequestPolicyTest {
     }
 
     @Test
-    fun `waiting for a rate slot returns retryAt instead of sleeping for minutes (I-4)`() {
-        assertEquals(listOf(200L), slots(5.0))
-        assertEquals(listOf(10L), slots(500.0))
+    fun `a sub-second rate slot is paced inline while longer waits defer (I-4)`() {
+        // 共享 5/s 节奏（200ms 槽位）仍在调用线程内等待：这是限速节奏，不是 429 冷却。
+        assertEquals(listOf(200L), slotWaits(5.0))
+        assertEquals(listOf(10L), slotWaits(500.0))
 
-        // 0.01/s = 100 秒槽位，超过内联等待上限 → 只返回 retryAt，绝不睡 100 秒。
+        // 慢到超过内联上限的槽位（0.01/s = 100 秒）绝不睡在调用线程里：立刻返回 Deferred(retryAt)。
         val recorder = FakeTime()
         val policy = OpenAlexRequestPolicy(
             properties(maxRequestsPerSecond = 0.0), recorder, InMemoryOpenAlexBudgetStore()
@@ -612,7 +650,7 @@ class OpenAlexRequestPolicyTest {
         val deferred = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
         assertEquals(DeferredReason.RATE_LIMIT, (deferred as Permit.Deferred).reason)
         assertEquals(100_000L, Duration.between(recorder.current, deferred.retryAt).toMillis())
-        assertTrue(recorder.sleeps.isEmpty(), "超过内联等待上限时必须返回 retryAt 而不是长时间 sleep")
+        assertTrue(recorder.sleeps.isEmpty(), "超过内联上限的槽位必须返回 retryAt 而不是长时间 sleep")
     }
 
     @Test
@@ -620,7 +658,7 @@ class OpenAlexRequestPolicyTest {
         val real = InMemoryOpenAlexBudgetStore()
         val slot = time.current.plusMillis(200)
         // 存储往返（锁等待 / 校准 HTTP）耗时超过剩余槽位：reserve 返回的共享 retryAt 在计算等待时已经过去，
-        // 于是 waitMs 为负 —— 修复前会把它交给 Thread.sleep 并抛 IllegalArgumentException。
+        // 于是 waitMs 为负 —— 非正等待绝不允许交给 Thread.sleep（负值抛 IllegalArgumentException）。
         val store = object : OpenAlexBudgetStore by real {
             override fun reserve(request: BudgetReserveRequest): BudgetReserveResult {
                 time.current = time.current.plusSeconds(5)
@@ -631,17 +669,20 @@ class OpenAlexRequestPolicyTest {
 
         val deferred = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
         assertEquals(Permit.Deferred(DeferredReason.RATE_LIMIT, slot), deferred)
-        assertTrue(time.sleeps.none { it <= 0L }, "非正等待绝不允许 sleep（实际 ${time.sleeps}）")
+        assertTrue(time.sleeps.isEmpty(), "非正等待绝不允许 sleep（实际 ${time.sleeps}）")
     }
 
-    /** Delay the policy inserts between two back-to-back requests at the given configured rate. */
-    private fun slots(maxRequestsPerSecond: Double): List<Long> {
+    /** 两次连续请求之间策略实际等待的限速槽位（毫秒）。 */
+    private fun slotWaits(maxRequestsPerSecond: Double): List<Long> {
         val recorder = FakeTime()
-        val recorded = OpenAlexRequestPolicy(
+        val policy = OpenAlexRequestPolicy(
             properties(maxRequestsPerSecond = maxRequestsPerSecond), recorder, InMemoryOpenAlexBudgetStore()
         )
-        recorded.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
-        recorded.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
+        assertTrue(policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Allowed)
+        assertTrue(
+            policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Allowed,
+            "子秒槽位必须在调用线程内等完，而不是把节奏变成延期"
+        )
         return recorder.sleeps.toList()
     }
 

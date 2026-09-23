@@ -595,4 +595,111 @@ describe("c3 deep discovery continuous run (frontend)", () => {
                 "the pause/resume text must be applied to the existing cancel button");
         });
     });
+
+    describe("repair V-1/V-2/V-3/V-5 (visibility, trigger restore, no inline styles, pending-sync budget)", () => {
+        it("surfaces a pipeline-info load failure on the page-level status bar (V-1)", async () => {
+            const sandbox = loadSandbox({
+                taskLaunchConfigs: {
+                    EXPERT_DISCOVERY: { title: "深度发现（外部数据源）", desc: "", preload: null }
+                },
+                apiHandler: () => { throw new Error("请求超时（10 秒）"); }
+            }, ["openTaskLaunchModal"]);
+
+            await sandbox.openTaskLaunchModal("EXPERT_DISCOVERY");
+
+            assert.ok(sandbox.statuses.some(entry => entry.message.includes("深度发现信息加载失败")),
+                "the failure must also reach the always-visible page status bar");
+            assert.strictEqual(sandbox.$("#taskLaunchRunBtn").disabled, true,
+                "the launch button must stay disabled until the information loads");
+            assert.ok(sandbox.$("#taskLaunchDesc").textContent.includes("加载失败"),
+                "the configuration area must still be restored for a retry");
+        });
+
+        it("restores the page trigger on every rejected continuous launch path (V-2)", async () => {
+            for (const failure of ["conflict", "unavailable"]) {
+                const watcherCalls = [];
+                const sandbox = loadSandbox({
+                    stopTaskWatcher: (taskType, restore) => watcherCalls.push({ taskType, restore })
+                }, [
+                    "executeDiscover", "postDiscoveryLaunch", "getSelectedSources",
+                    "handleDiscoveryLaunchFailure", "progressStoreHasRunningTask", "fetchTaskRunningOrThrow"
+                ]);
+                sandbox.__c3.setMode("CONTINUOUS");
+                sandbox.__c3.sourcesState().status = "ready";
+                sandbox.apiHandler = (requestPath) => {
+                    if (requestPath.startsWith("/api/expert-discovery/run")) {
+                        const error = new Error(failure === "conflict" ? "已有不同的查询仍在推进" : "服务暂不可用");
+                        error.status = failure === "conflict" ? 409 : 503;
+                        throw error;
+                    }
+                    return {};
+                };
+
+                await sandbox.executeDiscover();
+
+                assert.ok(
+                    watcherCalls.some(call => call.taskType === "EXPERT_DISCOVERY" && call.restore === true),
+                    failure + ": the page trigger must be restored, not left in the running state"
+                );
+            }
+        });
+
+        it("renders per-source detail with the existing table class and no inline styles (V-3)", () => {
+            const sandbox = loadSandbox({}, ["renderDiscoverySourceDetail"]);
+            vm.runInContext(
+                `renderDiscoverySourceDetail(${JSON.stringify({
+                    sources: [{
+                        source: "OPENALEX", cursorState: "ACTIVE", queuedItems: 1, processedItems: 2,
+                        activeJobs: 0, failedJobs: 0, indexedExperts: 3, sourceError: "SEARCH_FAILED"
+                    }]
+                })});`,
+                sandbox
+            );
+
+            const content = sandbox.$("#taskModalBySourceContent");
+            assert.ok(content.innerHTML.includes('class="data-table"'),
+                "per-source detail must reuse the existing table presentation");
+            assert.ok(!content.innerHTML.includes("style="),
+                "no inline style may be introduced: " + content.innerHTML);
+            assert.ok(content.innerHTML.includes("SEARCH_FAILED"), "the per-source error must stay visible");
+            assert.strictEqual(sandbox.$("#taskModalBySource").hidden, false);
+        });
+
+        it("renders an unconfirmed budget as pending sync instead of local credits (V-5)", () => {
+            const sandbox = loadSandbox({});
+            const text = sandbox.__c3.metricsText({
+                state: "WAITING",
+                waitReasons: [],
+                budget: {
+                    deferredReason: "BUDGET_SYNC",
+                    lastSyncedAt: "2026-09-22T23:00:00Z",
+                    confirmedSpentCredits: 0,
+                    officialLimitCredits: 10000,
+                    reservedCredits: 0,
+                    effectiveRemainingCredits: 10000,
+                    resetAt: null
+                }
+            }, null);
+
+            assert.ok(text.includes("待同步"), "an unconfirmed official cycle must render as 待同步: " + text);
+            assert.ok(!text.includes("保护后可用 10000"),
+                "the local protection ceiling must never look like a confirmed balance: " + text);
+
+            // 已确认的周期仍然展示真实读数（不能因为修复把正常路径也变成“待同步”）。
+            const trusted = sandbox.__c3.metricsText({
+                state: "WAITING",
+                waitReasons: [],
+                budget: {
+                    deferredReason: null,
+                    lastSyncedAt: "2026-09-22T23:00:00Z",
+                    confirmedSpentCredits: 227,
+                    officialLimitCredits: 10000,
+                    reservedCredits: 2,
+                    effectiveRemainingCredits: 9771,
+                    resetAt: "2026-09-23T00:00:00Z"
+                }
+            }, null);
+            assert.ok(trusted.includes("保护后可用 9771"), trusted);
+        });
+    });
 });

@@ -202,7 +202,9 @@ data class PipelineWindowResult(
     val waitReasons: List<String>,
     val queueDepth: Long,
     val nextWakeAt: Instant?,
-    val pendingWork: Boolean
+    val pendingWork: Boolean,
+    /** I-8：本窗口结束时流水线是否已真正排空（所有来源穷尽 + 无活跃条目 + 无在途工作）。 */
+    val drained: Boolean
 ) : TaskExecutionSummaryProvider {
 
     override val taskSuccessCount: Int get() = indexedExperts
@@ -212,16 +214,20 @@ data class PipelineWindowResult(
     /**
      * 窗口终止原因的**唯一**状态映射：
      * - 人工暂停 → CANCELLED；
+     * - 结束时已排空（无论收尾原因是窗口截止还是来源穷尽）且无失败 → SUCCESS；
      * - 不可恢复的全失败（没有任何处理、也没有待续跑工作）→ FAILED；
-     * - 已排空且无失败 → SUCCESS；
      * - 其余（窗口结束/额度/队列满/来源错误）都还有待续跑工作 → PARTIAL_SUCCESS。
+     *
+     * I-8：终态必须同时看**最终流水线状态**，否则「截止到点恰好排空」的窗口会被报成 PARTIAL_SUCCESS，
+     * 与已经 DRAINED 的流水线自相矛盾。
      */
     override val taskFinalStatus: String?
-        get() = when (terminationReason) {
-            PipelineTerminationReason.MANUAL_PAUSE -> DiscoveryTerminalStatus.CANCELLED
-            PipelineTerminationReason.SOURCE_EXHAUSTED ->
+        get() = when {
+            terminationReason == PipelineTerminationReason.MANUAL_PAUSE -> DiscoveryTerminalStatus.CANCELLED
+            drained -> if (failedItems == 0) DiscoveryTerminalStatus.SUCCESS else DiscoveryTerminalStatus.PARTIAL_SUCCESS
+            terminationReason == PipelineTerminationReason.SOURCE_EXHAUSTED ->
                 if (failedItems == 0) DiscoveryTerminalStatus.SUCCESS else DiscoveryTerminalStatus.PARTIAL_SUCCESS
-            PipelineTerminationReason.SOURCE_ERROR ->
+            terminationReason == PipelineTerminationReason.SOURCE_ERROR ->
                 if (processedItems == 0 && !pendingWork) {
                     DiscoveryTerminalStatus.FAILED
                 } else {
@@ -462,13 +468,22 @@ class DiscoveryPipelineService(
             )
         }
 
-        if (!hasProgressableWork(pipeline)) {
+        // I-4/I-7：先区分「现在就能跑」与「只是被延期」；两者都不该开窗口，更不该建空 task_execution。
+        val progressAt = nextProgressAt(pipeline)
+        if (progressAt == null) {
             repository.markDrained(now)
             val drained = repository.findPipeline() ?: pipeline
             return PipelineTickResult(
                 dispatched = false, state = derivedState(drained), phase = drained.phase,
                 skipReason = PipelineTickSkipReason.DRAINED,
                 waitReason = PipelineWaitReason.SOURCE_EXHAUSTED, nextWakeAt = null, ownerToken = null
+            )
+        }
+        if (progressAt.isAfter(now)) {
+            return PipelineTickResult(
+                dispatched = false, state = derivedState(pipeline), phase = pipeline.phase,
+                skipReason = PipelineTickSkipReason.NOT_DUE, waitReason = pipeline.waitReason,
+                nextWakeAt = progressAt, ownerToken = null
             )
         }
 
@@ -638,7 +653,7 @@ class DiscoveryPipelineService(
         if (criteria == null || queryHash == null) {
             log.error("流水线查询条件缺失或版本不支持（criteriaVersion={}），窗口只做故障标记", initial.criteriaVersion)
             releaseWindow(state, PipelineWaitReason.SOURCE_ERROR, now().plus(properties.pipelineTick))
-            return state.snapshot(initial, PipelineTerminationReason.SOURCE_ERROR, now())
+            return state.snapshot(initial, PipelineTerminationReason.SOURCE_ERROR, now(), drained = false)
         }
 
         // I-1：来源流按「本源条件」建流；旧 v2 检查点只在条件完全匹配时用于首次种子。
@@ -730,10 +745,15 @@ class DiscoveryPipelineService(
             reason == PipelineTerminationReason.SOURCE_EXHAUSTED -> PipelineWaitReason.SOURCE_EXHAUSTED
             else -> state.waitReasons.firstOrNull() ?: reason
         }
-        releaseWindow(state, waitReason, if (drained) null else now().plus(properties.pipelineTick))
+        releaseWindow(
+            state,
+            waitReason,
+            // I-4/I-7：下次唤醒取最早可进展时间（所有来源退避时不再按 tick 空转）；已排空则不再唤醒。
+            if (drained) null else nextProgressAt(finalPipeline) ?: now().plus(properties.pipelineTick)
+        )
         if (drained) repository.markDrained(now())
 
-        val snapshot = state.snapshot(finalPipeline, reason, now())
+        val snapshot = state.snapshot(finalPipeline, reason, now(), drained)
         publishProgress(state, reason, finalPipeline, snapshot)
         log.info(
             "深度发现窗口收尾: 等待原因={}, 待续跑={}, 队列深度={}, 采集页={}",
@@ -1140,11 +1160,36 @@ class DiscoveryPipelineService(
         }
     }
 
-    private fun hasProgressableWork(pipeline: PipelineRow): Boolean {
-        if (pipeline.activeCount > 0) return true
+    /**
+     * I-4/I-7：下一个可能取得进展的时刻；`null` 表示**永远不会再有**可进展工作（可置 `DRAINED`）。
+     *
+     * 三类状态必须分开，否则「所有来源都在退避/所有来源都不可用」会变成每 tick 开一个空窗口、
+     * 建一条空 `task_execution`：
+     * - 现在就能跑（到期 job、到点的 ACTIVE 来源、首次窗口尚未建流）→ 返回 `now`；
+     * - 只是被延期（来源退避、job 退避）→ 返回最早可尝试时间，tick 只延后唤醒、绝不开窗口；
+     * - 已经结束（没有启用来源、没有 ACTIVE 来源也没有活跃 job）→ `null`。
+     */
+    private fun nextProgressAt(pipeline: PipelineRow): Instant? {
+        val at = now()
+        // 条件缺失/版本不支持 → 永远建不出来源；解析后没有任何启用来源 → 同样永远不会有进展。
+        val criteria = criteriaOf(pipeline) ?: return null
+        if (expertDiscoveryService.queueSourceNames(criteria).isEmpty()) return null
         val streams = repository.findStreams(PIPELINE_ID)
-        if (streams.isEmpty()) return true
-        return streams.any { it.cursorState == StreamCursorState.ACTIVE }
+        // 首次窗口尚未建流：建流本身就是进展（streams 为空绝不能当作「已排空」）。
+        if (streams.isEmpty()) return at
+        val streamIds = streams.map { it.id }
+        if (repository.nextDueJob(streamIds, priorityFirst = true, now = at) != null) return at
+        val activeStreams = streams.filter { it.cursorState == StreamCursorState.ACTIVE }
+        val dueStream = activeStreams.any { it.nextAttemptAt == null || !it.nextAttemptAt!!.isAfter(at) }
+        if (dueStream) return at
+        val candidates = activeStreams.mapNotNull { it.nextAttemptAt }.filter { it.isAfter(at) }.toMutableList()
+        // 活跃 job（例如 EXHAUSTED 流里处于退避的 RETRY_WAIT）同样能进展，但只有 job 行带下次尝试时间；
+        // 用既有读取接口向前探测一次即可取其 `nextAttemptAt`，无需为此新增存储方法。
+        repository.nextDueJob(streamIds, priorityFirst = true, now = at.plus(PROGRESS_PROBE_HORIZON))
+            ?.let { if (it.nextAttemptAt.isAfter(at)) candidates += it.nextAttemptAt }
+        if (candidates.isNotEmpty()) return candidates.min()
+        // 仍活跃但没有已知时刻（例如租约未过期的 RUNNING job）：按窗口节奏保守重查，绝不当作已排空。
+        return if (pipeline.activeCount > 0L) at.plus(properties.pipelineTick) else null
     }
 
     private fun hasReadyWork(state: WindowState, streams: List<StreamRow>): Boolean {
@@ -1304,7 +1349,12 @@ class DiscoveryPipelineService(
             completions.offer(1)
         }
 
-        fun snapshot(pipeline: PipelineRow, reason: String, endedAt: Instant): PipelineWindowResult = PipelineWindowResult(
+        fun snapshot(
+            pipeline: PipelineRow,
+            reason: String,
+            endedAt: Instant,
+            drained: Boolean
+        ): PipelineWindowResult = PipelineWindowResult(
             pipelineId = PIPELINE_ID,
             queryHash = pipeline.queryHash,
             terminationReason = reason,
@@ -1322,7 +1372,8 @@ class DiscoveryPipelineService(
             waitReasons = waitReasons.toList().distinct(),
             queueDepth = pipeline.activeCount,
             nextWakeAt = pipeline.nextWakeAt,
-            pendingWork = pipeline.activeCount > 0 || capacityBlocked
+            pendingWork = pipeline.activeCount > 0 || capacityBlocked,
+            drained = drained
         )
 
         companion object {
@@ -1379,6 +1430,12 @@ class DiscoveryPipelineService(
 
         /** I-3：人工暂停期间退回 PENDING 的等待（恢复后立即可领）。 */
         private val PAUSE_BACKOFF: Duration = Duration.ofSeconds(1)
+
+        /**
+         * I-4/I-7：向前探测「下一个到期 job」的时间上界。job 退避上限 30 分钟、job 租约 120 秒，
+         * 1 天足以覆盖任何尚未到点的活跃行，且不依赖新增存储查询。
+         */
+        private val PROGRESS_PROBE_HORIZON: Duration = Duration.ofDays(1)
 
         /** I-8：终态负载保留 7 天、去重键/状态保留 90 天，每批 1000 条。 */
         private val TERMINAL_PAYLOAD_RETENTION: Duration = Duration.ofDays(7)

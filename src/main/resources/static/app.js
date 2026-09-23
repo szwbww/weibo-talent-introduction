@@ -856,11 +856,15 @@ function formatBeijingInstant(value) {
 }
 
 // I-5（c3）：预算与队列的真实读数（免费上限 / 官方已用 / 本地预占 / 保护后可用 / 下次 reset）。
+// 修复 V-5：官方周期未确认（BUDGET_SYNC 或从未同步）时，本地数值**不是**可信余额 ——
+// 已用/上限/可用/reset 一律渲染成“待同步”，绝不把本地保护上限显示成已确认的剩余额度。
 function discoveryBudgetText(budget) {
     if (!budget) return "OpenAlex：待同步";
-    const synced = budget.lastSyncedAt != null;
+    if (budget.deferredReason === "BUDGET_SYNC" || !budget.lastSyncedAt) {
+        return "OpenAlex：待同步（官方额度尚未确认，计量请求已延期）";
+    }
     const reset = formatBeijingInstant(budget.resetAt || budget.retryAt);
-    return "OpenAlex：已用 " + (synced ? pipelineValue(budget.confirmedSpentCredits) : "待同步") +
+    return "OpenAlex：已用 " + pipelineValue(budget.confirmedSpentCredits) +
         " / 上限 " + pipelineValue(budget.officialLimitCredits) +
         " credits，本地预占 " + pipelineValue(budget.reservedCredits) +
         "，保护后可用 " + pipelineValue(budget.effectiveRemainingCredits) +
@@ -899,6 +903,7 @@ function discoveryWaitTexts(status, envelope) {
 }
 
 // I-5（c3）：逐源明细 —— 局部来源错误单列，仍可推进的来源绝不被渲染为全部停止。
+// 修复 V-3：一律复用既有 `.data-table` 呈现，不新增 inline 样式、不新增 class。
 function renderDiscoverySourceDetail(status) {
     const bySource = $("#taskModalBySource");
     const content = $("#taskModalBySourceContent");
@@ -911,27 +916,27 @@ function renderDiscoverySourceDetail(status) {
     }
     const rows = sources.map(s => `
         <tr>
-            <td style="padding:3px 8px;">${escapeHtml(s.source)}</td>
-            <td style="padding:3px 8px;">${escapeHtml(s.cursorState || "-")}</td>
-            <td style="padding:3px 8px;">${escapeHtml(String(s.queuedItems || 0))}</td>
-            <td style="padding:3px 8px;">${escapeHtml(String(s.processedItems || 0))}</td>
-            <td style="padding:3px 8px;">${escapeHtml(String(s.activeJobs || 0))}</td>
-            <td style="padding:3px 8px;">${escapeHtml(String(s.failedJobs || 0))}</td>
-            <td style="padding:3px 8px;">${escapeHtml(String(s.indexedExperts || 0))}</td>
-            <td style="padding:3px 8px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(s.sourceError || "-")}</td>
+            <td>${escapeHtml(s.source)}</td>
+            <td>${escapeHtml(s.cursorState || "-")}</td>
+            <td>${escapeHtml(String(s.queuedItems || 0))}</td>
+            <td>${escapeHtml(String(s.processedItems || 0))}</td>
+            <td>${escapeHtml(String(s.activeJobs || 0))}</td>
+            <td>${escapeHtml(String(s.failedJobs || 0))}</td>
+            <td>${escapeHtml(String(s.indexedExperts || 0))}</td>
+            <td>${escapeHtml(s.sourceError || "-")}</td>
         </tr>
     `).join("");
     content.innerHTML = `
-        <table style="width:100%;border-collapse:collapse;font-size:11px;">
-            <thead><tr style="background:var(--panel-bg);border-bottom:1px solid var(--panel-border);">
-                <th style="padding:4px 8px;text-align:left;">来源</th>
-                <th style="padding:4px 8px;text-align:left;">游标</th>
-                <th style="padding:4px 8px;text-align:left;">在队列</th>
-                <th style="padding:4px 8px;text-align:left;">已处理</th>
-                <th style="padding:4px 8px;text-align:left;">在途</th>
-                <th style="padding:4px 8px;text-align:left;">失败</th>
-                <th style="padding:4px 8px;text-align:left;">新增专家</th>
-                <th style="padding:4px 8px;text-align:left;">来源错误</th>
+        <table class="data-table">
+            <thead><tr>
+                <th>来源</th>
+                <th>游标</th>
+                <th>在队列</th>
+                <th>已处理</th>
+                <th>在途</th>
+                <th>失败</th>
+                <th>新增专家</th>
+                <th>来源错误</th>
             </tr></thead>
             <tbody>${rows}</tbody>
         </table>
@@ -6687,8 +6692,11 @@ async function openTaskLaunchModal(taskType) {
         try {
             info = await fetchDiscoveryPipelineInfo();
         } catch (e) {
+            // 修复 V-1：配置区此时还藏在未展开的弹窗里（#taskLaunchDesc 不可见），
+            // 因此失败必须同时落到**页面级**可见状态条，否则操作端只看到“点击无反应”。
             $("#taskLaunchDesc").textContent = "加载失败：" + e.message + "；请重新打开弹窗重试";
             runBtn.disabled = true;
+            showStatus("深度发现信息加载失败：" + e.message + "；请重新打开弹窗重试", "error");
             return;
         }
         if (isContinuousDiscoveryMode() && info.status && info.status.queryHash) {
@@ -7167,9 +7175,13 @@ async function postDiscoveryLaunch(keywords, selectedSources, includeRawScan, co
 /** I-7（c3）：启动失败必须可见，并把弹窗还给可重试的配置态。 */
 function handleDiscoveryLaunchFailure(e, generation, continuous) {
     const message = (e && e.message) || "未知原因";
+    // 修复 V-2：openTaskModal 已经把页面触发按钮置为“执行中”，任何被拒绝的启动路径都必须把它还原，
+    // 否则入口会一直显示“执行中”直到刷新页面（旧模式的失败路径正是靠 stopTaskWatcher 还原的）。
+    const taskType = DISCOVERY_TASK_TYPE;
     if (e && e.status === 409) {
         // 不同的查询仍有在手工作：保留配置界面，不覆盖旧的积压条件。
         restoreLaunchConfigAfterFailure(generation);
+        stopTaskWatcher(taskType, true);
         const descEl = $("#taskLaunchDesc");
         if (descEl) {
             descEl.textContent = "该查询与正在运行的深度发现不一致：" + message +
@@ -7180,11 +7192,11 @@ function handleDiscoveryLaunchFailure(e, generation, continuous) {
     }
     if (continuous) {
         restoreLaunchConfigAfterFailure(generation);
+        stopTaskWatcher(taskType, true);
         showStatus("深度发现启动失败: " + message, "error");
         showTaskErrorLog("深度发现启动失败: " + message);
         return;
     }
-    const taskType = DISCOVERY_TASK_TYPE;
     if (message.includes("正在执行中")) {
         showStatus(message, "warn");
         stopTaskWatcher(taskType, true);

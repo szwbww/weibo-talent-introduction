@@ -563,8 +563,9 @@ data class OpenAlexBudgetSnapshot(
  * - I-2 有效免费上限 = min(官方日免费额度, 配置保护上限)，预付余额永不加入；账号用稳定的非秘密
  *   [OpenAlexProperties.accountScope] 标识，换 Key 不清空已用预算；
  * - I-3 预占先于外部请求，permit 唯一且只结算一次，UNKNOWN 不退还，乱序响应只能收紧本周期 ceiling；
- * - I-4 未获得可信余额 / 账本不可用时计量请求延期（绝不退回本地 10000）；429 冷却写共享 notBefore；
- *   任何等待都在数据库锁之外，且超过上限就返回 retryAt 而不是睡下去；
+ * - I-4 未获得可信余额 / 账本不可用时计量请求延期（绝不退回本地 10000）；429 冷却写共享 notBefore
+ *   并立刻以 Deferred(retryAt) 交给调用方（绝不在 HTTP worker / 调度线程里睡冷却）；
+ *   只有子秒级限速槽位（≤ 一个速率间隔且 ≤ 1 秒）仍在调用线程内等待，以维持共享 5/s 节奏；
  * - I-5 新专家补全保留区可借用但有依据；
  * - I-6 状态由 [OpenAlexBudgetStore] 持久化，重启/多实例共享。
  *
@@ -637,6 +638,10 @@ class OpenAlexRequestPolicy(
         } catch (e: DataAccessException) {
             0L
         }
+        // I-4/I-2：官方周期尚未确认（或 provider ceiling 未知）时，本地数值**不是**可信余额 ——
+        // 计量请求此刻会被延期，快照必须显式报告 BUDGET_SYNC，让调用方把预算字段渲染成“待同步”，
+        // 而不是把本地保护上限当成已确认的剩余额度展示。
+        val trusted = isBudgetTrusted(ledger, now)
         return OpenAlexBudgetSnapshot(
             accountScope = properties.accountScope,
             resetAt = ledger.cycleResetAt,
@@ -647,10 +652,18 @@ class OpenAlexRequestPolicy(
             effectiveRemainingCredits = ledger.effectiveRemainingCredits,
             enrichmentReserveCredits = reserve,
             lastSyncedAt = ledger.lastSyncedAt,
-            deferredReason = deferral?.reason,
-            retryAt = deferral?.retryAt
+            deferredReason = if (trusted) deferral?.reason else DeferredReason.BUDGET_SYNC,
+            retryAt = if (trusted) {
+                deferral?.retryAt
+            } else {
+                deferral?.takeIf { it.reason == DeferredReason.BUDGET_SYNC }?.retryAt ?: now.plusMillis(SYNC_RETRY_MS)
+            }
         )
     }
+
+    /** I-4/I-2：只有「已确认的官方周期 + 可信 provider ceiling」才算可信余额（内存账本按本地日切）。 */
+    private fun isBudgetTrusted(ledger: OpenAlexBudgetLedger, now: Instant): Boolean =
+        syncSource == null || (ledger.cycleResetAt?.isAfter(now) == true && ledger.providerCeilingCredits != null)
 
     /**
      * I-1/I-3：显式操作 + 用途的预占入口。返回 [Permit.Allowed]（带唯一 permitId）或
@@ -855,16 +868,14 @@ class OpenAlexRequestPolicy(
                 }
 
                 is BudgetReserveResult.Rejected -> {
+                    // I-4：429 冷却（官方 `Retry-After` / 指数退避，分钟级）一律**立刻**返回 Deferred(retryAt)，
+                    // 绝不在 HTTP worker 或调度线程里睡冷却（V-4）。只有账号共享限速的**子秒槽位**
+                    // （≤ 一个速率间隔，且 ≤ [MAX_INLINE_WAIT_MS]）仍在调用线程内等待，以维持 5/s 的节奏；
+                    // 非正等待（存储往返已越过槽位）一律直接延期。
                     if (result.reason == DeferredReason.RATE_LIMIT) {
                         val waitMs = Duration.between(time.now(), result.retryAt).toMillis()
-                        // I-4：槽位/共享冷却可能在存储往返期间已经过去，使 waitMs 非正。绝不能把它交给
-                        // Thread.sleep（负值抛 IllegalArgumentException），而是重读账本重新判断；重试预算
-                        // 耗尽时仍由下方 defer(RATE_LIMIT, retryAt) 兜底，调用方拿到 Deferred 而不是异常。
-                        if (waitMs <= 0L && attempt < MAX_RATE_WAIT_RETRIES) {
-                            attempt++
-                            continue
-                        }
-                        if (waitMs <= inlineWaitCapMs() && attempt < MAX_RATE_WAIT_RETRIES) {
+                        val pacingMs = minOf(rateIntervalMs(), MAX_INLINE_WAIT_MS)
+                        if (waitMs > 0L && waitMs <= pacingMs && attempt < MAX_RATE_WAIT_RETRIES) {
                             time.sleep(waitMs)
                             attempt++
                             continue
@@ -1009,9 +1020,6 @@ class OpenAlexRequestPolicy(
     private fun rateIntervalMs(): Long =
         (1_000.0 / effectiveMaxRequestsPerSecond).toLong().coerceAtLeast(1L)
 
-    /** I-4：允许在调用线程内等待的上限（= 配置的 429 退避上限）；超过就返回 retryAt。 */
-    private fun inlineWaitCapMs(): Long = properties.rateLimitBackoffMaxMs.coerceAtLeast(0)
-
     /**
      * I-4：429 的共享冷却时长。官方 `Retry-After` 一律照做（不受退避上限影响），指数退避部分才受
      * `rate-limit-backoff-max-ms` 约束。
@@ -1073,6 +1081,15 @@ class OpenAlexRequestPolicy(
         const val SYNC_LEASE_MS = 60_000L
         const val STORE_RETRY_MS = 30_000L
         const val SYNC_RETRY_MS = 60_000L
+
+        /**
+         * I-4：调用线程内允许的最长等待。它只可能覆盖**限速槽位**（5/s → 200ms），
+         * 429 冷却（Retry-After / 指数退避，最长 60 秒）一律立刻返回 Deferred(retryAt)，绝不在
+         * HTTP worker / 调度线程里睡冷却。超时上限与槽位取较小值，因此配置更慢的速率也不会变成长时间阻塞。
+         */
+        const val MAX_INLINE_WAIT_MS = 1_000L
+
+        /** I-4：限速槽位等待的最多重试次数（超出即返回 retryAt，不无限重试）。 */
         const val MAX_RATE_WAIT_RETRIES = 3
 
         /** I-6：已关闭周期账本/permit 的保留期与单批清理上限。 */
