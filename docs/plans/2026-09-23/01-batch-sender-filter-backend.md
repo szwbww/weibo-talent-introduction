@@ -1,6 +1,6 @@
 # 批量邮件发件账号筛选与已绑定专家跳过：后端计划（1/2）
 
-> create-p 子计划；受 [MAIN 总计划](00-batch-sender-filter-main.md) 的顺序、接口与发布门槛约束。只创建计划，不授权执行。执行前读 [前端计划](02-batch-sender-filter-frontend.md) 和共享收件箱 [配置计划](01-shared-inbox-configuration.md)、[路由计划](02-shared-inbox-routing.md)。本计划限 10 个代码/测试文件。迁移号以开跑时实际最高版本为准：基线最高为 V133，本计划使用下一个空号 V134（人工批准的改写见 `docs/plans/fast/2026-09-23-batch-sender-filter-main/ledger.md` 的 `## Amendments` A2）。实施前重新核对最高版本与工作树，若版本冲突先修订文件名和本文，不能抢号。
+> create-p 子计划；受 [MAIN 总计划](00-batch-sender-filter-main.md) 的顺序、接口与发布门槛约束。只创建计划，不授权执行。执行前读 [前端计划](02-batch-sender-filter-frontend.md) 和共享收件箱 [配置计划](01-shared-inbox-configuration.md)、[路由计划](02-shared-inbox-routing.md)。本计划限 10 个代码/测试文件。迁移号以实际占用为准：V134 已由并行共享收件箱 run 占用，本计划使用下一个空号 V135（人工批准的改写见 `docs/plans/fast/2026-09-23-batch-sender-filter-main/ledger.md` 的 `## Amendments` A2、A5）。实施前重新核对最高版本与工作树，若版本冲突先修订文件名和本文，不能抢号。
 
 **目标**：批量任务可保存多选逻辑发件账号；执行时仅从这些账号中选号。INTRODUCTION 与 MATERIAL_REMINDER 都跳过已有 `bound_sender_account_code` 的专家，不因筛选结果改绑或从其他账号发送。
 
@@ -17,7 +17,7 @@
 
 ### I-1：筛选身份与空值
 - 规则：新字段 `sender_account_codes_json` 持久化逻辑 `mail_sender_account.account_code` 的 JSON 数组；`[]` 表示不限制（旧配置和未传字段同义）。非空数组只允许列出的账号；绝不按 `inbound_mailbox_code` 合并/扩展兄弟别名。解析损坏 JSON 必须拒绝启动，不得降级成 `[]`。`BatchExecutionSnapshot.senderAccountCodes` 是本次执行唯一范围快照。
-- 适用写路径：V134、配置 create/update/旧 typed 更新、手动快照；适用读路径：toView、toExecutionSnapshot、两发送循环。
+- 适用写路径：V135、配置 create/update/旧 typed 更新、手动快照；适用读路径：toView、toExecutionSnapshot、两发送循环。
 - 违反后果：旧任务停发或筛选被意外放宽、共享收件箱别名串号。
 - 来源：`BatchSendTaskConfig.kt:7-111`、`BatchExecutionModels.kt:279-335`；K-batch-task-config-snapshot-log-identity、K-batch-config-legacy-adapter-field-preservation。
 
@@ -66,9 +66,9 @@
 ## 实现方案
 
 ### 阶段 1：字段与配置链（I-1、I-2、I-5）
-- 文件：`src/main/resources/db/migration/V134__add_batch_sender_account_codes.sql`、`src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendTaskConfig.kt`、`src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt`、`src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt`、`src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigServiceTest.kt`、`src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt`。
+- 文件：`src/main/resources/db/migration/V135__add_batch_sender_account_codes.sql`、`src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendTaskConfig.kt`、`src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt`、`src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt`、`src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigServiceTest.kt`、`src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt`。
 - 测试先行：新建/编辑/列表/详情/旧 typed 更新均往返 `["LuKai"]`；旧 payload、旧行回显 `[]`；模拟坏 JSON 时 `toExecutionSnapshot` 抛错，不能变为 unrestricted；LuKai 与 LuKai_QF 同物理 owner 仍保持两个不同 code。
-- V134 用 `ADD COLUMN sender_account_codes_json TEXT NULL` → `UPDATE ... SET '[]' WHERE ... IS NULL` → `MODIFY ... TEXT NOT NULL`；实体/命令/view/snapshot 字段默认 `emptyList()` 或 `"[]"`。配置服务统一 trim/去重/验证账号 code；`updateLegacyConfig` 显式传 `parseSenderAccountCodes(existing.senderAccountCodesJson)`；`toView` 和 `toExecutionSnapshot` 传真实值。坏 JSON 拒绝读取/启动，不用其他旧范围字段的“错误按不限”模式。Flyway 测试中普通最新版本断言现仍钉 `131`（`:62,136,178` 等），实施前按工作树实际最高版本重查并改到 `134`；定点 target 版本断言（如 `:435` 的 `130`）保持原值。增加旧配置 `[]` 与新增列存在的断言。
+- V135 用 `ADD COLUMN sender_account_codes_json TEXT NULL` → `UPDATE ... SET '[]' WHERE ... IS NULL` → `MODIFY ... TEXT NOT NULL`；实体/命令/view/snapshot 字段默认 `emptyList()` 或 `"[]"`。配置服务统一 trim/去重/验证账号 code；`updateLegacyConfig` 显式传 `parseSenderAccountCodes(existing.senderAccountCodesJson)`；`toView` 和 `toExecutionSnapshot` 传真实值。坏 JSON 拒绝读取/启动，不用其他旧范围字段的“错误按不限”模式。Flyway 测试中普通最新版本断言现仍钉 `131`（`:62,136,178` 等），实施前按工作树实际最高版本重查并改到 `135`（并行共享收件箱分支的 V134 不在本分支，序列允许缺口）；定点 target 版本断言（如 `:435` 的 `130`）保持原值。增加旧配置 `[]` 与新增列存在的断言。
 
 ### 阶段 2：启动校验与限定选号（I-1、I-2、I-5）
 - 文件：`src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt`、`src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountAssignmentService.kt`。
@@ -84,7 +84,7 @@
 
 | # | 文件 | 用途 |
 |---|---|---|
-| 1 | `src/main/resources/db/migration/V134__add_batch_sender_account_codes.sql` | JSON 列及旧行 `[]` |
+| 1 | `src/main/resources/db/migration/V135__add_batch_sender_account_codes.sql` | JSON 列及旧行 `[]` |
 | 2 | `src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendTaskConfig.kt` | 配置/命令/view 字段 |
 | 3 | `src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt` | 快照映射、跳过原因 |
 | 4 | `src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt` | 保存/回显/旧 API 保留 |
@@ -97,7 +97,7 @@
 
 ## 验收标准
 
-- I-1：V134 迁移后旧配置为 `[]`；JSON 损坏阻断执行；创建/修改/旧 typed 更新/详情/启动快照值一致。
+- I-1：V135 迁移后旧配置为 `[]`；JSON 损坏阻断执行；创建/修改/旧 typed 更新/详情/启动快照值一致。
 - I-2：两个类型在 `[LuKai]` 时实际外发账号仅 LuKai；LuKai 不可用时不从 QF 或其他账号兜底；空集合旧行为仍可用；手动快照伪造未知 code 返回 422。
 - I-3：已有任何绑定的专家无 SMTP、无重新选号/改绑；未绑定专家仍可发送且只绑定实际选中账号。材料提醒“全部已绑定”目标数为 0。
 - I-4：NEW 重试与材料提醒预估/执行同源；ES 已绑定目标至少在发送前被跳过，`skippedReasons.BOUND_SENDER_ALREADY_SET` 可见；ES 候选数仍以现有 `countExperts` 为估算口径。

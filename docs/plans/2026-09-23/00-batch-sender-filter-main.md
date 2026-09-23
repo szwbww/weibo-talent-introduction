@@ -4,7 +4,7 @@
 
 | 顺序 | 权威子计划 | 交付 | 进入下一阶段门槛 |
 |---|---|---|---|
-| 01 | [后端：配置、快照、严格选号与绑定跳过](01-batch-sender-filter-backend.md) | V134、`senderAccountCodes` API/快照、两类发送路径门禁 | 后端 I-1～I-5、Flyway 与黑盒 A-1～A-6 通过；不单独发布 |
+| 01 | [后端：配置、快照、严格选号与绑定跳过](01-batch-sender-filter-backend.md) | V135、`senderAccountCodes` API/快照、两类发送路径门禁 | 后端 I-1～I-5、Flyway 与黑盒 A-1～A-6 通过；不单独发布 |
 | 02 | [前端：定时与手动多选](02-batch-sender-filter-frontend.md) | 两个 picker、配置/预估/手动快照、差异提示 | 前端 I-1～I-3/S-1～S-2 与黑盒 A-1～A-4 通过；再做联合验收 |
 
 ## 需求描述
@@ -40,10 +40,10 @@
 - 来源：`ManualInitialOutreachService.kt:167-335,451-469,499-730,907-995`、`SenderAccountAssignmentService.kt:16-38`；K-recipient-count-preview-parity。
 
 ### M-5：迁移号与共享文件的落地顺序
-- 规则：本组是批量发件账号筛选功能的唯一发布单元。开跑基线 `main` @ `9237d6f` 的实际最高迁移版本是 V133，本组 01 使用当时的下一个空号 **V134**（`V134__add_batch_sender_account_codes.sql`）；共享收件箱 [01 配置计划](01-shared-inbox-configuration.md) 原预留的 V134 作废，由其自身 run 恢复时按该计划「若版本冲突先修订文件名和本文，不能抢号」条款顺延到 V134 之后的空号。本组 02 以当前 `index.html`/`app.js` 为基线修改；共享收件箱 run 恢复时再以本组产物为基线顺延，只增自己的字段/控件，不覆盖本组 picker、缓存键或测试断言。生产 Flyway 当前关闭，生产 DDL 按各自发布审批和现场核验处理，本 MAIN 不授权执行。若实际版本或文件基线变了，先改计划，不自行猜迁移号或机械套旧行号。
+- 规则：本组是批量发件账号筛选功能的唯一发布单元。V134 已由并行 run（`fast/2026-09-23-shared-inbox-master` 的 `V134__shared_inbox_owner.sql`，已实施并轻量验证）占用，故本组 01 使用其后的下一个空号 **V135**（`V135__add_batch_sender_account_codes.sql`），保持「共享收件箱 V134 → 本组 V135」的原顺序；本组不 rebase 到该分支。本组 02 仍以当前 `index.html`/`app.js` 为基线修改，共享收件箱的 owner UI 在并行分支上，两分支合入时共用文件按「方法区分开改、不整文件覆盖」人工解冲突，只增自己的字段/控件，不覆盖对方的 owner 配置或本组 picker、缓存键与测试断言。生产 Flyway 当前关闭，生产 DDL 按各自发布审批和现场核验处理，本 MAIN 不授权执行。若实际版本或文件基线变了，先改计划，不自行猜迁移号或机械套旧行号。
 - 适用：实施前检查、合并、迁移、静态资源构建。
-- 违反后果：迁移乱序、共用 UI 文件覆盖、线上旧 JS 缓存。
-- 来源：人工批准的计划改写（2026-09-23，`docs/plans/fast/2026-09-23-batch-sender-filter-main/ledger.md` 的 `## Amendments` A1）；当前本组子计划的 V134 与静态资源审计。
+- 违反后果：迁移重号（同库两个 V134 会使 Flyway 启动即失败）、共用 UI 文件覆盖、线上旧 JS 缓存。
+- 来源：人工批准的计划改写（2026-09-23，`docs/plans/fast/2026-09-23-batch-sender-filter-main/ledger.md` 的 `## Amendments` A1、A4）；当前本组子计划的 V135 与静态资源审计。
 
 ## 现状审计
 
@@ -56,16 +56,16 @@
 
 ### 共享文件清单
 
-| 文件 | 既有共享收件箱计划 01 | 本组子计划 | 落地顺序 |
+| 文件 | 共享收件箱 run | 本组子计划 | 落地顺序 |
 |---|---|---|---|
-| `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` | V134 预留已作废，恢复时顺延 | 后端 01 的 V134/旧行断言 | 本组先以当前最高版本 V133→V134 改最新版本断言；定点 target 断言不动；共享收件箱 run 恢复时再顺延自己的断言 |
-| `src/main/resources/static/index.html` | owner 选择器、启用文案、资源键（未实施） | 前端 02 的批量任务 picker、资源键 | 本组先改 picker 并按当前实际键统一 bump；共享收件箱 run 恢复时再顺延，不覆盖本组 picker |
-| `src/main/resources/static/app.js` | owner 选择/保存/回显（未实施） | 前端 02 的账号多选/快照 | 本组先加账号多选/快照方法；共享收件箱 run 恢复时以本组产物为基线，方法区分开改，不得整文件覆盖 |
+| `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt` | V134 断言（并行分支 `fast/2026-09-23-shared-inbox-master` 已实施） | 后端 01 的 V135/旧行断言 | 本组先按 V133→V135 改「最新版本」断言（并行分支留 V134 缺口）；定点 target 断言不动；两分支合入时该测试文件人工解冲突 |
+| `src/main/resources/static/index.html` | owner 选择器、启用文案、资源键（在并行分支上） | 前端 02 的批量任务 picker、资源键 | 本组按当前 main 基线改 picker 并按当前实际键统一 bump；合入时按方法区分开改，不覆盖对方 owner UI |
+| `src/main/resources/static/app.js` | owner 选择/保存/回显（在并行分支上） | 前端 02 的账号多选/快照 | 本组按当前 main 基线加账号多选/快照方法；合入时方法区分开改，不得整文件覆盖 |
 
 ## 实现方案
 
 ### G-0：迁移号与基线门槛（M-5）
-- 开跑前核对实际最高迁移版本与工作树：基线 `main` @ `9237d6f` 最高为 `V133__create_discovery_paper_queue.sql`，本组 01 使用下一个空号 V134，不等待共享收件箱计划 01（其 V134 预留已作废，恢复时自行顺延）。生产 DDL 是否已执行须到发布前现场核验，不能由本门槛推定。
+- 开跑前核对实际最高迁移版本与工作树：基线 `main` @ `9237d6f` 最高为 `V133__create_discovery_paper_queue.sql`；V134 已被并行 run 的 `V134__shared_inbox_owner.sql` 占用（该分支已实施并轻量验证），本组 01 使用下一个空号 V135，不等待共享收件箱 run 收尾。生产 DDL 是否已执行须到发布前现场核验，不能由本门槛推定。
 
 ### G-1：后端 01（M-1～M-5）
 - 仅按 [后端子计划](01-batch-sender-filter-backend.md) 的 10 文件清单实施；先跑其定向/迁移验证，再做 API 黑盒 A-1～A-6。A-5 用测试数据把 A/B 配成同一物理 IMAP 收件箱的两个逻辑发件账号（不依赖共享收件箱 01 的配置 UI），不要求生产 alias 切换。记录实际字段 JSON、启动快照、两类型发信 code、绑定跳过结果与失败项。通过后状态 `IMPLEMENTED_NOT_RELEASABLE`，以此结果作为前端唯一接口基线。
@@ -89,7 +89,7 @@
 - M-2：DB/API/前端/实际 SMTP 日志均以相同逻辑 `accountCode` 表示选择；`[]` 旧任务不被限制；非空选择没有未选账号外发。
 - M-3：两个邮件类型的已绑定专家均新增 0 封、绑定值不变；未绑定目标仍可从选中账号发送；材料目标全绑定时预估与执行均为 0。
 - M-4：选中账号禁用/暂停/满额时未选账号发件 0；INTRODUCTION ES 预估明确仍是候选估算，发送跳过数有原因。
-- M-5：本组迁移号为基线最高版本 V133 之后的下一个空号 V134，仓库与测试环境序列无重号/跳号；生产 DDL 有独立现场核验与审批；11 个资源键统一；三个共享文件由本组先改，共享收件箱 run 恢复时以本组产物为基线顺延。各子计划文件数仍 ≤10。
+- M-5：本组迁移号为 V134 之后的下一个空号 V135，与并行共享收件箱分支的 V134 不重号；生产 DDL 有独立现场核验与审批；11 个资源键统一；三个共享文件在两分支合入时按方法区分开改、人工解冲突。各子计划文件数仍 ≤10。
 
 ## 人工验收清单
 

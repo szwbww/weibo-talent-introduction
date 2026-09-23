@@ -1,6 +1,6 @@
 # 批量邮件发件账号筛选：前端计划（2/2）
 
-> create-p 子计划；受 [MAIN 总计划](00-batch-sender-filter-main.md) 的顺序、接口与发布门槛约束。只创建计划，不授权执行。依赖 [后端计划](01-batch-sender-filter-backend.md) 的 `senderAccountCodes` API。本组是 `index.html`/`app.js` 当前基线的修改方（共享收件箱 01 尚未实施，其 V134/owner UI 已由人工批准作废顺延，见 `docs/plans/fast/2026-09-23-batch-sender-filter-main/ledger.md` 的 `## Amendments` A3）；实施前按当前文件重查 DOM、资源键和测试。
+> create-p 子计划；受 [MAIN 总计划](00-batch-sender-filter-main.md) 的顺序、接口与发布门槛约束。只创建计划，不授权执行。依赖 [后端计划](01-batch-sender-filter-backend.md) 的 `senderAccountCodes` API。共享收件箱 01 已在并行分支 `fast/2026-09-23-shared-inbox-master` 实施（V134 + owner UI），本组不 rebase 到该分支，仍以当前 `index.html`/`app.js` 为基线修改；两分支合入时按「方法区分开改、不整文件覆盖」人工解冲突（人工批准的改写见 `docs/plans/fast/2026-09-23-batch-sender-filter-main/ledger.md` 的 `## Amendments` A3、A6）。实施前按当前文件重查 DOM、资源键和测试。
 
 **目标**：定时任务编辑和独立手动执行都能从实时逻辑发件账号列表多选；配置保存、回显、手动差异、预估和启动快照传同一 `senderAccountCodes`。显示“已绑定专家会跳过”。
 
