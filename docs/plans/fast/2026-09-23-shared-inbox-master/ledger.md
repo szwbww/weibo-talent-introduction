@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-23T00:00:00Z
-- Current child: c1
+- Current child: c2
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
@@ -44,8 +44,8 @@ Raw transcripts are committed under `docs/plans/fast/2026-09-23-shared-inbox-mas
 
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| c1 | docs/plans/2026-09-23/01-shared-inbox-configuration.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | none | 1 | PENDING | daabfdc900555f3c89a698cd85a0165ada20d1a9 | — | 0 | — | — | — | Configuration + additive DDL only; production mapping stays NULL. |
-| c2 | docs/plans/2026-09-23/02-shared-inbox-routing.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1 | 1 | PENDING | — | — | 0 | — | — | — | Owner-only polling, physical UID dedup, To/Cc/In-Reply-To routing. |
+| c1 | docs/plans/2026-09-23/01-shared-inbox-configuration.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | none | 1 | LIGHT_PASS_WITH_NOTES | daabfdc900555f3c89a698cd85a0165ada20d1a9 | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | 0 | — | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | — | Implementer C1Implementer; verifier C1Verifier returned LIGHT_PASS_WITH_NOTES (AUTO_FIX N/A, action COMPLETE_CHILD). Notes recorded: O-1 two extra Flyway IT repairs (V131 history delta bound to V130→V131, V124 seeded via existing migrateToV23AndSeedBase) judged target-preserving and inside the authorized test file; O-2 no PNG screenshot (environment), DOM+computed-style proof only, human A-3 open; O-3 app.js hardcodes the `SIMULATOR_NOOP` literal. |
+| c2 | docs/plans/2026-09-23/02-shared-inbox-routing.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1 | 1 | PENDING | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | — | 0 | — | — | — | Owner-only polling, physical UID dedup, To/Cc/In-Reply-To routing. |
 | c3 | docs/plans/2026-09-23/03-shared-inbox-bounce.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1,c2 | 1 | PENDING | — | — | 0 | — | — | — | OUTBOUND-only bounce attribution plus group-wide self-check filter. |
 | c4 | docs/plans/2026-09-23/04-lukai-production-migration.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1,c2,c3 | 1 | PENDING | — | — | 0 | — | — | — | Production migration; master plan M-4/G-4 gates it behind separate deployment authorization. |
 
