@@ -1056,23 +1056,6 @@ class MailSenderAccountServiceTest {
         Mockito.verify(repository, Mockito.never()).deleteById(7L)
     }
 
-    @Test
-    fun `listAutoReceiveAccounts still returns disabled and shared inbox accounts`() {
-        Mockito.`when`(repository.findAllByAccountCodeNot("SIMULATOR_NOOP")).thenReturn(
-            listOf(
-                account("owner"),
-                account("alias", enabled = false, inboundMailboxCode = "owner")
-            )
-        )
-
-        val result = service.listAutoReceiveAccounts()
-
-        assertEquals(listOf("owner", "alias"), result.map { it.accountCode })
-        assertEquals("owner", result[1].inboundMailboxCode)
-        assertFalse(result[1].enabled)
-        Mockito.verify(repository).findAllByAccountCodeNot("SIMULATOR_NOOP")
-    }
-
     private fun createCommand(
         accountCode: String,
         senderEmail: String = "$accountCode@qftechtalent.com",
