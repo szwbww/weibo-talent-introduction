@@ -1,14 +1,17 @@
 ---
 id: K-content-variant-input-read-contract
 domain: frontend
-created: 2026-08-14
-last_used: 2026-08-21
-hit_count: 11
+created: 2026-09-23
+last_used: 2026-09-23
+hit_count: 12
 source: create-p:ui-collapsible-preview-and-variant-carousel
 severity: P1
 ---
-经验：内容变体编辑器（`#qaRuleVariantsContainer` / `#replySnippetVariantsContainer`）的读取契约是「遍历容器内全部 `.content-variant-input` textarea」——`collectContentVariants`（app.js:7843）、`validateContentVariantInputs`（7858）、`updateContentVariantsCountBadge`（7829）、`saveQaRule`/`saveReplySnippet` 全依赖此。
-任何改造变体编辑器 UI（如改为轮播/一次显示一个）**必须保持每个变体各有一个 `.content-variant-input` 常驻 DOM**，仅用显隐控制可见性；严禁把非活跃变体移出 DOM 或改由 JS 数组托管值，否则保存时静默丢变体、校验漏检。渲染入口统一在 `renderContentVariantRows`（7744），两处编辑器共用，改一处即两处生效。
 
-> 2026-08-14 复验（create-p:expert-mail-preview）：行号已按当前 `app.js` 重新实测校正
-> （原记录的 6624/6642/6656/6671 已过期）；读取契约本身复验有效，未变。
+2026-09-23 重新核实：当前 QA 编辑页已改成标准事实正文，没有 qaRuleVariantsContainer；回复片段仍使用 replySnippetVariantsContainer。
+
+回复片段编辑器读取契约是遍历容器内所有 `.content-variant-input` textarea：app.js 的 collectContentVariants:10954、validateContentVariantInputs:10969、addContentVariantRow:11020、removeContentVariantRow:11029；saveReplySnippet:5897 最终提交完整数组。
+
+改成一个可见编辑框时，最小兼容方案是每个变体保留常驻 DOM，仅切显隐；原文保留 name=content，不混入 variants。不要只保留活跃 textarea 却继续调用旧 DOM 收集器；若将来改成数组模型，必须同时替换所有上述读路径。本期计划选择常驻节点方案。
+
+新增/删除前应收集 raw 值，包括空值；collectContentVariants 会 trim/filter，只适合校验通过后的提交。隐藏的 required 原文为空会触发原生表单无法聚焦问题，须由完整保存校验定位并显示错误版本。变量插入目标和片段预览目标也要跟随当前版本。

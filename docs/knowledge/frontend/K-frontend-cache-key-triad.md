@@ -1,9 +1,9 @@
 ---
 id: K-frontend-cache-key-triad
 domain: frontend
-created: 2026-09-20
-last_used: 2026-09-20
-hit_count: 24
+created: 2026-09-22
+last_used: 2026-09-23
+hit_count: 29
 source: create-p:v6-topnav-glass-navy-restyle
 severity: P1
 ---
@@ -58,3 +58,11 @@ bump 前后各跑一次：bump 前的结果就是必须同步的文件全集；b
 `meetingConfirmationAssets.test.js`和`trustReplyWorkbenchSharedMount.test.js`还精确断言资源总数为9；新增script/link时须同步数量、名字与顺序断言，不能只换版本字符串。本次会议日历计划复用app.js，不新增资源。
 
 2026-09-20 复核：`index.html` 已扩为 5 个 CSS + 6 个 JS，共 11 个版本化资源；大多数测试改为从 `styles.css?v=` 派生键。当前工作树因 SharePoint 文件卡 WIP 暂时存在 20260918/20260919 两组键，不能把这个分裂状态当发布契约。执行静态资源计划时仍须先读当前 diff，再统一全部 11 项；当前唯一额外写死键的是 `sharepointFileCardDisplay.test.js`，应改为派生而不是继续扩散字面量。
+
+2026-09-22较早快照：11项键统一为`20260920-manual-material-upload`；按该精确字符串搜索`src/test`为0命中。sharepointFileCardDisplay.test.js现已从styles.css派生CACHE_KEY，历史“唯一固定字面量测试”已解决。不要依据旧快照扩大测试文件修改清单；继续按当前键反查。
+
+2026-09-22本轮详细计划复核：工作区11项键已统一为`20260922-task-activity-center`，精确反查命中`src/test/js/taskActivityCenter.test.js:11`的固定CACHE_KEY。上述较早“0命中”不再适用；新静态资源计划必须包含该测试，优先改为从styles.css引用派生键。仍须实施前重查，不能将WIP快照当永久清单。
+
+2026-09-23 回复片段计划快照：index.html:11–15/2195–2200 的 11 项键为 `20260923-discovery-traffic`；`rg -n -F '20260923-discovery-traffic' src/test` 无命中（exit=1）。当前不需要依据旧记录修改 taskActivityCenter 固定值。执行前仍须重查。
+
+同轮收尾复核：并行任务提交 `13fb91e` 后键为 `20260923-discovery-traffic-v2`，精确反查 src/test 仍无命中（exit=1）。保留较早快照用于说明并行工作会改变缓存键，执行时不能照抄计划时旧值。

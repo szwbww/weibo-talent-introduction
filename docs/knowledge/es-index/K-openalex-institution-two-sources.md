@@ -2,8 +2,8 @@
 id: K-openalex-institution-two-sources
 domain: es-index
 created: 2026-08-25
-last_used: 2026-08-25
-hit_count: 0
+last_used: 2026-09-21
+hit_count: 1
 source: create-p:05a-institution-type-collection
 severity: P1
 ---

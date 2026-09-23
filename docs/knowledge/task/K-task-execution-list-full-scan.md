@@ -1,12 +1,15 @@
 ---
 id: K-task-execution-list-full-scan
 domain: task
-created: 2026-08-16
-last_used: 2026-08-16
-hit_count: 0
+created: 2026-09-22
+last_used: 2026-09-22
+hit_count: 1
 source: create-p:task-records-refactor-main
 severity: P1
 ---
+
+2026-09-22 现状复核：下述三重放大是历史问题。当前 TaskExecutionService.listExecutions:19 已走四组分页投影查询，TaskExecutionController:37 返回 items/total，V100已加索引。保留M-1作为新增高频列表约束；不可据此声称现有任务记录仍全表返回。TaskProgressController的旧最近执行接口仍读完整实体，不能直接复用为全站高频列表。
+
 
 经验：`GET /api/task-executions`（任务记录页）慢到不可用，是**三重放大叠加**，只治其一收益有限。
 

@@ -62,6 +62,12 @@ Flyway runs on startup from `src/main/resources/db/migration` (`V1`..`V10`). **S
 A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `styles.css`) is served by `common/controller/FrontendController` and talks to the REST controllers under `/api/*` (`/api/mail`, `/api/mail/sender-accounts`, `/api/expert-contacts`, `/api/experts`, `/api/qa`, `/api/task-executions`).
 
 ## 团队沉淀知识
+
+- 模板变体审计同时覆盖正式 render/renderByCode 与两类 preview-draft；专家 seed 的旧规则不等于独立随机，改回复片段选择时必须单独保护 QA 确定性。(K-variant-seed-call-sites)
+- 新模板字段逐层核对 Request→Command→create/update→Detail→preview；历史 subjectVariants 虽有列/DTO，现有 create/update 已清空，不能把字段存在当功能生效。(K-variant-pool-dto-chain)
+- 共享 IMAP 收件箱须区分业务发件账号与物理源账号：processing/mail_record 用逻辑账号，附件 source/transfer、markSeen、cursor 用真实登录账号；退信归属需在所有 ingest 入口以唯一 OUTBOUND 来源核验。(K-imap-source-vs-business-account, K-bounce-collection-ingest-entrypoints)
+- 来信机器邮件过滤不能只放 `receiveAndAutoReply` 批量循环：`processByUids` 会直调 `processSingle` 绕过它；统一闸门须覆盖两入口并保持 owner ack/游标确认语义。(K-process-single-all-callers)
+- 改 `mail_record.sender_account_code`/Message-ID 语义时，收信、手动回复、专家邮件、外联、会议邮件的全部 save 点都要核对；`findByMessageId` 不限制 OUTBOUND。(K-mail-record-save-sites)
 - `mail_sender_account.enabled=false` 只禁止自动外发，不排除 IMAP 接收、显式收信账号回复或收发件箱/待处理可见性；这些读取统一允许 disabled、只排除 `SIMULATOR_NOOP`。(K-sender-account-enabled-scope)
 - `mail_record.source_inbound_id` 的设计来源是触发出站的入站 `mail_record.id`，不是 `inbound_mail_processing.id`；跨表归属须按真实写入链核对，禁止凭字段名或数值相同推断。(K-mail-record-source-inbound-id)
 - 来信状态的写路径除新建/mark-resolved外还包含`InboundMailProcessingRepository.reopenManualResolved`条件UPDATE；待处理列表/计数变更必须覆盖撤销人工处理后的重新读取。(K-inbound-processing-write-paths)
@@ -141,7 +147,7 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 - `ManualInitialOutreachService` 有两个结构同构但独立的轮次循环（`runIntroductionFromSnapshot` / `runMaterialFromSnapshot`），进度写入也是两个方法（`updateProgress` / `updateProgressWithAccumulator`）；改发送节奏必须对称落到两处，且新增 break 条件要同时守卫轮尾 `perRoundIntervalMs` sleep。(K-batch-send-round-loop-symmetry)
 - `BatchSendTaskConfigService.updateLegacyConfig()` 用只含旧字段的请求调用全量 update；`batch_send_task_config` 每新增一列都必须在此显式 `newField = existing.newField`，否则旧 typed API 一次调用就把新配置项静默重置为默认值。(K-batch-config-legacy-adapter-field-preservation)
 - `mailDeliveryService.send` 有 7 个调用点，抑制名单（退订）检查只覆盖 4 条；漏的 3 条（`MeetingScheduleService:141`、`ManualExpertMailService:63`、`PendingMailOperationService:270`）全是操作端同步路径。抑制拦截禁止表达为投递失败（会误标 `EMAIL_INVALID`、误限流账号），须抛继承 `IllegalStateException` 的异常；发送期策略参数要加在 `ComposedMail` 带默认值的字段上，不要改 `MailDeliveryService.send()` 签名（9 个测试文件依赖）。但 `PendingMailOperationService:270` 的 send 被 `:359 catch (deliveryEx: Exception)` 包住，异常会被改写成 `DELIVERY_UNKNOWN` + 409「发送状态未知」并烧掉幂等 claim，该路径必须在 `prepareAndClaim`(`:253`) 之前单独前置拦截。(K-suppression-check-call-sites)
-- 内容变体编辑器（`#qaRuleVariantsContainer` / `#replySnippetVariantsContainer`）的读取契约是「遍历容器内全部 `.content-variant-input` textarea」（`collectContentVariants` / `validateContentVariantInputs` / `updateContentVariantsCountBadge` / `saveQaRule` / `saveReplySnippet` 全依赖此）；改造该 UI 必须保持每个变体各有一个常驻 `.content-variant-input`，只用显隐控制可见性，严禁移出 DOM 或改由 JS 数组托管值，否则保存时静默丢变体。(K-content-variant-input-read-contract)
+- 回复片段变体的 collect/validate/add/remove 读取容器内全部 `.content-variant-input`；单框显示改造应保留常驻节点并只切显隐，原文不混入 variants；当前 QA 编辑器已不使用该变体区域。(K-content-variant-input-read-contract)
 - 介绍邮件有两条并行外发路径：`InitialOutreachService.sendInitialBatch()`（cron，简单循环无 delay）与 `ManualInitialOutreachService`（round-based 引擎，含 perMailInterval / 限流 / 轮次闸门 / 日限额 / self-check）。二者共用 `IntroductionMailComposer.compose()` 与 `SenderAccountAssignmentService`，也共用 `ManualOutreachTxHelper.recordSuccess/recordFailure` 这个 `mail_record` 写入 seam；改 compose、选号或发信记录会同时波及两条路径。(K-dual-outreach-paths)
 - `GroundedAutoReplyDecisionService.decide()`（自动预览 + 自动实发的共享决策点，生产调用方恒 2 处）**从不调 `aiReplyContextService.build()`**，直接 `generate(inboundText, operatorTurns = emptyList())`：`expertProfile`/`mailHistory` 为 null、训练知识零注入、`contextWarnings` 为空使 `researchProfileSufficient` **恒 true**，于是 `resolveIntentEvidence()` 的 `requiresProfile && !profileSufficient → MISSING` 永不触发——同一封研究匹配类来信，工作台判 UNSUPPORTED 要人工、自动路判 SUPPORTED 可直发。当前靠 `LLM_AUTO_REPLY_ENABLED=false` 兜着，开之前必修。注意 `PendingMailOperationService:535` 的 `trainingKnowledge=""` 是误报（只读回 researchProfileSufficient），prompt 配置也本来就一致（`AiReplyDraftService:2114/2414`），别顺手改。(K-auto-reply-decide-context-parity)
 - `trust-reply-workbench.js` 的 `validateMount()` 用二元三目判 mode↔source 配对（`mode === SIMULATION ? TRAINING_MAIL : LIVE_INBOUND`）；`MODES` 一旦扩到第三个值，新模式会被静默当 LIVE 放行并拿到全部可写能力。扩模式必须先改成显式映射表。同类对称性坑：`unmountLiveTrustReply` 有 8 个调用点（app.js 1627/9722/9769/10019/10044/10058/10099/11567），新增宿主应收进统一 unmount 函数而不是逐点补。(K-workbench-mode-source-ternary-trap)
@@ -211,3 +217,5 @@ Fix plans accumulate over multiple verification rounds. To prevent later rounds 
 **Scope discipline**:
 - A fix plan for feature X must not include tasks for unrelated code hygiene (test config structure, unrelated formatting, general refactoring). Note them as observations if relevant, but do not create tasks.
 - If the verifier believes a closed decision was wrong, it should note the concern as an **observation** (not a task) and flag it for human review, not unilaterally reopen it.
+
+- 任务活动集合按 task_execution 执行 id，TaskProgressStore 仅按 taskType 存当前槽；附加实时进度必须正 id 相等，get 的日志恢复结果及 DB 的 RUNNING 均不等于进程存活证明。(K-task-activity-execution-identity)

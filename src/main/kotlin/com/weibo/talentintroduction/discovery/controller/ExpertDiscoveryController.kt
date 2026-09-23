@@ -77,9 +77,10 @@ class ExpertDiscoveryController(
 
     @GetMapping("/sources")
     fun getAvailableSources(): List<Map<String, Any>> {
+        val excludedSources = SubjectScopeCatalog.excludedSources(SubjectScopeCatalog.RND_TARGET)
         val all = listOf(
-            Triple("EUROPE_PMC", europePmcProperties.enabled, "FULLTEXT_XML"),
-            Triple("PMC_OA", pmcOaProvider.getIfAvailable() != null, "FULLTEXT_XML"),
+            Triple("EUROPE_PMC", europePmcProperties.enabled && "EUROPE_PMC" !in excludedSources, "FULLTEXT_XML"),
+            Triple("PMC_OA", pmcOaProvider.getIfAvailable() != null && "PMC_OA" !in excludedSources, "FULLTEXT_XML"),
             Triple("OPENALEX", openAlexProvider.getIfAvailable() != null, "FULLTEXT_XML"),
             Triple("CROSSREF", crossrefProvider.getIfAvailable() != null, "PDF_PARSE"),
             Triple("CORE", coreProvider.getIfAvailable() != null, "FULLTEXT_TEXT"),
@@ -122,21 +123,19 @@ class ExpertDiscoveryController(
         var execution: TaskExecution? = null
         var executionId: Long? = null
         try {
+            val effectiveCriteria = (criteria ?: PaperSearchCriteria(
+                excludeCountries = listOf("CN"),
+                openAccessOnly = true
+            )).copy(subjectScope = SubjectScopeCatalog.RND_TARGET)
             execution = taskExecutionService.runAndRecord(
-                "EXPERT_DISCOVERY", "MANUAL", criteria ?: PaperSearchCriteria(
-                    excludeCountries = listOf("CN"),
-                    openAccessOnly = true
-                ),
+                "EXPERT_DISCOVERY", "MANUAL", effectiveCriteria,
                 onStarted = { id ->
                     executionId = id
                     progressStore.bindExecutionId("EXPERT_DISCOVERY", token, id)
                 }
             ) {
                 discoveryService.discover(
-                    criteria ?: PaperSearchCriteria(
-                        excludeCountries = listOf("CN"),
-                        openAccessOnly = true
-                    ),
+                    effectiveCriteria,
                     "MANUAL",
                     includeRawScan = includeRawScan ?: discoveryProperties.includeRawScan
                 )
@@ -219,7 +218,8 @@ class ExpertDiscoveryController(
                 publicationYearTo = yearTo,
                 excludeCountries = listOf("CN"),
                 openAccessOnly = true,
-                sources = sources ?: emptyList()
+                sources = sources ?: emptyList(),
+                subjectScope = SubjectScopeCatalog.RND_TARGET
             )
             execution = taskExecutionService.runAndRecord(
                 "EXPERT_DISCOVERY", "MANUAL", criteria,

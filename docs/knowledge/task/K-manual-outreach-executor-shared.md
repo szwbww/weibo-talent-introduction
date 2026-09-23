@@ -2,8 +2,8 @@
 id: K-manual-outreach-executor-shared
 domain: task
 created: 2026-07-07
-last_used: 2026-09-07
-hit_count: 5
+last_used: 2026-09-22
+hit_count: 6
 source: create-p:enrichment-cross-day-resilient-run
 ---
 

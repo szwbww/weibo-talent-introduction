@@ -1,27 +1,20 @@
 ---
 id: K-progress-log-pending-token-orphan
 domain: task
-created: 2026-08-06
-last_used: 2026-08-24
-hit_count: 1
+created: 2026-09-22
+last_used: 2026-09-22
+hit_count: 2
 source: create-p:batch-execution-log-process-visibility-p1
 severity: P1
 ---
 
-经验：`TaskProgressStore.tryStartWithToken()` 落的第一条 `task_progress_log`（初始化行）
-持久化时 `task_execution_id = pendingToken`（`-System.nanoTime()`，负值），
-而 `bindExecutionId()` 只改内存槽，**不回写已落库的日志行**
-（`TaskProgressStore.kt:145-156` / `:158-179`）。
+2026-09-22 复核：历史“bindExecutionId 不回写负 token 日志”问题已经修复。
 
-后果：
-1. 任何按真实 executionId 查询进度日志的读取口（`findAllByTaskExecutionIdOrderByIdAsc`）
-   都拿不到初始化行，"任务启动了但看不到起点"；
-2. 负 id 行在 `task_progress_log` 中永久成为孤儿，无任何查询路径可达，也不会被清理。
+- `TaskProgressStore.tryStartWithToken:145` 仍先生成负 pendingToken，并写初始化日志。
+- `bindExecutionId:158-184` 成功替换内存 id 后调用 `TaskProgressLogRepository.rebindPendingExecutionId`；按 pendingToken 更新对应日志的 task_execution_id。
+- rebind 失败只 WARN，不改变 bind 成功返回值，不能为了日志修复阻断业务启动。
+- 新实时观察者须按“正 executionId 相等”绑定进度；负 token 阶段不能当真实任务记录展示。`clearExecutionContext` 清 id 不清 status，也不能仅按 taskType/status 认领执行。
 
-正确做法：`bindExecutionId` 绑定成功后，按 `task_execution_id = :pendingToken` 条件
-把这些行改写为真实 executionId；改写必须 try/catch 吞异常并只记 WARN，
-不得改变 `bindExecutionId` 返回值或阻断任务启动——该方法被 6 个任务类型共用
-（`BatchSendControlService`、`MailAutomationController`、`ExpertDiscoveryController`×3、
-`ExpertDiscoveryScheduler`、`ExpertIndexController`×2），抛出即 P0 级启动回归。
+历史问题仍应由 TaskProgressStoreRebindTest 防回归；不要在后续计划中重复要求实现已存在的 rebind。保留清理按 created_at，而不是依赖真实 executionId 的关联，兼容 rebind 失败留下的孤儿行。
 
-关联：[[K-manual-outreach-executor-shared]]、[[K-clearExecutionContext-status-leak]]
+来源复核：create-p:task-activity-center。关联：[[K-clearExecutionContext-status-leak]]。

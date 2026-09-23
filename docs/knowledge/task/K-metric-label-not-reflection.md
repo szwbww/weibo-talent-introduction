@@ -2,8 +2,8 @@
 id: K-metric-label-not-reflection
 domain: task
 created: 2026-08-16
-last_used: 2026-08-16
-hit_count: 0
+last_used: 2026-09-22
+hit_count: 1
 source: create-p:p1-task-type-catalog-semantics
 severity: P1
 ---

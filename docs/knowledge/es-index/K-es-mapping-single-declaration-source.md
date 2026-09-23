@@ -1,9 +1,9 @@
 ---
 id: K-es-mapping-single-declaration-source
 domain: es-index
-created: 2026-08-13
-last_used: 2026-08-25
-hit_count: 1
+created: 2026-09-21
+last_used: 2026-09-21
+hit_count: 2
 source: create-p:batch-send-status-consistency (03 P-B)
 ---
 
@@ -24,6 +24,4 @@ ES 索引 mapping 只能有一个声明源：`src/main/resources/es/*.json`。Ko
 不会自动进入倒排索引，须 `POST /{index}/_update_by_query` 触发重建（无 script 的 no-op 即可）——
 操作步骤见 `docs/runbooks/es-mapping-reindex.md`。
 
-**enrichedAt 类型债**：线上三层 `enrichedAt` 均为 `keyword`（动态映射产物），本地 JSON 迁就线上声明为
-`keyword`（技术债，待独立 reindex 计划回正为 `date`）；`ExpertDiscoveryService:795/806` 的 `range` 查询
-靠定宽零填充 `yyyy-MM-dd HH:mm:ss` 格式巧合保持正确。
+**enrichedAt 类型债（2026-09-21复核）**：当前仓库 RAW/CANDIDATE JSON 声明为 `date`，APPLICATION 为 `keyword`；此前记录过线上 keyword 类型。不得推断三层声明或生产实际类型一致，迁移前分别读取部署 mapping。现有时间格式为定宽 `yyyy-MM-dd HH:mm:ss`；本轮发现与补全计划不擅自 reindex 或更改存量类型。

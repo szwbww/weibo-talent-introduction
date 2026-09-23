@@ -2,8 +2,8 @@
 id: K-inbound-processing-write-paths
 domain: mail
 created: 2026-07-01
-last_used: 2026-09-12
-hit_count: 12
+last_used: 2026-09-23
+hit_count: 14
 source: create-p:inbound-mail-tag-backend
 severity: P2
 ---

@@ -2,8 +2,8 @@
 id: K-self-check-ttl-type-scope
 domain: mail
 created: 2026-07-13
-last_used: 2026-07-14
-hit_count: 5
+last_used: 2026-09-23
+hit_count: 6
 source: create-p:material-reminder-batch-send
 severity: P1
 ---

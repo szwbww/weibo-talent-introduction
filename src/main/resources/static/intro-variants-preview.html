@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>项目介绍 · 分段变体预览</title>
+  <link rel="stylesheet" href="intro-variants-preview.css?v=20260923-1">
+  <script src="intro-variants-preview.js?v=20260923-1" defer></script>
+</head>
+<body>
+  <header class="topbar"><a href="./">青飞人才 <span>/ 邮件模板</span></a><span class="preview-badge">线上预览 · 未应用到发送</span></header>
+  <main>
+    <div class="page-heading"><div><p class="eyebrow">PROJECT INTRODUCTION</p><h1>每一段，都有不同的表达</h1><p class="subtitle">保留项目信息，按段选择版本；右侧即时查看整封邮件。</p></div><a class="button" href="./">返回控制台 ↗</a></div>
+    <div id="loading" role="status" class="notice">正在读取线上项目介绍模板…</div>
+    <div id="error" role="alert" class="notice error" hidden></div>
+    <section id="workspace" hidden>
+      <div class="summary"><div><span>内容结构</span><strong>4 <small>段</small></strong></div><div><span>新增文案</span><strong>40 <small>个变体</small></strong></div><div><span>理论组合</span><strong id="combinationCount">14,641</strong></div><p id="sourceInfo"></p></div>
+      <div class="workbench">
+        <section class="editor panel" aria-label="分段内容编辑">
+          <div class="panel-heading"><div><h2>分段内容</h2><p>每段：原文 + 10 个变体</p></div><span class="subtle-chip">预览草稿</span></div>
+          <div class="section-tabs" id="sectionTabs" role="tablist" aria-label="选择段落"></div>
+          <div id="sectionEditors"></div>
+          <div class="editor-footer"><span id="editStatus" role="status">编辑仅保留在当前页面，刷新后恢复。</span></div>
+        </section>
+        <section class="preview panel" aria-label="整封邮件预览">
+          <div class="panel-heading"><div><h2>整封邮件预览</h2><p>按段落顺序拼接，变量保留占位符</p></div><button class="button primary" id="shuffle" type="button">↻ 换一组组合</button></div>
+          <div class="combination-label" id="combinationLabel" aria-live="polite"></div>
+          <article class="mail-paper"><div class="mail-subject"><span>SUBJECT</span><h3 id="mailSubject"></h3></div><div id="mailBody"></div></article>
+          <div class="preview-footer"><span>称呼、开场、落款和退订内容沿用线上模板。</span><button class="button" id="restore" type="button">查看全原文</button></div>
+        </section>
+      </div>
+      <p class="scope-note">此页读取线上模板。40 个变体为待评审草稿；选取、编辑与拼接均在浏览器中演示，不保存模板、不发送邮件。</p>
+    </section>
+  </main>
+</body>
+</html>

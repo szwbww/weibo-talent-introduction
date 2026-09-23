@@ -1,13 +1,13 @@
 ---
 id: K-variant-pool-dto-chain
 domain: template
-created: 2026-07-08
-last_used: 2026-08-14
-hit_count: 9
+created: 2026-09-23
+last_used: 2026-09-23
+hit_count: 10
 source: create-p:variant-pool-frontend-ui
 ---
 
-（2026-07-08 复核修正：原文所述"CRUD DTO 链路完全未贯通"已过期——`subjectVariants`/`variantGroup` 现已贯通 Request→Command→create/update→Detail 全链，且 previewDraft 已携带 subjectVariants。检查清单仍然有效，保留如下。）
+2026-09-23 复核：历史列/DTO 存在不等于功能有效。MailComposeTemplateService.create:72/update:98 明确写 subjectVariants=null，renderTemplate:266 只渲染 subject；previewDraft 的同名旧字段也不是有效主题变体入口。此前“subjectVariants/variantGroup 已贯通 CRUD 全链”的结论过期。新字段审计必须覆盖真正的读写方法，而不是只 grep DTO 属性。
 
 经验：Spring Data JDBC 的 `copy()` 不传的字段会保留旧值（不丢失），但 `MailComposeTemplate(...)` 构造器不传的 nullable 字段会默认 null（create 路径丢失）。
 

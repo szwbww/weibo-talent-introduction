@@ -74,11 +74,17 @@ class EsMappingContractTest {
             )
         }
         val application = propertiesOf("orcid_info_application.json")
-        assertEquals(
-            "keyword",
-            application.path("enrichedAt").path("type").asText(),
-            "application enrichedAt must be keyword (existing-live-index tech debt)"
-        )
+        for ((name, mapping) in mapOf(
+            "raw" to raw,
+            "candidate" to candidate,
+            "application" to application
+        )) {
+            assertEquals(
+                "keyword",
+                mapping.path("enrichedAt").path("type").asText(),
+                "$name enrichedAt must preserve the existing live-index keyword type"
+            )
+        }
     }
 
     @Test

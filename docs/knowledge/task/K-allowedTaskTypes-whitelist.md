@@ -2,8 +2,8 @@
 id: K-allowedTaskTypes-whitelist
 domain: task
 created: 2026-08-24
-last_used: 2026-08-24
-hit_count: 4
+last_used: 2026-09-22
+hit_count: 5
 source: create-p:expert-rnd-classification
 ---
 

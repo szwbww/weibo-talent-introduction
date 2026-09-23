@@ -41,6 +41,7 @@ const { defaultIgnoreConfig, defaultEnterpriseConfig } = require('../core.js');
     assert.equal(await page.locator('#online-tavily-key').getAttribute('type'), 'password');
     assert.equal(await page.locator('#online-deepseek-key').inputValue(), 'deepseek-test');
     assert.equal(await page.locator('#online-tavily-key').inputValue(), 'tavily-test');
+    assert.equal(await page.locator('#online-panel').getAttribute('open'), null, 'Automatic enterprise scoring starts collapsed');
     for (const id of ['enterprise-json', 'save-enterprises', 'reset-enterprises', 'export-enterprises', 'import-enterprises', 'enterprise-file']) assert.equal(await page.locator('#' + id).count(), 1, id);
     await page.locator('#rules-panel summary').click();
     await page.locator('#reset-rules').click();

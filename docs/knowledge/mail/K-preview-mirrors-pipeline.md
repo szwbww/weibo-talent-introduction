@@ -2,8 +2,8 @@
 id: K-preview-mirrors-pipeline
 domain: mail
 created: 2026-06-28
-last_used: 2026-08-21
-hit_count: 31
+last_used: 2026-09-23
+hit_count: 32
 source: create-p:auto-reply-dry-run-preview
 severity: P1
 ---
@@ -11,3 +11,5 @@ severity: P1
 正确做法：(1) 同源同序复现 `classify→effectiveIntent→when(autoAction)→QA match→gap/handoff` 链；展示 `match.replyBody` 不重排（见 K-composed-reply-order-contract）。(2) 预览是「假如开启自动回复」的反事实：不因 `autoReplyEnabled=false`/`MANUAL_HANDOFF`/退订等运行期闸门隐藏内容，只把闸门作为信息标记。(3) 无法等价复现的部分（如 `effectiveIntent` 的附件意图覆盖）必须显式标注偏差，禁止静默忽略。(4) 预览服务不加 `@Transactional`、无 `save`/`send`，纯只读。
 反例：预览自行用 `composeOrder/id` 重排正文、或在 `autoReplyEnabled=false` 时短路隐藏 QA 内容，导致人工队列里的记录（本就关自动回复）预览失效。
 关联：K-composed-reply-order-contract、K-overview-gap-supersede、K-plaintext-reply-client-reflow。
+
+2026-09-23 补充：同源生成算法不等于随机预览与稍后正式生成逐字一致。未持久化/复用同一生成结果时，预览应明确为样本。一次生成中 rawTexts、变量门禁、正文和块说明必须复用同一选择，不能为每个展示步骤再次抽样。

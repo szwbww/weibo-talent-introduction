@@ -2,8 +2,8 @@
 id: K-expert-profile-source-sync
 domain: es-index
 created: 2026-07-07
-last_used: 2026-08-28
-hit_count: 7
+last_used: 2026-09-21
+hit_count: 8
 source: create-p:expert-enrichment-backend
 ---
 

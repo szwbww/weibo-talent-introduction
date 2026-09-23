@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
 import com.weibo.talentintroduction.discovery.domain.DiscoveryStats
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
+import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.discovery.service.ArxivDataSource
 import com.weibo.talentintroduction.discovery.service.AutoEnrichmentBatchResult
 import com.weibo.talentintroduction.discovery.service.AutoEnrichmentSourceCounts
@@ -30,6 +31,7 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.http.HttpStatus
@@ -182,6 +184,58 @@ class ExpertDiscoveryControllerTest {
     }
 
     @Test
+    fun `manual discovery always applies the scheduled RND scope`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.doReturn(DiscoveryResult("MANUAL", DiscoveryStats())).`when`(discoveryService).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString(),
+            Mockito.anyBoolean()
+        )
+
+        controller.triggerDiscovery(PaperSearchCriteria(subjectScope = "UNSCOPED"))
+
+        val captor = ArgumentCaptor.forClass(PaperSearchCriteria::class.java)
+        Mockito.verify(discoveryService).discover(
+            captor.capture() ?: PaperSearchCriteria(),
+            Mockito.eq("MANUAL") ?: "MANUAL",
+            Mockito.eq(discoveryProperties.includeRawScan)
+        )
+        assertEquals(SubjectScopeCatalog.RND_TARGET, captor.value.subjectScope)
+    }
+
+    @Test
+    fun `manual keyword discovery applies the scheduled RND scope`() {
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.doReturn(DiscoveryResult("MANUAL", DiscoveryStats())).`when`(discoveryService).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString(),
+            Mockito.anyBoolean()
+        )
+
+        controller.triggerDiscoveryByKeyword(listOf("machine learning"), 2020, 2026)
+
+        val captor = ArgumentCaptor.forClass(PaperSearchCriteria::class.java)
+        Mockito.verify(discoveryService).discover(
+            captor.capture() ?: PaperSearchCriteria(),
+            Mockito.eq("MANUAL") ?: "MANUAL",
+            Mockito.eq(discoveryProperties.includeRawScan)
+        )
+        assertEquals(SubjectScopeCatalog.RND_TARGET, captor.value.subjectScope)
+    }
+
+    @Test
     fun `triggerDiscovery preserves existing errors on FAILED`() {
         val existing = TaskProgress(
             taskType = "EXPERT_DISCOVERY", status = "RUNNING",
@@ -233,6 +287,14 @@ class ExpertDiscoveryControllerTest {
         val sources = disabledController.getAvailableSources()
         val europePmc = sources.find { it["sourceName"] == "EUROPE_PMC" }
         assertEquals(false, europePmc?.get("enabled"))
+    }
+
+    @Test
+    fun `getAvailableSources disables biomedical sources excluded by scheduled scope`() {
+        val sources = controller.getAvailableSources()
+
+        assertEquals(false, sources.find { it["sourceName"] == "EUROPE_PMC" }?.get("enabled"))
+        assertEquals(false, sources.find { it["sourceName"] == "PMC_OA" }?.get("enabled"))
     }
 
     @Test

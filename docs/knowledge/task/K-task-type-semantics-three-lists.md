@@ -1,12 +1,15 @@
 ---
 id: K-task-type-semantics-three-lists
 domain: task
-created: 2026-08-16
-last_used: 2026-08-25
-hit_count: 2
+created: 2026-09-22
+last_used: 2026-09-22
+hit_count: 3
 source: create-p:p1-task-type-catalog-semantics
 severity: P1
 ---
+
+2026-09-22 现状复核：下表描述历史缺陷。当前筛选取实际类型GROUP BY再用catalog补label，progress历史白名单从hasProgressUi派生。taskButtonMapping仍只负责六个启动按钮；catalog的hasProgressUi当前还包括EXPERT_CLASSIFICATION_BACKFILL。新的全局运行集合必须从执行记录取，不能受这两份能力清单过滤。类型的group不是实际triggerType；自动补全worker写SCHEDULED，定时收信写AUTO_REPLY_ALL，不能照预览把它们当QUEUE/CHECK_REPLIES。
+
 
 经验：taskType 的"有哪些类型 / 叫什么名字"在仓库里有**三份互不相同的硬编码名单**，且都不等于实际写入的类型全集。
 

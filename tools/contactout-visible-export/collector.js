@@ -246,13 +246,14 @@
     card.removeAttribute('data-contactout-review');
   }
   function ensureReviewStyle() {
-    if (document.getElementById('contactout-review-style')) return;
-    const style = document.createElement('style');
-    style.id = 'contactout-review-style';
-    style.textContent = '[data-contactout-ignore="yes"]{background-color:#fff1f2!important;outline:2px solid #dc2626!important;outline-offset:-2px!important}' +
-      '[data-contactout-review-badge]{display:block!important;box-sizing:border-box!important;margin:8px!important;padding:8px 10px!important;border-radius:6px!important;background:#fee2e2!important;color:#991b1b!important;font:600 13px/1.5 system-ui,sans-serif!important;white-space:normal!important}' +
-      '[data-contactout-review="review"]{background-color:#fffbeb!important;outline:2px solid #d97706!important;outline-offset:-2px!important}[data-contactout-review="review"] [data-contactout-review-badge]{background:#fef3c7!important;color:#92400e!important}';
-    document.head.append(style);
+    let style = document.getElementById('contactout-review-style');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'contactout-review-style';
+      document.head.append(style);
+    }
+    style.textContent = '[data-contactout-ignore="yes"]{outline:2px solid #dc2626!important;outline-offset:-2px!important}' +
+      '[data-contactout-review="review"]{outline:2px solid #d97706!important;outline-offset:-2px!important}';
   }
   globalThis.contactOutReviewSignature = function () {
     return profileCardsForReview().map(card => {
@@ -302,19 +303,15 @@
         clearCardReviewMark(card);
         continue;
       }
-      const label = result.status === 'review' ? '待核实' : config.schemaVersion === 1 ? '本轮可忽略' : '可忽略候选';
-      const text = label + '（' + config.scope + '）：' + result.reason;
       const attribute = result.status === 'review' ? 'data-contactout-review' : 'data-contactout-ignore';
       const value = result.status === 'review' ? 'review' : 'yes';
-      const existing = card.querySelector(':scope > [data-contactout-review-badge]');
-      if (card.getAttribute(attribute) === value && existing?.textContent === text &&
-        !card.hasAttribute(attribute === 'data-contactout-review' ? 'data-contactout-ignore' : 'data-contactout-review')) continue;
+      const opposite = attribute === 'data-contactout-review' ? 'data-contactout-ignore' : 'data-contactout-review';
+      if (card.getAttribute(attribute) === value && !card.hasAttribute(opposite)) {
+        for (const badge of card.querySelectorAll(':scope > [data-contactout-review-badge]')) badge.remove();
+        continue;
+      }
       clearCardReviewMark(card);
       card.setAttribute(attribute, value);
-      const badge = document.createElement('div');
-      badge.setAttribute('data-contactout-review-badge', '');
-      badge.textContent = text;
-      card.prepend(badge);
     }
     globalThis.__contactoutReviewState = {};
     return { scanned: cards.length, marked, unknown, kept };

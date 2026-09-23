@@ -2,8 +2,8 @@
 id: K-batch-task-config-snapshot-log-identity
 domain: campaign
 created: 2026-07-14
-last_used: 2026-07-14
-hit_count: 5
+last_used: 2026-09-23
+hit_count: 6
 source: create-p:batch-send-task-console
 severity: P1
 ---

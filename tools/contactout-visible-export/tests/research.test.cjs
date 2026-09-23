@@ -203,13 +203,14 @@ test('popup direct query/cache/switch/failure does not mutate expert or manual c
     await page.waitForFunction(()=>document.querySelector('#online-status').textContent.includes('已核查'));
     assert.equal(requests,1);
     assert.ok(events.indexOf('expand:Exact Corp') < events.indexOf('search:Exact Corp'), 'online analysis must expand before network scoring');
-    assert.match(await page.locator('#online-results').innerText(),/90分.*L2/);
+    assert.match(await page.locator('#online-results').textContent(),/90分.*L2/);
     await page.locator('#mark').click();
     await page.waitForFunction(()=>document.querySelector('#online-results').textContent.includes('缓存'));
     assert.equal(requests,1);
     await page.evaluate(()=>{company='Next Corp';});
     await page.waitForFunction(()=>document.querySelector('#online-results').textContent.includes('Next Corp'));
     assert.equal(requests,2);
+    await page.locator('#online-panel summary').click();
     fail=true;
     await page.locator('#online-refresh').click();
     await page.waitForFunction(()=>document.querySelector('#online-status').textContent.includes('联网服务请求失败'));

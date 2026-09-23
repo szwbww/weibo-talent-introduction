@@ -1,24 +1,17 @@
 ---
 id: K-progress-log-per-mail-write-amplification
 domain: task
-created: 2026-08-06
-last_used: 2026-08-06
-hit_count: 0
+created: 2026-09-22
+last_used: 2026-09-22
+hit_count: 1
 source: create-p:batch-execution-log-process-visibility-p1
 ---
 
-经验：`TaskProgressStore.update()` 每次调用都 `persistProgressLog()` 落一行，
-而 `ManualInitialOutreachService.updateProgressWithAccumulator()` **每发一封邮件调用一次**。
-即批量发送每封邮件写一行 `task_progress_log`，且每行的 `details_json` 都内嵌
-`buildAccountStats()` 产出的**完整启用账号数组**（含每个账号的额度、预热、限流快照）。
+`TaskProgressStore.update()` 被接受时会 persistProgressLog，每次调用可能产生一条日志。
+`ManualInitialOutreachService.updateProgressWithAccumulator`（当前 :1410 起附近）仍将 accounts 完整统计加入 details（:1446），然后调用 Store.update（:1449）。不能把完整日志或 TaskProgress.details 塞进全站高频任务列表。
 
-后果：日限额 1000 封 × 十余个账号的 JSON ≈ 每天数 MB；`V22__create_task_progress_log.sql`
-只建了 `task_type` 与 `task_execution_id` 两个索引，无 `created_at` 索引、无任何清理策略。
+2026-09-22 复核修正：已存在 `V102__add_task_progress_log_created_at_index.sql` 与 `TaskAuditRetentionService.purge:42` 的按 created_at 分批保留清理；历史“没有created_at索引、没有清理策略”不是当前事实，不应重复设计保留调度。
 
-正确做法：要保留逐封明细时，必须同期做两件事之一或全部——
-① 降低写放大：只在轮次边界与失败/跳过时把 `accounts` 写进 `details_json`，
-   逐封成功行不带账号快照（内存 `TaskProgress` 仍完整，实时面板不受影响）；
-② 保留窗口：加 `created_at` 索引 + 定期清理调度（沿用
-   `TaskExecutionService.runAndRecord` 记审计），保留天数走配置。
+读取原则：活动列表用小字段投影，运行进度读匹配executionId的内存小DTO；单执行日志才允许按需读取。前端slice最后50条只限制渲染，不等于服务端分页或限制网络大小。若确有日志读取性能问题，单独审计端点后再加分页，勿在展示改造中默认追加写入降频/清理变更。
 
-关联：[[K-progress-log-pending-token-orphan]]
+来源复核：create-p:task-activity-center。
