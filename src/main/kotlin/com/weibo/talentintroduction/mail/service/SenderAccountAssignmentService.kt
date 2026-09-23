@@ -13,16 +13,35 @@ class SenderAccountAssignmentService(
     private val warmup: SenderWarmupService,
     private val expertContactRepository: ExpertContactRepository
 ) {
+    /**
+     * 旧四参入口：等价于「不限制账号」（[allowedAccountCodes] = 空集合）。
+     * 刻意保留为独立重载（而不是给五参方法加默认值）：Kotlin 的默认参数会生成 `$default`
+     * 桥接，使四参调用点在 JVM 上落到五参方法，从而让既有四参 Mockito 桩全部失配
+     * （实测 41 个 InvalidUseOfMatchersException）。
+     */
     fun selectAccount(
         expert: ExpertProfile,
         currentBatchAssignments: List<SenderExpertAssignment> = emptyList(),
         ignoreWarmup: Boolean = false,
         stock: SenderBindingStock = SenderBindingStock.EMPTY
+    ): MailSenderAccount = selectAccount(expert, currentBatchAssignments, ignoreWarmup, stock, emptySet())
+
+    /**
+     * I-2/I-5: 非空 [allowedAccountCodes] 时只在本次执行的逻辑发件账号集合内选号 ——
+     * 账号后来禁用/暂停/满额即无候选，绝不回退未选中账号。
+     */
+    fun selectAccount(
+        expert: ExpertProfile,
+        currentBatchAssignments: List<SenderExpertAssignment>,
+        ignoreWarmup: Boolean,
+        stock: SenderBindingStock,
+        allowedAccountCodes: Set<String>
     ): MailSenderAccount {
         val distributionKey = distributionKey(expert)
         return repository.findAllByEnabledTrue()
             .filter {
-                it.todaySentCount < warmup.effectiveDailyLimit(it, ignoreWarmup = ignoreWarmup) &&
+                (allowedAccountCodes.isEmpty() || it.accountCode in allowedAccountCodes) &&
+                    it.todaySentCount < warmup.effectiveDailyLimit(it, ignoreWarmup = ignoreWarmup) &&
                     it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE &&
                     !it.autoSendPaused
             }

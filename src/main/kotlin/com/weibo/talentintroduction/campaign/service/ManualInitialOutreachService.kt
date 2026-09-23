@@ -26,7 +26,6 @@ import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.weibo.talentintroduction.mail.service.AccountDailyState
 import com.weibo.talentintroduction.mail.service.AccountRateLimiter
 import com.weibo.talentintroduction.mail.service.AutoReplySettingService
-import com.weibo.talentintroduction.mail.service.BoundSenderAccountUnavailableException
 import com.weibo.talentintroduction.mail.service.DeliveredMail
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
@@ -40,8 +39,8 @@ import com.weibo.talentintroduction.mail.service.PersonalizationGateException
 import com.weibo.talentintroduction.mail.service.ProviderResolver
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
-import com.weibo.talentintroduction.mail.service.SenderAccountNotBoundException
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
+import com.weibo.talentintroduction.mail.service.SenderBindingStock
 import com.weibo.talentintroduction.mail.service.SenderExpertAssignment
 import com.weibo.talentintroduction.mail.service.SenderWarmupService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
@@ -175,6 +174,8 @@ class ManualInitialOutreachService(
         val config = snapshot.toBatchSendConfig(BatchSendType.MATERIAL_REMINDER)
         val templateId = snapshot.templateId ?: error("MATERIAL_REMINDER config requires a templateId")
         val scope = resolveScope(snapshot)
+        // I-1/I-2: 本次执行的唯一发件账号范围快照。
+        val allowedAccountCodes = allowedAccountCodesOf(snapshot)
 
         val materialSnapshot = buildMaterialReminderSnapshot(scope, config)
         val targets = materialSnapshot.targets
@@ -222,9 +223,9 @@ class ManualInitialOutreachService(
 
             // Round gate — explicit TTL from MATERIAL_REMINDER config (K-self-check-ttl-type-scope)
             roundNumber++
-            val sendable = runRoundGate(ignoreWarmup, config.selfCheckTtlMinutes)
+            val sendable = runRoundGate(ignoreWarmup, config.selfCheckTtlMinutes, allowedAccountCodes)
             if (sendable.isEmpty()) {
-                val outcome = classifyNoSendableOutcome(ignoreWarmup)
+                val outcome = classifyNoSendableOutcome(ignoreWarmup, allowedAccountCodes)
                 log.warn("No sendable accounts at reminder round {}: stopReason={}", roundNumber, outcome.stopReason)
                 stopReason = outcome.stopReason
                 finalStatus = outcome.finalStatus
@@ -273,33 +274,31 @@ class ManualInitialOutreachService(
                     continue
                 }
 
-                val account = try {
-                    senderAccountBindingService.resolveForSend(contact, manual = true)
-                } catch (e: SenderAccountNotBoundException) {
-                    try {
-                        val picked = senderAccountAssignmentService
-                            .selectAccount(expert, assignments, ignoreWarmup, stock)
-                        senderAccountBindingService
-                            .bindIfAbsent(contactId, picked.accountCode, LocalDateTime.now())
-                        picked
-                    } catch (ex: NoAvailableSenderAccountException) {
-                        stopReason = "NO_AVAILABLE_ACCOUNT"
-                        finalStatus = "PAUSED"
-                        midRoundStop = true
-                        break
-                    }
-                } catch (e: BoundSenderAccountUnavailableException) {
-                    // I-4: 单专家跳过，不中断整批
+                // I-3: 任一 expert_contact 行已有绑定（与绑定值是否在选中集合无关）→ 本次批量不发信、
+                // 不重选号、不改绑。目标构造已过滤一次，这里在发送前对同一 ORCID 重查兜底竞态。
+                if (contact.boundSenderAccountCode != null || hasBoundContact(normOrcid)) {
                     accumulator.recordSkipped(
-                        BatchOutcomeReasonCodes.SEND_EXCEPTION,
-                        "绑定账号不可用（${e.accountCode}/${e.reason}）：$email"
+                        BatchOutcomeReasonCodes.BOUND_SENDER_ALREADY_SET,
+                        "专家已绑定发件账号：$normOrcid"
                     )
-                    processedTotal++; roundSent++; roundProcessed++; roundRejected++
+                    processedTotal++; roundProcessed++; roundRejected++
                     updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
-                        "RUNNING", "正在发送材料提醒：$email", errors, mode, roundNumber, config, runAccountStats,
+                        "RUNNING", "已跳过已绑定发件账号：$email", errors, mode, roundNumber, config, runAccountStats,
                         roundNumber, roundProcessed, roundPassed, roundRejected,
                         sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                     continue
+                }
+
+                val account = try {
+                    val picked = selectSendAccount(expert, assignments, ignoreWarmup, stock, allowedAccountCodes)
+                    senderAccountBindingService
+                        .bindIfAbsent(contactId, picked.accountCode, LocalDateTime.now())
+                    picked
+                } catch (ex: NoAvailableSenderAccountException) {
+                    stopReason = "NO_AVAILABLE_ACCOUNT"
+                    finalStatus = "PAUSED"
+                    midRoundStop = true
+                    break
                 }
 
                 val stat = runAccountStats.getOrPut(account.accountCode) { AccountRunStat() }
@@ -396,7 +395,7 @@ class ManualInitialOutreachService(
             finalStatus != null -> finalStatus
             else -> "COMPLETED"
         }
-        val finalMessage = stopReasonMessage(resolvedFinalStatus, stopReason, ignoreWarmup)
+        val finalMessage = stopReasonMessage(resolvedFinalStatus, stopReason, ignoreWarmup, allowedAccountCodes)
         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
             resolvedFinalStatus, finalMessage, errors, mode, roundNumber, config, runAccountStats,
             stopReason = stopReason, sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
@@ -508,6 +507,8 @@ class ManualInitialOutreachService(
         val campaignId = campaign.id ?: error("Campaign ID is null")
         val config = snapshot.toBatchSendConfig(BatchSendType.INTRODUCTION)
         val scope = resolveScope(snapshot)
+        // I-1/I-2: 本次执行的唯一发件账号范围快照。
+        val allowedAccountCodes = allowedAccountCodesOf(snapshot)
         val (retryableTargets, seenOrcids) = buildRetryableTargets(campaignId, scope)
         val esEstimate = countEsTargets(scope)
         val totalEstimate = retryableTargets.size + esEstimate
@@ -564,9 +565,9 @@ class ManualInitialOutreachService(
 
             // 2. Round gate (L3-1): list sendable → self-check uncached → re-list sendable
             roundNumber++
-            val sendable = runRoundGate(ignoreWarmup, config.selfCheckTtlMinutes)
+            val sendable = runRoundGate(ignoreWarmup, config.selfCheckTtlMinutes, allowedAccountCodes)
             if (sendable.isEmpty()) {
-                val outcome = classifyNoSendableOutcome(ignoreWarmup)
+                val outcome = classifyNoSendableOutcome(ignoreWarmup, allowedAccountCodes)
                 log.warn("No sendable accounts at round {}: stopReason={}, finalStatus={}", roundNumber, outcome.stopReason, outcome.finalStatus)
                 stopReason = outcome.stopReason
                 finalStatus = outcome.finalStatus
@@ -631,40 +632,37 @@ class ManualInitialOutreachService(
                     continue
                 }
 
-                // I-1: 绑定优先于选号 —— 已有 contact 先解析绑定；无绑定才走 selectAccount 兜底
-                val account = if (existingContact != null && existingContact.boundSenderAccountCode != null) {
-                    try {
-                        senderAccountBindingService
-                            .resolveForSend(existingContact, manual = false, ignoreWarmup = ignoreWarmup)
-                    } catch (e: BoundSenderAccountUnavailableException) {
-                        // I-4: 单专家跳过，不中断整批
-                        accumulator.recordSkipped(
-                            BatchOutcomeReasonCodes.SEND_EXCEPTION,
-                            "绑定账号不可用（${e.accountCode}/${e.reason}）：${expert.email}"
-                        )
-                        processedTotal++; roundSent++; roundProcessed++; roundRejected++
-                        updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
-                            "RUNNING", "绑定账号不可用：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
-                            roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
-                        continue
-                    }
-                } else {
-                    try {
-                        senderAccountAssignmentService.selectAccount(expert, assignments, ignoreWarmup, stock)
-                    } catch (e: NoAvailableSenderAccountException) {
-                        log.warn("No available sender account mid-round after {} processed, pausing flow", processedTotal)
-                        stopReason = "NO_AVAILABLE_ACCOUNT"
-                        finalStatus = "PAUSED"
-                        midRoundStop = true
-                        break
-                    } catch (e: Exception) {
-                        log.error("System error selecting account", e)
-                        stopReason = "SYSTEM_ERROR"
-                        finalStatus = "FAILED"
-                        errors.add("系统错误: ${e.message ?: "Unknown error"}")
-                        midRoundStop = true
-                        break
-                    }
+                // I-3: 任一 expert_contact 行已有绑定（与绑定值是否在选中集合无关）→ 本次批量不发信、
+                // 不重选号、不改绑。NEW 重试在目标构造时已过滤；ES 页在此发送前对同一 ORCID 重查。
+                if (existingContact?.boundSenderAccountCode != null || hasBoundContact(normOrcid)) {
+                    accumulator.recordSkipped(
+                        BatchOutcomeReasonCodes.BOUND_SENDER_ALREADY_SET,
+                        "专家已绑定发件账号：${expert.orcidId}"
+                    )
+                    processedTotal++
+                    roundProcessed++
+                    roundRejected++
+                    updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                        "RUNNING", "已跳过已绑定发件账号：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
+                        roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
+                    continue
+                }
+
+                val account = try {
+                    selectSendAccount(expert, assignments, ignoreWarmup, stock, allowedAccountCodes)
+                } catch (e: NoAvailableSenderAccountException) {
+                    log.warn("No available sender account mid-round after {} processed, pausing flow", processedTotal)
+                    stopReason = "NO_AVAILABLE_ACCOUNT"
+                    finalStatus = "PAUSED"
+                    midRoundStop = true
+                    break
+                } catch (e: Exception) {
+                    log.error("System error selecting account", e)
+                    stopReason = "SYSTEM_ERROR"
+                    finalStatus = "FAILED"
+                    errors.add("系统错误: ${e.message ?: "Unknown error"}")
+                    midRoundStop = true
+                    break
                 }
 
                 val stat = runAccountStats.getOrPut(account.accountCode) { AccountRunStat() }
@@ -894,7 +892,7 @@ class ManualInitialOutreachService(
             finalStatus != null -> finalStatus
             else -> "COMPLETED"
         }
-        val finalMessage = stopReasonMessage(resolvedFinalStatus, stopReason, ignoreWarmup)
+        val finalMessage = stopReasonMessage(resolvedFinalStatus, stopReason, ignoreWarmup, allowedAccountCodes)
         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
             resolvedFinalStatus, finalMessage, errors, mode, roundNumber, config, runAccountStats,
             stopReason = stopReason, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
@@ -904,9 +902,14 @@ class ManualInitialOutreachService(
 
     // ──── Private helpers ────
 
-    private fun classifyNoSendableOutcome(ignoreWarmup: Boolean): StopOutcome {
+    private fun classifyNoSendableOutcome(
+        ignoreWarmup: Boolean,
+        allowedAccountCodes: Set<String> = emptySet()
+    ): StopOutcome {
         val activeAccounts = mailSenderAccountService.listEnabledAccounts()
             .filter { it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE }
+            // I-2/I-5: 停发判据只看本次选中集合 —— 未选中账号的状态不得影响筛选结果。
+            .filter { allowedAccountCodes.isEmpty() || it.accountCode in allowedAccountCodes }
         if (activeAccounts.isEmpty()) {
             return StopOutcome("NO_AVAILABLE_ACCOUNT", "PAUSED")
         }
@@ -930,9 +933,14 @@ class ManualInitialOutreachService(
         return StopOutcome(stopReason, finalStatus)
     }
 
-    private fun stopReasonMessage(finalStatus: String, stopReason: String?, ignoreWarmup: Boolean): String = when (stopReason) {
+    private fun stopReasonMessage(
+        finalStatus: String,
+        stopReason: String?,
+        ignoreWarmup: Boolean,
+        allowedAccountCodes: Set<String> = emptySet()
+    ): String = when (stopReason) {
         "WARMUP_LIMIT_REACHED" -> "已达到预热上限，今日暂停发送"
-        "DAILY_LIMIT_REACHED" -> if (hasWarmupLimitedAccounts(ignoreWarmup)) {
+        "DAILY_LIMIT_REACHED" -> if (hasWarmupLimitedAccounts(ignoreWarmup, allowedAccountCodes)) {
             "已达到今日发送上限（含预热账号）"
         } else {
             "已达到今日发送上限"
@@ -949,9 +957,13 @@ class ManualInitialOutreachService(
         }
     }
 
-    private fun hasWarmupLimitedAccounts(ignoreWarmup: Boolean): Boolean =
+    private fun hasWarmupLimitedAccounts(
+        ignoreWarmup: Boolean,
+        allowedAccountCodes: Set<String> = emptySet()
+    ): Boolean =
         mailSenderAccountService.listEnabledAccounts()
             .filter { it.accountCode != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE }
+            .filter { allowedAccountCodes.isEmpty() || it.accountCode in allowedAccountCodes }
             .any { senderWarmupService.dailyState(it, ignoreWarmup = ignoreWarmup) == AccountDailyState.WARMUP_LIMIT_REACHED }
 
     private data class StopOutcome(val stopReason: String, val finalStatus: String)
@@ -973,26 +985,80 @@ class ManualInitialOutreachService(
 
     /**
      * Round gate (L3-1) for INTRODUCTION: reads TTL from INTRODUCTION config (compat — existing tests mock checkSendable(account)).
+     * I-2: 非空 [allowedAccountCodes] 时候选与自检都只覆盖选中账号。
      */
-    private fun runRoundGate(ignoreWarmup: Boolean): List<MailSenderAccount> {
-        val candidates = mailSenderAccountService.listSendableAccounts(ignoreWarmup)
+    private fun runRoundGate(
+        ignoreWarmup: Boolean,
+        allowedAccountCodes: Set<String> = emptySet()
+    ): List<MailSenderAccount> {
+        val candidates = listSendableWithin(ignoreWarmup, allowedAccountCodes)
         if (candidates.isEmpty()) return emptyList()
         for (account in candidates) {
             selfCheckService.checkSendable(account)
         }
-        return mailSenderAccountService.listSendableAccounts(ignoreWarmup)
+        return listSendableWithin(ignoreWarmup, allowedAccountCodes)
     }
 
     /**
      * Round gate with explicit TTL — used by MATERIAL_REMINDER to pass its own selfCheckTtlMinutes.
      */
-    private fun runRoundGate(ignoreWarmup: Boolean, selfCheckTtlMinutes: Int): List<MailSenderAccount> {
-        val candidates = mailSenderAccountService.listSendableAccounts(ignoreWarmup)
+    private fun runRoundGate(
+        ignoreWarmup: Boolean,
+        selfCheckTtlMinutes: Int,
+        allowedAccountCodes: Set<String> = emptySet()
+    ): List<MailSenderAccount> {
+        val candidates = listSendableWithin(ignoreWarmup, allowedAccountCodes)
         if (candidates.isEmpty()) return emptyList()
         for (account in candidates) {
             selfCheckService.checkSendable(account, selfCheckTtlMinutes)
         }
-        return mailSenderAccountService.listSendableAccounts(ignoreWarmup)
+        return listSendableWithin(ignoreWarmup, allowedAccountCodes)
+    }
+
+    /** I-2: 每轮可用账号只取快照选中集合内的逻辑 code（空集合 = 旧行为，不限制）。 */
+    private fun listSendableWithin(ignoreWarmup: Boolean, allowedAccountCodes: Set<String>): List<MailSenderAccount> =
+        mailSenderAccountService.listSendableAccounts(ignoreWarmup)
+            .filter { allowedAccountCodes.isEmpty() || it.accountCode in allowedAccountCodes }
+
+    /**
+     * I-2: 非空白名单走五参选号（候选受限）；空集合保留旧四参调用，行为逐字不变。
+     */
+    private fun selectSendAccount(
+        expert: ExpertProfile,
+        assignments: List<SenderExpertAssignment>,
+        ignoreWarmup: Boolean,
+        stock: SenderBindingStock,
+        allowedAccountCodes: Set<String>
+    ): MailSenderAccount =
+        if (allowedAccountCodes.isEmpty()) {
+            senderAccountAssignmentService.selectAccount(expert, assignments, ignoreWarmup, stock)
+        } else {
+            senderAccountAssignmentService.selectAccount(expert, assignments, ignoreWarmup, stock, allowedAccountCodes)
+        }
+
+    /** I-1/I-2: 本次执行的发件账号范围快照（trim/丢空/去重后）；空集合 = 不限。 */
+    private fun allowedAccountCodesOf(snapshot: BatchExecutionSnapshot): Set<String> =
+        snapshot.senderAccountCodes.map { it.trim() }.filter { it.isNotEmpty() }.distinct().toSet()
+
+    /**
+     * I-3: 同一 ORCID 的**任一** `expert_contact` 行（任意 campaign）已有非空白绑定即为已绑定。
+     * 空白字符串不是合法绑定值（V85 注释明确禁止），故与 [SenderAccountBindingService.resolveForSend] 同口径。
+     */
+    private fun hasBoundContact(normOrcid: String): Boolean =
+        expertContactRepository.findByOrcidIdIn(listOf(normOrcid))
+            .any { !it.boundSenderAccountCode.isNullOrBlank() }
+
+    /**
+     * I-3/I-4: 批量判定一组 ORCID 是否已绑定（预估与目标构造共用，保证同源）。
+     * 同一 ORCID 在不同 campaign 可能有多行 —— 任一行有非空白绑定即视为已绑定。
+     */
+    private fun boundOrcidsOf(orcidIds: List<String>): Set<String> {
+        val distinct = orcidIds.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+        if (distinct.isEmpty()) return emptySet()
+        return expertContactRepository.findByOrcidIdIn(distinct)
+            .filter { !it.boundSenderAccountCode.isNullOrBlank() }
+            .map { normalizeOrcid(it.orcidId) }
+            .toSet()
     }
 
     /**
@@ -1012,6 +1078,8 @@ class ManualInitialOutreachService(
                 !hasSentIntroduction(it.id!!) && it.operatorStatus != "EMAIL_INVALID"
             }
             val orcidIds = retryableContacts.map { it.orcidId }
+            // I-3/I-4: 预估与执行共用本构造函数 —— 同一 ORCID 的任一 campaign 行已绑定即排除。
+            val boundOrcids = boundOrcidsOf(orcidIds)
             val profilesByLevel = if (orcidIds.isEmpty()) {
                 emptyMap()
             } else {
@@ -1022,6 +1090,7 @@ class ManualInitialOutreachService(
             }
             for (contact in retryableContacts) {
                 val normOrcid = normalizeOrcid(contact.orcidId)
+                if (normOrcid in boundOrcids) continue
                 val profile = scope.funnelLevels.asSequence()
                     .mapNotNull { level -> profilesByLevel[level]?.get(normOrcid) }
                     .firstOrNull() ?: continue
@@ -1238,12 +1307,18 @@ class ManualInitialOutreachService(
         val normOrcidList = normalizedExperts.map { it.first }.distinct()
         val contacts = if (normOrcidList.isNotEmpty()) expertContactRepository.findByOrcidIdIn(normOrcidList) else emptyList()
         val contactByNormOrcid = contacts.associateBy { normalizeOrcid(it.orcidId) }
+        // I-3/I-4: 预估与执行共用本构造函数 —— 同一 ORCID 的任一行已绑定即排除（材料目标全绑定时可为 0）。
+        val boundOrcids = contacts
+            .filter { !it.boundSenderAccountCode.isNullOrBlank() }
+            .map { normalizeOrcid(it.orcidId) }
+            .toSet()
 
         // Step 4: apply exclusion rules, dedup by contactId
         val seenContactIds = mutableSetOf<Long>()
         val sendableTargets = mutableListOf<Pair<ExpertContact, ExpertProfile>>()
 
         for ((normOrcid, expert) in normalizedExperts) {
+            if (normOrcid in boundOrcids) continue             // exclude: already bound to a sender account (I-3)
             val contact = contactByNormOrcid[normOrcid] ?: continue  // exclude: no existing contact
             val contactId = contact.id ?: continue
             if (!seenContactIds.add(contactId)) continue              // dedup by contactId

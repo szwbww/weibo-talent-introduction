@@ -8,10 +8,12 @@ import com.weibo.talentintroduction.campaign.domain.OperatorStatus
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
 import com.weibo.talentintroduction.campaign.domain.ResearchDirectionFilters
+import com.weibo.talentintroduction.campaign.domain.parseSenderAccountCodes
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.slf4j.LoggerFactory
@@ -31,7 +33,12 @@ class BatchSendTaskConfigService(
     private val mailComposeTemplateService: MailComposeTemplateService,
     private val objectMapper: ObjectMapper,
     private val eventPublisher: ApplicationEventPublisher,
-    private val taskExecutionService: TaskExecutionService
+    private val taskExecutionService: TaskExecutionService,
+    /**
+     * I-2: 发件账号白名单的存在性校验入口。保持可选尾参以兼容既有按位置构造的调用方
+     * （`BatchSendConfigControllerTest`）；Spring 环境恒注入真实 bean。
+     */
+    private val mailSenderAccountService: MailSenderAccountService? = null
 ) {
 
     private val log = LoggerFactory.getLogger(BatchSendTaskConfigService::class.java)
@@ -77,6 +84,7 @@ class BatchSendTaskConfigService(
                 discipline = normalized.discipline,
                 operatorStatusesJson = normalized.operatorStatusesJson,
                 expertTypesJson = normalized.expertTypesJson,
+                senderAccountCodesJson = normalized.senderAccountCodesJson,
                 templateId = normalized.templateId,
                 gateFilterEnabled = normalized.gateFilterEnabled,
                 researchDirectionFilter = normalized.researchDirectionFilter,
@@ -113,6 +121,7 @@ class BatchSendTaskConfigService(
                 discipline = normalized.discipline,
                 operatorStatusesJson = normalized.operatorStatusesJson,
                 expertTypesJson = normalized.expertTypesJson,
+                senderAccountCodesJson = normalized.senderAccountCodesJson,
                 templateId = normalized.templateId,
                 gateFilterEnabled = normalized.gateFilterEnabled,
                 researchDirectionFilter = normalized.researchDirectionFilter,
@@ -198,6 +207,8 @@ class BatchSendTaskConfigService(
                 operatorStatuses = parseOperatorStatuses(existing.operatorStatusesJson),
                 // I2-5: 旧 typed API 不传类型筛选，必须显式保留（漏写会命中默认值静默重置）。
                 expertTypes = parseExpertTypes(existing.expertTypesJson),
+                // I-1: 旧 typed API 不传发件账号白名单，必须显式保留（漏写会静默重置为不限 = 扩大外发范围）。
+                senderAccountCodes = parseSenderAccountCodes(objectMapper, existing.senderAccountCodesJson),
                 templateId = request.templateId,
                 // I4a-6 (M-2): 旧 typed API 不传门禁开关，必须显式保留存量值（漏写会命中默认值静默重置为 false）。
                 gateFilterEnabled = existing.gateFilterEnabled,
@@ -313,6 +324,29 @@ class BatchSendTaskConfigService(
         }
         val expertTypesJson = objectMapper.writeValueAsString(expertTypes)
 
+        // I-1/I-2/I-5: 逻辑发件账号白名单。trim、丢空、去重保序；空集合 = 不限。
+        // 逗号是前端 picker 的分隔符（K-batch-picker-comma-delimited-contract）。
+        // 校验「存在且非 SIMULATOR_NOOP」——绝不按 inbound_mailbox_code 合并共享 IMAP 的兄弟别名。
+        val senderAccountCodes = fields.senderAccountCodes
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        senderAccountCodes.forEach {
+            require(!it.contains(",")) { "senderAccountCode must not contain a comma: $it" }
+            require(it != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE) {
+                "senderAccountCode must not be the simulator account: $it"
+            }
+        }
+        if (senderAccountCodes.isNotEmpty()) {
+            val known = mailSenderAccountService?.listAccounts()?.map { it.accountCode }?.toSet()
+            if (known != null) {
+                senderAccountCodes.forEach {
+                    require(it in known) { "senderAccountCode does not exist: $it" }
+                }
+            }
+        }
+        val senderAccountCodesJson = objectMapper.writeValueAsString(senderAccountCodes)
+
         val tags = normalizeTags(fields.tags)
         val tagsJson = objectMapper.writeValueAsString(tags)
         val regions = normalizeRegions(fields.regions)
@@ -344,6 +378,7 @@ class BatchSendTaskConfigService(
             discipline = discipline,
             operatorStatusesJson = operatorStatusesJson,
             expertTypesJson = expertTypesJson,
+            senderAccountCodesJson = senderAccountCodesJson,
             templateId = fields.templateId,
             gateFilterEnabled = fields.gateFilterEnabled,
             researchDirectionFilter = researchDirectionFilter
@@ -491,6 +526,7 @@ class BatchSendTaskConfigService(
             discipline = row.discipline,
             operatorStatuses = parseOperatorStatuses(row.operatorStatusesJson),
             expertTypes = parseExpertTypes(row.expertTypesJson),
+            senderAccountCodes = parseSenderAccountCodes(objectMapper, row.senderAccountCodesJson),
             templateId = row.templateId,
             gateFilterEnabled = row.gateFilterEnabled,
             researchDirectionFilter = row.researchDirectionFilter,
@@ -585,6 +621,7 @@ class BatchSendTaskConfigService(
         val discipline: String?,
         val operatorStatuses: List<String>,
         val expertTypes: List<String> = emptyList(),
+        val senderAccountCodes: List<String> = emptyList(),
         val templateId: Long?,
         val gateFilterEnabled: Boolean = false,
         val researchDirectionFilter: String = ResearchDirectionFilters.ANY
@@ -607,6 +644,7 @@ class BatchSendTaskConfigService(
         val discipline: String?,
         val operatorStatusesJson: String,
         val expertTypesJson: String,
+        val senderAccountCodesJson: String = "[]",
         val templateId: Long?,
         val gateFilterEnabled: Boolean = false,
         val researchDirectionFilter: String = ResearchDirectionFilters.ANY
@@ -628,6 +666,7 @@ class BatchSendTaskConfigService(
         discipline = discipline,
         operatorStatuses = operatorStatuses,
         expertTypes = expertTypes,
+        senderAccountCodes = senderAccountCodes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter
@@ -649,6 +688,7 @@ class BatchSendTaskConfigService(
         discipline = discipline,
         operatorStatuses = operatorStatuses,
         expertTypes = expertTypes,
+        senderAccountCodes = senderAccountCodes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter
@@ -670,6 +710,7 @@ class BatchSendTaskConfigService(
         discipline = discipline,
         operatorStatuses = parseOperatorStatuses(operatorStatusesJson),
         expertTypes = parseExpertTypes(expertTypesJson),
+        senderAccountCodes = parseSenderAccountCodes(objectMapper, senderAccountCodesJson),
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter

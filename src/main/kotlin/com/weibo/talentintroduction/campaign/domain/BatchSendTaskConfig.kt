@@ -24,6 +24,11 @@ data class BatchSendTaskConfig(
     val discipline: String? = null,
     val operatorStatusesJson: String = "[]",
     val expertTypesJson: String = "[]",
+    /**
+     * I-1: 本次任务的逻辑发件账号白名单（`mail_sender_account.account_code` 的 JSON 数组）。
+     * `[]` = 不限（旧行/未传字段同义）；坏 JSON 由 [parseSenderAccountCodes] 拒绝，不降级为 `[]`。
+     */
+    val senderAccountCodesJson: String = "[]",
     val templateId: Long? = null,
     val gateFilterEnabled: Boolean = false,
     /** I-1: 研究方向三态（[ResearchDirectionFilters]）；旧行与默认 = ANY（不限）。 */
@@ -52,6 +57,8 @@ data class BatchSendTaskConfigView(
     val discipline: String?,
     val operatorStatuses: List<String> = emptyList(),
     val expertTypes: List<String> = emptyList(),
+    /** I-1: 发件账号白名单回显；`[]` = 不限。 */
+    val senderAccountCodes: List<String> = emptyList(),
     val templateId: Long?,
     val gateFilterEnabled: Boolean = false,
     /** I-1: 研究方向三态，永远回显权威值（旧任务 = ANY）。 */
@@ -80,6 +87,8 @@ data class BatchSendTaskConfigCreateCommand(
     val discipline: String? = null,
     val operatorStatuses: List<String> = emptyList(),
     val expertTypes: List<String> = emptyList(),
+    /** I-1: 未传值 = `[]`（不限）；非空为严格白名单，由配置服务 trim/去重并校验存在与非模拟器。 */
+    val senderAccountCodes: List<String> = emptyList(),
     val templateId: Long? = null,
     val gateFilterEnabled: Boolean = false,
     /** I-1: 未传值 = ANY（不限）；非法值由配置服务拒绝。 */
@@ -102,6 +111,8 @@ data class BatchSendTaskConfigUpdateCommand(
     val discipline: String? = null,
     val operatorStatuses: List<String> = emptyList(),
     val expertTypes: List<String> = emptyList(),
+    /** I-1: 未传值 = `[]`（不限）；非空为严格白名单，由配置服务 trim/去重并校验存在与非模拟器。 */
+    val senderAccountCodes: List<String> = emptyList(),
     val templateId: Long? = null,
     val gateFilterEnabled: Boolean = false,
     /** I-1: 未传值 = ANY（不限）；非法值由配置服务拒绝。 */

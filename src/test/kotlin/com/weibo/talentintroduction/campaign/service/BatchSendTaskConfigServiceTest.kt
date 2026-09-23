@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
+import com.weibo.talentintroduction.campaign.domain.toExecutionSnapshot
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionService
@@ -36,6 +37,9 @@ class BatchSendTaskConfigServiceTest {
     private val mailComposeTemplateService = Mockito.mock(MailComposeTemplateService::class.java)
     private val eventPublisher = Mockito.mock(ApplicationEventPublisher::class.java)
     private val taskExecutionService = Mockito.mock(TaskExecutionService::class.java)
+    private val mailSenderAccountService = Mockito.mock(
+        com.weibo.talentintroduction.mail.service.MailSenderAccountService::class.java
+    )
     private val objectMapper = ObjectMapper()
 
     private fun service() = BatchSendTaskConfigService(
@@ -43,8 +47,34 @@ class BatchSendTaskConfigServiceTest {
         mailComposeTemplateService = mailComposeTemplateService,
         objectMapper = objectMapper,
         eventPublisher = eventPublisher,
-        taskExecutionService = taskExecutionService
+        taskExecutionService = taskExecutionService,
+        mailSenderAccountService = mailSenderAccountService
     )
+
+    /** I-2: 白名单存在性校验的账号池（逻辑 account_code，含共享 IMAP 的两个独立 code）。 */
+    private fun stubKnownAccounts(vararg accountCodes: String) {
+        Mockito.`when`(mailSenderAccountService.listAccounts()).thenReturn(
+            accountCodes.map { code ->
+                com.weibo.talentintroduction.mail.domain.MailSenderAccount(
+                    accountCode = code,
+                    senderEmail = "$code@example.com",
+                    senderName = code,
+                    senderTitle = null,
+                    senderDisplayName = null,
+                    teamName = null,
+                    countryName = null,
+                    smtpHost = "smtp.example.com",
+                    smtpPort = 465,
+                    smtpUsername = "$code@example.com",
+                    smtpPassword = "secret",
+                    imapHost = "imap.example.com",
+                    imapPort = 993,
+                    imapUsername = "$code@example.com",
+                    imapPassword = "secret"
+                )
+            }
+        )
+    }
 
     // Repo-standard Mockito helpers for Kotlin-declared (non-null parameter) mock methods:
     // the matcher placeholders return null and must be coalesced with a default.
@@ -69,6 +99,7 @@ class BatchSendTaskConfigServiceTest {
         discipline: String? = null,
         operatorStatuses: List<String> = emptyList(),
         expertTypes: List<String> = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"),
+        senderAccountCodes: List<String> = emptyList(),
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false
     ) = BatchSendTaskConfigCreateCommand(
@@ -87,6 +118,7 @@ class BatchSendTaskConfigServiceTest {
         discipline = discipline,
         operatorStatuses = operatorStatuses,
         expertTypes = expertTypes,
+        senderAccountCodes = senderAccountCodes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled
     )
@@ -107,6 +139,7 @@ class BatchSendTaskConfigServiceTest {
         discipline: String? = null,
         operatorStatuses: List<String> = emptyList(),
         expertTypes: List<String> = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"),
+        senderAccountCodes: List<String> = emptyList(),
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false
     ) = BatchSendTaskConfigUpdateCommand(
@@ -125,6 +158,7 @@ class BatchSendTaskConfigServiceTest {
         discipline = discipline,
         operatorStatuses = operatorStatuses,
         expertTypes = expertTypes,
+        senderAccountCodes = senderAccountCodes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled
     )
@@ -142,6 +176,7 @@ class BatchSendTaskConfigServiceTest {
         discipline: String? = null,
         operatorStatusesJson: String = "[]",
         expertTypesJson: String = "[]",
+        senderAccountCodesJson: String = "[]",
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false,
         deletedAt: LocalDateTime? = null,
@@ -163,6 +198,7 @@ class BatchSendTaskConfigServiceTest {
         discipline = discipline,
         operatorStatusesJson = operatorStatusesJson,
         expertTypesJson = expertTypesJson,
+        senderAccountCodesJson = senderAccountCodesJson,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         deletedAt = deletedAt,
@@ -1390,5 +1426,185 @@ class BatchSendTaskConfigServiceTest {
         assertFalse(result.valid)
         assertTrue(!result.message.isNullOrEmpty())
         assertEquals(emptyList<LocalDateTime>(), result.nextFireTimes)
+    }
+
+    // ── 发件账号白名单（I-1 / I-2 / I-5）──────────────────────────────────────────
+
+    @Test
+    fun `create persists senderAccountCodes and get returns them in order (I-1)`() {
+        stubKnownAccounts("LuKai", "LuKai_QF")
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("发件账号任务")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 70L)
+        }
+        `when`(repository.findByIdAndDeletedAtIsNull(70L)).thenReturn(
+            row(id = 70L, name = "发件账号任务", senderAccountCodesJson = """["LuKai","LuKai_QF"]""")
+        )
+
+        service().create(createCmd(name = "发件账号任务", senderAccountCodes = listOf("LuKai", "LuKai_QF")))
+
+        verify(repository).save(captor.capture())
+        assertEquals("""["LuKai","LuKai_QF"]""", captor.value.senderAccountCodesJson)
+        // I-5: 共享同一物理 IMAP 的 LuKai / LuKai_QF 是两个独立逻辑 code，不得被合并成别名。
+        assertEquals(listOf("LuKai", "LuKai_QF"), service().get(70L).senderAccountCodes)
+    }
+
+    @Test
+    fun `create normalizes whitespace and duplicate senderAccountCodes (I-1)`() {
+        stubKnownAccounts("LuKai")
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("去重账号")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 71L)
+        }
+
+        service().create(createCmd(name = "去重账号", senderAccountCodes = listOf("  LuKai ", "LuKai", "")))
+
+        verify(repository).save(captor.capture())
+        assertEquals("""["LuKai"]""", captor.value.senderAccountCodesJson)
+    }
+
+    @Test
+    fun `create with empty senderAccountCodes persists an empty array and view returns empty (I-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("不限账号")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 72L)
+        }
+        `when`(repository.findByIdAndDeletedAtIsNull(72L)).thenReturn(row(id = 72L, name = "不限账号"))
+
+        service().create(createCmd(name = "不限账号"))
+
+        verify(repository).save(captor.capture())
+        assertEquals("[]", captor.value.senderAccountCodesJson)
+        assertEquals(emptyList<String>(), service().get(72L).senderAccountCodes)
+    }
+
+    @Test
+    fun `create rejects an unknown senderAccountCode (I-2)`() {
+        stubKnownAccounts("LuKai")
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("未知账号")).thenReturn(null)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "未知账号", senderAccountCodes = listOf("DOES_NOT_EXIST")))
+        }
+
+        assertTrue(ex.message!!.contains("DOES_NOT_EXIST"), ex.message)
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create rejects the simulator account in senderAccountCodes (I-1 I-5)`() {
+        stubKnownAccounts("LuKai", "SIMULATOR_NOOP")
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("模拟器账号")).thenReturn(null)
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "模拟器账号", senderAccountCodes = listOf("SIMULATOR_NOOP")))
+        }
+
+        assertTrue(ex.message!!.contains("SIMULATOR_NOOP"), ex.message)
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `invalid senderAccountCodesJson is rejected on read and snapshot instead of degrading to unrestricted (I-1)`() {
+        val corrupt = row(id = 73L, name = "坏账号JSON", senderAccountCodesJson = "not-json")
+        `when`(repository.findByIdAndDeletedAtIsNull(73L)).thenReturn(corrupt)
+
+        // 读取（get/list 走 toView）必须拒绝，不得把坏 JSON 当作 []（= 全池）。
+        assertThrows(IllegalStateException::class.java) { service().get(73L) }
+        // 启动快照（toExecutionSnapshot）同样必须拒绝。
+        assertThrows(IllegalStateException::class.java) { corrupt.toExecutionSnapshot(objectMapper) }
+    }
+
+    @Test
+    fun `create round-trips senderAccountCodes into the launch snapshot (I-1)`() {
+        stubKnownAccounts("LuKai")
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("快照账号")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 74L)
+        }
+
+        service().create(createCmd(name = "快照账号", senderAccountCodes = listOf("LuKai")))
+
+        verify(repository).save(captor.capture())
+        assertEquals(
+            listOf("LuKai"),
+            captor.value.toExecutionSnapshot(objectMapper).senderAccountCodes
+        )
+    }
+
+    @Test
+    fun `update replaces senderAccountCodes after validation (I-1 I-2)`() {
+        stubKnownAccounts("LuKai", "LuKai_QF")
+        val existing = row(id = 5L, name = "每日介绍", senderAccountCodesJson = """["LuKai"]""")
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 5L)
+        }
+
+        service().update(5L, updateCmd(senderAccountCodes = listOf("LuKai_QF")))
+
+        verify(repository).save(captor.capture())
+        assertEquals("""["LuKai_QF"]""", captor.value.senderAccountCodesJson)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves existing senderAccountCodesJson entity value (I-1)`() {
+        stubKnownAccounts("LuKai")
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
+            emailDomainsJson = "[]", operatorStatusesJson = "[]",
+            expertTypesJson = """["PRODUCTION_RND"]""",
+            senderAccountCodesJson = """["LuKai"]""",
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        // I-1: 旧 typed API 不传白名单 —— 漏写会把筛选静默重置为「不限」。
+        assertEquals("""["LuKai"]""", captor.value.senderAccountCodesJson)
+    }
+
+    @Test
+    fun `legacy row without the column still reads as an unrestricted empty list (I-1)`() {
+        `when`(repository.findByIdAndDeletedAtIsNull(1L)).thenReturn(row(id = 1L, senderAccountCodesJson = "[]"))
+
+        assertEquals(emptyList<String>(), service().get(1L).senderAccountCodes)
+        assertEquals(
+            emptyList<String>(),
+            row(id = 1L).toExecutionSnapshot(objectMapper).senderAccountCodes
+        )
     }
 }

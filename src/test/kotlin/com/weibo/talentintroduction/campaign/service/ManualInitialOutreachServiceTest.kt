@@ -44,7 +44,6 @@ import com.weibo.talentintroduction.mail.service.SelfCheckResult
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import com.weibo.talentintroduction.mail.service.SenderBindingStock
-import com.weibo.talentintroduction.mail.service.SenderAccountNotBoundException
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import com.weibo.talentintroduction.mail.service.SenderWarmupService
 import com.weibo.talentintroduction.task.service.TaskProgressStore
@@ -424,7 +423,7 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
-    fun `existing contact binding is not overwritten`() {
+    fun `existing contact binding is never overwritten because a bound target is skipped (I-3)`() {
         val account = account("chen")
         val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
         val existingContact = ExpertContact(
@@ -443,20 +442,19 @@ class ManualInitialOutreachServiceTest {
         stubScrolledExperts(emptyList())
 
         Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY))).thenReturn(account)
-        // A3: 已绑定 contact → resolveForSend 返回账号（I-1：不重选号、不补写绑定）
-        Mockito.`when`(senderAccountBindingService.resolveForSend(
-            anyValue(existingContact), eqValue(false), eqValue(true)
-        )).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
-        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(DeliveredMail(messageId = "msg1", status = "SENT"))
 
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
-        assertEquals(1, result.total)
-        assertEquals(1, result.sent)
+        // I-3: 已有绑定的目标不发信、不重选号、不改绑（绑定值是否为本次选中账号无关）。
+        assertEquals(0, result.sent)
+        assertEquals(1, result.skipped)
+        val boundSkip = result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.BOUND_SENDER_ALREADY_SET)
+        assertEquals(1, boundSkip?.count)
+        assertEquals("专家已绑定发件账号", boundSkip?.label)
+        Mockito.verifyNoInteractions(mailDeliveryService)
         Mockito.verify(expertContactRepository, Mockito.never()).updateBindingById(
             Mockito.anyLong(),
-            Mockito.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
             Mockito.any()
         )
         Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
@@ -1523,7 +1521,6 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(senderAccountAssignmentService.selectAccount(
             anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
         )).thenReturn(acc)
-        stubReminderResolveForSendNotBound()
         Mockito.`when`(manualExpertMailService.sendManualMail(
             anyLong(),
             anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -1910,7 +1907,6 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
             )).thenReturn(acc)
-            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 eqValue(contactId),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -1958,8 +1954,6 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
             )).thenReturn(acc)
-            stubReminderResolveForSendNotBound()
-
             val cmdCaptor = org.mockito.ArgumentCaptor.forClass(
                 com.weibo.talentintroduction.mail.service.ManualMailSendCommand::class.java
             )
@@ -2007,7 +2001,6 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
             )).thenReturn(acc)
-            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 eqValue(contactId),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -2058,7 +2051,6 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
             )).thenReturn(acc)
-            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 anyLong(),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -2108,7 +2100,6 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
             )).thenReturn(acc)
-            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 anyLong(),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -2170,7 +2161,6 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
             )).thenReturn(acc)
-            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 anyLong(),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -2223,7 +2213,6 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
             )).thenReturn(acc)
-            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 anyLong(),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -2277,7 +2266,6 @@ class ManualInitialOutreachServiceTest {
             Mockito.`when`(senderAccountAssignmentService.selectAccount(
                 anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
             )).thenReturn(acc)
-            stubReminderResolveForSendNotBound()
             Mockito.`when`(manualExpertMailService.sendManualMail(
                 anyLong(),
                 anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
@@ -4666,6 +4654,345 @@ class ManualInitialOutreachServiceTest {
         Mockito.verifyNoInteractions(progressStore)
     }
 
+    // ── 发件账号白名单与已绑定跳过（I-2 / I-3 / I-4 / I-5）──────────────────────────
+
+    @Test
+    fun `startManual rejects an unknown senderAccountCode with 422 before launching (I-2)`() {
+        Mockito.`when`(mailSenderAccountService.listAccounts()).thenReturn(listOf(account("LuKai")))
+        val executor = Mockito.mock(Executor::class.java)
+        val control = BatchSendControlService(
+            progressStore = progressStore,
+            taskExecutionService = taskExecutionService,
+            manualInitialOutreachService = service,
+            batchSendSettingService = batchSendSettingService,
+            batchSendTaskConfigRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java),
+            mailSenderAccountService = mailSenderAccountService,
+            mailComposeTemplateService = mailComposeTemplateService,
+            objectMapper = ObjectMapper().registerKotlinModule(),
+            manualOutreachExecutor = executor
+        )
+
+        val response = control.startManual(
+            ManualBatchExecutionRequest(
+                sourceConfigId = null,
+                sourceUpdatedAt = null,
+                snapshot = BatchExecutionSnapshot(
+                    mailType = "INTRODUCTION", roundSize = 10, roundsPerRun = 1,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                    funnelLevel = "CANDIDATE",
+                    expertTypes = listOf("PRODUCTION_RND"),
+                    // I-1/I-2: 未知 code 必须 422，绝不能被当作 []（= 放宽成全池）。
+                    senderAccountCodes = listOf("DOES_NOT_EXIST")
+                )
+            )
+        )
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, response.statusCode)
+        assertTrue(
+            response.body?.get("message").toString().contains("DOES_NOT_EXIST"),
+            "validation message must name the offending code: ${response.body}"
+        )
+        // 校验先于启动：不占用执行 token、不进入任何发送链路。
+        Mockito.verifyNoInteractions(progressStore)
+        Mockito.verifyNoInteractions(executor)
+    }
+
+    @Test
+    fun `startManual accepts a snapshot whose senderAccountCodes exist (I-2)`() {
+        Mockito.`when`(mailSenderAccountService.listAccounts()).thenReturn(listOf(account("LuKai")))
+        // 额度门禁置 0：合法 code 必须穿过 code 校验、只在额度处被拦（409 ≠ 422）。
+        Mockito.`when`(mailSenderAccountService.remainingDailyCapacity(Mockito.anyBoolean())).thenReturn(0)
+        val control = BatchSendControlService(
+            progressStore = progressStore,
+            taskExecutionService = taskExecutionService,
+            manualInitialOutreachService = service,
+            batchSendSettingService = batchSendSettingService,
+            batchSendTaskConfigRepository = Mockito.mock(BatchSendTaskConfigRepository::class.java),
+            mailSenderAccountService = mailSenderAccountService,
+            mailComposeTemplateService = mailComposeTemplateService,
+            objectMapper = ObjectMapper().registerKotlinModule(),
+            manualOutreachExecutor = Mockito.mock(Executor::class.java)
+        )
+
+        val response = control.startManual(
+            ManualBatchExecutionRequest(
+                sourceConfigId = null,
+                sourceUpdatedAt = null,
+                snapshot = BatchExecutionSnapshot(
+                    mailType = "INTRODUCTION", roundSize = 10, roundsPerRun = 1,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                    funnelLevel = "CANDIDATE",
+                    expertTypes = listOf("PRODUCTION_RND"),
+                    senderAccountCodes = listOf("LuKai")
+                )
+            )
+        )
+
+        assertEquals(HttpStatus.CONFLICT, response.statusCode)
+        assertTrue(
+            response.body?.get("message").toString().contains("额度"),
+            "capacity gate must be the stop point, not code validation: ${response.body}"
+        )
+        Mockito.verifyNoInteractions(progressStore)
+    }
+
+    @Test
+    fun `run sends only from the selected sender account and never falls back to an unselected one (I-2)`() {
+        val selected = account("LuKai")
+        val unselected = account("LuKai_QF")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(listOf(selected, unselected))
+        // I-2: 非空白名单走五参选号；未选中账号即便可用也不得被选中。
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY), eqValue(setOf("LuKai"))
+        )).thenReturn(selected)
+        // 旧四参路径（= 不限）在本用例里指向未选中账号，任何回退都会立刻暴露。
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )).thenReturn(unselected)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("LuKai"), anyValue(expert("", "")), Mockito.isNull()))
+            .thenReturn(ComposedMail("a@b.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(eqValue(selected), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg", "SENT"))
+
+        val snapshot = introSnapshot(roundSize = 10, roundsPerRun = 1).copy(senderAccountCodes = listOf("LuKai"))
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(1, result.sent)
+        Mockito.verify(senderAccountAssignmentService).selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY), eqValue(setOf("LuKai"))
+        )
+        Mockito.verify(mailDeliveryService, Mockito.never())
+            .send(eqValue(unselected), anyValue(ComposedMail("", "", "")))
+        Mockito.verify(introductionMailComposer, Mockito.never())
+            .compose(eqValue("LuKai_QF"), anyValue(expert("", "")), Mockito.isNull())
+    }
+
+    @Test
+    fun `run stops without falling back when the selected account has no capacity (I-2)`() {
+        val selected = account("LuKai")
+        val unselected = account("LuKai_QF")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(listOf(selected, unselected))
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY), eqValue(setOf("LuKai"))
+        )).thenThrow(com.weibo.talentintroduction.mail.service.NoAvailableSenderAccountException("selected account exhausted"))
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )).thenReturn(unselected)
+
+        val snapshot = introSnapshot(roundSize = 10, roundsPerRun = 1).copy(senderAccountCodes = listOf("LuKai"))
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(0, result.sent)
+        assertEquals("NO_AVAILABLE_ACCOUNT", result.stopReason)
+        Mockito.verify(mailDeliveryService, Mockito.never())
+            .send(eqValue(unselected), anyValue(ComposedMail("", "", "")))
+        Mockito.verify(mailDeliveryService, Mockito.never())
+            .send(eqValue(selected), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `run excludes a bound NEW retryable contact from preview and execution (I-3 I-4)`() {
+        val acc = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        val boundContact = ExpertContact(
+            id = 901L, campaignId = 10L, orcidId = "0001", expertEmail = "bound@b.com",
+            expertName = "Bound", currentStatus = "NEW",
+            boundSenderAccountCode = "other-account",
+            senderAccountBoundAt = LocalDateTime.of(2026, 1, 1, 12, 0)
+        )
+        val freeContact = ExpertContact(
+            id = 902L, campaignId = 10L, orcidId = "0002", expertEmail = "free@b.com",
+            expertName = "Free", currentStatus = "NEW"
+        )
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(boundContact, freeContact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(901L)).thenReturn(emptyList())
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(902L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("0001", "0002")))
+            .thenReturn(listOf(expert("0001", "bound@b.com"), expert("0002", "free@b.com")))
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(listOf("0001", "0002")))
+            .thenReturn(listOf(boundContact, freeContact))
+        stubScrolledExperts(emptyList())
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )).thenReturn(acc)
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("", "")), Mockito.isNull()))
+            .thenAnswer { invocation ->
+                ComposedMail(invocation.getArgument<ExpertProfile>(1).email ?: "", "Subject", "Body")
+            }
+        Mockito.`when`(mailDeliveryService.send(eqValue(acc), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg", "SENT"))
+        val mailCaptor = org.mockito.ArgumentCaptor.forClass(ComposedMail::class.java)
+
+        // I-4: 预估（countBySnapshot）与执行共用同一目标构造函数。
+        val preview = service.countBySnapshot(introSnapshot(roundSize = 10, roundsPerRun = 1))
+        val result = service.run(introSnapshot(roundSize = 10, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(1, preview.totalSendable)
+        assertEquals(1, result.total)
+        assertEquals(1, result.sent)
+        // 已绑定目标：不组稿、不发送、不改绑、不新建联系人。
+        Mockito.verify(mailDeliveryService, Mockito.times(1))
+            .send(eqValue(acc), captureValue(mailCaptor, ComposedMail("", "", "")))
+        assertEquals("free@b.com", mailCaptor.value.to)
+        Mockito.verify(expertContactRepository, Mockito.never()).updateBindingById(
+            anyLong(),
+            org.mockito.ArgumentMatchers.anyString(),
+            Mockito.any()
+        )
+        Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
+    }
+
+    @Test
+    fun `run skips an ES target bound in another campaign with the bound reason (I-3 I-4)`() {
+        val acc = account("chen")
+        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        val otherCampaignContact = ExpertContact(
+            id = 903L, campaignId = 77L, orcidId = "0001", expertEmail = "a@b.com",
+            expertName = "Other", currentStatus = "WAITING_REPLY",
+            boundSenderAccountCode = "LuKai_QF"
+        )
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
+        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(listOf("0001"))).thenReturn(listOf(otherCampaignContact))
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )).thenReturn(acc)
+
+        val result = service.run(introSnapshot(roundSize = 10, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(1, result.total)
+        assertEquals(0, result.sent)
+        assertEquals(1, result.skipped)
+        // I-4: 跳过原因必须可见（"专家已绑定发件账号"），而不是被记成 SMTP 失败。
+        val boundSkip = result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.BOUND_SENDER_ALREADY_SET)
+        assertEquals(1, boundSkip?.count)
+        assertEquals("专家已绑定发件账号", boundSkip?.label)
+        assertEquals(0, result.failed)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+        Mockito.verify(senderAccountAssignmentService, Mockito.never()).selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )
+    }
+
+    @Test
+    fun `run with empty senderAccountCodes keeps the legacy selection path (I-2)`() {
+        val acc = account("chen")
+        stubIntroSendPipeline(acc, listOf(expert("0001", "a@b.com")))
+
+        val result = service.run(introSnapshot(roundSize = 10, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(1, result.sent)
+        Mockito.verify(senderAccountAssignmentService).selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )
+    }
+
+    @Test
+    fun `material reminder sends only from the selected sender account (I-2)`() {
+        val contactId = 7L
+        val contact = ExpertContact(
+            id = contactId, campaignId = 10L, orcidId = "R004", expertEmail = "r4@test.com",
+            expertName = "R4", currentStatus = "WAITING_REPLY"
+        )
+        val ep = expert("R004", "r4@test.com")
+        val selected = account("LuKai")
+        val unselected = account("LuKai_QF")
+        Mockito.`when`(expertSearchService.countExperts(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+        )).thenReturn(1L)
+        Mockito.`when`(expertSearchService.searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+        )).thenReturn(listOf(ep))
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId))
+            .thenReturn(emptyList())
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue()))
+            .thenReturn(listOf(selected, unselected))
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY), eqValue(setOf("LuKai"))
+        )).thenReturn(selected)
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )).thenReturn(unselected)
+        val cmdCaptor = org.mockito.ArgumentCaptor.forClass(
+            com.weibo.talentintroduction.mail.service.ManualMailSendCommand::class.java
+        )
+        Mockito.`when`(manualExpertMailService.sendManualMail(
+            eqValue(contactId),
+            anyValue(com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+        )).thenReturn(
+            com.weibo.talentintroduction.mail.service.ManualMailSendResult(
+                contactId = contactId, senderAccountCode = "LuKai",
+                mailType = "MATERIAL_REMINDER", subject = "Subj",
+                sendStatus = "SENT", messageId = "msg-sel"
+            )
+        )
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "MATERIAL_REMINDER",
+            roundSize = 10, roundsPerRun = 1,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            templateId = 10L,
+            senderAccountCodes = listOf("LuKai")
+        )
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        assertEquals(1, result.sent)
+        Mockito.verify(manualExpertMailService).sendManualMail(
+            eqValue(contactId),
+            captureValue(cmdCaptor, com.weibo.talentintroduction.mail.service.ManualMailSendCommand("", "", ""))
+        )
+        // I-2: 实际外发身份只能是选中账号。
+        assertEquals("LuKai", cmdCaptor.value.senderAccountCode)
+    }
+
+    @Test
+    fun `material reminder with every target bound previews and sends zero (I-3 I-4)`() {
+        val contact = ExpertContact(
+            id = 904L, campaignId = 10L, orcidId = "R004", expertEmail = "r4@test.com",
+            expertName = "R4", currentStatus = "WAITING_REPLY",
+            boundSenderAccountCode = "LuKai_QF"
+        )
+        val ep = expert("R004", "r4@test.com")
+        Mockito.`when`(expertSearchService.countExperts(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())
+        )).thenReturn(1L)
+        Mockito.`when`(expertSearchService.searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+        )).thenReturn(listOf(ep))
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(anyValue(emptyList())))
+            .thenReturn(listOf(contact))
+
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "MATERIAL_REMINDER",
+            roundSize = 10, roundsPerRun = 1,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            templateId = 10L
+        )
+
+        val preview = service.countBySnapshot(snapshot)
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = true)
+
+        // I-4: 预估与执行同源 —— 全部已绑定 ⇒ 两侧都是 0。
+        assertEquals(0, preview.totalSendable)
+        assertEquals(0, result.total)
+        assertEquals(0, result.sent)
+        Mockito.verifyNoInteractions(manualExpertMailService)
+    }
+
     // ──── Helpers ────
 
     private fun expert(orcidId: String, email: String): ExpertProfile =
@@ -4776,18 +5103,6 @@ class ManualInitialOutreachServiceTest {
 
     private fun <T> captureValue(captor: org.mockito.ArgumentCaptor<T>, defaultValue: T): T =
         captor.capture() ?: defaultValue
-
-    /**
-     * A3 测试适配：材料提醒轮（manual=true）的 resolveForSend 桩。
-     * 未绑定 contact → 抛 SenderAccountNotBoundException，生产代码走 selectAccount 兜底 + bindIfAbsent（I-1/IP-1）。
-     */
-    private fun stubReminderResolveForSendNotBound() {
-        Mockito.`when`(senderAccountBindingService.resolveForSend(
-            anyValue(ExpertContact(campaignId = 0, orcidId = "", expertEmail = "", expertName = null)),
-            eqValue(true),
-            eqValue(false)
-        )).thenThrow(SenderAccountNotBoundException(0L))
-    }
 
     private fun anyBooleanValue(): Boolean = Mockito.anyBoolean() ?: false
 }

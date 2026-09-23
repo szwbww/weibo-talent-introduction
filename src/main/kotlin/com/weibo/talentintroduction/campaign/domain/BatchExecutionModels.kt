@@ -21,6 +21,11 @@ data class BatchExecutionSnapshot(
     val discipline: String? = null,
     val operatorStatuses: List<String> = emptyList(),
     val expertTypes: List<String> = emptyList(),
+    /**
+     * I-1/I-2: 本次执行唯一的发件账号范围快照（逻辑 `mail_sender_account.account_code`）。
+     * `[]` = 不限（旧任务/未传字段）；非空 = 严格白名单，两发送循环与选号服务都只在此集合内运作。
+     */
+    val senderAccountCodes: List<String> = emptyList(),
     val templateId: Long? = null,
     val gateFilterEnabled: Boolean = false,
     /**
@@ -187,6 +192,11 @@ object BatchOutcomeReasonCodes {
     const val CANCELLED = "CANCELLED"
     const val PERSONALIZATION_INCOMPLETE = "PERSONALIZATION_INCOMPLETE"
     const val EXPERT_NOT_SENDABLE = "EXPERT_NOT_SENDABLE"
+    /**
+     * I-3/I-4: 目标专家已有任一 `expert_contact.bound_sender_account_code`（与绑定值是否在
+     * 本次选中集合无关）→ 本次批量任务跳过，不发信、不重选号、不改绑。
+     */
+    const val BOUND_SENDER_ALREADY_SET = "BOUND_SENDER_ALREADY_SET"
 
     val LABELS = mapOf(
         SEND_EXCEPTION to "发送异常",
@@ -198,7 +208,8 @@ object BatchOutcomeReasonCodes {
         DAILY_CAP_EXCEEDED to "超日限额",
         CANCELLED to "被取消",
         PERSONALIZATION_INCOMPLETE to "个性化字段缺失",
-        EXPERT_NOT_SENDABLE to "研发类型不在本次选择范围内"
+        EXPERT_NOT_SENDABLE to "研发类型不在本次选择范围内",
+        BOUND_SENDER_ALREADY_SET to "专家已绑定发件账号"
     )
 
     fun label(code: String): String = LABELS[code] ?: code
@@ -323,6 +334,9 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
     } catch (_: Exception) {
         emptyList()
     }
+    // I-1: sender_account_codes_json 是唯一事实源，且是唯一**严格**解析的范围字段 ——
+    // 坏 JSON 拒绝启动/读取，绝不降级为 []（否则白名单会被静默放宽成全池）。
+    val senderAccountCodes = parseSenderAccountCodes(objectMapper, senderAccountCodesJson)
     return BatchExecutionSnapshot(
         mailType = mailType,
         roundSize = roundSize,
@@ -337,9 +351,39 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         discipline = discipline,
         operatorStatuses = operatorStatuses,
         expertTypes = expertTypes,
+        senderAccountCodes = senderAccountCodes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter,
         oneRoundOnly = oneRoundOnly
     )
+}
+
+/**
+ * I-1: `batch_send_task_config.sender_account_codes_json` 的唯一解析点。
+ *
+ * 与其它旧范围字段（tags/regions/emailDomains/operatorStatuses/expertTypes）的
+ * 「解析失败按不限」相反：这里的坏 JSON 必须拒绝读取/启动，绝不静默降级成 `[]` ——
+ * 降级会把「只从选中账号发件」悄悄放宽成全池。空/缺失文本 = `[]`（不限，旧行同义）。
+ * 返回值为 trim、丢空、去重保序后的逻辑 `account_code` 列表。
+ */
+fun parseSenderAccountCodes(objectMapper: ObjectMapper, json: String?): List<String> {
+    val text = json?.trim().orEmpty()
+    if (text.isEmpty()) return emptyList()
+    val node = try {
+        objectMapper.readTree(text)
+    } catch (e: Exception) {
+        throw IllegalStateException("sender_account_codes_json is not valid JSON: $text", e)
+    }
+    if (node == null || !node.isArray) {
+        throw IllegalStateException("sender_account_codes_json must be a JSON array: $text")
+    }
+    return node.map { element ->
+        if (!element.isTextual) {
+            throw IllegalStateException("sender_account_codes_json must contain only strings: $text")
+        }
+        element.asText()
+    }.map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
 }

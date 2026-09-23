@@ -432,6 +432,18 @@ class BatchSendControlService(
             }
             // I-1: 手动路径的快照直接来自请求体，不经配置服务，三态白名单必须在此独立校验。
             ResearchDirectionFilters.requireAllowed(snapshot.researchDirectionFilter)
+            // I-1/I-2/I-5: 发件账号白名单与配置保存同口径 —— trim/去重后每项必须存在且非模拟器；
+            // 未知 code 一律 422，绝不当作 []（否则伪造的未知 code 会被静默放宽成全池）。
+            val senderAccountCodes = snapshot.senderAccountCodes.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+            if (senderAccountCodes.isNotEmpty()) {
+                val known = mailSenderAccountService.listAccounts().map { it.accountCode }.toSet()
+                senderAccountCodes.forEach { code ->
+                    require(code != MailSenderAccountService.SIMULATOR_ACCOUNT_CODE) {
+                        "senderAccountCode must not be the simulator account: $code"
+                    }
+                    require(code in known) { "senderAccountCode does not exist: $code" }
+                }
+            }
             // I3-2: 手动路径的快照直接来自请求体，不经配置服务，必须在此独立校验。
             if (snapshot.mailType == BatchSendType.INTRODUCTION.name) {
                 require(snapshot.expertTypes.any { it.isNotBlank() }) { "研发类型至少选择一个" }
