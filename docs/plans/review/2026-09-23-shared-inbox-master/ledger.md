@@ -1,33 +1,33 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-09-23/00-shared-inbox-main.md
 
-- Status: MACHINE_BLOCKED
-- Review epoch: 1
+- Status: REPAIR_PLAN_READY
+- Review epoch: 2
 - Master plan: docs/plans/2026-09-23/00-shared-inbox-main.md (sha256 0b7066e0ef0273aa71c348368ce75248362962c3346f9e3287a04418d5615666)
 - Governing master identity: worktree sha256 0b7066e0ef0273aa71c348368ce75248362962c3346f9e3287a04418d5615666; commit 8de18f69a63d1683515dd00c1b46fbddbd644094
 - Invoked master identity: SAME
 - Master identity state: CONSISTENT
 - Governing amendment: A2; M-5; record 02's 11-file exception; HUMAN option A at 2026-09-23 18:58 +0800
-- Amendments: A1 (docs/plans/2026-09-23/02-shared-inbox-routing.md, commit 327bbbf3562bcbc1c7c7de45ce1eec1a100b1f6c); A2 (master, commit 8de18f69a63d1683515dd00c1b46fbddbd644094)
+- Amendments: A1 (docs/plans/2026-09-23/02-shared-inbox-routing.md, commit 327bbbf3562bcbc1c7c7de45ce1eec1a100b1f6c); A2 (master, commit 8de18f69a63d1683515dd00c1b46fbddbd644094); A3 (human-approved review amendment: phase 03 and MAIN M-5 authorize `BounceBackfillService.kt` and `BounceBackfillServiceTest.kt` solely to preserve the caller's known logical account during historical bounce backfill and prove contradictory OUTBOUND-owner behavior; user replied “批准” to this exact amendment on 2026-09-23)
 - Fast-p ledger: docs/plans/fast/2026-09-23-shared-inbox-master/ledger.md (sha256 587557d377fbbb4c367f3c8031925519e990d3f1a2ce1df620f1d4c4274dd351)
 - Fast-p handoff: docs/plans/fast/2026-09-23-shared-inbox-master/human-review-handoff.md (sha256 da1cddfa71018b92871a030eff5efa952436280ee9a1d722f5ea9eb9e6a7a9ea)
 - Master base: 9237d6f573335d1624217cbc5501f68a6f52b97b
 - Final code head: 1cff8f650cfa27ca506246380e0e56a77a20a4f9
-- Evidence parent before next commit: bce2ae6305f8b86241bc747c5e56c0205fb4dd87
-- Previous evidence commit: N/A
+- Evidence parent before next commit: 421cf2099b83d9e2b84e460e370176eaec19bf67
+- Previous evidence commit: 421cf2099b83d9e2b84e460e370176eaec19bf67
 - Branch: fast/2026-09-23-shared-inbox-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-23-shared-inbox-master
 - Worktree resolution: EXPLICIT
 - Discovery evidence: explicit resumption from the exact fast-p human-review-handoff; worktree/branch, master identity, child terminal table, evidence commits, and ancestry freshly validated
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_reviewer
+- Reviewer: /root/amendment_reviewer
 - Reviewer attempt: 1
 - Machine result: FAIL
-- Machine report epoch: machine-verification.md, Epoch 1
-- Repair artifact: N/A (repair-p returned PLAN_AMENDMENT_REQUIRED)
+- Machine report epoch: machine-verification.md, Epoch 2
+- Repair artifact: docs/plans/fix/00-shared-inbox-main/repair.md (DRAFT_READY)
 - Repair evidence mode: N/A
 - Repair approval source: N/A
 - Repair executor: N/A
 - Repair code head: N/A
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: approve a plan amendment to phase 03 and MAIN M-5 authorizing BounceBackfillService.kt and BounceBackfillServiceTest.kt, then rerun aggregate review
+- Blocker/next action: human approval and `$execute-p` of docs/plans/fix/00-shared-inbox-main/repair.md

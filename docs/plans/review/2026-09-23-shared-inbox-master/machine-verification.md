@@ -105,3 +105,68 @@ Approve an amendment to phase 03 and MAIN M-5 allowing:
 Repair: mark the backfill caller as known-logical attribution, preserve that code regardless of an OUTBOUND candidate, and add the contradictory-owner regression.
 
 No product code was modified.
+
+## Epoch 2 — 2026-09-23
+
+- Master plan: `docs/plans/2026-09-23/00-shared-inbox-main.md` (sha256 `0b7066e0ef0273aa71c348368ce75248362962c3346f9e3287a04418d5615666`)
+- Governing master identity: commit `8de18f69a63d1683515dd00c1b46fbddbd644094`; identity state `CONSISTENT`.
+- Amendment: A3, explicitly approved by the user in this task; phase 03/MAIN M-5 authorize `BounceBackfillService.kt` and `BounceBackfillServiceTest.kt` only for V-1.
+- Boundary: `9237d6f573335d1624217cbc5501f68a6f52b97b..1cff8f650cfa27ca506246380e0e56a77a20a4f9`
+- Reviewer: `/root/amendment_reviewer`
+- Result: FAIL
+- Convergence: INITIAL
+- Repair artifact/result: `docs/plans/fix/00-shared-inbox-main/repair.md` — DRAFT_READY.
+
+## Verification Result: FAIL
+
+Manual acceptance: PENDING.
+
+### Commands
+
+| Command | Result | Evidence |
+|---|---|---|
+| `node --check src/main/resources/static/app.js` | PASS | exit 0 |
+| `node --test src/test/js/*.test.js` | PASS | exit 0; 1121 pass, 0 fail |
+| Required eight-class Maven suite | PASS | exit 0; 221 tests, 0 errors/failures/skips |
+| `FlywayMigrationIntegrationTest` with OrbStack/API 1.40 | PASS | exit 0; 27 tests, 0 errors/failures/skips |
+
+The first sandbox Maven attempt failed reading `target/classes/application.yml`; the identical permitted rerun passed. No final command evidence is unavailable.
+
+### Contract Matrix
+
+| Contract | Verdict | Evidence |
+|---|---|---|
+| M-1 / 01 configuration | PASS | source/tests and selected suite |
+| M-2 physical UID | PASS | source/tests and selected suite |
+| M-3 routing, filtering, bounce | FAIL | V-1 |
+| M-4 production gate | PASS, manual PENDING | c4 runbook/evidence |
+| M-5 serial scope, A1/A2/A3 | PASS | ordered commits and authorized diff scope |
+| M-6 historical probes | PASS, manual PENDING | c4 runbook/evidence |
+| 01 UI/API/DDL | PASS | JS, Maven, Flyway fresh evidence |
+| 02 owner polling/routing | PASS | selected suite |
+| 03 bounce/probe | FAIL | V-1 |
+| 04 migration evidence | PASS, manual PENDING | Flyway 27/27; c4 evidence |
+
+### Finding Lineage
+
+| Finding | Prior | Current | Evidence |
+|---|---|---|---|
+| V-1 | NEW | PERSISTENT | `03-shared-inbox-bounce.md:17,90`; `BounceBackfillService.kt:32-39`; `BounceCollectionService.kt:98-103,176-208` |
+
+### P1
+
+- V-1: historical backfill supplies known `row.senderAccountCode`, then shared ingest overwrites it with a contradictory unique same-group OUTBOUND account. Existing backfill tests omit the conflict regression.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| c1 screenshot artifact absent | Manual UI acceptance | PENDING | c1 evidence |
+| c3 nullable `MailSenderAccountService` fallback unasserted | M-3 bounce attribution | Observation | source inspected |
+| c4 orphan tags/production hygiene | Outside MAIN scope | Observation | c4 evidence |
+
+## Repair Planning Result: DRAFT_READY
+
+- Included finding: V-1.
+- Repair artifact: `docs/plans/fix/00-shared-inbox-main/repair.md`.
+- No product code was modified.
