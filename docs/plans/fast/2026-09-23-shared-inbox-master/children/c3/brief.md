@@ -27,7 +27,12 @@ Do not create new files; do not modify `SelfCheckProbeSender`/`SenderAccountSelf
 
 - c1: `MailSenderAccount.inboundMailboxCode`, `InboundMailProcessing.mailboxOwnerCode`, migration `V134__shared_inbox_owner.sql`, service-level single-level relation validation.
 - c2: owner-only polling list plus alias→owner resolution in `MailSenderAccountService`; `ReceivedMail` exposes the parsed original top-level `To`/`Cc`; `AutoMailReplyService.processSingle` is the single inbound entry point (logical account in, owner resolved internally, owner used for IMAP/`markSeen`/cursor and attachment source); physical dedup via `(mailbox_owner_code, uid_validity, imap_uid)`; `MailRecordRepository` exposes a read-only **OUTBOUND-only** Message-ID candidate query returning a list.
-- Concretely: `<c2 interfaces — filled at dispatch from the c2 execution report>`.
+- c2 delivered (see `children/c2/execution.md`; re-read the sources before editing):
+  - `AutoMailReplyService.processSingle(account, received)` is the single inbound entry point: it accepts either a physical owner or an alias logical code, resolves the owner internally, and resolves the logical recipient from headers. Its precedence is physical-key duplicate → group legacy-fingerprint claim → recipient routing → `BODY_TRUNCATED` → `LEGACY_UID_UNVERIFIABLE` → business path, all before any business write. **Your group-wide probe filter belongs at this entry, before that routing/business logic.**
+  - `MailRecordRepository.findOutboundCandidatesByMessageId(messageId): List<MailRecord>` — read-only, `direction='OUTBOUND'` only, list-returning so callers reject ambiguity. It is the only lookup allowed for bounce attribution.
+  - `ReceivedMail.recipientAddresses: List<String>` — parsed original top-level `To`/`Cc`.
+  - `MailSenderAccountService`: `listAutoReceiveAccounts()` returns owners only; `resolveInboundOwner(account)`; `getAutoReceiveAccount(accountCode)` / `getAutoReceiveAccountOrNull(accountCode)` resolve alias→owner; `getReceiveAccount` still returns the raw logical account. Group members are derived from the account list by `inboundMailboxCode`.
+  - `InboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(...)` and `findLegacyOwnerlessByGroupAndImapUid(...)`; both processing-row writers fill `mailboxOwnerCode`; outcome codes in play include `DUPLICATE_IMAP_UID`, `LEGACY_UID_UNVERIFIABLE`, `RECIPIENT_UNRESOLVED`.
 
 ## Invariants (from the approved plan; violations are light-gate failures)
 

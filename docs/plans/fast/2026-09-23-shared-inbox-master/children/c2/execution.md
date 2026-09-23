@@ -104,3 +104,46 @@ Intermediate runs during the work (not evidence of the final state): the first 4
 ## Next Action
 
 - PLAN_CONFLICT → obtain the human decision / plan amendment described in "Remaining blocker"; no product change is needed beyond retiring the obsolete assertion.
+
+---
+
+## Epoch 2
+
+### Execution Result: READY_FOR_VERIFICATION
+
+- Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-23-shared-inbox-master/docs/plans/2026-09-23/02-shared-inbox-routing.md`
+- Plan SHA-256: `799ebb57a356234ebd5807d7d8c58cb192aa55106aa9fc1f7a128b39c4e9808e` (amended by A1/A2; previous epoch's identity was `ab9413ee…` — "same path, new content" epoch)
+- Execution epoch: 2 (resume, `fix_round = 0`, product base `a15cb52`, resumed from epoch-1 commit `16efaae36c01c11412b457df3e4a3f088860ce9d`)
+- Approval basis: human-approved amendment **A1** (authorize an 11th file for c2, `MailSenderAccountServiceTest.kt`, solely to retire the superseded stage-01 assertion) plus **A2** (M-5 file-cap exception), recorded by the controller in `327bbbf` / `8de18f6` / `4a726f9`; dispatched by `Main` in this invocation.
+- Target worktree / branch / Worktree ID: unchanged (`fast/2026-09-23-shared-inbox-master`, same worktree; `--expect-root/--expect-branch/--expect-git-dir` re-checked before staging).
+- Pre-execution code SHA (this epoch): `4a726f9` (controller amendment/evidence commit; product tree identical to `16efaae`)
+- Post-execution code SHA: `e28da464bb4bf310698079340796382e32acd2d0` (`feat(fast-p): implement c2 epoch 2`, one file, 17 deletions)
+
+### Authorized change (exactly one file, one deletion)
+
+| File | Change | Reason |
+|---|---|---|
+| `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountServiceTest.kt` | −17 lines: deleted **only** the `@Test` method `listAutoReceiveAccounts still returns disabled and shared inbox accounts` (and its blank separator line) | A1 authorization: it pinned the pre-shared-inbox receive list (`expected [owner, alias]`) and the `findAllByAccountCodeNot("SIMULATOR_NOOP")` interaction, which epoch 1's mandated owner-only `listAutoReceiveAccounts()` supersedes. Plan 01 had scoped that assertion to "不因阶段 01 改变"; plan 02 (amended) now owns its retirement. |
+
+Everything else in that file is untouched (`assertFalse` remains used by 4 other assertions, so no dangling import). No product code changed in this epoch. `git diff --stat` for the epoch = `1 file changed, 17 deletions(-)`.
+
+### Commands (final epoch-2 state, JDK 11)
+
+| Command | Exit | Result |
+|---|---|---|
+| `mvn -B -Dtest=ImapMailReceiveServiceTest,AutoMailReplyServiceTest,BatchAutoMailReplyServiceTest,OperatorStatusWriteSeamGuardTest,MailSenderAccountServiceTest test` | 0 (`BUILD SUCCESS`) | `Tests run: 181, Failures: 0, Errors: 0, Skipped: 0` — ImapMailReceiveServiceTest 28, AutoMailReplyServiceTest 70, BatchAutoMailReplyServiceTest 21, MailSenderAccountServiceTest **61** (was 62 with the retired assertion), OperatorStatusWriteSeamGuardTest 1 |
+| `node --test src/test/js/*.test.js` | 0 | `tests 1121 / pass 1121 / fail 0 / suites 222` |
+
+No Docker command was required or run.
+
+### Deviations
+
+- None. Only the one authorized test method was deleted; no other file was touched; `docs/plans/fast/**` was kept out of the commit.
+
+### Epoch-2 freshness
+
+- Plan identity rechecked on the amended plan: YES (`799ebb57…`)
+- Worktree identity rechecked before staging/commit: YES
+- Commit reachable from the target branch as `HEAD`: YES
+- Required commands run this invocation on the final state: YES
+- Epoch-1 blocker resolved by A1/A2: YES (no known in-scope failure remains; the earlier `MailSenderAccountServiceTest` failure is gone)
