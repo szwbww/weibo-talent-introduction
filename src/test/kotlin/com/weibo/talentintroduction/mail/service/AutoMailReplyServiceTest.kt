@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.ExpertContactStatusHistory
 import com.weibo.talentintroduction.campaign.domain.OperatorStatus
+import com.weibo.talentintroduction.campaign.repository.CampaignRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactStatusHistoryRepository
 import com.weibo.talentintroduction.campaign.service.ConversationStateService
@@ -22,6 +23,7 @@ import com.weibo.talentintroduction.mail.repository.InboundIntentRepository
 import com.weibo.talentintroduction.mail.repository.InboundMailProcessingRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordQaRuleRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.mail.repository.MailSenderAccountRepository
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
@@ -44,6 +46,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
+import org.springframework.dao.DataIntegrityViolationException
 import java.time.LocalDateTime
 
 class AutoMailReplyServiceTest {
@@ -157,6 +160,9 @@ class AutoMailReplyServiceTest {
             val code = invocation.getArgument<String>(0)
             accountService.getEnabledAccount(code)
         }
+        // I-1：默认按「自身即独立收件箱」恒等解析物理 owner；共享组用例单独覆盖。
+        Mockito.`when`(accountService.resolveInboundOwner(anyValue(account("stub-owner"))))
+            .thenAnswer { invocation -> invocation.getArgument<MailSenderAccount>(0) }
         Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
             .thenAnswer { invocation ->
                 val record = invocation.getArgument<InboundMailProcessing>(0)
@@ -879,9 +885,6 @@ class AutoMailReplyServiceTest {
         val contact = introSentContact()
         val received = reply()
         stubAutoReplyPipeline(account, contact, received)
-        Mockito.`when`(
-            inboundMailProcessingRepository.findBySenderAccountCodeAndImapUid("sender", received.imapUid)
-        ).thenReturn(null)
 
         val result = service.processSingle(account, received, skipImapAck = true)
 
@@ -1644,7 +1647,7 @@ class AutoMailReplyServiceTest {
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchByUids(account, listOf(uid))).thenReturn(listOf(mail))
         Mockito.`when`(
-            inboundMailProcessingRepository.findBySenderAccountCodeAndUidValidityAndImapUid(
+            inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(
                 "sender",
                 mail.uidValidity,
                 uid
@@ -1688,9 +1691,9 @@ class AutoMailReplyServiceTest {
         assertEquals(SinglePipelineOutcome.UNMATCHED_CONTACT, second.outcome)
         // 判重查询按真实代际身份执行（I-1：绝不按 account+uid 单独判重）
         Mockito.verify(inboundMailProcessingRepository)
-            .findBySenderAccountCodeAndUidValidityAndImapUid("sender", 1L, 101L)
+            .findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 1L, 101L)
         Mockito.verify(inboundMailProcessingRepository)
-            .findBySenderAccountCodeAndUidValidityAndImapUid("sender", 2L, 101L)
+            .findByMailboxOwnerCodeAndUidValidityAndImapUid("sender", 2L, 101L)
         val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
         Mockito.verify(inboundMailProcessingRepository, Mockito.times(2)).save(captor.capture())
         // 同一 (account, uid) 的两代际各登记一次，互不判重（I-1）
@@ -1705,22 +1708,24 @@ class AutoMailReplyServiceTest {
         val mail = reply(imapUid = uid)
         Mockito.`when`(accountService.getEnabledAccount("sender")).thenReturn(account)
         Mockito.`when`(receiveService.fetchByUids(account, listOf(uid))).thenReturn(listOf(mail))
-        // 历史 0 代际行：同 account/uid、Message-ID、from、秒级 receivedAt 全吻合
+        // 历史 0 代际行：组内同 UID、Message-ID、from、秒级 receivedAt 全吻合
         Mockito.`when`(
-            inboundMailProcessingRepository.findBySenderAccountCodeAndImapUid("sender", uid)
+            inboundMailProcessingRepository.findLegacyOwnerlessByGroupAndImapUid(listOf("sender"), uid)
         ).thenReturn(
-            InboundMailProcessing(
-                id = 9L,
-                senderAccountCode = "sender",
-                uidValidity = 0L,
-                imapUid = uid,
-                messageId = "reply-1",
-                fromEmail = "expert@example.com",
-                subject = "Re: Talent Program",
-                receivedAt = mail.receivedAt,
-                processStatus = "PROCESSED",
-                processReason = "QA_AUTO_REPLIED",
-                expertContactId = 11L
+            listOf(
+                InboundMailProcessing(
+                    id = 9L,
+                    senderAccountCode = "sender",
+                    uidValidity = 0L,
+                    imapUid = uid,
+                    messageId = "reply-1",
+                    fromEmail = "expert@example.com",
+                    subject = "Re: Talent Program",
+                    receivedAt = mail.receivedAt,
+                    processStatus = "PROCESSED",
+                    processReason = "QA_AUTO_REPLIED",
+                    expertContactId = 11L
+                )
             )
         )
 
@@ -1744,20 +1749,22 @@ class AutoMailReplyServiceTest {
         Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(mail.from)).thenReturn(null)
         // 历史 0 代际行存在但 Message-ID 不同 → 信息不足核验，绝不盲目吞信/自动回复
         Mockito.`when`(
-            inboundMailProcessingRepository.findBySenderAccountCodeAndImapUid("sender", uid)
+            inboundMailProcessingRepository.findLegacyOwnerlessByGroupAndImapUid(listOf("sender"), uid)
         ).thenReturn(
-            InboundMailProcessing(
-                id = 9L,
-                senderAccountCode = "sender",
-                uidValidity = 0L,
-                imapUid = uid,
-                messageId = "some-old-message",
-                fromEmail = "expert@example.com",
-                subject = "Old subject",
-                receivedAt = mail.receivedAt.minusDays(1),
-                processStatus = "PROCESSED",
-                processReason = "QA_AUTO_REPLIED",
-                expertContactId = 11L
+            listOf(
+                InboundMailProcessing(
+                    id = 9L,
+                    senderAccountCode = "sender",
+                    uidValidity = 0L,
+                    imapUid = uid,
+                    messageId = "some-old-message",
+                    fromEmail = "expert@example.com",
+                    subject = "Old subject",
+                    receivedAt = mail.receivedAt.minusDays(1),
+                    processStatus = "PROCESSED",
+                    processReason = "QA_AUTO_REPLIED",
+                    expertContactId = 11L
+                )
             )
         )
 
@@ -2135,6 +2142,593 @@ class AutoMailReplyServiceTest {
         Mockito.verify(receiveService).markSeen(account, 201L)
     }
 
+    // ------------------------------------------------------------------
+    // 共享收件箱路由 / 物理判重 / owner 游标与确认（I-1～I-4）
+    // ------------------------------------------------------------------
+
+    /** 共享组夹具（I-1/I-2）：owner 物理账号 + alias 逻辑账号（alias 归属 owner）。 */
+    private fun sharedGroup(
+        ownerCode: String = "owner",
+        aliasCode: String = "alias"
+    ): Pair<MailSenderAccount, MailSenderAccount> {
+        val owner = account(ownerCode)
+        val alias = account(aliasCode).copy(inboundMailboxCode = ownerCode)
+        Mockito.`when`(accountService.listAccounts()).thenReturn(listOf(owner, alias))
+        Mockito.`when`(accountService.getEnabledAccount(ownerCode)).thenReturn(owner)
+        Mockito.`when`(accountService.getAutoReceiveAccount(aliasCode)).thenReturn(owner)
+        Mockito.`when`(accountService.resolveInboundOwner(alias)).thenReturn(owner)
+        return owner to alias
+    }
+
+    /** 已处理/历史 processing 行（物理键与严格指纹判重用）。 */
+    private fun processingRow(
+        uid: Long,
+        senderCode: String = "sender",
+        validity: Long = 1L,
+        messageId: String? = "reply-1",
+        from: String = "expert@example.com",
+        receivedAt: LocalDateTime = LocalDateTime.of(2026, 5, 22, 10, 0)
+    ): InboundMailProcessing =
+        InboundMailProcessing(
+            id = 9L,
+            senderAccountCode = senderCode,
+            uidValidity = validity,
+            imapUid = uid,
+            messageId = messageId,
+            fromEmail = from,
+            subject = "Re: Talent Program",
+            receivedAt = receivedAt,
+            processStatus = "PROCESSED",
+            processReason = "QA_AUTO_REPLIED",
+            expertContactId = 11L
+        )
+
+    private fun outboundRecord(id: Long, accountCode: String, messageId: String): MailRecord =
+        MailRecord(
+            id = id,
+            expertContactId = 11L,
+            direction = "OUTBOUND",
+            mailType = "QA_REPLY",
+            senderAccountCode = accountCode,
+            messageId = messageId,
+            inReplyTo = null,
+            subject = "Re: Talent Program",
+            body = "Auto reply body",
+            matchedQaRuleId = null,
+            sendStatus = "SENT",
+            receivedAt = null,
+            sentAt = LocalDateTime.of(2026, 5, 22, 9, 0)
+        )
+
+    /** 真实 [MailSenderAccountService]（仓储为 mock）：验证 owner-only 轮询与 alias 解析。 */
+    private fun realAccountServiceWith(
+        accounts: List<MailSenderAccount>
+    ): Pair<MailSenderAccountService, MailSenderAccountRepository> {
+        val repository = Mockito.mock(MailSenderAccountRepository::class.java)
+        Mockito.`when`(
+            repository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+        ).thenReturn(accounts)
+        accounts.forEach { Mockito.`when`(repository.findByAccountCode(it.accountCode)).thenReturn(it) }
+        val realService = MailSenderAccountService(
+            repository,
+            Mockito.mock(SenderAccountSelfCheckService::class.java),
+            Mockito.mock(SmtpSenderFactory::class.java),
+            Mockito.mock(SenderWarmupService::class.java),
+            Mockito.mock(MailAccountConnectivityService::class.java),
+            Mockito.mock(CampaignRepository::class.java),
+            Mockito.mock(ExpertContactRepository::class.java)
+        )
+        return realService to repository
+    }
+
+    private fun stubBatchAutoReply() = Mockito.mock(AutoMailReplyService::class.java).also { autoReply ->
+        Mockito.`when`(
+            autoReply.receiveAndAutoReply(anyValue(""), anyValue(0), anyValue(null), anyValue(null))
+        ).thenReturn(AutoMailReplyBatchResult(fetched = 0, recorded = 0, replied = 0, manualReview = 0))
+    }
+
+    @Test
+    fun `shared group routes direct mail to the alias while imap and cursor stay on the owner`() {
+        val (owner, alias) = sharedGroup()
+        val received = reply(to = listOf(alias.senderEmail), imapUid = 11L)
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(received)))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(received.from)).thenReturn(null)
+
+        val result = service.receiveAndAutoReply("alias", 5)
+
+        assertEquals(1, result.manualReview)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("alias", captor.value.senderAccountCode, "业务归属必须是被唯一判定的逻辑账号")
+        assertEquals("owner", captor.value.mailboxOwnerCode, "物理去重身份必须是 owner")
+        // I-1：抓取、markSeen、游标一律 owner；alias 自己的旧游标不动
+        Mockito.verify(receiveService).fetchInboundSince(owner, 0L, 5)
+        Mockito.verify(receiveService).markSeen(owner, received.imapUid)
+        Mockito.verify(cursorService).get("owner")
+        Mockito.verify(cursorService).advance(
+            eqValue("owner"),
+            anyValue(1L),
+            anyValue(listOf(received.imapUid)),
+            anyValue(setOf(received.imapUid)),
+            anyValue(0L)
+        )
+        Mockito.verify(cursorService, Mockito.never()).get("alias")
+        Mockito.verify(cursorService, Mockito.never()).advance(
+            eqValue("alias"),
+            anyValue(0L),
+            anyValue(emptyList<Long>()),
+            anyValue(emptySet<Long>()),
+            anyValue(0L)
+        )
+    }
+
+    @Test
+    fun `shared group routes mail addressed to the owner itself`() {
+        val (owner, _) = sharedGroup()
+        val received = reply(to = listOf(owner.senderEmail), imapUid = 12L)
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(received)))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(received.from)).thenReturn(null)
+
+        val result = service.receiveAndAutoReply("owner", 5)
+
+        assertEquals(1, result.manualReview)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("owner", captor.value.senderAccountCode)
+        assertEquals("owner", captor.value.mailboxOwnerCode)
+    }
+
+    @Test
+    fun `shared group recipient matching is case insensitive`() {
+        val (owner, alias) = sharedGroup()
+        val received = reply(to = listOf("ALIAS@QFTECHTALENT.COM"), imapUid = 13L)
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(received)))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(received.from)).thenReturn(null)
+
+        service.receiveAndAutoReply("owner", 5)
+
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("alias", captor.value.senderAccountCode)
+    }
+
+    @Test
+    fun `routed shared group mail records inbound under the logical account`() {
+        val (owner, alias) = sharedGroup()
+        val contact = introSentContact()
+        val received = reply(to = listOf(alias.senderEmail), imapUid = 17L)
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(received)))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(received.from)).thenReturn(contact)
+        Mockito.`when`(
+            mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(11, "OUTBOUND", "INTRODUCTION")
+        ).thenReturn(true)
+        Mockito.`when`(mailRecordRepository.save(Mockito.any(MailRecord::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<MailRecord>(0).copy(id = 100L)
+        }
+        Mockito.`when`(
+            mailAttachmentService.saveInboundAttachments(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyList())
+        ).thenReturn(emptyList())
+        Mockito.`when`(contactRepository.save(Mockito.any(ExpertContact::class.java))).thenAnswer { invocation ->
+            invocation.getArgument<ExpertContact>(0)
+        }
+        Mockito.`when`(statusHistoryRepository.save(Mockito.any(ExpertContactStatusHistory::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<ExpertContactStatusHistory>(0) }
+        stubNotReadyDecision("QA_NO_MATCH")
+
+        val result = service.receiveAndAutoReply("owner", 5)
+
+        assertEquals(1, result.recorded)
+        val recordCaptor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(recordCaptor.capture())
+        assertEquals("INBOUND", recordCaptor.value.direction)
+        assertEquals("alias", recordCaptor.value.senderAccountCode, "INBOUND 业务归属必须是逻辑账号")
+        val processingCaptor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(processingCaptor.capture())
+        assertEquals("alias", processingCaptor.value.senderAccountCode)
+        assertEquals("owner", processingCaptor.value.mailboxOwnerCode)
+        Mockito.verify(receiveService).markSeen(owner, received.imapUid)
+    }
+
+    @Test
+    fun `shared group without a header match routes by a unique outbound in-reply-to`() {
+        val (owner, alias) = sharedGroup()
+        val received = reply(to = emptyList(), inReplyTo = "<outbound-1>", imapUid = 14L)
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(received)))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(received.from)).thenReturn(null)
+        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+            .thenReturn(listOf(outboundRecord(1L, "alias", "<outbound-1>")))
+
+        val result = service.receiveAndAutoReply("owner", 5)
+
+        assertEquals(1, result.manualReview)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("alias", captor.value.senderAccountCode, "唯一 OUTBOUND 记录的账号即业务归属")
+        assertEquals("owner", captor.value.mailboxOwnerCode)
+    }
+
+    @Test
+    fun `shared group with duplicate outbound message ids falls back to recipient unresolved`() {
+        val (owner, _) = sharedGroup()
+        val received = reply(to = emptyList(), inReplyTo = "<dup-outbound>", imapUid = 15L)
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(received)))
+        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+            .thenReturn(
+                listOf(
+                    outboundRecord(1L, "alias", "<dup-outbound>"),
+                    outboundRecord(2L, "alias", "<dup-outbound>")
+                )
+            )
+
+        val result = service.receiveAndAutoReply("owner", 5)
+
+        assertEquals(1, result.manualReview)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("RECIPIENT_UNRESOLVED", captor.value.processReason)
+        assertEquals("owner", captor.value.senderAccountCode)
+    }
+
+    @Test
+    fun `shared group with two group members in to and cc is unresolved`() {
+        val (owner, alias) = sharedGroup()
+        val received = reply(
+            to = listOf(owner.senderEmail, alias.senderEmail),
+            inReplyTo = "no-such-outbound",
+            imapUid = 16L
+        )
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(received)))
+
+        val result = service.receiveAndAutoReply("owner", 5)
+
+        assertEquals(1, result.manualReview)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("RECIPIENT_UNRESOLVED", captor.value.processReason)
+        assertEquals("owner", captor.value.senderAccountCode)
+    }
+
+    @Test
+    fun `unresolved recipient lands once as manual review under the owner without any send`() {
+        val (owner, _) = sharedGroup()
+        val received = reply(to = emptyList(), inReplyTo = "", imapUid = 21L)
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(received)))
+
+        val result = service.receiveAndAutoReply("owner", 5)
+
+        assertEquals(1, result.manualReview)
+        assertEquals(1, result.recorded)
+        assertEquals(0, result.replied)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.times(1)).save(captor.capture())
+        assertEquals("MANUAL_REVIEW", captor.value.processStatus)
+        assertEquals("RECIPIENT_UNRESOLVED", captor.value.processReason)
+        assertEquals("RECIPIENT_UNRESOLVED", captor.value.reasonType)
+        assertEquals("owner", captor.value.senderAccountCode)
+        assertEquals("owner", captor.value.mailboxOwnerCode)
+        assertEquals(null, captor.value.expertContactId, "无法判定收件人时绝不挂专家")
+        // 零 SMTP、零专家状态迁移、零联系人查询
+        Mockito.verifyNoInteractions(deliveryService, groundedAutoReplyDecisionService, expertEmailAliasService)
+        Mockito.verifyNoInteractions(contactRepository, statusHistoryRepository, manualHandoffRepository)
+        Mockito.verify(mailAttachmentService).saveUnmatchedAttachments(
+            eqValue(999L),
+            Mockito.anyList(),
+            Mockito.nullable(Long::class.java)
+        )
+        Mockito.verify(receiveService).markSeen(owner, received.imapUid)
+    }
+
+    @Test
+    fun `replaying the same physical owner uid validity and uid adds no row`() {
+        val (owner, _) = sharedGroup()
+        val received = reply(to = listOf(owner.senderEmail), imapUid = 31L)
+        Mockito.`when`(
+            inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("owner", 1L, 31L)
+        ).thenReturn(processingRow(uid = 31L))
+
+        val result = service.processSingle(owner, received, skipImapAck = false)
+
+        assertEquals(SinglePipelineOutcome.DUPLICATE_IMAP_UID, result.outcome)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .save(Mockito.any(InboundMailProcessing::class.java))
+        Mockito.verify(receiveService).markSeen(owner, 31L)
+    }
+
+    @Test
+    fun `concurrent unique key violation is a duplicate only when the physical key exists`() {
+        val (owner, _) = sharedGroup()
+        val received = reply(to = listOf(owner.senderEmail), imapUid = 41L)
+        Mockito.`when`(
+            inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid("owner", 1L, 41L)
+        ).thenReturn(null, processingRow(uid = 41L))
+        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+            .thenThrow(DataIntegrityViolationException("uk_inbound_mail_processing_owner_uid"))
+
+        val result = service.processSingle(owner, received, skipImapAck = false)
+
+        assertEquals(SinglePipelineOutcome.DUPLICATE_IMAP_UID, result.outcome)
+        Mockito.verify(receiveService).markSeen(owner, 41L)
+    }
+
+    @Test
+    fun `unique key violation without the physical key propagates`() {
+        val (owner, _) = sharedGroup()
+        val received = reply(to = listOf(owner.senderEmail), imapUid = 42L)
+        Mockito.`when`(inboundMailProcessingRepository.save(Mockito.any(InboundMailProcessing::class.java)))
+            .thenThrow(DataIntegrityViolationException("some other constraint"))
+
+        assertThrows(DataIntegrityViolationException::class.java) {
+            service.processSingle(owner, received, skipImapAck = false)
+        }
+
+        Mockito.verify(receiveService, Mockito.never()).markSeen(owner, 42L)
+    }
+
+    @Test
+    fun `legacy ownerless row of a sibling group member with matching fingerprint is a duplicate`() {
+        val (owner, alias) = sharedGroup()
+        val received = reply(to = listOf(alias.senderEmail), imapUid = 51L)
+        Mockito.`when`(
+            inboundMailProcessingRepository.findLegacyOwnerlessByGroupAndImapUid(listOf("owner", "alias"), 51L)
+        ).thenReturn(
+            listOf(
+                processingRow(
+                    uid = 51L,
+                    senderCode = "alias",
+                    validity = 0L,
+                    messageId = received.messageId,
+                    from = received.from,
+                    receivedAt = received.receivedAt
+                )
+            )
+        )
+
+        val result = service.processSingle(owner, received, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.DUPLICATE_IMAP_UID, result.outcome)
+        Mockito.verify(inboundMailProcessingRepository, Mockito.never())
+            .save(Mockito.any(InboundMailProcessing::class.java))
+    }
+
+    @Test
+    fun `legacy ownerless row of a sibling group member without the fingerprint stays manual`() {
+        val (owner, alias) = sharedGroup()
+        val received = reply(to = listOf(alias.senderEmail), imapUid = 52L)
+        Mockito.`when`(
+            inboundMailProcessingRepository.findLegacyOwnerlessByGroupAndImapUid(listOf("owner", "alias"), 52L)
+        ).thenReturn(
+            listOf(
+                processingRow(
+                    uid = 52L,
+                    senderCode = "alias",
+                    validity = 0L,
+                    messageId = "another-message",
+                    from = received.from,
+                    receivedAt = received.receivedAt
+                )
+            )
+        )
+
+        val result = service.processSingle(owner, received, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.LEGACY_UID_UNVERIFIABLE, result.outcome)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("LEGACY_UID_UNVERIFIABLE", captor.value.processReason)
+        assertEquals("owner", captor.value.mailboxOwnerCode)
+        Mockito.verifyNoInteractions(deliveryService, groundedAutoReplyDecisionService)
+    }
+
+    @Test
+    fun `uid backfill for an alias logs in as the owner and keeps the alias cursor untouched`() {
+        val (owner, alias) = sharedGroup()
+        val mail = reply(to = listOf(alias.senderEmail), imapUid = 71L)
+        Mockito.`when`(receiveService.fetchByUids(owner, listOf(71L))).thenReturn(listOf(mail))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias(mail.from)).thenReturn(null)
+
+        val results = service.processByUids("alias", listOf(71L))
+
+        assertEquals(1, results.size)
+        Mockito.verify(receiveService).fetchByUids(owner, listOf(71L))
+        Mockito.verify(receiveService).markSeen(owner, 71L)
+        Mockito.verify(cursorService, Mockito.never()).get("alias")
+        Mockito.verify(cursorService, Mockito.never()).advance(
+            eqValue("alias"),
+            anyValue(0L),
+            anyValue(emptyList<Long>()),
+            anyValue(emptySet<Long>()),
+            anyValue(0L)
+        )
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("alias", captor.value.senderAccountCode)
+        assertEquals("owner", captor.value.mailboxOwnerCode)
+    }
+
+    @Test
+    fun `all-accounts check polls each physical owner exactly once`() {
+        val owner = account("owner")
+        val alias = account("alias").copy(inboundMailboxCode = "owner")
+        val independent = account("independent")
+        val (realAccountService, _) = realAccountServiceWith(listOf(owner, alias, independent))
+        val autoReply = stubBatchAutoReply()
+        val batch = BatchAutoMailReplyService(realAccountService, autoReply, mailRecordRepository)
+
+        val result = batch.receiveAndAutoReplyAll(5)
+
+        assertEquals(2, result.accountCount, "共享组按物理 owner 只轮询一次，别名不单独轮询")
+        assertEquals(listOf("owner", "independent"), result.accounts.map { it.accountCode })
+        Mockito.verify(autoReply).receiveAndAutoReply("owner", 5, null, null)
+        Mockito.verify(autoReply).receiveAndAutoReply("independent", 5, null, null)
+        Mockito.verify(autoReply, Mockito.times(2))
+            .receiveAndAutoReply(Mockito.anyString(), Mockito.anyInt(), Mockito.any(), Mockito.any())
+    }
+
+    @Test
+    fun `contact scoped check maps alias to the owner and polls it once`() {
+        val owner = account("owner")
+        val alias = account("alias").copy(inboundMailboxCode = "owner")
+        val (realAccountService, _) = realAccountServiceWith(listOf(owner, alias))
+        Mockito.`when`(mailRecordRepository.findDistinctSenderAccountCodesByExpertContactIds(listOf(1L, 2L)))
+            .thenReturn(listOf("owner", "alias"))
+        val autoReply = stubBatchAutoReply()
+        val batch = BatchAutoMailReplyService(realAccountService, autoReply, mailRecordRepository)
+
+        val result = batch.receiveAndAutoReplyForContacts(listOf(1L, 2L), 5)
+
+        assertEquals(1, result.accountCount, "同一物理 owner 的两个逻辑账号只轮询一次")
+        assertEquals(listOf("owner"), result.accounts.map { it.accountCode })
+        Mockito.verify(autoReply).receiveAndAutoReply("owner", 5, null, null)
+        Mockito.verify(autoReply, Mockito.times(1))
+            .receiveAndAutoReply(Mockito.anyString(), Mockito.anyInt(), Mockito.any(), Mockito.any())
+    }
+
+    // ------------------------------------------------------------------
+    // 03：同组 self-check 探针的唯一入口过滤与全组退信监控（I-2～I-4）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `alias self-check probe fetched through the owner mailbox is ignored without business writes`() {
+        val (owner, alias) = sharedGroup()
+        val probe = reply(
+            from = alias.senderEmail,
+            subject = "[self-check] alias ${System.currentTimeMillis()}",
+            body = "self-check probe",
+            to = listOf(alias.senderEmail),
+            imapUid = 302L
+        )
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(probe)))
+
+        val result = service.receiveAndAutoReply("owner", 5)
+
+        assertEquals(1, result.fetched)
+        assertEquals(0, result.recorded)
+        assertEquals(0, result.manualReview)
+        Mockito.verify(receiveService).markSeen(owner, 302L)
+        Mockito.verifyNoInteractions(
+            inboundMailProcessingRepository,
+            mailRecordRepository,
+            inboundIntentRepository,
+            inboundMailTagService,
+            mailAttachmentService,
+            contactRepository,
+            deliveryService,
+            groundedAutoReplyDecisionService,
+            expertEmailAliasService,
+            expertOperatorStatusService
+        )
+        // I-4：探针 UID 进入 owner 已处理集合 → 游标连续推进；alias 自己的旧游标不动
+        Mockito.verify(cursorService).advance(
+            eqValue("owner"),
+            eqValue(1L),
+            eqValue(listOf(302L)),
+            eqValue(setOf(302L)),
+            eqValue(0L)
+        )
+        Mockito.verify(cursorService, Mockito.never()).get("alias")
+    }
+
+    @Test
+    fun `uid backfill ignores a group alias self-check probe`() {
+        val (owner, alias) = sharedGroup()
+        val probe = reply(
+            from = alias.senderEmail,
+            subject = "[self-check] alias 1788498000276",
+            body = "self-check probe",
+            to = listOf(alias.senderEmail),
+            imapUid = 71L
+        )
+        Mockito.`when`(receiveService.fetchByUids(owner, listOf(71L))).thenReturn(listOf(probe))
+
+        val results = service.processByUids("alias", listOf(71L))
+
+        assertEquals(1, results.size)
+        assertEquals(SinglePipelineOutcome.SELF_CHECK_IGNORED, results[0].outcome)
+        assertEquals(false, results[0].recorded)
+        Mockito.verify(receiveService).markSeen(owner, 71L)
+        Mockito.verifyNoInteractions(
+            inboundMailProcessingRepository,
+            mailRecordRepository,
+            inboundIntentRepository,
+            inboundMailTagService,
+            mailAttachmentService,
+            contactRepository,
+            deliveryService
+        )
+    }
+
+    @Test
+    fun `self-check probe is not acknowledged when the caller skips the imap ack`() {
+        val (owner, alias) = sharedGroup()
+        val probe = reply(
+            from = alias.senderEmail,
+            subject = "[self-check] alias 1788498000276",
+            body = "self-check probe",
+            to = listOf(alias.senderEmail),
+            imapUid = 72L
+        )
+
+        val result = service.processSingle(owner, probe, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.SELF_CHECK_IGNORED, result.outcome)
+        assertEquals(false, result.recorded)
+        Mockito.verify(receiveService, Mockito.never()).markSeen(owner, 72L)
+    }
+
+    @Test
+    fun `self-check probe without a positive uid validity is neither recorded nor acknowledged`() {
+        val (owner, alias) = sharedGroup()
+        val probe = reply(
+            from = alias.senderEmail,
+            subject = "[self-check] alias 1788498000276",
+            body = "self-check probe",
+            to = listOf(alias.senderEmail),
+            imapUid = 73L,
+            uidValidity = 0L
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.processSingle(owner, probe, skipImapAck = false)
+        }
+
+        Mockito.verify(receiveService, Mockito.never()).markSeen(owner, 73L)
+        Mockito.verifyNoInteractions(inboundMailProcessingRepository)
+    }
+
+    @Test
+    fun `external mail with a self-check subject still takes the business path`() {
+        val (owner, _) = sharedGroup()
+        val external = reply(
+            from = "expert@example.com",
+            subject = "[self-check] owner 1788498000276",
+            body = "Could you share the program details?",
+            to = listOf(owner.senderEmail),
+            imapUid = 303L
+        )
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(external)))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
+
+        val result = service.receiveAndAutoReply("owner", 5)
+
+        assertEquals(1, result.manualReview)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("MANUAL_REVIEW", captor.value.processStatus)
+        assertEquals("CONTACT_NOT_FOUND", captor.value.processReason)
+        Mockito.verify(receiveService).markSeen(owner, 303L)
+    }
+
+    @Test
+    fun `shared mailbox check runs the hard bounce monitor for every logical group member once`() {
+        val (owner, _) = sharedGroup()
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(emptyList()))
+
+        service.receiveAndAutoReply("owner", 5)
+
+        Mockito.verify(bounceRateMonitorService, Mockito.times(1)).checkAndWarn("owner")
+        Mockito.verify(bounceRateMonitorService, Mockito.times(1)).checkAndWarn("alias")
+    }
+
     private fun stubExpertProfile(
         orcidId: String,
         familyNames: String? = "Lovelace",
@@ -2280,7 +2874,9 @@ class AutoMailReplyServiceTest {
         imapUid: Long = 101,
         uidValidity: Long = 1L,
         messageId: String = "reply-1",
-        bodyTruncated: Boolean = false
+        bodyTruncated: Boolean = false,
+        to: List<String> = emptyList(),
+        inReplyTo: String = "intro-1"
     ): ReceivedMail =
         ReceivedMail(
             imapUid = imapUid,
@@ -2288,7 +2884,8 @@ class AutoMailReplyServiceTest {
             subject = subject,
             body = body,
             messageId = messageId,
-            inReplyTo = "intro-1",
+            inReplyTo = inReplyTo,
+            recipientAddresses = to,
             receivedAt = LocalDateTime.of(2026, 5, 22, 10, 0),
             attachments = attachments,
             uidValidity = uidValidity,

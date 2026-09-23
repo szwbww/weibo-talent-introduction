@@ -439,15 +439,17 @@ class FlywayMigrationIntegrationTest {
         }
         val historyBefore = connection().use { it.queryLong("SELECT COUNT(*) FROM flyway_schema_history") }
 
+        // V130 → V131 only adds one migration record; later migrations must not affect this assertion.
+        assertEquals("131", flyway(MigrationVersion.fromVersion("131")).migrate().targetSchemaVersion)
+        connection().use { connection ->
+            assertEquals(historyBefore + 1, connection.queryLong("SELECT COUNT(*) FROM flyway_schema_history"))
+        }
+
         assertEquals("135", flyway().migrate().targetSchemaVersion)
 
         connection().use { connection ->
             assertTrue(connection.tableExists("expert_academic_enrichment_job"))
             assertEquals(contactsBefore, connection.queryLong("SELECT COUNT(*) FROM expert_contact"))
-            assertEquals(
-                historyBefore + 1,
-                connection.queryLong("SELECT COUNT(*) FROM flyway_schema_history")
-            )
 
             // 列契约（I-1/I-2/I-3）：字段名就是持久化契约，08 消费同一组名字。
             listOf(
@@ -642,9 +644,9 @@ class FlywayMigrationIntegrationTest {
 
     @Test
     fun `V124 allows material attached promotion audit trigger`() {
-        val flyway = flyway()
-        flyway.clean()
-        assertEquals("135", flyway.migrate().targetSchemaVersion)
+        // The FK needs a seeded expert_contact before inserting the audit row.
+        migrateToV23AndSeedBase()
+        assertEquals("135", flyway().migrate().targetSchemaVersion)
         connection().use { connection ->
             assertEquals("32", connection.queryString(
                 "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.columns " +

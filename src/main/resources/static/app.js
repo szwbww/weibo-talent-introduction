@@ -3210,6 +3210,43 @@ function updateWarmupStatusBadge(account) {
     badge.hidden = false;
 }
 
+/**
+ * S-1：共享收件箱主账号下拉。候选只来自 state.accounts 中自身为独立收件箱的账号，
+ * 排除当前账号与模拟器（已有关联的子账号因 inboundMailboxCode 非空被排除）。
+ * 选项一律用 DOM option/textContent 构造，不用 innerHTML 拼账号代码。
+ */
+function fillInboundMailboxOptions(select, account) {
+    if (!select) {
+        return;
+    }
+    const currentCode = account?.accountCode || null;
+    const currentOwner = account?.inboundMailboxCode || null;
+    while (select.firstChild) {
+        select.removeChild(select.firstChild);
+    }
+    const independent = document.createElement("option");
+    independent.value = "";
+    independent.textContent = "独立收件箱（本账号）";
+    select.appendChild(independent);
+    (state.accounts || [])
+        .filter((candidate) => candidate.accountCode !== "SIMULATOR_NOOP")
+        .filter((candidate) => candidate.accountCode !== currentCode)
+        .filter((candidate) => !candidate.inboundMailboxCode)
+        .forEach((candidate) => {
+            const option = document.createElement("option");
+            option.value = candidate.accountCode;
+            option.textContent = `${candidate.accountCode}（${candidate.senderEmail}）`;
+            select.appendChild(option);
+        });
+    if (currentOwner && !Array.from(select.options).some((option) => option.value === currentOwner)) {
+        // 当前归属主账号不在候选集（账号被删除或已变成子账号）：只回显，不伪造可选项。
+        const stale = document.createElement("option");
+        stale.value = currentOwner;
+        stale.textContent = currentOwner;
+        select.appendChild(stale);
+    }
+}
+
 function fillAccountForm(account, mode = account ? "edit" : "new") {
     const form = $("#accountForm");
     showAccountEditor();
@@ -3237,11 +3274,12 @@ function fillAccountForm(account, mode = account ? "edit" : "new") {
         element.disabled = mode === "view";
     });
     form.accountCode.disabled = Boolean(account) || mode === "view";
+    fillInboundMailboxOptions(form.inboundMailboxCode, account);
     $("#saveAccountBtn").hidden = mode === "view";
     $("#clearAccountFormBtn").disabled = false;
     [
         "accountCode", "senderEmail", "senderName", "senderTitle", "senderDisplayName", "teamName",
-        "countryName", "smtpHost", "smtpPort", "smtpUsername", "imapHost", "imapPort",
+        "countryName", "inboundMailboxCode", "smtpHost", "smtpPort", "smtpUsername", "imapHost", "imapPort",
         "imapUsername", "strategyWeight", "dailySendLimit", "todaySentCount"
     ].forEach((name) => {
         form[name].value = account?.[name] ?? newAccountDefaults[name] ?? "";
@@ -3284,6 +3322,7 @@ async function saveAccount(event) {
         senderDisplayName: values.senderDisplayName || null,
         teamName: values.teamName || null,
         countryName: values.countryName || null,
+        inboundMailboxCode: values.inboundMailboxCode?.trim() || null,
         smtpHost: values.smtpHost,
         smtpPort: numberValue(values.smtpPort, 465),
         smtpUsername: values.smtpUsername,

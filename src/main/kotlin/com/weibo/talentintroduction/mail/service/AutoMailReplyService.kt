@@ -26,6 +26,7 @@ import com.weibo.talentintroduction.campaign.service.MeetingScheduleService
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.template.service.MailComposeTemplateService
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.support.TransactionTemplate
 import java.time.LocalDateTime
@@ -75,11 +76,18 @@ class AutoMailReplyService(
     private val duplicateInboundWindowMinutes = 30L
 
     /**
-     * 单信处理入口（I-2）：整个实际执行主体在显式事务内完成（同类
-     * receiveAndAutoReply/processByUids 与外部调用一律生效）；事务成功提交后才在
-     * 单一确认点 markSeen/纳入游标成功集（skipImapAck 仍生效）。事务失败/异常时
-     * 邮件保持未读、不推进游标，重试收敛；已确认 UID 重复到达走 DUPLICATE_IMAP_UID，
-     * 绝不重跑自动回复。
+     * 单信处理入口（I-2）：**所有**非退信/非 DMARC 来信（含收件人无法唯一判定者）都必须
+     * 经此进入业务写链，人工兜底行也只能在这里创建。
+     *
+     * 物理与业务分离（I-1）：入参 `account` 可以是物理 owner（批量/定时轮询）或 alias
+     * 逻辑账号（单账号控制器/队列/UID 回填）；IMAP、`markSeen`、物理判重一律使用解析后的
+     * owner，业务归属（`sender_account_code`）由 I-2 收件人路由唯一决定。
+     *
+     * 事务与确认（I-3/I-4）：物理键判重在业务事务之前，事务内只做实际执行主体（同类
+     * receiveAndAutoReply/processByUids 与外部调用一律生效）；事务成功提交后才在单一
+     * 确认点 markSeen/纳入游标成功集（skipImapAck 仍生效）。事务失败/异常时邮件保持未读、
+     * 不推进游标，重试收敛；已确认物理 UID 重复到达走 DUPLICATE_IMAP_UID，绝不重跑自动
+     * 回复。
      *
      * 已知历史边界（仅记录，不由本计划消除）：SMTP 发送是事务内副作用——网络发送
      * 成功但后续 DB 失败回滚时存在已发未记风险，沿用人工核对流程。
@@ -89,6 +97,7 @@ class AutoMailReplyService(
         received: ReceivedMail,
         skipImapAck: Boolean = false
     ): SinglePipelineResult {
+        val owner = mailSenderAccountService.resolveInboundOwner(account)
         // I-3/I-4：外链材料只在这里并入业务资料写链（MIME 之后，保持稳定顺序），
         // self-check/bounce/DMARC 位于调用前，仍只读真实 MIME attachments。
         val businessMail = if (received.linkedMaterials.isEmpty()) {
@@ -99,46 +108,100 @@ class AutoMailReplyService(
                 linkedMaterials = emptyList()
             )
         }
-        val result = transactionTemplate.execute {
-            processSingleCore(account, businessMail)
+        // I-1：新接收必须携带真实 UIDVALIDITY（0 仅历史未知）。未知远端 source
+        // fail-closed——不落 processing、不 markSeen，绝不反写 0/猜测代际。
+        require(businessMail.uidValidity > 0) {
+            "Inbound receipt for account=${owner.accountCode} uid=${businessMail.imapUid} carries no positive UIDVALIDITY; refusing to record an unknown remote source"
+        }
+        // I-2：物理组成员（owner + 直接别名账号）是收件人路由、历史指纹核验与同组探针识别的
+        // 共同口径，此处只查一次后传入核心写链。
+        val groupMembers = groupMembersOf(owner)
+        // I-3/I-4（03）：同物理组自检探针在业务事务与任何业务写入之前统一拦截——不落
+        // `inbound_mail_processing`/`mail_record`/意图/标签/附件/专家状态，只在允许确认时
+        // `markSeen(owner, uid)`；批量入口据返回结果把该 UID 纳入成功集以推进 owner 游标，
+        // 失败或无正数 UIDVALIDITY 时绝不确认、绝不推进游标。
+        if (selfCheckProbeDetector.isSelfCheckProbe(businessMail.from, businessMail.subject, groupMembers)) {
+            if (!skipImapAck) mailReceiveService.markSeen(owner, businessMail.imapUid)
+            log.debug(
+                "Ignored self-check probe: owner={} uid={}",
+                owner.accountCode,
+                businessMail.imapUid
+            )
+            return SinglePipelineResult(
+                outcome = SinglePipelineOutcome.SELF_CHECK_IGNORED,
+                recorded = false,
+                reason = "SELF_CHECK_IGNORED"
+            )
+        }
+        // I-3：入业务事务前先查物理键（V134 唯一键是并发兜底）；已确认物理 UID 重复到达
+        // 只 markSeen，绝不重跑自动回复。
+        if (physicalInboundRowExists(owner, businessMail)) {
+            if (!skipImapAck) mailReceiveService.markSeen(owner, businessMail.imapUid)
+            return SinglePipelineResult.duplicate(businessMail.imapUid)
+        }
+        val result = try {
+            transactionTemplate.execute {
+                processSingleCore(owner, businessMail, groupMembers)
+            }
+        } catch (e: DataIntegrityViolationException) {
+            // I-3：唯一键异常只在确实存在同一物理键时视为并发重复，其余异常向外抛。
+            if (physicalInboundRowExists(owner, businessMail)) {
+                if (!skipImapAck) mailReceiveService.markSeen(owner, businessMail.imapUid)
+                return SinglePipelineResult.duplicate(businessMail.imapUid)
+            }
+            throw e
         } ?: error(
-            "processSingle transaction produced no result: account=${account.accountCode} uid=${received.imapUid}"
+            "processSingle transaction produced no result: account=${owner.accountCode} uid=${businessMail.imapUid}"
         )
-        if (!skipImapAck) mailReceiveService.markSeen(account, received.imapUid)
+        if (!skipImapAck) mailReceiveService.markSeen(owner, businessMail.imapUid)
         return result
     }
 
+    /** I-3：物理键存在性（事务外判重与并发唯一冲突复核共用同一判据）。 */
+    private fun physicalInboundRowExists(owner: MailSenderAccount, received: ReceivedMail): Boolean =
+        inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(
+            owner.accountCode,
+            received.uidValidity,
+            received.imapUid
+        ) != null
+
+    /** I-2：物理组成员（owner + 直接别名账号）——收件人路由、历史指纹核验与同组探针识别的共同口径。 */
+    private fun groupMembersOf(owner: MailSenderAccount): List<MailSenderAccount> =
+        mailSenderAccountService.listAccounts()
+            .filter { (it.inboundMailboxCode ?: it.accountCode) == owner.accountCode }
+            .ifEmpty { listOf(owner) }
+
     private fun processSingleCore(
-        account: MailSenderAccount,
-        received: ReceivedMail
+        owner: MailSenderAccount,
+        received: ReceivedMail,
+        groupMembers: List<MailSenderAccount>
     ): SinglePipelineResult {
-        val accountCode = account.accountCode
-        // I-1：新接收必须携带真实 UIDVALIDITY（0 仅历史未知）。未知远端 source
-        // fail-closed——不落 processing、不 markSeen，绝不反写 0/猜测代际。
-        require(received.uidValidity > 0) {
-            "Inbound receipt for account=$accountCode uid=${received.imapUid} carries no positive UIDVALIDITY; refusing to record an unknown remote source"
-        }
-        // 真实远端身份判重（V120 唯一键 account/uid_validity/uid）：已确认 UID 重复
-        // 到达只 markSeen，绝不重跑自动回复。
-        if (inboundMailProcessingRepository.findBySenderAccountCodeAndUidValidityAndImapUid(
-                accountCode,
-                received.uidValidity,
-                received.imapUid
-            ) != null
-        ) {
-            return SinglePipelineResult.duplicate(received.imapUid)
-        }
-        // 历史 0 代际行（V120 之前，uid_validity=0 只表示代际未知）：仅当同 account/uid
-        // 且非空 Message-ID、from、秒级 receivedAt 全部吻合才认领同一代际（视为已处理）。
+        // 历史 0 代际行（V134 之前，组内任意逻辑账号且 mailbox_owner_code IS NULL）：仅当
+        // 同 UID 且非空 Message-ID、from、秒级 receivedAt 全部吻合才认领同一代际（视为已
+        // 处理）；否则转人工 LEGACY_UID_UNVERIFIABLE，绝不回填当前代际。
         var legacyUidUnverifiable = false
-        val legacySameUid = inboundMailProcessingRepository
-            .findBySenderAccountCodeAndImapUid(accountCode, received.imapUid)
-        if (legacySameUid != null && legacySameUid.uidValidity == 0L) {
-            if (sameMessageGeneration(legacySameUid, received)) {
+        val legacySameUid = inboundMailProcessingRepository.findLegacyOwnerlessByGroupAndImapUid(
+            groupMembers.map { it.accountCode },
+            received.imapUid
+        )
+        for (legacy in legacySameUid) {
+            if (legacy.uidValidity != 0L) {
+                continue
+            }
+            if (sameMessageGeneration(legacy, received)) {
                 return SinglePipelineResult.duplicate(received.imapUid)
             }
             legacyUidUnverifiable = true
         }
+
+        // I-2：先唯一判定逻辑收件账号；不能唯一判定时只入人工待核（RECIPIENT_UNRESOLVED），
+        // 绝不自动发信、改专家状态或冒充其它账号。
+        val routing = resolveRecipientRouting(owner, received, groupMembers)
+        if (routing is RecipientRouting.Unresolved) {
+            return unresolvedRecipientReview(owner, received)
+        }
+        val account = (routing as RecipientRouting.Resolved).account
+        val accountCode = account.accountCode
 
         val contact = expertEmailAliasService.findContactByEmailOrAlias(received.from)
         // I-4：正文被有界截断（03 元数据模式）→ 一律人工 BODY_TRUNCATED，禁自动回复。
@@ -763,6 +826,9 @@ class AutoMailReplyService(
      * 安全边界（每封邮件处理前）停止后续邮件，绝不中断已开始的业务/SMTP 事务
      * （不把邮件发送回滚当作可用取消方案）。接收窗口预算由 [ImapMailReceiveService]
      * 按账号执行，本方法不把 120s 称为含 LLM/SMTP 的整任务 SLA。
+     *
+     * I-1：入参可以是 alias 逻辑账号；IMAP 抓取、`markSeen`、`mail_inbox_cursor`
+     * 一律使用解析后的物理 owner，逻辑账号只由 I-2 收件人路由决定（业务归属）。
      */
     fun receiveAndAutoReply(
         accountCode: String,
@@ -771,7 +837,7 @@ class AutoMailReplyService(
         isCancelled: (() -> Boolean)? = null
     ): AutoMailReplyBatchResult {
         val account = mailSenderAccountService.getAutoReceiveAccount(accountCode)
-        val stored = mailInboxCursorService.get(accountCode)
+        val stored = mailInboxCursorService.get(account.accountCode)
         onPhase?.invoke(AccountAutoMailReplyPhases.READING_METADATA)
         var fetch = mailReceiveService.fetchInboundSince(account, stored.lastUid, maxMessages)
         var start = mailInboxCursorService.resolveStart(stored, fetch.uidValidity)
@@ -792,16 +858,10 @@ class AutoMailReplyService(
         for (mail in fetch.mails) {
             // I-2：取消只在安全边界（本封邮件尚未开始处理）停止后续邮件；不中断进行中的事务。
             if (isCancelled?.invoke() == true) {
-                log.info("Auto reply cancelled at a safe boundary for account {}", accountCode)
+                log.info("Auto reply cancelled at a safe boundary for account {}", account.accountCode)
                 break
             }
             try {
-                if (selfCheckProbeDetector.isSelfCheckProbe(mail.from, mail.subject, account.senderEmail)) {
-                    mailReceiveService.markSeen(account, mail.imapUid)
-                    log.debug("Discarded self-check probe: uid={}", mail.imapUid)
-                    handledUids.add(mail.imapUid)
-                    continue
-                }
                 val bounceSignal = bounceDetector.detect(mail.from, mail.subject, mail.body)
                 if (bounceSignal != null) {
                     bounceCollectionService.ingest(
@@ -859,14 +919,14 @@ class AutoMailReplyService(
                 log.error(
                     "Failed to process inbound mail uid={} account={}",
                     mail.imapUid,
-                    accountCode,
+                    account.accountCode,
                     e
                 )
             }
         }
 
         mailInboxCursorService.advance(
-            accountCode = accountCode,
+            accountCode = account.accountCode,
             currentUidValidity = fetch.uidValidity,
             fetchedUids = fetchedUids,
             handledUids = handledUids,
@@ -878,10 +938,14 @@ class AutoMailReplyService(
             log.info(
                 "Collected {} bounces for account {} after auto-reply",
                 bounceResult.collected,
-                accountCode
+                account.accountCode
             )
         }
-        bounceRateMonitorService.checkAndWarn(accountCode)
+        // I-2（03）：一次物理抓取后对组内每个逻辑账号各做一次硬退信率检查——共享邮箱里
+        // 别名自己发出的信退到 owner 收件箱，别名的高退信率也必须报警，不能只查 owner。
+        groupMembersOf(account).map { it.accountCode }.distinct().forEach { memberCode ->
+            bounceRateMonitorService.checkAndWarn(memberCode)
+        }
 
         return AutoMailReplyBatchResult(
             fetched = fetch.mails.size,
@@ -893,6 +957,10 @@ class AutoMailReplyService(
         )
     }
 
+    /**
+     * UID 回填（I-4）：alias 逻辑账号先解析为物理 owner 再登录 IMAP 取信，绝不使用
+     * alias 自己的旧游标；每封信仍经 [processSingle] 的唯一入口（含收件人路由）。
+     */
     fun processByUids(accountCode: String, uids: List<Long>): List<SinglePipelineResult> {
         val account = mailSenderAccountService.getAutoReceiveAccount(accountCode)
         val mailsByUid = mailReceiveService.fetchByUids(account, uids).associateBy { it.imapUid }
@@ -1231,6 +1299,9 @@ class AutoMailReplyService(
         val saved = inboundMailProcessingRepository.save(
             InboundMailProcessing(
                 senderAccountCode = account.accountCode,
+                // I-3：物理 owner 由逻辑账号唯一决定（单层归属），新行必须带物理键，
+                // 唯一键 (owner, uid_validity, imap_uid) 才能约束并发重复。
+                mailboxOwnerCode = mailSenderAccountService.resolveInboundOwner(account).accountCode,
                 uidValidity = received.uidValidity,
                 imapUid = received.imapUid,
                 messageId = received.messageId,
@@ -1284,6 +1355,8 @@ class AutoMailReplyService(
         val saved = inboundMailProcessingRepository.save(
             InboundMailProcessing(
                 senderAccountCode = account.accountCode,
+                // I-3：同 confirmManualReviewWithBody —— 新行必须带物理 owner 键。
+                mailboxOwnerCode = mailSenderAccountService.resolveInboundOwner(account).accountCode,
                 uidValidity = received.uidValidity,
                 imapUid = received.imapUid,
                 messageId = received.messageId,
@@ -1312,6 +1385,79 @@ class AutoMailReplyService(
     // ------------------------------------------------------------------
     // 04 新增路由辅助
     // ------------------------------------------------------------------
+
+    /** I-2 路由结果：唯一逻辑账号，或不可判定的显式人工兜底。 */
+    private sealed interface RecipientRouting {
+        data class Resolved(val account: MailSenderAccount) : RecipientRouting
+        object Unresolved : RecipientRouting
+    }
+
+    /**
+     * I-2：共享组内按原始顶层 `To`/`Cc` 精确匹配（大小写无关）组成员 `sender_email`，
+     * 恰好命中一个成员即用它；命中 0 个或多个时，仅当 `In-Reply-To` 唯一命中本组一条
+     * `direction='OUTBOUND'` 记录时按其 `sender_account_code` 路由；仍不能唯一判定
+     * （BCC、缺头、错误头、重复地址冲突）即 [RecipientRouting.Unresolved]。
+     * 组内只有 owner 一个成员时直接沿用独立账号旧路由。
+     */
+    private fun resolveRecipientRouting(
+        owner: MailSenderAccount,
+        received: ReceivedMail,
+        groupMembers: List<MailSenderAccount>
+    ): RecipientRouting {
+        if (groupMembers.size <= 1) {
+            return RecipientRouting.Resolved(owner)
+        }
+        val matched = groupMembers.filter { member ->
+            val memberEmail = member.senderEmail.trim()
+            memberEmail.isNotEmpty() &&
+                received.recipientAddresses.any { it.equals(memberEmail, ignoreCase = true) }
+        }
+        if (matched.size == 1) {
+            return RecipientRouting.Resolved(matched.single())
+        }
+        val inReplyTo = received.inReplyTo?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return RecipientRouting.Unresolved
+        val memberCodes = groupMembers.map { it.accountCode }.toSet()
+        // 只读候选：OUTBOUND-only、返回列表；0 条或多条都不能唯一归属（绝不取第一条）。
+        val candidates = MessageIdNormalizer.candidatesFor(inReplyTo)
+            .flatMap { mailRecordRepository.findOutboundCandidatesByMessageId(it) }
+            .distinctBy { it.id }
+            .filter { record -> record.senderAccountCode?.let { it in memberCodes } == true }
+        if (candidates.size != 1) {
+            return RecipientRouting.Unresolved
+        }
+        val logicalCode = candidates.single().senderAccountCode
+        val logical = groupMembers.firstOrNull { it.accountCode == logicalCode }
+            ?: return RecipientRouting.Unresolved
+        return RecipientRouting.Resolved(logical)
+    }
+
+    /**
+     * I-2：收件人无法唯一判定 —— 以 owner 归属只建一条 `MANUAL_REVIEW/RECIPIENT_UNRESOLVED`
+     * （含 processing-owner 附件登记），零 SMTP、零专家状态迁移、不挂任何专家。
+     */
+    private fun unresolvedRecipientReview(
+        owner: MailSenderAccount,
+        received: ReceivedMail
+    ): SinglePipelineResult {
+        val cleanedBody = mailBodyCleaner.clean(received.body)
+        val processing = confirmManualReviewWithBody(
+            account = owner,
+            received = received,
+            expertContactId = null,
+            reason = RECIPIENT_UNRESOLVED_REASON,
+            reasonType = RECIPIENT_UNRESOLVED_REASON,
+            cleanedBody = cleanedBody,
+            bridgeMetadata = false
+        )
+        val processingId = processing.id ?: error("Inbound mail processing id is required")
+        registerProcessingOwnerMaterials(processingId, received, expertContactId = null)
+        return SinglePipelineResult(
+            outcome = SinglePipelineOutcome.RECIPIENT_UNRESOLVED,
+            recorded = true,
+            reason = RECIPIENT_UNRESOLVED_REASON
+        )
+    }
 
     /** 人工专属路由（正文截断/历史 0 代际无法核验）：建 processing 后以 processing
      *  owner 登记附件（已知专家同时建 ExpertDocument）；不触发自动回复/状态迁移。 */
@@ -1375,6 +1521,9 @@ class AutoMailReplyService(
     }
 }
 
+/** I-2：收件人无法唯一判定时的人工兜底原因（process_reason / reason_type 同值）。 */
+private const val RECIPIENT_UNRESOLVED_REASON = "RECIPIENT_UNRESOLVED"
+
 enum class SinglePipelineOutcome {
     DUPLICATE_IMAP_UID,
     DUPLICATE_INBOUND_MESSAGE,
@@ -1392,7 +1541,11 @@ enum class SinglePipelineOutcome {
     /** 历史 0 代际行且同 UID 无法核验 → MANUAL_REVIEW/LEGACY_UID_UNVERIFIABLE。 */
     LEGACY_UID_UNVERIFIABLE,
     /** 正文被有界截断（03）→ MANUAL_REVIEW/BODY_TRUNCATED，禁自动回复。 */
-    BODY_TRUNCATED
+    BODY_TRUNCATED,
+    /** I-2：收件人无法唯一判定 → 仅一条 MANUAL_REVIEW/RECIPIENT_UNRESOLVED（owner 归属）。 */
+    RECIPIENT_UNRESOLVED,
+    /** I-3/I-4（03）：同物理组自检探针在业务事务前被忽略，不落任何业务表。 */
+    SELF_CHECK_IGNORED
 }
 
 data class SinglePipelineResult(
@@ -1434,7 +1587,8 @@ val MANUAL_REVIEW_OUTCOMES = setOf(
     SinglePipelineOutcome.CLOSED_BY_INTENT,
     SinglePipelineOutcome.MEETING_ALREADY_SENT,
     SinglePipelineOutcome.LEGACY_UID_UNVERIFIABLE,
-    SinglePipelineOutcome.BODY_TRUNCATED
+    SinglePipelineOutcome.BODY_TRUNCATED,
+    SinglePipelineOutcome.RECIPIENT_UNRESOLVED
 )
 
 data class RepliedExpertInfo(

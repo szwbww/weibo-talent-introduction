@@ -145,6 +145,22 @@ interface MailRecordRepository : CrudRepository<MailRecord, Long> {
 
     fun findFirstByMessageIdOrderByCreatedAtDesc(messageId: String): MailRecord?
 
+    /**
+     * I-2/03：入站回信头（`In-Reply-To`）/退信原始 Message-ID 的只读归属候选 —— 仅
+     * `direction='OUTBOUND'` 的精确命中，**返回列表**：空列表与多条都表示不能唯一归属，
+     * 调用方必须拒绝歧义，不得取第一条。调用方用 [MessageIdNormalizer] 产出候选并逐条
+     * 查询后按 id 去重。只读：不参与任何写入或状态迁移。
+     */
+    @Query(
+        """
+        SELECT * FROM mail_record
+        WHERE direction = 'OUTBOUND'
+          AND message_id = :messageId
+        ORDER BY id ASC
+        """
+    )
+    fun findOutboundCandidatesByMessageId(messageId: String): List<MailRecord>
+
     @Query(
         """
         SELECT * FROM mail_record

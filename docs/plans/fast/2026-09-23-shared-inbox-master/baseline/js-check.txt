@@ -1,0 +1,2 @@
+### node --check src/main/resources/static/app.js
+exit=0

@@ -88,10 +88,13 @@ class OperatorStatusWriteSeamGuardTest {
         // SELECT 列投影：读取列值供响应 DTO 使用
         // （2026-09-02 provider-undelivered 计划：MailRecordRepository 新增 DomainUndeliveredCount 投影
         //   与 aggregateUndeliveredByDomain 查询，:583 偏移至 :612，本计划授权行号修正）
-        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 612, "ec.operator_status AS operator_status"),
+        // （2026-09-23 共享收件箱计划 02：MailRecordRepository 在 :148 新增
+        //   findOutboundCandidatesByMessageId 只读候选查询（+16 行），:612 平移至 :628，path/context 不变）
+        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 628, "ec.operator_status AS operator_status"),
         // SELECT GROUP BY 列引用：只读聚合
         // （同上计划：:640 偏移至 :669，本计划授权行号修正）
-        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 669, "ec.operator_status, ec.current_index_level")
+        // （2026-09-23 共享收件箱计划 02：同一处 +16 行平移，:669 平移至 :685，path/context 不变）
+        NoiseSite("com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt", 685, "ec.operator_status, ec.current_index_level")
     )
 
     /**

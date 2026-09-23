@@ -24,6 +24,12 @@ data class ReceivedMail(
     val body: String,
     val messageId: String?,
     val inReplyTo: String?,
+    /**
+     * 原始顶层 `To`/`Cc` 的邮箱地址（I-2 逻辑账号路由的唯一依据）：只读顶层头字段，
+     * To 在前、Cc 在后、保持出现顺序、不去重；缺头或无法解析时为空列表
+     * （默认值保证旧构造/旧测试兼容）。
+     */
+    val recipientAddresses: List<String> = emptyList(),
     val receivedAt: LocalDateTime,
     val attachments: List<ReceivedMailAttachment> = emptyList(),
     /** 实际 IMAP UIDVALIDITY（04 持久化契约：新收信必须为正值，不能补猜）。 */

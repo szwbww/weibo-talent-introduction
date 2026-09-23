@@ -29,7 +29,7 @@ class BounceBackfillService(
                 scanned++
                 val signal = bounceDetector.detect(row.fromEmail, row.subject, row.body) ?: continue
                 when (
-                    bounceCollectionService.ingest(
+                    bounceCollectionService.ingestKnownLogicalAccount(
                         signal = signal,
                         senderAccountCode = row.senderAccountCode,
                         bounceMessageId = row.messageId,

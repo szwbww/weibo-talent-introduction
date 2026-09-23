@@ -561,6 +561,106 @@ class ImapMailReceiveServiceTest {
         )
     }
 
+    // ------------------------------------------------------------------
+    // I-2 原始顶层收件人解析（逻辑账号路由的唯一依据）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `missing to and cc headers yield no recipient addresses`() {
+        val message = roundTrip(multipartMessage(parts = listOf(MimeBodyPart().apply { setText("Hello body") })))
+
+        val received = convert(message, metadataOnly = true)
+
+        assertTrue(received.recipientAddresses.isEmpty(), "缺头必须为空列表，绝不猜测收件人")
+        assertEquals("Hello body", received.body)
+        assertEquals(7L, received.imapUid)
+    }
+
+    @Test
+    fun `top level to and cc addresses keep order and strip display names`() {
+        val message = roundTrip(
+            multipartMessage(
+                parts = listOf(MimeBodyPart().apply { setText("Hello body") }),
+                to = "\"LuKai Team\" <updates@qftechtalent.com>, QF <qf@qftechtalent.com>",
+                cc = "third@qftechtalent.com, \"Fourth\" <fourth@qftechtalent.com>"
+            )
+        )
+
+        val received = convert(message, metadataOnly = true)
+
+        assertEquals(
+            listOf(
+                "updates@qftechtalent.com",
+                "qf@qftechtalent.com",
+                "third@qftechtalent.com",
+                "fourth@qftechtalent.com"
+            ),
+            received.recipientAddresses,
+            "To 在前、Cc 在后，保持头内顺序并只保留邮箱地址"
+        )
+    }
+
+    @Test
+    fun `recipient address case is preserved for case-insensitive routing`() {
+        val message = roundTrip(
+            multipartMessage(
+                parts = listOf(MimeBodyPart().apply { setText("Hello body") }),
+                to = "Owner@Example.COM"
+            )
+        )
+
+        val received = convert(message, metadataOnly = true)
+
+        assertEquals(listOf("Owner@Example.COM"), received.recipientAddresses)
+    }
+
+    @Test
+    fun `nested rfc822 to header never becomes a routing recipient`() {
+        val session = Session.getDefaultInstance(Properties())
+        val nested = MimeMessage(session).apply {
+            setFrom(InternetAddress("inner@example.com"))
+            subject = "nested subject"
+            setHeader("To", "nested-recipient@qftechtalent.com")
+            setHeader("Message-ID", "<inner-nested@example.com>")
+            setText("Inner secret body")
+        }
+        val message = roundTrip(
+            multipartMessage(
+                parts = listOf(
+                    MimeBodyPart().apply { setText("Outer body") },
+                    MimeBodyPart().apply {
+                        setContent(nested, "message/rfc822")
+                        setFileName("original.eml")
+                    }
+                ),
+                to = "outer-recipient@qftechtalent.com"
+            )
+        )
+
+        val received = convert(message, metadataOnly = true)
+
+        assertEquals(
+            listOf("outer-recipient@qftechtalent.com"),
+            received.recipientAddresses,
+            "只读顶层头：嵌套 message/rfc822 的 To 绝不参与路由"
+        )
+    }
+
+    @Test
+    fun `malformed recipient header never blocks receiving`() {
+        val message = roundTrip(
+            multipartMessage(
+                parts = listOf(MimeBodyPart().apply { setText("Hello body") }),
+                to = "not-an-address"
+            )
+        )
+
+        val received = convert(message, metadataOnly = true)
+
+        assertEquals("Hello body", received.body)
+        assertEquals(42L, received.uidValidity)
+    }
+
     private fun subjectMessage(subject: String): MimeMessage {
         val session = Session.getDefaultInstance(Properties())
         val message = MimeMessage(session)
@@ -583,12 +683,18 @@ class ImapMailReceiveServiceTest {
         )
     }
 
-    private fun multipartMessage(parts: List<MimeBodyPart>): MimeMessage {
+    private fun multipartMessage(
+        parts: List<MimeBodyPart>,
+        to: String? = null,
+        cc: String? = null
+    ): MimeMessage {
         val session = Session.getDefaultInstance(Properties())
         val message = MimeMessage(session)
         message.setFrom(InternetAddress("expert@university.edu"))
         message.subject = "Re: Introduction"
         message.setHeader("Message-ID", "<unit-test@example.com>")
+        to?.let { message.setHeader("To", it) }
+        cc?.let { message.setHeader("Cc", it) }
         val multipart = MimeMultipart("mixed")
         parts.forEach { multipart.addBodyPart(it) }
         message.setContent(multipart)
