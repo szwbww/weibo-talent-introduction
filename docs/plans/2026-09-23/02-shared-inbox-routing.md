@@ -1,6 +1,8 @@
 # 共享收件箱单次抓取与逻辑账号路由开发计划（2/4）
 
-> 上位约束：[MAIN 总计划](00-shared-inbox-main.md)。依赖 01；本阶段可以部署但所有新归属配置保持 `NULL`，直到 03 完成。先补失败测试，再修改生产代码。
+> 上位约束：[MAIN 总计划](00-shared-inbox-main.md)。依赖 01；本阶段可以部署但所有新归属配置保持 NULL，直到 03 完成。先补失败测试，再修改生产代码。
+>
+> 修订（A1，2026-09-23，人工批准）：本阶段把 `listAutoReceiveAccounts()` 收紧为 owner-only 后，计划 01 在 `MailSenderAccountServiceTest.kt` 写的「除模拟器外全部参与收信」断言必然失效（该断言原文只承诺「不因阶段 01 改变」）。依据 M-5「每阶段最多改自己清单文件，超出先修计划」，本计划变更文件清单新增第 11 个文件 `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountServiceTest.kt`，仅用于退役该条被取代的断言。
 
 **目标**：共享同一物理 INBOX 的多个发件账号只抓取一次，按原始收件人路由到各自逻辑账号；旧独立账号、附件源、已处理去重、游标语义不变。当前两个账号的配置与历史修复由 04 执行。
 
@@ -65,6 +67,7 @@
 ### 阶段 1：头解析与组成员测试（I-1、I-2）
 - 文件：`MailReceiveService.kt`、`ImapMailReceiveService.kt`、`ImapMailReceiveServiceTest.kt`（完整路径见清单）。先写 To/Cc 缺失、单个、多个、大小写、带显示名测试。`ReceivedMail` 增加只读解析结果，默认空列表保证旧测试调用兼容；只拉顶层头字段，不拉完整 MIME。
 - 文件：`MailSenderAccountService.kt`。`listAutoReceiveAccounts()` 仅返回 owner，`getAutoReceiveAccount(accountCode)` 把 alias 解析为 owner，`getReceiveAccount` 仍保留原始逻辑账号读取；`getAutoReceiveAccountOrNull` 跟随 owner 解析。不得改发信账号的 `enabled` 读取。
+- 文件：`MailSenderAccountServiceTest.kt`（A1 授权）。删除计划 01 写的断言 `listAutoReceiveAccounts still returns disabled and shared inbox accounts`：它把「除模拟器外全部参与收信」的历史语义连同 `findAllByAccountCodeNot("SIMULATOR_NOOP")` 调用一起钉死，与本阶段 owner-only 收信列表直接冲突；只退役该条，同文件其余断言（含 I-1/I-3 相关用例）保留。
 
 ### 阶段 2：路由、去重、单次抓取（I-1～I-4）
 - 文件：`AutoMailReplyService.kt`、`BatchAutoMailReplyService.kt`、`InboundMailProcessingRepository.kt`、`MailRecordRepository.kt`、`AutoMailReplyServiceTest.kt`、`OperatorStatusWriteSeamGuardTest.kt`。
@@ -88,6 +91,7 @@
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveServiceTest.kt` | 头解析测试 |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt` | 路由/判重/游标/附件源测试 |
 | 10 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 仓库查询插入后精确行号排除位修正 |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountServiceTest.kt` | A1 授权：仅退役被阶段 2 owner-only 收信列表取代的计划 01 断言 |
 
 ## 验收标准
 
