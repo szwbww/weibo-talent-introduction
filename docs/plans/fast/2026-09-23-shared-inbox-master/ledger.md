@@ -51,6 +51,12 @@ Raw transcripts are committed under `docs/plans/fast/2026-09-23-shared-inbox-mas
 | c3 | docs/plans/2026-09-23/03-shared-inbox-bounce.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1,c2 | 1 | PENDING | e28da464bb4bf310698079340796382e32acd2d0 | — | 0 | — | — | — | OUTBOUND-only bounce attribution plus group-wide self-check filter. |
 | c4 | docs/plans/2026-09-23/04-lukai-production-migration.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1,c2,c3 | 1 | PENDING | — | — | 0 | — | — | — | Production migration; master plan M-4/G-4 gates it behind separate deployment authorization. |
 
+## Agent Availability Events
+
+| Child | Role | Attempt | Exact error | Timestamp | Code head | Action |
+|---|---|---:|---|---|---|---|
+| c3 | IMPLEMENTER | 1 | `task` subagent `C3Implementer` ended with `status: failed (exit 1)`; provider stream error `getaddrinfo ENOTFOUND opencode.ai`; transcript shows only "I'll start by reading the execute-p skill and the brief" | 2026-09-23T20:02+08:00 | b2cc257 (unchanged) | RETRY |
+
 ## Amendments
 
 | ID | Plan | Before | After | Master rule | Reason | Approval |

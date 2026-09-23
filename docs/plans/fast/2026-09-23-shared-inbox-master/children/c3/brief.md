@@ -3,7 +3,7 @@
 - Child ID: `c3`
 - Approved plan (complete contract): `docs/plans/2026-09-23/03-shared-inbox-bounce.md` — plan identity `commit:daabfdc900555f3c89a698cd85a0165ada20d1a9`
 - Master plan (upper constraint): `docs/plans/2026-09-23/00-shared-inbox-main.md` (invariants M-1, M-3, M-5, M-6)
-- Base SHA: `<c2 code head — recorded in the ledger at dispatch>` (product base = c2's terminal code head; the c2 evidence commit precedes this implementation in Git ancestry)
+- Base SHA: `e28da464bb4bf310698079340796382e32acd2d0` (product base = c2's terminal code head; c2's evidence commit `77746e27c4de3ec6c8d4a32d579d61d1bd2b774c` precedes this implementation in Git ancestry)
 - Worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-23-shared-inbox-master`
 - Branch: `fast/2026-09-23-shared-inbox-master`
 - Execution report: `docs/plans/fast/2026-09-23-shared-inbox-master/children/c3/execution.md`
@@ -33,6 +33,7 @@ Do not create new files; do not modify `SelfCheckProbeSender`/`SenderAccountSelf
   - `ReceivedMail.recipientAddresses: List<String>` — parsed original top-level `To`/`Cc`.
   - `MailSenderAccountService`: `listAutoReceiveAccounts()` returns owners only; `resolveInboundOwner(account)`; `getAutoReceiveAccount(accountCode)` / `getAutoReceiveAccountOrNull(accountCode)` resolve alias→owner; `getReceiveAccount` still returns the raw logical account. Group members are derived from the account list by `inboundMailboxCode`.
   - `InboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(...)` and `findLegacyOwnerlessByGroupAndImapUid(...)`; both processing-row writers fill `mailboxOwnerCode`; outcome codes in play include `DUPLICATE_IMAP_UID`, `LEGACY_UID_UNVERIFIABLE`, `RECIPIENT_UNRESOLVED`.
+  - Known state your plan must replace: the **batch** path still short-circuits `[self-check]` probes before `processSingle` with its own branch that compares only the polling account's mailbox (`AutoMailReplyService.kt:847-853`, byte-identical to the pre-c2 base, and it writes no business tables). Plan 03 requires one group-wide filter at the single entry point and forbids keeping that separate current-account-only branch, so fold it into the new detection while keeping the batch handled-set/cursor semantics.
 
 ## Invariants (from the approved plan; violations are light-gate failures)
 
