@@ -1,34 +1,46 @@
 # c4 execution.md
 
-## Execution Result: PAUSED_FOR_HUMAN (not started)
+## Execution Result: READY_FOR_VERIFICATION
 
-- Plan: `docs/plans/2026-09-23/04-lukai-production-migration.md` (identity `commit:daabfdc900555f3c89a698cd85a0165ada20d1a9`)
-- Child base (product boundary): `e77cb065ba6261317adc7060b2a7729052086407` (c3's terminal code head)
-- Execution epoch: 1 (never dispatched)
-- Product changes: none. No file was created, modified or deleted for this child; `git log --oneline` shows no commit after c3's evidence commit for c4.
-- Production objects touched: none — no DDL, no DML, no IMAP login, no scheduler stop, no WAR deploy, no restart.
+- Plan: `docs/plans/2026-09-23/04-lukai-production-migration.md`（G-4、I-1…I-5）
+- Child base (product boundary): `e77cb065ba6261317adc7060b2a7729052086407`（c3 终态）
+- Execution epoch: 1（授权后首次执行；此前为 PAUSED_FOR_HUMAN）
+- Authorization: 用户明确「授权」执行 04 的停轮询/停应用、DDL、逐 ID 删除与改归、账号配置 UPDATE、部署重启
+- Window: 2026-09-23 21:12 → 21:52（停写 21:18:39，修复 COMMIT ≈21:33，部署 21:35，旧上下文清理后重启 21:49）
+- Repository artifact: `docs/runbooks/repair-lukai-shared-inbox.md`（c4 唯一授权文件；已写入实际命令、逐 ID 分类、备份位置、前后结果与回滚）
+- Product/test files changed: none（除上述 runbook）
 
-## Why it was not started
+## What was executed
 
-The approved plan is explicitly an execution scheme rather than a deployment authorization ("本文件是执行方案，不是上线授权；当前绝不运行 UPDATE/DELETE/DDL/重启"), and the master plan gives phase 04 the entry gate "独立核验 + 人工黑盒验收；需单独上线授权" with invariant M-4 forbidding any production write-path operation before that authorization. The `$fast-p` invocation authorizes exactly one local worktree, one local branch and local commits.
+| 阶段 | 结果 |
+|---|---|
+| 0 冻结与只读预检 | 确认生产为 main HEAD `9237d6f57333`、无 Flyway、两账号同 UIDVALIDITY `1782107786`；停写前无在途作业 |
+| 1 停写 + 备份 + DDL | Tomcat 21:18:39 停（写冻结 20s 无变化）；全量备份 + 恢复验证（10 表逐表 OK）；手工等价 V134 DDL 应用（0 回填） |
+| 1 分类 | 159 条 QF processing 逐 ID 分为：探针 95（可删）、物理重复 35（可合并）、错归真实来信 27（改归）；47 条 QF INBOUND mail_record 全部改归保留（依赖不可证明无损合并） |
+| 2 事务修复 | 单事务 + 断言（`fail_count=0`，`COMMITTED`）：删 95 探针 + 35 重复、改归 27 processing + 47 mail_record、transfer/附件/标签去重与重指向、保留行标注物理 owner、账号 `LuKai_QF.inbound_mailbox_code='LuKai'` |
+| 3 部署与核对 | 新 WAR（sha256 `cbcca08c…`，含 V134）部署、健康 200；部署后发现**旧备份目录被当作独立上下文以旧代码并行运行**（见下），移出并重启后单实例运行 |
+| 3 收尾 | 旧实例残留的 3 条探针行按严格谓词删除（快照 `_bk_c4_20260923_probe3`） |
 
-c4's only repository artifact is `docs/runbooks/repair-lukai-shared-inbox.md`, defined by the plan as a record of actual on-site evidence — executed commands, desensitised per-ID classification, backup location, before/after SQL results and rollback steps. None of those fields can be produced without the maintenance window, and the plan forbids reusing the 2026-09-23 read-only snapshot counts as execution thresholds ("执行前再重采，不能继承今天的数字"). Writing the runbook from the snapshot would fabricate evidence, so the workflow stopped instead.
+## Verification evidence（现场，只读）
 
-## What a resumed c4 requires
+- 账号：`LuKai_QF.inbound_mailbox_code='LuKai'`、`enabled=0`、SMTP/IMAP/限额与切换前逐列相同（事务内哈希断言 `SAME`）。
+- 本组 processing：`LuKai MANUAL_REVIEW 27 / PROCESSED 109`、`LuKai_QF PROCESSED 2`；本组 `[self-check]` 待处理 = **0**。
+- `id=383` 已不存在；`id=366/369` 仍为 `PROCESSED/MANUAL_RESOLVED`。
+- 材料/意图完整：`expert_document` 126（未变）、`inbound_intent` 233（未变）、被删附件 6 条均为 owner 已有同名文件的重复元数据；`mail_attachment` 141→135、`mail_attachment_transfer` 82→72、`inbound_mail_tag` 428→397。
+- 孤儿检查：9 类 FK/软引用在事务前后相等（6→6），未新增；唯一键冲突 0。
+- 单实例轮询：21:50 周期只有 1 条 `AUTO_REPLY_ALL`（此前每轮 2 条）；`LuKai_QF` 游标冻结在 326；21:49 后新增 processing/mail_record = 0/0。
 
-See `children/c4/brief.md` for the full gate analysis. In short:
+## Deviations / 现场新发现
 
-1. The separate production authorization for a specific maintenance window.
-2. Stop application and schedulers, confirm no active receive/send job and no database writes.
-3. Fresh read-only re-collection: both accounts' UIDVALIDITY, sampled same-UID headers, cursors, QF `inbound_mail_processing` / `mail_record` rows, and every FK / soft reference from live `information_schema`; treat all previously recorded numbers as snapshots only.
-4. A verifiable database backup, then manual equivalent V134 DDL when `SHOW CREATE TABLE` shows it missing (production runs without Flyway).
-5. Three ordered classification passes: internal `[self-check]` probes first (strict 03 detection, raw IMAP header evidence, zero dependencies, `MANUAL_REVIEW` only), then physical duplicates versus logic-account gaps, then INBOUND `mail_record` equivalence including body / cleaned body; `MANUAL_RESOLVED` rows (366/369) stay untouched, unknown classifications stop the run.
-6. In one transaction: dependency re-pointing, the confirmed merges/re-attributions/deletions, and the single-row `LuKai_QF.inbound_mailbox_code='LuKai'` update with SMTP/IMAP/limits/`enabled` proven unchanged and both cursors retained.
-7. Deploy the full 01–03 WAR, verify read-only first, then low-risk test mail per address, then restore scheduling; roll back from the saved snapshots if any assertion fails.
+1. **`webapps/talent.dir.bak-20260922-manual-scope` 被 Tomcat 当作独立上下文部署**，以 2026-09-22 的旧代码并行运行（旧调度 + 旧收信逻辑），是「部署后 QF 仍被轮询」的直接原因，也是每轮两条 cron 记录的原因。已将该目录整体移出到 `/opt/talent/backups/`（保留未删）并重启；未改任何产品代码。原计划未预见该情况，处置记录见 runbook §8b。
+2. **3 条由旧上下文在 21:41 写入的探针行**（499/500/501）在处置后按同一严格判据删除（快照留存）。
+3. **未执行**：测试信投递（A-1/A-2/A-5/A-6 需外部测试邮箱）与 A-4 目视核对，留待人工验收。
+4. 生产既存隐患（弱口令、明文凭据、1.05 GB `catalina.out`）已记录，未在本窗口处置。
 
-## Carried forward from c1–c3 (deployment gate facts)
+## 人工验收建议顺序
 
-- V134 is the Flyway head added by c1 and is additive-only (`mail_sender_account.inbound_mailbox_code`, `inbound_mail_processing.mailbox_owner_code`, unique key on `(mailbox_owner_code, uid_validity, imap_uid)`); production must apply it manually with a backup.
-- c2 verified LIGHT_PASS_WITH_NOTES (`77746e27c4de3ec6c8d4a32d579d61d1bd2b774c`): owner-only polling, To/Cc + unique In-Reply-To routing, physical dedup, `RECIPIENT_UNRESOLVED` manual row.
-- c3 verified LIGHT_PASS_WITH_NOTES (`71d8aeb8202c872faca323960c5c58198b932945`): OUTBOUND-only bounce attribution, group-wide hard-bounce checks, single-entry `[self-check]` filtering; its RECORD_ONLY notes (O-1 constructor default, O-2 OUTBOUND-only expert association) are listed in the handoff and are relevant to how historical QF bounces are interpreted during c4.
-- Nothing in c1–c3 activates the shared inbox in production: all `inbound_mailbox_code` values remain NULL until c4 performs the authorized update.
+1. 打开专家会话（如 expert 2645/2382）确认同一封来信只有 1 条收件、账号显示为 LuKai；
+2. 待处理列表确认探针为 0、`383` 不在其中；
+3. 材料/意图页确认保留来信的附件与意图可读；
+4. 从外部邮箱分别给 updates / QF 各发 1 封测试信 → 手动「检查回复」→ 各自只出现 1 条且账号正确；
+5. 确认 `LuKai_QF` 账号页显示「共享收件箱主账号 = LuKai」且发信配置未变。
