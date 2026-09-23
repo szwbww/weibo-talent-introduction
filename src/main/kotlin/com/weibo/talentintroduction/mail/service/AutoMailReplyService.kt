@@ -113,6 +113,26 @@ class AutoMailReplyService(
         require(businessMail.uidValidity > 0) {
             "Inbound receipt for account=${owner.accountCode} uid=${businessMail.imapUid} carries no positive UIDVALIDITY; refusing to record an unknown remote source"
         }
+        // I-2：物理组成员（owner + 直接别名账号）是收件人路由、历史指纹核验与同组探针识别的
+        // 共同口径，此处只查一次后传入核心写链。
+        val groupMembers = groupMembersOf(owner)
+        // I-3/I-4（03）：同物理组自检探针在业务事务与任何业务写入之前统一拦截——不落
+        // `inbound_mail_processing`/`mail_record`/意图/标签/附件/专家状态，只在允许确认时
+        // `markSeen(owner, uid)`；批量入口据返回结果把该 UID 纳入成功集以推进 owner 游标，
+        // 失败或无正数 UIDVALIDITY 时绝不确认、绝不推进游标。
+        if (selfCheckProbeDetector.isSelfCheckProbe(businessMail.from, businessMail.subject, groupMembers)) {
+            if (!skipImapAck) mailReceiveService.markSeen(owner, businessMail.imapUid)
+            log.debug(
+                "Ignored self-check probe: owner={} uid={}",
+                owner.accountCode,
+                businessMail.imapUid
+            )
+            return SinglePipelineResult(
+                outcome = SinglePipelineOutcome.SELF_CHECK_IGNORED,
+                recorded = false,
+                reason = "SELF_CHECK_IGNORED"
+            )
+        }
         // I-3：入业务事务前先查物理键（V134 唯一键是并发兜底）；已确认物理 UID 重复到达
         // 只 markSeen，绝不重跑自动回复。
         if (physicalInboundRowExists(owner, businessMail)) {
@@ -121,7 +141,7 @@ class AutoMailReplyService(
         }
         val result = try {
             transactionTemplate.execute {
-                processSingleCore(owner, businessMail)
+                processSingleCore(owner, businessMail, groupMembers)
             }
         } catch (e: DataIntegrityViolationException) {
             // I-3：唯一键异常只在确实存在同一物理键时视为并发重复，其余异常向外抛。
@@ -145,16 +165,17 @@ class AutoMailReplyService(
             received.imapUid
         ) != null
 
+    /** I-2：物理组成员（owner + 直接别名账号）——收件人路由、历史指纹核验与同组探针识别的共同口径。 */
+    private fun groupMembersOf(owner: MailSenderAccount): List<MailSenderAccount> =
+        mailSenderAccountService.listAccounts()
+            .filter { (it.inboundMailboxCode ?: it.accountCode) == owner.accountCode }
+            .ifEmpty { listOf(owner) }
+
     private fun processSingleCore(
         owner: MailSenderAccount,
-        received: ReceivedMail
+        received: ReceivedMail,
+        groupMembers: List<MailSenderAccount>
     ): SinglePipelineResult {
-        val ownerCode = owner.accountCode
-        // I-2：物理组成员（owner + 直接别名账号）决定收件人路由与历史指纹核验范围。
-        // 组内至少含 owner 自身；仓储异常未返回自身行时按「只有 owner」处理（等同旧路由）。
-        val groupMembers = mailSenderAccountService.listAccounts()
-            .filter { (it.inboundMailboxCode ?: it.accountCode) == ownerCode }
-            .ifEmpty { listOf(owner) }
         // 历史 0 代际行（V134 之前，组内任意逻辑账号且 mailbox_owner_code IS NULL）：仅当
         // 同 UID 且非空 Message-ID、from、秒级 receivedAt 全部吻合才认领同一代际（视为已
         // 处理）；否则转人工 LEGACY_UID_UNVERIFIABLE，绝不回填当前代际。
@@ -841,12 +862,6 @@ class AutoMailReplyService(
                 break
             }
             try {
-                if (selfCheckProbeDetector.isSelfCheckProbe(mail.from, mail.subject, account.senderEmail)) {
-                    mailReceiveService.markSeen(account, mail.imapUid)
-                    log.debug("Discarded self-check probe: uid={}", mail.imapUid)
-                    handledUids.add(mail.imapUid)
-                    continue
-                }
                 val bounceSignal = bounceDetector.detect(mail.from, mail.subject, mail.body)
                 if (bounceSignal != null) {
                     bounceCollectionService.ingest(
@@ -926,7 +941,11 @@ class AutoMailReplyService(
                 account.accountCode
             )
         }
-        bounceRateMonitorService.checkAndWarn(account.accountCode)
+        // I-2（03）：一次物理抓取后对组内每个逻辑账号各做一次硬退信率检查——共享邮箱里
+        // 别名自己发出的信退到 owner 收件箱，别名的高退信率也必须报警，不能只查 owner。
+        groupMembersOf(account).map { it.accountCode }.distinct().forEach { memberCode ->
+            bounceRateMonitorService.checkAndWarn(memberCode)
+        }
 
         return AutoMailReplyBatchResult(
             fetched = fetch.mails.size,
@@ -1524,7 +1543,9 @@ enum class SinglePipelineOutcome {
     /** 正文被有界截断（03）→ MANUAL_REVIEW/BODY_TRUNCATED，禁自动回复。 */
     BODY_TRUNCATED,
     /** I-2：收件人无法唯一判定 → 仅一条 MANUAL_REVIEW/RECIPIENT_UNRESOLVED（owner 归属）。 */
-    RECIPIENT_UNRESOLVED
+    RECIPIENT_UNRESOLVED,
+    /** I-3/I-4（03）：同物理组自检探针在业务事务前被忽略，不落任何业务表。 */
+    SELF_CHECK_IGNORED
 }
 
 data class SinglePipelineResult(

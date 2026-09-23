@@ -2583,6 +2583,152 @@ class AutoMailReplyServiceTest {
             .receiveAndAutoReply(Mockito.anyString(), Mockito.anyInt(), Mockito.any(), Mockito.any())
     }
 
+    // ------------------------------------------------------------------
+    // 03：同组 self-check 探针的唯一入口过滤与全组退信监控（I-2～I-4）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `alias self-check probe fetched through the owner mailbox is ignored without business writes`() {
+        val (owner, alias) = sharedGroup()
+        val probe = reply(
+            from = alias.senderEmail,
+            subject = "[self-check] alias ${System.currentTimeMillis()}",
+            body = "self-check probe",
+            to = listOf(alias.senderEmail),
+            imapUid = 302L
+        )
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(probe)))
+
+        val result = service.receiveAndAutoReply("owner", 5)
+
+        assertEquals(1, result.fetched)
+        assertEquals(0, result.recorded)
+        assertEquals(0, result.manualReview)
+        Mockito.verify(receiveService).markSeen(owner, 302L)
+        Mockito.verifyNoInteractions(
+            inboundMailProcessingRepository,
+            mailRecordRepository,
+            inboundIntentRepository,
+            inboundMailTagService,
+            mailAttachmentService,
+            contactRepository,
+            deliveryService,
+            groundedAutoReplyDecisionService,
+            expertEmailAliasService,
+            expertOperatorStatusService
+        )
+        // I-4：探针 UID 进入 owner 已处理集合 → 游标连续推进；alias 自己的旧游标不动
+        Mockito.verify(cursorService).advance(
+            eqValue("owner"),
+            eqValue(1L),
+            eqValue(listOf(302L)),
+            eqValue(setOf(302L)),
+            eqValue(0L)
+        )
+        Mockito.verify(cursorService, Mockito.never()).get("alias")
+    }
+
+    @Test
+    fun `uid backfill ignores a group alias self-check probe`() {
+        val (owner, alias) = sharedGroup()
+        val probe = reply(
+            from = alias.senderEmail,
+            subject = "[self-check] alias 1788498000276",
+            body = "self-check probe",
+            to = listOf(alias.senderEmail),
+            imapUid = 71L
+        )
+        Mockito.`when`(receiveService.fetchByUids(owner, listOf(71L))).thenReturn(listOf(probe))
+
+        val results = service.processByUids("alias", listOf(71L))
+
+        assertEquals(1, results.size)
+        assertEquals(SinglePipelineOutcome.SELF_CHECK_IGNORED, results[0].outcome)
+        assertEquals(false, results[0].recorded)
+        Mockito.verify(receiveService).markSeen(owner, 71L)
+        Mockito.verifyNoInteractions(
+            inboundMailProcessingRepository,
+            mailRecordRepository,
+            inboundIntentRepository,
+            inboundMailTagService,
+            mailAttachmentService,
+            contactRepository,
+            deliveryService
+        )
+    }
+
+    @Test
+    fun `self-check probe is not acknowledged when the caller skips the imap ack`() {
+        val (owner, alias) = sharedGroup()
+        val probe = reply(
+            from = alias.senderEmail,
+            subject = "[self-check] alias 1788498000276",
+            body = "self-check probe",
+            to = listOf(alias.senderEmail),
+            imapUid = 72L
+        )
+
+        val result = service.processSingle(owner, probe, skipImapAck = true)
+
+        assertEquals(SinglePipelineOutcome.SELF_CHECK_IGNORED, result.outcome)
+        assertEquals(false, result.recorded)
+        Mockito.verify(receiveService, Mockito.never()).markSeen(owner, 72L)
+    }
+
+    @Test
+    fun `self-check probe without a positive uid validity is neither recorded nor acknowledged`() {
+        val (owner, alias) = sharedGroup()
+        val probe = reply(
+            from = alias.senderEmail,
+            subject = "[self-check] alias 1788498000276",
+            body = "self-check probe",
+            to = listOf(alias.senderEmail),
+            imapUid = 73L,
+            uidValidity = 0L
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service.processSingle(owner, probe, skipImapAck = false)
+        }
+
+        Mockito.verify(receiveService, Mockito.never()).markSeen(owner, 73L)
+        Mockito.verifyNoInteractions(inboundMailProcessingRepository)
+    }
+
+    @Test
+    fun `external mail with a self-check subject still takes the business path`() {
+        val (owner, _) = sharedGroup()
+        val external = reply(
+            from = "expert@example.com",
+            subject = "[self-check] owner 1788498000276",
+            body = "Could you share the program details?",
+            to = listOf(owner.senderEmail),
+            imapUid = 303L
+        )
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(listOf(external)))
+        Mockito.`when`(expertEmailAliasService.findContactByEmailOrAlias("expert@example.com")).thenReturn(null)
+
+        val result = service.receiveAndAutoReply("owner", 5)
+
+        assertEquals(1, result.manualReview)
+        val captor = ArgumentCaptor.forClass(InboundMailProcessing::class.java)
+        Mockito.verify(inboundMailProcessingRepository).save(captor.capture())
+        assertEquals("MANUAL_REVIEW", captor.value.processStatus)
+        assertEquals("CONTACT_NOT_FOUND", captor.value.processReason)
+        Mockito.verify(receiveService).markSeen(owner, 303L)
+    }
+
+    @Test
+    fun `shared mailbox check runs the hard bounce monitor for every logical group member once`() {
+        val (owner, _) = sharedGroup()
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5)).thenReturn(inboundFetch(emptyList()))
+
+        service.receiveAndAutoReply("owner", 5)
+
+        Mockito.verify(bounceRateMonitorService, Mockito.times(1)).checkAndWarn("owner")
+        Mockito.verify(bounceRateMonitorService, Mockito.times(1)).checkAndWarn("alias")
+    }
+
     private fun stubExpertProfile(
         orcidId: String,
         familyNames: String? = "Lovelace",
