@@ -9,8 +9,8 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-24T00:26:36+08:00
-- Current child: backend
-- Waiting role: N/A
+- Current child: frontend
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -40,8 +40,8 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| backend | docs/plans/2026-09-23/01-reply-snippet-variants-backend.md | commit:73bc40d5b5623d9a71b0c9ff8e5a5990f3e3ae18 | none | 1 | LIGHT_PASS | 24e8439480581fa6b6e5a81b5579e7b8ce393206 | c5cb4cc600d265aae935100aad7ac551ed00eb32 | 0 | N/A | c5cb4cc600d265aae935100aad7ac551ed00eb32 | N/A | LIGHT_PASS; implementer ReplySnippetBackendImplementerRetry, verifier ReplySnippetBackendVerifier; first dispatch aborted before commit |
-| frontend | docs/plans/2026-09-23/02-reply-snippet-variants-frontend.md | commit:73bc40d5b5623d9a71b0c9ff8e5a5990f3e3ae18 | backend | 1 | PENDING | N/A | N/A | 0 | N/A | N/A | N/A | Downstream nullable subjectSnippetId contract from backend |
+| backend | docs/plans/2026-09-23/01-reply-snippet-variants-backend.md | commit:73bc40d5b5623d9a71b0c9ff8e5a5990f3e3ae18 | none | 1 | LIGHT_PASS | 24e8439480581fa6b6e5a81b5579e7b8ce393206 | c5cb4cc600d265aae935100aad7ac551ed00eb32 | 0 | N/A | c5cb4cc600d265aae935100aad7ac551ed00eb32 | a869926fb9f675aafe8d731872753fc43303800d | LIGHT_PASS; implementer ReplySnippetBackendImplementerRetry, verifier ReplySnippetBackendVerifier; first dispatch aborted before commit |
+| frontend | docs/plans/2026-09-23/02-reply-snippet-variants-frontend.md | commit:73bc40d5b5623d9a71b0c9ff8e5a5990f3e3ae18 | backend | 1 | WAITING_FOR_AGENT | c5cb4cc600d265aae935100aad7ac551ed00eb32 | N/A | 0 | N/A | N/A | N/A | Backend light-pass evidence commit a869926fb9f675aafe8d731872753fc43303800d precedes frontend implementation |
 
 ## Agent Availability Events
 
