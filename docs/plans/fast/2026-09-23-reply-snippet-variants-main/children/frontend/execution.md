@@ -59,3 +59,6 @@ Backend gate: `LIGHT_PASS`; backend evidence `a869926fb9f675aafe8d731872753fc433
 
 ### Remaining Acceptance
 - Human visual acceptance in an authenticated local browser remains pending; the local server was unavailable during this execution.
+
+### Evidence Reconciliation
+- The initial evidence commit omitted the unchanged `fix-log.md` required by the artifact validator. This append-only note records the later evidence-only commit; command results and plan status are unchanged.

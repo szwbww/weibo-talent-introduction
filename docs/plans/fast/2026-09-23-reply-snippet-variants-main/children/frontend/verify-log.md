@@ -21,3 +21,6 @@ Epoch: 1; Attempt: 1; Timestamp: `2026-09-23T18:37:31Z`
 
 ### Required Action
 - COMPLETE_CHILD
+
+### Evidence Reconciliation
+- The initial evidence commit omitted the existing no-fix-round `fix-log.md`; this administrative addendum does not change the verifier verdict, gates, or O-1.

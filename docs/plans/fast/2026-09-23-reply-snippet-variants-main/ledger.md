@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-09-23/00-reply-snippet-variants-main.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-09-23/00-reply-snippet-variants-main.md (commit 73bc40d5b5623d9a71b0c9ff8e5a5990f3e3ae18)
 - Amendments: N/A
 - Master base: 24e8439480581fa6b6e5a81b5579e7b8ce393206
@@ -40,8 +40,8 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| backend | docs/plans/2026-09-23/01-reply-snippet-variants-backend.md | commit:73bc40d5b5623d9a71b0c9ff8e5a5990f3e3ae18 | none | 1 | LIGHT_PASS | 24e8439480581fa6b6e5a81b5579e7b8ce393206 | c5cb4cc600d265aae935100aad7ac551ed00eb32 | 0 | N/A | c5cb4cc600d265aae935100aad7ac551ed00eb32 | a869926fb9f675aafe8d731872753fc43303800d | LIGHT_PASS; implementer ReplySnippetBackendImplementerRetry, verifier ReplySnippetBackendVerifier; first dispatch aborted before commit |
-| frontend | docs/plans/2026-09-23/02-reply-snippet-variants-frontend.md | commit:73bc40d5b5623d9a71b0c9ff8e5a5990f3e3ae18 | backend | 1 | LIGHT_PASS_WITH_NOTES | c5cb4cc600d265aae935100aad7ac551ed00eb32 | b62f4bb63005e268ae789966257cfa400a3bb353 | 0 | N/A | b62f4bb63005e268ae789966257cfa400a3bb353 | N/A | O-1: A-6 browser visual acceptance awaits human; localhost:8080 refused |
+| backend | docs/plans/2026-09-23/01-reply-snippet-variants-backend.md | commit:73bc40d5b5623d9a71b0c9ff8e5a5990f3e3ae18 | none | 1 | LIGHT_PASS | 24e8439480581fa6b6e5a81b5579e7b8ce393206 | c5cb4cc600d265aae935100aad7ac551ed00eb32 | 0 | — | c5cb4cc600d265aae935100aad7ac551ed00eb32 | a869926fb9f675aafe8d731872753fc43303800d | LIGHT_PASS; implementer ReplySnippetBackendImplementerRetry, verifier ReplySnippetBackendVerifier; first dispatch aborted before commit |
+| frontend | docs/plans/2026-09-23/02-reply-snippet-variants-frontend.md | commit:73bc40d5b5623d9a71b0c9ff8e5a5990f3e3ae18 | backend | 1 | LIGHT_PASS_WITH_NOTES | c5cb4cc600d265aae935100aad7ac551ed00eb32 | b62f4bb63005e268ae789966257cfa400a3bb353 | 0 | — | b62f4bb63005e268ae789966257cfa400a3bb353 | 88c36b8ebf273b36edee964877aed11d1dbb3c5b | O-1: Manual A-1–A-6 remain for human; localhost:8080 refused browser check |
 
 ## Agent Availability Events
 
