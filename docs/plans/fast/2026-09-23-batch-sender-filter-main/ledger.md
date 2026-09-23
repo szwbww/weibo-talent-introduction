@@ -9,8 +9,8 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-23T10:33:58Z
-- Current child: c1
-- Waiting role: FIXER
+- Current child: c2
+- Waiting role: VERIFIER
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -41,8 +41,8 @@
 
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| c1 | docs/plans/2026-09-23/01-batch-sender-filter-backend.md | commit:a58ce98be8bb828899dd69c7b8a0282cce35eeb1 | none | 1 | LIGHT_PASS_WITH_NOTES | 377a38b91ffd8a0a78815f5ad3041dbc55b2db80 | c3f694f | 1 | 248c30a | 248c30a | PLACEHOLDER_E1 | 实现者 C1Backend（c3f694f，修复 248c30a）；验证者 C1Verifier LIGHT_FAIL/AUTO_FIX（F-1：提交内 Flyway 断言仍为 134）→ C1ReVerifier LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD（F-1 关闭）；O-1..O-4 RECORD_ONLY |
-| c2 | docs/plans/2026-09-23/02-batch-sender-filter-frontend.md | commit:a58ce98be8bb828899dd69c7b8a0282cce35eeb1 | c1 | 1 | PENDING | — | — | 0 | — | — | — | 前端 3 文件；Base 将取 c1 的 Code head |
+| c1 | docs/plans/2026-09-23/01-batch-sender-filter-backend.md | commit:a58ce98be8bb828899dd69c7b8a0282cce35eeb1 | none | 1 | LIGHT_PASS_WITH_NOTES | 377a38b91ffd8a0a78815f5ad3041dbc55b2db80 | c3f694f | 1 | 248c30a | 248c30a | 47505d3f38d91570d639222d652f3cf1a145e5ba | 实现者 C1Backend（c3f694f，修复 248c30a）；验证者 C1Verifier LIGHT_FAIL/AUTO_FIX（F-1：提交内 Flyway 断言仍为 134）→ C1ReVerifier LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD（F-1 关闭）；O-1..O-4 RECORD_ONLY |
+| c2 | docs/plans/2026-09-23/02-batch-sender-filter-frontend.md | commit:a58ce98be8bb828899dd69c7b8a0282cce35eeb1 | c1 | 1 | LIGHT_PASS_WITH_NOTES | 248c30a | 75cc1714 | 0 | — | 75cc1714 | PLACEHOLDER_E2 | 实现者 C2Frontend（75cc1714）；验证者 C2Verifier LIGHT_PASS_WITH_NOTES/COMPLETE_CHILD，四门全过；RECORD_ONLY：manualDraft.emailDomains 既有误键表达式保持原样、前端去重依赖构造顺序+后端 distinct()、证据提交落在字面边界内 |
 
 ## Amendments
 
