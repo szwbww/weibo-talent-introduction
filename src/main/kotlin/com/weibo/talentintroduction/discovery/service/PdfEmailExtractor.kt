@@ -55,6 +55,7 @@ class PdfEmailExtractor(
         deadline: Instant? = null,
         onResponseHeaders: ((HttpHeaders) -> Unit)? = null
     ): EmailExtractionOutcome {
+        val trafficBefore = DiscoveryTrafficMeter.currentScopeBytes()
         val uri = try {
             URI.create(pdfUrl)
         } catch (e: IllegalArgumentException) {
@@ -86,6 +87,7 @@ class PdfEmailExtractor(
                 downloadFailureCategory = FULLTEXT_FAILURE_TIMEOUT
             )
         } catch (e: PdfTooLargeException) {
+            DiscoveryTrafficMeter.recordOversized(DiscoveryTrafficMeter.currentScopeBytes() - trafficBefore)
             log.debug("[{}] PDF {} too large", sourceName, pdfUrl)
             return EmailExtractionOutcome(
                 emptyList(), "PDF_PARSE", "PDF_TOO_LARGE", httpRequests = 1, fulltextObtained = false

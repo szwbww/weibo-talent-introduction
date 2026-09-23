@@ -204,7 +204,8 @@ data class PipelineWindowResult(
     val nextWakeAt: Instant?,
     val pendingWork: Boolean,
     /** I-8：本窗口结束时流水线是否已真正排空（所有来源穷尽 + 无活跃条目 + 无在途工作）。 */
-    val drained: Boolean
+    val drained: Boolean,
+    val traffic: DiscoveryTrafficSnapshot? = null
 ) : TaskExecutionSummaryProvider {
 
     override val taskSuccessCount: Int get() = indexedExperts
@@ -254,7 +255,7 @@ data class PipelineWindowResult(
         "queueDepth" to queueDepth,
         "nextWakeAt" to (nextWakeAt?.toString() ?: ""),
         "pendingWork" to pendingWork
-    )
+    ).apply { traffic?.let { put("traffic", it) } }
 }
 
 /** I-8（c2）：一次清理的结果。 */
@@ -637,12 +638,17 @@ class DiscoveryPipelineService(
                 block = { windowLoop(state, initial) }
             ).second
             log.info(
-                "深度发现窗口结束: 原因={}, 处理={}, 新增专家={}, 重复={}, 失败={}, 队列深度={}",
+                "深度发现窗口结束: 原因={}, 处理={}, 新增专家={}, 重复={}, 失败={}, 队列深度={}, 下载总量={} 字节, 元数据={} 字节, 全文={} 字节, 额外排空={} 字节, 超限下载={} 次/{} 字节, 来源={}, 站点={}",
                 result.terminationReason, result.processedItems, result.indexedExperts,
-                result.duplicateExperts, result.failedItems, result.queueDepth
+                result.duplicateExperts, result.failedItems, result.queueDepth,
+                result.traffic?.totalBytes, result.traffic?.metadataBytes, result.traffic?.fulltextBytes,
+                result.traffic?.discardedBytes, result.traffic?.oversizedDownloads, result.traffic?.oversizedBytes,
+                result.traffic?.bySource, result.traffic?.byHost
             )
         } catch (e: Exception) {
-            log.error("深度发现窗口异常终止: {}", e.message, e)
+            val traffic = state.trafficSession.snapshot()
+            log.error("深度发现窗口异常终止: {}, 已读取响应体={} 字节, 来源={}, 站点={}",
+                e.message, traffic.totalBytes, traffic.bySource, traffic.byHost, e)
             runCatching { repository.markFaulted(ownerToken, PipelineWaitReason.SOURCE_ERROR, now()) }
         }
     }
@@ -825,12 +831,16 @@ class DiscoveryPipelineService(
         val criteria = state.criteria
         try {
             if (criteria == null) return
-            val page = expertDiscoveryService.collectQueuePage(
-                sourceName = stream.source,
-                criteria = criteria,
-                cursor = stream.cursorValue,
-                metadataMaxBytes = properties.metadataMaxBytes
-            )
+            val page = DiscoveryTrafficMeter.measure(
+                state.trafficSession, stream.source, DiscoveryTrafficMeter.Category.METADATA
+            ) {
+                expertDiscoveryService.collectQueuePage(
+                    sourceName = stream.source,
+                    criteria = criteria,
+                    cursor = stream.cursorValue,
+                    metadataMaxBytes = properties.metadataMaxBytes
+                )
+            }
             val at = now()
             if (page.deferredUntil != null) {
                 // I-6：OpenAlex 额度延期只推迟本源，其他来源照常。
@@ -999,12 +1009,14 @@ class DiscoveryPipelineService(
                     releaseWindow(state, PipelineWaitReason.SOURCE_ERROR, null)
                     return
                 }
-                when (val extraction = expertDiscoveryService.extractQueuedItem(
+                when (val extraction = DiscoveryTrafficMeter.measure(
+                    state.trafficSession, stream.source, DiscoveryTrafficMeter.Category.FULLTEXT
+                ) { expertDiscoveryService.extractQueuedItem(
                     envelope = envelope,
                     criteria = criteria,
                     perHostConcurrency = properties.perHostConcurrency,
                     extractionMaxBytes = properties.extractionMaxBytes
-                )) {
+                ) }) {
                     is QueuedItemExtraction.Extracted -> {
                         val bytes = extraction.extractionJson.toByteArray(Charsets.UTF_8).size.toLong()
                         val saved = repository.saveExtraction(
@@ -1318,6 +1330,7 @@ class DiscoveryPipelineService(
         val collectionInFlight = ConcurrentHashMap<Long, Boolean>()
         val completions = ArrayBlockingQueue<Int>(COMPLETION_QUEUE_CAPACITY)
         val executionId = AtomicLong(0L)
+        val trafficSession = DiscoveryTrafficMeter.newSession()
         val waitReasons = ConcurrentLinkedQueue<String>()
         val failureReasons = ConcurrentHashMap<String, Int>()
         val noProgressRounds = ConcurrentHashMap<Long, Int>()
@@ -1373,7 +1386,8 @@ class DiscoveryPipelineService(
             queueDepth = pipeline.activeCount,
             nextWakeAt = pipeline.nextWakeAt,
             pendingWork = pipeline.activeCount > 0 || capacityBlocked,
-            drained = drained
+            drained = drained,
+            traffic = trafficSession.snapshot()
         )
 
         companion object {

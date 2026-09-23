@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.task.controller
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.discovery.service.DISCOVERY_PIPELINE_TASK_TYPE
 import com.weibo.talentintroduction.discovery.service.DiscoveryPipelineService
+import com.weibo.talentintroduction.discovery.service.DiscoveryTrafficSnapshot
 import com.weibo.talentintroduction.task.domain.TaskProgressLog
 import com.weibo.talentintroduction.task.domain.TaskTypeCatalog
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
@@ -152,7 +153,12 @@ class TaskProgressController(
                 totalPassed = totals.totalPassed,
                 totalRejected = totals.totalRejected,
                 summaryText = totals.summaryText,
-                errorMessage = exec.errorMessage
+                errorMessage = exec.errorMessage,
+                traffic = if (taskType == DISCOVERY_PIPELINE_TASK_TYPE) {
+                    parseTraffic(exec.resultSummary)
+                        ?: exec.id?.let { progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(it)?.detailsJson }
+                            ?.let(::parseTraffic)
+                } else null
             )
         }
         return ResponseEntity.ok(responses)
@@ -160,6 +166,16 @@ class TaskProgressController(
 
     companion object {
         private val DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+    }
+
+    private fun parseTraffic(summary: String?): DiscoveryTrafficSnapshot? {
+        if (summary.isNullOrBlank()) return null
+        return runCatching {
+            val node = objectMapper.readTree(summary).path("traffic")
+            if (node.isObject && node.has("totalBytes")) {
+                objectMapper.treeToValue(node, DiscoveryTrafficSnapshot::class.java)
+            } else null
+        }.getOrNull()
     }
 }
 
@@ -175,5 +191,6 @@ data class TaskRunSummaryResponse(
     val totalPassed: Long,
     val totalRejected: Long,
     val summaryText: String?,
-    val errorMessage: String?
+    val errorMessage: String?,
+    val traffic: DiscoveryTrafficSnapshot? = null
 )

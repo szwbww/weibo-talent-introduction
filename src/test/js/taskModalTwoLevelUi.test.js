@@ -17,8 +17,10 @@ const sandbox = { currentTaskModal: null };
 vm.createContext(sandbox);
 vm.runInContext(extractFn("escapeHtml"), sandbox);
 vm.runInContext(extractFn("badge"), sandbox);
+vm.runInContext(extractFn("formatFileSize"), sandbox);
 vm.runInContext(extractFn("renderBatchTable"), sandbox);
 vm.runInContext(extractFn("renderRunRow"), sandbox);
+vm.runInContext(extractFn("renderBatchDetailRow"), sandbox);
 vm.runInContext(extractFn("formatDateTime"), sandbox);
 
 const runtimePath = path.join(__dirname, "..", "..", "main", "resources", "static", "task-modal-runtime.js");
@@ -27,11 +29,33 @@ vm.runInContext(runtimeSource, sandbox);
 
 const renderBatchTable = sandbox.renderBatchTable;
 const renderRunRow = sandbox.renderRunRow;
+const renderBatchDetailRow = sandbox.renderBatchDetailRow;
 const isProgressTerminal = sandbox.isProgressTerminal;
 const isExecutionTerminal = sandbox.isExecutionTerminal;
 const isCurrentTaskModal = sandbox.isCurrentTaskModal;
 
 const { describe, it } = require("node:test");
+
+describe("discovery traffic detail", () => {
+    it("shows measured categories, oversized downloads and discarded bytes", () => {
+        sandbox.currentTaskModal = {
+            taskType: "EXPERT_DISCOVERY",
+            runTrafficByExecutionId: {
+                7: {
+                    totalBytes: 10485760, metadataBytes: 1024, fulltextBytes: 10484736,
+                    oversizedDownloads: 1, oversizedBytes: 10485760, discardedBytes: 8192,
+                    bySource: { OPENALEX: 10485760 }, byHost: { "example.org": 10485760 }
+                }
+            }
+        };
+        const html = renderBatchDetailRow(7);
+        assert.ok(html.includes("超限下载：1 次 / 10.0 MB"));
+        assert.ok(html.includes("额外排空：8.0 KB"));
+        assert.ok(html.includes("OPENALEX 10.0 MB"));
+        assert.ok(html.includes("example.org 10.0 MB"));
+        sandbox.currentTaskModal = null;
+    });
+});
 
 describe("renderBatchTable (from app.js)", () => {
 
@@ -138,6 +162,17 @@ describe("renderRunRow (from app.js)", () => {
         const html = renderRunRow(run, "EXPERT_DISCOVERY");
         assert.ok(html.includes("失败"), "FAILED status label present");
         assert.ok(html.includes("30秒"), "duration rendered");
+    });
+
+    it("shows measured discovery bytes and marks historical executions unmeasured", () => {
+        const base = {
+            executionId: 5, taskType: "EXPERT_DISCOVERY", triggerType: "SCHEDULED",
+            status: "SUCCESS", startedAt: "2026-09-23 02:00:00", finishedAt: "2026-09-23 02:10:00",
+            durationSeconds: 600, totalProcessed: 10, totalPassed: 2, totalRejected: 8
+        };
+        assert.ok(renderRunRow(base, "EXPERT_DISCOVERY").includes("未记录"));
+        assert.ok(renderRunRow({ ...base, traffic: { totalBytes: 1048576 } }, "EXPERT_DISCOVERY").includes("1.0 MB"));
+        assert.ok(!renderRunRow(base, "EXPERT_REVALIDATION").includes("未记录"));
     });
 
     it("null durationSeconds renders dash", () => {

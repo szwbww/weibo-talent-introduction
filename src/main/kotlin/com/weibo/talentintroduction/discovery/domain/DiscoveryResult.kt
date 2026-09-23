@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.discovery.domain
 
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
+import com.weibo.talentintroduction.discovery.service.DiscoveryTrafficSnapshot
 
 /**
  * I-3: 发现任务终态的唯一决策函数。任务执行记录（[DiscoveryResult.taskFinalStatus]）与任务进度
@@ -32,7 +33,8 @@ data class DiscoveryResult(
     val triggeredBy: String,
     val stats: DiscoveryStats,
     val wasCancelled: Boolean = false,
-    val summaryText: String? = null
+    val summaryText: String? = null,
+    val traffic: DiscoveryTrafficSnapshot? = null
 ) : TaskExecutionSummaryProvider {
     override val taskSuccessCount: Int get() = stats.indexed
     override val taskFailureCount: Int

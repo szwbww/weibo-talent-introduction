@@ -39,7 +39,7 @@ class RestTemplateConfigTest {
         )
 
         assertNotSame(base, bounded, "剩余预算更紧时必须换用有界 client")
-        val factory = bounded.requestFactory as SimpleClientHttpRequestFactory
+        val factory = underlyingFactory(bounded)
         // 剩余预算是从绝对 deadline 现算的，毫秒取整可能少 1ms；这里断言「不超过预算且两项一致」。
         val connectTimeout = timeoutField(factory, "connectTimeout")
         assertEquals(connectTimeout, timeoutField(factory, "readTimeout"))
@@ -59,7 +59,7 @@ class RestTemplateConfigTest {
         // R-1（V-4）：预算宽于配置时**不再**返回原 client —— 否则正常 90 秒预算会绕过 body 包装。
         val wideBudget = BoundedFulltextHttp.bounded(base, 5_000, 30_000, java.time.Instant.now().plusSeconds(3_600))
         assertNotSame(base, wideBudget, "非空 deadline 一律使用 deadline 包装过的 client")
-        val wideFactory = wideBudget.requestFactory as SimpleClientHttpRequestFactory
+        val wideFactory = underlyingFactory(wideBudget)
         assertEquals(5_000, timeoutField(wideFactory, "connectTimeout"), "预算宽于配置时超时保持原配置值")
         assertEquals(30_000, timeoutField(wideFactory, "readTimeout"))
         assertEquals(base.messageConverters.size, wideBudget.messageConverters.size)
@@ -108,16 +108,22 @@ class RestTemplateConfigTest {
         return (field.get(factory) as Number).toInt()
     }
 
+    private fun underlyingFactory(client: RestTemplate): SimpleClientHttpRequestFactory {
+        val wrapper = client.requestFactory
+        return (org.springframework.test.util.ReflectionTestUtils.getField(wrapper, "requestFactory")
+            ?: wrapper) as SimpleClientHttpRequestFactory
+    }
+
     @Test
-    fun `shared restTemplate has no interceptors`() {
-        assertTrue(config.restTemplate().interceptors.isEmpty())
+    fun `shared restTemplate meters discovery only`() {
+        assertEquals(1, config.restTemplate().interceptors.size)
     }
 
     @Test
     fun `europePmcRestTemplate includes retry interceptor`() {
         val restTemplate = config.europePmcRestTemplate(EuropePmcProperties(), RestTemplateBuilder())
 
-        assertEquals(1, restTemplate.interceptors.size)
+        assertEquals(2, restTemplate.interceptors.size)
         assertTrue(restTemplate.interceptors[0] is RetryingClientHttpRequestInterceptor)
     }
 
@@ -125,15 +131,15 @@ class RestTemplateConfigTest {
     fun `pdfDownloadRestTemplate includes retry interceptor`() {
         val restTemplate = config.pdfDownloadRestTemplate(PdfExtractionProperties(), RestTemplateBuilder())
 
-        assertEquals(1, restTemplate.interceptors.size)
+        assertEquals(2, restTemplate.interceptors.size)
         assertTrue(restTemplate.interceptors[0] is RetryingClientHttpRequestInterceptor)
     }
 
     @Test
-    fun `openAlexRestTemplate carries only the authentication interceptor`() {
+    fun `openAlexRestTemplate carries authentication and discovery metering interceptors`() {
         val restTemplate = config.openAlexRestTemplate(OpenAlexProperties(), RestTemplateBuilder())
 
-        assertEquals(1, restTemplate.interceptors.size)
+        assertEquals(2, restTemplate.interceptors.size)
         assertTrue(restTemplate.interceptors[0] is OpenAlexAuthInterceptor)
     }
 

@@ -302,6 +302,7 @@ class ExpertDiscoveryService(
         )
         if (sourceName != null) details["currentSource"] = sourceName
         if (method != null) details["currentMethod"] = method
+        DiscoveryTrafficMeter.currentSession()?.let { details["traffic"] = it.snapshot() }
         return details
     }
 
@@ -334,6 +335,7 @@ class ExpertDiscoveryService(
         includeRawScan: Boolean = discoveryProperties.includeRawScan
     ): DiscoveryResult {
         val stats = DiscoveryStats()
+        val trafficSession = DiscoveryTrafficMeter.newSession()
         val execId = progressStore.getCurrentExecutionId("EXPERT_DISCOVERY")
         val sources = resolveEnabledSources(criteria)
         // I-1（09）：启动校验 —— 全局 cap 必须覆盖各启用来源的基础份额，否则直接报配置错误，
@@ -376,13 +378,17 @@ class ExpertDiscoveryService(
                 // I-2: 先给每个后来源留一页基础份额，再按来源顺序分配本源的运行额度；
                 // 已穷尽/失效来源没用掉的份额自然留在全局剩余里给后来源复用。
                 val runQuota = allocateSourceQuota(sources, index, criteria.pageSize, papersUsedForGlobalCap(stats))
-                val outcome = discoverFromSource(source, criteria, stats, runQuota, deadline)
+                val outcome = DiscoveryTrafficMeter.measure(
+                    trafficSession, source.sourceName, DiscoveryTrafficMeter.Category.METADATA
+                ) { discoverFromSource(source, criteria, stats, runQuota, deadline) }
                 log.info("[{}] 本次运行结束: stopReason={}, exhausted={}, resumeCursor={}",
                     source.sourceName, outcome.stopReason, outcome.exhausted,
                     outcome.resumeCursor?.take(50) ?: "null")
             }
 
-            discoverFromOrcid(criteria, stats, deadline)
+            DiscoveryTrafficMeter.measure(trafficSession, "ORCID", DiscoveryTrafficMeter.Category.METADATA) {
+                discoverFromOrcid(criteria, stats, deadline)
+            }
             stats.refreshGlobalCounts()
 
             val totalElapsed = System.currentTimeMillis() - startTime
@@ -395,6 +401,7 @@ class ExpertDiscoveryService(
                 pendingWork = stats.pendingSources > 0
             )
             val details = buildProgressDetails(stats).toMutableMap()
+            details["traffic"] = trafficSession.snapshot()
             details["terminalStatus"] = terminalStatusOfRun
             details["summaryText"] = buildSummaryText(stats, totalElapsed, terminalStatusOfRun)
 
@@ -408,7 +415,8 @@ class ExpertDiscoveryService(
                     message = buildProgressMessage(terminalStatusOfRun, stats),
                     details = details, errors = snapshotErrors(stats)
                 ), execId)
-                return DiscoveryResult(triggeredBy, stats, wasCancelled = true, summaryText = details["summaryText"] as String)
+                return DiscoveryResult(triggeredBy, stats, wasCancelled = true,
+                    summaryText = details["summaryText"] as String, traffic = trafficSession.snapshot())
             }
 
             val totalValidEmails = stats.bySource.values.sumOf { it.emailsValid }
@@ -417,6 +425,12 @@ class ExpertDiscoveryService(
                 "合计: 论文 ${stats.totalPapers}, 作者候选 ${stats.totalAuthors}, " +
                 "邮箱有效 $totalValidEmails (无效 ${stats.emailRejected}), 收录 ${stats.indexed}, 晋升 ${stats.promoted}, " +
                 "源终止失败 ${stats.sourceFailures}, 待续跑来源 ${stats.pendingSources}")
+            trafficSession.snapshot().let { traffic ->
+                log.info("发现任务下载量: 总计={} 字节, 元数据={} 字节, 全文={} 字节, 额外排空={} 字节, 超限下载={} 次/{} 字节, 来源={}, 站点={}",
+                    traffic.totalBytes, traffic.metadataBytes, traffic.fulltextBytes,
+                    traffic.discardedBytes, traffic.oversizedDownloads, traffic.oversizedBytes,
+                    traffic.bySource, traffic.byHost)
+            }
 
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                 taskType = "EXPERT_DISCOVERY",
@@ -430,6 +444,7 @@ class ExpertDiscoveryService(
             stats.refreshGlobalCounts()
             val totalElapsed = System.currentTimeMillis() - startTime
             val details = buildProgressDetails(stats).toMutableMap()
+            details["traffic"] = trafficSession.snapshot()
             details["summaryText"] = buildSummaryText(stats, totalElapsed, DiscoveryTerminalStatus.FAILED)
             progressStore.update("EXPERT_DISCOVERY", TaskProgress(
                 taskType = "EXPERT_DISCOVERY", status = "FAILED",
@@ -443,7 +458,8 @@ class ExpertDiscoveryService(
         val finalElapsed = System.currentTimeMillis() - startTime
         return DiscoveryResult(
             triggeredBy, stats,
-            summaryText = buildSummaryText(stats, finalElapsed, terminalStatusOfRun)
+            summaryText = buildSummaryText(stats, finalElapsed, terminalStatusOfRun),
+            traffic = trafficSession.snapshot()
         )
     }
 
@@ -770,12 +786,13 @@ class ExpertDiscoveryService(
                 snapshotRejectReasons(sourceStats)
             )
 
-            log.info("[{}] 批次 {}: 论文 +{} (累计 {}/{}), 获全文 {}, 抽到邮箱 {}, 有效 {}, 重复 {}, 收录 {}, 晋升 {}",
+            log.info("[{}] 批次 {}: 论文 +{} (累计 {}/{}), 获全文 {}, 抽到邮箱 {}, 有效 {}, 重复 {}, 收录 {}, 晋升 {}, 累计下载 {} 字节",
                 source.sourceName, batchNumber, batchProcessed,
                 sourceStats.papersSearched, sourceLimit,
                 sourceStats.fulltextObtained, sourceStats.authorsExtracted,
                 sourceStats.emailsValid, sourceStats.duplicates,
-                sourceStats.indexed, sourceStats.promoted)
+                sourceStats.indexed, sourceStats.promoted,
+                DiscoveryTrafficMeter.currentSession()?.snapshot()?.totalBytes ?: 0)
 
             stats.refreshGlobalCounts()
             val persistedBatchNumber = stats.nextBatchSeq()
@@ -1177,11 +1194,19 @@ class ExpertDiscoveryService(
         source: AcademicDataSource
     ): List<Pair<PaperMetadata, PaperExtraction>> {
         if (papers.isEmpty()) return emptyList()
+        val trafficSession = DiscoveryTrafficMeter.currentSession()
+        fun extract(paper: PaperMetadata): PaperExtraction = if (trafficSession == null) {
+            extractOutcome(paper, source)
+        } else {
+            DiscoveryTrafficMeter.measure(trafficSession, source.sourceName, DiscoveryTrafficMeter.Category.FULLTEXT) {
+                extractOutcome(paper, source)
+            }
+        }
         if (discoveryProperties.fetchConcurrency <= 1) {
-            return papers.map { it to extractOutcome(it, source) }
+            return papers.map { it to extract(it) }
         }
         val futures = papers.map { paper ->
-            paper to CompletableFuture.supplyAsync({ extractOutcome(paper, source) }, discoveryFetchExecutor)
+            paper to CompletableFuture.supplyAsync({ extract(paper) }, discoveryFetchExecutor)
         }
         return futures.map { (paper, future) -> paper to future.join() }
     }

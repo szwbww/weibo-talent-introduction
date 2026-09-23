@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.config
 
+import com.weibo.talentintroduction.discovery.service.DiscoveryTrafficMeter
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.web.client.RestTemplateBuilder
@@ -58,7 +59,9 @@ const val PDF_DOWNLOAD_CONNECT_TIMEOUT_MS: Long = 10_000L
 class RestTemplateConfig {
 
     @Bean
-    fun restTemplate(): RestTemplate = RestTemplate()
+    fun restTemplate(): RestTemplate = RestTemplate().apply {
+        interceptors.add(DiscoveryTrafficMeter.interceptor)
+    }
 
     @Bean
     @Qualifier("europePmcRestTemplate")
@@ -73,7 +76,8 @@ class RestTemplateConfig {
                 RetryingClientHttpRequestInterceptor(
                     maxRetries = europePmcProperties.maxRetries,
                     initialBackoffMs = europePmcProperties.retryBackoffMs
-                )
+                ),
+                DiscoveryTrafficMeter.interceptor
             )
             .build()
 
@@ -90,7 +94,8 @@ class RestTemplateConfig {
                 RetryingClientHttpRequestInterceptor(
                     maxRetries = pdfExtractionProperties.maxRetries,
                     initialBackoffMs = pdfExtractionProperties.retryBackoffMs
-                )
+                ),
+                DiscoveryTrafficMeter.interceptor
             )
             .build()
 
@@ -103,6 +108,7 @@ class RestTemplateConfig {
         builder
             .setConnectTimeout(Duration.ofMillis(translationProperties.timeoutMs.toLong()))
             .setReadTimeout(Duration.ofMillis(translationProperties.timeoutMs.toLong()))
+            .additionalInterceptors(DiscoveryTrafficMeter.interceptor)
             .build()
 
     @Bean
@@ -119,7 +125,8 @@ class RestTemplateConfig {
                 OpenAlexAuthInterceptor(
                     apiKey = openAlexProperties.apiKey,
                     baseUrl = openAlexProperties.baseUrl
-                )
+                ),
+                DiscoveryTrafficMeter.interceptor
             )
             .build()
 
@@ -551,19 +558,19 @@ object BoundedFulltextHttp : BoundedHttpExecutor {
                             throw e
                         }
                         val location = response.headers[HttpHeaders.LOCATION]?.firstOrNull()
-                        if (location.isNullOrBlank()) return boundedBody(response, permit)
+                        if (location.isNullOrBlank()) return boundedBody(response, permit, current.uri)
                         val target = current.uri.resolve(location)
                         if (hops++ >= MAX_REDIRECTS) {
-                            drainAndClose(response)
+                            drainAndClose(response, current.uri)
                             permit?.close()
                             throw TooManyRedirectsException(target.toString())
                         }
                         if (OpenAlexMeteredDestinations.isMetered(target.toString())) {
-                            drainAndClose(response)
+                            drainAndClose(response, current.uri)
                             permit?.close()
                             throw MeteredRedirectException(target.toString())
                         }
-                        drainAndClose(response)
+                        drainAndClose(response, current.uri)
                         permit?.close()
                         current = rawRequest(target, HttpMethod.GET)
                     }
@@ -573,7 +580,8 @@ object BoundedFulltextHttp : BoundedHttpExecutor {
 
         private fun boundedBody(
             response: ClientHttpResponse,
-            permit: FulltextRequestGate.HopPermit?
+            permit: FulltextRequestGate.HopPermit?,
+            uri: URI
         ): ClientHttpResponse =
             object : ClientHttpResponse by response {
                 override fun getBody(): java.io.InputStream =
@@ -589,7 +597,7 @@ object BoundedFulltextHttp : BoundedHttpExecutor {
                  */
                 override fun close() {
                     try {
-                        drainAndClose(response)
+                        drainAndClose(response, uri)
                     } finally {
                         permit?.close()
                     }
@@ -597,12 +605,14 @@ object BoundedFulltextHttp : BoundedHttpExecutor {
             }
 
         /** 中间跳（3xx）的响应体同样按绝对 deadline 排空，绝不在这里无限等待。 */
-        private fun drainAndClose(response: ClientHttpResponse) {
+        private fun drainAndClose(response: ClientHttpResponse, uri: URI) {
             try {
                 val bounded = DeadlineBoundedInputStream(response.body, deadline)
                 val sink = ByteArray(DRAIN_BUFFER_BYTES)
-                while (bounded.read(sink) != -1) {
-                    // 排空剩余响应体（丢弃），只是为了让连接可复用
+                while (true) {
+                    val count = bounded.read(sink)
+                    if (count == -1) break
+                    DiscoveryTrafficMeter.recordDiscarded(uri.host ?: "unknown", count.toLong())
                 }
                 response.close()
             } catch (e: Exception) {

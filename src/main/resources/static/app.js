@@ -706,6 +706,7 @@ function formatFileSize(size) {
     if (!size) return "0 B";
     if (size < 1024) return `${size} B`;
     if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    if (size >= 1024 * 1024 * 1024) return `${(size / 1024 / 1024 / 1024).toFixed(2)} GB`;
     return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
@@ -2261,10 +2262,14 @@ function renderRunList(runs, taskType, generation) {
         runs.forEach(r => {
             currentTaskModal.runStatusByExecutionId[r.executionId] = r.status;
         });
+        currentTaskModal.runTrafficByExecutionId = Object.fromEntries(runs.map(r => [r.executionId, r.traffic || null]));
     }
+    const showTraffic = taskType === "EXPERT_DISCOVERY";
+    const trafficHead = $("#taskModalTrafficHead");
+    if (trafficHead) trafficHead.style.display = showTraffic ? "" : "none";
     const html = runs.length > 0
         ? runs.map(r => renderRunRow(r, taskType)).join("")
-        : `<tr><td colspan="8" class="muted" style="text-align:center;padding:12px;">暂无执行记录</td></tr>`;
+        : `<tr><td colspan="${showTraffic ? 9 : 8}" class="muted" style="text-align:center;padding:12px;">暂无执行记录</td></tr>`;
     // 内容未变化时跳过整表重写，避免每 5s 轮询导致的明显闪烁（及展开行被反复销毁重建）。
     if (runBody.__lastHtml === html) return;
     runBody.__lastHtml = html;
@@ -2473,6 +2478,10 @@ function renderRunRow(run, taskType) {
     const duration = run.durationSeconds != null ? run.durationSeconds + "秒" : "-";
     const expanded = currentTaskModal?.expandedExecutionId === run.executionId;
     const arrow = expanded ? "▼" : "▶";
+    const trafficCell = taskType === "EXPERT_DISCOVERY"
+        ? `<td title="HTTP 响应体下载量，不等于代理账单流量">${run.traffic != null
+            ? formatFileSize(run.traffic.totalBytes)
+            : (run.status === "RUNNING" ? "统计中" : "未记录")}</td>` : "";
     return `
         <tr class="run-row" data-execution-id="${run.executionId}" data-status="${escapeHtml(run.status)}" onclick="toggleRunDetail('${escapeHtml(taskType)}', ${run.executionId})" style="cursor:pointer;">
             <td style="width:24px;text-align:center;">${arrow}</td>
@@ -2482,15 +2491,30 @@ function renderRunRow(run, taskType) {
             <td>${run.totalProcessed}</td>
             <td>${run.totalPassed}</td>
             <td>${run.totalRejected}</td>
+            ${trafficCell}
             <td>${escapeHtml(duration)}</td>
         </tr>
     `;
 }
 
 function renderBatchDetailRow(executionId) {
+    const showTraffic = currentTaskModal?.taskType === "EXPERT_DISCOVERY";
+    const traffic = currentTaskModal?.runTrafficByExecutionId?.[executionId];
+    const trafficSummary = showTraffic ? (traffic
+        ? `<div style="padding:8px 10px;font-size:11px;line-height:1.7;">
+               HTTP 响应体下载：<strong>${formatFileSize(traffic.totalBytes)}</strong>
+               （元数据 ${formatFileSize(traffic.metadataBytes)}，全文 ${formatFileSize(traffic.fulltextBytes)}）<br>
+               超限下载：${Number(traffic.oversizedDownloads || 0)} 次 / ${formatFileSize(traffic.oversizedBytes || 0)}；
+               关闭或跳转时额外排空：${formatFileSize(traffic.discardedBytes || 0)}<br>
+               来源：${escapeHtml(Object.entries(traffic.bySource || {}).map(([name, bytes]) => `${name} ${formatFileSize(bytes)}`).join("、") || "无")}<br>
+               站点：${escapeHtml(Object.entries(traffic.byHost || {}).map(([host, bytes]) => `${host} ${formatFileSize(bytes)}`).join("、") || "无")}
+               <div class="muted">仅统计本任务实际读取的响应体；不含 TLS、代理开销及其他应用流量。</div>
+           </div>`
+        : `<div class="muted" style="padding:8px 10px;font-size:11px;">本次执行未记录下载量；历史数据无法追溯。</div>`) : "";
     return `
         <tr class="run-detail-row" id="detail-row-${executionId}">
-            <td colspan="8" style="padding:0;">
+            <td colspan="${showTraffic ? 9 : 8}" style="padding:0;">
+                ${trafficSummary}
                 <div style="max-height:200px;overflow-y:auto;margin:4px 0;">
                     <table class="data-table compact" style="width:100%;border-collapse:collapse;font-size:11px;">
                         <thead>
@@ -7565,7 +7589,7 @@ async function openTaskLaunchModal(taskType) {
         }
     };
 
-    $("#taskModalRunBody").innerHTML = `<tr><td colspan="8" class="muted" style="text-align:center;padding:12px;">正在加载最近执行记录...</td></tr>`;
+    $("#taskModalRunBody").innerHTML = `<tr><td colspan="${taskType === "EXPERT_DISCOVERY" ? 9 : 8}" class="muted" style="text-align:center;padding:12px;">正在加载最近执行记录...</td></tr>`;
     $("#taskModalErrors").hidden = true;
     $("#taskModalErrorContent").textContent = "";
 
