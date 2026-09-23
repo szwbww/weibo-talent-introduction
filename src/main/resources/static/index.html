@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260922-discovery-continuous">
-    <link rel="stylesheet" href="expert-materials.css?v=20260922-discovery-continuous">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20260922-discovery-continuous">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20260922-discovery-continuous">
-    <link rel="stylesheet" href="world-clock.css?v=20260922-discovery-continuous">
+    <link rel="stylesheet" href="styles.css?v=20260923-batch-sender-filter">
+    <link rel="stylesheet" href="expert-materials.css?v=20260923-batch-sender-filter">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20260923-batch-sender-filter">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20260923-batch-sender-filter">
+    <link rel="stylesheet" href="world-clock.css?v=20260923-batch-sender-filter">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1267,7 +1267,7 @@
                 <section class="batch-config-editor-section">
                     <div class="batch-config-editor-section-heading">
                         <h4>收件范围</h4>
-                        <span>所有条件同时生效，留空表示不限制</span>
+                        <span>所有条件同时生效；已绑定发件账号的专家会跳过；发件邮箱留空使用全部可发送账号</span>
                     </div>
                     <div class="batch-config-editor-grid">
                         <label class="batch-config-field">
@@ -1312,6 +1312,18 @@
                                 </div>
                                 <input type="hidden" id="batchConfigEditorEmailDomains" value="">
                                 <div id="batchConfigEditorEmailDomainsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                            </div>
+                        </div>
+                        <div class="batch-config-field">
+                            <span class="batch-config-field-label">发件邮箱</span>
+                            <div class="batch-tag-picker" data-tag-picker="batchConfigEditorSenderAccounts">
+                                <div class="batch-tag-picker-control">
+                                    <div id="batchConfigEditorSenderAccountsChips" class="batch-tag-picker-chips"></div>
+                                    <input type="search" id="batchConfigEditorSenderAccountsSearch" class="batch-tag-picker-search" placeholder="搜索发件邮箱；不选则全部可发送账号" autocomplete="off" aria-controls="batchConfigEditorSenderAccountsDropdown" aria-expanded="false">
+                                    <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                                </div>
+                                <input type="hidden" id="batchConfigEditorSenderAccounts" value="">
+                                <div id="batchConfigEditorSenderAccountsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
                             </div>
                         </div>
                         <label class="batch-config-field">
@@ -1464,7 +1476,7 @@
             <section class="batch-manual-section">
                 <div class="batch-manual-section-heading">
                     <h4>模板与收件范围</h4>
-                    <span>邮件类型根据模板自动确定；留空筛选项表示不限制</span>
+                    <span>邮件类型根据模板自动确定；已绑定发件账号的专家会跳过；发件邮箱留空使用全部可发送账号</span>
                 </div>
                 <div class="batch-config-editor-grid">
                     <label class="batch-config-field" id="manualFieldTemplate">
@@ -1523,6 +1535,20 @@
                             </div>
                             <input type="hidden" id="batchManualEmailDomains" value="">
                             <div id="batchManualEmailDomainsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
+                        </div>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </div>
+                    <div class="batch-config-field" id="manualFieldSenderAccounts">
+                        <span class="batch-config-field-label">发件邮箱</span>
+                        <div class="batch-tag-picker" data-tag-picker="batchManualSenderAccounts">
+                            <div class="batch-tag-picker-control">
+                                <div id="batchManualSenderAccountsChips" class="batch-tag-picker-chips"></div>
+                                <input type="search" id="batchManualSenderAccountsSearch" class="batch-tag-picker-search" placeholder="搜索发件邮箱；不选则全部可发送账号" autocomplete="off" aria-controls="batchManualSenderAccountsDropdown" aria-expanded="false">
+                                <span class="batch-tag-picker-chevron" aria-hidden="true">⌄</span>
+                            </div>
+                            <input type="hidden" id="batchManualSenderAccounts" value="">
+                            <div id="batchManualSenderAccountsDropdown" class="batch-tag-picker-dropdown" role="listbox" aria-multiselectable="true" hidden></div>
                         </div>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
@@ -2165,11 +2191,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260922-discovery-continuous"></script>
-<script src="expert-materials.js?v=20260922-discovery-continuous"></script>
-<script src="meeting-confirmation.js?v=20260922-discovery-continuous"></script>
-<script src="mailbox-chat.js?v=20260922-discovery-continuous"></script>
-<script src="app.js?v=20260922-discovery-continuous"></script>
-<script src="world-clock.js?v=20260922-discovery-continuous"></script>
+<script src="trust-reply-workbench.js?v=20260923-batch-sender-filter"></script>
+<script src="expert-materials.js?v=20260923-batch-sender-filter"></script>
+<script src="meeting-confirmation.js?v=20260923-batch-sender-filter"></script>
+<script src="mailbox-chat.js?v=20260923-batch-sender-filter"></script>
+<script src="app.js?v=20260923-batch-sender-filter"></script>
+<script src="world-clock.js?v=20260923-batch-sender-filter"></script>
 </body>
 </html>

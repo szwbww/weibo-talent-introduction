@@ -17107,7 +17107,8 @@ var batchTaskState = {
     manualDraft: null,        // current draft values
     preloadedTemplates: [],
     preloadedProviders: [],
-    preloadedTags: []
+    preloadedTags: [],
+    preloadedSenderAccounts: []
 };
 
 var batchConfigSearchTimer = null;
@@ -17157,7 +17158,8 @@ function resetBatchTaskState() {
         manualDraft: null,
         preloadedTemplates: batchTaskState.preloadedTemplates,
         preloadedProviders: batchTaskState.preloadedProviders,
-        preloadedTags: batchTaskState.preloadedTags
+        preloadedTags: batchTaskState.preloadedTags,
+        preloadedSenderAccounts: batchTaskState.preloadedSenderAccounts
     };
     clearBatchLogRefreshTimer();
     clearTimeout(batchConfigSearchTimer);
@@ -17178,6 +17180,16 @@ async function preloadBatchSendLookups() {
         }
     } catch (e) { console.error("Failed to load compose templates", e); }
     await loadBatchTagOptions();
+    // I-1：批量弹窗不保证账号页已打开，这里独立请求只读账号列表。
+    // 失败时保留上一次已加载的列表与 hidden input 里的历史选择，绝不清成 []。
+    try {
+        var accounts = await api("/api/mail/sender-accounts");
+        if (Array.isArray(accounts)) {
+            batchTaskState.preloadedSenderAccounts = accounts;
+            renderBatchMultiPicker("batchConfigEditorSenderAccounts");
+            renderBatchMultiPicker("batchManualSenderAccounts");
+        }
+    } catch (e) { console.error("Failed to load sender accounts", e); }
     try {
         var providers = await loadBatchSendTypeProviders("INTRODUCTION");
         if (Array.isArray(providers)) batchTaskState.preloadedProviders = providers;
@@ -17452,6 +17464,8 @@ function showBatchConfigEditor(config) {
     fillBatchConfigEditorTemplateSelector(config ? config.templateId : null);
     if (typeof refreshBatchGateState === "function") refreshBatchGateState("editor");
     setBatchMultiPickerValue("batchConfigEditorEmailDomains", config && Array.isArray(config.emailDomains) ? config.emailDomains : []);
+    // I-1：历史/未知 code 原样回显（列表未加载时 chip 以 code 原文显示），不静默清空。
+    setBatchMultiPickerValue("batchConfigEditorSenderAccounts", config && Array.isArray(config.senderAccountCodes) ? config.senderAccountCodes : []);
     updateBatchConfigVolumeHint();
     if (typeof scheduleRecipientPreview === "function") scheduleRecipientPreview("editor");
 }
@@ -17812,8 +17826,34 @@ var BATCH_MULTI_PICKER_REGISTRY = {
         options: function() { return batchExpertTypeOptions(); },
         emptyText: "没有匹配类型",
         previewKind: "manual"
+    },
+    /* I-1：发件账号选项来自只读 GET /api/mail/sender-accounts；value 恒为原始 accountCode，
+       不按 inboundMailboxCode 分组/去重（同一物理收件箱的两个逻辑账号是两个选项）。 */
+    batchConfigEditorSenderAccounts: {
+        options: function() { return batchSenderAccountOptions(); },
+        emptyText: "没有匹配发件邮箱",
+        previewKind: "editor"
+    },
+    batchManualSenderAccounts: {
+        options: function() { return batchSenderAccountOptions(); },
+        emptyText: "没有匹配发件邮箱",
+        previewKind: "manual",
+        draftKey: "senderAccountCodes"
     }
 };
+
+/* I-1：label = `senderEmail · accountCode`；停用账号额外标注，历史已选值仍保留可见
+   （未知 code 由 renderBatchMultiPicker 的 fallback 以 code 原文显示，不静默删除）。 */
+function batchSenderAccountOptions() {
+    return (batchTaskState.preloadedSenderAccounts || []).map(function(a) {
+        var code = String(a && a.accountCode != null ? a.accountCode : "").trim();
+        if (!code) return null;
+        var email = String(a && a.senderEmail != null ? a.senderEmail : "").trim();
+        var label = email ? email + " · " + code : code;
+        if (a && a.enabled === false) label += "（已停用，本次不会发信）";
+        return { value: code, label: label };
+    }).filter(Boolean);
+}
 
 /* I3b-3：状态选项从既有 operatorStatusOptions 常量派生，不另抄一份。
    I3b-2：value 是英文枚举名（进 payload / 进 diff 比较），label 只用于展示。 */
@@ -17904,7 +17944,7 @@ function notifyBatchMultiPickerChanged(valueId) {
     if (!meta) return;
     if (meta.previewKind === "manual") {
         if (!batchTaskState.manualDraft) batchTaskState.manualDraft = {};
-        batchTaskState.manualDraft.emailDomains = readBatchMultiPickerValue(valueId);
+        batchTaskState.manualDraft[meta.draftKey || "emailDomains"] = readBatchMultiPickerValue(valueId);
         computeAndRenderDiffs();
     }
     scheduleRecipientPreview(meta.previewKind);
@@ -18181,6 +18221,7 @@ function buildConfigEditorRecipientSnapshot() {
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
         expertTypes: readBatchMultiPickerValue("batchConfigEditorExpertTypes"),
+        senderAccountCodes: readBatchMultiPickerValue("batchConfigEditorSenderAccounts"),
         researchDirectionFilter: val("batchConfigEditorResearchDirectionFilter") || "ANY",
         gateFilterEnabled: gateToggleChecked("editor"),
         templateId: templateId
@@ -18203,6 +18244,7 @@ function buildManualExecutionSnapshot() {
         discipline: values.discipline,
         operatorStatuses: values.operatorStatuses,
         expertTypes: values.expertTypes,
+        senderAccountCodes: values.senderAccountCodes,
         researchDirectionFilter: values.researchDirectionFilter || "ANY",
         gateFilterEnabled: values.gateFilterEnabled,
         templateId: values.templateId
@@ -18323,6 +18365,7 @@ async function saveBatchConfigEditor() {
         discipline: val("batchConfigEditorDiscipline") || null,
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
         expertTypes: readBatchMultiPickerValue("batchConfigEditorExpertTypes"),
+        senderAccountCodes: readBatchMultiPickerValue("batchConfigEditorSenderAccounts"),
         researchDirectionFilter: val("batchConfigEditorResearchDirectionFilter") || "ANY",
         gateFilterEnabled: gateToggleChecked("editor"),
         templateId: templateId
@@ -18415,6 +18458,7 @@ function deepCloneConfig(c) {
         discipline: c.discipline || "",
         operatorStatuses: Array.isArray(c.operatorStatuses) ? c.operatorStatuses.slice() : [],
         expertTypes: Array.isArray(c.expertTypes) ? c.expertTypes.slice() : [],
+        senderAccountCodes: Array.isArray(c.senderAccountCodes) ? c.senderAccountCodes.slice() : [],
         researchDirectionFilter: c.researchDirectionFilter || "ANY",
         gateFilterEnabled: c.gateFilterEnabled === true,
         roundSize: c.roundSize || 50,
@@ -18438,6 +18482,7 @@ function fillManualFormDefaults() {
         discipline: "",
         operatorStatuses: [],
         expertTypes: ["PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"],
+        senderAccountCodes: [],
         researchDirectionFilter: "ANY",
         gateFilterEnabled: false,
         roundSize: 50,
@@ -18465,6 +18510,7 @@ function fillManualFormFromDraft() {
     setVal("batchManualResearchDirectionFilter", d.researchDirectionFilter || "ANY");
     setBatchMultiPickerValue("batchManualOperatorStatuses", Array.isArray(d.operatorStatuses) ? d.operatorStatuses : []);
     setBatchMultiPickerValue("batchManualExpertTypes", Array.isArray(d.expertTypes) ? d.expertTypes : []);
+    setBatchMultiPickerValue("batchManualSenderAccounts", Array.isArray(d.senderAccountCodes) ? d.senderAccountCodes : []);
     setVal("batchManualRoundSize", d.roundSize);
     setVal("batchManualRoundsPerRun", d.roundsPerRun);
     setVal("batchManualPerMailIntervalSec", Math.round((d.perMailIntervalMs || 1000) / 1000));
@@ -18550,6 +18596,7 @@ function readManualFormValues() {
         researchDirectionFilter: val("batchManualResearchDirectionFilter") || "ANY",
         operatorStatuses: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualOperatorStatuses") : [],
         expertTypes: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualExpertTypes") : [],
+        senderAccountCodes: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualSenderAccounts") : [],
         gateFilterEnabled: Boolean(gateCheckboxEl && gateCheckboxEl.checked),
         roundSize: parseNum("batchManualRoundSize"),
         roundsPerRun: parseNum("batchManualRoundsPerRun"),
@@ -18570,6 +18617,7 @@ function normalizeManualSnapshot(v) {
         researchDirectionFilter: (v.researchDirectionFilter || "ANY").trim() || "ANY",
         operatorStatuses: (Array.isArray(v.operatorStatuses) ? v.operatorStatuses : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
         expertTypes: (Array.isArray(v.expertTypes) ? v.expertTypes : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
+        senderAccountCodes: (Array.isArray(v.senderAccountCodes) ? v.senderAccountCodes : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
         gateFilterEnabled: Boolean(v.gateFilterEnabled),
         roundSize: Number.isFinite(v.roundSize) ? v.roundSize : null,
         roundsPerRun: Number.isFinite(v.roundsPerRun) ? v.roundsPerRun : null,
@@ -18607,6 +18655,7 @@ function formatManualDiffValue(key, value) {
         var labels = batchExpertTypeOptions().reduce(function(acc, o) { acc[o.value] = o.label; return acc; }, {});
         return (Array.isArray(value) && value.length > 0) ? value.map(function(v) { return labels[v] || v; }).join("、") : "全部类型";
     }
+    if (key === "senderAccountCodes") return (Array.isArray(value) && value.length > 0) ? value.join("、") : "全部可发送账号";
     if (key === "tags") {
         var tags = Array.isArray(value) ? value : [];
         return tags.length > 0 ? tags.join(", ") : "(无)";
@@ -18630,6 +18679,7 @@ function computeManualDiffs() {
         { key: "researchDirectionFilter", label: "研究方向" },
         { key: "operatorStatuses", label: "专家状态" },
         { key: "expertTypes", label: "研发类型" },
+        { key: "senderAccountCodes", label: "发件邮箱" },
         { key: "gateFilterEnabled", label: "邮件模版门禁过滤" },
         { key: "roundsPerRun", label: "执行轮次" },
         { key: "roundSize", label: "每轮数量" },
@@ -18679,6 +18729,7 @@ function computeAndRenderDiffs() {
         researchDirectionFilter: "manualFieldResearchDirectionFilter",
         operatorStatuses: "manualFieldOperatorStatus",
         expertTypes: "manualFieldExpertTypes",
+        senderAccountCodes: "manualFieldSenderAccounts",
         gateFilterEnabled: "manualFieldGateFilter",
         roundsPerRun: "manualFieldRoundsPerRun",
         roundSize: "manualFieldRoundSize",
@@ -18709,7 +18760,7 @@ function computeAndRenderDiffs() {
 
 function clearAllDiffMarkers() {
     var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldRegions", "manualFieldEmailDomain",
-        "manualFieldDiscipline", "manualFieldResearchDirectionFilter", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldGateFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
+        "manualFieldDiscipline", "manualFieldResearchDirectionFilter", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldSenderAccounts", "manualFieldGateFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
         var el = document.getElementById(id);
@@ -19348,6 +19399,8 @@ function bindBatchSendTaskEvents() {
     bindBatchMultiPicker("batchManualOperatorStatuses");
     bindBatchMultiPicker("batchConfigEditorExpertTypes");
     bindBatchMultiPicker("batchManualExpertTypes");
+    bindBatchMultiPicker("batchConfigEditorSenderAccounts");
+    bindBatchMultiPicker("batchManualSenderAccounts");
 
     // Cron preview test button
     var cronTestBtn = document.getElementById("batchConfigEditorCronTestBtn");
