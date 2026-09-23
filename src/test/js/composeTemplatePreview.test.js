@@ -39,6 +39,7 @@ function createSandbox(blocks) {
     const store = createStore();
     const form = store.el("composeTemplateForm");
     form.subject = { value: "Professor ${expertFamilyName|Professor} - ${researchFields|Your Field}" };
+    store.el("composeTemplateSubject").value = form.subject.value;
     const sandbox = {
         state: {
             composeTemplates: [],
@@ -47,10 +48,9 @@ function createSandbox(blocks) {
             composeTemplatePreviewExperts: [],
             composeTemplatePreviewAccounts: [],
             selectedComposeTemplateId: null,
+            selectedSubjectSnippetId: null,
             previewDrawer: {
-                targetId: "composeTemplate",
-                variantIndex: 0,
-                variantPoolSize: 1
+                targetId: "composeTemplate"
             }
         },
         composeTemplatePreviewRequestId: 0,
@@ -78,7 +78,6 @@ function createSandbox(blocks) {
             blocks: [{ blockOrder: 0, blockType: "CUSTOM_TEXT", included: true }],
             fallbackKeys: [],
             toEmail: "ada@mit.edu",
-            variantPoolSize: 1,
             variables: [
                 { key: "senderName", label: "发件人姓名", value: "Chen Jingjing", filled: true, usedFallback: false }
             ]
@@ -86,6 +85,12 @@ function createSandbox(blocks) {
     };
     vm.createContext(sandbox);
     [
+        "replySnippetDisplayLabel",
+        "subjectSnippetLabel",
+        "subjectSnippetIsEligible",
+        "findSubjectSnippet",
+        "subjectSnippetStatus",
+        "collectComposeTemplateSubject",
         "placeholderDefaultFallback",
         "composeTemplatePreviewExpertLabel",
         "composeTemplatePreviewAccountLabel",
@@ -230,7 +235,6 @@ describe("compose template server preview", () => {
             blocks: [{ blockOrder: 0, blockType: "CUSTOM_TEXT", included: true }],
             fallbackKeys: [],
             toEmail: "ada@mit.edu",
-            variantPoolSize: 1,
             variables: []
         });
 
@@ -253,7 +257,6 @@ describe("compose template server preview", () => {
             ],
             fallbackKeys: ["researchFields"],
             toEmail: "expert@example.com",
-            variantPoolSize: 1,
             variables: []
         });
 
@@ -264,16 +267,17 @@ describe("compose template server preview", () => {
     it("refresh calls preview-draft endpoint", async () => {
         const sb = createSandbox([customTextRow("To ${expertName}")]);
         let called = false;
-        sb.api = async (url) => {
+        let requestPayload = null;
+        sb.api = async (url, options) => {
             if (url === "/api/compose-templates/preview-draft") {
                 called = true;
+                requestPayload = JSON.parse(options.body);
                 return {
                     subject: "Subject",
                     body: "To Ada Smith",
                     blocks: [],
                     fallbackKeys: [],
                     toEmail: "ada@mit.edu",
-                    variantPoolSize: 1,
                     variables: []
                 };
             }
@@ -282,8 +286,26 @@ describe("compose template server preview", () => {
 
         await sb.refreshComposeTemplatePreview();
 
+        assert.equal(requestPayload.subjectSnippetId, null);
+        assert.equal(Object.hasOwn(requestPayload, "variantIndex"), false);
         assert.equal(called, true);
         assert.equal(sb.__store.get("previewMailBody").textContent, "To Ada Smith");
+    });
+
+    it("sends the referenced snippet ID and source text for draft preview", async () => {
+        const sb = createSandbox([customTextRow("Body")]);
+        sb.state.replySnippets = [{ id: 44, name: "Intro topic", content: "Source topic", enabled: true }];
+        sb.state.selectedSubjectSnippetId = 44;
+        sb.__store.get("composeTemplateSubject").value = "Source topic";
+        let payload = null;
+        sb.api = async (_url, options) => {
+            payload = JSON.parse(options.body);
+            return { subject: "Source topic", body: "Body", blocks: [], fallbackKeys: [], toEmail: "ada@mit.edu", variables: [] };
+        };
+        await sb.refreshComposeTemplatePreview();
+        assert.equal(payload.subject, "Source topic");
+        assert.equal(payload.subjectSnippetId, 44);
+        assert.equal(Object.hasOwn(payload, "variantIndex"), false);
     });
 
     it("random sample uses preview random-expert endpoint", async () => {
@@ -313,7 +335,6 @@ describe("compose template server preview", () => {
                     blocks: [],
                     fallbackKeys: [],
                     toEmail: "ada@mit.edu",
-                    variantPoolSize: 1,
                     variables: []
                 };
             }
