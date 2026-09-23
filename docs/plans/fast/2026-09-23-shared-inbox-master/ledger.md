@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-09-23/00-shared-inbox-main.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-09-23/00-shared-inbox-main.md (commit 8de18f69a63d1683515dd00c1b46fbddbd644094)
 - Amendments: A1, A2
 - Master base: 9237d6f573335d1624217cbc5501f68a6f52b97b
@@ -9,12 +9,12 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-23T00:00:00Z
-- Current child: c2
+- Current child: c4
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Child c4 (production migration) cannot start without the separate production authorization that the master plan's phase gate G-4 and invariant M-4 require; the `$fast-p` invocation authorizes only one worktree, one branch and local commits, and c4's sole deliverable is a runbook of commands, per-ID classification, backup location and before/after SQL results that only exist once the maintenance window has actually been executed. Children c1, c2 and c3 are terminal with recorded evidence. No product or test file was changed for c4, and no production object was touched anywhere in this run.
+- Resume from: c4, epoch 1, code head e77cb065ba6261317adc7060b2a7729052086407. Next action: supply the separate production authorization and the maintenance window (see `children/c4/brief.md`), then dispatch the c4 implementer to perform the stop-write re-collection, backup, manual equivalent DDL, per-ID classification, in-transaction repair plus the single `LuKai_QF.inbound_mailbox_code='LuKai'` update, and the controlled resume, writing `docs/runbooks/repair-lukai-shared-inbox.md`.
 
 ## Baseline
 
@@ -49,7 +49,7 @@ Raw transcripts are committed under `docs/plans/fast/2026-09-23-shared-inbox-mas
 | c1 | docs/plans/2026-09-23/01-shared-inbox-configuration.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | none | 1 | LIGHT_PASS_WITH_NOTES | daabfdc900555f3c89a698cd85a0165ada20d1a9 | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | 0 | — | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | 23bf02608bca49201d3eb51ab0002c1e455198ef | Implementer C1Implementer; verifier C1Verifier returned LIGHT_PASS_WITH_NOTES (AUTO_FIX N/A, action COMPLETE_CHILD). Notes recorded: O-1 two extra Flyway IT repairs (V131 history delta bound to V130→V131, V124 seeded via existing migrateToV23AndSeedBase) judged target-preserving and inside the authorized test file; O-2 no PNG screenshot (environment), DOM+computed-style proof only, human A-3 open; O-3 app.js hardcodes the `SIMULATOR_NOOP` literal. |
 | c2 | docs/plans/2026-09-23/02-shared-inbox-routing.md | commit:327bbbf3562bcbc1c7c7de45ce1eec1a100b1f6c | c1 | 2 | LIGHT_PASS_WITH_NOTES | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | e28da464bb4bf310698079340796382e32acd2d0 | 0 | — | e28da464bb4bf310698079340796382e32acd2d0 | 77746e27c4de3ec6c8d4a32d579d61d1bd2b774c | Epoch 1 (C2Implementer) delivered all authorized work at `16efaae36c01c11412b457df3e4a3f088860ce9d` and returned PLAN_CONFLICT over an unauthorized collateral test; pause evidence `a617dad`. Amendments A1/A2 widened the file list (record-only; no AUTO_FIX round was raised). Epoch 2 resumed at `fix_round=0` and retired the superseded stage-01 assertion in `e28da464bb4bf310698079340796382e32acd2d0`. Verifier C2Verifier returned LIGHT_PASS_WITH_NOTES (AUTO_FIX N/A, action COMPLETE_CHILD); O-1 records that the batch path still short-circuits `[self-check]` probes before `processSingle` (`AutoMailReplyService.kt:847-853`, unchanged from base) without writing business tables, which child c3 must account for. |
 | c3 | docs/plans/2026-09-23/03-shared-inbox-bounce.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1,c2 | 1 | LIGHT_PASS_WITH_NOTES | e28da464bb4bf310698079340796382e32acd2d0 | e77cb065ba6261317adc7060b2a7729052086407 | 0 | — | e77cb065ba6261317adc7060b2a7729052086407 | 71d8aeb8202c872faca323960c5c58198b932945 | Implementer `C3ImplementerRetry` (first dispatch `C3Implementer` died on a provider stream error with no product change); verifier `C3Verifier` returned LIGHT_PASS_WITH_NOTES (AUTO_FIX N/A, action COMPLETE_CHILD). Notes: O-1 the nullable tail-defaulted `MailSenderAccountService?` parameter in `BounceCollectionService` is the only group-membership source for I-1 and its degraded non-Spring path is unasserted; O-2 the original-contact read is now OUTBOUND-only, so a bounce matching only an INBOUND Message-ID leaves `original_expert_contact_id` NULL and falls back to `failedRecipient`; also recorded by the verifier: an already-recorded probe UID now returns `SELF_CHECK_IGNORED` instead of `DUPLICATE_IMAP_UID` (same `recorded=false` outcome class). |
-| c4 | docs/plans/2026-09-23/04-lukai-production-migration.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1,c2,c3 | 1 | PENDING | — | — | 0 | — | — | — | Production migration; master plan M-4/G-4 gates it behind separate deployment authorization. |
+| c4 | docs/plans/2026-09-23/04-lukai-production-migration.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1,c2,c3 | 1 | PAUSED_FOR_HUMAN | e77cb065ba6261317adc7060b2a7729052086407 | — | 0 | — | — | — | Not started: the approved plan states it is an execution scheme rather than a deployment authorization ("当前绝不运行 UPDATE/DELETE/DDL/重启") and the master plan's G-4 entry gate requires a separate production authorization (M-4), which the `$fast-p` invocation does not grant. Its only repository artifact (`docs/runbooks/repair-lukai-shared-inbox.md`) must record actual on-site commands, row classification, backup location and before/after SQL results collected inside a stop-the-world maintenance window, so no part of it can be produced without that authorization; `children/c4/brief.md` records the full authority analysis and what a resumed c4 requires. |
 
 ## Agent Availability Events
 
