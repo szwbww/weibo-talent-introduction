@@ -1,0 +1,19 @@
+# c2 fix log (fast-p automatic fix rounds)
+
+## Epoch 1 — Round 1/3
+- Findings: F-1
+- Before: 58b96c7b2f66aee703eede6c283ce807ea9d16fe
+- Fix commit: ef1eb2b8c1e17aabaf04178f5f7931852872a42b
+- Authorized files changed:
+  - `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt` (stream creation keyed by the per-source hash)
+  - `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt` (production-path test + harness identity alignment)
+- Commands:
+  - `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -B -Dtest=DiscoveryPipelineServiceTest,DiscoveryPaperQueueRepositoryIT,ExpertDiscoveryServiceTest,RestTemplateConfigTest -DmysqlIt=true -Dapi.version=1.40 test` -> exit 0 / BUILD SUCCESS; 212 run, 0 failures, 0 errors, 0 skipped (DiscoveryPipelineServiceTest 42, DiscoveryPaperQueueRepositoryIT 31 — real Testcontainers MySQL 25.286 s, ExpertDiscoveryServiceTest 121, RestTemplateConfigTest 18).
+  - `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -B -Dtest=ExpertDiscoveryControllerMvcTest,ExpertDiscoveryControllerTest,ExpertDiscoverySchedulerTest,ExpertAcademicEnrichmentWorkerTest test` -> exit 0 / BUILD SUCCESS; 38 run, 0 failures, 0 errors, 0 skipped (17 + 3 + 8 + 10).
+- Result: FIXED
+- Notes:
+  - Smallest correction applied: `DiscoveryPipelineService.kt:651` now passes `queryHash = expertDiscoveryService.queueQueryHash(source, criteria)` into `repository.ensureStream(...)`, i.e. the per-source normalized hash (I-1: keywords/institution/excluded countries/years/OA/scope/page size/that source's own name; `sources` normalized to `[source]`), while the `discovery_pipeline` row keeps the pipeline-level `queryHashOf(normalized)` (`:312`) as the launch idempotency/conflict identity and `:637/:638` keeps the missing-criteria guard. No other production reader of `stream.query_hash` exists (grep: only `ensureStream`/`findStream` in `DiscoveryPaperQueueRepository.kt`, both keyed by the value passed in).
+  - Test proof through the production path (`stream identity is the per-source hash, not the pipeline hash (I-1)`): launch A = `sources=["OPENALEX","PMC_OA"]` (PMC_OA has no data source, so only OPENALEX streams while the pipeline hash still differs) → the single stream row's `query_hash` equals `queueQueryHash("OPENALEX", criteria())` and differs from `pipeline.queryHash`; then launch B = `sources=[]` (same effective per-source conditions, different pipeline hash) → the window re-runs `ensureStream` and finds the **same** row (same id, same per-source hash, still `EXHAUSTED`, `cursor_value` null, `queued_papers` unchanged — no page 0 re-collection); finally launch C = same criteria with `pageSize=50` (genuinely different effective query) → a second stream row appears with `queueQueryHash("OPENALEX", C)`. The old direct-call-only assertion was replaced.
+  - Falsification evidence: with `DiscoveryPipelineService.kt:651` temporarily restored to `queryHash = queryHash`, the new test fails (`stream 必须按本源规范化 hash 建流 ==> expected: <a0a388…> but was: <60d862…>`, i.e. the pipeline hash was used as the stream key), so the test cannot pass while the wiring is absent. Production file was restored before running the required commands.
+  - Harness alignment (test-only, required by the same invariant): `harness`'s mocked `ExpertDiscoveryService.queueQueryHash` is stubbed per source and `streamFor` derives the stream key from the launched `criteria_json` via the same `queueQueryHash(source, …)` call the window uses, so pre-seeded streams and window-created streams share one identity.
+  - RECORD_ONLY items O-1..O-4 and out-of-scope concerns were left untouched. `docs/plans/fast/**` is excluded from the fix commit.

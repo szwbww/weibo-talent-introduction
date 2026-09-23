@@ -8,7 +8,33 @@ const staticDir = path.join(__dirname, "..", "..", "main", "resources", "static"
 const appSource = fs.readFileSync(path.join(staticDir, "app.js"), "utf-8");
 const htmlSource = fs.readFileSync(path.join(staticDir, "index.html"), "utf-8");
 const cssSource = fs.readFileSync(path.join(staticDir, "styles.css"), "utf-8");
-const CACHE_KEY = "20260922-task-activity-center";
+
+/**
+ * c3/T-3：缓存键**不写死**在测试里 —— 从随包发布的 `index.html` 派生，
+ * 因此后续任何一次键 bump 都不需要再改测试；断言的仍然是资源一致性契约。
+ */
+const CACHE_KEY = (() => {
+    const match = htmlSource.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
+
+const ORDERED_ASSETS = [
+    "styles.css",
+    "expert-materials.css",
+    "mailbox-chat.css",
+    "meeting-confirmation.css",
+    "world-clock.css",
+    "trust-reply-workbench.js",
+    "expert-materials.js",
+    "meeting-confirmation.js",
+    "mailbox-chat.js",
+    "app.js",
+    "world-clock.js"
+];
+
+/** 历史键必须零命中（K-frontend-cache-key-triad：新旧键不得混用）。 */
+const RETIRED_KEYS = ["20260920-manual-material-upload", "20260922-task-activity-center", "20260903-bounce-warning"];
 
 // ── source extraction ──────────────────────────────────────────────────────────────
 
@@ -641,10 +667,30 @@ describe("task activity center static contract", () => {
         const keys = htmlSource.match(/\?v=[^"']+/g) || [];
         assert.strictEqual(keys.length, 11, `expected 11 versioned assets, found ${keys.length}`);
         keys.forEach((key) => assert.strictEqual(key, `?v=${CACHE_KEY}`));
-        assert.ok(!htmlSource.includes("20260920-manual-material-upload"), "旧缓存键必须清除");
         assert.ok(!htmlSource.includes("task-center.css"), "不得新增资源文件");
         assert.ok(htmlSource.includes('<script src="task-modal-runtime.js"></script>'),
             "task-modal-runtime.js 保持无版本键的原引用方式");
+        assert.ok(!htmlSource.includes("task-modal-runtime.js?v="));
+
+        // c3/T-3：注册顺序与发布 triad（样式 / 工作台 / 主脚本）必须同键。
+        let previous = -1;
+        for (const asset of ORDERED_ASSETS) {
+            const at = htmlSource.indexOf(asset + "?v=" + CACHE_KEY);
+            assert.ok(at > previous, asset + " must stay in registration order (CSS then workbench -> app)");
+            previous = at;
+        }
+        for (const retired of RETIRED_KEYS) {
+            if (retired === CACHE_KEY) continue;
+            assert.ok(!htmlSource.includes(retired), "retired cache key must have zero hits in index.html: " + retired);
+        }
+        // 键字面量只允许出现在 index.html：脚本与测试都不得再固化它。
+        const stragglers = [
+            ...fs.readdirSync(staticDir).filter((name) => name.endsWith(".js")).map((name) => path.join(staticDir, name)),
+            ...fs.readdirSync(__dirname).filter((name) => name.endsWith(".js")).map((name) => path.join(__dirname, name))
+        ].filter((file) => fs.readFileSync(file, "utf-8").includes(CACHE_KEY));
+        assert.deepStrictEqual(stragglers, [],
+            "a cache key literal must live only in index.html — found in: " + stragglers.join(", "));
+        assert.ok(/^[0-9]{8}-[a-z0-9-]+$/.test(CACHE_KEY), "cache key must be <yyyymmdd>-<slug>, got: " + CACHE_KEY);
     });
 
     it("I-8: the new markup carries no inline style or inline handler", () => {

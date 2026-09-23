@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-22/openalex-daily-budget-design.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
+- Master plan: docs/plans/2026-09-22/openalex-daily-budget-design.md (sha256 120646415a1af9aad8c76fcfc7a072a551259df57844dd310bdd20c880e3b47e)
+- Governing master identity: sha256 120646415a1af9aad8c76fcfc7a072a551259df57844dd310bdd20c880e3b47e; recorded commit ee1dfcd5439de54475c12ff51c9c713e984a82ec
+- Invoked master identity: sha256 120646415a1af9aad8c76fcfc7a072a551259df57844dd310bdd20c880e3b47e
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/2026-09-22-openalex-daily-budget-design/ledger.md (sha256 ceee3836ce72992dad559c05c277fe8220b48bca8319c7c8f5be7da21594d96b)
+- Fast-p handoff: docs/plans/fast/2026-09-22-openalex-daily-budget-design/human-review-handoff.md (sha256 9fc305061a31500ef45a335bf73ed054cdf89e3341df8ddf8e37f5f63e747ed8)
+- Master base: e2247680592603b091af791ef3629d70739a015b
+- Final code head: f51512591f27ab1f21a81302f7f5f767d7f06695
+- Evidence parent before next commit: fa3f16cb0cca313fd819c82b72e6ed526d4985b5
+- Previous evidence commit: fa3f16cb0cca313fd819c82b72e6ed526d4985b5
+- Branch: fast/2026-09-22-openalex-daily-budget-design
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-22-openalex-daily-budget-design
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; 1 candidate; child_count=3; fast_final_code_head=13b82fde5d74836977d12e97b7f794a98803429d; execution_authority=matching READY_FOR_HUMAN_REVIEW fast-p ledger and handoff
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_rereviewer
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md#epoch-2
+- Repair artifact: docs/plans/fix/openalex-daily-budget-design/repair.md (sha256 545b8402eb52fce9f0e1947504f2553f784821fd960f3fd828dc21293f9c190d; DRAFT_READY)
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: explicit human invocation `$execute-p docs/plans/fix/openalex-daily-budget-design/repair.md` (2026-09-23)
+- Repair executor: Main (omp session controller)
+- Repair code head: f51512591f27ab1f21a81302f7f5f767d7f06695
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human acceptance of A-1 through A-5 and explicit sign-off for f51512591f27ab1f21a81302f7f5f767d7f06695.

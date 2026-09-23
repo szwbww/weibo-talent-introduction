@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.discovery.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
+import com.weibo.talentintroduction.config.OpenAlexMeteredDestinations
 import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.config.OpenAlexRequestPolicy
 import com.weibo.talentintroduction.config.PdfExtractionProperties
@@ -14,6 +15,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
+import com.weibo.talentintroduction.discovery.domain.resolvedFulltextObtained
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -56,20 +58,23 @@ class OpenAlexDataSourceTest {
     )
     private val mapper = ObjectMapper()
 
-    /** Keeps the shared quota policy off the wall clock so no test pays a real rate-limit sleep. */
+    /**
+     * Keeps the shared quota policy off the wall clock so no test pays a real rate-limit sleep.
+     * 共享账本按 UTC 时刻记账，因此 sleep 必须同时推进 `now`（否则限速槽永远追不上）。
+     */
     private class TestTimeSource : PolicyTimeSource {
-        private var nanos: Long = 0
+        private var current: Instant = Instant.parse("2026-09-21T02:41:17Z")
 
-        override fun now(): Instant = Instant.parse("2026-09-21T02:41:17Z")
-
-        override fun nanoTime(): Long = nanos
+        override fun now(): Instant = current
 
         override fun sleep(ms: Long) {
-            nanos += ms * 1_000_000L
+            current = current.plusMillis(ms)
         }
     }
 
-    private val policy = OpenAlexRequestPolicy(properties, TestTimeSource())
+    /** I-5：测试可控的补全待办数（生产由共享账本读取 expert_academic_enrichment_job）。 */
+    private val budgetStore = com.weibo.talentintroduction.config.InMemoryOpenAlexBudgetStore()
+    private val policy = OpenAlexRequestPolicy(properties, TestTimeSource(), budgetStore)
     private val dataSource = OpenAlexDataSource(restTemplate, properties, europePmc, pdfExtractor, unpaywallClient, policy)
 
     @Test
@@ -1054,25 +1059,42 @@ class OpenAlexDataSourceTest {
     }
 
     @Test
-    fun `a metered fulltext download reports its quota headers to the shared policy (c1 O-1)`() {
-        // c1 的 O-1：fulltextDownloadCount() 之前没有生产写入方 —— 下载真正发生时把 provider 响应头交回 policy。
-        Mockito.doAnswer { invocation: InvocationOnMock ->
-            invocation.getArgument<(HttpHeaders) -> Unit>(4)(
-                HttpHeaders().apply { set(OpenAlexRequestPolicy.CREDITS_USED_HEADER, "100") }
+    fun `a metered content candidate is skipped and never writes a ledger row (I-1)`() {
+        // I-1：Content API 主机（100 credits/次）不是公开全文候选 —— 本阶段拒绝新增计量下载。
+        stubDownloads("https://repo.example/copy.pdf" to successfulDownload("john.smith@oxford.ac.uk"))
+
+        val outcome = dataSource.extractAuthorEmails(
+            openAlexPaper(
+                downloadUrl = "https://content.openalex.org/works/W1.pdf",
+                candidates = listOf("https://repo.example/copy.pdf")
             )
-            successfulDownload("john.smith@oxford.ac.uk")
-        }.`when`(pdfExtractor).extract(
-            Mockito.anyString(), Mockito.anyList(), Mockito.anyString(), Mockito.any(), Mockito.any()
         )
 
-        dataSource.extractAuthorEmails(openAlexPaper(downloadUrl = "https://content.openalex.org/works/W1.pdf"))
-
-        assertEquals(1L, policy.fulltextDownloadCount(), "计量内容下载必须计入共享额度，而不是停在死计数器里")
+        assertTrue(outcome.resolvedFulltextObtained(), "跳过计量主机后必须改试已有公开链接")
+        assertEquals(listOf("https://repo.example/copy.pdf"), downloadAttempts)
+        assertTrue(downloadAttempts.none { OpenAlexMeteredDestinations.isMetered(it) })
+        // 公开 PDF 不属于 OpenAlex 计量请求：零账本行、零额度消耗。
+        assertEquals(0L, policy.snapshot().confirmedSpentCredits)
+        assertEquals(0L, policy.snapshot().reservedCredits)
+        assertEquals(0L, policy.fulltextDownloadCount())
+        assertEquals(0L, policy.listRequestCount())
     }
 
     @Test
-    fun `an external host without openalex quota headers leaves the shared policy untouched (c1 O-1)`() {
-        // 外部开放全文站点不带 provider 配额头：既不算额度消耗，也不触发无谓退避。
+    fun `an api host is not a public fulltext candidate either (I-1)`() {
+        val outcome = dataSource.extractAuthorEmails(
+            openAlexPaper(downloadUrl = "https://api.openalex.org/works/W1/fulltext")
+        )
+
+        assertEquals("NO_PMC_ID", outcome.failureReason)
+        assertEquals(0, outcome.httpRequests)
+        Mockito.verifyNoInteractions(pdfExtractor)
+        assertEquals(0L, policy.snapshot().confirmedSpentCredits)
+    }
+
+    @Test
+    fun `a publisher download leaves the shared policy untouched (I-1)`() {
+        // 出版社/仓库的公开 PDF 不带 provider 配额头：既不算额度消耗，也不触发退避。
         Mockito.doAnswer { invocation: InvocationOnMock ->
             invocation.getArgument<(HttpHeaders) -> Unit>(4)(
                 HttpHeaders().apply { set(HttpHeaders.CONTENT_TYPE, "application/pdf") }
@@ -1086,6 +1108,8 @@ class OpenAlexDataSourceTest {
 
         assertEquals(0L, policy.fulltextDownloadCount())
         assertEquals(0L, policy.listRequestCount())
+        assertEquals(0L, policy.snapshot().confirmedSpentCredits)
+        assertEquals(0L, policy.snapshot().reservedCredits)
     }
 
     @Test
@@ -1148,6 +1172,101 @@ class OpenAlexDataSourceTest {
         assertTrue(outcome.emails.any { it.email == "john.smith@oxford.ac.uk" })
         assertTrue(outcome.emails.all { it.orcidId == null && it.openAlexAuthorId == null }, "备用版本的同名歧义不得被当身份")
         assertEquals(2, outcome.httpRequests)
+    }
+
+    // ── 子计划 01：逐路径成本、重试二次记账、重定向逐跳检查 ──
+
+    @Test
+    fun `list search and singleton calls are charged 1 10 and 0 credits per path (I-1)`() {
+        stubWorksResponse("""{"meta":{"count":0,"next_cursor":null},"results":[]}""")
+        dataSource.searchPapers(PaperSearchCriteria())
+        assertEquals(1L, policy.snapshot().confirmedSpentCredits, "无关键词的列表查询 = 1 credit")
+
+        stubWorksResponse("""{"meta":{"count":0,"next_cursor":null},"results":[]}""")
+        dataSource.searchPapers(PaperSearchCriteria(keywords = listOf("alloy")))
+        assertEquals(11L, policy.snapshot().confirmedSpentCredits, "关键词搜索 = 10 credits")
+
+        stubAuthorEnrichment("""{"works_count":4,"cited_by_count":9,"summary_stats":{"h_index":3},"topics":[]}""")
+        assertEquals(3, dataSource.enrichAuthor("A1", RequestKind.NEW_ENRICHMENT)!!.hIndex)
+        assertEquals(11L, policy.snapshot().confirmedSpentCredits, "单实体读取 = 0 credit")
+        assertEquals(0L, policy.snapshot().reservedCredits)
+    }
+
+    @Test
+    fun `a retried request reserves and is charged a second time (I-1)`() {
+        // 第一次尝试网络失败 → 预占保留为 UNKNOWN（不退还），绝不把失败重试变成免费调用。
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenThrow(RuntimeException("network down"))
+
+        val failed = dataSource.batchEnrichByOrcids(listOf("0000-0001"), RequestKind.NEW_ENRICHMENT)
+        assertTrue(failed.values.all { it is EnrichmentOutcome.ApiError })
+        assertEquals(1L, policy.snapshot().reservedCredits, "失败尝试的预占必须保留")
+        assertEquals(0L, policy.snapshot().confirmedSpentCredits)
+
+        // 重试：重新预占并结算 —— 两次尝试合计 2 credits。
+        stubJsonWithHeaders(
+            """{"meta":{"count":1},"results":[{"id":"https://openalex.org/A1","orcid":"https://orcid.org/0000-0001","works_count":4,"cited_by_count":9,"summary_stats":{"h_index":3},"topics":[]}]}""",
+            HttpHeaders()
+        )
+        val retried = dataSource.batchEnrichByOrcids(listOf("0000-0001"), RequestKind.NEW_ENRICHMENT)
+        assertTrue(retried.values.all { it is EnrichmentOutcome.Success })
+        assertEquals(1L, policy.snapshot().confirmedSpentCredits)
+        assertEquals(
+            2L,
+            policy.snapshot().confirmedSpentCredits + policy.snapshot().reservedCredits,
+            "重试必须二次预占，总占用 2 credits"
+        )
+    }
+
+    @Test
+    fun `a redirect into an openalex metered destination is refused hop by hop (I-1)`() {
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val requests = java.util.concurrent.atomic.AtomicInteger(0)
+        server.createContext("/metered") { exchange ->
+            requests.incrementAndGet()
+            exchange.responseHeaders.add("Location", "https://content.openalex.org/works/W1.pdf")
+            exchange.sendResponseHeaders(302, -1)
+            exchange.close()
+        }
+        server.createContext("/ok") { exchange ->
+            requests.incrementAndGet()
+            val body = "ok".toByteArray()
+            exchange.sendResponseHeaders(200, body.size.toLong())
+            exchange.responseBody.use { it.write(body) }
+        }
+        server.createContext("/public") { exchange ->
+            requests.incrementAndGet()
+            exchange.responseHeaders.add("Location", "http://127.0.0.1:${server.address.port}/ok")
+            exchange.sendResponseHeaders(302, -1)
+            exchange.close()
+        }
+        server.start()
+        try {
+            val base = RestTemplate()
+            val thrown = assertThrows(Exception::class.java) {
+                BoundedFulltextHttp.getForObject(
+                    base, "http://127.0.0.1:${server.address.port}/metered", ByteArray::class.java,
+                    connectCapMs = 2_000, readCapMs = 2_000, deadline = Instant.now().plusSeconds(10)
+                )
+            }
+            assertTrue(
+                generateSequence(thrown as Throwable?) { it.cause }
+                    .any { it is BoundedFulltextHttp.MeteredRedirectException },
+                "指向计量主机的 302 必须逐跳拒绝（实际异常：$thrown）"
+            )
+            assertEquals(1, requests.get(), "计量目标绝不被访问")
+
+            // 合法公开重定向仍然被跟随：不是「一律禁止重定向」。
+            val body = BoundedFulltextHttp.getForObject(
+                base, "http://127.0.0.1:${server.address.port}/public", ByteArray::class.java,
+                connectCapMs = 2_000, readCapMs = 2_000, deadline = Instant.now().plusSeconds(10)
+            )
+            assertEquals("ok", String(body!!))
+            assertEquals(3, requests.get())
+        } finally {
+            server.stop(0)
+        }
     }
 
     /** Mockito 的 eq(any) 返回 null，Kotlin 非空参数会触发空检查 —— 用真实值兜底（本仓库既有习惯）。 */
@@ -1214,8 +1333,9 @@ class OpenAlexDataSourceTest {
     /** Spends budget through the policy exactly like a real caller: reserve a slot, then reconcile the response. */
     private fun consumeCredits(requests: Int) {
         repeat(requests) {
-            assertEquals(Permit.Allowed, policy.beforeRequest(RequestKind.DISCOVERY))
-            policy.recordResponse(HttpHeaders())
+            val permit = policy.beforeRequest(RequestKind.DISCOVERY)
+            assertTrue(permit is Permit.Allowed, "expected an allowed permit, got $permit")
+            policy.recordResponse((permit as Permit.Allowed).permitId, HttpHeaders())
         }
     }
 
@@ -1237,6 +1357,8 @@ class OpenAlexDataSourceTest {
     @Test
     fun `discovery defers on the reserved share while new-expert enrichment still runs (I-3, V-3)`() {
         consumeCredits(800)
+        // I-5：有待补全任务时保留区生效（20 条待补 × 10 credits 估算 = 20% 目标 = 200）。
+        budgetStore.pendingEnrichmentJobs = 20
         val enrichmentJson = """{"works_count":4,"cited_by_count":9,"summary_stats":{"h_index":3},"topics":[]}"""
         stubAuthorEnrichment(enrichmentJson)
 
@@ -1248,8 +1370,9 @@ class OpenAlexDataSourceTest {
         }
         assertEquals(Instant.parse("2026-09-22T00:00:00Z"), deferred.resetAt)
 
+        // 单实体读取是 0 成本操作：额度/保留区都不阻止它（I-4）。
+        assertEquals(3, dataSource.enrichAuthor("A1")!!.hIndex)
         // Legacy backfill callers are history enrichment: lowest priority, never inside the reserve.
-        assertThrows(OpenAlexBudgetDeferredException::class.java) { dataSource.enrichAuthor("A1") }
         assertThrows(OpenAlexBudgetDeferredException::class.java) { dataSource.batchEnrichByOrcids(listOf("0000-0001")) }
     }
 
@@ -1263,7 +1386,7 @@ class OpenAlexDataSourceTest {
 
         assertEquals(999, policy.remainingCredits())
         assertEquals(0, policy.listRequestCount())
-        assertEquals(Permit.Allowed, policy.beforeRequest(RequestKind.NEW_ENRICHMENT))
+        assertTrue(policy.beforeRequest(RequestKind.NEW_ENRICHMENT) is Permit.Allowed)
     }
 
     // ── 子计划 06：按作者 ID 批量补全与可单独重试的附加标题（I-1、I-3、V-3）──

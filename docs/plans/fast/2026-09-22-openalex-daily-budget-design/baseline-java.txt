@@ -1,0 +1,39 @@
+# Fast-P baseline — master base e2247680592603b091af791ef3629d70739a015b (plans seeded at ee1dfcd5439de54475c12ff51c9c713e984a82ec)
+
+Recorded 2026-09-22 before any child implementation, in the retained worktree.
+
+## 1. JS suite
+
+```
+node --test src/test/js/*.test.js
+exit 0
+tests 1037 | suites 207 | pass 1037 | fail 0 | cancelled 0 | skipped 0 | todo 0 | duration_ms 3599.7845
+```
+
+## 2. Java targeted baseline (tests named by the child plans that exist at base)
+
+```
+JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -B \
+  -Dtest=OpenAlexRequestPolicyTest,OpenAlexDataSourceTest,ExpertDiscoveryServiceTest,RestTemplateConfigTest,ExpertDiscoveryControllerMvcTest,ExpertDiscoveryControllerTest,ExpertDiscoverySchedulerTest,TaskProgressControllerTest,TaskProgressControllerExecutionsTest \
+  test
+exit 0 — Tests run: 277, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS
+```
+
+Per class: OpenAlexRequestPolicyTest 13; RestTemplateConfigTest 18; ExpertDiscoveryControllerTest 17; ExpertDiscoveryControllerMvcTest 3; ExpertDiscoverySchedulerTest 8; ExpertDiscoveryServiceTest 121; OpenAlexDataSourceTest 63; TaskProgressControllerExecutionsTest 26; TaskProgressControllerTest 8.
+
+## 3. Testcontainers MySQL smoke (environment discovery)
+
+| Variant | Command | Result |
+|---|---|---|
+| a | `mvn -Dtest=ExpertAcademicEnrichmentJobRepositoryIT -DmigrationIt=true test` | FAIL — `Could not find a valid Docker environment` |
+| b | `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock mvn -Dtest=… -DmigrationIt=true test` | FAIL — `BadRequestException (Status 400: client version 1.32 is too old. Minimum supported API version is 1.40)` |
+| c | `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock mvn -B -Dtest=ExpertAcademicEnrichmentJobRepositoryIT -DmigrationIt=true -Dapi.version=1.40 test` | exit 0 — Tests run: 14, Failures: 0, Errors: 0, Skipped: 0 — BUILD SUCCESS |
+
+`mysql:8.0.36` and `testcontainers/ryuk` images are cached locally; `~/.testcontainers.properties` already selects the OrbStack unix socket. **Every MySQL IT in this run therefore needs `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock` and `-Dapi.version=1.40`** (variants a and b are pre-existing environment failures, not child regressions).
+
+## Environment facts
+
+- JDK: `/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home` (required; newer JDKs fail the build).
+- Highest Flyway migration at base: `V131__create_expert_academic_enrichment_job.sql`; `V132`/`V133` free.
+- `mvn test` also runs the node JS suite through `exec-maven-plugin` in the `test` phase.
+- The retained worktree is clean at base; the primary `main` worktree's uncommitted `task-activity-center` work is deliberately absent.
