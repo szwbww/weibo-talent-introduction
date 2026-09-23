@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-09-23/00-shared-inbox-main.md
 
-- Status: PAUSED_FOR_HUMAN
-- Master plan: docs/plans/2026-09-23/00-shared-inbox-main.md (commit daabfdc900555f3c89a698cd85a0165ada20d1a9)
-- Amendments: N/A
+- Status: RUNNING
+- Master plan: docs/plans/2026-09-23/00-shared-inbox-main.md (commit 8de18f69a63d1683515dd00c1b46fbddbd644094)
+- Amendments: A1, A2
 - Master base: 9237d6f573335d1624217cbc5501f68a6f52b97b
 - Branch: fast/2026-09-23-shared-inbox-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-23-shared-inbox-master
@@ -13,14 +13,16 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Plan conflict on child c2 — the plan-02-mandated owner-only rework of `MailSenderAccountService.listAutoReceiveAccounts()` retires a c1-authored assertion (`MailSenderAccountServiceTest.kt` `listAutoReceiveAccounts still returns disabled and shared inbox accounts`, lines 1059-1072, `expected: <[owner, alias]> but was: <[owner]>`), and that test file is not in c2's 10-file authorization while master rule M-5 forbids changing files outside a child's own list without first fixing the plan. The executor committed all authorized work (`16efaae`) and returned PLAN_CONFLICT instead of self-authorizing the amendment. Human approval of a plan amendment (widen child c2's authorized files by `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountServiceTest.kt`, or an alternative arbitration) is required before c2 can terminate.
-- Resume from: 16efaae36c01c11412b457df3e4a3f088860ce9d — commit the approved amendment to `docs/plans/2026-09-23/02-shared-inbox-routing.md`, append its `## Amendments` row, then resume child c2 in epoch 2 (fix_round=0): retire the obsolete stage-01 assertion, re-run the brief's required commands, and dispatch a fresh verifier.
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Baseline
 
 - Approval basis: explicit `$fast-p docs/plans/2026-09-23/00-shared-inbox-main.md` invocation (2026-09-23), which authorizes one worktree, one local branch, and local commits for this run. The master plan and its four child plans were untracked on `main` at run start.
 - MASTER_BASE_SHA `9237d6f573335d1624217cbc5501f68a6f52b97b` = `main` HEAD at run start; branch `fast/2026-09-23-shared-inbox-master` created there in a dedicated worktree.
-- Plans seeded on the branch as plan-only commit `daabfdc900555f3c89a698cd85a0165ada20d1a9` (`docs/plans/2026-09-23/00-shared-inbox-main.md`, `01-shared-inbox-configuration.md`, `02-shared-inbox-routing.md`, `03-shared-inbox-bounce.md`, `04-lukai-production-migration.md`); seeding is not an amendment. Master and all four child plan identities = `commit:daabfdc900555f3c89a698cd85a0165ada20d1a9`.
+- Plans seeded on the branch as plan-only commit `daabfdc900555f3c89a698cd85a0165ada20d1a9` (`docs/plans/2026-09-23/00-shared-inbox-main.md`, `01-shared-inbox-configuration.md`, `02-shared-inbox-routing.md`, `03-shared-inbox-bounce.md`, `04-lukai-production-migration.md`); seeding is not an amendment. Children c1, c3 and c4 keep the seed identity `commit:daabfdc900555f3c89a698cd85a0165ada20d1a9`.
+- Amendments A1 (`327bbbf3562bcbc1c7c7de45ce1eec1a100b1f6c`) and A2 (`8de18f69a63d1683515dd00c1b46fbddbd644094`) supersede the seed identity for the two amended plans: plan 02 is now identified by A1's After commit and the master plan by A2's After commit.
+- Pause/resume: child c2 paused for plan arbitration after its epoch-1 implementation `16efaae36c01c11412b457df3e4a3f088860ce9d` (pause evidence `a617dad`), then resumed in epoch 2 with `fix_round=0` after the human approved amendment option A at 2026-09-23 18:58 +0800.
 - Child order and dependencies follow the master plan phase table: c1 none; c2 c1; c3 c1,c2; c4 c1,c2,c3.
 - `main` carried uncommitted work-in-progress at run start (knowledge-base edits, `ExpertDiscoveryController`/ES mapping edits, `tools/contactout-visible-export`, untracked `docs/plans/2026-09-22/task-activity-center.md` and `docs/plans/2026-09-23/01-batch-sender-filter-backend.md`, `02-batch-sender-filter-frontend.md`). None of it is authorized or present in this worktree; only the five shared-inbox plan files were seeded.
 - Highest Flyway migration at base is `V133__create_discovery_paper_queue.sql`; child c1 adds `V134__shared_inbox_owner.sql` per its plan, and the sibling batch-sender-filter plan reserves V135 only after V134 enters the Flyway sequence.
@@ -45,7 +47,7 @@ Raw transcripts are committed under `docs/plans/fast/2026-09-23-shared-inbox-mas
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | c1 | docs/plans/2026-09-23/01-shared-inbox-configuration.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | none | 1 | LIGHT_PASS_WITH_NOTES | daabfdc900555f3c89a698cd85a0165ada20d1a9 | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | 0 | — | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | 23bf02608bca49201d3eb51ab0002c1e455198ef | Implementer C1Implementer; verifier C1Verifier returned LIGHT_PASS_WITH_NOTES (AUTO_FIX N/A, action COMPLETE_CHILD). Notes recorded: O-1 two extra Flyway IT repairs (V131 history delta bound to V130→V131, V124 seeded via existing migrateToV23AndSeedBase) judged target-preserving and inside the authorized test file; O-2 no PNG screenshot (environment), DOM+computed-style proof only, human A-3 open; O-3 app.js hardcodes the `SIMULATOR_NOOP` literal. |
-| c2 | docs/plans/2026-09-23/02-shared-inbox-routing.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1 | 1 | PAUSED_FOR_HUMAN | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | 16efaae36c01c11412b457df3e4a3f088860ce9d | 0 | — | 16efaae36c01c11412b457df3e4a3f088860ce9d | — | Implementer C2Implementer returned PLAN_CONFLICT after committing all authorized work (exactly the 10 authorized files). Owner-only polling, To/Cc + unique In-Reply-To OUTBOUND routing, physical UID dedup, owner cursor/ack/attachment source, `RECIPIENT_UNRESOLVED` owner row, and the OUTBOUND-only candidate query for c3 are implemented; the brief's required commands are green (120 JVM tests, JS 1121/1121). Blocker needs human arbitration: `MailSenderAccountServiceTest.kt` (outside c2's authorization) still pins the pre-shared-inbox receive list and now fails, so M-5 requires a plan amendment before c2 can terminate. |
+| c2 | docs/plans/2026-09-23/02-shared-inbox-routing.md | commit:327bbbf3562bcbc1c7c7de45ce1eec1a100b1f6c | c1 | 2 | IMPLEMENTING | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | 16efaae36c01c11412b457df3e4a3f088860ce9d | 0 | — | 16efaae36c01c11412b457df3e4a3f088860ce9d | — | Epoch 1 (implementer C2Implementer) delivered all authorized work and returned PLAN_CONFLICT at `16efaae`; pause evidence `a617dad`. Amendments A1/A2 widened the child's file list by `MailSenderAccountServiceTest.kt` so the stage-01 receive-list assertion superseded by owner-only polling can be retired; record-only, no AUTO_FIX round was raised. Plan identity now tracks A1's After commit because the approved plan content changed. Epoch 2 continues from `16efaae` with fix_round=0. |
 | c3 | docs/plans/2026-09-23/03-shared-inbox-bounce.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1,c2 | 1 | PENDING | — | — | 0 | — | — | — | OUTBOUND-only bounce attribution plus group-wide self-check filter. |
 | c4 | docs/plans/2026-09-23/04-lukai-production-migration.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1,c2,c3 | 1 | PENDING | — | — | 0 | — | — | — | Production migration; master plan M-4/G-4 gates it behind separate deployment authorization. |
 
@@ -53,3 +55,5 @@ Raw transcripts are committed under `docs/plans/fast/2026-09-23-shared-inbox-mas
 
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
+| A1 | docs/plans/2026-09-23/02-shared-inbox-routing.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | commit:327bbbf3562bcbc1c7c7de45ce1eec1a100b1f6c | M-5 (每阶段最多改自己清单文件，超出先修计划) | 02 的 owner-only 收信列表取代计划 01 的旧断言，而该断言所在测试文件不在 02 的授权清单内 | HUMAN:fast-p ask c2_amendment answered "A. Amend plan 02: add the test file, retire the stale assertion" at 2026-09-23 18:58 +0800 |
+| A2 | docs/plans/2026-09-23/00-shared-inbox-main.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | commit:8de18f69a63d1683515dd00c1b46fbddbd644094 | M-5 (四份子计划各自文件数 ≤10) | 记录 02 的授权文件数按 11 计的例外，保持 MAIN 验收口径自洽 | HUMAN:fast-p ask c2_amendment answered "A. Amend plan 02: add the test file, retire the stale assertion" at 2026-09-23 18:58 +0800 |

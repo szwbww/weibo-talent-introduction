@@ -1,7 +1,7 @@
 # Child c2 Brief — 共享收件箱单次抓取与逻辑账号路由
 
 - Child ID: `c2`
-- Approved plan (complete contract): `docs/plans/2026-09-23/02-shared-inbox-routing.md` — plan identity `commit:daabfdc900555f3c89a698cd85a0165ada20d1a9`
+- Approved plan (complete contract): `docs/plans/2026-09-23/02-shared-inbox-routing.md` — plan identity `commit:327bbbf3562bcbc1c7c7de45ce1eec1a100b1f6c` (amended by A1; the seed identity was `commit:daabfdc900555f3c89a698cd85a0165ada20d1a9`)
 - Master plan (upper constraint): `docs/plans/2026-09-23/00-shared-inbox-main.md` (invariants M-1…M-6, especially M-1 and M-2)
 - Base SHA: `a15cb52b599e81753bb9fa3bcbb6e04969f44813` (product base = c1's terminal code head; c1's evidence commit precedes this implementation in Git ancestry)
 - Worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-23-shared-inbox-master`
@@ -12,7 +12,7 @@
 
 One physical IMAP poll per physical mailbox. Several business accounts sharing one IMAP INBOX must be polled once through the owner's credentials and the owner's `mail_inbox_cursor`; each incoming message is routed to a single logical account by its original top-level `To`/`Cc` (falling back to a unique `In-Reply-To` match against an `OUTBOUND` record), or — when it cannot be resolved uniquely — lands once as `MANUAL_REVIEW/RECIPIENT_UNRESOLVED` under the owner without any automatic mail or expert-state change.
 
-## Authorized files (exactly these 10, no others)
+## Authorized files (exactly these 11, no others)
 
 1. `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailReceiveService.kt`
 2. `src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveService.kt`
@@ -24,8 +24,11 @@ One physical IMAP poll per physical mailbox. Several business accounts sharing o
 8. `src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveServiceTest.kt`
 9. `src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt`
 10. `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt`
+11. `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountServiceTest.kt` — **amendment A1**: used only to retire the plan-01 assertion `listAutoReceiveAccounts still returns disabled and shared inbox accounts` (it pins the pre-shared-inbox receive list and the `findAllByAccountCodeNot("SIMULATOR_NOOP")` call, which owner-only polling supersedes). Delete that single test method; keep every other test in the file untouched.
 
 Do not modify `BatchAutoMailReplyServiceTest.kt` (it is a regression target, not an authorized edit) and do not create new files.
+
+**Epoch 2 note:** the child's epoch-1 implementation is already committed at `16efaae36c01c11412b457df3e4a3f088860ce9d` and is not to be redone; the only outstanding work is the authorized file-11 retirement above plus re-running the required commands. `MailSenderAccountServiceTest` currently fails with exactly one test (`listAutoReceiveAccounts still returns disabled and shared inbox accounts`, `expected: <[owner, alias]> but was: <[owner]>`).
 
 ## Upstream contract delivered by c1 (verify against `children/c1/execution.md` before editing)
 
@@ -50,9 +53,11 @@ Do not modify `BatchAutoMailReplyServiceTest.kt` (it is a regression target, not
 
 ```
 export JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home
-mvn -B -Dtest=ImapMailReceiveServiceTest,AutoMailReplyServiceTest,BatchAutoMailReplyServiceTest,OperatorStatusWriteSeamGuardTest test
+mvn -B -Dtest=ImapMailReceiveServiceTest,AutoMailReplyServiceTest,BatchAutoMailReplyServiceTest,OperatorStatusWriteSeamGuardTest,MailSenderAccountServiceTest test
 node --test src/test/js/*.test.js
 ```
+
+`MailSenderAccountServiceTest` is added to the required commands for epoch 2 by amendment A1: it must be green after the obsolete assertion is retired, with its other 61 tests unchanged.
 
 No Docker/Testcontainers command is required for this child. Do not run the whole project suite, and do not run formatters or linters.
 
