@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-23/00-batch-sender-filter-main.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-09-23/00-batch-sender-filter-main.md (worktree sha256 5d23d9dab0e2f7fdf8541a393c62f7171aee7d510e2d619f23665d6dababa62e)
+- Governing master identity: sha256 5d23d9dab0e2f7fdf8541a393c62f7171aee7d510e2d619f23665d6dababa62e; recorded commit a58ce98be8bb828899dd69c7b8a0282cce35eeb1
+- Invoked master identity: sha256 b535d9388636dd7aa9a30180717770b5d62a46e1986a087d10ee2cc53adf4a16
+- Master identity state: AMENDMENT_RECORDED
+- Governing amendment: A4; M-5 / G-0; V134 conflict resolved by moving this run to V135 without rebase; HUMAN:2026-09-23 选择「本组改用 V135（推荐）」
+- Amendments: A1–A6 in docs/plans/fast/2026-09-23-batch-sender-filter-main/ledger.md; A4 governs this master identity
+- Fast-p ledger: docs/plans/fast/2026-09-23-batch-sender-filter-main/ledger.md (sha256 bae7a6be4f1df2d8cc7f6cf272271f3a5c93ad1c1fcd3953387bcc62525c1d20)
+- Fast-p handoff: docs/plans/fast/2026-09-23-batch-sender-filter-main/human-review-handoff.md (sha256 5daf5fb249f273ed5a271e2eb11d82f945b8f57596bc617ef42c9676bead2989)
+- Master base: 9237d6f573335d1624217cbc5501f68a6f52b97b
+- Final code head: 75cc1714611ac085341cf372d28c057bb332796d
+- Evidence parent before next commit: f514a0938238d63fb1cfa315698ed4d2022cd680
+- Previous evidence commit: N/A
+- Branch: fast/2026-09-23-batch-sender-filter-main
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-23-batch-sender-filter-main
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; one candidate; discovery result identified the worktree, branch, base, final code head, two terminal children, matching ledger/handoff, and AMENDMENT_RECORDED A4
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer_epoch1 (fresh; no inherited fast-p implementation or lightweight-verification conversation)
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md, Epoch 1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: human performs and reports mandatory A-1 through A-4, then explicitly signs off boundary 75cc1714611ac085341cf372d28c057bb332796d
