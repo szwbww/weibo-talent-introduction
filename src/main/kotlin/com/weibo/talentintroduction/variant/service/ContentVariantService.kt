@@ -8,6 +8,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.LocalDateTime
 
+import kotlin.random.Random
+
 @Service
 class ContentVariantService(
     private val contentVariantRepository: ContentVariantRepository,
@@ -20,11 +22,30 @@ class ContentVariantService(
         seed: Int,
         useVariants: Boolean = true
     ): String {
+        if (ownerType == ContentVariantOwnerType.REPLY_SNIPPET && useVariants) {
+            return resolveReplySnippetBody(ownerId, mainBody)
+        }
         val pool = buildPool(ownerType, ownerId, mainBody, useVariants)
         if (pool.size <= 1) {
             return mainBody
         }
         val index = Math.floorMod(seed + ownerId!!, pool.size)
+        return pool[index]
+    }
+
+    fun replySnippetBodies(ownerId: Long, mainBody: String): List<String> =
+        buildPool(ContentVariantOwnerType.REPLY_SNIPPET, ownerId, mainBody, useVariants = true)
+
+    fun resolveReplySnippetBody(
+        ownerId: Long?,
+        mainBody: String,
+        previewIndex: Int? = null,
+        random: Random = Random.Default
+    ): String {
+        val pool = if (ownerId == null) listOf(mainBody) else replySnippetBodies(ownerId, mainBody)
+        if (pool.size <= 1) return mainBody
+        val index = previewIndex?.let { Math.floorMod(it.toLong() + ownerId!!, pool.size.toLong()).toInt() }
+            ?: random.nextInt(pool.size)
         return pool[index]
     }
 

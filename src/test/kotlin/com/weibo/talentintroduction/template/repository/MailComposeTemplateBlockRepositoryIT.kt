@@ -52,6 +52,7 @@ class MailComposeTemplateBlockRepositoryIT {
             registry.add("spring.datasource.url", mysql::getJdbcUrl)
             registry.add("spring.datasource.username", mysql::getUsername)
             registry.add("spring.datasource.password", mysql::getPassword)
+            registry.add("spring.flyway.placeholder-replacement") { false }
         }
     }
 
@@ -66,6 +67,8 @@ class MailComposeTemplateBlockRepositoryIT {
 
     @BeforeEach
     fun createSchema() {
+        jdbcTemplate.execute("DROP TABLE IF EXISTS task_execution")
+        jdbcTemplate.execute("DROP TABLE IF EXISTS batch_send_task_config")
         jdbcTemplate.execute("DROP TABLE IF EXISTS mail_compose_template_block")
         jdbcTemplate.execute("DROP TABLE IF EXISTS mail_compose_template")
         jdbcTemplate.execute(
@@ -75,8 +78,11 @@ class MailComposeTemplateBlockRepositoryIT {
                 template_code VARCHAR(64) NULL,
                 template_name VARCHAR(100) NOT NULL,
                 subject VARCHAR(255) NOT NULL,
+                subject_variants TEXT NULL,
+                subject_snippet_id BIGINT NULL,
                 description VARCHAR(500) NULL,
                 mail_type VARCHAR(64) NULL,
+                required_keys VARCHAR(500) NULL,
                 enabled TINYINT(1) NOT NULL DEFAULT 1,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -126,5 +132,23 @@ class MailComposeTemplateBlockRepositoryIT {
         blockRepository.deleteAllByTemplateId(templateId)
 
         assertEquals(0, blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(templateId).size)
+    }
+    @Test
+    fun `subject snippet reference persists and can be cleared through JDBC`() {
+        val saved = templateRepository.save(
+            MailComposeTemplate(
+                templateName = "Referenced subject",
+                subject = "Source snapshot",
+                subjectSnippetId = 42L
+            )
+        )
+        val templateId = saved.id ?: error("template id is required")
+
+        assertEquals(42L, templateRepository.findById(templateId).orElseThrow().subjectSnippetId)
+
+        templateRepository.save(saved.copy(subjectSnippetId = null))
+
+        assertEquals(null, templateRepository.findById(templateId).orElseThrow().subjectSnippetId)
+        assertEquals("Source snapshot", templateRepository.findById(templateId).orElseThrow().subject)
     }
 }

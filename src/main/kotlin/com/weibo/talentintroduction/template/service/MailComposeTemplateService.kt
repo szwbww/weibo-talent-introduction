@@ -63,13 +63,14 @@ class MailComposeTemplateService(
             MailComposeTemplate(
                 templateCode = command.templateCode?.trim()?.takeIf { it.isNotBlank() },
                 templateName = command.templateName.trim(),
-                subject = command.subject.trim(),
+                subject = subjectSnapshot(command),
                 description = command.description?.trim()?.takeIf { it.isNotBlank() },
                 // I-3: a template created in the UI must be selectable by a batch task,
                 // and BatchSendTaskConfigService.resolveMailType only accepts
                 // INTRODUCTION/MATERIAL_REMINDER.
                 mailType = command.mailType?.trim()?.takeIf { it.isNotBlank() } ?: INTRODUCTION_MAIL_TYPE,
                 subjectVariants = null,
+                subjectSnippetId = command.subjectSnippetId,
                 enabled = command.enabled,
                 createdAt = now,
                 updatedAt = now
@@ -89,13 +90,14 @@ class MailComposeTemplateService(
             existing.copy(
                 templateCode = command.templateCode?.trim()?.takeIf { it.isNotBlank() } ?: existing.templateCode,
                 templateName = command.templateName.trim(),
-                subject = command.subject.trim(),
+                subject = subjectSnapshot(command),
                 description = command.description?.trim()?.takeIf { it.isNotBlank() },
                 // I-3: an edit keeps the stored mail type (and therefore the task
                 // binding semantics); the request value is only used to backfill a
                 // template that has none yet.
                 mailType = existing.mailType ?: command.mailType?.trim()?.takeIf { it.isNotBlank() },
                 subjectVariants = null,
+                subjectSnippetId = command.subjectSnippetId,
                 enabled = command.enabled,
                 updatedAt = now
             )
@@ -178,7 +180,9 @@ class MailComposeTemplateService(
     fun effectiveRequiredKeys(templateId: Long): List<String> {
         val pool = renderTextPool(findTemplate(templateId))
         val keys = linkedSetOf<String>()
-        keys.addAll(mailPlaceholderService.requiredKeysIn(pool.subject))
+        pool.subjectTexts.forEach { text ->
+            keys.addAll(mailPlaceholderService.requiredKeysIn(text))
+        }
         pool.blockTexts.flatten().forEach { text ->
             keys.addAll(mailPlaceholderService.requiredKeysIn(text))
         }
@@ -200,7 +204,12 @@ class MailComposeTemplateService(
     private fun alwaysRequiredKeys(template: MailComposeTemplate): List<String> {
         val pool = renderTextPool(template)
         val keys = linkedSetOf<String>()
-        keys.addAll(mailPlaceholderService.requiredKeysIn(pool.subject))
+        val requiredByEverySubject = pool.subjectTexts
+            .map { mailPlaceholderService.requiredKeysIn(it).toSet() }
+            .reduce { acc, next -> acc intersect next }
+        mailPlaceholderService.requiredKeysIn(pool.subjectTexts.first())
+            .filter { it in requiredByEverySubject }
+            .forEach { keys.add(it) }
         pool.blockTexts.forEach { texts ->
             val requiredByEveryVariant = texts
                 .map { mailPlaceholderService.requiredKeysIn(it).toSet() }
@@ -213,7 +222,7 @@ class MailComposeTemplateService(
     }
 
     private data class RenderTextPool(
-        val subject: String,
+        val subjectTexts: List<String>,
         val blockTexts: List<List<String>>
     )
 
@@ -227,7 +236,7 @@ class MailComposeTemplateService(
         val blocks = blockRepository.findAllByTemplateIdOrderByBlockOrderAsc(templateId)
             .sortedBy { it.blockOrder }
         return RenderTextPool(
-            subject = template.subject,
+            subjectTexts = subjectCandidates(template),
             blockTexts = blocks.mapNotNull { possibleRenderTexts(it) }
         )
     }
@@ -238,15 +247,8 @@ class MailComposeTemplateService(
             ComposeBlockType.REPLY_SNIPPET -> {
                 val refId = block.refId
                 val snippet = refId?.let { replySnippetRepository.findById(it).orElse(null) }
-                if (snippet == null || !snippet.enabled) {
-                    null
-                } else {
-                    val variants = contentVariantService
-                        .listByOwner(ContentVariantOwnerType.REPLY_SNIPPET, refId)
-                        .filter { it.enabled }
-                        .map { it.content }
-                    listOf(snippet.content) + variants
-                }
+                if (snippet == null || !snippet.enabled) null
+                else contentVariantService.replySnippetBodies(refId, snippet.content)
             }
             ComposeBlockType.QA_RULE -> {
                 val rule = block.refId?.let { qaRuleRepository.findById(it).orElse(null) }
@@ -261,13 +263,16 @@ class MailComposeTemplateService(
         variables: Map<String, String>,
         variantSeed: Int = 0
     ): ComposeTemplateRenderResult {
-        val resolved = resolveBlocks(blocks.map { it.toDraftBlock() }, variables, variantSeed)
+        val rawSubject = selectSubject(template, previewIndex = null)
+        val resolved = resolveBlocks(blocks.map { it.toDraftBlock() }, variables, previewIndex = null)
+        val subject = renderText(rawSubject, variables)
+        validateRenderedSubject(subject)
         return ComposeTemplateRenderResult(
-            subject = renderText(template.subject, variables),
+            subject = subject,
             body = resolved.includedTexts.joinToString("\n\n"),
             qaRuleIds = resolved.qaRuleIds,
             mailType = template.mailType,
-            rawTexts = listOf(template.subject) + resolved.rawTexts.values,
+            rawTexts = listOf(rawSubject) + resolved.rawTexts.values,
             templateId = template.id
         )
     }
@@ -278,7 +283,7 @@ class MailComposeTemplateService(
             .map { it.toDraftBlock() }
         val resolved = resolveBlocks(blocks)
         return ComposeTemplatePreviewResult(
-            subject = template.subject,
+            subject = selectSubject(template, previewIndex = null),
             body = resolved.includedTexts.joinToString("\n\n"),
             blocks = resolved.previewBlocks
         )
@@ -295,7 +300,6 @@ class MailComposeTemplateService(
                 )
             )
         }
-        val variantSeed = request.variantIndex ?: 0
         val draftBlocks = request.blocks.map { block ->
             ComposeDraftBlock(
                 blockOrder = block.blockOrder,
@@ -304,8 +308,13 @@ class MailComposeTemplateService(
                 customText = block.customText
             )
         }
-        val baseResolved = resolveBlocks(draftBlocks, variantSeed = variantSeed, renderVariables = false)
-        val subjectTemplate = request.subject
+        val baseResolved = resolveBlocks(
+            draftBlocks,
+            previewIndex = request.variantIndex,
+            renderVariables = false
+        )
+        val subjectTemplate = resolveDraftSubject(request.subject, request.subjectSnippetId, request.variantIndex)
+        val variantPoolSize = maxOf(baseResolved.variantPoolSize, draftSubjectPoolSize(request.subjectSnippetId, request.subject))
         val contact = resolvePreviewContact(request.contactId, request.orcidId, request.expertEmail)
         val account = resolvePreviewAccount(request.senderAccountCode, contact)
 
@@ -318,11 +327,13 @@ class MailComposeTemplateService(
                 fallbackKeys = mailVariableService.placeholderKeysIn(*texts.toTypedArray()),
                 toEmail = null,
                 variables = emptyList(),
-                variantPoolSize = baseResolved.variantPoolSize
+                variantPoolSize = variantPoolSize
             )
         }
 
         val subjectResult = mailVariableService.renderPreview(subjectTemplate, account, contact)
+        validateRenderedSubject(subjectResult.rendered)
+
         val allFallbackKeys = subjectResult.fallbackKeys.toMutableList()
         val allVariables = subjectResult.variables.toMutableList()
         val bodyParts = mutableListOf<String>()
@@ -364,7 +375,7 @@ class MailComposeTemplateService(
             fallbackKeys = allFallbackKeys.distinct(),
             toEmail = contact.expertEmail,
             variables = allVariables,
-            variantPoolSize = baseResolved.variantPoolSize
+            variantPoolSize = variantPoolSize
         )
     }
 
@@ -443,6 +454,7 @@ class MailComposeTemplateService(
             description = template.description,
             mailType = template.mailType,
             subjectVariants = template.subjectVariants,
+            subjectSnippetId = template.subjectSnippetId,
             enabled = template.enabled,
             blocks = blocks,
             createdAt = template.createdAt,
@@ -511,14 +523,68 @@ class MailComposeTemplateService(
         }
     }
 
+    private fun subjectCandidates(template: MailComposeTemplate): List<String> =
+        template.subjectSnippetId?.let { snippetSubjectCandidates(it) }
+            ?: listOf(template.subject).also { validateSubjectCandidates(it) }
+
+    private fun snippetSubjectCandidates(id: Long): List<String> {
+        val snippet = replySnippetRepository.findById(id).orElse(null)
+        if (snippet == null || !snippet.enabled) {
+            throw IllegalArgumentException("主题引用的回复片段不存在或已停用（ID: $id）")
+        }
+        return contentVariantService.replySnippetBodies(id, snippet.content).also(::validateSubjectCandidates)
+    }
+
+    private fun validateSubjectCandidates(candidates: List<String>) {
+        candidates.forEachIndexed { index, text ->
+            require(text.isNotBlank() && text.length <= 255 && '\r' !in text && '\n' !in text) {
+                "主题片段第 ${index + 1} 个候选必须为 1–255 字的单行文本"
+            }
+        }
+    }
+
+    private fun validateRenderedSubject(subject: String) {
+        require(subject.isNotBlank() && subject.length <= 255 && '\r' !in subject && '\n' !in subject) {
+            "渲染后的邮件主题必须为 1–255 字的单行文本"
+        }
+    }
+
+    private fun subjectSnapshot(command: MailComposeTemplateCommand): String =
+        command.subjectSnippetId?.let { snippetSubjectCandidates(it).first() } ?: command.subject.trim()
+
+    private fun selectSubject(template: MailComposeTemplate, previewIndex: Int?): String {
+        val id = template.subjectSnippetId ?: return template.subject.also { validateSubjectCandidates(listOf(it)) }
+        val candidates = snippetSubjectCandidates(id)
+        return contentVariantService.resolveReplySnippetBody(id, candidates.first(), previewIndex)
+    }
+
+    private fun resolveDraftSubject(subject: String, subjectSnippetId: Long?, previewIndex: Int?): String {
+        if (subjectSnippetId == null) {
+            validateSubjectCandidates(listOf(subject))
+            return subject
+        }
+        val candidates = snippetSubjectCandidates(subjectSnippetId)
+        return contentVariantService.resolveReplySnippetBody(subjectSnippetId, candidates.first(), previewIndex)
+    }
+
+    private fun draftSubjectPoolSize(subjectSnippetId: Long?, subject: String): Int =
+        if (subjectSnippetId == null) {
+            validateSubjectCandidates(listOf(subject))
+            1
+        } else {
+            snippetSubjectCandidates(subjectSnippetId).size
+        }
+
     private fun validateCommand(command: MailComposeTemplateCommand) {
         require(command.templateName.isNotBlank()) { "templateName is required" }
         require(command.subject.isNotBlank()) { "subject is required" }
         require(command.blocks.isNotEmpty()) { "At least one content block is required" }
-        // I-1: reject unknown keys, blank defaults and broken `${` tokens at save time
-        // for the subject and every custom block; snippet/QA bodies keep their own
-        // (stricter) validation in ReplySnippetService / QaFactBodyPolicy.
-        mailPlaceholderService.requireValidTemplatePlaceholders(command.subject)
+        if (command.subjectSnippetId == null) {
+            mailPlaceholderService.requireValidTemplatePlaceholders(command.subject)
+            validateSubjectCandidates(listOf(command.subject.trim()))
+        } else {
+            snippetSubjectCandidates(command.subjectSnippetId)
+        }
         command.blocks.forEach { block ->
             validateBlockCommand(block)
             if (block.blockType.uppercase() == ComposeBlockType.CUSTOM_TEXT) {
@@ -541,7 +607,7 @@ class MailComposeTemplateService(
     private fun resolveBlocks(
         blocks: List<ComposeDraftBlock>,
         variables: Map<String, String> = emptyMap(),
-        variantSeed: Int = 0,
+        previewIndex: Int? = null,
         renderVariables: Boolean = true
     ): ResolvedBlocks {
         val includedTexts = mutableListOf<String>()
@@ -611,16 +677,13 @@ class MailComposeTemplateService(
                         previewBlocks += skippedPreviewBlock(block, "已禁用", refId, displayName)
                         return@forEach
                     }
-                    val resolvedContent = contentVariantService.resolveBody(
-                        ContentVariantOwnerType.REPLY_SNIPPET,
+                    val candidates = contentVariantService.replySnippetBodies(refId, snippet.content)
+                    val resolvedContent = contentVariantService.resolveReplySnippetBody(
                         refId,
                         snippet.content,
-                        variantSeed
+                        previewIndex
                     )
-                    variantPoolSize = maxOf(
-                        variantPoolSize,
-                        contentVariantService.poolSize(ContentVariantOwnerType.REPLY_SNIPPET, refId, snippet.content)
-                    )
+                    variantPoolSize = maxOf(variantPoolSize, candidates.size)
                     rawTexts[block.blockOrder] = resolvedContent
                     val text = if (renderVariables) {
                         renderText(resolvedContent, variables).trim()
@@ -740,7 +803,8 @@ data class MailComposeTemplateCommand(
     val mailType: String? = null,
     val subjectVariants: String? = null,
     val enabled: Boolean = true,
-    val blocks: List<MailComposeTemplateBlockCommand>
+    val blocks: List<MailComposeTemplateBlockCommand>,
+    val subjectSnippetId: Long? = null
 )
 
 data class MailComposeTemplateBlockCommand(
@@ -761,7 +825,8 @@ data class MailComposeTemplateDetail(
     val enabled: Boolean,
     val blocks: List<MailComposeTemplateBlockDetail>,
     val createdAt: LocalDateTime?,
-    val updatedAt: LocalDateTime?
+    val updatedAt: LocalDateTime?,
+    val subjectSnippetId: Long? = null
 )
 
 data class MailComposeTemplateBlockDetail(
@@ -814,7 +879,8 @@ data class ComposeTemplatePreviewDraftRequest(
     val expertEmail: String? = null,
     val contactId: Long? = null,
     val senderAccountCode: String? = null,
-    val strictPlaceholders: Boolean = false
+    val strictPlaceholders: Boolean = false,
+    val subjectSnippetId: Long? = null
 )
 
 data class ComposeTemplatePreviewDraftResult(
