@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-09-23/00-shared-inbox-main.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-09-23/00-shared-inbox-main.md (commit daabfdc900555f3c89a698cd85a0165ada20d1a9)
 - Amendments: N/A
 - Master base: 9237d6f573335d1624217cbc5501f68a6f52b97b
@@ -13,8 +13,8 @@
 - Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: Plan conflict on child c2 — the plan-02-mandated owner-only rework of `MailSenderAccountService.listAutoReceiveAccounts()` retires a c1-authored assertion (`MailSenderAccountServiceTest.kt` `listAutoReceiveAccounts still returns disabled and shared inbox accounts`, lines 1059-1072, `expected: <[owner, alias]> but was: <[owner]>`), and that test file is not in c2's 10-file authorization while master rule M-5 forbids changing files outside a child's own list without first fixing the plan. The executor committed all authorized work (`16efaae`) and returned PLAN_CONFLICT instead of self-authorizing the amendment. Human approval of a plan amendment (widen child c2's authorized files by `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountServiceTest.kt`, or an alternative arbitration) is required before c2 can terminate.
+- Resume from: 16efaae36c01c11412b457df3e4a3f088860ce9d — commit the approved amendment to `docs/plans/2026-09-23/02-shared-inbox-routing.md`, append its `## Amendments` row, then resume child c2 in epoch 2 (fix_round=0): retire the obsolete stage-01 assertion, re-run the brief's required commands, and dispatch a fresh verifier.
 
 ## Baseline
 
@@ -45,7 +45,7 @@ Raw transcripts are committed under `docs/plans/fast/2026-09-23-shared-inbox-mas
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | c1 | docs/plans/2026-09-23/01-shared-inbox-configuration.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | none | 1 | LIGHT_PASS_WITH_NOTES | daabfdc900555f3c89a698cd85a0165ada20d1a9 | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | 0 | — | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | 23bf02608bca49201d3eb51ab0002c1e455198ef | Implementer C1Implementer; verifier C1Verifier returned LIGHT_PASS_WITH_NOTES (AUTO_FIX N/A, action COMPLETE_CHILD). Notes recorded: O-1 two extra Flyway IT repairs (V131 history delta bound to V130→V131, V124 seeded via existing migrateToV23AndSeedBase) judged target-preserving and inside the authorized test file; O-2 no PNG screenshot (environment), DOM+computed-style proof only, human A-3 open; O-3 app.js hardcodes the `SIMULATOR_NOOP` literal. |
-| c2 | docs/plans/2026-09-23/02-shared-inbox-routing.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1 | 1 | PENDING | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | — | 0 | — | — | — | Owner-only polling, physical UID dedup, To/Cc/In-Reply-To routing. |
+| c2 | docs/plans/2026-09-23/02-shared-inbox-routing.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1 | 1 | PAUSED_FOR_HUMAN | a15cb52b599e81753bb9fa3bcbb6e04969f44813 | 16efaae36c01c11412b457df3e4a3f088860ce9d | 0 | — | 16efaae36c01c11412b457df3e4a3f088860ce9d | — | Implementer C2Implementer returned PLAN_CONFLICT after committing all authorized work (exactly the 10 authorized files). Owner-only polling, To/Cc + unique In-Reply-To OUTBOUND routing, physical UID dedup, owner cursor/ack/attachment source, `RECIPIENT_UNRESOLVED` owner row, and the OUTBOUND-only candidate query for c3 are implemented; the brief's required commands are green (120 JVM tests, JS 1121/1121). Blocker needs human arbitration: `MailSenderAccountServiceTest.kt` (outside c2's authorization) still pins the pre-shared-inbox receive list and now fails, so M-5 requires a plan amendment before c2 can terminate. |
 | c3 | docs/plans/2026-09-23/03-shared-inbox-bounce.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1,c2 | 1 | PENDING | — | — | 0 | — | — | — | OUTBOUND-only bounce attribution plus group-wide self-check filter. |
 | c4 | docs/plans/2026-09-23/04-lukai-production-migration.md | commit:daabfdc900555f3c89a698cd85a0165ada20d1a9 | c1,c2,c3 | 1 | PENDING | — | — | 0 | — | — | — | Production migration; master plan M-4/G-4 gates it behind separate deployment authorization. |
 
