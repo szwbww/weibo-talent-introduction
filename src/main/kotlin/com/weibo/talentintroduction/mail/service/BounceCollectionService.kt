@@ -89,6 +89,41 @@ class BounceCollectionService(
         from: String?,
         subject: String?,
         receivedAt: LocalDateTime
+    ): BounceIngestResult = ingest(
+        signal,
+        senderAccountCode,
+        bounceMessageId,
+        from,
+        subject,
+        receivedAt,
+        preservePassedInAttribution = false
+    )
+
+    fun ingestKnownLogicalAccount(
+        signal: BounceSignal,
+        senderAccountCode: String,
+        bounceMessageId: String?,
+        from: String?,
+        subject: String?,
+        receivedAt: LocalDateTime
+    ): BounceIngestResult = ingest(
+        signal,
+        senderAccountCode,
+        bounceMessageId,
+        from,
+        subject,
+        receivedAt,
+        preservePassedInAttribution = true
+    )
+
+    private fun ingest(
+        signal: BounceSignal,
+        senderAccountCode: String,
+        bounceMessageId: String?,
+        from: String?,
+        subject: String?,
+        receivedAt: LocalDateTime,
+        preservePassedInAttribution: Boolean
     ): BounceIngestResult {
         val dedupeKey = resolveBounceMessageId(bounceMessageId, from, subject, receivedAt)
         if (bounceRecordRepository.existsByBounceMessageId(dedupeKey)) {
@@ -98,8 +133,11 @@ class BounceCollectionService(
         // I-1：归属只凭唯一 OUTBOUND 原始发信证明。删除邮箱抓取传入 owner（物理来源），
         // 回填传入已知逻辑账号；二者都只作「保持传入归属」的兜底值，绝不据此推断别名。
         val outboundCandidates = findOutboundCandidates(signal.originalMessageId)
-        val attributedAccountCode =
+        val attributedAccountCode = if (preservePassedInAttribution) {
+            senderAccountCode
+        } else {
             resolveSenderAccountCode(senderAccountCode, outboundCandidates, signal.originalMessageId)
+        }
         val originalContact = resolveOriginalContact(signal, outboundCandidates)
 
         bounceRecordRepository.save(
