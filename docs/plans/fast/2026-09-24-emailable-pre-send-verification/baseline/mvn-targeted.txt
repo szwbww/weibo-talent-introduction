@@ -1,1 +1,42 @@
 ### mvn targeted (ManualInitialOutreachServiceTest,BatchSendTaskRuntimeIntegrationTest,BatchSendTaskConfigServiceTest,BatchSendControlServiceTest,BatchSendSchedulerTest,BatchSendConfigControllerTest,BatchSendExecutionDetailTest)
+  ✔ fake now 前进 60 秒只更新当前钟面，选择、输入与换算结果不变 (1.208791ms)
+  ✔ 使用当前时间换算更新输入与结果；关闭重开保留选择 (2.496792ms)
+  ✔ 键盘与指针交互：Escape/关闭按钮回焦 trigger，外部点击不抢焦点 (2.1685ms)
+✔ I-3 实时钟与所选换算时间分离 (6.020583ms)
+▶ I-6 失败/重试/认证/销毁
+  ✔ 加载失败显示错误与显式重试入口，当前钟面仍显示 (0.75975ms)
+  ✔ 重试成功回到 ready；重试进行中不可重复触发 (1.203917ms)
+  ✔ 非数组或没有合法条目的响应视为 error，不使用常见假数据 (0.872958ms)
+  ✔ 认证隐藏：关闭浮层、中止请求、清空目录与选择、停表；晚到回包不写 DOM (0.897959ms)
+  ✔ visibilitychange 暂停后台 tick，回来立即刷新当前时间 (0.495667ms)
+  ✔ destroy 解绑监听/observer/计时器/请求与新增 DOM，且保留宿主节点与监听 (1.74775ms)
+✔ I-6 失败/重试/认证/销毁 (6.169875ms)
+▶ I-7 只读边界
+  ✔ transport 只收到目录 GET，路径为相对路径且无重复前缀 (1.721917ms)
+  ✔ 目录文本一律 textContent：恶意 label 不产生元素、无 inline style (1.175292ms)
+  ✔ 生产模块不含静态目录数据、持久化偏好、fetch 或 ES module 语法 (0.759ms)
+  ✔ 页面未被注册（01 不激活）：index.html 不含组件节点 (0.608625ms)
+✔ I-7 只读边界 (4.351625ms)
+▶ 脚本自启动与独立导出（T1/I-8 边界）
+  ✔ 普通 script：浏览器挂 window.WorldClock，Node 导出 mount/parseBeijingInput/projectZones (1.201125ms)
+  ✔ readyState=loading 时注册 DOMContentLoaded；宿主缺失时不挂载也不报错 (0.790292ms)
+✔ 脚本自启动与独立导出（T1/I-8 边界） (2.039375ms)
+ℹ tests 1152
+ℹ suites 230
+ℹ pass 1152
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3925.491125
+[INFO] 
+[INFO] --- exec:3.1.0:exec (node-check-app) @ weibo-talent-introduction ---
+[INFO] 
+[INFO] --- exec:3.1.0:exec (node-check-task-modal-runtime) @ weibo-talent-introduction ---
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  02:20 min
+[INFO] Finished at: 2026-09-24T13:15:08+08:00
+[INFO] ------------------------------------------------------------------------
+MVN_TARGETED_EXIT=0

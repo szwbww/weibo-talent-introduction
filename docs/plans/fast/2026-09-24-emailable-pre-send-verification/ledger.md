@@ -32,7 +32,13 @@
 
 | Command | Exit | Result |
 |---|---|---|
-| （pending） | — | 见 `baseline/` |
+| `node --test src/test/js/*.test.js` | 0 | 1152 tests / 230 suites / 0 fail（`baseline/js.txt`） |
+| `node --check src/main/resources/static/app.js` | 0 | 语法通过（`baseline/js.txt`） |
+| `mvn -B -Dtest=ManualInitialOutreachServiceTest,BatchSendTaskRuntimeIntegrationTest,BatchSendTaskConfigServiceTest,BatchSendControlServiceTest,BatchSendSchedulerTest,BatchSendConfigControllerTest,BatchSendExecutionDetailTest test` | 0 | 279 tests / 0 failures / 0 errors（119+22+74+34+5+8+17；`baseline/mvn-targeted.txt`） |
+| `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock mvn -B -Dtest=OpenAlexBudgetRepositoryIT,DiscoveryPaperQueueRepositoryIT -DmysqlIt=true -Dapi.version=1.40 test` | 1 | 见 `baseline/mvn-mysqlit.txt` |
+| `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock mvn -B -Dtest=FlywayMigrationIntegrationTest -DmigrationIt=true -Dapi.version=1.40 test` | 1 | 见 `baseline/mvn-migrationit.txt` |
+
+Docker 环境事实：testcontainers 默认 client API 1.32 被 OrbStack 拒绝（`Minimum supported API version is 1.40`），因此所有 `-DmysqlIt=true` / `-DmigrationIt=true` 命令必须带 `-Dapi.version=1.40`（并可显式设 `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock`）。不带该参数时 IT 类在容器启动阶段直接 error，不是产品失败。
 
 ## Children
 

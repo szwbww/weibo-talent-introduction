@@ -59,7 +59,13 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=BatchEmailVerificationRepositoryIT,FlywayMigrationIntegrationTest -DmysqlIt=true -DmigrationIt=true
 ```
 
-第二条需要本地 Docker（已确认可用，testcontainers MySQL 8.0.36）。第一条会同时触发 `pom.xml` 绑定的 node 测试（`node --test src/test/js/*.test.js`、`node --check app.js`）。
+第二条需要本地 Docker（testcontainers MySQL 8.0.36）。**Docker 环境事实**：OrbStack 拒绝 testcontainers 默认 client API 1.32（`Minimum supported API version is 1.40`），因此 IT 命令必须加 `-Dapi.version=1.40` 并显式设 `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock`：
+
+```sh
+DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -Dtest=BatchEmailVerificationRepositoryIT,FlywayMigrationIntegrationTest -DmysqlIt=true -DmigrationIt=true -Dapi.version=1.40
+```
+
+`FlywayMigrationIntegrationTest` 基线（V137 已存在、latest 断言写 136）预期为红；把无显式 target 的 latest 断言改到 138 后，剩余红若属既有 latent 期望需在报告里按“基线对比”明确归类。
 
 ## 交付
 
