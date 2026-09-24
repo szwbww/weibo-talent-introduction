@@ -11787,6 +11787,24 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .outbound-files button:disabled,.outbound-upload:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
 .outbound-files[hidden]{display:none!important}
 @media(max-width:760px){.outbound-file{flex-wrap:wrap}.outbound-file-actions{width:100%;padding-left:42px}}
+/* 批量介绍邮件：Emailable 执行明细（仅此区域） */
+.batch-email-verification { margin: 14px 0; }
+.batch-email-verification h4 { margin: 0 0 8px; font-size: 13px; color: var(--text-main); }
+.batch-email-verification-note { margin: 6px 0; color: var(--text-sidebar); font-size: 12px; line-height: 1.6; }
+.batch-email-verification-note.is-error { color: var(--error-strong); }
+.batch-email-verification-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--panel-border); border-radius: var(--radius-md); }
+.batch-email-verification-table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 12px; line-height: 1.5; }
+.batch-email-verification-table th, .batch-email-verification-table td { padding: 8px 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--panel-border); overflow-wrap: anywhere; }
+.batch-email-verification-table th { color: var(--text-sidebar); background: var(--bg-subtle); font-weight: 600; }
+.batch-email-verification-table tbody tr:last-child td { border-bottom: 0; }
+.batch-email-verification-table details { margin-top: 4px; color: var(--text-secondary); }
+.batch-email-verification-table summary { cursor: pointer; color: var(--primary); }
+.batch-email-verification-table summary:hover { color: var(--primary-hover); }
+.batch-email-verification-table summary:active { color: var(--primary-active); }
+.batch-email-verification-table summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--radius-sm); }
+.batch-email-verification-pager { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.batch-email-verification-pager .button:disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
+
 /* task-center-contract:start */
 .topnav.task-center-nav {
     flex-wrap: wrap;

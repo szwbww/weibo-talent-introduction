@@ -6,6 +6,8 @@ import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCom
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
 import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
+import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRepository
+import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRow
 import com.weibo.talentintroduction.campaign.service.BatchSendConfig
 import com.weibo.talentintroduction.campaign.service.BatchSendConfigUpdateRequest
 import com.weibo.talentintroduction.campaign.service.BatchSendControlService
@@ -44,7 +46,8 @@ class BatchSendConfigController(
     private val manualInitialOutreachService: ManualInitialOutreachService,
     private val taskExecutionService: TaskExecutionService,
     private val progressLogRepository: TaskProgressLogRepository,
-    private val objectMapper: ObjectMapper
+    private val objectMapper: ObjectMapper,
+    private val batchEmailVerificationRepository: BatchEmailVerificationRepository
 ) {
     private val log = LoggerFactory.getLogger(BatchSendConfigController::class.java)
     // ── New multi-config CRUD ──────────────────────────────────────────────────
@@ -160,6 +163,101 @@ class BatchSendConfigController(
     fun cancelExecution(
         @PathVariable executionId: Long
     ): ResponseEntity<Map<String, Any>> = batchSendControlService.cancelExecution(executionId)
+
+    /**
+     * 03 T1（I-2/I-3/I-4/I-5）：逐邮箱发送前验证明细**只读**接口。
+     *
+     * - 身份优先：执行必须存在且 `taskType` 为批量介绍邮件执行；传 `configId` 时必须等于
+     *   `execution.batchConfigId`（软删配置的历史执行仍可按 executionId 读）。
+     * - 开关只读该次执行保存的 `requestSnapshot`：历史 payload 缺字段 = false；快照 JSON 无法解析时
+     *   明确报错，绝不冒充「关闭」。
+     * - 分页由仓储在同一只读事务内组合（`limit+1` 判 `hasMore`，游标取本页最后 id）；
+     *   `summary` 是整次执行而不是本页，`passed/rejected/errors` 互斥，`tagFailed` 是附加维度。
+     * - 本接口只有读操作：不触发验证、不发送、无密钥字段。仓储异常直接向上抛（服务错误），
+     *   不返回空数组掩盖故障。
+     */
+    @GetMapping("/executions/{executionId}/email-verifications")
+    fun getExecutionEmailVerifications(
+        @PathVariable executionId: Long,
+        @RequestParam(defaultValue = "0") afterId: Long,
+        @RequestParam(defaultValue = "50") limit: Int,
+        @RequestParam(required = false) configId: Long?
+    ): ResponseEntity<BatchEmailVerificationDetail> {
+        require(afterId >= 0) { "afterId must be >= 0" }
+        require(limit in 1..BatchEmailVerificationRepository.MAX_PAGE_SIZE) {
+            "limit must be between 1 and ${BatchEmailVerificationRepository.MAX_PAGE_SIZE}"
+        }
+        val execution = try {
+            taskExecutionService.getExecution(executionId)
+        } catch (_: IllegalStateException) {
+            // 与其它执行级接口同码：不存在的执行按 404，不按参数错误。
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build()
+        }
+        if (execution.taskType != BatchSendControlService.TASK_TYPE) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build()
+        }
+        if (configId != null && configId != execution.batchConfigId) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build()
+        }
+        val enabled = readEmailVerificationEnabled(execution)
+        val page = batchEmailVerificationRepository.readPage(executionId, afterId, limit)
+        return ResponseEntity.ok(
+            BatchEmailVerificationDetail(
+                executionId = executionId,
+                enabled = enabled,
+                summary = BatchEmailVerificationSummary(
+                    total = page.aggregate.total,
+                    pending = page.aggregate.pending,
+                    passed = page.aggregate.passed,
+                    rejected = page.aggregate.rejected,
+                    errors = page.aggregate.serviceError,
+                    tagFailed = page.aggregate.tagFailed
+                ),
+                items = page.rows.map { it.toVerificationItem() },
+                nextAfterId = if (page.hasMore) page.rows.lastOrNull()?.id else null,
+                hasMore = page.hasMore
+            )
+        )
+    }
+
+    /**
+     * 开关以该次执行保存的 `requestSnapshot` 为准（I-2），不读当前配置推断。
+     * 无 payload / 无 snapshot 节点 / 缺字段一律 false；payload 不是合法 JSON 时明确报错。
+     */
+    private fun readEmailVerificationEnabled(
+        execution: com.weibo.talentintroduction.task.domain.TaskExecution
+    ): Boolean {
+        val payload = execution.requestPayload ?: return false
+        val root = try {
+            objectMapper.readTree(payload)
+        } catch (_: Exception) {
+            throw IllegalStateException("历史执行快照无法解析（executionId=${execution.id}）")
+        }
+        val snapshot = root.path("snapshot")
+        if (snapshot.isMissingNode || !snapshot.isObject) return false
+        val flag = snapshot.path("emailVerificationEnabled")
+        return !flag.isMissingNode && !flag.isNull && flag.asBoolean(false)
+    }
+
+    /** 展示白名单：不含 key/HTTP 原文，也不回传 taskExecutionId、createdAt、updatedAt。 */
+    private fun BatchEmailVerificationRow.toVerificationItem(): BatchEmailVerificationItem =
+        BatchEmailVerificationItem(
+            id = id,
+            expertDocId = expertDocId,
+            orcidId = orcidId,
+            expertName = expertName,
+            email = email,
+            decision = decision,
+            providerState = providerState,
+            providerReason = providerReason,
+            errorCode = errorCode,
+            checkedAt = checkedAt,
+            requestCount = requestCount,
+            sendStatus = sendStatus,
+            sendReason = sendReason,
+            tagStatus = tagStatus,
+            tagError = tagError
+        )
 
     private fun buildProgressRows(executionId: Long): List<ExecutionProgressRow> {
         val logs = progressLogRepository.findAllByTaskExecutionIdOrderByIdAsc(executionId)
@@ -479,6 +577,48 @@ data class ExecutionProgressRow(
     val batchRejected: Int,
     val errors: List<String>,
     val createdAt: java.time.LocalDateTime
+)
+
+/** 03 T1：一次执行的验证明细响应。`nextAfterId` 只在 `hasMore` 时有值。 */
+data class BatchEmailVerificationDetail(
+    val executionId: Long,
+    val enabled: Boolean,
+    val summary: BatchEmailVerificationSummary,
+    val items: List<BatchEmailVerificationItem>,
+    val nextAfterId: Long?,
+    val hasMore: Boolean
+)
+
+/**
+ * 整次执行的验证汇总（不是本页）：`passed + rejected + errors + pending = total`；
+ * `tagFailed` 是标签处理的附加维度，不参与该合计。
+ */
+data class BatchEmailVerificationSummary(
+    val total: Int,
+    val pending: Int,
+    val passed: Int,
+    val rejected: Int,
+    val errors: Int,
+    val tagFailed: Int
+)
+
+/** 明细行展示白名单（无供应商密钥、无 HTTP 原文、无内部时间戳）。 */
+data class BatchEmailVerificationItem(
+    val id: Long,
+    val expertDocId: String?,
+    val orcidId: String,
+    val expertName: String?,
+    val email: String,
+    val decision: String,
+    val providerState: String?,
+    val providerReason: String?,
+    val errorCode: String?,
+    val checkedAt: java.time.LocalDateTime?,
+    val requestCount: Int,
+    val sendStatus: String,
+    val sendReason: String?,
+    val tagStatus: String,
+    val tagError: String?
 )
 
 private data class ParsedOutcome(

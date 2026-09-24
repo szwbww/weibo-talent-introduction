@@ -1,6 +1,10 @@
 package com.weibo.talentintroduction.mail.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationAggregate
+import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationPage
+import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRepository
+import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRow
 import com.weibo.talentintroduction.campaign.service.BatchSendControlService
 import com.weibo.talentintroduction.campaign.service.BatchSendTaskConfigService
 import com.weibo.talentintroduction.campaign.service.ExecutionLiveView
@@ -11,7 +15,9 @@ import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -28,7 +34,12 @@ class BatchSendExecutionDetailTest {
     private val taskExecutionService = Mockito.mock(TaskExecutionService::class.java)
     private val progressLogRepository = Mockito.mock(TaskProgressLogRepository::class.java)
     private val batchSendControlService = Mockito.mock(BatchSendControlService::class.java)
+    private val emailVerificationRepository = Mockito.mock(BatchEmailVerificationRepository::class.java)
     private val objectMapper = ObjectMapper()
+
+    /** 序列化断言用：与 Spring Boot 运行时一致地注册 JavaTimeModule（LocalDateTime 列）。 */
+    private val jsonMapper = ObjectMapper()
+        .registerModule(com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
 
     private fun controller() = BatchSendConfigController(
         batchSendTaskConfigService = Mockito.mock(BatchSendTaskConfigService::class.java),
@@ -37,7 +48,8 @@ class BatchSendExecutionDetailTest {
         manualInitialOutreachService = Mockito.mock(ManualInitialOutreachService::class.java),
         taskExecutionService = taskExecutionService,
         progressLogRepository = progressLogRepository,
-        objectMapper = objectMapper
+        objectMapper = objectMapper,
+        batchEmailVerificationRepository = emailVerificationRepository
     )
 
     private fun execution(
@@ -47,13 +59,14 @@ class BatchSendExecutionDetailTest {
         resultSummary: String? = null,
         successCount: Int = 0,
         failureCount: Int = 0,
-        taskType: String = "MANUAL_INITIAL_OUTREACH"
+        taskType: String = "MANUAL_INITIAL_OUTREACH",
+        requestPayload: String? = null
     ) = TaskExecution(
         id = id,
         taskType = taskType,
         triggerType = "MANUAL",
         status = status,
-        requestPayload = null,
+        requestPayload = requestPayload,
         resultSummary = resultSummary,
         successCount = successCount,
         failureCount = failureCount,
@@ -377,5 +390,269 @@ class BatchSendExecutionDetailTest {
         assertEquals(HttpStatus.OK, response.statusCode)
         assertEquals(emptyList<Any>(), response.body)
         Mockito.verify(taskExecutionService).listRecentByTaskType(BatchSendControlService.TASK_TYPE, 200)
+    }
+
+    // ── 03 T1: per-email verification detail (read-only) ───────────────────────────
+
+    private fun verificationRow(
+        id: Long,
+        decision: String = "PASS",
+        providerState: String? = "deliverable",
+        providerReason: String? = null,
+        errorCode: String? = null,
+        sendStatus: String = "SENT",
+        sendReason: String? = null,
+        tagStatus: String = "NOT_REQUIRED",
+        tagError: String? = null,
+        requestCount: Int = 1,
+        checkedAt: LocalDateTime? = LocalDateTime.of(2026, 8, 6, 10, 0, 5)
+    ) = BatchEmailVerificationRow(
+        id = id,
+        taskExecutionId = 10L,
+        expertDocId = "doc-$id",
+        orcidId = "0000-0002-1825-009$id",
+        expertName = "专家$id",
+        email = "expert$id@university.edu",
+        decision = decision,
+        providerState = providerState,
+        providerReason = providerReason,
+        errorCode = errorCode,
+        requestCount = requestCount,
+        checkedAt = checkedAt,
+        sendStatus = sendStatus,
+        sendReason = sendReason,
+        tagStatus = tagStatus,
+        tagError = tagError,
+        createdAt = LocalDateTime.of(2026, 8, 6, 10, 0, 0),
+        updatedAt = LocalDateTime.of(2026, 8, 6, 10, 0, 6)
+    )
+
+    private fun verificationPage(
+        rows: List<BatchEmailVerificationRow>,
+        hasMore: Boolean = false,
+        aggregate: BatchEmailVerificationAggregate = BatchEmailVerificationAggregate.EMPTY
+    ) = BatchEmailVerificationPage(rows = rows, hasMore = hasMore, aggregate = aggregate)
+
+    private fun stubAnyVerificationPage(page: BatchEmailVerificationPage) {
+        Mockito.`when`(
+            emailVerificationRepository.readPage(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyInt())
+        ).thenReturn(page)
+    }
+
+    @Test
+    fun `verification detail is 404 for a non manual-initial-outreach execution`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L))
+            .thenReturn(execution(taskType = "EXPERT_DISCOVERY"))
+
+        val response = controller().getExecutionEmailVerifications(10L, 0L, 50, null)
+
+        assertEquals(HttpStatus.NOT_FOUND, response.statusCode)
+        Mockito.verify(emailVerificationRepository, Mockito.never())
+            .readPage(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyInt())
+    }
+
+    @Test
+    fun `verification detail is 404 for an unknown execution`() {
+        Mockito.`when`(taskExecutionService.getExecution(99L))
+            .thenThrow(IllegalStateException("Task execution not found: 99"))
+
+        val response = controller().getExecutionEmailVerifications(99L, 0L, 50, null)
+
+        assertEquals(HttpStatus.NOT_FOUND, response.statusCode)
+        Mockito.verify(emailVerificationRepository, Mockito.never())
+            .readPage(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyInt())
+    }
+
+    @Test
+    fun `verification detail is 404 when configId does not own the execution`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution(batchConfigId = 1L))
+
+        val response = controller().getExecutionEmailVerifications(10L, 0L, 50, 2L)
+
+        assertEquals(HttpStatus.NOT_FOUND, response.statusCode)
+        Mockito.verify(emailVerificationRepository, Mockito.never())
+            .readPage(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyInt())
+    }
+
+    @Test
+    fun `verification detail accepts the matching configId and reads that page`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution(batchConfigId = 1L))
+        Mockito.`when`(emailVerificationRepository.readPage(10L, 0L, 50))
+            .thenReturn(verificationPage(listOf(verificationRow(1L))))
+
+        val body = controller().getExecutionEmailVerifications(10L, 0L, 50, 1L).body!!
+
+        assertEquals(10L, body.executionId)
+        assertEquals(1, body.items.size)
+        Mockito.verify(emailVerificationRepository).readPage(10L, 0L, 50)
+    }
+
+    @Test
+    fun `verification detail rejects a negative cursor and an out-of-range limit`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            controller().getExecutionEmailVerifications(10L, -1L, 50, null)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            controller().getExecutionEmailVerifications(10L, 0L, 101, null)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            controller().getExecutionEmailVerifications(10L, 0L, 0, null)
+        }
+        Mockito.verify(emailVerificationRepository, Mockito.never())
+            .readPage(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyInt())
+    }
+
+    @Test
+    fun `enabled comes from the saved request snapshot not the current config`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(
+            execution(
+                requestPayload = """
+                    {"sourceConfigId":1,"sourceUpdatedAt":"2026-08-06T10:00:00",
+                     "snapshot":{"mailType":"INTRODUCTION","emailVerificationEnabled":true,"roundSize":5}}
+                """.trimIndent()
+            )
+        )
+        stubAnyVerificationPage(verificationPage(emptyList()))
+
+        val enabled = controller().getExecutionEmailVerifications(10L, 0L, 50, null).body!!.enabled
+
+        assertTrue(enabled, "the switch must follow the execution snapshot")
+        Mockito.verify(taskExecutionService).getExecution(10L)
+    }
+
+    @Test
+    fun `legacy payload without the field and a missing payload both read as disabled`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(
+            execution(
+                requestPayload = """{"legacySendType":"INTRODUCTION","snapshot":{"mailType":"INTRODUCTION"}}"""
+            )
+        )
+        Mockito.`when`(taskExecutionService.getExecution(11L))
+            .thenReturn(execution(id = 11L, requestPayload = null))
+        stubAnyVerificationPage(verificationPage(emptyList()))
+
+        assertFalse(controller().getExecutionEmailVerifications(10L, 0L, 50, null).body!!.enabled)
+        assertFalse(controller().getExecutionEmailVerifications(11L, 0L, 50, null).body!!.enabled)
+    }
+
+    @Test
+    fun `unreadable request snapshot fails loudly instead of reporting disabled`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L))
+            .thenReturn(execution(requestPayload = "{not json"))
+
+        val failure = assertThrows(IllegalStateException::class.java) {
+            controller().getExecutionEmailVerifications(10L, 0L, 50, null)
+        }
+
+        assertTrue(
+            failure.message!!.contains("快照"),
+            "a broken historical snapshot must be named, never shown as 'not enabled'"
+        )
+        Mockito.verify(emailVerificationRepository, Mockito.never())
+            .readPage(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyInt())
+    }
+
+    @Test
+    fun `paging cursor is the last id of the page and is null on the last page`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution())
+        Mockito.`when`(emailVerificationRepository.readPage(10L, 100L, 2))
+            .thenReturn(
+                verificationPage(rows = listOf(verificationRow(101L), verificationRow(102L)), hasMore = true)
+            )
+        Mockito.`when`(emailVerificationRepository.readPage(10L, 102L, 2))
+            .thenReturn(verificationPage(rows = listOf(verificationRow(103L)), hasMore = false))
+
+        val firstPage = controller().getExecutionEmailVerifications(10L, 100L, 2, null).body!!
+        assertEquals(102L, firstPage.nextAfterId)
+        assertTrue(firstPage.hasMore)
+
+        val lastPage = controller().getExecutionEmailVerifications(10L, 102L, 2, null).body!!
+        assertNull(lastPage.nextAfterId, "no cursor may be emitted for the final page")
+        assertFalse(lastPage.hasMore)
+    }
+
+    @Test
+    fun `summary is the whole execution aggregate with errors mapped from serviceError`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution())
+        Mockito.`when`(emailVerificationRepository.readPage(10L, 0L, 50)).thenReturn(
+            verificationPage(
+                rows = listOf(verificationRow(1L)),
+                aggregate = BatchEmailVerificationAggregate(
+                    total = 5, pending = 0, passed = 2, rejected = 3, serviceError = 0,
+                    notSent = 4, sending = 0, sent = 1, sendFailed = 0, sendSkipped = 3,
+                    tagNotRequired = 2, tagPending = 0, tagApplied = 0, tagFailed = 1
+                )
+            )
+        )
+
+        val summary = controller().getExecutionEmailVerifications(10L, 0L, 50, null).body!!.summary
+
+        assertEquals(5, summary.total)
+        assertEquals(0, summary.pending)
+        assertEquals(2, summary.passed)
+        assertEquals(3, summary.rejected)
+        assertEquals(0, summary.errors)
+        assertEquals(1, summary.tagFailed, "tag failures are an extra dimension of the same execution")
+        assertEquals(
+            summary.total,
+            summary.passed + summary.rejected + summary.errors + summary.pending,
+            "passed/rejected/errors/pending must partition the total"
+        )
+    }
+
+    @Test
+    fun `items expose only the display whitelist`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution())
+        Mockito.`when`(emailVerificationRepository.readPage(10L, 0L, 50)).thenReturn(
+            verificationPage(
+                listOf(
+                    verificationRow(
+                        id = 1L, decision = "SKIP", providerState = "undeliverable",
+                        providerReason = "rejected_email", tagStatus = "FAILED",
+                        tagError = "EMAIL_VERIFY_TAG_FAILED", sendStatus = "SKIPPED",
+                        sendReason = "EMAIL_VERIFICATION_REJECTED"
+                    )
+                )
+            )
+        )
+
+        val json = jsonMapper.writeValueAsString(
+            controller().getExecutionEmailVerifications(10L, 0L, 50, null).body!!
+        )
+        val keys = jsonMapper.readTree(json).path("items").get(0).fieldNames().asSequence().toSet()
+
+        assertEquals(
+            setOf(
+                "id", "expertDocId", "orcidId", "expertName", "email", "decision",
+                "providerState", "providerReason", "errorCode", "checkedAt", "requestCount",
+                "sendStatus", "sendReason", "tagStatus", "tagError"
+            ),
+            keys
+        )
+        assertFalse(json.contains("apiKey"), "no provider secret may reach the console")
+        assertFalse(json.contains("updatedAt"), "internal timestamps stay out of the response")
+    }
+
+    @Test
+    fun `repository failure propagates instead of returning an empty page`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution())
+        Mockito.`when`(
+            emailVerificationRepository.readPage(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyInt())
+        ).thenThrow(RuntimeException("batch_email_verification unavailable"))
+
+        assertThrows(RuntimeException::class.java) {
+            controller().getExecutionEmailVerifications(10L, 0L, 50, null)
+        }
+    }
+
+    @Test
+    fun `verification detail performs a single read and never writes`() {
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution())
+        stubAnyVerificationPage(verificationPage(listOf(verificationRow(1L))))
+
+        controller().getExecutionEmailVerifications(10L, 0L, 50, null)
+
+        Mockito.verify(emailVerificationRepository).readPage(10L, 0L, 50)
+        Mockito.verifyNoMoreInteractions(emailVerificationRepository)
     }
 }

@@ -1,0 +1,29 @@
+### node --test src/test/js/*.test.js
+  ✔ 加载失败显示错误与显式重试入口，当前钟面仍显示 (0.94275ms)
+  ✔ 重试成功回到 ready；重试进行中不可重复触发 (1.424209ms)
+  ✔ 非数组或没有合法条目的响应视为 error，不使用常见假数据 (0.751208ms)
+  ✔ 认证隐藏：关闭浮层、中止请求、清空目录与选择、停表；晚到回包不写 DOM (0.982042ms)
+  ✔ visibilitychange 暂停后台 tick，回来立即刷新当前时间 (0.555292ms)
+  ✔ destroy 解绑监听/observer/计时器/请求与新增 DOM，且保留宿主节点与监听 (2.1655ms)
+✔ I-6 失败/重试/认证/销毁 (7.055708ms)
+▶ I-7 只读边界
+  ✔ transport 只收到目录 GET，路径为相对路径且无重复前缀 (1.865209ms)
+  ✔ 目录文本一律 textContent：恶意 label 不产生元素、无 inline style (1.569292ms)
+  ✔ 生产模块不含静态目录数据、持久化偏好、fetch 或 ES module 语法 (0.880833ms)
+  ✔ 页面未被注册（01 不激活）：index.html 不含组件节点 (0.72475ms)
+✔ I-7 只读边界 (5.161125ms)
+▶ 脚本自启动与独立导出（T1/I-8 边界）
+  ✔ 普通 script：浏览器挂 window.WorldClock，Node 导出 mount/parseBeijingInput/projectZones (1.382583ms)
+  ✔ readyState=loading 时注册 DOMContentLoaded；宿主缺失时不挂载也不报错 (1.045958ms)
+✔ 脚本自启动与独立导出（T1/I-8 边界） (2.49575ms)
+ℹ tests 1152
+ℹ suites 230
+ℹ pass 1152
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3372.476875
+NODE_TEST_EXIT=0
+### node --check app.js
+NODE_CHECK_EXIT=0

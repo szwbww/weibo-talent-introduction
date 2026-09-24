@@ -1,0 +1,62 @@
+### mvn migrationIt (FlywayMigrationIntegrationTest) -Dapi.version=1.40
+
+[ERROR] V131 creates the enrichment job table on a V130 database leaving existing contacts untouched  Time elapsed: 14.64 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <136> but was: <137>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V131 creates the enrichment job table on a V130 database leaving existing contacts untouched(FlywayMigrationIntegrationTest.kt:481)
+
+[ERROR] V123 adds nullable calendar attachment json column leaving history null  Time elapsed: 17.199 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <136> but was: <137>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V123 adds nullable calendar attachment json column leaving history null(FlywayMigrationIntegrationTest.kt:647)
+
+[ERROR] V119 creates mail_attachment_transfer with the persistence contract  Time elapsed: 16.346 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <136> but was: <137>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V119 creates mail_attachment_transfer with the persistence contract(FlywayMigrationIntegrationTest.kt:1189)
+
+[ERROR] V23 historical records are linked and SENT quota is backfilled  Time elapsed: 16.953 s  <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <136> but was: <137>
+	at com.weibo.talentintroduction.campaign.repository.FlywayMigrationIntegrationTest.V23 historical records are linked and SENT quota is backfilled(FlywayMigrationIntegrationTest.kt:951)
+
+[INFO] 
+[INFO] Results:
+[INFO] 
+[ERROR] Failures: 
+[ERROR]   FlywayMigrationIntegrationTest.V117 clears only BOUNCE_RATE_HIGH pauses and keeps other pause reasons:793 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V118 allows metadata-only attachments preserving historical values and owner XOR:1073 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V119 creates mail_attachment_transfer with the persistence contract:1189 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V120 scopes inbound uid uniqueness by uid validity without backfilling history:1334 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V121 creates expert_follow with composite ownership key and contact FK:1424 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V122 does not overwrite a pre-existing manual meeting template configuration:1601 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V123 adds nullable calendar attachment json column leaving history null:647 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V124 allows material attached promotion audit trigger:682 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V127 adds nullable outbound attachments json column leaving history null:169 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V129 widens the material code check to twelve codes without touching stored rows:211 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V130 adds the manual upload owner table switching the owner check to three-way:308 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V131 creates the enrichment job table on a V130 database leaving existing contacts untouched:481 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V135 adds the sender account codes column backfilling existing rows with an empty array:603 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V136 preserves existing template subject and initializes reference as null:81 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.V23 historical records are linked and SENT quota is backfilled:951 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.ambiguous V23 data fails before persistent V24 DDL and can rerun after repair:997 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.database at original V23 upgrades to V122 without repair:900 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.database at original V24 upgrades to V122 without repair:916 expected: <136> but was: <137>
+[ERROR]   FlywayMigrationIntegrationTest.fresh database migrates through V136:62 expected: <136> but was: <137>
+[INFO] 
+[ERROR] Tests run: 28, Failures: 19, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  08:31 min
+[INFO] Finished at: 2026-09-24T13:30:53+08:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:2.22.2:test (default-test) on project weibo-talent-introduction: There are test failures.
+[ERROR] 
+[ERROR] Please refer to /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-24-emailable-pre-send-verification/target/surefire-reports for the individual test results.
+[ERROR] Please refer to dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
+MVN_MIGRATIONIT_EXIT=1

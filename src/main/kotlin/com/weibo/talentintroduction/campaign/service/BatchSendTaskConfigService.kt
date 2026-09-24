@@ -88,6 +88,7 @@ class BatchSendTaskConfigService(
                 templateId = normalized.templateId,
                 gateFilterEnabled = normalized.gateFilterEnabled,
                 researchDirectionFilter = normalized.researchDirectionFilter,
+                emailVerificationEnabled = normalized.emailVerificationEnabled,
                 createdAt = now,
                 updatedAt = now
             ),
@@ -101,7 +102,14 @@ class BatchSendTaskConfigService(
     fun update(id: Long, cmd: BatchSendTaskConfigUpdateCommand): BatchSendTaskConfigView {
         val existing = repository.findByIdAndDeletedAtIsNull(id)
             ?: throw NoSuchElementException("Batch send task config not found: $id")
-        val normalized = normalizeAndValidate(cmd.toFields(), excludeId = id)
+        // I-1: 缺省/null 保留现值 —— Update 命令的 nullable 字段在这里与实体显式合并，
+        // 绝不走「空值即清空」逻辑（旧客户端不传该字段时必须保住开启状态）。
+        val normalized = normalizeAndValidate(
+            cmd.toFields(
+                mergedEmailVerificationEnabled = cmd.emailVerificationEnabled ?: existing.emailVerificationEnabled
+            ),
+            excludeId = id
+        )
         val now = LocalDateTime.now()
         val saved = saveConfig(
             existing.copy(
@@ -125,6 +133,7 @@ class BatchSendTaskConfigService(
                 templateId = normalized.templateId,
                 gateFilterEnabled = normalized.gateFilterEnabled,
                 researchDirectionFilter = normalized.researchDirectionFilter,
+                emailVerificationEnabled = normalized.emailVerificationEnabled,
                 updatedAt = now
             ),
             configName = normalized.configName
@@ -214,6 +223,9 @@ class BatchSendTaskConfigService(
                 gateFilterEnabled = existing.gateFilterEnabled,
                 // I-1: 旧 typed API 不传方向三态，必须显式保留存量值（漏写会命中默认值静默重置为 ANY）。
                 researchDirectionFilter = existing.researchDirectionFilter,
+                // I-1: 旧 typed API 不传邮箱验证开关，必须显式保留存量值（漏写会命中 null→现值合并之外
+                // 的默认值，把已开启的验证策略静默关掉）。
+                emailVerificationEnabled = existing.emailVerificationEnabled,
             )
         )
         return BatchSendConfig(
@@ -352,6 +364,11 @@ class BatchSendTaskConfigService(
         val regions = normalizeRegions(fields.regions)
         val regionsJson = objectMapper.writeValueAsString(regions)
         val mailType = resolveMailType(fields.templateId)
+        // I-3: 发送前邮箱验证只支持 INTRODUCTION —— 在模板解析后判定，用户显式开启+材料提醒模板
+        // 一律 400 拒绝，绝不暗中把开关关掉（暗中关闭会让运营以为策略已生效）。
+        require(mailType == BatchSendType.INTRODUCTION.name || !fields.emailVerificationEnabled) {
+            "发送前邮箱验证只支持介绍邮件（${BatchSendType.INTRODUCTION.name}），当前配置类型为 $mailType"
+        }
         // I-1: 三态白名单是权威 —— 非法值在此拒绝（未传值/空白归一为 ANY）。
         val researchDirectionFilter = ResearchDirectionFilters.requireAllowed(fields.researchDirectionFilter)
 
@@ -381,7 +398,8 @@ class BatchSendTaskConfigService(
             senderAccountCodesJson = senderAccountCodesJson,
             templateId = fields.templateId,
             gateFilterEnabled = fields.gateFilterEnabled,
-            researchDirectionFilter = researchDirectionFilter
+            researchDirectionFilter = researchDirectionFilter,
+            emailVerificationEnabled = fields.emailVerificationEnabled
         )
     }
 
@@ -530,6 +548,7 @@ class BatchSendTaskConfigService(
             templateId = row.templateId,
             gateFilterEnabled = row.gateFilterEnabled,
             researchDirectionFilter = row.researchDirectionFilter,
+            emailVerificationEnabled = row.emailVerificationEnabled,
             createdAt = row.createdAt,
             updatedAt = row.updatedAt,
             nextFireTime = computeNextFireTime(row.cron),
@@ -624,7 +643,9 @@ class BatchSendTaskConfigService(
         val senderAccountCodes: List<String> = emptyList(),
         val templateId: Long?,
         val gateFilterEnabled: Boolean = false,
-        val researchDirectionFilter: String = ResearchDirectionFilters.ANY
+        val researchDirectionFilter: String = ResearchDirectionFilters.ANY,
+        /** I-1: 合并后的权威开关值（update 路径先与实体现值合并再进入 ConfigFields）。 */
+        val emailVerificationEnabled: Boolean = false
     )
 
     private data class NormalizedConfig(
@@ -647,7 +668,9 @@ class BatchSendTaskConfigService(
         val senderAccountCodesJson: String = "[]",
         val templateId: Long?,
         val gateFilterEnabled: Boolean = false,
-        val researchDirectionFilter: String = ResearchDirectionFilters.ANY
+        val researchDirectionFilter: String = ResearchDirectionFilters.ANY,
+        /** I-1: 校验通过后的权威开关值，原样落到实体列。 */
+        val emailVerificationEnabled: Boolean = false
     )
 
     private fun BatchSendTaskConfigCreateCommand.toFields() = ConfigFields(
@@ -669,10 +692,17 @@ class BatchSendTaskConfigService(
         senderAccountCodes = senderAccountCodes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
-        researchDirectionFilter = researchDirectionFilter
+        researchDirectionFilter = researchDirectionFilter,
+        emailVerificationEnabled = emailVerificationEnabled
     )
 
-    private fun BatchSendTaskConfigUpdateCommand.toFields() = ConfigFields(
+    /**
+     * I-1: update 路径的开关值由调用方（[update]）与实体现值显式合并后传入 ——
+     * 命令上的 nullable 字段不在这里做「空值即清空」推断。
+     */
+    private fun BatchSendTaskConfigUpdateCommand.toFields(
+        mergedEmailVerificationEnabled: Boolean
+    ) = ConfigFields(
         configName = configName,
         autoEnabled = autoEnabled,
         cron = cron,
@@ -691,7 +721,8 @@ class BatchSendTaskConfigService(
         senderAccountCodes = senderAccountCodes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
-        researchDirectionFilter = researchDirectionFilter
+        researchDirectionFilter = researchDirectionFilter,
+        emailVerificationEnabled = mergedEmailVerificationEnabled
     )
 
     private fun BatchSendTaskConfig.toFields() = ConfigFields(
@@ -713,7 +744,8 @@ class BatchSendTaskConfigService(
         senderAccountCodes = parseSenderAccountCodes(objectMapper, senderAccountCodesJson),
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
-        researchDirectionFilter = researchDirectionFilter
+        researchDirectionFilter = researchDirectionFilter,
+        emailVerificationEnabled = emailVerificationEnabled
     )
 
     private companion object {

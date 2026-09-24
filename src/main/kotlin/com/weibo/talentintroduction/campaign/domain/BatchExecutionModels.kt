@@ -33,7 +33,13 @@ data class BatchExecutionSnapshot(
      * 前端手动快照、`toExecutionSnapshot` 与 `RecipientScope.fromSnapshot` 逐字传递。
      */
     val researchDirectionFilter: String = ResearchDirectionFilters.ANY,
-    val oneRoundOnly: Boolean = false
+    val oneRoundOnly: Boolean = false,
+    /**
+     * I-1（快照）：发送前邮箱验证开关。旧 `request_payload` JSON 缺字段 = false（默认关闭）；
+     * 只有 INTRODUCTION 允许 true；MATERIAL_REMINDER + true 在任何业务写入前拒绝。
+     * 关闭时不调用验证 HTTP / 验证明细仓储，也不要求密钥。
+     */
+    val emailVerificationEnabled: Boolean = false
 )
 
 data class ManualBatchExecutionRequest(
@@ -197,6 +203,12 @@ object BatchOutcomeReasonCodes {
      * 本次选中集合无关）→ 本次批量任务跳过，不发信、不重选号、不改绑。
      */
     const val BOUND_SENDER_ALREADY_SET = "BOUND_SENDER_ALREADY_SET"
+    /**
+     * I-2/I-6: 发送前验证明确不通过（undeliverable/risky/unknown）。
+     * 该目标跳过并占本轮处理槽，但不计 success、不计发送失败、不占账号发送量；
+     * 明细行的 send_status=SKIPPED 使用同一码。
+     */
+    const val EMAIL_VERIFICATION_REJECTED = "EMAIL_VERIFICATION_REJECTED"
 
     val LABELS = mapOf(
         SEND_EXCEPTION to "发送异常",
@@ -209,7 +221,8 @@ object BatchOutcomeReasonCodes {
         CANCELLED to "被取消",
         PERSONALIZATION_INCOMPLETE to "个性化字段缺失",
         EXPERT_NOT_SENDABLE to "研发类型不在本次选择范围内",
-        BOUND_SENDER_ALREADY_SET to "专家已绑定发件账号"
+        BOUND_SENDER_ALREADY_SET to "专家已绑定发件账号",
+        EMAIL_VERIFICATION_REJECTED to "邮箱验证未通过"
     )
 
     fun label(code: String): String = LABELS[code] ?: code
@@ -355,7 +368,9 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter,
-        oneRoundOnly = oneRoundOnly
+        oneRoundOnly = oneRoundOnly,
+        // I-1/I-4: 配置实体是快照的唯一来源；启动时逐字复制，运行中改配置/软删不改本次快照。
+        emailVerificationEnabled = emailVerificationEnabled
     )
 }
 
