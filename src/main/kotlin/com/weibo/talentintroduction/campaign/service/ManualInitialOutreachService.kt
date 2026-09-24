@@ -272,14 +272,19 @@ class ManualInitialOutreachService(
                 break
             }
 
-            // Send round
-            var roundSent = 0
+            // 每轮额度只计成功发送；跳过和失败继续扫描后续目标补足。
             var roundProcessed = 0
             var roundPassed = 0
             var roundRejected = 0
             var midRoundStop = false
 
-            while (roundSent < roundQuota && targetIndex < targets.size) {
+            while (roundPassed < roundQuota && targetIndex < targets.size) {
+                if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                    wasCancelled = true
+                    stopReason = "CANCELLED"
+                    midRoundStop = true
+                    break
+                }
                 val (contact, expert) = targets[targetIndex]
                 targetIndex++
 
@@ -289,7 +294,7 @@ class ManualInitialOutreachService(
 
                 if (email.isBlank() || emailSuppressionService.isSuppressed(email)) {
                     accumulator.recordSkipped(BatchOutcomeReasonCodes.SUPPRESSED, "已跳过抑制邮箱：$email")
-                    processedTotal++; roundSent++; roundProcessed++; roundRejected++
+                    processedTotal++; roundProcessed++; roundRejected++
                     updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                         "RUNNING", "已跳过抑制邮箱：$email", errors, mode, roundNumber, config, runAccountStats,
                         roundNumber, roundProcessed, roundPassed, roundRejected,
@@ -332,7 +337,9 @@ class ManualInitialOutreachService(
                     if (hasSentMaterialReminder(contactId)) {
                         log.info("SENT MATERIAL_REMINDER already exists for contact {}, skipping", contactId)
                         accumulator.recordSkipped(BatchOutcomeReasonCodes.DEDUP)
-                        roundSent++
+                        processedTotal++
+                        roundProcessed++
+                        roundRejected++
                         continue
                     }
 
@@ -362,7 +369,7 @@ class ManualInitialOutreachService(
                         BatchOutcomeReasonCodes.PERSONALIZATION_INCOMPLETE,
                         "个性化字段缺失（${e.missingKeys.joinToString(",")}）：$email"
                     )
-                    // 计数由循环公共收尾路径（processedTotal/roundSent/roundProcessed）统一推进一次，
+                    // 计数由循环公共收尾路径（processedTotal/roundProcessed）统一推进一次，
                     // 此处不再自增，避免与收尾路径重复计数（V-1）。
                 } catch (e: Exception) {
                     log.error("Failed to send material reminder to contact {}", contactId, e)
@@ -379,7 +386,6 @@ class ManualInitialOutreachService(
                 ))
 
                 processedTotal++
-                roundSent++
                 roundProcessed++
 
                 updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
@@ -388,7 +394,7 @@ class ManualInitialOutreachService(
                     sendType = BatchSendType.MATERIAL_REMINDER, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
 
                 val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, provider, config.perMailIntervalMs)
-                if (intervalMs > 0 && roundSent < roundQuota && targetIndex < targets.size) {
+                if (intervalMs > 0 && roundPassed < roundQuota && targetIndex < targets.size) {
                     try { Thread.sleep(intervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
                 }
             }
@@ -625,13 +631,18 @@ class ManualInitialOutreachService(
                 break
             }
 
-            // 4. Send this round
-            var roundSent = 0
+            // 4. 每轮额度只计成功发送；跳过和失败继续扫描后续目标补足。
             var roundProcessed = 0
             var roundPassed = 0
             var roundRejected = 0
             var midRoundStop = false
-            while (roundSent < roundQuota && targetIterator.hasNext()) {
+            while (roundPassed < roundQuota && targetIterator.hasNext()) {
+                if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                    wasCancelled = true
+                    stopReason = "CANCELLED"
+                    midRoundStop = true
+                    break
+                }
                 val (existingContact, expert) = targetIterator.next()
                 val normOrcid = normalizeOrcid(expert.orcidId)
 
@@ -655,7 +666,6 @@ class ManualInitialOutreachService(
                 if (email.isNullOrBlank() || emailSuppressionService.isSuppressed(email)) {
                     accumulator.recordSkipped(BatchOutcomeReasonCodes.SUPPRESSED, "已跳过抑制邮箱：${email ?: ""}")
                     processedTotal++
-                    roundSent++
                     roundProcessed++
                     roundRejected++
                     updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
@@ -717,7 +727,6 @@ class ManualInitialOutreachService(
                                 "邮箱验证未通过：$email"
                             )
                             processedTotal++
-                            roundSent++
                             roundProcessed++
                             roundRejected++
                             updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
@@ -798,7 +807,6 @@ class ManualInitialOutreachService(
                         log.info("SENT introduction already exists for contact {}, skipping", contact.id)
                         accumulator.recordSkipped(BatchOutcomeReasonCodes.DEDUP)
                         processedTotal++
-                        roundSent++
                         roundProcessed++
                         // I-6：PASS 后未进 SMTP 的分支保留 NOT_SENT + 具体原因。
                         recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.DEDUP)
@@ -817,7 +825,6 @@ class ManualInitialOutreachService(
                         )
                         roundRejected++
                         processedTotal++
-                        roundSent++
                         roundProcessed++
                         recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.PERSONALIZATION_INCOMPLETE)
                         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
@@ -830,7 +837,6 @@ class ManualInitialOutreachService(
                         stat.failed++
                         roundRejected++
                         processedTotal++
-                        roundSent++
                         roundProcessed++
                         recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.TEMPLATE_RENDER_FAILED)
                         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
@@ -855,7 +861,6 @@ class ManualInitialOutreachService(
                     }
 
                     // I-3/I-6：PASS 之后、SMTP 之前再查一次取消 —— 不发未确认的信，明细留 NOT_SENT/CANCELLED。
-                    // 只在开启验证的执行里检查：关闭时发送循环的取消语义逐字保持原样（仅轮次开头检查）。
                     if (emailVerificationEnabled && progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
                         verified?.let {
                             recordVerificationSend(it, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.CANCELLED)
@@ -1022,7 +1027,6 @@ class ManualInitialOutreachService(
                 ))
 
                 processedTotal++
-                roundSent++
                 roundProcessed++
 
                 // Update progress (I-8: per-account stats)
@@ -1032,7 +1036,7 @@ class ManualInitialOutreachService(
 
                 // Throttle per mail (I-6 + dynamic rate limiter)
                 val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, provider, config.perMailIntervalMs)
-                if (intervalMs > 0 && roundSent < roundQuota && targetIterator.hasNext()) {
+                if (intervalMs > 0 && roundPassed < roundQuota && targetIterator.hasNext()) {
                     try { Thread.sleep(intervalMs) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
                 }
             }

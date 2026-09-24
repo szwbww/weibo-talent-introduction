@@ -50,7 +50,7 @@
 - 来源: K-task-execution-id-is-batch-cohort-key
 
 ### Invariant I-7: 成本与统计边界
-- Rule: 只验证实际走到验证门禁的目标，预估人数不调用 Emailable。同一 execution 内同邮箱的最终结果可内存复用，但每个专家单独留明细，复用行 requestCount=0；下一次执行重新验证。单邮箱连续249最多2次，物理请求间至少100ms，无并发池。验证跳过计 skipped、processed、roundProcessed/roundRejected，并占现有 roundSent 处理槽；不把它计 success 或账号发送量。remaining=target-success-failure-skipped。
+- Rule: 只验证实际走到验证门禁的目标，预估人数不调用 Emailable。同一 execution 内同邮箱的最终结果可内存复用，但每个专家单独留明细，复用行 requestCount=0；下一次执行重新验证。单邮箱连续249最多2次，物理请求间至少100ms，无并发池。验证跳过计 skipped、processed、roundProcessed/roundRejected，但不占发送额度；每批以成功发送数计上限，继续扫描后续目标补足。其它跳过和失败也不计成功数；目标耗尽、取消、账号额度/可用性不足或既有故障停止条件优先。此口径同样适用于关闭验证和材料提醒。remaining=target-success-failure-skipped。
 - Applies to: 循环/OutcomeAccumulator/验证上下文
 - Violation consequence: 关联系统全量扫描收费、跳过假装已发、为了凑足发信数无限验证。
 - 来源: K-batch-send-round-loop-symmetry
@@ -120,7 +120,7 @@ ES 标签：每层 `_mget` 当前 expert_doc_id；只给身份/当前邮箱匹�
 
 文件：`src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt`、`src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt`、`src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt`、`src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt`。加入必需服务构造参数，同步两处显式测试构造器（E-5），禁止 nullable/default-null 来绕过接入。
 
-处理顺序：入口检查开关/类型/密钥 → 原目标过滤 → 取消检查 → insertPending → verify/recordDecision → 若SKIP追加标签、记 EMAIL_VERIFICATION_REJECTED 跳过并占本轮处理槽 → 若ERROR设置停止原因并退出 → 若PASS继续旧选号/contact/去重/compose → 再核对 mail.to 与取消 → 原attempt PREPARED → 审计SENDING持久化 → SMTP → 旧txHelper与统计 → 审计SENT/FAILED。
+处理顺序：入口检查开关/类型/密钥 → 原目标过滤 → 取消检查 → insertPending → verify/recordDecision → 若SKIP追加标签、记 EMAIL_VERIFICATION_REJECTED 跳过、不占本轮发送额度，继续取后续目标 → 若ERROR设置停止原因并退出 → 若PASS继续旧选号/contact/去重/compose → 再核对 mail.to 与取消 → 原attempt PREPARED → 审计SENDING持久化 → SMTP → 旧txHelper与统计 → 审计SENT/FAILED。
 
 原选号失败、已发送去重、模板门禁continue、模板错误、发送成功、SMTP永久/临时失败、广义catch、取消/break必须逐项处理已有验证行。PASS后没走SMTP保持NOT_SENT+具体原因，不能把“验证通过”展示成“发送成功”。SKIP行 send_status=SKIPPED。结果不明保持SENDING，停止本次执行。审计数据库异常使用专用异常边界先于当前广义catch处理；不得进入 pauseAccount/SMTP故障统计。若 SMTP已返回SENT且txHelper已提交但最后审计更新失败，保持原成功计数，审计结果未确认；不覆盖成发送失败。
 
@@ -155,7 +155,7 @@ ES 标签：每层 `_mget` 当前 expert_doc_id；只给身份/当前邮箱匹�
 - I-4：249→200与249→249、402、403、429、网络timeout/5xx逐项；服务错误不加邮箱异常；成功0→FAILED，成功1后故障→PARTIAL_SUCCESS且remaining准确。
 - I-5：真实_id不等于ORCID、三个层存在、只有候选层、其它层邮箱已变、重复标签、写方false/读异常；旧标签保留；operatorStatus无改动；通过不清标签。
 - I-6：insert/decision/SENDING/最终更新分别故障；均验证无未记账的继续发送；发送完成后审计失败不得重复SMTP；所有continue/break分支有NOT_SENT原因。
-- I-7：同邮箱两专家仅请求一次但两明细；不同执行再请求；roundSize=5有3个拒绝2个通过，仅发2、skip3、无第6次目标验证；预估API请求0。
+- I-7：同邮箱两专家仅请求一次但两明细；不同执行再请求；roundSize=2、6个候选中前5个有3个拒绝2个通过，应发2、skip3、remaining1，第6个不验证；另覆盖roundSize=20时12个拒绝后仍发满20、跨页全部拒绝后正常结束、多轮混合跳过/失败以及材料提醒补足；预估API请求0。
 - I-8：假私钥只出现在 Authorization；不进入URL/结果JSON/日志；缺key/test_开关开启停止；关开关无影响；provider文本不可执行。
 - I-9：MySQL唯一约束、游标隔离/50+1分页、SUM汇总、级联清理；100封运行的每条progress.details_json不含累计邮箱数组。
 
@@ -211,3 +211,7 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test -
   2. 通过现有清理任务入口执行归档；查询过期执行及其明细。
 - 预期结果：快照包含true；过期执行及其关联明细均0行；A-1近期数据仍保留；没有孤儿明细。
 - 覆盖：I-1/I-9；X1/X6
+
+## 修正记录
+
+- 2026-09-25：按用户指示修正 I-7、T3 执行顺序和验收条件：跳过不消耗每批发送额度，按成功发送数补足。主计划“关键边界”是本次修正依据，覆盖原“占处理槽”决策；原故障停止、账号限制、统计守恒和轮数限制保留。

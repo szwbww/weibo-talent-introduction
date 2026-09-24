@@ -1489,14 +1489,14 @@ class ManualInitialOutreachServiceTest {
 
     @Test
     fun `runMaterialReminderBatch gate rejection records one skip, single progress advancement, and continues (V-1)`() {
-        // V-1: the MATERIAL_REMINDER gate catch must not double-count processedTotal/roundSent/roundProcessed,
+        // V-1: the MATERIAL_REMINDER gate catch must not double-count processedTotal/roundProcessed,
         // must record exactly one PERSONALIZATION_INCOMPLETE skip (not a failure), and must continue the batch.
         Mockito.`when`(batchSendSettingService.getConfig(BatchSendType.MATERIAL_REMINDER))
             .thenReturn(
                 BatchSendConfig(
                     sendType = BatchSendType.MATERIAL_REMINDER,
                     autoEnabled = false, cron = "0 0 8 * * ?",
-                    dailyCap = 60, roundSize = 30,
+                    dailyCap = 1, roundSize = 1,
                     perMailIntervalMs = 0, perRoundIntervalMs = 0,
                     selfCheckTtlMinutes = 30, templateId = 10L
                 )
@@ -1565,7 +1565,7 @@ class ManualInitialOutreachServiceTest {
             true
         }
 
-        val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, false)
+        val result = service.runMaterialReminderBatch(12345L, ExecutionMode.MANUAL, true)
 
         // gate rejection is exactly one skip with the PERSONALIZATION_INCOMPLETE label, not a failure
         assertEquals(1, result.skipped)
@@ -5231,12 +5231,14 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
-    fun `rejected addresses occupy the round slot so no extra target is verified (I-7)`() {
+    fun `rejected addresses do not consume the successful send quota`() {
         val account = account("chen")
-        stubIntroSendPipeline(account, listOf(
+        val experts = listOf(
             expert("0001", "a@b.com"), expert("0002", "b@b.com"), expert("0003", "c@b.com"),
             expert("0004", "d@b.com"), expert("0005", "e@b.com"), expert("0006", "f@b.com")
-        ))
+        )
+        stubIntroSendPipeline(account, experts)
+        stubIntroChunkedExperts(experts, pageSize = 4)
         // I-2：共享 fixture 的 compose 固定返回 a@b.com —— 多邮箱用例必须按专家返回其真实收件地址，
         // 否则 SMTP 前的「收件地址 = 已验证地址」断言会（正确地）终止本次执行。
         Mockito.`when`(introductionMailComposer.compose(anyValue("chen"), anyValue(expert("", "")), Mockito.any()))
@@ -5247,7 +5249,7 @@ class ManualInitialOutreachServiceTest {
         stubVerificationDecision(rejected = setOf("b@b.com", "c@b.com", "d@b.com"))
 
         val result = service.run(
-            introSnapshotWithVerification(roundSize = 5),
+            introSnapshotWithVerification(roundSize = 2),
             12345L,
             ExecutionMode.MANUAL,
             oneRoundOnly = false
@@ -5256,10 +5258,101 @@ class ManualInitialOutreachServiceTest {
         assertEquals(2, result.sent)
         assertEquals(3, result.skipped)
         assertEquals(1, result.remaining)
-        // 每轮 5 个处理槽：3 跳过 + 2 发送，绝不为凑满而验证第 6 个目标。
+        // 跳过 3 个仍补足 2 封成功；达到成功上限后不验证第 6 个目标。
         Mockito.verify(batchEmailVerificationService, Mockito.times(5))
             .verify(anyValue(verificationContext), anyValue(verificationTarget()))
         Mockito.verify(mailDeliveryService, Mockito.times(2)).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `twelve verification skips still fill twenty successful sends`() {
+        val acc = account("chen")
+        val experts = (1..33).map { expert("Q$it", "q$it@test.com") }
+        stubIntroSendPipeline(acc, experts)
+        Mockito.`when`(introductionMailComposer.compose(anyValue("chen"), anyValue(expert("", "")), Mockito.any()))
+            .thenAnswer { invocation ->
+                ComposedMail(invocation.getArgument<ExpertProfile>(1).email.orEmpty(), "Subject", "Body")
+            }
+        stubVerificationDecision(rejected = experts.take(12).map { it.email!! }.toSet())
+
+        val result = service.run(introSnapshotWithVerification(roundSize = 20), 12345L, ExecutionMode.MANUAL, true)
+
+        assertEquals(20, result.sent)
+        assertEquals(12, result.skipped)
+        assertEquals(1, result.remaining)
+        assertEquals("ONE_ROUND_DONE", result.stopReason)
+        Mockito.verify(batchEmailVerificationService, Mockito.times(32))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+        Mockito.verify(mailDeliveryService, Mockito.times(20)).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `all rejected targets exhaust across pages without sending or looping forever`() {
+        val experts = (1..9).map { expert("Q$it", "q$it@test.com") }
+        stubIntroSendPipeline(account("chen"), experts)
+        stubIntroChunkedExperts(experts, pageSize = 4)
+        stubVerificationDecision(rejected = experts.map { it.email!! }.toSet())
+
+        val result = service.run(introSnapshotWithVerification(roundSize = 2), 12345L, ExecutionMode.AUTO, false)
+
+        assertEquals(0, result.sent)
+        assertEquals(9, result.skipped)
+        assertEquals(0, result.remaining)
+        assertEquals("COMPLETED", result.finalStatus)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `suppression personalization and smtp failure do not consume either round quota`() {
+        val acc = account("chen")
+        val experts = (1..8).map { expert("Q$it", "q$it@test.com") }
+        stubIntroSendPipeline(acc, experts)
+        stubIntroChunkedExperts(experts, pageSize = 4)
+        Mockito.`when`(emailSuppressionService.isSuppressed("q1@test.com")).thenReturn(true)
+        Mockito.`when`(introductionMailComposer.compose(anyValue("chen"), anyValue(expert("", "")), Mockito.any()))
+            .thenAnswer { invocation ->
+                val profile = invocation.getArgument<ExpertProfile>(1)
+                if (profile.email == "q2@test.com") {
+                    throw com.weibo.talentintroduction.mail.service.PersonalizationGateException(listOf("recentWorkTitle"))
+                }
+                ComposedMail(profile.email.orEmpty(), "Subject", "Body")
+            }
+        Mockito.`when`(mailDeliveryService.send(anyValue(acc), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("failed", "FAILED", errorCategory = SmtpErrorCategory.PERMANENT))
+            .thenReturn(DeliveredMail("sent", "SENT"))
+
+        val result = service.run(introSnapshot(roundSize = 2, roundsPerRun = 2), 12345L, ExecutionMode.AUTO, false)
+
+        assertEquals(4, result.sent)
+        assertEquals(2, result.skipped)
+        assertEquals(1, result.outcome!!.failure)
+        assertEquals(1, result.remaining)
+        assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+        Mockito.verify(mailDeliveryService, Mockito.times(5)).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `cancel during skipped targets stops before scanning the next recipient`() {
+        val experts = (1..3).map { expert("Q$it", "q$it@test.com") }
+        stubIntroSendPipeline(account("chen"), experts)
+        var cancelRequested = false
+        Mockito.`when`(emailSuppressionService.isSuppressed(Mockito.anyString())).thenAnswer {
+            cancelRequested = true
+            true
+        }
+        Mockito.`when`(progressStore.isCancelled(eqValue("MANUAL_INITIAL_OUTREACH"), eqValue(12345L)))
+            .thenAnswer { cancelRequested }
+
+        val result = service.run(introSnapshot(roundSize = 2, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, true)
+
+        assertTrue(result.wasCancelled)
+        assertEquals("CANCELLED", result.finalStatus)
+        assertEquals(3, result.skipped)
+        assertEquals(0, result.remaining)
+        assertEquals(1, result.outcome!!.skippedReasons[BatchOutcomeReasonCodes.SUPPRESSED]?.count)
+        assertEquals(2, result.outcome!!.skippedReasons[BatchOutcomeReasonCodes.CANCELLED]?.count)
+        Mockito.verify(emailSuppressionService, Mockito.times(1)).isSuppressed(Mockito.anyString())
+        Mockito.verifyNoInteractions(mailDeliveryService)
     }
 
     // ──── Helpers ────
