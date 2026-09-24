@@ -506,6 +506,24 @@ describe("batch email verification detail area (I-2 / I-3 / I-4 / S-2)", () => {
         assert.ok(html.includes("验证时间："));
     });
 
+    it("history reuse shows the original time, zero requests and escaped source id", () => {
+        const { sandbox } = verificationSandbox();
+        const row = verificationRow({ reusedFromId: 42, requestCount: 0, sendStatus: "NOT_SENT" });
+        const html = sandbox.batchEmailVerificationRowHtml(row);
+        assert.ok(html.includes("复用历史验证（原始记录 #42）"));
+        assert.ok(html.includes("请求次数：0"));
+        assert.ok(html.includes("未发送"));
+        assert.ok(html.includes(sandbox.formatDateTime(row.checkedAt)));
+        const escaped = sandbox.batchEmailVerificationRowHtml(Object.assign({}, row, { reusedFromId: '<img onerror="boom">' }));
+        assert.ok(!escaped.includes('<img'));
+        assert.ok(escaped.includes('&lt;img'));
+        const legacy = sandbox.batchEmailVerificationRowHtml(Object.assign({}, row, { reusedFromId: null }));
+        assert.ok(legacy.includes("复用验证结果（原始记录未关联）"));
+        const pending = sandbox.batchEmailVerificationRowHtml(verificationRow({ decision: "PENDING", requestCount: 0 }));
+        assert.ok(pending.includes("尚未调用"));
+        assert.ok(!pending.includes("复用历史验证"));
+    });
+
     it("V12: a still-SENDING row only becomes 结果未确认 once the run reaches a final state", () => {
         const { sandbox, elements } = verificationSandbox();
         const payload = verificationPayload({

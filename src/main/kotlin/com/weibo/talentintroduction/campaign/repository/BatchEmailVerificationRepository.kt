@@ -17,7 +17,7 @@ import java.time.LocalDateTime
  *   绝不覆盖先前验证结论（provider_* / error_code / request_count / checked_at）。
  * - 发送前用 [markSending] 条件更新（PASS + NOT_SENT → SENDING），必须影响 1 行才允许 SMTP；
  *   0 行表示重复/状态冲突，调用方必须停止而不是重发。
- * - 分页严格按 (task_execution_id, id) 游标；不带 executionId 的查询不存在。
+ * - 审计分页严格按 (task_execution_id, id) 游标；验证复用另按规范化邮箱读取一年内原始结果。
  * - 身份键超长（email/orcid/docId）明确抛异常拒绝，绝不截断；只有展示用的 expert_name 允许截断。
  *
  * MySQL 语句兼容性：`SUM(boolean)` 与 `LIMIT ?` 在 MySQL 5.7/8.0 均可解析；本表仅用于 MySQL。
@@ -73,6 +73,19 @@ class BatchEmailVerificationRepository(private val jdbcTemplate: JdbcTemplate) {
         checkedAt,
         now,
         id
+    )
+
+    /** 最近一年内的原始已完成结果；按邮箱跨执行复用，不拿复用行延长有效期。 */
+    fun findReusable(email: String, now: LocalDateTime): BatchEmailVerificationRow? =
+        jdbcTemplate.query(FIND_REUSABLE_SQL, ROW_MAPPER, email, now.minusYears(1), now).firstOrNull()
+
+    /** 复制验证结论及原始时间，不复制其它专家的发送/标签结果。 */
+    fun recordReusedDecision(
+        id: Long, sourceId: Long, decision: String, providerState: String?,
+        providerReason: String?, checkedAt: LocalDateTime, now: LocalDateTime
+    ): Int = jdbcTemplate.update(
+        RECORD_REUSED_DECISION_SQL, decision, providerState, providerReason,
+        checkedAt, sourceId, now, id
     )
 
     /** 标签处理结果；只写 tag_status / tag_error，不触碰验证结论。 */
@@ -174,6 +187,22 @@ class BatchEmailVerificationRepository(private val jdbcTemplate: JdbcTemplate) {
              WHERE id = ? AND decision = 'PENDING'
         """
 
+        private const val FIND_REUSABLE_SQL = """
+            SELECT * FROM batch_email_verification
+             WHERE email = ? AND checked_at > ? AND checked_at <= ?
+               AND request_count > 0 AND reused_from_id IS NULL AND error_code IS NULL
+               AND ((decision = 'PASS' AND provider_state = 'deliverable')
+                 OR (decision = 'SKIP' AND provider_state IN ('undeliverable', 'risky', 'unknown')))
+             ORDER BY checked_at DESC, id DESC LIMIT 1
+        """
+
+        private const val RECORD_REUSED_DECISION_SQL = """
+            UPDATE batch_email_verification
+               SET decision = ?, provider_state = ?, provider_reason = ?, error_code = NULL,
+                   request_count = 0, checked_at = ?, reused_from_id = ?, updated_at = ?
+             WHERE id = ? AND decision = 'PENDING'
+        """
+
         private const val RECORD_TAG_SQL = """
             UPDATE batch_email_verification
                SET tag_status = ?, tag_error = ?, updated_at = ?
@@ -195,7 +224,7 @@ class BatchEmailVerificationRepository(private val jdbcTemplate: JdbcTemplate) {
         private const val LIST_AFTER_SQL = """
             SELECT id, task_execution_id, expert_doc_id, orcid_id, expert_name, email, decision,
                    provider_state, provider_reason, error_code, request_count, checked_at,
-                   send_status, send_reason, tag_status, tag_error, created_at, updated_at
+                   send_status, send_reason, tag_status, tag_error, created_at, updated_at, reused_from_id
               FROM batch_email_verification
              WHERE task_execution_id = ? AND id > ?
              ORDER BY id ASC
@@ -260,7 +289,8 @@ class BatchEmailVerificationRepository(private val jdbcTemplate: JdbcTemplate) {
             tagStatus = getString("tag_status"),
             tagError = getString("tag_error"),
             createdAt = getObject("created_at", LocalDateTime::class.java),
-            updatedAt = getObject("updated_at", LocalDateTime::class.java)
+            updatedAt = getObject("updated_at", LocalDateTime::class.java),
+            reusedFromId = getLong("reused_from_id").let { if (wasNull()) null else it }
         )
     }
 }
@@ -284,7 +314,8 @@ data class BatchEmailVerificationRow(
     val tagStatus: String,
     val tagError: String?,
     val createdAt: LocalDateTime,
-    val updatedAt: LocalDateTime
+    val updatedAt: LocalDateTime,
+    val reusedFromId: Long? = null
 )
 
 /** 单个执行的明细汇总；每个计数都直接来自本表，不从 errorSamples 或进度日志推断。 */

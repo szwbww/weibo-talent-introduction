@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.BatchOutcomeReasonCodes
+import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRow
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationDecision
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationErrorCodes
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRepository
@@ -60,6 +61,8 @@ class BatchEmailVerificationServiceTest {
         Mockito.`when`(repository.recordTag(Mockito.anyLong(), Mockito.anyString(), Mockito.any(), anyTime())).thenReturn(1)
         Mockito.`when`(repository.recordSend(Mockito.anyLong(), Mockito.anyString(), Mockito.any(), anyTime())).thenReturn(1)
         Mockito.`when`(repository.markSending(Mockito.anyLong(), anyTime())).thenReturn(true)
+        Mockito.`when`(repository.recordReusedDecision(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyString(),
+            Mockito.any(), Mockito.any(), anyTime(), anyTime())).thenReturn(1)
     }
 
     // ──── I-2：结果矩阵 ────
@@ -286,23 +289,30 @@ class BatchEmailVerificationServiceTest {
             Mockito.eq(100L), eqValue(BatchEmailVerificationDecision.PASS), Mockito.any(), Mockito.any(),
             Mockito.isNull(), Mockito.eq(1), checkedAt.capture(), anyTime()
         )
-        Mockito.verify(repository).recordDecision(
-            Mockito.eq(101L), eqValue(BatchEmailVerificationDecision.PASS), Mockito.any(), Mockito.any(),
-            Mockito.isNull(), Mockito.eq(0), checkedAt.capture(), anyTime()
+        Mockito.verify(repository).recordReusedDecision(
+            Mockito.eq(101L), Mockito.eq(100L), eqValue(BatchEmailVerificationDecision.PASS),
+            Mockito.any(), Mockito.any(), checkedAt.capture() ?: ANY_TIME, anyTime()
         )
         assertEquals(checkedAt.allValues[0], checkedAt.allValues[1])
     }
 
     @Test
-    fun `a new execution verifies the same address again`() {
+    fun `a new execution reuses the same address within a year`() {
         client.respond(ok("a@b.com", "deliverable"))
         client.respond(ok("a@b.com", "deliverable"))
         val subject = subject()
 
         subject.verify(subject.beginExecution(7L) { false }, target(email = "a@b.com"))
-        subject.verify(subject.beginExecution(8L) { false }, target(email = "a@b.com"))
+        val original = history(100L)
+        Mockito.`when`(repository.findReusable(eqValue("a@b.com"), anyTime())).thenReturn(original)
+        // 新服务实例模拟进程重启；只有数据库历史可用于命中。
+        val restarted = subject()
+        nextRowId = 200L
+        restarted.verify(restarted.beginExecution(8L) { false }, target(orcid = "another-expert", email = " A@B.COM "))
 
-        assertEquals(2, client.requests.size, "跨执行不得复用上一次执行的验证结果")
+        assertEquals(1, client.requests.size, "跨执行应复用一年内的验证结果")
+        Mockito.verify(repository).recordReusedDecision(Mockito.eq(200L), Mockito.eq(100L), eqValue("PASS"),
+            Mockito.eq("deliverable"), Mockito.isNull(), eqValue(original.checkedAt!!), anyTime())
     }
 
     @Test
@@ -350,6 +360,66 @@ class BatchEmailVerificationServiceTest {
             Mockito.anyLong(), Mockito.anyString(), Mockito.any(), Mockito.any(), Mockito.any(),
             Mockito.anyInt(), Mockito.any(), anyTime()
         )
+    }
+
+    @Test
+    fun `historical rejection tags the current expert without copying old send status`() {
+        val original = history(42L, "SKIP", "risky")
+        Mockito.`when`(repository.findReusable(eqValue("a@b.com"), anyTime())).thenReturn(original)
+        stubMatchingCandidateCopy(orcidId = "new-expert")
+        val subject = subject()
+        assertEquals(VerificationResult.Rejected(100L, "APPLIED"),
+            subject.verify(subject.beginExecution(8L) { false }, target(orcid = "new-expert", docId = DOC_ID)))
+        assertEquals(0, client.requests.size)
+        Mockito.verify(repository).recordSend(Mockito.eq(100L), eqValue("SKIPPED"),
+            eqValue(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_REJECTED), anyTime())
+        Mockito.verify(expertIndexWriterService).addTag(DOC_ID, "邮箱异常", ExpertIndexLevel.CANDIDATE)
+        Mockito.verify(repository).recordReusedDecision(Mockito.eq(100L), Mockito.eq(42L), eqValue("SKIP"),
+            Mockito.eq("risky"), Mockito.isNull(), eqValue(original.checkedAt!!), anyTime())
+    }
+
+    @Test
+    fun `database and memory reuse keep the original id without chaining or extending time`() {
+        val original = history(42L)
+        Mockito.`when`(repository.findReusable(eqValue("a@b.com"), anyTime())).thenReturn(original)
+        val subject = subject()
+        val context = subject.beginExecution(8L) { false }
+        subject.verify(context, target(orcid = "first"))
+        subject.verify(context, target(orcid = "second"))
+        Mockito.verify(repository, Mockito.times(1)).findReusable(eqValue("a@b.com"), anyTime())
+        for (rowId in listOf(100L, 101L)) {
+            Mockito.verify(repository).recordReusedDecision(Mockito.eq(rowId), Mockito.eq(42L), eqValue("PASS"),
+                Mockito.eq("deliverable"), Mockito.isNull(), eqValue(original.checkedAt!!), anyTime())
+        }
+        assertEquals(0, client.requests.size)
+    }
+
+    @Test
+    fun `historical lookup failure stops instead of paying for a new request`() {
+        Mockito.`when`(repository.findReusable(Mockito.anyString(), anyTime())).thenThrow(IllegalStateException("db down"))
+        val subject = subject()
+        assertThrows(EmailVerificationAuditException::class.java) {
+            subject.verify(subject.beginExecution(8L) { false }, target())
+        }
+        assertEquals(0, client.requests.size)
+    }
+
+    @Test
+    fun `historical reuse audit failure does not fall back to the provider`() {
+        Mockito.`when`(repository.findReusable(Mockito.anyString(), anyTime())).thenReturn(history(42L))
+        Mockito.`when`(repository.recordReusedDecision(Mockito.anyLong(), Mockito.anyLong(), Mockito.anyString(),
+            Mockito.any(), Mockito.any(), anyTime(), anyTime())).thenReturn(0)
+        val subject = subject()
+        assertThrows(EmailVerificationAuditException::class.java) {
+            subject.verify(subject.beginExecution(8L) { false }, target())
+        }
+        assertEquals(0, client.requests.size)
+    }
+
+    private fun history(id: Long, decision: String = "PASS", state: String = "deliverable"): BatchEmailVerificationRow {
+        val checked = LocalDateTime.now(java.time.ZoneId.of("Asia/Shanghai")).minusDays(100)
+        return BatchEmailVerificationRow(id, 1L, "old-doc", "old-orcid", "Old", "a@b.com", decision,
+            state, null, null, 1, checked, "SENT", null, "NOT_REQUIRED", null, checked, checked)
     }
 
     // ──── I-5：标签规则 ────

@@ -253,6 +253,7 @@ class BatchSendConfigController(
             errorCode = errorCode,
             checkedAt = checkedAt,
             requestCount = requestCount,
+            reusedFromId = reusedFromId,
             sendStatus = sendStatus,
             sendReason = sendReason,
             tagStatus = tagStatus,
@@ -618,7 +619,8 @@ data class BatchEmailVerificationItem(
     val sendStatus: String,
     val sendReason: String?,
     val tagStatus: String,
-    val tagError: String?
+    val tagError: String?,
+    val reusedFromId: Long? = null
 )
 
 private data class ParsedOutcome(

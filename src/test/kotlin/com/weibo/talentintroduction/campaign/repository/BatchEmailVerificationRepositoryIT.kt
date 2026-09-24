@@ -286,6 +286,76 @@ class BatchEmailVerificationRepositoryIT {
         assertEquals(1, repository.aggregate(OTHER_EXECUTION_ID).total)
     }
 
+    @Test
+    fun `history selects the latest original across executions and ignores invalid results`() {
+        fun original(execution: Long, orcid: String, at: LocalDateTime, decision: String = "PASS",
+                     state: String? = "deliverable", count: Int = 1, error: String? = null): Long {
+            val id = repository.insertPending(execution, null, orcid, "Name", "shared@b.com", NOW)
+            repository.recordDecision(id, decision, state, null, error, count, at, NOW)
+            return id
+        }
+        val older = original(EXECUTION_ID, "older", NOW.minusDays(100))
+        val latest = original(OTHER_EXECUTION_ID, "latest", NOW.minusDays(2), "SKIP", "unknown")
+        original(EXECUTION_ID, "error", NOW.minusHours(1), "ERROR", null, error = "EMAIL_VERIFY_TIMEOUT")
+        original(EXECUTION_ID, "future", NOW.plusDays(1))
+        original(EXECUTION_ID, "reuse-without-source", NOW.minusHours(2), count = 0)
+        original(EXECUTION_ID, "mismatched", NOW.minusHours(3), "PASS", "risky")
+        original(EXECUTION_ID, "stale", NOW.minusYears(1))
+        val pending = repository.insertPending(EXECUTION_ID, null, "pending", null, "shared@b.com", NOW)
+        assertEquals(latest, repository.findReusable("shared@b.com", NOW)!!.id)
+        assertEquals("SKIP", repository.findReusable("shared@b.com", NOW)!!.decision)
+        assertNull(repository.findReusable("different@b.com", NOW))
+        val reuse = repository.insertPending(OTHER_EXECUTION_ID, null, "reused", null, "shared@b.com", NOW)
+        assertEquals(1, repository.recordReusedDecision(reuse, latest, "SKIP", "unknown", null, NOW.minusDays(2), NOW))
+        assertEquals(0, repository.recordReusedDecision(reuse, older, "PASS", "deliverable", null, NOW, NOW))
+        val row = repository.listAfter(OTHER_EXECUTION_ID, latest, 10).single()
+        assertEquals(latest, row.reusedFromId)
+        assertEquals(0, row.requestCount)
+        assertEquals(NOW.minusDays(2), row.checkedAt)
+        assertEquals("NOT_SENT", row.sendStatus)
+        assertEquals("NOT_REQUIRED", row.tagStatus)
+        assertEquals(latest, repository.findReusable("shared@b.com", NOW)!!.id)
+        assertNull(repository.findReusable("shared@b.com", NOW.plusYears(2)))
+        assertTrue(pending > latest)
+    }
+
+    @Test
+    fun `one calendar year is a strict boundary and a reuse cannot renew it`() {
+        val id = repository.insertPending(EXECUTION_ID, null, "boundary", null, "year@b.com", NOW)
+        repository.recordDecision(id, "PASS", "deliverable", null, null, 1, NOW.minusYears(1), NOW)
+        assertNull(repository.findReusable("year@b.com", NOW))
+        assertEquals(id, repository.findReusable("year@b.com", NOW.minusNanos(1_000_000))!!.id)
+        assertNull(repository.findReusable("year@b.com", NOW.minusYears(1).minusSeconds(1)))
+    }
+
+    @Test
+    fun `retention preserves original results for a year but not ordinary or reused execution rows`() {
+        val now = jdbcTemplate.queryForObject(
+            "SELECT CONVERT_TZ(UTC_TIMESTAMP(3), '+00:00', '+08:00')", LocalDateTime::class.java)!!
+        jdbcTemplate.update("UPDATE task_execution SET started_at = ?", now.minusDays(200))
+        val original = repository.insertPending(EXECUTION_ID, null, "old", null, "keep@b.com", now)
+        repository.recordDecision(original, "PASS", "deliverable", null, null, 1, now.minusDays(200), now)
+        val copy = repository.insertPending(OTHER_EXECUTION_ID, null, "copy", null, "keep@b.com", now)
+        repository.recordReusedDecision(copy, original, "PASS", "deliverable", null, now.minusDays(200), now)
+        val repoClass = com.weibo.talentintroduction.task.repository.TaskExecutionRepository::class.java
+        val method = repoClass.methods.single { it.name == "deleteOlderThan" }
+        val sql = method.getAnnotation(org.springframework.data.jdbc.repository.query.Query::class.java).value
+            .replace(":cutoff", "?").replace(":batchSize", "?")
+        assertEquals(1, jdbcTemplate.update(sql, now.minusDays(90), 10))
+        assertEquals(1L, countRows(EXECUTION_ID))
+        assertEquals(0L, countRows(OTHER_EXECUTION_ID))
+        assertEquals(original, repository.findReusable("keep@b.com", now)!!.id)
+        // 原结果一旦过期，可随执行清理，复用过不会续期。
+        jdbcTemplate.update("UPDATE batch_email_verification SET checked_at = ? WHERE id = ?", now.minusYears(1).minusDays(1), original)
+        assertEquals(1, jdbcTemplate.update(sql, now.minusDays(90), 10))
+        assertEquals(0L, countRows(EXECUTION_ID))
+        seedExecution(EXECUTION_ID)
+        jdbcTemplate.update("UPDATE task_execution SET started_at = ?", now.minusDays(200))
+        val error = repository.insertPending(EXECUTION_ID, null, "error", null, "error@b.com", now)
+        repository.recordDecision(error, "ERROR", null, null, "EMAIL_VERIFY_TIMEOUT", 1, now.minusDays(100), now)
+        assertEquals(1, jdbcTemplate.update(sql, now.minusDays(90), 10))
+    }
+
     private fun seedExecution(executionId: Long) {
         jdbcTemplate.update(
             """

@@ -625,12 +625,26 @@ class BatchSendExecutionDetailTest {
             setOf(
                 "id", "expertDocId", "orcidId", "expertName", "email", "decision",
                 "providerState", "providerReason", "errorCode", "checkedAt", "requestCount",
-                "sendStatus", "sendReason", "tagStatus", "tagError"
+                "sendStatus", "sendReason", "tagStatus", "tagError", "reusedFromId"
             ),
             keys
         )
         assertFalse(json.contains("apiKey"), "no provider secret may reach the console")
         assertFalse(json.contains("updatedAt"), "internal timestamps stay out of the response")
+    }
+
+    @Test
+    fun `reused verification exposes source without replacing current send status`() {
+        val originalTime = LocalDateTime.of(2026, 1, 1, 9, 0)
+        Mockito.`when`(taskExecutionService.getExecution(10L)).thenReturn(execution())
+        Mockito.`when`(emailVerificationRepository.readPage(10L, 0L, 50)).thenReturn(
+            verificationPage(listOf(verificationRow(50L, checkedAt = originalTime, requestCount = 0,
+                sendStatus = "NOT_SENT").copy(reusedFromId = 42L))))
+        val row = controller().getExecutionEmailVerifications(10L, 0L, 50, null).body!!.items.single()
+        assertEquals(42L, row.reusedFromId)
+        assertEquals(0, row.requestCount)
+        assertEquals(originalTime, row.checkedAt)
+        assertEquals("NOT_SENT", row.sendStatus)
     }
 
     @Test

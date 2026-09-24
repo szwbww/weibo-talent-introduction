@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import java.time.ZoneId
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -41,7 +42,7 @@ import java.util.Locale
  * - I-6 审计先落库：先插 PENDING → 请求 → 写 PASS/SKIP/ERROR → 再允许发送；审计不可用抛
  *   [EmailVerificationAuditException]，调用方必须停止发送，绝不静默降级。
  * - I-7 成本边界：只验证实际走到门禁的目标；同一执行内同邮箱可内存复用（复用行 requestCount=0，
- *   沿原结果时间），服务异常不缓存；单邮箱连续 249 最多 2 次；相邻物理请求开始间隔 ≥100ms；无并发池。
+ *   沿原结果时间）；跨执行查一年内原始结果，服务异常不缓存；单邮箱连续 249 最多 2 次；相邻物理请求开始间隔 ≥100ms；无并发池。
  * - I-8 密钥安全：EMAILABLE_API_KEY 只从后端环境读取，仅作为 Bearer 头，不进 URL / 请求快照 /
  *   异常日志 / 数据库；只保存允许字段与受控错误码，不保存完整 HTTP 请求或响应。
  */
@@ -68,7 +69,7 @@ class BatchEmailVerificationService(
         }
     }
 
-    /** 一次执行的验证上下文：持有内存复用表与物理请求间隔状态；不跨执行共享。 */
+    /** 一次执行的内存加速与限速上下文；跨执行结果从持久化明细读取。 */
     fun beginExecution(executionId: Long, isCancelled: () -> Boolean): ExecutionVerificationContext =
         ExecutionVerificationContext(executionId, isCancelled)
 
@@ -86,19 +87,33 @@ class BatchEmailVerificationService(
                 orcidId = normalizedOrcid,
                 expertName = target.expertName,
                 email = normalizedEmail,
-                now = LocalDateTime.now()
+                now = verificationNow()
             )
         }
         if (context.isCancelled()) return VerificationResult.Cancelled(rowId)
 
-        val reused = context.reuseOf(normalizedEmail)
+        val now = verificationNow()
+        val reused = context.reuseOf(normalizedEmail)?.takeIf {
+            it.checkedAt > now.minusYears(1) && it.checkedAt <= now
+        } ?: audit("查询历史验证") {
+            repository.findReusable(normalizedEmail, now)?.let {
+                ReusedProviderResult(it.decision, it.providerState, it.providerReason, requireNotNull(it.checkedAt), it.id)
+            }
+        }
+        if (context.isCancelled()) return VerificationResult.Cancelled(rowId)
         if (reused != null) {
-            persistDecision(rowId, reused.decision, reused.providerState, reused.providerReason, null, 0, reused.checkedAt)
+            audit("记录历史验证复用") {
+                require(repository.recordReusedDecision(
+                    rowId, reused.sourceRowId, reused.decision, reused.providerState,
+                    reused.providerReason, reused.checkedAt, verificationNow()
+                ) == 1) { "复用验证结论未落库：id=$rowId" }
+            }
+            context.remember(normalizedEmail, reused)
             return conclude(context, target.copy(orcidId = normalizedOrcid), normalizedEmail, rowId, reused.decision, null)
         }
 
         val outcome = requestNewResult(context, normalizedEmail) ?: return VerificationResult.Cancelled(rowId)
-        val checkedAt = LocalDateTime.now()
+        val checkedAt = verificationNow()
         persistDecision(
             rowId, outcome.decision, outcome.providerState, outcome.providerReason,
             outcome.errorCode, outcome.requestCount, checkedAt
@@ -106,7 +121,7 @@ class BatchEmailVerificationService(
         if (outcome.decision in REUSABLE_DECISIONS) {
             context.remember(
                 normalizedEmail,
-                ReusedProviderResult(outcome.decision, outcome.providerState, outcome.providerReason, checkedAt)
+                ReusedProviderResult(outcome.decision, outcome.providerState, outcome.providerReason, checkedAt, rowId)
             )
         }
         return conclude(
@@ -124,7 +139,7 @@ class BatchEmailVerificationService(
      * false 表示重复目标或状态冲突，调用方必须停止并报告，不得继续发信。
      */
     fun markSending(rowId: Long): Boolean = audit("发送前预占 SENDING") {
-        repository.markSending(rowId, LocalDateTime.now())
+        repository.markSending(rowId, verificationNow())
     }
 
     /**
@@ -134,7 +149,7 @@ class BatchEmailVerificationService(
      */
     fun recordSend(rowId: Long, sendStatus: String, sendReason: String?) {
         audit("记录发送结果") {
-            require(repository.recordSend(rowId, sendStatus, sendReason, LocalDateTime.now()) == 1) {
+            require(repository.recordSend(rowId, sendStatus, sendReason, verificationNow()) == 1) {
                 "发送结果未落库（受影响 0 行）：id=$rowId"
             }
         }
@@ -152,13 +167,13 @@ class BatchEmailVerificationService(
         BatchEmailVerificationDecision.SKIP -> {
             // 标签处理是 SKIP 的独立结果：先 PENDING（崩溃后可见未完成），ES 处理完再写 APPLIED/FAILED。
             audit("记录标签待处理") {
-                require(repository.recordTag(rowId, BatchEmailVerificationTagStatus.PENDING, null, LocalDateTime.now()) == 1) {
+                require(repository.recordTag(rowId, BatchEmailVerificationTagStatus.PENDING, null, verificationNow()) == 1) {
                     "标签待处理未落库（受影响 0 行）：id=$rowId"
                 }
             }
             val tag = appendEmailAbnormalTag(target, normalizedEmail)
             audit("记录标签结果") {
-                require(repository.recordTag(rowId, tag.status, tag.error, LocalDateTime.now()) == 1) {
+                require(repository.recordTag(rowId, tag.status, tag.error, verificationNow()) == 1) {
                     "标签结果未落库（受影响 0 行）：id=$rowId"
                 }
             }
@@ -179,7 +194,7 @@ class BatchEmailVerificationService(
         checkedAt: LocalDateTime
     ) {
         audit("写入验证结论") {
-            require(repository.recordDecision(rowId, decision, providerState, providerReason, errorCode, requestCount, checkedAt, LocalDateTime.now()) == 1) {
+            require(repository.recordDecision(rowId, decision, providerState, providerReason, errorCode, requestCount, checkedAt, verificationNow()) == 1) {
                 "验证结论未落库（受影响 0 行，疑似重复目标）：id=$rowId"
             }
         }
@@ -386,12 +401,13 @@ sealed class VerificationResult {
     data class Cancelled(val rowId: Long?) : VerificationResult()
 }
 
-/** 一次执行的内存复用结果；只缓存已完成供应商结果，不缓存服务异常。 */
+/** 内存/持久化复用结果；sourceRowId 始终指实际调用供应商的原始明细。 */
 internal data class ReusedProviderResult(
     val decision: String,
     val providerState: String?,
     val providerReason: String?,
-    val checkedAt: LocalDateTime
+    val checkedAt: LocalDateTime,
+    val sourceRowId: Long
 )
 
 /**
@@ -543,3 +559,5 @@ class EmailableHttpVerifyClient : EmailableVerifyClient {
  */
 class EmailVerificationAuditException(message: String, cause: Throwable? = null) :
     IllegalStateException(message, cause)
+
+private fun verificationNow(): LocalDateTime = LocalDateTime.now(ZoneId.of("Asia/Shanghai"))

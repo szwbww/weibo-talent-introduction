@@ -19832,6 +19832,10 @@ function batchEmailVerificationRowHtml(row) {
             '<details data-verification-id="' + escapeHtml(String(row.id)) + '"' + (expanded ? ' open' : '') + '>' +
             '<summary>验证详情</summary>' +
             '<div>原因：' + escapeHtml(emailVerificationReasonText(row)) + '</div>' +
+            '<div>验证来源：' + (row.reusedFromId != null
+                ? '复用历史验证（原始记录 #' + escapeHtml(String(row.reusedFromId)) + '）'
+                : (row.requestCount === 0 && (row.decision === "PASS" || row.decision === "SKIP")
+                    ? '复用验证结果（原始记录未关联）' : (Number(row.requestCount) > 0 ? '本次调用 Emailable' : '尚未调用'))) + '</div>' +
             '<div>验证时间：' + escapeHtml(formatDateTime(row.checkedAt)) + '</div>' +
             '<div>请求次数：' + escapeHtml(String(row.requestCount == null ? 0 : row.requestCount)) + '</div>' +
             '</details></td>' +

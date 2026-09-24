@@ -171,10 +171,25 @@ interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
 
     /**
      * B5 保留清理（I3-3）：按 `started_at` 删（该列有 idx_te_started，created_at 无索引）。
+     * 含一年内原始邮箱验证结果的执行暂留，防FK级联在90天时删掉可复用历史；复用行不延长保留。
+     * 时间取北京时间（固定偏移无需MySQL时区表）；与验证服务 now.minusYears(1) 同口径。
      * `ORDER BY ... LIMIT` 使删除沿索引顺序分批进行，减少锁范围（I3-2）。返回受影响行数。
      */
     @Modifying
-    @Query("DELETE FROM task_execution WHERE started_at < :cutoff ORDER BY started_at LIMIT :batchSize")
+    @Query("""
+        DELETE FROM task_execution
+         WHERE started_at < :cutoff
+           AND NOT EXISTS (
+               SELECT 1 FROM batch_email_verification v
+                WHERE v.task_execution_id = task_execution.id
+                  AND v.request_count > 0 AND v.reused_from_id IS NULL AND v.error_code IS NULL
+                  AND v.checked_at > DATE_SUB(CONVERT_TZ(UTC_TIMESTAMP(3), '+00:00', '+08:00'), INTERVAL 1 YEAR)
+                  AND v.checked_at <= CONVERT_TZ(UTC_TIMESTAMP(3), '+00:00', '+08:00')
+                  AND ((v.decision = 'PASS' AND v.provider_state = 'deliverable')
+                    OR (v.decision = 'SKIP' AND v.provider_state IN ('undeliverable', 'risky', 'unknown')))
+           )
+         ORDER BY started_at LIMIT :batchSize
+    """)
     fun deleteOlderThan(cutoff: LocalDateTime, batchSize: Int): Int
 
     // ---- Paged list queries (M-1): SELECT list deliberately omits request_payload / result_summary ----
