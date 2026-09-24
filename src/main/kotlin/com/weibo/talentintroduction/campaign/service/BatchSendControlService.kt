@@ -416,6 +416,15 @@ class BatchSendControlService(
     }
 
     private fun validateSnapshotFields(snapshot: BatchExecutionSnapshot): ResponseEntity<Map<String, Any>>? {
+        // I-3: 直接手动快照（c3 手动草稿走同一入口）绕过配置服务，类型守卫必须在此独立成立。
+        // 显式 400：与配置保存路径的 `require` → GlobalExceptionHandler(BAD_REQUEST) 同码。
+        if (snapshot.emailVerificationEnabled && snapshot.mailType != BatchSendType.INTRODUCTION.name) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(mapOf("message" to
+                    "发送前邮箱验证只支持介绍邮件（${BatchSendType.INTRODUCTION.name}），" +
+                        "当前快照类型为 ${snapshot.mailType}"
+                ))
+        }
         return try {
             require(snapshot.roundSize > 0) { "roundSize must be > 0" }
             require(snapshot.roundsPerRun >= 1) { "roundsPerRun must be >= 1" }

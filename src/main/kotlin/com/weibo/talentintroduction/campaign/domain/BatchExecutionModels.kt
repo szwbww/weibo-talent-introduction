@@ -368,7 +368,9 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter,
-        oneRoundOnly = oneRoundOnly
+        oneRoundOnly = oneRoundOnly,
+        // I-1/I-4: 配置实体是快照的唯一来源；启动时逐字复制，运行中改配置/软删不改本次快照。
+        emailVerificationEnabled = emailVerificationEnabled
     )
 }
 

@@ -101,7 +101,8 @@ class BatchSendTaskConfigServiceTest {
         expertTypes: List<String> = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"),
         senderAccountCodes: List<String> = emptyList(),
         templateId: Long? = null,
-        gateFilterEnabled: Boolean = false
+        gateFilterEnabled: Boolean = false,
+        emailVerificationEnabled: Boolean = false
     ) = BatchSendTaskConfigCreateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -120,7 +121,8 @@ class BatchSendTaskConfigServiceTest {
         expertTypes = expertTypes,
         senderAccountCodes = senderAccountCodes,
         templateId = templateId,
-        gateFilterEnabled = gateFilterEnabled
+        gateFilterEnabled = gateFilterEnabled,
+        emailVerificationEnabled = emailVerificationEnabled
     )
 
     private fun updateCmd(
@@ -141,7 +143,8 @@ class BatchSendTaskConfigServiceTest {
         expertTypes: List<String> = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"),
         senderAccountCodes: List<String> = emptyList(),
         templateId: Long? = null,
-        gateFilterEnabled: Boolean = false
+        gateFilterEnabled: Boolean = false,
+        emailVerificationEnabled: Boolean? = null
     ) = BatchSendTaskConfigUpdateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -160,7 +163,8 @@ class BatchSendTaskConfigServiceTest {
         expertTypes = expertTypes,
         senderAccountCodes = senderAccountCodes,
         templateId = templateId,
-        gateFilterEnabled = gateFilterEnabled
+        gateFilterEnabled = gateFilterEnabled,
+        emailVerificationEnabled = emailVerificationEnabled
     )
 
     private fun row(
@@ -179,6 +183,7 @@ class BatchSendTaskConfigServiceTest {
         senderAccountCodesJson: String = "[]",
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false,
+        emailVerificationEnabled: Boolean = false,
         deletedAt: LocalDateTime? = null,
         updatedAt: LocalDateTime = LocalDateTime.of(2026, 7, 14, 10, 0)
     ) = BatchSendTaskConfig(
@@ -201,6 +206,7 @@ class BatchSendTaskConfigServiceTest {
         senderAccountCodesJson = senderAccountCodesJson,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
+        emailVerificationEnabled = emailVerificationEnabled,
         deletedAt = deletedAt,
         createdAt = updatedAt,
         updatedAt = updatedAt
@@ -1606,5 +1612,226 @@ class BatchSendTaskConfigServiceTest {
             emptyList<String>(),
             row(id = 1L).toExecutionSnapshot(objectMapper).senderAccountCodes
         )
+    }
+
+    // ──── I-1/I-2/I-3: 发送前邮箱验证开关（email_verification_enabled） ────
+
+    @Test
+    fun `create persists emailVerificationEnabled true into entity view and launch snapshot (I-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("开启验证")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 76L)
+        }
+
+        val view = service().create(createCmd(name = "开启验证", emailVerificationEnabled = true))
+
+        verify(repository).save(captor.capture())
+        assertTrue(captor.value.emailVerificationEnabled)
+        assertTrue(view.emailVerificationEnabled)
+        // 快照是权威传递面：配置 true 必须逐字落到启动快照。
+        assertTrue(captor.value.toExecutionSnapshot(objectMapper).emailVerificationEnabled)
+    }
+
+    @Test
+    fun `create without emailVerificationEnabled defaults to false in entity view and snapshot (I-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("缺省验证")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 77L)
+        }
+
+        val view = service().create(createCmd(name = "缺省验证"))
+
+        verify(repository).save(captor.capture())
+        assertFalse(captor.value.emailVerificationEnabled)
+        assertFalse(view.emailVerificationEnabled)
+        assertFalse(captor.value.toExecutionSnapshot(objectMapper).emailVerificationEnabled)
+    }
+
+    @Test
+    fun `update without the field keeps the stored switch on (I-1)`() {
+        val existing = row(id = 5L, name = "每日介绍", emailVerificationEnabled = true)
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 5L)
+        }
+
+        val view = service().update(5L, updateCmd())
+
+        verify(repository).save(captor.capture())
+        // I-1: 缺省/null 保留现值 —— 旧客户端整份 PUT 不带该字段时不得静默关掉验证策略。
+        assertTrue(captor.value.emailVerificationEnabled)
+        assertTrue(view.emailVerificationEnabled)
+    }
+
+    @Test
+    fun `update with explicit false turns the stored switch off (I-1)`() {
+        val existing = row(id = 5L, name = "每日介绍", emailVerificationEnabled = true)
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 5L)
+        }
+
+        val view = service().update(5L, updateCmd(emailVerificationEnabled = false))
+
+        verify(repository).save(captor.capture())
+        assertFalse(captor.value.emailVerificationEnabled)
+        assertFalse(view.emailVerificationEnabled)
+    }
+
+    @Test
+    fun `setEnabled false keeps the stored switch and setEnabled true revalidates it (I-2 I-3)`() {
+        val existing = row(
+            id = 5L,
+            name = "每日介绍",
+            expertTypesJson = """["PRODUCTION_RND"]""",
+            emailVerificationEnabled = true
+        )
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 5L)
+        }
+
+        // 停用只改 autoEnabled，绝不能顺手重置验证开关。
+        val disabled = service().setEnabled(5L, false)
+        // 启用走 normalizeAndValidate（模板解析后的类型守卫），INTRODUCTION + true 合法放行。
+        val enabled = service().setEnabled(5L, true)
+
+        verify(repository, times(2)).save(captor.capture())
+        val (disabledRow, enabledRow) = captor.allValues
+        assertTrue(disabledRow.emailVerificationEnabled)
+        assertFalse(disabledRow.autoEnabled)
+        assertTrue(disabled.emailVerificationEnabled)
+        assertTrue(enabledRow.emailVerificationEnabled)
+        assertTrue(enabledRow.autoEnabled)
+        assertTrue(enabled.emailVerificationEnabled)
+    }
+
+    @Test
+    fun `setEnabled true rejects a MATERIAL_REMINDER row carrying the switch without saving (I-3)`() {
+        val existing = row(
+            id = 7L,
+            name = "材料提醒",
+            mailType = "MATERIAL_REMINDER",
+            templateId = 42L,
+            emailVerificationEnabled = true
+        )
+        `when`(repository.findByIdAndDeletedAtIsNull(7L)).thenReturn(existing)
+        `when`(mailComposeTemplateService.getById(42L)).thenReturn(templateDetail(42L, "MATERIAL_REMINDER"))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) { service().setEnabled(7L, true) }
+
+        assertTrue(ex.message!!.contains("只支持介绍邮件"))
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `softDelete keeps the stored switch value (I-2)`() {
+        val existing = row(id = 5L, name = "每日介绍", emailVerificationEnabled = true)
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation -> invocation.arguments[0] as BatchSendTaskConfig }
+
+        service().softDelete(5L)
+
+        verify(repository).save(captor.capture())
+        assertTrue(captor.value.emailVerificationEnabled)
+        assertFalse(captor.value.autoEnabled)
+        assertNotNull(captor.value.deletedAt)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves existing emailVerificationEnabled entity value (I-1 I-2)`() {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = "[]",
+            emailDomainsJson = "[]", operatorStatusesJson = "[]",
+            expertTypesJson = """["PRODUCTION_RND"]""",
+            senderAccountCodesJson = "[]",
+            emailVerificationEnabled = true,
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        // I-1: 旧 typed API 不传该字段 —— 漏写会把已开启的验证策略静默关掉。
+        assertTrue(captor.value.emailVerificationEnabled)
+    }
+
+    @Test
+    fun `create rejects emailVerificationEnabled true with a MATERIAL_REMINDER template without saving (I-3)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("材料验证")).thenReturn(null)
+        `when`(mailComposeTemplateService.getById(42L)).thenReturn(templateDetail(42L, "MATERIAL_REMINDER"))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().create(createCmd(name = "材料验证", templateId = 42L, emailVerificationEnabled = true))
+        }
+
+        assertTrue(ex.message!!.contains("发送前邮箱验证只支持介绍邮件"))
+        assertTrue(ex.message!!.contains("MATERIAL_REMINDER"))
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `update rejects emailVerificationEnabled true on an existing MATERIAL_REMINDER config without saving (I-3)`() {
+        val existing = row(id = 7L, name = "材料提醒", mailType = "MATERIAL_REMINDER", templateId = 42L)
+        `when`(repository.findByIdAndDeletedAtIsNull(7L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("材料提醒")).thenReturn(existing)
+        `when`(mailComposeTemplateService.getById(42L)).thenReturn(templateDetail(42L, "MATERIAL_REMINDER"))
+
+        val ex = assertThrows(IllegalArgumentException::class.java) {
+            service().update(
+                7L,
+                updateCmd(
+                    name = "材料提醒",
+                    templateId = 42L,
+                    expertTypes = emptyList(),
+                    emailVerificationEnabled = true
+                )
+            )
+        }
+
+        assertTrue(ex.message!!.contains("发送前邮箱验证只支持介绍邮件"))
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `legacy row without the column reads switch false in view and snapshot (I-1)`() {
+        `when`(repository.findByIdAndDeletedAtIsNull(1L)).thenReturn(row(id = 1L))
+
+        assertFalse(service().get(1L).emailVerificationEnabled)
+        assertFalse(row(id = 1L).toExecutionSnapshot(objectMapper).emailVerificationEnabled)
     }
 }

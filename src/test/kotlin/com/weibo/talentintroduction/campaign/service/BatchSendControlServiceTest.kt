@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -50,6 +51,37 @@ class BatchSendControlServiceTest {
     private fun <T> anyValue(defaultValue: T): T = Mockito.any<T>() ?: defaultValue
     private fun <T> eqValue(value: T): T = Mockito.eq(value) ?: value
     private fun <T> captureValue(captor: ArgumentCaptor<T>, defaultValue: T): T = captor.capture() ?: defaultValue
+
+    /** I-1: 存量介绍邮件任务的配置实体形态（研发类型非空 → 过快照校验）。 */
+    private fun verificationConfig(id: Long, enabled: Boolean) =
+        com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig(
+            id = id,
+            configName = "INTRODUCTION",
+            mailType = "INTRODUCTION",
+            autoEnabled = true,
+            cron = "0 0 0 * * ?",
+            roundSize = 10,
+            perMailIntervalMs = 0,
+            perRoundIntervalMs = 0,
+            selfCheckTtlMinutes = 30,
+            expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
+            emailVerificationEnabled = enabled,
+            legacyCode = null
+        )
+
+    /** I-1/I-4: 读出本次启动固定进 `task_execution.request_payload` 的那份请求载荷。 */
+    private fun capturedLaunchRequest(): com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest {
+        val payloadCaptor = ArgumentCaptor.forClass(Any::class.java)
+        Mockito.verify(taskExecutionService).runAndRecordWithResult<ManualOutreachResult>(
+            eqValue(BatchSendControlService.TASK_TYPE),
+            anyValue(""),
+            captureValue(payloadCaptor, Any()),
+            anyValue { },
+            anyValue(null as Long?),
+            anyValue { ManualOutreachResult(0, 0, 0, 0, false) }
+        )
+        return payloadCaptor.value as com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
+    }
 
     @BeforeEach
     fun setUp() {
@@ -732,6 +764,8 @@ class BatchSendControlServiceTest {
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
         // I-6/X-1: legacy KV fallback derives roundsPerRun = ceil(dailyCap / roundSize)
         assertEquals(10, captor.value.roundsPerRun)
+        // I-1/I-2: 纯 KV 兼容快照没有该字段 → 一律 false，缺字段绝不等于开启验证。
+        assertFalse(captor.value.emailVerificationEnabled)
     }
 
     @Test
@@ -785,5 +819,147 @@ class BatchSendControlServiceTest {
         // I3-1: 必填只对 INTRODUCTION 生效 —— MATERIAL_REMINDER 空 expertTypes 正常启动。
         assertEquals(HttpStatus.ACCEPTED, response.statusCode)
         Mockito.verify(manualOutreachExecutor).execute(Mockito.any(Runnable::class.java))
+    }
+
+    // ──── I-1/I-3/I-4: 发送前邮箱验证开关（email_verification_enabled） ────
+
+    @Test
+    fun `startScheduled copies the switch into snapshot and execution request payload (I-1 I-4)`() {
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(6L))
+            .thenReturn(verificationConfig(6L, enabled = true))
+
+        val response = control.startScheduled(6L)
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        val payload = capturedLaunchRequest()
+        assertTrue(payload.snapshot.emailVerificationEnabled)
+        // I-4: 快照在启动时固定；配置写入面不得被启动流程触碰。
+        Mockito.verify(batchSendTaskConfigRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `startManualFromConfig derives the switch from the persisted config entity (I-1)`() {
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(6L))
+            .thenReturn(verificationConfig(6L, enabled = true))
+        val captor = ArgumentCaptor.forClass(
+            com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot::class.java
+        )
+        Mockito.doReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
+            .`when`(manualInitialOutreachService).run(
+            captureValue(
+                captor,
+                com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                    mailType = "INTRODUCTION", roundSize = 10,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+                )
+            ),
+            eqValue(99L),
+            eqValue(ExecutionMode.MANUAL),
+            eqValue(false)
+        )
+
+        val response = control.startManualFromConfig(6L)
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        assertTrue(captor.value.emailVerificationEnabled)
+    }
+
+    @Test
+    fun `startManual(request) temporary override never rewrites the source config (I-4)`() {
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(6L))
+            .thenReturn(verificationConfig(6L, enabled = true))
+        val request = com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest(
+            sourceConfigId = 6L,
+            sourceUpdatedAt = LocalDateTime.of(2026, 9, 24, 9, 0),
+            snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "INTRODUCTION", roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                expertTypes = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"),
+                emailVerificationEnabled = false
+            )
+        )
+
+        val response = control.startManual(request)
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        // 临时关闭只影响本次：来源配置不被回写。
+        Mockito.verify(batchSendTaskConfigRepository, Mockito.never()).save(Mockito.any())
+        val payload = capturedLaunchRequest()
+        assertFalse(payload.snapshot.emailVerificationEnabled)
+        // 审计身份原样保留，便于按执行 ID 回溯来源配置。
+        assertEquals(6L, payload.sourceConfigId)
+    }
+
+    @Test
+    fun `startManual(request) rejects a MATERIAL_REMINDER snapshot with the switch on with 400 (I-3)`() {
+        val request = com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest(
+            sourceConfigId = null,
+            sourceUpdatedAt = null,
+            snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "MATERIAL_REMINDER", roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                templateId = 42L, emailVerificationEnabled = true
+            )
+        )
+
+        val response = control.startManual(request)
+
+        // I-3: 直接快照绕过配置服务，类型守卫必须在此独立成立且为 400（与配置保存同码）。
+        assertEquals(HttpStatus.BAD_REQUEST, response.statusCode)
+        assertTrue((response.body?.get("message") as String).contains("发送前邮箱验证只支持介绍邮件"))
+        Mockito.verify(manualOutreachExecutor, Mockito.never()).execute(Mockito.any(Runnable::class.java))
+    }
+
+    @Test
+    fun `startManual(request) accepts an INTRODUCTION snapshot with the switch on (I-3)`() {
+        val captor = ArgumentCaptor.forClass(
+            com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot::class.java
+        )
+        Mockito.doReturn(ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED"))
+            .`when`(manualInitialOutreachService).run(
+            captureValue(
+                captor,
+                com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                    mailType = "INTRODUCTION", roundSize = 10,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+                )
+            ),
+            eqValue(99L),
+            eqValue(ExecutionMode.MANUAL),
+            eqValue(false)
+        )
+        val request = com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest(
+            sourceConfigId = null,
+            sourceUpdatedAt = null,
+            snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "INTRODUCTION", roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                expertTypes = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"),
+                emailVerificationEnabled = true
+            )
+        )
+
+        val response = control.startManual(request)
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        assertTrue(captor.value.emailVerificationEnabled)
+    }
+
+    @Test
+    fun `legacy request payload without the flag still reads as false (I-1)`() {
+        // 存量 task_execution.request_payload（V139 之前写入）没有该字段 —— 反序列化必须仍为 false，
+        // 不得因缺字段抛异常或把历史执行读成开启。
+        val legacyJson = """
+            {"sourceConfigId":6,"snapshot":{"mailType":"INTRODUCTION","roundSize":10,
+            "perMailIntervalMs":0,"perRoundIntervalMs":0,"selfCheckTtlMinutes":30,
+            "expertTypes":["PRODUCTION_RND"]}}
+        """.trimIndent()
+
+        val request = objectMapper.readValue(
+            legacyJson,
+            com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest::class.java
+        )
+
+        assertFalse(request.snapshot.emailVerificationEnabled)
     }
 }
