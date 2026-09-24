@@ -75,7 +75,7 @@ class MailContentServiceTest {
             listOf(url)
         )
 
-        assertEquals("<p>Click here: <a href=\"$url\">Unsubscribe</a></p>", html)
+        assertEquals("<p>Click here: <a href=\"$url\">$url</a></p>", html)
     }
 
     @Test
@@ -104,7 +104,7 @@ class MailContentServiceTest {
             listOf(url)
         )
 
-        assertTrue(html.contains("Tom &amp; Jerry &lt;3&gt; use <a href=\"$url\">Unsubscribe</a>"))
+        assertTrue(html.contains("Tom &amp; Jerry &lt;3&gt; use <a href=\"$url\">$url</a>"))
         assertFalse(html.contains("<a href=\"&lt;"), "anchor tag itself must not be escaped")
     }
 
@@ -116,7 +116,7 @@ class MailContentServiceTest {
             listOf(target)
         )
 
-        assertTrue(html.contains("<a href=\"$target\">Unsubscribe</a>"))
+        assertTrue(html.contains("<a href=\"$target\">$target</a>"))
         assertTrue(html.contains("https://www.qingfeitalent.com"), "non-target url must stay plain text")
         assertFalse(html.contains("href=\"https://www.qingfeitalent.com\""))
     }

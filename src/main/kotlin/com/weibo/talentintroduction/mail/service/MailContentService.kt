@@ -11,7 +11,8 @@ class MailContentService {
             .map { paragraph ->
                 var inner = escapeHtml(paragraph.trim()).replace("\n", "<br>")
                 targets.forEach { url ->
-                    inner = inner.replace(url, "<a href=\"$url\">$UNSUBSCRIBE_ANCHOR_TEXT</a>")
+                    val escapedUrl = escapeHtml(url)
+                    inner = inner.replace(escapedUrl, "<a href=\"$escapedUrl\">$escapedUrl</a>")
                 }
                 "<p>$inner</p>"
             }
@@ -74,8 +75,6 @@ class MailContentService {
             .replace("'", "&#39;")
 
     companion object {
-        const val UNSUBSCRIBE_ANCHOR_TEXT = "Unsubscribe"
-
         /** 两个及以上 `<br>`（标签间允许空白）——规范为两个 `<br>`。 */
         private val CONSECUTIVE_BR = Regex("(?i)<br\\s*/?>(?:\\s*<br\\s*/?>)+")
 

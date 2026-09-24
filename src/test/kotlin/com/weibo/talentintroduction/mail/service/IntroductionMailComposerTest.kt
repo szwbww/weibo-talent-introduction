@@ -582,7 +582,7 @@ class IntroductionMailComposerTest {
         val mail = anchoredComposer.compose("chenjj", sparseExpert())
 
         assertTrue(mail.html)
-        assertTrue(mail.body!!.contains("<a href=\"$url\">Unsubscribe</a>"))
+        assertTrue(mail.body!!.contains("<a href=\"$url\">$url</a>"))
         assertEquals("Rendered body with $url", mail.text)
         assertTrue(mail.text!!.contains("https://example.com/u/unsubscribe?token="))
     }
