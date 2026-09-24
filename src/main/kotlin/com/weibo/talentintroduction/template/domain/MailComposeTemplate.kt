@@ -11,6 +11,7 @@ data class MailComposeTemplate(
     val templateName: String,
     val subject: String,
     val subjectVariants: String? = null,
+    val subjectSnippetId: Long? = null,
     val description: String? = null,
     val mailType: String? = null,
     val requiredKeys: String? = null,

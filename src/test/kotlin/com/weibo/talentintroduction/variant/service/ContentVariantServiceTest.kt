@@ -15,7 +15,7 @@ class ContentVariantServiceTest {
     private val service = ContentVariantService(repository, MailPlaceholderService())
 
     @Test
-    fun `resolveBody selects from pool by variant_order asc id asc`() {
+    fun `legacy QA resolveBody remains deterministic`() {
         Mockito.`when`(
             repository.findByOwnerTypeAndOwnerIdAndEnabledTrueOrderByVariantOrderAscIdAsc(
                 ContentVariantOwnerType.QA_RULE,
@@ -27,13 +27,74 @@ class ContentVariantServiceTest {
                 variant(id = 2L, order = 2, content = "B")
             )
         )
+        assertEquals("MAIN", service.resolveBody(ContentVariantOwnerType.QA_RULE, 10L, "MAIN", seed = 2))
+        assertEquals("A", service.resolveBody(ContentVariantOwnerType.QA_RULE, 10L, "MAIN", seed = 3))
+        assertEquals("B", service.resolveBody(ContentVariantOwnerType.QA_RULE, 10L, "MAIN", seed = 4))
+    }
 
-        val seed = 2
-        val selected = service.resolveBody(ContentVariantOwnerType.QA_RULE, 10L, "MAIN", seed)
+    @Test
 
-        assertEquals("MAIN", selected)
-        assertEquals("A", service.resolveBody(ContentVariantOwnerType.QA_RULE, 10L, "MAIN", seed + 1))
-        assertEquals("B", service.resolveBody(ContentVariantOwnerType.QA_RULE, 10L, "MAIN", seed + 2))
+    fun `public reply snippet selector exposes main and ordered enabled variants`() {
+        Mockito.`when`(
+            repository.findByOwnerTypeAndOwnerIdAndEnabledTrueOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.REPLY_SNIPPET,
+                5L
+            )
+        ).thenReturn(
+            listOf(
+                variant(id = 2L, order = 1, content = "A"),
+                variant(id = 3L, order = 2, content = "B")
+            )
+        )
+
+        assertEquals(listOf("MAIN", "A", "B"), service.replySnippetBodies(5L, "MAIN"))
+        assertEquals("B", service.resolveReplySnippetBody(5L, "MAIN", previewIndex = 0))
+        assertEquals("MAIN", service.resolveReplySnippetBody(5L, "MAIN", previewIndex = 1))
+        assertEquals("A", service.resolveReplySnippetBody(5L, "MAIN", previewIndex = 2))
+    }
+
+    @Test
+    fun `reply snippet selection defaults to random seam independently of legacy seed`() {
+        Mockito.`when`(
+            repository.findByOwnerTypeAndOwnerIdAndEnabledTrueOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.REPLY_SNIPPET,
+                5L
+            )
+        ).thenReturn(
+            listOf(
+                variant(id = 2L, order = 1, content = "ALT"),
+                variant(id = 3L, order = 2, content = "ALT2")
+            )
+        )
+        val zeroIndex = object : kotlin.random.Random() {
+            override fun nextBits(bitCount: Int): Int = 0
+            override fun nextInt(until: Int): Int = 0
+        }
+        val oneIndex = object : kotlin.random.Random() {
+            override fun nextBits(bitCount: Int): Int = 0
+            override fun nextInt(until: Int): Int = 1
+        }
+        val twoIndex = object : kotlin.random.Random() {
+            override fun nextBits(bitCount: Int): Int = 0
+            override fun nextInt(until: Int): Int = 2
+        }
+
+        assertEquals("ALT2", service.resolveReplySnippetBody(5L, "MAIN", random = twoIndex))
+
+        assertEquals("MAIN", service.resolveReplySnippetBody(5L, "MAIN", random = zeroIndex))
+        assertEquals("ALT", service.resolveReplySnippetBody(5L, "MAIN", random = oneIndex))
+    }
+
+    @Test
+    fun `reply snippet without variants returns original without sampling`() {
+        Mockito.`when`(
+            repository.findByOwnerTypeAndOwnerIdAndEnabledTrueOrderByVariantOrderAscIdAsc(
+                ContentVariantOwnerType.REPLY_SNIPPET,
+                5L
+            )
+        ).thenReturn(emptyList())
+
+        assertEquals(" raw ", service.resolveReplySnippetBody(5L, " raw "))
     }
 
     @Test

@@ -12,8 +12,8 @@ const state = {
     qaControlledGroups: [],
     qaCoverageAuthorities: {},
     composeTemplates: [],
-    mailTemplatesSubTab: "qa",
     selectedComposeTemplateId: null,
+    selectedSubjectSnippetId: null,
     composeTemplatePreviewExperts: [],
     composeTemplatePreviewAccounts: [],
     composeTemplatePreviewOptionsLoaded: false,
@@ -97,6 +97,7 @@ const state = {
         report: null
     },
     replySnippets: [],
+    replySnippetsLoaded: false,
     selectedReplySnippetId: null,
     aiTraining: {
         activeTab: "simulate",
@@ -155,8 +156,8 @@ const state = {
         expertEmail: null,
         matchCount: null,
         totalCount: null,
-        variantIndex: 0,
-        variantPoolSize: 1
+
+        targetSnippetId: null
     }
 };
 
@@ -3988,35 +3989,11 @@ function updatePreviewContextPanels() {
     if (fieldCtx) fieldCtx.hidden = isCompose;
     if (composeCtx) composeCtx.hidden = !isCompose;
 }
-
-function updatePreviewVariantSwitcher(poolSize) {
+function updatePreviewVariantSwitcher() {
     const switcher = $("#previewVariantSwitcher");
+    if (switcher) switcher.hidden = !isComposeTemplatePreviewTarget();
     const label = $("#previewVariantLabel");
-    if (!switcher || !label) return;
-    const size = poolSize ?? state.previewDrawer.variantPoolSize ?? 1;
-    state.previewDrawer.variantPoolSize = size;
-    if (size <= 1) {
-        switcher.hidden = true;
-        state.previewDrawer.variantIndex = 0;
-        label.textContent = "组合 1/1";
-        return;
-    }
-    if (state.previewDrawer.variantIndex >= size) {
-        state.previewDrawer.variantIndex = 0;
-    }
-    switcher.hidden = false;
-    label.textContent = `组合 ${state.previewDrawer.variantIndex + 1}/${size}`;
-}
-
-function stepPreviewVariantIndex(delta) {
-    const size = state.previewDrawer.variantPoolSize || 1;
-    if (size <= 1) return;
-    let next = state.previewDrawer.variantIndex + delta;
-    if (next < 0) next = size - 1;
-    if (next >= size) next = 0;
-    state.previewDrawer.variantIndex = next;
-    updatePreviewVariantSwitcher(size);
-    refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
+    if (label) label.textContent = "随机样本，发送时重新生成";
 }
 
 function closeOpenVarInsertMenus(exceptWrap) {
@@ -4446,8 +4423,7 @@ function mountPreviewRail({ targetId, contactId, orcidId }) {
         expertEmail: null,
         matchCount: null,
         totalCount: null,
-        variantIndex: 0,
-        variantPoolSize: 1
+
     };
     updatePreviewContextPanels();
     const orcidInput = $("#previewOrcidInput");
@@ -4765,7 +4741,16 @@ const replySnippetTypes = ["SALUTATION", "ACK", "GREETING", "CLOSING", "CUSTOM"]
 
 async function loadReplySnippets() {
     state.replySnippets = await api("/api/reply-snippets");
+    state.replySnippetsLoaded = true;
     renderReplySnippetsPanels();
+    renderSubjectSnippetOptions();
+    updateSubjectSnippetSource();
+    renderComposeTemplatesTable();
+}
+
+async function ensureReplySnippetsLoaded() {
+    if (state.replySnippetsLoaded) return;
+    await loadReplySnippets();
 }
 
 function switchAiTrainingTab(tab) {
@@ -5934,7 +5919,9 @@ function showReplySnippetEditor() {
 function hideReplySnippetEditor() {
     const form = $("#replySnippetForm");
     form.reset();
-    renderContentVariantRows($("#replySnippetVariantsContainer"), []);
+    const container = $("#replySnippetVariantsContainer");
+    if (container) container.dataset.activeIndex = "0";
+    renderContentVariantRows(container, []);
     $("#replySnippetModal").hidden = true;
     document.body.classList.remove("modal-open");
     state.selectedReplySnippetId = null;
@@ -5945,9 +5932,7 @@ function hideReplySnippetEditor() {
 function updateReplySnippetDefaultFieldVisibility() {
     const type = $("#replySnippetForm")?.snippetType?.value || "";
     const defaultRow = $("#replySnippetDefaultRow");
-    if (defaultRow) {
-        defaultRow.hidden = type === "ACK" || type === "CUSTOM";
-    }
+    if (defaultRow) defaultRow.hidden = type === "ACK" || type === "CUSTOM";
 }
 
 function fillReplySnippetForm(snippet, presetType) {
@@ -5965,12 +5950,12 @@ function fillReplySnippetForm(snippet, presetType) {
     form.displayOrder.value = snippet?.displayOrder ?? 100;
     form.enabled.checked = snippet?.enabled ?? true;
     form.isDefault.checked = snippet?.isDefault ?? false;
-    renderContentVariantRows($("#replySnippetVariantsContainer"), snippet?.variants || []);
+    const container = $("#replySnippetVariantsContainer");
+    if (container) container.dataset.activeIndex = "0";
+    renderContentVariantRows(container, snippet?.variants || []);
     updateReplySnippetDefaultFieldVisibility();
-    const contentEl = $("#replySnippetContent");
-    if (contentEl) {
-        updateVarValidationForTarget("replySnippetContent", contentEl);
-    }
+    updateVarValidationForTarget("replySnippetContent", $("#replySnippetContent"));
+    setActiveVariant(container, 0);
     mountPreviewRail({ targetId: "replySnippetContent" });
 }
 
@@ -5978,15 +5963,14 @@ async function saveReplySnippet(event) {
     event.preventDefault();
     const form = event.currentTarget;
     const contentEl = $("#replySnippetContent");
-    if (contentEl && !updateVarValidationForTarget("replySnippetContent", contentEl)) {
-        showStatus("请先修正非法占位符", "error");
-        return;
-    }
     const variantsContainer = $("#replySnippetVariantsContainer");
-    const mainText = contentEl?.value || "";
-    if (!validateContentVariantInputs(variantsContainer, mainText)) {
+    if (!contentEl?.value.trim()) {
+        showStatus("片段原文不能为空", "error");
+        setActiveVariant(variantsContainer, 0);
+        contentEl?.focus();
         return;
     }
+    if (!validateContentVariantInputs(variantsContainer, contentEl.value)) return;
     const values = formValues(form);
     const payload = {
         content: values.content,
@@ -6004,10 +5988,7 @@ async function saveReplySnippet(event) {
     } else {
         await api("/api/reply-snippets", {
             method: "POST",
-            body: JSON.stringify({
-                snippetType: values.snippetType,
-                ...payload
-            })
+            body: JSON.stringify({ snippetType: values.snippetType, ...payload })
         });
     }
     showStatus("回复片段已保存");
@@ -10912,8 +10893,7 @@ function collectComposeTemplatePreviewContext() {
 }
 
 function collectComposeTemplatePreviewSampleText() {
-    const form = $("#composeTemplateForm");
-    const parts = [form?.subject?.value || ""];
+    const parts = [collectComposeTemplateSubject().subject];
     collectComposeTemplateBlocksFromForm().forEach((block) => {
         if (block.blockType === "CUSTOM_TEXT") {
             parts.push(block.customText || "");
@@ -10935,100 +10915,57 @@ function collectComposeTemplatePreviewSampleText() {
 function renderContentVariantRows(container, variants) {
     if (!container) return;
     const values = variants || [];
-    if (!values.length) {
-        container.dataset.activeIndex = "0";
-        container.innerHTML = `
-            <div class="content-variant-carousel">
-                <p class="content-variants-empty">未添加变体，仅使用主体发送</p>
-                <div class="content-variant-nav">
-                    <span class="content-variant-nav-spacer"></span>
-                    <button type="button" class="button small" data-action="add-content-variant">+ 新增</button>
-                </div>
-            </div>`;
-        updateContentVariantsCountBadge(container);
-        return;
-    }
-    const n = values.length;
-    let active = Number(container.dataset.activeIndex);
-    if (!Number.isFinite(active)) active = 0;
-    active = Math.max(0, Math.min(active, n - 1));
-    container.dataset.activeIndex = String(active);
-    const rows = values.map((value, index) => {
-        const isActive = index === active;
-        return `
-        <div class="content-variant-row${isActive ? " active" : ""}" data-variant-index="${index}"${isActive ? "" : " hidden"}>
-            <span class="content-variant-index">${index + 1}</span>
-            <textarea class="content-variant-input" rows="3" maxlength="2000" placeholder="变体正文">${escapeHtml(value || "")}</textarea>
-            <button type="button" class="button small danger" data-action="remove-content-variant" data-index="${index}">×</button>
-        </div>`;
-    }).join("");
-    const dots = values.map((_, index) =>
-        `<span class="content-variant-dot${index === active ? " active" : ""}" data-index="${index}"></span>`
-    ).join("");
-    container.innerHTML = `
-        <div class="content-variant-carousel">
-            <div class="content-variant-nav">
-                <button type="button" class="button small" data-action="variant-prev" aria-label="上一个变体">‹</button>
-                <span class="content-variant-nav-counter">${active + 1} / ${n}</span>
-                <button type="button" class="button small" data-action="variant-next" aria-label="下一个变体">›</button>
-                <span class="content-variant-nav-spacer"></span>
-                <button type="button" class="button small" data-action="add-content-variant">+ 新增</button>
-            </div>
-            <div class="content-variant-rows">
-                ${rows}
-            </div>
-            <div class="content-variant-dots">
-                ${dots}
-            </div>
-        </div>`;
-    updateContentVariantsCountBadge(container);
+    container.innerHTML = values.map((value, index) => `
+        <div class="content-variant-row var-editor-wrap" data-variant-index="${index}" hidden>
+            <div class="var-validation-hint" id="varHint-replySnippetVariant-${index}" hidden></div>
+            <textarea id="replySnippetVariant-${index}" class="content-variant-input" rows="8" maxlength="2000" placeholder="变体正文">${escapeHtml(value || "")}</textarea>
+        </div>`).join("");
+    container.hidden = values.length === 0;
+    container.dataset.activeIndex = "0";
+    setActiveVariant(container, 0);
 }
 
 function setActiveVariant(container, index) {
     if (!container) return;
     const rows = Array.from(container.querySelectorAll(".content-variant-row"));
-    const n = rows.length;
-    if (!n) return;
-    let active = Number(index);
-    if (!Number.isFinite(active)) active = 0;
-    active = Math.max(0, Math.min(active, n - 1));
+    const total = rows.length + 1;
+    const active = Math.max(0, Math.min(Number(index) || 0, total - 1));
     container.dataset.activeIndex = String(active);
-    rows.forEach((row, i) => {
-        const isActive = i === active;
-        row.classList.toggle("active", isActive);
-        if (isActive) {
-            row.removeAttribute("hidden");
-        } else {
-            row.setAttribute("hidden", "");
-        }
-        const hint = row.nextElementSibling;
-        if (hint?.classList.contains("content-variant-duplicate-hint")) {
-            if (isActive) {
-                hint.removeAttribute("hidden");
-            } else {
-                hint.setAttribute("hidden", "");
-            }
-        }
-    });
-    const counter = container.querySelector(".content-variant-nav-counter");
-    if (counter) counter.textContent = `${active + 1} / ${n}`;
-    container.querySelectorAll(".content-variant-dot").forEach((dot) => {
-        dot.classList.toggle("active", Number(dot.dataset.index) === active);
-    });
+    const original = $("#replySnippetOriginalPanel");
+    if (original) original.hidden = active !== 0;
+    container.hidden = rows.length === 0 || active === 0;
+    rows.forEach((row, i) => { row.hidden = active !== i + 1; });
+    const label = $("#replySnippetVersionLabel");
+    if (label) label.textContent = active === 0
+        ? `原文 · 1 / ${total}`
+        : `变体 ${active} · ${active + 1} / ${total}`;
+    const hint = $("#replySnippetVersionHint");
+    if (hint) hint.textContent = `共 ${total} 个版本，引用时随机选择一个`;
+    const form = $("#replySnippetForm");
+    const prev = form?.querySelector('[data-action="variant-prev"]');
+    const next = form?.querySelector('[data-action="variant-next"]');
+    const remove = $("#replySnippetRemoveVersion");
+    if (prev) prev.disabled = active === 0;
+    if (next) next.disabled = active === total - 1;
+    if (remove) remove.disabled = active === 0;
+    const targetId = active === 0 ? "replySnippetContent" : `replySnippetVariant-${active - 1}`;
+    const variableButton = document.querySelector('[data-var-insert-target="replySnippetContent"], [data-var-insert-target^="replySnippetVariant-"]');
+    if (variableButton) variableButton.dataset.varInsertTarget = targetId;
+    if (state.previewDrawer.targetId === "replySnippetContent" || state.previewDrawer.targetId?.startsWith("replySnippetVariant-")) {
+        state.previewDrawer.targetId = targetId;
+        state.previewDrawer.targetSnippetId = state.selectedReplySnippetId;
+    }
+    closeOpenVarInsertMenus();
+    refreshVariableEditors().catch((error) => showStatus(error.message, "error"));
+    if (isPreviewDrawerOpen() && !isComposeTemplatePreviewTarget()) {
+        refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
+    }
 }
 
 function updateContentVariantsCountBadge(container) {
     if (!container) return;
     const badge = container.closest(".content-variants-block")?.querySelector(".content-variants-count");
-    if (!badge) return;
-    const variantCount = collectContentVariants(container).length;
-    if (variantCount > 0) {
-        badge.hidden = false;
-        badge.textContent = `${variantCount} 变体`;
-    } else {
-        badge.hidden = true;
-        badge.textContent = "";
-    }
+    if (badge) badge.hidden = true;
 }
 
 function collectContentVariants(container) {
@@ -11038,119 +10975,98 @@ function collectContentVariants(container) {
         .filter(Boolean);
 }
 
-function clearContentVariantValidationMarks(container) {
-    if (!container) return;
-    container.querySelectorAll(".content-variant-duplicate-hint").forEach((element) => element.remove());
-    container.querySelectorAll(".content-variant-input.duplicate").forEach((input) => {
-        input.classList.remove("duplicate");
-    });
+function captureContentVariantValues(container) {
+    return Array.from(container?.querySelectorAll(".content-variant-input") || []).map((input) => input.value);
 }
 
 function validateContentVariantInputs(container, mainText) {
     if (!container) return true;
-    clearContentVariantValidationMarks(container);
-    const trimmedMain = (mainText || "").trim();
     const inputs = Array.from(container.querySelectorAll(".content-variant-input"));
-    if (!inputs.length) return true;
-    const trimmedValues = inputs.map((input) => input.value.trim());
-    let valid = true;
-    const seen = new Map();
-
-    trimmedValues.forEach((value, index) => {
-        const row = inputs[index].closest(".content-variant-row");
-        const insertHint = (message) => {
-            const hint = document.createElement("p");
-            hint.className = "content-variant-duplicate-hint";
-            hint.textContent = message;
-            row?.insertAdjacentElement("afterend", hint);
-        };
-        if (!value) {
-            inputs[index].classList.add("duplicate");
-            insertHint("变体不能为空");
-            valid = false;
-            return;
+    let firstInvalid = null;
+    const original = (mainText || "").trim();
+    const originalCheck = validatePlaceholderText(mainText || "", { lenient: false });
+    const originalHint = $("#varHint-replySnippetContent");
+    if (!originalCheck.valid) {
+        if (originalHint) {
+            originalHint.hidden = false;
+            originalHint.className = "var-validation-hint invalid";
+            originalHint.textContent = `非法占位符：${originalCheck.violations.join(", ")}`;
         }
-        if (value === trimmedMain) {
-            inputs[index].classList.add("duplicate");
-            insertHint("与主体 内容重复");
-            valid = false;
-            return;
-        }
-        if (seen.has(value)) {
-            inputs[index].classList.add("duplicate");
-            insertHint(`与变体 ${seen.get(value)} 内容重复`);
-            valid = false;
-            return;
-        }
-        seen.set(value, index + 1);
-    });
-
-    if (!valid) {
-        showStatus("请修正内容变体中的重复或空值", "error");
-        const firstDuplicate = container.querySelector(".content-variant-input.duplicate");
-        const row = firstDuplicate?.closest(".content-variant-row");
-        if (row) {
-            const invalidIndex = Number(row.dataset.variantIndex);
-            if (Number.isFinite(invalidIndex)) setActiveVariant(container, invalidIndex);
-        }
+        firstInvalid = { index: 0, input: $("#replySnippetContent") };
+    } else if (originalHint) {
+        originalHint.hidden = true;
+        originalHint.textContent = "";
     }
-    return valid;
+    const seen = new Map();
+    inputs.forEach((input, index) => {
+        const value = input.value.trim();
+        const hint = $(`#varHint-replySnippetVariant-${index}`);
+        input.classList.remove("duplicate");
+        const placeholder = validatePlaceholderText(input.value, { lenient: false });
+        let message = "";
+        if (!value) message = "变体不能为空";
+        else if (value === original) message = "与原文内容重复";
+        else if (seen.has(value)) message = `与变体 ${seen.get(value) + 1} 内容重复`;
+        else if (!placeholder.valid) message = `非法占位符：${placeholder.violations.join(", ")}`;
+        if (!message) seen.set(value, index);
+        if (hint) {
+            hint.hidden = !message;
+            hint.className = message ? "var-validation-hint invalid content-variant-duplicate-hint" : "var-validation-hint";
+            hint.textContent = message;
+        }
+        if (message) {
+            input.classList.add("duplicate");
+            if (!firstInvalid) firstInvalid = { index: index + 1, input };
+        }
+    });
+    if (!firstInvalid) return true;
+    setActiveVariant(container, firstInvalid.index);
+    showStatus(firstInvalid.index === 0 ? "请修正原文中的非法占位符" : "请修正内容变体中的空值、重复或非法占位符", "error");
+    firstInvalid.input?.focus();
+    return false;
 }
 
 function addContentVariantRow(container) {
     if (!container) return;
-    const variants = Array.from(container.querySelectorAll(".content-variant-input")).map((input) => input.value);
+    const variants = captureContentVariantValues(container);
     variants.push("");
-    container.dataset.activeIndex = String(variants.length - 1);
     renderContentVariantRows(container, variants);
-    container.querySelector(".content-variant-row.active .content-variant-input")?.focus();
+    setActiveVariant(container, variants.length);
+    container.querySelector(".content-variant-row:not([hidden]) .content-variant-input")?.focus();
 }
 
 function removeContentVariantRow(container, index) {
     if (!container) return;
-    const variants = Array.from(container.querySelectorAll(".content-variant-input")).map((input) => input.value);
+    const variants = captureContentVariantValues(container);
     variants.splice(index, 1);
-    const n = variants.length;
-    container.dataset.activeIndex = n === 0 ? "0" : String(Math.min(index, n - 1));
     renderContentVariantRows(container, variants);
+    setActiveVariant(container, Math.min(index + 1, variants.length));
 }
 
 function handleContentVariantEditorClick(event, form) {
     const addBtn = event.target.closest('[data-action="add-content-variant"]');
     if (addBtn && form.contains(addBtn)) {
-        const container = addBtn.closest(".content-variants-block")?.querySelector(".content-variants-container");
-        if (container) addContentVariantRow(container);
+        addContentVariantRow($("#replySnippetVariantsContainer"));
         return;
     }
     const removeBtn = event.target.closest('[data-action="remove-content-variant"]');
     if (removeBtn && form.contains(removeBtn)) {
-        const container = removeBtn.closest(".content-variants-block")?.querySelector(".content-variants-container");
-        if (container) removeContentVariantRow(container, Number(removeBtn.dataset.index));
+        const container = $("#replySnippetVariantsContainer");
+        if (container) removeContentVariantRow(container, Number(container.dataset.activeIndex) - 1);
         return;
     }
     const prevBtn = event.target.closest('[data-action="variant-prev"]');
-    if (prevBtn && form.contains(prevBtn)) {
-        const container = prevBtn.closest(".content-variants-block")?.querySelector(".content-variants-container");
-        if (container) setActiveVariant(container, Number(container.dataset.activeIndex || 0) - 1);
-        return;
-    }
     const nextBtn = event.target.closest('[data-action="variant-next"]');
-    if (nextBtn && form.contains(nextBtn)) {
-        const container = nextBtn.closest(".content-variants-block")?.querySelector(".content-variants-container");
-        if (container) setActiveVariant(container, Number(container.dataset.activeIndex || 0) + 1);
-        return;
-    }
-    const dot = event.target.closest(".content-variant-dot[data-index]");
-    if (dot && form.contains(dot)) {
-        const container = dot.closest(".content-variants-block")?.querySelector(".content-variants-container");
-        if (container) setActiveVariant(container, Number(dot.dataset.index));
+    if (prevBtn || nextBtn) {
+        const container = $("#replySnippetVariantsContainer");
+        if (container) setActiveVariant(container, Number(container.dataset.activeIndex || 0) + (prevBtn ? -1 : 1));
     }
 }
 
 function handleContentVariantEditorInput(event) {
-    if (!event.target.classList.contains("content-variant-input")) return;
-    const container = event.target.closest(".content-variants-container");
-    if (container) updateContentVariantsCountBadge(container);
+    if (event.target.id === "replySnippetContent" || event.target.classList.contains("content-variant-input")) {
+        schedulePreviewDrawerRefresh();
+    }
 }
 
 function populateComposeTemplatePreviewDatalists() {
@@ -11203,6 +11119,7 @@ async function loadExpertMailPreview(panel, orcidId) {
     panel.dataset.loaded = "true";
     try {
         await ensureComposeTemplatesLoaded();
+        await ensureReplySnippetsLoaded();
         const templates = state.composeTemplates || [];
         const preferred = templates.find((t) => t.enabled) || templates[0];
         panel.innerHTML = `
@@ -11221,6 +11138,7 @@ async function loadExpertMailPreview(panel, orcidId) {
             <div data-role="mail-preview-blocks"></div>
             <div class="expert-mail-preview-meta">
                 <span data-role="mail-preview-to"></span>
+                <span class="text-muted" data-role="variant-sample-note">随机样本，发送时重新生成</span>
             </div>
         `;
         await renderExpertMailPreview(panel, orcidId);
@@ -11230,23 +11148,20 @@ async function loadExpertMailPreview(panel, orcidId) {
     }
 }
 
-function javaStringHashCode(value) {
-    let hash = 0;
-    const seed = String(value == null ? "" : value).trim();
-    for (let i = 0; i < seed.length; i++) {
-        hash = (hash * 31 + seed.charCodeAt(i)) | 0;
-    }
-    return hash;
-}
 
 async function renderExpertMailPreview(panel, orcidId) {
     const templateId = panel.querySelector('[data-role="mail-preview-template"]')?.value || "";
     const template = (state.composeTemplates || []).find((t) => String(t.id) === String(templateId));
     if (!template) return;
+    const snippetId = template.subjectSnippetId == null ? null : Number(template.subjectSnippetId);
+    const snippet = snippetId == null ? null : findSubjectSnippet(snippetId);
+    if (snippetId != null && subjectSnippetStatus(snippet) !== "reference") {
+        throw new Error(`模板主题引用失效 · #${snippetId}，请重新选择或改为自定义主题`);
+    }
     const previewContact = (state.contacts || []).find((item) => item.orcidId === orcidId);
-    const previewContactId = previewContact?.contactId ?? null;
     const payload = {
-        subject: template.subject || "",
+        subject: snippet ? snippet.content : (template.subject || ""),
+        subjectSnippetId: snippetId,
         blocks: (template.blocks || []).map((block) => ({
             blockOrder: block.blockOrder,
             blockType: block.blockType,
@@ -11255,10 +11170,9 @@ async function renderExpertMailPreview(panel, orcidId) {
         })),
         strictPlaceholders: false,
         orcidId,
-        contactId: previewContactId,
+        contactId: previewContact?.contactId ?? null,
         expertEmail: null,
-        senderAccountCode: null,
-        variantIndex: javaStringHashCode(orcidId)
+        senderAccountCode: null
     };
     const requestId = ++expertMailPreviewRequestId;
     try {
@@ -11306,6 +11220,7 @@ async function openTemplateEditorForExpert(templateId, orcidId) {
         showStatus("模板不存在，请刷新后重试", "error");
         return;
     }
+    await ensureReplySnippetsLoaded();
     const expert = (state.contacts || []).find((item) => item.orcidId === orcidId);
     setView("mail-templates");
     switchMailTemplatesSubTab("compose-templates");
@@ -11323,6 +11238,178 @@ async function openTemplateEditorForExpert(templateId, orcidId) {
     await openComposeTemplatePreview();
 }
 
+function subjectSnippetLabel(snippet) {
+    return `${replySnippetDisplayLabel(snippet)} · #${snippet.id}`;
+}
+
+function subjectSnippetIsEligible(snippet) {
+    const content = String(snippet?.content || "");
+    return snippet?.enabled === true && content.trim().length > 0
+        && !/[\r\n]/.test(content) && content.length <= 255;
+}
+
+function findSubjectSnippet(id) {
+    return (state.replySnippets || []).find((snippet) => Number(snippet.id) === Number(id)) || null;
+}
+
+function subjectSnippetStatus(snippet) {
+    return snippet && subjectSnippetIsEligible(snippet) ? "reference" : "invalid";
+}
+
+function updateSubjectSnippetSource() {
+    const input = $("#composeTemplateSubject");
+    const badgeEl = $("#composeSubjectSource");
+    const variableButton = document.querySelector('[data-var-insert-target="composeTemplateSubject"]');
+    const snippet = state.selectedSubjectSnippetId == null ? null : findSubjectSnippet(state.selectedSubjectSnippetId);
+    if (snippet && subjectSnippetStatus(snippet) === "reference") {
+        if (badgeEl) {
+            badgeEl.className = "badge primary";
+            badgeEl.textContent = "引用";
+        }
+        if (variableButton) {
+            variableButton.disabled = true;
+            variableButton.title = "引用内容请到回复片段中编辑";
+        }
+        input?.removeAttribute("aria-invalid");
+        return true;
+    }
+    if (state.selectedSubjectSnippetId != null) {
+        if (badgeEl) {
+            badgeEl.className = "badge error";
+            badgeEl.textContent = `引用失效 · #${state.selectedSubjectSnippetId}`;
+        }
+        if (variableButton) {
+            variableButton.disabled = true;
+            variableButton.title = "引用内容请到回复片段中编辑";
+        }
+        input?.setAttribute("aria-invalid", "true");
+        return false;
+    }
+    if (badgeEl) {
+        badgeEl.className = "badge";
+        badgeEl.textContent = "自定义";
+    }
+    if (variableButton) {
+        variableButton.disabled = false;
+        variableButton.title = "插入变量";
+    }
+    input?.removeAttribute("aria-invalid");
+    return true;
+}
+
+function renderSubjectSnippetOptions(filter = "", showAll = false) {
+    const list = $("#composeSubjectOptions");
+    const input = $("#composeTemplateSubject");
+    if (!list || !input) return;
+    const snippets = (state.replySnippets || []).filter(subjectSnippetIsEligible);
+    const query = filter.trim().toLocaleLowerCase();
+    const choices = showAll || !query ? snippets : snippets.filter((item) => subjectSnippetLabel(item).toLocaleLowerCase().includes(query));
+    list.innerHTML = choices.length
+        ? choices.map((item) => `<button type="button" class="snippet-subject-option" id="composeSubjectOption-${Number(item.id)}" role="option" aria-selected="false" data-snippet-id="${Number(item.id)}">${escapeHtml(subjectSnippetLabel(item))}</button>`).join("")
+        : '<span class="text-muted">没有可用于主题的单行片段</span>';
+}
+
+function closeSubjectSnippetOptions() {
+    const list = $("#composeSubjectOptions");
+    const input = $("#composeTemplateSubject");
+    if (list) list.hidden = true;
+    input?.setAttribute("aria-expanded", "false");
+    input?.removeAttribute("aria-activedescendant");
+}
+
+function selectSubjectSnippet(snippet) {
+    if (!subjectSnippetIsEligible(snippet)) return;
+    state.selectedSubjectSnippetId = Number(snippet.id);
+    const input = $("#composeTemplateSubject");
+    if (input) input.value = snippet.content;
+    updateSubjectSnippetSource();
+    closeSubjectSnippetOptions();
+    schedulePreviewDrawerRefresh();
+}
+
+function syncSubjectSnippetInput({ exactLabel = true } = {}) {
+    const input = $("#composeTemplateSubject");
+    if (!input) return;
+    const exact = exactLabel
+        ? (state.replySnippets || []).filter(subjectSnippetIsEligible).find((snippet) => subjectSnippetLabel(snippet) === input.value)
+        : null;
+    if (exact) {
+        selectSubjectSnippet(exact);
+        return;
+    }
+    state.selectedSubjectSnippetId = null;
+    updateSubjectSnippetSource();
+    const hint = $("#varHint-composeTemplateSubject");
+    if (hint) {
+        hint.hidden = input.value.length <= 255;
+        hint.className = "var-validation-hint invalid";
+        hint.textContent = input.value.length > 255 ? "自定义主题最多 255 个字符" : "";
+    }
+    schedulePreviewDrawerRefresh();
+}
+
+function collectComposeTemplateSubject() {
+    const snippetId = state.selectedSubjectSnippetId == null ? null : Number(state.selectedSubjectSnippetId);
+    const snippet = snippetId == null ? null : findSubjectSnippet(snippetId);
+    if (snippetId != null && subjectSnippetStatus(snippet) !== "reference") {
+        return { subject: "", subjectSnippetId: snippetId, invalid: true };
+    }
+    if (snippet) return { subject: snippet.content, subjectSnippetId: snippetId, invalid: false };
+    return { subject: $("#composeTemplateSubject")?.value || "", subjectSnippetId: null, invalid: false };
+}
+
+function bindSubjectSnippetEditor() {
+    const input = $("#composeTemplateSubject");
+    const list = $("#composeSubjectOptions");
+    if (!input || input.dataset.snippetBound === "1") return;
+    input.dataset.snippetBound = "1";
+    input.addEventListener("input", () => {
+        syncSubjectSnippetInput();
+        if (state.selectedSubjectSnippetId != null) return;
+        renderSubjectSnippetOptions(input.value);
+        if (list) list.hidden = false;
+        input.setAttribute("aria-expanded", "true");
+    });
+    input.addEventListener("change", () => syncSubjectSnippetInput());
+    input.addEventListener("keydown", (event) => {
+        let options = Array.from(list?.querySelectorAll(".snippet-subject-option") || []);
+        let active = options.findIndex((option) => option.id === input.getAttribute("aria-activedescendant"));
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            if (list.hidden) {
+                renderSubjectSnippetOptions(input.value, true);
+                list.hidden = false;
+                input.setAttribute("aria-expanded", "true");
+                options = Array.from(list.querySelectorAll(".snippet-subject-option"));
+            }
+            if (!options.length) return;
+            event.preventDefault();
+            active = (active + (event.key === "ArrowDown" ? 1 : options.length - 1)) % options.length;
+            options.forEach((option, index) => option.setAttribute("aria-selected", String(index === active)));
+            input.setAttribute("aria-activedescendant", options[active].id);
+        } else if (event.key === "Enter" && active >= 0 && options[active]) {
+            event.preventDefault();
+            selectSubjectSnippet(findSubjectSnippet(options[active].dataset.snippetId));
+        } else if (event.key === "Escape" || event.key === "Tab") {
+            closeSubjectSnippetOptions();
+        }
+    });
+    list?.addEventListener("click", (event) => {
+        const option = event.target.closest(".snippet-subject-option");
+        if (option) selectSubjectSnippet(findSubjectSnippet(option.dataset.snippetId));
+    });
+    $("#composeSubjectToggle")?.addEventListener("click", () => {
+        if (!list.hidden) closeSubjectSnippetOptions();
+        else {
+            renderSubjectSnippetOptions("", true);
+            list.hidden = false;
+            input.setAttribute("aria-expanded", "true");
+        }
+    });
+    document.addEventListener("click", (event) => {
+        if (!event.target.closest(".snippet-subject-combobox")) closeSubjectSnippetOptions();
+    });
+}
+
 function renderComposeTemplatesTable() {
     const table = $("#composeTemplatesTable");
     if (!table) return;
@@ -11332,10 +11419,16 @@ function renderComposeTemplatesTable() {
                 || (block.blockType === "CUSTOM_TEXT" ? "自定义文本" : composeBlockTypeLabels[block.blockType] || block.blockType);
             return `<span class="compose-block-pill">${escapeHtml(label)}</span>`;
         }).join("");
+        const snippet = template.subjectSnippetId == null ? null : findSubjectSnippet(template.subjectSnippetId);
+        const subjectCell = template.subjectSnippetId == null
+            ? `<span class="badge">自定义</span> ${escapeHtml(template.subject || "")}`
+            : snippet && subjectSnippetIsEligible(snippet)
+                ? `<span class="badge primary">引用</span> ${escapeHtml(subjectSnippetLabel(snippet))}`
+                : `<span class="badge error">引用失效</span> #${escapeHtml(String(template.subjectSnippetId))}`;
         return `
         <tr>
             <td><strong>${escapeHtml(template.templateName)}</strong></td>
-            <td>${escapeHtml(template.subject)}</td>
+            <td>${subjectCell}</td>
             <td>${blockPills || '<span class="muted">无内容块</span>'}</td>
             <td>${badge(template.enabled ? "启用" : "禁用", template.enabled ? "ok" : "warn")}</td>
             <td style="text-align: right; white-space: nowrap;">
@@ -11350,15 +11443,22 @@ function renderComposeTemplatesTable() {
 
 function openComposeTemplateEditor(template) {
     state.selectedComposeTemplateId = template?.id ?? null;
+    state.selectedSubjectSnippetId = template?.subjectSnippetId == null ? null : Number(template.subjectSnippetId);
     const form = $("#composeTemplateForm");
     form.templateName.value = template?.templateName || "";
-    form.subject.value = template?.subject || "";
+    const referenced = state.selectedSubjectSnippetId == null ? null : findSubjectSnippet(state.selectedSubjectSnippetId);
+    form.subject.value = referenced && subjectSnippetIsEligible(referenced)
+        ? referenced.content
+        : template?.subject || "";
     form.description.value = template?.description || "";
     form.enabled.checked = template?.enabled !== false;
     $("#composeTemplateEditorTitle").textContent = template ? "编辑邮件模板" : "新建邮件模板";
     renderComposeTemplateBlockRows(template?.blocks || []);
     loadComposeTemplatePreviewOptions().catch((error) => showStatus(error.message, "error"));
     $("#composeTemplateModal").hidden = false;
+    updateSubjectSnippetSource();
+    renderSubjectSnippetOptions();
+    bindSubjectSnippetEditor();
     refreshVariableEditors().catch((error) => showStatus(error.message, "error"));
     mountPreviewRail({ targetId: "composeTemplate" });
 }
@@ -11366,8 +11466,12 @@ function openComposeTemplateEditor(template) {
 function hideComposeTemplateEditor() {
     $("#composeTemplateModal").hidden = true;
     state.selectedComposeTemplateId = null;
+    state.selectedSubjectSnippetId = null;
+    closeSubjectSnippetOptions();
+    updateSubjectSnippetSource();
     closePreviewDrawer();
 }
+
 
 function renderComposeTemplateBlockRows(blocks) {
     const container = $("#composeTemplateBlocksList");
@@ -11497,25 +11601,51 @@ function renderComposeTemplatePreviewInDrawer(preview) {
         rowsEl.innerHTML = renderComposeTemplatePreviewVariableRows(variables);
     }
     updatePreviewCoverage(null, null);
-    updatePreviewVariantSwitcher(preview.variantPoolSize ?? 1);
+    updatePreviewVariantSwitcher();
 }
 
 async function renderServerComposeTemplatePreview() {
     const form = $("#composeTemplateForm");
     if (!form) return;
     const requestId = ++composeTemplatePreviewRequestId;
+    const errorEl = $("#previewDrawerError");
+    if (errorEl) {
+        errorEl.hidden = true;
+        errorEl.textContent = "";
+    }
+    ["#previewMailSubject", "#previewMailBody", "#previewMailTo"].forEach((selector) => {
+        const element = $(selector);
+        if (element) element.textContent = "";
+    });
+    const subject = collectComposeTemplateSubject();
     const blocks = collectComposeTemplateBlocksFromForm();
     const context = collectComposeTemplatePreviewContext();
     const strictPlaceholders = $("#previewComposeStrictPlaceholders")?.checked === true;
+    if (subject.invalid) {
+        const errorEl = $("#previewDrawerError");
+        if (errorEl) {
+            errorEl.hidden = false;
+            errorEl.textContent = `模板主题引用失效 · #${subject.subjectSnippetId}，请重新选择或改为自定义主题`;
+        }
+        return;
+    }
+    if (!subject.subject.trim() || (subject.subjectSnippetId == null && subject.subject.length > 255)) {
+        const errorEl = $("#previewDrawerError");
+        if (errorEl) {
+            errorEl.hidden = false;
+            errorEl.textContent = "主题不能为空且自定义主题最多 255 个字符";
+        }
+        return;
+    }
     const payload = {
-        subject: form.subject.value || "",
+        subject: subject.subject,
+        subjectSnippetId: subject.subjectSnippetId,
         blocks,
         strictPlaceholders,
         contactId: context.contactId,
         orcidId: context.orcidId,
         expertEmail: context.expertEmail,
-        senderAccountCode: context.senderAccountCode,
-        variantIndex: state.previewDrawer.variantIndex
+        senderAccountCode: context.senderAccountCode
     };
     try {
         const result = await api("/api/compose-templates/preview-draft", {
@@ -11525,12 +11655,12 @@ async function renderServerComposeTemplatePreview() {
         if (requestId !== composeTemplatePreviewRequestId) return;
         if (!isPreviewDrawerOpen() || !isComposeTemplatePreviewTarget()) return;
         renderComposeTemplatePreviewInDrawer(result);
-    } catch (_error) {
+    } catch (error) {
         if (requestId !== composeTemplatePreviewRequestId) return;
         const errorEl = $("#previewDrawerError");
         if (errorEl) {
             errorEl.hidden = false;
-            errorEl.textContent = "预览失败，请重试";
+            errorEl.textContent = error?.message || "预览失败，请重试";
         }
     }
 }
@@ -11588,13 +11718,24 @@ async function saveComposeTemplate(event) {
     event.preventDefault();
     const form = $("#composeTemplateForm");
     const blocks = collectComposeTemplateBlocksFromForm();
+    const subject = collectComposeTemplateSubject();
     if (!blocks.length) {
         showStatus("请至少添加一个内容块", "error");
         return;
     }
+    if (subject.invalid) {
+        showStatus(`模板主题引用失效 · #${subject.subjectSnippetId}，请重新选择或改为自定义主题`, "error");
+        return;
+    }
+    if (!subject.subject.trim() || (subject.subjectSnippetId == null && subject.subject.length > 255)) {
+        showStatus("主题不能为空且自定义主题最多 255 个字符", "error");
+        $("#composeTemplateSubject")?.focus();
+        return;
+    }
     const payload = {
         templateName: form.templateName.value.trim(),
-        subject: form.subject.value.trim(),
+        subject: subject.subject.trim(),
+        subjectSnippetId: subject.subjectSnippetId,
         description: form.description.value.trim() || null,
         enabled: form.enabled.checked,
         blocks
@@ -14353,8 +14494,9 @@ function bindEvents() {
     $("#previewComposeDiceBtn")?.addEventListener("click", () => {
         randomComposeTemplatePreviewExpert().catch((error) => showStatus(error.message, "error"));
     });
-    $("#previewVariantPrev")?.addEventListener("click", () => stepPreviewVariantIndex(-1));
-    $("#previewVariantNext")?.addEventListener("click", () => stepPreviewVariantIndex(1));
+    $("#previewVariantResample")?.addEventListener("click", () => {
+        refreshPreviewDrawer().catch((error) => showStatus(error.message, "error"));
+    });
     $("#previewDrawer")?.addEventListener("keydown", (event) => {
         if (
             event.key === "Enter"
@@ -14433,7 +14575,7 @@ function bindEvents() {
     $("#composeTemplateBlocksList")?.addEventListener("click", handleComposeTemplateBlocksListClick);
     $("#composeTemplateBlocksList")?.addEventListener("change", handleComposeTemplateBlockTypeChange);
     $("#composeTemplateBlocksList")?.addEventListener("input", schedulePreviewDrawerRefresh);
-    $("#composeTemplateSubject")?.addEventListener("input", schedulePreviewDrawerRefresh);
+    bindSubjectSnippetEditor();
     $("#previewComposeExpertInput")?.addEventListener("input", schedulePreviewDrawerRefresh);
     $("#previewComposeAccountInput")?.addEventListener("input", schedulePreviewDrawerRefresh);
     document.querySelectorAll('input[name="previewComposePlaceholderMode"]').forEach((input) => {

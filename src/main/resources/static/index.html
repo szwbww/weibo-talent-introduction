@@ -1977,22 +1977,26 @@
             <label>片段名称<input name="name" maxlength="120" placeholder="留空则显示内容摘要"></label>
             <label>片段 ID<input name="id" disabled placeholder="系统自动生成"></label>
             <label>显示排序<input name="displayOrder" type="number" value="100" required></label>
-            <label class="span-2">片段内容
-                <div class="var-editor-wrap">
-                    <div class="var-editor-toolbar">
-                        <div class="var-insert-wrap">
-                            <button type="button" class="var-insert-btn" data-var-insert-target="replySnippetContent">+ 插入变量 ▾</button>
-                            <div class="var-insert-menu" hidden></div>
-                        </div>
+            <div class="span-2 content-variants-block snippet-variant-editor">
+                <div class="snippet-version-toolbar">
+                    <span>片段内容</span>
+                    <button type="button" class="button small" data-action="variant-prev" aria-label="上一个版本">‹</button>
+                    <span id="replySnippetVersionLabel" class="badge primary" aria-live="polite">原文 · 1 / 1</span>
+                    <button type="button" class="button small" data-action="variant-next" aria-label="下一个版本">›</button>
+                    <span class="snippet-version-spacer"></span>
+                    <div class="var-insert-wrap">
+                        <button type="button" class="var-insert-btn snippet-variable-icon" data-var-insert-target="replySnippetContent" title="插入变量" aria-label="插入变量">{}</button>
+                        <div class="var-insert-menu" hidden></div>
                     </div>
-                    <div class="var-validation-hint" id="varHint-replySnippetContent" hidden></div>
-                    <textarea id="replySnippetContent" name="content" rows="6" placeholder="英文回复片段正文" required></textarea>
+                    <button type="button" class="button small" data-action="add-content-variant">+ 新增变体</button>
+                    <button type="button" class="button small danger" id="replySnippetRemoveVersion" data-action="remove-content-variant" disabled>删除变体</button>
                 </div>
-            </label>
-            <div class="full-width content-variants-block">
-                <span class="field-label">内容变体 <span class="badge primary content-variants-count" hidden></span></span>
-                <div class="content-variants-container" id="replySnippetVariantsContainer"></div>
-                <p class="compose-template-variable-hint">主体与全部变体共同轮换，每位专家固定命中其中一个；变体输入 textarea 支持多行</p>
+                <div id="replySnippetOriginalPanel" class="var-editor-wrap">
+                    <div class="var-validation-hint" id="varHint-replySnippetContent" hidden></div>
+                    <textarea id="replySnippetContent" name="content" rows="8" placeholder="英文回复片段正文"></textarea>
+                </div>
+                <div class="content-variants-container" id="replySnippetVariantsContainer" hidden></div>
+                <span class="text-muted" id="replySnippetVersionHint">共 1 个版本，引用时随机选择一个</span>
             </div>
             <label class="checkbox-row" id="replySnippetDefaultRow"><input name="isDefault" type="checkbox"> 设为该类型默认片段</label>
             <label class="checkbox-row"><input name="enabled" type="checkbox" checked> 启用该片段</label>
@@ -2029,17 +2033,20 @@
                         </div>
                         <div class="compose-template-fields">
                             <label>模板名称<input name="templateName" required maxlength="100"></label>
-                            <label>邮件主题
-                                <div class="var-editor-wrap var-editor-inline">
-                                    <div class="var-editor-toolbar">
-                                        <div class="var-insert-wrap">
-                                            <button type="button" class="var-insert-btn" data-var-insert-target="composeTemplateSubject">+ 插入变量 ▾</button>
-                                            <div class="var-insert-menu" hidden></div>
-                                        </div>
+                            <div class="snippet-subject-field">
+                                <label for="composeTemplateSubject">邮件主题</label>
+                                <div class="snippet-subject-combobox">
+                                    <input id="composeTemplateSubject" name="subject" type="text" required role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="composeSubjectOptions" autocomplete="off">
+                                    <span id="composeSubjectSource" class="badge">自定义</span>
+                                    <button type="button" id="composeSubjectToggle" class="snippet-subject-arrow" title="选择回复片段" aria-label="选择回复片段" aria-controls="composeSubjectOptions">▾</button>
+                                    <div class="var-insert-wrap">
+                                        <button type="button" class="var-insert-btn snippet-variable-icon" data-var-insert-target="composeTemplateSubject" title="插入变量" aria-label="插入变量">{}</button>
+                                        <div class="var-insert-menu" hidden></div>
                                     </div>
-                                    <input id="composeTemplateSubject" name="subject" required maxlength="255">
+                                    <div id="composeSubjectOptions" class="snippet-subject-options" role="listbox" aria-label="可引用的回复片段" hidden></div>
                                 </div>
-                            </label>
+                                <div class="var-validation-hint" id="varHint-composeTemplateSubject" hidden></div>
+                            </div>
                             <label class="full-width">用途描述<textarea name="description" rows="2" maxlength="500"></textarea></label>
                         </div>
                     </section>
@@ -2125,9 +2132,8 @@
         <h2 id="previewDrawerTitle">邮件预览</h2>
         <span class="preview-source-badge" id="previewSourceBadge">变量渲染</span>
         <div class="variant-switcher" id="previewVariantSwitcher" hidden>
-            <button type="button" class="button small" id="previewVariantPrev" aria-label="上一个变体组合">‹</button>
-            <span class="badge primary variant-switcher-label" id="previewVariantLabel">组合 1/1</span>
-            <button type="button" class="button small" id="previewVariantNext" aria-label="下一个变体组合">›</button>
+            <span class="text-muted" id="previewVariantLabel">随机样本，发送时重新生成</span>
+            <button type="button" class="button small" id="previewVariantResample">换一组</button>
         </div>
       </div>
       <button class="button secondary preview-drawer-close" id="previewDrawerCloseBtn" type="button" aria-label="关闭">×</button>
