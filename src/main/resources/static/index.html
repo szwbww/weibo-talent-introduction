@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260924-task-interruption-recovery">
-    <link rel="stylesheet" href="expert-materials.css?v=20260924-task-interruption-recovery">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20260924-task-interruption-recovery">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20260924-task-interruption-recovery">
-    <link rel="stylesheet" href="world-clock.css?v=20260924-task-interruption-recovery">
+    <link rel="stylesheet" href="styles.css?v=20260924-account-editor">
+    <link rel="stylesheet" href="expert-materials.css?v=20260924-account-editor">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20260924-account-editor">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20260924-account-editor">
+    <link rel="stylesheet" href="world-clock.css?v=20260924-account-editor">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1822,6 +1822,11 @@
                 </fieldset>
                 <fieldset class="form-section">
                     <legend class="form-section-title">IMAP 收信配置<button class="link-btn" type="button" id="copySmtpToImapBtn">同步 SMTP</button></legend>
+                    <div class="form-grid-1 mail-source-field">
+                        <label>收件来源<select name="inboundMailboxCode" aria-describedby="inboundMailboxAddress inboundMailboxHint"></select></label>
+                        <span class="mail-source-address" id="inboundMailboxAddress" hidden></span>
+                        <p class="text-muted" id="inboundMailboxHint" aria-live="polite"></p>
+                    </div>
                     <div class="form-grid-host-port">
                         <label>服务器<input name="imapHost" placeholder="如: imap.exmail.qq.com" required></label>
                         <label>端口<input name="imapPort" type="number" value="993" required></label>
@@ -1876,15 +1881,15 @@
                 </div>
             </div>
 
-            <!-- 底部操作栏 -->
-            <div class="account-form-footer">
-                <button class="button danger-outline" type="button" id="deleteAccountBtn" hidden>删除账号</button>
-                <div class="account-form-footer-right">
-                    <button class="button secondary" type="button" id="clearAccountFormBtn">取消</button>
-                    <button class="button primary" type="submit" id="saveAccountBtn">保存配置</button>
-                </div>
-            </div>
         </form>
+        <!-- 底部操作栏独立于滚动区，按钮仍关联原表单。 -->
+        <div class="account-form-footer">
+            <button class="button danger-outline" type="button" form="accountForm" id="deleteAccountBtn" hidden>删除账号</button>
+            <div class="account-form-footer-right">
+                <button class="button secondary" type="button" form="accountForm" id="clearAccountFormBtn">取消</button>
+                <button class="button primary" type="submit" form="accountForm" id="saveAccountBtn">保存配置</button>
+            </div>
+        </div>
     </section>
 </div>
 
@@ -2214,11 +2219,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260924-task-interruption-recovery"></script>
-<script src="expert-materials.js?v=20260924-task-interruption-recovery"></script>
-<script src="meeting-confirmation.js?v=20260924-task-interruption-recovery"></script>
-<script src="mailbox-chat.js?v=20260924-task-interruption-recovery"></script>
-<script src="app.js?v=20260924-task-interruption-recovery"></script>
-<script src="world-clock.js?v=20260924-task-interruption-recovery"></script>
+<script src="trust-reply-workbench.js?v=20260924-account-editor"></script>
+<script src="expert-materials.js?v=20260924-account-editor"></script>
+<script src="meeting-confirmation.js?v=20260924-account-editor"></script>
+<script src="mailbox-chat.js?v=20260924-account-editor"></script>
+<script src="app.js?v=20260924-account-editor"></script>
+<script src="world-clock.js?v=20260924-account-editor"></script>
 </body>
 </html>

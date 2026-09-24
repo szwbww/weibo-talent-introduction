@@ -91,16 +91,17 @@ class MailSenderAccountService(
         require(command.accountCode.isNotBlank()) { "accountCode is required" }
         require(command.senderEmail.isNotBlank()) { "senderEmail is required" }
         require(command.smtpHost.isNotBlank()) { "smtpHost is required" }
-        require(command.imapHost.isNotBlank()) { "imapHost is required" }
         require(command.strategyWeight > 0) { "strategyWeight must be positive" }
         require(command.dailySendLimit > 0) { "dailySendLimit must be positive" }
         require(!repository.existsByAccountCode(command.accountCode)) {
             "Mail sender account already exists: ${command.accountCode}"
         }
         require(command.smtpPassword.isNotBlank()) { "smtpPassword is required" }
-        require(command.imapPassword.isNotBlank()) { "imapPassword is required" }
 
         val inboundMailboxCode = normalizeInboundMailboxCode(command.inboundMailboxCode)
+        if (inboundMailboxCode == null) {
+            requireImapConfig(command.imapHost, command.imapPort, command.imapUsername, command.imapPassword)
+        }
         requireValidInboundMailbox(
             accountCode = command.accountCode,
             inboundMailboxCode = inboundMailboxCode,
@@ -138,6 +139,13 @@ class MailSenderAccountService(
         } else {
             command.imapPassword
         }
+        // Disabled IMAP inputs are omitted by the browser; retain the account's own settings.
+        val imapHost = command.imapHost ?: existing.imapHost
+        val imapPort = command.imapPort ?: existing.imapPort
+        val imapUsername = command.imapUsername ?: existing.imapUsername
+        if (inboundMailboxCode == null) {
+            requireImapConfig(imapHost, imapPort, imapUsername, imapPassword)
+        }
 
         if (!existing.enabled && command.enabled) {
             requireConnectivityPassed(accountCode)
@@ -159,9 +167,9 @@ class MailSenderAccountService(
                 smtpPort = command.smtpPort,
                 smtpUsername = command.smtpUsername,
                 smtpPassword = smtpPassword,
-                imapHost = command.imapHost,
-                imapPort = command.imapPort,
-                imapUsername = command.imapUsername,
+                imapHost = imapHost,
+                imapPort = imapPort,
+                imapUsername = imapUsername,
                 imapPassword = imapPassword,
                 strategyWeight = command.strategyWeight,
                 dailySendLimit = command.dailySendLimit,
@@ -324,6 +332,13 @@ class MailSenderAccountService(
     private fun normalizeInboundMailboxCode(value: String?): String? =
         value?.trim()?.takeIf { it.isNotEmpty() }
 
+    private fun requireImapConfig(host: String, port: Int, username: String, password: String) {
+        require(host.isNotBlank()) { "独立收件箱必须填写 IMAP 服务器（imapHost）" }
+        require(port in 1..65535) { "IMAP 端口必须在 1–65535 之间" }
+        require(username.isNotBlank()) { "独立收件箱必须填写 IMAP 用户名（imapUsername）" }
+        require(password.isNotBlank()) { "独立收件箱必须填写 IMAP 授权码（imapPassword）" }
+    }
+
     private fun requireConnectivityPassed(accountCode: String) {
         val result = connectivityService.testAccount(accountCode)
         if (!result.passed) {
@@ -417,9 +432,9 @@ data class MailSenderAccountUpdateCommand(
     val smtpPort: Int,
     val smtpUsername: String,
     val smtpPassword: String?,
-    val imapHost: String,
-    val imapPort: Int,
-    val imapUsername: String,
+    val imapHost: String? = null,
+    val imapPort: Int? = null,
+    val imapUsername: String? = null,
     val imapPassword: String?,
     val strategyWeight: Int,
     val dailySendLimit: Int,

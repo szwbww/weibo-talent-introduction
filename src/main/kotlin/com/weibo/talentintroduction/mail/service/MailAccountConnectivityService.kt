@@ -16,13 +16,22 @@ class MailAccountConnectivityService(
         val account = repository.findByAccountCode(accountCode)
             ?: error("Mail sender account not found: $accountCode")
         val smtp = testSmtp(account)
-        val imap = testImap(account)
+        val imap = testImap(resolveImapAccount(account))
         return MailAccountConnectivityResult(
             accountCode = account.accountCode,
             smtp = smtp,
             imap = imap,
             passed = smtp.passed && imap.passed
         )
+    }
+
+    internal fun resolveImapAccount(account: MailSenderAccount): MailSenderAccount {
+        val ownerCode = account.inboundMailboxCode ?: return account
+        val owner = repository.findByAccountCode(ownerCode)
+            ?: error("共享收件箱主账号不存在：$ownerCode")
+        require(owner.accountCode != account.accountCode && owner.inboundMailboxCode == null &&
+            owner.accountCode != "SIMULATOR_NOOP") { "共享收件箱只允许关联独立的真实账号" }
+        return owner
     }
 
     private fun testSmtp(account: MailSenderAccount): MailProtocolConnectivityResult =

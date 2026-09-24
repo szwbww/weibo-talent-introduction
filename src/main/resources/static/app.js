@@ -3277,7 +3277,7 @@ function fillInboundMailboxOptions(select, account) {
         .forEach((candidate) => {
             const option = document.createElement("option");
             option.value = candidate.accountCode;
-            option.textContent = `${candidate.accountCode}（${candidate.senderEmail}）`;
+            option.textContent = candidate.accountCode;
             select.appendChild(option);
         });
     if (currentOwner && !Array.from(select.options).some((option) => option.value === currentOwner)) {
@@ -3287,6 +3287,25 @@ function fillInboundMailboxOptions(select, account) {
         stale.textContent = currentOwner;
         select.appendChild(stale);
     }
+}
+
+function updateInboundMailboxFields() {
+    const form = $("#accountForm");
+    const ownerCode = form.inboundMailboxCode.value;
+    const shared = Boolean(ownerCode);
+    const readOnly = state.accountEditorMode === "view";
+    ["imapHost", "imapPort", "imapUsername", "imapPassword"].forEach((name) => {
+        form[name].disabled = shared || readOnly;
+        form[name].required = !shared && (name !== "imapPassword" || state.accountEditorMode === "new");
+    });
+    $("#copySmtpToImapBtn").disabled = shared || readOnly;
+    document.querySelector('#accountForm .password-toggle[data-target="imapPassword"]').disabled = shared || readOnly;
+    const owner = state.accounts.find((item) => item.accountCode === ownerCode);
+    $("#inboundMailboxAddress").textContent = owner?.senderEmail || "";
+    $("#inboundMailboxAddress").hidden = !shared || !owner;
+    $("#inboundMailboxHint").textContent = shared
+        ? `由 ${ownerCode} 收取来信，邮件仍按实际收件账号归属。`
+        : "使用下方 IMAP 配置独立收取本账号来信。";
 }
 
 function fillAccountForm(account, mode = account ? "edit" : "new") {
@@ -3333,6 +3352,7 @@ function fillAccountForm(account, mode = account ? "edit" : "new") {
     form.imapPassword.required = !isEdit;
     form.smtpPassword.placeholder = isEdit ? "留空保持不变" : "授权码或账号密码";
     form.imapPassword.placeholder = isEdit ? "留空保持不变" : "授权码或账号密码";
+    updateInboundMailboxFields();
     form.enabled.checked = account?.enabled ?? false;
     form.warmupEnabled.checked = account?.warmupEnabled === true;
     form.warmupStartedAt.value = toDatetimeLocalValue(account?.warmupStartedAt);
@@ -3355,6 +3375,10 @@ async function saveAccount(event) {
         return;
     }
     const form = event.currentTarget;
+    if (!form.inboundMailboxCode) {
+        showStatus("账号编辑页面不完整，请刷新后重试", "error");
+        return;
+    }
     const values = formValues(form);
     const payload = {
         accountCode: form.accountCode.value,
@@ -3370,7 +3394,7 @@ async function saveAccount(event) {
         smtpUsername: values.smtpUsername,
         smtpPassword: values.smtpPassword,
         imapHost: values.imapHost,
-        imapPort: numberValue(values.imapPort, 993),
+        imapPort: values.imapPort === undefined ? undefined : numberValue(values.imapPort, 993),
         imapUsername: values.imapUsername,
         imapPassword: values.imapPassword,
         strategyWeight: numberValue(values.strategyWeight, 100),
@@ -14387,6 +14411,7 @@ function bindEvents() {
         }
     });
     $("#accountForm").addEventListener("submit", saveAccount);
+    $("#accountForm").inboundMailboxCode.addEventListener("change", updateInboundMailboxFields);
     document.querySelectorAll(".password-toggle").forEach((btn) => {
         btn.addEventListener("click", () => {
             const input = $("#accountForm").elements[btn.dataset.target];

@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.controller
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.node.ObjectNode
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.service.BounceRateMonitorService
 import com.weibo.talentintroduction.mail.service.MailAccountConnectivityService
@@ -111,7 +112,7 @@ class MailSenderAccountControllerMvcTest {
     }
 
     @Test
-    fun `createAccount binds and echoes the inboundMailboxCode json property`() {
+    fun `createAccount binds shared owner without separate imap fields`() {
         val created = account("alias", inboundMailboxCode = "owner")
         Mockito.`when`(
             service.createAccount(
@@ -124,7 +125,7 @@ class MailSenderAccountControllerMvcTest {
         mockMvc.perform(
             post("/api/mail/sender-accounts")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(createRequestBody(inboundMailboxCode = "owner"))
+                .content(withoutImapFields(createRequestBody(inboundMailboxCode = "owner")))
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.accountCode").value("alias"))
@@ -133,6 +134,8 @@ class MailSenderAccountControllerMvcTest {
         val captor = ArgumentCaptor.forClass(MailSenderAccountCreateCommand::class.java)
         Mockito.verify(service).createAccount(captor.capture() ?: anyCreateCommand())
         assertEquals("owner", captor.value.inboundMailboxCode)
+        assertEquals("", captor.value.imapHost)
+        assertEquals("", captor.value.imapPassword)
     }
 
     @Test
@@ -174,7 +177,7 @@ class MailSenderAccountControllerMvcTest {
         mockMvc.perform(
             put("/api/mail/sender-accounts/alias")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(updateRequestBody(inboundMailboxCode = "owner"))
+                .content(withoutImapFields(updateRequestBody(inboundMailboxCode = "owner")))
         )
             .andExpect(status().isOk)
             .andExpect(jsonPath("$.inboundMailboxCode").value("owner"))
@@ -182,6 +185,9 @@ class MailSenderAccountControllerMvcTest {
         val captor = ArgumentCaptor.forClass(MailSenderAccountUpdateCommand::class.java)
         Mockito.verify(service).updateAccount(Mockito.eq("alias") ?: "alias", captor.capture() ?: anyUpdateCommand())
         assertEquals("owner", captor.value.inboundMailboxCode)
+        assertEquals(null, captor.value.imapHost)
+        assertEquals(null, captor.value.imapPort)
+        assertEquals(null, captor.value.imapUsername)
     }
 
     @Test
@@ -296,6 +302,11 @@ class MailSenderAccountControllerMvcTest {
             todaySentCount = 0,
             enabled = false
         )
+
+    private fun withoutImapFields(json: String): String =
+        (objectMapper.readTree(json) as ObjectNode).apply {
+            remove(listOf("imapHost", "imapPort", "imapUsername", "imapPassword"))
+        }.toString()
 
     private fun account(
         accountCode: String,

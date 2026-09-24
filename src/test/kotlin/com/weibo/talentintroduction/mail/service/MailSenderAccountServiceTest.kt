@@ -1056,6 +1056,73 @@ class MailSenderAccountServiceTest {
         Mockito.verify(repository, Mockito.never()).deleteById(7L)
     }
 
+    @Test
+    fun `shared account can be created without separate imap credentials`() {
+        Mockito.`when`(repository.findByAccountCode("owner")).thenReturn(account("owner"))
+        Mockito.`when`(repository.save(Mockito.any(MailSenderAccount::class.java)))
+            .thenAnswer { it.arguments[0] as MailSenderAccount }
+        val command = createCommand("alias", inboundMailboxCode = "owner")
+            .copy(imapHost = "", imapUsername = "", imapPassword = "")
+        val created = service.createAccount(command)
+        assertEquals("owner", created.inboundMailboxCode)
+        assertEquals("alias@qftechtalent.com", created.smtpUsername)
+        assertEquals("", created.imapPassword)
+        assertFalse(created.enabled)
+        assertThrows(IllegalArgumentException::class.java) {
+            service.createAccount(command.copy(inboundMailboxCode = null))
+        }
+    }
+
+    @Test
+    fun `editing shared account preserves omitted imap settings and can switch back`() {
+        val existing = account("alias", inboundMailboxCode = "owner").copy(imapPort = 143)
+        Mockito.`when`(repository.findByAccountCode("alias")).thenReturn(existing)
+        Mockito.`when`(repository.findByAccountCode("owner")).thenReturn(account("owner"))
+        Mockito.`when`(repository.save(Mockito.any(MailSenderAccount::class.java)))
+            .thenAnswer { it.arguments[0] as MailSenderAccount }
+        val command = updateCommand(true, "alias", inboundMailboxCode = "owner")
+            .copy(imapHost = null, imapPort = null, imapUsername = null, imapPassword = null)
+        val updated = service.updateAccount("alias", command)
+        assertEquals(existing.imapHost, updated.imapHost)
+        assertEquals(143, updated.imapPort)
+        assertEquals(existing.imapUsername, updated.imapUsername)
+        assertEquals(existing.imapPassword, updated.imapPassword)
+        assertEquals("owner", updated.inboundMailboxCode)
+        assertNull(service.updateAccount("alias", command.copy(inboundMailboxCode = null)).inboundMailboxCode)
+    }
+
+    @Test
+    fun `switching alias without credentials to independent requires complete imap settings`() {
+        Mockito.`when`(repository.findByAccountCode("alias")).thenReturn(
+            account("alias", inboundMailboxCode = "owner").copy(imapPassword = "")
+        )
+        val command = updateCommand(true, "alias")
+        assertThrows(IllegalArgumentException::class.java) { service.updateAccount("alias", command) }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.updateAccount("alias", command.copy(imapPort = 0, imapPassword = "new-secret"))
+        }
+        Mockito.`when`(repository.save(Mockito.any(MailSenderAccount::class.java)))
+            .thenAnswer { it.arguments[0] as MailSenderAccount }
+        val updated = service.updateAccount("alias", command.copy(imapPassword = "new-secret"))
+        assertNull(updated.inboundMailboxCode)
+        assertEquals("new-secret", updated.imapPassword)
+    }
+
+    @Test
+    fun `connectivity resolves only imap to the owner and rejects missing or chained owners`() {
+        val connectivity = MailAccountConnectivityService(repository)
+        val owner = account("owner")
+        val alias = account("alias", inboundMailboxCode = "owner")
+        Mockito.`when`(repository.findByAccountCode("owner")).thenReturn(owner)
+        assertEquals(owner, connectivity.resolveImapAccount(alias))
+        assertEquals(owner, connectivity.resolveImapAccount(owner))
+        assertEquals("alias@qftechtalent.com", alias.smtpUsername)
+        Mockito.`when`(repository.findByAccountCode("owner")).thenReturn(owner.copy(inboundMailboxCode = "other"))
+        assertThrows(IllegalArgumentException::class.java) { connectivity.resolveImapAccount(alias) }
+        Mockito.`when`(repository.findByAccountCode("owner")).thenReturn(null)
+        assertThrows(IllegalStateException::class.java) { connectivity.resolveImapAccount(alias) }
+    }
+
     private fun createCommand(
         accountCode: String,
         senderEmail: String = "$accountCode@qftechtalent.com",
