@@ -242,6 +242,7 @@
 
     const FOLLOWUP_BODY_LINES = {
         video: "Just following up on my email below about a brief Zoom call. Would you be available sometime this week or next? We’re happy to work around your time zone.",
+        meetingReminder: "This is a courteous reminder of our scheduled meeting. We would be honored by your participation at the appointed time.",
         cv: "Just following up on my note below. When convenient, could you please send your CV? It will help us identify suitable industry partners.",
         generic: "Just following up on my email below. Please let me know when you have a chance."
     };
@@ -3973,7 +3974,9 @@
         function followupBodyText(item, copy) {
             const line = FOLLOWUP_BODY_LINES[copy];
             if (!line) return "";
-            return `${followupGreeting(item)}\n\n${line}\n\nBest regards,\n${String(item.accountCode || "")}`;
+            const getSenderName = hostFn("mcHostGetSenderName");
+            const senderName = getSenderName ? String(getSenderName(item.accountCode) || "").trim() : "";
+            return `${followupGreeting(item)}\n\n${line}\n\nBest regards,${senderName ? `\n${senderName}` : ""}`;
         }
 
         function followupAnchorNoteText(id) {
@@ -4056,6 +4059,7 @@
                             <p class="followup-help">请选择本次跟进重点；系统不会按专家状态自动选择。</p>
                             <div class="followup-field" role="group" aria-label="跟进文案">
                                 <button class="button" type="button" data-action="mc-select-followup-copy" data-followup-copy="video" aria-pressed="false" disabled>视频会议</button>
+                                <button class="button" type="button" data-action="mc-select-followup-copy" data-followup-copy="meetingReminder" aria-pressed="false" disabled>会议提醒</button>
                                 <button class="button" type="button" data-action="mc-select-followup-copy" data-followup-copy="cv" aria-pressed="false" disabled>索取简历</button>
                                 <button class="button" type="button" data-action="mc-select-followup-copy" data-followup-copy="generic" aria-pressed="false" disabled>通用跟进</button>
                             </div>

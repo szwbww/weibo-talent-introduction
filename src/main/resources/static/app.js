@@ -16445,10 +16445,16 @@ async function mcHostDownloadCalendar(relativePath, filename) {
     }, 1000);
 }
 
+function mcHostGetSenderName(accountCode) {
+    const account = (state.accounts || []).find(item => item.accountCode === accountCode);
+    return String(account && account.senderName || "").trim();
+}
+
 async function loadMailboxAccounts() {
     if (state.mailbox.accountsLoaded) return;
     try {
         const accounts = await api("/api/mail/sender-accounts");
+        state.accounts = accounts;
         const activeAccounts = accounts.filter(a => a.enabled);
         const select = $("#mailboxFilterAccountCode");
         select.innerHTML = '<option value="">全部邮箱账号</option>' + activeAccounts.map(a =>

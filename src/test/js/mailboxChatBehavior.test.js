@@ -3181,6 +3181,7 @@ describe("app.js mcHostMountUnmatchedDetail / mcHostReleaseUnmatchedDetail（lea
 
 describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S-3）", () => {
     const VIDEO_BODY = "Just following up on my email below about a brief Zoom call. Would you be available sometime this week or next? We’re happy to work around your time zone.";
+    const MEETING_REMINDER_BODY = "This is a courteous reminder of our scheduled meeting. We would be honored by your participation at the appointed time.";
     const CV_BODY = "Just following up on my note below. When convenient, could you please send your CV? It will help us identify suitable industry partners.";
     const GENERIC_BODY = "Just following up on my email below. Please let me know when you have a chance.";
 
@@ -3248,10 +3249,16 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
 
     async function bootFollowup(serverOverrides, mountOptions) {
         const conversations = { items: [expertA(), expertB()], total: 2 };
-        return bootChat(
+        const ctx = await bootChat(
             Object.assign({ conversations, messages: followupMessages(), contact: contactA() }, serverOverrides || {}),
             mountOptions
         );
+        ctx.sandbox.state = { accounts: [
+            { accountCode: "acc1", senderName: "Alice Chen", senderDisplayName: "Talent Team" },
+            { accountCode: "acc9", senderName: "Bob Wang" }
+        ] };
+        vm.runInContext(extractFn("mcHostGetSenderName"), ctx.sandbox);
+        return ctx;
     }
 
     function dialogOf(ctx) {
@@ -3398,8 +3405,8 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         assert.strictEqual(dialog.querySelector('[data-role="followup-body"]').value, "");
         assert.deepStrictEqual(
             followupCopyOptions(ctx).map((node) => [node.dataset.followupCopy, node.getAttribute("aria-pressed")]),
-            [["video", "false"], ["cv", "false"], ["generic", "false"]],
-            "三种文案都必须由运营手动选择"
+            [["video", "false"], ["meetingReminder", "false"], ["cv", "false"], ["generic", "false"]],
+            "四种文案都必须由运营手动选择"
         );
         // I-6：引用头 + 块级/换行标签确定性转换后的完整原文
         assert.strictEqual(
@@ -3413,7 +3420,7 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         assert.strictEqual(dialog.querySelector('[data-action="mc-apply-followup"]').disabled, false);
         assert.strictEqual(
             dialog.querySelector('[data-role="followup-body"]').value,
-            `Dear Professor,\n\n${VIDEO_BODY}\n\nBest regards,\nacc1`
+            `Dear Professor,\n\n${VIDEO_BODY}\n\nBest regards,\nAlice Chen`
         );
 
         selectOption(ctx, 4007);
@@ -3431,9 +3438,10 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         assert.strictEqual(dialog.querySelector('[data-action="mc-apply-followup"]').disabled, true);
     });
 
-    it("I-5：人工选择视频、简历、通用文案；不读取专家标签", async () => {
+    it("I-5：四种跟进文案使用发件人名称落款；不读取专家标签", async () => {
         const cases = [
             { copy: "video", line: VIDEO_BODY },
+            { copy: "meetingReminder", line: MEETING_REMINDER_BODY },
             { copy: "cv", line: CV_BODY },
             { copy: "generic", line: GENERIC_BODY }
         ];
@@ -3446,7 +3454,47 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
             selectOption(ctx, 2893);
             selectCopy(ctx, item.copy);
             const body = dialogOf(ctx).querySelector('[data-role="followup-body"]').value;
-            assert.strictEqual(body, `Dear Professor,\n\n${item.line}\n\nBest regards,\nacc1`, `人工文案 ${item.copy}`);
+            assert.strictEqual(body, `Dear Professor,\n\n${item.line}\n\nBest regards,\nAlice Chen`, `人工文案 ${item.copy}`);
+            applyFollowup(ctx);
+            assert.ok(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText.startsWith(`${body}\n\nOn `), "填入草稿保留所选文案和发件人名称");
+        }
+    });
+
+    it("账号接口提供落款名称，选择不同账号引用时使用对应名称", async () => {
+        const ctx = await bootFollowup({ messages: followupMessages({ withOtherAccount: true }) });
+        const accounts = [
+            { accountCode: "acc1", senderName: "  Alice Chen  ", senderDisplayName: "Talent Team", senderEmail: "alice@example.com", enabled: true },
+            { accountCode: "acc9", senderName: "Bob Wang", senderEmail: "bob@example.com", enabled: false }
+        ];
+        const originalApi = ctx.sandbox.api;
+        ctx.sandbox.api = (url, opts) => url === "/api/mail/sender-accounts" ? Promise.resolve(accounts) : originalApi(url, opts);
+        ctx.sandbox.state = { accounts: [], mailbox: { accountsLoaded: false } };
+        ctx.sandbox.$ = (selector) => ctx.doc.querySelector(selector);
+        vm.runInContext(extractFn("loadMailboxAccounts"), ctx.sandbox);
+        await ctx.sandbox.loadMailboxAccounts();
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        openFollowup(ctx);
+        for (const [id, name] of [[2893, "Alice Chen"], [4011, "Bob Wang"]]) {
+            selectOption(ctx, id);
+            selectCopy(ctx, "meetingReminder");
+            assert.ok(dialogOf(ctx).querySelector('[data-role="followup-body"]').value.endsWith(`Best regards,\n${name}`));
+        }
+    });
+
+    it("发件人名称缺失时不把账号代码用作落款", async () => {
+        const ctx = await bootFollowup();
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        openFollowup(ctx);
+        selectOption(ctx, 2893);
+        for (const accounts of [[], [{ accountCode: "acc1", senderName: "   " }]]) {
+            ctx.sandbox.state.accounts = accounts;
+            selectCopy(ctx, "meetingReminder");
+            assert.strictEqual(dialogOf(ctx).querySelector('[data-role="followup-body"]').value,
+                `Dear Professor,\n\n${MEETING_REMINDER_BODY}\n\nBest regards,`);
         }
     });
 
