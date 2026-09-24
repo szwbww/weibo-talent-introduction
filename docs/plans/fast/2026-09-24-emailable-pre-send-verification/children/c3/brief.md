@@ -42,9 +42,24 @@
 
 ## 上游依赖（c1/c2 已交付，直接复用，不要重复实现）
 
-- c1：`batch_email_verification` 表与 `BatchEmailVerificationRepository`（分页/汇总查询契约见 c1 brief 与子计划 01 的 T1）；错误码与 `decision/send_status/tag_status` 取值集合。
-- c2：`BatchSendTaskConfigView.emailVerificationEnabled` 与 Create/Update 命令字段；`toExecutionSnapshot`/`validateSnapshotFields` 的类型守卫。
-- 具体实现签名与行号：读取 c1/c2 的 execution 报告（`children/c1/execution.md`、`children/c2/execution.md`）与工作区代码，不要凭计划行号猜测。
+c1 终态：`LIGHT_PASS_WITH_NOTES`，Code head `0965a037d94e198f6ce8b13900149a09d35683b4`；实现/验证报告见 `children/c1/execution.md`、`children/c1/verify-log.md`。可直接复用的只读接口（`campaign/repository/BatchEmailVerificationRepository.kt`）：
+
+- `readPage(executionId, afterId = 0, limit = 50): BatchEmailVerificationPage`（readOnly 事务内组合分页与全量汇总；`limit` 被 `coerceIn(1, MAX_PAGE_SIZE=100)`）。
+- `BatchEmailVerificationPage(rows: List<BatchEmailVerificationRow>, hasMore: Boolean, aggregate: BatchEmailVerificationAggregate)`。
+- `BatchEmailVerificationRow(id, taskExecutionId, expertDocId, orcidId, expertName, email, decision, providerState, providerReason, errorCode, requestCount, checkedAt, sendStatus, sendReason, tagStatus, tagError, createdAt, updatedAt)`。
+- `BatchEmailVerificationAggregate(total, pending, passed, rejected, serviceError, notSent, sending, sent, sendFailed, sendSkipped, tagNotRequired, tagPending, tagApplied, tagFailed)`（注意字段名是 `serviceError`，不是 `errors`）。
+- 取值集合常量：`BatchEmailVerificationDecision`（PENDING/PASS/SKIP/ERROR）、`BatchEmailVerificationSendStatus`（NOT_SENT/SENDING/SENT/FAILED/SKIPPED）、以及同文件内的 tag_status 常量。
+- `BatchExecutionSnapshot.emailVerificationEnabled: Boolean = false`（c1 落在 `campaign/domain/BatchExecutionModels.kt`）。
+- 错误码：`EMAIL_VERIFY_AUTH_ERROR / EMAIL_VERIFY_NO_CREDITS / EMAIL_VERIFY_RATE_LIMITED / EMAIL_VERIFY_TIMEOUT / EMAIL_VERIFY_INCOMPLETE / EMAIL_VERIFY_BAD_RESPONSE / EMAIL_VERIFY_SERVICE_ERROR`，另有 c1 附加的受控码 `EMAIL_CHANGED`、`EMAIL_VERIFY_AUDIT_FAILED`、`EMAIL_VERIFY_SEND_STATE_CONFLICT`（展示时按受控原因处理，不要当作未知字符串丢弃）。
+
+c2 终态：Code head `1968f01d0d07afda1f0d2de571cf3dc3bf72e776`，报告 `children/c2/execution.md`。配置侧接口实测：
+
+- `BatchSendTaskConfig.kt`：实体 `:40`、View `:74`、Create 命令 `:109` 均为 `emailVerificationEnabled: Boolean = false`；Update 命令 `:138` 为 `Boolean? = null`（缺省/null 保留现值）。
+- `BatchSendTaskConfigService.kt`：`:369` 的 `require(mailType == INTRODUCTION || !emailVerificationEnabled)`；`:109` 的合并语义 `cmd.emailVerificationEnabled ?: existing.emailVerificationEnabled`；`:228` legacy adapter 显式带 existing 值。
+- `BatchExecutionModels.kt:373` 的 `toExecutionSnapshot` 复制该字段；`BatchSendControlService.kt:421` 对直接手动快照做 `INTRODUCTION` 类型守卫（显式 400）。
+- `V139__add_batch_email_verification_enabled.sql`：`ALTER TABLE batch_send_task_config ADD COLUMN email_verification_enabled BOOLEAN NOT NULL DEFAULT FALSE`（不回填 true）。
+
+实施前请直接读工作区代码确认签名与行号，不要凭计划里的行号猜测。
 
 ## 必需命令（fresh 运行，逐条记录 exit code 与计数）
 
