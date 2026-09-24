@@ -41,8 +41,12 @@
 
 ## 上游依赖（c1 已交付，直接复用，不要重复实现）
 
-- `BatchExecutionSnapshot.emailVerificationEnabled: Boolean = false`（`campaign/domain/BatchExecutionModels.kt`）：旧 JSON 缺字段读作 false；本 child 的 `toExecutionSnapshot` 负责从配置实体复制该值。
-- c1 已实现运行期守卫（`ManualInitialOutreachService` 入口的类型/配置校验、密钥检查、验证明细表与仓储、`EMAIL_VERIFICATION_REJECTED` 跳过码）。本 child 只做配置→快照传递与双入口校验，不修改发送引擎。
+c1 终态：`LIGHT_PASS_WITH_NOTES`，Code head `0965a037d94e198f6ce8b13900149a09d35683b4`，证据提交 `55afb93d32b23ebfd34dbc12e0268ba2c702393a`；实现报告 `children/c1/execution.md`、验证报告 `children/c1/verify-log.md`。
+
+- `BatchExecutionSnapshot.emailVerificationEnabled: Boolean = false` 已落在 `src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt`（尾部参数、默认 false，旧 JSON 缺字段读作 false）。本 child 的 `toExecutionSnapshot` 负责从配置实体复制该值；不要重复定义字段。
+- 运行期守卫已在 `ManualInitialOutreachService`（入口类型/配置校验、`EMAILABLE_API_KEY` 检查、验证明细表与仓储、`EMAIL_VERIFICATION_REJECTED` 跳过码、`EMAIL_VERIFY_*` 错误码）。本 child 只做配置→快照传递与双入口校验，不修改发送引擎。
+- c1 新增的受控码（`EMAIL_CHANGED`、`EMAIL_VERIFY_AUDIT_FAILED`、`EMAIL_VERIFY_SEND_STATE_CONFLICT`）属于 c1 已交付语义，c2 不得重命名或复用为配置校验错误。
+- 迁移状态：V138 已被 c1 占用并验证通过；V139 归本 child。
 
 ## 下游接口（c3 依赖，必须精确实现）
 
