@@ -44,7 +44,7 @@ Docker 环境事实：testcontainers 默认 client API 1.32 被 OrbStack 拒绝�
 
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| c1 | docs/plans/2026-09-24/emailable-01-runtime-audit.md | commit:99aa2ed7e9c93cfc5552f47889670fae96816f01 | none | 1 | PENDING | — | — | 0 | — | — | — | 手动快照开关、验证/标签/审计持久化；10 文件 |
+| c1 | docs/plans/2026-09-24/emailable-01-runtime-audit.md | commit:99aa2ed7e9c93cfc5552f47889670fae96816f01 | none | 1 | LIGHT_VERIFYING | f64e9f6e9a1e5220d9267d9cde97127ae456df74 | 0965a037d94e198f6ce8b13900149a09d35683b4 | 0 | — | 0965a037d94e198f6ce8b13900149a09d35683b4 | — | 实现者 C1Impl；10/10 授权文件；定向 178 tests 0 fail，IT 37 tests 0 fail（137→v138）；偏差：新增受控码 EMAIL_CHANGED / EMAIL_VERIFY_AUDIT_FAILED / EMAIL_VERIFY_SEND_STATE_CONFLICT |
 | c2 | docs/plans/2026-09-24/emailable-02-task-config.md | commit:99aa2ed7e9c93cfc5552f47889670fae96816f01 | c1 | 1 | PENDING | — | — | 0 | — | — | — | 配置表一列贯通定时/手动/旧接口；8 文件 |
 | c3 | docs/plans/2026-09-24/emailable-03-console-logs.md | commit:99aa2ed7e9c93cfc5552f47889670fae96816f01 | c1,c2 | 1 | PENDING | — | — | 0 | — | — | — | 两处开关与逐邮箱分页明细；7 文件 |
 
