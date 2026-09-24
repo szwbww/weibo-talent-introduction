@@ -1,0 +1,1 @@
+### mvn targeted (ManualInitialOutreachServiceTest,BatchSendTaskRuntimeIntegrationTest,BatchSendTaskConfigServiceTest,BatchSendControlServiceTest,BatchSendSchedulerTest,BatchSendConfigControllerTest,BatchSendExecutionDetailTest)
