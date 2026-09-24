@@ -45,7 +45,8 @@ class BatchSendConfigControllerTest {
         manualInitialOutreachService = Mockito.mock(ManualInitialOutreachService::class.java),
         taskExecutionService = taskExecutionService,
         progressLogRepository = Mockito.mock(TaskProgressLogRepository::class.java),
-        objectMapper = objectMapper
+        objectMapper = objectMapper,
+        batchEmailVerificationRepository = Mockito.mock(com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRepository::class.java)
     )
 
     private fun introEntity(

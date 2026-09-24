@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260924-account-editor">
-    <link rel="stylesheet" href="expert-materials.css?v=20260924-account-editor">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20260924-account-editor">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20260924-account-editor">
-    <link rel="stylesheet" href="world-clock.css?v=20260924-account-editor">
+    <link rel="stylesheet" href="styles.css?v=20260924-email-verification">
+    <link rel="stylesheet" href="expert-materials.css?v=20260924-email-verification">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20260924-email-verification">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20260924-email-verification">
+    <link rel="stylesheet" href="world-clock.css?v=20260924-email-verification">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1405,6 +1405,17 @@
                         <span>限制发送节奏，避免单次任务占用过多资源</span>
                     </div>
                     <div class="batch-config-editor-grid batch-config-editor-grid-controls">
+                        <div class="batch-config-field batch-gate-field" id="editorFieldEmailVerification">
+                            <span class="batch-config-field-label">发送前验证邮箱（Emailable）</span>
+                            <div class="batch-gate-row">
+                                <label class="batch-task-status-toggle batch-gate-toggle">
+                                    <input type="checkbox" id="batchConfigEditorEmailVerification" aria-describedby="batchConfigEditorEmailVerificationHint">
+                                    <span class="batch-task-status-switch" aria-hidden="true"></span>
+                                    <span class="batch-task-status-label" id="batchConfigEditorEmailVerificationLabel">已关闭</span>
+                                </label>
+                                <span class="batch-gate-hint" id="batchConfigEditorEmailVerificationHint">仅验证通过才发送；未通过跳过并标记邮箱异常。会消耗 Emailable 额度。</span>
+                            </div>
+                        </div>
                         <label class="batch-config-field">
                             <span class="batch-config-field-label">执行轮次（轮）</span>
                             <input type="number" id="batchConfigEditorRoundsPerRun" class="bsc-input" min="1" value="1">
@@ -1643,6 +1654,19 @@
                     <span>仅影响本次执行，不修改原定时任务</span>
                 </div>
                 <div class="batch-config-editor-grid batch-config-editor-grid-controls">
+                    <div class="batch-config-field batch-gate-field" id="manualFieldEmailVerification">
+                        <span class="batch-config-field-label">发送前验证邮箱（Emailable）</span>
+                        <div class="batch-gate-row">
+                            <label class="batch-task-status-toggle batch-gate-toggle">
+                                <input type="checkbox" id="batchManualEmailVerification" aria-describedby="batchManualEmailVerificationHint">
+                                <span class="batch-task-status-switch" aria-hidden="true"></span>
+                                <span class="batch-task-status-label" id="batchManualEmailVerificationLabel">已关闭</span>
+                            </label>
+                            <span class="batch-gate-hint" id="batchManualEmailVerificationHint">仅验证通过才发送；未通过跳过并标记邮箱异常。会消耗 Emailable 额度。仅影响本次执行。</span>
+                        </div>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </div>
                     <label class="batch-config-field" id="manualFieldRoundsPerRun">
                         <span class="batch-config-field-label">执行轮次（轮）</span>
                         <input type="number" id="batchManualRoundsPerRun" class="bsc-input" min="1" value="1">
@@ -1705,6 +1729,22 @@
                 <div class="batch-log-live-hint">取消后将在当前批次结束时停止，已发出的邮件不会撤回。</div>
             </div>
             <div id="batchLogMetrics" class="batch-log-metrics"></div>
+            <section id="batchLogEmailVerification" class="batch-email-verification" aria-labelledby="batchLogEmailVerificationTitle">
+                <h4 id="batchLogEmailVerificationTitle">邮箱验证</h4>
+                <p id="batchLogEmailVerificationNote" class="batch-email-verification-note" aria-live="polite"></p>
+                <div id="batchLogEmailVerificationMetrics" class="batch-log-metrics"></div>
+                <div class="batch-email-verification-table-wrap" id="batchLogEmailVerificationTableWrap" hidden>
+                    <table class="batch-email-verification-table">
+                        <thead><tr><th scope="col">专家 / 邮箱</th><th scope="col">验证结果</th><th scope="col">发送结果</th><th scope="col">标签处理</th></tr></thead>
+                        <tbody id="batchLogEmailVerificationRows"></tbody>
+                    </table>
+                </div>
+                <div id="batchLogEmailVerificationPager" class="batch-email-verification-pager" hidden>
+                    <button id="batchLogEmailVerificationPrev" class="button small secondary" type="button">上一页</button>
+                    <span id="batchLogEmailVerificationPage" class="batch-gate-hint"></span>
+                    <button id="batchLogEmailVerificationNext" class="button small secondary" type="button">下一页</button>
+                </div>
+            </section>
             <div id="batchLogIntegrityWarning" class="batch-log-integrity-warning" hidden></div>
             <div id="batchLogFailureSection">
                 <h4 style="margin:14px 0 6px;font-size:13px;color:var(--error);">失败原因</h4>
@@ -2219,11 +2259,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260924-account-editor"></script>
-<script src="expert-materials.js?v=20260924-account-editor"></script>
-<script src="meeting-confirmation.js?v=20260924-account-editor"></script>
-<script src="mailbox-chat.js?v=20260924-account-editor"></script>
-<script src="app.js?v=20260924-account-editor"></script>
-<script src="world-clock.js?v=20260924-account-editor"></script>
+<script src="trust-reply-workbench.js?v=20260924-email-verification"></script>
+<script src="expert-materials.js?v=20260924-email-verification"></script>
+<script src="meeting-confirmation.js?v=20260924-email-verification"></script>
+<script src="mailbox-chat.js?v=20260924-email-verification"></script>
+<script src="app.js?v=20260924-email-verification"></script>
+<script src="world-clock.js?v=20260924-email-verification"></script>
 </body>
 </html>

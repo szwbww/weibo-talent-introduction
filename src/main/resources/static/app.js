@@ -17392,6 +17392,18 @@ var batchTaskState = {
     logRefreshTimer: null,
     manualSource: null,       // config view object or null
     manualDraft: null,        // current draft values
+    // 03 T3（I-4）：验证明细分页与竞态隔离。游标栈只由本区域读写，
+    // 请求序号在打开/切换执行/翻页/关闭时递增，旧响应一律丢弃。
+    verificationExecutionId: null,
+    verificationExecutionStatus: null,
+    verificationCursorStack: [],
+    verificationAfterId: 0,
+    verificationNextAfterId: null,
+    verificationHasMore: false,
+    verificationRequestSeq: 0,
+    verificationLoading: false,
+    verificationLoaded: false,
+    verificationExpandedIds: [],
     preloadedTemplates: [],
     preloadedProviders: [],
     preloadedTags: [],
@@ -17443,11 +17455,22 @@ function resetBatchTaskState() {
         logRefreshTimer: null,
         manualSource: null,
         manualDraft: null,
+        verificationExecutionId: null,
+        verificationExecutionStatus: null,
+        verificationCursorStack: [],
+        verificationAfterId: 0,
+        verificationNextAfterId: null,
+        verificationHasMore: false,
+        verificationRequestSeq: batchTaskState.verificationRequestSeq,
+        verificationLoading: false,
+        verificationLoaded: false,
+        verificationExpandedIds: [],
         preloadedTemplates: batchTaskState.preloadedTemplates,
         preloadedProviders: batchTaskState.preloadedProviders,
         preloadedTags: batchTaskState.preloadedTags,
         preloadedSenderAccounts: batchTaskState.preloadedSenderAccounts
     };
+    if (typeof resetBatchEmailVerification === "function") resetBatchEmailVerification();
     clearBatchLogRefreshTimer();
     clearTimeout(batchConfigSearchTimer);
     batchConfigSearchTimer = null;
@@ -17577,6 +17600,10 @@ function renderBatchConfigRow(c) {
     // S4b-2：门禁 pill 恒输出一行（三态之一），追加在可见行与 <details> 之后；
     // 不并入 scopeParts，否则「无限制」分支会被 pill 顶掉（V9/W9 回归约束）。
     scopeHtml += '<span class="batch-task-scope-line">' + batchGatePillHtml(c) + '</span>';
+    // 03 T2（S-1）：邮箱验证 pill 追加在门禁 pill 旁，同样恒输出一行（两态：开/关）。
+    scopeHtml += '<span class="batch-task-scope-line">' + (c.emailVerificationEnabled === true
+        ? '<span class="batch-gate-pill">邮箱验证 · 开</span>'
+        : '<span class="batch-gate-pill is-off">邮箱验证 · 关</span>') + '</span>';
 
     var planHtml = cronToDisplayText(c.cron);
     var statusHtml = renderBatchConfigStatusToggle(c);
@@ -17722,6 +17749,11 @@ function showBatchConfigEditor(config) {
     batchTaskState.editorAutoEnabled = config ? Boolean(config.autoEnabled) : false;
     var gateCheckbox = document.getElementById("batchConfigEditorGateFilter");
     if (gateCheckbox) gateCheckbox.checked = Boolean(config && config.gateFilterEnabled);
+    // I-1：编辑从 View 回填，新建默认关闭；材料提醒的禁用/置回由 refreshEmailVerificationState 收口。
+    var emailVerificationCheckbox = document.getElementById("batchConfigEditorEmailVerification");
+    if (emailVerificationCheckbox) {
+        emailVerificationCheckbox.checked = Boolean(config && config.emailVerificationEnabled === true);
+    }
 
     // Cron 回显走白名单反解（I1-1）：只有完全匹配预设格式的表达式才映射到
     // 每小时 / 每天 / 每周一；其余（范围、列表、步长、工作日、月/日限制…）
@@ -17750,6 +17782,7 @@ function showBatchConfigEditor(config) {
     // Fill template selector and provider dropdown
     fillBatchConfigEditorTemplateSelector(config ? config.templateId : null);
     if (typeof refreshBatchGateState === "function") refreshBatchGateState("editor");
+    if (typeof refreshEmailVerificationState === "function") refreshEmailVerificationState("editor");
     setBatchMultiPickerValue("batchConfigEditorEmailDomains", config && Array.isArray(config.emailDomains) ? config.emailDomains : []);
     // I-1：历史/未知 code 原样回显（列表未加载时 chip 以 code 原文显示），不静默清空。
     setBatchMultiPickerValue("batchConfigEditorSenderAccounts", config && Array.isArray(config.senderAccountCodes) ? config.senderAccountCodes : []);
@@ -17790,6 +17823,9 @@ function refreshBatchTemplateSelectors() {
         fillBatchConfigEditorTemplateSelector(editorTemplateId);
         if (batchTaskState.editorMode && typeof refreshBatchGateState === "function") {
             refreshBatchGateState("editor");
+        }
+        if (batchTaskState.editorMode && typeof refreshEmailVerificationState === "function") {
+            refreshEmailVerificationState("editor");
         }
     }
     var manualSelect = document.getElementById("batchManualTemplateId");
@@ -18482,6 +18518,68 @@ async function refreshBatchGateState(kind) {
     scheduleRecipientPreview(kind);
 }
 
+// ── 发送前邮箱验证（Emailable）开关（03 T2 / I-1 / S-1） ────────────────────────────
+// 与门禁开关同构：复用 .batch-gate-field/.batch-gate-row/.batch-gate-toggle/.batch-gate-hint，
+// 不新增 CSS。只有介绍邮件支持；材料提醒在 UI 层禁用并置回 false（后端另有同口径 require）。
+
+var BATCH_EMAIL_VERIFICATION_HINT = {
+    editor: "仅验证通过才发送；未通过跳过并标记邮箱异常。会消耗 Emailable 额度。",
+    manual: "仅验证通过才发送；未通过跳过并标记邮箱异常。会消耗 Emailable 额度。仅影响本次执行。"
+};
+var BATCH_EMAIL_VERIFICATION_UNSUPPORTED_HINT = "仅介绍邮件支持发送前验证";
+
+function emailVerificationFieldId(kind) {
+    return kind === "editor" ? "editorFieldEmailVerification" : "manualFieldEmailVerification";
+}
+
+function emailVerificationToggleId(kind) {
+    return kind === "editor" ? "batchConfigEditorEmailVerification" : "batchManualEmailVerification";
+}
+
+function emailVerificationLabelId(kind) {
+    return kind === "editor" ? "batchConfigEditorEmailVerificationLabel" : "batchManualEmailVerificationLabel";
+}
+
+function emailVerificationHintId(kind) {
+    return kind === "editor" ? "batchConfigEditorEmailVerificationHint" : "batchManualEmailVerificationHint";
+}
+
+function emailVerificationToggleChecked(kind) {
+    var el = document.getElementById(emailVerificationToggleId(kind));
+    return Boolean(el && el.checked);
+}
+
+function updateEmailVerificationToggleLabel(kind) {
+    var label = document.getElementById(emailVerificationLabelId(kind));
+    if (!label) return;
+    label.textContent = emailVerificationToggleChecked(kind) ? "已开启" : "已关闭";
+}
+
+/* 生效规则（I-1）：材料提醒禁用并**显式置回 false**；介绍邮件恢复可操作但不自动开启
+   （只解除禁用，不写 checked，所以「切换回介绍邮件不偷偷开启」）。 */
+function refreshEmailVerificationState(kind) {
+    if (kind !== "editor" && kind !== "manual") return;
+    var field = document.getElementById(emailVerificationFieldId(kind));
+    var checkbox = document.getElementById(emailVerificationToggleId(kind));
+    var hint = document.getElementById(emailVerificationHintId(kind));
+    if (!field || !checkbox || !hint) return;
+    var templateEl = document.getElementById(kind === "editor" ? "batchConfigEditorTemplateId" : "batchManualTemplateId");
+    var rawTemplate = templateEl ? templateEl.value : "";
+    var mailType = resolveBatchTemplateMailType(rawTemplate ? Number(rawTemplate) : null);
+    if (mailType !== "INTRODUCTION") {
+        field.classList.add("is-disabled");
+        checkbox.disabled = true;
+        checkbox.checked = false;
+        hint.textContent = BATCH_EMAIL_VERIFICATION_UNSUPPORTED_HINT;
+        updateEmailVerificationToggleLabel(kind);
+        return;
+    }
+    field.classList.remove("is-disabled");
+    checkbox.disabled = false;
+    hint.textContent = BATCH_EMAIL_VERIFICATION_HINT[kind];
+    updateEmailVerificationToggleLabel(kind);
+}
+
 // ── Recipient-count preview (P-F / 06) ──────────────────────────────────────────────
 // 与执行共用同一入参 BatchExecutionSnapshot（I-2）：后端 countBySnapshot 复用执行路径
 // 的同一套目标计算（I-1），前端此处只负责把面板当前过滤条件组装成该 snapshot。
@@ -18494,6 +18592,8 @@ function buildConfigEditorRecipientSnapshot() {
         var n = Number(rawTemplate);
         if (Number.isFinite(n) && n > 0) templateId = n;
     }
+    // I-1：生效值 = 勾选状态（材料提醒已被 refreshEmailVerificationState 禁用并置回 false）。
+    var emailVerificationEl = document.getElementById("batchConfigEditorEmailVerification");
     return {
         mailType: resolveBatchTemplateMailType(templateId),
         roundSize: Number(val("batchConfigEditorRoundSize")) || 50,
@@ -18511,6 +18611,7 @@ function buildConfigEditorRecipientSnapshot() {
         senderAccountCodes: readBatchMultiPickerValue("batchConfigEditorSenderAccounts"),
         researchDirectionFilter: val("batchConfigEditorResearchDirectionFilter") || "ANY",
         gateFilterEnabled: gateToggleChecked("editor"),
+        emailVerificationEnabled: Boolean(emailVerificationEl && emailVerificationEl.checked),
         templateId: templateId
     };
 }
@@ -18534,6 +18635,8 @@ function buildManualExecutionSnapshot() {
         senderAccountCodes: values.senderAccountCodes,
         researchDirectionFilter: values.researchDirectionFilter || "ANY",
         gateFilterEnabled: values.gateFilterEnabled,
+        // I-1：与预估/执行共用同一完整快照，手动覆盖不回写原配置。
+        emailVerificationEnabled: values.emailVerificationEnabled,
         templateId: values.templateId
     };
 }
@@ -18635,6 +18738,8 @@ async function saveBatchConfigEditor() {
         var n = Number(rawTemplate);
         if (Number.isFinite(n) && n > 0) templateId = n;
     }
+    // I-1：材料提醒时开关已被禁用并置回 false，这里只读勾选状态，不再二次推断类型。
+    var emailVerificationEl = document.getElementById("batchConfigEditorEmailVerification");
 
     var payload = {
         configName: name,
@@ -18655,6 +18760,7 @@ async function saveBatchConfigEditor() {
         senderAccountCodes: readBatchMultiPickerValue("batchConfigEditorSenderAccounts"),
         researchDirectionFilter: val("batchConfigEditorResearchDirectionFilter") || "ANY",
         gateFilterEnabled: gateToggleChecked("editor"),
+        emailVerificationEnabled: Boolean(emailVerificationEl && emailVerificationEl.checked),
         templateId: templateId
     };
 
@@ -18748,6 +18854,7 @@ function deepCloneConfig(c) {
         senderAccountCodes: Array.isArray(c.senderAccountCodes) ? c.senderAccountCodes.slice() : [],
         researchDirectionFilter: c.researchDirectionFilter || "ANY",
         gateFilterEnabled: c.gateFilterEnabled === true,
+        emailVerificationEnabled: c.emailVerificationEnabled === true,
         roundSize: c.roundSize || 50,
         roundsPerRun: c.roundsPerRun || 1,
         perMailIntervalMs: c.perMailIntervalMs || 1000,
@@ -18772,6 +18879,7 @@ function fillManualFormDefaults() {
         senderAccountCodes: [],
         researchDirectionFilter: "ANY",
         gateFilterEnabled: false,
+        emailVerificationEnabled: false,
         roundSize: 50,
         roundsPerRun: 1,
         perMailIntervalMs: 1000,
@@ -18807,8 +18915,12 @@ function fillManualFormFromDraft() {
     var gateCheckbox = document.getElementById("batchManualGateFilter");
     if (gateCheckbox) gateCheckbox.checked = Boolean(d.gateFilterEnabled);
     if (typeof updateGateToggleLabel === "function") updateGateToggleLabel("manual");
+    // I-1：手动草稿回填后由同一处收口材料提醒的禁用/置回 false（选源、还原、清空都走这里）。
+    var emailVerificationCheckbox = document.getElementById("batchManualEmailVerification");
+    if (emailVerificationCheckbox) emailVerificationCheckbox.checked = Boolean(d.emailVerificationEnabled);
 
     fillBatchManualTemplateSelector(d.templateId);
+    if (typeof refreshEmailVerificationState === "function") refreshEmailVerificationState("manual");
 
     computeAndRenderDiffs();
     scheduleRecipientPreview("manual");
@@ -18872,6 +18984,7 @@ function readManualFormValues() {
     var rawTemplateId = val("batchManualTemplateId");
     var templateId = rawTemplateId ? Number(rawTemplateId) : null;
     var gateCheckboxEl = document.getElementById("batchManualGateFilter");
+    var emailVerificationEl = document.getElementById("batchManualEmailVerification");
     return {
         templateId: templateId,
         mailType: resolveBatchTemplateMailType(templateId),
@@ -18885,6 +18998,7 @@ function readManualFormValues() {
         expertTypes: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualExpertTypes") : [],
         senderAccountCodes: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualSenderAccounts") : [],
         gateFilterEnabled: Boolean(gateCheckboxEl && gateCheckboxEl.checked),
+        emailVerificationEnabled: Boolean(emailVerificationEl && emailVerificationEl.checked),
         roundSize: parseNum("batchManualRoundSize"),
         roundsPerRun: parseNum("batchManualRoundsPerRun"),
         perMailIntervalMs: parseNumSec("batchManualPerMailIntervalSec"),
@@ -18906,6 +19020,7 @@ function normalizeManualSnapshot(v) {
         expertTypes: (Array.isArray(v.expertTypes) ? v.expertTypes : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
         senderAccountCodes: (Array.isArray(v.senderAccountCodes) ? v.senderAccountCodes : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
         gateFilterEnabled: Boolean(v.gateFilterEnabled),
+        emailVerificationEnabled: Boolean(v.emailVerificationEnabled),
         roundSize: Number.isFinite(v.roundSize) ? v.roundSize : null,
         roundsPerRun: Number.isFinite(v.roundsPerRun) ? v.roundsPerRun : null,
         perMailIntervalMs: Number.isFinite(v.perMailIntervalMs) ? v.perMailIntervalMs : null,
@@ -18916,6 +19031,7 @@ function normalizeManualSnapshot(v) {
 
 function formatManualDiffValue(key, value) {
     if (key === "gateFilterEnabled") return value ? "开启" : "关闭";
+    if (key === "emailVerificationEnabled") return value ? "开启" : "关闭";
     if (key === "templateId") {
         if (!value) return "系统默认介绍邮件模板";
         var template = supportedBatchComposeTemplates().find(function(item) {
@@ -18968,6 +19084,7 @@ function computeManualDiffs() {
         { key: "expertTypes", label: "研发类型" },
         { key: "senderAccountCodes", label: "发件邮箱" },
         { key: "gateFilterEnabled", label: "邮件模版门禁过滤" },
+        { key: "emailVerificationEnabled", label: "发送前验证邮箱" },
         { key: "roundsPerRun", label: "执行轮次" },
         { key: "roundSize", label: "每轮数量" },
         { key: "perMailIntervalMs", label: "每封间隔" },
@@ -19018,6 +19135,7 @@ function computeAndRenderDiffs() {
         expertTypes: "manualFieldExpertTypes",
         senderAccountCodes: "manualFieldSenderAccounts",
         gateFilterEnabled: "manualFieldGateFilter",
+        emailVerificationEnabled: "manualFieldEmailVerification",
         roundsPerRun: "manualFieldRoundsPerRun",
         roundSize: "manualFieldRoundSize",
         perMailIntervalMs: "manualFieldPerMailIntervalSec",
@@ -19047,7 +19165,7 @@ function computeAndRenderDiffs() {
 
 function clearAllDiffMarkers() {
     var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldRegions", "manualFieldEmailDomain",
-        "manualFieldDiscipline", "manualFieldResearchDirectionFilter", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldSenderAccounts", "manualFieldGateFilter", "manualFieldRoundsPerRun", "manualFieldRoundSize",
+        "manualFieldDiscipline", "manualFieldResearchDirectionFilter", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldSenderAccounts", "manualFieldGateFilter", "manualFieldEmailVerification", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
         var el = document.getElementById(id);
@@ -19070,6 +19188,10 @@ function showBatchManualConfirm() {
     var dialog = document.getElementById("batchManualConfirmDialog");
     if (!title || !body || !dialog) return;
 
+    // I-1：确认页显示本次执行的开关值（同源读取勾选状态，不回写原配置）。
+    var emailVerificationEl = document.getElementById("batchManualEmailVerification");
+    var emailVerificationText = emailVerificationEl && emailVerificationEl.checked ? "开启" : "关闭";
+
     if (source && diffs.length > 0) {
         title.textContent = "确认按修改后的配置执行？";
         var tableRows = diffs.map(function(d) {
@@ -19088,6 +19210,7 @@ function showBatchManualConfirm() {
             '<div class="batch-manual-confirm-summary">' +
             '<strong>' + escapeHtml(source.configName) + '</strong><br>' +
             '轮次: ' + source.roundsPerRun + ' 轮 · 每轮: ' + source.roundSize + ' 封<br>' +
+            '发送前验证邮箱: ' + emailVerificationText + '<br>' +
             '来源配置: ' + escapeHtml(source.configName) +
             '</div>';
     } else {
@@ -19096,6 +19219,7 @@ function showBatchManualConfirm() {
             '<div class="batch-manual-confirm-summary">' +
             '未关联定时配置，本次参数不会保存。<br>' +
             '每轮: ' + escapeHtml(String(document.getElementById("batchManualRoundSize")?.value || "50")) + ' 封<br>' +
+            '发送前验证邮箱: ' + emailVerificationText + '<br>' +
             '</div>' +
             '<p class="batch-manual-confirm-warning">此为独立执行，不关联任何定时配置。</p>';
     }
@@ -19261,6 +19385,7 @@ function openBatchRecentLogs(executionId) {
     var select = document.getElementById("batchLogExecutionSelect");
     if (select) select.hidden = false;
     clearBatchLogRefreshTimer();
+    if (typeof resetBatchEmailVerification === "function") resetBatchEmailVerification();
     loadBatchGlobalExecutions(executionId);
 }
 
@@ -19305,6 +19430,7 @@ function openBatchConfigLogs(configId, executionId) {
     var select = document.getElementById("batchLogExecutionSelect");
     if (select) select.hidden = false;
     clearBatchLogRefreshTimer();
+    if (typeof resetBatchEmailVerification === "function") resetBatchEmailVerification();
     loadBatchLogExecutions(configId, executionId);
 }
 
@@ -19320,6 +19446,7 @@ function closeBatchLogDrawer() {
     var drawer = document.getElementById("batchExecutionLogDrawer");
     if (drawer) drawer.hidden = true;
     clearBatchLogRefreshTimer();
+    if (typeof resetBatchEmailVerification === "function") resetBatchEmailVerification();
     batchTaskState.logConfigId = null;
     batchTaskState.logExecutionId = null;
     batchTaskState.logMode = null;
@@ -19393,6 +19520,10 @@ async function loadBatchLogDetail(configId, executionId) {
         var detail = await api(url);
         if (batchTaskState.logConfigId !== configId || batchTaskState.logExecutionId !== executionId) return;
         renderBatchExecutionDetail(detail);
+        // I-4：验证明细复用同一轮询节奏，只刷新当前页（不重置游标/展开行）。
+        if (typeof loadBatchEmailVerification === "function") {
+            loadBatchEmailVerification(configId, executionId, detail.status, { poll: true });
+        }
         if (detail.status === "RUNNING" || detail.live != null) {
             clearBatchLogRefreshTimer();
             batchTaskState.logRefreshTimer = setInterval(function() {
@@ -19549,6 +19680,7 @@ function renderLogStatusInfo(d) {
 function clearBatchLogDisplay() {
     var metrics = document.getElementById("batchLogMetrics");
     if (metrics) metrics.innerHTML = '<span class="muted">暂无执行记录</span>';
+    if (typeof resetBatchEmailVerification === "function") resetBatchEmailVerification();
     var failureReasons = document.getElementById("batchLogFailureReasons");
     if (failureReasons) failureReasons.innerHTML = '';
     var skippedReasons = document.getElementById("batchLogSkippedReasons");
@@ -19568,6 +19700,348 @@ function clearBatchLogDisplay() {
     if (skippedSection) skippedSection.hidden = false;
     var errorSamplesSection = document.getElementById("batchLogErrorSamples");
     if (errorSamplesSection) errorSamplesSection.hidden = false;
+}
+
+// ── 邮箱验证明细区（03 T3 / I-2 / I-3 / I-4 / S-2） ──────────────────────────────────
+// 只读展示：GET 一次读一页明细 + 整次汇总；不改原日志 DTO、折叠时间线与六个指标。
+// 分页游标、请求序号与展开行都挂在本区域自己的状态上，轮询只刷新当前页。
+
+var BATCH_EMAIL_VERIFICATION_PAGE_SIZE = 50;
+var BATCH_EMAIL_VERIFICATION_NOTE = "仅列出已进入邮箱验证的明细；预筛选跳过见原跳过原因。服务异常会停止本次执行。";
+
+/* 受控码 → 中文解释（其余一律原样展示，不猜含义）。来源：
+   BatchEmailVerificationErrorCodes / BatchOutcomeReasonCodes / appendEmailAbnormalTag。 */
+var BATCH_EMAIL_VERIFICATION_ERROR_LABELS = {
+    EMAIL_VERIFY_AUTH_ERROR: "验证服务鉴权失败",
+    EMAIL_VERIFY_NO_CREDITS: "验证服务额度不足",
+    EMAIL_VERIFY_RATE_LIMITED: "验证服务限流",
+    EMAIL_VERIFY_TIMEOUT: "验证服务超时",
+    EMAIL_VERIFY_INCOMPLETE: "验证服务未返回结果",
+    EMAIL_VERIFY_BAD_RESPONSE: "验证服务返回非法响应",
+    EMAIL_VERIFY_SERVICE_ERROR: "验证服务故障"
+};
+var BATCH_EMAIL_VERIFICATION_SEND_REASON_LABELS = {
+    EMAIL_VERIFICATION_REJECTED: "验证未通过，未发送",
+    SEND_EXCEPTION: "发送异常",
+    TEMPLATE_RENDER_FAILED: "模板渲染失败",
+    PERSONALIZATION_INCOMPLETE: "个性化字段缺失",
+    ACCOUNT_UNAVAILABLE: "邮箱账号不可用",
+    DEDUP: "重复目标已跳过",
+    CANCELLED: "执行已取消",
+    SUPPRESSED: "退订/抑制",
+    DAILY_CAP_EXCEEDED: "超日限额",
+    EMAIL_CHANGED: "验证后收件地址发生变化"
+};
+var BATCH_EMAIL_VERIFICATION_TAG_ERROR_LABELS = {
+    MISSING_DOC_ID: "缺少专家文档 ID",
+    NO_MATCHING_DOC: "未匹配到专家文档",
+    ES_READ_FAILED: "读取专家文档失败",
+    ES_WRITE_FAILED: "写入标签失败"
+};
+
+function emailVerificationDecisionText(row, running) {
+    if (row.decision === "PASS") return "通过";
+    if (row.decision === "SKIP") return "未通过";
+    if (row.decision === "ERROR") return "验证服务异常";
+    if (row.decision === "PENDING") return running ? "验证中" : "验证未完成";
+    return String(row.decision || "—");
+}
+
+function emailVerificationDecisionBadgeClass(row) {
+    if (row.decision === "PASS") return "ok";
+    if (row.decision === "SKIP") return "warn";
+    if (row.decision === "ERROR") return "error";
+    return "info";
+}
+
+/* 验证原因：ERROR 走受控错误码解释；其余保留 provider 原 state/reason，未知值原样展示。 */
+function emailVerificationReasonText(row) {
+    var provider = [row.providerState, row.providerReason]
+        .filter(function(v) { return v != null && String(v) !== ""; })
+        .map(String)
+        .join(" / ");
+    if (row.decision === "ERROR") {
+        var code = row.errorCode ? String(row.errorCode) : "";
+        var label = code ? BATCH_EMAIL_VERIFICATION_ERROR_LABELS[code] : "";
+        var codeText = label ? label + "（" + code + "）" : (code || "验证服务异常");
+        return provider ? codeText + "；供应商： " + provider : codeText;
+    }
+    return provider || "—";
+}
+
+function emailVerificationSendReasonText(raw) {
+    var code = String(raw || "");
+    var label = BATCH_EMAIL_VERIFICATION_SEND_REASON_LABELS[code];
+    return label ? label + "（" + code + "）" : code;
+}
+
+/* PASS≠发送成功：发送结果只由 send_status 决定；SENDING 在执行终态时是「结果未确认」。 */
+function emailVerificationSendText(row, running) {
+    var reason = row.sendReason ? emailVerificationSendReasonText(row.sendReason) : "";
+    var suffix = reason ? "（" + reason + "）" : "";
+    if (row.sendStatus === "SENT") return "已发送";
+    if (row.sendStatus === "FAILED") return "发送失败" + suffix;
+    if (row.sendStatus === "SKIPPED") return "已跳过" + suffix;
+    if (row.sendStatus === "SENDING") return running ? "发送中" : "结果未确认";
+    if (row.sendStatus === "NOT_SENT") return "未发送" + suffix;
+    return String(row.sendStatus || "—") + suffix;
+}
+
+function emailVerificationTagErrorText(raw) {
+    var text = String(raw || "");
+    var colon = text.indexOf(":");
+    var label = BATCH_EMAIL_VERIFICATION_TAG_ERROR_LABELS[colon >= 0 ? text.slice(0, colon) : text];
+    return label ? label + "（" + text + "）" : text;
+}
+
+function emailVerificationTagText(row, running) {
+    var status = String(row.tagStatus || "");
+    if (status === "APPLIED") return "已标记邮箱异常";
+    if (status === "FAILED") {
+        var detail = row.tagError ? emailVerificationTagErrorText(row.tagError) : "";
+        return "标签写入失败" + (detail ? "（" + detail + "）" : "");
+    }
+    if (status === "PENDING") return running ? "待写入" : "标签未完成";
+    if (status === "NOT_REQUIRED") return "无需处理";
+    return status || "—";
+}
+
+function emailVerificationIsRunning() {
+    var status = batchTaskState.verificationExecutionStatus;
+    return status === "RUNNING" || status === "CANCELLING";
+}
+
+function batchEmailVerificationRowHtml(row) {
+    var running = emailVerificationIsRunning();
+    var expanded = Array.isArray(batchTaskState.verificationExpandedIds)
+        && batchTaskState.verificationExpandedIds.indexOf(String(row.id)) >= 0;
+    var tagText = emailVerificationTagText(row, running);
+    var tagHtml = row.tagStatus === "FAILED"
+        ? '<span class="badge error">' + escapeHtml(tagText) + '</span>'
+        : escapeHtml(tagText);
+    return '<tr>' +
+        '<td><strong>' + escapeHtml(row.expertName || "—") + '</strong><br>' + escapeHtml(row.email || "—") + '</td>' +
+        '<td><span class="badge ' + emailVerificationDecisionBadgeClass(row) + '">' +
+            escapeHtml(emailVerificationDecisionText(row, running)) + '</span>' +
+            '<details data-verification-id="' + escapeHtml(String(row.id)) + '"' + (expanded ? ' open' : '') + '>' +
+            '<summary>验证详情</summary>' +
+            '<div>原因：' + escapeHtml(emailVerificationReasonText(row)) + '</div>' +
+            '<div>验证时间：' + escapeHtml(formatDateTime(row.checkedAt)) + '</div>' +
+            '<div>请求次数：' + escapeHtml(String(row.requestCount == null ? 0 : row.requestCount)) + '</div>' +
+            '</details></td>' +
+        '<td>' + escapeHtml(emailVerificationSendText(row, running)) + '</td>' +
+        '<td>' + tagHtml + '</td>' +
+        '</tr>';
+}
+
+function batchEmailVerificationMetricsHtml(summary) {
+    var cells = [
+        { label: "验证通过", value: summary.passed, cls: "is-success" },
+        { label: "未通过", value: summary.rejected, cls: "is-skipped" },
+        { label: "服务异常", value: summary.errors, cls: "is-failure" }
+    ];
+    return cells.map(function(cell) {
+        return '<div class="batch-log-metric ' + cell.cls + '">' +
+            '<div class="batch-log-metric-label">' + escapeHtml(cell.label) + '</div>' +
+            '<div class="batch-log-metric-value">' + escapeHtml(String(Number(cell.value || 0))) + '</div>' +
+            '</div>';
+    }).join("");
+}
+
+/* note 四类：关闭 / 尚未进入 / 正常分页说明 / 加载失败（is-error，见 renderBatchEmailVerificationFailure）。 */
+function batchEmailVerificationNoteText(payload, running) {
+    if (!payload || payload.enabled !== true) return "未启用邮箱验证";
+    var summary = payload.summary || {};
+    if (Number(summary.total || 0) === 0) return "尚未进入邮箱验证";
+    var text = BATCH_EMAIL_VERIFICATION_NOTE;
+    var pending = Number(summary.pending || 0);
+    if (pending > 0) {
+        text += running
+            ? "当前有 " + pending + " 条仍在验证中。"
+            : "当前有 " + pending + " 条到执行结束时仍未完成验证。";
+    }
+    return text;
+}
+
+function setBatchEmailVerificationPagerLoading(loading) {
+    var s = batchTaskState;
+    var stack = Array.isArray(s.verificationCursorStack) ? s.verificationCursorStack : [];
+    var prevBtn = document.getElementById("batchLogEmailVerificationPrev");
+    var nextBtn = document.getElementById("batchLogEmailVerificationNext");
+    if (prevBtn) prevBtn.disabled = Boolean(loading) || stack.length === 0;
+    if (nextBtn) nextBtn.disabled = Boolean(loading) || s.verificationHasMore !== true;
+}
+
+function clearBatchEmailVerificationDisplay() {
+    var note = document.getElementById("batchLogEmailVerificationNote");
+    if (note) {
+        note.textContent = "";
+        note.classList.remove("is-error");
+    }
+    var metrics = document.getElementById("batchLogEmailVerificationMetrics");
+    if (metrics) metrics.innerHTML = "";
+    var tbody = document.getElementById("batchLogEmailVerificationRows");
+    if (tbody) tbody.innerHTML = "";
+    var tableWrap = document.getElementById("batchLogEmailVerificationTableWrap");
+    if (tableWrap) tableWrap.hidden = true;
+    var pager = document.getElementById("batchLogEmailVerificationPager");
+    if (pager) pager.hidden = true;
+    var pageInfo = document.getElementById("batchLogEmailVerificationPage");
+    if (pageInfo) pageInfo.textContent = "";
+    batchTaskState.verificationHasMore = false;
+    batchTaskState.verificationNextAfterId = null;
+    setBatchEmailVerificationPagerLoading(false);
+}
+
+/* 打开/切换执行/关闭：递增请求序号使在途响应全部作废，并清空游标与展开行。 */
+function resetBatchEmailVerification() {
+    var s = batchTaskState;
+    s.verificationRequestSeq = (Number(s.verificationRequestSeq) || 0) + 1;
+    s.verificationExecutionId = null;
+    s.verificationExecutionStatus = null;
+    s.verificationCursorStack = [];
+    s.verificationAfterId = 0;
+    s.verificationLoaded = false;
+    s.verificationExpandedIds = [];
+    s.verificationLoading = false;
+    clearBatchEmailVerificationDisplay();
+}
+
+function renderBatchEmailVerification(payload, executionStatus) {
+    var s = batchTaskState;
+    if (typeof executionStatus === "string" && executionStatus) s.verificationExecutionStatus = executionStatus;
+    var running = emailVerificationIsRunning();
+    var note = document.getElementById("batchLogEmailVerificationNote");
+    var metricsEl = document.getElementById("batchLogEmailVerificationMetrics");
+    var tbody = document.getElementById("batchLogEmailVerificationRows");
+    var tableWrap = document.getElementById("batchLogEmailVerificationTableWrap");
+    var pager = document.getElementById("batchLogEmailVerificationPager");
+    var pageInfo = document.getElementById("batchLogEmailVerificationPage");
+    var enabled = Boolean(payload && payload.enabled === true);
+    var summary = (payload && payload.summary) || {};
+    var items = payload && Array.isArray(payload.items) ? payload.items : [];
+    s.verificationLoaded = true;
+    s.verificationHasMore = Boolean(payload && payload.hasMore === true);
+    s.verificationNextAfterId = s.verificationHasMore && payload.nextAfterId != null ? payload.nextAfterId : null;
+
+    if (note) {
+        note.classList.remove("is-error");
+        note.textContent = batchEmailVerificationNoteText(payload, running);
+    }
+    if (metricsEl) {
+        metricsEl.innerHTML = enabled && Number(summary.total || 0) > 0
+            ? batchEmailVerificationMetricsHtml(summary)
+            : "";
+    }
+    if (tbody) tbody.innerHTML = items.map(batchEmailVerificationRowHtml).join("");
+    if (tableWrap) tableWrap.hidden = items.length === 0;
+    var stack = Array.isArray(s.verificationCursorStack) ? s.verificationCursorStack : [];
+    if (pager) pager.hidden = !enabled || (items.length === 0 && stack.length === 0 && !s.verificationHasMore);
+    if (pageInfo) pageInfo.textContent = "第 " + (stack.length + 1) + " 页 · 本页 " + items.length + " 条";
+    setBatchEmailVerificationPagerLoading(false);
+}
+
+/* 首次失败不展示任何计数（未渲染过成功结果时只留提示）；已加载过则保留旧数据并醒目提示可能过期。 */
+function renderBatchEmailVerificationFailure(error) {
+    var note = document.getElementById("batchLogEmailVerificationNote");
+    if (!note) return;
+    var message = error && error.message ? String(error.message) : "请求失败";
+    note.classList.add("is-error");
+    note.textContent = batchTaskState.verificationLoaded
+        ? "验证明细加载失败，以下内容可能是上一次结果：" + message
+        : "验证明细加载失败：" + message;
+}
+
+/**
+ * 读取一页验证明细（I-4）：
+ * - 切换执行时重置游标、展开行与已加载标记；同一执行内保留当前页与展开行。
+ * - 每次请求递增序号，旧响应（过期执行/过期页）一律丢弃。
+ * - `poll: true`（既有 1500/3000ms 轮询）在同一页请求未完成时不重复发起。
+ */
+async function loadBatchEmailVerification(configId, executionId, executionStatus, options) {
+    var s = batchTaskState;
+    var opts = options || {};
+    if (!executionId) return;
+    if (s.logExecutionId !== executionId) return;
+    if (opts.poll === true && s.verificationLoading === true) return;
+    if (s.verificationExecutionId !== executionId) {
+        s.verificationExecutionId = executionId;
+        s.verificationCursorStack = [];
+        s.verificationAfterId = 0;
+        s.verificationExpandedIds = [];
+        s.verificationLoaded = false;
+        clearBatchEmailVerificationDisplay();
+    }
+    if (typeof executionStatus === "string" && executionStatus) s.verificationExecutionStatus = executionStatus;
+    var afterId = Number(s.verificationAfterId) || 0;
+    var seq = ++s.verificationRequestSeq;
+    s.verificationLoading = true;
+    setBatchEmailVerificationPagerLoading(true);
+    var url = "/api/mail/batch-send/executions/" + encodeURIComponent(String(executionId)) + "/email-verifications" +
+        "?afterId=" + afterId + "&limit=" + BATCH_EMAIL_VERIFICATION_PAGE_SIZE +
+        (configId == null ? "" : "&configId=" + encodeURIComponent(String(configId)));
+    try {
+        var payload = await api(url);
+        if (seq !== s.verificationRequestSeq) return;
+        if (s.logExecutionId !== executionId) return;
+        s.verificationLoading = false;
+        renderBatchEmailVerification(payload, executionStatus);
+    } catch (error) {
+        if (seq !== s.verificationRequestSeq) return;
+        if (s.logExecutionId !== executionId) return;
+        s.verificationLoading = false;
+        console.error("Failed to load email verification detail", error);
+        renderBatchEmailVerificationFailure(error);
+    } finally {
+        if (seq === s.verificationRequestSeq) setBatchEmailVerificationPagerLoading(false);
+    }
+}
+
+function batchEmailVerificationNextPage() {
+    var s = batchTaskState;
+    if (s.verificationLoading === true || s.verificationNextAfterId == null) return;
+    s.verificationCursorStack = Array.isArray(s.verificationCursorStack) ? s.verificationCursorStack : [];
+    s.verificationCursorStack.push(Number(s.verificationAfterId) || 0);
+    s.verificationAfterId = s.verificationNextAfterId;
+    loadBatchEmailVerification(s.logConfigId, s.logExecutionId, s.verificationExecutionStatus);
+}
+
+function batchEmailVerificationPrevPage() {
+    var s = batchTaskState;
+    if (s.verificationLoading === true) return;
+    var stack = Array.isArray(s.verificationCursorStack) ? s.verificationCursorStack : [];
+    if (stack.length === 0) return;
+    s.verificationAfterId = stack.pop();
+    loadBatchEmailVerification(s.logConfigId, s.logExecutionId, s.verificationExecutionStatus);
+}
+
+/* 轮询重渲染会重建 tbody，展开行必须记在状态里（按 id），而不是靠 DOM 保留。 */
+function batchEmailVerificationTrackExpanded(id, open) {
+    var s = batchTaskState;
+    var list = Array.isArray(s.verificationExpandedIds) ? s.verificationExpandedIds.slice() : [];
+    var key = String(id);
+    var index = list.indexOf(key);
+    if (open && index < 0) list.push(key);
+    if (!open && index >= 0) list.splice(index, 1);
+    s.verificationExpandedIds = list;
+}
+
+function bindBatchEmailVerificationEvents() {
+    var prevBtn = document.getElementById("batchLogEmailVerificationPrev");
+    if (prevBtn) prevBtn.addEventListener("click", batchEmailVerificationPrevPage);
+    var nextBtn = document.getElementById("batchLogEmailVerificationNext");
+    if (nextBtn) nextBtn.addEventListener("click", batchEmailVerificationNextPage);
+    var tbody = document.getElementById("batchLogEmailVerificationRows");
+    if (tbody) {
+        // <details> 的 toggle 不冒泡，用捕获阶段登记展开行。
+        tbody.addEventListener("toggle", function(event) {
+            var target = event.target;
+            if (!target || target.tagName !== "DETAILS") return;
+            var id = target.getAttribute("data-verification-id");
+            if (id == null) return;
+            batchEmailVerificationTrackExpanded(id, Boolean(target.open));
+        }, true);
+    }
 }
 
 function renderBatchTimeline(rows) {
@@ -19709,13 +20183,24 @@ function bindBatchSendTaskEvents() {
     // P4b 门禁过滤（IP-1 / IP-2）：模板下拉变化 → 重新解析三态（内部以 scheduleRecipientPreview 收尾）；
     // 开关变化 → 同步 label + 重新预估。
     var editorGateTemplate = document.getElementById("batchConfigEditorTemplateId");
-    if (editorGateTemplate) editorGateTemplate.addEventListener("change", function() { refreshBatchGateState("editor"); });
+    if (editorGateTemplate) editorGateTemplate.addEventListener("change", function() {
+        refreshBatchGateState("editor");
+        if (typeof refreshEmailVerificationState === "function") refreshEmailVerificationState("editor");
+    });
     var manualGateTemplate = document.getElementById("batchManualTemplateId");
-    if (manualGateTemplate) manualGateTemplate.addEventListener("change", function() { refreshBatchGateState("manual"); });
+    if (manualGateTemplate) manualGateTemplate.addEventListener("change", function() {
+        refreshBatchGateState("manual");
+        if (typeof refreshEmailVerificationState === "function") refreshEmailVerificationState("manual");
+    });
     var editorGateToggle = document.getElementById("batchConfigEditorGateFilter");
     if (editorGateToggle) editorGateToggle.addEventListener("change", function() { updateGateToggleLabel("editor"); scheduleRecipientPreview("editor"); });
     var manualGateToggle = document.getElementById("batchManualGateFilter");
     if (manualGateToggle) manualGateToggle.addEventListener("change", function() { updateGateToggleLabel("manual"); scheduleRecipientPreview("manual"); });
+    // 03 T2：开关 label 同步（手动面板的差异标记由既有 input/change 监听负责）。
+    var editorEmailVerificationToggle = document.getElementById("batchConfigEditorEmailVerification");
+    if (editorEmailVerificationToggle) editorEmailVerificationToggle.addEventListener("change", function() { updateEmailVerificationToggleLabel("editor"); });
+    var manualEmailVerificationToggle = document.getElementById("batchManualEmailVerification");
+    if (manualEmailVerificationToggle) manualEmailVerificationToggle.addEventListener("change", function() { updateEmailVerificationToggleLabel("manual"); });
 
     // Manual source search — autocomplete
     var sourceQuery = document.getElementById("batchManualSourceQuery");
@@ -19771,6 +20256,8 @@ function bindBatchSendTaskEvents() {
 
     var liveCancelBtn = document.getElementById("batchLogLiveCancelBtn");
     if (liveCancelBtn) liveCancelBtn.addEventListener("click", handleBatchLiveCancel);
+
+    if (typeof bindBatchEmailVerificationEvents === "function") bindBatchEmailVerificationEvents();
 
     var logExecSelect = document.getElementById("batchLogExecutionSelect");
     if (logExecSelect) {
