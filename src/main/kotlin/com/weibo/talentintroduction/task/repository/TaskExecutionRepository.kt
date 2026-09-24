@@ -112,10 +112,62 @@ interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
         SET success_count = :successCount,
             failure_count = :failureCount,
             updated_at = :updatedAt
-        WHERE id = :id
+        WHERE id = :id AND status IN ('RUNNING', 'CANCELLING')
         """
     )
     fun updateProgressCounts(id: Long, successCount: Int, failureCount: Int, updatedAt: LocalDateTime): Int
+
+    @Modifying
+    @Query("""
+        UPDATE task_execution SET heartbeat_at = :now, updated_at = :now
+        WHERE owner_token = :ownerToken AND status IN ('RUNNING', 'CANCELLING')
+    """)
+    fun heartbeatOwned(ownerToken: String, now: LocalDateTime): Int
+
+    @Modifying
+    @Query("""
+        UPDATE task_execution
+        SET status = 'INTERRUPTED', finished_at = :now, updated_at = :now,
+            interruption_reason_code = 'EXECUTION_LOST',
+            error_message = '执行进程失联或服务重启；实际业务结果待核查'
+        WHERE status IN ('RUNNING', 'CANCELLING')
+          AND COALESCE(heartbeat_at, started_at) < :cutoff
+        ORDER BY started_at LIMIT 500
+    """)
+    fun interruptExpired(cutoff: LocalDateTime, now: LocalDateTime): Int
+
+    @Modifying
+    @Query("""
+        UPDATE task_execution
+        SET status = :status, result_summary = :resultSummary,
+            success_count = :successCount, failure_count = :failureCount,
+            error_message = :errorMessage, finished_at = :finishedAt, updated_at = :finishedAt
+        WHERE id = :id AND owner_token = :ownerToken
+          AND status IN ('RUNNING', 'CANCELLING')
+    """)
+    fun finishOwned(
+        id: Long, ownerToken: String, status: String, resultSummary: String?,
+        successCount: Int, failureCount: Int, errorMessage: String?, finishedAt: LocalDateTime
+    ): Int
+
+    @Modifying
+    @Query("""
+        UPDATE task_execution
+        SET status = 'INTERRUPTED', finished_at = COALESCE(finished_at, :now), updated_at = :now,
+            interruption_reason_code = :reasonCode,
+            interruption_reason_detail = :detail,
+            handled_by = :handledBy, handled_at = :now,
+            error_message = :message
+        WHERE id = :id AND (
+            (status IN ('RUNNING', 'CANCELLING')
+             AND COALESCE(heartbeat_at, started_at) < :cutoff)
+            OR (status = 'INTERRUPTED' AND handled_at IS NULL)
+          )
+    """)
+    fun interruptManually(
+        id: Long, reasonCode: String, detail: String?, handledBy: String,
+        message: String, cutoff: LocalDateTime, now: LocalDateTime
+    ): Int
 
     /**
      * B5 保留清理（I3-3）：按 `started_at` 删（该列有 idx_te_started，created_at 无索引）。

@@ -3,12 +3,14 @@ package com.weibo.talentintroduction.task.service
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.domain.TaskInterruptionReasons
 import com.weibo.talentintroduction.task.repository.TaskExecutionListItem
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.util.UUID
 
 @Service
 class TaskExecutionService(
@@ -16,6 +18,39 @@ class TaskExecutionService(
     private val objectMapper: ObjectMapper,
     private val schedulingProperties: MailSchedulingProperties
 ) {
+    private val ownerToken = UUID.randomUUID().toString()
+
+    /** 心跳与恢复共用五分钟租约；历史无 owner 的运行行按开始时间判断。 */
+    fun reconcileInterruptedExecutions(): Int {
+        val now = LocalDateTime.now()
+        repository.heartbeatOwned(ownerToken, now)
+        return repository.interruptExpired(now.minusMinutes(5), now)
+    }
+
+    fun interruptManually(id: Long, reasonCode: String, detail: String?, handledBy: String): TaskExecution {
+        val label = TaskInterruptionReasons.label(reasonCode)
+            ?: throw IllegalArgumentException("未知异常处理原因")
+        val note = detail?.trim()?.takeIf { it.isNotEmpty() }
+        require(note == null || note.length <= 1000) { "补充说明最多1000字" }
+        require(reasonCode != "OTHER" || note != null) { "其他原因必须填写说明" }
+        require(handledBy.isNotBlank()) { "操作人不能为空" }
+        val now = LocalDateTime.now()
+        val message = "人工标记已中断：$label" + (note?.let { "；$it" } ?: "")
+        val changed = repository.interruptManually(
+            id, reasonCode, note, handledBy, message, now.minusMinutes(5), now
+        )
+        if (changed == 0) {
+            val current = repository.findById(id).orElseThrow {
+                NoSuchElementException("任务记录不存在：$id")
+            }
+            throw IllegalStateException(if (current.status in setOf("RUNNING", "CANCELLING")) {
+                "任务仍有近期心跳，请先确认执行进程已停止；失联超过5分钟后可人工处理"
+            } else {
+                "任务已有终态：${current.status}"
+            })
+        }
+        return repository.findById(id).orElseThrow { NoSuchElementException("任务记录不存在：$id") }
+    }
     fun listExecutions(taskType: String?, status: String?, page: Int, size: Int): TaskExecutionPage {
         val offset = page.toLong() * size
         return when {
@@ -119,13 +154,14 @@ class TaskExecutionService(
                 startedAt = startedAt,
                 createdAt = startedAt,
                 updatedAt = startedAt,
-                batchConfigId = batchConfigId
+                batchConfigId = batchConfigId,
+                ownerToken = ownerToken,
+                heartbeatAt = startedAt
             )
         )
 
-        onStarted?.invoke(running.id!!)
-
         return try {
+            onStarted?.invoke(running.id!!)
             val result = block()
             val resultValue: Any? = result ?: Unit
             val (successCount, failureCount, status) = when (resultValue) {
@@ -151,7 +187,7 @@ class TaskExecutionService(
                 }
             }
             val finishedAt = LocalDateTime.now()
-            val saved = repository.save(
+            val saved = finishOwned(
                 running.copy(
                     status = status,
                     resultSummary = toJson(resultValue),
@@ -165,7 +201,7 @@ class TaskExecutionService(
             Pair(saved, result)
         } catch (ex: Exception) {
             val finishedAt = LocalDateTime.now()
-            repository.save(
+            finishOwned(
                 running.copy(
                     status = "FAILED",
                     failureCount = 1,
@@ -197,13 +233,14 @@ class TaskExecutionService(
                 startedAt = startedAt,
                 createdAt = startedAt,
                 updatedAt = startedAt,
-                batchConfigId = batchConfigId
+                batchConfigId = batchConfigId,
+                ownerToken = ownerToken,
+                heartbeatAt = startedAt
             )
         )
 
-        onStarted?.invoke(running.id!!)
-
         return try {
+            onStarted?.invoke(running.id!!)
             val result = block()
             val resultValue: Any? = result
             val (successCount, failureCount, status) = when (resultValue) {
@@ -229,7 +266,7 @@ class TaskExecutionService(
                 }
             }
             val finishedAt = LocalDateTime.now()
-            repository.save(
+            finishOwned(
                 running.copy(
                     status = status,
                     resultSummary = toJson(resultValue),
@@ -241,7 +278,7 @@ class TaskExecutionService(
             )
         } catch (ex: Exception) {
             val finishedAt = LocalDateTime.now()
-            repository.save(
+            finishOwned(
                 running.copy(
                     status = "FAILED",
                     failureCount = 1,
@@ -251,6 +288,17 @@ class TaskExecutionService(
                 )
             )
         }
+    }
+
+    private fun finishOwned(next: TaskExecution): TaskExecution {
+        val id = requireNotNull(next.id)
+        val changed = repository.finishOwned(
+            id, ownerToken, next.status, next.resultSummary,
+            next.successCount, next.failureCount, next.errorMessage,
+            requireNotNull(next.finishedAt)
+        )
+        // 租约恢复或人工中断已抢先写入终态时，不能再用旧快照覆盖它。
+        return if (changed == 1) next else repository.findById(id).orElse(next)
     }
 
     private fun toJson(value: Any?): String =

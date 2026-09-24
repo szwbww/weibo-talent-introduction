@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260923-discovery-traffic-v2">
-    <link rel="stylesheet" href="expert-materials.css?v=20260923-discovery-traffic-v2">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20260923-discovery-traffic-v2">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20260923-discovery-traffic-v2">
-    <link rel="stylesheet" href="world-clock.css?v=20260923-discovery-traffic-v2">
+    <link rel="stylesheet" href="styles.css?v=20260924-task-interruption-recovery">
+    <link rel="stylesheet" href="expert-materials.css?v=20260924-task-interruption-recovery">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20260924-task-interruption-recovery">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20260924-task-interruption-recovery">
+    <link rel="stylesheet" href="world-clock.css?v=20260924-task-interruption-recovery">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1023,6 +1023,21 @@
                     <button type="button" id="taskActiveLoadLogs" class="task-center-link" hidden>加载批次日志</button>
                     <button type="button" id="taskActiveOpenControl" class="button small secondary" hidden>打开任务控制</button>
                 </div>
+                <div id="taskActiveInterruptPanel" class="task-center-interrupt" hidden>
+                    <label for="taskActiveInterruptReason">人工异常处理：运行记录须失联超过 5 分钟；已中断记录可补充一次原因</label>
+                    <select id="taskActiveInterruptReason">
+                        <option value="SERVICE_RESTART">服务重启或发布中断</option>
+                        <option value="PROCESS_EXIT">进程异常退出</option>
+                        <option value="DEPENDENCY_FAILURE">数据库、网络或外部服务故障</option>
+                        <option value="QUEUE_INTERRUPTED">消息队列或消费中断</option>
+                        <option value="TIMEOUT_STALLED">执行超时或长期无进展</option>
+                        <option value="VERIFIED_STOPPED">人工确认执行已停止</option>
+                        <option value="UNKNOWN">原因待排查</option>
+                        <option value="OTHER">其他原因（填写说明）</option>
+                    </select>
+                    <textarea id="taskActiveInterruptDetail" maxlength="1000" rows="2" placeholder="补充处理原因；选择“其他原因”时必填"></textarea>
+                    <button type="button" id="taskActiveInterruptSubmit" class="button small secondary">标记已中断</button>
+                </div>
                 <pre id="taskActiveLogs" class="task-center-log" hidden></pre>
             </section>
 
@@ -1039,6 +1054,7 @@
                     <option value="PARTIAL_SUCCESS">部分成功</option>
                     <option value="FAILED">执行失败</option>
                     <option value="CANCELLED">已取消</option>
+                    <option value="INTERRUPTED">已中断</option>
                 </select>
                 <button class="button primary" id="loadTasksBtn">查询任务执行记录</button>
             </div>
@@ -2192,11 +2208,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260923-discovery-traffic-v2"></script>
-<script src="expert-materials.js?v=20260923-discovery-traffic-v2"></script>
-<script src="meeting-confirmation.js?v=20260923-discovery-traffic-v2"></script>
-<script src="mailbox-chat.js?v=20260923-discovery-traffic-v2"></script>
-<script src="app.js?v=20260923-discovery-traffic-v2"></script>
-<script src="world-clock.js?v=20260923-discovery-traffic-v2"></script>
+<script src="trust-reply-workbench.js?v=20260924-task-interruption-recovery"></script>
+<script src="expert-materials.js?v=20260924-task-interruption-recovery"></script>
+<script src="meeting-confirmation.js?v=20260924-task-interruption-recovery"></script>
+<script src="mailbox-chat.js?v=20260924-task-interruption-recovery"></script>
+<script src="app.js?v=20260924-task-interruption-recovery"></script>
+<script src="world-clock.js?v=20260924-task-interruption-recovery"></script>
 </body>
 </html>

@@ -12,11 +12,64 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import java.time.LocalDateTime
+import java.util.Optional
 
 class TaskExecutionServiceTest {
     private val repository = Mockito.mock(TaskExecutionRepository::class.java)
     private val schedulingProperties = MailSchedulingProperties(autoReplyAllCron = "-")
     private val service = TaskExecutionService(repository, ObjectMapper(), schedulingProperties)
+
+    @Test
+    fun `recovery heartbeats this owner before expiring lost executions`() {
+        assertEquals(0, service.reconcileInterruptedExecutions())
+
+        val invocations = Mockito.mockingDetails(repository).invocations.toList()
+        assertEquals("heartbeatOwned", invocations[0].method.name)
+        assertEquals("interruptExpired", invocations[1].method.name)
+        val cutoff = invocations[1].arguments[0] as LocalDateTime
+        val now = invocations[1].arguments[1] as LocalDateTime
+        assertEquals(5, java.time.Duration.between(cutoff, now).toMinutes())
+    }
+
+    @Test
+    fun `manual interruption rejects a live execution`() {
+        Mockito.`when`(repository.findById(42L)).thenReturn(Optional.of(execution("RUNNING").copy(id = 42L)))
+
+        val error = assertThrows(IllegalStateException::class.java) {
+            service.interruptManually(42L, "SERVICE_RESTART", "已核实", "admin")
+        }
+
+        assertTrue(error.message!!.contains("近期心跳"))
+    }
+
+    @Test
+    fun `manual interruption returns the persisted terminal row`() {
+        val terminal = execution("INTERRUPTED").copy(id = 42L, handledBy = "admin")
+        val stubbedRepository = Mockito.mock(TaskExecutionRepository::class.java) { call ->
+            when (call.method.name) {
+                "interruptManually" -> 1
+                "findById" -> Optional.of(terminal)
+                else -> Mockito.RETURNS_DEFAULTS.answer(call)
+            }
+        }
+        val target = TaskExecutionService(stubbedRepository, ObjectMapper(), schedulingProperties)
+
+        val saved = target.interruptManually(42L, "SERVICE_RESTART", "确认旧进程已停止", "admin")
+
+        assertEquals("INTERRUPTED", saved.status)
+        val write = Mockito.mockingDetails(stubbedRepository).invocations.single { it.method.name == "interruptManually" }
+        assertEquals("SERVICE_RESTART", write.arguments[1])
+        assertEquals("确认旧进程已停止", write.arguments[2])
+        assertEquals("admin", write.arguments[3])
+    }
+
+    @Test
+    fun `other interruption reason requires operator explanation`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            service.interruptManually(42L, "OTHER", "  ", "admin")
+        }
+        Mockito.verifyNoInteractions(repository)
+    }
 
     @Test
     fun `lists executions by task type and status with pagination`() {
@@ -288,11 +341,12 @@ class TaskExecutionServiceTest {
         }
 
         assertTrue(ex.message!!.contains("ES connection refused"))
-        assertEquals(2, saveInvocations.size)
+        assertEquals(1, saveInvocations.size)
         assertEquals("RUNNING", saveInvocations[0].status)
-        assertEquals("FAILED", saveInvocations[1].status)
-        assertEquals(1, saveInvocations[1].failureCount)
-        assertTrue(saveInvocations[1].errorMessage!!.contains("ES connection refused"))
+        val finish = Mockito.mockingDetails(repository).invocations.single { it.method.name == "finishOwned" }
+        assertEquals("FAILED", finish.arguments[2])
+        assertEquals(1, finish.arguments[5])
+        assertTrue((finish.arguments[6] as String).contains("ES connection refused"))
     }
 
     @Test

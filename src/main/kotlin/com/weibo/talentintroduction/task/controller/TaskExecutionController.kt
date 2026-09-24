@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.weibo.talentintroduction.task.domain.Drilldown
 import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.domain.TaskInterruptionReasons
+import com.weibo.talentintroduction.task.domain.TaskInterruptionReason
+import com.weibo.talentintroduction.auth.config.AuthSessionKeys
 import com.weibo.talentintroduction.task.domain.TaskTypeCatalog
 import com.weibo.talentintroduction.task.repository.TaskExecutionListItem
 import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
@@ -16,11 +19,16 @@ import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.slf4j.LoggerFactory
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import javax.servlet.http.HttpServletRequest
+import org.springframework.http.HttpStatus
+import org.springframework.http.ResponseEntity
 
 @RestController
 @RequestMapping("/api/task-executions")
@@ -66,6 +74,23 @@ class TaskExecutionController(
             }
             .sortedByDescending { it.count }
 
+    @GetMapping("/interruption-reasons")
+    fun interruptionReasons(): List<TaskInterruptionReason> = TaskInterruptionReasons.defaults
+
+    @PostMapping("/{id}/interrupt")
+    fun interruptExecution(
+        @PathVariable id: Long,
+        @RequestBody request: InterruptTaskExecutionRequest,
+        servletRequest: HttpServletRequest
+    ): ResponseEntity<Any> {
+        val username = servletRequest.getSession(false)?.getAttribute(AuthSessionKeys.USERNAME) as? String ?: "anonymous"
+        return try {
+            ResponseEntity.ok(service.interruptManually(id, request.reasonCode, request.detail, username).toResponse())
+        } catch (ex: IllegalStateException) {
+            ResponseEntity.status(HttpStatus.CONFLICT).body(mapOf("message" to (ex.message ?: "任务状态已变化")))
+        }
+    }
+
     /**
      * I1-5：任意 taskType 的通用明细端点，一律返回 200（禁止用 require(...) 对
      * taskType 做前置断言）。有结构化 renderer 的类型由前端按 catalog 分派渲染；
@@ -99,7 +124,12 @@ class TaskExecutionController(
             drilldown = drilldown?.name,
             drilldownState = drilldownState,
             drilldownCount = drilldownCount,
-            experts = experts
+            experts = experts,
+            interruptionReasonCode = exec.interruptionReasonCode,
+            interruptionReasonDetail = exec.interruptionReasonDetail,
+            handledBy = exec.handledBy,
+            handledAt = exec.handledAt?.format(DATE_FMT),
+            errorMessage = exec.errorMessage
         )
     }
 
@@ -330,8 +360,14 @@ data class TaskExecutionResponse(
     val startedAt: String,
     val finishedAt: String?,
     val createdAt: String?,
-    val updatedAt: String?
+    val updatedAt: String?,
+    val interruptionReasonCode: String? = null,
+    val interruptionReasonDetail: String? = null,
+    val handledBy: String? = null,
+    val handledAt: String? = null
 )
+
+data class InterruptTaskExecutionRequest(val reasonCode: String, val detail: String? = null)
 
 /**
  * 列表响应投影（M-1）：刻意不含 requestPayload / resultSummary —— 两个 TEXT 列
@@ -383,7 +419,12 @@ data class TaskExecutionDetailResponse(
     /** B4：邮件类为该执行发出的邮件数；专家类为明细中专家总数。 */
     val drilldownCount: Int = 0,
     /** B4：仅 EXPERT_BY_POLL_DETAIL 附带（复用 PollDetailRaw 解析）；其余为 null。 */
-    val experts: List<PollRepliedExpert>? = null
+    val experts: List<PollRepliedExpert>? = null,
+    val interruptionReasonCode: String? = null,
+    val interruptionReasonDetail: String? = null,
+    val handledBy: String? = null,
+    val handledAt: String? = null,
+    val errorMessage: String? = null
 )
 
 data class TaskExecutionPageResponse(
@@ -469,5 +510,9 @@ private fun TaskExecution.toResponse(): TaskExecutionResponse =
         startedAt = startedAt.toString(),
         finishedAt = finishedAt?.toString(),
         createdAt = createdAt?.toString(),
-        updatedAt = updatedAt?.toString()
+        updatedAt = updatedAt?.toString(),
+        interruptionReasonCode = interruptionReasonCode,
+        interruptionReasonDetail = interruptionReasonDetail,
+        handledBy = handledBy,
+        handledAt = handledAt?.toString()
     )

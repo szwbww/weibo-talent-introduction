@@ -585,6 +585,7 @@ const statusLabels = {
     SUCCESS: "成功",
     PARTIAL_SUCCESS: "部分成功",
     FAILED: "失败",
+    INTERRUPTED: "已中断",
     PENDING: "待处理",
     ASSIGNED: "已分配",
     COMPLETED: "已完成"
@@ -1320,6 +1321,7 @@ function renderTaskActivityDetail(detail) {
     }
     if (detail.startedAt) parts.push(`开始于 ${detail.startedAt}`);
     if (detail.status === "FAILED") parts.push("错误原因可在下方执行记录查看");
+    if (detail.status === "INTERRUPTED" && detail.handledBy) parts.push(`处理人：${detail.handledBy}`);
     const status = $("#taskActiveDetailStatus");
     if (status) {
         const tone = detail.status === "SUCCESS" ? "ok" : detail.status === "FAILED" ? "error" : "warn";
@@ -1342,6 +1344,8 @@ function renderTaskActivityDetail(detail) {
         // 控制入口只对 taskButtonMapping 已支持的类型显示；hasProgressUi 不意味着已有控制按钮。
         controlBtn.hidden = !(running && taskActivityCanOpenControl());
     }
+    const interruptPanel = $("#taskActiveInterruptPanel");
+    if (interruptPanel) interruptPanel.hidden = !(running || (detail.status === "INTERRUPTED" && !detail.handledBy));
 }
 
 function openTaskActivityDetail(executionId) {
@@ -1371,6 +1375,12 @@ function openTaskActivityDetail(executionId) {
     if (logsBtn) logsBtn.hidden = true;
     const controlBtn = $("#taskActiveOpenControl");
     if (controlBtn) controlBtn.hidden = true;
+    const interruptPanel = $("#taskActiveInterruptPanel");
+    if (interruptPanel) interruptPanel.hidden = true;
+    const interruptReason = $("#taskActiveInterruptReason");
+    if (interruptReason) interruptReason.value = "SERVICE_RESTART";
+    const interruptDetail = $("#taskActiveInterruptDetail");
+    if (interruptDetail) interruptDetail.value = "";
     syncTaskActivityDetailButtons();
     refreshTaskActivityDetail(generation).catch(() => {});
 }
@@ -1400,10 +1410,39 @@ function closeTaskActivityDetail(options = {}) {
     if (logsBtn) logsBtn.hidden = true;
     const controlBtn = $("#taskActiveOpenControl");
     if (controlBtn) controlBtn.hidden = true;
+    const interruptPanel = $("#taskActiveInterruptPanel");
+    if (interruptPanel) interruptPanel.hidden = true;
     syncTaskActivityDetailButtons();
     if (restoreFocus && previousId != null) {
         const button = $(`#taskActiveCards button[data-task-active-detail="${previousId}"]`);
         if (button) button.focus();
+    }
+}
+
+async function interruptTaskActivityExecution() {
+    const id = taskActivityState.detailId;
+    if (id == null) return;
+    const reasonCode = $("#taskActiveInterruptReason").value;
+    const detail = $("#taskActiveInterruptDetail").value.trim();
+    if (reasonCode === "OTHER" && !detail) {
+        showStatus("选择其他原因时必须填写说明", "error");
+        return;
+    }
+    if (!window.confirm(`确认提交任务 #${id} 的异常处理原因？此操作只修改执行记录，不会停止仍在运行的程序。`)) return;
+    const button = $("#taskActiveInterruptSubmit");
+    button.disabled = true;
+    try {
+        await api(`/api/task-executions/${id}/interrupt`, {
+            method: "POST", body: JSON.stringify({ reasonCode, detail })
+        });
+        showStatus(`任务 #${id} 已标记中断`);
+        await refreshTaskActivityDetail(taskActivityState.detailGeneration);
+        await refreshTaskActivity();
+        await loadTasks();
+    } catch (error) {
+        showStatus(error.message, "error");
+    } finally {
+        button.disabled = false;
     }
 }
 
@@ -1548,6 +1587,8 @@ function initTaskActivityObserver() {
             openTaskActivityControl().catch(() => {});
         });
     }
+    const interruptBtn = $("#taskActiveInterruptSubmit");
+    if (interruptBtn) interruptBtn.addEventListener("click", interruptTaskActivityExecution);
     document.addEventListener("visibilitychange", () => {
         if (taskActivityDocumentHidden()) {
             // 隐藏：停掉 pending 的定时器并使 requestSequence 失效，
@@ -12110,6 +12151,13 @@ function renderTaskPager() {
  */
 function renderTaskDetailRawBlocks(detail) {
     let html = "";
+    if (detail.status === "INTERRUPTED" && detail.errorMessage) {
+        html += '<div class="text-muted">中断原因</div>';
+        html += `<div class="pre">${escapeHtml(detail.errorMessage)}</div>`;
+        if (detail.handledBy) {
+            html += `<div class="text-muted">处理人：${escapeHtml(detail.handledBy)}${detail.handledAt ? ` · 处理时间：${escapeHtml(detail.handledAt)}` : ""}</div>`;
+        }
+    }
     if (detail.rawRequestPayload != null) {
         html += '<div class="text-muted">请求参数</div>';
         html += `<div class="pre">${escapeHtml(detail.rawRequestPayload)}</div>`;
@@ -12211,7 +12259,10 @@ async function toggleTaskDetail(row) {
             .map((expert) => `<button type="button" class="link-btn" data-action="task-drilldown-contact" data-contact-id="${expert.expertContactId}">${escapeHtml((expert.expertName || "") + (expert.expertEmail ? ` <${expert.expertEmail}>` : ""))}</button>`)
             .join("<br>");
     }
-    contentHtml = drilldownHtml + contentHtml;
+    const interruptionAction = detail && detail.status === "INTERRUPTED" && !detail.handledBy
+        ? `<button type="button" class="link-btn" data-action="task-interruption-reason" data-execution-id="${detail.id}">补充处理原因</button>`
+        : "";
+    contentHtml = interruptionAction + drilldownHtml + contentHtml;
     const detailRow = document.createElement("tr");
     detailRow.className = "task-detail-row";
     detailRow.innerHTML = `<td colspan="7" style="padding:12px 16px;background:var(--surface);">${contentHtml || '<div class="text-muted">暂无明细</div>'}</td>`;
@@ -15007,6 +15058,12 @@ function bindEvents() {
         if (action === "task-drilldown-contact") {
             event.preventDefault();
             handleTaskDrilldownContact(element);
+            return;
+        }
+        if (action === "task-interruption-reason") {
+            event.preventDefault();
+            openTaskActivityDetail(Number(element.dataset.executionId));
+            $("#taskActiveDetail")?.scrollIntoView({ behavior: "smooth", block: "start" });
             return;
         }
         if (action === "add-alias") {

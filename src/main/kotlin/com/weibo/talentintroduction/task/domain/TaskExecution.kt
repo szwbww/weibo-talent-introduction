@@ -21,5 +21,11 @@ data class TaskExecution(
     val createdAt: LocalDateTime? = null,
     val updatedAt: LocalDateTime? = null,
     /** Source batch_send_task_config id at launch; null for independent manual runs. Soft-delete safe. */
-    val batchConfigId: Long? = null
+    val batchConfigId: Long? = null,
+    val ownerToken: String? = null,
+    val heartbeatAt: LocalDateTime? = null,
+    val interruptionReasonCode: String? = null,
+    val interruptionReasonDetail: String? = null,
+    val handledBy: String? = null,
+    val handledAt: LocalDateTime? = null
 )

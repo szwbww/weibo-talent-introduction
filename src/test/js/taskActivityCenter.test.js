@@ -649,6 +649,16 @@ describe("task activity center static contract", () => {
         assert.ok(!detailRegion.includes("onclick="), "详情不得携带内联事件");
     });
 
+    it("manual interruption has one real reason form and an interrupted history filter", () => {
+        for (const id of ["taskActiveInterruptPanel", "taskActiveInterruptReason", "taskActiveInterruptDetail", "taskActiveInterruptSubmit"]) {
+            assert.strictEqual((htmlSource.match(new RegExp(`id="${id}"`, "g")) || []).length, 1);
+        }
+        assert.ok(htmlSource.includes('<option value="OTHER">其他原因（填写说明）</option>'));
+        assert.ok(htmlSource.includes('<option value="INTERRUPTED">已中断</option>'));
+        assert.ok(appSource.includes('function interruptTaskActivityExecution()'));
+        assert.ok(appSource.includes('method: "POST", body: JSON.stringify({ reasonCode, detail })'));
+    });
+
     it("S-4: the history table keeps its seven columns, filters and pager", () => {
         const viewStart = htmlSource.indexOf('id="view-tasks"');
         const viewEnd = htmlSource.indexOf("</section>", htmlSource.indexOf('id="taskPager"'));

@@ -18,6 +18,14 @@ import java.time.LocalDateTime
 @WebMvcTest(TaskExecutionController::class)
 class TaskExecutionControllerMvcTest {
 
+    @Test
+    fun `interruption reasons expose preset and custom choices`() {
+        mockMvc.perform(get("/api/task-executions/interruption-reasons"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$[0].code").value("SERVICE_RESTART"))
+            .andExpect(jsonPath("$[7].code").value("OTHER"))
+    }
+
     @Autowired
     private lateinit var mockMvc: MockMvc
 
