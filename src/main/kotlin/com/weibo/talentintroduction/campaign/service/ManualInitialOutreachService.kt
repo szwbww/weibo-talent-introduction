@@ -11,6 +11,8 @@ import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.domain.MailSendAttempt
 import com.weibo.talentintroduction.campaign.domain.MailSendAttemptStatus
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
+import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationErrorCodes
+import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationSendStatus
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.config.ManualOutreachProperties
@@ -57,6 +59,15 @@ import kotlin.math.ceil
 
 enum class ExecutionMode { AUTO, MANUAL }
 
+/** I-6：验证明细审计不可用（写入失败）时的停止原因码 —— 停止本次执行，绝不静默降级继续发信。 */
+private const val STOP_EMAIL_VERIFY_AUDIT_FAILED = "EMAIL_VERIFY_AUDIT_FAILED"
+
+/** I-6：PASS 行无法条件预占 SENDING（重复目标/状态冲突）时的停止原因码。 */
+private const val STOP_EMAIL_VERIFY_SEND_STATE_CONFLICT = "EMAIL_VERIFY_SEND_STATE_CONFLICT"
+
+/** I-2：SMTP 前发现最终收件地址与已验证地址不一致时的停止原因码 / 明细 send_reason。 */
+private const val SEND_REASON_EMAIL_CHANGED = "EMAIL_CHANGED"
+
 @Service
 class ManualInitialOutreachService(
     private val expertSearchService: ExpertSearchService,
@@ -83,7 +94,9 @@ class ManualInitialOutreachService(
     private val manualExpertMailService: ManualExpertMailService,
     private val taskExecutionService: TaskExecutionService,
     private val senderAccountBindingService: SenderAccountBindingService,
-    private val mailComposeTemplateService: MailComposeTemplateService
+    private val mailComposeTemplateService: MailComposeTemplateService,
+    /** I-1/I-2/I-6：发送前邮箱验证（HTTP + 明细审计 + 标签）的唯一接入点。 */
+    private val batchEmailVerificationService: BatchEmailVerificationService
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -137,11 +150,21 @@ class ManualInitialOutreachService(
         executionId: Long,
         mode: ExecutionMode,
         oneRoundOnly: Boolean = snapshot.oneRoundOnly
-    ): ManualOutreachResult = when (snapshot.mailType) {
-        BatchSendType.MATERIAL_REMINDER.name ->
-            runMaterialFromSnapshot(snapshot, executionId, mode, oneRoundOnly)
-        else ->
-            runIntroductionFromSnapshot(snapshot, executionId, mode, oneRoundOnly)
+    ): ManualOutreachResult {
+        // I-1/I-8：开启发送前验证时先校验类型与密钥 —— 任何业务写入之前完成，
+        // MATERIAL_REMINDER + true 与缺失/test_ 密钥都在此明确失败，绝不带着未验证策略开跑。
+        if (snapshot.emailVerificationEnabled) {
+            require(snapshot.mailType == BatchSendType.INTRODUCTION.name) {
+                "发送前邮箱验证只支持介绍邮件（${BatchSendType.INTRODUCTION.name}），当前快照类型为 ${snapshot.mailType}"
+            }
+            batchEmailVerificationService.requireConfiguredApiKey()
+        }
+        return when (snapshot.mailType) {
+            BatchSendType.MATERIAL_REMINDER.name ->
+                runMaterialFromSnapshot(snapshot, executionId, mode, oneRoundOnly)
+            else ->
+                runIntroductionFromSnapshot(snapshot, executionId, mode, oneRoundOnly)
+        }
     }
 
     /**
@@ -509,6 +532,15 @@ class ManualInitialOutreachService(
         val scope = resolveScope(snapshot)
         // I-1/I-2: 本次执行的唯一发件账号范围快照。
         val allowedAccountCodes = allowedAccountCodesOf(snapshot)
+        // I-1/I-2/I-7：验证开关与逐次执行上下文。关闭时不建立上下文 —— 零 HTTP、零验证明细仓储调用。
+        val emailVerificationEnabled = snapshot.emailVerificationEnabled
+        val verificationContext = if (emailVerificationEnabled) {
+            batchEmailVerificationService.beginExecution(executionId) {
+                progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
+            }
+        } else {
+            null
+        }
         val (retryableTargets, seenOrcids) = buildRetryableTargets(campaignId, scope)
         val esEstimate = countEsTargets(scope)
         val totalEstimate = retryableTargets.size + esEstimate
@@ -648,16 +680,89 @@ class ManualInitialOutreachService(
                     continue
                 }
 
+                // ── I-2/I-3/I-6：发送前邮箱验证 ──
+                // 位于类型/抑制/已绑定门禁之后、选号之前：非通过目标不新建/绑定 contact、
+                // 不写 PREPARED、不调用 SMTP、不计账号发送量；通过目标仍走原全部门禁。
+                var verified: VerificationResult.Passed? = null
+                if (emailVerificationEnabled) {
+                    // I-3：验证前检查取消 —— 取消后不再插入明细、不发请求、不建行。
+                    if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                        wasCancelled = true
+                        stopReason = "CANCELLED"
+                        midRoundStop = true
+                        break
+                    }
+                    val outcome = try {
+                        batchEmailVerificationService.verify(
+                            verificationContext!!,
+                            EmailVerificationTarget(
+                                expertDocId = expert.esDocId,
+                                orcidId = normOrcid,
+                                expertName = expert.displayName,
+                                email = email
+                            )
+                        )
+                    } catch (e: EmailVerificationAuditException) {
+                        log.error("Email verification audit unavailable for ORCID {}: {}", normOrcid, e.message)
+                        errors.add("验证审计写入失败：${e.message.orEmpty().take(120)}")
+                        stopReason = STOP_EMAIL_VERIFY_AUDIT_FAILED
+                        finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+                        midRoundStop = true
+                        break
+                    }
+                    when (outcome) {
+                        is VerificationResult.Rejected -> {
+                            accumulator.recordSkipped(
+                                BatchOutcomeReasonCodes.EMAIL_VERIFICATION_REJECTED,
+                                "邮箱验证未通过：$email"
+                            )
+                            processedTotal++
+                            roundSent++
+                            roundProcessed++
+                            roundRejected++
+                            updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                                "RUNNING", "已跳过邮箱验证未通过：$email", errors, mode, roundNumber, config, runAccountStats,
+                                roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
+                            continue
+                        }
+                        is VerificationResult.ServiceFailure -> {
+                            // I-4：服务故障停止本次执行，不批量标坏邮箱、不伪增 SMTP 失败/跳过。
+                            log.warn("Email verification service failure for ORCID {}: {}", normOrcid, outcome.errorCode)
+                            errors.add("邮箱验证服务故障：${outcome.errorCode}（$email）")
+                            stopReason = outcome.errorCode
+                            finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+                            midRoundStop = true
+                            break
+                        }
+                        is VerificationResult.Cancelled -> {
+                            outcome.rowId?.let {
+                                recordVerificationSendQuietly(it, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.CANCELLED)
+                            }
+                            wasCancelled = true
+                            stopReason = "CANCELLED"
+                            midRoundStop = true
+                            break
+                        }
+                        is VerificationResult.Passed -> verified = outcome
+                    }
+                }
+
                 val account = try {
                     selectSendAccount(expert, assignments, ignoreWarmup, stock, allowedAccountCodes)
                 } catch (e: NoAvailableSenderAccountException) {
                     log.warn("No available sender account mid-round after {} processed, pausing flow", processedTotal)
+                    verified?.let {
+                        recordVerificationSendQuietly(it.rowId, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.ACCOUNT_UNAVAILABLE)
+                    }
                     stopReason = "NO_AVAILABLE_ACCOUNT"
                     finalStatus = "PAUSED"
                     midRoundStop = true
                     break
                 } catch (e: Exception) {
                     log.error("System error selecting account", e)
+                    verified?.let {
+                        recordVerificationSendQuietly(it.rowId, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.SEND_EXCEPTION)
+                    }
                     stopReason = "SYSTEM_ERROR"
                     finalStatus = "FAILED"
                     errors.add("系统错误: ${e.message ?: "Unknown error"}")
@@ -667,6 +772,8 @@ class ManualInitialOutreachService(
 
                 val stat = runAccountStats.getOrPut(account.accountCode) { AccountRunStat() }
                 val provider = providerResolver.resolve(expert.email)
+                // I-6：区分「SMTP 前失败（NOT_SENT）」与「SMTP 结果不明（保持 SENDING）」。
+                var smtpAttempted = false
 
                 try {
                     // 1. Create or reuse contact (occupy the slot) — I-7
@@ -693,6 +800,8 @@ class ManualInitialOutreachService(
                         processedTotal++
                         roundSent++
                         roundProcessed++
+                        // I-6：PASS 后未进 SMTP 的分支保留 NOT_SENT + 具体原因。
+                        recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.DEDUP)
                         continue
                     }
 
@@ -710,6 +819,7 @@ class ManualInitialOutreachService(
                         processedTotal++
                         roundSent++
                         roundProcessed++
+                        recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.PERSONALIZATION_INCOMPLETE)
                         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                             "RUNNING", "个性化字段缺失：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
                             roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
@@ -722,10 +832,38 @@ class ManualInitialOutreachService(
                         processedTotal++
                         roundSent++
                         roundProcessed++
+                        recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.TEMPLATE_RENDER_FAILED)
                         updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                             "RUNNING", "模板渲染失败：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
                             roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                         continue
+                    }
+
+                    // I-2：SMTP 前再断言最终收件地址 = 已验证地址；不一致则终止本次执行，绝不发未验证地址。
+                    val verifiedTarget = verified
+                    if (verifiedTarget != null && normalizeVerificationEmail(mail.to) != verifiedTarget.normalizedEmail) {
+                        log.error(
+                            "Composed recipient differs from verified address for ORCID {}; stopping execution",
+                            normOrcid
+                        )
+                        errors.add("收件地址在验证后发生变化：${expert.email}")
+                        recordVerificationSend(verifiedTarget, BatchEmailVerificationSendStatus.NOT_SENT, SEND_REASON_EMAIL_CHANGED)
+                        stopReason = SEND_REASON_EMAIL_CHANGED
+                        finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+                        midRoundStop = true
+                        break
+                    }
+
+                    // I-3/I-6：PASS 之后、SMTP 之前再查一次取消 —— 不发未确认的信，明细留 NOT_SENT/CANCELLED。
+                    // 只在开启验证的执行里检查：关闭时发送循环的取消语义逐字保持原样（仅轮次开头检查）。
+                    if (emailVerificationEnabled && progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+                        verified?.let {
+                            recordVerificationSend(it, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.CANCELLED)
+                        }
+                        wasCancelled = true
+                        stopReason = "CANCELLED"
+                        midRoundStop = true
+                        break
                     }
 
                     // 4. Persist attempt as PREPARED (audit trail) — upsert to respect UNIQUE(orcid_id, mail_type) (I-7)
@@ -748,7 +886,19 @@ class ManualInitialOutreachService(
                         }
                     )
 
+                    // I-6：审计先落库 —— 条件预占 SENDING 必须影响 1 行才允许 SMTP；
+                    // 0 行表示重复目标或状态冲突，停止并报告，绝不重发。
+                    if (verifiedTarget != null && !batchEmailVerificationService.markSending(verifiedTarget.rowId)) {
+                        log.error("Verification row {} cannot be reserved for sending; stopping execution", verifiedTarget.rowId)
+                        errors.add("验证明细状态冲突：无法预占发送（${expert.email}）")
+                        stopReason = STOP_EMAIL_VERIFY_SEND_STATE_CONFLICT
+                        finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+                        midRoundStop = true
+                        break
+                    }
+
                     // 5. Send via SMTP
+                    smtpAttempted = true
                     val delivered = mailDeliveryService.send(account, mail)
                     if (delivered.status == "SENT") {
                         accountRateLimiter.recordSuccess(account.accountCode, provider, config.perMailIntervalMs)
@@ -763,6 +913,9 @@ class ManualInitialOutreachService(
                         stat.success++
                         roundPassed++
                         taskExecutionService.updateProgressCounts(executionId, accumulator.success, accumulator.failure)
+                        // I-6：SMTP 已返回 SENT 且 txHelper 已提交 —— 此处审计失败不回退成功计数，
+                        // 行留在 SENDING（结果未确认）并由专用审计边界停止本次执行。
+                        recordVerificationSend(verified, BatchEmailVerificationSendStatus.SENT, null)
                     } else {
                         val errorSummary = buildSmtpErrorSummary(delivered)
                         when (delivered.errorCategory) {
@@ -780,6 +933,7 @@ class ManualInitialOutreachService(
                                 accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "永久发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
                                 stat.failed++
                                 roundRejected++
+                                recordVerificationSend(verified, BatchEmailVerificationSendStatus.FAILED, BatchOutcomeReasonCodes.SEND_EXCEPTION)
                             }
                             SmtpErrorCategory.TRANSIENT -> {
                                 txHelper.recordFailure(
@@ -794,6 +948,7 @@ class ManualInitialOutreachService(
                                     accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "限流 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
                                     stat.failed++
                                     roundRejected++
+                                    recordVerificationSend(verified, BatchEmailVerificationSendStatus.FAILED, BatchOutcomeReasonCodes.SEND_EXCEPTION)
                                 } else {
                                     mailSenderAccountService.pauseAutoSend(
                                         account.accountCode,
@@ -802,6 +957,7 @@ class ManualInitialOutreachService(
                                     accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "暂时发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
                                     stat.failed++
                                     roundRejected++
+                                    recordVerificationSend(verified, BatchEmailVerificationSendStatus.FAILED, BatchOutcomeReasonCodes.SEND_EXCEPTION)
                                     midRoundStop = true
                                     break
                                 }
@@ -820,6 +976,7 @@ class ManualInitialOutreachService(
                                 accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "基础设施发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
                                 stat.failed++
                                 roundRejected++
+                                recordVerificationSend(verified, BatchEmailVerificationSendStatus.FAILED, BatchOutcomeReasonCodes.SEND_EXCEPTION)
                                 midRoundStop = true
                                 break
                             }
@@ -833,11 +990,26 @@ class ManualInitialOutreachService(
                                 accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "发送失败 (${expert.email}): ${delivered.status}")
                                 stat.failed++
                                 roundRejected++
+                                recordVerificationSend(verified, BatchEmailVerificationSendStatus.FAILED, BatchOutcomeReasonCodes.SEND_EXCEPTION)
                             }
                         }
                     }
+                } catch (e: EmailVerificationAuditException) {
+                    // I-6：审计边界先于广义 catch —— 绝不进入 pauseAccount / SMTP 故障统计，也不伪增失败。
+                    log.error("Email verification audit failed for ORCID {}: {}", normOrcid, e.message)
+                    errors.add("验证审计写入失败：${e.message.orEmpty().take(120)}")
+                    stopReason = STOP_EMAIL_VERIFY_AUDIT_FAILED
+                    finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+                    midRoundStop = true
+                    break
                 } catch (e: Exception) {
                     log.error("Failed to process ORCID: {}", normOrcid, e)
+                    // I-6：未进入 SMTP 的记 NOT_SENT + 原因；已进 SMTP 的结果不明，保持 SENDING 不覆盖。
+                    if (!smtpAttempted) {
+                        verified?.let {
+                            recordVerificationSendQuietly(it.rowId, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.SEND_EXCEPTION)
+                        }
+                    }
                     accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "发送异常 (${expert.email}): ${e.message}")
                     stat.failed++
                     roundRejected++
@@ -949,6 +1121,17 @@ class ManualInitialOutreachService(
         "ROUNDS_PER_RUN_REACHED" -> "本次调度轮次已用完"
         "ONE_ROUND_DONE" -> "手动单轮发送已完成"
         "CANCELLED" -> "发送任务已被取消"
+        // I-4/I-6：发送前验证的受控停止原因（服务故障/审计不可用/状态冲突），文案按受控错误码给出。
+        BatchEmailVerificationErrorCodes.AUTH_ERROR -> "邮箱验证服务鉴权失败，已停止本次发送"
+        BatchEmailVerificationErrorCodes.NO_CREDITS -> "邮箱验证服务额度不足，已停止本次发送"
+        BatchEmailVerificationErrorCodes.RATE_LIMITED -> "邮箱验证服务限流，已停止本次发送"
+        BatchEmailVerificationErrorCodes.TIMEOUT -> "邮箱验证服务超时，已停止本次发送"
+        BatchEmailVerificationErrorCodes.INCOMPLETE -> "邮箱验证服务未返回结果，已停止本次发送"
+        BatchEmailVerificationErrorCodes.BAD_RESPONSE -> "邮箱验证服务返回非法响应，已停止本次发送"
+        BatchEmailVerificationErrorCodes.SERVICE_ERROR -> "邮箱验证服务故障，已停止本次发送"
+        STOP_EMAIL_VERIFY_AUDIT_FAILED -> "邮箱验证明细写入失败，已停止本次发送"
+        STOP_EMAIL_VERIFY_SEND_STATE_CONFLICT -> "邮箱验证明细状态冲突，已停止本次发送"
+        SEND_REASON_EMAIL_CHANGED -> "收件地址在验证后发生变化，已停止本次发送"
         else -> when (finalStatus) {
             "PAUSED" -> "流程已暂停: ${stopReason ?: ""}"
             "FAILED" -> "发送任务失败: ${stopReason ?: ""}"
@@ -969,6 +1152,24 @@ class ManualInitialOutreachService(
     private data class StopOutcome(val stopReason: String, val finalStatus: String)
 
     private fun normalizeOrcid(orcid: String) = ExpertIdNormalizer.normalize(orcid)
+
+    /**
+     * I-6：验证明细的发送结果收尾。审计不可用时抛 [EmailVerificationAuditException]，
+     * 由发送循环的专用边界处理（停止本次执行，不进入 SMTP 故障统计）。
+     */
+    private fun recordVerificationSend(verified: VerificationResult.Passed?, sendStatus: String, sendReason: String?) {
+        val passed = verified ?: return
+        batchEmailVerificationService.recordSend(passed.rowId, sendStatus, sendReason)
+    }
+
+    /** I-6：调用方已经在停止时的收尾（取消/无可用账号/系统错误）；写失败只记日志，行保持默认 NOT_SENT。 */
+    private fun recordVerificationSendQuietly(rowId: Long, sendStatus: String, sendReason: String?) {
+        try {
+            batchEmailVerificationService.recordSend(rowId, sendStatus, sendReason)
+        } catch (e: EmailVerificationAuditException) {
+            log.warn("Email verification trailing audit write failed for row {}: {}", rowId, e.message)
+        }
+    }
 
     private fun buildSmtpErrorSummary(delivered: DeliveredMail): String =
         buildString {
