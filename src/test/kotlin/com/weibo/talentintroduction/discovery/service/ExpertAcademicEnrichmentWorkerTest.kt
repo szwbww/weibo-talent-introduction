@@ -58,6 +58,8 @@ class ExpertAcademicEnrichmentWorkerTest {
 
     private fun anyTaskProgress(): TaskProgress =
         Mockito.any(TaskProgress::class.java) ?: TaskProgress("", "", 0, 0, 0)
+    private fun anyLocalDateTime(): LocalDateTime =
+        Mockito.any(LocalDateTime::class.java) ?: LocalDateTime.MIN
 
     private fun anyRequestKind(): RequestKind =
         Mockito.any(RequestKind::class.java) ?: RequestKind.NEW_ENRICHMENT
@@ -118,12 +120,15 @@ class ExpertAcademicEnrichmentWorkerTest {
         )
         // I-4：自动补全有独立 EXPERT_ENRICHMENT 任务记录，details 带逐源计数
         val execution = savedExecutions().last()
+        val resultSummary = ArgumentCaptor.forClass(String::class.java)
         assertEquals("EXPERT_ENRICHMENT", execution.taskType)
         assertEquals("SCHEDULED", execution.triggerType)
-        assertEquals("SUCCESS", execution.status)
-        assertEquals(1, execution.successCount)
-        assertTrue(execution.resultSummary!!.contains("\"bySource\""))
-        assertTrue(execution.resultSummary!!.contains("EUROPE_PMC"))
+        Mockito.verify(repository).finishOwned(
+            eqValue(7L), Mockito.anyString(), eqValue("SUCCESS"), resultSummary.capture(),
+            eqValue(1), eqValue(0), Mockito.isNull(), anyLocalDateTime()
+        )
+        assertTrue(resultSummary.value.contains("\"bySource\""))
+        assertTrue(resultSummary.value.contains("EUROPE_PMC"))
         // 批次结束后释放锁，后续 tick（或人工入口）可再次获取
         Mockito.verify(progressStore).clearExecutionContext("EXPERT_ENRICHMENT", 7L)
     }
@@ -198,7 +203,10 @@ class ExpertAcademicEnrichmentWorkerTest {
 
         worker().processDueEnrichmentJobs()
 
-        assertEquals("FAILED", savedExecutions().last().status)
+        Mockito.verify(repository).finishOwned(
+            eqValue(9L), Mockito.anyString(), eqValue("FAILED"), Mockito.isNull(),
+            eqValue(0), eqValue(1), eqValue("RAW 文档读取失败"), anyLocalDateTime()
+        )
         assertEquals("FAILED", captured.single().status)
         assertTrue(captured.single().message!!.contains("RAW 文档读取失败"))
         Mockito.verify(progressStore).clearExecutionContext("EXPERT_ENRICHMENT", 9L)
