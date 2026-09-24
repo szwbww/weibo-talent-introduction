@@ -4043,8 +4043,7 @@ function validatePlaceholderText(text, options) {
     if (!text) {
         return { valid: true, violations: [] };
     }
-    // I-4: the compose template editor accepts bare `${key}` (the mandatory form) and
-    // `${key|默认值}`; QA rules and reply snippets keep the stricter legacy rule below.
+    // Templates and reply snippets accept bare known tokens; QA retains its fallback requirement.
     const lenient = Boolean(options && options.lenient);
     const metaByKey = Object.fromEntries((state.variableMeta || []).map((meta) => [meta.key, meta]));
     const violations = [];
@@ -4086,9 +4085,25 @@ function brokenPlaceholderFragments(text) {
     return [];
 }
 
-/** I-4: the compose template editor is the only placeholder editor that allows bare tokens. */
+/** Compose template placeholder targets. */
 function isComposeTemplateVarTarget(targetId) {
     return targetId === "composeTemplateSubject" || targetId.indexOf("composeBlockCustomText-") === 0;
+}
+
+function isReplySnippetVarTarget(targetId) {
+    return targetId === "replySnippetContent" || targetId.startsWith("replySnippetVariant-");
+}
+
+function replySnippetPlaceholderWarning(text) {
+    const nullableKeys = new Set((state.variableMeta || []).filter((meta) => meta.nullable).map((meta) => meta.key));
+    const keys = [];
+    const regex = /\$\{([^}]*)\}/g;
+    let match;
+    while ((match = regex.exec(text || "")) !== null) {
+        const parsed = parsePlaceholderToken(match[1]);
+        if (parsed.fallback === null && nullableKeys.has(parsed.key) && !keys.includes(parsed.key)) keys.push(parsed.key);
+    }
+    return keys.length ? `${keys.join("、")} 未设置默认值；专家缺少该字段时，将由发送门槛过滤。` : "";
 }
 
 function placeholderDefaultFallback(key) {
@@ -4200,7 +4215,7 @@ function updateVarValidationForTarget(targetId, textarea) {
     const form = textarea?.closest("form");
     const submitBtn = form?.querySelector('button[type="submit"]');
     const { valid, violations } = validatePlaceholderText(textarea?.value || "", {
-        lenient: isComposeTemplateVarTarget(targetId)
+        lenient: isComposeTemplateVarTarget(targetId) || isReplySnippetVarTarget(targetId)
     });
     if (hint) {
         if (!valid) {
@@ -4208,9 +4223,10 @@ function updateVarValidationForTarget(targetId, textarea) {
             hint.className = "var-validation-hint invalid";
             hint.textContent = `非法占位符：${violations.join(", ")}`;
         } else {
-            hint.hidden = true;
+            const warning = isReplySnippetVarTarget(targetId) ? replySnippetPlaceholderWarning(textarea?.value || "") : "";
+            hint.hidden = !warning;
             hint.className = "var-validation-hint";
-            hint.textContent = "";
+            hint.textContent = warning;
         }
     }
     if (submitBtn) {
@@ -4231,11 +4247,8 @@ function bindVarChipBar(container) {
             const key = chip.dataset.varKey;
             const nullable = chip.dataset.varNullable === "true";
             const fallback = chip.dataset.varFallback || "";
-            // I-4: in the compose template editor a bare `${key}` is how the operator
-            // makes the variable mandatory (a default is still available by typing
-            // `${key|默认值}`); QA rules and reply snippets keep the legacy behaviour of
-            // inserting `${key|默认值}` for nullable variables.
-            const insertBare = !nullable || isComposeTemplateVarTarget(targetId);
+            // Bare snippet tokens use the same missing-value gate as template tokens.
+            const insertBare = !nullable || isComposeTemplateVarTarget(targetId) || isReplySnippetVarTarget(targetId);
             const insertText = insertBare ? `\${${key}}` : `\${${key}|${fallback}}`;
             const cursorOffset = !insertBare && !fallback ? 1 : 0;
             insertVarAtCursor(textarea, insertText, cursorOffset);
@@ -11008,7 +11021,7 @@ function validateContentVariantInputs(container, mainText) {
     const inputs = Array.from(container.querySelectorAll(".content-variant-input"));
     let firstInvalid = null;
     const original = (mainText || "").trim();
-    const originalCheck = validatePlaceholderText(mainText || "", { lenient: false });
+    const originalCheck = validatePlaceholderText(mainText || "", { lenient: true });
     const originalHint = $("#varHint-replySnippetContent");
     if (!originalCheck.valid) {
         if (originalHint) {
@@ -11018,15 +11031,17 @@ function validateContentVariantInputs(container, mainText) {
         }
         firstInvalid = { index: 0, input: $("#replySnippetContent") };
     } else if (originalHint) {
-        originalHint.hidden = true;
-        originalHint.textContent = "";
+        const warning = replySnippetPlaceholderWarning(mainText);
+        originalHint.hidden = !warning;
+        originalHint.className = "var-validation-hint";
+        originalHint.textContent = warning;
     }
     const seen = new Map();
     inputs.forEach((input, index) => {
         const value = input.value.trim();
         const hint = $(`#varHint-replySnippetVariant-${index}`);
         input.classList.remove("duplicate");
-        const placeholder = validatePlaceholderText(input.value, { lenient: false });
+        const placeholder = validatePlaceholderText(input.value, { lenient: true });
         let message = "";
         if (!value) message = "变体不能为空";
         else if (value === original) message = "与原文内容重复";
@@ -11034,9 +11049,10 @@ function validateContentVariantInputs(container, mainText) {
         else if (!placeholder.valid) message = `非法占位符：${placeholder.violations.join(", ")}`;
         if (!message) seen.set(value, index);
         if (hint) {
-            hint.hidden = !message;
+            const warning = message ? "" : replySnippetPlaceholderWarning(input.value);
+            hint.hidden = !(message || warning);
             hint.className = message ? "var-validation-hint invalid content-variant-duplicate-hint" : "var-validation-hint";
-            hint.textContent = message;
+            hint.textContent = message || warning;
         }
         if (message) {
             input.classList.add("duplicate");

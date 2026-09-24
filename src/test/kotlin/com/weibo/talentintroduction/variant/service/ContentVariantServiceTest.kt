@@ -15,6 +15,21 @@ class ContentVariantServiceTest {
     private val service = ContentVariantService(repository, MailPlaceholderService())
 
     @Test
+    fun `replacement permits bare snippet variables but preserves strict QA validation`() {
+        service.replaceForOwner(ContentVariantOwnerType.REPLY_SNIPPET, 5L, "Main",
+            listOf("Topic \${primaryResearchField}"))
+        val captor = ArgumentCaptor.forClass(ContentVariant::class.java)
+        Mockito.verify(repository).save(captor.capture())
+        assertEquals("Topic \${primaryResearchField}", captor.value.content)
+        Mockito.clearInvocations(repository)
+        assertThrows(IllegalArgumentException::class.java) {
+            service.replaceForOwner(ContentVariantOwnerType.QA_RULE, 5L, "Main",
+                listOf("Topic \${primaryResearchField}"))
+        }
+        Mockito.verifyNoInteractions(repository)
+    }
+
+    @Test
     fun `legacy QA resolveBody remains deterministic`() {
         Mockito.`when`(
             repository.findByOwnerTypeAndOwnerIdAndEnabledTrueOrderByVariantOrderAscIdAsc(

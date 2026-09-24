@@ -8687,6 +8687,14 @@ tr td {
     font-size: 11px;
     color: var(--text-muted);
 }
+/* Keep the snippet editor and its sticky actions opaque above the modal scrim. */
+#replySnippetModal .modal-panel {
+    --panel-bg: #ffffff;
+    --text-muted: #64748b;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
 .snippet-variant-editor {
     min-width: 0;
     display: flex;

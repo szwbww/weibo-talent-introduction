@@ -237,16 +237,50 @@ class ReplySnippetServiceTest {
     }
 
     @Test
-    fun `create rejects nullable placeholder without fallback`() {
-        val ex = assertThrows(IllegalArgumentException::class.java) {
-            service.create(
-                ReplySnippetCreateCommand(
-                    snippetType = SnippetType.SALUTATION.name,
-                    content = "Dear Dr. \${expertFamilyName},"
-                )
+    fun `create and update allow bare known placeholders in original and variants`() {
+        Mockito.`when`(repository.save(Mockito.any(ReplySnippet::class.java)))
+            .thenAnswer { invocation -> (invocation.arguments[0] as ReplySnippet).copy(id = 1L) }
+        stubVariantPersistence()
+        val created = service.create(
+            ReplySnippetCreateCommand(
+                snippetType = SnippetType.CUSTOM.name,
+                content = "Topic \${primaryResearchField}",
+                variants = listOf("Research \${primaryResearchField}")
             )
+        )
+        assertEquals("Topic \${primaryResearchField}", created.snippet.content)
+        assertEquals(listOf("Research \${primaryResearchField}"), created.variants)
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(created.snippet))
+        val updated = service.update(1L, ReplySnippetUpdateCommand(
+            content = "Hello \${expertFamilyName}", displayOrder = 10, isDefault = false, enabled = true,
+            variants = listOf("Your work on \${primaryResearchField}", "Topic \${primaryResearchField|research}")
+        ))
+        assertEquals("Hello \${expertFamilyName}", updated.snippet.content)
+        assertEquals(2, updated.variants.size)
+    }
+
+    @Test
+    fun `create and update reject malformed and unknown placeholders before writes`() {
+        Mockito.`when`(repository.findById(1L)).thenReturn(Optional.of(snippet(1L, SnippetType.CUSTOM.name)))
+        for (invalid in listOf("\${bogus}", "\${primaryResearchField", "\${primaryResearchField|}")) {
+            assertThrows(IllegalArgumentException::class.java) {
+                service.create(ReplySnippetCreateCommand(snippetType = SnippetType.CUSTOM.name, content = invalid))
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                service.create(ReplySnippetCreateCommand(snippetType = SnippetType.CUSTOM.name,
+                    content = "Valid \${primaryResearchField}", variants = listOf(invalid)))
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                service.update(1L, ReplySnippetUpdateCommand(content = invalid,
+                    displayOrder = 10, isDefault = false, enabled = true))
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                service.update(1L, ReplySnippetUpdateCommand(content = "Valid \${primaryResearchField}",
+                    displayOrder = 10, isDefault = false, enabled = true, variants = listOf(invalid)))
+            }
         }
-        assertTrue(ex.message!!.contains("\${expertFamilyName}"))
+        Mockito.verify(repository, Mockito.never()).save(Mockito.any())
+        Mockito.verifyNoInteractions(contentVariantRepository)
     }
 
     @Test

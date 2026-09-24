@@ -99,7 +99,7 @@ function createEditorSandbox() {
         return { valid, violations: valid ? [] : ["INVALID"] };
     };
     vm.createContext(sandbox);
-    ["renderContentVariantRows", "setActiveVariant", "collectContentVariants", "captureContentVariantValues", "addContentVariantRow", "removeContentVariantRow", "validateContentVariantInputs", "closeSubjectSnippetOptions", "subjectSnippetLabel", "subjectSnippetIsEligible", "findSubjectSnippet", "subjectSnippetStatus", "collectComposeTemplateSubject", "selectSubjectSnippet", "syncSubjectSnippetInput", "updateSubjectSnippetSource", "bindSubjectSnippetEditor", "saveComposeTemplate"].forEach((name) => vm.runInContext(extractFn(name), sandbox));
+    ["parsePlaceholderToken", "replySnippetPlaceholderWarning", "renderContentVariantRows", "setActiveVariant", "collectContentVariants", "captureContentVariantValues", "addContentVariantRow", "removeContentVariantRow", "validateContentVariantInputs", "closeSubjectSnippetOptions", "subjectSnippetLabel", "subjectSnippetIsEligible", "findSubjectSnippet", "subjectSnippetStatus", "collectComposeTemplateSubject", "selectSubjectSnippet", "syncSubjectSnippetInput", "updateSubjectSnippetSource", "bindSubjectSnippetEditor", "saveComposeTemplate"].forEach((name) => vm.runInContext(extractFn(name), sandbox));
     sandbox.__ = { get, container, inputs, rows, originalPanel, originalInput, variableButton };
     return sandbox;
 }
@@ -242,5 +242,23 @@ describe("subject snippet identity and custom fallback", () => {
         await sb.saveComposeTemplate({ preventDefault() {} });
         assert.equal(sent.subject, "Personal topic");
         assert.equal(sent.subjectSnippetId, null);
+    });
+});
+
+
+describe("snippet save with real placeholder validation", () => {
+    it("accepts bare variables across versions and rejects a malformed hidden variant", () => {
+        const sb = createEditorSandbox();
+        sb.state.variableMeta = [{ key: "primaryResearchField", nullable: true }];
+        ["validatePlaceholderText", "brokenPlaceholderFragments"].forEach((name) => vm.runInContext(extractFn(name), sb));
+        const { container, inputs, get } = sb.__;
+        sb.renderContentVariantRows(container, ["Research ${primaryResearchField}"]);
+        assert.equal(sb.validateContentVariantInputs(container, "Topic ${primaryResearchField}"), true);
+        assert.match(get("varHint-replySnippetContent").textContent, /未设置默认值/);
+        assert.match(get("varHint-replySnippetVariant-0").textContent, /未设置默认值/);
+        inputs[0].value = "Research ${primaryResearchField";
+        assert.equal(sb.validateContentVariantInputs(container, "Topic ${primaryResearchField}"), false);
+        assert.equal(container.dataset.activeIndex, "1");
+        assert.equal(inputs[0].focused, true);
     });
 });

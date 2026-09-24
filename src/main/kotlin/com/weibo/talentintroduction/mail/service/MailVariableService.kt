@@ -223,6 +223,10 @@ class MailVariableService(
         mailPlaceholderService.requireValidPlaceholders(text)
     }
 
+    fun requireValidTemplatePlaceholders(text: String) {
+        mailPlaceholderService.requireValidTemplatePlaceholders(text)
+    }
+
     private fun buildPreviewVariables(
         text: String,
         variables: Map<String, String>,

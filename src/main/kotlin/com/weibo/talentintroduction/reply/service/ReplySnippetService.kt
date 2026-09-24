@@ -184,12 +184,12 @@ class ReplySnippetService(
         validateSnippetType(snippetType)
         require(command.content.isNotBlank()) { "content is required" }
         require(command.displayOrder > 0) { "displayOrder must be positive" }
-        mailVariableService.requireValidPlaceholders(command.content)
+        mailVariableService.requireValidTemplatePlaceholders(command.content)
         if (command.isDefault) {
             require(snippetType != SnippetType.ACK.name) { "ACK snippets cannot be default" }
             require(snippetType != SnippetType.CUSTOM.name) { "CUSTOM snippets cannot be default" }
         }
-        contentVariantService.validateVariantTexts(command.content.trim(), command.variants)
+        contentVariantService.validateVariantTexts(command.content.trim(), command.variants, ContentVariantOwnerType.REPLY_SNIPPET)
 
         val now = LocalDateTime.now()
         val saved = repository.save(
@@ -223,12 +223,12 @@ class ReplySnippetService(
         val existing = findById(id)
         require(command.content.isNotBlank()) { "content is required" }
         require(command.displayOrder > 0) { "displayOrder must be positive" }
-        mailVariableService.requireValidPlaceholders(command.content)
+        mailVariableService.requireValidTemplatePlaceholders(command.content)
         if (command.isDefault) {
             require(existing.snippetType != SnippetType.ACK.name) { "ACK snippets cannot be default" }
             require(existing.snippetType != SnippetType.CUSTOM.name) { "CUSTOM snippets cannot be default" }
         }
-        contentVariantService.validateVariantTexts(command.content.trim(), command.variants)
+        contentVariantService.validateVariantTexts(command.content.trim(), command.variants, ContentVariantOwnerType.REPLY_SNIPPET)
 
         val updated = repository.save(
             existing.copy(

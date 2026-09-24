@@ -55,14 +55,16 @@ class ContentVariantService(
     fun listByOwner(ownerType: String, ownerId: Long): List<ContentVariant> =
         contentVariantRepository.findByOwnerTypeAndOwnerIdOrderByVariantOrderAscIdAsc(ownerType, ownerId)
 
-    fun validateVariantTexts(mainBody: String, variants: List<String>) {
-        validateVariants(mainBody, variants)
+    fun validateVariantTexts(
+        mainBody: String, variants: List<String>, ownerType: String = ContentVariantOwnerType.QA_RULE
+    ) {
+        validateVariants(mainBody, variants, ownerType)
     }
 
     @Transactional
     fun replaceForOwner(ownerType: String, ownerId: Long, mainBody: String, variants: List<String>) {
         require(ContentVariantOwnerType.isKnown(ownerType)) { "Unsupported content variant owner type: $ownerType" }
-        validateVariants(mainBody, variants)
+        validateVariants(mainBody, variants, ownerType)
         contentVariantRepository.deleteByOwnerTypeAndOwnerId(ownerType, ownerId)
         if (variants.isEmpty()) {
             return
@@ -90,7 +92,7 @@ class ContentVariantService(
         contentVariantRepository.deleteByOwnerTypeAndOwnerId(ownerType, ownerId)
     }
 
-    private fun validateVariants(mainBody: String, variants: List<String>) {
+    private fun validateVariants(mainBody: String, variants: List<String>, ownerType: String) {
         val trimmedMain = mainBody.trim()
         val seen = mutableSetOf<String>()
         variants.forEachIndexed { index, raw ->
@@ -104,7 +106,11 @@ class ContentVariantService(
             if (!seen.add(trimmed)) {
                 throw IllegalArgumentException("变体不能重复")
             }
-            mailPlaceholderService.requireValidPlaceholders(trimmed)
+            if (ownerType == ContentVariantOwnerType.REPLY_SNIPPET) {
+                mailPlaceholderService.requireValidTemplatePlaceholders(trimmed)
+            } else {
+                mailPlaceholderService.requireValidPlaceholders(trimmed)
+            }
         }
     }
 

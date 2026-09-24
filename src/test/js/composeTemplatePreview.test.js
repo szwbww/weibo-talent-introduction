@@ -173,6 +173,8 @@ function createVarEditorSandbox() {
         "validatePlaceholderText",
         "brokenPlaceholderFragments",
         "isComposeTemplateVarTarget",
+        "isReplySnippetVarTarget",
+        "replySnippetPlaceholderWarning",
         "placeholderDefaultFallback",
         "renderVarChipButtons",
         "renderVarInsertMenuContent",
@@ -388,7 +390,7 @@ describe("compose template server preview", () => {
 });
 
 describe("compose template variable editor (I-1/I-4)", () => {
-    it("relaxes bare tokens for the template editor but keeps QA/snippet rules strict", () => {
+    it("relaxes bare tokens for the template editor but keeps QA rules strict", () => {
         const sb = createVarEditorSandbox();
 
         // template editor: `${key}` (the mandatory form) and `${key|默认值}` are both legal
@@ -405,7 +407,7 @@ describe("compose template variable editor (I-1/I-4)", () => {
         assert.equal(broken.valid, false);
         assert.deepEqual(broken.violations, ["${institution"]);
 
-        // QA rule / reply snippet editors keep the pre-existing severity
+        // QA rule editors keep the pre-existing severity
         assert.equal(sb.validatePlaceholderText("Hello ${institution}").valid, false);
         assert.equal(sb.validatePlaceholderText("Hello ${institution|your institution}").valid, true);
         assert.equal(sb.validatePlaceholderText("Hello ${senderName}").valid, true);
@@ -470,4 +472,33 @@ describe("compose template variable editor (I-1/I-4)", () => {
         assert.deepEqual(blocks.map((block) => block.blockOrder), [0, 1]);
         assert.deepEqual(blocks.map((block) => block.customText), texts);
     });
+});
+
+
+describe("reply snippet placeholder validation", () => {
+    for (const target of ["replySnippetContent", "replySnippetVariant-0"]) {
+        it(`${target} inserts bare variables and warns without disabling save`, () => {
+            const sb = createVarEditorSandbox();
+            const input = sb.__textarea(target, "Topic ");
+            const hint = sb.__textarea(`varHint-${target}`, "");
+            const submit = { disabled: false };
+            input.closest = () => ({ querySelector: () => submit });
+            const chip = sb.__chip(target, "primaryResearchField", true, "");
+            sb.bindVarChipBar({ querySelectorAll: () => [chip] });
+            chip.click();
+            assert.equal(input.value, "Topic ${primaryResearchField}");
+            assert.equal(submit.disabled, false);
+            assert.equal(hint.hidden, false);
+            assert.match(hint.textContent, /未设置默认值.*发送门槛过滤/);
+            assert.equal(hint.className, "var-validation-hint");
+            input.value = "Topic ${primaryResearchField|research}";
+            assert.equal(sb.updateVarValidationForTarget(target, input), true);
+            assert.equal(hint.hidden, true);
+            for (const invalid of ["${bogus}", "${primaryResearchField", "${primaryResearchField|}"]) {
+                input.value = invalid;
+                assert.equal(sb.updateVarValidationForTarget(target, input), false);
+                assert.equal(submit.disabled, true);
+            }
+        });
+    }
 });
