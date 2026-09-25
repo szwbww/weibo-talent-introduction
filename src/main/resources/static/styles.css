@@ -11813,6 +11813,53 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .batch-email-verification-pager { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .batch-email-verification-pager .button:disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
 
+.mot-root {
+    padding: 0 24px 24px;
+}
+.mot-root[hidden], .mot-detail[hidden], #motSettingsRetry[hidden] {
+    display: none;
+}
+.mot-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.mot-toggle input {
+    width: 16px;
+    height: 16px;
+    min-height: 0;
+    accent-color: var(--primary);
+}
+.mot-error {
+    color: #b91c1c;
+}
+.mot-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    padding-top: 16px;
+}
+.mot-detail {
+    margin-top: 16px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #f8fafc;
+}
+.mot-detail-grid {
+    display: grid;
+    grid-template-columns: 100px minmax(0, 1fr);
+    gap: 8px 16px;
+    margin: 0;
+}
+.mot-detail-grid dt {
+    color: var(--text-secondary);
+}
+.mot-detail-grid dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+}
 /* task-center-contract:start */
 .topnav.task-center-nav {
     flex-wrap: wrap;

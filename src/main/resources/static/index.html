@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260925-emailable-policy-pagination">
-    <link rel="stylesheet" href="expert-materials.css?v=20260925-emailable-policy-pagination">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20260925-emailable-policy-pagination">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20260925-emailable-policy-pagination">
-    <link rel="stylesheet" href="world-clock.css?v=20260925-emailable-policy-pagination">
+    <link rel="stylesheet" href="styles.css?v=20260925-mail-open-tracking">
+    <link rel="stylesheet" href="expert-materials.css?v=20260925-mail-open-tracking">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20260925-mail-open-tracking">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20260925-mail-open-tracking">
+    <link rel="stylesheet" href="world-clock.css?v=20260925-mail-open-tracking">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -254,6 +254,7 @@
                 <div class="panel-head">
                     <div class="tabs" id="monitoringSubTabs" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <button class="tab button secondary active" data-subtab="introductions">首发邮件</button>
+                        <button class="tab button secondary" data-subtab="tracking">打开跟踪</button>
                         <button class="tab button secondary" data-subtab="inbound">收信分类</button>
                         <button class="tab button secondary" data-subtab="outbound">发信回复</button>
                         <button class="tab button secondary" data-subtab="pending">未匹配邮件</button>
@@ -262,6 +263,28 @@
                         <button class="button secondary" id="monitoringBounceBackfillBtn" style="margin-left: auto; display: none;">回填历史退信</button>
                     </div>
                 </div>
+                <div id="monitoringOpenTracking" class="mot-root" hidden>
+                    <div class="toolbar">
+                        <label class="mot-toggle"><input id="motEnabled" type="checkbox" disabled>开启非回复邮件打开跟踪</label>
+                        <span id="motSettingStatus" class="muted" role="status">正在读取设置…</span>
+                        <button id="motSettingsRetry" class="button secondary" type="button" hidden>重试设置</button>
+                    </div>
+                    <p class="muted">适用于所有非回复外发邮件；自动回复、人工回信均排除。关闭后停止新邮件跟踪及新信号记录，历史保留。</p>
+                    <p id="motConfigStatus" class="muted"></p>
+                    <div id="motMetrics" class="card-grid" aria-live="polite"><div class="metric-card"><div class="metric-label">跟踪发出</div><div class="metric-value">—</div></div><div class="metric-card"><div class="metric-label">收到打开信号</div><div class="metric-value">—</div></div><div class="metric-card"><div class="metric-label">打开信号率</div><div class="metric-value">—</div></div></div>
+                    <p class="muted">打开信号表示图片被加载，不等于本人已读。指标按发送日期和发件账号统计；下方状态与搜索只影响列表。</p>
+                    <div class="toolbar">
+                        <label>状态 <select id="motStatus"><option value="ALL">全部</option><option value="OPENED">已收到打开信号</option><option value="NO_SIGNAL">暂无打开信号</option><option value="NOT_TRACKED">未跟踪</option></select></label>
+                        <label>搜索 <input id="motKeyword" type="search" maxlength="200" placeholder="专家、收件邮箱或主题"></label>
+                        <button id="motQuery" class="button secondary" type="button">查询</button>
+                        <span id="motRefreshed" class="muted"></span>
+                    </div>
+                    <p id="motError" class="mot-error" role="alert" hidden></p>
+                    <div class="table-wrap"><table id="motTable"><thead><tr><th>发送时间</th><th>专家</th><th>收件邮箱</th><th>发件账号</th><th>主题</th><th>跟踪状态</th><th>首次信号</th><th>最近信号</th><th>操作</th></tr></thead><tbody></tbody></table></div>
+                    <div id="motPagination" class="pagination mot-pagination"></div>
+                    <section id="motDetail" class="mot-detail" hidden></section>
+                </div>
+                <div id="monitoringLegacyActivity">
                 <div class="table-wrap">
                     <table id="monitoringActivityTable">
                         <thead></thead>
@@ -269,6 +292,7 @@
                     </table>
                 </div>
                 <div class="pagination" id="monitoringPagination" style="padding: 16px 24px; display: flex; justify-content: flex-end; gap: 8px;"></div>
+                </div>
             </section>
 
             <section class="panel">
@@ -2259,11 +2283,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260925-emailable-policy-pagination"></script>
-<script src="expert-materials.js?v=20260925-emailable-policy-pagination"></script>
-<script src="meeting-confirmation.js?v=20260925-emailable-policy-pagination"></script>
-<script src="mailbox-chat.js?v=20260925-emailable-policy-pagination"></script>
-<script src="app.js?v=20260925-emailable-policy-pagination"></script>
-<script src="world-clock.js?v=20260925-emailable-policy-pagination"></script>
+<script src="trust-reply-workbench.js?v=20260925-mail-open-tracking"></script>
+<script src="expert-materials.js?v=20260925-mail-open-tracking"></script>
+<script src="meeting-confirmation.js?v=20260925-mail-open-tracking"></script>
+<script src="mailbox-chat.js?v=20260925-mail-open-tracking"></script>
+<script src="app.js?v=20260925-mail-open-tracking"></script>
+<script src="world-clock.js?v=20260925-mail-open-tracking"></script>
 </body>
 </html>

@@ -55,7 +55,14 @@ const state = {
         reputationDays: 30,
         expandedRegions: {},
         lastRefreshedAt: null,
-        autoRefreshTimer: null
+        autoRefreshTimer: null,
+        openTracking: {
+            settings: null, loadingSettings: false, saving: false, settingsSeq: 0,
+            summary: null, rows: [], totalCount: 0, page: 0, status: "ALL", keyword: "",
+            loading: false, requestSeq: 0, detailSeq: 0, detailId: null, refreshedAt: null
+        },
+        activitySeq: 0,
+        loadSeq: 0
     },
     mailbox: {
         items: [],
@@ -3061,6 +3068,13 @@ function setView(view) {
     if (state.monitoring.autoRefreshTimer && view !== "monitoring") {
         clearTimeout(state.monitoring.autoRefreshTimer);
         state.monitoring.autoRefreshTimer = null;
+    }
+    if (view !== "monitoring") {
+        ++state.monitoring.loadSeq;
+        ++state.monitoring.activitySeq;
+        ++state.monitoring.openTracking.requestSeq;
+        ++state.monitoring.openTracking.settingsSeq;
+        closeOpenTrackingDetail();
     }
     state.view = view;
     if (view === "mail-templates") {
@@ -13813,6 +13827,7 @@ function renderEmailAliasSection(contactId) {
 }
 
 async function loadMonitoring() {
+    const sequence = ++state.monitoring.loadSeq;
     const dateInput = $("#monitoringDate");
     if (dateInput && !state.monitoring.date) {
         state.monitoring.date = monitoringToday();
@@ -13829,6 +13844,7 @@ async function loadMonitoring() {
         api(`/api/mail-monitoring/provider-distribution?${windowParams}`).catch(() => ({ rows: [], unattributedBounceCount: 0 })),
         api(`/api/mail-monitoring/region-distribution?${windowParams}`).catch(() => [])
     ]);
+    if (sequence !== state.monitoring.loadSeq || state.view !== "monitoring") return;
     state.monitoring.summary = summary;
     state.monitoring.senderHealth = senderHealth || [];
     state.monitoring.providerDistribution = providerDistribution?.rows || [];
@@ -13839,6 +13855,7 @@ async function loadMonitoring() {
     renderMonitoringProviderDistribution();
     renderMonitoringRegionDistribution();
     await loadMonitoringReputation();
+    if (sequence !== state.monitoring.loadSeq || state.view !== "monitoring") return;
     renderMonitoringSenderHealth();
     renderMonitoringSenderOptions();
     await loadMonitoringSubTab();
@@ -14173,8 +14190,239 @@ function renderMonitoringSenderHealth() {
     `).join("") || `<tr><td colspan="9" class="text-muted" style="text-align:center;">暂无账号数据</td></tr>`;
 }
 
+function openTrackingVisible() {
+    return state.view === "monitoring" && state.monitoring.subTab === "tracking";
+}
+
+function renderOpenTrackingSettings() {
+    const tracking = state.monitoring.openTracking;
+    const toggle = $("#motEnabled");
+    const retry = $("#motSettingsRetry");
+    toggle.checked = tracking.settings?.enabled === true;
+    toggle.disabled = tracking.loadingSettings || tracking.saving || !tracking.settings ||
+        (!tracking.settings.configured && !tracking.settings.enabled);
+    retry.hidden = !tracking.settingsError;
+    $("#motConfigStatus").textContent = tracking.settings
+        ? (tracking.settings.configured
+            ? "公网地址已配置，连通性需实际验证"
+            : "未配置公网跟踪地址，暂不能开启")
+        : "";
+    $("#motSettingStatus").textContent = tracking.settingsError
+        ? `设置读取或保存失败：${tracking.settingsError}`
+        : tracking.loadingSettings ? "正在读取设置…"
+        : tracking.saving ? "正在保存设置…"
+        : tracking.settings ? (tracking.settings.enabled ? "跟踪已开启" : "跟踪已关闭") : "设置尚未读取";
+}
+
+async function loadOpenTrackingSettings() {
+    const tracking = state.monitoring.openTracking;
+    const sequence = ++tracking.settingsSeq;
+    tracking.loadingSettings = true;
+    tracking.settingsError = "";
+    // A failed GET cannot turn a previously displayed value into an actionable stale switch.
+    tracking.settings = null;
+    renderOpenTrackingSettings();
+    try {
+        const settings = await api("/api/mail-open-tracking/settings");
+        if (sequence !== tracking.settingsSeq || !openTrackingVisible()) return;
+        tracking.settings = settings;
+    } catch (error) {
+        if (sequence !== tracking.settingsSeq || !openTrackingVisible()) return;
+        tracking.settingsError = error.message;
+    } finally {
+        if (sequence === tracking.settingsSeq && openTrackingVisible()) {
+            tracking.loadingSettings = false;
+            renderOpenTrackingSettings();
+        }
+    }
+}
+
+async function saveOpenTrackingSettings(enabled) {
+    const tracking = state.monitoring.openTracking;
+    if (!openTrackingVisible() || !tracking.settings || tracking.loadingSettings || tracking.saving ||
+        (enabled && !tracking.settings.configured)) {
+        renderOpenTrackingSettings();
+        return;
+    }
+    const sequence = ++tracking.settingsSeq;
+    tracking.saving = true;
+    tracking.settingsError = "";
+    renderOpenTrackingSettings();
+    try {
+        const settings = await api("/api/mail-open-tracking/settings", {
+            method: "PUT", body: JSON.stringify({ enabled })
+        });
+        if (sequence !== tracking.settingsSeq || !openTrackingVisible()) return;
+        tracking.settings = settings;
+    } catch (error) {
+        if (sequence !== tracking.settingsSeq || !openTrackingVisible()) return;
+        tracking.settingsError = error.message;
+    } finally {
+        tracking.saving = false;
+        if (sequence === tracking.settingsSeq) {
+            if (openTrackingVisible()) renderOpenTrackingSettings();
+        } else if (openTrackingVisible()) {
+            // A later GET may have raced the PUT; settle the displayed switch from the server.
+            loadOpenTrackingSettings();
+        }
+    }
+}
+
+const openTrackingStatusLabels = {
+    OPENED: ["已收到打开信号", "ok"],
+    NO_SIGNAL: ["暂无打开信号", "warn"],
+    NOT_TRACKED: ["未跟踪", ""]
+};
+
+function renderOpenTrackingRecords(message = null) {
+    const tracking = state.monitoring.openTracking;
+    const body = $("#motTable").querySelector("tbody");
+    if (message) {
+        body.innerHTML = `<tr><td colspan="9" class="muted">${message}</td></tr>`;
+        return;
+    }
+    body.innerHTML = tracking.rows.map((row) => {
+        const [label, tone] = openTrackingStatusLabels[row.trackingStatus] || openTrackingStatusLabels.NOT_TRACKED;
+        const id = Number(row.mailRecordId);
+        return `<tr><td>${escapeHtml(row.sentAt || "—")}</td><td>${escapeHtml(row.expertName || "—")}</td>
+            <td>${escapeHtml(row.recipient ?? "未保存收件快照")}</td><td>${escapeHtml(row.senderAccountCode || "—")}</td>
+            <td>${escapeHtml(row.subject || "—")}</td><td><span class="badge${tone ? ` ${tone}` : ""}">${label}</span></td>
+            <td>${escapeHtml(row.firstOpenAt || "—")}</td><td>${escapeHtml(row.lastOpenAt || "—")}</td>
+            <td>${Number.isSafeInteger(id) && id > 0 ? `<button class="button secondary" type="button" data-mot-detail="${id}">详情</button>` : ""}</td></tr>`;
+    }).join("") || '<tr><td colspan="9" class="muted">暂无记录</td></tr>';
+}
+
+function renderOpenTrackingPagination() {
+    const tracking = state.monitoring.openTracking;
+    const maxPage = Math.max(0, Math.ceil(tracking.totalCount / 20) - 1);
+    $("#motPagination").innerHTML = `<span class="muted">共 ${escapeHtml(tracking.totalCount)} 条 · 第 ${tracking.page + 1} 页</span>
+        <button class="button secondary" type="button" data-mot-page="prev" ${tracking.loading || tracking.page === 0 ? "disabled" : ""}>上一页</button>
+        <button class="button secondary" type="button" data-mot-page="next" ${tracking.loading || tracking.page >= maxPage ? "disabled" : ""}>下一页</button>`;
+}
+
+async function loadOpenTrackingRecords(retried = false) {
+    const tracking = state.monitoring.openTracking;
+    const sequence = ++tracking.requestSeq;
+    const params = monitoringWindowParams();
+    const sender = $("#monitoringSenderAccount")?.value || "";
+    if (sender) params.set("senderAccountCode", sender);
+    params.set("status", tracking.status);
+    if (tracking.keyword) params.set("keyword", tracking.keyword);
+    params.set("pageSize", 20);
+    params.set("pageOffset", tracking.page * 20);
+    const query = params.toString();
+    tracking.loading = true;
+    $("#motError").hidden = true;
+    renderOpenTrackingRecords("加载中…");
+    renderOpenTrackingPagination();
+    const current = () => sequence === tracking.requestSeq && openTrackingVisible() &&
+        query === (() => {
+            const now = monitoringWindowParams();
+            const account = $("#monitoringSenderAccount")?.value || "";
+            if (account) now.set("senderAccountCode", account);
+            now.set("status", tracking.status);
+            if (tracking.keyword) now.set("keyword", tracking.keyword);
+            now.set("pageSize", 20);
+            now.set("pageOffset", tracking.page * 20);
+            return now.toString();
+        })();
+    try {
+        const snapshot = await api(`/api/mail-open-tracking/records?${query}`);
+        if (!current()) return;
+        const last = Math.max(0, Math.ceil(snapshot.totalCount / 20) - 1);
+        if (!retried && tracking.page > last) {
+            tracking.page = last;
+            return loadOpenTrackingRecords(true);
+        }
+        tracking.rows = snapshot.records || [];
+        tracking.totalCount = snapshot.totalCount;
+        tracking.summary = snapshot.summary;
+        tracking.refreshedAt = new Date();
+        const metrics = [
+            ["跟踪发出", snapshot.summary.trackedSent],
+            ["收到打开信号", snapshot.summary.opened],
+            ["打开信号率", snapshot.summary.trackedSent ? formatPercent(snapshot.summary.openSignalRate) : "—"]
+        ];
+        $("#motMetrics").innerHTML = metrics.map(([label, value]) =>
+            `<div class="metric-card"><div class="metric-label">${label}</div><div class="metric-value">${escapeHtml(value)}</div></div>`
+        ).join("");
+        $("#motRefreshed").textContent = `最近查询 ${tracking.refreshedAt.toLocaleTimeString()}`;
+        renderOpenTrackingRecords();
+    } catch (error) {
+        if (!current()) return;
+        $("#motError").textContent = `查询失败：${error.message}`;
+        $("#motError").hidden = false;
+        renderOpenTrackingRecords("加载失败，请重试");
+    } finally {
+        if (sequence === tracking.requestSeq && openTrackingVisible()) {
+            tracking.loading = false;
+            renderOpenTrackingPagination();
+        }
+    }
+}
+
+function closeOpenTrackingDetail() {
+    const tracking = state.monitoring.openTracking;
+    ++tracking.detailSeq;
+    tracking.detailId = null;
+    $("#motDetail").hidden = true;
+    $("#motDetail").innerHTML = "";
+}
+
+function renderOpenTrackingDetail(row, message = null, error = false) {
+    const detail = $("#motDetail");
+    detail.hidden = false;
+    const header = '<div class="panel-head"><h3>跟踪详情</h3><button class="button secondary" type="button" id="motDetailClose">关闭详情</button></div>';
+    if (message) {
+        detail.innerHTML = `${header}<p class="${error ? "mot-error" : "muted"}"${error ? ' role="alert"' : ""}>${message}</p>`;
+        return;
+    }
+    const [status] = openTrackingStatusLabels[row.trackingStatus] || openTrackingStatusLabels.NOT_TRACKED;
+    const fields = [
+        ["邮件记录", row.mailRecordId], ["主题", row.subject || "—"], ["状态", status],
+        ["收件邮箱", row.recipient ?? "未保存收件快照"], ["发送时间", row.sentAt || "—"],
+        ["首次信号", row.firstOpenAt || "—"], ["最近信号", row.lastOpenAt || "—"],
+        ["Message-ID", row.messageId || "—"]
+    ];
+    detail.innerHTML = `${header}<dl class="mot-detail-grid">${fields.map(([label, value]) =>
+        `<dt>${label}</dt><dd>${escapeHtml(value)}</dd>`).join("")}</dl>`;
+}
+
+function loadOpenTrackingDetail(id) {
+    if (!/^[1-9]\d*$/.test(String(id)) || !Number.isSafeInteger(Number(id)) || !openTrackingVisible()) return;
+    const tracking = state.monitoring.openTracking;
+    const sequence = ++tracking.detailSeq;
+    tracking.detailId = Number(id);
+    renderOpenTrackingDetail(null, "加载中…");
+    return api(`/api/mail-open-tracking/records/${id}`).then((row) => {
+        if (sequence === tracking.detailSeq && tracking.detailId === Number(id) && openTrackingVisible()) {
+            renderOpenTrackingDetail(row);
+        }
+    }).catch((error) => {
+        if (sequence === tracking.detailSeq && tracking.detailId === Number(id) && openTrackingVisible()) {
+            renderOpenTrackingDetail(null, error.status === 404 ? "该邮件记录不存在" : "加载失败，请重新点击详情", true);
+        }
+    });
+}
+
 async function loadMonitoringSubTab() {
     const tab = state.monitoring.subTab;
+    if (tab !== "tracking") {
+        ++state.monitoring.openTracking.requestSeq;
+        ++state.monitoring.openTracking.settingsSeq;
+        closeOpenTrackingDetail();
+    }
+    if (tab === "tracking") {
+        $("#monitoringLegacyActivity").hidden = true;
+        $("#monitoringOpenTracking").hidden = false;
+        const backfill = $("#monitoringBounceBackfillBtn");
+        if (backfill) backfill.style.display = "none";
+        await Promise.all([loadOpenTrackingSettings(), loadOpenTrackingRecords()]);
+        return;
+    }
+    $("#monitoringOpenTracking").hidden = true;
+    $("#monitoringLegacyActivity").hidden = false;
+    const sequence = ++state.monitoring.activitySeq;
     const params = monitoringRangeParams();
     let url;
     if (tab === "introductions") url = `/api/mail-monitoring/introductions?${params}`;
@@ -14196,6 +14444,7 @@ async function loadMonitoringSubTab() {
     }
     if (tab === "promotions") url = `/api/mail-monitoring/promotions?${params}`;
     const data = await api(url);
+    if (sequence !== state.monitoring.activitySeq || state.view !== "monitoring" || state.monitoring.subTab !== tab) return;
     state.monitoring.rows = data.records || [];
     state.monitoring.totalCount = data.totalCount ?? state.monitoring.rows.length;
     renderMonitoringActivityTable();
@@ -14326,6 +14575,8 @@ function bindMonitoringEvents() {
     $("#monitoringDate").addEventListener("change", (event) => {
         state.monitoring.date = event.target.value || null;
         state.monitoring.page = 0;
+        state.monitoring.openTracking.page = 0;
+        closeOpenTrackingDetail();
         loadMonitoring().catch((e) => showStatus(e.message, "error"));
     });
     $("#monitoringRangeTabs").addEventListener("click", (event) => {
@@ -14333,6 +14584,8 @@ function bindMonitoringEvents() {
         if (!tab) return;
         state.monitoring.rangeDays = Number(tab.dataset.range);
         state.monitoring.page = 0;
+        state.monitoring.openTracking.page = 0;
+        closeOpenTrackingDetail();
         syncMonitoringRangeTabs();
         loadMonitoring().catch((e) => showStatus(e.message, "error"));
     });
@@ -14345,6 +14598,8 @@ function bindMonitoringEvents() {
     });
     $("#monitoringSenderAccount").addEventListener("change", () => {
         state.monitoring.page = 0;
+        state.monitoring.openTracking.page = 0;
+        closeOpenTrackingDetail();
         loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
     });
     $("#monitoringReputationDomain")?.addEventListener("change", (event) => {
@@ -14360,8 +14615,40 @@ function bindMonitoringEvents() {
         if (!tab) return;
         state.monitoring.subTab = tab.dataset.subtab;
         state.monitoring.page = 0;
+        closeOpenTrackingDetail();
         $$("#monitoringSubTabs .tab").forEach((item) => item.classList.toggle("active", item === tab));
         loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
+    });
+    $("#motEnabled").addEventListener("change", (event) => saveOpenTrackingSettings(event.target.checked));
+    $("#motSettingsRetry").addEventListener("click", () => loadOpenTrackingSettings());
+    const queryTracking = () => {
+        const tracking = state.monitoring.openTracking;
+        tracking.status = $("#motStatus").value;
+        tracking.keyword = $("#motKeyword").value.trim();
+        tracking.page = 0;
+        closeOpenTrackingDetail();
+        loadOpenTrackingSettings();
+        loadOpenTrackingRecords();
+    };
+    $("#motQuery").addEventListener("click", queryTracking);
+    $("#motKeyword").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") queryTracking();
+    });
+    $("#motStatus").addEventListener("change", queryTracking);
+    $("#motPagination").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-mot-page]");
+        const tracking = state.monitoring.openTracking;
+        if (!button || tracking.loading || button.disabled) return;
+        tracking.page += button.dataset.motPage === "next" ? 1 : -1;
+        closeOpenTrackingDetail();
+        loadOpenTrackingRecords();
+    });
+    $("#motTable").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-mot-detail]");
+        if (button) loadOpenTrackingDetail(button.dataset.motDetail);
+    });
+    $("#motDetail").addEventListener("click", (event) => {
+        if (event.target.closest("#motDetailClose")) closeOpenTrackingDetail();
     });
     $("#monitoringBounceBackfillBtn")?.addEventListener("click", async () => {
         if (!confirm("将从 inbound 历史记录回填退信名单，可重复执行。继续？")) return;
