@@ -112,6 +112,8 @@ talent-introduction:
     resume-consecutive-days: ${POSTMASTER_RESUME_CONSECUTIVE_DAYS:3}
   manual-outreach:
     send-interval-ms: ${MANUAL_OUTREACH_SEND_INTERVAL_MS:1000}
+  mail-open-tracking:
+    base-url: ${MAIL_OPEN_TRACKING_BASE_URL:}
   unsubscribe:
     base-url: ${UNSUBSCRIBE_BASE_URL:}
     secret: ${UNSUBSCRIBE_SECRET:}

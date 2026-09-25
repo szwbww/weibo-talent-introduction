@@ -38,5 +38,6 @@ data class MailRecord(
      *  OutboundAttachmentSnapshotCodec.serialize 生成的有序快照数组。
      *  只由 ManualReplySendAttemptService 两个 finalize 的 copy/new 四支显式写，
      *  其余构造点保持默认 null（不强迫无关调用改参数）。 */
-    val outboundAttachmentsJson: String? = null
+    val outboundAttachmentsJson: String? = null,
+    val openTrackingId: Long? = null
 )
