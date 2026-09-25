@@ -1,0 +1,22 @@
+# Child 01 approved brief
+
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-mail-open-recovery
+- Branch: fast/mail-open-tracking-00-master
+- Exact approved plan: docs/plans/2026-09-25/mail-open-tracking-01-storage-api.md (commit 7bfd699e17a872cfefdc18e19a9a1e2b5bad07ce)
+- Master: docs/plans/2026-09-25/mail-open-tracking-00-master.md (commit ab2dda0f86c52d8bd9570d994fa895f087931df3)
+- Product base: f9c8dce2d1f2efe09d9ccb0c439498d2e91f22f5
+- Dependencies: none
+- Constraints: Use execute-p for implementation. Only authorized files, preserve master G-1..G-6 and downstream contracts. JDK11. No push/merge/rebase/reset/amend/worktree deletion. Product changes must be separate from evidence commits.
+- Authorized Files:
+  - `src/main/resources/db/migration/V141__create_mail_open_tracking.sql`
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailRecord.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepository.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingService.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailOpenTrackingController.kt`
+  - `src/main/resources/application.yml`
+  - `src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepositoryIT.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingServiceTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailOpenTrackingControllerTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt`
+- Commands: Run every command in docs/plans/2026-09-25/mail-open-tracking-01-storage-api.md acceptance criteria; Docker unavailable is NOT_RUN, not PASS.
+- Outputs: committed implementation, execution.md and fix-log.md (explicit N/A for zero rounds). Independent verifier writes verify-log.md. All four child artifacts must change in the child's evidence commit, even when no automatic fix was needed.

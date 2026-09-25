@@ -1,0 +1,22 @@
+# Child 02 approved brief
+
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-mail-open-recovery
+- Branch: fast/mail-open-tracking-00-master
+- Exact approved plan: docs/plans/2026-09-25/mail-open-tracking-02-reply-context.md (commit 7bfd699e17a872cfefdc18e19a9a1e2b5bad07ce)
+- Master: docs/plans/2026-09-25/mail-open-tracking-00-master.md (commit ab2dda0f86c52d8bd9570d994fa895f087931df3)
+- Product base: 76de1ab3a3257a2b2e292f6c894296d7eb8c80dd
+- Dependencies: 01 terminal light pass
+- Constraints: Use execute-p for implementation. Only authorized files, preserve master G-1..G-6 and downstream contracts. JDK11. No push/merge/rebase/reset/amend/worktree deletion. Product changes must be separate from evidence commits.
+- Authorized Files:
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailContentService.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleServiceTest.kt`
+- Commands: Run every command in docs/plans/2026-09-25/mail-open-tracking-02-reply-context.md acceptance criteria; Docker unavailable is NOT_RUN, not PASS.
+- Outputs: committed implementation, execution.md and fix-log.md (explicit N/A for zero rounds). Independent verifier writes verify-log.md. All four child artifacts must change in the child's evidence commit, even when no automatic fix was needed.

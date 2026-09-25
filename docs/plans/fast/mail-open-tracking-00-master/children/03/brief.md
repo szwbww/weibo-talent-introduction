@@ -1,0 +1,23 @@
+# Child 03 approved brief
+
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-mail-open-recovery
+- Branch: fast/mail-open-tracking-00-master
+- Exact approved plan: docs/plans/2026-09-25/mail-open-tracking-03-smtp-integration.md (commit ab2dda0f86c52d8bd9570d994fa895f087931df3)
+- Master: docs/plans/2026-09-25/mail-open-tracking-00-master.md (commit ab2dda0f86c52d8bd9570d994fa895f087931df3)
+- Product base: Use previous terminal Code head in ledger
+- Dependencies: 02 terminal light pass
+- Constraints: Use execute-p for implementation. Only authorized files, preserve master G-1..G-6 and downstream contracts. JDK11. No push/merge/rebase/reset/amend/worktree deletion. Product changes must be separate from evidence commits.
+- Authorized Files:
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryService.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/service/MailDeliveryService.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt`
+  - `src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt`
+  - `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt`
+- Commands: Run every command in docs/plans/2026-09-25/mail-open-tracking-03-smtp-integration.md acceptance criteria; Docker unavailable is NOT_RUN, not PASS.
+- Outputs: committed implementation, execution.md and fix-log.md (explicit N/A for zero rounds). Independent verifier writes verify-log.md. All four child artifacts must change in the child's evidence commit, even when no automatic fix was needed.
