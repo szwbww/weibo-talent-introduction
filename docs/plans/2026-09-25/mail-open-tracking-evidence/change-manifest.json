@@ -1,0 +1,43 @@
+{
+  "01": [
+    "src/main/resources/db/migration/V141__create_mail_open_tracking.sql",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/domain/MailRecord.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepository.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailOpenTrackingController.kt",
+    "src/main/resources/application.yml",
+    "src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepositoryIT.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingServiceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailOpenTrackingControllerTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt"
+  ],
+  "02": [
+    "src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailContentService.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationServiceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleServiceTest.kt"
+  ],
+  "03": [
+    "src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailDeliveryService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt"
+  ],
+  "04": [
+    "src/main/resources/static/index.html",
+    "src/main/resources/static/app.js",
+    "src/main/resources/static/styles.css",
+    "src/test/js/mailOpenTracking.test.js"
+  ]
+}

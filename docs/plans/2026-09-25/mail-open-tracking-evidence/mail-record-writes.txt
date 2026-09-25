@@ -1,0 +1,13 @@
+$ rg -n mailRecordRepository\.(save|delete)|UPDATE mail_record|DELETE FROM mail_record|INSERT INTO mail_record src/main scripts --glob *.kt --glob *.sql --glob *.py
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:59:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:110:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:70:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:397:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:496:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:419:        val inboundMailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:759:        val outboundRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1039:    ): MailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1237:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:144:        mailRecordRepository.save(
+src/main/resources/db/migration/V24__extend_mail_send_attempt_state_and_link_mail_record.sql:26:UPDATE mail_record mr

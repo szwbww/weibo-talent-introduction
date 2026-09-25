@@ -1,0 +1,673 @@
+$ rg -n -C 2 mailRecordRepository\.|FROM mail_record|JOIN mail_record src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-72-            from = start.toLocalDate().toString(),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-73-            to = anchorDate.toString(),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:74:            introductions = mailRecordRepository.countOutboundByMailTypeBetween("INTRODUCTION", start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:75:            inboundReplies = mailRecordRepository.countInboundBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:76:            repliedExperts = mailRecordRepository.countDistinctRepliedExpertsBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:77:            autoReplies = mailRecordRepository.countAutoRepliesBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:78:            operatorOutbound = mailRecordRepository.countOperatorOutboundBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:79:            meetingInvitations = mailRecordRepository.countOutboundByMailTypeBetween("MEETING_INVITATION", start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-80-            manualReviewInbound = inboundMailProcessingRepository.countManualReviewBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-81-            unmatchedInbound = inboundMailProcessingRepository.countUnmatchedBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:82:            failedOutbound = mailRecordRepository.countFailedOutboundBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-83-            applicationPromotions = promotionRepository.countByStatusAndCreatedAtBetween("SUCCESS", start, end)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-84-        )
+--
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-93-    ): IntroductionListResponse {
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-94-        val (start, end) = dateRangeResolver.resolveRange(from, to)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:95:        val records = mailRecordRepository.listIntroductions(start, end, senderAccountCode, pageSize.safeLimit(), pageOffset.safeOffset())
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-96-        val contacts = records.contactsById()
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-97-        return IntroductionListResponse(
+--
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-114-                )
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-115-            },
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:116:            totalCount = mailRecordRepository.countIntroductions(start, end, senderAccountCode)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-117-        )
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-118-    }
+--
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-129-    ): OutboundReplyListResponse {
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-130-        val (start, end) = dateRangeResolver.resolveRange(from, to)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:131:        val records = mailRecordRepository.listOutboundReplies(
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-132-            start, end, triggeredBy, mailType, senderAccountCode, sendStatus, pageSize.safeLimit(), pageOffset.safeOffset()
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-133-        )
+--
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-135-        val sourceInbound = records.mapNotNull { it.sourceInboundId }.distinct()
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-136-            .takeIf { it.isNotEmpty() }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:137:            ?.let { mailRecordRepository.findAllById(it).associateBy { record -> record.id } }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-138-            ?: emptyMap()
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-139-        val qaRules = records.mapNotNull { it.matchedQaRuleId }.distinct()
+--
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-170-                )
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-171-            },
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:172:            totalCount = mailRecordRepository.countOutboundReplies(start, end, triggeredBy, mailType, senderAccountCode, sendStatus)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-173-        )
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-174-    }
+--
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-243-    fun senderAccountHealth(date: LocalDate?): List<SenderAccountHealthRow> {
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-244-        val (from, to) = dateRangeResolver.resolveDay(date)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:245:        val stats = mailRecordRepository.aggregateSenderAccountStats(from, to).associateBy { it.senderAccountCode }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-246-        val lastReceived = inboundMailProcessingRepository.findLastReceivedAtPerAccount()
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-247-            .associate { it.senderAccountCode to it.lastReceivedAt }
+--
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-270-        val hardBounces = bounceRecordRepository.countHardBouncesSince(accountCode, since)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-271-        val softBounces = bounceRecordRepository.countSoftBouncesSince(accountCode, since)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:272:        val sentCount = mailRecordRepository.countSentByAccountSince(accountCode, since)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-273-        val bounceRate = if (sentCount > 0) hardBounces.toDouble() / sentCount else 0.0
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-274-        return BounceStatsResponse(
+--
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-287-        val stats = PROVIDER_ORDER.associateWith { MutableProviderStats() }.toMutableMap()
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-288-
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:289:        mailRecordRepository.aggregateIntroCohortByDomain(start, end, matureBefore).forEach { row ->
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-290-            val provider = resolveProviderFromDomain(row.domain)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-291-            val bucket = stats.getOrPut(provider) { MutableProviderStats() }
+--
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-296-        }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-297-        // 未送达 = 发送失败 ∪ 被退回，按专家去重（UNION），分桶键是专家邮箱域名（I-1、I-3）
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:298:        mailRecordRepository.aggregateUndeliveredByDomain(start, end).forEach { row ->
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-299-            val provider = resolveProviderFromDomain(row.domain)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-300-            val bucket = stats.getOrPut(provider) { MutableProviderStats() }
+--
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-324-        val (start, end) = dateRangeResolver.resolveRange(fromDate, toDate)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-325-        val matureBefore = LocalDateTime.now().minusDays(MATURITY_DAYS)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:326:        val countryRows = mailRecordRepository.aggregateIntroCohortByCountry(start, end, matureBefore)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-327-            .map { row -> row.toRegionCountryRow() }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt-328-        val promotionByRegion = promotionRepository.aggregateSuccessByCountry(start, end)
+--
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-79-        val attachmentId = attachment.id ?: return null
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-80-        if (attachment.mailRecordId != null) {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:81:            return mailRecordRepository.findByIdOrNull(attachment.mailRecordId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-82-                ?.expertContactId
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-83-        }
+--
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-708-        return when (source) {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-709-            SOURCE_TYPE_MAIL_RECORD -> {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:710:                val record = mailRecordRepository.findByIdOrNull(id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-711-                    ?: return emptyList()
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-712-                if (record.direction != "INBOUND") {
+--
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-774-        jdbc.queryForList(
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-775-            """
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:776:            SELECT id FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-777-             WHERE direction = 'INBOUND'
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-778-               AND expert_contact_id = :expertContactId
+--
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-854-              LEFT JOIN mail_attachment_transfer t ON t.attachment_id = a.id
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-855-              LEFT JOIN inbound_mail_processing p ON p.id = COALESCE(t.inbound_processing_id, a.inbound_processing_id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:856:              LEFT JOIN mail_record mr ON mr.id = a.mail_record_id
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-857-              LEFT JOIN manual_expert_material_upload mu ON mu.id = a.manual_upload_id
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt-858-             WHERE d.expert_contact_id = :contactId
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-46-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-47-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:48:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-49-        WHERE expert_contact_id = :contactId AND direction = 'INBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-50-        ORDER BY COALESCE(received_at, created_at) DESC, id DESC
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-57-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-58-        SELECT mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:59:        FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-60-        INNER JOIN expert_contact ec ON ec.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-61-        WHERE mr.direction = 'INBOUND'
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-73-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-74-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:75:        SELECT mr.* FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-76-        INNER JOIN (
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-77-            SELECT expert_contact_id, MAX(id) AS latest_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:78:            FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-79-            WHERE direction = 'INBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-80-              AND expert_contact_id IS NOT NULL
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-110-        SELECT COUNT(*) FROM (
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-111-            SELECT expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:112:            FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-113-            WHERE direction = 'INBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-114-              AND expert_contact_id IS NOT NULL
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-154-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-155-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:156:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-157-        WHERE direction = 'OUTBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-158-          AND message_id = :messageId
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-164-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-165-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:166:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-167-        WHERE expert_contact_id = :expertContactId
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-168-          AND sender_account_code = :senderAccountCode
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-188-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-189-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:190:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-191-        WHERE direction = 'OUTBOUND' AND mail_type = :mailType
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-192-          AND sent_at >= :from AND sent_at < :to
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-197-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-198-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:199:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-200-        WHERE direction = 'INBOUND' AND received_at >= :from AND received_at < :to
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-201-        """
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-205-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-206-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:207:        SELECT COUNT(DISTINCT expert_contact_id) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-208-        WHERE direction = 'INBOUND' AND received_at >= :from AND received_at < :to
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-209-        """
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-213-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-214-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:215:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-216-        WHERE direction = 'OUTBOUND' AND triggered_by = 'SYSTEM'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-217-          AND mail_type IN ('QA_REPLY', 'MEETING_INVITATION', 'MEETING_CONFIRMATION')
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-223-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-224-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:225:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-226-        WHERE direction = 'OUTBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-227-          AND (triggered_by = 'OPERATOR' OR triggered_by IS NULL)
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-233-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-234-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:235:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-236-        WHERE direction = 'OUTBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-237-          AND send_status = 'FAILED'
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-243-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-244-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:245:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-246-        WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-247-          AND (:from IS NULL OR sent_at >= :from)
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-262-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-263-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:264:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-265-        WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-266-          AND (:from IS NULL OR sent_at >= :from)
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-277-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-278-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:279:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-280-        WHERE direction = 'OUTBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-281-          AND (:from IS NULL OR sent_at >= :from)
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-303-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-304-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:305:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-306-        WHERE direction = 'OUTBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-307-          AND (:from IS NULL OR sent_at >= :from)
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-323-    ): Long
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-324-
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:325:    @Query("SELECT * FROM mail_record WHERE id = :id")
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-326-    fun findByIdOrNull(id: Long): MailRecord?
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-327-
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-328-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-329-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:330:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-331-        WHERE expert_contact_id = :expertContactId
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-332-          AND direction = 'INBOUND'
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-345-               SUM(CASE WHEN send_status = 'FAILED' THEN 1 ELSE 0 END) AS failed_count,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-346-               MAX(sent_at) AS last_sent_at
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:347:          FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-348-         WHERE direction = 'OUTBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-349-           AND sender_account_code IS NOT NULL
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-373-                        THEN 1 ELSE 0 END) AS mature_replied_count
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-374-          FROM (SELECT expert_contact_id, MIN(sent_at) AS first_sent_at
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:375:                  FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-376-                 WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-377-                   AND sent_at >= :from AND sent_at < :to
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-379-          JOIN expert_contact ec ON ec.id = s.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-380-          LEFT JOIN (SELECT inb.expert_contact_id, MIN(inb.received_at) AS first_reply_at
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:381:                       FROM mail_record inb
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-382-                       JOIN (SELECT expert_contact_id, MIN(sent_at) AS first_sent_at
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:383:                               FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-384-                              WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-385-                                AND sent_at >= :from AND sent_at < :to
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-413-                        THEN 1 ELSE 0 END) AS mature_replied_count
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-414-          FROM (SELECT expert_contact_id, MIN(sent_at) AS first_sent_at
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:415:                  FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-416-                 WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-417-                   AND sent_at >= :from AND sent_at < :to
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-419-          JOIN expert_contact ec ON ec.id = s.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-420-          LEFT JOIN (SELECT inb.expert_contact_id, MIN(inb.received_at) AS first_reply_at
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:421:                       FROM mail_record inb
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-422-                       JOIN (SELECT expert_contact_id, MIN(sent_at) AS first_sent_at
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:423:                               FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-424-                              WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-425-                                AND sent_at >= :from AND sent_at < :to
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-448-          FROM (
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-449-                SELECT expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:450:                  FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-451-                 WHERE direction = 'OUTBOUND' AND mail_type = 'INTRODUCTION'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-452-                   AND send_status = 'FAILED'
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-466-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-467-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:468:        SELECT DISTINCT sender_account_code FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-469-        WHERE expert_contact_id IN (:contactIds) AND sender_account_code IS NOT NULL
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-470-        """
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-474-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-475-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:476:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-477-         WHERE sender_account_code = :accountCode
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-478-           AND direction = 'OUTBOUND'
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-485-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-486-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:487:        SELECT COUNT(*) FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-488-         WHERE direction = 'OUTBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-489-           AND mail_type = :mailType
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-514-                 CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-515-                 CAST(NULL AS SIGNED) AS inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:516:            FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-517-            LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-518-           WHERE mr.direction = 'OUTBOUND'
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-544-                 CAST(EXISTS(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-545-                   SELECT 1 FROM mail_attachment ma
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:546:                     JOIN mail_record mr2 ON ma.mail_record_id = mr2.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-547-                    WHERE mr2.message_id = imp.message_id AND mr2.direction = 'INBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-548-                 ) AS SIGNED) AS has_attachment,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-581-        SELECT COUNT(*) FROM (
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-582-          SELECT mr.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:583:            FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-584-            LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-585-           WHERE mr.direction = 'OUTBOUND'
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-640-                     CASE WHEN mr.send_status = 'SENT' THEN 1 ELSE 0 END AS sent_flag,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-641-                     CASE WHEN mr.send_status = 'FAILED' THEN 1 ELSE 0 END AS failed_flag
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:642:                FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-643-                JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-644-               WHERE mr.direction = 'OUTBOUND'
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-708-          FROM (
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-709-              SELECT mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:710:                FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-711-                JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-712-               WHERE mr.direction = 'OUTBOUND'
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-782-                 CAST(EXISTS(SELECT 1 FROM mail_attachment ma WHERE ma.mail_record_id = mr.id) AS SIGNED) AS has_attachment,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-783-                 CAST(NULL AS SIGNED) AS inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:784:            FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-785-            JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-786-           WHERE mr.direction = 'OUTBOUND'
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-820-                 CAST(EXISTS(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-821-                   SELECT 1 FROM mail_attachment ma
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:822:                     JOIN mail_record mr2 ON ma.mail_record_id = mr2.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-823-                    WHERE mr2.message_id = imp.message_id AND mr2.direction = 'INBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-824-                 ) AS SIGNED) AS has_attachment,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-872-    @Query(
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-873-        """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:874:        SELECT * FROM mail_record
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-875-        WHERE expert_contact_id = :contactId
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt-876-          AND direction = 'OUTBOUND'
+--
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt-48-
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt-49-        val limit = (maxContacts ?: schedulingProperties.aiQaExtractionMaxContacts).coerceIn(1, 200)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt:50:        val contactIds = mailRecordRepository.findExpertContactIdsWithInboundMail(null, limit)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt-51-        var upserted = 0
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt-52-        var skipped = 0
+--
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt-54-        contactIds.forEach { contactId ->
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt-55-            try {
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt:56:                val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt-57-                if (records.isEmpty()) {
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiQaExtractionService.kt-58-                    skipped++
+--
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt-2354-
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt-2355-    private fun resolveTrainingMail(source: TrustReplySourceRef): ResolvedTrustReplySource {
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:2356:        val mail = mailRecordRepository.findById(source.sourceId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt-2357-            TrustReplyWorkbenchException(HttpStatus.NOT_FOUND, "TRUST_REPLY_SOURCE_NOT_FOUND")
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt-2358-        }
+--
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt-2399-            TrustReplyWorkbenchException(HttpStatus.UNPROCESSABLE_ENTITY, "TRUST_REPLY_SOURCE_CONTACT_NOT_FOUND")
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt-2400-        }
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:2401:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt-2402-        val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt-2403-        val context = aiReplyContextService.build(
+--
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt-55-            val mailRecordId = attachment.mailRecordId
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt-56-            if (mailRecordId != null) {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt:57:                val mailRecord = mailRecordRepository.findByIdOrNull(mailRecordId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt-58-                    ?: error("Mail record not found: $mailRecordId")
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseService.kt-59-                require(mailRecord.expertContactId == contactId) {
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt-466-                   0 AS received_flag,
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt-467-                   0 AS pending_flag$outboundBody
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:468:              FROM mail_record mr
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt-469-             WHERE mr.direction = 'OUTBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt-470-               AND mr.expert_contact_id IS NOT NULL
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt-528-            """
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt-529-            EXISTS (
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:530:                SELECT 1 FROM mail_record mro
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt-531-                 WHERE mro.direction = 'OUTBOUND'
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt-532-                   AND mro.expert_contact_id = u.expert_contact_id
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt-57-
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt-58-        // 2. Create mail record
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:59:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt-60-            MailRecord(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt-61-                expertContactId = contact.id ?: error("Contact ID is null"),
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt-108-        val now = LocalDateTime.now()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt-109-
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:110:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt-111-            MailRecord(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt-112-                expertContactId = contactId,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt-243-            emptyMap()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt-244-        } else {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:245:            mailRecordRepository.findAllById(outboundSentRows.map { it.id })
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt-246-                .asSequence()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt-247-                .filter {
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt-199-        val byId = mutableMapOf<Long, MailRecord>()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt-200-        for (candidate in MessageIdNormalizer.candidatesFor(originalMessageId)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt:201:            for (record in mailRecordRepository.findOutboundCandidatesByMessageId(candidate)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt-202-                val id = record.id ?: continue
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt-203-                byId.getOrPut(id) { record }
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorService.kt-20-        val since = LocalDateTime.now().minusDays(windowDays.toLong())
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorService.kt-21-        val hardBounces = bounceRecordRepository.countHardBouncesSince(accountCode, since)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorService.kt:22:        val sentCount = mailRecordRepository.countSentByAccountSince(accountCode, since)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorService.kt-23-        if (sentCount < MIN_SAMPLE_SIZE) return -1.0
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorService.kt-24-        return hardBounces.toDouble() / sentCount
+--
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-119-
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-120-        val offset = normalizedPage * normalizedSize
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:121:        val records = mailRecordRepository.findInboundMailsForSimulation(
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-122-            unrestricted = contactFilter.unrestricted,
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-123-            contactIds = contactFilter.contactIds,
+--
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-127-            offset = offset
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-128-        )
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:129:        val total = mailRecordRepository.countInboundMailsForSimulation(
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-130-            unrestricted = contactFilter.unrestricted,
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-131-            contactIds = contactFilter.contactIds,
+--
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-175-        val normalizedLimit = limit.coerceIn(1, 200)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-176-        val normalizedKeyword = keyword?.trim()?.takeIf { it.isNotEmpty() }
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:177:        val contactIds = mailRecordRepository.findExpertContactIdsWithInboundMail(normalizedKeyword, normalizedLimit)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-178-        if (contactIds.isEmpty()) {
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-179-            return emptyList()
+--
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-182-        return contactIds.mapNotNull { contactId ->
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-183-            val contact = contacts[contactId] ?: return@mapNotNull null
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:184:            val latestInbound = mailRecordRepository.findLatestInboundByExpertContactId(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-185-            AiTrainingSimulateExpertResponse(
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-186-                contactId = contactId,
+--
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-195-    fun simulate(@RequestBody request: AiTrainingSimulateRequest): AiTrainingSimulateResponse {
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-196-        val (contact, inboundMail) = if (request.mailRecordId != null) {
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:197:            val mail = mailRecordRepository.findById(request.mailRecordId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-198-                ?: throw IllegalArgumentException("Mail record not found: ${request.mailRecordId}")
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-199-            if (mail.direction != "INBOUND")
+--
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-209-            val c = expertContactRepository.findById(contactId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-210-                ?: throw IllegalArgumentException("Expert contact not found: $contactId")
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:211:            val latest = mailRecordRepository.findLatestInboundByExpertContactId(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-212-                ?: throw IllegalArgumentException("No inbound mail found for contact: $contactId")
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-213-            c to latest
+--
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-216-        val contactId = requireNotNull(contact.id)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-217-        val inboundText = inboundMail.cleanedBody?.takeIf { it.isNotBlank() } ?: inboundMail.body.orEmpty()
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:218:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-219-        val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt-220-        val context = aiReplyContextService.build(contact, records, inboundText, knowledge, inboundMail.messageId)
+--
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt-76-    /** 训练邮件：mail_record 行；只接受 INBOUND。 */
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt-77-    private fun resolveTrainingMail(sourceId: Long): RagResolvedSource {
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:78:        val mail = mailRecordRepository.findById(sourceId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt-79-            RagComposeException(
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt-80-                HttpStatus.NOT_FOUND.value(),
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionService.kt-212-            )
+src/main/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionService.kt-213-        }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionService.kt:214:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionService.kt-215-        val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionService.kt-216-        return aiReplyContextService.build(
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt-94-        if (inReplyTo != null) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt-95-            val outboundMail = MessageIdNormalizer.candidatesFor(inReplyTo)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:96:                .firstNotNullOfOrNull { mailRecordRepository.findByMessageId(it) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt-97-            if (outboundMail != null) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt-98-                val contact = expertContactRepository.findById(outboundMail.expertContactId).orElse(null)
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt-53-    fun reconcile(): ReconcileReport {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt-54-        val contacts = expertContactRepository.findAll().toList()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:55:        val mailRecords = mailRecordRepository.findAll()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt-56-        val attachments = mailAttachmentRepository.findAll()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt-57-        val bounces = bounceRecordRepository.findAll()
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt-69-    fun getContactDetail(contactId: Long): ExpertContactDetail {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt-70-        val contact = getContact(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:71:        val mails = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt-72-        val attachments = mails
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt-73-            .mapNotNull { it.id }
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt-142-        val now = LocalDateTime.now()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt-143-
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:144:        mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt-145-            MailRecord(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt-146-                expertContactId = contactId,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-433-        // 跟进（I-2）：显式 id 必须重读同一行并全校验，前端只作提示、绝不作为权限边界。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-434-        val anchor = if (anchorMailRecordId != null) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:435:            mailRecordRepository.findById(anchorMailRecordId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-436-                .orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-437-                ?.takeIf { isConversationSentAnchor(it, contactId, accountScope) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-438-        } else {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:439:            mailRecordRepository.findLatestSentOutboundAnchor(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-440-                contactId = contactId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-441-                accountScope = accountScope?.takeIf { it.isNotBlank() },
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-906-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-907-            ManualReplySendAttemptService.ClaimResult.DEDUP_SENT -> {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:908:                val existingRecord = mailRecordRepository.findByMailSendAttemptId(claim.attemptId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-909-                val archive = if (source.inboundProcessingId != null) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-910-                    archiveLiveUnsupportedAnswers(
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-1170-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-1171-    private fun resolveResearchProfileSufficient(contact: ExpertContact, inboundText: String): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1172:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(requireNotNull(contact.id))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-1173-        val context = aiReplyContextService.build(contact, records, inboundText, "")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt-1174-        return context.researchProfileSufficient
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt-32-        val contactId = contact.id ?: return contact
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt-33-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:34:        val replyCount = mailRecordRepository.countInboundReplies(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt-35-        if (replyCount <= 2) return contact
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt-36-
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-51-        val onlyPending = if (pending) 1 else 0
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-52-        val offset = page.toLong() * size
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:53:        val rows = mailRecordRepository.listMailbox(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-54-            accountCodes = activeCodes,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-55-            direction = direction,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-63-            offset = offset
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-64-        )
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:65:        val total = mailRecordRepository.countMailbox(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-66-            accountCodes = activeCodes,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-67-            direction = direction,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-107-        val offset = page.toLong() * size
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-108-        val onlyPending = if (pending) 1 else 0
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:109:        val total = mailRecordRepository.countMailboxExperts(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-110-            accountCodes = activeCodes,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-111-            direction = direction,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-123-        }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-124-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:125:        val summaries = mailRecordRepository.listMailboxExpertSummaries(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-126-            accountCodes = activeCodes,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-127-            direction = direction,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-142-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-143-        val expertContactIds = summaries.map { it.expertContactId }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:144:        val mailRows = mailRecordRepository.listMailboxByExpertContactIds(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-145-            expertContactIds = expertContactIds,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-146-            accountCodes = activeCodes,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-190-     */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-191-    fun listByTaskExecution(taskExecutionId: Long): MailboxListResponse {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:192:        val items = mailRecordRepository.findAllByTaskExecutionIdOrderByIdAsc(taskExecutionId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-193-            .map { record -> toMailboxItemResponse(toMailboxRow(record), emptyMap()) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-194-        return MailboxListResponse(items, items.size.toLong())
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-263-        return when (source) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-264-            "MAIL_RECORD" -> {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:265:                val record = mailRecordRepository.findByIdOrNull(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-266-                    ?: throw NoSuchElementException("Mail record not found: $id")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt-267-                toDetailFromMailRecord(record)
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/CalendarAttachmentController.kt-48-        @PathVariable mailRecordId: Long
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/CalendarAttachmentController.kt-49-    ): ResponseEntity<ByteArray> {
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/CalendarAttachmentController.kt:50:        val record = mailRecordRepository.findById(mailRecordId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/CalendarAttachmentController.kt-51-        val snapshot = if (record == null ||
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/CalendarAttachmentController.kt-52-            record.direction != MailboxConversationRepository.DIRECTION_OUTBOUND ||
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt-1185-    /** Check if a SENT outbound INTRODUCTION mail record exists for this contact. */
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt-1186-    private fun hasSentIntroduction(contactId: Long): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1187:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt-1188-        return records.any { it.direction == "OUTBOUND" && it.mailType == "INTRODUCTION" && it.sendStatus == "SENT" }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt-1189-    }
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt-1419-
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt-1420-    private fun hasSentMaterialReminder(contactId: Long): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1421:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt-1422-        return records.any { it.direction == "OUTBOUND" && it.mailType == "MATERIAL_REMINDER" && it.sendStatus == "SENT" }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt-1423-    }
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt-180-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt-181-    private fun hasIntroductionInquiry(contactId: Long): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:182:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt-183-            expertContactId = contactId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt-184-            direction = "OUTBOUND",
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt-187-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt-188-    private fun hasMeetingInvitation(contactId: Long): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:189:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt-190-            expertContactId = contactId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt-191-            direction = "OUTBOUND",
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt-392-        if (document != null) return document.expertContactId
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt-393-        if (mailRecordId != null) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:394:            return mailRecordRepository.findByIdOrNull(mailRecordId)?.expertContactId
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt-395-        }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt-396-        return null
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt-68-        val now = LocalDateTime.now()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt-69-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:70:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt-71-            MailRecord(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt-72-                expertContactId = contactId,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt-243-        val isMaterialReminder = (rendered.mailType ?: "COMPOSE_TEMPLATE") == "MATERIAL_REMINDER"
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt-244-        val anchor = if (isMaterialReminder) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:245:            contact.id?.let { mailRecordRepository.findLatestInboundByExpertContactId(it) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt-246-        } else null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt-247-        val anchorMessageId = anchor?.messageId
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt-378-            ?: throw IllegalArgumentException("Expert contact not found: $contactId")
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt-379-        val isContinuation = request.turns.isNotEmpty()
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:380:        val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt-381-        val knowledge = aiTrainingQaService.buildKnowledgeContext(inboundText)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt-382-        val context = aiReplyContextService.build(contact, records, inboundText, knowledge, detail.messageId)
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-384-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-385-        val cleanedBody = mailBodyCleaner.clean(received.body)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:386:        val duplicateInbound = mailRecordRepository.findRecentDuplicateInbound(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-387-            expertContactId = contactId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-388-            senderAccountCode = account.accountCode,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-417-            )
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-418-        }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:419:        val inboundMailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-420-            MailRecord(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-421-                expertContactId = contactId,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-757-        val now = LocalDateTime.now()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-758-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:759:        val outboundRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-760-            MailRecord(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-761-                expertContactId = contactId,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1037-        received: ReceivedMail,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1038-        cleanedBody: String
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1039:    ): MailRecord = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1040-        MailRecord(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1041-            expertContactId = contactId,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1075-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1076-    private fun hasIntroductionInquiry(contactId: Long): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1077:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1078-            expertContactId = contactId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1079-            direction = "OUTBOUND",
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1082-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1083-    private fun hasMeetingInvitation(contactId: Long): Boolean =
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1084:        mailRecordRepository.existsByExpertContactIdAndDirectionAndMailType(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1085-            expertContactId = contactId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1086-            direction = "OUTBOUND",
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1235-        val delivered = mailDeliveryService.send(account, mail)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1236-        val now = LocalDateTime.now()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1237:        val saved = mailRecordRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1238-            MailRecord(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1239-                expertContactId = contactId,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1421-        // 只读候选：OUTBOUND-only、返回列表；0 条或多条都不能唯一归属（绝不取第一条）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1422-        val candidates = MessageIdNormalizer.candidatesFor(inReplyTo)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1423:            .flatMap { mailRecordRepository.findOutboundCandidatesByMessageId(it) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1424-            .distinctBy { it.id }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt-1425-            .filter { record -> record.senderAccountCode?.let { it in memberCodes } == true }
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt-96-        }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt-97-        val messages = if (inbound.expertContactId != null) {
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:98:            mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(inbound.expertContactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt-99-                .map { record ->
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt-100-                    val inboundProcessingId = record.resolveInboundProcessingId(processingByMessageId)
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-222-        if (attempt.status != MailSendAttemptStatus.SENT) return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-223-        val attemptId = attempt.id ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:224:        val record = mailRecordRepository.findByMailSendAttemptId(attemptId) ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-225-        return CompletedOutboundReply(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-226-            attemptId = attemptId,
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-357-            .takeIf { it.isNotEmpty() }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-358-            ?.let { OutboundAttachmentSnapshotCodec.serialize(it) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:359:        val existingRecord = mailRecordRepository.findByMailSendAttemptId(attemptId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-360-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-361-        val mailRecord = if (existingRecord != null) {
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-395-            )
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-396-        }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:397:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-398-        val mailRecordId = requireNotNull(savedRecord.id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-399-
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-455-            .takeIf { it.isNotEmpty() }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-456-            ?.let { OutboundAttachmentSnapshotCodec.serialize(it) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:457:        val existingRecord = mailRecordRepository.findByMailSendAttemptId(attemptId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-458-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-459-        val mailRecord = if (existingRecord != null) {
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-494-            )
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-495-        }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:496:        val savedRecord = mailRecordRepository.save(mailRecord)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-497-        val mailRecordId = requireNotNull(savedRecord.id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt-498-

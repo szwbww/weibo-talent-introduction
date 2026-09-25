@@ -1,0 +1,115 @@
+$ rg -n -C 2 batch_send_setting|BatchSendSettingRepository|BatchSendSetting\( src/main scripts --glob *.kt --glob *.sql --glob *.py
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendSetting.kt-5-import java.time.LocalDateTime
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendSetting.kt-6-
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendSetting.kt:7:@Table("batch_send_setting")
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendSetting.kt:8:data class BatchSendSetting(
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendSetting.kt-9-    @Id
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendSetting.kt-10-    val id: Long? = null,
+--
+src/main/resources/db/migration/V27__create_batch_send_setting.sql:1:CREATE TABLE batch_send_setting (
+src/main/resources/db/migration/V27__create_batch_send_setting.sql-2-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+src/main/resources/db/migration/V27__create_batch_send_setting.sql-3-    setting_key VARCHAR(64) NOT NULL UNIQUE,
+--
+src/main/resources/db/migration/V27__create_batch_send_setting.sql-6-);
+src/main/resources/db/migration/V27__create_batch_send_setting.sql-7-
+src/main/resources/db/migration/V27__create_batch_send_setting.sql:8:INSERT INTO batch_send_setting (setting_key, setting_value) VALUES
+src/main/resources/db/migration/V27__create_batch_send_setting.sql-9-    ('batchSend.autoEnabled', 'false'),
+src/main/resources/db/migration/V27__create_batch_send_setting.sql-10-    ('batchSend.cron', '0 0 0 * * ?'),
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-3-import com.weibo.talentintroduction.campaign.domain.BatchSendSetting
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-4-import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt:5:import com.weibo.talentintroduction.campaign.repository.BatchSendSettingRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-6-import org.slf4j.LoggerFactory
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-7-import org.springframework.context.ApplicationEventPublisher
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-14-@Service
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-15-class BatchSendSettingService(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt:16:    private val repository: BatchSendSettingRepository,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-17-    private val eventPublisher: ApplicationEventPublisher
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-18-) {
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-161-    private fun upsert(key: String, value: String) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-162-        val existing = repository.findBySettingKey(key)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt:163:        val toSave = BatchSendSetting(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-164-            id = existing?.id,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-165-            settingKey = key,
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-174-            repository.findAll().associate { it.settingKey to it.settingValue }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-175-        } catch (e: Exception) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt:176:            log.warn("Failed to load batch_send_setting rows, using defaults", e)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-177-            emptyMap()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt-178-        }
+--
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-55-    '默认介绍邮件任务',
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-56-    'INTRODUCTION',
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:57:    COALESCE((SELECT CASE WHEN setting_value = 'true' THEN 1 ELSE 0 END FROM batch_send_setting WHERE setting_key = 'batchSend.autoEnabled' LIMIT 1), 0),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:58:    COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.cron' LIMIT 1), '0 0 0 * * ?'),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:59:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.dailyCap' LIMIT 1), 1000),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:60:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.roundSize' LIMIT 1), 50),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:61:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.perMailIntervalMs' LIMIT 1), 1000),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:62:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.perRoundIntervalMs' LIMIT 1), 60000),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:63:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.selfCheckTtlMinutes' LIMIT 1), 30),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-64-    NULL,
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-65-    '[]',
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:66:    NULLIF(COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.emailDomain' LIMIT 1), ''), ''),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:67:    NULLIF(COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.discipline' LIMIT 1), ''), ''),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-68-    (
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-69-        SELECT CASE
+--
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-71-            ELSE CAST(setting_value AS UNSIGNED)
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-72-        END
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:73:        FROM batch_send_setting
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-74-        WHERE setting_key = 'batchSend.templateId'
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-75-        LIMIT 1
+--
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-108-    '材料提醒任务',
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-109-    'MATERIAL_REMINDER',
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:110:    COALESCE((SELECT CASE WHEN setting_value = 'true' THEN 1 ELSE 0 END FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.autoEnabled' LIMIT 1), 0),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:111:    COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.cron' LIMIT 1), '0 0 8 * * ?'),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:112:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.dailyCap' LIMIT 1), 60),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:113:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.roundSize' LIMIT 1), 30),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:114:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.perMailIntervalMs' LIMIT 1), 3000),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:115:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.perRoundIntervalMs' LIMIT 1), 120000),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:116:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.selfCheckTtlMinutes' LIMIT 1), 30),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-117-    NULL,
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-118-    '[]',
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:119:    NULLIF(COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.emailDomain' LIMIT 1), ''), ''),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:120:    NULLIF(COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.discipline' LIMIT 1), ''), ''),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-121-    COALESCE(
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-122-        (
+--
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-125-                ELSE CAST(setting_value AS UNSIGNED)
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-126-            END
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:127:            FROM batch_send_setting
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-128-            WHERE setting_key = 'batchSend.materialReminder.templateId'
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql-129-            LIMIT 1
+--
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchSendSettingRepository.kt-5-import org.springframework.data.repository.CrudRepository
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchSendSettingRepository.kt-6-
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchSendSettingRepository.kt:7:interface BatchSendSettingRepository : CrudRepository<BatchSendSetting, Long> {
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchSendSettingRepository.kt-8-
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchSendSettingRepository.kt:9:    @Query("SELECT * FROM batch_send_setting WHERE setting_key = :settingKey LIMIT 1")
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchSendSettingRepository.kt-10-    fun findBySettingKey(settingKey: String): BatchSendSetting?
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchSendSettingRepository.kt-11-
+--
+src/main/resources/db/migration/V50__add_global_auto_reply_setting.sql:1:INSERT INTO batch_send_setting (setting_key, setting_value) VALUES
+src/main/resources/db/migration/V50__add_global_auto_reply_setting.sql-2-    ('autoReply.globalEnabled', 'false');
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-2-
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-3-import com.weibo.talentintroduction.campaign.domain.BatchSendSetting
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt:4:import com.weibo.talentintroduction.campaign.repository.BatchSendSettingRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-5-import org.springframework.stereotype.Service
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-6-import java.time.LocalDateTime
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-8-@Service
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-9-class AutoReplySettingService(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt:10:    private val repository: BatchSendSettingRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-11-) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-12-    fun isGlobalEnabled(): Boolean {
+--
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-18-        val existing = repository.findBySettingKey(KEY)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-19-        repository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt:20:            BatchSendSetting(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-21-                id = existing?.id,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt-22-                settingKey = KEY,

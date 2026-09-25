@@ -1,0 +1,28 @@
+$ rg -n mailDeliveryService.send|sender.send\(|Transport.send|: MailDeliveryService|ComposedMail\( src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountSelfCheckService.kt:27:        sender.send(message)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:29:    private val mailDeliveryService: MailDeliveryService,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:67:        val delivered = mailDeliveryService.send(account, composed.mail)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:263:        return ManualComposedMail(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:265:            mail = ComposedMail(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:366:private data class ManualComposedMail(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:38:    private val mailDeliveryService: MailDeliveryService,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:748:        val reply = ComposedMail(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:756:        val delivered = mailDeliveryService.send(account, reply)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1229:        val mail = ComposedMail(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1235:        val delivered = mailDeliveryService.send(account, mail)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingInvitationMailComposer.kt:22:        return ComposedMail(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryService.kt:16:) : MailDeliveryService {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryService.kt:110:            sender.send(message)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:68:    private val mailDeliveryService: MailDeliveryService,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:722:                val mail = ComposedMail(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:746:                    val delivered = mailDeliveryService.send(source.account, mail)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt:38:        val mail = ComposedMail(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt:73:data class ComposedMail(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:24:    private val mailDeliveryService: MailDeliveryService,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:93:                mailDeliveryService.send(account, mail)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:30:    private val mailDeliveryService: MailDeliveryService,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:135:        val composed = ComposedMail(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:141:        val delivered = mailDeliveryService.send(account, composed)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:76:    private val mailDeliveryService: MailDeliveryService,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:907:                    val delivered = mailDeliveryService.send(account, mail)

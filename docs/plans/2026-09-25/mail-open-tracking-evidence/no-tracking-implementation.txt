@@ -1,0 +1,2 @@
+$ rg -n open_tracking|openTracking|trackOpen|trackingPixel|/t/mail-open src/main src/test
+exit=1

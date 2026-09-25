@@ -1,0 +1,51 @@
+{
+  "stages": [
+    {
+      "file": "mail-open-tracking-01-storage-api.md",
+      "files": 10,
+      "new_files": [
+        "src/main/resources/db/migration/V141__create_mail_open_tracking.sql",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepository.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailOpenTrackingController.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepositoryIT.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingServiceTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailOpenTrackingControllerTest.kt"
+      ],
+      "invariants": 7,
+      "manual_scenarios": 5
+    },
+    {
+      "file": "mail-open-tracking-02-reply-context.md",
+      "files": 10,
+      "new_files": [],
+      "invariants": 4,
+      "manual_scenarios": 3
+    },
+    {
+      "file": "mail-open-tracking-03-smtp-integration.md",
+      "files": 9,
+      "new_files": [
+        "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt"
+      ],
+      "invariants": 5,
+      "manual_scenarios": 4
+    },
+    {
+      "file": "mail-open-tracking-04-monitoring-ui.md",
+      "files": 4,
+      "new_files": [
+        "src/test/js/mailOpenTracking.test.js"
+      ],
+      "invariants": 5,
+      "manual_scenarios": 5
+    }
+  ],
+  "source_drift": [],
+  "broken_links": [],
+  "frontend_css_tokens": [
+    "--border",
+    "--primary",
+    "--text-secondary"
+  ]
+}

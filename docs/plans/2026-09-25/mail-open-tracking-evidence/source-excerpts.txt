@@ -1,0 +1,1807 @@
+
+## src/main/resources/static/index.html:195-280
+  195	
+  196	        <!-- View 1: Mail Monitoring -->
+  197	        <section class="view" id="view-monitoring">
+  198	            <div class="toolbar">
+  199	                <div class="tabs" id="monitoringRangeTabs">
+  200	                    <button class="tab button secondary" data-range="1">今日</button>
+  201	                    <button class="tab button secondary active" data-range="7">近 7 天</button>
+  202	                    <button class="tab button secondary" data-range="30">近 30 天</button>
+  203	                </div>
+  204	                <input type="date" id="monitoringDate">
+  205	                <select id="monitoringSenderAccount">
+  206	                    <option value="">全部发件账号</option>
+  207	                </select>
+  208	                <button class="button secondary" id="monitoringRefreshBtn">手动查询</button>
+  209	                <span class="muted" id="monitoringLastRefreshed" style="font-size: 12px; margin-left: auto;"></span>
+  210	            </div>
+  211	
+  212	            <section class="panel">
+  213	                <div class="panel-head"><h2 id="monitoringOverviewTitle">今日全链路指标概览</h2></div>
+  214	                <div id="monitoringCards" class="card-grid"></div>
+  215	            </section>
+  216	
+  217	            <section class="panel">
+  218	                <div class="panel-head"><h2>按收件方服务商分布</h2></div>
+  219	                <div class="table-wrap">
+  220	                    <table id="monitoringProviderDistributionTable">
+  221	                        <thead></thead>
+  222	                        <tbody></tbody>
+  223	                    </table>
+  224	                </div>
+  225	            </section>
+  226	
+  227	            <section class="panel">
+  228	                <div class="panel-head"><h2>按专家地区分布</h2></div>
+  229	                <div class="table-wrap">
+  230	                    <table id="monitoringRegionDistributionTable">
+  231	                        <thead></thead>
+  232	                        <tbody></tbody>
+  233	                    </table>
+  234	                </div>
+  235	            </section>
+  236	
+  237	            <section class="panel">
+  238	                <div class="panel-head">
+  239	                    <h2>域信誉趋势</h2>
+  240	                    <div style="display:flex; gap:8px; align-items:center; margin-left:auto;">
+  241	                        <select id="monitoringReputationDomain"></select>
+  242	                        <select id="monitoringReputationDays">
+  243	                            <option value="7">近 7 天</option>
+  244	                            <option value="30" selected>近 30 天</option>
+  245	                            <option value="90">近 90 天</option>
+  246	                        </select>
+  247	                    </div>
+  248	                </div>
+  249	                <div id="monitoringReputationStatus" class="muted" style="padding: 0 24px 8px; font-size: 13px;"></div>
+  250	                <div id="monitoringReputationChart" style="padding: 0 24px 24px; overflow-x: auto;"></div>
+  251	            </section>
+  252	
+  253	            <section class="panel">
+  254	                <div class="panel-head">
+  255	                    <div class="tabs" id="monitoringSubTabs" style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+  256	                        <button class="tab button secondary active" data-subtab="introductions">首发邮件</button>
+  257	                        <button class="tab button secondary" data-subtab="inbound">收信分类</button>
+  258	                        <button class="tab button secondary" data-subtab="outbound">发信回复</button>
+  259	                        <button class="tab button secondary" data-subtab="pending">未匹配邮件</button>
+  260	                        <button class="tab button secondary" data-subtab="bounces">退信名单</button>
+  261	                        <button class="tab button secondary" data-subtab="promotions">漏斗晋级</button>
+  262	                        <button class="button secondary" id="monitoringBounceBackfillBtn" style="margin-left: auto; display: none;">回填历史退信</button>
+  263	                    </div>
+  264	                </div>
+  265	                <div class="table-wrap">
+  266	                    <table id="monitoringActivityTable">
+  267	                        <thead></thead>
+  268	                        <tbody></tbody>
+  269	                    </table>
+  270	                </div>
+  271	                <div class="pagination" id="monitoringPagination" style="padding: 16px 24px; display: flex; justify-content: flex-end; gap: 8px;"></div>
+  272	            </section>
+  273	
+  274	            <section class="panel">
+  275	                <div class="panel-head"><h2>当前发件账号限额监控</h2></div>
+  276	                <div class="table-wrap">
+  277	                    <table id="monitoringSenderHealthTable">
+  278	                        <thead></thead>
+  279	                        <tbody></tbody>
+  280	                    </table>
+
+## src/main/resources/static/index.html:2258-2270
+ 2258	</button>
+ 2259	
+ 2260	<!-- App Core controller -->
+ 2261	<script src="task-modal-runtime.js"></script>
+ 2262	<script src="trust-reply-workbench.js?v=20260925-emailable-policy-pagination"></script>
+ 2263	<script src="expert-materials.js?v=20260925-emailable-policy-pagination"></script>
+ 2264	<script src="meeting-confirmation.js?v=20260925-emailable-policy-pagination"></script>
+ 2265	<script src="mailbox-chat.js?v=20260925-emailable-policy-pagination"></script>
+ 2266	<script src="app.js?v=20260925-emailable-policy-pagination"></script>
+ 2267	<script src="world-clock.js?v=20260925-emailable-policy-pagination"></script>
+ 2268	</body>
+ 2269	</html>
+
+## src/main/resources/static/styles.css:1-95
+    1	:root {
+    2	    /* Brand — modern business blue */
+    3	    --primary: #1e40af;
+    4	    --primary-hover: #1e3a8a;
+    5	    --primary-active: #172554;
+    6	    --primary-rgb: 30, 64, 175;
+    7	    --primary-light: rgba(var(--primary-rgb), 0.07);
+    8	    --primary-tint: rgba(var(--primary-rgb), 0.1);
+    9	
+   10	    --bg-main: #f5f7fb;
+   11	    --bg-sidebar: #ffffff;
+   12	    --bg-sidebar-hover: rgba(var(--primary-rgb), 0.06);
+   13	    --bg-sidebar-active: rgba(var(--primary-rgb), 0.09);
+   14	
+   15	    --panel-bg: rgba(255, 255, 255, 0.55);
+   16	    --panel-border: rgba(15, 23, 42, 0.08);
+   17	    --line: rgba(15, 23, 42, 0.055);
+   18	    --border: rgba(15, 23, 42, 0.11);
+   19	    --surface: rgba(15, 23, 42, 0.022);
+   20	
+   21	    --text-main: #1e293b;
+   22	    --text-muted: #94a3b8;
+   23	    --text-sidebar: #64748b;
+   24	    --text-sidebar-active: #1e293b;
+   25	    --text-secondary: #475569;
+   26	    --text-strong: #334155;
+   27	    --ink: #1e293b;
+   28	    --bg-subtle: #f8fafc;
+   29	    --border-strong: #cbd5e1;
+   30	    --primary-bright: #3b82f6;
+   31	
+   32	    --success: #059669;
+   33	    --success-rgb: 5, 150, 105;
+   34	    --success-bg: rgba(var(--success-rgb), 0.08);
+   35	    --success-border: rgba(var(--success-rgb), 0.18);
+   36	    --green: var(--success);
+   37	
+   38	    --error: #e11d48;
+   39	    --error-rgb: 225, 29, 72;
+   40	    --error-bg: rgba(var(--error-rgb), 0.07);
+   41	    --error-border: rgba(var(--error-rgb), 0.16);
+   42	    --error-strong: #be123c;
+   43	    --red: var(--error);
+   44	
+   45	    --warning: #d97706;
+   46	    --warning-rgb: 217, 119, 6;
+   47	    --warning-bg: rgba(var(--warning-rgb), 0.08);
+   48	    --warning-border: rgba(var(--warning-rgb), 0.2);
+   49	    --warning-strong: #b45309;
+   50	    --warning-bright: #f59e0b;
+   51	    --amber: var(--warning);
+   52	
+   53	    --info: #0ea5e9;
+   54	    --info-rgb: 14, 165, 233;
+   55	    --info-bg: rgba(var(--info-rgb), 0.08);
+   56	    --info-border: rgba(var(--info-rgb), 0.2);
+   57	
+   58	    --z-sticky: 10;
+   59	    --z-dropdown: 20;
+   60	    --z-overlay: 50;
+   61	    --z-drawer: 60;
+   62	    --z-modal: 1000;
+   63	    --z-confirm: 1200;
+   64	    --z-toast: 9999;
+   65	
+   66	    --glass-border: rgba(255, 255, 255, 0.5);
+   67	    --glass-shadow: 0 8px 32px rgba(var(--primary-rgb), 0.1);
+   68	    --glass-blur: blur(16px);
+   69	
+   70	    --radius-sm: 7px;
+   71	    --radius-md: 10px;
+   72	    --radius-lg: 18px;
+   73	
+   74	    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+   75	    --shadow-md: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.03);
+   76	    --shadow-lg: 0 10px 28px -8px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.05);
+   77	    --shadow-xl: 0 20px 48px -12px rgba(15, 23, 42, 0.2), 0 4px 12px rgba(15, 23, 42, 0.06);
+   78	    --shadow: var(--shadow-md);
+   79	
+   80	    --transition: all 0.15s ease;
+   81	
+   82	    --font-mono: 'SF Mono', ui-monospace, Menlo, monospace;
+   83	    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', sans-serif;
+   84	
+   85	    --verbatim: #7c3aed;
+   86	    --verbatim-bg: rgba(124, 58, 237, 0.06);
+   87	    --verbatim-border: rgba(124, 58, 237, 0.24);
+   88	}
+   89	
+   90	* {
+   91	    box-sizing: border-box;
+   92	    margin: 0;
+   93	    padding: 0;
+   94	}
+   95	
+
+## src/main/resources/static/styles.css:355-380
+  355	.toolbar {
+  356	    display: flex;
+  357	    align-items: center;
+  358	    gap: 8px;
+  359	    flex-wrap: wrap;
+  360	    background-color: var(--panel-bg);
+  361	    padding: 10px 14px;
+  362	    border-radius: var(--radius-md);
+  363	    border: 1px solid var(--panel-border);
+  364	}
+  365	
+  366	.toolbar input,
+  367	.toolbar select {
+  368	    width: auto;
+  369	    min-width: 120px;
+  370	    height: 32px;
+  371	    min-height: 32px;
+  372	}
+  373	
+  374	.mailbox-view-controls {
+  375	    display: inline-flex;
+  376	    align-items: center;
+  377	    gap: 8px;
+  378	    flex: 0 0 auto;
+  379	}
+  380	
+
+## src/main/resources/static/styles.css:802-880
+  802	.button {
+  803	    display: inline-flex;
+  804	    align-items: center;
+  805	    justify-content: center;
+  806	    gap: 6px;
+  807	    min-height: 32px;
+  808	    height: 32px;
+  809	    padding: 0 12px;
+  810	    border-radius: var(--radius-sm);
+  811	    font-weight: 500;
+  812	    font-size: 12px;
+  813	    cursor: pointer;
+  814	    border: 1px solid var(--border);
+  815	    background-color: transparent;
+  816	    color: var(--text-main);
+  817	    transition: transform 0.12s ease, box-shadow 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, opacity 0.1s ease;
+  818	    outline: none;
+  819	    user-select: none;
+  820	    font-family: var(--font-body);
+  821	    position: relative;
+  822	    overflow: hidden;
+  823	}
+  824	
+  825	.button:hover {
+  826	    border-color: rgba(15, 23, 42, 0.2);
+  827	    background-color: var(--surface);
+  828	    transform: translateY(-1px);
+  829	    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+  830	}
+  831	
+  832	.button:active {
+  833	    transform: translateY(0) scale(0.97);
+  834	    box-shadow: none;
+  835	    opacity: 0.85;
+  836	}
+  837	
+  838	.button.primary {
+  839	    background-image: linear-gradient(180deg, var(--primary-bright), var(--primary));
+  840	    background-color: var(--primary);
+  841	    border-color: transparent;
+  842	    color: #ffffff;
+  843	    font-weight: 600;
+  844	    box-shadow: 0 1px 2px rgba(var(--primary-rgb), 0.4), inset 0 1px 0 rgba(255,255,255,0.18);
+  845	}
+  846	
+  847	.button.primary:hover {
+  848	    background-image: linear-gradient(180deg, #2f7bff, var(--primary-hover));
+  849	    box-shadow: 0 4px 14px rgba(var(--primary-rgb), 0.35), inset 0 1px 0 rgba(255,255,255,0.18);
+  850	}
+  851	
+  852	.button.secondary {
+  853	    background-color: var(--primary-light);
+  854	    border-color: rgba(var(--primary-rgb), 0.12);
+  855	    color: var(--primary);
+  856	}
+  857	
+  858	.button.secondary:hover {
+  859	    background-color: rgba(var(--primary-rgb), 0.1);
+  860	}
+  861	
+  862	.button.danger {
+  863	    background-color: var(--error-bg);
+  864	    border-color: var(--error-border);
+  865	    color: var(--error);
+  866	}
+  867	
+  868	.button.danger:hover {
+  869	    background-color: rgba(var(--error-rgb), 0.1);
+  870	}
+  871	
+  872	.icon-button {
+  873	    width: 32px;
+  874	    height: 32px;
+  875	    min-width: 32px;
+  876	    border: 1px solid var(--border);
+  877	    border-radius: var(--radius-sm);
+  878	    background-color: transparent;
+  879	    color: var(--text-muted);
+  880	    font-size: 18px;
+
+## src/main/resources/static/styles.css:948-1100
+  948	.panel {
+  949	    background: var(--panel-bg);
+  950	    backdrop-filter: var(--glass-blur);
+  951	    -webkit-backdrop-filter: var(--glass-blur);
+  952	    border: 1px solid var(--glass-border);
+  953	    border-radius: var(--radius-lg);
+  954	    box-shadow: var(--glass-shadow);
+  955	}
+  956	
+  957	.panel:hover {
+  958	    box-shadow: var(--shadow-lg);
+  959	    border-color: rgba(15, 23, 42, 0.12);
+  960	}
+  961	
+  962	.panel-head {
+  963	    display: flex;
+  964	    align-items: center;
+  965	    justify-content: space-between;
+  966	    gap: 12px;
+  967	    padding: 12px 16px;
+  968	    border-bottom: 1px solid var(--line);
+  969	}
+  970	
+  971	.panel-head h2 {
+  972	    padding-left: 0;
+  973	}
+  974	
+  975	.panel-head h2::before {
+  976	    display: none;
+  977	}
+  978	
+  979	.panel-head-actions {
+  980	    display: inline-flex;
+  981	    align-items: center;
+  982	    gap: 8px;
+  983	    flex-shrink: 0;
+  984	}
+  985	
+  986	/* Tables */
+  987	.table-wrap {
+  988	    overflow-x: auto;
+  989	    -webkit-overflow-scrolling: touch;
+  990	    width: 100%;
+  991	}
+  992	
+  993	table {
+  994	    width: 100%;
+  995	    border-collapse: collapse;
+  996	    min-width: 720px;
+  997	}
+  998	
+  999	th, td {
+ 1000	    padding: 8px 14px;
+ 1001	    text-align: left;
+ 1002	    border-bottom: 1px solid var(--line);
+ 1003	    vertical-align: middle;
+ 1004	}
+ 1005	
+ 1006	th {
+ 1007	    color: var(--text-sidebar);
+ 1008	    font-size: 11px;
+ 1009	    font-weight: 600;
+ 1010	    background-color: var(--surface);
+ 1011	    text-transform: uppercase;
+ 1012	    letter-spacing: 0.5px;
+ 1013	    font-family: var(--font-body);
+ 1014	    position: sticky;
+ 1015	    top: 0;
+ 1016	}
+ 1017	
+ 1018	tr {
+ 1019	    transition: background-color 0.12s ease;
+ 1020	}
+ 1021	
+ 1022	td {
+ 1023	    transition: background-color 0.12s ease;
+ 1024	}
+ 1025	
+ 1026	tr:hover td {
+ 1027	    background-color: rgba(var(--primary-rgb), 0.07);
+ 1028	}
+ 1029	
+ 1030	td {
+ 1031	    font-size: 13px;
+ 1032	}
+ 1033	
+ 1034	td strong {
+ 1035	    color: var(--text-main);
+ 1036	    font-weight: 600;
+ 1037	}
+ 1038	
+ 1039	td.actions {
+ 1040	    white-space: nowrap;
+ 1041	    display: flex;
+ 1042	    gap: 4px;
+ 1043	    flex-wrap: wrap;
+ 1044	}
+ 1045	
+ 1046	td.actions .button {
+ 1047	    height: 26px;
+ 1048	    min-height: 26px;
+ 1049	    padding: 0 8px;
+ 1050	    font-size: 11px;
+ 1051	}
+ 1052	
+ 1053	/* Badges */
+ 1054	.badge {
+ 1055	    display: inline-flex;
+ 1056	    align-items: center;
+ 1057	    padding: 2px 8px;
+ 1058	    border-radius: 999px;
+ 1059	    font-size: 11px;
+ 1060	    font-weight: 600;
+ 1061	    font-family: var(--font-body);
+ 1062	    line-height: 1;
+ 1063	    background-color: var(--surface);
+ 1064	    color: var(--text-muted);
+ 1065	    border: 1px solid transparent;
+ 1066	}
+ 1067	
+ 1068	.badge.ok {
+ 1069	    background-color: var(--success-bg);
+ 1070	    color: var(--success);
+ 1071	    border-color: var(--success-border);
+ 1072	}
+ 1073	
+ 1074	.badge.warn {
+ 1075	    background-color: var(--warning-bg);
+ 1076	    color: var(--warning);
+ 1077	    border-color: var(--warning-border);
+ 1078	}
+ 1079	
+ 1080	.badge.error {
+ 1081	    background-color: var(--error-bg);
+ 1082	    color: var(--error);
+ 1083	    border-color: var(--error-border);
+ 1084	}
+ 1085	
+ 1086	.badge.info {
+ 1087	    background-color: var(--info-bg);
+ 1088	    color: var(--info);
+ 1089	    border-color: var(--info-border);
+ 1090	}
+ 1091	
+ 1092	.badge.primary {
+ 1093	    background-color: var(--primary-light);
+ 1094	    color: var(--primary);
+ 1095	    border-color: rgba(var(--primary-rgb), 0.2);
+ 1096	}
+ 1097	
+ 1098	.badge.warn-yellow {
+ 1099	    background-color: var(--warning-bg);
+ 1100	    color: var(--warning);
+
+## src/main/resources/static/styles.css:2970-3090
+ 2970	.card-grid {
+ 2971	    display: grid;
+ 2972	    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+ 2973	    gap: 8px;
+ 2974	    margin: 8px 0;
+ 2975	    padding: 12px;
+ 2976	}
+ 2977	
+ 2978	.metric-card {
+ 2979	    border: 1px solid var(--panel-border);
+ 2980	    border-radius: var(--radius-md);
+ 2981	    padding: 14px 16px;
+ 2982	    background: linear-gradient(180deg, rgba(var(--primary-rgb), 0.035), rgba(var(--primary-rgb), 0) 70%), var(--panel-bg);
+ 2983	    position: relative;
+ 2984	    overflow: hidden;
+ 2985	    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+ 2986	}
+ 2987	
+ 2988	.metric-card::before {
+ 2989	    content: '';
+ 2990	    position: absolute;
+ 2991	    left: 0;
+ 2992	    top: 0;
+ 2993	    bottom: 0;
+ 2994	    width: 3px;
+ 2995	    background: linear-gradient(180deg, var(--primary), #60a5fa);
+ 2996	    opacity: 0.85;
+ 2997	}
+ 2998	
+ 2999	.metric-card:hover {
+ 3000	    transform: translateY(-2px);
+ 3001	    box-shadow: var(--shadow-lg);
+ 3002	    border-color: rgba(var(--primary-rgb), 0.28);
+ 3003	}
+ 3004	
+ 3005	.metric-card .metric-label {
+ 3006	    color: var(--text-muted);
+ 3007	    font-size: 11px;
+ 3008	    font-weight: 600;
+ 3009	    text-transform: uppercase;
+ 3010	    letter-spacing: 0.5px;
+ 3011	    margin-bottom: 6px;
+ 3012	    font-family: var(--font-body);
+ 3013	}
+ 3014	
+ 3015	.metric-card .metric-value {
+ 3016	    color: var(--text-main);
+ 3017	    font-size: 24px;
+ 3018	    font-weight: 700;
+ 3019	    font-family: var(--font-mono);
+ 3020	    line-height: 1.1;
+ 3021	    letter-spacing: -0.5px;
+ 3022	}
+ 3023	
+ 3024	/* Tabs */
+ 3025	.tabs {
+ 3026	    display: flex;
+ 3027	    flex-wrap: wrap;
+ 3028	    gap: 4px;
+ 3029	}
+ 3030	
+ 3031	.tab {
+ 3032	    border: 1px solid var(--border);
+ 3033	    border-radius: var(--radius-sm);
+ 3034	    background: transparent;
+ 3035	    color: var(--text-muted);
+ 3036	    padding: 6px 12px;
+ 3037	    cursor: pointer;
+ 3038	    font-weight: 500;
+ 3039	    font-size: 11px;
+ 3040	    font-family: var(--font-body);
+ 3041	    transition: var(--transition);
+ 3042	}
+ 3043	
+ 3044	.tab:hover {
+ 3045	    color: var(--primary);
+ 3046	    border-color: var(--primary);
+ 3047	}
+ 3048	
+ 3049	.tab.active {
+ 3050	    background: var(--primary);
+ 3051	    border-color: var(--primary);
+ 3052	    color: #ffffff;
+ 3053	    font-weight: 600;
+ 3054	}
+ 3055	
+ 3056	.pagination {
+ 3057	    display: flex;
+ 3058	    align-items: center;
+ 3059	    justify-content: flex-end;
+ 3060	    gap: 6px;
+ 3061	    padding: 10px 0 0;
+ 3062	    flex-wrap: wrap;
+ 3063	}
+ 3064	
+ 3065	.pagination .page-num {
+ 3066	    min-width: 32px;
+ 3067	    padding-left: 8px;
+ 3068	    padding-right: 8px;
+ 3069	    text-align: center;
+ 3070	}
+ 3071	
+ 3072	.pagination .page-num.active {
+ 3073	    background: var(--primary);
+ 3074	    border-color: var(--primary);
+ 3075	    color: #fff;
+ 3076	    opacity: 1;
+ 3077	}
+ 3078	
+ 3079	.pagination .page-ellipsis {
+ 3080	    padding: 0 2px;
+ 3081	    color: var(--text-muted);
+ 3082	}
+ 3083	
+ 3084	.muted {
+ 3085	    color: var(--text-muted);
+ 3086	    font-size: 12px;
+ 3087	}
+ 3088	
+ 3089	.muted-cell {
+ 3090	    color: var(--text-muted);
+
+## src/main/resources/static/app.js:32-62
+   32	    selectedAccount: null,
+   33	    accountEditorMode: null,
+   34	    currentEditAccount: null,
+   35	    selectedExpertOrcid: null,
+   36	    selectedRuleId: null,
+   37	    unmatchedRecords: [],
+   38	    unmatchedFiltered: [],
+   39	    monitoring: {
+   40	        date: monitoringToday(),
+   41	        rangeDays: 7,
+   42	        summary: null,
+   43	        subTab: "introductions",
+   44	        page: 0,
+   45	        pageSize: 20,
+   46	        rows: [],
+   47	        totalCount: 0,
+   48	        senderHealth: [],
+   49	        providerDistribution: [],
+   50	        unattributedBounceCount: 0,
+   51	        regionDistribution: [],
+   52	        reputationHistory: [],
+   53	        reputationDomains: [],
+   54	        reputationDomain: "",
+   55	        reputationDays: 30,
+   56	        expandedRegions: {},
+   57	        lastRefreshedAt: null,
+   58	        autoRefreshTimer: null
+   59	    },
+   60	    mailbox: {
+   61	        items: [],
+   62	        groups: [],
+
+## src/main/resources/static/app.js:13815-13888
+13815	async function loadMonitoring() {
+13816	    const dateInput = $("#monitoringDate");
+13817	    if (dateInput && !state.monitoring.date) {
+13818	        state.monitoring.date = monitoringToday();
+13819	    }
+13820	    if (dateInput) {
+13821	        dateInput.value = state.monitoring.date || monitoringToday();
+13822	    }
+13823	    const windowParams = monitoringWindowParams();
+13824	    const dateParams = new URLSearchParams();
+13825	    if (state.monitoring.date) dateParams.set("date", state.monitoring.date);
+13826	    const [summary, senderHealth, providerDistribution, regionDistribution] = await Promise.all([
+13827	        api(`/api/mail-monitoring/summary?${windowParams}`),
+13828	        api(`/api/mail-monitoring/sender-accounts?${dateParams}`),
+13829	        api(`/api/mail-monitoring/provider-distribution?${windowParams}`).catch(() => ({ rows: [], unattributedBounceCount: 0 })),
+13830	        api(`/api/mail-monitoring/region-distribution?${windowParams}`).catch(() => [])
+13831	    ]);
+13832	    state.monitoring.summary = summary;
+13833	    state.monitoring.senderHealth = senderHealth || [];
+13834	    state.monitoring.providerDistribution = providerDistribution?.rows || [];
+13835	    state.monitoring.unattributedBounceCount = providerDistribution?.unattributedBounceCount || 0;
+13836	    state.monitoring.regionDistribution = regionDistribution || [];
+13837	    syncMonitoringRangeTabs();
+13838	    renderMonitoringCards();
+13839	    renderMonitoringProviderDistribution();
+13840	    renderMonitoringRegionDistribution();
+13841	    await loadMonitoringReputation();
+13842	    renderMonitoringSenderHealth();
+13843	    renderMonitoringSenderOptions();
+13844	    await loadMonitoringSubTab();
+13845	    state.monitoring.lastRefreshedAt = new Date();
+13846	    renderMonitoringLastRefreshed();
+13847	    scheduleMonitoringAutoRefresh();
+13848	}
+13849	
+13850	function monitoringWindowParams() {
+13851	    const params = new URLSearchParams();
+13852	    const anchorDate = state.monitoring.date || monitoringToday();
+13853	    const rangeDays = Math.max(1, Number(state.monitoring.rangeDays) || 1);
+13854	    params.set("from", shiftMonitoringDate(anchorDate, -(rangeDays - 1)));
+13855	    params.set("to", anchorDate);
+13856	    return params;
+13857	}
+13858	
+13859	// 纯日历平移：Date.UTC 解析 + UTC 取值格式化，避免本地时区把锚点日偏移一天。
+13860	function shiftMonitoringDate(dateStr, deltaDays) {
+13861	    const [y, m, d] = dateStr.split("-").map(Number);
+13862	    const shifted = new Date(Date.UTC(y, m - 1, d + deltaDays));
+13863	    return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+13864	}
+13865	
+13866	function monitoringRangeLabel() {
+13867	    const days = Number(state.monitoring.rangeDays) || 1;
+13868	    return days === 1 ? "今日" : `近 ${days} 天`;
+13869	}
+13870	
+13871	function syncMonitoringRangeTabs() {
+13872	    const activeDays = Number(state.monitoring.rangeDays) || 7;
+13873	    $$("#monitoringRangeTabs .tab").forEach((tab) => {
+13874	        tab.classList.toggle("active", Number(tab.dataset.range) === activeDays);
+13875	    });
+13876	}
+13877	
+13878	function monitoringRangeParams() {
+13879	    const params = monitoringWindowParams();
+13880	    params.set("pageSize", state.monitoring.pageSize);
+13881	    params.set("pageOffset", state.monitoring.page * state.monitoring.pageSize);
+13882	    const sender = $("#monitoringSenderAccount")?.value;
+13883	    if (sender && ["introductions", "outbound"].includes(state.monitoring.subTab)) {
+13884	        params.set("senderAccountCode", sender);
+13885	    }
+13886	    return params;
+13887	}
+13888	
+
+## src/main/resources/static/app.js:14176-14380
+14176	async function loadMonitoringSubTab() {
+14177	    const tab = state.monitoring.subTab;
+14178	    const params = monitoringRangeParams();
+14179	    let url;
+14180	    if (tab === "introductions") url = `/api/mail-monitoring/introductions?${params}`;
+14181	    if (tab === "inbound") url = `/api/mail-monitoring/inbound?${params}`;
+14182	    if (tab === "outbound") url = `/api/mail-monitoring/outbound-replies?${params}`;
+14183	    if (tab === "pending") {
+14184	        const pendingParams = new URLSearchParams();
+14185	        pendingParams.set("pageSize", state.monitoring.pageSize);
+14186	        pendingParams.set("pageOffset", state.monitoring.page * state.monitoring.pageSize);
+14187	        url = `/api/mail/unmatched-inbound?${pendingParams}`;
+14188	    }
+14189	    if (tab === "bounces") {
+14190	        const bounceParams = new URLSearchParams();
+14191	        bounceParams.set("pageSize", state.monitoring.pageSize);
+14192	        bounceParams.set("pageOffset", state.monitoring.page * state.monitoring.pageSize);
+14193	        const accountCode = $("#monitoringSenderAccount")?.value;
+14194	        if (accountCode) bounceParams.set("accountCode", accountCode);
+14195	        url = `/api/mail/bounces?${bounceParams}`;
+14196	    }
+14197	    if (tab === "promotions") url = `/api/mail-monitoring/promotions?${params}`;
+14198	    const data = await api(url);
+14199	    state.monitoring.rows = data.records || [];
+14200	    state.monitoring.totalCount = data.totalCount ?? state.monitoring.rows.length;
+14201	    renderMonitoringActivityTable();
+14202	    renderMonitoringPagination();
+14203	}
+14204	
+14205	function renderMonitoringActivityTable() {
+14206	    const table = $("#monitoringActivityTable");
+14207	    const tab = state.monitoring.subTab;
+14208	    const rows = state.monitoring.rows || [];
+14209	    const renderEmpty = (colspan) => `<tr><td colspan="${colspan}" class="text-muted" style="text-align:center;">暂无记录</td></tr>`;
+14210	    if (tab === "introductions") {
+14211	        table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>专家</th><th>账号</th><th>主题</th><th>状态</th><th>阶段</th><th>已回复</th></tr>`;
+14212	        table.querySelector("tbody").innerHTML = rows.map((r) => `
+14213	            <tr><td>${escapeHtml(r.sentAt || "-")}</td><td>${monitoringContactCell(r)}</td><td>${escapeHtml(r.senderAccountCode || "-")}</td>
+14214	            <td>${escapeHtml(r.subject || "-")}</td><td>${badge(r.sendStatus || "-", r.sendStatus === "SUCCESS" ? "ok" : "warn")}</td>
+14215	            <td>${escapeHtml(labelStatus(r.contactCurrentStatus) || "-")}</td><td>${escapeHtml(r.replied ? "是" : "否")}</td></tr>
+14216	        `).join("") || renderEmpty(7);
+14217	        return;
+14218	    }
+14219	    if (tab === "inbound") {
+14220	        table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>专家</th><th>发件邮箱</th><th>主题</th><th>处理</th><th>阶段</th><th>自动回复</th><th>摘要</th></tr>`;
+14221	        table.querySelector("tbody").innerHTML = rows.map((r) => `
+14222	            <tr><td>${escapeHtml(r.receivedAt || "-")}</td><td>${monitoringContactCell(r)}</td><td>${escapeHtml(r.fromEmail)}</td>
+14223	            <td>${escapeHtml(r.subject || "-")}</td><td>${escapeHtml(r.processStatus)} ${r.reasonType ? badge(r.reasonType, "warn") : ""}</td>
+14224	            <td>${escapeHtml(labelStatus(r.contactCurrentStatus) || "-")}</td><td>${escapeHtml(r.autoReplyEnabled === false ? "暂停" : "开启")}</td>
+14225	            <td>${escapeHtml((r.cleanedBody || "").slice(0, 80))}</td></tr>
+14226	        `).join("") || renderEmpty(8);
+14227	        return;
+14228	    }
+14229	    if (tab === "outbound") {
+14230	        table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>专家</th><th>触发</th><th>类型</th><th>账号</th><th>主题</th><th>状态</th><th>来源来信</th><th>QA</th></tr>`;
+14231	        table.querySelector("tbody").innerHTML = rows.map((r) => `
+14232	            <tr><td>${escapeHtml(r.sentAt || "-")}</td><td>${monitoringContactCell(r)}</td><td>${escapeHtml(triggeredByLabels[r.triggeredBy] || r.triggeredBy)}</td>
+14233	            <td>${escapeHtml(labelMailType(r.mailType))}</td><td>${escapeHtml(r.senderAccountCode || "-")}</td><td>${escapeHtml(r.subject || "-")}</td>
+14234	            <td>${badge(r.sendStatus || "-", r.sendStatus === "SUCCESS" ? "ok" : "warn")}</td><td>${escapeHtml(r.sourceInbound?.subject || "-")}</td>
+14235	            <td>${escapeHtml(r.matchedQaRuleDisplayName || r.matchedQaRuleId || "-")}</td></tr>
+14236	        `).join("") || renderEmpty(9);
+14237	        return;
+14238	    }
+14239	    if (tab === "pending") {
+14240	        table.querySelector("thead").innerHTML = `<tr><th>ID</th><th>发件邮箱</th><th>主题</th><th>收信时间</th><th>关联专家</th><th>原因</th><th>操作</th></tr>`;
+14241	        table.querySelector("tbody").innerHTML = rows.map((r) => `
+14242	            <tr><td>${escapeHtml(r.id)}</td><td>${escapeHtml(r.fromEmail)}</td><td>${escapeHtml(r.subject || "-")}</td>
+14243	            <td>${escapeHtml(r.receivedAt || "-")}</td><td>${escapeHtml(r.expertName || "-")}</td><td>${escapeHtml(r.reasonType || r.processReason)}</td>
+14244	            <td><button class="button" data-action="view-unmatched" data-id="${escapeHtml(r.id)}">处理</button></td></tr>
+14245	        `).join("") || renderEmpty(7);
+14246	        return;
+14247	    }
+14248	    if (tab === "bounces") {
+14249	        table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>账号</th><th>类型</th><th>失败收件人</th><th>失败原因</th><th>关联专家</th><th>DSN</th><th>原始 Message-ID</th></tr>`;
+14250	        table.querySelector("tbody").innerHTML = rows.map((r) => `
+14251	            <tr><td>${escapeHtml(r.receivedAt || "-")}</td><td>${escapeHtml(r.senderAccountCode || "-")}</td>
+14252	            <td>${badge(r.bounceType || "-", r.bounceType === "HARD" ? "error" : "warn")}</td>
+14253	            <td>${escapeHtml(r.failedRecipient || "-")}</td>
+14254	            <td>${escapeHtml(r.bounceReason || "-")}</td>
+14255	            <td>${escapeHtml(r.expertName || r.expertEmail || r.originalExpertContactId || "-")}</td>
+14256	            <td>${escapeHtml(r.dsnStatus || "-")}</td><td>${escapeHtml(r.originalMessageId || "-")}</td></tr>
+14257	        `).join("") || renderEmpty(8);
+14258	        const backfillBtn = $("#monitoringBounceBackfillBtn");
+14259	        if (backfillBtn) backfillBtn.style.display = "";
+14260	        return;
+14261	    }
+14262	    const backfillBtn = $("#monitoringBounceBackfillBtn");
+14263	    if (backfillBtn) backfillBtn.style.display = "none";
+14264	    table.querySelector("thead").innerHTML = `<tr><th>时间</th><th>专家</th><th>触发</th><th>状态</th><th>层级</th><th>来源来信</th><th>错误</th><th>操作</th></tr>`;
+14265	    table.querySelector("tbody").innerHTML = rows.map((r) => `
+14266	        <tr><td>${escapeHtml(r.createdAt || "-")}</td><td>${monitoringContactCell(r)}</td><td>${escapeHtml(triggeredByLabels[r.triggeredBy] || r.triggeredBy)}</td>
+14267	        <td>${badge(promotionStatusLabels[r.promotionStatus] || r.promotionStatus, r.promotionStatus === "FAILED" ? "error" : "ok")}</td>
+14268	        <td>${escapeHtml(r.fromLevel)} → ${escapeHtml(r.toLevel)}</td><td>${escapeHtml(r.sourceInboundId || "-")}</td><td>${escapeHtml(r.errorMessage || "-")}</td>
+14269	        <td>${r.promotionStatus === "FAILED" ? `<button class="button" data-action="retry-promotion" data-id="${escapeHtml(r.promotionId)}">重试</button>` : ""}</td></tr>
+14270	    `).join("") || renderEmpty(8);
+14271	}
+14272	
+14273	function monitoringContactCell(row) {
+14274	    const label = row.expertName || row.orcidId || row.expertEmail || row.expertContactId || "-";
+14275	    if (!row.expertContactId) return escapeHtml(label);
+14276	    return `<a href="javascript:void 0" data-action="open-monitoring-contact" data-id="${escapeHtml(row.expertContactId)}">${escapeHtml(label)}</a>`;
+14277	}
+14278	
+14279	function renderMonitoringPagination() {
+14280	    const total = state.monitoring.totalCount || 0;
+14281	    const page = state.monitoring.page;
+14282	    const maxPage = Math.max(0, Math.ceil(total / state.monitoring.pageSize) - 1);
+14283	    $("#monitoringPagination").innerHTML = `
+14284	        <span class="muted">共 ${escapeHtml(total)} 条，第 ${escapeHtml(page + 1)} / ${escapeHtml(maxPage + 1)} 页</span>
+14285	        <button class="button secondary" data-action="monitoring-prev" ${page <= 0 ? "disabled" : ""}>上一页</button>
+14286	        <button class="button secondary" data-action="monitoring-next" ${page >= maxPage ? "disabled" : ""}>下一页</button>
+14287	    `;
+14288	}
+14289	
+14290	function renderMonitoringLastRefreshed() {
+14291	    $("#monitoringLastRefreshed").textContent = state.monitoring.lastRefreshedAt
+14292	        ? `最近刷新 ${state.monitoring.lastRefreshedAt.toLocaleTimeString()}`
+14293	        : "";
+14294	}
+14295	
+14296	function scheduleMonitoringAutoRefresh() {
+14297	    if (state.monitoring.autoRefreshTimer) clearTimeout(state.monitoring.autoRefreshTimer);
+14298	    if (state.view !== "monitoring") return;
+14299	    state.monitoring.autoRefreshTimer = setTimeout(async () => {
+14300	        try {
+14301	            const windowParams = monitoringWindowParams();
+14302	            const dateParams = new URLSearchParams();
+14303	            if (state.monitoring.date) dateParams.set("date", state.monitoring.date);
+14304	            const [summary, senderHealth] = await Promise.all([
+14305	                api(`/api/mail-monitoring/summary?${windowParams}`),
+14306	                api(`/api/mail-monitoring/sender-accounts?${dateParams}`)
+14307	            ]);
+14308	            state.monitoring.summary = summary;
+14309	            state.monitoring.senderHealth = senderHealth || [];
+14310	            renderMonitoringCards();
+14311	            renderMonitoringSenderHealth();
+14312	            state.monitoring.lastRefreshedAt = new Date();
+14313	            renderMonitoringLastRefreshed();
+14314	        } catch (error) {
+14315	            showStatus(error.message, "error");
+14316	        } finally {
+14317	            if (appStarted === true && state.view === "monitoring") {
+14318	                scheduleMonitoringAutoRefresh();
+14319	            }
+14320	        }
+14321	    }, 60000);
+14322	}
+14323	
+14324	function bindMonitoringEvents() {
+14325	    $("#monitoringRefreshBtn").addEventListener("click", () => loadMonitoring().catch((e) => showStatus(e.message, "error")));
+14326	    $("#monitoringDate").addEventListener("change", (event) => {
+14327	        state.monitoring.date = event.target.value || null;
+14328	        state.monitoring.page = 0;
+14329	        loadMonitoring().catch((e) => showStatus(e.message, "error"));
+14330	    });
+14331	    $("#monitoringRangeTabs").addEventListener("click", (event) => {
+14332	        const tab = event.target.closest("[data-range]");
+14333	        if (!tab) return;
+14334	        state.monitoring.rangeDays = Number(tab.dataset.range);
+14335	        state.monitoring.page = 0;
+14336	        syncMonitoringRangeTabs();
+14337	        loadMonitoring().catch((e) => showStatus(e.message, "error"));
+14338	    });
+14339	    $("#monitoringRegionDistributionTable").addEventListener("click", (event) => {
+14340	        const button = event.target.closest("[data-action='toggle-region']");
+14341	        if (!button) return;
+14342	        const region = button.dataset.region;
+14343	        state.monitoring.expandedRegions[region] = !state.monitoring.expandedRegions[region];
+14344	        renderMonitoringRegionDistribution();
+14345	    });
+14346	    $("#monitoringSenderAccount").addEventListener("change", () => {
+14347	        state.monitoring.page = 0;
+14348	        loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
+14349	    });
+14350	    $("#monitoringReputationDomain")?.addEventListener("change", (event) => {
+14351	        state.monitoring.reputationDomain = event.target.value || "";
+14352	        loadMonitoringReputation().catch((e) => showStatus(e.message, "error"));
+14353	    });
+14354	    $("#monitoringReputationDays")?.addEventListener("change", (event) => {
+14355	        state.monitoring.reputationDays = Number(event.target.value || 30);
+14356	        loadMonitoringReputation().catch((e) => showStatus(e.message, "error"));
+14357	    });
+14358	    $("#monitoringSubTabs").addEventListener("click", (event) => {
+14359	        const tab = event.target.closest("[data-subtab]");
+14360	        if (!tab) return;
+14361	        state.monitoring.subTab = tab.dataset.subtab;
+14362	        state.monitoring.page = 0;
+14363	        $$("#monitoringSubTabs .tab").forEach((item) => item.classList.toggle("active", item === tab));
+14364	        loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
+14365	    });
+14366	    $("#monitoringBounceBackfillBtn")?.addEventListener("click", async () => {
+14367	        if (!confirm("将从 inbound 历史记录回填退信名单，可重复执行。继续？")) return;
+14368	        try {
+14369	            const result = await api("/api/mail/bounces/backfill", { method: "POST" });
+14370	            showStatus(`回填完成：扫描 ${result.scanned}，新增 ${result.ingested}，重复 ${result.duplicates}`);
+14371	            if (state.monitoring.subTab === "bounces") {
+14372	                await loadMonitoringSubTab();
+14373	            }
+14374	        } catch (e) {
+14375	            showStatus(e.message, "error");
+14376	        }
+14377	    });
+14378	    $("#monitoringPagination").addEventListener("click", (event) => {
+14379	        const button = event.target.closest("button[data-action]");
+14380	        if (!button) return;
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryService.kt:1-165
+    1	package com.weibo.talentintroduction.mail.service
+    2	
+    3	import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+    4	import org.springframework.mail.MailException
+    5	import org.springframework.stereotype.Service
+    6	import javax.mail.AuthenticationFailedException
+    7	import javax.mail.MessagingException
+    8	import javax.mail.SendFailedException
+    9	
+   10	@Service
+   11	class SmtpMailDeliveryService(
+   12	    private val smtpSenderFactory: SmtpSenderFactory,
+   13	    private val unsubscribeTokenService: UnsubscribeTokenService,
+   14	    private val mailContentService: MailContentService,
+   15	    private val emailSuppressionService: EmailSuppressionService
+   16	) : MailDeliveryService {
+   17	    override fun send(account: MailSenderAccount, mail: ComposedMail): DeliveredMail {
+   18	        // I-1: 兜底 fail-closed 拦截。必须位于接触任何 SMTP 资源（getSender）之前；
+   19	        // 命中且未显式 override 时抛异常，绝不返回 DeliveredMail（I-2）。
+   20	        if (!mail.allowSuppressedRecipient && emailSuppressionService.isSuppressed(mail.to)) {
+   21	            throw RecipientSuppressedException(mail.to)
+   22	        }
+   23	
+   24	        val sender = smtpSenderFactory.getSender(account)
+   25	
+   26	        val mailSession = sender.session
+   27	        val message = if (mail.messageId != null) {
+   28	            object : javax.mail.internet.MimeMessage(mailSession) {
+   29	                override fun updateMessageID() {
+   30	                    setHeader("Message-ID", mail.messageId)
+   31	                }
+   32	            }
+   33	        } else {
+   34	            sender.createMimeMessage()
+   35	        }
+   36	
+   37	        // J-2: 仅在 senderDisplayName trim 后非空时使用显示名；非 ASCII 由三参构造器
+   38	        // 完成 RFC 2047 编码，禁止手工拼接。为空时逐字退回裸地址形态。
+   39	        val displayName = account.senderDisplayName?.trim()?.takeIf { it.isNotEmpty() }
+   40	        if (displayName != null) {
+   41	            message.setFrom(javax.mail.internet.InternetAddress(account.senderEmail, displayName, "UTF-8"))
+   42	        } else {
+   43	            message.setFrom(account.senderEmail)
+   44	        }
+   45	        message.setRecipients(javax.mail.Message.RecipientType.TO, mail.to)
+   46	        message.subject = mail.subject
+   47	        mail.inReplyTo?.takeIf { it.isNotBlank() }?.let { message.setHeader("In-Reply-To", it) }
+   48	        mail.references?.takeIf { it.isNotBlank() }?.let { message.setHeader("References", it) }
+   49	        val calendar = mail.calendarAttachment
+   50	        val outboundAttachments = mail.outboundAttachments
+   51	        if (calendar == null && outboundAttachments.isEmpty()) {
+   52	            // fast-p 02 (I-3): 无附件分支逐字保留旧实现（正文/MIME 与旧状态机完全一致）。
+   53	            if (mail.html) {
+   54	                val plain = mail.text?.takeIf { it.isNotBlank() }
+   55	                    ?: mailContentService.htmlToPlainText(mail.body)
+   56	                val multipart = javax.mail.internet.MimeMultipart("alternative")
+   57	                multipart.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+   58	                    setText(plain, Charsets.UTF_8.name())
+   59	                })
+   60	                multipart.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+   61	                    setContent(mail.body, "text/html; charset=UTF-8")
+   62	                })
+   63	                message.setContent(multipart)
+   64	            } else {
+   65	                message.setText(mail.body, Charsets.UTF_8.name())
+   66	            }
+   67	        } else {
+   68	            // fast-p 02/05 (I-3): 任一附件存在 → multipart/mixed 外层；part 1 包原文
+   69	            // (alternative(plain,html) 或 text/plain)，之后先既有 ICS，再通用附件按
+   70	            // 选择顺序。构造用 javax.mail MIME API，禁止自拼 MIME 字符串；
+   71	            // 不重复第二个 html/plain，日历不做 METHOD/文本正文替代；通用附件一律
+   72	            // Disposition=ATTACHMENT、快照 contentType、快照 filename 的原件字节
+   73	            // （不改变字节、不展开压缩包、不把任意文件按 text/calendar 发送）。
+   74	            val mixed = javax.mail.internet.MimeMultipart("mixed")
+   75	            mixed.addBodyPart(originalBodyPart(mail))
+   76	            if (calendar != null) {
+   77	                // fast-p 02 (I-3): 快照 icsText 的 UTF-8 字节
+   78	                // (text/calendar; charset=UTF-8、attachment disposition、安全 filename)。
+   79	                mixed.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+   80	                    dataHandler = javax.activation.DataHandler(
+   81	                        javax.mail.util.ByteArrayDataSource(
+   82	                            calendar.icsText.toByteArray(Charsets.UTF_8),
+   83	                            calendar.contentType
+   84	                        )
+   85	                    )
+   86	                    fileName = calendar.filename
+   87	                    disposition = javax.mail.Part.ATTACHMENT
+   88	                })
+   89	            }
+   90	            outboundAttachments.forEach { file ->
+   91	                mixed.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+   92	                    dataHandler = javax.activation.DataHandler(
+   93	                        javax.mail.util.ByteArrayDataSource(file.bytes, file.snapshot.contentType)
+   94	                    )
+   95	                    fileName = file.snapshot.filename
+   96	                    disposition = javax.mail.Part.ATTACHMENT
+   97	                })
+   98	            }
+   99	            message.setContent(mixed)
+  100	        }
+  101	
+  102	        if (unsubscribeTokenService.enabled()) {
+  103	            val httpsUrl = unsubscribeTokenService.unsubscribeUrl(mail.to)
+  104	            val mailto = "mailto:${account.senderEmail}?subject=unsubscribe"
+  105	            message.addHeader("List-Unsubscribe", "<$httpsUrl>, <$mailto>")
+  106	            message.addHeader("List-Unsubscribe-Post", "List-Unsubscribe=One-Click")
+  107	        }
+  108	
+  109	        return try {
+  110	            sender.send(message)
+  111	            DeliveredMail(
+  112	                messageId = message.messageID ?: mail.messageId,
+  113	                status = "SENT"
+  114	            )
+  115	        } catch (e: SendFailedException) {
+  116	            SmtpErrorClassifier.fromSendFailedException(e, mail.messageId)
+  117	        } catch (e: AuthenticationFailedException) {
+  118	            SmtpErrorClassifier.fromAuthenticationFailedException(e, mail.messageId)
+  119	        } catch (e: MessagingException) {
+  120	            SmtpErrorClassifier.fromMessagingException(e, mail.messageId)
+  121	        } catch (e: MailException) {
+  122	            SmtpErrorClassifier.fromMailException(e, mail.messageId)
+  123	        }
+  124	    }
+  125	
+  126	    /**
+  127	     * mixed 外层的 part 1（fast-p 02/05，I-3）：html 时 multipart/alternative(plain,
+  128	     * html)，否则单 text/plain。与旧混合分支逐字同构（contentType 显式取自
+  129	     * alternative 本体），仅从 send 中提取以便 ICS 与通用附件共用。
+  130	     */
+  131	    private fun originalBodyPart(mail: ComposedMail): javax.mail.internet.MimeBodyPart =
+  132	        javax.mail.internet.MimeBodyPart().apply {
+  133	            if (mail.html) {
+  134	                val plain = mail.text?.takeIf { it.isNotBlank() }
+  135	                    ?: mailContentService.htmlToPlainText(mail.body)
+  136	                val alternative = javax.mail.internet.MimeMultipart("alternative")
+  137	                alternative.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+  138	                    setText(plain, Charsets.UTF_8.name())
+  139	                })
+  140	                alternative.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
+  141	                    setContent(mail.body, "text/html; charset=UTF-8")
+  142	                })
+  143	                setContent(alternative, alternative.contentType)
+  144	            } else {
+  145	                setText(mail.body, Charsets.UTF_8.name())
+  146	            }
+  147	        }
+  148	}
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt:31-102
+   31	            throw PersonalizationGateException(gate.missingKeys)
+   32	        }
+   33	
+   34	        val domain = account.senderEmail.substringAfter("@")
+   35	        val messageId = "<intro-${expert.orcidId}-${UUID.randomUUID()}@$domain>"
+   36	
+   37	        val plain = rendered.body
+   38	        val mail = ComposedMail(
+   39	            to = expert.email ?: error("Expert email is required for introduction mail"),
+   40	            subject = rendered.subject,
+   41	            body = mailContentService.plainTextToHtml(plain, listOfNotNull(variables["unsubscribeUrl"])),
+   42	            html = true,
+   43	            text = plain,
+   44	            messageId = messageId
+   45	        )
+   46	        personalizationGateService.requireNoPlaceholderResidue(mail.subject, plain)
+   47	        return mail
+   48	    }
+   49	
+   50	    fun buildTemplateVariables(expert: ExpertProfile, accountCode: String?): List<TemplateVariableItem> {
+   51	        val account = accountCode?.let { mailSenderAccountService.getEnabledAccount(it) }
+   52	        return toTemplateVariableItems(buildVariables(account, expert))
+   53	    }
+   54	
+   55	    fun buildVariables(account: MailSenderAccount?, expert: ExpertProfile): Map<String, String> =
+   56	        mailVariableService.buildVariables(account, expert)
+   57	
+   58	    fun toTemplateVariableItems(variables: Map<String, String>): List<TemplateVariableItem> =
+   59	        mailVariableService.toTemplateVariableItems(variables)
+   60	
+   61	    companion object {
+   62	        val VARIABLE_LABELS: Map<String, String> = MailVariableService.VARIABLE_LABELS
+   63	    }
+   64	}
+   65	
+   66	data class TemplateVariableItem(
+   67	    val key: String,
+   68	    val label: String,
+   69	    val value: String,
+   70	    val filled: Boolean
+   71	)
+   72	
+   73	data class ComposedMail(
+   74	    val to: String,
+   75	    val subject: String,
+   76	    val body: String,
+   77	    val html: Boolean = false,
+   78	    val text: String? = null,
+   79	    val messageId: String? = null,
+   80	    val inReplyTo: String? = null,
+   81	    val references: String? = null,
+   82	    /** 显式绕过抑制名单拦截。只允许人工单发路径按操作端请求置 true；批量与自动路径恒为 false。见 plan I-4。 */
+   83	    val allowSuppressedRecipient: Boolean = false,
+   84	    /** 会议日历附件快照（fast-p 02，I-3）：null=无附件，旧无附件构造形态不变；
+   85	     *  非 null 时 SMTP 以 multipart/mixed 携带该快照的 icsText（text/calendar 附件）。 */
+   86	    val calendarAttachment: CalendarAttachmentSnapshot? = null,
+   87	    /** 通用附件原件（fast-p 05，I-3）：默认空 = 旧无附件/仅 ICS 形态逐字不变；
+   88	     *  元素是 04 已验证快照 + 已核过尺寸/hash 的原件字节，非空时 SMTP 在既有
+   89	     *  ICS 之后按选择顺序以 multipart/mixed 携带。所有既有调用点保持默认不改。 */
+   90	    val outboundAttachments: List<OutboundMailFile> = emptyList()
+   91	)
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:738-779
+  738	                previousStatus = contact.currentStatus,
+  739	                reason = "RECIPIENT_UNSUBSCRIBED"
+  740	            )
+  741	        }
+  742	
+  743	        val plainBody = mailVariableService.renderForContact(
+  744	            requireNotNull(decision.rawDraftText) { "Grounded auto reply draft text is required" },
+  745	            account,
+  746	            contact
+  747	        )
+  748	        val reply = ComposedMail(
+  749	            to = received.from,
+  750	            subject = decision.subject,
+  751	            body = mailContentService.plainTextToHtml(plainBody),
+  752	            html = true,
+  753	            text = plainBody,
+  754	            messageId = OutboundMessageIdFactory.newId("auto-reply", contactId.toString(), account.senderEmail)
+  755	        )
+  756	        val delivered = mailDeliveryService.send(account, reply)
+  757	        val now = LocalDateTime.now()
+  758	
+  759	        val outboundRecord = mailRecordRepository.save(
+  760	            MailRecord(
+  761	                expertContactId = contactId,
+  762	                direction = "OUTBOUND",
+  763	                mailType = "QA_REPLY",
+  764	                senderAccountCode = account.accountCode,
+  765	                triggeredBy = TriggeredBy.SYSTEM,
+  766	                sourceInboundId = inboundMailRecordId,
+  767	                messageId = delivered.messageId,
+  768	                inReplyTo = received.messageId,
+  769	                subject = reply.subject,
+  770	                body = plainBody,
+  771	                cleanedBody = null,
+  772	                matchedQaRuleId = decision.qaRuleIds.firstOrNull(),
+  773	                sendStatus = delivered.status,
+  774	                receivedAt = null,
+  775	                sentAt = now,
+  776	                createdAt = now
+  777	            )
+  778	        )
+  779	
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1024-1065
+ 1024	            log.info(
+ 1025	                "Queued DMARC report transfer id={} uid={} part={} file={}",
+ 1026	                transferId,
+ 1027	                received.imapUid,
+ 1028	                source.partPath,
+ 1029	                attachment.fileName
+ 1030	            )
+ 1031	        }
+ 1032	    }
+ 1033	
+ 1034	    private fun saveMailRecord(
+ 1035	        account: MailSenderAccount,
+ 1036	        contactId: Long,
+ 1037	        received: ReceivedMail,
+ 1038	        cleanedBody: String
+ 1039	    ): MailRecord = mailRecordRepository.save(
+ 1040	        MailRecord(
+ 1041	            expertContactId = contactId,
+ 1042	            direction = "INBOUND",
+ 1043	            mailType = "REPLY",
+ 1044	            senderAccountCode = account.accountCode,
+ 1045	            triggeredBy = null,
+ 1046	            sourceInboundId = null,
+ 1047	            messageId = received.messageId,
+ 1048	            inReplyTo = received.inReplyTo,
+ 1049	            subject = received.subject,
+ 1050	            body = received.body,
+ 1051	            cleanedBody = cleanedBody,
+ 1052	            matchedQaRuleId = null,
+ 1053	            sendStatus = null,
+ 1054	            receivedAt = received.receivedAt,
+ 1055	            sentAt = null,
+ 1056	            createdAt = LocalDateTime.now()
+ 1057	        )
+ 1058	    )
+ 1059	
+ 1060	    private fun applyPromotionAndStatus(
+ 1061	        contact: ExpertContact,
+ 1062	        receivedAt: LocalDateTime,
+ 1063	        inboundMailRecordId: Long,
+ 1064	        attachmentCount: Int
+ 1065	    ): ExpertContact {
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1216-1258
+ 1216	    private fun sendMeetingInvitation(
+ 1217	        account: MailSenderAccount,
+ 1218	        contact: ExpertContact,
+ 1219	        contactId: Long,
+ 1220	        received: ReceivedMail,
+ 1221	        sourceInboundId: Long
+ 1222	    ): MailRecord {
+ 1223	        val variantSeed = MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail)
+ 1224	        val rendered = mailComposeTemplateService.renderByCode(
+ 1225	            templateCode = "MEETING_INVITATION",
+ 1226	            variables = mailTemplateVariables(account),
+ 1227	            variantSeed = variantSeed
+ 1228	        )
+ 1229	        val mail = ComposedMail(
+ 1230	            to = received.from,
+ 1231	            subject = rendered.subject.ifBlank { "Re: ${received.subject.orEmpty()}".trim() },
+ 1232	            body = rendered.body,
+ 1233	            messageId = OutboundMessageIdFactory.newId("meeting-invitation", contact.orcidId, account.senderEmail)
+ 1234	        )
+ 1235	        val delivered = mailDeliveryService.send(account, mail)
+ 1236	        val now = LocalDateTime.now()
+ 1237	        val saved = mailRecordRepository.save(
+ 1238	            MailRecord(
+ 1239	                expertContactId = contactId,
+ 1240	                direction = "OUTBOUND",
+ 1241	                mailType = "MEETING_INVITATION",
+ 1242	                senderAccountCode = account.accountCode,
+ 1243	                triggeredBy = TriggeredBy.SYSTEM,
+ 1244	                sourceInboundId = sourceInboundId,
+ 1245	                messageId = delivered.messageId,
+ 1246	                inReplyTo = received.messageId,
+ 1247	                subject = mail.subject,
+ 1248	                body = mail.body,
+ 1249	                cleanedBody = null,
+ 1250	                matchedQaRuleId = null,
+ 1251	                sendStatus = delivered.status,
+ 1252	                receivedAt = null,
+ 1253	                sentAt = now,
+ 1254	                createdAt = now
+ 1255	            )
+ 1256	        )
+ 1257	        return saved
+ 1258	    }
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:310-335
+  310	        // 03b (I-43): RAG 路径 matched_qa_rule_id 恒 null，绝不用 legacy_rule_id 兜底。
+  311	        val primaryRuleId = if (ragMode) null else canonicalFactIds.firstOrNull()
+  312	
+  313	        val account = resolvePendingReplyAccount(senderAccountCode, record.senderAccountCode)
+  314	
+  315	        val manualSource = ManualRichSendSource(
+  316	            contact = contact,
+  317	            contactId = contactId,
+  318	            inboundProcessingId = inboundProcessingId,
+  319	            inboundRecord = record,
+  320	            account = account,
+  321	            accountCode = account.accountCode,
+  322	            persistInReplyTo = record.messageId,
+  323	            smtpInReplyTo = null,
+  324	            smtpReferences = null,
+  325	            anchorMailRecordId = null,
+  326	            requestId = null
+  327	        )
+  328	        return executeManualRichSend(
+  329	            source = manualSource,
+  330	            rawSubject = subject,
+  331	            htmlBody = htmlBody,
+  332	            textBody = textBody,
+  333	            operatorName = operatorName,
+  334	            safetyWarningConfirmed = safetyWarningConfirmed,
+  335	            strongConfirmationText = strongConfirmationText,
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:450-478
+  450	        }
+  451	        val account = mailSenderAccountService.getManualSendAccount(accountCode)
+  452	
+  453	        // I-7：Message-ID 仅在 trim 后非空且 <=255 时进入落库 inReplyTo 与 SMTP 线程头；
+  454	        // 缺失/超长不取消资格 —— 线程头为空仍发送（I-3：引用链只来自真实锚点）。
+  455	        val anchorMessageId = anchor.messageId
+  456	            ?.trim()
+  457	            ?.takeIf { it.isNotBlank() && it.length <= 255 }
+  458	        val smtpReferences = if (anchorMessageId != null) {
+  459	            listOfNotNull(anchor.inReplyTo?.trim()?.takeIf { it.isNotBlank() }, anchorMessageId)
+  460	                .joinToString(" ")
+  461	        } else null
+  462	
+  463	        val source = ManualRichSendSource(
+  464	            contact = contact,
+  465	            contactId = contactId,
+  466	            inboundProcessingId = null,
+  467	            inboundRecord = null,
+  468	            account = account,
+  469	            accountCode = accountCode,
+  470	            persistInReplyTo = anchorMessageId,
+  471	            smtpInReplyTo = anchorMessageId,
+  472	            smtpReferences = smtpReferences,
+  473	            anchorMailRecordId = requireNotNull(anchor.id) { "Conversation anchor mail record has no id" },
+  474	            requestId = canonicalRequestId
+  475	        )
+  476	        return executeManualRichSend(
+  477	            source = source,
+  478	            rawSubject = subject,
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:552-573
+  552	            mailVariableService.requireValidPlaceholders(rawHtmlFromTemplate)
+  553	        } else if (evidence.templateTextBody.isNullOrBlank()) {
+  554	            mailVariableService.requireValidPlaceholders(htmlBody)
+  555	        }
+  556	
+  557	        val renderedText = mailVariableService.renderForContact(rawText, source.account, contact)
+  558	        // I-1/I-2/I-3：人工富文本最终正文必须在变量渲染之后、最终校验/安全确认/幂等指纹/
+  559	        // SMTP/落库/审计之前规范化一次；本方法后续所有读路径（finalValidationText、会议正文
+  560	        // 核对、SendPayload 指纹、ComposedMail 两个 MIME alternative、预览与归档）全部引用这
+  561	        // 一份 canonical final body，禁止检查原文却发送另一份正文（I-4）。
+  562	        val finalTextBody = mailContentService.normalizeManualTextLineBreaks(renderedText)
+  563	        val finalHtmlBody = when {
+  564	            rawHtmlFromTemplate != null ->
+  565	                mailVariableService.renderHtmlForContact(rawHtmlFromTemplate, source.account, contact)
+  566	            !evidence.templateTextBody.isNullOrBlank() ->
+  567	                mailContentService.plainTextToHtml(renderedText)
+  568	            else ->
+  569	                mailVariableService.renderHtmlForContact(htmlBody, source.account, contact)
+  570	        }.let { mailContentService.normalizeManualRichHtmlLineBreaks(it) }
+  571	
+  572	        val finalValidationText = buildFinalValidationText(renderedSubject, finalTextBody, finalHtmlBody)
+  573	        require(finalValidationText.isNotBlank()) { "Final validation text is empty after rendering" }
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:717-747
+  717	        val claim = manualReplySendAttemptService.prepareAndClaim(payload)
+  718	
+  719	        return when (claim.result) {
+  720	            ManualReplySendAttemptService.ClaimResult.CLAIMED,
+  721	            ManualReplySendAttemptService.ClaimResult.SAFE_RETRY_CLAIMED -> {
+  722	                val mail = ComposedMail(
+  723	                    to = contact.expertEmail,
+  724	                    subject = renderedSubject,
+  725	                    body = finalHtmlBody,
+  726	                    html = true,
+  727	                    text = finalTextBody,
+  728	                    messageId = claim.messageId,
+  729	                    // 03 (I-2/I-3): 带会议日历的新分支用真实来信 processing.messageId 作
+  730	                    // SMTP 线程头（inReplyTo/references 同一来源）；会议只由来信路径产生，
+  731	                    // 无会议时回落该路径原形态（来信 SMTP 头恒 null；会话回信 = 锚点头），
+  732	                    // 不因本合并顺带改变旧邮件线程形态。
+  733	                    inReplyTo = if (calendarSnapshot != null) source.inboundRecord?.messageId
+  734	                        else source.smtpInReplyTo,
+  735	                    references = if (calendarSnapshot != null) source.inboundRecord?.messageId
+  736	                        else source.smtpReferences,
+  737	                    calendarAttachment = calendarSnapshot,
+  738	                    // 06 (I-1)：同一文件集合的原件（已核尺寸/hash），SMTP 在 ICS 之后按
+  739	                    // 选择顺序以 multipart/mixed 携带。
+  740	                    outboundAttachments = attachmentFileSet.files
+  741	                )
+  742	                val bodyPreviewText = (finalTextBody.ifBlank { mailBodyCleaner.clean(finalHtmlBody) }
+  743	                    .takeIf { it.isNotBlank() } ?: mailBodyCleaner.clean(finalHtmlBody)).take(500)
+  744	
+  745	                try {
+  746	                    val delivered = mailDeliveryService.send(source.account, mail)
+  747	                    val classification = classifyDelivery(delivered)
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:52-94
+   52	    }
+   53	
+   54	    @Transactional
+   55	    fun sendManualMail(contactId: Long, command: ManualMailSendCommand): ManualMailSendResult {
+   56	        val contact = expertContactRepository.findById(contactId)
+   57	            .orElseThrow { error("Expert contact not found: $contactId") }
+   58	        require(contact.expertEmail.isNotBlank()) { "Expert email is required" }
+   59	
+   60	        val account = resolveAccount(contact, command.senderAccountCode)
+   61	        val composed = compose(contact, account, command)
+   62	        personalizationGateService.requireNoPlaceholderResidue(
+   63	            composed.mail.subject,
+   64	            composed.mail.text,
+   65	            composed.mail.body
+   66	        )
+   67	        val delivered = mailDeliveryService.send(account, composed.mail)
+   68	        val now = LocalDateTime.now()
+   69	
+   70	        val saved = mailRecordRepository.save(
+   71	            MailRecord(
+   72	                expertContactId = contactId,
+   73	                direction = "OUTBOUND",
+   74	                mailType = composed.mailType,
+   75	                senderAccountCode = account.accountCode,
+   76	                triggeredBy = TriggeredBy.OPERATOR,
+   77	                sourceInboundId = command.sourceInboundId,
+   78	                messageId = delivered.messageId,
+   79	                inReplyTo = composed.mail.inReplyTo,
+   80	                subject = composed.mail.subject,
+   81	                body = composed.mail.body,
+   82	                matchedQaRuleId = composed.matchedQaRuleId,
+   83	                sendStatus = delivered.status,
+   84	                receivedAt = null,
+   85	                sentAt = now,
+   86	                createdAt = now
+   87	            )
+   88	        )
+   89	
+   90	        if (composed.qaRuleIds.isNotEmpty()) {
+   91	            val mailRecordId = saved.id ?: error("Mail record id is required")
+   92	            composed.qaRuleIds.forEachIndexed { ordinal, qaRuleId ->
+   93	                mailRecordQaRuleRepository.save(
+   94	                    MailRecordQaRule(
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:172-202
+  172	        }
+  173	        // 无绑定兜底：显式 code 优先，否则选号；两者都要补写绑定（IP-1）
+  174	        val account = requested
+  175	            ?.let(mailSenderAccountService::getManualSendAccount)
+  176	            ?: mailSenderAccountService.selectAccountForManualSending()
+  177	        senderAccountBindingService.bindIfAbsent(contactId, account.accountCode, LocalDateTime.now())
+  178	        return account
+  179	    }
+  180	
+  181	    private fun compose(
+  182	        contact: ExpertContact,
+  183	        account: MailSenderAccount,
+  184	        command: ManualMailSendCommand
+  185	    ): ManualComposedMail {
+  186	        val optionType = try {
+  187	            ManualMailOptionType.valueOf(command.optionType.uppercase())
+  188	        } catch (ex: IllegalArgumentException) {
+  189	            throw IllegalArgumentException("Unsupported manual mail option type: ${command.optionType}")
+  190	        }
+  191	        return when (optionType) {
+  192	            ManualMailOptionType.COMPOSE_TEMPLATE -> composeComposeTemplate(
+  193	                contact,
+  194	                account,
+  195	                command.optionValue.toLong(),
+  196	                command.allowSuppressed
+  197	            )
+  198	        }
+  199	    }
+  200	
+  201	    private fun composeComposeTemplate(
+  202	        contact: ExpertContact,
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:237-283
+  237	        val rawTexts = rendered.rawTexts.ifEmpty { listOf(template.subject) }
+  238	        val gate = personalizationGateService.evaluate(rawTexts, variables, requiredKeys)
+  239	        if (gate.blocked) {
+  240	            throw PersonalizationGateException(gate.missingKeys)
+  241	        }
+  242	
+  243	        val isMaterialReminder = (rendered.mailType ?: "COMPOSE_TEMPLATE") == "MATERIAL_REMINDER"
+  244	        val anchor = if (isMaterialReminder) {
+  245	            contact.id?.let { mailRecordRepository.findLatestInboundByExpertContactId(it) }
+  246	        } else null
+  247	        val anchorMessageId = anchor?.messageId
+  248	            ?.trim()
+  249	            ?.takeIf { it.isNotBlank() && it.length <= 255 }        // I-1 长度守卫
+  250	        val threadSubject = if (anchorMessageId != null) {
+  251	            buildReplySubject(anchor?.subject, rendered.subject)     // I-2
+  252	        } else rendered.subject
+  253	        val references = if (anchorMessageId != null) {
+  254	            listOfNotNull(anchor?.inReplyTo?.trim()?.takeIf { it.isNotBlank() }, anchorMessageId)
+  255	                .joinToString(" ")
+  256	        } else null
+  257	
+  258	        val senderDomain = account.senderEmail.substringAfter("@")
+  259	        // I-1: rendered.body 是已完成变量替换的纯文本单源。text/plain 逐字使用它，
+  260	        // text/html 必须由 plainTextToHtml() 做一次安全转换（段落/换行/转义），
+  261	        // 禁止把纯文本直接标记为 HTML（renderHtmlForContact 只替换变量，不产生标签）。
+  262	        val html = mailContentService.plainTextToHtml(rendered.body, listOfNotNull(variables["unsubscribeUrl"]))
+  263	        return ManualComposedMail(
+  264	            mailType = rendered.mailType ?: "COMPOSE_TEMPLATE",
+  265	            mail = ComposedMail(
+  266	                to = contact.expertEmail,
+  267	                subject = threadSubject,                                                    // I-2
+  268	                body = html,
+  269	                html = true,
+  270	                text = rendered.body,
+  271	                messageId = "<reminder-${contact.id}-${UUID.randomUUID()}@$senderDomain>",   // I-3
+  272	                inReplyTo = anchorMessageId,                                                // I-1
+  273	                references = references,                                                     // I-1
+  274	                allowSuppressedRecipient = allowSuppressed                                   // I-4
+  275	            ),
+  276	            matchedQaRuleId = rendered.qaRuleIds.firstOrNull(),
+  277	            qaRuleIds = rendered.qaRuleIds
+  278	        )
+  279	    }
+  280	
+  281	    private fun buildReplySubject(anchorSubject: String?, fallback: String): String {
+  282	        val stripped = stripReplyPrefixes(anchorSubject?.trim().orEmpty())
+  283	        if (stripped.isBlank()) return fallback
+
+## src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:135-162
+  135	        val composed = ComposedMail(
+  136	            to = contact.expertEmail,
+  137	            subject = rendered.subject,
+  138	            body = rendered.body,
+  139	            messageId = OutboundMessageIdFactory.newId("meeting-confirmation", contact.orcidId, account.senderEmail)
+  140	        )
+  141	        val delivered = mailDeliveryService.send(account, composed)
+  142	        val now = LocalDateTime.now()
+  143	
+  144	        mailRecordRepository.save(
+  145	            MailRecord(
+  146	                expertContactId = contactId,
+  147	                direction = "OUTBOUND",
+  148	                mailType = "MEETING_CONFIRMATION",
+  149	                senderAccountCode = account.accountCode,
+  150	                triggeredBy = TriggeredBy.SYSTEM,
+  151	                sourceInboundId = schedule.sourceMailRecordId,
+  152	                messageId = delivered.messageId,
+  153	                inReplyTo = null,
+  154	                subject = composed.subject,
+  155	                body = composed.body,
+  156	                matchedQaRuleId = null,
+  157	                sendStatus = delivered.status,
+  158	                receivedAt = null,
+  159	                sentAt = now,
+  160	                createdAt = now
+  161	            )
+  162	        )
+
+## src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelper.kt:27-80
+   27	    @Transactional
+   28	    fun recordSuccess(
+   29	        contact: ExpertContact,
+   30	        accountCode: String,
+   31	        deliveredMessageId: String?,
+   32	        subject: String?,
+   33	        body: String?,
+   34	        attemptId: Long,
+   35	        taskExecutionId: Long? = null
+   36	    ) {
+   37	        val now = LocalDateTime.now()
+   38	
+   39	        // 1. Transition contact state: NEW → INTRO_SENT
+   40	        val transitioned = conversationStateService.transition(
+   41	            contact = contact,
+   42	            toStatus = ConversationStatus.INTRO_SENT,
+   43	            reason = "MANUAL_BULK_OUTREACH",
+   44	            source = "MANUAL",
+   45	            now = now
+   46	        ) {
+   47	            it.copy(lastMailAt = now)
+   48	        }
+   49	
+   50	        // 1b. I-3: operator_status 收敛到唯一自动写入口（transition 之后调用，
+   51	        // 用 transition 返回值；目标集按构造必为 NOT_CONTACTED，I-1 单调判断恒真）
+   52	        expertOperatorStatusService.updateAutomatically(
+   53	            transitioned,
+   54	            OperatorStatus.CONTACTED,
+   55	            "MANUAL_BULK_OUTREACH"
+   56	        )
+   57	
+   58	        // 2. Create mail record
+   59	        mailRecordRepository.save(
+   60	            MailRecord(
+   61	                expertContactId = contact.id ?: error("Contact ID is null"),
+   62	                direction = "OUTBOUND",
+   63	                mailType = "INTRODUCTION",
+   64	                senderAccountCode = accountCode,
+   65	                triggeredBy = "MANUAL",
+   66	                sourceInboundId = null,
+   67	                messageId = deliveredMessageId,
+   68	                inReplyTo = null,
+   69	                subject = subject,
+   70	                body = body,
+   71	                matchedQaRuleId = null,
+   72	                sendStatus = "SENT",
+   73	                receivedAt = null,
+   74	                sentAt = now,
+   75	                mailSendAttemptId = attemptId,
+   76	                createdAt = now,
+   77	                taskExecutionId = taskExecutionId
+   78	            )
+   79	        )
+   80	
+
+## src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:91-135
+   91	            val mail = introductionMailComposer.compose(account.accountCode, expert)
+   92	            val delivered = try {
+   93	                mailDeliveryService.send(account, mail)
+   94	            } catch (e: Exception) {
+   95	                sentResults += InitialOutreachSendResult(
+   96	                    orcidId = expert.orcidId,
+   97	                    expertEmail = expert.email.orEmpty(),
+   98	                    senderAccountCode = account.accountCode,
+   99	                    status = "FAILED"
+  100	                )
+  101	                assignments += SenderExpertAssignment(
+  102	                    accountCode = account.accountCode,
+  103	                    expertId = expert.orcidId,
+  104	                    distributionKey = expert.country?.lowercase()?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
+  105	                )
+  106	                return@forEachIndexed
+  107	            }
+  108	
+  109	            if (delivered.status == "SENT") {
+  110	                txHelper.recordSuccess(
+  111	                    contact = contact,
+  112	                    accountCode = account.accountCode,
+  113	                    deliveredMessageId = delivered.messageId,
+  114	                    subject = mail.subject,
+  115	                    body = mail.text ?: mail.body,
+  116	                    attemptId = 0L,
+  117	                    taskExecutionId = taskExecutionId
+  118	                )
+  119	            } else {
+  120	                txHelper.recordFailure(
+  121	                    contactId = contact.id ?: error("Saved expert contact id is null"),
+  122	                    accountCode = account.accountCode,
+  123	                    messageId = delivered.messageId,
+  124	                    errorSummary = delivered.errorDetail ?: delivered.status,
+  125	                    subject = mail.subject,
+  126	                    body = mail.text ?: mail.body,
+  127	                    attemptId = null,
+  128	                    taskExecutionId = taskExecutionId
+  129	                )
+  130	            }
+  131	
+  132	            assignments += SenderExpertAssignment(
+  133	                accountCode = account.accountCode,
+  134	                expertId = expert.orcidId,
+  135	                distributionKey = expert.country?.lowercase()?.trim()?.takeIf { it.isNotBlank() } ?: "unknown"
+
+## src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:800-821
+  800	                            senderAccountBoundAt = boundAt,
+  801	                            createdAt = now, updatedAt = now
+  802	                        ))
+  803	                    }
+  804	
+  805	                    // 2. Double-check: skip if SENT introduction already exists (anti-duplicate, I-7)
+  806	                    if (hasSentIntroduction(contact.id!!)) {
+  807	                        log.info("SENT introduction already exists for contact {}, skipping", contact.id)
+  808	                        accumulator.recordSkipped(BatchOutcomeReasonCodes.DEDUP)
+  809	                        processedTotal++
+  810	                        roundProcessed++
+  811	                        // I-6：PASS 后未进 SMTP 的分支保留 NOT_SENT + 具体原因。
+  812	                        recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.DEDUP)
+  813	                        continue
+  814	                    }
+  815	
+  816	                    val messageId = "<manual-outreach-${normOrcid}-${UUID.randomUUID()}@weibo.com>"
+  817	                    val mail = try {
+  818	                        introductionMailComposer.compose(account.accountCode, expert, config.templateId)
+  819	                            .copy(messageId = messageId)
+  820	                    } catch (e: PersonalizationGateException) {
+  821	                        log.info("Personalization gate blocked ORCID {}: missing keys {}", normOrcid, e.missingKeys)
+
+## src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:902-920
+  902	                        break
+  903	                    }
+  904	
+  905	                    // 5. Send via SMTP
+  906	                    smtpAttempted = true
+  907	                    val delivered = mailDeliveryService.send(account, mail)
+  908	                    if (delivered.status == "SENT") {
+  909	                        accountRateLimiter.recordSuccess(account.accountCode, provider, config.perMailIntervalMs)
+  910	                        // 6. Record success atomically (state transition + mail_record + counter + attempt + ES) — I-7
+  911	                        txHelper.recordSuccess(
+  912	                            contact = contact, accountCode = account.accountCode,
+  913	                            deliveredMessageId = messageId, subject = mail.subject,
+  914	                            body = mail.text ?: mail.body, attemptId = attempt.id!!,
+  915	                            taskExecutionId = executionId
+  916	                        )
+  917	                        accumulator.recordSuccess()
+  918	                        stat.success++
+  919	                        roundPassed++
+  920	                        taskExecutionService.updateProgressCounts(executionId, accumulator.success, accumulator.failure)
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/MailContentService.kt:7-77
+    7	    fun plainTextToHtml(plain: String, linkedUrls: Collection<String>): String {
+    8	        if (plain.isBlank()) return ""
+    9	        val targets = linkedUrls.filter { it.isNotBlank() }.distinct().sortedByDescending { it.length }
+   10	        return plain.split(Regex("\\n\\s*\\n"))
+   11	            .map { paragraph ->
+   12	                var inner = escapeHtml(paragraph.trim()).replace("\n", "<br>")
+   13	                targets.forEach { url ->
+   14	                    val escapedUrl = escapeHtml(url)
+   15	                    inner = inner.replace(escapedUrl, "<a href=\"$escapedUrl\">$escapedUrl</a>")
+   16	                }
+   17	                "<p>$inner</p>"
+   18	            }
+   19	            .joinToString("")
+   20	    }
+   21	
+   22	    fun plainTextToHtml(plain: String): String = plainTextToHtml(plain, emptyList())
+   23	
+   24	    fun htmlToPlainText(html: String): String =
+   25	        html.replace(Regex("(?is)<(script|style).*?>.*?</\\1>"), "")
+   26	            .replace(Regex("(?i)<br\\s*/?>"), "\n")
+   27	            .replace(Regex("(?i)</p>"), "\n\n")
+   28	            .replace(Regex("<[^>]+>"), "")
+   29	            .let { unescapeHtmlEntities(it) }
+   30	            .replace(Regex("[ \\t]+"), " ")
+   31	            .replace(Regex("\\n{3,}"), "\n\n")
+   32	            .trim()
+   33	
+   34	    /**
+   35	     * 人工富文本专用：CRLF/CR 统一为 LF；普通换行保留，连续空白行最多保留一行。
+   36	     * 非空行内容逐字保留（不 trim、不合并行内空白）。只服务人工富文本发送（`executeManualRichSend`），
+   37	     * 不改变 `plainTextToHtml` 与非人工邮件既有的 `\n\n` 段落约定（I-5）。
+   38	     */
+   39	    fun normalizeManualTextLineBreaks(text: String): String {
+   40	        val normalized = text.replace("\r\n", "\n").replace('\r', '\n')
+   41	        val result = StringBuilder()
+   42	        var pendingBlankLine = false
+   43	        normalized.split("\n").forEach { line ->
+   44	            if (line.all { it == ' ' || it == '\t' }) {
+   45	                if (result.isNotEmpty()) pendingBlankLine = true
+   46	            } else {
+   47	                if (result.isNotEmpty()) result.append(if (pendingBlankLine) "\n\n" else "\n")
+   48	                result.append(line)
+   49	                pendingBlankLine = false
+   50	            }
+   51	        }
+   52	        return result.toString()
+   53	    }
+   54	
+   55	    /**
+   56	     * 人工富文本专用：连续 `<br>` 最多保留两个，连续空 `<p>`/`<div>` 块最多保留一个，
+   57	     * 从而在邮件中保留一行空白。其他标签、属性与文本顺序逐字保留。
+   58	     */
+   59	    fun normalizeManualRichHtmlLineBreaks(html: String): String {
+   60	        var current = html
+   61	        var passes = 0
+   62	        while (passes++ < MAX_MANUAL_HTML_PASSES) {
+   63	            val next = EMPTY_BLOCK_RUN.replace(CONSECUTIVE_BR.replace(current, "<br><br>"), "$1")
+   64	            if (next == current) return current
+   65	            current = next
+   66	        }
+   67	        return current
+   68	    }
+   69	
+   70	    private fun escapeHtml(text: String): String =
+   71	        text.replace("&", "&amp;")
+   72	            .replace("<", "&lt;")
+   73	            .replace(">", "&gt;")
+   74	            .replace("\"", "&quot;")
+   75	            .replace("'", "&#39;")
+   76	
+   77	    companion object {
+
+## src/main/kotlin/com/weibo/talentintroduction/auth/config/AuthWebConfig.kt:1-35
+    1	package com.weibo.talentintroduction.auth.config
+    2	
+    3	import com.fasterxml.jackson.databind.ObjectMapper
+    4	import com.weibo.talentintroduction.auth.service.AuthService
+    5	import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
+    6	import org.springframework.context.annotation.Bean
+    7	import org.springframework.context.annotation.Configuration
+    8	import org.springframework.web.servlet.config.annotation.InterceptorRegistry
+    9	import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+   10	
+   11	@Configuration
+   12	@ConditionalOnProperty("talent-introduction.auth.enabled", havingValue = "true", matchIfMissing = true)
+   13	class AuthWebConfig(
+   14	    private val authService: AuthService,
+   15	    private val objectMapper: ObjectMapper
+   16	) : WebMvcConfigurer {
+   17	
+   18	    @Bean
+   19	    fun authInterceptor(): AuthInterceptor {
+   20	        return AuthInterceptor(authService, objectMapper)
+   21	    }
+   22	
+   23	    override fun addInterceptors(registry: InterceptorRegistry) {
+   24	        registry.addInterceptor(authInterceptor())
+   25	            .addPathPatterns("/api/**")
+   26	            .excludePathPatterns("/api/auth/login", "/api/auth/me")
+   27	    }
+   28	}
+
+## src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplySettingService.kt:1-40
+    1	package com.weibo.talentintroduction.mail.service
+    2	
+    3	import com.weibo.talentintroduction.campaign.domain.BatchSendSetting
+    4	import com.weibo.talentintroduction.campaign.repository.BatchSendSettingRepository
+    5	import org.springframework.stereotype.Service
+    6	import java.time.LocalDateTime
+    7	
+    8	@Service
+    9	class AutoReplySettingService(
+   10	    private val repository: BatchSendSettingRepository
+   11	) {
+   12	    fun isGlobalEnabled(): Boolean {
+   13	        val row = repository.findBySettingKey(KEY)
+   14	        return row?.settingValue?.toBooleanStrictOrNull() ?: DEFAULT
+   15	    }
+   16	
+   17	    fun setGlobalEnabled(enabled: Boolean) {
+   18	        val existing = repository.findBySettingKey(KEY)
+   19	        repository.save(
+   20	            BatchSendSetting(
+   21	                id = existing?.id,
+   22	                settingKey = KEY,
+   23	                settingValue = enabled.toString(),
+   24	                updatedAt = LocalDateTime.now()
+   25	            )
+   26	        )
+   27	    }
+   28	
+   29	    private companion object {
+   30	        const val KEY = "autoReply.globalEnabled"
+   31	        const val DEFAULT = false
+   32	    }
+   33	}

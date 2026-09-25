@@ -1,0 +1,64 @@
+$ rg -n messageId =|OutboundMessageIdFactory src/main/kotlin/com/weibo/talentintroduction/mail/service src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:816:                    val messageId = "<manual-outreach-${normOrcid}-${UUID.randomUUID()}@weibo.com>"
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:819:                            .copy(messageId = messageId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:880:                                accountCode = account.accountCode, messageId = messageId,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:887:                                accountCode = account.accountCode, messageId = messageId,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:930:                                    messageId = messageId, errorSummary = errorSummary,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:946:                                    messageId = messageId, errorSummary = errorSummary,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:973:                                    messageId = messageId, errorSummary = errorSummary,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:991:                                    messageId = messageId, errorSummary = errorSummary,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:190:                        messageId = i.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:274:                messageId = row.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpErrorClassifier.kt:14:            messageId = messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpErrorClassifier.kt:24:            messageId = messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpErrorClassifier.kt:33:            messageId = messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpErrorClassifier.kt:44:                messageId = messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpErrorClassifier.kt:64:            messageId = messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:78:                messageId = delivered.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:133:            messageId = delivered.messageId
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:271:                messageId = "<reminder-${contact.id}-${UUID.randomUUID()}@$senderDomain>",   // I-3
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:427:                messageId = received.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:754:            messageId = OutboundMessageIdFactory.newId("auto-reply", contactId.toString(), account.senderEmail)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:767:                messageId = delivered.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1003:                    messageId = source.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1047:            messageId = received.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1233:            messageId = OutboundMessageIdFactory.newId("meeting-invitation", contact.orcidId, account.senderEmail)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1245:                messageId = delivered.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1307:                messageId = received.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1362:                messageId = received.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1513:        if (legacyMessageId == null || received.messageId == null || legacyMessageId != received.messageId) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt:449:                    messageId = claimed.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt:257:                messageId = source.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundMessageIdFactory.kt:12:object OutboundMessageIdFactory {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryService.kt:112:                messageId = message.messageID ?: mail.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt:111:            messageId = request.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:125:        val messageId = String.format(MESSAGE_ID_TEMPLATE, UUID.randomUUID().toString().replace("-", ""))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:196:            messageId = messageId
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:242:            messageId = fingerprint.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:287:                    messageId = attempt.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:295:                    messageId = attempt.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:311:                    messageId = attempt.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:319:                    messageId = attempt.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:326:                    messageId = attempt.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:333:                    messageId = attempt.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:364:                messageId = messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:383:                messageId = messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:462:                messageId = messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:481:                messageId = messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt:35:        val messageId = "<intro-${expert.orcidId}-${UUID.randomUUID()}@$domain>"
+src/main/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposer.kt:44:            messageId = messageId
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingInvitationMailComposer.kt:26:            messageId = OutboundMessageIdFactory.newId("meeting-invitation", expert.orcidId, account.senderEmail)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveService.kt:306:            messageId = headers.messageId
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveService.kt:314:            messageId = headers.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveService.kt:347:            messageId = message.getHeader("Message-ID")?.firstOrNull(),
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveService.kt:571:                messageId = context.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:427:                messageId = record.messageId ?: completed.attemptMessageId
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:728:                    messageId = claim.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:754:                                messageId = claim.messageId
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:818:                                    messageId = claim.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:851:                            messageId = claim.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:860:                            messageId = claim.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:890:                                    messageId = claim.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:927:                    messageId = existingRecord?.messageId ?: claim.messageId,
+src/main/kotlin/com/weibo/talentintroduction/mail/service/GoogleDriveMaterialSource.kt:201:                        messageId = context.messageId,

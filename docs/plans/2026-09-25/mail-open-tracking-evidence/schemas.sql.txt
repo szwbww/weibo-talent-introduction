@@ -1,0 +1,360 @@
+-- V1__create_business_tables.sql
+CREATE TABLE mail_sender_account (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    account_code VARCHAR(64) NOT NULL UNIQUE,
+    sender_email VARCHAR(255) NOT NULL,
+    sender_name VARCHAR(128) NOT NULL,
+    sender_title VARCHAR(128),
+    sender_display_name VARCHAR(128),
+    team_name VARCHAR(128),
+    country_name VARCHAR(64),
+    smtp_host VARCHAR(255) NOT NULL,
+    smtp_port INT NOT NULL,
+    smtp_username VARCHAR(255) NOT NULL,
+    smtp_password VARCHAR(255) NOT NULL,
+    imap_host VARCHAR(255) NOT NULL,
+    imap_port INT NOT NULL,
+    imap_username VARCHAR(255) NOT NULL,
+    imap_password VARCHAR(255) NOT NULL,
+    strategy_weight INT NOT NULL DEFAULT 100,
+    daily_send_limit INT NOT NULL DEFAULT 100,
+    today_sent_count INT NOT NULL DEFAULT 0,
+    last_sent_at DATETIME,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE mail_template (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    template_code VARCHAR(64) NOT NULL UNIQUE,
+    template_name VARCHAR(128) NOT NULL,
+    subject VARCHAR(255),
+    body TEXT NOT NULL,
+    language VARCHAR(16) NOT NULL DEFAULT 'en',
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE qa_category (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    category_code VARCHAR(64) NOT NULL UNIQUE,
+    category_name VARCHAR(128) NOT NULL,
+    description VARCHAR(255),
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+CREATE TABLE qa_rule (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    category_id BIGINT NOT NULL,
+    keywords TEXT NOT NULL,
+    match_mode VARCHAR(16) NOT NULL DEFAULT 'ANY',
+    priority INT NOT NULL DEFAULT 100,
+    reply_subject VARCHAR(255),
+    reply_body TEXT NOT NULL,
+    auto_reply_enabled TINYINT(1) NOT NULL DEFAULT 1,
+    handoff_required TINYINT(1) NOT NULL DEFAULT 0,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_qa_rule_category
+        FOREIGN KEY (category_id) REFERENCES qa_category(id)
+);
+
+CREATE TABLE campaign (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    campaign_code VARCHAR(64) NOT NULL UNIQUE,
+    campaign_name VARCHAR(128) NOT NULL,
+    description VARCHAR(255),
+    status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
+    sender_account_id BIGINT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_campaign_sender
+        FOREIGN KEY (sender_account_id) REFERENCES mail_sender_account(id)
+);
+
+CREATE TABLE expert_contact (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    campaign_id BIGINT NOT NULL,
+    orcid_id VARCHAR(64) NOT NULL,
+    expert_email VARCHAR(255) NOT NULL,
+    expert_name VARCHAR(255),
+    current_status VARCHAR(64) NOT NULL DEFAULT 'NEW',
+    last_mail_at DATETIME,
+    last_reply_at DATETIME,
+    manual_handoff_required TINYINT(1) NOT NULL DEFAULT 0,
+    closed_reason VARCHAR(255),
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_campaign_expert (campaign_id, orcid_id),
+    CONSTRAINT fk_expert_contact_campaign
+        FOREIGN KEY (campaign_id) REFERENCES campaign(id)
+);
+
+CREATE TABLE mail_record (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    expert_contact_id BIGINT NOT NULL,
+    direction VARCHAR(16) NOT NULL,
+    mail_type VARCHAR(64) NOT NULL,
+    message_id VARCHAR(255),
+    in_reply_to VARCHAR(255),
+    subject VARCHAR(255),
+    body LONGTEXT,
+    matched_qa_rule_id BIGINT,
+    send_status VARCHAR(32),
+    received_at DATETIME,
+    sent_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_mail_record_contact
+        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id),
+    CONSTRAINT fk_mail_record_rule
+        FOREIGN KEY (matched_qa_rule_id) REFERENCES qa_rule(id)
+);
+
+CREATE TABLE manual_handoff (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    expert_contact_id BIGINT NOT NULL,
+    reason VARCHAR(255) NOT NULL,
+    handoff_status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+    assigned_to VARCHAR(128),
+    note TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_manual_handoff_contact
+        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+);
+
+
+-- V6__add_inbound_cleaning_and_intent.sql
+ALTER TABLE mail_record
+    ADD COLUMN cleaned_body LONGTEXT AFTER body;
+
+CREATE TABLE inbound_intent (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    mail_record_id BIGINT NOT NULL,
+    expert_contact_id BIGINT NOT NULL,
+    intent_code VARCHAR(64) NOT NULL,
+    confidence INT NOT NULL DEFAULT 0,
+    matched_keywords TEXT,
+    auto_action VARCHAR(64) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_inbound_intent_contact (expert_contact_id, created_at),
+    KEY idx_inbound_intent_code (intent_code, created_at),
+    CONSTRAINT fk_inbound_intent_mail_record
+        FOREIGN KEY (mail_record_id) REFERENCES mail_record(id),
+    CONSTRAINT fk_inbound_intent_contact
+        FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+);
+
+
+-- V15__add_mail_monitoring_columns_and_promotion_audit.sql
+-- 1. mail_record monitoring fields
+ALTER TABLE mail_record
+    ADD COLUMN sender_account_code VARCHAR(64) NULL
+        COMMENT '发件 / 收件账号 code；INBOUND=接收账号；OUTBOUND=发件账号' AFTER mail_type,
+    ADD COLUMN triggered_by VARCHAR(16) NULL
+        COMMENT 'SYSTEM=系统自动；OPERATOR=运营手动；INBOUND 行此列为 NULL' AFTER sender_account_code,
+    ADD COLUMN source_inbound_id BIGINT NULL
+        COMMENT '触发本条 OUTBOUND 的 INBOUND mail_record.id' AFTER triggered_by;
+
+ALTER TABLE mail_record
+    ADD INDEX idx_mail_record_dir_type_sent (direction, mail_type, sent_at),
+    ADD INDEX idx_mail_record_dir_received (direction, received_at),
+    ADD INDEX idx_mail_record_sender_sent (sender_account_code, sent_at),
+    ADD INDEX idx_mail_record_triggered_sent (triggered_by, sent_at),
+    ADD INDEX idx_mail_record_source_inbound (source_inbound_id);
+
+-- 2. Extend reason_type comments without changing the column shape.
+ALTER TABLE inbound_mail_processing
+    MODIFY COLUMN reason_type VARCHAR(32) NULL
+        COMMENT 'UNMATCHED_CONTACT / UNCLEAR_INTENT / QA_NO_MATCH / NOT_INTERESTED / MANUAL_RESOLVED / AUTO_QA_REPLIED / AUTO_MEETING_INVITED / AUTO_NOOP';
+
+-- 3. Backfill historical processed rows into an explicit noop bucket.
+UPDATE inbound_mail_processing
+   SET reason_type = 'AUTO_NOOP'
+ WHERE process_status = 'PROCESSED' AND reason_type IS NULL;
+
+-- 4. Application promotion audit.
+CREATE TABLE expert_application_promotion (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    expert_contact_id BIGINT NOT NULL,
+    orcid_id VARCHAR(64) NOT NULL,
+    source_inbound_id BIGINT NULL COMMENT '触发本次晋级的 INBOUND mail_record.id',
+    triggered_by VARCHAR(16) NOT NULL COMMENT 'SYSTEM / OPERATOR',
+    promotion_status VARCHAR(16) NOT NULL COMMENT 'PENDING / SUCCESS / FAILED / REVERTED',
+    from_level VARCHAR(16) NOT NULL DEFAULT 'CANDIDATE',
+    to_level VARCHAR(16) NOT NULL DEFAULT 'APPLICATION',
+    error_message TEXT NULL,
+    operator_name VARCHAR(64) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_eap_status_created (promotion_status, created_at),
+    KEY idx_eap_contact (expert_contact_id, created_at),
+    CONSTRAINT fk_eap_contact FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+);
+
+-- 5. Add one SUCCESS history row for contacts already in APPLICATION.
+INSERT INTO expert_application_promotion
+    (expert_contact_id, orcid_id, source_inbound_id, triggered_by, promotion_status,
+     from_level, to_level, created_at, updated_at)
+SELECT ec.id, ec.orcid_id, NULL, 'SYSTEM', 'SUCCESS',
+       'CANDIDATE', 'APPLICATION', ec.updated_at, ec.updated_at
+  FROM expert_contact ec
+ WHERE ec.current_index_level = 'APPLICATION'
+   AND NOT EXISTS (
+       SELECT 1 FROM expert_application_promotion eap
+        WHERE eap.expert_contact_id = ec.id
+          AND eap.promotion_status = 'SUCCESS'
+   );
+
+
+-- V23__create_mail_send_attempt_and_add_mail_record_error.sql
+CREATE TABLE mail_send_attempt (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    orcid_id VARCHAR(100) NOT NULL,
+    mail_type VARCHAR(50) NOT NULL,
+    account_code VARCHAR(100) NOT NULL,
+    message_id VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL COMMENT 'PREPARED, DELIVERY_IN_PROGRESS, DELIVERY_UNKNOWN, SENT, FAILED_SAFE_TO_RETRY',
+    error_summary TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_orcid_mail_type (orcid_id, mail_type),
+    UNIQUE KEY uq_msa_message_id (message_id)
+);
+
+ALTER TABLE mail_record ADD COLUMN error_summary VARCHAR(1024) DEFAULT NULL;
+ALTER TABLE mail_record ADD COLUMN mail_send_attempt_id BIGINT DEFAULT NULL;
+CREATE INDEX idx_mr_mail_send_attempt_id ON mail_record(mail_send_attempt_id);
+
+
+-- V24__extend_mail_send_attempt_state_and_link_mail_record.sql
+-- Preflight must complete before any persistent DDL because MySQL ALTER TABLE
+-- implicitly commits and cannot be rolled back by Flyway.
+CREATE TEMPORARY TABLE v24_mail_record_ambiguous_attempts AS
+SELECT msa.id AS mail_send_attempt_id
+  FROM mail_send_attempt msa
+  JOIN mail_record mr
+    ON mr.message_id = msa.message_id
+   AND mr.direction = 'OUTBOUND'
+   AND mr.mail_type = 'INTRODUCTION'
+ GROUP BY msa.id
+HAVING COUNT(*) > 1;
+
+CREATE TEMPORARY TABLE v24_mail_record_ambiguous_guard (id BIGINT PRIMARY KEY);
+INSERT INTO v24_mail_record_ambiguous_guard (id) VALUES (1);
+INSERT INTO v24_mail_record_ambiguous_guard (id)
+SELECT 1 FROM v24_mail_record_ambiguous_attempts LIMIT 1;
+
+ALTER TABLE mail_send_attempt
+    ADD COLUMN recipient VARCHAR(255) DEFAULT NULL,
+    ADD COLUMN subject VARCHAR(255) DEFAULT NULL,
+    ADD COLUMN body LONGTEXT DEFAULT NULL,
+    ADD COLUMN content_type VARCHAR(64) DEFAULT NULL,
+    ADD COLUMN quota_counted TINYINT(1) NOT NULL DEFAULT 0,
+    ADD COLUMN account_counted_at DATETIME DEFAULT NULL;
+
+UPDATE mail_record mr
+JOIN mail_send_attempt msa
+  ON mr.message_id = msa.message_id
+ AND mr.direction = 'OUTBOUND'
+ AND mr.mail_type = 'INTRODUCTION'
+SET mr.mail_send_attempt_id = msa.id
+WHERE mr.mail_send_attempt_id IS NULL;
+
+-- Drop the ordinary index from V23 since it's replaced by a UNIQUE constraint
+DROP INDEX idx_mr_mail_send_attempt_id ON mail_record;
+
+ALTER TABLE mail_record
+    ADD CONSTRAINT uq_mail_record_send_attempt UNIQUE (mail_send_attempt_id),
+    ADD CONSTRAINT fk_mail_record_send_attempt
+        FOREIGN KEY (mail_send_attempt_id) REFERENCES mail_send_attempt(id);
+
+UPDATE mail_send_attempt msa
+JOIN mail_record mr
+  ON mr.mail_send_attempt_id = msa.id
+ AND mr.direction = 'OUTBOUND'
+ AND mr.mail_type = 'INTRODUCTION'
+ AND mr.send_status = 'SENT'
+SET msa.quota_counted = 1,
+    msa.account_counted_at = COALESCE(mr.sent_at, msa.updated_at)
+WHERE msa.quota_counted = 0;
+
+
+-- V27__create_batch_send_setting.sql
+CREATE TABLE batch_send_setting (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(64) NOT NULL UNIQUE,
+    setting_value VARCHAR(255) NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+INSERT INTO batch_send_setting (setting_key, setting_value) VALUES
+    ('batchSend.autoEnabled', 'false'),
+    ('batchSend.cron', '0 0 0 * * ?'),
+    ('batchSend.dailyCap', '1000'),
+    ('batchSend.roundSize', '50'),
+    ('batchSend.perMailIntervalMs', '1000'),
+    ('batchSend.perRoundIntervalMs', '60000'),
+    ('batchSend.selfCheckTtlMinutes', '30'),
+    ('batchSend.runtimeStatus', 'IDLE'),
+    ('batchSend.runtimeMode', 'NONE'),
+    ('batchSend.pauseReason', '');
+
+
+-- V31__add_mail_record_created_at_index.sql
+ALTER TABLE mail_record
+    ADD INDEX idx_mail_record_status_created (direction, send_status, created_at);
+
+
+-- V50__add_global_auto_reply_setting.sql
+INSERT INTO batch_send_setting (setting_key, setting_value) VALUES
+    ('autoReply.globalEnabled', 'false');
+
+
+-- V101__add_task_execution_id_to_mail_record.sql
+-- 关联邮件到产生它的任务执行。刻意不加外键：task_execution 有 90 天硬删除保留策略
+-- （见 V102 / TaskAuditRetentionScheduler），加 FK 会阻塞清理。悬垂值由读取侧兜底。
+ALTER TABLE mail_record
+    ADD COLUMN task_execution_id BIGINT NULL;
+
+CREATE INDEX idx_mail_record_task_execution
+    ON mail_record (task_execution_id, id);
+
+
+-- V123__add_mail_record_calendar_attachment.sql
+-- ============================================================================
+-- V123 mail_record 会议日历附件存档列（fast-p 02）
+--
+-- 只新增一列：calendar_attachment_json LONGTEXT NULL。
+--   * NULL = 无会议日历（唯一 absence 形态；禁止用空串/{} 表示无附件，I-1）；
+--   * 非 NULL 必须是 01 CalendarAttachmentSnapshot 规范快照 JSON
+--     （schemaVersion=1，UTF-8 字节 sha256 与语义 sha256 均与 icsText 一致），
+--     由应用层 CalendarAttachmentCodec 严格生成/读取验证（I-1），本迁移不设
+--     CHECK（应用 01 codec 是唯一校验方）。
+-- 历史行不回填（旧行保持 NULL），不加默认值、不加索引。
+-- ============================================================================
+
+ALTER TABLE mail_record
+    ADD COLUMN calendar_attachment_json LONGTEXT NULL;
+
+
+-- V127__add_outbound_attachments_snapshot.sql
+-- ============================================================================
+-- V127 mail_record 人工回复通用附件存档列（fast-p 05）
+--
+-- 只新增一列：outbound_attachments_json LONGTEXT NULL。
+--   * NULL = 无通用附件（唯一 absence 形态；禁止用空数组/空串表示无附件，I-1）；
+--   * 非 NULL 必须是 04 OutboundAttachmentSnapshotCodec.serialize 生成的有序快照
+--     JSON 数组（schemaVersion=1，按选取顺序，逐项 filename/contentType/
+--     byteLength/sha256；不含上传 UUID/磁盘路径/上传时间），由应用层 codec
+--     严格生成与读取校验（I-1/I-2），本迁移不设 CHECK。
+-- 历史行不回填（旧行保持 NULL），不加默认值、不加索引。
+-- ============================================================================
+
+ALTER TABLE mail_record
+    ADD COLUMN outbound_attachments_json LONGTEXT NULL;
