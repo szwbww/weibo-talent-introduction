@@ -1,27 +1,17 @@
 ---
 id: K-progress-log-batchonly-two-readers
 domain: task
-created: 2026-08-06
-last_used: 2026-09-22
-hit_count: 2
+created: 2026-09-24
+last_used: 2026-09-24
+hit_count: 3
 source: create-p:batch-execution-log-process-visibility-p1
 severity: P1
 ---
 
-经验：`task_progress_log` 有两个语义不同的读取口，看起来都在做
-`filter { batchNumber > 0 }.groupBy { batchNumber }.map { last }`，但不能顺手统一：
+`task_progress_log` 的通用任务弹窗与批量发送日志有不同契约，不应顺手统一。
 
-1. `TaskProgressController.getProgressLogs` — 过滤受 `batchOnly` 参数控制，
-   默认 `false` 已返回全部行。`batchOnly=true` 是通用任务进度弹窗
-   （`static/task-modal-runtime.js:130`）的既定契约，并被
-   `TaskProgressControllerExecutionsTest`（"batchOnly filters out batchNumber zero and negative"
-   与 "batchOnly false returns all logs"）两条用例锁定。**不要动。**
-2. `BatchSendConfigController.getConfigExecutionDetail` — **硬编码**同样的过滤，
-   无参数、无测试覆盖。`batchNumber == 0` 的行（初始化行、空快照终态、轮次闸门失败、
-   最终 stopReason 收尾）全被丢弃，导致"为什么一封没发/为什么中途停了"在 UI 上不可见。
+- `TaskProgressController.getProgressLogs` 受 batchOnly 参数控制；默认false可读全部，true保留通用弹窗的按批行为。
+- 2026-09-24 当前 `BatchSendConfigController.buildProgressRows:164` 已保留 batchNumber=0 的首条INIT与后续FINAL；其余按batchNumber取末条ROUND，并按id排序。旧条目“初始化/最终行全被丢弃且无测试”的缺陷已修复，现有 `BatchSendExecutionDetailTest` 覆盖此语义。
+- 每邮箱事件仍不能仅依赖按批取末条的列表；已有OutcomeAccumulator错误样本最多20，完整逐项审计应有独立读写合同，不能把样本当全集。
 
-正确做法：改批量执行日志的可见性时，只改 ②，并保留 ① 的 batchOnly 语义与其测试。
-`batchNumber == 0` 的行应分类为 INIT / FINAL 保留，`batchNumber > 0` 才按批次去重，
-整体按 `id` 升序而非 `batchNumber` 升序输出。
-
-关联：[[K-execution-detail-running-needs-progress-log]]
+证据：docs/plans/2026-09-24/emailable-evidence.md F-8；本条不要求修改通用进度控制器。

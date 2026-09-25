@@ -1,0 +1,57 @@
+$ rg -n loadMonitoring|renderMonitoring|monitoringSubTabs|monitoringRangeParams|class="pre"|escapeHtml\(.*body src/main/resources/static/app.js
+exit=0
+2894:    return `${escapeHtml(extracted.body)}${linksHtml}`;
+3105:        if (state.view === "monitoring") await loadMonitoring();
+5134:            <td class="muted-cell"><div class="pre">${escapeHtml(item.operatorInstruction || "—")}</div></td>
+5258:        <td><div class="pre">${escapeHtml(topic.draftBody || "—")}</div></td>
+8384:        preview.innerHTML = `<strong>${escapeHtml(p.subject || "")}</strong><div class="pre">${escapeHtml(p.body || "")}</div>`;
+10752:                <div><strong>内容:</strong><br>${escapeHtml(after?.bodyPreviewText || after?.bodyPreview || "-")}</div>
+10759:                <div><strong>内容:</strong><br>${escapeHtml(after?.bodyPreviewText || after?.bodyPreview || "-")}</div>
+11177:            <div class="pre" data-role="mail-preview-body"></div>
+11754:        <div class="compose-preview-mail-body">${escapeHtml(preview.body || "")}</div>`;
+12337:        html += `<div class="pre">${escapeHtml(detail.errorMessage)}</div>`;
+12344:        html += `<div class="pre">${escapeHtml(detail.rawRequestPayload)}</div>`;
+12351:        html += `<div class="pre">${escapeHtml(detail.rawResultSummary)}</div>`;
+12727:    bubble.innerHTML = `<div class="ai-chat-label">修改要求</div><div class="pre">${escapeHtml(instruction)}</div>`;
+13815:async function loadMonitoring() {
+13838:    renderMonitoringCards();
+13839:    renderMonitoringProviderDistribution();
+13840:    renderMonitoringRegionDistribution();
+13841:    await loadMonitoringReputation();
+13842:    renderMonitoringSenderHealth();
+13843:    renderMonitoringSenderOptions();
+13844:    await loadMonitoringSubTab();
+13846:    renderMonitoringLastRefreshed();
+13878:function monitoringRangeParams() {
+13889:function renderMonitoringCards() {
+13967:function renderMonitoringProviderDistribution() {
+14001:function renderMonitoringRegionDistribution() {
+14055:async function loadMonitoringReputation() {
+14083:        renderMonitoringReputationChart();
+14086:        renderMonitoringReputationChart();
+14090:function renderMonitoringReputationChart() {
+14144:function renderMonitoringSenderOptions() {
+14153:function renderMonitoringSenderHealth() {
+14176:async function loadMonitoringSubTab() {
+14178:    const params = monitoringRangeParams();
+14201:    renderMonitoringActivityTable();
+14202:    renderMonitoringPagination();
+14205:function renderMonitoringActivityTable() {
+14279:function renderMonitoringPagination() {
+14290:function renderMonitoringLastRefreshed() {
+14310:            renderMonitoringCards();
+14311:            renderMonitoringSenderHealth();
+14313:            renderMonitoringLastRefreshed();
+14325:    $("#monitoringRefreshBtn").addEventListener("click", () => loadMonitoring().catch((e) => showStatus(e.message, "error")));
+14329:        loadMonitoring().catch((e) => showStatus(e.message, "error"));
+14337:        loadMonitoring().catch((e) => showStatus(e.message, "error"));
+14344:        renderMonitoringRegionDistribution();
+14348:        loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
+14352:        loadMonitoringReputation().catch((e) => showStatus(e.message, "error"));
+14356:        loadMonitoringReputation().catch((e) => showStatus(e.message, "error"));
+14358:    $("#monitoringSubTabs").addEventListener("click", (event) => {
+14363:        $$("#monitoringSubTabs .tab").forEach((item) => item.classList.toggle("active", item === tab));
+14364:        loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
+14372:                await loadMonitoringSubTab();
+14383:        loadMonitoringSubTab().catch((e) => showStatus(e.message, "error"));
+14401:            await loadMonitoringSubTab();

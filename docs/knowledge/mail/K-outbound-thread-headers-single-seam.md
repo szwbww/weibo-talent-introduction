@@ -1,16 +1,18 @@
 ---
 id: K-outbound-thread-headers-single-seam
 domain: mail
-created: 2026-09-09
-last_used: 2026-09-14
-hit_count: 4
-source: create-p:material-reminder-01-threading
+created: 2026-09-25
+last_used: 2026-09-25
+hit_count: 5
+source: create-p:mail-open-tracking-00-master
 ---
 
-2026-09-09 重新读代码：旧“全库未设置线程头”结论已失效。`ComposedMail`（IntroductionMailComposer.kt:73）已有可空默认 `inReplyTo` / `references`；`SmtpMailDeliveryService.send` 的唯一MIME写入点已将非空值设置到真实邮件头。AutoMailReplyService、ManualExpertMailService 的部分构造点已传入。
+2026-09-25重新审计：ComposedMail已有inReplyTo/references，SmtpMailDeliveryService:43–44统一写入非空线程头；但不是所有真实回复调用方均传入。
 
-审计仍必须检查**调用方实际传参**：PendingMailOperationService.sendManualRichReply:383 当前只传messageId，没有传这两个头；其SendPayload.inReplyTo和mail_record.in_reply_to仍记真实来信messageId。不能把数据库记账等同于已写入MIME，也不能把这一处缺参推广成所有出站路径缺失。
+- AutoMailReplyService:748–754 QA回复和:1229–1234来信触发邀约未传SMTP回复头，保存mail_record时却写sourceInboundId/inReplyTo。
+- PendingMailOperationService:322–324普通回复来源smtp头为null，:470–472会话回复来源带真实锚点头；:722–740统一交给SMTP。
+- ManualExpertMailService:244–279材料提醒可读真实来信锚点，有messageId才设置头；command.sourceInboundId目前另存记录。
+- MeetingScheduleService:135–159不传SMTP回复头，记录可带schedule.sourceMailRecordId。
 
-可复用规则：修改线程行为时，逐项追踪真实INBOUND messageId→ComposedMail→SMTP headers→mail_record.in_reply_to；没有真实messageId时不伪造。对已有调用新增可选载体字段必须带默认值；是否改变旧调用的线程行为需要明确范围，不能借新附件功能顺带修改全站发件。
-
-本次证据：docs/plans/2026-09-09/meeting-confirmation-audit.md D3；原始构造点见同目录meeting-confirmation-evidence/constructors.txt。本条描述现有代码，不意味着会议日历功能已实现。
+可复用规则：回复判定须审计实际业务上下文、DTO参数与MIME头，不能把记录字段存在等同于头已发送，也不能以头缺失证明新会话。修改某一能力不得顺带补全站线程头。
+证据：docs/plans/2026-09-25/mail-open-tracking-audit.md §1。

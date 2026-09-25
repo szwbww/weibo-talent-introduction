@@ -1,0 +1,50 @@
+ M docs/knowledge/audit/K-plan-quantified-claims-need-grep-receipts.md
+ M docs/knowledge/build/K-js-tests-run-via-exec-plugin.md
+ M docs/knowledge/campaign/K-batch-config-legacy-adapter-field-preservation.md
+ M docs/knowledge/campaign/K-batch-send-filter-retry-parity.md
+ M docs/knowledge/campaign/K-batch-send-legacy-routes-entity-ssot.md
+ M docs/knowledge/campaign/K-batch-send-round-loop-symmetry.md
+ M docs/knowledge/campaign/K-batch-task-config-snapshot-log-identity.md
+ M docs/knowledge/campaign/K-email-invalid-no-existing-seam.md
+ M docs/knowledge/campaign/K-operator-status-single-writer.md
+ M docs/knowledge/es-index/K-es-dynamic-false.md
+ M docs/knowledge/frontend/K-batch-console-log-timeline.md
+ M docs/knowledge/frontend/K-batch-console-regression-contract.md
+ M docs/knowledge/frontend/K-batch-console-source-identity.md
+ M docs/knowledge/frontend/K-expert-tag-editor-shared-render-contract.md
+ M docs/knowledge/frontend/K-frontend-cache-key-triad.md
+ M docs/knowledge/frontend/K-js-test-invocation-surface.md
+ M docs/knowledge/frontend/K-panel-bg-token-is-translucent.md
+ M docs/knowledge/mail/K-cold-outreach-html-asymmetry.md
+ M docs/knowledge/mail/K-dual-outreach-paths.md
+ M docs/knowledge/mail/K-mail-body-display-sites.md
+ M docs/knowledge/mail/K-mail-record-source-inbound-id.md
+ M docs/knowledge/mail/K-outbound-message-id-single-factory.md
+ M docs/knowledge/mail/K-outbound-thread-headers-single-seam.md
+ M docs/knowledge/mail/K-plaintext-reply-client-reflow.md
+ M docs/knowledge/mail/K-smtp-idempotency-reservation-before-delivery.md
+ M docs/knowledge/mail/K-unsubscribe-token-plaintext-email.md
+ M docs/knowledge/task/K-progress-log-batchonly-two-readers.md
+ M docs/knowledge/task/K-progress-log-per-mail-write-amplification.md
+ M docs/operations/dmarc-and-postmaster-setup.md
+ M docs/releases.json
+ M src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt
+ M src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchEmailVerificationService.kt
+ M src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt
+ M src/main/resources/static/app.js
+ M src/main/resources/static/index.html
+ M src/test/js/batchEmailVerification.test.js
+ M src/test/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepositoryIT.kt
+ M src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchEmailVerificationServiceTest.kt
+ M src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt
+?? docs/audits/
+?? docs/deploy/2026-09-25-emailable-policy-pagination.md
+?? docs/introduction-mail-copy-neutral-2026-09-25-applied.json
+?? docs/introduction-mail-copy-neutral-2026-09-25.json
+?? docs/introduction-mail-copy-neutral-2026-09-25.md
+?? docs/mockups/open-tracking-preview/
+?? docs/mockups/task-center-preview/
+?? docs/plans/2026-09-25/
+?? scripts/build_contactout_enterprise_es_import.py
+?? scripts/build_qiandeng_contactout_configs.py
+?? scripts/update_sbir_employment.py

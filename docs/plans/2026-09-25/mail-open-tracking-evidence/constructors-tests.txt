@@ -1,0 +1,39 @@
+$ rg -n SmtpMailDeliveryService\(|recordSuccess\(|normalizeManualRichHtmlLineBreaks\( src/test
+exit=0
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:399:        Mockito.verify(txHelper).recordSuccess(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:1943:            Mockito.verify(txHelper, Mockito.never()).recordSuccess(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:81:        helper.recordSuccess(contact, "chen", "msg123", "Subject", "Body", 77L, 1000L)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:159:        helper.recordSuccess(contact, "chen", "msg456", "Subject", "Body", 88L, 2000L)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualOutreachTxHelperTest.kt:250:        helper.recordSuccess(contact, "chen", "msg123", "Subject", "Body", 77L, taskExecutionId = 4242L)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:371:        repeat(3) { acc.recordSuccess() }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:381:        repeat(2) { acc.recordSuccess() }
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt:97:        Mockito.verify(txHelper, Mockito.times(2)).recordSuccess(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt:138:        Mockito.verify(txHelper, Mockito.times(2)).recordSuccess(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt:172:        Mockito.verify(txHelper, Mockito.never()).recordSuccess(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt:399:        Mockito.verify(txHelper).recordSuccess(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AccountRateLimiterTest.kt:34:            limiter.recordSuccess("chen", baseIntervalMs)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/AccountRateLimiterTest.kt:79:            limiter.recordSuccess("chen", "gmail", baseIntervalMs)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:137:        val delivered = SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:160:        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService, emailSuppressionService).send(account, mail)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:186:        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService, emailSuppressionService).send(account, mail)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:209:        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:231:        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:253:        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:278:        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:434:        val delivered = SmtpMailDeliveryService(factory, tokenService, mailContentService, emailSuppressionService)
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:714:        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:745:        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:767:        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:795:        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:847:            SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:870:        val delivered = SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt:902:        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailContentServiceTest.kt:154:            service.normalizeManualRichHtmlLineBreaks("<b>A</b><br><br><br><a href=\"https://x.test\">B</a>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailContentServiceTest.kt:156:        assertEquals("A<br><br>B", service.normalizeManualRichHtmlLineBreaks("A<br> \n<br />B"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailContentServiceTest.kt:158:        assertEquals("<p>A<br>B</p>", service.normalizeManualRichHtmlLineBreaks("<p>A<br>B</p>"))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailContentServiceTest.kt:166:            service.normalizeManualRichHtmlLineBreaks("<p>A</p><p><br></p><p>&nbsp;</p><p>B</p>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailContentServiceTest.kt:170:            service.normalizeManualRichHtmlLineBreaks("<div>A</div><div><br></div><div><br></div><div>B</div>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailContentServiceTest.kt:174:            service.normalizeManualRichHtmlLineBreaks("<p>A</p><div><div><br></div></div>")
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailContentServiceTest.kt:182:        assertEquals(list, service.normalizeManualRichHtmlLineBreaks(list))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailContentServiceTest.kt:184:        assertEquals(styled, service.normalizeManualRichHtmlLineBreaks(styled))
+src/test/kotlin/com/weibo/talentintroduction/mail/service/MailContentServiceTest.kt:185:        assertEquals("", service.normalizeManualRichHtmlLineBreaks(""))

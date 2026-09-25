@@ -2,8 +2,8 @@
 id: K-batch-send-round-loop-symmetry
 domain: campaign
 created: 2026-08-12
-last_used: 2026-09-03
-hit_count: 1
+last_used: 2026-09-24
+hit_count: 2
 source: create-p:batch-send-rhythm-01-rounds-per-run
 severity: P1
 ---

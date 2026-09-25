@@ -2,8 +2,8 @@
 id: K-frontend-cache-key-triad
 domain: frontend
 created: 2026-09-22
-last_used: 2026-09-23
-hit_count: 29
+last_used: 2026-09-25
+hit_count: 31
 source: create-p:v6-topnav-glass-navy-restyle
 severity: P1
 ---
@@ -66,3 +66,5 @@ bump 前后各跑一次：bump 前的结果就是必须同步的文件全集；b
 2026-09-23 回复片段计划快照：index.html:11–15/2195–2200 的 11 项键为 `20260923-discovery-traffic`；`rg -n -F '20260923-discovery-traffic' src/test` 无命中（exit=1）。当前不需要依据旧记录修改 taskActivityCenter 固定值。执行前仍须重查。
 
 同轮收尾复核：并行任务提交 `13fb91e` 后键为 `20260923-discovery-traffic-v2`，精确反查 src/test 仍无命中（exit=1）。保留较早快照用于说明并行工作会改变缓存键，执行时不能照抄计划时旧值。
+
+2026-09-24本轮复核：工作区当前键 `20260924-snippet-dialog-contrast`；`rg -n -F '20260924-snippet-dialog-contrast' src/test` 无匹配(exit=1)。维持实施前按实际键反查，不根据过去记录增改无关测试。

@@ -2,8 +2,8 @@
 id: K-progress-log-per-mail-write-amplification
 domain: task
 created: 2026-09-22
-last_used: 2026-09-22
-hit_count: 1
+last_used: 2026-09-24
+hit_count: 2
 source: create-p:batch-execution-log-process-visibility-p1
 ---
 

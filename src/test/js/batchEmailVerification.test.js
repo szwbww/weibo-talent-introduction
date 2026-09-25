@@ -287,7 +287,7 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
         assert.strictEqual(checkbox.checked, false, "re-enabling must never silently turn verification on");
         assert.strictEqual(elements.get("editorFieldEmailVerification").classList.contains("is-disabled"), false);
         assert.strictEqual(elements.get("batchConfigEditorEmailVerificationHint").textContent,
-            "仅验证通过才发送；未通过跳过并标记邮箱异常。会消耗 Emailable 额度。");
+            "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。服务异常停止本次执行。会消耗 Emailable 额度。");
     });
 
     it("V4: the manual draft keeps the switch and reports it as a diff against the source", () => {
@@ -467,12 +467,24 @@ describe("batch email verification detail area (I-2 / I-3 / I-4 / S-2)", () => {
         assert.ok(metrics.includes('<div class="batch-log-metric is-success">'), "passed keeps is-success");
         assert.ok(metrics.includes('<div class="batch-log-metric is-skipped">'), "rejected keeps is-skipped");
         assert.ok(metrics.includes('<div class="batch-log-metric is-failure">'), "service errors keep is-failure");
-        assert.ok(metrics.includes("验证通过") && metrics.includes("未通过") && metrics.includes("服务异常"));
+        assert.ok(metrics.includes("策略放行") && metrics.includes("未通过") && metrics.includes("服务异常"));
         assert.strictEqual(metrics.split('class="batch-log-metric ').length - 1, 3, "exactly three cells");
 
         const note = elements.get("batchLogEmailVerificationNote").textContent;
         assert.ok(note.includes("当前有 1 条仍在验证中"), "pending is reported as text, not as passed");
         assert.ok(note.includes("服务异常会停止本次执行"));
+    });
+
+    it("risky and unknown are displayed as policy permission with provider evidence", () => {
+        const { sandbox, elements } = verificationSandbox();
+        sandbox.renderBatchEmailVerification(verificationPayload({ items: [
+            verificationRow({ providerState: "risky", providerReason: "low_deliverability" }),
+            verificationRow({ id: 2, providerState: "unknown", providerReason: "unavailable_smtp" })
+        ] }), "SUCCESS");
+        const html = elements.get("batchLogEmailVerificationRows").innerHTML;
+        assert.ok(html.includes("按策略放行"));
+        assert.ok(html.includes("risky / low_deliverability"));
+        assert.ok(html.includes("unknown / unavailable_smtp"));
     });
 
     it("V11: PASS is not send success, SKIP keeps the provider verdict, ERROR is a service fault, tag failures are labelled", () => {
@@ -792,7 +804,7 @@ describe("batch email verification static contract (S-1 / S-2 / I-5)", () => {
         });
         assert.strictEqual(indexSource.split('<span class="batch-config-field-label">发送前验证邮箱（Emailable）</span>').length - 1, 2,
             "both panels must label the switch identically");
-        assert.ok(indexSource.includes("仅验证通过才发送；未通过跳过并标记邮箱异常。会消耗 Emailable 额度。仅影响本次执行。"),
+        assert.ok(indexSource.includes("仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。服务异常停止本次执行。会消耗 Emailable 额度。仅影响本次执行。"),
             "the manual hint must spell out that it only affects this run");
         ["batchConfigEditorEmailVerification", "batchManualEmailVerification"].forEach((id) => {
             const at = indexSource.indexOf('id="' + id + '"');

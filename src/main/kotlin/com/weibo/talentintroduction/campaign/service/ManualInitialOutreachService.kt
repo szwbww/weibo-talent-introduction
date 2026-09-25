@@ -569,7 +569,7 @@ class ManualInitialOutreachService(
             pageSize = config.roundSize * 2,
             seenOrcids = seenOrcids,
             fetchNextPage = { offset, size ->
-                fetchEsPage(scope, seenOrcids, offset, size)
+                fetchEsPage(scope, offset, size)
             }
         )
 
@@ -1546,7 +1546,7 @@ class ManualInitialOutreachService(
         return total
     }
 
-    private fun fetchEsPage(scope: RecipientScope, seenOrcids: MutableSet<String>, offset: Int, size: Int): List<ExpertProfile> {
+    private fun fetchEsPage(scope: RecipientScope, offset: Int, size: Int): List<ExpertProfile> {
         val results = mutableListOf<ExpertProfile>()
         var remaining = size
         var pageOffset = offset
@@ -1563,7 +1563,9 @@ class ManualInitialOutreachService(
                 filters = filters,
                 from = pageOffset,
                 size = remaining
-            ).filter { normalizeOrcid(it.orcidId) !in seenOrcids }
+            )
+            // 必须返回原始页：迭代器按原始长度判断末页，并统一处理 seenOrcids 去重。
+            // 先去重会把仍含后续候选的完整页误判成末页，导致未补足轮次额度就停止。
             results.addAll(page)
             remaining -= page.size
             pageOffset = 0

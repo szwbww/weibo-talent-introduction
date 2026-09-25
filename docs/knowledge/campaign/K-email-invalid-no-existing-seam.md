@@ -1,31 +1,18 @@
 ---
 id: K-email-invalid-no-existing-seam
 domain: campaign
-created: 2026-08-18
-last_used: 2026-08-18
-hit_count: 0
+created: 2026-09-24
+last_used: 2026-09-24
+hit_count: 1
 source: create-p:bounce-dsn-classification-and-email-invalid-writeback
 ---
-经验：`EMAIL_INVALID` 是 `OperatorStatus` **枚举外**的旁路终态，
-`ExpertOperatorStatusService` 现有两个出口**都无法表达它**：
 
-- `updateAutomatically(contact, targetStatus: OperatorStatus, reason)` —— 形参是枚举类型，
-  字面无法传入 EMAIL_INVALID。
-- `changeStatus(contactId, targetStatus: String, …)` —— 内部 `OperatorStatus.fromName()`
-  对 EMAIL_INVALID 直接 `error("Unsupported operator status")`；且它会写
-  `OperatorActionType.CHANGE_OPERATOR_STATUS` 审计，而该审计是对账作业的
-  **人工覆盖判别器**（`OperatorStatusReconcileService:60-65` 据此单列 `HUMAN_OVERRIDE`
-  且不计入异常）——自动路径写它会让退信标记被误分类。
+## 2026-09-24 校正：已有专用入口
 
-正确做法：新增标记 EMAIL_INVALID 的能力时，**把方法加进 `ExpertOperatorStatusService.kt`**，
-而不是在调用方直接 `contact.copy(operatorStatus = ...)`——后者会让
-`OperatorStatusWriteSeamGuardTest` 的「命中文件集合恰好等于 ALLOWED_WRITE_SITES」断言失败。
-写在服务内则白名单闭包天然保持不变，无需登记新文件。
+原题名“no-existing-seam”描述的是历史缺口。当前 `ExpertOperatorStatusService.kt:78 markEmailInvalid(contact, reason)` 已实现专用入口，`:88` 保存EMAIL_INVALID，`:89`同步ES；应复用，不再重复新增。
 
-两条必守语义：
-- **不回退**：当前状态 ordinal ≥ `REPLIED`（REPLIED / MATERIALS_RECEIVED / INVITED /
-  COMPLETED）时必须零交互返回。专家已回信即证明地址可达；且因
-  `updateAutomatically():53` 对 EMAIL_INVALID 无条件短路，一旦误标将**永久**无法自动恢复。
-- **不写审计**：自动路径禁止写 CHANGE_OPERATOR_STATUS（对齐 `updateAutomatically` 全程不写审计）。
+`updateAutomatically` 面向正常枚举并对EMAIL_INVALID短路；`changeStatus` 属人工操作并产生人工状态变更审计。两者均不能替代自动无效邮箱入口。markEmailInvalid对已回复及更后状态有保护，具体以当前实现为准。
 
-关联：K-operator-status-single-writer、K-operator-status-write-seam-guard、K-operator-status-reconcile。
+**专家标签“邮箱异常”与 operatorStatus.EMAIL_INVALID 是不同数据合同。** 用户只要求打标签时，不应顺带调用状态迁移；追加tags也不能被描述为修改了联系状态。现有批量SMTP永久失败另有直接copy分支，属于遗留行为，不借标签功能扩改。
+
+证据命令：`rg -n 'EMAIL_INVALID|fun markEmailInvalid' src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertOperatorStatusService.kt`，命中78/85/88/89/95；`ManualInitialOutreachService.kt:777`为遗留永久SMTP失败分支。

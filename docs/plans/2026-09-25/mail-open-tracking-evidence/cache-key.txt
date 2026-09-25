@@ -1,0 +1,3 @@
+current key=20260925-emailable-policy-pagination
+$ rg -n -F 20260925-emailable-policy-pagination src/test
+exit=1

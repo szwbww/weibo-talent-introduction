@@ -1,0 +1,136 @@
+$ rg -n expertContactRepository\.|FROM expert_contact|JOIN expert_contact|UPDATE expert_contact|INSERT INTO expert_contact src/main/kotlin scripts --glob *.kt --glob *.py
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:190:            ?.let { expertContactRepository.findAllById(it).associateBy { contact -> contact.id } }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:229:            ?.let { expertContactRepository.findAllById(it).associateBy { contact -> contact.id } }
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:239:        val contact = expertContactRepository.findById(promotion.expertContactId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:393:            ?.let { expertContactRepository.findAllById(it).associateBy { contact -> contact.id } }
+src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateOperatorStatusSyncService.kt:18:        val latestUpdates = expertContactRepository.findAllByOrderByUpdatedAtDesc()
+src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt:384:            return expertContactRepository.findById(id).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:479:        val contact = expertContactRepository.findById(promotion.expertContactId)
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:116:                expertContactRepository.save(contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:2398:        val contact = expertContactRepository.findById(contactId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:211:        expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:318:        val contacts = expertContactRepository.findAllById(rows.map { it.expertContactId })
+src/main/kotlin/com/weibo/talentintroduction/qa/controller/QaRuleManagementController.kt:209:            return expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/expert/repository/ExpertApplicationPromotionRepository.kt:56:          JOIN expert_contact ec ON eap.expert_contact_id = ec.id
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:134:        expertContactRepository.findById(contactId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountService.kt:26:        expertContactRepository.countBindingsByAccount()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:54:        val contacts = expertContactRepository.findAll().toList()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:33:        val all = expertContactRepository.findAll().toList()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:75:            expertContactRepository.updateCountryById(contactId, country)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:94:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:189:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingScheduleService.kt:215:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:60:            if (expertContactRepository.existsByCampaignIdAndOrcidId(campaignId, expert.orcidId)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:75:            val contact = expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt:56:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertEmailAliasService.kt:21:        expertContactRepository.findFirstByExpertEmailOrderByUpdatedAtDesc(email)?.let { return it }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertEmailAliasService.kt:24:        return expertContactRepository.findById(alias.expertContactId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertEmailAliasService.kt:29:        expertContactRepository.findFirstByExpertEmailOrderByUpdatedAtDesc(normalized)?.let { return it }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertEmailAliasService.kt:30:        expertContactRepository.findFirstByExpertEmailOrderByUpdatedAtDesc(email)?.let { return it }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertEmailAliasService.kt:33:        return expertContactRepository.findById(alias.expertContactId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertEmailAliasService.kt:42:        expertContactRepository.findById(expertContactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:140:            expertContactRepository.findAllById(contactIds).associateBy { requireNotNull(it.id) }
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:181:        val contacts = expertContactRepository.findAllById(contactIds).associateBy { it.id }
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:203:            val c = expertContactRepository.findById(contactId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:209:            val c = expertContactRepository.findById(contactId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:369:        val contactIds = expertContactRepository.findByOrcidIdIn(orcidIds).mapNotNull { it.id }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertOperatorStatusService.kt:27:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertOperatorStatusService.kt:30:        val updated = expertContactRepository.save(contact.copy(operatorStatus = target.name))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertOperatorStatusService.kt:64:        val updated = expertContactRepository.save(contact.copy(operatorStatus = targetStatus.name))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertOperatorStatusService.kt:88:        val updated = expertContactRepository.save(contact.copy(operatorStatus = EMAIL_INVALID))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:356:                    expertContactRepository.save(disabledContact.copy(needsManualAttention = true))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:793:                        expertContactRepository.save(ExpertContact(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:934:                                expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1253:        expertContactRepository.findByOrcidIdIn(listOf(normOrcid))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1263:        return expertContactRepository.findByOrcidIdIn(distinct)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1280:        val newContacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:1513:        val contacts = if (normOrcidList.isNotEmpty()) expertContactRepository.findByOrcidIdIn(normOrcidList) else emptyList()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:26:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:69:        return expertContactRepository.save(contact.copy(currentIndexLevel = "CANDIDATE"))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:86:        return expertContactRepository.save(contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:103:        return expertContactRepository.save(contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:110:        return expertContactRepository.save(contact.copy(currentIndexLevel = "RAW", applicationIndexed = false))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarService.kt:218:        if (!expertContactRepository.existsById(contactId)) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:50:        expertContactRepository.findFilteredContacts(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:57:        return expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:64:        return expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:277:        val updated = expertContactRepository.save(contact.copy(applicationIndexed = true, currentIndexLevel = "APPLICATION"))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:287:        return expertContactRepository.save(contact.copy(currentIndexLevel = "CANDIDATE"))
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:296:        return expertContactRepository.save(contact.copy(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:316:                expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:454:        expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:463:        val allContacts = expertContactRepository.findAll().toList()
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ConversationStateService.kt:26:        val saved = expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertMaterialService.kt:224:        expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ManualExpertMaterialUploadService.kt:86:        if (!expertContactRepository.existsById(contactId)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutomaticApplicationPromotionService.kt:83:                val saved = expertContactRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:196:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:386:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1040:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1056:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1539:                expertContactRepository.findById(contactId).ifPresent { contact ->
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1541:                        expertContactRepository.save(contact.copy(needsManualAttention = false))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1603:            expertContactRepository.findById(contactId).ifPresent { contact ->
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1605:                    expertContactRepository.save(contact.copy(needsManualAttention = true))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1659:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:203:     * LEFT JOIN expert_contact / EXISTS(mail_attachment)）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:207:        val contact = expertContactRepository.findById(record.expertContactId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:296:        val contact = expertContactRepository.findById(record.expertContactId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:328:        val contact = record.expertContactId?.let { expertContactRepository.findById(it).orElse(null) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:45:        expertContactRepository.updateBindingById(contactId, code, at)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:51:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:58:        expertContactRepository.rebindSenderAccountById(contactId, target.accountCode, now)  // I-2
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:70:        return expertContactRepository.findById(contactId).orElseThrow()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:86:        val updated = expertContactRepository.migrateBindingByAccount(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:108:        expertContactRepository.clearSenderChangeMarkById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountBindingService.kt:119:        return expertContactRepository.findById(contactId).orElseThrow()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:208:        expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountAssignmentService.kt:80:        val totals = expertContactRepository.countBindingsByAccount()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountAssignmentService.kt:82:        val segments = expertContactRepository.countBindingsByAccountAndCountry()
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:44:        SELECT * FROM expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:67:    @Query("UPDATE expert_contact SET country = :country WHERE id = :id")
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:72:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:81:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:92:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:105:        UPDATE expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:116:          FROM expert_contact
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/ExpertContactRepository.kt:128:          FROM expert_contact
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:87:                val contactForSeed = contactId?.let { expertContactRepository.findById(it).orElse(null) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:111:                val previewContact = contactId?.let { expertContactRepository.findById(it).orElse(null) }
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:168:        val contact = expertContactRepository.findById(contactId).orElse(null) ?: return blocked
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/MeetingCalendarEventRepository.kt:184:              JOIN expert_contact c ON c.id = e.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:98:                val contact = expertContactRepository.findById(outboundMail.expertContactId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:147:        expertContactRepository.findAllByOrcidIdContainingIgnoreCaseOrExpertNameContainingIgnoreCaseOrExpertEmailContainingIgnoreCaseOrderByUpdatedAtDesc(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:162:        val contact = expertContactRepository.findById(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:190:        expertContactRepository.save(currentContact)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:251:                expertContactRepository.findById(contactId).ifPresent { contact ->
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:253:                        expertContactRepository.save(contact.copy(needsManualAttention = false))
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:30:            "SELECT COUNT(*) FROM expert_contact WHERE id = :contactId",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceCollectionService.kt:288:                expertContactRepository.findById(mailRecord.expertContactId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:60:            expertContactRepository.findAllById(contactIds).associateBy { it.id }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:111:            expertContactRepository.findAllById(contactIds).associateBy { it.id }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:135:        val contact = record.expertContactId?.let { expertContactRepository.findById(it).orElse(null) }
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:377:        val contact = expertContactRepository.findById(contactId).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentService.kt:57:        if (!expertContactRepository.existsById(contactId)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BounceController.kt:37:            expertContactRepository.findAllById(contactIds).associateBy { it.id }
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:129:                  JOIN expert_contact ec ON ec.id = u.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:167:              JOIN expert_contact ec ON ec.id = u.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:208:              JOIN expert_contact ec ON ec.id = u.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/BounceRecordRepository.kt:59:    // 可能指向已不存在的 expert_contact（孤儿引用）；主查询的 JOIN expert_contact 会丢弃这类行，
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/BounceRecordRepository.kt:67:                OR NOT EXISTS (SELECT 1 FROM expert_contact ec WHERE ec.id = br.original_expert_contact_id))
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:60:        INNER JOIN expert_contact ec ON ec.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:379:          JOIN expert_contact ec ON ec.id = s.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:419:          JOIN expert_contact ec ON ec.id = s.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:460:          JOIN expert_contact ec ON ec.id = u.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:517:            LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:551:            LEFT JOIN expert_contact ec2 ON imp.expert_contact_id = ec2.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:584:            LEFT JOIN expert_contact ec ON mr.expert_contact_id = ec.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:598:            LEFT JOIN expert_contact ec2 ON imp.expert_contact_id = ec2.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:643:                JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:668:                JOIN expert_contact ec2 ON ec2.id = imp.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:683:          JOIN expert_contact ec ON u.expert_contact_id = ec.id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:711:                JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:734:                JOIN expert_contact ec2 ON ec2.id = imp.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:785:            JOIN expert_contact ec1 ON ec1.id = mr.expert_contact_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:827:            JOIN expert_contact ec2 ON ec2.id = imp.expert_contact_id

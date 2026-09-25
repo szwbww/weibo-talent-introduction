@@ -1697,9 +1697,8 @@ class ManualInitialOutreachServiceTest {
     }
 
     /**
-     * ES paging stub that serves a fresh page slice on every call. The lazy
-     * [OutreachTargetIterator] refetches from offset 0 and dedups via seenOrcids,
-     * so a flat drop/take stub can only ever surface one page (roundSize * 2).
+     * Legacy fixture serving a fresh page on each call. Real offset paging and
+     * shrinking result sets are covered separately by the scheduled-round regressions.
      */
     private fun stubIntroChunkedExperts(experts: List<ExpertProfile>, pageSize: Int) {
         val chunks = experts.chunked(pageSize)
@@ -5284,6 +5283,57 @@ class ManualInitialOutreachServiceTest {
         Mockito.verify(batchEmailVerificationService, Mockito.times(32))
             .verify(anyValue(verificationContext), anyValue(verificationTarget()))
         Mockito.verify(mailDeliveryService, Mockito.times(20)).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `scheduled round fills twenty sends when skipped experts remain in shrinking ES pages`() {
+        val acc = account("chen")
+        val experts = (1..100).map { expert("Q$it", "q$it@test.com") }
+        val sentEmails = mutableSetOf<String>()
+        stubIntroSendPipeline(acc, experts)
+        // Real ES applies from/size BEFORE the service's in-memory deduplication.
+        Mockito.`when`(expertSearchService.searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), anyInt(), anyInt()
+        )).thenAnswer { call ->
+            experts.filterNot { it.email in sentEmails }
+                .drop(call.getArgument<Int>(2)).take(call.getArgument<Int>(3))
+        }
+        Mockito.`when`(expertSearchService.countExperts(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())
+        )).thenAnswer { (experts.size - sentEmails.size).toLong() }
+        Mockito.`when`(introductionMailComposer.compose(anyValue("chen"), anyValue(expert("", "")), Mockito.any()))
+            .thenAnswer { ComposedMail(it.getArgument<ExpertProfile>(1).email.orEmpty(), "Subject", "Body") }
+        Mockito.`when`(mailDeliveryService.send(anyValue(acc), anyValue(ComposedMail("", "", ""))))
+            .thenAnswer {
+                assertTrue(sentEmails.add(it.getArgument<ComposedMail>(1).to), "Never resend a recipient")
+                DeliveredMail("sent-${sentEmails.size}", "SENT")
+            }
+        stubVerificationDecision(rejected = experts.take(40).filterIndexed { i, _ -> i != 0 && i != 37 }
+            .map { it.email!! }.toSet())
+
+        val result = service.run(introSnapshotWithVerification(roundSize = 20), 12345L, ExecutionMode.AUTO, false)
+
+        assertEquals(20, result.sent)
+        assertEquals(38, result.skipped)
+        assertEquals(42, result.remaining)
+        assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+        Mockito.verify(batchEmailVerificationService, Mockito.times(58))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+    }
+
+    @Test
+    fun `all rejected raw ES pages are scanned to exhaustion`() {
+        val experts = (1..85).map { expert("Q$it", "q$it@test.com") }
+        stubIntroSendPipeline(account("chen"), experts)
+        stubPagedExperts(experts)
+        stubVerificationDecision(rejected = experts.map { it.email!! }.toSet())
+
+        val result = service.run(introSnapshotWithVerification(roundSize = 20), 12345L, ExecutionMode.AUTO, false)
+
+        assertEquals(0, result.sent)
+        assertEquals(85, result.skipped)
+        assertEquals(0, result.remaining)
+        Mockito.verifyNoInteractions(mailDeliveryService)
     }
 
     @Test

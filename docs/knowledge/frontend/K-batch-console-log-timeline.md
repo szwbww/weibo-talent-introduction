@@ -2,8 +2,8 @@
 id: K-batch-console-log-timeline
 domain: frontend
 created: 2026-07-14
-last_used: 2026-09-22
-hit_count: 6
+last_used: 2026-09-24
+hit_count: 7
 source: fix-v:batch-send-task-console-frontend:fix-1
 severity: P1
 ---

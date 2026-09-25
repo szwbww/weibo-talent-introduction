@@ -1,18 +1,17 @@
 ---
 id: K-outbound-message-id-single-factory
 domain: mail
-created: 2026-08-06
-last_used: 2026-08-06
-hit_count: 0
-source: create-p:outbound-message-id-01-fill-missing
+created: 2026-09-25
+last_used: 2026-09-25
+hit_count: 1
+source: create-p:mail-open-tracking-00-master
 ---
 
-出站 Message-ID 的唯一生成入口是 `OutboundMessageIdFactory.newId(kind, discriminator, senderEmail)`（写侧专用；读侧归一化/匹配见 [[K-vendor-message-id-prefix.md]]，由 `inbound-message-id-vendor-prefix` 计划创建并链接回来）。同一事实的写侧与读侧各记一处。
+2026-09-25重新审计：OutboundMessageIdFactory存在，但“全部外发均已使用单工厂”不是当前代码事实。
 
-规则：
-- **唯一入口**：任何外发邮件路径都必须在 `ComposedMail` 上显式设置 `messageId = OutboundMessageIdFactory.newId(...)`，禁止留空依赖 JavaMail 默认生成（默认格式会把服务器主机名暴露到公网邮件头，可被 ESP 指纹识别）。
-- **域名取自本次投递账号**：`domain = account.senderEmail.substringAfter("@")`，其中 `account` 是本次投递实际使用的 `MailSenderAccount`；禁止域名字面量、hostname、InetAddress 或配置注入。`senderEmail` 不含 `@` 或域名为空白 → `IllegalArgumentException`（fail-fast）。
-- **唯一性只依赖 UUID**：格式 `<{kind}-{discriminator}-{uuid}@{domain}>`，`uuid` 为 `UUID.randomUUID().toString()`；`kind` / `discriminator` 仅供人工排查，禁止任何代码解析、匹配或作为查询条件（`MailRecordRepository.findByMessageId()` 为精确相等、格式无关）。
-- **同类邮件同 kind**：同一邮件类型的多条产出路径必须使用同一 `kind`，防止同类邮件出现两种前缀（前车之鉴：`intro-` / `manual-outreach-` 分裂）。例：MEETING_INVITATION 的 `MeetingInvitationMailComposer` 与 `AutoMailReplyService:958` 均为 `meeting-invitation`。
+- IntroductionMailComposer:35仍内联UUID构造intro Message-ID。
+- ManualInitialOutreachService:816–819覆盖为manual-outreach前缀及固定weibo.com域名。
+- ManualExpertMailService也存在内联构造；其它部分路径调用工厂。完整grep：docs/plans/2026-09-25/mail-open-tracking-evidence/message-id-factory.txt。
+- mail_record.message_id无数据库唯一约束；findByMessageId不限定OUTBOUND。禁止用前缀判断邮件类型/回复属性，禁止仅按Message-ID关联需要精确身份的新记录。
 
-任何新增外发邮件路径都应继承以上规则。
+新增路径优先复用OutboundMessageIdFactory、按实际senderEmail生成域名；旧路径统一化应独立审计立项，不能借别的发信改动顺手修复。格式前缀只用于人工诊断，不是业务身份。

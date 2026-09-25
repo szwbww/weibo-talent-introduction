@@ -63,6 +63,8 @@ A static admin UI (`src/main/resources/static/` — `index.html`, `app.js`, `sty
 
 ## 团队沉淀知识
 
+- `--panel-bg` 为半透明 rgba(255,255,255,.55)，需遮住底层内容的浮层必须单独定义不透明背景，不能靠提高 z-index 修复透底。(K-panel-bg-token-is-translucent)
+
 - 模板变体审计同时覆盖正式 render/renderByCode 与两类 preview-draft；专家 seed 的旧规则不等于独立随机，改回复片段选择时必须单独保护 QA 确定性。(K-variant-seed-call-sites)
 - 新模板字段逐层核对 Request→Command→create/update→Detail→preview；历史 subjectVariants 虽有列/DTO，现有 create/update 已清空，不能把字段存在当功能生效。(K-variant-pool-dto-chain)
 - 共享 IMAP 收件箱须区分业务发件账号与物理源账号：processing/mail_record 用逻辑账号，附件 source/transfer、markSeen、cursor 用真实登录账号；退信归属需在所有 ingest 入口以唯一 OUTBOUND 来源核验。(K-imap-source-vs-business-account, K-bounce-collection-ingest-entrypoints)

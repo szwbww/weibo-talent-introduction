@@ -2,8 +2,8 @@
 id: K-mail-record-source-inbound-id
 domain: mail
 created: 2026-09-08
-last_used: 2026-09-23
-hit_count: 12
+last_used: 2026-09-25
+hit_count: 13
 source: create-p:inbound-summary-redesign
 last_source: fix-v:ai-reply-07-final-send-integrity-plan:stop-after-fix-3
 ---

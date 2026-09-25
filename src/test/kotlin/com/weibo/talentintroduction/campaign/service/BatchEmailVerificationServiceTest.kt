@@ -68,7 +68,7 @@ class BatchEmailVerificationServiceTest {
     // ──── I-2：结果矩阵 ────
 
     @Test
-    fun `only deliverable passes and it needs no tag`() {
+    fun `deliverable passes and it needs no tag`() {
         client.respond(ok("a@b.com", "deliverable", "accepted_email"))
         val subject = subject()
         val context = subject.beginExecution(7L) { false }
@@ -86,46 +86,39 @@ class BatchEmailVerificationServiceTest {
     }
 
     @Test
-    fun `risky undeliverable and unknown are rejected and each one is tagged`() {
-        val cases = listOf(
-            Triple("doc-risky", "risky@b.com", "risky"),
-            Triple("doc-undeliverable", "undeliverable@b.com", "undeliverable"),
-            Triple("doc-unknown", "unknown@b.com", "unknown")
-        )
-        cases.forEach { (_, email, state) -> client.respond(ok(email, state, "provider_reason")) }
-        cases.forEachIndexed { index, (docId, email, _) ->
-            stubMatchingCandidateCopy(docId = docId, orcidId = "orcid-$index", email = email)
-        }
+    fun `risky and unknown pass without adding abnormal tags`() {
         val subject = subject()
-        val context = subject.beginExecution(7L) { false }
+        for ((index, state) in listOf("risky", "unknown").withIndex()) {
+            val email = "$state@b.com"
+            client.respond(ok(email, state, "provider_reason"))
+            assertEquals(VerificationResult.Passed(100L + index, email),
+                subject.verify(subject.beginExecution(7L) { false }, target(email = email)))
+            Mockito.verify(repository).recordDecision(Mockito.eq(100L + index), eqValue("PASS"),
+                Mockito.eq(state), Mockito.eq("provider_reason"), Mockito.isNull(), Mockito.eq(1), Mockito.any(), anyTime())
+        }
+        Mockito.verifyNoInteractions(expertIndexWriterService, expertSearchService)
+        Mockito.verify(repository, Mockito.never()).recordTag(Mockito.anyLong(), Mockito.anyString(), Mockito.any(), anyTime())
+    }
 
-        val results = cases.mapIndexed { index, (docId, email, _) ->
-            subject.verify(context, target(orcid = "orcid-$index", email = email, docId = docId))
+    @Test
+    fun `historical risky and unknown skips are reclassified for database and memory reuse`() {
+        val subject = subject()
+        for ((index, state) in listOf("risky", "unknown").withIndex()) {
+            val email = "$state@b.com"
+            val original = history(42L + index, "SKIP", state).copy(email = email)
+            Mockito.`when`(repository.findReusable(eqValue(email), anyTime())).thenReturn(original)
+            val context = subject.beginExecution(8L) { false }
+            repeat(2) { n ->
+                val rowId = 100L + index * 2 + n
+                assertEquals(VerificationResult.Passed(rowId, email),
+                    subject.verify(context, target(orcid = "expert-$n", email = email)))
+                Mockito.verify(repository).recordReusedDecision(Mockito.eq(rowId), Mockito.eq(original.id),
+                    eqValue("PASS"), Mockito.eq(state), Mockito.isNull(), eqValue(original.checkedAt!!), anyTime())
+            }
         }
-
-        // 三个不同邮箱各自一次物理请求、各自一行明细、各自一次标签。
-        results.forEachIndexed { index, result ->
-            assertEquals(VerificationResult.Rejected(100L + index, BatchEmailVerificationTagStatus.APPLIED), result)
-        }
-        Mockito.verify(repository, Mockito.times(3)).recordDecision(
-            Mockito.anyLong(), eqValue(BatchEmailVerificationDecision.SKIP), Mockito.anyString(), Mockito.any(),
-            Mockito.isNull(), Mockito.eq(1), Mockito.any(), anyTime()
-        )
-        Mockito.verify(repository, Mockito.times(3)).recordTag(
-            Mockito.anyLong(), eqValue(BatchEmailVerificationTagStatus.PENDING), Mockito.isNull(), anyTime()
-        )
-        Mockito.verify(repository, Mockito.times(3)).recordTag(
-            Mockito.anyLong(), eqValue(BatchEmailVerificationTagStatus.APPLIED), Mockito.isNull(), anyTime()
-        )
-        Mockito.verify(repository, Mockito.times(3)).recordSend(
-            Mockito.anyLong(), eqValue(BatchEmailVerificationSendStatus.SKIPPED),
-            Mockito.eq(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_REJECTED), anyTime()
-        )
-        cases.forEach { (docId, _, _) ->
-            Mockito.verify(expertIndexWriterService).addTag(
-                eqValue(docId), eqValue(BatchEmailVerificationService.EMAIL_ABNORMAL_TAG), eqValue(ExpertIndexLevel.CANDIDATE)
-            )
-        }
+        assertEquals(0, client.requests.size)
+        Mockito.verifyNoInteractions(expertIndexWriterService, expertSearchService)
+        Mockito.verify(repository, Mockito.never()).recordSend(Mockito.anyLong(), Mockito.anyString(), Mockito.any(), anyTime())
     }
 
     @Test
@@ -364,7 +357,7 @@ class BatchEmailVerificationServiceTest {
 
     @Test
     fun `historical rejection tags the current expert without copying old send status`() {
-        val original = history(42L, "SKIP", "risky")
+        val original = history(42L, "SKIP", "undeliverable")
         Mockito.`when`(repository.findReusable(eqValue("a@b.com"), anyTime())).thenReturn(original)
         stubMatchingCandidateCopy(orcidId = "new-expert")
         val subject = subject()
@@ -375,7 +368,7 @@ class BatchEmailVerificationServiceTest {
             eqValue(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_REJECTED), anyTime())
         Mockito.verify(expertIndexWriterService).addTag(DOC_ID, "邮箱异常", ExpertIndexLevel.CANDIDATE)
         Mockito.verify(repository).recordReusedDecision(Mockito.eq(100L), Mockito.eq(42L), eqValue("SKIP"),
-            Mockito.eq("risky"), Mockito.isNull(), eqValue(original.checkedAt!!), anyTime())
+            Mockito.eq("undeliverable"), Mockito.isNull(), eqValue(original.checkedAt!!), anyTime())
     }
 
     @Test
@@ -426,7 +419,7 @@ class BatchEmailVerificationServiceTest {
 
     @Test
     fun `a missing real document id fails the tag and never falls back to the orcid`() {
-        client.respond(ok("a@b.com", "risky"))
+        client.respond(ok("a@b.com", "undeliverable"))
         val subject = subject()
 
         val result = subject.verify(subject.beginExecution(7L) { false }, target(email = "a@b.com", docId = null))
@@ -470,7 +463,7 @@ class BatchEmailVerificationServiceTest {
 
     @Test
     fun `a false write result is a failed tag while the address stays rejected`() {
-        client.respond(ok("a@b.com", "risky"))
+        client.respond(ok("a@b.com", "undeliverable"))
         stubMatchingCandidateCopy()
         Mockito.`when`(
             expertIndexWriterService.addTag(DOC_ID, BatchEmailVerificationService.EMAIL_ABNORMAL_TAG, ExpertIndexLevel.CANDIDATE)
@@ -487,7 +480,7 @@ class BatchEmailVerificationServiceTest {
 
     @Test
     fun `an es read failure is a failed tag while the address stays rejected`() {
-        client.respond(ok("a@b.com", "risky"))
+        client.respond(ok("a@b.com", "undeliverable"))
         Mockito.`when`(expertSearchService.findByDocumentIds(eqValue(ExpertIndexLevel.RAW), anyValue(emptyList<String>())))
             .thenThrow(IllegalStateException("es down"))
         val subject = subject()
@@ -504,7 +497,7 @@ class BatchEmailVerificationServiceTest {
 
     @Test
     fun `no existing copy at all is a failed tag`() {
-        client.respond(ok("a@b.com", "unknown"))
+        client.respond(ok("a@b.com", "undeliverable"))
         val subject = subject()
 
         val result = subject.verify(subject.beginExecution(7L) { false }, target(email = "a@b.com", docId = DOC_ID))

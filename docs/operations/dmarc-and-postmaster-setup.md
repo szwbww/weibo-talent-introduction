@@ -129,7 +129,7 @@ DNS 生效前记录仍会返回旧值，按 TTL 等待。
 ```bash
 # 必填
 POSTMASTER_ENABLED=true
-POSTMASTER_DOMAINS=mail.szwebotech.cn,szwebotech.cn,talents.szwebotech.cn,updates.szwebotech.cn
+POSTMASTER_DOMAINS=mail.szwebotech.cn,szwebotech.cn,talents.szwebotech.cn,updates.szwebotech.cn,qingfeitalent.com
 
 # OAuth 客户端配置
 POSTMASTER_OAUTH_CLIENT_ID=...

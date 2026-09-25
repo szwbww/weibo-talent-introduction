@@ -299,7 +299,7 @@ class BatchEmailVerificationRepositoryIT {
         original(EXECUTION_ID, "error", NOW.minusHours(1), "ERROR", null, error = "EMAIL_VERIFY_TIMEOUT")
         original(EXECUTION_ID, "future", NOW.plusDays(1))
         original(EXECUTION_ID, "reuse-without-source", NOW.minusHours(2), count = 0)
-        original(EXECUTION_ID, "mismatched", NOW.minusHours(3), "PASS", "risky")
+        original(EXECUTION_ID, "mismatched", NOW.minusHours(3), "PASS", "undeliverable")
         original(EXECUTION_ID, "stale", NOW.minusYears(1))
         val pending = repository.insertPending(EXECUTION_ID, null, "pending", null, "shared@b.com", NOW)
         assertEquals(latest, repository.findReusable("shared@b.com", NOW)!!.id)
@@ -317,6 +317,19 @@ class BatchEmailVerificationRepositoryIT {
         assertEquals(latest, repository.findReusable("shared@b.com", NOW)!!.id)
         assertNull(repository.findReusable("shared@b.com", NOW.plusYears(2)))
         assertTrue(pending > latest)
+    }
+
+    @Test
+    fun `new policy risky and unknown passes are reusable originals`() {
+        for (state in listOf("risky", "unknown")) {
+            val email = "$state@b.com"
+            val id = repository.insertPending(EXECUTION_ID, null, state, null, email, NOW)
+            repository.recordDecision(id, "PASS", state, "provider_reason", null, 1, NOW, NOW)
+            val row = repository.findReusable(email, NOW)!!
+            assertEquals(id, row.id)
+            assertEquals("PASS", row.decision)
+            assertEquals(state, row.providerState)
+        }
     }
 
     @Test

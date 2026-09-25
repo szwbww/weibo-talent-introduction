@@ -32,11 +32,11 @@ import java.util.Locale
  *
  * 关键不变量（子计划 01）：
  * - I-2 验证对象 = 最终收件地址：规范化（trim + lowercase(Locale.ROOT)，保留 `+tag`、不合并点号）后作验证键；
- *   只有 HTTP 200 且返回 email 匹配且 state=deliverable 才放行；undeliverable/risky/unknown 都跳过；
+ *   HTTP 200 且返回 email 匹配时，deliverable/risky/unknown 放行，只有 undeliverable 跳过；
  *   unknown 是供应商明确结果，不等于 HTTP 超时（超时是 ERROR）。
  * - I-4 服务异常绝不当邮箱异常：249 最多两次物理请求；402/401/403/429/网络超时/5xx/非法 JSON 或 state/
  *   邮箱不匹配一律 ERROR + 受控错误码；不做自动重试（249 除外）；供应商故障绝不追加「邮箱异常」标签。
- * - I-5 明确非通过结果只追加 tags 中的「邮箱异常」：用真实 `esDocId` 做 `_mget`，只在真实 ID、ORCID、
+ * - I-5 仅 undeliverable 追加 tags 中的「邮箱异常」：用真实 `esDocId` 做 `_mget`，只在真实 ID、ORCID、
  *   当前邮箱三者都匹配的已存在副本上调用现有 addTag；无匹配/读取异常/任一应写层返回 false 记 FAILED；
  *   缺失真实文档 ID 记 FAILED/MISSING_DOC_ID，绝不用 ORCID 冒充 `_id`；deliverable 不自动清标签。
  * - I-6 审计先落库：先插 PENDING → 请求 → 写 PASS/SKIP/ERROR → 再允许发送；审计不可用抛
@@ -97,7 +97,9 @@ class BatchEmailVerificationService(
             it.checkedAt > now.minusYears(1) && it.checkedAt <= now
         } ?: audit("查询历史验证") {
             repository.findReusable(normalizedEmail, now)?.let {
-                ReusedProviderResult(it.decision, it.providerState, it.providerReason, requireNotNull(it.checkedAt), it.id)
+                // 复用供应商事实，不沿用旧发送策略的 SKIP；原行与原检查时间保持不变。
+                ReusedProviderResult(requireNotNull(decisionForState(it.providerState)), it.providerState,
+                    it.providerReason, requireNotNull(it.checkedAt), it.id)
             }
         }
         if (context.isCancelled()) return VerificationResult.Cancelled(rowId)
@@ -266,15 +268,16 @@ class BatchEmailVerificationService(
             log.warn("Email verification response does not echo the requested address for {}", normalizedEmail)
             return ProviderOutcome.failed(BatchEmailVerificationErrorCodes.BAD_RESPONSE, requestCount, state, reason)
         }
-        return when (state.lowercase(Locale.ROOT)) {
-            STATE_DELIVERABLE -> ProviderOutcome(
-                BatchEmailVerificationDecision.PASS, null, requestCount, state, reason
-            )
-            STATE_UNDELIVERABLE, STATE_RISKY, STATE_UNKNOWN -> ProviderOutcome(
-                BatchEmailVerificationDecision.SKIP, null, requestCount, state, reason
-            )
-            else -> ProviderOutcome.failed(BatchEmailVerificationErrorCodes.BAD_RESPONSE, requestCount, state, reason)
-        }
+        val decision = decisionForState(state)
+            ?: return ProviderOutcome.failed(BatchEmailVerificationErrorCodes.BAD_RESPONSE, requestCount, state, reason)
+        return ProviderOutcome(decision, null, requestCount, state, reason)
+    }
+
+    /** 当前发送策略；未知协议值不是供应商明确的 unknown 结果。 */
+    private fun decisionForState(state: String?): String? = when (state?.lowercase(Locale.ROOT)) {
+        STATE_DELIVERABLE, STATE_RISKY, STATE_UNKNOWN -> BatchEmailVerificationDecision.PASS
+        STATE_UNDELIVERABLE -> BatchEmailVerificationDecision.SKIP
+        else -> null
     }
 
     /**

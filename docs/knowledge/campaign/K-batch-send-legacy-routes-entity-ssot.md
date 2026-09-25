@@ -2,8 +2,8 @@
 id: K-batch-send-legacy-routes-entity-ssot
 domain: campaign
 created: 2026-07-14
-last_used: 2026-07-14
-hit_count: 2
+last_used: 2026-09-24
+hit_count: 3
 source: fix-v:batch-send-task-execution-and-logs:fix-1
 severity: P1
 ---

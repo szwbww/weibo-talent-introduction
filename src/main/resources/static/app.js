@@ -18545,8 +18545,8 @@ async function refreshBatchGateState(kind) {
 // 不新增 CSS。只有介绍邮件支持；材料提醒在 UI 层禁用并置回 false（后端另有同口径 require）。
 
 var BATCH_EMAIL_VERIFICATION_HINT = {
-    editor: "仅验证通过才发送；未通过跳过并标记邮箱异常。会消耗 Emailable 额度。",
-    manual: "仅验证通过才发送；未通过跳过并标记邮箱异常。会消耗 Emailable 额度。仅影响本次执行。"
+    editor: "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。服务异常停止本次执行。会消耗 Emailable 额度。",
+    manual: "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。服务异常停止本次执行。会消耗 Emailable 额度。仅影响本次执行。"
 };
 var BATCH_EMAIL_VERIFICATION_UNSUPPORTED_HINT = "仅介绍邮件支持发送前验证";
 
@@ -19762,7 +19762,7 @@ var BATCH_EMAIL_VERIFICATION_TAG_ERROR_LABELS = {
 };
 
 function emailVerificationDecisionText(row, running) {
-    if (row.decision === "PASS") return "通过";
+    if (row.decision === "PASS") return "按策略放行";
     if (row.decision === "SKIP") return "未通过";
     if (row.decision === "ERROR") return "验证服务异常";
     if (row.decision === "PENDING") return running ? "验证中" : "验证未完成";
@@ -19862,7 +19862,7 @@ function batchEmailVerificationRowHtml(row) {
 
 function batchEmailVerificationMetricsHtml(summary) {
     var cells = [
-        { label: "验证通过", value: summary.passed, cls: "is-success" },
+        { label: "策略放行", value: summary.passed, cls: "is-success" },
         { label: "未通过", value: summary.rejected, cls: "is-skipped" },
         { label: "服务异常", value: summary.errors, cls: "is-failure" }
     ];

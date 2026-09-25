@@ -191,7 +191,7 @@ class BatchEmailVerificationRepository(private val jdbcTemplate: JdbcTemplate) {
             SELECT * FROM batch_email_verification
              WHERE email = ? AND checked_at > ? AND checked_at <= ?
                AND request_count > 0 AND reused_from_id IS NULL AND error_code IS NULL
-               AND ((decision = 'PASS' AND provider_state = 'deliverable')
+               AND ((decision = 'PASS' AND provider_state IN ('deliverable', 'risky', 'unknown'))
                  OR (decision = 'SKIP' AND provider_state IN ('undeliverable', 'risky', 'unknown')))
              ORDER BY checked_at DESC, id DESC LIMIT 1
         """
