@@ -167,8 +167,12 @@ class MailOpenTrackingRepositoryIT {
         mail(9203,"OUTBOUND","SENT",at,null,"Untracked")
         mail(9204,"OUTBOUND","FAILED",null,failed.id,"Failed")
         mail(9205,"INBOUND","SENT",at,inbound.id,"Incoming")
-        mail(9206,"OUTBOUND","SENT",at.minusNanos(1000),null,"Previous day")
+        mail(9206,"OUTBOUND","SENT",at.minusSeconds(1),null,"Previous day")
         mail(9207,"OUTBOUND","SENT",at.plusDays(1),null,"Next day")
+        val persistedPreviousDay = jdbc.queryForObject(
+            "SELECT sent_at FROM mail_record WHERE id=?", LocalDateTime::class.java, 9206L
+        )
+        assertEquals(at.toLocalDate().minusDays(1), persistedPreviousDay?.toLocalDate())
         val all = service.readPage(LocalDate.of(2026,9,25), LocalDate.of(2026,9,25),null,"ALL",null,20,0)
         assertEquals(listOf(9203L,9202L,9201L), all.records.map { it.mailRecordId })
         assertEquals(3L, all.totalCount)
