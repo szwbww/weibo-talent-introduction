@@ -32,7 +32,9 @@
     "src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt",
     "src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt",
     "src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt",
-    "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt"
+    "src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt"
   ],
   "04": [
     "src/main/resources/static/index.html",

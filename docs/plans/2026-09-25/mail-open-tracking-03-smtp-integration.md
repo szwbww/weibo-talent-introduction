@@ -57,19 +57,19 @@
 文件：`MailDeliveryService.kt`、`ManualExpertMailService.kt`、`MeetingScheduleService.kt`、`ManualOutreachTxHelper.kt`、`InitialOutreachService.kt`、`ManualInitialOutreachService.kt`。
 - DTO尾部默认null，原分类器与原调用兼容。
 - ManualExpert/Meeting在构造MailRecord时赋 `openTrackingId = delivered.openTrackingId`，并防御只在SENT时使用；不改原sentAt/status/body。
-- helper.recordSuccess末尾加 `openTrackingId:Long?=null`，只成功save写入；两个outreach调用者命名参数透传。recordFailure签名不改。taskExecutionId保持原值。
+- helper.recordSuccess末尾加 `openTrackingId:Long?=null`，只成功save写入；删除七参数兼容重载，两个outreach调用者统一以命名参数透传（包括null）。recordFailure签名不改。taskExecutionId保持原值。迁移既有Mockito调用验证，不留下条件分支或兼容路径。
 - 不向 Auto/ManualReplySendAttempt 回复保存链透传；02明确isReply+SMTP测试保证回复输出id恒null。
 - SMTP成功后由已有业务事务持久化关联。既有“SMTP已接受但业务记录失败”的窗口仍存在，本期不能声称exactly-once；孤儿token不进入指标，也不为修复它新建重发任务。
 
 ### T3 — 实际发送链测试（I-1～5）
-文件：`SmtpMailDeliveryServiceTest.kt`、新增 `MailOpenTrackingPersistenceTest.kt`。
+文件：`SmtpMailDeliveryServiceTest.kt`、新增 `MailOpenTrackingPersistenceTest.kt`、既有 `InitialOutreachServiceTest.kt` 和 `ManualInitialOutreachServiceTest.kt`（迁移recordSuccess的七参数Mockito验证）。
 - SMTP mock只替代网络，捕获真实MimeMessage、递归解析部件验证HTML/plain/附件；预留mock为null/id/抛错，验证send调用恰一次或被抑制时零次。
 - 表驱动覆盖回复位/两种非空头/主题regex正反例；plain、html、calendar、通用附件、合并附件；开关关闭、未配置、抑制、SMTP失败与普通成功。
 - 新持久化test实际调用四种业务发送入口（Initial、ManualInitial、ManualExpert含批量、Meeting），mock外部依赖但捕获真实repository.save。outreach使用实际helper，不能只验证mock helper收到参数就声称已落记录。可采用既有对应service test的最小fixture，不启动真实SMTP/ES。
 - 记录成功ID、失败null、回复null、连续两次非回复分别ID、body/text不带token。01真实MySQL IT负责SQL关联/早到请求，03不重复搭数据库平台。
 
 ## 变更文件清单
-共9文件，两个子系统：MIME投递；业务成功记录关联。
+共11文件，两个子系统：MIME投递；业务成功记录关联。经人工批准，本阶段文件上限由10调整为11，仅新增两份既有调用测试。
 
 | # | 文件 |
 |---|---|
@@ -82,6 +82,8 @@
 | 7 | `src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt` |
 | 8 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt` |
 | 9 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt` |
+| 10 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt` |
+| 11 | `src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt` |
 
 ## 验收标准
 - I-1：按入口、主题、头、reply位的正反矩阵；第二封非回复仍eligible；现有业务去重仍生效，不为了测试解除去重。
