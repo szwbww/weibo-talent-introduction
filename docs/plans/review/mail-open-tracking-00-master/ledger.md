@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-25/mail-open-tracking-00-master.md
+
+- Status: REPAIR_PLAN_READY
+- Review epoch: 1
+- Master plan: docs/plans/2026-09-25/mail-open-tracking-00-master.md (sha256 14ff85b2875caf62e2adf936973c3b30f8f4a66b375c86a16c51f4f7c11f86a1)
+- Governing master identity: sha256 14ff85b2875caf62e2adf936973c3b30f8f4a66b375c86a16c51f4f7c11f86a1; recorded commit ab2dda0f86c52d8bd9570d994fa895f087931df3
+- Invoked master identity: SAME
+- Master identity state: CONSISTENT
+- Governing amendment: A1; G-6 / 每阶段不得超10文件; Child 03 requires two legacy Mockito test migrations; approved 11-file exception and corrected aggregate counts; HUMAN:2026-09-25T11:20:27Z selected 扩大测试白名单并干净切换; 批准03扩为11文件
+- Amendments: A1 master plan and A2 child 03; fast-p ledger ## Amendments
+- Fast-p ledger: docs/plans/fast/mail-open-tracking-00-master/ledger.md (sha256 4418a4866aa6eab789d7e0de83382160624dbdc62f37db2c0ae56b3047c5a6f1)
+- Fast-p handoff: docs/plans/fast/mail-open-tracking-00-master/human-review-handoff.md (sha256 25281cafa79a2419dcbec4094bbe386fc75c714094e700167886a60b211dc0fb)
+- Master base: f9c8dce2d1f2efe09d9ccb0c439498d2e91f22f5
+- Final code head: 2fd810b50ebded265cb0cf5eeaca2a2b6550521a
+- Evidence parent before next commit: c26d65a4e515da41afe6b591352a5041f96e7f03
+- Previous evidence commit: N/A
+- Branch: fast/mail-open-tracking-00-master
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-mail-open-recovery
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: discover_fast_p.py SELECTED one candidate; recorded identities match; branch/worktree and terminal children match
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: FAIL
+- Machine report epoch: docs/plans/review/mail-open-tracking-00-master/machine-verification.md, epoch 1
+- Repair artifact: docs/plans/fix/mail-open-tracking-00-master/repair.md (sha256 107fb3416f73b14b646f8790d832e49025ca0d6f43b539497d56f721cdaab292)
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: V-1 mandatory MySQL date-boundary fixture fails; await human-originated `$execute-p docs/plans/fix/mail-open-tracking-00-master/repair.md` approval, then aggregate re-review.
