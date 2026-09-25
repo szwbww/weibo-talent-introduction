@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
+import org.slf4j.LoggerFactory
 import org.springframework.mail.MailException
 import org.springframework.stereotype.Service
 import javax.mail.AuthenticationFailedException
@@ -12,7 +13,8 @@ class SmtpMailDeliveryService(
     private val smtpSenderFactory: SmtpSenderFactory,
     private val unsubscribeTokenService: UnsubscribeTokenService,
     private val mailContentService: MailContentService,
-    private val emailSuppressionService: EmailSuppressionService
+    private val emailSuppressionService: EmailSuppressionService,
+    private val mailOpenTrackingService: MailOpenTrackingService
 ) : MailDeliveryService {
     override fun send(account: MailSenderAccount, mail: ComposedMail): DeliveredMail {
         // I-1: 兜底 fail-closed 拦截。必须位于接触任何 SMTP 资源（getSender）之前；
@@ -20,6 +22,29 @@ class SmtpMailDeliveryService(
         if (!mail.allowSuppressedRecipient && emailSuppressionService.isSuppressed(mail.to)) {
             throw RecipientSuppressedException(mail.to)
         }
+        val cleanedMail = if (mail.html) mail.copy(body = mailContentService.stripOpenTrackingImages(mail.body)) else mail
+        var openTrackingId: Long? = null
+        val wireMail = if (!mail.isReply &&
+            mail.inReplyTo.isNullOrBlank() && mail.references.isNullOrBlank() &&
+            !REPLY_SUBJECT.containsMatchIn(mail.subject)
+        ) {
+            try {
+                val reservation = mailOpenTrackingService.reserve(mail.to)
+                if (reservation == null) cleanedMail else {
+                    val html = if (cleanedMail.html) cleanedMail.body else mailContentService.plainTextToHtml(cleanedMail.body)
+                    val pixel = "<img data-mail-open-tracking=\"1\" src=\"${escapeAttribute(reservation.url)}\" width=\"1\" height=\"1\" alt=\"\">"
+                    val bodyEnd = BODY_END.findAll(html).lastOrNull()?.range?.first ?: html.length
+                    val trackedHtml = html.substring(0, bodyEnd) + pixel + html.substring(bodyEnd)
+                    openTrackingId = reservation.id
+                    if (cleanedMail.html) cleanedMail.copy(body = trackedHtml)
+                    else cleanedMail.copy(body = trackedHtml, html = true, text = cleanedMail.body)
+                }
+            } catch (e: Exception) {
+                log.warn("Mail open tracking preparation unavailable: {}", e.javaClass.simpleName)
+                openTrackingId = null
+                cleanedMail
+            }
+        } else cleanedMail
 
         val sender = smtpSenderFactory.getSender(account)
 
@@ -50,19 +75,19 @@ class SmtpMailDeliveryService(
         val outboundAttachments = mail.outboundAttachments
         if (calendar == null && outboundAttachments.isEmpty()) {
             // fast-p 02 (I-3): 无附件分支逐字保留旧实现（正文/MIME 与旧状态机完全一致）。
-            if (mail.html) {
-                val plain = mail.text?.takeIf { it.isNotBlank() }
-                    ?: mailContentService.htmlToPlainText(mail.body)
+            if (wireMail.html) {
+                val plain = wireMail.text?.takeIf { it.isNotBlank() }
+                    ?: mailContentService.htmlToPlainText(wireMail.body)
                 val multipart = javax.mail.internet.MimeMultipart("alternative")
                 multipart.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
                     setText(plain, Charsets.UTF_8.name())
                 })
                 multipart.addBodyPart(javax.mail.internet.MimeBodyPart().apply {
-                    setContent(mail.body, "text/html; charset=UTF-8")
+                    setContent(wireMail.body, "text/html; charset=UTF-8")
                 })
                 message.setContent(multipart)
             } else {
-                message.setText(mail.body, Charsets.UTF_8.name())
+                message.setText(wireMail.body, Charsets.UTF_8.name())
             }
         } else {
             // fast-p 02/05 (I-3): 任一附件存在 → multipart/mixed 外层；part 1 包原文
@@ -72,7 +97,7 @@ class SmtpMailDeliveryService(
             // Disposition=ATTACHMENT、快照 contentType、快照 filename 的原件字节
             // （不改变字节、不展开压缩包、不把任意文件按 text/calendar 发送）。
             val mixed = javax.mail.internet.MimeMultipart("mixed")
-            mixed.addBodyPart(originalBodyPart(mail))
+            mixed.addBodyPart(originalBodyPart(wireMail))
             if (calendar != null) {
                 // fast-p 02 (I-3): 快照 icsText 的 UTF-8 字节
                 // (text/calendar; charset=UTF-8、attachment disposition、安全 filename)。
@@ -110,7 +135,8 @@ class SmtpMailDeliveryService(
             sender.send(message)
             DeliveredMail(
                 messageId = message.messageID ?: mail.messageId,
-                status = "SENT"
+                status = "SENT",
+                openTrackingId = openTrackingId
             )
         } catch (e: SendFailedException) {
             SmtpErrorClassifier.fromSendFailedException(e, mail.messageId)
@@ -145,4 +171,14 @@ class SmtpMailDeliveryService(
                 setText(mail.body, Charsets.UTF_8.name())
             }
         }
+
+    private fun escapeAttribute(value: String): String = value
+        .replace("&", "&amp;").replace("\"", "&quot;")
+        .replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;")
+
+    private companion object {
+        val log = LoggerFactory.getLogger(SmtpMailDeliveryService::class.java)
+        val REPLY_SUBJECT = Regex("""(?i)^\s*(?:re(?:\[\d+\])?|回复|答复)\s*[:：]""")
+        val BODY_END = Regex("</body\\s*>", RegexOption.IGNORE_CASE)
+    }
 }

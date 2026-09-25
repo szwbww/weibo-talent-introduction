@@ -36,6 +36,7 @@ import javax.mail.SendFailedException
 class SmtpMailDeliveryServiceTest {
     private val mailContentService = MailContentService()
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
+    private val mailOpenTrackingService = Mockito.mock(MailOpenTrackingService::class.java)
 
     init {
         Mockito.`when`(emailSuppressionService.isSuppressed(Mockito.anyString())).thenReturn(false)
@@ -134,7 +135,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        val delivered = SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+        val delivered = SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
             account,
             ComposedMail("bad@example.com", "Subject", "Body", messageId = "msg-1")
         )
@@ -157,7 +158,7 @@ class SmtpMailDeliveryServiceTest {
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
         val mail = ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
 
-        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService, emailSuppressionService).send(account, mail)
+        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(account, mail)
 
         assertEquals("SENT", delivered.status)
         val message = captured.single()
@@ -183,7 +184,7 @@ class SmtpMailDeliveryServiceTest {
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
         val mail = ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
 
-        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService, emailSuppressionService).send(account, mail)
+        val delivered = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(account, mail)
 
         assertEquals("SENT", delivered.status)
         val message = captured.single()
@@ -206,7 +207,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
             account,
             ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
         )
@@ -228,7 +229,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
             account,
             ComposedMail("recipient@example.com", "Subject", "Plain body", html = false)
         )
@@ -250,7 +251,7 @@ class SmtpMailDeliveryServiceTest {
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
         val htmlBody = "<p>Hello <strong>world</strong></p>"
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
             account,
             ComposedMail("recipient@example.com", "Subject", htmlBody, html = true)
         )
@@ -275,7 +276,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
             account,
             ComposedMail(
                 to = "recipient@example.com",
@@ -431,7 +432,7 @@ class SmtpMailDeliveryServiceTest {
             }
         }
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
-        val delivered = SmtpMailDeliveryService(factory, tokenService, mailContentService, emailSuppressionService)
+        val delivered = SmtpMailDeliveryService(factory, tokenService, mailContentService, emailSuppressionService, mailOpenTrackingService)
             .send(account, mail)
         assertEquals("SENT", delivered.status)
         return captured.single()
@@ -711,7 +712,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
             account,
             ComposedMail(
                 to = "recipient@example.com",
@@ -742,7 +743,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
             account,
             ComposedMail("recipient@example.com", "Subject", "Body")
         )
@@ -764,7 +765,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
             account,
             ComposedMail(
                 to = "recipient@example.com",
@@ -792,7 +793,7 @@ class SmtpMailDeliveryServiceTest {
         val account = testAccount()
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
             account,
             ComposedMail(
                 to = "recipient@example.com",
@@ -844,7 +845,7 @@ class SmtpMailDeliveryServiceTest {
         Mockito.`when`(emailSuppressionService.isSuppressed("blocked@example.com")).thenReturn(true)
 
         assertThrows(RecipientSuppressedException::class.java) {
-            SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+            SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
                 account,
                 ComposedMail("blocked@example.com", "Subject", "Body")
             )
@@ -852,6 +853,7 @@ class SmtpMailDeliveryServiceTest {
 
         // I-1: 拦截必须发生在接触任何 SMTP 资源之前 —— getSender 零调用。
         Mockito.verify(factory, Mockito.never()).getSender(anyValue(testAccount()))
+        Mockito.verifyNoInteractions(mailOpenTrackingService)
     }
 
     @Test
@@ -867,7 +869,7 @@ class SmtpMailDeliveryServiceTest {
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
         Mockito.`when`(emailSuppressionService.isSuppressed("blocked@example.com")).thenReturn(true)
 
-        val delivered = SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+        val delivered = SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
             account,
             ComposedMail(
                 to = "blocked@example.com",
@@ -889,6 +891,116 @@ class SmtpMailDeliveryServiceTest {
         assertEquals("收件人已退订，禁止外发：blocked@example.com", ex.message)
     }
 
+    @Test
+    fun `eligible HTML uses one fresh pixel on wire only and reserves per send`() {
+        val account = testAccount()
+        val sent = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        Mockito.`when`(factory.getSender(account)).thenReturn(object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) { sent += mimeMessage }
+        })
+        Mockito.`when`(mailOpenTrackingService.reserve("recipient@example.com"))
+            .thenReturn(MailOpenTrackingReservation(11, "a", "https://example.org/a.gif?x=1&y=2"))
+            .thenReturn(MailOpenTrackingReservation(12, "b", "https://example.org/b.gif"))
+        val old = "<img data-mail-open-tracking='1' src='https://example.org/old.gif'>"
+        val mail = ComposedMail("recipient@example.com", "Hello", "<body><p>Hi</p>$old</BODY>",
+            html = true, text = "Hi", messageId = "<fixed@example.org>")
+        val service = SmtpMailDeliveryService(factory, enabledTokenService, mailContentService,
+            emailSuppressionService, mailOpenTrackingService)
+        assertEquals(11L, service.send(account, mail).openTrackingId)
+        assertEquals(12L, service.send(account, mail).openTrackingId)
+        assertTrue(mail.body.contains(old))
+        val first = roundTrip(sent.first())
+        val parts = first.content as MimeMultipart
+        val html = parts.getBodyPart(1).content.toString()
+        assertEquals(1, Regex("data-mail-open-tracking=").findAll(html).count())
+        assertTrue(html.contains("a.gif?x=1&amp;y=2"))
+        assertTrue(html.indexOf("a.gif") < html.indexOf("</BODY>"))
+        assertTrue(!html.contains("old.gif"))
+        assertEquals("Hi", parts.getBodyPart(0).content.toString().trim())
+        assertEquals("<fixed@example.org>", first.getHeader("Message-ID", null))
+        assertEquals("List-Unsubscribe=One-Click", first.getHeader("List-Unsubscribe-Post", null))
+        assertTrue((sent.last().content as MimeMultipart).getBodyPart(1).content.toString().contains("b.gif"))
+        assertEquals(2, sent.size)
+    }
+
+    @Test
+    fun `reply contexts never reserve regardless of missing Re prefix`() {
+        val cases = listOf(
+            ComposedMail("recipient@example.com", "Plain", "Body", isReply = true),
+            ComposedMail("recipient@example.com", "Plain", "Body", inReplyTo = "<original>"),
+            ComposedMail("recipient@example.com", "Plain", "Body", references = "<original>")
+        ) + listOf("Re: hello", "re[2]: hello", "回复：hello", "答复: hello")
+            .map { ComposedMail("recipient@example.com", it, "Body") }
+        cases.forEach {
+            assertEquals("Body", captureSentMime(testAccount(), it).content.toString())
+        }
+        Mockito.verifyNoInteractions(mailOpenTrackingService)
+    }
+
+    @Test
+    fun `reservation error sends clean body once and failure carries no id`() {
+        val account = testAccount()
+        val sent = mutableListOf<MimeMessage>()
+        val factory = Mockito.mock(SmtpSenderFactory::class.java)
+        Mockito.`when`(factory.getSender(account)).thenReturn(object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) { sent += mimeMessage }
+        })
+        Mockito.`when`(mailOpenTrackingService.reserve("recipient@example.com"))
+            .thenThrow(IllegalStateException("db"))
+        val mail = ComposedMail("recipient@example.com", "Subject",
+            "<p>Hi</p><img data-mail-open-tracking='1' src='https://example.org/old.gif'>", html = true)
+        val service = SmtpMailDeliveryService(factory, disabledTokenService, mailContentService,
+            emailSuppressionService, mailOpenTrackingService)
+        val delivered = service.send(account, mail)
+        assertEquals("SENT", delivered.status)
+        assertNull(delivered.openTrackingId)
+        assertEquals("<p>Hi</p>", (sent.single().content as MimeMultipart).getBodyPart(1).content.toString())
+        assertTrue(mail.body.contains("old.gif"))
+        Mockito.doReturn(MailOpenTrackingReservation(22, "d", "https://example.org/d.gif"))
+            .`when`(mailOpenTrackingService).reserve("recipient@example.com")
+        Mockito.`when`(factory.getSender(account)).thenReturn(object : JavaMailSenderImpl() {
+            override fun send(mimeMessage: MimeMessage) { throw MailSendException("550 rejected") }
+        })
+        assertNull(service.send(account, mail).openTrackingId)
+    }
+
+    @Test
+    fun `plain tracked mail adds HTML alternative without changing calendar or file attachments`() {
+        val file = outboundFile("material.zip", "application/zip", zipBytes())
+        Mockito.`when`(mailOpenTrackingService.reserve("recipient@example.com"))
+            .thenReturn(MailOpenTrackingReservation(21, "c", "https://example.org/c.gif"))
+        val mail = ComposedMail("recipient@example.com", "Regarding programme", "Line 1\n\nLine 2",
+            outboundAttachments = listOf(file), calendarAttachment = realMeetingSnapshot())
+        val mixed = roundTrip(captureSentMime(testAccount(), mail)).content as MimeMultipart
+        assertEquals(3, mixed.count)
+        val alternative = mixed.getBodyPart(0).content as MimeMultipart
+        assertEquals("Line 1\n\nLine 2", alternative.getBodyPart(0).content.toString().trim())
+        assertTrue(alternative.getBodyPart(1).content.toString().contains("c.gif"))
+        assertTrue(!alternative.getBodyPart(0).content.toString().contains("c.gif"))
+        assertTrue(mixed.getBodyPart(1).contentType.startsWith("text/calendar"))
+        assertArrayEquals(file.bytes, mixed.getBodyPart(2).inputStream.readBytes())
+        assertEquals("material.zip", mixed.getBodyPart(2).fileName)
+        assertEquals("Line 1\n\nLine 2", mail.body)
+    }
+
+    @Test
+    fun `plain-only non-reply becomes alternative only when reservation succeeds`() {
+        Mockito.`when`(mailOpenTrackingService.reserve("recipient@example.com"))
+            .thenReturn(MailOpenTrackingReservation(31, "plain", "https://example.org/plain.gif"))
+        val mail = ComposedMail("recipient@example.com", "Fwd: fresh note", "Plain <body> & content")
+        val tracked = roundTrip(captureSentMime(testAccount(), mail)).content as MimeMultipart
+        assertEquals("Plain <body> & content", tracked.getBodyPart(0).content.toString().trim())
+        assertTrue(tracked.getBodyPart(1).content.toString().contains("Plain &lt;body&gt; &amp; content"))
+        assertTrue(tracked.getBodyPart(1).content.toString().contains("plain.gif"))
+        assertEquals("Plain <body> & content", mail.body)
+
+        Mockito.doReturn(null).`when`(mailOpenTrackingService).reserve("recipient@example.com")
+        val disabled = captureSentMime(testAccount(), mail)
+        assertEquals("Plain <body> & content", disabled.content.toString())
+        assertTrue(disabled.contentType.startsWith("text/plain"))
+    }
+
     private fun captureSent(account: MailSenderAccount): MimeMessage {
         val captured = mutableListOf<MimeMessage>()
         val factory = Mockito.mock(SmtpSenderFactory::class.java)
@@ -899,7 +1011,7 @@ class SmtpMailDeliveryServiceTest {
         }
         Mockito.`when`(factory.getSender(account)).thenReturn(sender)
 
-        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService).send(
+        SmtpMailDeliveryService(factory, disabledTokenService, mailContentService, emailSuppressionService, mailOpenTrackingService).send(
             account,
             ComposedMail("recipient@example.com", "Subject", "Body", messageId = "msg-1")
         )

@@ -12,5 +12,6 @@ data class DeliveredMail(
     val status: String,
     val errorCategory: SmtpErrorCategory = SmtpErrorCategory.SUCCESS,
     val smtpResponseCode: Int? = null,
-    val errorDetail: String? = null
+    val errorDetail: String? = null,
+    val openTrackingId: Long? = null
 )

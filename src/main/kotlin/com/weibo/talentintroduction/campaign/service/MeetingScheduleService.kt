@@ -158,7 +158,8 @@ class MeetingScheduleService(
                 sendStatus = delivered.status,
                 receivedAt = null,
                 sentAt = now,
-                createdAt = now
+                createdAt = now,
+                openTrackingId = delivered.openTrackingId.takeIf { delivered.status == "SENT" }
             )
         )
 

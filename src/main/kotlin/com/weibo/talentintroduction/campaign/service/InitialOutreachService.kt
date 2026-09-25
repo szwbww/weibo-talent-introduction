@@ -107,15 +107,21 @@ class InitialOutreachService(
             }
 
             if (delivered.status == "SENT") {
-                txHelper.recordSuccess(
-                    contact = contact,
-                    accountCode = account.accountCode,
-                    deliveredMessageId = delivered.messageId,
-                    subject = mail.subject,
-                    body = mail.text ?: mail.body,
-                    attemptId = 0L,
-                    taskExecutionId = taskExecutionId
-                )
+                if (delivered.openTrackingId == null) {
+                    txHelper.recordSuccess(
+                        contact = contact, accountCode = account.accountCode,
+                        deliveredMessageId = delivered.messageId, subject = mail.subject,
+                        body = mail.text ?: mail.body, attemptId = 0L,
+                        taskExecutionId = taskExecutionId
+                    )
+                } else {
+                    txHelper.recordSuccess(
+                        contact = contact, accountCode = account.accountCode,
+                        deliveredMessageId = delivered.messageId, subject = mail.subject,
+                        body = mail.text ?: mail.body, attemptId = 0L,
+                        taskExecutionId = taskExecutionId, openTrackingId = delivered.openTrackingId
+                    )
+                }
             } else {
                 txHelper.recordFailure(
                     contactId = contact.id ?: error("Saved expert contact id is null"),
