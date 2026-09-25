@@ -81,7 +81,7 @@ class MailOpenTrackingRepository(private val jdbc: JdbcTemplate) {
                last_open_at = CASE WHEN last_open_at IS NULL OR last_open_at < ? THEN ? ELSE last_open_at END
            WHERE t.token = ? AND EXISTS (
                SELECT 1 FROM batch_send_setting s
-               WHERE s.setting_key = 'mailOpenTracking.enabled' AND s.setting_value = 'true'
+               WHERE s.setting_key = 'mailOpenTracking.enabled' AND BINARY s.setting_value = BINARY 'true'
            )""".trimIndent(), now, now, now, now, token
     )
 

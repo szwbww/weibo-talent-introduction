@@ -26,6 +26,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 
 @EnabledIfSystemProperty(named = "mysqlIt", matches = "true")
 @DataJdbcTest
@@ -52,6 +53,7 @@ class MailOpenTrackingRepositoryIT {
     }
 
     @Autowired lateinit var jdbc: JdbcTemplate
+    @Autowired lateinit var dataSource: DataSource
     @Autowired lateinit var repository: MailOpenTrackingRepository
     @Autowired lateinit var service: MailOpenTrackingService
     @Autowired lateinit var transactions: PlatformTransactionManager
@@ -79,7 +81,21 @@ class MailOpenTrackingRepositoryIT {
         TransactionTemplate(transactions).execute { outer ->
             jdbc.update("INSERT INTO expert_contact (id,campaign_id,orcid_id,expert_email) VALUES (9103,9101,'uncommitted','uncommitted@example.test')")
             id = service.reserve("valid@example.test")!!.id
-            assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM mail_open_tracking WHERE id=?", Int::class.java, id))
+            dataSource.connection.use { connection ->
+                connection.prepareStatement("SELECT COUNT(*) FROM mail_open_tracking WHERE id=?").use { statement ->
+                    statement.setLong(1, id)
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals(1, rows.getInt(1))
+                    }
+                }
+                connection.prepareStatement("SELECT COUNT(*) FROM expert_contact WHERE id=9103").use { statement ->
+                    statement.executeQuery().use { rows ->
+                        assertTrue(rows.next())
+                        assertEquals(0, rows.getInt(1))
+                    }
+                }
+            }
             outer.setRollbackOnly()
         }
         assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM mail_open_tracking WHERE id=?", Int::class.java, id))
@@ -113,6 +129,11 @@ class MailOpenTrackingRepositoryIT {
         val reservation = service.reserve("one@example.test")!!
         val early = LocalDateTime.of(2026, 9, 25, 0, 0)
         val late = early.plusHours(8)
+        jdbc.update("UPDATE batch_send_setting SET setting_value='TRUE' WHERE setting_key='mailOpenTracking.enabled'")
+        assertFalse(repository.isEnabled())
+        assertEquals(0, repository.recordSignal(reservation.token, late))
+        assertNull(jdbc.queryForObject("SELECT first_open_at FROM mail_open_tracking WHERE id=?", LocalDateTime::class.java, reservation.id))
+        service.setEnabled(true)
         val executor = Executors.newFixedThreadPool(8)
         try {
             val work = (0 until 100).map { index -> executor.submit<Int> {
