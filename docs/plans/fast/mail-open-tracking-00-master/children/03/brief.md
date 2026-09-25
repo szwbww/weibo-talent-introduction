@@ -4,7 +4,7 @@
 - Branch: fast/mail-open-tracking-00-master
 - Exact approved plan: docs/plans/2026-09-25/mail-open-tracking-03-smtp-integration.md (commit ab2dda0f86c52d8bd9570d994fa895f087931df3)
 - Master: docs/plans/2026-09-25/mail-open-tracking-00-master.md (commit ab2dda0f86c52d8bd9570d994fa895f087931df3)
-- Product base: Use previous terminal Code head in ledger
+- Product base: a8ed5f80b67ac7b4f97f9de8ca78084b521e1c94
 - Dependencies: 02 terminal light pass
 - Constraints: Use execute-p for implementation. Only authorized files, preserve master G-1..G-6 and downstream contracts. JDK11. No push/merge/rebase/reset/amend/worktree deletion. Product changes must be separate from evidence commits.
 - Authorized Files:

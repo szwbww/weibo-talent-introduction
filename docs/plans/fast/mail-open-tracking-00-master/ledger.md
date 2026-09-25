@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-25T12:27:24.289943+00:00
-- Current child: 02
+- Current child: 03
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
@@ -25,8 +25,8 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-09-25/mail-open-tracking-01-storage-api.md | commit:7bfd699e17a872cfefdc18e19a9a1e2b5bad07ce | none | 1 | LIGHT_PASS_WITH_NOTES | f9c8dce2d1f2efe09d9ccb0c439498d2e91f22f5 | c39198962a728e620bf0648e71021c49601778d2 | 1 | 76de1ab3a3257a2b2e292f6c894296d7eb8c80dd | 76de1ab3a3257a2b2e292f6c894296d7eb8c80dd | N/A | RecoveryStorageWriter and RecoveryStorageVerifier; O-01 Docker/MySQL NOT_RUN |
-| 02 | docs/plans/2026-09-25/mail-open-tracking-02-reply-context.md | commit:7bfd699e17a872cfefdc18e19a9a1e2b5bad07ce | 01 | 1 | PENDING | N/A | N/A | 0 | — | N/A | N/A | N/A |
+| 01 | docs/plans/2026-09-25/mail-open-tracking-01-storage-api.md | commit:7bfd699e17a872cfefdc18e19a9a1e2b5bad07ce | none | 1 | LIGHT_PASS_WITH_NOTES | f9c8dce2d1f2efe09d9ccb0c439498d2e91f22f5 | c39198962a728e620bf0648e71021c49601778d2 | 1 | 76de1ab3a3257a2b2e292f6c894296d7eb8c80dd | 76de1ab3a3257a2b2e292f6c894296d7eb8c80dd | c8e755e0ba88ce81257c505ecdd42951f60e2560 | RecoveryStorageWriter and RecoveryStorageVerifier; O-01 Docker/MySQL NOT_RUN |
+| 02 | docs/plans/2026-09-25/mail-open-tracking-02-reply-context.md | commit:7bfd699e17a872cfefdc18e19a9a1e2b5bad07ce | 01 | 1 | LIGHT_PASS | 76de1ab3a3257a2b2e292f6c894296d7eb8c80dd | a8ed5f80b67ac7b4f97f9de8ca78084b521e1c94 | 0 | — | a8ed5f80b67ac7b4f97f9de8ca78084b521e1c94 | N/A | RecoveryReplyWriter and RecoveryReplyVerifier; 153 scoped tests passed |
 | 03 | docs/plans/2026-09-25/mail-open-tracking-03-smtp-integration.md | commit:ab2dda0f86c52d8bd9570d994fa895f087931df3 | 02 | 1 | PENDING | N/A | N/A | 0 | — | N/A | N/A | N/A |
 | 04 | docs/plans/2026-09-25/mail-open-tracking-04-monitoring-ui.md | commit:7bfd699e17a872cfefdc18e19a9a1e2b5bad07ce | 03 | 1 | PENDING | N/A | N/A | 0 | — | N/A | N/A | N/A |
 
