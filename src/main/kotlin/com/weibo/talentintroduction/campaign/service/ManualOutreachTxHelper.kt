@@ -20,17 +20,6 @@ class ManualOutreachTxHelper(
     private val mailSendAttemptRepository: MailSendAttemptRepository,
     private val expertOperatorStatusService: ExpertOperatorStatusService
 ) {
-    @Transactional
-    fun recordSuccess(
-        contact: ExpertContact,
-        accountCode: String,
-        deliveredMessageId: String?,
-        subject: String?,
-        body: String?,
-        attemptId: Long,
-        taskExecutionId: Long? = null
-    ) = recordSuccess(contact, accountCode, deliveredMessageId, subject, body, attemptId, taskExecutionId, null)
-
     /**
      * Atomically records a successful send: transition contact NEW→INTRO_SENT,
      * create SENT mail record, increment account counter, mark attempt SENT.

@@ -101,6 +101,7 @@ class InitialOutreachServiceTest {
             eqValue("Subject"),
             eqValue("Body"),
             eqValue(0L),
+            Mockito.isNull(),
             Mockito.isNull()
         )
         Mockito.verify(txHelper, Mockito.never()).recordFailure(
@@ -142,6 +143,7 @@ class InitialOutreachServiceTest {
             eqValue("Subject"),
             eqValue("Body"),
             eqValue(0L),
+            Mockito.isNull(),
             Mockito.isNull()
         )
     }
@@ -176,7 +178,8 @@ class InitialOutreachServiceTest {
             Mockito.any(),
             Mockito.any(),
             Mockito.anyLong(),
-            Mockito.any()
+            Mockito.any(),
+            Mockito.nullable(Long::class.javaObjectType)
         )
         Mockito.verify(txHelper).recordFailure(
             contactId = eqValue(100L),
@@ -403,7 +406,8 @@ class InitialOutreachServiceTest {
             eqValue("Subject"),
             eqValue("Body"),
             eqValue(0L),
-            eqValue(42L)
+            eqValue(42L),
+            Mockito.isNull()
         )
     }
 

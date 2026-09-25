@@ -403,7 +403,8 @@ class ManualInitialOutreachServiceTest {
             subject = eqValue("Subject"),
             body = eqValue("Body"),
             attemptId = Mockito.anyLong(),
-            taskExecutionId = Mockito.eq(12345L)
+            taskExecutionId = Mockito.eq(12345L),
+            openTrackingId = Mockito.isNull()
         )
     }
 
@@ -1942,7 +1943,8 @@ class ManualInitialOutreachServiceTest {
             // Does not use txHelper (no contact creation/status change for reminder)
             Mockito.verify(txHelper, Mockito.never()).recordSuccess(
                 anyValue(ExpertContact(campaignId = 0, orcidId = "", expertEmail = "", expertName = null)),
-                Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyLong(), Mockito.any()
+                Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyLong(), Mockito.any(),
+                Mockito.nullable(Long::class.javaObjectType)
             )
         }
 

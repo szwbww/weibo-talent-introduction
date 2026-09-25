@@ -908,21 +908,12 @@ class ManualInitialOutreachService(
                     if (delivered.status == "SENT") {
                         accountRateLimiter.recordSuccess(account.accountCode, provider, config.perMailIntervalMs)
                         // 6. Record success atomically (state transition + mail_record + counter + attempt + ES) — I-7
-                        if (delivered.openTrackingId == null) {
-                            txHelper.recordSuccess(
-                                contact = contact, accountCode = account.accountCode,
-                                deliveredMessageId = messageId, subject = mail.subject,
-                                body = mail.text ?: mail.body, attemptId = attempt.id!!,
-                                taskExecutionId = executionId
-                            )
-                        } else {
-                            txHelper.recordSuccess(
-                                contact = contact, accountCode = account.accountCode,
-                                deliveredMessageId = messageId, subject = mail.subject,
-                                body = mail.text ?: mail.body, attemptId = attempt.id!!,
-                                taskExecutionId = executionId, openTrackingId = delivered.openTrackingId
-                            )
-                        }
+                        txHelper.recordSuccess(
+                            contact = contact, accountCode = account.accountCode,
+                            deliveredMessageId = messageId, subject = mail.subject,
+                            body = mail.text ?: mail.body, attemptId = attempt.id!!,
+                            taskExecutionId = executionId, openTrackingId = delivered.openTrackingId
+                        )
                         accumulator.recordSuccess()
                         stat.success++
                         roundPassed++
