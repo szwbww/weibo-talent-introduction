@@ -404,6 +404,7 @@ class PendingMailOperationServiceTest {
         val sendInvocation = invocationOf(mailDeliveryService, "send")
         assertEquals("sender-1", (sendInvocation.arguments[0] as MailSenderAccount).accountCode)
         val mail = sendInvocation.arguments[1] as ComposedMail
+        assertTrue(mail.isReply)
         assertEquals("<anchor-1@test.com>", mail.inReplyTo)
         assertEquals("<old-0@test.com> <anchor-1@test.com>", mail.references)
         assertEquals("<manual-rich-abc@weibo.com>", mail.messageId)
@@ -926,6 +927,7 @@ class PendingMailOperationServiceTest {
         assertEquals(input.zoomUrl, event.meetingLink)
         // 同一快照实例同时进入 SendPayload 与 ComposedMail（不生成第二份）。
         assertSame(snapshot, mail.calendarAttachment)
+        assertTrue(mail.isReply)
         // I-2: 带日历新分支的线程头 = 真实来信 messageId（in-1）；inReplyTo/references 同源。
         assertEquals("in-1", mail.inReplyTo)
         assertEquals("in-1", mail.references)
@@ -1067,6 +1069,7 @@ class PendingMailOperationServiceTest {
         assertNull(mail.calendarAttachment)
         assertNull(mail.inReplyTo, "旧调用形态线程头保持默认 null")
         assertNull(mail.references)
+        assertTrue(mail.isReply, "没有线程头的人工来信回信仍是回复")
     }
 
     // I-1/I-2/I-4：来信路径的 final body 在变量渲染后、claim 前规范化一次；claim 载荷、
@@ -1096,6 +1099,7 @@ class PendingMailOperationServiceTest {
         val mail = capturedMails.single()
         assertEquals(claimed.finalText, mail.text, "text/plain alternative 与 payload 逐字相同")
         assertEquals(claimed.finalHtml, mail.body, "HTML alternative 与 payload 逐字相同")
+        assertTrue(mail.isReply)
         val persisted = capturedPayloads.single()
         assertEquals(claimed.finalText, persisted.finalText, "落库 payload 引用同一 canonical 正文")
         assertEquals(claimed.finalHtml, persisted.finalHtml)
@@ -1146,6 +1150,71 @@ class PendingMailOperationServiceTest {
         val mail = invocationOf(mailDeliveryService, "send").arguments[1] as ComposedMail
         assertEquals(claimed.finalText, mail.text)
         assertEquals(claimed.finalHtml, mail.body)
+        assertTrue(mail.isReply)
+    }
+
+    @Test
+    fun `manual reply strips quoted tracking pixels before claim and keeps canonical body on retry`() {
+        val token = "a".repeat(43)
+        val pixel = "<IMG title='quoted > value' SRC='https://tracking.test/app/t/mail-open/$token.gif?source=quoted' />"
+        val original = "<p>Test</p>$pixel<img src='https://images.test/normal.gif'>"
+        val cleaned = "<p>Test</p><img src='https://images.test/normal.gif'>"
+        val capturedMails = mutableListOf<ComposedMail>()
+        val persistedPayloads = captureCalendarSend(capturedMails)
+
+        repeat(2) { attempt ->
+            if (attempt == 1) {
+                Mockito.`when`(manualReplySendAttemptService.prepareAndClaim(anyValue(sendPayload())))
+                    .thenReturn(
+                        ManualReplySendAttemptService.ClaimedAttempt(
+                            attemptId = 1L, messageId = "<manual-rich-abc@weibo.com>",
+                            result = ManualReplySendAttemptService.ClaimResult.DEDUP_SENT
+                        )
+                    )
+            }
+            val sent = service.sendManualRichReply(
+                inboundProcessingId = 100L, senderAccountCode = null, subject = "Details",
+                htmlBody = original, textBody = "Test", operatorName = "op"
+            )
+            assertEquals("SENT", sent.sendStatus)
+        }
+
+        val claims = Mockito.mockingDetails(manualReplySendAttemptService).invocations
+            .filter { it.method.name == "prepareAndClaim" }
+            .map { it.arguments[0] as ManualReplySendAttemptService.SendPayload }
+        assertEquals(2, claims.size)
+        assertEquals(cleaned, claims[0].finalHtml)
+        assertEquals(claims[0], claims[1], "相同正文与请求必须提交相同幂等身份")
+        assertEquals(claims[0].finalHtml, claims[1].finalHtml)
+        assertEquals(cleaned, capturedMails.single().body)
+        assertEquals("Test", capturedMails.single().text)
+        assertTrue(capturedMails.single().isReply)
+        assertNull(capturedMails.single().inReplyTo)
+        assertEquals(cleaned, persistedPayloads.single().finalHtml)
+    }
+
+    @Test
+    fun `tracking image stripping preserves every nonmatching byte and is idempotent`() {
+        val token = "A".repeat(43)
+        val image = "<img src=https://host.test/context/t/mail-open/$token.gif/>"
+        val marked = "<ImG DaTa-MaIl-OpEn-TrAcKiNg='1' src='https://host.test/other.gif'/>"
+        val lookalikes = "<img data-mail-open-tracking='10' src='https://host.test/other.gif'>" +
+            "<img src='https://host.test/context/t/mail-open/${"a".repeat(42)}.gif'>" +
+            "<img src='https://host.test/context/T/mail-open/$token.gif'>" +
+            "<img src='https://host.test/context/t/mail-open/$token.gif.webp'>" +
+            "<a href='https://host.test/context/t/mail-open/$token.gif'>link</a>"
+        val html = "before $image between $marked after $lookalikes"
+        val cleaner = MailContentService()
+        val expected = "before  between  after $lookalikes"
+        assertEquals(expected, cleaner.stripOpenTrackingImages(html))
+        assertEquals(expected, cleaner.stripOpenTrackingImages(expected))
+        assertEquals(lookalikes, cleaner.stripOpenTrackingImages(lookalikes))
+        val encoded = "<img SRC=\"https://host.test/context/t/mail-open/$token.gif?x=1&amp;y=2\">"
+        assertEquals("", cleaner.stripOpenTrackingImages(encoded))
+        assertEquals("", cleaner.stripOpenTrackingImages("<img data-mail-open-tracking=1 src=/unrelated/>"))
+        val nonTags = "<!-- <img data-mail-open-tracking=1> -->" +
+            "<div data-note=\"<img data-mail-open-tracking=1>\">text</div>"
+        assertEquals(nonTags, cleaner.stripOpenTrackingImages(nonTags))
     }
 
     // 03: 发送侧 controller 透传 —— 以 UnmatchedInboundMailController 同形请求调用
@@ -1381,6 +1450,7 @@ class PendingMailOperationServiceTest {
         assertEquals(fileSet.snapshots, payload.outboundAttachments, "payload 快照 = 04 有序快照")
         val mail = capturedMails.single()
         assertEquals(1, mail.outboundAttachments.size)
+        assertTrue(mail.isReply)
         assertEquals(fileSet.snapshots.single(), mail.outboundAttachments.single().snapshot)
         assertArrayEquals(fileSet.files.single().bytes, mail.outboundAttachments.single().bytes)
     }
@@ -1405,6 +1475,7 @@ class PendingMailOperationServiceTest {
         assertEquals("SENT", result.sendStatus)
         assertEquals(fileSet.snapshots, capturedPayloads.single().outboundAttachments)
         assertEquals(1, capturedMails.single().outboundAttachments.size)
+        assertTrue(capturedMails.single().isReply)
         val order = Mockito.inOrder(outboundAttachmentService, manualReplySendAttemptService)
         order.verify(outboundAttachmentService).resolveForSend(1L, listOf(attachmentId), "op")
         order.verify(manualReplySendAttemptService).prepareAndClaim(anyValue(sendPayload()))

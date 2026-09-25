@@ -182,6 +182,9 @@ class MeetingScheduleServiceTest {
         )
 
         val sentMail = sentMails.single()
+        assertEquals(false, sentMail.isReply)
+        assertEquals("Meeting Confirmed", sentMail.subject)
+        assertEquals("expert@example.com", sentMail.to)
         assertNotNull(sentMail.messageId)
         // I-2: domain must come from the stub account's senderEmail, not any hardcoded literal
         val accountDomain = account.senderEmail.substringAfter("@")
@@ -207,6 +210,56 @@ class MeetingScheduleServiceTest {
         assertEquals(1, accountCaptor.value.todaySentCount)
         assertNotNull(accountCaptor.value.lastSentAt)
     }
+
+    @Test
+    fun `confirmation with source mail record is a reply despite missing thread headers`() {
+        val contactId = 1L
+        val scheduleId = 500L
+        val contact = ExpertContact(
+            id = contactId, campaignId = 10L, orcidId = "orcid-1",
+            expertEmail = "expert@example.com", expertName = "Dr. Expert",
+            currentStatus = ConversationStatus.MEETING_SCHEDULING.name
+        )
+        val schedule = MeetingSchedule(
+            id = scheduleId, expertContactId = contactId, meetingStatus = "PENDING", sourceMailRecordId = 55L
+        )
+        val account = MailSenderAccount(
+            accountCode = "sender", senderEmail = "sender@example.com", senderName = "Sender",
+            senderTitle = null, senderDisplayName = null, teamName = null, countryName = null,
+            smtpHost = "smtp.example.com", smtpPort = 465, smtpUsername = "sender@example.com",
+            smtpPassword = "pwd", imapHost = "imap.example.com", imapPort = 993,
+            imapUsername = "sender@example.com", imapPassword = "pwd"
+        )
+        Mockito.`when`(expertContactRepository.findById(contactId)).thenReturn(Optional.of(contact))
+        Mockito.`when`(meetingScheduleRepository.findById(scheduleId)).thenReturn(Optional.of(schedule))
+        Mockito.`when`(meetingScheduleRepository.save(Mockito.any(MeetingSchedule::class.java)))
+            .thenAnswer { it.getArgument<MeetingSchedule>(0) }
+        Mockito.`when`(senderAccountBindingService.resolveForSend(eqValue(contact), eqValue(true), eqValue(false)))
+            .thenReturn(account)
+        Mockito.`when`(mailComposeTemplateService.renderByCode(
+            eqValue("MEETING_CONFIRMATION"), anyValue(emptyMap<String, String>()),
+            eqValue(MailComposeTemplateService.variantSeedFor(contact.orcidId, contact.expertEmail))
+        )).thenReturn(ComposeTemplateRenderResult(subject = "Meeting", body = "Details", mailType = "MEETING_CONFIRMATION"))
+        val captor = ArgumentCaptor.forClass(ComposedMail::class.java)
+        Mockito.`when`(mailDeliveryService.send(eqValue(account), captor.capture()
+            ?: ComposedMail("stub", "stub", "stub"))).thenReturn(DeliveredMail("msg-123", "SENT"))
+        Mockito.`when`(expertContactRepository.save(Mockito.any(ExpertContact::class.java)))
+            .thenAnswer { it.getArgument<ExpertContact>(0) }
+
+        service.confirmMeetingAndEmail(
+            contactId, scheduleId,
+            ConfirmMeetingCommand(chinaTime = "2026-06-01 10:00 AM", meetingTool = "Teams", meetingLink = "https://teams.test/1", note = null)
+        )
+        assertTrue(captor.value.isReply)
+        assertEquals("Meeting", captor.value.subject)
+        assertEquals("expert@example.com", captor.value.to)
+        assertEquals(null, captor.value.inReplyTo)
+        assertEquals(null, captor.value.references)
+        val record = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(record.capture())
+        assertEquals(55L, record.value.sourceInboundId)
+    }
+
 
     @Test
     fun `confirmMeetingAndEmail uses bound account`() {

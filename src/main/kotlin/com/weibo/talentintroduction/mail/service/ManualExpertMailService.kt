@@ -193,7 +193,8 @@ class ManualExpertMailService(
                 contact,
                 account,
                 command.optionValue.toLong(),
-                command.allowSuppressed
+                command.allowSuppressed,
+                command.sourceInboundId != null
             )
         }
     }
@@ -202,7 +203,8 @@ class ManualExpertMailService(
         contact: ExpertContact,
         account: MailSenderAccount,
         templateId: Long,
-        allowSuppressed: Boolean
+        allowSuppressed: Boolean,
+        hasSourceInbound: Boolean
     ): ManualComposedMail {
         val template = mailComposeTemplateService.getById(templateId)
         // 专用会议模板只经会议弹窗确认流程；普通单发列表已过滤，直接按 id
@@ -271,7 +273,8 @@ class ManualExpertMailService(
                 messageId = "<reminder-${contact.id}-${UUID.randomUUID()}@$senderDomain>",   // I-3
                 inReplyTo = anchorMessageId,                                                // I-1
                 references = references,                                                     // I-1
-                allowSuppressedRecipient = allowSuppressed                                   // I-4
+                allowSuppressedRecipient = allowSuppressed,                                  // I-4
+                isReply = hasSourceInbound || anchor != null
             ),
             matchedQaRuleId = rendered.qaRuleIds.firstOrNull(),
             qaRuleIds = rendered.qaRuleIds

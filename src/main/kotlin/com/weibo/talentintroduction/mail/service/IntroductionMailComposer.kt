@@ -87,5 +87,7 @@ data class ComposedMail(
     /** 通用附件原件（fast-p 05，I-3）：默认空 = 旧无附件/仅 ICS 形态逐字不变；
      *  元素是 04 已验证快照 + 已核过尺寸/hash 的原件字节，非空时 SMTP 在既有
      *  ICS 之后按选择顺序以 multipart/mixed 携带。所有既有调用点保持默认不改。 */
-    val outboundAttachments: List<OutboundMailFile> = emptyList()
+    val outboundAttachments: List<OutboundMailFile> = emptyList(),
+    /** Business reply context, independent of subject and SMTP thread headers. */
+    val isReply: Boolean = false
 )

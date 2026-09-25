@@ -136,7 +136,8 @@ class MeetingScheduleService(
             to = contact.expertEmail,
             subject = rendered.subject,
             body = rendered.body,
-            messageId = OutboundMessageIdFactory.newId("meeting-confirmation", contact.orcidId, account.senderEmail)
+            messageId = OutboundMessageIdFactory.newId("meeting-confirmation", contact.orcidId, account.senderEmail),
+            isReply = schedule.sourceMailRecordId != null
         )
         val delivered = mailDeliveryService.send(account, composed)
         val now = LocalDateTime.now()

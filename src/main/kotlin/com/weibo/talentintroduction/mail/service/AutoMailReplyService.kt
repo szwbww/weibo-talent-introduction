@@ -751,7 +751,8 @@ class AutoMailReplyService(
             body = mailContentService.plainTextToHtml(plainBody),
             html = true,
             text = plainBody,
-            messageId = OutboundMessageIdFactory.newId("auto-reply", contactId.toString(), account.senderEmail)
+            messageId = OutboundMessageIdFactory.newId("auto-reply", contactId.toString(), account.senderEmail),
+            isReply = true
         )
         val delivered = mailDeliveryService.send(account, reply)
         val now = LocalDateTime.now()
@@ -1230,7 +1231,8 @@ class AutoMailReplyService(
             to = received.from,
             subject = rendered.subject.ifBlank { "Re: ${received.subject.orEmpty()}".trim() },
             body = rendered.body,
-            messageId = OutboundMessageIdFactory.newId("meeting-invitation", contact.orcidId, account.senderEmail)
+            messageId = OutboundMessageIdFactory.newId("meeting-invitation", contact.orcidId, account.senderEmail),
+            isReply = true
         )
         val delivered = mailDeliveryService.send(account, mail)
         val now = LocalDateTime.now()

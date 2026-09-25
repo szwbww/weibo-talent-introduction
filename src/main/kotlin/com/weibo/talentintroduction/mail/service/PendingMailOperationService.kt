@@ -567,7 +567,8 @@ class PendingMailOperationService(
                 mailContentService.plainTextToHtml(renderedText)
             else ->
                 mailVariableService.renderHtmlForContact(htmlBody, source.account, contact)
-        }.let { mailContentService.normalizeManualRichHtmlLineBreaks(it) }
+        }.let { mailContentService.stripOpenTrackingImages(it) }
+            .let { mailContentService.normalizeManualRichHtmlLineBreaks(it) }
 
         val finalValidationText = buildFinalValidationText(renderedSubject, finalTextBody, finalHtmlBody)
         require(finalValidationText.isNotBlank()) { "Final validation text is empty after rendering" }
@@ -737,7 +738,8 @@ class PendingMailOperationService(
                     calendarAttachment = calendarSnapshot,
                     // 06 (I-1)：同一文件集合的原件（已核尺寸/hash），SMTP 在 ICS 之后按
                     // 选择顺序以 multipart/mixed 携带。
-                    outboundAttachments = attachmentFileSet.files
+                    outboundAttachments = attachmentFileSet.files,
+                    isReply = true
                 )
                 val bodyPreviewText = (finalTextBody.ifBlank { mailBodyCleaner.clean(finalHtmlBody) }
                     .takeIf { it.isNotBlank() } ?: mailBodyCleaner.clean(finalHtmlBody)).take(500)

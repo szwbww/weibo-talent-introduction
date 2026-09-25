@@ -295,10 +295,30 @@ class ManualExpertMailServiceTest {
             eqValue(account),
             captor.capture() ?: ComposedMail("stub", "stub", "stub")
         )
+        assertEquals(false, captor.value.isReply)
+        assertEquals(false, captor.value.copy(subject = "Re: not a reply").isReply)
         assertTrue(captor.value.html)
         assertEquals("<p>First paragraph.</p><p>Second paragraph.</p>", captor.value.body)
         assertEquals("First paragraph.\n\nSecond paragraph.", captor.value.text)
     }
+
+    @Test
+    fun `sendBatchMail without a source keeps composed introduction non-reply`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        val result = service.sendBatchMail(
+            listOf(1L), ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
+        )
+        assertEquals(1, result.success)
+        val captor = ArgumentCaptor.forClass(ComposedMail::class.java)
+        Mockito.verify(mailDeliveryService).send(
+            eqValue(account), captor.capture() ?: ComposedMail("stub", "stub", "stub")
+        )
+        assertEquals(false, captor.value.isReply)
+        assertNull(captor.value.inReplyTo)
+        assertNull(captor.value.references)
+    }
+
 
     @Test
     fun `sendManualMail rejects bare QA optionType`() {
@@ -690,6 +710,7 @@ class ManualExpertMailServiceTest {
         assertEquals("<inbound-1@test.com>", captor.value.inReplyTo)
         assertEquals("<inbound-1@test.com>", captor.value.references)
         assertEquals("Re: Original Subject", captor.value.subject)
+        assertEquals(true, captor.value.isReply)
     }
 
     @Test
@@ -711,6 +732,41 @@ class ManualExpertMailServiceTest {
         assertNull(captor.value.references)
         assertEquals("Gentle Follow-up on the Requested Materials", captor.value.subject)
         assertTrue(!captor.value.subject.startsWith("Re: "))
+        assertEquals(false, captor.value.isReply)
+    }
+
+    @Test
+    fun `MATERIAL_REMINDER anchor without message id remains a reply without thread headers`() {
+        val account = stubAccount()
+        stubReminderSend(account, inboundAnchor(messageId = null))
+        service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "20", senderAccountCode = null)
+        )
+        val captor = ArgumentCaptor.forClass(ComposedMail::class.java)
+        Mockito.verify(mailDeliveryService).send(
+            eqValue(account), captor.capture() ?: ComposedMail("stub", "stub", "stub")
+        )
+        assertTrue(captor.value.isReply)
+        assertNull(captor.value.inReplyTo)
+        assertNull(captor.value.references)
+        assertEquals("Gentle Follow-up on the Requested Materials", captor.value.subject)
+    }
+
+    @Test
+    fun `explicit source on non-reminder manual template marks single and batch mail as replies`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        val command = ManualMailSendCommand(
+            optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null, sourceInboundId = 91L
+        )
+        service.sendManualMail(1, command)
+        assertEquals(1, service.sendBatchMail(listOf(1L), command).success)
+        val captor = ArgumentCaptor.forClass(ComposedMail::class.java)
+        Mockito.verify(mailDeliveryService, Mockito.times(2)).send(
+            eqValue(account), captor.capture() ?: ComposedMail("stub", "stub", "stub")
+        )
+        assertTrue(captor.allValues.all { it.isReply && it.inReplyTo == null && it.references == null })
     }
 
     @Test

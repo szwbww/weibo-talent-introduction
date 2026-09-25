@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 import org.springframework.stereotype.Service
+import java.net.URI
 
 @Service
 class MailContentService {
@@ -67,6 +68,95 @@ class MailContentService {
         return current
     }
 
+    /**
+     * Remove only this application's open-tracking img tags from quoted reply HTML.
+     * Locate the original tag spans instead of reserializing HTML so unrelated content stays byte-for-byte intact.
+     */
+    fun stripOpenTrackingImages(html: String): String {
+        var searchFrom = 0
+        var keptThrough = 0
+        var cleaned: StringBuilder? = null
+        while (true) {
+            val start = html.indexOf('<', searchFrom)
+            if (start < 0) break
+            if (html.startsWith("<!--", start)) {
+                val commentEnd = html.indexOf("-->", start + 4)
+                if (commentEnd < 0) break
+                searchFrom = commentEnd + 3
+                continue
+            }
+            val image = html.regionMatches(start, "<img", 0, 4, ignoreCase = true) &&
+                start + 4 < html.length &&
+                (html[start + 4].isWhitespace() || html[start + 4] == '/' || html[start + 4] == '>')
+            if (!image && (start + 1 >= html.length ||
+                    !(html[start + 1].isLetter() ||
+                        (html[start + 1] == '/' && start + 2 < html.length && html[start + 2].isLetter())))) {
+                searchFrom = start + 1
+                continue
+            }
+            var quote = '\u0000'
+            var end = if (image) start + 4 else start + 1
+            while (end < html.length) {
+                val ch = html[end]
+                if (quote != '\u0000') {
+                    if (ch == quote) quote = '\u0000'
+                } else if (ch == '"' || ch == '\'') {
+                    quote = ch
+                } else if (ch == '>') {
+                    break
+                }
+                end++
+            }
+            if (end == html.length) break
+            searchFrom = end + 1
+            if (!image || !isOpenTrackingImage(html, start + 4, end)) continue
+            val result = cleaned ?: StringBuilder(html.length).also { cleaned = it }
+            result.append(html, keptThrough, start)
+            keptThrough = end + 1
+        }
+        return cleaned?.append(html, keptThrough, html.length)?.toString() ?: html
+    }
+
+    private fun isOpenTrackingImage(html: String, attributesStart: Int, tagEnd: Int): Boolean {
+        var pos = attributesStart
+        while (pos < tagEnd) {
+            while (pos < tagEnd && (html[pos].isWhitespace() || html[pos] == '/')) pos++
+            val nameStart = pos
+            while (pos < tagEnd && !html[pos].isWhitespace() && html[pos] != '=' && html[pos] != '/') pos++
+            if (pos == nameStart) {
+                pos++
+                continue
+            }
+            val nameEnd = pos
+            while (pos < tagEnd && html[pos].isWhitespace()) pos++
+            if (pos == tagEnd || html[pos] != '=') continue
+            pos++
+            while (pos < tagEnd && html[pos].isWhitespace()) pos++
+            val valueStart: Int
+            val valueEnd: Int
+            if (pos < tagEnd && (html[pos] == '"' || html[pos] == '\'')) {
+                val quote = html[pos++]
+                valueStart = pos
+                while (pos < tagEnd && html[pos] != quote) pos++
+                valueEnd = pos
+                if (pos < tagEnd) pos++
+            } else {
+                valueStart = pos
+                while (pos < tagEnd && !html[pos].isWhitespace()) pos++
+                valueEnd = if (pos == tagEnd && pos > valueStart && html[pos - 1] == '/') pos - 1 else pos
+            }
+            if (nameEnd - nameStart == 23 &&
+                html.regionMatches(nameStart, "data-mail-open-tracking", 0, 23, ignoreCase = true) &&
+                valueEnd - valueStart == 1 && html[valueStart] == '1') return true
+            if (nameEnd - nameStart == 3 && html.regionMatches(nameStart, "src", 0, 3, ignoreCase = true)) {
+                val src = unescapeHtmlEntities(html.substring(valueStart, valueEnd))
+                val path = try { URI(src).path } catch (_: IllegalArgumentException) { null }
+                if (path != null && OPEN_TRACKING_PATH.containsMatchIn(path)) return true
+            }
+        }
+        return false
+    }
+
     private fun escapeHtml(text: String): String =
         text.replace("&", "&amp;")
             .replace("<", "&lt;")
@@ -84,6 +174,7 @@ class MailContentService {
         )
 
         /** 折叠不动点上限：每轮都严格缩短字符串，正常 2 轮内收敛，上限只作防御。 */
+        private val OPEN_TRACKING_PATH = Regex("(?:^|/)t/mail-open/[A-Za-z0-9_-]{43}\\.gif$")
         private const val MAX_MANUAL_HTML_PASSES = 8
     }
 

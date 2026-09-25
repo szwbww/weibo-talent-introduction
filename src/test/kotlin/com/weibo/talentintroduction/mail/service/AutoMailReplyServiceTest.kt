@@ -41,6 +41,7 @@ import com.weibo.talentintroduction.variant.service.ContentVariantService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -973,7 +974,7 @@ class AutoMailReplyServiceTest {
         val contact = introSentContact()
         stubAutoReplyPipeline(account, contact)
         val plainBody = "Auto reply body"
-        stubReadyDecision(subject = "Re: Program", body = plainBody, ruleIds = listOf(1L))
+        stubReadyDecision(subject = "Program", body = plainBody, ruleIds = listOf(1L))
         Mockito.`when`(emailSuppressionService.isSuppressed("expert@example.com")).thenReturn(false)
         val sentMails = mutableListOf<ComposedMail>()
         Mockito.`when`(
@@ -992,6 +993,10 @@ class AutoMailReplyServiceTest {
         assertEquals(0, result.manualReview)
         Mockito.verify(emailSuppressionService).isSuppressed("expert@example.com")
         val sentMail = sentMails.single()
+        assertTrue(sentMail.isReply)
+        assertEquals("Program", sentMail.subject)
+        assertNull(sentMail.inReplyTo)
+        assertNull(sentMail.references)
         assertEquals(true, sentMail.html)
         assertEquals(plainBody, sentMail.text)
         assertEquals(mailContentService.plainTextToHtml(plainBody), sentMail.body)
@@ -1244,6 +1249,10 @@ class AutoMailReplyServiceTest {
             eqValue(expectedSeed)
         )
         val sentMail = sentMails.single()
+        assertTrue(sentMail.isReply)
+        assertEquals("Meeting invite", sentMail.subject)
+        assertNull(sentMail.inReplyTo)
+        assertNull(sentMail.references)
         assertNotNull(sentMail.messageId)
         // IP-4: kind must be identical to MeetingInvitationMailComposer's "meeting-invitation"
         val kind = Regex("^<([a-z-]+)-").find(sentMail.messageId!!)!!.groupValues[1]
