@@ -11,7 +11,7 @@
 | 01 | LIGHT_PASS | `64c0394a940bd79c2ecc04e5c497650f045faa75..29db24e66b8cb98eceb782812da34d1acbd6da06` | 1 | 418ff1bab09083de4f95f8a169ffdeb4ef0aecba |
 | 02 | LIGHT_PASS | `29db24e66b8cb98eceb782812da34d1acbd6da06..ddc26e020ec692d381b33fe5f575ccb6b14fd595` | 0 | 8e9ffe8113f3a11ccea242e4a691cbf97609e878 |
 | 03 | LIGHT_PASS | `ddc26e020ec692d381b33fe5f575ccb6b14fd595..3fc33d82463cb63602ff41e8a633ef1cd57b4d8e` | 0 | cfa86caf472d2f1f325ec9da7de5981d48652a80 |
-| 04 | PAUSED_FOR_HUMAN | `3fc33d82463cb63602ff41e8a633ef1cd57b4d8e..3fc33d82463cb63602ff41e8a633ef1cd57b4d8e` | 0 | — |
+| 04 | PAUSED_FOR_HUMAN | `3fc33d82463cb63602ff41e8a633ef1cd57b4d8e..3fc33d82463cb63602ff41e8a633ef1cd57b4d8e` | 0 | 53e359ba60f74dc7c60547dbd2fbcae0a3ff302f |
 | 05 | PENDING | — | 0 | — |
 | 06 | PENDING | — | 0 | — |
 | 07 | PENDING | — | 0 | — |
