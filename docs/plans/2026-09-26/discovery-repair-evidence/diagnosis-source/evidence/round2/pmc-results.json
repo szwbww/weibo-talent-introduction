@@ -1,0 +1,254 @@
+[ {
+  "case" : "pmc_link_ignored",
+  "paper" : {
+    "pmcId" : null,
+    "pmid" : "32939066",
+    "doi" : "10.1038/s41586-020-2649-2",
+    "title" : "Array programming with NumPy",
+    "pubYear" : 2020,
+    "journal" : "Nature",
+    "authors" : [ {
+      "givenNames" : "Charles",
+      "familyNames" : "R. Harris",
+      "orcidId" : null,
+      "affiliation" : null,
+      "email" : null,
+      "institutionType" : null,
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "K.",
+      "familyNames" : "Jarrod Millman",
+      "orcidId" : "0000-0002-5263-5070",
+      "affiliation" : "Berkeley College",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : true
+    }, {
+      "givenNames" : "Stéfan",
+      "familyNames" : "J. van der Walt",
+      "orcidId" : "0000-0001-9276-1891",
+      "affiliation" : "Berkeley College",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : true
+    }, {
+      "givenNames" : "Ralf",
+      "familyNames" : "Gommers",
+      "orcidId" : "0000-0002-0300-3333",
+      "affiliation" : "Quansight (United States)",
+      "email" : null,
+      "institutionType" : "company",
+      "openAlexAuthorId" : null,
+      "corresponding" : true
+    }, {
+      "givenNames" : "Pauli",
+      "familyNames" : "Virtanen",
+      "orcidId" : null,
+      "affiliation" : "University of Jyväskylä",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "David",
+      "familyNames" : "Cournapeau",
+      "orcidId" : null,
+      "affiliation" : null,
+      "email" : null,
+      "institutionType" : null,
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Eric",
+      "familyNames" : "Wieser",
+      "orcidId" : null,
+      "affiliation" : "University of Cambridge",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Julian",
+      "familyNames" : "Taylor",
+      "orcidId" : null,
+      "affiliation" : "Karlsruhe University of Education",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Sebastian",
+      "familyNames" : "Berg",
+      "orcidId" : null,
+      "affiliation" : "University of California, Berkeley",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Nathaniel",
+      "familyNames" : "J. Smith",
+      "orcidId" : null,
+      "affiliation" : null,
+      "email" : null,
+      "institutionType" : null,
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Robert",
+      "familyNames" : "Kern",
+      "orcidId" : null,
+      "affiliation" : "Enthought (United States)",
+      "email" : null,
+      "institutionType" : "company",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Matti",
+      "familyNames" : "Picus",
+      "orcidId" : "0000-0002-1771-9949",
+      "affiliation" : "University of California, Berkeley",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Stephan",
+      "familyNames" : "Hoyer",
+      "orcidId" : "0000-0002-5207-0380",
+      "affiliation" : "Google (United States)",
+      "email" : null,
+      "institutionType" : "company",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Marten",
+      "familyNames" : "H. van Kerkwijk",
+      "orcidId" : null,
+      "affiliation" : "University of Toronto",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Matthew",
+      "familyNames" : "Brett",
+      "orcidId" : null,
+      "affiliation" : "University of Birmingham",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Allan",
+      "familyNames" : "Haldane",
+      "orcidId" : null,
+      "affiliation" : "Temple University",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Jaime",
+      "familyNames" : "Fernández del Río",
+      "orcidId" : null,
+      "affiliation" : "Google (Switzerland)",
+      "email" : null,
+      "institutionType" : "company",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Mark",
+      "familyNames" : "Wiebe",
+      "orcidId" : "0000-0003-3603-8038",
+      "affiliation" : "Amazon (United States)",
+      "email" : null,
+      "institutionType" : "company",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Pearu",
+      "familyNames" : "Peterson",
+      "orcidId" : "0000-0001-7328-4305",
+      "affiliation" : "Tallinn University of Technology",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Pierre",
+      "familyNames" : "Gérard-Marchant",
+      "orcidId" : null,
+      "affiliation" : "University of Georgia",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Kevin",
+      "familyNames" : "Sheppard",
+      "orcidId" : "0000-0001-8700-2292",
+      "affiliation" : "University of Oxford",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Tyler",
+      "familyNames" : "Reddy",
+      "orcidId" : null,
+      "affiliation" : "Los Alamos National Laboratory",
+      "email" : null,
+      "institutionType" : "facility",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Warren",
+      "familyNames" : "Weckesser",
+      "orcidId" : null,
+      "affiliation" : "University of California, Berkeley",
+      "email" : null,
+      "institutionType" : "education",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Hameer",
+      "familyNames" : "Abbasi",
+      "orcidId" : null,
+      "affiliation" : "Quansight (United States)",
+      "email" : null,
+      "institutionType" : "company",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Christoph",
+      "familyNames" : "Gohlke",
+      "orcidId" : "0000-0001-8108-7707",
+      "affiliation" : "Fluor (United States)",
+      "email" : null,
+      "institutionType" : "company",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    }, {
+      "givenNames" : "Travis",
+      "familyNames" : "E. Oliphant",
+      "orcidId" : null,
+      "affiliation" : "Quansight (United States)",
+      "email" : null,
+      "institutionType" : "company",
+      "openAlexAuthorId" : null,
+      "corresponding" : false
+    } ],
+    "source" : "OPENALEX",
+    "fullText" : null,
+    "downloadUrl" : "https://www.nature.com/articles/s41586-020-2649-2.pdf",
+    "candidateDownloadUrls" : [ "https://arxiv.org/pdf/2006.10256" ]
+  }
+}, {
+  "case" : "real_pmc_xml_parser",
+  "pmcId" : "PMC7759461",
+  "result" : [ ]
+} ]

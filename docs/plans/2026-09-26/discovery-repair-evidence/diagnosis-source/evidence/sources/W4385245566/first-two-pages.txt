@@ -1,0 +1,104 @@
+MizAR 60 for Mizar 50
+Jan Jakubův #
+Czech Technical University in Prague,
+Czech Republic
+Karel Chvalovský #
+Czech Technical University in Prague,
+Czech Republic
+Zarathustra Goertzel
+Czech Technical University in Prague,
+Czech Republic
+Cezary Kaliszyk #
+Universität Innsbruck, Austria
+INDRC, Prague, Czech Republic
+Mirek Olšák
+Institut des Hautes Études Scientifiques,
+Paris, France
+Bartosz Piotrowski #
+Czech Technical University in Prague,
+Czech Republic
+Stephan Schulz
+DHBW Stuttgart, Germany
+Martin Suda #
+Czech Technical University in Prague,
+Czech Republic
+Josef Urban
+Czech Technical University in Prague,
+Czech Republic
+Abstract
+As a present to Mizar on its 50th anniversary, we develop an AI/TP system that automatically
+proves about 60 % of the Mizar theorems in the hammer setting. We also automatically prove 75 %
+of the Mizar theorems when the automated provers are helped by using only the premises used in the
+human-written Mizar proofs. We describe the methods and large-scale experiments leading to these
+results. This includes in particular the E and Vampire provers, their ENIGMA and Deepire learning
+modifications, a number of learning-based premise selection methods, and the incremental loop that
+interleaves growing a corpus of millions of ATP proofs with training increasingly strong AI/TP
+systems on them. We also present a selection of Mizar problems that were proved automatically.
+2012 ACM Subject Classification Theory of computation Ñ Automated reasoning
+Keywords and phrases Mizar, ENIGMA, Automated Reasoning, Machine Learning
+Digital Object Identifier 10.4230/LIPIcs.ITP.2023.19
+Related Version Extended Version: https://doi.org/10.48550/arXiv.2303.06686
+Supplementary Material Software: https://github.com/ai4reason/ATP_Proofs
+Funding The funding for the multi-year development of the methods and for the experiments was
+partially provided by the ERC Consolidator grant AI4REASON no. 649043 (KC, ZG, JJ, BP,
+MS and JU), the European Regional Development Fund under the Czech project AI&Reasoning
+no. CZ.02.1.01/0.0/0.0/15_003/0000466 (KC, ZG, JJ, MO, JU), the ERC Starting Grant SMART
+no. 714034 (JJ, CK, MO), the Czech Science Foundation project 20-06390Y and project RICAIP
+no. 857306 under the EU-H2020 programme (MS), ERC-CZ project POSTMAN no. LL1902 (KC,
+JJ, BP), Amazon Research Awards (JU), the EU ICT-48 2020 project TAILOR no. 952215 (JU),
+and the grant 2018/29/N/ST6/02903 of National Science Center, Poland (BP).
+Acknowledgements The development of ENIGMA, premise selection and other methods used here,
+as well as the large-scale experiments, benefited from many informal discussions which involved
+(at least) Lasse Blaauwbroek, Chad Brown, Thibault Gauthier, Mikoláš Janota, Jelle Piepenbrock,
+Stanisław Purgał, Bob Veroff, and Jiří Vyskočil.
+© Jan Jakubův, Karel Chvalovský, Zarathustra Goertzel, Cezary Kaliszyk, Mirek Olšák, Bartosz
+Piotrowski, Stephan Schulz, Martin Suda, and Josef Urban;
+licensed under Creative Commons License CC-BY 4.0
+14th International Conference on Interactive Theorem Proving (ITP 2023).
+Editors: Adam Naumowicz and René Thiemann; Article No. 19; pp. 19:1–19:22
+Leibniz International Proceedings in Informatics
+Schloss Dagstuhl – Leibniz-Zentrum für Informatik, Dagstuhl Publishing, Germany
+19:2 MizAR 60 for Mizar 50
+1 Introduction: Mizar, MML, Hammers and AITP
+In recent years, methods that combine machine learning (ML), artificial intelligence (AI)
+and automated theorem proving (ATP) [44] have been considerably developed, primarily
+targeting large libraries of formal mathematics developed by the ITP community. This ranges
+from premise selection methods [2] and hammer [7] systems to developing and training
+learning-based internal guidance of ATP systems such as E [47, 49] and Vampire [37] on the
+thousands to millions of problems extracted from the ITP libraries. Such large ITP corpora
+have further enabled research topics such as automated strategy invention [57] and tactical
+guidance [15], learning-based conjecturing [58], autoformalization [34, 61], and development
+of metasystems that combine learning and reasoning in various feedback loops [59].
+Starting with the March 2003 release1 of the MPTP system [54] and the first ML/TP
+and hammer experiments over it [55], the Mizar Mathematical Library [3, 4, 22] (MML) and
+its subsets have as of 2023 been used for twenty years for this research, making it perhaps
+the oldest and most researched AI/TP resource in the last two decades.
+1.1 Contributions
+The last large Mizar40 evaluation [32] of the AI/TP methods over MML was done almost
+ten years ago, on the occasion of 40 years of Mizar. Since then, a number of strong methods
+have been developed in areas such as premise selection and internal guidance of ATPs. In
+this work, we therefore evaluate these methods in a way that can be compared to the Mizar40
+evaluation, providing an overall picture of how far the field has moved. Our main results are:
+1. Over 75 % of the Mizar toplevel lemmas can today be proved by AI/TP systems when the
+premises for the proof can be selected from the library either by a human or a machine.
+This should be compared to 56 % in Mizar40 achieved on the same version of the MML.
+Over 200 examples of the automatically obtained proofs are analyzed on our web page.2
+2. 58.4 % of the Mizar toplevel lemmas can be proved today without any help from the
+users, i.e., in the large-theory (hammering) mode. This should be compared to about
+40.6 % achieved on the same version of the MML in Mizar40. In both cases, this is done
+by a large portfolio of AI/TP methods which is limited to 420 s of CPU time.
+3. Our strongest single AI/TP method alone now proves in 30 s 40 % of the lemmas in the
+hammering mode, i.e., reaching the same strength as the full 420 s portfolio in Mizar40.
+4. Our strongest single AI/TP method now proves in 120 s 60 % of the toplevel lemmas
+in the human-premises (bushy) mode (Section 6.6), i.e., outperforming the union of all
+methods developed in Mizar40 (56 %).
+5. We show that our strongest method transfers to a significantly newer version of the
+MML which contains a lot of new terminology and lemmas. In particular, on the new
+13 370 theorems coming from the new 242 articles in MML version 1382, our strongest
+method outperforms standard E prover by 58.2 %, while this is only 56.1 % on the Mizar40
+version of the library where we do the training and experiments. This is thanks to our
+development and use of anonymous [25] logic-aware ML methods that learn only from
+the structure of mathematical problems. This is unusual in today’s machine learning
+which is dominated by large language models that typically struggle on new terminology.
+1 http://mizar.uwb.edu.pl/forum/archive/0303/msg00004.html
+2 https://github.com/ai4reason/ATP_Proofs

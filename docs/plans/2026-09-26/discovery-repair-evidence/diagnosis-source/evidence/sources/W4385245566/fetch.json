@@ -1,0 +1,19 @@
+{
+  "id": "W4385245566",
+  "title": "Exploiting Generative AI to Scale up Intelligent Tutoring Systems",
+  "doi": "https://doi.org/10.4230/lipics.itp.2023.19",
+  "attempts": [
+    {
+      "url": "https://drops.dagstuhl.de/storage/00lipics/lipics-vol268-itp2023/LIPIcs.ITP.2023.19/LIPIcs.ITP.2023.19.pdf",
+      "final_url": "https://drops.dagstuhl.de/storage/00lipics/lipics-vol268-itp2023/LIPIcs.ITP.2023.19/LIPIcs.ITP.2023.19.pdf",
+      "status": 200,
+      "kind": "pdf"
+    }
+  ],
+  "status": "DOWNLOADED",
+  "path": "/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/audits/2026-09-26-deep-discovery-diagnosis/evidence/sources/W4385245566/source.pdf",
+  "kind": "pdf",
+  "sha256": "82f7e32dc25bd5f25de5e09db4ce5622bc9a115f61b6434d0350e39ef161a1ee",
+  "bytes": 958728,
+  "url": "https://drops.dagstuhl.de/storage/00lipics/lipics-vol268-itp2023/LIPIcs.ITP.2023.19/LIPIcs.ITP.2023.19.pdf"
+}
