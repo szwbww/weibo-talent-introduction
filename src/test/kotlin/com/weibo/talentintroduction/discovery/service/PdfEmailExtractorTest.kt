@@ -61,6 +61,48 @@ class PdfEmailExtractorTest {
     private val extractor = PdfEmailExtractor(restTemplate, plainTextExtractor, properties, passThroughBoundedHttp)
 
     @Test
+    fun `contact entry resolves an opaque mailbox from the original name`() {
+        stubPdfDownload("<p>Jane Doe: r142@university.edu</p>".toByteArray(), MediaType.TEXT_HTML)
+        val result = extractor.extract("https://paper.test/fulltext", listOf(
+            PaperAuthor("Jane", "Doe", "0000-0002", "Lab", true),
+            PaperAuthor("John", "Smith", null, null, false)), "TEST")
+        assertEquals("Jane", result.emails.single().givenNames)
+        assertNotNull(result.emails.single().identityEvidence)
+    }
+
+    @Test
+    fun `sole author and matching mailbox spelling do not prove ownership`() {
+        stubPdfDownload("<p>Contact: jane.doe@university.edu</p>".toByteArray(), MediaType.TEXT_HTML)
+        val result = extractor.extract("https://paper.test/fulltext", listOf(
+            PaperAuthor("Jane", "Doe", "0000-0002", "Lab", true)), "TEST")
+        assertNull(result.emails.single().givenNames)
+        assertNull(result.emails.single().orcidId)
+    }
+
+    @Test
+    fun `published HTML takes the real extractor path without guessing shared notes`() {
+        for (case in sourceOwnershipCases()) {
+            val result = extractOwnershipContent(case.path("html").asText().toByteArray(), MediaType.TEXT_HTML, sourceOwnershipAuthors(case))
+            assertEquals("HTML_FALLBACK", result.methodUsed)
+            for (email in result.emails) {
+                val expected = case.path("expected").path(email.email)
+                if (expected.isNull) assertNull(email.givenNames, email.email)
+                else assertEquals(expected.asText(), "${email.givenNames} ${email.familyNames}")
+            }
+            assertEquals(case.path("expected").size(), result.emails.size)
+        }
+    }
+
+    @Test
+    fun `PDF contact field resolves ownership while bare mailbox remains unresolved`() {
+        val result = extractOwnershipContent(ownershipPdf("Jane Doe: opaque@uni.edu", "thirdparty@uni.edu"),
+            MediaType.APPLICATION_PDF, listOf(PaperAuthor("Jane", "Doe", "real-id", "Lab", true)))
+        assertEquals("PDF_PARSE", result.methodUsed)
+        assertEquals("Jane", result.emails.first { it.email == "opaque@uni.edu" }.givenNames)
+        assertNull(result.emails.first { it.email == "thirdparty@uni.edu" }.givenNames)
+    }
+
+    @Test
     fun `extracts emails from standard PDF`() {
         val pdfBytes = readPdfFixture("pdf/standard.pdf")
         stubPdfDownload(pdfBytes, MediaType.APPLICATION_PDF)
@@ -125,7 +167,7 @@ class PdfEmailExtractorTest {
 
     @Test
     fun `extracts emails from HTML landing page`() {
-        val html = "<html><body>Contact: jane.doe@university.edu</body></html>".toByteArray()
+        val html = "<html><body>Contact: Jane Doe: jane.doe@university.edu</body></html>".toByteArray()
         stubPdfDownload(html, MediaType.TEXT_HTML)
 
         val result = extractor.extract("http://example.com/landing", emptyList(), "TEST")
@@ -355,8 +397,8 @@ class PdfEmailExtractorTest {
     }
 
     @Test
-    fun `binds the unique full-name combination and carries the author identity (I-2)`() {
-        val html = "<html><body>Contact: jane.doe@university.edu</body></html>".toByteArray()
+    fun `explicit full-name contact entry carries the author identity (I-2)`() {
+        val html = "<html><body>Contact: Jane Doe: jane.doe@university.edu</body></html>".toByteArray()
         stubPdfDownload(html, MediaType.TEXT_HTML)
         val authors = listOf(
             PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK", true, openAlexAuthorId = "A5023888391"),
@@ -373,7 +415,7 @@ class PdfEmailExtractorTest {
     }
 
     @Test
-    fun `keeps the sole-author sole-email attribution (I-2)`() {
+    fun `sole-author mailbox without a source name remains unresolved (I-2)`() {
         val html = "<html><body>Contact: single.author@uni.edu</body></html>".toByteArray()
         stubPdfDownload(html, MediaType.TEXT_HTML)
         val authors = listOf(
@@ -383,10 +425,10 @@ class PdfEmailExtractorTest {
         val result = extractor.extract("http://example.com/landing", authors, "TEST")
 
         val email = result.emails.single()
-        assertEquals("Single", email.givenNames)
-        assertEquals("Author", email.familyNames)
-        assertEquals("0000-0009", email.orcidId)
-        assertEquals("A999", email.openAlexAuthorId)
+        assertNull(email.givenNames)
+        assertNull(email.familyNames)
+        assertNull(email.orcidId)
+        assertNull(email.openAlexAuthorId)
     }
 
     @Test

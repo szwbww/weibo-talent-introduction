@@ -13,6 +13,19 @@ class DiscoveryIdentityTest {
         assertFalse(DiscoveryIdentity.allowed(legacy.copy(tags = listOf("discovered"))))
         assertFalse(DiscoveryIdentity.allowed(legacy.copy(emailSource = "PAPER_FULLTEXT")))
     }
+    @Test fun `explicit text source supports bound academic identity`() {
+        val profile = legacy.copy(emailSource = "PAPER_FULLTEXT", identityVerification =
+            DiscoveryIdentity.verified(legacy.email!!, "Jane", "Doe", "SOURCE_SHA256:" + "b".repeat(64), "real-orcid", "A123"))
+        assertTrue(DiscoveryIdentity.allowed(profile))
+        assertFalse(DiscoveryIdentity.allowed(profile.copy(givenNames = "Other")))
+    }
+
+    @Test fun `cache compatibility does not change historical proof version`() {
+        assertEquals(20260925, DiscoveryIdentity.VERSION)
+        assertNotEquals(DiscoveryIdentity.VERSION, DiscoveryIdentity.EXTRACTION_VERSION)
+        assertTrue(DiscoveryIdentity.allowed(verified()))
+    }
+
     @Test fun `proof binds names email and version`() {
         val profile = verified()
         assertTrue(DiscoveryIdentity.allowed(profile))

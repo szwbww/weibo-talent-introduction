@@ -161,7 +161,7 @@ class CoreDataSource(
             val emails = plainTextExtractor.extract(paper.fullText, emptyList())
             if (emails.isNotEmpty()) {
                 return EmailExtractionOutcome(
-                    associateEmails(emails, paper.authors), "FULLTEXT_TEXT", null, httpRequests = 0
+                    SourceAuthorEmailResolver.resolveText(paper.fullText, paper.authors), "FULLTEXT_TEXT", null, httpRequests = 0
                 )
             }
             // fullText had no emails, try PDF if available
@@ -174,24 +174,6 @@ class CoreDataSource(
             return pdfEmailExtractor.extract(paper.downloadUrl, paper.authors, sourceName)
         }
         return EmailExtractionOutcome(emptyList(), emailExtractionMethod, "NO_FULLTEXT")
-    }
-
-    private fun associateEmails(emails: List<String>, authors: List<PaperAuthor>): List<AuthorEmail> {
-        val uniqueEmails = emails.distinct()
-        return uniqueEmails.map { email ->
-            // I-2: CORE 全文本与 PDF 走同一条强证据规则 —— 歧义时保留邮箱线索，但不携带学术身份。
-            val verified = verifiedAuthorFor(email, authors, uniqueEmails.size)
-            if (verified == null) {
-                AuthorEmail(email, null, null, false, null, null)
-            } else {
-                AuthorEmail(
-                    email = email, givenNames = verified.givenNames, familyNames = verified.familyNames,
-                    isCorresponding = verified.isCorresponding, affiliation = verified.affiliation,
-                    orcidId = verified.orcidId, institutionType = verified.institutionType,
-                    openAlexAuthorId = verified.openAlexAuthorId
-                )
-            }
-        }
     }
 
     /** I-1: 一页响应的解析结果。[rawCount] 是原始返回条数（推进 offset 的唯一依据），不是可收录论文数。 */

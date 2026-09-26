@@ -219,6 +219,7 @@ class ExpertDiscoveryService(
 
     private fun snapshotRejectReasons(sourceStats: SourceStats): Map<String, Int> {
         val snapshot = HashMap(sourceStats.failureReasons)
+        sourceStats.filterReasons.forEach { (reason, count) -> snapshot[reason] = count }
         if (sourceStats.emailsRejected > 0) snapshot["EMAIL_INVALID"] = sourceStats.emailsRejected
         if (sourceStats.duplicates > 0) snapshot["DUPLICATE"] = sourceStats.duplicates
         if (sourceStats.dedupErrors > 0) snapshot["DEDUP_ERROR"] = sourceStats.dedupErrors
@@ -984,8 +985,8 @@ class ExpertDiscoveryService(
 
                     val identityReject = identityRejection(authorEmail)
                     if (identityReject != null) {
-                        sourceStats.failureReasons.merge(identityReject, 1) { a, b -> a + b }
-                        sourceStats.emailsRejected++
+                        sourceStats.filterReasons.merge(identityReject, 1) { a, b -> a + b }
+                        sourceStats.filtered++
                         continue
                     }
                     val emailResult = emailValidationService.validate(authorEmail.email)
@@ -1306,8 +1307,8 @@ class ExpertDiscoveryService(
 
             val identityReject = identityRejection(authorEmail)
             if (identityReject != null) {
-                sourceStats.failureReasons.merge(identityReject, 1) { a, b -> a + b }
-                sourceStats.emailsRejected++
+                sourceStats.filterReasons.merge(identityReject, 1) { a, b -> a + b }
+                sourceStats.filtered++
                 continue
             }
             val emailResult = emailValidationService.validate(authorEmail.email)
@@ -1371,7 +1372,7 @@ class ExpertDiscoveryService(
             rawWriteFailed = rawWriteFailed,
             enqueueFailed = enqueueFailed,
             dedupFailed = dedupFailed,
-            failureReasons = snapshotFailureReasons(sourceStats)
+            failureReasons = snapshotRejectReasons(sourceStats)
         )
     }
 
@@ -1602,7 +1603,7 @@ class ExpertDiscoveryService(
                 if (FulltextRequestGate.hostBusyInScope()) {
                     QueuedItemExtraction.HostBusy
                 } else {
-                    val json = objectMapper.writeValueAsString(outcome.copy(identityRuleVersion = DiscoveryIdentity.VERSION))
+                    val json = objectMapper.writeValueAsString(outcome.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION))
                     if (utf8Bytes(json) > extractionMaxBytes) {
                         QueuedItemExtraction.TooLarge
                     } else {
@@ -1643,7 +1644,7 @@ class ExpertDiscoveryService(
         } catch (e: Exception) {
             return QueuedItemConsumption(unrecoverableReason = QUEUE_EXTRACTION_UNREADABLE)
         }
-        if (extraction.identityRuleVersion != DiscoveryIdentity.VERSION) {
+        if (extraction.identityRuleVersion != DiscoveryIdentity.EXTRACTION_VERSION) {
             return QueuedItemConsumption(unrecoverableReason = "IDENTITY_EXTRACTION_VERSION_UNSUPPORTED")
         }
         val identityFactory = try {
@@ -1818,12 +1819,11 @@ class ExpertDiscoveryService(
     }
 
     private fun identityRejection(author: AuthorEmail): String? = when {
-        author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank() ||
-            !DiscoveryIdentity.validEvidence(author.identityEvidence) -> "IDENTITY_UNRESOLVED"
+        author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank() -> "IDENTITY_UNRESOLVED"
         else -> null
     }
 
-    private fun proofFor(author: AuthorEmail) = author.identityEvidence?.takeIf { identityRejection(author) == null }?.let {
+    private fun proofFor(author: AuthorEmail) = author.identityEvidence?.takeIf { identityRejection(author) == null && DiscoveryIdentity.validEvidence(it) }?.let {
         DiscoveryIdentity.verified(author.email, author.givenNames, author.familyNames, it, author.orcidId, author.openAlexAuthorId)
     }
 
@@ -1831,12 +1831,21 @@ class ExpertDiscoveryService(
         sourceName: String, executionId: Long?) {
         val source = existing.source
         val proof = source?.let { DiscoveryIdentity.read(it.path("identityVerification")) }
+        val externalIds = source?.path("externalIds")?.let {
+            if (it.isTextual) try { objectMapper.readTree(it.asText()) } catch (_: Exception) { null } else it
+        }
+        fun conflictingId(stored: String?, incomingId: String?) =
+            !stored.isNullOrBlank() && !incomingId.isNullOrBlank() && stored != incomingId
         val mismatch = source != null && (source.path("givenNames").asText(null) != incoming.givenNames ||
             source.path("familyNames").asText(null) != incoming.familyNames ||
             DiscoveryIdentity.normalizedEmail(source.path("email").asText(null)) != DiscoveryIdentity.normalizedEmail(incoming.email) ||
             (proof?.orcid != null && incoming.orcidId != null && proof.orcid != incoming.orcidId) ||
-            (proof?.openAlexAuthorId != null && incoming.openAlexAuthorId != null && proof.openAlexAuthorId != incoming.openAlexAuthorId))
-        if (mismatch || source == null || proof == null || !DiscoveryIdentity.allowedSource(source)) {
+            (proof?.openAlexAuthorId != null && incoming.openAlexAuthorId != null && proof.openAlexAuthorId != incoming.openAlexAuthorId) ||
+            conflictingId(externalIds?.path("orcid")?.asText(null), incoming.orcidId) ||
+            conflictingId(externalIds?.path("openAlexAuthorId")?.asText(null), incoming.openAlexAuthorId))
+        // A matching retry can recover a missing job without rewriting the profile. The enrichment
+        // worker independently requires bound author IDs; no proof means no academic author query.
+        if (mismatch || source == null || !DiscoveryIdentity.isDiscoverySource(source)) {
             stats.failureReasons.merge(if (mismatch) "IDENTITY_EXISTING_CONFLICT" else "IDENTITY_EXISTING_UNVERIFIED", 1) { a, b -> a + b }
             return
         }
@@ -1880,10 +1889,8 @@ class ExpertDiscoveryService(
     }
 
     private fun promoteDiscoveredToCandidate(esDocId: String, rawDoc: Map<String, Any?>): Boolean {
-        if (!DiscoveryIdentity.allowedMap(rawDoc)) return false
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val now = LocalDateTime.now().format(dateFormatter)
-        if (!DiscoveryIdentity.allowedMap(rawDoc)) return false
         val candidateDoc = rawDoc.toMutableMap().apply {
             put("candidateValidatedAt", now); put("updatedAt", now)
             val existingTags = (get("tags") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
@@ -2766,7 +2773,7 @@ class ExpertDiscoveryService(
         val query = mapOf(
             "query" to mapOf("term" to mapOf("email" to DiscoveryIdentity.normalizedEmail(email))),
             "size" to 1,
-            "_source" to listOf("email", "givenNames", "familyNames", "identityVerification", "externalIds")
+            "_source" to listOf("email", "givenNames", "familyNames", "identityVerification", "externalIds", "emailSource", "tags")
         )
         return try {
             val response = restTemplate.exchange(url, HttpMethod.POST, HttpEntity(query, esHeaders()),

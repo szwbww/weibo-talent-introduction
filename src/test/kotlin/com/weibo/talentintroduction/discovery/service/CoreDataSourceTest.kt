@@ -241,9 +241,9 @@ class CoreDataSourceTest {
     }
 
     @Test
-    fun `extractAuthorEmails binds the unique full-name combination (I-2)`() {
+    fun `extractAuthorEmails binds an explicit full-name contact entry (I-2)`() {
         val paper = corePaper(
-            "Contact: jane.doe@univ.edu",
+            "Contact: Jane Doe: jane.doe@univ.edu",
             listOf(
                 PaperAuthor("John", "Smith", "0000-0001", "Oxford, UK", true, openAlexAuthorId = "A5023888391"),
                 PaperAuthor("Jane", "Doe", "0000-0002", "Cambridge, UK", true, openAlexAuthorId = "A5086928770")
@@ -259,7 +259,7 @@ class CoreDataSourceTest {
     }
 
     @Test
-    fun `extractAuthorEmails keeps the sole-author sole-email attribution (I-2)`() {
+    fun `extractAuthorEmails does not infer sole-author mailbox ownership (I-2)`() {
         val paper = corePaper(
             "Contact: single.author@uni.edu",
             listOf(PaperAuthor("Single", "Author", "0000-0009", "Some Lab", true, openAlexAuthorId = "A999"))
@@ -267,10 +267,34 @@ class CoreDataSourceTest {
 
         val email = dataSource.extractAuthorEmails(paper).emails.single()
 
-        assertEquals("Single", email.givenNames)
-        assertEquals("Author", email.familyNames)
-        assertEquals("0000-0009", email.orcidId)
-        assertEquals("A999", email.openAlexAuthorId)
+        assertNull(email.givenNames)
+        assertNull(email.familyNames)
+        assertNull(email.orcidId)
+        assertNull(email.openAlexAuthorId)
+    }
+
+    @Test
+    fun `CORE source response preserves contact boundaries through parsing`() {
+        stubSearchResponses("""{"totalHits":1,"results":[{"title":"Contacts","yearPublished":2024,
+            "authors":[{"name":"Jane Doe"},{"name":"John Smith"}],
+            "fullText":"Jane Doe: opaque@uni.edu\nJohn Smith\n\nthirdparty@uni.edu"}]}""")
+        val paper = dataSource.searchPapers(PaperSearchCriteria(pageSize = 2)).papers.single()
+        val result = dataSource.extractAuthorEmails(paper)
+        assertEquals("Jane", result.emails.first { it.email == "opaque@uni.edu" }.givenNames)
+        assertNull(result.emails.first { it.email == "thirdparty@uni.edu" }.givenNames)
+        assertNotNull(result.emails.first().identityEvidence)
+    }
+
+    @Test
+    fun `CORE PDF fallback uses the same real contact parser`() {
+        val realPdf = Mockito.mock(PdfEmailExtractor::class.java)
+        Mockito.`when`(realPdf.extract(Mockito.anyString(), Mockito.anyList(), Mockito.anyString(), Mockito.any(), Mockito.any()))
+            .thenAnswer { invocation -> extractOwnershipContent(ownershipPdf("Jane Doe: opaque@uni.edu"),
+                org.springframework.http.MediaType.APPLICATION_PDF, invocation.getArgument(1)) }
+        val core = CoreDataSource(restTemplate, properties, plainTextExtractor, realPdf)
+        val result = core.extractAuthorEmails(corePaper("No email here", listOf(
+            PaperAuthor("Jane", "Doe", null, null, false))).copy(downloadUrl = "https://paper.test/pdf"))
+        assertEquals("Jane", result.emails.single().givenNames)
     }
 
     private fun corePaper(fullText: String, authors: List<PaperAuthor>) =

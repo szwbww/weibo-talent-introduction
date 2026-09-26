@@ -600,11 +600,10 @@ class ExpertIndexWriterService(
     }
 
     fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
-        if (!DiscoveryIdentity.allowedMap(profile)) return false
         val normalizedOrcid = ExpertIdNormalizer.normalize(orcid)
         val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
         val putUrl = "${properties.baseUrl}/$rawIndex/_doc/$normalizedOrcid" +
-            if (profile["identityVerification"] != null) "?op_type=create" else ""
+            if (DiscoveryIdentity.isDiscoveryMap(profile)) "?op_type=create" else ""
         return try {
             restTemplate.exchange(
                 putUrl,

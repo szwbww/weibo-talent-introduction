@@ -54,10 +54,25 @@ class ExpertIndexWriterServiceTest {
     }
 
     @Test
-    fun `new discovery still needs source evidence when entering RAW`() {
+    fun `new discovery without proof enters RAW with atomic create`() {
         val unknown = mapOf<String, Any?>("email" to "a@example.org", "emailSource" to "PAPER_FULLTEXT", "givenNames" to "A", "familyNames" to "B")
-        assertFalse(service.indexToRaw("new", unknown))
-        Mockito.verifyNoInteractions(restTemplate)
+        Mockito.`when`(restTemplate.exchange(Mockito.anyString(), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenReturn(ResponseEntity(mapper.readTree("{}"), HttpStatus.CREATED))
+        assertTrue(service.indexToRaw("new", unknown))
+        Mockito.verify(restTemplate).exchange(eq("https://es.example.com:9200/orcid_info/_doc/NEW?op_type=create"),
+            eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+    }
+
+    @Test
+    fun `proof-free discovery conflict never falls back to overwrite for any discovery marker`() {
+        Mockito.`when`(restTemplate.exchange(Mockito.contains("?op_type=create"), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenThrow(HttpClientErrorException(HttpStatus.CONFLICT))
+        for (marker in listOf(mapOf("emailSource" to "PAPER_FULLTEXT"), mapOf("emailSource" to "ORCID_PUBLIC"), mapOf("tags" to listOf("discovered")))) {
+            val doc = mapOf("email" to "a@example.org", "givenNames" to "Jane", "familyNames" to "Doe") + marker
+            assertFalse(service.indexToRaw("EMAIL-existing", doc))
+        }
+        Mockito.verify(restTemplate, Mockito.times(3)).exchange(Mockito.contains("?op_type=create"), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+        Mockito.verifyNoMoreInteractions(restTemplate)
     }
 
     @Test

@@ -20,6 +20,8 @@ data class IdentityVerification(
 
 object DiscoveryIdentity {
     const val VERSION = 20260925
+    /** Cached extractor output compatibility; independent of persisted proof versions. */
+    const val EXTRACTION_VERSION = 20260926
     private val mapper = jacksonObjectMapper()
     private val sources = listOf("PAPER_FULLTEXT", "ORCID_PUBLIC")
     fun normalizedEmail(email: String?) = email.orEmpty().trim().lowercase(Locale.ROOT)
@@ -28,12 +30,20 @@ object DiscoveryIdentity {
     fun isDiscovery(profile: ExpertProfile) = profile.identityVerification != null ||
         profile.emailSource in sources || profile.tags.orEmpty().contains("discovered")
     fun validEvidence(evidence: String?): Boolean = evidence != null &&
-        evidence.matches(Regex("(?:JATS_SHA256|ORCID_RECORD_SHA256):[0-9a-f]{64}"))
+        evidence.matches(Regex("(?:JATS_SHA256|ORCID_RECORD_SHA256|SOURCE_SHA256):[0-9a-f]{64}"))
     fun verified(email: String, given: String?, family: String?, evidence: String, orcid: String?, authorId: String?) =
         IdentityVerification("VERIFIED", VERSION, normalizedEmail(email), given, family,
             evidence.substringBefore(':'), evidence.substringAfter(':'), orcid, authorId)
 
-    /** Import/enrichment evidence only; outreach and promotion use their configured eligibility rules. */
+    fun isDiscoveryMap(source: Map<String, Any?>): Boolean = source["identityVerification"] != null ||
+        source["emailSource"] in sources || (source["tags"] as? Collection<*>)?.contains("discovered") == true
+
+    fun isDiscoverySource(source: JsonNode): Boolean =
+        (!source.path("identityVerification").isMissingNode && !source.path("identityVerification").isNull) ||
+            source.path("emailSource").asText(null) in sources ||
+            source.path("tags").takeIf { it.isArray }?.any { it.asText() == "discovered" } == true
+
+    /** Bound academic identity only; admission, outreach and promotion do not require this proof. */
     fun allowed(profile: ExpertProfile): Boolean {
         if (!isDiscovery(profile)) return true
         val proof = profile.identityVerification ?: return false

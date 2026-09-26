@@ -76,7 +76,7 @@ class ExpertDiscoveryServiceTest {
     private fun currentExtraction(emails: List<AuthorEmail>, methodUsed: String?, failureReason: String? = null,
         httpRequests: Int = 0, fulltextObtained: Boolean? = null, downloadFailureCategory: String? = null): EmailExtractionOutcome =
         EmailExtractionOutcome(emails, methodUsed, failureReason, httpRequests, fulltextObtained, downloadFailureCategory,
-            com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.VERSION)
+            com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.EXTRACTION_VERSION)
     private lateinit var revalidationService: ExpertRevalidationService
     private lateinit var europePmc: EuropePmcDataSource
     private lateinit var openAlexProvider: ObjectProvider<OpenAlexDataSource>
@@ -360,23 +360,153 @@ class ExpertDiscoveryServiceTest {
         java.net.URLDecoder.decode(url.substringAfter("?q=").substringBefore("&"), "UTF-8")
 
     @Test
-    fun `discovery rejects unproven authors but admits source evidence without a historical blacklist`() {
+    fun `discovery separates missing ownership from invalid email and accepts parsed identity without proof`() {
         val svc = createService()
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC-BLOCK", "Ownership")), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, listOf(
-            AuthorEmail("guess@example.org", "Guess", "Owner", true, null, null),
-            verifiedAuthorEmail("hanlei1974@sina.com", "New", "Name", true, null, null)))
+            AuthorEmail("guess@example.org", null, null, false, null, null),
+            AuthorEmail("invalid@example.org", "Invalid", "Owner", true, null, null),
+            AuthorEmail("hanlei1974@sina.com", "New", "Name", true, null, null)))
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "hanlei1974@sina.com", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "invalid@example.org", EmailValidationResult(0, false))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
         val result = svc.discover(PaperSearchCriteria(), "TEST")
         assertEquals(1, result.stats.indexed)
         assertEquals(1, result.stats.promoted)
-        assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").failureReasons["IDENTITY_UNRESOLVED"])
+        assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").filterReasons["IDENTITY_UNRESOLVED"])
+        assertEquals(1, result.stats.filtered)
+        assertEquals(1, result.stats.emailRejected)
+        assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").emailsValid)
+        val rejectsMethod = ExpertDiscoveryService::class.java.getDeclaredMethod("snapshotRejectReasons", com.weibo.talentintroduction.discovery.domain.SourceStats::class.java)
+        rejectsMethod.isAccessible = true
+        val reasons = rejectsMethod.invoke(svc, result.stats.bySource.getValue("EUROPE_PMC")) as Map<*, *>
+        assertEquals(1, reasons["EMAIL_INVALID"])
+        assertEquals(1, reasons["IDENTITY_UNRESOLVED"])
         assertFalse(result.stats.bySource.getValue("EUROPE_PMC").failureReasons.containsKey("IDENTITY_DELETED_BLOCKED"))
         Mockito.verify(indexWriterService, Mockito.times(1)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+    }
+
+    /** Real ES writer and controlled storage transport, including atomic conflicts and email dedup. */
+    private fun installOwnershipStorage(): MutableMap<String, Map<String, Any?>> {
+        val docs = linkedMapOf<String, Map<String, Any?>>()
+        indexWriterService = ExpertIndexWriterService(restTemplate, esProperties, indexService, objectMapper,
+            Mockito.mock(com.weibo.talentintroduction.expert.service.ExpertPromotionAuditService::class.java),
+            Mockito.mock(com.weibo.talentintroduction.campaign.repository.ExpertContactRepository::class.java))
+        Mockito.doAnswer { invocation ->
+            val url = invocation.getArgument<String>(0)
+            assertTrue(url.endsWith("?op_type=create"), url)
+            if (docs.containsKey(url)) throw HttpClientErrorException(HttpStatus.CONFLICT)
+            @Suppress("UNCHECKED_CAST")
+            val doc = (invocation.getArgument<Any>(2) as HttpEntity<*>).body as Map<String, Any?>
+            docs[url] = doc
+            ResponseEntity.ok(objectMapper.readTree("{}"))
+        }.`when`(restTemplate).exchange(Mockito.anyString(), Mockito.eq(HttpMethod.PUT), Mockito.any(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        Mockito.doAnswer { invocation ->
+            val query = objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>((invocation.getArgument<Any>(2) as HttpEntity<*>).body)
+            val email = query.path("query").path("term").path("email").asText()
+            val matched = docs.entries.firstOrNull { it.value["email"] == email }
+            val hit = matched?.let { mapOf("_id" to it.key.substringAfter("/_doc/").substringBefore('?'), "_source" to it.value) }
+            ResponseEntity.ok(objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(mapOf("hits" to mapOf(
+                "total" to mapOf("value" to if (hit == null) 0 else 1), "hits" to listOfNotNull(hit)))))
+        }.`when`(restTemplate).exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        return docs
+    }
+
+    private fun ownershipEnvelope(paper: PaperMetadata): QueuedItemEnvelope {
+        val json = objectMapper.writeValueAsString(paper)
+        return QueuedItemEnvelope(paper.source, paper.doi ?: "test", "DOI", "PAPER", 1, json, json.toByteArray().size.toLong(), true)
+    }
+
+    @Test
+    fun `published HTML through parser consumer and writer admits two owned emails and zero shared ones`() {
+        val docs = installOwnershipStorage()
+        val svc = createService()
+        var indexed = 0
+        var promoted = 0
+        for (case in sourceOwnershipCases()) {
+            val authors = sourceOwnershipAuthors(case)
+            val parsed = extractOwnershipContent(case.path("html").asText().toByteArray(), org.springframework.http.MediaType.TEXT_HTML, authors)
+            for (email in parsed.emails) DiscoveryMockHelper.stubValidateEmail(emailValidationService, email.email, EmailValidationResult(3, true))
+            val paper = paper("source", "Source block").copy(authors = authors, source = "OPENALEX", doi = case.path("id").asText())
+            val result = svc.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(
+                parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), 12L)
+            assertTrue(result.succeeded)
+            indexed += result.indexedExperts
+            promoted += result.promoted
+            assertFalse(result.failureReasons.containsKey("EMAIL_INVALID"))
+        }
+        assertEquals(2, indexed)
+        assertEquals(2, promoted)
+        assertEquals(4, docs.size)
+        assertEquals(setOf("edward.raff@crowdstrike.com", "raff.edward@umbc.edu"), docs.values.map { it["email"] }.toSet())
+        assertTrue(docs.values.all { it["givenNames"] == "Edward" && it["familyNames"] == "Raff" })
+    }
+
+    @Test
+    fun `PDF and CORE identities can enter without audit proof and missing author IDs never query academics`() {
+        val docs = installOwnershipStorage()
+        val svc = createService()
+        val authors = listOf(PaperAuthor("Jane", "Doe", null, "Lab", true))
+        val pdf = extractOwnershipContent(ownershipPdf("Jane Doe: r01@uni.edu"), org.springframework.http.MediaType.APPLICATION_PDF, authors)
+        val core = CoreDataSource(Mockito.mock(RestTemplate::class.java), CoreProperties(apiKey = "test", requestDelayMs = 0),
+            PlainTextEmailExtractor(), Mockito.mock(PdfEmailExtractor::class.java))
+        val paper = paper("plain", "Contacts").copy(authors = authors, source = "CORE", fullText = "Jane Doe: r02@uni.edu")
+        val outcomes = listOf(pdf, core.extractAuthorEmails(paper))
+        for (parsed in outcomes) {
+            for (email in parsed.emails) DiscoveryMockHelper.stubValidateEmail(emailValidationService, email.email, EmailValidationResult(3, true))
+            val noProof = parsed.copy(emails = parsed.emails.map { it.copy(identityEvidence = null) }, identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
+            val result = svc.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(noProof), null)
+            assertEquals(1, result.indexedExperts)
+            assertEquals(1, result.promoted)
+        }
+        assertEquals(4, docs.size)
+        val noIdProfiles = docs.entries.filter { it.key.contains("/orcid_info/") }.map { (url, value) ->
+            ExpertProfile(orcidId = value["orcidId"] as String, email = value["email"] as String,
+                givenNames = value["givenNames"] as String, familyNames = value["familyNames"] as String,
+                country = null, keyword = null, employment = null, emailSource = "PAPER_FULLTEXT",
+                esDocId = url.substringAfter("/_doc/").substringBefore('?'))
+        }
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        assertTrue(svc.enrichProfiles(noIdProfiles).values.all { it is ProfileEnrichmentOutcome.NoId })
+        Mockito.verifyNoInteractions(openAlex)
+    }
+
+    @Test
+    fun `same-email retry recovers missing job without proof or recreating a deleted candidate`() {
+        val docs = installOwnershipStorage()
+        val svc = createService()
+        val author = PaperAuthor("Jane", "Doe", null, null, false)
+        val parsed = extractOwnershipContent(ownershipPdf("Jane Doe: opaque@uni.edu"), org.springframework.http.MediaType.APPLICATION_PDF, listOf(author))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "opaque@uni.edu", EmailValidationResult(3, true))
+        val payload = objectMapper.writeValueAsString(parsed.copy(emails = parsed.emails.map { it.copy(identityEvidence = null) }, identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION))
+        val envelope = ownershipEnvelope(paper("retry", "Retry").copy(authors = listOf(author)))
+        Mockito.doThrow(IllegalStateException("queue unavailable")).doNothing().`when`(enrichmentJobService)
+            .enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+        assertTrue(svc.consumeQueuedItem(envelope, payload, null).enqueueFailed)
+        docs.keys.filter { it.contains("/orcid_info_candidate/") }.toList().forEach { docs.remove(it) }
+        val before = docs.toMap()
+        val retry = svc.consumeQueuedItem(envelope, payload, null)
+        assertTrue(retry.succeeded)
+        assertEquals(0, retry.indexedExperts)
+        assertEquals(1, retry.duplicateExperts)
+        assertEquals(before, docs)
+        Mockito.verify(enrichmentJobService, Mockito.times(2)).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+        val conflicting = parsed.copy(emails = listOf(parsed.emails.single().copy(givenNames = "Other")), identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
+        val conflict = svc.consumeQueuedItem(envelope, objectMapper.writeValueAsString(conflicting), null)
+        assertEquals(1, conflict.failureReasons["IDENTITY_EXISTING_CONFLICT"])
+        assertEquals(before, docs)
+        Mockito.verify(enrichmentJobService, Mockito.times(2)).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+        // Matching a legacy import must not create a new path into its business-key fallback.
+        val key = docs.keys.single()
+        docs[key] = docs.getValue(key) - "identityVerification" - "emailSource" - "tags"
+        val legacyRetry = svc.consumeQueuedItem(envelope, payload, null)
+        assertEquals(1, legacyRetry.failureReasons["IDENTITY_EXISTING_UNVERIFIED"])
+        Mockito.verify(enrichmentJobService, Mockito.times(2)).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
     }
 
     @Test
@@ -3243,6 +3373,28 @@ class ExpertDiscoveryServiceTest {
         assertEquals(proof, params["identity"])
         assertEquals(mapOf("openAlexAuthorId" to "A9999999999"), params["externalIds"])
         assertTrue(script["source"].toString().contains("ctx.op = 'none'"))
+    }
+
+    @Test
+    fun `PDF source ownership author ID reaches academic lookup with bound audit`() {
+        val svc = createService()
+        val parsed = extractOwnershipContent(ownershipPdf("Test User: opaque@uni.edu"),
+            org.springframework.http.MediaType.APPLICATION_PDF,
+            listOf(PaperAuthor("Test", "User", null, "Lab", true, openAlexAuthorId = "A5023888391"))).emails.single()
+        val proofFor = ExpertDiscoveryService::class.java.getDeclaredMethod("proofFor", AuthorEmail::class.java)
+        proofFor.isAccessible = true
+        val proof = proofFor.invoke(svc, parsed) as com.weibo.talentintroduction.expert.domain.IdentityVerification
+        assertEquals("SOURCE_SHA256", proof.source)
+        val profile = c6Expert("OLD-BUSINESS-KEY", esDocId = "DOC-SOURCE").copy(
+            email = parsed.email, givenNames = parsed.givenNames, familyNames = parsed.familyNames,
+            emailSource = "PAPER_FULLTEXT", identityVerification = proof)
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        Mockito.doReturn(mapOf("A5023888391" to EnrichmentOutcome.NotFound))
+            .`when`(openAlex).batchEnrichByAuthorIds(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        assertEquals(ProfileEnrichmentOutcome.NotFound, svc.enrichProfiles(listOf(profile))["DOC-SOURCE"])
+        Mockito.verify(openAlex).batchEnrichByAuthorIds(eqValue(listOf("A5023888391")), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        Mockito.verify(openAlex, Mockito.never()).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
     }
 
     @Test

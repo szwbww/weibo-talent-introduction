@@ -147,8 +147,7 @@ class PdfEmailExtractor(
      */
     private fun extractFromHtml(bytes: ByteArray, knownAuthors: List<PaperAuthor>): EmailExtractionOutcome {
         val html = String(bytes, StandardCharsets.UTF_8)
-        val text = htmlToVisibleText(html)
-        val emails = associateEmailsWithAuthors(text, knownAuthors)
+        val emails = SourceAuthorEmailResolver.resolveHtml(html, knownAuthors, properties.blacklistPrefixes)
         if (emails.isEmpty()) {
             return EmailExtractionOutcome(
                 emptyList(), "HTML_FALLBACK", "NO_EMAIL_IN_HTML", httpRequests = 1, fulltextObtained = true
@@ -265,15 +264,6 @@ class PdfEmailExtractor(
         return prefix.startsWith("<!doctype html") || prefix.startsWith("<html")
     }
 
-    private fun htmlToVisibleText(html: String): String {
-        return html
-            .replace(Regex("(?is)<script[^>]*>.*?</script>"), " ")
-            .replace(Regex("(?is)<style[^>]*>.*?</style>"), " ")
-            .replace(Regex("<[^>]+>"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-    }
-
     private fun extractEmailsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>): List<AuthorEmail> {
         ByteArrayInputStream(bytes).use { stream ->
             PDDocument.load(stream).use { doc ->
@@ -286,35 +276,9 @@ class PdfEmailExtractor(
         }
     }
 
-    private fun associateEmailsWithAuthors(text: String, knownAuthors: List<PaperAuthor>): List<AuthorEmail> {
-        val emails = plainTextExtractor.extract(text, properties.blacklistPrefixes)
-        if (emails.isEmpty()) return emptyList()
+    private fun associateEmailsWithAuthors(text: String, knownAuthors: List<PaperAuthor>): List<AuthorEmail> =
+        SourceAuthorEmailResolver.resolveText(text, knownAuthors, properties.blacklistPrefixes)
 
-        if (knownAuthors.isEmpty()) {
-            return emails.map { AuthorEmail(it, null, null, false, null, null) }
-        }
-
-        return emails.map { email ->
-            val verified = verifiedAuthorFor(email, knownAuthors, emails.size)
-            if (verified == null) {
-                AuthorEmail(email, null, null, false, null, null)
-            } else {
-                AuthorEmail(
-                    email = email, givenNames = verified.givenNames, familyNames = verified.familyNames,
-                    isCorresponding = verified.isCorresponding, affiliation = verified.affiliation,
-                    orcidId = verified.orcidId, institutionType = verified.institutionType,
-                    openAlexAuthorId = verified.openAlexAuthorId
-                )
-            }
-        }.also { results ->
-            val unmatched = knownAuthors.filter { author ->
-                results.none { r -> r.familyNames == author.familyNames && r.givenNames == author.givenNames }
-            }
-            for (author in unmatched) {
-                log.debug("Could not associate any email with author {} {}", author.givenNames, author.familyNames)
-            }
-        }
-    }
 }
 
 /** c10（I-3）：下载失败的低基数类别词汇表（进入任务 details_json 的 failureReasons）。 */
@@ -342,33 +306,6 @@ internal fun publicFulltextUrl(raw: String?): String? {
         null
     }
 }
-
-/**
- * I-2: 文本挖掘出来的邮箱只有在本地部分同时含「姓」与「名」（完整姓名组合）时才算强证据。
- * 首字母、单姓、单名都不足以绑定学术身份 —— 曾用 `localPart.contains(family.take(1))` 兜底，
- * 会把甲的邮箱绑到乙的 ORCID/作者ID 上。
- */
-internal fun hasStrongEmailNameEvidence(email: String, author: PaperAuthor): Boolean {
-    val localPart = normalizeNameToken(email.substringBefore("@")) ?: return false
-    val family = normalizeNameToken(author.familyNames) ?: return false
-    val given = normalizeNameToken(author.givenNames) ?: return false
-    return localPart.contains(family) && localPart.contains(given)
-}
-
-/**
- * I-2: 邮箱 → 作者的唯一归属。多个作者同时命中（共享首字母、同名、姓氏子串）或证据不足时返回 null：
- * 调用方保留邮箱线索，但不携带任何学术身份。唯一作者且唯一邮箱是明确无歧义、允许的归属。
- */
-internal fun verifiedAuthorFor(email: String, authors: List<PaperAuthor>, emailCount: Int): PaperAuthor? {
-    val matches = authors.filter { hasStrongEmailNameEvidence(email, it) }
-    return matches.singleOrNull() ?: authors.singleOrNull()?.takeIf { emailCount == 1 }
-}
-
-/** 姓名/邮箱本地部分的比较单位：小写字母数字，且至少两个字符（单字符姓名不构成证据）。 */
-private const val MIN_NAME_TOKEN_LENGTH = 2
-
-private fun normalizeNameToken(value: String?): String? =
-    value?.lowercase()?.filter { it.isLetterOrDigit() }?.takeIf { it.length >= MIN_NAME_TOKEN_LENGTH }
 
 private class PdfTooLargeException : RuntimeException()
 

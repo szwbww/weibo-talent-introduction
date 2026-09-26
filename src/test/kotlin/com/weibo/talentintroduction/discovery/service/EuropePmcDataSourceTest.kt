@@ -609,7 +609,7 @@ class EuropePmcDataSourceTest {
     }
 
     @Test
-    fun `extractAuthorEmails reuses search authorEmail when pmcId is null`() {
+    fun `search email without fulltext stays an identity-free clue`() {
         val restTemplate = Mockito.mock(RestTemplate::class.java)
         val dataSource = EuropePmcDataSource(restTemplate, properties)
 
@@ -634,6 +634,11 @@ class EuropePmcDataSourceTest {
         assertNull(outcome.failureReason)
         assertEquals(1, outcome.emails.size)
         assertEquals("alice@mit.edu", outcome.emails[0].email)
+        assertNull(outcome.emails[0].givenNames)
+        assertNull(outcome.emails[0].familyNames)
+        assertNull(outcome.emails[0].affiliation)
+        assertNull(outcome.emails[0].orcidId)
+        assertNull(outcome.emails[0].openAlexAuthorId)
         Mockito.verify(restTemplate, Mockito.never())
             .getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
     }

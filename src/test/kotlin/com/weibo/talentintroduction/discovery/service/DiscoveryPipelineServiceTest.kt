@@ -1155,7 +1155,7 @@ class DiscoveryPipelineServiceTest {
     private fun extractionJson(email: String = "john@ox.ac.uk") = objectMapper.writeValueAsString(
         EmailExtractionOutcome(
             listOf(AuthorEmail(email, "John", "Smith", true, "Oxford", "0000-0002-1825-0097", identityEvidence = "JATS_SHA256:" + "a".repeat(64))), "FULLTEXT",
-            identityRuleVersion = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.VERSION
+            identityRuleVersion = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.EXTRACTION_VERSION
         )
     )
 
@@ -1828,6 +1828,24 @@ class DiscoveryPipelineServiceTest {
     // ==================================================================
     // I-4：先保存抽取结果，再幂等消费
     // ==================================================================
+
+    @Test
+    fun `old saved extraction becomes failed without replaying guessed authors or spending another download`() {
+        val discovery = realDiscoveryService()
+        val h = harnessWithRealDiscovery(discovery)
+        val stream = streamFor(h)
+        stream.cursorState = StreamCursorState.EXHAUSTED
+        val old = objectMapper.readTree(extractionJson()) as com.fasterxml.jackson.databind.node.ObjectNode
+        old.put("identityRuleVersion", com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.VERSION)
+        val job = h.store.seedJob(stream.id, "DOI:old", extractionJson = objectMapper.writeValueAsString(old))
+        launch(h)
+        runWindow(h)
+        assertEquals(QueueJobStatus.FAILED, h.store.jobs[job.id]!!.status)
+        assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", h.store.jobs[job.id]!!.lastError)
+        assertEquals(0L, h.store.pipeline.indexedExperts)
+        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        Mockito.verify(openAlex, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper())
+    }
 
     @Test
     fun `an already-saved extraction is consumed without downloading again (I-4)`() {

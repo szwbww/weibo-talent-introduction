@@ -1,0 +1,83 @@
+[
+  {
+    "id": "2609.21306v1",
+    "url": "https://arxiv.org/html/2609.21306v1",
+    "sourceSha256": "0d004a644bae5f8e5d7bcdb24eb8d8edd6a7930bbfa02bd5369bb4b962ca8719",
+    "html": "<div class=\"ltx_authors\"><span class=\"ltx_creator ltx_role_author\">\n<span class=\"ltx_personname\">Edward Raff\n</span><span class=\"ltx_author_notes\"><span class=\"ltx_author_notes_content\">\n<span class=\"ltx_contact ltx_role_affiliation\"><span class=\"ltx_contact_name\">Affiliation: </span><span id=\"id3\" class=\"ltx_text ltx_font_italic\">CrowdStrike, Inc.</span>, USA\n<br class=\"ltx_break\">edward.raff@crowdstrike.com\n<br class=\"ltx_break\"><span id=\"id4\" class=\"ltx_text ltx_font_italic\">Univ. of Maryland, Baltimore County</span>, USA\n<br class=\"ltx_break\">raff.edward@umbc.edu\n\n</span></span></span></span></div>",
+    "authors": [
+      {
+        "givenNames": "Manu",
+        "familyNames": "Nandan"
+      },
+      {
+        "givenNames": "Michael",
+        "familyNames": "Brautbar"
+      },
+      {
+        "givenNames": "Edward",
+        "familyNames": "Raff"
+      }
+    ],
+    "expected": {
+      "edward.raff@crowdstrike.com": "Edward Raff",
+      "raff.edward@umbc.edu": "Edward Raff"
+    }
+  },
+  {
+    "id": "2609.22795v1",
+    "url": "https://arxiv.org/html/2609.22795v1",
+    "sourceSha256": "ec9716bedbec44c2cf24344da9596d69b74dc268b64a03e7be9bf623eee10717",
+    "html": "<div class=\"ltx_authors\">\n<span class=\"ltx_creator ltx_role_author\">\n<span class=\"ltx_personname\">Xuanyu Huang\n</span></span>\n<span class=\"ltx_author_before\">  </span><span class=\"ltx_creator ltx_role_author\">\n<span class=\"ltx_personname\">Jianqiang Dong\n</span></span>\n<span class=\"ltx_author_before\">  </span><span class=\"ltx_creator ltx_role_author\">\n<span class=\"ltx_personname\">Hang Zhao\n</span><span id=\"id1\" class=\"ltx_note ltx_note_frontmatter ltx_thanks_funding ltx_role_thanks\"><sup class=\"ltx_note_mark\">†</sup><span class=\"ltx_note_outer\"><span class=\"ltx_note_content\"><sup class=\"ltx_note_mark\">†</sup><span class=\"ltx_note_type\">thanks: </span>This work was supported by the National Natural Science Foundation of China under Grant 52407066.</span></span></span><span id=\"id2\" class=\"ltx_note ltx_note_frontmatter ltx_thanks_correspondence ltx_role_thanks\"><sup class=\"ltx_note_mark\">†</sup><span class=\"ltx_note_outer\"><span class=\"ltx_note_content\"><sup class=\"ltx_note_mark\">†</sup><span class=\"ltx_note_type\">thanks: </span>The authors are with the Hong Kong University of Science and Technology (Guangzhou), Guangzhou, China\n(e-mail: xhuang313@connect.hkust-gz.edu.cn; jdong921@connect.hkust-gz.edu.cn; hangzhao@hkust-gz.edu.cn). Hang Zhao is the corresponding author.</span></span></span></span></div>",
+    "authors": [
+      {
+        "givenNames": "Xuanyu",
+        "familyNames": "Huang"
+      },
+      {
+        "givenNames": "Jianqiang",
+        "familyNames": "Dong"
+      },
+      {
+        "givenNames": "Hang",
+        "familyNames": "Zhao"
+      }
+    ],
+    "expected": {
+      "xhuang313@connect.hkust-gz.edu.cn": null,
+      "jdong921@connect.hkust-gz.edu.cn": null,
+      "hangzhao@hkust-gz.edu.cn": null
+    }
+  },
+  {
+    "id": "2609.21983v1",
+    "url": "https://arxiv.org/html/2609.21983v1",
+    "sourceSha256": "2e4804014bbeba79db0f2212cb63bedfc89ac8323fd49e37b65e1000c76287ff",
+    "html": "<div class=\"ltx_authors\">\n<span class=\"ltx_creator ltx_role_author\">\n<span class=\"ltx_personname\">Pengjun Niu\n</span><span class=\"ltx_author_notes\"><span class=\"ltx_author_notes_content\">\n<span class=\"ltx_contact ltx_role_affiliation\"><span class=\"ltx_contact_name\">Affiliation: </span><span id=\"id1\" class=\"ltx_text\" style=\"font-size:90%;\">School of Advanced Manufacturing and Robotics,\nPeking University, Beijing, 100871, China</span>\n</span></span></span></span>\n<span class=\"ltx_author_before\">  </span><span class=\"ltx_creator ltx_role_author\">\n<span class=\"ltx_personname\">Yujia Xie\n</span><span class=\"ltx_author_notes\"><span class=\"ltx_author_notes_content\">\n<span class=\"ltx_contact ltx_role_affiliation\"><span class=\"ltx_contact_name\">Affiliation: </span><span id=\"id2\" class=\"ltx_text\" style=\"font-size:90%;\">School of Advanced Manufacturing and Robotics,\nPeking University, Beijing, 100871, China</span>\n</span></span></span></span>\n<span class=\"ltx_author_before\">  </span><span class=\"ltx_creator ltx_role_author\">\n<span class=\"ltx_personname\">Rui Peng\n</span><span class=\"ltx_author_notes\"><span class=\"ltx_author_notes_content\">\n<span class=\"ltx_contact ltx_role_affiliation\"><span class=\"ltx_contact_name\">Affiliation: </span><span id=\"id3\" class=\"ltx_text\" style=\"font-size:90%;\">Feagine</span>\n</span></span></span></span>\n<span class=\"ltx_author_before\">  </span><span class=\"ltx_creator ltx_role_author\">\n<span class=\"ltx_personname\">Hang Zhao\n</span><span class=\"ltx_author_notes\"><span class=\"ltx_author_notes_content\">\n<span class=\"ltx_contact ltx_role_affiliation\"><span class=\"ltx_contact_name\">Affiliation: </span><span id=\"id4\" class=\"ltx_text\" style=\"font-size:90%;\">IIIS, Tsinghua University</span>\n</span></span></span></span>\n<span class=\"ltx_author_before\">  </span><span class=\"ltx_creator ltx_role_author\">\n<span class=\"ltx_personname\">Ke Liu\n</span><span class=\"ltx_author_notes\"><span class=\"ltx_author_notes_content\">\n<span class=\"ltx_contact ltx_role_affiliation\"><span class=\"ltx_contact_name\">Affiliation: </span><span id=\"id5\" class=\"ltx_text\" style=\"font-size:90%;\">School of Advanced Manufacturing and Robotics,\nPeking University, Beijing, 100871, China</span>\n</span>\n<span class=\"ltx_contact ltx_role_affiliation\"><span class=\"ltx_contact_name\">Affiliation: </span><span id=\"id6\" class=\"ltx_text\" style=\"font-size:90%;\">Research Center for Robotics,\nPeking University, Beijing, 100871, China<sup id=\"id6.1\" class=\"ltx_sup\">*</sup>Equal contribution\n  <sup id=\"id6.2\" class=\"ltx_sup\">†</sup>Corresponding authors<span id=\"id6.3\" class=\"ltx_text ltx_font_typewriter\">hangzhao@tsinghua.edu.cn</span>\n  <span id=\"id6.4\" class=\"ltx_text ltx_font_typewriter\">liuke@pku.edu.cn</span></span>\n</span></span></span></span></div>",
+    "authors": [
+      {
+        "givenNames": "Pengjun",
+        "familyNames": "Niu"
+      },
+      {
+        "givenNames": "Yujia",
+        "familyNames": "Xie"
+      },
+      {
+        "givenNames": "Rui",
+        "familyNames": "Peng"
+      },
+      {
+        "givenNames": "Hang",
+        "familyNames": "Zhao"
+      },
+      {
+        "givenNames": "Ke",
+        "familyNames": "Liu"
+      }
+    ],
+    "expected": {
+      "hangzhao@tsinghua.edu.cn": null,
+      "liuke@pku.edu.cn": null
+    }
+  }
+]

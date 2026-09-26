@@ -149,15 +149,7 @@ class EuropePmcDataSource(
 
         val searchEmails = paper.authors.mapNotNull { author ->
             val email = author.email?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-            AuthorEmail(
-                email = email,
-                givenNames = author.givenNames,
-                familyNames = author.familyNames,
-                isCorresponding = author.isCorresponding,
-                affiliation = author.affiliation,
-                orcidId = author.orcidId,
-                institutionType = author.institutionType
-            )
+            AuthorEmail(email, null, null, false, null, null)
         }
         // Search metadata alone remains an unverified clue; prefer explicit fulltext ownership.
         if (searchEmails.isNotEmpty() && paper.pmcId == null) {
