@@ -104,6 +104,37 @@ class SourceAuthorEmailResolverTest {
         val nested = "<span class='ltx_role_author'><span class='ltx_personname'>John Smith</span>$node</span>"
         assertEquals("Jane", SourceAuthorEmailResolver.resolveHtml(nested, listOf(jane, john)).single().givenNames)
     }
+    @Test fun `normalizes obfuscated contact identically while hashing original entry`() {
+        val original = "Jane Doe: opaque(at)uni.edu"
+        val plain = SourceAuthorEmailResolver.resolveText("Jane Doe: opaque@uni.edu", listOf(jane)).single()
+        val obfuscated = SourceAuthorEmailResolver.resolveText(original, listOf(jane)).single()
+        assertEquals(plain.email, obfuscated.email)
+        assertEquals(plain.givenNames, obfuscated.givenNames)
+        assertEquals("SOURCE_SHA256:" + com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.hash(original),
+            obfuscated.identityEvidence)
+        assertNotEquals(plain.identityEvidence, obfuscated.identityEvidence)
+    }
+    @Test fun `one-line email wrapping claims only its own bounded contact record`() {
+        val original = "Jane Doe: opaque@\nuni.edu"
+        val wrapped = SourceAuthorEmailResolver.resolveText(original, listOf(jane)).single()
+        assertEquals("opaque@uni.edu", wrapped.email)
+        assertEquals("Jane", wrapped.givenNames)
+        assertEquals("SOURCE_SHA256:" + com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.hash(original),
+            wrapped.identityEvidence)
+        val splitParagraph = SourceAuthorEmailResolver.resolveText("Jane Doe: opaque@\n\nuni.edu", listOf(jane))
+        assertTrue(splitParagraph.isEmpty())
+    }
+
+    @Test fun `brace and wrapped source emails remain unbound without explicit same record owner`() {
+        val fixture = jacksonObjectMapper().readTree(
+            requireNotNull(javaClass.getResourceAsStream("/discovery/email-text-recall.json")).use { it.readBytes() })
+        val brace = fixture.path("sourceBrace").path("cases").first().path("text").asText()
+        val braceResults = SourceAuthorEmailResolver.resolveText(brace, listOf(jane))
+        assertEquals(6, braceResults.size)
+        assertTrue(braceResults.all { it.givenNames == null && it.familyNames == null && it.identityEvidence == null })
+        val wrapped = SourceAuthorEmailResolver.resolveText(fixture.path("wrappedSource").path("text").asText(), listOf(jane))
+        assertTrue(wrapped.any { it.email == "kairouz@google.com" && it.givenNames == null && it.identityEvidence == null })
+    }
 }
 
 /** Real PDF/HTML parsing with an HTTP response fixture; only the transport is replaced. */

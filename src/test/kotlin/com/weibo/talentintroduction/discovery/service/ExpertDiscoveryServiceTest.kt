@@ -534,9 +534,27 @@ class ExpertDiscoveryServiceTest {
     fun `legacy extraction cache is rejected before interpreting old author identities`() {
         val svc = createService()
         val envelope = QueuedItemEnvelope("EUROPE_PMC", "old-key", "PMCID", "PAPER", 1, "{}", 2, true)
-        val outcome = svc.consumeQueuedItem(envelope, """{"emails":[],"methodUsed":"FULLTEXT_XML"}""", null)
+        val outcome = svc.consumeQueuedItem(envelope,
+            """{"emails":[],"methodUsed":"FULLTEXT_XML","identityRuleVersion":20260926}""", null)
         assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", outcome.unrecoverableReason)
         Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+    }
+
+    @Test
+    fun `real extracted brace email without owner is rejected before validation or raw write`() {
+        val docs = installOwnershipStorage()
+        val svc = createService()
+        val sourceFixture = objectMapper.readTree(
+            requireNotNull(javaClass.getResourceAsStream("/discovery/email-text-recall.json")).use { it.readBytes() })
+        val source = sourceFixture.path("sourceBrace").path("cases").first().path("text").asText()
+        val parsed = extractOwnershipContent(ownershipPdf(source), org.springframework.http.MediaType.APPLICATION_PDF, emptyList())
+        assertEquals(6, parsed.emails.size)
+        val paper = paper("unbound-brace", "Unbound brace source").copy(authors = emptyList(), source = "CORE")
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper),
+            objectMapper.writeValueAsString(parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+        assertEquals(6, result.failureReasons["IDENTITY_UNRESOLVED"])
+        assertTrue(docs.isEmpty())
+        Mockito.verifyNoInteractions(emailValidationService)
     }
 
     @Test

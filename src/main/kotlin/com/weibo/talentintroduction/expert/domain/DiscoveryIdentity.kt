@@ -21,7 +21,7 @@ data class IdentityVerification(
 object DiscoveryIdentity {
     const val VERSION = 20260925
     /** Cached extractor output compatibility; independent of persisted proof versions. */
-    const val EXTRACTION_VERSION = 20260926
+    const val EXTRACTION_VERSION = 20260927
     private val mapper = jacksonObjectMapper()
     private val sources = listOf("PAPER_FULLTEXT", "ORCID_PUBLIC")
     fun normalizedEmail(email: String?) = email.orEmpty().trim().lowercase(Locale.ROOT)
