@@ -998,6 +998,7 @@ class ExpertDiscoveryService(
                 val authorEmails = orcid.orcidRecordToAuthorEmails(record)
 
                 for (authorEmail in authorEmails) {
+                    stats.refreshGlobalCounts()
                     if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
                         limitReason = DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT
                         break
