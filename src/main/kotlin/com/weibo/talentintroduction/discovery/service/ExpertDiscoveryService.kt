@@ -58,6 +58,16 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Base64
+import java.io.EOFException
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.security.cert.CertificateException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
+import javax.net.ssl.SSLProtocolException
+import java.util.concurrent.ThreadLocalRandom
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
@@ -609,6 +619,7 @@ class ExpertDiscoveryService(
         var batchNumber = 0
         var sourcePapersProcessed = 0
         var consecutiveFailures = 0
+        var openAlexPageAttempts = 0
         var circuitBreakerTripped = false
         var exhausted = false
         var stopReason = DiscoveryStopReason.EXHAUSTED
@@ -653,6 +664,7 @@ class ExpertDiscoveryService(
                 break
             }
 
+            if (source is OpenAlexDataSource) openAlexPageAttempts++
             sourceStats.apiRequests++
 
             var batch: PaperSearchResult? = null
@@ -673,7 +685,23 @@ class ExpertDiscoveryService(
                 break
             } catch (e: HttpStatusCodeException) {
                 val code = e.statusCode.value()
-                if (code == 429 || code == 503) {
+                if (source is OpenAlexDataSource && code == 429) {
+                    // OpenAlex already records response cooling in its request policy; don't wait for Retry-After.
+                    stopReason = DiscoveryStopReason.BUDGET_DEFERRED
+                    break
+                }
+                val retryableOpenAlex = source is OpenAlexDataSource && code in OPENALEX_RETRYABLE_HTTP_STATUS
+                if (retryableOpenAlex && openAlexPageAttempts < OPENALEX_MAX_PAGE_ATTEMPTS) {
+                    log.warn("[{}] 同页重试 {}/{}，异常类型={}", source.sourceName, openAlexPageAttempts,
+                        OPENALEX_MAX_PAGE_ATTEMPTS, e.javaClass.simpleName)
+                    val waitStop = waitForOpenAlexRetry(openAlexPageAttempts, deadline)
+                    if (waitStop != null) {
+                        stopReason = waitStop
+                        break
+                    }
+                    continue
+                }
+                if (source !is OpenAlexDataSource && (code == 429 || code == 503)) {
                     consecutiveFailures++
                     sourceStats.failureReasons.merge("RATE_LIMITED", 1) { a, b -> a + b }
                     if (consecutiveFailures >= 5) {
@@ -687,14 +715,35 @@ class ExpertDiscoveryService(
                     continue
                 }
                 recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
+                log.error("[{}] 搜索失败: attempt={}/{}, 异常类型={}", source.sourceName,
+                    if (source is OpenAlexDataSource) openAlexPageAttempts else 1,
+                    if (source is OpenAlexDataSource) OPENALEX_MAX_PAGE_ATTEMPTS else 1,
+                    e.javaClass.simpleName)
                 stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
             } catch (e: Exception) {
+                if (source is OpenAlexDataSource && isRetryableOpenAlexFailure(e) &&
+                    openAlexPageAttempts < OPENALEX_MAX_PAGE_ATTEMPTS) {
+                    log.warn("[{}] 同页重试 {}/{}，异常类型={}", source.sourceName, openAlexPageAttempts,
+                        OPENALEX_MAX_PAGE_ATTEMPTS, e.javaClass.simpleName)
+                    val waitStop = waitForOpenAlexRetry(openAlexPageAttempts, deadline)
+                    if (waitStop != null) {
+                        stopReason = waitStop
+                        break
+                    }
+                    continue
+                }
                 recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
-                log.error("[{}] 搜索失败: {}", source.sourceName, e.message)
+                log.error("[{}] 搜索失败: attempt={}/{}, 异常类型={}", source.sourceName,
+                    if (source is OpenAlexDataSource) openAlexPageAttempts else 1,
+                    if (source is OpenAlexDataSource) OPENALEX_MAX_PAGE_ATTEMPTS else 1,
+                    e.javaClass.simpleName)
                 stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
             }
+
+            openAlexPageAttempts = 0
+            consecutiveFailures = 0
 
             if (corePage?.windowLimit == true) {
                 // I-4: 分片窗口边界是一次显式事件（不是失败、也不是穷尽）。游标已切到下一分片，
@@ -717,7 +766,6 @@ class ExpertDiscoveryService(
                 persistCheckpoint(next, DiscoveryStopReason.EMPTY_PAGE, false)
                 continue
             }
-            consecutiveFailures = 0
             batchNumber++
 
             val papersBefore = sourceStats.papersSearched
@@ -2013,6 +2061,53 @@ class ExpertDiscoveryService(
         }
         return progressStore.isCancelled(taskType)
     }
+    private fun waitForOpenAlexRetry(attempt: Int, deadline: Instant): String? {
+        var remaining = attempt * 1000L + ThreadLocalRandom.current().nextLong(201L)
+        while (remaining > 0L) {
+            if (progressStore.isCancelled("EXPERT_DISCOVERY")) return DiscoveryStopReason.CANCELLED
+            if (timeBudgetReached(deadline)) return DiscoveryStopReason.TIME_BUDGET
+            val slice = minOf(remaining, 100L)
+            try {
+                Thread.sleep(slice)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return DiscoveryStopReason.CANCELLED
+            }
+            remaining -= slice
+        }
+        return when {
+            progressStore.isCancelled("EXPERT_DISCOVERY") -> DiscoveryStopReason.CANCELLED
+            timeBudgetReached(deadline) -> DiscoveryStopReason.TIME_BUDGET
+            else -> null
+        }
+    }
+
+    private fun isRetryableOpenAlexFailure(error: Throwable): Boolean {
+        val causes = generateSequence(error) { it.cause }.toList()
+        if (causes.any {
+                it is CertificateException || it is SSLPeerUnverifiedException || it is SSLProtocolException ||
+                    it is com.fasterxml.jackson.core.JsonProcessingException ||
+                    it is org.springframework.http.converter.HttpMessageNotReadableException
+            }) return false
+        val handshake = causes.filterIsInstance<SSLHandshakeException>().firstOrNull()
+        if (handshake != null) {
+            return handshake.message?.lowercase(Locale.ROOT)?.contains("remote host terminated the handshake") == true
+        }
+        return causes.any { cause ->
+            when (cause) {
+                is SocketTimeoutException, is ConnectException, is EOFException -> true
+                is SocketException -> cause.message?.lowercase(Locale.ROOT)?.let {
+                    it.contains("reset") || it.contains("aborted") || it.contains("broken pipe")
+                } == true
+                is IOException -> cause.javaClass.simpleName == "ConnectTimeoutException" ||
+                    cause.message?.lowercase(Locale.ROOT)?.let {
+                        it.contains("connection reset") || it.contains("unexpected end of file") ||
+                            it.contains("connection closed")
+                    } == true
+                else -> false
+            }
+        }
+    }
 
     private fun computeEnrichmentBackoffMs(consecutiveRateLimits: Int, retryAfterMs: Long?): Long {
         val exponential = 2000L * (1L shl (consecutiveRateLimits - 1).coerceAtMost(20))
@@ -3174,6 +3269,9 @@ private const val EMAIL_PRIMARY_KEY_PREFIX = "EMAIL-"
 
 /** I-1：OpenAlex 的 `filter=...|...` 每批最多 100 个不同身份。 */
 private const val MAX_ENRICHMENT_IDENTITIES_PER_BATCH = 100
+
+private const val OPENALEX_MAX_PAGE_ATTEMPTS = 3
+private val OPENALEX_RETRYABLE_HTTP_STATUS = setOf(500, 502, 503, 504)
 
 /** I-1（08）：补全入队的失败原因码（与 [DiscoveryStopReason.ENQUEUE_INCOMPLETE] 配对）。 */
 private const val ENRICHMENT_ENQUEUE_FAILED = "ENRICHMENT_ENQUEUE_FAILED"

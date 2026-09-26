@@ -66,6 +66,16 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import javax.net.ssl.SSLHandshakeException
+import java.security.cert.CertificateException
+import java.net.SocketTimeoutException
+import java.util.concurrent.atomic.AtomicReference
 
 class ExpertDiscoveryServiceTest {
 
@@ -264,6 +274,15 @@ class ExpertDiscoveryServiceTest {
         val result = svc.discover(criteria, "TEST")
         Mockito.verify(cursorRepository, Mockito.atLeastOnce()).save(captor.capture())
         return result to captor.allValues
+    }
+    private fun mockOpenAlex(): OpenAlexDataSource {
+        val source = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn("OPENALEX").`when`(source).sourceName
+        Mockito.doReturn("FULLTEXT_XML").`when`(source).emailExtractionMethod
+        Mockito.doReturn(100).`when`(source).maxPapersPerSource
+        Mockito.doReturn(source).`when`(openAlexProvider).getIfAvailable()
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(source, "NO_EMAIL_IN_FULLTEXT")
+        return source
     }
 
     private fun savedCheckpoints(saved: List<DiscoverySourceCursor>, sourceName: String): List<DiscoverySourceCursor> =
@@ -2819,6 +2838,249 @@ class ExpertDiscoveryServiceTest {
         assertEquals("SUCCESS", result.taskFinalStatus)
     }
 
+    @Test
+    fun `OpenAlex remote handshake interruption retries the entering cursor and counts success once`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C1")
+        stubStoredCheckpoint("OPENALEX", "C1", criteria)
+        val openAlex = mockOpenAlex()
+        val requests = mutableListOf<PaperSearchCriteria>()
+        val page = PaperSearchResult(listOf(paper("OA-1", "OpenAlex paper").copy(source = "OPENALEX")), null, 1)
+        Mockito.doAnswer { invocation ->
+            requests += invocation.getArgument(0) as PaperSearchCriteria
+            if (requests.size == 1) {
+                throw ResourceAccessException(
+                    "handshake interrupted",
+                    SSLHandshakeException("Remote host terminated the handshake")
+                )
+            }
+            page
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(listOf("C1", "C1"), requests.map { it.cursor })
+        assertEquals(2, sourceStats?.apiRequests)
+        assertEquals(1, sourceStats?.papersSearched)
+        assertEquals(0, sourceStats?.sourceFailureCount)
+        assertEquals("EXHAUSTED", sourceStats?.stopReason)
+        assertNull(storedCheckpointFor("OPENALEX", criteria).cursor)
+        assertTrue(storedCheckpointFor("OPENALEX", criteria).exhausted)
+        val output = Paths.get("target/discovery-plan-acceptance/02.json")
+        Files.createDirectories(output.parent)
+        Files.write(output, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(mapOf(
+            "fixture" to "openalex-same-page-remote-handshake-retry",
+            "requests" to requests.map { mapOf("source" to "OPENALEX", "cursor" to it.cursor) },
+            "apiRequests" to sourceStats?.apiRequests,
+            "papersSearched" to sourceStats?.papersSearched,
+            "sourceFailureCount" to sourceStats?.sourceFailureCount,
+            "checkpoint" to mapOf("cursor" to storedCheckpointFor("OPENALEX", criteria).cursor,
+                "exhausted" to storedCheckpointFor("OPENALEX", criteria).exhausted),
+            "stopReason" to sourceStats?.stopReason,
+            "taskStatus" to result.taskFinalStatus
+        )))
+    }
+
+    @Test
+    fun `OpenAlex three timeouts fail once and retain the same cursor`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C7")
+        stubStoredCheckpoint("OPENALEX", "C7", criteria)
+        val openAlex = mockOpenAlex()
+        val requests = mutableListOf<PaperSearchCriteria>()
+        Mockito.doAnswer { invocation ->
+            requests += invocation.getArgument(0) as PaperSearchCriteria
+            throw ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(listOf("C7", "C7", "C7"), requests.map { it.cursor })
+        assertEquals(3, sourceStats?.apiRequests)
+        assertEquals(1, sourceStats?.sourceFailureCount)
+        assertEquals(1, sourceStats?.failureReasons?.get("SEARCH_FAILED"))
+        assertEquals(1, result.stats.sourceFailures)
+        assertEquals("C7", storedCheckpointFor("OPENALEX", criteria).cursor)
+        assertFalse(storedCheckpointFor("OPENALEX", criteria).exhausted)
+    }
+
+    @Test
+    fun `OpenAlex retries each approved server status on its same page`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C1")
+        stubStoredCheckpoint("OPENALEX", "C1", criteria)
+        val openAlex = mockOpenAlex()
+        val requests = mutableListOf<PaperSearchCriteria>()
+        val statuses = listOf(500, 502, 503, 504)
+        Mockito.doAnswer { invocation ->
+            val index = requests.size
+            requests += invocation.getArgument(0) as PaperSearchCriteria
+            if (index % 2 == 0) {
+                throw org.springframework.web.client.HttpServerErrorException(HttpStatus.valueOf(statuses[index / 2]))
+            }
+            val next = if (index / 2 == statuses.lastIndex) null else "C${index / 2 + 2}"
+            PaperSearchResult(emptyList(), next, 0)
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(8, requests.size)
+        assertEquals(listOf("C1", "C1", "C2", "C2", "C3", "C3", "C4", "C4"), requests.map { it.cursor })
+        assertEquals(8, sourceStats?.apiRequests)
+        assertEquals(0, sourceStats?.sourceFailureCount)
+        assertEquals("EXHAUSTED", sourceStats?.stopReason)
+    }
+
+    @Test
+    fun `OpenAlex certificate failures and forbidden responses are not retried`() {
+        val cases = listOf(
+            ResourceAccessException(
+                "certificate rejected",
+                java.io.IOException("certificate rejected", CertificateException("certificate rejected"))
+            ),
+            org.springframework.web.client.HttpClientErrorException(HttpStatus.FORBIDDEN)
+        )
+        for ((index, error) in cases.withIndex()) {
+            val svc = createService(ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+            ))
+            val criteria = PaperSearchCriteria(cursor = "C$index")
+            stubStoredCheckpoint("OPENALEX", criteria.cursor, criteria)
+            val openAlex = mockOpenAlex()
+            val calls = AtomicInteger()
+            Mockito.doAnswer {
+                calls.incrementAndGet()
+                throw error
+            }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+            val (result, _) = runAndCapture(svc, criteria)
+
+            assertEquals(1, calls.get())
+            assertEquals(1, result.stats.bySource["OPENALEX"]?.sourceFailureCount)
+            assertEquals(criteria.cursor, storedCheckpointFor("OPENALEX", criteria).cursor)
+            assertFalse(storedCheckpointFor("OPENALEX", criteria).exhausted)
+        }
+    }
+
+    @Test
+    fun `OpenAlex 429 defers without retry or terminal search failure`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C429")
+        stubStoredCheckpoint("OPENALEX", "C429", criteria)
+        val openAlex = mockOpenAlex()
+        val calls = AtomicInteger()
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            throw org.springframework.web.client.HttpClientErrorException(HttpStatus.TOO_MANY_REQUESTS)
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        assertEquals(1, calls.get())
+        assertEquals(1, result.stats.bySource["OPENALEX"]?.apiRequests)
+        assertEquals(DiscoveryStopReason.BUDGET_DEFERRED, result.stats.bySource["OPENALEX"]?.stopReason)
+        assertEquals(0, result.stats.sourceFailures)
+        assertEquals("C429", storedCheckpointFor("OPENALEX", criteria).cursor)
+    }
+
+    @Test
+    fun `OpenAlex retry wait stops at the run deadline before another request`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false,
+            timeBudget = Duration.ofMillis(500)
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C-deadline")
+        stubStoredCheckpoint("OPENALEX", "C-deadline", criteria)
+        val openAlex = mockOpenAlex()
+        val calls = AtomicInteger()
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            throw ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        assertEquals(1, calls.get())
+        assertEquals(DiscoveryStopReason.TIME_BUDGET, result.stats.bySource["OPENALEX"]?.stopReason)
+        assertEquals(0, result.stats.sourceFailures)
+        assertEquals("C-deadline", storedCheckpointFor("OPENALEX", criteria).cursor)
+    }
+
+    @Test
+    fun `OpenAlex retry wait observes cancellation without another request`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C-cancel")
+        stubStoredCheckpoint("OPENALEX", "C-cancel", criteria)
+        val openAlex = mockOpenAlex()
+        val cancelled = AtomicBoolean(false)
+        val firstFailure = CountDownLatch(1)
+        val calls = AtomicInteger()
+        Mockito.doAnswer { cancelled.get() }.`when`(progressStore).isCancelled(Mockito.anyString())
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            firstFailure.countDown()
+            throw ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val resultRef = AtomicReference<DiscoveryResult>()
+        val worker = Thread { resultRef.set(svc.discover(criteria, "TEST")) }
+        worker.start()
+        assertTrue(firstFailure.await(2, TimeUnit.SECONDS), "first page request should fail")
+        Thread.sleep(150)
+        cancelled.set(true)
+        worker.join(3000)
+
+        assertFalse(worker.isAlive)
+        assertEquals(1, calls.get())
+        assertEquals(DiscoveryStopReason.CANCELLED, resultRef.get().stats.bySource["OPENALEX"]?.stopReason)
+        assertEquals("C-cancel", storedCheckpointFor("OPENALEX", criteria).cursor)
+    }
+
+    @Test
+    fun `OpenAlex retry wait restores interruption and exits without another request`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C-interrupt")
+        stubStoredCheckpoint("OPENALEX", "C-interrupt", criteria)
+        val openAlex = mockOpenAlex()
+        val firstFailure = CountDownLatch(1)
+        val calls = AtomicInteger()
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            firstFailure.countDown()
+            throw ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val resultRef = AtomicReference<DiscoveryResult>()
+        val interrupted = AtomicBoolean(false)
+        val worker = Thread {
+            resultRef.set(svc.discover(criteria, "TEST"))
+            interrupted.set(Thread.currentThread().isInterrupted)
+        }
+        worker.start()
+        assertTrue(firstFailure.await(2, TimeUnit.SECONDS), "first page request should fail")
+        Thread.sleep(150)
+        worker.interrupt()
+        worker.join(3000)
+
+        assertFalse(worker.isAlive)
+        assertTrue(interrupted.get(), "retry wait must restore the interrupt flag")
+        assertEquals(1, calls.get())
+        assertEquals(DiscoveryStopReason.CANCELLED, resultRef.get().stats.bySource["OPENALEX"]?.stopReason)
+        assertEquals("C-interrupt", storedCheckpointFor("OPENALEX", criteria).cursor)
+    }
     @Test
     fun `different keywords persist to different checkpoint keys`() {
         // V-2 / A-3: 不同关键词不共用检查点
