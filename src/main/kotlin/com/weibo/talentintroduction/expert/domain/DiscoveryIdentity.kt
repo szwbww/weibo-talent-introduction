@@ -27,7 +27,7 @@ object DiscoveryIdentity {
             "Identity deletion blocklist is missing"
         }
         stream.bufferedReader().use { it.readLines().filter { line -> line.matches(Regex("[0-9a-f]{64}")) }.toSet() }
-            .also { check(it.size == 1923) { "Identity deletion blocklist is incomplete" } }
+            .also { check(it.size == 1919) { "Identity deletion blocklist is incomplete" } }
     }
     fun normalizedEmail(email: String?) = email.orEmpty().trim().lowercase(Locale.ROOT)
     fun hash(text: String): String = MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))

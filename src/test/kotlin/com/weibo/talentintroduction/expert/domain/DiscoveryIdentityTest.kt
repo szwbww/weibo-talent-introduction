@@ -36,4 +36,9 @@ class DiscoveryIdentityTest {
         assertFalse(DiscoveryIdentity.allowed(reviewed.copy(email = "hanlei1974@sina.com",
             identityVerification = reviewed.identityVerification!!.copy(email = "hanlei1974@sina.com"))))
     }
+    @Test fun `four explicitly reviewed source identities are released from the historical deletion blocklist`() {
+        listOf("raff.edward@umbc.edu", "edward.raff@crowdstrike.com", "hangzhao@hkust-gz.edu.cn", "hangzhao@tsinghua.edu.cn")
+            .forEach { assertFalse(DiscoveryIdentity.isBlocked(it)) }
+        assertTrue(DiscoveryIdentity.isBlocked("hanlei1974@sina.com"))
+    }
 }
