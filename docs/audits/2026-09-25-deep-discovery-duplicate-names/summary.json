@@ -1,0 +1,102 @@
+{
+  "kind": "summary",
+  "serverSnapshot": "/opt/talent/backups/deep-discovery-name-audit-20260925-153111",
+  "at": "2026-09-25T15:31:11.331732",
+  "scannedLayers": 102729,
+  "scanExpected": 102729,
+  "layerCounts": {
+    "orcid_info_application": 27,
+    "orcid_info_candidate": 52383,
+    "orcid_info": 50319
+  },
+  "broadUniqueDocs": 52393,
+  "deepDiscoveryUniqueDocs": 50319,
+  "deepSources": {
+    "EUROPE_PMC": 26306,
+    "OPENALEX": 14254,
+    "CORE": 158,
+    "SBIR": 3919,
+    "CROSSREF": 874,
+    "ARXIV": 4037,
+    "ORCID": 771
+  },
+  "deepEmailSources": {
+    "PAPER_FULLTEXT": 45629,
+    "SBIR_PUBLIC_AWARD": 3919,
+    "ORCID_PUBLIC": 771
+  },
+  "supplementaryUniqueDocs": 2074,
+  "supplementarySources": {
+    "MANUAL_TEST": 6,
+    "UNIVERSITY_FACULTY_DIRECTORY": 919,
+    "IET_WILEY": 1,
+    "SUBOPTIC_2019": 4,
+    "SUBOPTIC_2016": 1,
+    "CIGRE": 2,
+    "JICABLE_2019": 3,
+    "CIGRE_2023": 3,
+    "JICABLE_2023": 2,
+    "CONTACTOUT_VISIBLE": 335,
+    "APOLLO_ENTERPRISE_RND": 788,
+    "NKT_OFFICIAL": 3,
+    "UJ_CONSORTIUM": 1,
+    "JICABLE": 1,
+    "CORNING_SUBOPTIC_2023": 1,
+    "IEEE_2023": 1,
+    "MDPI_ENERGIES": 1,
+    "JICABLE_2015": 1,
+    "NKT_AND_PATENT": 1
+  },
+  "emptyNameDocs": 8089,
+  "emptyEmailDocs": 0,
+  "duplicateNameGroups": 3182,
+  "duplicateNameDocs": 7637,
+  "duplicateNameEmails": 7637,
+  "samePaperNameGroups": 2318,
+  "samePaperDoiNamePairs": 2349,
+  "samePaperNameDocs": 5232,
+  "riskDocsWithSent": 174,
+  "crossLayerIdentityConflicts": 0,
+  "xmlPapersInDuplicateGroups": 3257,
+  "strictDuplicateNameGroups": 3151,
+  "strictDuplicateNameEmails": 7562,
+  "verificationCounts": {
+    "AMBIGUOUS_OR_UNMAPPED_EMAIL": 1244,
+    "MATCH": 2847,
+    "CONFIRMED_OTHER_AUTHOR": 2102,
+    "NO_PMC_XML_REFERENCE": 1417,
+    "XML_UNAVAILABLE": 27
+  },
+  "newConfirmedWrong": 2102,
+  "newConfirmedWrongSources": {
+    "EUROPE_PMC": 1961,
+    "OPENALEX": 141
+  },
+  "newConfirmedWrongEvidenceMethods": {
+    "XML_EXPLICIT_FULLNAME": 916,
+    "XML_CONTRIBUTOR_INFORMATION": 176,
+    "XML_EXPLICIT_INITIALS": 937,
+    "XML_EXPLICIT_FULLNAME_EMAIL_LIST": 2,
+    "XML_EXPLICIT_FULLNAME+XML_UNIQUE_XREF": 14,
+    "XML_DIRECT+XML_EXPLICIT_FULLNAME": 6,
+    "XML_DIRECT": 44,
+    "XML_DIRECT+XML_EXPLICIT_FULLNAME_EMAIL_LIST": 1,
+    "XML_UNIQUE_XREF": 4,
+    "XML_DIRECT+XML_EXPLICIT_FULLNAME+XML_UNIQUE_XREF": 1,
+    "XML_CONTRIBUTOR_INFORMATION+XML_EXPLICIT_FULLNAME": 1
+  },
+  "newConfirmedWrongWithSentMail": 13,
+  "newConfirmedWrongSentMails": 15,
+  "xmlAvailablePapers": 3519,
+  "allMemberMappedSamePaperGroups": 43,
+  "previouslyRestoredIdsInNewWrongList": 0,
+  "generatedAt": "2026-09-25T17:20:26.152446",
+  "liveVerification": {
+    "at": "2026-09-25T17:20:58.582399",
+    "counts": {
+      "STILL_WRONG": 2102
+    }
+  },
+  "pendingIdentityVerification": 2688,
+  "requestedPmcPapers": 3533
+}

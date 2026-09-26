@@ -17,6 +17,11 @@ class MailInboxCursorService(
 ) {
     private val log = LoggerFactory.getLogger(MailInboxCursorService::class.java)
 
+    fun initializeIfAbsent(accountCode: String, position: InboxPosition) {
+        require(position.uidValidity > 0 && position.lastUid >= 0) { "Invalid IMAP inbox position" }
+        repository.initializeIfAbsent(accountCode, position.uidValidity, position.lastUid)
+    }
+
     fun get(accountCode: String): CursorState {
         val row = repository.findBySenderAccountCode(accountCode)
         return CursorState(

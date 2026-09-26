@@ -95,6 +95,45 @@ class ImapMetadataFetchIT {
         )
 
     @Test
+    fun `initial inbox position reads only mailbox metadata and uses UID not message count`() {
+        server.addBox("user1", "pw", 901L,
+            listOf(server.mail(42L, "old", "must not be read", 0)))
+        val position = service(true).currentInboxPosition(account(server.port()))
+        assertEquals(InboxPosition(901L, 42L), position)
+        assertTrue(server.commandLog().any { it.contains("EXAMINE ") })
+        assertTrue(server.commandLog().none { it.contains("FETCH ") || it.contains("STORE ") })
+    }
+
+    @Test
+    fun `empty inbox baseline retains generation and zero UID`() {
+        server.addBox("user1", "pw", 902L, emptyList())
+        assertEquals(InboxPosition(902L, 0L), service(true).currentInboxPosition(account(server.port())))
+    }
+
+    @Test
+    fun `mail after initial snapshot remains eligible while old mail is skipped`() {
+        val old = server.mail(42L, "old", "old body", 0)
+        server.addBox("user1", "pw", 903L, listOf(old))
+        val receiver = service(true)
+        val position = receiver.currentInboxPosition(account(server.port()))
+        server.addBox("user1", "pw", 903L, listOf(old, server.mail(44L, "new", "new body", 0)))
+        val result = receiver.fetchInboundSince(account(server.port()), position.lastUid, 10)
+        assertEquals(listOf(44L), result.mails.map { it.imapUid })
+    }
+
+    @Test
+    fun `bounce scan does not read historical MIME and rejects generation change`() {
+        server.addBox("user1", "pw", 904L,
+            listOf(server.mail(42L, "old", "must not be read", 0)))
+        val receiver = service(true)
+        assertTrue(receiver.fetchUnseenMessages(account(server.port()), afterUid = 42L, expectedUidValidity = 904L).isEmpty())
+        assertTrue(server.commandLog().none { it.contains("BODY") || it.contains("RFC822") })
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
+            receiver.fetchUnseenMessages(account(server.port()), afterUid = 42L, expectedUidValidity = 905L)
+        }
+    }
+
+    @Test
     fun `metadata mode fetches 19 and 20 attachment envelopes completely without any attachment content fetch`() {
         metadataServer()
         val box = server.addBox(
@@ -694,7 +733,7 @@ class MetadataFixtureServer : AutoCloseable {
                             writeLine(writer, "* ${current.messages.size} EXISTS")
                             writeLine(writer, "* 0 RECENT")
                             writeLine(writer, "* OK [UIDVALIDITY ${current.uidValidity}] UIDVALIDITY")
-                            writeLine(writer, "* OK [UIDNEXT ${current.messages.size + 1}] Predicted next UID")
+                            writeLine(writer, "* OK [UIDNEXT ${(current.messages.maxOfOrNull { it.fixture.uid } ?: 0L) + 1}] Predicted next UID")
                             ok(writer, tag, "EXAMINE completed")
                         }
                     } else if (command.startsWith("UID FETCH ") || command.startsWith("FETCH ")) {

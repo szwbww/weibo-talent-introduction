@@ -174,7 +174,8 @@ class AutoMailReplyServiceTest {
             Mockito.anyList(),
             Mockito.nullable(Long::class.java)
         )).thenReturn(emptyList())
-        Mockito.`when`(cursorService.get(Mockito.anyString())).thenReturn(CursorState(null, 0L))
+        // Existing-mailbox fixtures have already initialized an empty inbox.
+        Mockito.`when`(cursorService.get(Mockito.anyString())).thenReturn(CursorState(1L, 0L))
         Mockito.`when`(
             cursorService.resolveStart(
                 anyValue(CursorState(null, 0L)),
@@ -185,6 +186,53 @@ class AutoMailReplyServiceTest {
                 val currentUidValidity = invocation.getArgument<Long>(1)
                 if (stored.uidValidity != null && stored.uidValidity != currentUidValidity) 0L else stored.lastUid
             }
+    }
+
+    @Test
+    fun `first poll initializes owner without fetching or processing history`() {
+        val owner = account("owner")
+        Mockito.`when`(accountService.getAutoReceiveAccount("alias")).thenReturn(owner)
+        Mockito.`when`(cursorService.get("owner")).thenReturn(CursorState(null, 0L))
+        Mockito.`when`(receiveService.currentInboxPosition(owner)).thenReturn(InboxPosition(81L, 250L))
+
+        val result = service.receiveAndAutoReply("alias", 5)
+
+        assertEquals(AutoMailReplyBatchResult(0, 0, 0, 0), result)
+        Mockito.verify(cursorService).initializeIfAbsent("owner", InboxPosition(81L, 250L))
+        Mockito.verify(receiveService).currentInboxPosition(owner)
+        Mockito.verifyNoMoreInteractions(receiveService)
+        Mockito.verifyNoInteractions(bounceCollectionService, deliveryService, mailRecordRepository,
+            inboundMailProcessingRepository)
+    }
+
+    @Test
+    fun `failed inbox snapshot cannot fall back to old mail or persist baseline`() {
+        val owner = account("owner")
+        Mockito.`when`(accountService.getAutoReceiveAccount("owner")).thenReturn(owner)
+        Mockito.`when`(cursorService.get("owner")).thenReturn(CursorState(null, 0L))
+        Mockito.`when`(receiveService.currentInboxPosition(owner)).thenThrow(IllegalStateException("offline"))
+
+        assertThrows(IllegalStateException::class.java) { service.receiveAndAutoReply("owner", 5) }
+
+        Mockito.verify(cursorService).get("owner")
+        Mockito.verifyNoMoreInteractions(cursorService)
+        Mockito.verify(receiveService).currentInboxPosition(owner)
+        Mockito.verifyNoMoreInteractions(receiveService)
+    }
+
+    @Test
+    fun `initialized empty inbox fetches first new message instead of resetting baseline`() {
+        val owner = account("owner")
+        Mockito.`when`(accountService.getAutoReceiveAccount("owner")).thenReturn(owner)
+        Mockito.`when`(cursorService.get("owner")).thenReturn(CursorState(81L, 0L))
+        Mockito.`when`(receiveService.fetchInboundSince(owner, 0L, 5))
+            .thenReturn(inboundFetch(emptyList(), uidValidity = 81L))
+
+        service.receiveAndAutoReply("owner", 5)
+
+        Mockito.verify(receiveService, Mockito.never()).currentInboxPosition(owner)
+        Mockito.verify(receiveService).fetchInboundSince(owner, 0L, 5)
+        Mockito.verify(bounceCollectionService).collectBounces(owner, 0L, 81L)
     }
 
     private fun defaultPromotionStubs(contact: ExpertContact) {
@@ -250,7 +298,7 @@ class AutoMailReplyServiceTest {
             anyValue(LocalDateTime.now())
         )
         inOrder.verify(receiveService).markSeen(account, bounceMail.imapUid)
-        inOrder.verify(bounceCollectionService).collectBounces(account)
+        inOrder.verify(bounceCollectionService).collectBounces(account, 0L, 1L)
         inOrder.verify(bounceRateMonitorService).checkAndWarn("sender")
         Mockito.verify(expertEmailAliasService, Mockito.never())
             .findContactByEmailOrAlias("mailer-daemon@example.com")
@@ -298,7 +346,7 @@ class AutoMailReplyServiceTest {
         service.receiveAndAutoReply("sender", 5)
 
         inOrder.verify(receiveService).fetchInboundSince(account, 0L, 5)
-        inOrder.verify(bounceCollectionService).collectBounces(account)
+        inOrder.verify(bounceCollectionService).collectBounces(account, 0L, 1L)
         inOrder.verify(bounceRateMonitorService).checkAndWarn("sender")
     }
 

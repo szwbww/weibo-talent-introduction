@@ -1,0 +1,122 @@
+{
+  "01": [
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt",
+      "批量取每邮箱最新有效原始记录；单邮箱查询复用同一判据"
+    ],
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchEmailVerificationService.kt",
+      "只读规范化/分块查询 helper"
+    ],
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt",
+      "保留策略纳入 PASS risky/unknown"
+    ],
+    [
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepositoryIT.kt",
+      "真实 MySQL 最新结果、边界、清理后查询测试"
+    ],
+    [
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchEmailVerificationServiceTest.kt",
+      "规范化、500 分块、零 HTTP/零写测试"
+    ],
+    [
+      "src/test/kotlin/com/weibo/talentintroduction/task/service/TaskRetentionMigrationTest.kt",
+      "保留判据回归"
+    ]
+  ],
+  "02": [
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendTaskConfig.kt",
+      "entity/view/create/update 新字段"
+    ],
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt",
+      "snapshot/scope/toExecutionSnapshot 新字段"
+    ],
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigService.kt",
+      "create/update/legacy/view 全链传递"
+    ],
+    [
+      "src/main/resources/db/migration/V142__add_exclude_verified_unavailable_emails.sql",
+      "一个布尔列，存量默认 false"
+    ],
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt",
+      "预估、新目标、重试、材料提醒共同过滤"
+    ],
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/service/OutreachTargetIterator.kt",
+      "原始页判末页后批量过滤；取消响应"
+    ],
+    [
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskConfigServiceTest.kt",
+      "默认、合并、legacy 保留"
+    ],
+    [
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt",
+      "双来源、材料地址、预估、额度及副作用测试"
+    ],
+    [
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/service/OutreachTargetIteratorTest.kt",
+      "整页过滤不提前结束、数据收缩及取消"
+    ],
+    [
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt",
+      "V141→V142 存量默认/新列实际写读；最新版本断言更新"
+    ]
+  ],
+  "03": [
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt",
+      "ErrorCodes 中显式局部/全局分类，不改 HTTP 映射"
+    ],
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt",
+      "新增 EMAIL_VERIFICATION_DEFERRED 原因及中文标签"
+    ],
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt",
+      "局部错误跳过并继续；全局错误继续终止"
+    ],
+    [
+      "src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt",
+      "旧 runtime 全局错误即使 PARTIAL_SUCCESS 仍暂停"
+    ],
+    [
+      "src/main/resources/static/app.js",
+      "按落库暂缓原因展示文案；验证异常总计"
+    ],
+    [
+      "src/main/resources/static/index.html",
+      "两个发送前验证提示语同步"
+    ],
+    [
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt",
+      "局部继续/全局停止/审计失败矩阵"
+    ],
+    [
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlServiceTest.kt",
+      "旧 runtime 与现代执行入口区别"
+    ],
+    [
+      "src/test/js/batchEmailVerification.test.js",
+      "暂缓与历史 ERROR 展示回归"
+    ]
+  ],
+  "04": [
+    [
+      "src/main/resources/static/index.html",
+      "两个过滤区新增开关"
+    ],
+    [
+      "src/main/resources/static/app.js",
+      "新建/编辑/来源/预估/确认/差异/历史快照贯通"
+    ],
+    [
+      "src/test/js/batchEmailVerification.test.js",
+      "真实 DOM 与全链行为断言"
+    ]
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "total": 2688,
+  "counts": {
+    "MATCH": 571,
+    "UNRESOLVED": 1924,
+    "CONFIRMED_OTHER_AUTHOR": 193
+  },
+  "bySource": {
+    "ARXIV": {
+      "UNRESOLVED": 109,
+      "MATCH": 57
+    },
+    "CORE": {
+      "UNRESOLVED": 78
+    },
+    "CROSSREF": {
+      "UNRESOLVED": 15
+    },
+    "EUROPE_PMC": {
+      "MATCH": 343,
+      "UNRESOLVED": 612,
+      "CONFIRMED_OTHER_AUTHOR": 73
+    },
+    "OPENALEX": {
+      "UNRESOLVED": 1104,
+      "CONFIRMED_OTHER_AUTHOR": 120,
+      "MATCH": 32
+    },
+    "ORCID": {
+      "MATCH": 10
+    },
+    "SBIR": {
+      "MATCH": 129,
+      "UNRESOLVED": 6
+    }
+  },
+  "wrongWithSentMail": 4,
+  "wrongSentMailCount": 5,
+  "legacyBusinessIdsInWrong": 40,
+  "unresolvedByReason": {
+    "XML_RECHECK": 698,
+    "NO_XML": 1217,
+    "CROSS_AWARD_NAME_VARIANTS_OR_CONFLICT": 6,
+    "ARXIV_SOURCE_ATTRIBUTION_NEEDS_REVIEW": 3
+  }
+}

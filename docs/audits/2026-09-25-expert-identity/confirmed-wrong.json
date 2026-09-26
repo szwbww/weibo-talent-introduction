@@ -1,0 +1,1646 @@
+[
+  {
+    "kind": "risk",
+    "id": "EMAIL-b60a62182f640d2f952",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "a.siddharth.in@gmail.com",
+    "name": "David Vlahov",
+    "doi": "10.1007/s11524-020-00438-6",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-06-28 02:40:58",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 229,
+        "email": "a.siddharth.in@gmail.com",
+        "contactName": "David Vlahov",
+        "sent": 2,
+        "inbound": 0,
+        "firstSent": "2026-06-28 08:00:45",
+        "lastSent": "2026-09-18 17:08:28"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Siddharth Agarwal",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://ysph.yale.edu/news-article/slum-health-arresting-covid-19-and-improving-well-being-in-urban-informal-settlements/",
+    "sentGreetings": [
+      {
+        "mailId": 245,
+        "sentAt": "2026-06-28 08:00:45",
+        "greeting": "Dear Professor,"
+      },
+      {
+        "mailId": 5498,
+        "sentAt": "2026-09-18 17:08:28",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-d2e7dcc8a193c780b99",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "aamousavi@gmail.com",
+    "name": "Sajjad Abbasi",
+    "doi": "10.1371/journal.pone.0333572",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-09 01:00:58",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 767,
+        "email": "aamousavi@gmail.com",
+        "contactName": "Sajjad Abbasi",
+        "sent": 2,
+        "inbound": 0,
+        "firstSent": "2026-06-30 12:25:05",
+        "lastSent": "2026-09-16 17:53:01"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Ali Akbar Moosavi",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13241006/",
+    "pmcId": "PMC13241006",
+    "sentGreetings": [
+      {
+        "mailId": 814,
+        "sentAt": "2026-06-30 12:25:05",
+        "greeting": "Dear Professor,"
+      },
+      {
+        "mailId": 4914,
+        "sentAt": "2026-09-16 17:53:01",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-2e7289af4c7ae3b3f54",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "afnkazemi@gmail.com",
+    "name": "Ali-Reza Babapour",
+    "doi": "10.1186/s12912-022-00852-y",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-07-03 02:22:31",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 1503,
+        "email": "afnkazemi@gmail.com",
+        "contactName": "Ali-Reza Babapour",
+        "sent": 2,
+        "inbound": 0,
+        "firstSent": "2026-07-03 08:00:29",
+        "lastSent": "2026-09-20 17:48:03"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Azita Fathnezhad-Kazemi",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8968092/",
+    "sentGreetings": [
+      {
+        "mailId": 1576,
+        "sentAt": "2026-07-03 08:00:29",
+        "greeting": "Dear Professor,"
+      },
+      {
+        "mailId": 6044,
+        "sentAt": "2026-09-20 17:48:03",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-0df093857d68797eed1",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "alan.ywlin@gmail.com",
+    "name": "Andrea Tipold",
+    "doi": "10.3389/fvets.2026.1808718",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:00:52",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 594,
+        "email": "alan.ywlin@gmail.com",
+        "contactName": "Andrea Tipold",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-06-30 08:08:53",
+        "lastSent": "2026-06-30 08:08:53"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Yu-Wei Lin",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13269065/",
+    "pmcId": "PMC13269065",
+    "sentGreetings": [
+      {
+        "mailId": 638,
+        "sentAt": "2026-06-30 08:08:53",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-8fe9fa5f014dd8ac9e3",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "amitai.armon@intel.com",
+    "name": "Ravid Shwartz-Ziv",
+    "doi": "10.1016/j.inffus.2021.11.011",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 02:26:30",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5844,
+        "email": "amitai.armon@intel.com",
+        "contactName": "Ravid Shwartz-Ziv",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 01:33:06",
+        "lastSent": "2026-09-25 01:33:06"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Amitai Armon",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://workshops.inf.ed.ac.uk/nips2016-ai4datasci/papers/NIPS2016-AI4DataSci_paper_2.pdf",
+    "sentGreetings": [
+      {
+        "mailId": 7138,
+        "sentAt": "2026-09-25 01:33:06",
+        "greeting": "Dear Dr. Shwartz-Ziv,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-a4ccd6090a049697509",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "angelomontana49@gmail.com",
+    "name": "Margherita Neri",
+    "doi": "10.3389/fphar.2026.1884873",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:00:52",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 593,
+        "email": "angelomontana49@gmail.com",
+        "contactName": "Margherita Neri",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-06-30 08:08:49",
+        "lastSent": "2026-06-30 08:08:49"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Angelo Montana",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13270177/",
+    "pmcId": "PMC13270177",
+    "sentGreetings": [
+      {
+        "mailId": 637,
+        "sentAt": "2026-06-30 08:08:49",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "0009-0000-6790-7203",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "datta_madamwar@yahoo.com",
+    "name": "Avani Bharatkumar Patel",
+    "doi": "10.3389/fmicb.2020.562813",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-08-19 02:19:47",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 2607,
+        "email": "datta_madamwar@yahoo.com",
+        "contactName": "Avani Bharatkumar Patel",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-02 07:01:41",
+        "lastSent": "2026-09-02 07:01:41"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Datta Madamwar",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://www.spuvvn.edu/team/dr-datta-madamwar/",
+    "sentGreetings": [
+      {
+        "mailId": 2811,
+        "sentAt": "2026-09-02 07:01:41",
+        "greeting": "Dear Professor Bharatkumar Patel,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-8d35a4836d37d9af38c",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "doubleyingtao@gmail.com",
+    "name": "Lei Wang",
+    "doi": "10.3389/fimmu.2026.1856481",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:07:48",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 513,
+        "email": "doubleyingtao@gmail.com",
+        "contactName": "Lei Wang",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-06-30 08:03:20",
+        "lastSent": "2026-06-30 08:03:20"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Tao Han",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13268918/",
+    "pmcId": "PMC13268918",
+    "sentGreetings": [
+      {
+        "mailId": 557,
+        "sentAt": "2026-06-30 08:03:20",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-1c6a239e769938a8688",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "etelvina.gandara@gmail.com",
+    "name": "Marko Gómez-Hernández",
+    "doi": "10.3390/jof12060397",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-28 02:05:21",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 615,
+        "email": "etelvina.gandara@gmail.com",
+        "contactName": "Marko Gómez-Hernández",
+        "sent": 2,
+        "inbound": 0,
+        "firstSent": "2026-06-30 08:10:04",
+        "lastSent": "2026-09-18 18:07:41"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Etelvina Gándara",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13302147/",
+    "pmcId": "PMC13302147",
+    "sentGreetings": [
+      {
+        "mailId": 659,
+        "sentAt": "2026-06-30 08:10:04",
+        "greeting": "Dear Professor,"
+      },
+      {
+        "mailId": 5574,
+        "sentAt": "2026-09-18 18:07:41",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-14318840d82b7fe58f2",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "hanan89md@gmail.com",
+    "name": "Omar Alzakholi",
+    "doi": "10.38094/jastt1219",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 02:55:35",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5833,
+        "email": "hanan89md@gmail.com",
+        "contactName": "Omar Alzakholi",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 01:20:46",
+        "lastSent": "2026-09-25 01:20:46"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Hanan M. Shukur",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://jastt.org/index.php/jasttpath/article/download/19/8/72",
+    "sentGreetings": [
+      {
+        "mailId": 7127,
+        "sentAt": "2026-09-25 01:20:46",
+        "greeting": "Dear Dr. Alzakholi,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-61ced8d795a25b53cb5",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "hemadate@iimmumbai.ac.in",
+    "name": "Minati Rath",
+    "doi": "10.1140/epjqt/s40507-024-00285-3",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-17 02:39:12",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5892,
+        "email": "hemadate@iimmumbai.ac.in",
+        "contactName": "Minati Rath",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 13:02:23",
+        "lastSent": "2026-09-25 13:02:23"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Hema Date",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://iimmumbai.ac.in/faculty/profile/46",
+    "sentGreetings": [
+      {
+        "mailId": 7188,
+        "sentAt": "2026-09-25 13:02:23",
+        "greeting": "Dear Dr. Rath,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-095611632371e975ce1",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "hsy@knu.ac.kr",
+    "name": "Hyun-Sik Yun",
+    "doi": "10.3389/fbioe.2021.774143",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 02:45:05",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5837,
+        "email": "hsy@knu.ac.kr",
+        "contactName": "Hyun-Sik Yun",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 01:25:18",
+        "lastSent": "2026-09-25 01:25:18"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Ho-Sung Yoon",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://www.frontiersin.org/journals/bioengineering-and-biotechnology/articles/10.3389/fbioe.2021.774143/full",
+    "sentGreetings": [
+      {
+        "mailId": 7131,
+        "sentAt": "2026-09-25 01:25:18",
+        "greeting": "Dear Dr. Yun,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-c5c1a0017660c29f52b",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "jiez1857@gmail.com",
+    "name": "Yanping Fu",
+    "doi": "10.1371/journal.pone.0349751",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-09 02:05:40",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 725,
+        "email": "jiez1857@gmail.com",
+        "contactName": "Yanping Fu",
+        "sent": 2,
+        "inbound": 0,
+        "firstSent": "2026-06-30 12:22:54",
+        "lastSent": "2026-09-16 17:51:23"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Jie Zhang",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13240919/",
+    "pmcId": "PMC13240919",
+    "sentGreetings": [
+      {
+        "mailId": 772,
+        "sentAt": "2026-06-30 12:22:54",
+        "greeting": "Dear Professor,"
+      },
+      {
+        "mailId": 4912,
+        "sentAt": "2026-09-16 17:51:23",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-2c5afefcab1962585de",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "john.m.carson@nasa.gov",
+    "name": "Michael Szmuk",
+    "doi": "10.2514/1.g004536",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 02:21:41",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5874,
+        "email": "john.m.carson@nasa.gov",
+        "contactName": "Michael Szmuk",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 11:04:18",
+        "lastSent": "2026-09-25 11:04:18"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "John M. Carson III",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://aiaa.org/wp-content/uploads/2025/03/GNC_Additional.pdf",
+    "sentGreetings": [
+      {
+        "mailId": 7170,
+        "sentAt": "2026-09-25 11:04:18",
+        "greeting": "Dear Dr. Szmuk,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-9a84f2fe3f08b8df9fa",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "jschaefer@fb2.fra-uas.de",
+    "name": "Elis Haruni",
+    "doi": "10.1007/s42486-020-00027-1",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 03:17:23",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5828,
+        "email": "jschaefer@fb2.fra-uas.de",
+        "contactName": "Elis Haruni",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 01:15:16",
+        "lastSent": "2026-09-25 01:15:16"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Jörg Schäfer",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://idw-online.de/de/news816974",
+    "sentGreetings": [
+      {
+        "mailId": 7122,
+        "sentAt": "2026-09-25 01:15:16",
+        "greeting": "Dear Dr. Haruni,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-069b03d18160c1d6c46",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "kyslhh1228@hanmail.net",
+    "name": "Hyun-Sik Yun",
+    "doi": "10.3389/fbioe.2021.774143",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 02:45:05",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5836,
+        "email": "kyslhh1228@hanmail.net",
+        "contactName": "Hyun-Sik Yun",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 01:24:13",
+        "lastSent": "2026-09-25 01:24:13"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Young-Saeng Kim",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://www.frontiersin.org/journals/bioengineering-and-biotechnology/articles/10.3389/fbioe.2021.774143/full",
+    "sentGreetings": [
+      {
+        "mailId": 7130,
+        "sentAt": "2026-09-25 01:24:13",
+        "greeting": "Dear Dr. Yun,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-270d5793345cda89dfd",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "lailan.haji@uoz.edu.krd",
+    "name": "Omar Alzakholi",
+    "doi": "10.38094/jastt1219",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 02:55:35",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5834,
+        "email": "lailan.haji@uoz.edu.krd",
+        "contactName": "Omar Alzakholi",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 01:21:50",
+        "lastSent": "2026-09-25 01:21:50"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Lailan M. Haji",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://jastt.org/index.php/jasttpath/article/download/19/8/72",
+    "sentGreetings": [
+      {
+        "mailId": 7128,
+        "sentAt": "2026-09-25 01:21:50",
+        "greeting": "Dear Dr. Alzakholi,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-b176a6b1acde10260a4",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "latharadhakrishna@gmail.com",
+    "name": "Suvarna Hebbar",
+    "doi": "10.1371/journal.pgph.0006685",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-07-04 02:09:54",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 1857,
+        "email": "latharadhakrishna@gmail.com",
+        "contactName": "Suvarna Hebbar",
+        "sent": 2,
+        "inbound": 1,
+        "firstSent": "2026-07-04 08:05:44",
+        "lastSent": "2026-07-04 20:18:29"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Latha Thimmappa",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13293455/",
+    "pmcId": "PMC13293455",
+    "sentGreetings": [
+      {
+        "mailId": 1935,
+        "sentAt": "2026-07-04 08:05:44",
+        "greeting": "Dear Professor,"
+      },
+      {
+        "mailId": 1947,
+        "sentAt": "2026-07-04 20:18:29",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-877c716d79d7ed1513f",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "luthfihamdani@gmail.com",
+    "name": "Hilna Putria",
+    "doi": "10.31004/basicedu.v4i4.460",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-06-27 02:19:49",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 147,
+        "email": "luthfihamdani@gmail.com",
+        "contactName": "Hilna Putria",
+        "sent": 2,
+        "inbound": 0,
+        "firstSent": "2026-06-27 08:00:43",
+        "lastSent": "2026-09-18 17:03:50"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Luthfi Hamdani Maula",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://jbasic.org/index.php/basicedu/article/download/460/pdf/1581",
+    "sentGreetings": [
+      {
+        "mailId": 161,
+        "sentAt": "2026-06-27 08:00:43",
+        "greeting": "Dear Professor,"
+      },
+      {
+        "mailId": 5470,
+        "sentAt": "2026-09-18 17:03:50",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-350ea21109ac3288a42",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "mallik.k5@gmail.com",
+    "name": "Wei Li",
+    "doi": "10.3390/ijms27114996",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-28 02:10:31",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 286,
+        "email": "mallik.k5@gmail.com",
+        "contactName": "Wei Li",
+        "sent": 2,
+        "inbound": 0,
+        "firstSent": "2026-06-28 08:04:47",
+        "lastSent": "2026-09-15 17:09:49"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Mallikarjuna Korivi",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256914/",
+    "pmcId": "PMC13256914",
+    "sentGreetings": [
+      {
+        "mailId": 302,
+        "sentAt": "2026-06-28 08:04:47",
+        "greeting": "Dear Professor,"
+      },
+      {
+        "mailId": 4592,
+        "sentAt": "2026-09-15 17:09:49",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-c53d3a4affe33ec79d7",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "mesbahi@uw.edu",
+    "name": "Michael Szmuk",
+    "doi": "10.2514/1.g004536",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 02:21:41",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5847,
+        "email": "mesbahi@uw.edu",
+        "contactName": "Michael Szmuk",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 09:01:21",
+        "lastSent": "2026-09-25 09:01:21"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Mehran Mesbahi",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://mehran-mesbahi.github.io/",
+    "sentGreetings": [
+      {
+        "mailId": 7142,
+        "sentAt": "2026-09-25 09:01:21",
+        "greeting": "Dear Dr. Szmuk,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-fce307d2d84bcf85892",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "mgyyh00@gmail.com",
+    "name": "U-Young Lee",
+    "doi": "10.3390/diagnostics16111698",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-28 02:03:24",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 629,
+        "email": "mgyyh00@gmail.com",
+        "contactName": "U-Young Lee",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-06-30 11:12:47",
+        "lastSent": "2026-06-30 11:12:47"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Yonghyun Yoon",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256739/",
+    "pmcId": "PMC13256739",
+    "sentGreetings": [
+      {
+        "mailId": 676,
+        "sentAt": "2026-06-30 11:12:47",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-7e8c8791468abbe8b95",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "murtazabotanist@gmail.com",
+    "name": "Hassan Mehmood",
+    "doi": "10.1080/15592324.2026.2687959",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-07-15 02:06:07",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 2035,
+        "email": "murtazabotanist@gmail.com",
+        "contactName": "Hassan Mehmood",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-07-16 00:00:50",
+        "lastSent": "2026-07-16 00:00:50"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Ghulam Murtaza",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13274135/",
+    "pmcId": "PMC13274135",
+    "sentGreetings": [
+      {
+        "mailId": 2137,
+        "sentAt": "2026-07-16 00:00:50",
+        "greeting": "Dear Hassan Mehmood,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-904ff2c71b9cf981ca3",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "phdamg@nbi.dk",
+    "name": "Andrea Cristofoli",
+    "doi": "10.1007/jhep08(2020)038",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 02:21:43",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5873,
+        "email": "phdamg@nbi.dk",
+        "contactName": "Andrea Cristofoli",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 11:03:15",
+        "lastSent": "2026-09-25 11:03:15"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Poul H. Damgaard",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.132.251603",
+    "sentGreetings": [
+      {
+        "mailId": 7169,
+        "sentAt": "2026-09-25 11:03:15",
+        "greeting": "Dear Dr. Cristofoli,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-17e7e14c5a353fb25aa",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "psuffys@gmail.com",
+    "name": "Emilyn Costa Conceiçao",
+    "doi": "10.3389/fmicb.2026.1881582",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:05:46",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 540,
+        "email": "psuffys@gmail.com",
+        "contactName": "Emilyn Costa Conceiçao",
+        "sent": 2,
+        "inbound": 0,
+        "firstSent": "2026-06-30 08:05:51",
+        "lastSent": "2026-09-18 17:57:56"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Philip Noel Suffys",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13270926/",
+    "pmcId": "PMC13270926",
+    "sentGreetings": [
+      {
+        "mailId": 584,
+        "sentAt": "2026-06-30 08:05:51",
+        "greeting": "Dear Professor,"
+      },
+      {
+        "mailId": 5561,
+        "sentAt": "2026-09-18 17:57:56",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-7ee64d95f8e2ef9e3ed",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "raguvarma@gmail.com",
+    "name": "Chaiyavat Chaiyasut",
+    "doi": "10.3389/fphar.2026.1798820",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:03:36",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 564,
+        "email": "raguvarma@gmail.com",
+        "contactName": "Chaiyavat Chaiyasut",
+        "sent": 2,
+        "inbound": 0,
+        "firstSent": "2026-06-30 08:07:13",
+        "lastSent": "2026-09-16 17:41:59"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Durairaj Ragu Varman",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13269353/",
+    "pmcId": "PMC13269353",
+    "sentGreetings": [
+      {
+        "mailId": 608,
+        "sentAt": "2026-06-30 08:07:13",
+        "greeting": "Dear Professor,"
+      },
+      {
+        "mailId": 4890,
+        "sentAt": "2026-09-16 17:41:59",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-5a34ea10b946b60abda",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "rajeswarishome@gmail.com",
+    "name": "Shivasharanappa Nayakvadi",
+    "doi": "10.3389/fmicb.2026.1836952",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-28 02:14:19",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 261,
+        "email": "rajeswarishome@gmail.com",
+        "contactName": "Shivasharanappa Nayakvadi",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-06-28 08:03:29",
+        "lastSent": "2026-06-28 08:03:29"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Rajeswari Shome",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13260132/",
+    "pmcId": "PMC13260132",
+    "sentGreetings": [
+      {
+        "mailId": 277,
+        "sentAt": "2026-06-28 08:03:29",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-907eae343f28c158050",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "sajidjalwan@gmail.com",
+    "name": "Hassan Mehmood",
+    "doi": "10.1080/15592324.2026.2687959",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-07-15 02:06:07",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 2037,
+        "email": "sajidjalwan@gmail.com",
+        "contactName": "Hassan Mehmood",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-07-16 00:01:01",
+        "lastSent": "2026-07-16 00:01:01"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Sajid Ullah",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13274135/",
+    "pmcId": "PMC13274135",
+    "sentGreetings": [
+      {
+        "mailId": 2139,
+        "sentAt": "2026-07-16 00:01:01",
+        "greeting": "Dear Hassan Mehmood,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-cc65b06492ea3c42a75",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "shakirdu@yahoo.com",
+    "name": "Omar Alzakholi",
+    "doi": "10.38094/jastt1219",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 02:55:35",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5866,
+        "email": "shakirdu@yahoo.com",
+        "contactName": "Omar Alzakholi",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 09:57:31",
+        "lastSent": "2026-09-25 09:57:31"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Shakir M. Abas",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://jastt.org/index.php/jasttpath/article/download/19/8/72",
+    "sentGreetings": [
+      {
+        "mailId": 7162,
+        "sentAt": "2026-09-25 09:57:31",
+        "greeting": "Dear Dr. Alzakholi,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-ecfe6a12ee6c6aec55a",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "xzhu3@fau.edu",
+    "name": "Zhabiz Gharibshah",
+    "doi": "10.1007/s41019-019-00115-y",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 02:09:55",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 5879,
+        "email": "xzhu3@fau.edu",
+        "contactName": "Zhabiz Gharibshah",
+        "sent": 1,
+        "inbound": 0,
+        "firstSent": "2026-09-25 11:09:41",
+        "lastSent": "2026-09-25 11:09:41"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Xingquan Zhu",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://www.fau.edu/engineering/directory/faculty/zhu/",
+    "sentGreetings": [
+      {
+        "mailId": 7175,
+        "sentAt": "2026-09-25 11:09:41",
+        "greeting": "Dear Dr. Gharibshah,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-41c63708a070c6d2447",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "zhuxinmao@gmail.com",
+    "name": "Li Liu",
+    "doi": "10.3390/biology15110872",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-28 02:01:59",
+    "strongEmailName": false,
+    "contacts": [
+      {
+        "contactId": 643,
+        "email": "zhuxinmao@gmail.com",
+        "contactName": "Li Liu",
+        "sent": 2,
+        "inbound": 0,
+        "firstSent": "2026-06-30 11:13:32",
+        "lastSent": "2026-09-18 18:16:46"
+      }
+    ],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Zhuxin Mao",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13255882/",
+    "pmcId": "PMC13255882",
+    "sentGreetings": [
+      {
+        "mailId": 690,
+        "sentAt": "2026-06-30 11:13:32",
+        "greeting": "Dear Professor,"
+      },
+      {
+        "mailId": 5585,
+        "sentAt": "2026-09-18 18:16:46",
+        "greeting": "Dear Professor,"
+      }
+    ]
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-4000208423e318f2d23",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "aamousavi@shirazu.ac.ir",
+    "name": "Sajjad Abbasi",
+    "doi": "10.1371/journal.pone.0333572",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-09 01:00:58",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Ali Akbar Moosavi",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13241006/",
+    "pmcId": "PMC13241006",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-e76191d9ee9e06ef021",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "albert.lecube@vallhebron.cat",
+    "name": "Raquel Ruano",
+    "doi": "10.3389/fendo.2026.1813327",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-28 02:14:28",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Albert Lecube",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13259888/",
+    "pmcId": "PMC13259888",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-89719bd21ac2bd5246f",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "cristina.viana@unifesp.br",
+    "name": "Emilyn Costa Conceiçao",
+    "doi": "10.3389/fmicb.2026.1881582",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:05:46",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Cristina Viana-Niero",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13270926/",
+    "pmcId": "PMC13270926",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-a0a4d20d6abc97b0a6f",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "dr_ranad_ms@hotmail.com",
+    "name": "Bilal Azab",
+    "doi": "10.3389/fcell.2026.1802945",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:10:54",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Ranad Maswadi",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13269086/",
+    "pmcId": "PMC13269086",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-29b665e8d8f3e5b6d06",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "emma.draghici@umfcv.ro",
+    "name": "Antonia Samia Khaddour",
+    "doi": "10.3390/jcm15114312",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:03:43",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Emma Cristina Drăghici",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13258047/",
+    "pmcId": "PMC13258047",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-143ffcf012309e7ee56",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "enricospinas@tiscali.it",
+    "name": "Alessio Verdecchia",
+    "doi": "10.3390/dj14060372",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-07-15 02:02:35",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Enrico Spinas",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13297725/",
+    "pmcId": "PMC13297725",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-fd6b828aebfafdde022",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "giwaabdulmoseensegun@ncpu.edu.cn",
+    "name": "Ndungutse Jean Maurice",
+    "doi": "10.3390/molecules31111882",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-28 02:02:14",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Abdulmoseen Segun Giwa",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13258567/",
+    "pmcId": "PMC13258567",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-425c0053fdffbc8767c",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "ihossain.mbg@nstu.edu.bd",
+    "name": "Noimul Hasan Siddiquee",
+    "doi": "10.1371/journal.pone.0351129",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-25 14:33:26",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Imam Hossain",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13249230/",
+    "pmcId": "PMC13249230",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-7dfc86807f3f4eac63d",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "luis.ortega@umich.mx",
+    "name": "Georgina Ortiz-Martínez",
+    "doi": "10.3390/cells15121084",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-07-15 02:11:13",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Luis Fernando Ortega-Varela",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13296773/",
+    "pmcId": "PMC13296773",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-50eb4142e080ea7e5f4",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "mallik@zjnu.edu.cn",
+    "name": "Wei Li",
+    "doi": "10.3390/ijms27114996",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-28 02:10:31",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Mallikarjuna Korivi",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256914/",
+    "pmcId": "PMC13256914",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-9650dd63ba1e883e8a0",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "mohammad.abdulrazaq@dpu.edu.krd",
+    "name": "Omar Alzakholi",
+    "doi": "10.38094/jastt1219",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-18 02:55:35",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Mohammad A. M. Sadeeq",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://jastt.org/index.php/jasttpath/article/download/19/8/72",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-30a09ba3f367bd18af3",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "mrfom@ihmt.unl.pt",
+    "name": "Érica Manuel",
+    "doi": "10.3389/fnut.2026.1833701",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:10:50",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Maria do Rosário O. Martins",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13270930/",
+    "pmcId": "PMC13270930",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-f393e789db3d206ac12",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "msousa@icbas.up.pt",
+    "name": "Sara Raimundo",
+    "doi": "10.3390/cells15111022",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:06:41",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Mário Sousa",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256310/",
+    "pmcId": "PMC13256310",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-0b5103aff7149f06128",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "msprong@govst.edu",
+    "name": "Dalia Chowdhury",
+    "doi": "10.3389/fpubh.2026.1817065",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:10:50",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Matthew Evan Sprong",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13270468/",
+    "pmcId": "PMC13270468",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-2a1d7f1e07173c2708a",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "ogatta@uel.br",
+    "name": "Celso Vataru Nakamura",
+    "doi": "10.3390/diagnostics16111704",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:05:52",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Sueli Fumie Yamada-Ogatta",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256636/",
+    "pmcId": "PMC13256636",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-68fa7e6d1850e5c9da5",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "raguvarmand@sbms.sbvu.ac.in",
+    "name": "Chaiyavat Chaiyasut",
+    "doi": "10.3389/fphar.2026.1798820",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:03:36",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Durairaj Ragu Varman",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13269353/",
+    "pmcId": "PMC13269353",
+    "sentGreetings": []
+  },
+  {
+    "id": "0000-0002-8420-5331",
+    "indices": [
+      "orcid_info",
+      "orcid_info_candidate"
+    ],
+    "email": "rizgar.ramadhan@dpu.edu.krd",
+    "name": "Hanan M. Shukur",
+    "doi": "10.38094/jastt1331",
+    "source": "OPENALEX",
+    "discoveredAt": "2026-09-11 02:16:04",
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Rizgar R. Zebari",
+    "evidenceMethod": "PUBLIC_ORIGINAL_PAPER_OR_AUTHOR_PROFILE",
+    "evidenceUrl": "https://jastt.org/index.php/jasttpath/article/download/31/14/183",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-d1d63bf96cb403fa240",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "sabhat@kfu.edu.sa",
+    "name": "Hassan Mehmood",
+    "doi": "10.1080/15592324.2026.2687959",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-07-15 02:06:08",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Sajad Ali",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13274135/",
+    "pmcId": "PMC13274135",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-ddca31e7a6718e6f6f2",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "stplayer@naver.com",
+    "name": "U-Young Lee",
+    "doi": "10.3390/diagnostics16111698",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-28 02:03:24",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Seungbeom Kim",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256739/",
+    "pmcId": "PMC13256739",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-2b6e4c6fe08627bbe1d",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "wjren1966@163.com",
+    "name": "Lei Wang",
+    "doi": "10.3389/fimmu.2026.1856481",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-30 02:07:48",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Wenjie Ren",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13268918/",
+    "pmcId": "PMC13268918",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-6a76665f0d84c15d74c",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "xyfysjnkfy@126.com",
+    "name": "Qiuchen Zhao",
+    "doi": "10.3389/fneur.2026.1824909",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-06-28 02:14:21",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Yu Feng",
+    "evidenceMethod": "XML_EXPLICIT_FULLNAME",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13260588/",
+    "pmcId": "PMC13260588",
+    "sentGreetings": []
+  },
+  {
+    "kind": "risk",
+    "id": "EMAIL-a8977f115709b6525b8",
+    "indices": [
+      "orcid_info_candidate",
+      "orcid_info"
+    ],
+    "email": "yasminebarreto@usp.br",
+    "name": "Matheus Paiva Emidio Cavalcanti",
+    "doi": "10.3390/epidemiologia7030083",
+    "source": "EUROPE_PMC",
+    "discoveredAt": "2026-07-15 02:14:03",
+    "strongEmailName": false,
+    "contacts": [],
+    "verdict": "DIFFERENT_AUTHOR",
+    "expectedName": "Yasmin Esther Barreto",
+    "evidenceMethod": "XML_EXPLICIT_INITIALS",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13298685/",
+    "pmcId": "PMC13298685",
+    "sentGreetings": []
+  }
+]

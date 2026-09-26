@@ -1,0 +1,58 @@
+[
+  {
+    "id": "EMAIL-13f89adcc06de5c1f48",
+    "email": "jyotismita.c@gmail.com",
+    "oldName": "Asmita Balasaheb Kalamkar",
+    "expectedName": "Jyotismita Chaki",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reason": "Explicit individual author/email node identifies another named coauthor; old stored name is an abbreviated/expanded variant of a different coauthor"
+  },
+  {
+    "id": "EMAIL-d4035a5a2bd25015d53",
+    "email": "neelanjan.dey@gmail.com",
+    "oldName": "Asmita Balasaheb Kalamkar",
+    "expectedName": "Nilanjan Dey",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reason": "Explicit individual author/email node identifies another named coauthor; old stored name is an abbreviated/expanded variant of a different coauthor"
+  },
+  {
+    "id": "EMAIL-26ccb8783f95f219c85",
+    "email": "irp2@le.ac.uk",
+    "oldName": "Ian Powley",
+    "expectedName": "Ian R. Powley",
+    "verdict": "MATCH",
+    "reason": "Middle initial omitted; same author"
+  },
+  {
+    "id": "EMAIL-ec409ddc4c0712036b4",
+    "email": "cap8@le.ac.uk",
+    "oldName": "Ian Powley",
+    "expectedName": "Catrin Pritchard",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reason": "Explicit individual author/email node identifies another named coauthor; old stored name is an abbreviated/expanded variant of a different coauthor"
+  },
+  {
+    "id": "EMAIL-b62a60e0b1e849c251c",
+    "email": "andrzejj@anl.gov",
+    "oldName": "J. Osipiuk",
+    "expectedName": "Andrzej Joachimiak",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reason": "Explicit individual author/email node identifies another named coauthor; old stored name is an abbreviated/expanded variant of a different coauthor"
+  },
+  {
+    "id": "EMAIL-fb8bfb85013f5059b97",
+    "email": "dickinson@uchicago.edu",
+    "oldName": "J. Osipiuk",
+    "expectedName": "Bryan C. Dickinson",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reason": "Explicit individual author/email node identifies another named coauthor; old stored name is an abbreviated/expanded variant of a different coauthor"
+  },
+  {
+    "id": "0000-0002-4145-3458",
+    "email": "cooperm2@dal.ca",
+    "oldName": "Matthew Cooper",
+    "expectedName": "Matthew J. Cooper",
+    "verdict": "MATCH",
+    "reason": "Middle initial omitted; same author"
+  }
+]

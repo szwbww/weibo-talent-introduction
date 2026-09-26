@@ -84,6 +84,7 @@ class ManualExpertMailService(
                 receivedAt = null,
                 sentAt = now,
                 createdAt = now,
+                errorSummary = delivered.errorDetail?.take(1000),
                 openTrackingId = delivered.openTrackingId.takeIf { delivered.status == "SENT" }
             )
         )

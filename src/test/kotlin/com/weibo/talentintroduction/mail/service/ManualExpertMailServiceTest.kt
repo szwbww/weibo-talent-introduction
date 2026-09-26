@@ -236,6 +236,27 @@ class ManualExpertMailServiceTest {
     )
 
     @Test
+    fun `sendManualMail persists bounded delivery failure detail`() {
+        val account = stubAccount()
+        stubTemplateSend(account)
+        val detail = "SMTP connection timed out: " + "x".repeat(1100)
+        Mockito.`when`(mailDeliveryService.send(
+            anyValue(account), anyValue(ComposedMail("stub", "stub", "stub"))
+        )).thenReturn(DeliveredMail(messageId = "msg-failed", status = "FAILED", errorDetail = detail))
+
+        val result = service.sendManualMail(
+            1,
+            ManualMailSendCommand(optionType = "COMPOSE_TEMPLATE", optionValue = "10", senderAccountCode = null)
+        )
+
+        val captor = ArgumentCaptor.forClass(MailRecord::class.java)
+        Mockito.verify(mailRecordRepository).save(captor.capture())
+        assertEquals("FAILED", result.sendStatus)
+        assertEquals("FAILED", captor.value.sendStatus)
+        assertEquals(detail.take(1000), captor.value.errorSummary)
+    }
+
+    @Test
     fun `sendManualMail does not increment todaySentCount`() {
         val account = stubAccount(todaySentCount = 5)
         stubTemplateSend(account)

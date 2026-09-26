@@ -34,6 +34,16 @@ class ImapMailReceiveService(
 ) : MailReceiveService {
     private val log = LoggerFactory.getLogger(ImapMailReceiveService::class.java)
 
+    override fun currentInboxPosition(account: MailSenderAccount): InboxPosition =
+        withAccountReceiveWindow(account, readOnly = true) { folder, budget ->
+            val uidFolder = folder as? UIDFolder ?: error("IMAP INBOX does not support UID lookup")
+            val validity = uidFolder.uidValidity
+            val next = uidFolder.uidNext
+            require(validity > 0 && next > 0) { "IMAP inbox position is unavailable; refusing historical scan" }
+            budget.check()
+            InboxPosition(validity, next - 1)
+        }
+
     override fun fetchInboundSince(
         account: MailSenderAccount,
         afterUid: Long,
@@ -118,8 +128,14 @@ class ImapMailReceiveService(
      * Fetches UNSEEN inbox messages as detached [MimeMessage] copies so callers can parse
      * multipart DSN content after the IMAP connection closes.
      */
-    fun fetchUnseenMessages(account: MailSenderAccount, maxMessages: Int = 100): List<MimeMessage> {
+    fun fetchUnseenMessages(
+        account: MailSenderAccount,
+        maxMessages: Int = 100,
+        afterUid: Long = 0,
+        expectedUidValidity: Long? = null
+    ): List<MimeMessage> {
         require(maxMessages in 1..100) { "maxMessages must be between 1 and 100" }
+        require(afterUid >= 0) { "afterUid must be non-negative" }
 
         val session = Session.getInstance(imapProperties(account.imapPort))
         val store = session.getStore("imap")
@@ -129,8 +145,13 @@ class ImapMailReceiveService(
             val inbox = connectedStore.getFolder("INBOX")
             inbox.open(Folder.READ_ONLY)
             inbox.use { folder ->
-                folder.messages
+                val uidFolder = folder as? UIDFolder ?: error("IMAP INBOX does not support UID lookup")
+                require(expectedUidValidity == null || uidFolder.uidValidity == expectedUidValidity) {
+                    "IMAP UIDVALIDITY changed before bounce scan"
+                }
+                uidFolder.getMessagesByUID(afterUid + 1, UIDFolder.LASTUID)
                     .asSequence()
+                    .filter { uidFolder.getUID(it) > afterUid }
                     .filterNot { it.flags.contains(Flags.Flag.SEEN) }
                     .take(maxMessages)
                     .map { message -> MimeMessage(message as MimeMessage) }
@@ -153,6 +174,7 @@ class ImapMailReceiveService(
      */
     private fun <T> withAccountReceiveWindow(
         account: MailSenderAccount,
+        readOnly: Boolean = false,
         block: (folder: Folder, budget: AccountReceiveBudget) -> T
     ): T {
         require(properties.accountReceiveTimeoutSeconds > 0) {
@@ -162,7 +184,7 @@ class ImapMailReceiveService(
         val store = session.getStore("imap")
         store.connect(account.imapHost, account.imapPort, account.imapUsername, account.imapPassword)
         val folder = store.getFolder("INBOX")
-        folder.open(Folder.READ_WRITE)
+        folder.open(if (readOnly) Folder.READ_ONLY else Folder.READ_WRITE)
         val budget = AccountReceiveBudget(account.accountCode, properties.accountReceiveTimeoutSeconds)
         budget.arm {
             // 预算到点：真关闭连接，打断阻塞中的读。实测 JavaMail 1.6.x 的
@@ -638,8 +660,8 @@ class ImapMailReceiveService(
 
     private fun imapProperties(port: Int): Properties =
         Properties().apply {
-            put("mail.imap.connectiontimeout", "10000")
-            put("mail.imap.timeout", "10000")
+            put("mail.imap.connectiontimeout", "30000")
+            put("mail.imap.timeout", "60000")
             put("mail.imap.peek", "true")
             if (port == 993) {
                 put("mail.imap.ssl.enable", "true")

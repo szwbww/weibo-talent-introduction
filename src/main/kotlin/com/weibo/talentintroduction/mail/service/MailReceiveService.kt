@@ -4,12 +4,17 @@ import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import java.time.LocalDateTime
 
 interface MailReceiveService {
+    /** Snapshot only: never fetch old message bodies or change their flags. */
+    fun currentInboxPosition(account: MailSenderAccount): InboxPosition
+
     fun fetchInboundSince(account: MailSenderAccount, afterUid: Long, maxMessages: Int): InboundFetchResult
 
     fun fetchByUids(account: MailSenderAccount, uids: List<Long>): List<ReceivedMail>
 
     fun markSeen(account: MailSenderAccount, imapUid: Long)
 }
+
+data class InboxPosition(val uidValidity: Long, val lastUid: Long)
 
 data class InboundFetchResult(
     val mails: List<ReceivedMail>,

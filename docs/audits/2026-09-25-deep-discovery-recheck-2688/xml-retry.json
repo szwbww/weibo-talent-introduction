@@ -1,0 +1,212 @@
+[
+  {
+    "pmc": "PMC10768720",
+    "ok": false,
+    "attempts": [
+      {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC10768720/fullTextXML",
+        "error": "500 Server Error:  for url: https://www.ebi.ac.uk/europepmc/webservices/rest/PMC10768720/fullTextXML"
+      },
+      {
+        "url": "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC10768720",
+        "error": "HTTPSConnectionPool(host='www.ncbi.nlm.nih.gov', port=443): Max retries exceeded with url: /pmc/utils/oa/oa.fcgi?id=PMC10768720 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1018)')))"
+      }
+    ]
+  },
+  {
+    "pmc": "PMC10792518",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC10792518/fullTextXML"
+  },
+  {
+    "pmc": "PMC10798234",
+    "ok": false,
+    "attempts": [
+      {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC10798234/fullTextXML",
+        "error": "500 Server Error:  for url: https://www.ebi.ac.uk/europepmc/webservices/rest/PMC10798234/fullTextXML"
+      },
+      {
+        "url": "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC10798234",
+        "error": "HTTPSConnectionPool(host='www.ncbi.nlm.nih.gov', port=443): Max retries exceeded with url: /pmc/utils/oa/oa.fcgi?id=PMC10798234 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1018)')))"
+      }
+    ]
+  },
+  {
+    "pmc": "PMC10838959",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC10838959/fullTextXML"
+  },
+  {
+    "pmc": "PMC11323634",
+    "ok": false,
+    "attempts": [
+      {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC11323634/fullTextXML",
+        "error": "500 Server Error:  for url: https://www.ebi.ac.uk/europepmc/webservices/rest/PMC11323634/fullTextXML"
+      },
+      {
+        "url": "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC11323634",
+        "error": "HTTPSConnectionPool(host='www.ncbi.nlm.nih.gov', port=443): Max retries exceeded with url: /pmc/utils/oa/oa.fcgi?id=PMC11323634 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1018)')))"
+      }
+    ]
+  },
+  {
+    "pmc": "PMC7156674",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7156674/fullTextXML"
+  },
+  {
+    "pmc": "PMC7190716",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7190716/fullTextXML"
+  },
+  {
+    "pmc": "PMC7293215",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7293215/fullTextXML"
+  },
+  {
+    "pmc": "PMC7328981",
+    "ok": false,
+    "attempts": [
+      {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7328981/fullTextXML",
+        "error": "500 Server Error:  for url: https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7328981/fullTextXML"
+      },
+      {
+        "url": "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC7328981",
+        "error": "HTTPSConnectionPool(host='www.ncbi.nlm.nih.gov', port=443): Max retries exceeded with url: /pmc/utils/oa/oa.fcgi?id=PMC7328981 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1018)')))"
+      }
+    ]
+  },
+  {
+    "pmc": "PMC7371638",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7371638/fullTextXML"
+  },
+  {
+    "pmc": "PMC7453351",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7453351/fullTextXML"
+  },
+  {
+    "pmc": "PMC7645593",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC7645593/fullTextXML"
+  },
+  {
+    "pmc": "PMC8009091",
+    "ok": false,
+    "attempts": [
+      {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8009091/fullTextXML",
+        "error": "500 Server Error:  for url: https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8009091/fullTextXML"
+      },
+      {
+        "url": "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC8009091",
+        "error": "HTTPSConnectionPool(host='www.ncbi.nlm.nih.gov', port=443): Max retries exceeded with url: /pmc/utils/oa/oa.fcgi?id=PMC8009091 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1018)')))"
+      }
+    ]
+  },
+  {
+    "pmc": "PMC8216082",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8216082/fullTextXML"
+  },
+  {
+    "pmc": "PMC8404743",
+    "ok": false,
+    "attempts": [
+      {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8404743/fullTextXML",
+        "error": "500 Server Error:  for url: https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8404743/fullTextXML"
+      },
+      {
+        "url": "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC8404743",
+        "error": "HTTPSConnectionPool(host='www.ncbi.nlm.nih.gov', port=443): Max retries exceeded with url: /pmc/utils/oa/oa.fcgi?id=PMC8404743 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1018)')))"
+      }
+    ]
+  },
+  {
+    "pmc": "PMC8433336",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8433336/fullTextXML"
+  },
+  {
+    "pmc": "PMC8647936",
+    "ok": false,
+    "attempts": [
+      {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8647936/fullTextXML",
+        "error": "500 Server Error:  for url: https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8647936/fullTextXML"
+      },
+      {
+        "url": "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC8647936",
+        "error": "HTTPSConnectionPool(host='www.ncbi.nlm.nih.gov', port=443): Max retries exceeded with url: /pmc/utils/oa/oa.fcgi?id=PMC8647936 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1018)')))"
+      }
+    ]
+  },
+  {
+    "pmc": "PMC8768969",
+    "ok": false,
+    "attempts": [
+      {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8768969/fullTextXML",
+        "error": "500 Server Error:  for url: https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8768969/fullTextXML"
+      },
+      {
+        "url": "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC8768969",
+        "error": "HTTPSConnectionPool(host='www.ncbi.nlm.nih.gov', port=443): Max retries exceeded with url: /pmc/utils/oa/oa.fcgi?id=PMC8768969 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1018)')))"
+      }
+    ]
+  },
+  {
+    "pmc": "PMC8769021",
+    "ok": false,
+    "attempts": [
+      {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8769021/fullTextXML",
+        "error": "500 Server Error:  for url: https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8769021/fullTextXML"
+      },
+      {
+        "url": "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC8769021",
+        "error": "HTTPSConnectionPool(host='www.ncbi.nlm.nih.gov', port=443): Max retries exceeded with url: /pmc/utils/oa/oa.fcgi?id=PMC8769021 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1018)')))"
+      }
+    ]
+  },
+  {
+    "pmc": "PMC8850458",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC8850458/fullTextXML"
+  },
+  {
+    "pmc": "PMC9046223",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC9046223/fullTextXML"
+  },
+  {
+    "pmc": "PMC9381680",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC9381680/fullTextXML"
+  },
+  {
+    "pmc": "PMC9402379",
+    "ok": false,
+    "attempts": [
+      {
+        "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC9402379/fullTextXML",
+        "error": "500 Server Error:  for url: https://www.ebi.ac.uk/europepmc/webservices/rest/PMC9402379/fullTextXML"
+      },
+      {
+        "url": "https://www.ncbi.nlm.nih.gov/pmc/utils/oa/oa.fcgi?id=PMC9402379",
+        "error": "HTTPSConnectionPool(host='www.ncbi.nlm.nih.gov', port=443): Max retries exceeded with url: /pmc/utils/oa/oa.fcgi?id=PMC9402379 (Caused by SSLError(SSLEOFError(8, '[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1018)')))"
+      }
+    ]
+  },
+  {
+    "pmc": "PMC9792464",
+    "ok": true,
+    "url": "https://www.ebi.ac.uk/europepmc/webservices/rest/PMC9792464/fullTextXML"
+  }
+]

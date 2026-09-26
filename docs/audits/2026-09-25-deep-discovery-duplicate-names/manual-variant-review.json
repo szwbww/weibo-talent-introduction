@@ -1,0 +1,114 @@
+[
+  {
+    "email": "jimmie.ye@ucsf.edu",
+    "storedName": "Chun Ye",
+    "expectedName": "Chun Jimmie Ye",
+    "pmcId": "PMC10484790",
+    "verdict": "MATCH",
+    "reviewReason": "First and family names agree; middle name omitted in stored form. Original paper lists this exact email for the full name.",
+    "evidenceSnippets": [
+      "Chun Jimmie Ye, Email: jimmie.ye@ucsf.edu."
+    ]
+  },
+  {
+    "email": "santoshgenetics@mdurohtak.ac.in",
+    "storedName": "Anjana Anjana",
+    "expectedName": "Santosh Kumar Tiwari",
+    "pmcId": "PMC9149203",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reviewReason": "Reviewed the original paper contributor/correspondence text: explicit email belongs to the expected author; stored name is a different author/name, not a middle-name variant of the expected author.",
+    "evidenceSnippets": [
+      "*Correspondence: Santosh Kumar Tiwari, santoshgenetics@mdurohtak.ac.in"
+    ]
+  },
+  {
+    "email": "skhare@rocketmail.com",
+    "storedName": "Ankita C. Maurya",
+    "expectedName": "Sunil Kumar Khare",
+    "pmcId": "PMC7710609",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reviewReason": "Reviewed the original paper contributor/correspondence text: explicit email belongs to the expected author; stored name is a different author/name, not a middle-name variant of the expected author.",
+    "evidenceSnippets": [
+      "✉*Correspondence: Sunil Kumar Khare, skhare@rocketmail.com"
+    ]
+  },
+  {
+    "email": "hyadav@wakehealth.edu",
+    "storedName": "Basavaprabhu Haranahalli Nataraj",
+    "expectedName": "Hariom Yadav",
+    "pmcId": "PMC7441679",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reviewReason": "Reviewed the original paper contributor/correspondence text: explicit email belongs to the expected author; stored name is a different author/name, not a middle-name variant of the expected author.",
+    "evidenceSnippets": [
+      "Hariom Yadav, Email: hyadav@wakehealth.edu."
+    ]
+  },
+  {
+    "email": "pradip_behare@yahoo.com",
+    "storedName": "Basavaprabhu Haranahalli Nataraj",
+    "expectedName": "Pradip V Behare",
+    "pmcId": "PMC7441679",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reviewReason": "Reviewed the original paper contributor/correspondence text: explicit email belongs to the expected author; stored name is a different author/name, not a middle-name variant of the expected author.",
+    "evidenceSnippets": [
+      "Pradip V. Behare, Email: pradip_behare@yahoo.com"
+    ]
+  },
+  {
+    "email": "mihir@psiquantum.com",
+    "storedName": "Patrick M. Birchall",
+    "expectedName": "Mihir Pant",
+    "pmcId": "PMC9938229",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reviewReason": "Reviewed the original paper contributor/correspondence text: explicit email belongs to the expected author; stored name is a different author/name, not a middle-name variant of the expected author.",
+    "evidenceSnippets": [
+      "Mihir Pant, Email: mihir@psiquantum.com."
+    ]
+  },
+  {
+    "email": "naomi@psiquantum.com",
+    "storedName": "Patrick M. Birchall",
+    "expectedName": "Naomi Nickerson",
+    "pmcId": "PMC9938229",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reviewReason": "Reviewed the original paper contributor/correspondence text: explicit email belongs to the expected author; stored name is a different author/name, not a middle-name variant of the expected author.",
+    "evidenceSnippets": [
+      "Naomi Nickerson, Email: naomi@psiquantum.com."
+    ]
+  },
+  {
+    "email": "pkumar@igib.res.in",
+    "storedName": "Santosh Kumar Yadav",
+    "expectedName": "Pradeep Kumar",
+    "pmcId": "PMC7051917",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reviewReason": "Reviewed the original paper contributor/correspondence text: explicit email belongs to the expected author; stored name is a different author/name, not a middle-name variant of the expected author.",
+    "evidenceSnippets": [
+      "*Correspondence: Pradeep Kumar, pkumar@igib.res.in",
+      "*Correspondence: Pradeep Kumar,  pkumar@igib.res.in"
+    ]
+  },
+  {
+    "email": "james.d.johnson@ubc.ca",
+    "storedName": "Anni Zhang",
+    "expectedName": "James D Johnson",
+    "pmcId": "PMC8164941",
+    "verdict": "CONFIRMED_OTHER_AUTHOR",
+    "reviewReason": "Reviewed the original paper contributor/correspondence text: explicit email belongs to the expected author; stored name is a different author/name, not a middle-name variant of the expected author.",
+    "evidenceSnippets": [
+      "✉Corresponding author: James D. Johnson https://orcid.org/0000-0002-7523-9433 Department of Cellular and Physiological Sciences, Life Sciences Institute, University of British Columbia, 2329 W Mall Vancouver, BC V6T 1Z4, Vancouver, BC, Canada E-mail:  James.d.johnson@ubc.ca"
+    ]
+  },
+  {
+    "email": "skohn3@gmu.edu",
+    "storedName": "Spencer Kohn",
+    "expectedName": "Spencer C. Kohn",
+    "pmcId": "PMC8562383",
+    "verdict": "MATCH",
+    "reviewReason": "First and family names agree; middle name omitted in stored form. Original paper lists this exact email for the full name.",
+    "evidenceSnippets": [
+      "*Correspondence: Spencer C. Kohn, skohn3@gmu.edu",
+      "*Correspondence: Spencer C. Kohn,  skohn3@gmu.edu"
+    ]
+  }
+]

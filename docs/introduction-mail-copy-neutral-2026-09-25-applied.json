@@ -1,0 +1,18 @@
+{
+  "status": "APPLIED_AND_VERIFIED",
+  "verified_at_utc": "2026-09-24T17:06:30.350349Z",
+  "host": "150.158.92.103",
+  "backup_directory": "/root/talent-data-backups/mail-copy-neutral-20260924T170630Z-93d05023",
+  "approved_draft_sha256": "fd99066566eedf1faa315a2e628b38a108e4526b8120fd95fc92eddb2759a715",
+  "verified_snippets": 15,
+  "changed_snippets": 13,
+  "unchanged_snippets": 2,
+  "verified_variants": 100,
+  "changed_variants": 100,
+  "template_bindings_unchanged": true,
+  "template_rows_unchanged": true,
+  "test_template_12_unchanged": true,
+  "shared_signature_used_by_template_9": true,
+  "validation": "Exact approved-content comparison inside transaction and through a fresh connection after commit; non-content metadata unchanged except updated_at.",
+  "approved_json_preserved": true
+}

@@ -99,9 +99,9 @@ class MailAccountConnectivityService(
         Properties().apply {
             put("mail.smtp.auth", "true")
             put("mail.smtp.auth.mechanisms", "LOGIN")
-            put("mail.smtp.connectiontimeout", "10000")
-            put("mail.smtp.timeout", "10000")
-            put("mail.smtp.writetimeout", "10000")
+            put("mail.smtp.connectiontimeout", "30000")
+            put("mail.smtp.timeout", "60000")
+            put("mail.smtp.writetimeout", "60000")
             if (port == 465) {
                 put("mail.smtp.ssl.enable", "true")
             } else {
@@ -111,8 +111,8 @@ class MailAccountConnectivityService(
 
     private fun imapProperties(port: Int): Properties =
         Properties().apply {
-            put("mail.imap.connectiontimeout", "10000")
-            put("mail.imap.timeout", "10000")
+            put("mail.imap.connectiontimeout", "30000")
+            put("mail.imap.timeout", "60000")
             if (port == 993) {
                 put("mail.imap.ssl.enable", "true")
             }

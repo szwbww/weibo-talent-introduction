@@ -2,8 +2,8 @@
 id: K-expert-classification-one-object-three-layers
 domain: expert
 created: 2026-08-24
-last_used: 2026-09-21
-hit_count: 3
+last_used: 2026-09-25
+hit_count: 4
 source: create-p:expert-rnd-classification
 ---
 

@@ -840,6 +840,13 @@ class AutoMailReplyService(
         val account = mailSenderAccountService.getAutoReceiveAccount(accountCode)
         val stored = mailInboxCursorService.get(account.accountCode)
         onPhase?.invoke(AccountAutoMailReplyPhases.READING_METADATA)
+        if (stored.uidValidity == null) {
+            val position = mailReceiveService.currentInboxPosition(account)
+            mailInboxCursorService.initializeIfAbsent(account.accountCode, position)
+            log.info("Initialized inbox cursor without importing history: account={} uidValidity={} lastUid={}",
+                account.accountCode, position.uidValidity, position.lastUid)
+            return AutoMailReplyBatchResult(fetched = 0, recorded = 0, replied = 0, manualReview = 0)
+        }
         var fetch = mailReceiveService.fetchInboundSince(account, stored.lastUid, maxMessages)
         var start = mailInboxCursorService.resolveStart(stored, fetch.uidValidity)
         if (start == 0L && stored.lastUid > 0L) {
@@ -934,7 +941,7 @@ class AutoMailReplyService(
             oldStart = start
         )
 
-        val bounceResult = bounceCollectionService.collectBounces(account)
+        val bounceResult = bounceCollectionService.collectBounces(account, start, fetch.uidValidity)
         if (bounceResult.collected > 0) {
             log.info(
                 "Collected {} bounces for account {} after auto-reply",

@@ -1,0 +1,66 @@
+[
+  {
+    "id": "EMAIL-f34e434195cc7e83e8f",
+    "email": "imaginglu@hotmail.com",
+    "wrongRestoredName": "Shibao Lu",
+    "originalStoredName": "Wei Wang",
+    "expectedName": "Jie Lu",
+    "patch": {
+      "givenNames": "Jie",
+      "familyNames": "Lu",
+      "institution": "; ",
+      "employment": "; ",
+      "country": "China",
+      "externalIds": {
+        "pmcId": "PMC13280751",
+        "pmid": "42328112",
+        "doi": "10.7150/ijms.127489"
+      }
+    },
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13280751/",
+    "originalAuthorXml": "<contrib contrib-type=\"author\"><name name-style=\"western\"><surname>Lu</surname><given-names initials=\"J\">Jie</given-names></name><xref rid=\"A2\" ref-type=\"aff\">2</xref><xref rid=\"A3\" ref-type=\"aff\">3</xref><xref rid=\"FNA_envelop\" ref-type=\"corresp\">✉</xref></contrib>"
+  },
+  {
+    "id": "EMAIL-622071b7c48c489f6d1",
+    "email": "wangwei37@buaa.edu.cn",
+    "wrongRestoredName": "Jie Lu",
+    "originalStoredName": "Wei Wang",
+    "expectedName": "Wei Wang",
+    "patch": {
+      "givenNames": "Wei",
+      "familyNames": "Wang",
+      "institution": "; ",
+      "employment": "; ",
+      "country": "China",
+      "externalIds": {
+        "pmcId": "PMC13280751",
+        "pmid": "42328112",
+        "doi": "10.7150/ijms.127489"
+      }
+    },
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13280751/",
+    "originalAuthorXml": "<contrib contrib-type=\"author\"><name name-style=\"western\"><surname>Wang</surname><given-names initials=\"W\">Wei</given-names></name><xref rid=\"A1\" ref-type=\"aff\">1</xref><xref rid=\"A2\" ref-type=\"aff\">2</xref><xref rid=\"FNA_envelop\" ref-type=\"corresp\">✉</xref></contrib>"
+  },
+  {
+    "id": "EMAIL-a07f1f6fad505740a57",
+    "email": "jointwwg@163.com",
+    "wrongRestoredName": "Sébastien Lustig",
+    "originalStoredName": "Fuqiang Gao",
+    "expectedName": "Weiguo Wang",
+    "patch": {
+      "givenNames": "Weiguo",
+      "familyNames": "Wang",
+      "institution": "Center for Hip Preservation, Osteonecrosis and Developmental Dysplasia of the Hip, China-Japan Friendship Hospital Beijing 100029 PR China; Department of Orthopedics, China-Japan Friendship Hospital Beijing 100029 PR China",
+      "employment": "Center for Hip Preservation, Osteonecrosis and Developmental Dysplasia of the Hip, China-Japan Friendship Hospital Beijing 100029 PR China; Department of Orthopedics, China-Japan Friendship Hospital Beijing 100029 PR China",
+      "country": "China",
+      "externalIds": {
+        "pmcId": "PMC13196294",
+        "pmid": "42171022",
+        "doi": "10.1051/sicotj/2026012",
+        "orcid": "0000-0001-5136-7118"
+      }
+    },
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13196294/",
+    "originalAuthorXml": "<contrib contrib-type=\"author\" corresp=\"yes\"><contrib-id contrib-id-type=\"orcid\" authenticated=\"false\">http://orcid.org/0000-0001-5136-7118</contrib-id><name name-style=\"western\"><surname>Wang</surname><given-names initials=\"W\">Weiguo</given-names></name><xref rid=\"AFF3\" ref-type=\"aff\">3</xref><xref rid=\"AFF4\" ref-type=\"aff\">4</xref><xref rid=\"FN1\" ref-type=\"corresp\">*</xref></contrib>"
+  }
+]

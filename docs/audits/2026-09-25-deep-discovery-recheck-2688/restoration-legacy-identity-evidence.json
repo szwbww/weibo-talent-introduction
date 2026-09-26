@@ -1,0 +1,2713 @@
+[
+  {
+    "id": "0000-0002-5965-5365",
+    "email": "h.w@lmu.de",
+    "expectedName": "Harald Weinfurter",
+    "oldOrcidOwnerName": "Wei Zhang",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5043938679",
+    "workUrl": "https://openalex.org/W4288052074",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5043938679",
+        "display_name": "Harald Weinfurter",
+        "orcid": "https://orcid.org/0000-0001-6882-3909",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-6882-3909"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I4210120293",
+          "display_name": "Max Planck Institute of Quantum Optics",
+          "ror": "https://ror.org/01vekys64",
+          "country_code": "DE",
+          "type": "facility",
+          "lineage": [
+            "https://openalex.org/I149899117",
+            "https://openalex.org/I4210120293"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I4210142743",
+          "display_name": "Munich Center for Quantum Science and Technology",
+          "ror": "https://ror.org/04xrcta15",
+          "country_code": "DE",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I4210142743",
+            "https://openalex.org/I8204097"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I8204097",
+          "display_name": "Ludwig-Maximilians-Universität München",
+          "ror": "https://ror.org/05591te55",
+          "country_code": "DE",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I8204097"
+          ]
+        }
+      ],
+      "countries": [
+        "DE"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Harald Weinfurter",
+      "raw_affiliation_strings": [
+        "Fakultät für Physik, Ludwig-Maximilians-Universität, München, Germany. h.w@lmu.de",
+        "Max-Planck Institut für Quantenoptik, Garching, Germany. h.w@lmu.de",
+        "Munich Center for Quantum Science and Technology (MCQST), München, Germany. h.w@lmu.de",
+        "Fakultät für Physik, Ludwig-Maximilians-Universität, München, Germany"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Fakultät für Physik, Ludwig-Maximilians-Universität, München, Germany. h.w@lmu.de",
+          "institution_ids": [
+            "https://openalex.org/I8204097"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Max-Planck Institut für Quantenoptik, Garching, Germany. h.w@lmu.de",
+          "institution_ids": [
+            "https://openalex.org/I4210120293"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Munich Center for Quantum Science and Technology (MCQST), München, Germany. h.w@lmu.de",
+          "institution_ids": [
+            "https://openalex.org/I4210142743"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Fakultät für Physik, Ludwig-Maximilians-Universität, München, Germany",
+          "institution_ids": [
+            "https://openalex.org/I8204097"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-8197-3335",
+    "email": "zuanwang@cityu.edu.hk",
+    "expectedName": "Zuankai Wang",
+    "oldOrcidOwnerName": "Hao Wu",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5026247328",
+    "workUrl": "https://openalex.org/W3201520731",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5026247328",
+        "display_name": "Zuankai Wang",
+        "orcid": "https://orcid.org/0000-0002-3510-1122",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-3510-1122"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I168719708",
+          "display_name": "City University of Hong Kong",
+          "ror": "https://ror.org/03q8dnn23",
+          "country_code": "HK",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I168719708"
+          ]
+        }
+      ],
+      "countries": [
+        "HK"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Zuankai Wang",
+      "raw_affiliation_strings": [
+        "Department of Mechanical Engineering, City University of Hong Kong, Hong Kong, China. zuanwang@cityu.edu.hk",
+        "Department of Mechanical Engineering, City University of Hong Kong, Hong Kong, China"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-3510-1122",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Mechanical Engineering, City University of Hong Kong, Hong Kong, China. zuanwang@cityu.edu.hk",
+          "institution_ids": [
+            "https://openalex.org/I168719708"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Mechanical Engineering, City University of Hong Kong, Hong Kong, China",
+          "institution_ids": [
+            "https://openalex.org/I168719708"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-4335-3546",
+    "email": "zonglzhu@cityu.edu.hk",
+    "expectedName": "Zonglong Zhu",
+    "oldOrcidOwnerName": "Jie ZHANG",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5085664488",
+    "workUrl": "https://openalex.org/W3125929959",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5085664488",
+        "display_name": "Zonglong Zhu",
+        "orcid": "https://orcid.org/0000-0002-8285-9665",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-8285-9665"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I168719708",
+          "display_name": "City University of Hong Kong",
+          "ror": "https://ror.org/03q8dnn23",
+          "country_code": "HK",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I168719708"
+          ]
+        }
+      ],
+      "countries": [
+        "HK"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Zonglong Zhu",
+      "raw_affiliation_strings": [
+        "Department of Chemistry, City University of Hong Kong, Tat Chee Avenue, 999077, Kowloon, Hong Kong. zonglzhu@cityu.edu.hk",
+        "Department of Materials Science and Engineering, City University of Hong Kong, Tat Chee Avenue, 999077, Kowloon, Hong Kong. zonglzhu@cityu.edu.hk",
+        "Department of Chemistry, City University of Hong Kong, Tat Chee Avenue, 999077, Kowloon, Hong Kong"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-8285-9665",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Chemistry, City University of Hong Kong, Tat Chee Avenue, 999077, Kowloon, Hong Kong. zonglzhu@cityu.edu.hk",
+          "institution_ids": [
+            "https://openalex.org/I168719708"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Materials Science and Engineering, City University of Hong Kong, Tat Chee Avenue, 999077, Kowloon, Hong Kong. zonglzhu@cityu.edu.hk",
+          "institution_ids": [
+            "https://openalex.org/I168719708"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Chemistry, City University of Hong Kong, Tat Chee Avenue, 999077, Kowloon, Hong Kong",
+          "institution_ids": [
+            "https://openalex.org/I168719708"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0001-8281-7978",
+    "email": "afutreal@mdanderson.org",
+    "expectedName": "P. Andrew Futreal",
+    "oldOrcidOwnerName": "Feng Wang",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5067102201",
+    "workUrl": "https://openalex.org/W3093815480",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5067102201",
+        "display_name": "P. Andrew Futreal",
+        "orcid": "https://orcid.org/0000-0001-8663-2671",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-8663-2671"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I1343551460",
+          "display_name": "The University of Texas MD Anderson Cancer Center",
+          "ror": "https://ror.org/04twxam07",
+          "country_code": "US",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I1343551460"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "P. Andrew Futreal",
+      "raw_affiliation_strings": [
+        "Department of Genomic Medicine, The University of Texas MD Anderson Cancer Center, Houston, TX, USA. afutreal@mdanderson.org",
+        "Department of Genomic Medicine, The University of Texas MD Anderson Cancer Center, Houston, TX, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-8663-2671",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Genomic Medicine, The University of Texas MD Anderson Cancer Center, Houston, TX, USA. afutreal@mdanderson.org",
+          "institution_ids": [
+            "https://openalex.org/I1343551460"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Genomic Medicine, The University of Texas MD Anderson Cancer Center, Houston, TX, USA",
+          "institution_ids": [
+            "https://openalex.org/I1343551460"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-0847-182X",
+    "email": "jian.xu@utsouthwestern.edu",
+    "expectedName": "Jian Xu",
+    "oldOrcidOwnerName": "Xin Liu",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5088119941",
+    "workUrl": "https://openalex.org/W3002468721",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5088119941",
+        "display_name": "Jian Wei Xu",
+        "orcid": "https://orcid.org/0000-0003-1988-7337",
+        "observed_orcids": [
+          "https://orcid.org/0000-0003-1988-7337"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I1297463080",
+          "display_name": "Children's Medical Center",
+          "ror": "https://ror.org/02ndk3y82",
+          "country_code": "US",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I1297463080"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I4210096815",
+          "display_name": "Southwestern Medical Center",
+          "ror": "https://ror.org/00t9vx427",
+          "country_code": "US",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I4210096815"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I867280407",
+          "display_name": "The University of Texas Southwestern Medical Center",
+          "ror": "https://ror.org/05byvp690",
+          "country_code": "US",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I867280407"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Jian Xu",
+      "raw_affiliation_strings": [
+        "Children's Medical Center Research Institute, University of Texas Southwestern Medical Center, Dallas, TX, 75390, USA. jian.xu@utsouthwestern.edu",
+        "Department of Pediatrics, Harold C. Simmons Comprehensive Cancer Center, and Hamon Center for Regenerative Science and Medicine, University of Texas Southwestern Medical Center, Dallas, TX, 75390, USA. jian.xu@utsouthwestern.edu",
+        "Children's Medical Center Research Institute, University of Texas Southwestern Medical Center, Dallas, TX, 75390, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0003-1988-7337",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Children's Medical Center Research Institute, University of Texas Southwestern Medical Center, Dallas, TX, 75390, USA. jian.xu@utsouthwestern.edu",
+          "institution_ids": [
+            "https://openalex.org/I4210096815",
+            "https://openalex.org/I867280407"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Pediatrics, Harold C. Simmons Comprehensive Cancer Center, and Hamon Center for Regenerative Science and Medicine, University of Texas Southwestern Medical Center, Dallas, TX, 75390, USA. jian.xu@utsouthwestern.edu",
+          "institution_ids": [
+            "https://openalex.org/I4210096815",
+            "https://openalex.org/I867280407"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Children's Medical Center Research Institute, University of Texas Southwestern Medical Center, Dallas, TX, 75390, USA",
+          "institution_ids": [
+            "https://openalex.org/I1297463080",
+            "https://openalex.org/I867280407"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-1171-7141",
+    "email": "hliang1@mdanderson.org",
+    "expectedName": "Han Liang",
+    "oldOrcidOwnerName": "Jun Li",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5053104107",
+    "workUrl": "https://openalex.org/W3004462687",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5053104107",
+        "display_name": "Han Liang",
+        "orcid": "https://orcid.org/0000-0001-7633-286X",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-7633-286X",
+          "https://orcid.org/0009-0002-0768-0777"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I1343551460",
+          "display_name": "The University of Texas MD Anderson Cancer Center",
+          "ror": "https://ror.org/04twxam07",
+          "country_code": "US",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I1343551460"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I4210098931",
+          "display_name": "Quantitative BioSciences",
+          "ror": "https://ror.org/010brsj79",
+          "country_code": "US",
+          "type": "nonprofit",
+          "lineage": [
+            "https://openalex.org/I4210098931"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Han Liang",
+      "raw_affiliation_strings": [
+        "Department of Bioinformatics and Computational Biology, The University of Texas MD Anderson Cancer Center, Houston, TX, USA. hliang1@mdanderson.org",
+        "Department of Systems Biology, The University of Texas MD Anderson Cancer Center, Houston, TX, USA. hliang1@mdanderson.org",
+        "Quantitative and Computational Biosciences Graduate Program, Baylor College of Medicine, Houston, TX, USA. hliang1@mdanderson.org",
+        "Department of Systems Biology, The University of Texas MD Anderson Cancer Center, Houston, TX, USA"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Bioinformatics and Computational Biology, The University of Texas MD Anderson Cancer Center, Houston, TX, USA. hliang1@mdanderson.org",
+          "institution_ids": [
+            "https://openalex.org/I1343551460"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Systems Biology, The University of Texas MD Anderson Cancer Center, Houston, TX, USA. hliang1@mdanderson.org",
+          "institution_ids": [
+            "https://openalex.org/I1343551460"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Quantitative and Computational Biosciences Graduate Program, Baylor College of Medicine, Houston, TX, USA. hliang1@mdanderson.org",
+          "institution_ids": [
+            "https://openalex.org/I4210098931"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Systems Biology, The University of Texas MD Anderson Cancer Center, Houston, TX, USA",
+          "institution_ids": [
+            "https://openalex.org/I1343551460"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0001-8654-3636",
+    "email": "jjlee@mdanderson.org",
+    "expectedName": "J. Jack Lee",
+    "oldOrcidOwnerName": "Na Liu",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5100383910",
+    "workUrl": "https://openalex.org/W3163923489",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5100383910",
+        "display_name": "J. Jack Lee",
+        "orcid": "https://orcid.org/0000-0001-5469-9214",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-5469-9214"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I1343551460",
+          "display_name": "The University of Texas MD Anderson Cancer Center",
+          "ror": "https://ror.org/04twxam07",
+          "country_code": "US",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I1343551460"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "J. Jack Lee",
+      "raw_affiliation_strings": [
+        "Department of Biostatistics, The University of Texas, MD Anderson Cancer Center, Houston, United States. jjlee@mdanderson.org",
+        "Department of Biostatistics, The University of Texas, MD Anderson Cancer Center, Houston, United States"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-5469-9214",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Biostatistics, The University of Texas, MD Anderson Cancer Center, Houston, United States. jjlee@mdanderson.org",
+          "institution_ids": [
+            "https://openalex.org/I1343551460"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Biostatistics, The University of Texas, MD Anderson Cancer Center, Houston, United States",
+          "institution_ids": [
+            "https://openalex.org/I1343551460"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-0221-3419",
+    "email": "minhyuk.park@snu.ac.kr",
+    "expectedName": "Min Hyuk Park",
+    "oldOrcidOwnerName": "Kun Yang",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5074806474",
+    "workUrl": "https://openalex.org/W4389221329",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5074806474",
+        "display_name": "Min Hyuk Park",
+        "orcid": "https://orcid.org/0000-0001-6333-2668",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-6333-2668"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I139264467",
+          "display_name": "Seoul National University",
+          "ror": "https://ror.org/04h9pn542",
+          "country_code": "KR",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I139264467"
+          ]
+        }
+      ],
+      "countries": [
+        "KR"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Min Hyuk Park",
+      "raw_affiliation_strings": [
+        "Department of Materials Science and Engineering and Inter-University Semiconductor Research Center, College of Engineering, Seoul National University, Gwanak-Ro 1, Gwanak-Gu, Seoul, 08826, Republic of Korea. minhyuk.park@snu.ac.kr",
+        "Research Institute of Advanced Materials, Seoul National University, Gwanak-Ro 1, Gwanak-Gu, Seoul, 08826, Republic of Korea. minhyuk.park@snu.ac.kr",
+        "Research Institute of Advanced Materials, Seoul National University, Gwanak-Ro 1, Gwanak-Gu, Seoul, 08826, Republic of Korea"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-6333-2668",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Materials Science and Engineering and Inter-University Semiconductor Research Center, College of Engineering, Seoul National University, Gwanak-Ro 1, Gwanak-Gu, Seoul, 08826, Republic of Korea. minhyuk.park@snu.ac.kr",
+          "institution_ids": [
+            "https://openalex.org/I139264467"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Research Institute of Advanced Materials, Seoul National University, Gwanak-Ro 1, Gwanak-Gu, Seoul, 08826, Republic of Korea. minhyuk.park@snu.ac.kr",
+          "institution_ids": [
+            "https://openalex.org/I139264467"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Research Institute of Advanced Materials, Seoul National University, Gwanak-Ro 1, Gwanak-Gu, Seoul, 08826, Republic of Korea",
+          "institution_ids": [
+            "https://openalex.org/I139264467"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0001-8421-9031",
+    "email": "sung.jaeyun@mayo.edu",
+    "expectedName": "Jaeyun Sung",
+    "oldOrcidOwnerName": "Utpal Bakshi",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5023975863",
+    "workUrl": "https://openalex.org/W3087332590",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5023975863",
+        "display_name": "Jaeyun Sung",
+        "orcid": "https://orcid.org/0000-0002-3005-2798",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-3005-2798"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I1330342723",
+          "display_name": "Mayo Clinic",
+          "ror": "https://ror.org/02qp3tb03",
+          "country_code": "US",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I1330342723"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I4210125099",
+          "display_name": "Mayo Clinic in Arizona",
+          "ror": "https://ror.org/03jp40720",
+          "country_code": "US",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I1330342723",
+            "https://openalex.org/I4210125099"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I4210146710",
+          "display_name": "Mayo Clinic in Florida",
+          "ror": "https://ror.org/03zzw1w08",
+          "country_code": "US",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I1330342723",
+            "https://openalex.org/I4210146710"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Jaeyun Sung",
+      "raw_affiliation_strings": [
+        "Division of Rheumatology, Department of Medicine, Mayo Clinic, Rochester, MN, 55905, USA. Sung.Jaeyun@mayo.edu",
+        "Division of Surgery Research, Department of Surgery, Mayo Clinic, Rochester, MN, 55905, USA. Sung.Jaeyun@mayo.edu",
+        "Microbiome Program, Center for Individualized Medicine, Mayo Clinic, Rochester, MN, 55905, USA. Sung.Jaeyun@mayo.edu",
+        "Division of Surgery Research, Department of Surgery, Mayo Clinic, Rochester, MN, 55905, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-3005-2798",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Division of Rheumatology, Department of Medicine, Mayo Clinic, Rochester, MN, 55905, USA. Sung.Jaeyun@mayo.edu",
+          "institution_ids": [
+            "https://openalex.org/I4210125099"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Division of Surgery Research, Department of Surgery, Mayo Clinic, Rochester, MN, 55905, USA. Sung.Jaeyun@mayo.edu",
+          "institution_ids": [
+            "https://openalex.org/I1330342723",
+            "https://openalex.org/I4210125099",
+            "https://openalex.org/I4210146710"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Microbiome Program, Center for Individualized Medicine, Mayo Clinic, Rochester, MN, 55905, USA. Sung.Jaeyun@mayo.edu",
+          "institution_ids": [
+            "https://openalex.org/I1330342723",
+            "https://openalex.org/I4210125099",
+            "https://openalex.org/I4210146710"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Division of Surgery Research, Department of Surgery, Mayo Clinic, Rochester, MN, 55905, USA",
+          "institution_ids": [
+            "https://openalex.org/I1330342723"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-0621-5320",
+    "email": "lpham@sandia.gov",
+    "expectedName": "Le Thanh Mai Pham",
+    "oldOrcidOwnerName": "Brooke Harmon",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5043694377",
+    "workUrl": "https://openalex.org/W7165022440",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5043694377",
+        "display_name": "Le Thanh Mai Pham",
+        "orcid": "https://orcid.org/0000-0001-8020-1256"
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I192454743",
+          "display_name": "Sandia National Laboratories California",
+          "ror": "https://ror.org/058m7ey48",
+          "country_code": "US",
+          "type": "facility",
+          "lineage": [
+            "https://openalex.org/I1330989302",
+            "https://openalex.org/I192454743",
+            "https://openalex.org/I198811213",
+            "https://openalex.org/I4210104735"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Le Thanh Mai Pham",
+      "raw_affiliation_strings": [
+        "Bioresource and Environmental Security, Sandia National Laboratories, Livermore, California, United States of America"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-8020-1256",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Bioresource and Environmental Security, Sandia National Laboratories, Livermore, California, United States of America",
+          "institution_ids": [
+            "https://openalex.org/I192454743"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-6033-0648",
+    "email": "yangc2@nih.gov",
+    "expectedName": "Chunzhang Yang",
+    "oldOrcidOwnerName": "Yang Liu",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5059419027",
+    "workUrl": "https://openalex.org/W3015988344",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5059419027",
+        "display_name": "Chunzhang Yang",
+        "orcid": "https://orcid.org/0000-0001-6433-0867",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-6433-0867"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I4210140884",
+          "display_name": "National Cancer Institute",
+          "ror": "https://ror.org/040gcmg81",
+          "country_code": "US",
+          "type": "government",
+          "lineage": [
+            "https://openalex.org/I1299022934",
+            "https://openalex.org/I1299303238",
+            "https://openalex.org/I4210140884"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I4210149717",
+          "display_name": "Center for Cancer Research",
+          "ror": "https://ror.org/05bjen692",
+          "country_code": "US",
+          "type": "facility",
+          "lineage": [
+            "https://openalex.org/I1299022934",
+            "https://openalex.org/I1299303238",
+            "https://openalex.org/I4210140884",
+            "https://openalex.org/I4210149717"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Chunzhang Yang",
+      "raw_affiliation_strings": [
+        "Neuro-Oncology Branch, Center for Cancer Research, National Cancer Institute, Bethesda, MD, 20892, USA. yangc2@nih.gov",
+        "Neuro-Oncology Branch, Center for Cancer Research, National Cancer Institute, Bethesda, MD, 20892, USA"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Neuro-Oncology Branch, Center for Cancer Research, National Cancer Institute, Bethesda, MD, 20892, USA. yangc2@nih.gov",
+          "institution_ids": [
+            "https://openalex.org/I4210140884"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Neuro-Oncology Branch, Center for Cancer Research, National Cancer Institute, Bethesda, MD, 20892, USA",
+          "institution_ids": [
+            "https://openalex.org/I4210140884",
+            "https://openalex.org/I4210149717"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-3541-488X",
+    "email": "xiachaoming@suda.edu.cn",
+    "expectedName": "Chao-Ming Xia",
+    "oldOrcidOwnerName": "Chaoming Xia",
+    "legacyOrcidIsCorrect": true,
+    "verifiedOpenAlexAuthorId": "A5008284434",
+    "workUrl": "https://openalex.org/W4415214805",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5008284434",
+        "display_name": "Chao-Ming Xia",
+        "orcid": "https://orcid.org/0000-0003-3541-488X",
+        "observed_orcids": [
+          "https://orcid.org/0000-0003-3541-488X"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I3923682",
+          "display_name": "Soochow University",
+          "ror": "https://ror.org/05t8y2r12",
+          "country_code": "CN",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I3923682"
+          ]
+        }
+      ],
+      "countries": [
+        "CN"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Chao-Ming Xia",
+      "raw_affiliation_strings": [
+        "Suzhou Medical College of Soochow University;"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0003-3541-488X",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Suzhou Medical College of Soochow University;",
+          "institution_ids": [
+            "https://openalex.org/I3923682"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0001-7963-0619",
+    "email": "zhengt@exchange.nih.gov",
+    "expectedName": "Zhi-Ming Zheng",
+    "oldOrcidOwnerName": "Wei Tian",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5086610984",
+    "workUrl": "https://openalex.org/W3186835643",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5086610984",
+        "display_name": "Zhi‐Ming Zheng",
+        "orcid": "https://orcid.org/0000-0001-5547-7912",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-5547-7912"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I4210140884",
+          "display_name": "National Cancer Institute",
+          "ror": "https://ror.org/040gcmg81",
+          "country_code": "US",
+          "type": "government",
+          "lineage": [
+            "https://openalex.org/I1299022934",
+            "https://openalex.org/I1299303238",
+            "https://openalex.org/I4210140884"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Zhi-Ming Zheng",
+      "raw_affiliation_strings": [
+        "Tumor Virus RNA Biology Section, HIV DRP, National Cancer Institute, NIH, Frederick, MD, USA. zhengt@exchange.nih.gov",
+        "Tumor Virus RNA Biology Section, HIV DRP, National Cancer Institute, NIH, Frederick, MD, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-5547-7912",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Tumor Virus RNA Biology Section, HIV DRP, National Cancer Institute, NIH, Frederick, MD, USA. zhengt@exchange.nih.gov",
+          "institution_ids": []
+        },
+        {
+          "raw_affiliation_string": "Tumor Virus RNA Biology Section, HIV DRP, National Cancer Institute, NIH, Frederick, MD, USA",
+          "institution_ids": [
+            "https://openalex.org/I4210140884"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-9123-4974",
+    "email": "sydai@tamu.edu",
+    "expectedName": "Susie Y Dai",
+    "oldOrcidOwnerName": "Yan Liu",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5052052772",
+    "workUrl": "https://openalex.org/W3049406819",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5052052772",
+        "display_name": "Susie Y. Dai",
+        "orcid": "https://orcid.org/0000-0002-5747-9222",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-5747-9222"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I91045830",
+          "display_name": "Texas A&M University",
+          "ror": "https://ror.org/01f5ytq51",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I91045830"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Susie Y. Dai",
+      "raw_affiliation_strings": [
+        "Department of Plant Pathology and Microbiology, Texas A&M University, College Station, TX, United States of America"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-5747-9222",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Plant Pathology and Microbiology, Texas A&M University, College Station, TX, United States of America",
+          "institution_ids": [
+            "https://openalex.org/I91045830"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-1375-1295",
+    "email": "m.r.groves@rug.nl",
+    "expectedName": "Matthew R. Groves",
+    "oldOrcidOwnerName": "Kai Gao",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5022246263",
+    "workUrl": "https://openalex.org/W3004216838",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5022246263",
+        "display_name": "Matthew R. Groves",
+        "orcid": "https://orcid.org/0000-0001-9859-5177"
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I169381384",
+          "display_name": "University of Groningen",
+          "ror": "https://ror.org/012p63287",
+          "country_code": "NL",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I169381384"
+          ]
+        }
+      ],
+      "countries": [
+        "NL"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Matthew R. Groves",
+      "raw_affiliation_strings": [
+        "Structure Biology in Drug Design, Drug Design Group XB20, Departments of Pharmacy, University of Groningen, Groningen, The Netherlands. m.r.groves@rug.nl",
+        "Structure Biology in Drug Design, Drug Design Group XB20, Departments of Pharmacy, University of Groningen, Groningen, The Netherlands"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-9859-5177",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Structure Biology in Drug Design, Drug Design Group XB20, Departments of Pharmacy, University of Groningen, Groningen, The Netherlands. m.r.groves@rug.nl",
+          "institution_ids": [
+            "https://openalex.org/I169381384"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Structure Biology in Drug Design, Drug Design Group XB20, Departments of Pharmacy, University of Groningen, Groningen, The Netherlands",
+          "institution_ids": [
+            "https://openalex.org/I169381384"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0009-0001-6428-6672",
+    "email": "jeff.xia@mcgill.ca",
+    "expectedName": "Jianguo Xia",
+    "oldOrcidOwnerName": "Lei Xu",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5073663029",
+    "workUrl": "https://openalex.org/W4396547507",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5073663029",
+        "display_name": "Jianguo Xia",
+        "orcid": "https://orcid.org/0000-0003-2040-2624",
+        "observed_orcids": [
+          "https://orcid.org/0000-0003-2040-2624"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I5023651",
+          "display_name": "McGill University",
+          "ror": "https://ror.org/01pxwe438",
+          "country_code": "CA",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I5023651"
+          ]
+        }
+      ],
+      "countries": [
+        "CA"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Jianguo Xia",
+      "raw_affiliation_strings": [
+        "Department of Microbiology and Immunology, McGill University, Montreal, QC, Canada. jeff.xia@mcgill.ca",
+        "Faculty of Agricultural and Environmental Sciences, McGill University, Ste-Anne-de-Bellevue, QC, Canada. jeff.xia@mcgill.ca",
+        "Faculty of Agricultural and Environmental Sciences, McGill University, Ste-Anne-de-Bellevue, QC, Canada"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0003-2040-2624",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Microbiology and Immunology, McGill University, Montreal, QC, Canada. jeff.xia@mcgill.ca",
+          "institution_ids": [
+            "https://openalex.org/I5023651"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Faculty of Agricultural and Environmental Sciences, McGill University, Ste-Anne-de-Bellevue, QC, Canada. jeff.xia@mcgill.ca",
+          "institution_ids": [
+            "https://openalex.org/I5023651"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Faculty of Agricultural and Environmental Sciences, McGill University, Ste-Anne-de-Bellevue, QC, Canada",
+          "institution_ids": [
+            "https://openalex.org/I5023651"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0001-6565-4812",
+    "email": "donald.mcdonnell@duke.edu",
+    "expectedName": "Donald P. McDonnell",
+    "oldOrcidOwnerName": "Wen Liu",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5062055452",
+    "workUrl": "https://openalex.org/W3194627617",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5062055452",
+        "display_name": "Donald Patrick McDonnell",
+        "orcid": "https://orcid.org/0000-0002-7331-4700",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-7331-4700"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I170897317",
+          "display_name": "Duke University",
+          "ror": "https://ror.org/00py81415",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I170897317"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Donald P. McDonnell",
+      "raw_affiliation_strings": [
+        "Department of Pharmacology and Cancer Biology, Duke University School of Medicine, Durham, NC, 27710, USA. donald.mcdonnell@duke.edu",
+        "Department of Pharmacology and Cancer Biology, Duke University School of Medicine, Durham, NC, 27710, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-7331-4700",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Pharmacology and Cancer Biology, Duke University School of Medicine, Durham, NC, 27710, USA. donald.mcdonnell@duke.edu",
+          "institution_ids": [
+            "https://openalex.org/I170897317"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Pharmacology and Cancer Biology, Duke University School of Medicine, Durham, NC, 27710, USA",
+          "institution_ids": [
+            "https://openalex.org/I170897317"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-2981-3972",
+    "email": "yonghui.wu@ufl.edu",
+    "expectedName": "Yonghui Wu",
+    "oldOrcidOwnerName": "Xi Yang",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5010253402",
+    "workUrl": "https://openalex.org/W4312220150",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5010253402",
+        "display_name": "Yonghui Wu",
+        "orcid": "https://orcid.org/0000-0002-6780-6135",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-6780-6135"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I2800717037",
+          "display_name": "University of Florida Health",
+          "ror": "https://ror.org/04tk2gy88",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I2800717037"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I4390039331",
+          "display_name": "UF Health Cancer Center",
+          "ror": "https://ror.org/044vhe029",
+          "country_code": null,
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I2800717037",
+            "https://openalex.org/I4390039331"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I94062374",
+          "display_name": "Florida College",
+          "ror": "https://ror.org/010bgev76",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I94062374"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Yonghui Wu",
+      "raw_affiliation_strings": [
+        "Cancer Informatics and eHealth core, University of Florida Health Cancer Center, Gainesville, FL, USA. yonghui.wu@ufl.edu",
+        "Department of Health Outcomes and Biomedical Informatics, College of Medicine, University of Florida, Gainesville, FL, USA. yonghui.wu@ufl.edu",
+        "Cancer Informatics and eHealth core, University of Florida Health Cancer Center, Gainesville, FL, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-6780-6135",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Cancer Informatics and eHealth core, University of Florida Health Cancer Center, Gainesville, FL, USA. yonghui.wu@ufl.edu",
+          "institution_ids": [
+            "https://openalex.org/I2800717037"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Health Outcomes and Biomedical Informatics, College of Medicine, University of Florida, Gainesville, FL, USA. yonghui.wu@ufl.edu",
+          "institution_ids": [
+            "https://openalex.org/I94062374"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Cancer Informatics and eHealth core, University of Florida Health Cancer Center, Gainesville, FL, USA",
+          "institution_ids": [
+            "https://openalex.org/I2800717037",
+            "https://openalex.org/I4390039331"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-3956-946X",
+    "email": "zxguo@hku.hk",
+    "expectedName": "Zhengxiao Guo",
+    "oldOrcidOwnerName": "Xu Liu",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5077700652",
+    "workUrl": "https://openalex.org/W3027479287",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5077700652",
+        "display_name": "Zhengxiao Guo",
+        "orcid": "https://orcid.org/0000-0001-5404-3215",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-5404-3215"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I4210147894",
+          "display_name": "Institut de Recherche et d’Innovation",
+          "ror": "https://ror.org/04nqadf13",
+          "country_code": "FR",
+          "type": "facility",
+          "lineage": [
+            "https://openalex.org/I4210147894"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I45129253",
+          "display_name": "University College London",
+          "ror": "https://ror.org/02jx3x895",
+          "country_code": "GB",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I124357947",
+            "https://openalex.org/I45129253"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I889458895",
+          "display_name": "University of Hong Kong",
+          "ror": "https://ror.org/02zhqgq86",
+          "country_code": "HK",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I889458895"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I98259816",
+          "display_name": "Birkbeck, University of London",
+          "ror": "https://ror.org/02mb95055",
+          "country_code": "GB",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I124357947",
+            "https://openalex.org/I98259816"
+          ]
+        }
+      ],
+      "countries": [
+        "FR",
+        "GB",
+        "HK"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Zhengxiao Guo",
+      "raw_affiliation_strings": [
+        "Department of Chemistry, HKU-CAS Joint Laboratory on New Materials, The University of Hong Kong, Hong Kong, China. zxguo@hku.hk",
+        "Department of Chemistry, University College London, 20 Gordon Street, London, WC1H 0AJ, UK. zxguo@hku.hk",
+        "Department of Mechanical Engineering, The University of Hong Kong, Hong Kong, China. zxguo@hku.hk",
+        "HKU Zhejiang Institute of Research and Innovation, The University of Hong Kong, Hangzhou, China. zxguo@hku.hk",
+        "Department of Chemistry, University College London, 20 Gordon Street, London, WC1H 0AJ, UK"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-5404-3215",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Chemistry, HKU-CAS Joint Laboratory on New Materials, The University of Hong Kong, Hong Kong, China. zxguo@hku.hk",
+          "institution_ids": [
+            "https://openalex.org/I889458895"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Chemistry, University College London, 20 Gordon Street, London, WC1H 0AJ, UK. zxguo@hku.hk",
+          "institution_ids": [
+            "https://openalex.org/I45129253",
+            "https://openalex.org/I98259816"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Mechanical Engineering, The University of Hong Kong, Hong Kong, China. zxguo@hku.hk",
+          "institution_ids": [
+            "https://openalex.org/I889458895"
+          ]
+        },
+        {
+          "raw_affiliation_string": "HKU Zhejiang Institute of Research and Innovation, The University of Hong Kong, Hangzhou, China. zxguo@hku.hk",
+          "institution_ids": [
+            "https://openalex.org/I4210147894",
+            "https://openalex.org/I889458895"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Chemistry, University College London, 20 Gordon Street, London, WC1H 0AJ, UK",
+          "institution_ids": [
+            "https://openalex.org/I45129253"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-2854-6163",
+    "email": "bkante@berkeley.edu",
+    "expectedName": "Boubacar Kanté",
+    "oldOrcidOwnerName": "Abdoulaye Ndao",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5004611571",
+    "workUrl": "https://openalex.org/W3037924704",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5004611571",
+        "display_name": "Boubacar Kanté",
+        "orcid": "https://orcid.org/0000-0001-5633-4163"
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I148283060",
+          "display_name": "Lawrence Berkeley National Laboratory",
+          "ror": "https://ror.org/02jbv0t02",
+          "country_code": "US",
+          "type": "facility",
+          "lineage": [
+            "https://openalex.org/I1330989302",
+            "https://openalex.org/I148283060",
+            "https://openalex.org/I39565521"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I36258959",
+          "display_name": "University of California San Diego",
+          "ror": "https://ror.org/0168r3w48",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I36258959"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I95457486",
+          "display_name": "University of California, Berkeley",
+          "ror": "https://ror.org/01an7q238",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I95457486"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Boubacar Kanté",
+      "raw_affiliation_strings": [
+        "Department of Electrical Engineering and Computer Sciences, University of California, Berkeley, CA, 94720, USA. bkante@berkeley.edu",
+        "Department of Electrical and Computer Engineering, University of California San Diego, La Jolla, CA, 92093-0407, USA. bkante@berkeley.edu",
+        "Department of Mechanical Engineering, University of California, Berkeley, CA, 94720, USA. bkante@berkeley.edu",
+        "Materials Sciences Division, Lawrence Berkeley National Laboratory, 1 Cyclotron Road, Berkeley, CA, 94720, USA. bkante@berkeley.edu",
+        "Department of Electrical Engineering and Computer Sciences, University of California, Berkeley, CA, 94720, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-5633-4163",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Electrical Engineering and Computer Sciences, University of California, Berkeley, CA, 94720, USA. bkante@berkeley.edu",
+          "institution_ids": [
+            "https://openalex.org/I95457486"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Electrical and Computer Engineering, University of California San Diego, La Jolla, CA, 92093-0407, USA. bkante@berkeley.edu",
+          "institution_ids": [
+            "https://openalex.org/I36258959"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Mechanical Engineering, University of California, Berkeley, CA, 94720, USA. bkante@berkeley.edu",
+          "institution_ids": [
+            "https://openalex.org/I95457486"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Materials Sciences Division, Lawrence Berkeley National Laboratory, 1 Cyclotron Road, Berkeley, CA, 94720, USA. bkante@berkeley.edu",
+          "institution_ids": [
+            "https://openalex.org/I148283060"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Electrical Engineering and Computer Sciences, University of California, Berkeley, CA, 94720, USA",
+          "institution_ids": [
+            "https://openalex.org/I95457486"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-3535-8494",
+    "email": "cummer@ee.duke.edu",
+    "expectedName": "Steven A. Cummer",
+    "oldOrcidOwnerName": "Chen Shen",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5052409233",
+    "workUrl": "https://openalex.org/W3005146309",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5052409233",
+        "display_name": "Steven A. Cummer",
+        "orcid": "https://orcid.org/0000-0002-0002-0613",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-0002-0613"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I170897317",
+          "display_name": "Duke University",
+          "ror": "https://ror.org/00py81415",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I170897317"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Steven A. Cummer",
+      "raw_affiliation_strings": [
+        "Department of Electrical and Computer Engineering, Duke University, Durham, NC, 27708, USA. cummer@ee.duke.edu",
+        "Department of Electrical and Computer Engineering, Duke University, Durham, NC, 27708, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-0002-0613",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Electrical and Computer Engineering, Duke University, Durham, NC, 27708, USA. cummer@ee.duke.edu",
+          "institution_ids": [
+            "https://openalex.org/I170897317"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Electrical and Computer Engineering, Duke University, Durham, NC, 27708, USA",
+          "institution_ids": [
+            "https://openalex.org/I170897317"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-2737-0530",
+    "email": "hgao@civil.tamu.edu",
+    "expectedName": "Huilin Gao",
+    "oldOrcidOwnerName": "Gang Zhao",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5009536582",
+    "workUrl": "https://openalex.org/W4283657715",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5009536582",
+        "display_name": "Huilin Gao",
+        "orcid": "https://orcid.org/0000-0001-7009-8005",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-7009-8005"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I91045830",
+          "display_name": "Texas A&M University",
+          "ror": "https://ror.org/01f5ytq51",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I91045830"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Huilin Gao",
+      "raw_affiliation_strings": [
+        "Zachry Department of Civil and Environmental Engineering, Texas A&M University, College Station, TX, 77843, USA. hgao@civil.tamu.edu",
+        "Zachry Department of Civil and Environmental Engineering, Texas A&M University, College Station, TX, 77843, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-7009-8005",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Zachry Department of Civil and Environmental Engineering, Texas A&M University, College Station, TX, 77843, USA. hgao@civil.tamu.edu",
+          "institution_ids": [
+            "https://openalex.org/I91045830"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Zachry Department of Civil and Environmental Engineering, Texas A&M University, College Station, TX, 77843, USA",
+          "institution_ids": [
+            "https://openalex.org/I91045830"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-1890-3825",
+    "email": "tichi@imr.tohoku.ac.jp",
+    "expectedName": "Tetsu Ichitsubo",
+    "oldOrcidOwnerName": "Hongyi Li",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5074016900",
+    "workUrl": "https://openalex.org/W3015400650",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5074016900",
+        "display_name": "Tetsu Ichitsubo",
+        "orcid": "https://orcid.org/0000-0002-1127-3034",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-1127-3034"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I201537933",
+          "display_name": "Tohoku University",
+          "ror": "https://ror.org/01dq60k83",
+          "country_code": "JP",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I201537933"
+          ]
+        }
+      ],
+      "countries": [
+        "JP"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Tetsu Ichitsubo",
+      "raw_affiliation_strings": [
+        "Institute for Materials Research, Tohoku University, Sendai, 980-8577, Japan. tichi@imr.tohoku.ac.jp",
+        "Institute for Materials Research, Tohoku University, Sendai, 980-8577, Japan"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-1127-3034",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Institute for Materials Research, Tohoku University, Sendai, 980-8577, Japan. tichi@imr.tohoku.ac.jp",
+          "institution_ids": [
+            "https://openalex.org/I201537933"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Institute for Materials Research, Tohoku University, Sendai, 980-8577, Japan",
+          "institution_ids": [
+            "https://openalex.org/I201537933"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-5751-7241",
+    "email": "sangouk.kim@kaist.ac.kr",
+    "expectedName": "Sang Ouk Kim",
+    "oldOrcidOwnerName": "Inho Kim",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5062489047",
+    "workUrl": "https://openalex.org/W4307407421",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5062489047",
+        "display_name": "Sang Ouk Kim",
+        "orcid": "https://orcid.org/0000-0003-1513-6042",
+        "observed_orcids": [
+          "https://orcid.org/0000-0003-1513-6042"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I157485424",
+          "display_name": "Korea Advanced Institute of Science and Technology",
+          "ror": "https://ror.org/05apxxy63",
+          "country_code": "KR",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I157485424"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I4210100816",
+          "display_name": "Creative Research",
+          "ror": "https://ror.org/01561s686",
+          "country_code": "GB",
+          "type": "other",
+          "lineage": [
+            "https://openalex.org/I4210100816"
+          ]
+        }
+      ],
+      "countries": [
+        "GB",
+        "KR"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Sang Ouk Kim",
+      "raw_affiliation_strings": [
+        "Department of Materials Science and Engineering, Korea Advanced Institute of Science and Technology (KAIST), Daejeon, Republic of Korea. sangouk.kim@kaist.ac.kr",
+        "Materials Creation, Seoul, Republic of Korea. sangouk.kim@kaist.ac.kr",
+        "National Creative Research Initiative Center for Multi-dimensional Directed Nanoscale Assembly, Korea Advanced Institute of Science and Technology (KAIST), Daejeon, Republic of Korea. sangouk.kim@kaist.ac.kr",
+        "Materials Creation, Seoul, Republic of Korea"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0003-1513-6042",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Materials Science and Engineering, Korea Advanced Institute of Science and Technology (KAIST), Daejeon, Republic of Korea. sangouk.kim@kaist.ac.kr",
+          "institution_ids": [
+            "https://openalex.org/I157485424"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Materials Creation, Seoul, Republic of Korea. sangouk.kim@kaist.ac.kr",
+          "institution_ids": []
+        },
+        {
+          "raw_affiliation_string": "National Creative Research Initiative Center for Multi-dimensional Directed Nanoscale Assembly, Korea Advanced Institute of Science and Technology (KAIST), Daejeon, Republic of Korea. sangouk.kim@kaist.ac.kr",
+          "institution_ids": [
+            "https://openalex.org/I157485424",
+            "https://openalex.org/I4210100816"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Materials Creation, Seoul, Republic of Korea",
+          "institution_ids": []
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-2499-5877",
+    "email": "okeye@knu.ac.kr",
+    "expectedName": "Hong Kyun Kim",
+    "oldOrcidOwnerName": "JEONGHO KIM",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5102771180",
+    "workUrl": "https://openalex.org/W4393464310",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5102771180",
+        "display_name": "Hong Kyun Kim",
+        "orcid": "https://orcid.org/0000-0002-9283-3506",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-9283-3506"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I2801673063",
+          "display_name": "Kyungpook National University Hospital",
+          "ror": "https://ror.org/04qn0xg47",
+          "country_code": "KR",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I2801673063",
+            "https://openalex.org/I31419693"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I31419693",
+          "display_name": "Kyungpook National University",
+          "ror": "https://ror.org/040c17130",
+          "country_code": "KR",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I31419693"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I4210092510",
+          "display_name": "National University",
+          "ror": "https://ror.org/003r3cg42",
+          "country_code": "SD",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I4210092510"
+          ]
+        }
+      ],
+      "countries": [
+        "KR",
+        "SD"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Hong Kyun Kim",
+      "raw_affiliation_strings": [
+        "Cell and Matrix Research Institute, School of Medicine, Kyungpook National University, Daegu, 41944, Republic of Korea. okeye@knu.ac.kr",
+        "Department of Ophthalmology, Kyungpook National University Hospital, Daegu, 41944, Republic of Korea. okeye@knu.ac.kr",
+        "Department of Ophthalmology, Kyungpook National University School of Medicine, Daegu, 41944, Republic of Korea. okeye@knu.ac.kr"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-9283-3506",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Cell and Matrix Research Institute, School of Medicine, Kyungpook National University, Daegu, 41944, Republic of Korea. okeye@knu.ac.kr",
+          "institution_ids": [
+            "https://openalex.org/I31419693",
+            "https://openalex.org/I4210092510"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Ophthalmology, Kyungpook National University Hospital, Daegu, 41944, Republic of Korea. okeye@knu.ac.kr",
+          "institution_ids": [
+            "https://openalex.org/I2801673063"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Ophthalmology, Kyungpook National University School of Medicine, Daegu, 41944, Republic of Korea. okeye@knu.ac.kr",
+          "institution_ids": [
+            "https://openalex.org/I31419693"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-4520-6307",
+    "email": "bu.guojun@mayo.edu",
+    "expectedName": "Guojun Bu",
+    "oldOrcidOwnerName": "Jing Zhao",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5025930339",
+    "workUrl": "https://openalex.org/W3095784700",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5025930339",
+        "display_name": "Guojun Bu",
+        "orcid": "https://orcid.org/0000-0003-3491-1016",
+        "observed_orcids": [
+          "https://orcid.org/0000-0003-3491-1016"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I2801572250",
+          "display_name": "Jacksonville College",
+          "ror": "https://ror.org/03a9t7g49",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I2801572250"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I4210146710",
+          "display_name": "Mayo Clinic in Florida",
+          "ror": "https://ror.org/03zzw1w08",
+          "country_code": "US",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I1330342723",
+            "https://openalex.org/I4210146710"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Guojun Bu",
+      "raw_affiliation_strings": [
+        "Center for Regenerative Medicine, Neuroregeneration Lab, Mayo Clinic, Jacksonville, FL, 32224, USA. bu.guojun@mayo.edu",
+        "Department of Neuroscience, Mayo Clinic, Jacksonville, FL, 32224, USA. bu.guojun@mayo.edu",
+        "Center for Regenerative Medicine, Neuroregeneration Lab, Mayo Clinic, Jacksonville, FL, 32224, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0003-3491-1016",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Center for Regenerative Medicine, Neuroregeneration Lab, Mayo Clinic, Jacksonville, FL, 32224, USA. bu.guojun@mayo.edu",
+          "institution_ids": [
+            "https://openalex.org/I2801572250",
+            "https://openalex.org/I4210146710"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Neuroscience, Mayo Clinic, Jacksonville, FL, 32224, USA. bu.guojun@mayo.edu",
+          "institution_ids": [
+            "https://openalex.org/I2801572250",
+            "https://openalex.org/I4210146710"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Center for Regenerative Medicine, Neuroregeneration Lab, Mayo Clinic, Jacksonville, FL, 32224, USA",
+          "institution_ids": [
+            "https://openalex.org/I4210146710"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-5355-3974",
+    "email": "cswang@umd.edu",
+    "expectedName": "Chunsheng Wang",
+    "oldOrcidOwnerName": "Long Chen",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5100331428",
+    "workUrl": "https://openalex.org/W3029911133",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5100331428",
+        "display_name": "Chunsheng Wang",
+        "orcid": "https://orcid.org/0000-0002-8626-6381",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-8626-6381"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I66946132",
+          "display_name": "University of Maryland, College Park",
+          "ror": "https://ror.org/047s2c258",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I66946132"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Chunsheng Wang",
+      "raw_affiliation_strings": [
+        "Department of Chemical and Biomolecular Engineering, University of Maryland, College Park, MD, 20742, USA. cswang@umd.edu",
+        "Department of Chemistry and Biochemistry, University of Maryland, College Park, MD, 20742, USA. cswang@umd.edu",
+        "Department of Chemistry and Biochemistry, University of Maryland, College Park, MD, 20742, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-8626-6381",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Chemical and Biomolecular Engineering, University of Maryland, College Park, MD, 20742, USA. cswang@umd.edu",
+          "institution_ids": [
+            "https://openalex.org/I66946132"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Chemistry and Biochemistry, University of Maryland, College Park, MD, 20742, USA. cswang@umd.edu",
+          "institution_ids": [
+            "https://openalex.org/I66946132"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Chemistry and Biochemistry, University of Maryland, College Park, MD, 20742, USA",
+          "institution_ids": [
+            "https://openalex.org/I66946132"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0001-7251-0227",
+    "email": "dimitrios.chronopoulos@kuleuven.be",
+    "expectedName": "Dimitrios Chronopoulos",
+    "oldOrcidOwnerName": "Mohand Saed",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5056315318",
+    "workUrl": "https://openalex.org/W3213181111",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5056315318",
+        "display_name": "Dimitrios Chronopoulos",
+        "orcid": "https://orcid.org/0000-0003-0186-8314",
+        "observed_orcids": [
+          "https://orcid.org/0000-0003-0186-8314"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I99464096",
+          "display_name": "KU Leuven",
+          "ror": "https://ror.org/05f950310",
+          "country_code": "BE",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I99464096"
+          ]
+        }
+      ],
+      "countries": [
+        "BE"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Dimitrios Chronopoulos",
+      "raw_affiliation_strings": [
+        "Department of Mechanical Engineering (LMSD), KU Leuven, Ghent Technology Campus, 9000, Gent, Belgium. dimitrios.chronopoulos@kuleuven.be",
+        "Department of Mechanical Engineering (LMSD), KU Leuven, Ghent Technology Campus, 9000, Gent, Belgium"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Mechanical Engineering (LMSD), KU Leuven, Ghent Technology Campus, 9000, Gent, Belgium. dimitrios.chronopoulos@kuleuven.be",
+          "institution_ids": [
+            "https://openalex.org/I99464096"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Mechanical Engineering (LMSD), KU Leuven, Ghent Technology Campus, 9000, Gent, Belgium",
+          "institution_ids": [
+            "https://openalex.org/I99464096"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0001-8295-9861",
+    "email": "poom.kum@kmutt.ac.th",
+    "expectedName": "Poom Kumam",
+    "oldOrcidOwnerName": "Muhammad Shoaib",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5036720066",
+    "workUrl": "https://openalex.org/W3094858401",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5036720066",
+        "display_name": "Poom Kumam",
+        "orcid": "https://orcid.org/0000-0002-5463-4581",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-5463-4581"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I184693016",
+          "display_name": "China Medical University",
+          "ror": "https://ror.org/00v408z34",
+          "country_code": "TW",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I184693016"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I4210126829",
+          "display_name": "China Medical University Hospital",
+          "ror": "https://ror.org/0368s4g32",
+          "country_code": "TW",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I4210126829"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I60837268",
+          "display_name": "King Mongkut's University of Technology Thonburi",
+          "ror": "https://ror.org/0057ax056",
+          "country_code": "TH",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I60837268"
+          ]
+        }
+      ],
+      "countries": [
+        "TH",
+        "TW"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Poom Kumam",
+      "raw_affiliation_strings": [
+        "Department of Medical Research, China Medical University Hospital, China Medical University, Taichung, 40402, Taiwan, ROC. poom.kum@kmutt.ac.th",
+        "KMUTT Fixed Point Research Laboratory, Room SCL 802 Fixed Point Laboratory, Science Laboratory Building, Department of Mathematics, Faculty of Science, King Mongkut's University of Technology Thonburi (KMUTT), Bangkok, 10140, Thailand. poom.kum@kmutt.ac.th",
+        "KMUTT Fixed Point Research Laboratory, Room SCL 802 Fixed Point Laboratory, Science Laboratory Building, Department of Mathematics, Faculty of Science, King Mongkut's University of Technology Thonburi (KMUTT), Bangkok, 10140, Thailand"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Medical Research, China Medical University Hospital, China Medical University, Taichung, 40402, Taiwan, ROC. poom.kum@kmutt.ac.th",
+          "institution_ids": [
+            "https://openalex.org/I184693016",
+            "https://openalex.org/I4210126829"
+          ]
+        },
+        {
+          "raw_affiliation_string": "KMUTT Fixed Point Research Laboratory, Room SCL 802 Fixed Point Laboratory, Science Laboratory Building, Department of Mathematics, Faculty of Science, King Mongkut's University of Technology Thonburi (KMUTT), Bangkok, 10140, Thailand. poom.kum@kmutt.ac.th",
+          "institution_ids": [
+            "https://openalex.org/I60837268"
+          ]
+        },
+        {
+          "raw_affiliation_string": "KMUTT Fixed Point Research Laboratory, Room SCL 802 Fixed Point Laboratory, Science Laboratory Building, Department of Mathematics, Faculty of Science, King Mongkut's University of Technology Thonburi (KMUTT), Bangkok, 10140, Thailand",
+          "institution_ids": [
+            "https://openalex.org/I60837268"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-6303-9573",
+    "email": "heqian@nus.edu.sg",
+    "expectedName": "Qian He",
+    "oldOrcidOwnerName": "Qiang Gao",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5051694258",
+    "workUrl": "https://openalex.org/W4225114738",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5051694258",
+        "display_name": "Qian He",
+        "orcid": "https://orcid.org/0000-0003-4891-3581",
+        "observed_orcids": [
+          "https://orcid.org/0000-0003-4891-3581",
+          "https://orcid.org/0000-0001-6345-3611"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I165932596",
+          "display_name": "National University of Singapore",
+          "ror": "https://ror.org/01tgyzw49",
+          "country_code": "SG",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I165932596"
+          ]
+        }
+      ],
+      "countries": [
+        "SG"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Qian He",
+      "raw_affiliation_strings": [
+        "Department of Materials Science and Engineering, National University of Singapore, 9 Engineering Drive 1, 117575, Singapore, Singapore. heqian@nus.edu.sg",
+        "Department of Materials Science and Engineering, National University of Singapore, 9 Engineering Drive 1, 117575, Singapore, Singapore"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0003-4891-3581",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Materials Science and Engineering, National University of Singapore, 9 Engineering Drive 1, 117575, Singapore, Singapore. heqian@nus.edu.sg",
+          "institution_ids": [
+            "https://openalex.org/I165932596"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Materials Science and Engineering, National University of Singapore, 9 Engineering Drive 1, 117575, Singapore, Singapore",
+          "institution_ids": [
+            "https://openalex.org/I165932596"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-2121-1021",
+    "email": "rhamamot@ncc.go.jp",
+    "expectedName": "Ryuji Hamamoto",
+    "oldOrcidOwnerName": "Satoshi Takahashi",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5011852177",
+    "workUrl": "https://openalex.org/W4402499135",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5011852177",
+        "display_name": "Ryuji Hamamoto",
+        "orcid": "https://orcid.org/0000-0002-2632-1334",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-2632-1334"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I4210126580",
+          "display_name": "RIKEN Center for Advanced Intelligence Project",
+          "ror": "https://ror.org/03ckxwf91",
+          "country_code": "JP",
+          "type": "facility",
+          "lineage": [
+            "https://openalex.org/I4210110652",
+            "https://openalex.org/I4210126580"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I54696188",
+          "display_name": "National Cancer Research Institute",
+          "ror": "https://ror.org/02mp0vf47",
+          "country_code": "GB",
+          "type": "facility",
+          "lineage": [
+            "https://openalex.org/I54696188"
+          ]
+        }
+      ],
+      "countries": [
+        "GB",
+        "JP"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Ryuji Hamamoto",
+      "raw_affiliation_strings": [
+        "Cancer Translational Research Team, RIKEN Center for Advanced Intelligence Project, 1-4-1 Nihonbashi, Chuo-ku, Tokyo, 103-0027, Japan. rhamamot@ncc.go.jp",
+        "Division of Medical AI Research and Development, National Cancer Center Research Institute, 5-1-1 Tsukiji, Chuo-ku, Tokyo, 104-0045, Japan. rhamamot@ncc.go.jp"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Cancer Translational Research Team, RIKEN Center for Advanced Intelligence Project, 1-4-1 Nihonbashi, Chuo-ku, Tokyo, 103-0027, Japan. rhamamot@ncc.go.jp",
+          "institution_ids": [
+            "https://openalex.org/I4210126580"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Division of Medical AI Research and Development, National Cancer Center Research Institute, 5-1-1 Tsukiji, Chuo-ku, Tokyo, 104-0045, Japan. rhamamot@ncc.go.jp",
+          "institution_ids": [
+            "https://openalex.org/I54696188"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-5440-2780",
+    "email": "alberto.paccanaro@rhul.ac.uk",
+    "expectedName": "Alberto Paccanaro",
+    "oldOrcidOwnerName": "Shantao Li",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5030607460",
+    "workUrl": "https://openalex.org/W3085898256",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5030607460",
+        "display_name": "Alberto Paccanaro",
+        "orcid": "https://orcid.org/0000-0001-8059-1346"
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I184558857",
+          "display_name": "Royal Holloway University of London",
+          "ror": "https://ror.org/04g2vpn86",
+          "country_code": "GB",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I124357947",
+            "https://openalex.org/I184558857"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I44202434",
+          "display_name": "Fundação Getulio Vargas",
+          "ror": "https://ror.org/01evzkn27",
+          "country_code": "BR",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I44202434"
+          ]
+        }
+      ],
+      "countries": [
+        "BR",
+        "GB"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Alberto Paccanaro",
+      "raw_affiliation_strings": [
+        "Department of Computer Science, Centre for Systems and Synthetic Biology, Royal Holloway, University of London, Egham Hill, Egham, UK. alberto.paccanaro@rhul.ac.uk",
+        "School of Applied Mathematics, Fundação Getulio Vargas, Rio de Janeiro, Brazil. alberto.paccanaro@rhul.ac.uk",
+        "Department of Computer Science, Centre for Systems and Synthetic Biology, Royal Holloway, University of London, Egham Hill, Egham, UK",
+        "School of Applied Mathematics, Fundação Getulio Vargas, Rio de Janeiro, Brazil"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-8059-1346",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Department of Computer Science, Centre for Systems and Synthetic Biology, Royal Holloway, University of London, Egham Hill, Egham, UK. alberto.paccanaro@rhul.ac.uk",
+          "institution_ids": [
+            "https://openalex.org/I184558857"
+          ]
+        },
+        {
+          "raw_affiliation_string": "School of Applied Mathematics, Fundação Getulio Vargas, Rio de Janeiro, Brazil. alberto.paccanaro@rhul.ac.uk",
+          "institution_ids": [
+            "https://openalex.org/I44202434"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Computer Science, Centre for Systems and Synthetic Biology, Royal Holloway, University of London, Egham Hill, Egham, UK",
+          "institution_ids": [
+            "https://openalex.org/I184558857"
+          ]
+        },
+        {
+          "raw_affiliation_string": "School of Applied Mathematics, Fundação Getulio Vargas, Rio de Janeiro, Brazil",
+          "institution_ids": [
+            "https://openalex.org/I44202434"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-4868-3934",
+    "email": "subburaj.ilangumaran@usherbrooke.ca",
+    "expectedName": "Subburaj Ilangumaran",
+    "oldOrcidOwnerName": "Sheela Ramanathan",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5063239425",
+    "workUrl": "https://openalex.org/W7163193919",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5063239425",
+        "display_name": "Subburaj Ilangumaran",
+        "orcid": "https://orcid.org/0000-0002-7563-576X",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-7563-576X"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I135117807",
+          "display_name": "Université de Sherbrooke",
+          "ror": "https://ror.org/00kybxq39",
+          "country_code": "CA",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I135117807"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I2801825082",
+          "display_name": "Centre Hospitalier Universitaire de Sherbrooke",
+          "ror": "https://ror.org/020r51985",
+          "country_code": "CA",
+          "type": "healthcare",
+          "lineage": [
+            "https://openalex.org/I2801825082",
+            "https://openalex.org/I2801902503",
+            "https://openalex.org/I4210139015",
+            "https://openalex.org/I4405279980"
+          ]
+        }
+      ],
+      "countries": [
+        "CA"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Subburaj Ilangumaran",
+      "raw_affiliation_strings": [
+        "Centre de Recherche, Centre Hospitalier Universitaire de Sherbrooke , Sherbrooke, QC J1H 5N4 ,",
+        "Department of Immunology and Cell Biology, Faculty of Medicine and Health Sciences, Université de Sherbrooke , Sherbrooke, QC J1H 5N4 ,"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-7563-576X",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Centre de Recherche, Centre Hospitalier Universitaire de Sherbrooke , Sherbrooke, QC J1H 5N4 ,",
+          "institution_ids": [
+            "https://openalex.org/I2801825082"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Immunology and Cell Biology, Faculty of Medicine and Health Sciences, Université de Sherbrooke , Sherbrooke, QC J1H 5N4 ,",
+          "institution_ids": [
+            "https://openalex.org/I135117807"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0002-3460-6989",
+    "email": "manjit.kr@yahoo.com",
+    "expectedName": "Manjit Kaur",
+    "oldOrcidOwnerName": "Vijay Kumar Chahar",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5101898959",
+    "workUrl": "https://openalex.org/W3017403618",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5101898959",
+        "display_name": "Manjit Kaur",
+        "orcid": "https://orcid.org/0000-0001-8804-9172",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-8804-9172"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I164861460",
+          "display_name": "Manipal Academy of Higher Education",
+          "ror": "https://ror.org/02xzytt36",
+          "country_code": "IN",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I164861460"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I73779912",
+          "display_name": "Manipal University Jaipur",
+          "ror": "https://ror.org/040h76494",
+          "country_code": null,
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I73779912"
+          ]
+        }
+      ],
+      "countries": [
+        "IN"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Manjit Kaur",
+      "raw_affiliation_strings": [
+        "Computer and Communication Engineering Department, School of Computing and Information Technology, Manipal University Jaipur, Jaipur, India. Manjit.kr@yahoo.com",
+        "Computer and Communication Engineering Department, School of Computing and Information Technology, Manipal University Jaipur, Jaipur, India"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Computer and Communication Engineering Department, School of Computing and Information Technology, Manipal University Jaipur, Jaipur, India. Manjit.kr@yahoo.com",
+          "institution_ids": [
+            "https://openalex.org/I164861460"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Computer and Communication Engineering Department, School of Computing and Information Technology, Manipal University Jaipur, Jaipur, India",
+          "institution_ids": [
+            "https://openalex.org/I73779912"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0001-9850-9339",
+    "email": "haali2@hbku.edu.qa",
+    "expectedName": "Hazrat Ali",
+    "oldOrcidOwnerName": "Waqar Ahmad",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5051893714",
+    "workUrl": "https://openalex.org/W4282937861",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5051893714",
+        "display_name": "Hazrat Ali",
+        "orcid": "https://orcid.org/0000-0003-3058-5794",
+        "observed_orcids": [
+          "https://orcid.org/0000-0003-3058-5794"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I4210144839",
+          "display_name": "Hamad bin Khalifa University",
+          "ror": "https://ror.org/03eyq4y97",
+          "country_code": "QA",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I4210144839"
+          ]
+        }
+      ],
+      "countries": [
+        "QA"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Hazrat Ali",
+      "raw_affiliation_strings": [
+        "College of Science and Engineering, Hamad Bin Khalifa University, Doha, Qatar. haali2@hbku.edu.qa",
+        "College of Science and Engineering, Hamad Bin Khalifa University, Doha, Qatar"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+        {
+          "raw_affiliation_string": "College of Science and Engineering, Hamad Bin Khalifa University, Doha, Qatar. haali2@hbku.edu.qa",
+          "institution_ids": [
+            "https://openalex.org/I4210144839"
+          ]
+        },
+        {
+          "raw_affiliation_string": "College of Science and Engineering, Hamad Bin Khalifa University, Doha, Qatar",
+          "institution_ids": [
+            "https://openalex.org/I4210144839"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0001-5647-5206",
+    "email": "jinyang.liang@inrs.ca",
+    "expectedName": "Jinyang Liang",
+    "oldOrcidOwnerName": "Xianglei Liu",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5076984584",
+    "workUrl": "https://openalex.org/W3210153287",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5076984584",
+        "display_name": "Jinyang Liang",
+        "orcid": "https://orcid.org/0000-0001-5983-0488",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-5983-0488",
+          "https://orcid.org/0009-0007-4015-6228"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I39481719",
+          "display_name": "Institut National de la Recherche Scientifique",
+          "ror": "https://ror.org/04td37d32",
+          "country_code": "CA",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I39481719",
+            "https://openalex.org/I49663120"
+          ]
+        }
+      ],
+      "countries": [
+        "CA"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Jinyang Liang",
+      "raw_affiliation_strings": [
+        "Centre Énergie Matériaux Télécommunications, Institut National de la Recherche Scientifique, 1650 boulevard Lionel-Boulet, Varennes, Québec, J3X1S2, Canada. Jinyang.Liang@inrs.ca",
+        "Centre Énergie Matériaux Télécommunications, Institut National de la Recherche Scientifique, 1650 boulevard Lionel-Boulet, Varennes, Québec, J3X1S2, Canada"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Centre Énergie Matériaux Télécommunications, Institut National de la Recherche Scientifique, 1650 boulevard Lionel-Boulet, Varennes, Québec, J3X1S2, Canada. Jinyang.Liang@inrs.ca",
+          "institution_ids": [
+            "https://openalex.org/I39481719"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Centre Énergie Matériaux Télécommunications, Institut National de la Recherche Scientifique, 1650 boulevard Lionel-Boulet, Varennes, Québec, J3X1S2, Canada",
+          "institution_ids": [
+            "https://openalex.org/I39481719"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-4137-3535",
+    "email": "zhaoyanli@ntu.edu.sg",
+    "expectedName": "Yanli Zhao",
+    "oldOrcidOwnerName": "Xiaodong Zhang",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5112754141",
+    "workUrl": "https://openalex.org/W4224315419",
+    "matchedAuthorship": {
+      "author_position": "last",
+      "author": {
+        "id": "https://openalex.org/A5112754141",
+        "display_name": "Yanli Zhao",
+        "orcid": "https://orcid.org/0000-0002-9231-8360"
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I172675005",
+          "display_name": "Nanyang Technological University",
+          "ror": "https://ror.org/02e7b5302",
+          "country_code": "SG",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I172675005"
+          ]
+        }
+      ],
+      "countries": [
+        "SG"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Yanli Zhao",
+      "raw_affiliation_strings": [
+        "Division of Chemistry and Biological Chemistry, School of Physical and Mathematical Sciences, Nanyang Technological University, 21 Nanyang Link, Singapore, 637371, Singapore. zhaoyanli@ntu.edu.sg",
+        "Division of Chemistry and Biological Chemistry, School of Physical and Mathematical Sciences, Nanyang Technological University, 21 Nanyang Link, Singapore, 637371, Singapore"
+      ],
+      "raw_orcid": null,
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Division of Chemistry and Biological Chemistry, School of Physical and Mathematical Sciences, Nanyang Technological University, 21 Nanyang Link, Singapore, 637371, Singapore. zhaoyanli@ntu.edu.sg",
+          "institution_ids": [
+            "https://openalex.org/I172675005"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Division of Chemistry and Biological Chemistry, School of Physical and Mathematical Sciences, Nanyang Technological University, 21 Nanyang Link, Singapore, 637371, Singapore",
+          "institution_ids": [
+            "https://openalex.org/I172675005"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0003-1579-7561",
+    "email": "scheres@mrc-lmb.cam.ac.uk",
+    "expectedName": "Sjors HW Scheres",
+    "oldOrcidOwnerName": "Yang Shi",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5061952716",
+    "workUrl": "https://openalex.org/W4296025960",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5061952716",
+        "display_name": "Sjors H. W. Scheres",
+        "orcid": "https://orcid.org/0000-0002-0462-6540",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-0462-6540"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I170203145",
+          "display_name": "MRC Laboratory of Molecular Biology",
+          "ror": "https://ror.org/00tw3jy02",
+          "country_code": "GB",
+          "type": "facility",
+          "lineage": [
+            "https://openalex.org/I170203145",
+            "https://openalex.org/I4210087105",
+            "https://openalex.org/I90344618"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I90344618",
+          "display_name": "Medical Research Council",
+          "ror": "https://ror.org/03x94j517",
+          "country_code": "GB",
+          "type": "government",
+          "lineage": [
+            "https://openalex.org/I4210087105",
+            "https://openalex.org/I90344618"
+          ]
+        }
+      ],
+      "countries": [
+        "GB"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Sjors H. W. Scheres",
+      "raw_affiliation_strings": [
+        "Medical Research Council Laboratory of Molecular Biology, Cambridge, UK. scheres@mrc-lmb.cam.ac.uk",
+        "Medical Research Council Laboratory of Molecular Biology, Cambridge, UK"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-0462-6540",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Medical Research Council Laboratory of Molecular Biology, Cambridge, UK. scheres@mrc-lmb.cam.ac.uk",
+          "institution_ids": [
+            "https://openalex.org/I170203145",
+            "https://openalex.org/I90344618"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Medical Research Council Laboratory of Molecular Biology, Cambridge, UK",
+          "institution_ids": [
+            "https://openalex.org/I170203145",
+            "https://openalex.org/I90344618"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0001-8965-5051",
+    "email": "oliver.gutierrez@pnnl.gov",
+    "expectedName": "Oliver Y. Gutiérrez",
+    "oldOrcidOwnerName": "Zhu Yifeng",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5051053074",
+    "workUrl": "https://openalex.org/W3101807566",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5051053074",
+        "display_name": "Oliver Y. Gutiérrez",
+        "orcid": "https://orcid.org/0000-0001-9163-4786",
+        "observed_orcids": [
+          "https://orcid.org/0000-0001-9163-4786"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I142606810",
+          "display_name": "Pacific Northwest National Laboratory",
+          "ror": "https://ror.org/05h992307",
+          "country_code": "US",
+          "type": "facility",
+          "lineage": [
+            "https://openalex.org/I1325736334",
+            "https://openalex.org/I1330989302",
+            "https://openalex.org/I142606810",
+            "https://openalex.org/I39565521"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Oliver Y. Gutiérrez",
+      "raw_affiliation_strings": [
+        "Institute for Integrated Catalysis, and Physical and Computational Sciences Directorate, Pacific Northwest National Laboratory, Richland, WA, 99354, USA. oliver.gutierrez@pnnl.gov",
+        "Institute for Integrated Catalysis, and Physical and Computational Sciences Directorate, Pacific Northwest National Laboratory, Richland, WA, 99354, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0001-9163-4786",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Institute for Integrated Catalysis, and Physical and Computational Sciences Directorate, Pacific Northwest National Laboratory, Richland, WA, 99354, USA. oliver.gutierrez@pnnl.gov",
+          "institution_ids": [
+            "https://openalex.org/I142606810"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Institute for Integrated Catalysis, and Physical and Computational Sciences Directorate, Pacific Northwest National Laboratory, Richland, WA, 99354, USA",
+          "institution_ids": [
+            "https://openalex.org/I142606810"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "id": "0000-0001-8812-3184",
+    "email": "yzhao@corban.edu",
+    "expectedName": "Yufeng Zhao",
+    "oldOrcidOwnerName": "Zhe Wang",
+    "legacyOrcidIsCorrect": false,
+    "verifiedOpenAlexAuthorId": "A5035677481",
+    "workUrl": "https://openalex.org/W4205472367",
+    "matchedAuthorship": {
+      "author_position": "middle",
+      "author": {
+        "id": "https://openalex.org/A5035677481",
+        "display_name": "Yufeng Zhao",
+        "orcid": "https://orcid.org/0000-0002-7644-5407",
+        "observed_orcids": [
+          "https://orcid.org/0000-0002-7644-5407"
+        ]
+      },
+      "institutions": [
+        {
+          "id": "https://openalex.org/I111713297",
+          "display_name": "Corban University",
+          "ror": "https://ror.org/00n8j9g10",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I111713297"
+          ]
+        },
+        {
+          "id": "https://openalex.org/I74775410",
+          "display_name": "Rice University",
+          "ror": "https://ror.org/008zs3103",
+          "country_code": "US",
+          "type": "education",
+          "lineage": [
+            "https://openalex.org/I74775410"
+          ]
+        }
+      ],
+      "countries": [
+        "US"
+      ],
+      "is_corresponding": true,
+      "raw_author_name": "Yufeng Zhao",
+      "raw_affiliation_strings": [
+        "Corban University, Salem, Oregon, 97317, USA. YZhao@corban.edu",
+        "Department of Materials Science and NanoEngineering, Rice University, Houston, TX, 77005, USA. YZhao@corban.edu",
+        "Department of Materials Science and NanoEngineering, Rice University, Houston, TX, 77005, USA"
+      ],
+      "raw_orcid": "https://orcid.org/0000-0002-7644-5407",
+      "affiliations": [
+        {
+          "raw_affiliation_string": "Corban University, Salem, Oregon, 97317, USA. YZhao@corban.edu",
+          "institution_ids": [
+            "https://openalex.org/I111713297"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Materials Science and NanoEngineering, Rice University, Houston, TX, 77005, USA. YZhao@corban.edu",
+          "institution_ids": [
+            "https://openalex.org/I74775410"
+          ]
+        },
+        {
+          "raw_affiliation_string": "Department of Materials Science and NanoEngineering, Rice University, Houston, TX, 77005, USA",
+          "institution_ids": [
+            "https://openalex.org/I74775410"
+          ]
+        }
+      ]
+    }
+  }
+]

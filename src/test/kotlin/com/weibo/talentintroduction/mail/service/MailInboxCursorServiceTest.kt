@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.mail.domain.MailInboxCursor
 import com.weibo.talentintroduction.mail.repository.MailInboxCursorRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
@@ -11,6 +12,24 @@ import org.mockito.Mockito
 class MailInboxCursorServiceTest {
     private val repository = Mockito.mock(MailInboxCursorRepository::class.java)
     private val service = MailInboxCursorService(repository)
+
+    @Test
+    fun `initialization uses insert-only boundary including empty mailbox`() {
+        service.initializeIfAbsent("sender", InboxPosition(123L, 0L))
+        Mockito.verify(repository).initializeIfAbsent("sender", 123L, 0L)
+        Mockito.verify(repository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `invalid initialization never writes cursor`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            service.initializeIfAbsent("sender", InboxPosition(0L, 5L))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            service.initializeIfAbsent("sender", InboxPosition(1L, -1L))
+        }
+        Mockito.verifyNoInteractions(repository)
+    }
 
     @Test
     fun `get returns zero cursor when row missing`() {

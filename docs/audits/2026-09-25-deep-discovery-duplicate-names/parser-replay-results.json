@@ -1,0 +1,479 @@
+[
+  {
+    "email": "aboitcairo@gmail.com",
+    "pmcId": "PMC7261047",
+    "storedName": "R. Sujath",
+    "expectedName": "Aboul Ella Hassanien",
+    "method": "XML_CONTRIBUTOR_INFORMATION",
+    "parserName": null,
+    "reproducedStoredError": false
+  },
+  {
+    "email": "amandal4@ur.rochester.edu",
+    "pmcId": "PMC7910560",
+    "storedName": "Xinyang Li",
+    "expectedName": "Arkajit Mandal",
+    "method": "XML_CONTRIBUTOR_INFORMATION",
+    "parserName": null,
+    "reproducedStoredError": false
+  },
+  {
+    "email": "dr.akbarzadeh2010@gmail.com",
+    "pmcId": "PMC7069202",
+    "storedName": "Farhad Abasalizadeh",
+    "expectedName": "Abolfazl Akbarzadeh",
+    "method": "XML_CONTRIBUTOR_INFORMATION",
+    "parserName": null,
+    "reproducedStoredError": false
+  },
+  {
+    "email": "elisabeth.stavropoulou@gmail.com",
+    "pmcId": "PMC7044178",
+    "storedName": "Ioannis Manisalidis",
+    "expectedName": "Elisavet Stavropoulou",
+    "method": "XML_EXPLICIT_FULLNAME+XML_UNIQUE_XREF",
+    "parserName": "Elisavet Stavropoulou",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "maryemerce@gmail.com",
+    "pmcId": "PMC13302515",
+    "storedName": "Javier Álvarez de la Cruz",
+    "expectedName": "Marye Mercé Méndez Ojeda",
+    "method": "XML_EXPLICIT_INITIALS",
+    "parserName": "Javier Álvarez de la Cruz",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "roksanatoma@gmail.com",
+    "pmcId": "PMC13284505",
+    "storedName": "Shahin Mahmud",
+    "expectedName": "Roksana Khanam",
+    "method": "XML_CONTRIBUTOR_INFORMATION",
+    "parserName": "Shahin Mahmud",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "samuelbogdant@gmail.com",
+    "pmcId": "PMC13301919",
+    "storedName": "Cristian Ichim",
+    "expectedName": "Samuel Bogdan Todor",
+    "method": "XML_EXPLICIT_INITIALS",
+    "parserName": "Cristian Ichim",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "tatsuyahirano1@gmail.com",
+    "pmcId": "PMC13293682",
+    "storedName": "Keishi Shintomi",
+    "expectedName": "Tatsuya Hirano",
+    "method": "XML_EXPLICIT_INITIALS",
+    "parserName": "Keishi Shintomi",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "togha1961@gmail.com",
+    "pmcId": "PMC7020496",
+    "storedName": "Mahsa Arzani",
+    "expectedName": "Mansoureh Togha",
+    "method": "XML_CONTRIBUTOR_INFORMATION",
+    "parserName": null,
+    "reproducedStoredError": false
+  },
+  {
+    "email": "yimin.wu@uwaterloo.ca",
+    "pmcId": "PMC10556094",
+    "storedName": "Wei Wei",
+    "expectedName": "Yimin A Wu",
+    "method": "XML_CONTRIBUTOR_INFORMATION",
+    "parserName": null,
+    "reproducedStoredError": false
+  },
+  {
+    "email": "yuyingc75@gmail.com",
+    "pmcId": "PMC13299319",
+    "storedName": "Hsiu-Ju Chang",
+    "expectedName": "Pi-Chen Chang",
+    "method": "XML_EXPLICIT_INITIALS",
+    "parserName": "Hsiu-Ju Chang",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "004181@hnucm.edu.cn",
+    "pmcId": "PMC13268953",
+    "storedName": "Meiyan Zeng",
+    "expectedName": "Pan Meng",
+    "method": "XML_EXPLICIT_FULLNAME",
+    "parserName": "Meiyan Zeng",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "007152@jlau.edu.cn",
+    "pmcId": "PMC13258802",
+    "storedName": "Zhongmei He",
+    "expectedName": "Jia Zhou",
+    "method": "XML_EXPLICIT_INITIALS",
+    "parserName": "Zhongmei He",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "091100@yzu.edu.cn",
+    "pmcId": "PMC13230133",
+    "storedName": "Changmin Niu",
+    "expectedName": "Jinhua Shu",
+    "method": "XML_EXPLICIT_FULLNAME",
+    "parserName": "Changmin Niu",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "102411214@hbut.edu.cn",
+    "pmcId": "PMC13297547",
+    "storedName": "Zhongzhen Yan",
+    "expectedName": "Yi Yu",
+    "method": "XML_EXPLICIT_INITIALS",
+    "parserName": "Zhongzhen Yan",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "1042245991@qq.com",
+    "pmcId": "PMC13223015",
+    "storedName": "Yang Wen",
+    "expectedName": "Xiaoyu Jing",
+    "method": "XML_EXPLICIT_FULLNAME",
+    "parserName": "Yang Wen",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "1058026348@qq.com",
+    "pmcId": "PMC13271938",
+    "storedName": "Guangsu Qu",
+    "expectedName": "Yangcuo Silang",
+    "method": "XML_EXPLICIT_FULLNAME",
+    "parserName": "Guangsu Qu",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "11000556@kust.edu.cn",
+    "pmcId": "PMC13299199",
+    "storedName": "Qianze Zhu",
+    "expectedName": "Tonghua Yang",
+    "method": "XML_EXPLICIT_INITIALS",
+    "parserName": "Qianze Zhu",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "1120159763@qq.com",
+    "pmcId": "PMC13259747",
+    "storedName": "Liang Zhao",
+    "expectedName": "Xiaofu Yang",
+    "method": "XML_EXPLICIT_FULLNAME",
+    "parserName": "Liang Zhao",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "1125266775@qq.com",
+    "pmcId": "PMC13236847",
+    "storedName": "Hong Yu",
+    "expectedName": "Ying Zhang",
+    "method": "XML_EXPLICIT_FULLNAME",
+    "parserName": "Hong Yu",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "1157291925@qq.com",
+    "pmcId": "PMC13235341",
+    "storedName": "Shencong Xu",
+    "expectedName": "Hangying Jin",
+    "method": "XML_CONTRIBUTOR_INFORMATION",
+    "parserName": "Shencong Xu",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "116500414@qq.com",
+    "pmcId": "PMC13260552",
+    "storedName": "Zong-Jie Zheng",
+    "expectedName": "Jie Ma",
+    "method": "XML_EXPLICIT_FULLNAME",
+    "parserName": "Zong-Jie Zheng",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "12893437@qq.com",
+    "pmcId": "PMC13272339",
+    "storedName": "Ying Jiang",
+    "expectedName": "Zhaokun Guo",
+    "method": "XML_EXPLICIT_FULLNAME",
+    "parserName": "Ying Jiang",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "13002219875@163.com",
+    "pmcId": "PMC13204978",
+    "storedName": "Aina Xiao",
+    "expectedName": "Wenjia Guo",
+    "method": "XML_EXPLICIT_INITIALS",
+    "parserName": "Aina Xiao",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "13659882508@163.com",
+    "pmcId": "PMC13241982",
+    "storedName": "Zihan Bao",
+    "expectedName": "Jian Sun",
+    "method": "XML_DIRECT",
+    "parserName": "Jian Sun",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "18518351472@163.com",
+    "pmcId": "PMC13293764",
+    "storedName": "Baoguo Sun",
+    "expectedName": "Dandan Pu",
+    "method": "XML_DIRECT",
+    "parserName": "Dandan Pu",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "351239334@qq.com",
+    "pmcId": "PMC13199762",
+    "storedName": "Qian Xiao",
+    "expectedName": "Xiaoqun Liu",
+    "method": "XML_CONTRIBUTOR_INFORMATION",
+    "parserName": "Qian Xiao",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "aaosman@mdanderson.org",
+    "pmcId": "PMC13255033",
+    "storedName": "Jeffrey N Myers",
+    "expectedName": "Abdullah A. Osman",
+    "method": "XML_DIRECT",
+    "parserName": "Abdullah A. Osman",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "alberto.verrottidipianella@univaq.it",
+    "pmcId": "PMC8258148",
+    "storedName": "Antonella Fattorusso",
+    "expectedName": "Alberto Verrotti",
+    "method": "XML_EXPLICIT_FULLNAME+XML_UNIQUE_XREF",
+    "parserName": "Alberto Verrotti",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "ali.kahyani@saadi.shirazu.ac.ir",
+    "pmcId": "PMC13292774",
+    "storedName": "Mohammad Saied Salehi",
+    "expectedName": "Ali Kahyani",
+    "method": "XML_DIRECT",
+    "parserName": "Ali Kahyani",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "bharley@illinois.edu",
+    "pmcId": "PMC13254848",
+    "storedName": "Kim A Selting",
+    "expectedName": "Brendan A.C. Harley",
+    "method": "XML_DIRECT",
+    "parserName": "Brendan A.C. Harley",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "coelhojunior@hotmail.com.br",
+    "pmcId": "PMC13251652",
+    "storedName": "Emanuele Marzetti",
+    "expectedName": "Hélio Jose Coelho-Junior",
+    "method": "XML_DIRECT",
+    "parserName": "Hélio Jose Coelho-Junior",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "daniel_huang@nus.edu.sg",
+    "pmcId": "PMC10029957",
+    "storedName": "Margaret LP Teng",
+    "expectedName": "Daniel Q Huang",
+    "method": "XML_UNIQUE_XREF",
+    "parserName": "Daniel Q Huang",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "dlgang101@163.com",
+    "pmcId": "PMC13213870",
+    "storedName": "Lihui Zheng",
+    "expectedName": "Ligang Ding",
+    "method": "XML_DIRECT",
+    "parserName": "Ligang Ding",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "donglei@sxu.edu.cn",
+    "pmcId": "PMC13231079",
+    "storedName": "Vincenzo Spagnolo",
+    "expectedName": "Lei Dong",
+    "method": "XML_DIRECT",
+    "parserName": "Lei Dong",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "drkwon@catholic.ac.kr",
+    "pmcId": "PMC9171160",
+    "storedName": "Kyungdo Han",
+    "expectedName": "Hyuk-Sang Kwon",
+    "method": "XML_UNIQUE_XREF",
+    "parserName": "Hyuk-Sang Kwon",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "evan.campbell1@unb.ca",
+    "pmcId": "PMC7063031",
+    "storedName": "Ulysse Côté-Allard",
+    "expectedName": "Evan Campbell",
+    "method": "XML_EXPLICIT_FULLNAME+XML_UNIQUE_XREF",
+    "parserName": "Evan Campbell",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "garovic.vesna@mayo.edu",
+    "pmcId": "PMC7462000",
+    "storedName": "Ingrid Aneman",
+    "expectedName": "Vesna D Garovic",
+    "method": "XML_EXPLICIT_FULLNAME+XML_UNIQUE_XREF",
+    "parserName": null,
+    "reproducedStoredError": false
+  },
+  {
+    "email": "honggl98@126.com",
+    "pmcId": "PMC13286894",
+    "storedName": "Peng Liu",
+    "expectedName": "Guangliang Hong",
+    "method": "XML_EXPLICIT_FULLNAME_EMAIL_LIST",
+    "parserName": "Peng Liu",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "i.kadmiri@mascir.ma",
+    "pmcId": "PMC7947814",
+    "storedName": "Abderrahim Aasfar",
+    "expectedName": "Issam Meftah Kadmiri",
+    "method": "XML_EXPLICIT_FULLNAME+XML_UNIQUE_XREF",
+    "parserName": "Issam Meftah Kadmiri",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "jilusha@lcu.edu.cn",
+    "pmcId": "PMC13275695",
+    "storedName": "Shikun Ge",
+    "expectedName": "Lusha Ji",
+    "method": "XML_EXPLICIT_FULLNAME+XML_UNIQUE_XREF",
+    "parserName": "Lusha Ji",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "jingbozhang@hospital.cqmu.edu.cn",
+    "pmcId": "PMC13294776",
+    "storedName": "Jun Shirakawa",
+    "expectedName": "Jingbo Zhang",
+    "method": "XML_DIRECT+XML_EXPLICIT_FULLNAME",
+    "parserName": "Jingbo Zhang",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "junjiao_song@fudan.edu.cn",
+    "pmcId": "PMC13324349",
+    "storedName": "Shengli Li",
+    "expectedName": "Junjiao Song",
+    "method": "XML_DIRECT+XML_EXPLICIT_FULLNAME",
+    "parserName": "Junjiao Song",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "khalidumar@usm.my",
+    "pmcId": "PMC8490810",
+    "storedName": "Hayfa Alajilani Abraheem Jamjoum",
+    "expectedName": "Khalid Umar",
+    "method": "XML_EXPLICIT_FULLNAME_EMAIL_LIST",
+    "parserName": "Khalid Umar",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "lilisha@jlu.edu.cn",
+    "pmcId": "PMC13259867",
+    "storedName": "Yujun Du",
+    "expectedName": "Lisha Li",
+    "method": "XML_DIRECT+XML_EXPLICIT_FULLNAME",
+    "parserName": "Lisha Li",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "liss@szu.edu.cn",
+    "pmcId": "PMC13311161",
+    "storedName": "Jun Zhao",
+    "expectedName": "Sisi Li",
+    "method": "XML_DIRECT+XML_EXPLICIT_FULLNAME_EMAIL_LIST",
+    "parserName": "Sisi Li",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "lpjwalk@163.com",
+    "pmcId": "PMC13289780",
+    "storedName": "Minghua Zhang",
+    "expectedName": "Peijun Liu",
+    "method": "XML_UNIQUE_XREF",
+    "parserName": "Minghua Zhang",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "mikael.martino@monash.edu",
+    "pmcId": "PMC6985039",
+    "storedName": "Xiaochen Ren",
+    "expectedName": "Mikaël M Martino",
+    "method": "XML_EXPLICIT_FULLNAME+XML_UNIQUE_XREF",
+    "parserName": "Mikaël M Martino",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "ruth.herbst@meduniwien.ac.at",
+    "pmcId": "PMC13305817",
+    "storedName": "Yuko Tsutsui",
+    "expectedName": "Ruth Herbst",
+    "method": "XML_CONTRIBUTOR_INFORMATION+XML_EXPLICIT_FULLNAME",
+    "parserName": "Yuko Tsutsui",
+    "reproducedStoredError": true
+  },
+  {
+    "email": "shankarem@cutn.ac.in",
+    "pmcId": "PMC7267050",
+    "storedName": "A. S. Smiline Girija",
+    "expectedName": "Esaki M. Shankar",
+    "method": "XML_EXPLICIT_FULLNAME+XML_UNIQUE_XREF",
+    "parserName": "Esaki M. Shankar",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "shehes@yahoo.com",
+    "pmcId": "PMC13292641",
+    "storedName": "Mikhail Ostrovsky",
+    "expectedName": "Vladislav Shcheslavskiy",
+    "method": "XML_DIRECT+XML_EXPLICIT_FULLNAME",
+    "parserName": "Vladislav Shcheslavskiy",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "tina.vilsboell.01@regionh.dk",
+    "pmcId": "PMC13294792",
+    "storedName": "Henrik Maagensen",
+    "expectedName": "Tina Vilsbøll",
+    "method": "XML_DIRECT+XML_EXPLICIT_FULLNAME",
+    "parserName": "Tina Vilsbøll",
+    "reproducedStoredError": false
+  },
+  {
+    "email": "wugz@ivdc.chinacdc.cn",
+    "pmcId": "PMC8393069",
+    "storedName": "Wenjie Tan",
+    "expectedName": "Guizhen Wu",
+    "method": "XML_DIRECT+XML_EXPLICIT_FULLNAME+XML_UNIQUE_XREF",
+    "parserName": "Guizhen Wu",
+    "reproducedStoredError": false
+  }
+]

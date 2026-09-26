@@ -52,9 +52,9 @@ class SmtpSenderFactory {
         Properties().apply {
             put("mail.smtp.auth", "true")
             put("mail.smtp.auth.mechanisms", "LOGIN")
-            put("mail.smtp.connectiontimeout", "10000")
-            put("mail.smtp.timeout", "10000")
-            put("mail.smtp.writetimeout", "10000")
+            put("mail.smtp.connectiontimeout", "30000")
+            put("mail.smtp.timeout", "60000")
+            put("mail.smtp.writetimeout", "60000")
             if (port == 465) {
                 put("mail.smtp.ssl.enable", "true")
             } else {

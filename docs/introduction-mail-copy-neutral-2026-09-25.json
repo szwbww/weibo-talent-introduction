@@ -1,0 +1,659 @@
+{
+  "status": "DRAFT_NOT_APPLIED",
+  "basis": "Live database read over SSH on 2026-09-25, host 150.158.92.103",
+  "templates": [
+    {
+      "id": 1,
+      "name": "项目介绍邮件",
+      "subject_snippet_id": 21,
+      "body_snippet_ids": [
+        1,
+        20,
+        16,
+        17,
+        18,
+        19,
+        14,
+        3,
+        11
+      ]
+    },
+    {
+      "id": 10,
+      "name": "项目介绍邮件-高校",
+      "subject_snippet_id": 23,
+      "body_snippet_ids": [
+        1,
+        22,
+        16,
+        17,
+        18,
+        19,
+        3,
+        11
+      ]
+    },
+    {
+      "id": 11,
+      "name": "项目介绍邮件-企业",
+      "subject_snippet_id": 27,
+      "body_snippet_ids": [
+        25,
+        26,
+        16,
+        17,
+        18,
+        19,
+        3,
+        11
+      ]
+    }
+  ],
+  "snippets": [
+    {
+      "snippet_id": 1,
+      "name": "称呼",
+      "main": "Dear Dr. ${expertFamilyName},",
+      "variants": []
+    },
+    {
+      "snippet_id": 25,
+      "name": "称呼-企业",
+      "main": "Hi ${expertName},",
+      "variants": []
+    },
+    {
+      "snippet_id": 20,
+      "name": "项目介绍-研究方向",
+      "main": "I came across your work in ${primaryResearchField}. I am writing to ask about your interest in research collaboration with companies in China.",
+      "variants": [
+        {
+          "ordinal": 1,
+          "variant_id": 1,
+          "content": "I found your research in ${primaryResearchField} and wanted to ask whether collaboration with companies in China would be relevant to your work."
+        },
+        {
+          "ordinal": 2,
+          "variant_id": 2,
+          "content": "I came across your work in ${primaryResearchField} and wondered whether you would consider a research discussion with companies in China."
+        },
+        {
+          "ordinal": 3,
+          "variant_id": 3,
+          "content": "Your work in ${primaryResearchField} prompted this email. Would you consider discussing research collaboration with companies in China?"
+        },
+        {
+          "ordinal": 4,
+          "variant_id": 4,
+          "content": "I am writing after finding your research in ${primaryResearchField}. Would collaboration with companies in China be of interest?"
+        },
+        {
+          "ordinal": 5,
+          "variant_id": 5,
+          "content": "I found your work in ${primaryResearchField}. I would like to ask whether you would consider research collaboration with companies in China."
+        },
+        {
+          "ordinal": 6,
+          "variant_id": 6,
+          "content": "I came across your research in ${primaryResearchField}. Would you be willing to discuss research collaboration with companies in China?"
+        },
+        {
+          "ordinal": 7,
+          "variant_id": 7,
+          "content": "I am contacting you about your work in ${primaryResearchField} to ask whether collaboration with companies in China is something you would consider."
+        },
+        {
+          "ordinal": 8,
+          "variant_id": 8,
+          "content": "I found your research in ${primaryResearchField} and wanted to ask about your interest in working with companies in China on research."
+        },
+        {
+          "ordinal": 9,
+          "variant_id": 9,
+          "content": "I came across your work in ${primaryResearchField}. Would a discussion about research collaboration with companies in China be relevant to you?"
+        },
+        {
+          "ordinal": 10,
+          "variant_id": 10,
+          "content": "After finding your work in ${primaryResearchField}, I wanted to ask whether you would consider discussing research with companies in China."
+        }
+      ]
+    },
+    {
+      "snippet_id": 22,
+      "name": "项目介绍-机构",
+      "main": "I came across your profile at ${institution}. I am writing to ask about your interest in research collaboration with companies in China.",
+      "variants": [
+        {
+          "ordinal": 1,
+          "variant_id": 71,
+          "content": "I found your profile at ${institution} and wanted to ask whether collaboration with companies in China would be relevant to your research."
+        },
+        {
+          "ordinal": 2,
+          "variant_id": 72,
+          "content": "I came across your profile at ${institution} and wondered whether you would consider a research discussion with companies in China."
+        },
+        {
+          "ordinal": 3,
+          "variant_id": 73,
+          "content": "Your profile at ${institution} prompted this email. Would you consider discussing research collaboration with companies in China?"
+        },
+        {
+          "ordinal": 4,
+          "variant_id": 74,
+          "content": "I am writing after finding your profile at ${institution}. Would research collaboration with companies in China be of interest?"
+        },
+        {
+          "ordinal": 5,
+          "variant_id": 75,
+          "content": "I found your profile at ${institution}. I would like to ask whether you would consider research collaboration with companies in China."
+        },
+        {
+          "ordinal": 6,
+          "variant_id": 76,
+          "content": "I came across your profile at ${institution}. Would you be willing to discuss research collaboration with companies in China?"
+        },
+        {
+          "ordinal": 7,
+          "variant_id": 77,
+          "content": "I noticed your affiliation with ${institution} in your profile. I am writing to ask about your interest in research collaboration with companies in China."
+        },
+        {
+          "ordinal": 8,
+          "variant_id": 78,
+          "content": "I found your profile at ${institution} and wanted to ask whether you would consider working with companies in China on research."
+        },
+        {
+          "ordinal": 9,
+          "variant_id": 79,
+          "content": "I came across your profile at ${institution}. Would a discussion about research collaboration with companies in China be relevant to you?"
+        },
+        {
+          "ordinal": 10,
+          "variant_id": 80,
+          "content": "After finding your profile at ${institution}, I wanted to ask whether you would consider discussing research with companies in China."
+        }
+      ]
+    },
+    {
+      "snippet_id": 26,
+      "name": "项目介绍-工作",
+      "main": "Your professional profile lists experience as ${employment}. I am writing to ask whether you would consider technical advisory work or R&D collaboration with companies in China.",
+      "variants": [
+        {
+          "ordinal": 1,
+          "variant_id": 81,
+          "content": "I noticed your experience as ${employment} in your professional profile. Would you consider technical advisory work or R&D collaboration with companies in China?"
+        },
+        {
+          "ordinal": 2,
+          "variant_id": 82,
+          "content": "I found your professional profile, which lists experience as ${employment}. Would technical advisory work or R&D collaboration with companies in China be of interest?"
+        },
+        {
+          "ordinal": 3,
+          "variant_id": 83,
+          "content": "Your professional profile mentions experience as ${employment}. I wanted to ask about your interest in technical advisory work or R&D collaboration with companies in China."
+        },
+        {
+          "ordinal": 4,
+          "variant_id": 84,
+          "content": "I came across your professional profile and its reference to your experience as ${employment}. Would you consider discussing technical advisory work or R&D collaboration with companies in China?"
+        },
+        {
+          "ordinal": 5,
+          "variant_id": 85,
+          "content": "I am writing after finding your professional profile, which lists experience as ${employment}. Would you consider technical advisory work or R&D collaboration with companies in China?"
+        },
+        {
+          "ordinal": 6,
+          "variant_id": 86,
+          "content": "I found your experience as ${employment} listed in your professional profile. I wanted to ask whether technical advisory work or R&D collaboration with companies in China would be relevant to you."
+        },
+        {
+          "ordinal": 7,
+          "variant_id": 87,
+          "content": "Your profile lists experience as ${employment}. Would you be willing to discuss technical advisory work or R&D collaboration with companies in China?"
+        },
+        {
+          "ordinal": 8,
+          "variant_id": 88,
+          "content": "I noticed that your professional profile includes experience as ${employment}. Would technical advisory work or R&D collaboration with companies in China be something you would consider?"
+        },
+        {
+          "ordinal": 9,
+          "variant_id": 89,
+          "content": "I came across your professional profile, which mentions experience as ${employment}. I am contacting you about possible technical advisory work or R&D collaboration with companies in China."
+        },
+        {
+          "ordinal": 10,
+          "variant_id": 90,
+          "content": "I found your professional profile and noted your experience as ${employment}. Would a discussion about technical advisory work or R&D collaboration with companies in China be relevant to you?"
+        }
+      ]
+    },
+    {
+      "snippet_id": 16,
+      "name": "项目介绍-职责",
+      "main": "I work with ${teamName}, an agency in China. We help overseas researchers find industry partners and apply to a national talent programme initiated by the Chinese government.",
+      "variants": [
+        {
+          "ordinal": 1,
+          "variant_id": 11,
+          "content": "I am with ${teamName}, an agency in China that helps overseas researchers find industry partners and apply to a national talent programme initiated by the Chinese government."
+        },
+        {
+          "ordinal": 2,
+          "variant_id": 12,
+          "content": "At ${teamName}, an agency in China, we help overseas researchers identify industry partners and apply to a national talent programme initiated by the Chinese government."
+        },
+        {
+          "ordinal": 3,
+          "variant_id": 13,
+          "content": "Our agency, ${teamName}, is based in China. We assist overseas researchers in finding industry partners and applying to a national talent programme initiated by the Chinese government."
+        },
+        {
+          "ordinal": 4,
+          "variant_id": 14,
+          "content": "I work for ${teamName}, an agency based in China. Our work includes helping overseas researchers find industry partners and apply to a national talent programme initiated by the Chinese government."
+        },
+        {
+          "ordinal": 5,
+          "variant_id": 15,
+          "content": "${teamName} is an agency in China, where I work. We help overseas researchers identify industry partners and prepare applications to a national talent programme initiated by the Chinese government."
+        },
+        {
+          "ordinal": 6,
+          "variant_id": 16,
+          "content": "I am part of ${teamName}, an agency in China. We assist overseas researchers with finding industry partners and applying to a national talent programme initiated by the Chinese government."
+        },
+        {
+          "ordinal": 7,
+          "variant_id": 17,
+          "content": "I work at ${teamName}, an agency in China that supports overseas researchers in finding industry partners and applying to a national talent programme initiated by the Chinese government."
+        },
+        {
+          "ordinal": 8,
+          "variant_id": 18,
+          "content": "At our agency in China, ${teamName}, we help overseas researchers find industry partners and apply to a national talent programme initiated by the Chinese government."
+        },
+        {
+          "ordinal": 9,
+          "variant_id": 19,
+          "content": "I am writing from ${teamName}, an agency in China. We help overseas researchers identify industry partners and apply to a national talent programme initiated by the Chinese government."
+        },
+        {
+          "ordinal": 10,
+          "variant_id": 20,
+          "content": "My team at ${teamName}, an agency in China, helps overseas researchers find industry partners and apply to a national talent programme initiated by the Chinese government."
+        }
+      ]
+    },
+    {
+      "snippet_id": 17,
+      "name": "项目介绍-角色",
+      "main": "We have not identified a company for you yet. We would first learn about your research interests, then look for companies with related R&D needs. An application would require interest from both sides and competitive review.",
+      "variants": [
+        {
+          "ordinal": 1,
+          "variant_id": 21,
+          "content": "We have not matched you with a company. We would begin with your research interests and look for companies with related R&D needs. Any application would depend on mutual interest and competitive review."
+        },
+        {
+          "ordinal": 2,
+          "variant_id": 22,
+          "content": "No company has been identified for you at this stage. We would first discuss your research interests, then look for companies with relevant R&D needs. Applications require mutual interest and undergo competitive review."
+        },
+        {
+          "ordinal": 3,
+          "variant_id": 23,
+          "content": "We would start by learning about your research interests before identifying companies with related R&D needs. We have not identified a company for you yet. Any application would require mutual interest and competitive review."
+        },
+        {
+          "ordinal": 4,
+          "variant_id": 24,
+          "content": "We have not identified a specific company for you. A discussion of your research interests would come before our search for companies with relevant R&D needs. Applications depend on mutual interest and competitive review."
+        },
+        {
+          "ordinal": 5,
+          "variant_id": 25,
+          "content": "Our first step would be to understand your research interests. We would then look for companies with related R&D needs; none has been identified for you yet. Any application would require mutual interest and competitive review."
+        },
+        {
+          "ordinal": 6,
+          "variant_id": 26,
+          "content": "We have not yet identified a company for you. We would first discuss your research interests and then identify companies with relevant R&D needs. An application would proceed only with mutual interest and remain subject to competitive review."
+        },
+        {
+          "ordinal": 7,
+          "variant_id": 27,
+          "content": "We would first learn about your research interests and then look for companies with related R&D needs. No company has been identified for you yet. Applications depend on interest from both sides and competitive review."
+        },
+        {
+          "ordinal": 8,
+          "variant_id": 28,
+          "content": "No specific company has been identified for you. We would begin by understanding your research interests and look for companies with relevant R&D needs. Any application would require mutual interest and undergo competitive review."
+        },
+        {
+          "ordinal": 9,
+          "variant_id": 29,
+          "content": "We have not matched you with a company at this point. Your research interests would guide our search for companies with related R&D needs. Applications would depend on mutual interest and competitive review."
+        },
+        {
+          "ordinal": 10,
+          "variant_id": 30,
+          "content": "Before looking for companies with relevant R&D needs, we would discuss your research interests. We have not identified a company for you yet. An application would require interest from both sides and competitive review."
+        }
+      ]
+    },
+    {
+      "snippet_id": 18,
+      "name": "项目介绍-合作方式",
+      "main": "If selected, you could undertake part-time advisory work alongside your current position, combining remote work with short visits to China. The work, terms and visit schedule would need to be agreed with the company.",
+      "variants": [
+        {
+          "ordinal": 1,
+          "variant_id": 31,
+          "content": "If selected, a possible arrangement is part-time advisory work alongside your current position, with remote work and short visits to China. The work, terms and visit schedule would be agreed with the company."
+        },
+        {
+          "ordinal": 2,
+          "variant_id": 32,
+          "content": "Subject to selection, you could combine your current position with part-time advisory work, carried out remotely and through short visits to China. The work, terms and visit schedule would require agreement with the company."
+        },
+        {
+          "ordinal": 3,
+          "variant_id": 33,
+          "content": "If you are selected, the arrangement could involve part-time advisory work alongside your current position. It would combine remote work with short visits to China, with the work, terms and visit schedule agreed with the company."
+        },
+        {
+          "ordinal": 4,
+          "variant_id": 34,
+          "content": "Following selection, part-time advisory work alongside your current position may be possible. Remote work and short visits to China would be involved, with the work, terms and visit schedule agreed with the company."
+        },
+        {
+          "ordinal": 5,
+          "variant_id": 35,
+          "content": "If selected, you could advise a company part-time alongside your current position. The arrangement would include remote work and short visits to China. The work, terms and visit schedule would be agreed with the company."
+        },
+        {
+          "ordinal": 6,
+          "variant_id": 36,
+          "content": "Subject to selection, part-time advisory work could run alongside your current position, combining remote work and short visits to China. You and the company would agree on the work, terms and visit schedule."
+        },
+        {
+          "ordinal": 7,
+          "variant_id": 37,
+          "content": "If selected, you could carry out part-time advisory work remotely and during short visits to China, alongside your current position. The work, terms and visit schedule would need agreement with the company."
+        },
+        {
+          "ordinal": 8,
+          "variant_id": 38,
+          "content": "For selected researchers, one possible arrangement is part-time advisory work alongside their current position, with remote work and short visits to China. The work, terms and visit schedule would be agreed with the company."
+        },
+        {
+          "ordinal": 9,
+          "variant_id": 39,
+          "content": "If you are selected, part-time advisory work could be arranged alongside your current position. This would combine remote work with short visits to China. You and the company would agree on the work, terms and visit schedule."
+        },
+        {
+          "ordinal": 10,
+          "variant_id": 40,
+          "content": "One arrangement, subject to selection, is part-time advisory work alongside your current position, carried out remotely and through short visits to China. The work, terms and visit schedule would be agreed with the company."
+        }
+      ]
+    },
+    {
+      "snippet_id": 19,
+      "name": "项目介绍-意向",
+      "main": "If this is relevant to your work, a brief note about the research topics you would consider discussing would help. We can continue by email.",
+      "variants": [
+        {
+          "ordinal": 1,
+          "variant_id": 41,
+          "content": "If you would like to discuss this, a brief note about your research interests would help. Email is fine."
+        },
+        {
+          "ordinal": 2,
+          "variant_id": 42,
+          "content": "If this relates to your work, you could reply with the research topics you would consider discussing. We can continue by email."
+        },
+        {
+          "ordinal": 3,
+          "variant_id": 43,
+          "content": "A brief note about the research topics you would like to discuss would help, if this is relevant to you. We can keep the discussion by email."
+        },
+        {
+          "ordinal": 4,
+          "variant_id": 44,
+          "content": "If you would like to continue, please let me know which research topics you would consider discussing. We can correspond by email."
+        },
+        {
+          "ordinal": 5,
+          "variant_id": 45,
+          "content": "If this is of interest, a sentence or two about the research topics you would consider discussing would help. We can continue by email."
+        },
+        {
+          "ordinal": 6,
+          "variant_id": 46,
+          "content": "You are welcome to reply with the research topics you would like to discuss, if this is relevant to your work. Email is fine."
+        },
+        {
+          "ordinal": 7,
+          "variant_id": 47,
+          "content": "If you would consider a discussion, please let me know which research topics would be relevant. We can continue by email."
+        },
+        {
+          "ordinal": 8,
+          "variant_id": 48,
+          "content": "If this relates to your research, a brief reply about the topics you would consider discussing would help. We can keep the conversation by email."
+        },
+        {
+          "ordinal": 9,
+          "variant_id": 49,
+          "content": "If you wish to discuss this, you could send a short note about your research interests. We can continue by email."
+        },
+        {
+          "ordinal": 10,
+          "variant_id": 50,
+          "content": "If this is relevant, please let me know which research topics you would be willing to discuss. We can correspond by email."
+        }
+      ]
+    },
+    {
+      "snippet_id": 14,
+      "name": "欢迎询问",
+      "main": "Please let me know if you have any questions.",
+      "variants": []
+    },
+    {
+      "snippet_id": 3,
+      "name": "致敬-签名",
+      "main": "Best regards,\n${senderName}, ${senderTitle}\n${teamName}, ${countryName}",
+      "variants": []
+    },
+    {
+      "snippet_id": 11,
+      "name": "退订",
+      "main": "If you would prefer not to receive further emails from us, you can unsubscribe here: ${unsubscribeUrl}",
+      "variants": []
+    },
+    {
+      "snippet_id": 21,
+      "name": "项目介绍-主题-研究方向",
+      "main": "Industry research collaboration in China: ${primaryResearchField}",
+      "variants": [
+        {
+          "ordinal": 1,
+          "variant_id": 51,
+          "content": "A question about research collaboration: ${primaryResearchField}"
+        },
+        {
+          "ordinal": 2,
+          "variant_id": 52,
+          "content": "${primaryResearchField}: a research collaboration enquiry"
+        },
+        {
+          "ordinal": 3,
+          "variant_id": 53,
+          "content": "Research discussion with companies in China: ${primaryResearchField}"
+        },
+        {
+          "ordinal": 4,
+          "variant_id": 54,
+          "content": "${primaryResearchField}: discussing industry collaboration in China"
+        },
+        {
+          "ordinal": 5,
+          "variant_id": 55,
+          "content": "An enquiry about industry research: ${primaryResearchField}"
+        },
+        {
+          "ordinal": 6,
+          "variant_id": 56,
+          "content": "Research collaboration with companies in China: ${primaryResearchField}"
+        },
+        {
+          "ordinal": 7,
+          "variant_id": 57,
+          "content": "${primaryResearchField}: research collaboration in China"
+        },
+        {
+          "ordinal": 8,
+          "variant_id": 58,
+          "content": "A research enquiry concerning ${primaryResearchField}"
+        },
+        {
+          "ordinal": 9,
+          "variant_id": 59,
+          "content": "Discussing research with companies in China: ${primaryResearchField}"
+        },
+        {
+          "ordinal": 10,
+          "variant_id": 60,
+          "content": "${primaryResearchField}: an enquiry about collaboration in China"
+        }
+      ]
+    },
+    {
+      "snippet_id": 23,
+      "name": "项目介绍-主题-高校",
+      "main": "A question about research collaboration with companies in China",
+      "variants": [
+        {
+          "ordinal": 1,
+          "variant_id": 61,
+          "content": "An enquiry about research collaboration in China"
+        },
+        {
+          "ordinal": 2,
+          "variant_id": 62,
+          "content": "Research collaboration with companies in China"
+        },
+        {
+          "ordinal": 3,
+          "variant_id": 63,
+          "content": "A research collaboration enquiry"
+        },
+        {
+          "ordinal": 4,
+          "variant_id": 64,
+          "content": "Discussing research collaboration with companies in China"
+        },
+        {
+          "ordinal": 5,
+          "variant_id": 65,
+          "content": "A question about industry research collaboration"
+        },
+        {
+          "ordinal": 6,
+          "variant_id": 66,
+          "content": "An enquiry about research with companies in China"
+        },
+        {
+          "ordinal": 7,
+          "variant_id": 67,
+          "content": "Research discussion with companies in China"
+        },
+        {
+          "ordinal": 8,
+          "variant_id": 68,
+          "content": "A question about research collaboration in China"
+        },
+        {
+          "ordinal": 9,
+          "variant_id": 69,
+          "content": "Industry research collaboration in China"
+        },
+        {
+          "ordinal": 10,
+          "variant_id": 70,
+          "content": "An enquiry about collaboration with companies in China"
+        }
+      ]
+    },
+    {
+      "snippet_id": 27,
+      "name": "项目介绍-主题-企业",
+      "main": "A question about technical collaboration with companies in China",
+      "variants": [
+        {
+          "ordinal": 1,
+          "variant_id": 91,
+          "content": "An enquiry about technical collaboration in China"
+        },
+        {
+          "ordinal": 2,
+          "variant_id": 92,
+          "content": "Technical collaboration with companies in China"
+        },
+        {
+          "ordinal": 3,
+          "variant_id": 93,
+          "content": "A technical collaboration enquiry"
+        },
+        {
+          "ordinal": 4,
+          "variant_id": 94,
+          "content": "Discussing technical collaboration with companies in China"
+        },
+        {
+          "ordinal": 5,
+          "variant_id": 95,
+          "content": "A question about R&D collaboration in China"
+        },
+        {
+          "ordinal": 6,
+          "variant_id": 96,
+          "content": "An enquiry about advisory work with companies in China"
+        },
+        {
+          "ordinal": 7,
+          "variant_id": 97,
+          "content": "Technical advisory work with companies in China"
+        },
+        {
+          "ordinal": 8,
+          "variant_id": 98,
+          "content": "A question about technical collaboration in China"
+        },
+        {
+          "ordinal": 9,
+          "variant_id": 99,
+          "content": "R&D collaboration with companies in China"
+        },
+        {
+          "ordinal": 10,
+          "variant_id": 100,
+          "content": "An enquiry about technical work with companies in China"
+        }
+      ]
+    }
+  ],
+  "test_template": {
+    "id": 12,
+    "subject": "A question about research collaboration in carbon fiber composites",
+    "body": "Dear Dr. Czo,\n\nI am writing to ask whether you would consider research collaboration with companies in China on carbon fiber composites.\n\nI work with Qingfei Tech Talent Team, an agency in China. We help overseas researchers find industry partners and apply to a national talent programme initiated by the Chinese government.\n\nWe have not identified a company for you yet. We would first discuss your research interests, then look for companies with related R&D needs. Any application would require mutual interest and competitive review.\n\nIf selected, you could undertake part-time advisory work alongside your current position, combining remote work with short visits to China. The work, terms and visit schedule would be agreed with the company.\n\nIf this is relevant to your work, a brief note about the research topics you would consider discussing would help. We can continue by email.\n\nBest regards,\nLuKai\nQingfei Tech Talent Team\n\nIf you would prefer not to receive further emails from us, you can unsubscribe here: ${unsubscribeUrl}"
+  }
+}

@@ -1,0 +1,4303 @@
+[
+  {
+    "id": "0000-0002-5965-5365",
+    "email": "h.w@lmu.de",
+    "oldName": "Wei Zhang",
+    "expectedName": "Harald Weinfurter",
+    "givenNames": "Harald",
+    "familyNames": "Weinfurter",
+    "affiliations": [
+      {
+        "text": "Fakultät für Physik,Ludwig-Maximilians-Universität,München, Germany",
+        "countries": []
+      },
+      {
+        "text": "Munich Center for Quantum Science and Technology (MCQST),München, Germany",
+        "countries": []
+      },
+      {
+        "text": "Max-Planck Institut für Quantenoptik,Garching, Germany",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41586-022-04891-y",
+    "paperYear": 2022,
+    "pmcId": "PMC9329124",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9329124/"
+  },
+  {
+    "id": "0000-0002-8197-3335",
+    "email": "zuanwang@cityu.edu.hk",
+    "oldName": "Hao Wu",
+    "expectedName": "Zuankai Wang",
+    "givenNames": "Zuankai",
+    "familyNames": "Wang",
+    "affiliations": [
+      {
+        "text": "Department of Mechanical Engineering,City University of Hong Kong,Hong Kong, China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-3510-1122"
+    ],
+    "doi": "10.1038/s41467-021-25753-7",
+    "paperYear": 2021,
+    "pmcId": "PMC8443631",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8443631/"
+  },
+  {
+    "id": "EMAIL-cdc1cab539f7a499df2",
+    "email": "chzhang2014@tmmu.edu.cn",
+    "oldName": "Jing Li",
+    "expectedName": "Cheng Zhang",
+    "givenNames": "Cheng",
+    "familyNames": "Zhang",
+    "affiliations": [
+      {
+        "text": "Medical Center of Hematology, Xinqiao Hospital of Army Medical University, Chongqing, 400037 China",
+        "countries": []
+      },
+      {
+        "text": "State Key Laboratory of Trauma and Chemical Poisoning, Chongqing Key Laboratory of Hematology and Microenvironment, Chongqing, 400037 China",
+        "countries": []
+      },
+      {
+        "text": "Jinfeng Laboratory, Chongqing, 401329 China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1097/bs9.0000000000000295",
+    "paperYear": 2026,
+    "pmcId": "PMC13278256",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13278256/"
+  },
+  {
+    "id": "EMAIL-2ff442e66a9e52bf0df",
+    "email": "zhangxi@tmmu.edu.cn",
+    "oldName": "Jing Li",
+    "expectedName": "Xi Zhang",
+    "givenNames": "Xi",
+    "familyNames": "Zhang",
+    "affiliations": [
+      {
+        "text": "Medical Center of Hematology, Xinqiao Hospital of Army Medical University, Chongqing, 400037 China",
+        "countries": []
+      },
+      {
+        "text": "State Key Laboratory of Trauma and Chemical Poisoning, Chongqing Key Laboratory of Hematology and Microenvironment, Chongqing, 400037 China",
+        "countries": []
+      },
+      {
+        "text": "Jinfeng Laboratory, Chongqing, 401329 China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1097/bs9.0000000000000295",
+    "paperYear": 2026,
+    "pmcId": "PMC13278256",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13278256/"
+  },
+  {
+    "id": "EMAIL-b037b33401153f344c9",
+    "email": "jjx2020@sjtu.edu.cn",
+    "oldName": "Jing Wang",
+    "expectedName": "Jingxuan Jiang",
+    "givenNames": "Jingxuan",
+    "familyNames": "Jiang",
+    "affiliations": [
+      {
+        "text": "Department of Radiology, Affiliated Hospital of Nantong University, Nantong, China.",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.7150/jca.129931",
+    "paperYear": 2026,
+    "pmcId": "PMC13189845",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13189845/"
+  },
+  {
+    "id": "0000-0003-4335-3546",
+    "email": "zonglzhu@cityu.edu.hk",
+    "oldName": "Jie Zhang",
+    "expectedName": "Zonglong Zhu",
+    "givenNames": "Zonglong",
+    "familyNames": "Zhu",
+    "affiliations": [
+      {
+        "text": "Department of Materials Science and Engineering,City University of Hong Kong,Tat Chee Avenue, 999077 Kowloon, Hong Kong",
+        "countries": []
+      },
+      {
+        "text": "Department of Chemistry,City University of Hong Kong,Tat Chee Avenue, 999077 Kowloon, Hong Kong",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-8285-9665"
+    ],
+    "doi": "10.1038/s41467-020-20791-z",
+    "paperYear": 2021,
+    "pmcId": "PMC7817662",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7817662/"
+  },
+  {
+    "id": "0000-0001-8281-7978",
+    "email": "afutreal@mdanderson.org",
+    "oldName": "Feng Wang",
+    "expectedName": "P. Andrew Futreal",
+    "givenNames": "P. Andrew",
+    "familyNames": "Futreal",
+    "affiliations": [
+      {
+        "text": "Department of Genomic Medicine,The University of Texas MD Anderson Cancer Center,Houston, TX USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-8663-2671"
+    ],
+    "doi": "10.1038/s41467-020-19119-8",
+    "paperYear": 2020,
+    "pmcId": "PMC7577981",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7577981/"
+  },
+  {
+    "id": "EMAIL-4ce47a9299d05b183dd",
+    "email": "wanjadanie@gmail.com",
+    "oldName": "Christine Minoo Mbindyo",
+    "expectedName": "Daniel Wambua Wanja",
+    "givenNames": "Daniel Wambua",
+    "familyNames": "Wanja",
+    "affiliations": [
+      {
+        "text": "Department of Veterinary Pathology, Microbiology and Parasitology, Faculty of Veterinary Medicine and Surgery, Egerton University, Njoro-Egerton, Kenya",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1867-1887",
+    "paperYear": 2026,
+    "pmcId": "PMC13290336",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290336/"
+  },
+  {
+    "id": "EMAIL-9de551a9333db0002e8",
+    "email": "mkibegwa@uonbi.ac.ke",
+    "oldName": "Christine Minoo Mbindyo",
+    "expectedName": "Felix M Kibegwa",
+    "givenNames": "Felix M",
+    "familyNames": "Kibegwa",
+    "affiliations": [
+      {
+        "text": "Department of Animal Production, Faculty of Veterinary Medicine, University of Nairobi, Nairobi, Kenya",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1867-1887",
+    "paperYear": 2026,
+    "pmcId": "PMC13290336",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290336/"
+  },
+  {
+    "id": "EMAIL-e765d8bd6487f341f83",
+    "email": "katodrago@gmail.com",
+    "oldName": "Christine Minoo Mbindyo",
+    "expectedName": "Charles Drago Kato",
+    "givenNames": "Charles Drago",
+    "familyNames": "Kato",
+    "affiliations": [
+      {
+        "text": "School of Biosecurity, Biotechnical and Laboratory Sciences, College of Veterinary Medicine, Animal Resources and Biosecurity, Makerere University, Kampala, Uganda",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1867-1887",
+    "paperYear": 2026,
+    "pmcId": "PMC13290336",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290336/"
+  },
+  {
+    "id": "EMAIL-2c2465bc82fe07f1231",
+    "email": "metrinenyanja@gmail.com",
+    "oldName": "Christine Minoo Mbindyo",
+    "expectedName": "Metrine Namalwa Nyanja",
+    "givenNames": "Metrine Namalwa",
+    "familyNames": "Nyanja",
+    "affiliations": [
+      {
+        "text": "Department of Public Health Pharmacology and Toxicology Pathology, Faculty of Veterinary Medicine, University of Nairobi, Nairobi, Kenya",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1867-1887",
+    "paperYear": 2026,
+    "pmcId": "PMC13290336",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290336/"
+  },
+  {
+    "id": "EMAIL-d9544fd2c95b94e2927",
+    "email": "gitao@uonbi.ac.ke",
+    "oldName": "Christine Minoo Mbindyo",
+    "expectedName": "George C Gitao",
+    "givenNames": "George C",
+    "familyNames": "Gitao",
+    "affiliations": [
+      {
+        "text": "Department of Veterinary Pathology, Microbiology and Parasitology, Faculty of Veterinary Medicine, University of Nairobi, Nairobi, Kenya",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1867-1887",
+    "paperYear": 2026,
+    "pmcId": "PMC13290336",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290336/"
+  },
+  {
+    "id": "EMAIL-11fde8be4b3047f090f",
+    "email": "rodriguezvargasraul01@gmail.com",
+    "oldName": "Emmanuel Alexander Sessarego",
+    "expectedName": "Aníbal Rodríguez-Vargas",
+    "givenNames": "Aníbal",
+    "familyNames": "Rodríguez-Vargas",
+    "affiliations": [
+      {
+        "text": "Dirección de Servicios Estratégicos Agrarios, Instituto Nacional de Innovación Agraria (INIA), Lima 15024, Lima, Perú",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1850-1866",
+    "paperYear": 2026,
+    "pmcId": "PMC13290330",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290330/"
+  },
+  {
+    "id": "EMAIL-21635fdb1bdce14cc50",
+    "email": "jaruizch@gmail.com",
+    "oldName": "Emmanuel Alexander Sessarego",
+    "expectedName": "José Ruiz-Chamorro",
+    "givenNames": "José",
+    "familyNames": "Ruiz-Chamorro",
+    "affiliations": [
+      {
+        "text": "Dirección de Servicios Estratégicos Agrarios, Instituto Nacional de Innovación Agraria (INIA), Lima 15024, Lima, Perú",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1850-1866",
+    "paperYear": 2026,
+    "pmcId": "PMC13290330",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290330/"
+  },
+  {
+    "id": "EMAIL-17c4cd0b1a339e5d87b",
+    "email": "cbarrantes@lamolina.edu.pe",
+    "oldName": "Emmanuel Alexander Sessarego",
+    "expectedName": "Cecilio Barrantes-Campos",
+    "givenNames": "Cecilio",
+    "familyNames": "Barrantes-Campos",
+    "affiliations": [
+      {
+        "text": "Programa de Investigación y Proyección Social en Animales Menores, Universidad Nacional Agraria La Molina, Lima 15024, Lima, Perú",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1850-1866",
+    "paperYear": 2026,
+    "pmcId": "PMC13290330",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290330/"
+  },
+  {
+    "id": "EMAIL-75b2ee6b1651d8da1a3",
+    "email": "lucindatafurg@gmail.com",
+    "oldName": "Emmanuel Alexander Sessarego",
+    "expectedName": "Lucinda Tafur-Gutiérrez",
+    "givenNames": "Lucinda",
+    "familyNames": "Tafur-Gutiérrez",
+    "affiliations": [
+      {
+        "text": "Estación Experimental Agraria Amazonas, Instituto Nacional de Innovación Agraria, Utcubamba 01621, Amazonas, Perú",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1850-1866",
+    "paperYear": 2026,
+    "pmcId": "PMC13290330",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290330/"
+  },
+  {
+    "id": "EMAIL-c8d8046f8979c608a41",
+    "email": "jcruz@inia.gob.pe",
+    "oldName": "Emmanuel Alexander Sessarego",
+    "expectedName": "Juancarlos Cruz-Luis",
+    "givenNames": "Juancarlos",
+    "familyNames": "Cruz-Luis",
+    "affiliations": [
+      {
+        "text": "Dirección de Servicios Estratégicos Agrarios, Instituto Nacional de Innovación Agraria (INIA), Lima 15024, Lima, Perú",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1850-1866",
+    "paperYear": 2026,
+    "pmcId": "PMC13290330",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290330/"
+  },
+  {
+    "id": "EMAIL-27205d8d80591bd5c1f",
+    "email": "djcruzflores@agro.uba.ar",
+    "oldName": "Jhony Soca",
+    "expectedName": "Danny Julio Cruz",
+    "givenNames": "Danny Julio",
+    "familyNames": "Cruz",
+    "affiliations": [
+      {
+        "text": "Estación Experimental Agraria Chincha, Instituto Nacional de Innovación Agraria, Ica 11770, Peru",
+        "countries": []
+      },
+      {
+        "text": "Departamento de Producción Animal, Facultad de Agronomía, Universidad de Buenos Aires, Buenos Aires 1417, Argentina",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1838-1849",
+    "paperYear": 2026,
+    "pmcId": "PMC13290352",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290352/"
+  },
+  {
+    "id": "EMAIL-35b87cded2db13c7d1a",
+    "email": "edwinmendoza.ala@gmail.com",
+    "oldName": "Jhony Soca",
+    "expectedName": "Edwin Mendoza-Alacute",
+    "givenNames": "Edwin",
+    "familyNames": "Mendoza-Alacute",
+    "affiliations": [
+      {
+        "text": "Estación Experimental Agraria Canaán, Instituto Nacional de Innovación Agraria, Ayacucho 05007, Peru",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1838-1849",
+    "paperYear": 2026,
+    "pmcId": "PMC13290352",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290352/"
+  },
+  {
+    "id": "EMAIL-d3c57c15b06cc2543b8",
+    "email": "marisela.trillo@upsjb.edu.pe",
+    "oldName": "Jhony Soca",
+    "expectedName": "Marisela Trillo-Salvador",
+    "givenNames": "Marisela",
+    "familyNames": "Trillo-Salvador",
+    "affiliations": [
+      {
+        "text": "Escuela de Medicina Veterinaria y Zootecnia, Universidad Privada San Juan Bautista, Ica 11004, Peru",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1838-1849",
+    "paperYear": 2026,
+    "pmcId": "PMC13290352",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290352/"
+  },
+  {
+    "id": "EMAIL-075d6c21a52a6d51b99",
+    "email": "justo.valdivia@upsjb.edu.pe",
+    "oldName": "Jhony Soca",
+    "expectedName": "Justo Valdivia-Zevallos",
+    "givenNames": "Justo",
+    "familyNames": "Valdivia-Zevallos",
+    "affiliations": [
+      {
+        "text": "Escuela de Medicina Veterinaria y Zootecnia, Universidad Privada San Juan Bautista, Ica 11004, Peru",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1838-1849",
+    "paperYear": 2026,
+    "pmcId": "PMC13290352",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290352/"
+  },
+  {
+    "id": "EMAIL-b12d24728e781d74677",
+    "email": "temochsoc@gmail.com",
+    "oldName": "Jhony Soca",
+    "expectedName": "Victor Temoche-Socola",
+    "givenNames": "Victor",
+    "familyNames": "Temoche-Socola",
+    "affiliations": [
+      {
+        "text": "Dirección de Servicios Estratégicos Agrarios, Instituto Nacional de Innovación Agraria, Lima 15024, Peru",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1838-1849",
+    "paperYear": 2026,
+    "pmcId": "PMC13290352",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290352/"
+  },
+  {
+    "id": "EMAIL-b5f53a7bca1e23f604d",
+    "email": "juancanchinog@gmail.com",
+    "oldName": "Jhony Soca",
+    "expectedName": "Juan Canchino-Gutierrez",
+    "givenNames": "Juan",
+    "familyNames": "Canchino-Gutierrez",
+    "affiliations": [
+      {
+        "text": "Estación Experimental Agraria Chincha, Instituto Nacional de Innovación Agraria, Ica 11770, Peru",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1838-1849",
+    "paperYear": 2026,
+    "pmcId": "PMC13290352",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290352/"
+  },
+  {
+    "id": "0000-0003-0847-182X",
+    "email": "jian.xu@utsouthwestern.edu",
+    "oldName": "Xin Liu",
+    "expectedName": "Jian Xu",
+    "givenNames": "Jian",
+    "familyNames": "Xu",
+    "affiliations": [
+      {
+        "text": "Children’s Medical Center Research Institute,University of Texas Southwestern Medical Center,Dallas, TX 75390 USA",
+        "countries": []
+      },
+      {
+        "text": "Department of Pediatrics, Harold C. Simmons Comprehensive Cancer Center, and Hamon Center for Regenerative Science and Medicine,University of Texas Southwestern Medical Center,Dallas, TX 75390 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-1988-7337"
+    ],
+    "doi": "10.1038/s41467-020-14362-5",
+    "paperYear": 2020,
+    "pmcId": "PMC6981169",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6981169/"
+  },
+  {
+    "id": "EMAIL-3c50d46d003e7bf92e6",
+    "email": "hexiaori@yeah.net",
+    "oldName": "Tao Wang",
+    "expectedName": "Xiao Ri He",
+    "givenNames": "Xiao Ri",
+    "familyNames": "He",
+    "affiliations": [
+      {
+        "text": "Department of Pediatrics, The Second Xiangya Hospital, Central South University, Changsha, Hunan, China",
+        "countries": []
+      },
+      {
+        "text": "Department of Neonatology, Children’s Medical Center, The Second Xiangya Hospital, Central South University, Changsha, Hunan, China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1371/journal.pone.0350859",
+    "paperYear": 2026,
+    "pmcId": "PMC13262855",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13262855/"
+  },
+  {
+    "id": "EMAIL-676386b1783d4368129",
+    "email": "sophie.rosset@limsi.fr",
+    "oldName": "Alvaro Rodrigo",
+    "expectedName": "Sophie Rosset",
+    "givenNames": "Sophie",
+    "familyNames": "Rosset",
+    "affiliations": [
+      {
+        "text": "CNRS, LIMSI,Université Paris-Saclay,Campus Universitaire, Bât. 508, rue John von Neumann, 91405 Orsay Cedex, France",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s10462-020-09866-x",
+    "paperYear": 2020,
+    "pmcId": "PMC7817575",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7817575/"
+  },
+  {
+    "id": "EMAIL-4eadef7eba48b0fab94",
+    "email": "arantza.otegi@ehu.eus",
+    "oldName": "Alvaro Rodrigo",
+    "expectedName": "Arantxa Otegi",
+    "givenNames": "Arantxa",
+    "familyNames": "Otegi",
+    "affiliations": [
+      {
+        "text": "IXA NLP Group,University of the Basque Country(UPV/EHU),Manuel Lardizabal 1 Donostia, 20018 Basque Country, Spain",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s10462-020-09866-x",
+    "paperYear": 2020,
+    "pmcId": "PMC7817575",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7817575/"
+  },
+  {
+    "id": "EMAIL-86ab0ebed18a32d35a8",
+    "email": "gblanco@lsi.uned.es",
+    "oldName": "Alvaro Rodrigo",
+    "expectedName": "Guillermo Echegoyen",
+    "givenNames": "Guillermo",
+    "familyNames": "Echegoyen",
+    "affiliations": [
+      {
+        "text": "NLP & IRGroup,UNED,C/Juan del Rosal 16, 28040 Madrid, Spain",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s10462-020-09866-x",
+    "paperYear": 2020,
+    "pmcId": "PMC7817575",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7817575/"
+  },
+  {
+    "id": "EMAIL-a21ae601d0ef0b46e27",
+    "email": "e.agirre@ehu.eus",
+    "oldName": "Alvaro Rodrigo",
+    "expectedName": "Eneko Agirre",
+    "givenNames": "Eneko",
+    "familyNames": "Agirre",
+    "affiliations": [
+      {
+        "text": "IXA NLP Group,University of the Basque Country(UPV/EHU),Manuel Lardizabal 1 Donostia, 20018 Basque Country, Spain",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s10462-020-09866-x",
+    "paperYear": 2020,
+    "pmcId": "PMC7817575",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7817575/"
+  },
+  {
+    "id": "0000-0002-1171-7141",
+    "email": "hliang1@mdanderson.org",
+    "oldName": "Jun Li",
+    "expectedName": "Han Liang",
+    "givenNames": "Han",
+    "familyNames": "Liang",
+    "affiliations": [
+      {
+        "text": "Department of Bioinformatics and Computational Biology,The University of Texas MD Anderson Cancer Center,Houston, TX USA",
+        "countries": []
+      },
+      {
+        "text": "Quantitative and Computational Biosciences Graduate Program, Baylor College of Medicine,Houston, TX USA",
+        "countries": []
+      },
+      {
+        "text": "Department of Systems Biology,The University of Texas MD Anderson Cancer Center,Houston, TX USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-7633-286X"
+    ],
+    "doi": "10.1038/s41588-019-0557-x",
+    "paperYear": 2020,
+    "pmcId": "PMC7058535",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7058535/"
+  },
+  {
+    "id": "EMAIL-884303f1bc4164ed565",
+    "email": "sap_anan@staff.uns.ac.id",
+    "oldName": "Sri Sugiarsi",
+    "expectedName": "Sapja Anantanyu",
+    "givenNames": "Sapja",
+    "familyNames": "Anantanyu",
+    "affiliations": [
+      {
+        "text": "Doctoral Program of Development Extension and Community Empowerment, Universitas Sebelas Maret, Surakarta, Indonesia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1888-1899",
+    "paperYear": 2026,
+    "pmcId": "PMC13290329",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290329/"
+  },
+  {
+    "id": "EMAIL-a872a7700f5a12c419a",
+    "email": "aniklestari@staff.uns.ac.id",
+    "oldName": "Sri Sugiarsi",
+    "expectedName": "Anik Lestari",
+    "givenNames": "Anik",
+    "familyNames": "Lestari",
+    "affiliations": [
+      {
+        "text": "Faculty of Medicine, Universitas Sebelas Maret, Surakarta, Indonesia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1888-1899",
+    "paperYear": 2026,
+    "pmcId": "PMC13290329",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290329/"
+  },
+  {
+    "id": "EMAIL-a6dd95760d231c86351",
+    "email": "endangsutisna@staff.uns.ac.id",
+    "oldName": "Sri Sugiarsi",
+    "expectedName": "Endang Sutisna Sulaeman",
+    "givenNames": "Endang Sutisna",
+    "familyNames": "Sulaeman",
+    "affiliations": [
+      {
+        "text": "Master’s Program in Public Health, Graduate School, Universitas Sebelas Maret, Surakarta, Indonesia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.1888-1899",
+    "paperYear": 2026,
+    "pmcId": "PMC13290329",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290329/"
+  },
+  {
+    "id": "EMAIL-ff61758a7afee1738a2",
+    "email": "budi_wardiman@ymail.com",
+    "oldName": "Syahriani Syahrir",
+    "expectedName": "Budi Wardiman",
+    "givenNames": "Budi",
+    "familyNames": "Wardiman",
+    "affiliations": [
+      {
+        "text": "Department of Agricultural Science, Hasanuddin University, Makassar 90245, Indonesia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.2067-2087",
+    "paperYear": 2026,
+    "pmcId": "PMC13290351",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290351/"
+  },
+  {
+    "id": "EMAIL-214bb643d5c306f6f41",
+    "email": "ahmadrifai.m07@gmail.com",
+    "oldName": "Syahriani Syahrir",
+    "expectedName": "Ahmad Rifai",
+    "givenNames": "Ahmad",
+    "familyNames": "Rifai",
+    "affiliations": [
+      {
+        "text": "Feed Chemistry Laboratory, Faculty of Animal Science, Hasanuddin University, Makassar 90245, Indonesia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.2067-2087",
+    "paperYear": 2026,
+    "pmcId": "PMC13290351",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290351/"
+  },
+  {
+    "id": "EMAIL-185430a5272b23fec05",
+    "email": "aurelyayulyanti4@gmail.com",
+    "oldName": "Syahriani Syahrir",
+    "expectedName": "Aurelya Yulyanti Sudarmanto",
+    "givenNames": "Aurelya Yulyanti",
+    "familyNames": "Sudarmanto",
+    "affiliations": [
+      {
+        "text": "Feed Chemistry Laboratory, Faculty of Animal Science, Hasanuddin University, Makassar 90245, Indonesia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.2067-2087",
+    "paperYear": 2026,
+    "pmcId": "PMC13290351",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290351/"
+  },
+  {
+    "id": "EMAIL-2b7e1f4473fe82f492b",
+    "email": "asmuddin_natsir@unhas.ac.id",
+    "oldName": "Syahriani Syahrir",
+    "expectedName": "Asmuddin Natsir",
+    "givenNames": "Asmuddin",
+    "familyNames": "Natsir",
+    "affiliations": [
+      {
+        "text": "Feed Chemistry Laboratory, Faculty of Animal Science, Hasanuddin University, Makassar 90245, Indonesia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.2067-2087",
+    "paperYear": 2026,
+    "pmcId": "PMC13290351",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290351/"
+  },
+  {
+    "id": "EMAIL-2f038a3bac8fc939fe3",
+    "email": "liqiu809@hospital.cqmu.edu.cn",
+    "oldName": "Wei Jiang",
+    "expectedName": "Qiu Li",
+    "givenNames": "Qiu",
+    "familyNames": "Li",
+    "affiliations": [
+      {
+        "text": "Department of Nephrology, Children's Hospital of Chongqing Medical University, National Clinical Research Center for Children and Adolescents' Health and Diseases, Ministry of Education Key Laboratory of Child Development and Disorders, Chongqing Key Laboratory of Pediatric Metabolism and Inflammatory Diseases, Chongqing, P.R. China.",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.7150/ijbs.133879",
+    "paperYear": 2026,
+    "pmcId": "PMC13215461",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13215461/"
+  },
+  {
+    "id": "EMAIL-2e15595f48453dab479",
+    "email": "crnkaya@hotmail.com",
+    "oldName": "Ali Narin",
+    "expectedName": "Ceren Kaya",
+    "givenNames": "Ceren",
+    "familyNames": "Kaya",
+    "affiliations": [
+      {
+        "text": "Department of Biomedical Engineering,Zonguldak Bulent Ecevit University,Zonguldak, 67100 Turkey",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-1970-2833"
+    ],
+    "doi": "10.1007/s10044-021-00984-y",
+    "paperYear": 2021,
+    "pmcId": "PMC8106971",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8106971/"
+  },
+  {
+    "id": "EMAIL-55a47c20dae01f1d217",
+    "email": "ceren.kaya@beun.edu.tr",
+    "oldName": "Ali Narin",
+    "expectedName": "Ceren Kaya",
+    "givenNames": "Ceren",
+    "familyNames": "Kaya",
+    "affiliations": [
+      {
+        "text": "Department of Biomedical Engineering,Zonguldak Bulent Ecevit University,Zonguldak, 67100 Turkey",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-1970-2833"
+    ],
+    "doi": "10.1007/s10044-021-00984-y",
+    "paperYear": 2021,
+    "pmcId": "PMC8106971",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8106971/"
+  },
+  {
+    "id": "EMAIL-fb835d71b7db8026cc1",
+    "email": "ziynet.pamuk@beun.edu.tr",
+    "oldName": "Ali Narin",
+    "expectedName": "Ziynet Pamuk",
+    "givenNames": "Ziynet",
+    "familyNames": "Pamuk",
+    "affiliations": [
+      {
+        "text": "Department of Biomedical Engineering,Zonguldak Bulent Ecevit University,Zonguldak, 67100 Turkey",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s10044-021-00984-y",
+    "paperYear": 2021,
+    "pmcId": "PMC8106971",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8106971/"
+  },
+  {
+    "id": "0000-0001-8654-3636",
+    "email": "jjlee@mdanderson.org",
+    "oldName": "Na Liu",
+    "expectedName": "J. Jack Lee",
+    "givenNames": "J. Jack",
+    "familyNames": "Lee",
+    "affiliations": [
+      {
+        "text": "Department of Biostatistics,The University of Texas, MD Anderson Cancer Center,Houston, United States",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-5469-9214"
+    ],
+    "doi": "10.1186/s12874-021-01308-8",
+    "paperYear": 2021,
+    "pmcId": "PMC8168323",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8168323/"
+  },
+  {
+    "id": "EMAIL-cdda39b6362c4e5578e",
+    "email": "eboldyreva@catalysis.ru",
+    "oldName": "Adam A. L. Michalchuk",
+    "expectedName": "Elena V. Boldyreva",
+    "givenNames": "Elena V.",
+    "familyNames": "Boldyreva",
+    "affiliations": [
+      {
+        "text": "Novosibirsk State University, Novosibirsk, Russia",
+        "countries": [
+          {
+            "text": "Russia",
+            "code": null
+          }
+        ]
+      },
+      {
+        "text": "Boreskov Institute of Catalysis SB RAS, Novosibirsk, Russia",
+        "countries": [
+          {
+            "text": "Russia",
+            "code": null
+          }
+        ]
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.3389/fchem.2021.685789",
+    "paperYear": 2021,
+    "pmcId": "PMC8216082",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8216082/"
+  },
+  {
+    "id": "EMAIL-bf29d68ef05708b4bd7",
+    "email": "eboldyreva@yahoo.com",
+    "oldName": "Adam A. L. Michalchuk",
+    "expectedName": "Elena V. Boldyreva",
+    "givenNames": "Elena V.",
+    "familyNames": "Boldyreva",
+    "affiliations": [
+      {
+        "text": "Novosibirsk State University, Novosibirsk, Russia",
+        "countries": [
+          {
+            "text": "Russia",
+            "code": null
+          }
+        ]
+      },
+      {
+        "text": "Boreskov Institute of Catalysis SB RAS, Novosibirsk, Russia",
+        "countries": [
+          {
+            "text": "Russia",
+            "code": null
+          }
+        ]
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.3389/fchem.2021.685789",
+    "paperYear": 2021,
+    "pmcId": "PMC8216082",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8216082/"
+  },
+  {
+    "id": "EMAIL-9547c4491e01065e416",
+    "email": "keiichi.mochida@riken.jp",
+    "oldName": "Akihiro Ezoe",
+    "expectedName": "Keiichi Mochida",
+    "givenNames": "Keiichi",
+    "familyNames": "Mochida",
+    "affiliations": [
+      {
+        "text": "RIKEN Center for Sustainable Resource Science, Yokohama, Kanagawa 230-0045, Japan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/bioadv/vbag155",
+    "paperYear": 2026,
+    "pmcId": "PMC13281915",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13281915/"
+  },
+  {
+    "id": "EMAIL-db99fb868a8ab035347",
+    "email": "motoaki.seki@riken.jp",
+    "oldName": "Akihiro Ezoe",
+    "expectedName": "Motoaki Seki",
+    "givenNames": "Motoaki",
+    "familyNames": "Seki",
+    "affiliations": [
+      {
+        "text": "RIKEN Center for Sustainable Resource Science, Yokohama, Kanagawa 230-0045, Japan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/bioadv/vbag155",
+    "paperYear": 2026,
+    "pmcId": "PMC13281915",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13281915/"
+  },
+  {
+    "id": "EMAIL-3f5136387bbba7e5ddb",
+    "email": "d.santamaria@usal.es",
+    "oldName": "Alberto Martín",
+    "expectedName": "David Santamaría",
+    "givenNames": "David",
+    "familyNames": "Santamaría",
+    "affiliations": [
+      {
+        "text": "Molecular Mechanisms of Cancer Program, Centro de Investigación del Cáncer (CIC), CSIC-Universidad de Salamanca, Campus Miguel de Unamuno 37007, Salamanca, Spain",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1158/0008-5472.can-25-5172",
+    "paperYear": 2026,
+    "pmcId": "PMC7619155",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7619155/"
+  },
+  {
+    "id": "EMAIL-86a29af31524e730575",
+    "email": "andreas.geiger@tue.mpg.de",
+    "oldName": "Aljos̆a Os̆ep",
+    "expectedName": "Andreas Geiger",
+    "givenNames": "Andreas",
+    "familyNames": "Geiger",
+    "affiliations": [
+      {
+        "text": "Max Planck Institute for Intelligent Systems, Tübingen,Tübingen, Germany",
+        "countries": []
+      },
+      {
+        "text": "University of Tübingen,Tübingen, Germany",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s11263-020-01375-2",
+    "paperYear": 2020,
+    "pmcId": "PMC7881978",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7881978/"
+  },
+  {
+    "id": "EMAIL-5f8dec3170c940eb0de",
+    "email": "patrick.dendorfer@tum.de",
+    "oldName": "Aljos̆a Os̆ep",
+    "expectedName": "Patrick Dendorfer",
+    "givenNames": "Patrick",
+    "familyNames": "Dendorfer",
+    "affiliations": [
+      {
+        "text": "Technical University Munich,Munich, Germany",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s11263-020-01375-2",
+    "paperYear": 2020,
+    "pmcId": "PMC7881978",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7881978/"
+  },
+  {
+    "id": "EMAIL-4b8ee57b997b2a6ca48",
+    "email": "150220995@qq.com",
+    "oldName": "Fan Cheng",
+    "expectedName": "Wei Li",
+    "givenNames": "Wei",
+    "familyNames": "Li",
+    "affiliations": [
+      {
+        "text": "Department of Anesthesiology, Renmin Hospital of Wuhan University, Wuhan, 430060, China.",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.7150/thno.127538",
+    "paperYear": 2026,
+    "pmcId": "PMC13232619",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13232619/"
+  },
+  {
+    "id": "EMAIL-42b0c26d488cbe530de",
+    "email": "jian.zheng.1@louisville.edu",
+    "oldName": "Gang Ye",
+    "expectedName": "Jian Zheng",
+    "givenNames": "Jian",
+    "familyNames": "Zheng",
+    "affiliations": [
+      {
+        "text": "Center for Predictive Medicine, University of Louisville, Kentucky, United States of America",
+        "countries": []
+      },
+      {
+        "text": "Department of Microbiology and Immunology, University of Louisville, Kentucky, United States of America",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1371/journal.ppat.1014223",
+    "paperYear": 2026,
+    "pmcId": "PMC13193604",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13193604/"
+  },
+  {
+    "id": "EMAIL-14aab2ab9a40cb30f3c",
+    "email": "cslqm@henu.edu.cn",
+    "oldName": "Guohua Wang",
+    "expectedName": "Qiaoming Liu",
+    "givenNames": "Qiaoming",
+    "familyNames": "Liu",
+    "affiliations": [
+      {
+        "text": "School of Artificial Intelligence, Henan University, Zhengzhou 450000, China",
+        "countries": [
+          {
+            "text": "China",
+            "code": "CN"
+          }
+        ]
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/bioinformatics/btag361",
+    "paperYear": 2026,
+    "pmcId": "PMC13290474",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290474/"
+  },
+  {
+    "id": "EMAIL-8b3e2b6871298af9bbf",
+    "email": "zym@nefu.edu.cn",
+    "oldName": "Guohua Wang",
+    "expectedName": "Yuming Zhao",
+    "givenNames": "Yuming",
+    "familyNames": "Zhao",
+    "affiliations": [
+      {
+        "text": "School of Computer Science and Artificial Intelligence, Northeast Forestry University, Harbin 150040, China",
+        "countries": [
+          {
+            "text": "China",
+            "code": "CN"
+          }
+        ]
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-7219-0999"
+    ],
+    "doi": "10.1093/bioinformatics/btag361",
+    "paperYear": 2026,
+    "pmcId": "PMC13290474",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290474/"
+  },
+  {
+    "id": "EMAIL-c18b3bad4324499aab2",
+    "email": "yunkyungkim@kist.re.kr",
+    "oldName": "Hee Yeon Kim",
+    "expectedName": "Yun Kyung Kim",
+    "givenNames": "Yun Kyung",
+    "familyNames": "Kim",
+    "affiliations": [
+      {
+        "text": "Convergence Research Center for Brain Science, Brain Science Institute,Korea Institute of Science and Technology (KIST),Seoul, 02792 Korea",
+        "countries": []
+      },
+      {
+        "text": "Division of Bio-Medical Science & Technology, KIST School,University of Science and Technology (UST),Seoul, 02792 Korea",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-8682-120X"
+    ],
+    "doi": "10.1038/s41467-022-28520-4",
+    "paperYear": 2022,
+    "pmcId": "PMC8850458",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8850458/"
+  },
+  {
+    "id": "EMAIL-0bddc57f98490e210ea",
+    "email": "yok5@snu.ac.kr",
+    "oldName": "Hee Yeon Kim",
+    "expectedName": "Yong Tae Kwon",
+    "givenNames": "Yong Tae",
+    "familyNames": "Kwon",
+    "affiliations": [
+      {
+        "text": "Cellular Degradation Biology Center and Department of Biomedical Sciences, College of Medicine,Seoul National University,Seoul, 03080 Korea",
+        "countries": []
+      },
+      {
+        "text": "AUTOTAC Bio Inc., Changkkyunggung-ro 254, Jongno-gu, Seoul, 03080 Korea",
+        "countries": []
+      },
+      {
+        "text": "SNU Dementia Research Center, College of Medicine,Seoul National University,Seoul, 110-799 Republic of Korea",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-8115-3150"
+    ],
+    "doi": "10.1038/s41467-022-28520-4",
+    "paperYear": 2022,
+    "pmcId": "PMC8850458",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8850458/"
+  },
+  {
+    "id": "EMAIL-293761818b9a92e00dc",
+    "email": "bykim@kribb.re.kr",
+    "oldName": "Hee Yeon Kim",
+    "expectedName": "Bo Yeon Kim",
+    "givenNames": "Bo Yeon",
+    "familyNames": "Kim",
+    "affiliations": [
+      {
+        "text": "Anticancer Agents Research Center,Korea Research Institute of Bioscience and Biotechnology, Ochang,Cheongju, 28116 Korea",
+        "countries": []
+      },
+      {
+        "text": "Department of Biomolecular Science, KRIBB School,University of Science and Technology (UST),Daejeon, 34113 Korea",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-1105-5480"
+    ],
+    "doi": "10.1038/s41467-022-28520-4",
+    "paperYear": 2022,
+    "pmcId": "PMC8850458",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8850458/"
+  },
+  {
+    "id": "EMAIL-9d47aba3aeb658bd324",
+    "email": "jigang.zhou@gm.com",
+    "oldName": "Hongliu Dai",
+    "expectedName": "Jigang Zhou",
+    "givenNames": "Jigang",
+    "familyNames": "Zhou",
+    "affiliations": [
+      {
+        "text": "Canadian Light Source,Saskatoon, SK S7N 2V3 Canada",
+        "countries": []
+      },
+      {
+        "text": "Present Address: General Motors Research and Development Center,30470 Harley Earl Boulevard, Warren, MI 48092 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-6644-2862"
+    ],
+    "doi": "10.1038/s41467-024-52651-5",
+    "paperYear": 2024,
+    "pmcId": "PMC11449998",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11449998/"
+  },
+  {
+    "id": "EMAIL-54d6e7b381dc797d0a2",
+    "email": "shuhui.sun@inrs.ca",
+    "oldName": "Hongliu Dai",
+    "expectedName": "Shuhui Sun",
+    "givenNames": "Shuhui",
+    "familyNames": "Sun",
+    "affiliations": [
+      {
+        "text": "Institut National de la Recherche Scientifique (INRS),Center Énergie Matériaux Télécommunications,Varennes, QC J3X 1P7 Canada",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-0508-2944"
+    ],
+    "doi": "10.1038/s41467-024-52651-5",
+    "paperYear": 2024,
+    "pmcId": "PMC11449998",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11449998/"
+  },
+  {
+    "id": "EMAIL-4294115e16099db9188",
+    "email": "gaixia.zhang@etsmtl.ca",
+    "oldName": "Hongliu Dai",
+    "expectedName": "Gaixia Zhang",
+    "givenNames": "Gaixia",
+    "familyNames": "Zhang",
+    "affiliations": [
+      {
+        "text": "Department of Electrical Engineering,École de Technologie Supérieure (ÉTS),Montréal, QC H3C 1K3 Canada",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-5340-8961"
+    ],
+    "doi": "10.1038/s41467-024-52651-5",
+    "paperYear": 2024,
+    "pmcId": "PMC11449998",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11449998/"
+  },
+  {
+    "id": "EMAIL-8f0558f35d7b57a2fe2",
+    "email": "ohto@molectronics.jp",
+    "oldName": "Kailong Hu",
+    "expectedName": "Tatsuhiko Ohto",
+    "givenNames": "Tatsuhiko",
+    "familyNames": "Ohto",
+    "affiliations": [
+      {
+        "text": "Graduate School of Engineering Science,Osaka University,1-3 Machikaneyama, Toyonaka, 560-8531 Japan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41467-020-20503-7",
+    "paperYear": 2021,
+    "pmcId": "PMC7794435",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7794435/"
+  },
+  {
+    "id": "EMAIL-d9bb6cfa47d2296c4f2",
+    "email": "ito.yoshikazu.ga@u.tsukuba.jp",
+    "oldName": "Kailong Hu",
+    "expectedName": "Yoshikazu Ito",
+    "givenNames": "Yoshikazu",
+    "familyNames": "Ito",
+    "affiliations": [
+      {
+        "text": "Institute of Applied Physics, Graduate School of Pure and Applied Sciences,University of Tsukuba,Tsukuba, 305-8573 Japan",
+        "countries": []
+      },
+      {
+        "text": "PRESTO, Japan Science and Technology Agency,Saitama, 332-0012 Japan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-8059-8396"
+    ],
+    "doi": "10.1038/s41467-020-20503-7",
+    "paperYear": 2021,
+    "pmcId": "PMC7794435",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7794435/"
+  },
+  {
+    "id": "0000-0002-0221-3419",
+    "email": "minhyuk.park@snu.ac.kr",
+    "oldName": "Kun Yang",
+    "expectedName": "Min Hyuk Park",
+    "givenNames": "Min Hyuk",
+    "familyNames": "Park",
+    "affiliations": [
+      {
+        "text": "Department of Materials Science and Engineering and Inter-University Semiconductor Research Center, College of Engineering,Seoul National University,Gwanak-Ro 1, Gwanak-Gu, Seoul, 08826 Republic of Korea",
+        "countries": []
+      },
+      {
+        "text": "Research Institute of Advanced Materials, Seoul National University,Gwanak-Ro 1, Gwanak-Gu, Seoul, 08826 Republic of Korea",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-6333-2668"
+    ],
+    "doi": "10.1186/s40580-023-00403-4",
+    "paperYear": 2023,
+    "pmcId": "PMC10692067",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10692067/"
+  },
+  {
+    "id": "EMAIL-b39e962290245015890",
+    "email": "raviganesa@rediffmail.com",
+    "oldName": "M. Isacfranklin",
+    "expectedName": "G. Ravi",
+    "givenNames": "G.",
+    "familyNames": "Ravi",
+    "affiliations": [
+      {
+        "text": "Department of Physics,Alagappa University,Karaikudi, Tamil Nadu 630 003 India",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-020-75879-9",
+    "paperYear": 2020,
+    "pmcId": "PMC7645593",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7645593/"
+  },
+  {
+    "id": "EMAIL-739afc3f5d4d184e6e3",
+    "email": "dhayalan.velauthapillai@hvl.no",
+    "oldName": "M. Isacfranklin",
+    "expectedName": "Dhayalan Velauthapillai",
+    "givenNames": "Dhayalan",
+    "familyNames": "Velauthapillai",
+    "affiliations": [
+      {
+        "text": "Faculty of Engineering and Science,Western Norway University of Applied Sciences,5063 Bergen, Norway",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-020-75879-9",
+    "paperYear": 2020,
+    "pmcId": "PMC7645593",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7645593/"
+  },
+  {
+    "id": "EMAIL-754cc2f597bdf3fa8a7",
+    "email": "yuvakkumarr@alagappauniversity.ac.in",
+    "oldName": "M. Isacfranklin",
+    "expectedName": "R. Yuvakkumar",
+    "givenNames": "R.",
+    "familyNames": "Yuvakkumar",
+    "affiliations": [
+      {
+        "text": "Department of Physics,Alagappa University,Karaikudi, Tamil Nadu 630 003 India",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-020-75879-9",
+    "paperYear": 2020,
+    "pmcId": "PMC7645593",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7645593/"
+  },
+  {
+    "id": "0000-0001-8421-9031",
+    "email": "sung.jaeyun@mayo.edu",
+    "oldName": "Utpal Bakshi",
+    "expectedName": "Jaeyun Sung",
+    "givenNames": "Jaeyun",
+    "familyNames": "Sung",
+    "affiliations": [
+      {
+        "text": "Microbiome Program, Center for Individualized Medicine,Mayo Clinic,Rochester, MN 55905 USA",
+        "countries": []
+      },
+      {
+        "text": "Division of Surgery Research, Department of Surgery,Mayo Clinic,Rochester, MN 55905 USA",
+        "countries": []
+      },
+      {
+        "text": "Division of Rheumatology, Department of Medicine,Mayo Clinic,Rochester, MN 55905 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-3005-2798"
+    ],
+    "doi": "10.1038/s41467-020-18476-8",
+    "paperYear": 2020,
+    "pmcId": "PMC7492273",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7492273/"
+  },
+  {
+    "id": "EMAIL-d46deed93cbf5dcaef1",
+    "email": "hulinet169@163.com",
+    "oldName": "Yong Cui",
+    "expectedName": "Zhibin Hu",
+    "givenNames": "Zhibin",
+    "familyNames": "Hu",
+    "affiliations": [
+      {
+        "text": "Heart Center, Department of Cardiovascular Surgery, Zhejiang Provincial People’s Hospital (Affiliated People’s Hospital), Hangzhou Medical College, Hangzhou, Zhejiang, 310014, China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/icvts/ivag174",
+    "paperYear": 2026,
+    "pmcId": "PMC13323797",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13323797/"
+  },
+  {
+    "id": "EMAIL-b4b04329634695c6dd2",
+    "email": "xzliang@simm.ac.cn",
+    "oldName": "Yuanhua Liu",
+    "expectedName": "Xiaozhen Liang",
+    "givenNames": "Xiaozhen",
+    "familyNames": "Liang",
+    "affiliations": [
+      {
+        "text": "University of Chinese Academy of Sciences, Shanghai Institute of Materia Medica, Chinese Academy of Sciences, Shanghai 200031, China.",
+        "countries": []
+      },
+      {
+        "text": "Shanghai Institute of Infectious Disease and Biosecurity, Fudan University, Shanghai 200032, China.",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.7150/thno.132582",
+    "paperYear": 2026,
+    "pmcId": "PMC13295915",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13295915/"
+  },
+  {
+    "id": "EMAIL-192e7a3b5ff93469d53",
+    "email": "rtao@shca.org.cn",
+    "oldName": "Yuanhua Liu",
+    "expectedName": "Rong Tao",
+    "givenNames": "Rong",
+    "familyNames": "Tao",
+    "affiliations": [
+      {
+        "text": "Department of Lymphoma and Medical Oncology, Fudan University Shanghai Cancer Center, Research Center for Lymphoma, Fudan University, Shanghai 200032, China.",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.7150/thno.132582",
+    "paperYear": 2026,
+    "pmcId": "PMC13295915",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13295915/"
+  },
+  {
+    "id": "EMAIL-1fa3b3b1b81db4f2439",
+    "email": "philipp.kukura@chem.ox.ac.uk",
+    "oldName": "Adar Sonn-Segev",
+    "expectedName": "Philipp Kukura",
+    "givenNames": "Philipp",
+    "familyNames": "Kukura",
+    "affiliations": [
+      {
+        "text": "Physical and Theoretical Chemistry Laboratory, Department of Chemistry, University of Oxford,South Parks Road, Oxford, OX1 3QZ UK",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-0136-7704"
+    ],
+    "doi": "10.1038/s41467-020-15642-w",
+    "paperYear": 2020,
+    "pmcId": "PMC7156492",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7156492/"
+  },
+  {
+    "id": "EMAIL-c0b924b8974107491d5",
+    "email": "david.haselbach@imp.ac.at",
+    "oldName": "Adar Sonn-Segev",
+    "expectedName": "David Haselbach",
+    "givenNames": "David",
+    "familyNames": "Haselbach",
+    "affiliations": [
+      {
+        "text": "Research Institute of Molecular Pathology (IMP), Vienna BioCenter (VBC),Campus-Vienna-Biocenter 1, 1030 Vienna, Austria",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-5276-5633"
+    ],
+    "doi": "10.1038/s41467-020-15642-w",
+    "paperYear": 2020,
+    "pmcId": "PMC7156492",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7156492/"
+  },
+  {
+    "id": "EMAIL-a9841ac871ff878697d",
+    "email": "tachiban@yokohama-cu.ac.jp",
+    "oldName": "Akansha Dager",
+    "expectedName": "Masaru Tachibana",
+    "givenNames": "Masaru",
+    "familyNames": "Tachibana",
+    "affiliations": [
+      {
+        "text": "Graduate School of Nanobioscience,Yokohama City University,22-2 Seto, Kanazawa-ku, Yokohama, 236-0027 Japan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-020-69264-9",
+    "paperYear": 2020,
+    "pmcId": "PMC7378176",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7378176/"
+  },
+  {
+    "id": "EMAIL-8429929aff17694e983",
+    "email": "philippe.gaubert@ird.fr",
+    "oldName": "Alain Didier Missoup",
+    "expectedName": "Philippe Gaubert",
+    "givenNames": "Philippe",
+    "familyNames": "Gaubert",
+    "affiliations": [
+      {
+        "text": "Centre de Recherche sur la Biodiversité et l’Environnement, Université de Toulouse, CNRS, IRD, Toulouse INP, Toulouse, France",
+        "countries": []
+      },
+      {
+        "text": "CIIMAR/CIMAR, Interdisciplinary Centre of Marine and Environmental Research, University of Porto, Matosinhos, Portugal",
+        "countries": []
+      },
+      {
+        "text": "Laboratoire d’Ecologie Appliquée, Faculté des Sciences Agronomiques, Université d’Abomey-Calavi, Calavi, Benin",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-1375-9935"
+    ],
+    "doi": "10.1371/journal.pntd.0014308",
+    "paperYear": 2026,
+    "pmcId": "PMC13197069",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13197069/"
+  },
+  {
+    "id": "EMAIL-c68a813ed341263c3b9",
+    "email": "sarmati@med.uniroma2.it",
+    "oldName": "Alessandra Imeneo",
+    "expectedName": "Loredana Sarmati",
+    "givenNames": "Loredana",
+    "familyNames": "Sarmati",
+    "affiliations": [
+      {
+        "text": "Infectious Diseases, Department of Systems Medicine, Tor Vergata University, Rome, Italy",
+        "countries": []
+      },
+      {
+        "text": "Infectious Disease Clinic, Policlinico Tor Vergata, Rome, Italy",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/ofid/ofag327",
+    "paperYear": 2026,
+    "pmcId": "PMC13263525",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13263525/"
+  },
+  {
+    "id": "EMAIL-099a4596a721202d607",
+    "email": "p.samokhvalov@gmail.com",
+    "oldName": "Alexei Alexandrov",
+    "expectedName": "Igor Nabiev",
+    "givenNames": "Igor",
+    "familyNames": "Nabiev",
+    "affiliations": [
+      {
+        "text": "Laboratory of Nano-Bioengineering, National Research Nuclear University MEPhI (Moscow Engineering Physics Institute),115409 Moscow, Russian Federation",
+        "countries": []
+      },
+      {
+        "text": "Laboratoire de Recherche en Nanosciences, LRN-EA4682, Université de Reims Champagne-Ardenne,51100 Reims, France",
+        "countries": []
+      },
+      {
+        "text": "I.M. Sechenov First Moscow State Medical University,119991 Moscow, Russian Federation",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-020-64263-2",
+    "paperYear": 2020,
+    "pmcId": "PMC7198560",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7198560/"
+  },
+  {
+    "id": "EMAIL-23210f907079f3b90f3",
+    "email": "igor.nabiev@univ-reims.fr",
+    "oldName": "Alexei Alexandrov",
+    "expectedName": "Pavel Samokhvalov",
+    "givenNames": "Pavel",
+    "familyNames": "Samokhvalov",
+    "affiliations": [
+      {
+        "text": "Laboratory of Nano-Bioengineering, National Research Nuclear University MEPhI (Moscow Engineering Physics Institute),115409 Moscow, Russian Federation",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-020-64263-2",
+    "paperYear": 2020,
+    "pmcId": "PMC7198560",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7198560/"
+  },
+  {
+    "id": "EMAIL-c62b60a22a3b6126a08",
+    "email": "mona.garvert@uni-wuerzburg.de",
+    "oldName": "Alon B. Baram",
+    "expectedName": "Mona M Garvert",
+    "givenNames": "Mona M",
+    "familyNames": "Garvert",
+    "affiliations": [
+      {
+        "text": "Oxford Centre for Integrative Neuroimaging, FMRIB, Nuffield Department of Clinical Neurosciences, University of Oxford, John Radcliffe Hospital, Headington, Oxford OX3 9DA, UK",
+        "countries": []
+      },
+      {
+        "text": "Junior professorship of Neuroscience, Faculty of Human Sciences, Julius-Maximilians-University of Würzburg, Sanderring 2, 97070 Würzburg, Germany",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1016/j.cub.2026.05.068",
+    "paperYear": 2026,
+    "pmcId": "PMC7619258",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7619258/"
+  },
+  {
+    "id": "EMAIL-91941ecd0a4d9ef789e",
+    "email": "alessandro.cuomo@ieo.it",
+    "oldName": "Andrea Graziadei",
+    "expectedName": "Alessandro Cuomo",
+    "givenNames": "Alessandro",
+    "familyNames": "Cuomo",
+    "affiliations": [
+      {
+        "text": "Department of Experimental Oncology at IEO, European Institute of Oncology IRCCS, Milan 20139, Italy",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/bioadv/vbag158",
+    "paperYear": 2026,
+    "pmcId": "PMC13278766",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13278766/"
+  },
+  {
+    "id": "EMAIL-d1762694b8504367078",
+    "email": "manashp@ucla.edu",
+    "oldName": "Aritraa Lahiri",
+    "expectedName": "Manash K. Paul",
+    "givenNames": "Manash K.",
+    "familyNames": "Paul",
+    "affiliations": [
+      {
+        "text": "Department of Pulmonary and Critical Care Medicine, David Geffen School of Medicine,University of California Los Angeles,Los Angeles, CA 90095 USA",
+        "countries": []
+      },
+      {
+        "text": "Department of Microbiology, Kasturba Medical College,Manipal Academy of Higher Education,Manipal, Karnataka 576104 India",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1186/s12943-023-01740-y",
+    "paperYear": 2023,
+    "pmcId": "PMC9942077",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9942077/"
+  },
+  {
+    "id": "EMAIL-6d5517c4860ee0f8f52",
+    "email": "anubhabrsv@gmail.com",
+    "oldName": "Aritraa Lahiri",
+    "expectedName": "Anubhab Mukherjee",
+    "givenNames": "Anubhab",
+    "familyNames": "Mukherjee",
+    "affiliations": [
+      {
+        "text": "Esperer Onco Nutrition Pvt Ltd, 4BA, 4Th Floor, B Wing, Gundecha Onclave, Khairani Road, Sakinaka, Andheri East, Mumbai, Maharashtra 400072 India",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1186/s12943-023-01740-y",
+    "paperYear": 2023,
+    "pmcId": "PMC9942077",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9942077/"
+  },
+  {
+    "id": "EMAIL-13f89adcc06de5c1f48",
+    "email": "jyotismita.c@gmail.com",
+    "oldName": "Asmita Balasaheb Kalamkar",
+    "expectedName": "Jyotismita Chaki",
+    "givenNames": "Jyotismita",
+    "familyNames": "Chaki",
+    "affiliations": [
+      {
+        "text": "School of Information Technology and Engineering,Vellore Institute of Technology,Vellore, India",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s42979-020-00209-9",
+    "paperYear": 2020,
+    "pmcId": "PMC7289234",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7289234/"
+  },
+  {
+    "id": "EMAIL-d4035a5a2bd25015d53",
+    "email": "neelanjan.dey@gmail.com",
+    "oldName": "Asmita Balasaheb Kalamkar",
+    "expectedName": "Nilanjan Dey",
+    "givenNames": "Nilanjan",
+    "familyNames": "Dey",
+    "affiliations": [
+      {
+        "text": "Department of Information Technology, Techno International New Town, Kolkata, India",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s42979-020-00209-9",
+    "paperYear": 2020,
+    "pmcId": "PMC7289234",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7289234/"
+  },
+  {
+    "id": "EMAIL-5c8975ffdebe0bcbba1",
+    "email": "t.kruse@tu-bs.de",
+    "oldName": "Boas Pucker",
+    "expectedName": "Tobias Kruse",
+    "givenNames": "Tobias",
+    "familyNames": "Kruse",
+    "affiliations": [
+      {
+        "text": "TU Braunschweig, Institute of Plant Biology, Braunschweig, Germany",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1371/journal.pone.0350191",
+    "paperYear": 2026,
+    "pmcId": "PMC13262936",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13262936/"
+  },
+  {
+    "id": "0000-0003-0621-5320",
+    "email": "lpham@sandia.gov",
+    "oldName": "Brooke Harmon",
+    "expectedName": "Le Thanh Mai Pham",
+    "givenNames": "Le Thanh Mai",
+    "familyNames": "Pham",
+    "affiliations": [
+      {
+        "text": "Bioresource and Environmental Security, Sandia National Laboratories, Livermore, California, United States of America",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1371/journal.pcbi.1014394",
+    "paperYear": 2026,
+    "pmcId": "PMC13274873",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13274873/"
+  },
+  {
+    "id": "EMAIL-8860052f47f80535af6",
+    "email": "lloydch@unimelb.edu.au",
+    "oldName": "C. D. Hill",
+    "expectedName": "L. C. L. Hollenberg",
+    "givenNames": "L. C. L.",
+    "familyNames": "Hollenberg",
+    "affiliations": [
+      {
+        "text": "School of Physics,University of Melbourne,Parkville, VIC 3010 Australia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-7672-6965"
+    ],
+    "doi": "10.1038/s41467-020-20113-3",
+    "paperYear": 2020,
+    "pmcId": "PMC7725842",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7725842/"
+  },
+  {
+    "id": "EMAIL-6c526886fcffc1b0e2d",
+    "email": "hqwang@cmu.edu.cn",
+    "oldName": "Chuan Liu",
+    "expectedName": "Hua-Qin Wang",
+    "givenNames": "Hua-Qin",
+    "familyNames": "Wang",
+    "affiliations": [
+      {
+        "text": "Department of Biochemistry and Molecular Biology, China Medical University, Shenyang, 110122, China.",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.7150/ijbs.131303",
+    "paperYear": 2026,
+    "pmcId": "PMC13215458",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13215458/"
+  },
+  {
+    "id": "EMAIL-e9d644dd776027ea3f0",
+    "email": "chang.m.aa@m.titech.ac.jp",
+    "oldName": "Chun-Wen Tsao",
+    "expectedName": "Tso-Fu Mark Chang",
+    "givenNames": "Tso-Fu Mark",
+    "familyNames": "Chang",
+    "affiliations": [
+      {
+        "text": "Institute of Innovative Research,Tokyo Institute of Technology,Kanagawa, 226-8503 Japan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-0221-8882"
+    ],
+    "doi": "10.1038/s41467-023-44664-3",
+    "paperYear": 2024,
+    "pmcId": "PMC10776726",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10776726/"
+  },
+  {
+    "id": "EMAIL-3e3c1616abc24545389",
+    "email": "yclo@nycu.edu.tw",
+    "oldName": "Chun-Wen Tsao",
+    "expectedName": "Yu-Chieh Lo",
+    "givenNames": "Yu-Chieh",
+    "familyNames": "Lo",
+    "affiliations": [
+      {
+        "text": "Department of Materials Science and Engineering,National Yang Ming Chiao Tung University,Hsinchu, 300093 Taiwan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-7117-9154"
+    ],
+    "doi": "10.1038/s41467-023-44664-3",
+    "paperYear": 2024,
+    "pmcId": "PMC10776726",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10776726/"
+  },
+  {
+    "id": "EMAIL-46d75ca9fd7d94115bc",
+    "email": "chengguofeng2026@163.com",
+    "oldName": "Cizhong Jiang",
+    "expectedName": "Guofeng Cheng",
+    "givenNames": "Guofeng",
+    "familyNames": "Cheng",
+    "affiliations": [
+      {
+        "text": "Shanghai Tenth People’s Hospital, Institute for Infectious Diseases and Vaccine Development, School of Medicine, School of Life Sciences and Technology, Tongji University, Shanghai, China.",
+        "countries": [
+          {
+            "text": "China",
+            "code": null
+          }
+        ]
+      },
+      {
+        "text": "Affiliated Shanghai Blue Cross Brain Hospital, Tongji University School of Medicine, Shanghai, China.",
+        "countries": [
+          {
+            "text": "China",
+            "code": null
+          }
+        ]
+      },
+      {
+        "text": "Clinical Center for Brain and Spinal Cord Research, Tongji University, Shanghai, China.",
+        "countries": [
+          {
+            "text": "China",
+            "code": null
+          }
+        ]
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-5249-1065"
+    ],
+    "doi": "10.34133/research.1328",
+    "paperYear": 2026,
+    "pmcId": "PMC13319631",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13319631/"
+  },
+  {
+    "id": "EMAIL-ce6e9d4045c8ae9adf1",
+    "email": "zhengwenting@ihcams.ac.cn",
+    "oldName": "Dan Ding",
+    "expectedName": "Wenting Zheng",
+    "givenNames": "Wenting",
+    "familyNames": "Zheng",
+    "affiliations": [
+      {
+        "text": "State Key Laboratory of Experimental Hematology, National Clinical Research Center for Blood Diseases, Institute of Hematology & Blood Diseases Hospital, Chinese Academy of Medical Sciences & Peking Union Medical College, Tianjin 300020, PR China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1097/bs9.0000000000000291",
+    "paperYear": 2026,
+    "pmcId": "PMC13232917",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13232917/"
+  },
+  {
+    "id": "EMAIL-f89bed5ff7f5239d9a1",
+    "email": "phlaw@ust.hk",
+    "oldName": "En Li",
+    "expectedName": "Kam Tuen Law",
+    "givenNames": "Kam Tuen",
+    "familyNames": "Law",
+    "affiliations": [
+      {
+        "text": "Department of Physics,The Hong Kong University of Science and Technology,Hong Kong SAR, China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-0501-6290"
+    ],
+    "doi": "10.1038/s41467-021-25924-6",
+    "paperYear": 2021,
+    "pmcId": "PMC8460827",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8460827/"
+  },
+  {
+    "id": "EMAIL-51bbb9b89d0babe750d",
+    "email": "phnlin@ust.hk",
+    "oldName": "En Li",
+    "expectedName": "Nian Lin",
+    "givenNames": "Nian",
+    "familyNames": "Lin",
+    "affiliations": [
+      {
+        "text": "Department of Physics,The Hong Kong University of Science and Technology,Hong Kong SAR, China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-5693-4011"
+    ],
+    "doi": "10.1038/s41467-021-25924-6",
+    "paperYear": 2021,
+    "pmcId": "PMC8460827",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8460827/"
+  },
+  {
+    "id": "EMAIL-c31211941df9126a87a",
+    "email": "pmercier@ucsd.edu",
+    "oldName": "Ernesto De la Paz",
+    "expectedName": "Patrick P. Mercier",
+    "givenNames": "Patrick P.",
+    "familyNames": "Mercier",
+    "affiliations": [
+      {
+        "text": "Department of Electrical and Computer Engineering,University of California San Diego,La Jolla, CA 92093 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-1488-5076"
+    ],
+    "doi": "10.1038/s41467-022-35074-y",
+    "paperYear": 2022,
+    "pmcId": "PMC9715945",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9715945/"
+  },
+  {
+    "id": "EMAIL-72a1c0bc24a855c498e",
+    "email": "josephwang@ucsd.edu",
+    "oldName": "Ernesto De la Paz",
+    "expectedName": "Joseph Wang",
+    "givenNames": "Joseph",
+    "familyNames": "Wang",
+    "affiliations": [
+      {
+        "text": "Department of Nanoengineering,University of California San Diego,La Jolla, CA 92093 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-4921-9674"
+    ],
+    "doi": "10.1038/s41467-022-35074-y",
+    "paperYear": 2022,
+    "pmcId": "PMC9715945",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9715945/"
+  },
+  {
+    "id": "EMAIL-82f7dba8a12d4263a67",
+    "email": "aurelie.cobat@inserm.fr",
+    "oldName": "Estelle Talouarn",
+    "expectedName": "Aurélie Cobat",
+    "givenNames": "Aurélie",
+    "familyNames": "Cobat",
+    "affiliations": [
+      {
+        "text": "Laboratory of Human Genetics of Infectious Diseases, Necker Branch, INSERM U1163, Paris, France",
+        "countries": [
+          {
+            "text": "France",
+            "code": "FR"
+          }
+        ]
+      },
+      {
+        "text": "Imagine Institute, Paris City University, Paris, France",
+        "countries": [
+          {
+            "text": "France",
+            "code": "FR"
+          }
+        ]
+      },
+      {
+        "text": "St. Giles Laboratory of Human Genetics of Infectious Diseases, Rockefeller Branch, The Rockefeller University, New York, NY, United States",
+        "countries": [
+          {
+            "text": "United States",
+            "code": "US"
+          }
+        ]
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-7209-6257"
+    ],
+    "doi": "10.1093/bioadv/vbag144",
+    "paperYear": 2026,
+    "pmcId": "PMC13289815",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13289815/"
+  },
+  {
+    "id": "EMAIL-dffc672b5257a3da8a6",
+    "email": "skoenig@usc.edu",
+    "oldName": "Gerald Steinbauer",
+    "expectedName": "Sven Koenig",
+    "givenNames": "Sven",
+    "familyNames": "Koenig",
+    "affiliations": [
+      {
+        "text": "University of Southern California,Los Angeles, USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s13218-021-00724-8",
+    "paperYear": 2021,
+    "pmcId": "PMC8117807",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8117807/"
+  },
+  {
+    "id": "EMAIL-a6199945c04693907cf",
+    "email": "rafael@xanadu.ai",
+    "oldName": "H. Aghaee Rad",
+    "expectedName": "R. N. Alexander",
+    "givenNames": "R. N.",
+    "familyNames": "Alexander",
+    "affiliations": [
+      {
+        "text": "Xanadu Quantum Technologies Inc.,Toronto, Ontario Canada",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41586-024-08406-9",
+    "paperYear": 2025,
+    "pmcId": "PMC11864973",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11864973/"
+  },
+  {
+    "id": "EMAIL-ae9883fc3ed36634fd4",
+    "email": "jonathan@xanadu.ai",
+    "oldName": "H. Aghaee Rad",
+    "expectedName": "J. Lavoie",
+    "givenNames": "J.",
+    "familyNames": "Lavoie",
+    "affiliations": [
+      {
+        "text": "Xanadu Quantum Technologies Inc.,Toronto, Ontario Canada",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-5208-6729"
+    ],
+    "doi": "10.1038/s41586-024-08406-9",
+    "paperYear": 2025,
+    "pmcId": "PMC11864973",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11864973/"
+  },
+  {
+    "id": "EMAIL-30145dff05c4a4c157b",
+    "email": "trkuo@tmu.edu.tw",
+    "oldName": "Hanny Tika Draviana",
+    "expectedName": "Tsung-Rong Kuo",
+    "givenNames": "Tsung-Rong",
+    "familyNames": "Kuo",
+    "affiliations": [
+      {
+        "text": "Graduate Institute of Nanomedicine and Medical Engineering, College of Biomedical Engineering,Taipei Medical University,Taipei, 11031 Taiwan",
+        "countries": []
+      },
+      {
+        "text": "International PhD Program in Biomedical Engineering, College of Biomedical Engineering,Taipei Medical University,Taipei, 11031 Taiwan",
+        "countries": []
+      },
+      {
+        "text": "Precision Medicine and Translational Cancer Research Center,Taipei Medical University Hospital,Taipei, 11031 Taiwan",
+        "countries": []
+      },
+      {
+        "text": "Stanford Byers Center for Biodesign,Stanford University,Stanford, CA 94305 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1186/s12951-023-02208-3",
+    "paperYear": 2023,
+    "pmcId": "PMC10648733",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10648733/"
+  },
+  {
+    "id": "EMAIL-cb0ac79662b63adb0a0",
+    "email": "chlai@tmu.edu.tw",
+    "oldName": "Hanny Tika Draviana",
+    "expectedName": "Chien-Hung Lai",
+    "givenNames": "Chien-Hung",
+    "familyNames": "Lai",
+    "affiliations": [
+      {
+        "text": "Department of Physical Medicine and Rehabilitation, School of Medicine, College of Medicine,Taipei Medical University,Taipei, 11031 Taiwan",
+        "countries": []
+      },
+      {
+        "text": "Department of Physical Medicine and Rehabilitation,Taipei Medical University Hospital,Taipei, 11031 Taiwan",
+        "countries": []
+      },
+      {
+        "text": "Taipei Neuroscience Institute, Taipei Medical University,Taipei, 11031 Taiwan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1186/s12951-023-02208-3",
+    "paperYear": 2023,
+    "pmcId": "PMC10648733",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10648733/"
+  },
+  {
+    "id": "EMAIL-ec409ddc4c0712036b4",
+    "email": "cap8@le.ac.uk",
+    "oldName": "Ian Powley",
+    "expectedName": "Catrin Pritchard",
+    "givenNames": "Catrin",
+    "familyNames": "Pritchard",
+    "affiliations": [
+      {
+        "text": "Leicester Cancer Research Centre,University of Leicester, Clinical Sciences Building,Leicester, LE2 7LX UK",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41416-019-0672-6",
+    "paperYear": 2020,
+    "pmcId": "PMC7078311",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7078311/"
+  },
+  {
+    "id": "EMAIL-67082fa26aaff56b3d3",
+    "email": "h.burgess@imperial.ac.uk",
+    "oldName": "Jonas Leins",
+    "expectedName": "Hannah M. Burgess",
+    "givenNames": "Hannah M.",
+    "familyNames": "Burgess",
+    "affiliations": [
+      {
+        "text": "Department of Life Sciences, Imperial College London, London, United Kingdom",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-3577-4746"
+    ],
+    "doi": "10.1371/journal.ppat.1014341",
+    "paperYear": 2026,
+    "pmcId": "PMC13271517",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13271517/"
+  },
+  {
+    "id": "EMAIL-5f4bdc97bb7d9936d62",
+    "email": "depledge.daniel@mh-hannover.de",
+    "oldName": "Jonas Leins",
+    "expectedName": "Daniel P. Depledge",
+    "givenNames": "Daniel P.",
+    "familyNames": "Depledge",
+    "affiliations": [
+      {
+        "text": "Institute of Virology, Hannover Medical School, Hannover, Germany",
+        "countries": []
+      },
+      {
+        "text": "Cluster of Excellence RESIST (EXC 2155), Hannover Medical School, Hannover, Germany",
+        "countries": []
+      },
+      {
+        "text": "German Center for Infection Research (DZIF), partner site Hannover-Braunschweig, Hannover, Germany",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-4292-0599"
+    ],
+    "doi": "10.1371/journal.ppat.1014341",
+    "paperYear": 2026,
+    "pmcId": "PMC13271517",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13271517/"
+  },
+  {
+    "id": "EMAIL-c43d6c232a9bd7a62e0",
+    "email": "michael.lifshitz2@mcgill.ca",
+    "oldName": "Jonas Mago",
+    "expectedName": "Michael Lifshitz",
+    "givenNames": "Michael",
+    "familyNames": "Lifshitz",
+    "affiliations": [
+      {
+        "text": "Division of Social and Transcultural Psychiatry, Department of Psychiatry, McGill University, 1033 Pine Ave Montreal, Quebec, Canada",
+        "countries": [
+          {
+            "text": "Canada",
+            "code": "CA"
+          }
+        ]
+      },
+      {
+        "text": "Lady Davis Institute for Medical Research, Montreal Jewish General Hospital, 4333 Chem. de la Côte-Sainte-Catherine, Montréal, QC H3T 1E4, Canada",
+        "countries": [
+          {
+            "text": "Canada",
+            "code": "CA"
+          }
+        ]
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/nc/niaf069",
+    "paperYear": 2026,
+    "pmcId": "PMC13240852",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13240852/"
+  },
+  {
+    "id": "EMAIL-b62a60e0b1e849c251c",
+    "email": "andrzejj@anl.gov",
+    "oldName": "J. Osipiuk",
+    "expectedName": "Andrzej Joachimiak",
+    "givenNames": "Andrzej",
+    "familyNames": "Joachimiak",
+    "affiliations": [
+      {
+        "text": "Center for Structural Genomics of Infectious Diseases, Consortium for Advanced Science and Engineering,University of Chicago,Chicago, IL USA",
+        "countries": []
+      },
+      {
+        "text": "Structural Biology Center, X-ray Science Division,Argonne National Laboratory,Argonne, IL USA",
+        "countries": []
+      },
+      {
+        "text": "Department of Biochemistry and Molecular Biology,University of Chicago,Chicago, IL USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-2535-6209"
+    ],
+    "doi": "10.1038/s41467-021-21060-3",
+    "paperYear": 2021,
+    "pmcId": "PMC7854729",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7854729/"
+  },
+  {
+    "id": "EMAIL-fb8bfb85013f5059b97",
+    "email": "dickinson@uchicago.edu",
+    "oldName": "J. Osipiuk",
+    "expectedName": "Bryan C. Dickinson",
+    "givenNames": "Bryan C.",
+    "familyNames": "Dickinson",
+    "affiliations": [
+      {
+        "text": "Department of Chemistry,University of Chicago,Chicago, IL USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-9616-1911"
+    ],
+    "doi": "10.1038/s41467-021-21060-3",
+    "paperYear": 2021,
+    "pmcId": "PMC7854729",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7854729/"
+  },
+  {
+    "id": "EMAIL-08b66f2359782ad6fd8",
+    "email": "mark.banfield@jic.ac.uk",
+    "oldName": "Juan Carlos De la Concepcion",
+    "expectedName": "Mark J Banfield",
+    "givenNames": "Mark J",
+    "familyNames": "Banfield",
+    "affiliations": [
+      {
+        "text": "Department of Biochemistry and Metabolism, John Innes Centre, Norwich Research Park, Norwich NR4 7UH, United Kingdom",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/plcell/koag168",
+    "paperYear": 2026,
+    "pmcId": "PMC13291817",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13291817/"
+  },
+  {
+    "id": "EMAIL-1baa227c3265bfb0466",
+    "email": "kimgh@krict.re.kr",
+    "oldName": "Kanghyeok Jeon",
+    "expectedName": "Gun Hwan Kim",
+    "givenNames": "Gun Hwan",
+    "familyNames": "Kim",
+    "affiliations": [
+      {
+        "text": "Division of Advanced Materials,Korea Research Institute of Chemical Technology (KRICT) 141 Gajeong-Ro, Yuseong-Gu,Daejeon, Republic of Korea",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-2911-4525"
+    ],
+    "doi": "10.1038/s41467-021-23180-2",
+    "paperYear": 2021,
+    "pmcId": "PMC8137934",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8137934/"
+  },
+  {
+    "id": "EMAIL-c5a36d6d2a69e3d4abb",
+    "email": "dooseokj@hanyang.ac.kr",
+    "oldName": "Kanghyeok Jeon",
+    "expectedName": "Doo Seok Jeong",
+    "givenNames": "Doo Seok",
+    "familyNames": "Jeong",
+    "affiliations": [
+      {
+        "text": "Division of Materials Science and Engineering,Hanyang University,Seoul, Republic of Korea",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-7954-2213"
+    ],
+    "doi": "10.1038/s41467-021-23180-2",
+    "paperYear": 2021,
+    "pmcId": "PMC8137934",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8137934/"
+  },
+  {
+    "id": "EMAIL-2d6e4b249bac3e32690",
+    "email": "guomingxie@cqmu.edu.cn",
+    "oldName": "Ke Lv",
+    "expectedName": "Guoming Xie",
+    "givenNames": "Guoming",
+    "familyNames": "Xie",
+    "affiliations": [
+      {
+        "text": "Department of Neurosurgery, Laboratory of Neurological Diseases and Interdisciplinary Medicine, The First Affiliated Hospital of Chongqing Medical University, No.1 Youyi Road, Chongqing, 400016, China.",
+        "countries": []
+      },
+      {
+        "text": "Key Laboratory of Clinical Laboratory Diagnostics (Chinese Ministry of Education), College of Laboratory Medicine, Chongqing Medical University, Chongqing, 400016, China.",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.7150/thno.136316",
+    "paperYear": 2026,
+    "pmcId": "PMC13295757",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13295757/"
+  },
+  {
+    "id": "EMAIL-a1b5a54a779e7bef465",
+    "email": "nalk@google.com",
+    "oldName": "Lasse Espeholt",
+    "expectedName": "Nal Kalchbrenner",
+    "givenNames": "Nal",
+    "familyNames": "Kalchbrenner",
+    "affiliations": [
+      {
+        "text": "Google Research, Google Inc,1600 Amphitheatre Pkwy, Mountain View, CA 94043 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-8148-3088"
+    ],
+    "doi": "10.1038/s41467-022-32483-x",
+    "paperYear": 2022,
+    "pmcId": "PMC9436943",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9436943/"
+  },
+  {
+    "id": "EMAIL-4926b7e2a37be97a17c",
+    "email": "alexander.kutz@ksa.ch",
+    "oldName": "Lennart Essmann",
+    "expectedName": "Alexander Kutz",
+    "givenNames": "Alexander",
+    "familyNames": "Kutz",
+    "affiliations": [
+      {
+        "text": "Department of Internal Medicine and Primary Care Medicine, Cantonal Hospital Aarau, Medical University Clinic, Aarau, Switzerland",
+        "countries": []
+      },
+      {
+        "text": "Medical Faculty, University of Basel, Basel, Switzerland",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/ofid/ofag350",
+    "paperYear": 2026,
+    "pmcId": "PMC13263528",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13263528/"
+  },
+  {
+    "id": "EMAIL-ed8a31d521cfcf91cf8",
+    "email": "767267217@qq.com",
+    "oldName": "Longquan Shao",
+    "expectedName": "Yi Xing",
+    "givenNames": "Yi",
+    "familyNames": "Xing",
+    "affiliations": [
+      {
+        "text": "Stomatological Hospital, School of Stomatology, Southern Medical University, Guangzhou, 510280, PR China.",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.7150/thno.133095",
+    "paperYear": 2026,
+    "pmcId": "PMC13232620",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13232620/"
+  },
+  {
+    "id": "EMAIL-3feae486e8429ddaaa7",
+    "email": "gshadel@salk.edu",
+    "oldName": "Lucia Gutierrez Aguiar",
+    "expectedName": "Gerald S. Shadel",
+    "givenNames": "Gerald S.",
+    "familyNames": "Shadel",
+    "affiliations": [
+      {
+        "text": "The Salk Institute for Biological Studies,La Jolla, CA USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-2899-8717"
+    ],
+    "doi": "10.1038/s41586-023-05710-8",
+    "paperYear": 2023,
+    "pmcId": "PMC9946831",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9946831/"
+  },
+  {
+    "id": "EMAIL-87d2b0f5c831e571110",
+    "email": "karlseder@salk.edu",
+    "oldName": "Lucia Gutierrez Aguiar",
+    "expectedName": "Jan Karlseder",
+    "givenNames": "Jan",
+    "familyNames": "Karlseder",
+    "affiliations": [
+      {
+        "text": "The Salk Institute for Biological Studies,La Jolla, CA USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-7433-9750"
+    ],
+    "doi": "10.1038/s41586-023-05710-8",
+    "paperYear": 2023,
+    "pmcId": "PMC9946831",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9946831/"
+  },
+  {
+    "id": "EMAIL-2b8cad6e01afc9bb12a",
+    "email": "ghayourm@mums.ac.ir",
+    "oldName": "Mahshad Hedayatnia",
+    "expectedName": "Majid Ghayour-Mobarhan",
+    "givenNames": "Majid",
+    "familyNames": "Ghayour-Mobarhan",
+    "affiliations": [
+      {
+        "text": "Metabolic Syndrome Research Center, School of Medicine,Mashhad University of Medical Sciences,Mashhad, Iran",
+        "countries": []
+      },
+      {
+        "text": "International UNESCO Center for Health-Related Basic Sciences and Human Nutrition, Department of Nutrition, School of Medicine,Mashhad University of Medical Sciences,Mashhad, Iran",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-1081-6754"
+    ],
+    "doi": "10.1186/s12944-020-01204-y",
+    "paperYear": 2020,
+    "pmcId": "PMC7075010",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7075010/"
+  },
+  {
+    "id": "EMAIL-73bd85d135513525ddd",
+    "email": "esmailyh@mums.ac.ir",
+    "oldName": "Mahshad Hedayatnia",
+    "expectedName": "Habibollah Esmaily",
+    "givenNames": "Habibollah",
+    "familyNames": "Esmaily",
+    "affiliations": [
+      {
+        "text": "Social Determinants of Health Research Center,Mashhad University of Medical Sciences,Mashhad, Iran",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1186/s12944-020-01204-y",
+    "paperYear": 2020,
+    "pmcId": "PMC7075010",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7075010/"
+  },
+  {
+    "id": "EMAIL-c7072957f990cb802f1",
+    "email": "sckim07@ynu.ac.kr",
+    "oldName": "Manogar Priya",
+    "expectedName": "Seong-Cheol Kim",
+    "givenNames": "Seong-Cheol",
+    "familyNames": "Kim",
+    "affiliations": [
+      {
+        "text": "School of Chemical Engineering,Yeungnam University,Gyeongsan, 38541 Republic of Korea",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-023-46002-5",
+    "paperYear": 2023,
+    "pmcId": "PMC10620180",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10620180/"
+  },
+  {
+    "id": "EMAIL-4c46c685d5a06705fd6",
+    "email": "mdcmdm@nus.edu.sg",
+    "oldName": "Margaret LP Teng",
+    "expectedName": "Mark D Muthiah",
+    "givenNames": "Mark D",
+    "familyNames": "Muthiah",
+    "affiliations": [
+      {
+        "text": "Division of Gastroenterology and Hepatology, Department of Medicine, National University Hospital, Singapore",
+        "countries": []
+      },
+      {
+        "text": "Yong Loo Lin School of Medicine, National University of Singapore, Singapore",
+        "countries": []
+      },
+      {
+        "text": "National University Centre for Organ Transplantation, National University Hospital, Singapore",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.3350/cmh.2022.0365",
+    "paperYear": 2022,
+    "pmcId": "PMC10029957",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10029957/"
+  },
+  {
+    "id": "EMAIL-39b6f2a1b892000ba78",
+    "email": "sarah-maria.fendt@kuleuven.be",
+    "oldName": "Mariia Yuneva",
+    "expectedName": "Sarah-Maria Fendt",
+    "givenNames": "Sarah-Maria",
+    "familyNames": "Fendt",
+    "affiliations": [
+      {
+        "text": "Laboratory of Cellular Metabolism and Metabolic Regulation, VIB Center for Cancer Biology, VIB, Herestraat 49, 3000 Leuven, Belgium",
+        "countries": [
+          {
+            "text": "Belgium",
+            "code": "BE"
+          }
+        ]
+      },
+      {
+        "text": "Laboratory of Cellular Metabolism and Metabolic Regulation, Department of Oncology, KU Leuven and Leuven Cancer Institute (LKI), Herestraat 49, 3000 Leuven, Belgium",
+        "countries": [
+          {
+            "text": "Belgium",
+            "code": "BE"
+          }
+        ]
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1158/2159-8290.cd-25-0191",
+    "paperYear": 2026,
+    "pmcId": "PMC7619144",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7619144/"
+  },
+  {
+    "id": "EMAIL-3508d0e1000f38a10ad",
+    "email": "220000286@stu.ukzn.ac.za",
+    "oldName": "Matthew Adekunle Adeleke",
+    "expectedName": "Nooran Mahomed Rafeer",
+    "givenNames": "Nooran Mahomed",
+    "familyNames": "Rafeer",
+    "affiliations": [
+      {
+        "text": "Discipline of Biological Sciences, School of Agriculture and Science, College of Agriculture, Engineering and Science, University of KwaZulu-Natal, Westville, South Africa",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.14202/vetworld.2026.2088-2104",
+    "paperYear": 2026,
+    "pmcId": "PMC13290348",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13290348/"
+  },
+  {
+    "id": "EMAIL-fa58483449ecfa4e8ba",
+    "email": "ssemple@acuitastx.com",
+    "oldName": "Melissa K. Dennis",
+    "expectedName": "Sean C. Semple",
+    "givenNames": "Sean C.",
+    "familyNames": "Semple",
+    "affiliations": [
+      {
+        "text": "Acuitas Therapeutics Inc.,Vancouver, BC Canada",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41587-021-00933-4",
+    "paperYear": 2021,
+    "pmcId": "PMC8352781",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8352781/"
+  },
+  {
+    "id": "EMAIL-7068b8f41d2fdf760da",
+    "email": "schwank@pharma.uzh.ch",
+    "oldName": "Melissa K. Dennis",
+    "expectedName": "Gerald Schwank",
+    "givenNames": "Gerald",
+    "familyNames": "Schwank",
+    "affiliations": [
+      {
+        "text": "University of Zurich, Institute for Pharmacology and Toxicology,Zurich, Switzerland",
+        "countries": []
+      },
+      {
+        "text": "Department of Biology,Institute for Molecular Health Sciences, ETH Zurich,Zurich, Switzerland",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-0767-2953"
+    ],
+    "doi": "10.1038/s41587-021-00933-4",
+    "paperYear": 2021,
+    "pmcId": "PMC8352781",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8352781/"
+  },
+  {
+    "id": "EMAIL-6da7ed426aa6f75b16b",
+    "email": "erik.frank@uni-wuerzburg.de",
+    "oldName": "Melvin Kenneth Opolka",
+    "expectedName": "Erik Thomas Frank",
+    "givenNames": "Erik Thomas",
+    "familyNames": "Frank",
+    "affiliations": [
+      {
+        "text": "Department of Animal Ecology and Tropical Biology, Biocenter, University of Würzburg, Am Hubland, 97074 Würzburg, Germany",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/beheco/arag055",
+    "paperYear": 2026,
+    "pmcId": "PMC13247590",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13247590/"
+  },
+  {
+    "id": "EMAIL-1b6977e4d3f8c6fc84e",
+    "email": "t.lohmueller@lmu.de",
+    "oldName": "Michael Steinberger",
+    "expectedName": "Theobald Lohmueller",
+    "givenNames": "Theobald",
+    "familyNames": "Lohmueller",
+    "affiliations": [
+      {
+        "text": "Chair for Photonics and Optoelectronics, Nano-Institute Munich, Department of Physics,Ludwig-Maximilians-Universität (LMU),Königinstraße 10, 80539 Munich, Germany",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-2699-7067"
+    ],
+    "doi": "10.1038/s41467-023-42943-7",
+    "paperYear": 2023,
+    "pmcId": "PMC10632510",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10632510/"
+  },
+  {
+    "id": "EMAIL-3f7ba52ad3f0124af8f",
+    "email": "tim.liedl@physik.uni-muenchen.de",
+    "oldName": "Michael Steinberger",
+    "expectedName": "Tim Liedl",
+    "givenNames": "Tim",
+    "familyNames": "Liedl",
+    "affiliations": [
+      {
+        "text": "Physics Department and CeNS,Ludwig-Maximilians-University Munich,Geschwister-Scholl-Platz 1, 80539 Munich, Germany",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-0040-0173"
+    ],
+    "doi": "10.1038/s41467-023-42943-7",
+    "paperYear": 2023,
+    "pmcId": "PMC10632510",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10632510/"
+  },
+  {
+    "id": "EMAIL-96b02853d3f06614840",
+    "email": "jleonard@ebd.csic.es",
+    "oldName": "Miguel Camacho-Sanchez",
+    "expectedName": "Jennifer A Leonard",
+    "givenNames": "Jennifer A",
+    "familyNames": "Leonard",
+    "affiliations": [
+      {
+        "text": "Conservation & Evolutionary Genetics Group, Estación Biológica de Doñana (EBD-CSIC), Av. Américo Vespucio 26, 41092, Seville, Spain",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/jhered/esaf106",
+    "paperYear": 2026,
+    "pmcId": "PMC13326413",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13326413/"
+  },
+  {
+    "id": "EMAIL-80c04cb1197c5636d77",
+    "email": "abhat@sidra.org",
+    "oldName": "Mudasir A. Kumar",
+    "expectedName": "Ajaz A Bhat",
+    "givenNames": "Ajaz A",
+    "familyNames": "Bhat",
+    "affiliations": [
+      {
+        "text": "Department of Human Genetics-Precision Medicine in Diabetes, Obesity and Cancer Program, Sidra Medicine, Doha, Qatar",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41392-024-01735-1",
+    "paperYear": 2024,
+    "pmcId": "PMC10838959",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10838959/"
+  },
+  {
+    "id": "EMAIL-0adc506cbaceff06228",
+    "email": "rashidmirtabuk@gmail.com",
+    "oldName": "Mudasir A. Kumar",
+    "expectedName": "Rashid Mir",
+    "givenNames": "Rashid",
+    "familyNames": "Mir",
+    "affiliations": [
+      {
+        "text": "Department of Medical Laboratory Technology, Prince Fahad Bin Sultan Chair for Biomedical Research, Faculty of Applied Medical Sciences, University of Tabuk, Tabuk, Saudi Arabia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41392-024-01735-1",
+    "paperYear": 2024,
+    "pmcId": "PMC10838959",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10838959/"
+  },
+  {
+    "id": "EMAIL-12b34270b64fe4a866b",
+    "email": "jonathon.campbell@mcgill.ca",
+    "oldName": "Namrata Rana",
+    "expectedName": "Jonathon R Campbell",
+    "givenNames": "Jonathon R",
+    "familyNames": "Campbell",
+    "affiliations": [
+      {
+        "text": "Respiratory Epidemiology and Clinical Research Unit, Research Institute of the McGill University Health Centre, Montreal, Quebec, Canada",
+        "countries": [
+          {
+            "text": "Canada",
+            "code": "CA"
+          }
+        ]
+      },
+      {
+        "text": "Department of Medicine, Faculty of Medicine and Health Sciences, McGill University, Montreal, Quebec, Canada",
+        "countries": [
+          {
+            "text": "Canada",
+            "code": "CA"
+          }
+        ]
+      },
+      {
+        "text": "McGill International TB Centre, Faculty of Medicine and Health Sciences, McGill University, Montreal, Quebec, Canada",
+        "countries": [
+          {
+            "text": "Canada",
+            "code": "CA"
+          }
+        ]
+      },
+      {
+        "text": "Department of Global and Public Health, Faculty of Medicine and Health Sciences, McGill University, Montreal, Quebec, Canada",
+        "countries": [
+          {
+            "text": "Canada",
+            "code": "CA"
+          }
+        ]
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/ofid/ofag345",
+    "paperYear": 2026,
+    "pmcId": "PMC13274984",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13274984/"
+  },
+  {
+    "id": "EMAIL-4dbf4e473532a50b8ba",
+    "email": "ayalnehdemissis@gmail.com",
+    "oldName": "Nebyu Mekonen",
+    "expectedName": "Ayalneh Demissie",
+    "givenNames": "Ayalneh",
+    "familyNames": "Demissie",
+    "affiliations": [
+      {
+        "text": "Department of Public Health, Arsi University, College of Health Sciences, Arsi, Ethiopia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1371/journal.pone.0330576",
+    "paperYear": 2026,
+    "pmcId": "PMC13252749",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13252749/"
+  },
+  {
+    "id": "EMAIL-9122e44e3a85b97afcc",
+    "email": "drsureshnano@gmail.com",
+    "oldName": "Nida Qutub",
+    "expectedName": "Suresh Sagadevan",
+    "givenNames": "Suresh",
+    "familyNames": "Sagadevan",
+    "affiliations": [
+      {
+        "text": "Nanotechnology & Catalysis Research Centre,University of Malaya,50603 Kuala Lumpur, Malaysia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-022-09479-0",
+    "paperYear": 2022,
+    "pmcId": "PMC8986795",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8986795/"
+  },
+  {
+    "id": "EMAIL-8d146ab8dab12c76957",
+    "email": "takeuchi.masayuki@nims.go.jp",
+    "oldName": "Norihiko Sasaki",
+    "expectedName": "Masayuki Takeuchi",
+    "givenNames": "Masayuki",
+    "familyNames": "Takeuchi",
+    "affiliations": [
+      {
+        "text": "National Institute for Materials Science,1-2-1 Sengen, Tsukuba, Ibaraki 305-0047 Japan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-0207-0665"
+    ],
+    "doi": "10.1038/s41467-020-17356-5",
+    "paperYear": 2020,
+    "pmcId": "PMC7368029",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7368029/"
+  },
+  {
+    "id": "EMAIL-63a63662082c6f65625",
+    "email": "sugiyasu.kazunori@nims.go.jp",
+    "oldName": "Norihiko Sasaki",
+    "expectedName": "Kazunori Sugiyasu",
+    "givenNames": "Kazunori",
+    "familyNames": "Sugiyasu",
+    "affiliations": [
+      {
+        "text": "Department of Materials Physics and Chemistry, Graduate School of Engineering,Kyushu University,744 Moto-oka, Nishi-ku, Fukuoka 819-0395 Japan",
+        "countries": []
+      },
+      {
+        "text": "National Institute for Materials Science,1-2-1 Sengen, Tsukuba, Ibaraki 305-0047 Japan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-5699-2772"
+    ],
+    "doi": "10.1038/s41467-020-17356-5",
+    "paperYear": 2020,
+    "pmcId": "PMC7368029",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7368029/"
+  },
+  {
+    "id": "EMAIL-3ee860a02afd0dba94b",
+    "email": "s.gharaghani@ut.ac.ir",
+    "oldName": "Parvin Razzaghi",
+    "expectedName": "Sajjad Gharaghani",
+    "givenNames": "Sajjad",
+    "familyNames": "Gharaghani",
+    "affiliations": [
+      {
+        "text": "Laboratory of Bioinformatics and Drug Design (LBD), Institute of Biochemistry and Biophysics, University of Tehran, Tehran 1417935840, Iran",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/bioadv/vbag051",
+    "paperYear": 2026,
+    "pmcId": "PMC13189710",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13189710/"
+  },
+  {
+    "id": "EMAIL-942801cdb290767edf2",
+    "email": "oncopark@skku.edu",
+    "oldName": "Pawan Noel",
+    "expectedName": "Joon Oh Park",
+    "givenNames": "Joon Oh",
+    "familyNames": "Park",
+    "affiliations": [
+      {
+        "text": "Samsung Medical Center,Sungkyunkwan University School of Medicine,Seoul, 06351 South Korea",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1186/s13073-020-00776-9",
+    "paperYear": 2020,
+    "pmcId": "PMC7523332",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7523332/"
+  },
+  {
+    "id": "EMAIL-c7ce0b859d8593d53e2",
+    "email": "hhan@tgen.org",
+    "oldName": "Pawan Noel",
+    "expectedName": "Haiyong Han",
+    "givenNames": "Haiyong",
+    "familyNames": "Han",
+    "affiliations": [
+      {
+        "text": "Molecular Medicine Division,Translational Genomics Research Institute,445 N. Fifth St., Phoenix, AZ 85004 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-9031-9880"
+    ],
+    "doi": "10.1186/s13073-020-00776-9",
+    "paperYear": 2020,
+    "pmcId": "PMC7523332",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7523332/"
+  },
+  {
+    "id": "EMAIL-d73f52dbd784de68ced",
+    "email": "jiahonglin@caas.cn",
+    "oldName": "Qian Jiang",
+    "expectedName": "Honglin Jia",
+    "givenNames": "Honglin",
+    "familyNames": "Jia",
+    "affiliations": [
+      {
+        "text": "State Key Laboratory of Animal Disease Control and Prevention, Harbin Veterinary Research Institute, Chinese Academy of Agricultural Sciences, Harbin, China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1371/journal.ppat.1013865",
+    "paperYear": 2026,
+    "pmcId": "PMC13298984",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13298984/"
+  },
+  {
+    "id": "EMAIL-03336396dd286aef610",
+    "email": "siddharthan.chandran@ed.ac.uk",
+    "oldName": "Sachin S. Tiwari",
+    "expectedName": "Siddharthan Chandran",
+    "givenNames": "Siddharthan",
+    "familyNames": "Chandran",
+    "affiliations": [
+      {
+        "text": "UK Dementia Research Institute at the University of Edinburgh, Chancellor’s Building, Edinburgh Medical School,Edinburgh, EH16 4SB UK",
+        "countries": []
+      },
+      {
+        "text": "Centre for Clinical Brain Sciences,University of Edinburgh Chancellor’s Building,Edinburgh, UK",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41467-021-27702-w",
+    "paperYear": 2022,
+    "pmcId": "PMC8748982",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8748982/"
+  },
+  {
+    "id": "EMAIL-d42e6e06aaf38d74e5c",
+    "email": "giles.hardingham@ed.ac.uk",
+    "oldName": "Sachin S. Tiwari",
+    "expectedName": "Giles E. Hardingham",
+    "givenNames": "Giles E.",
+    "familyNames": "Hardingham",
+    "affiliations": [
+      {
+        "text": "UK Dementia Research Institute at the University of Edinburgh, Chancellor’s Building, Edinburgh Medical School,Edinburgh, EH16 4SB UK",
+        "countries": []
+      },
+      {
+        "text": "Centre for Discovery Brain Sciences,University of Edinburgh, Hugh Robson Building, George Square,Edinburgh, EH8 9XD UK",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-7629-5314"
+    ],
+    "doi": "10.1038/s41467-021-27702-w",
+    "paperYear": 2022,
+    "pmcId": "PMC8748982",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8748982/"
+  },
+  {
+    "id": "EMAIL-01b4768e76e667b8350",
+    "email": "a.j.easton@warwick.ac.uk",
+    "oldName": "Saghi Nooraei",
+    "expectedName": "Andrew J. Easton",
+    "givenNames": "Andrew J.",
+    "familyNames": "Easton",
+    "affiliations": [
+      {
+        "text": "School of Life Sciences, Gibbet Hill Campus,University of Warwick,Coventry, UK",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1186/s12951-021-00806-7",
+    "paperYear": 2021,
+    "pmcId": "PMC7905985",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7905985/"
+  },
+  {
+    "id": "EMAIL-2febe05806035267b6e",
+    "email": "ahmadian@nigeb.ac.ir",
+    "oldName": "Saghi Nooraei",
+    "expectedName": "Gholamreza Ahmadian",
+    "givenNames": "Gholamreza",
+    "familyNames": "Ahmadian",
+    "affiliations": [
+      {
+        "text": "Department of Industrial and Environmental Biotechnology,National Institute of Genetic Engineering and Biotechnology (NIGEB),P. O. BOX: 14155-6343, Tehran, 1497716316 Iran",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1186/s12951-021-00806-7",
+    "paperYear": 2021,
+    "pmcId": "PMC7905985",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7905985/"
+  },
+  {
+    "id": "EMAIL-7cf1d0624c3f9cc5ee9",
+    "email": "mcouncil@wustl.edu",
+    "oldName": "Samantha L. Schneider",
+    "expectedName": "Martha Laurin Council",
+    "givenNames": "Martha Laurin",
+    "familyNames": "Council",
+    "affiliations": [
+      {
+        "text": "Washington University in St. Louis,St. Louis, MO USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-2657-9060"
+    ],
+    "doi": "10.1007/s00403-020-02088-9",
+    "paperYear": 2020,
+    "pmcId": "PMC7209972",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7209972/"
+  },
+  {
+    "id": "EMAIL-293a370206a1b7de6cb",
+    "email": "stephen-baek@uiowa.edu",
+    "oldName": "Sehyun Chun",
+    "expectedName": "Stephen S. Baek",
+    "givenNames": "Stephen S.",
+    "familyNames": "Baek",
+    "affiliations": [
+      {
+        "text": "Department of Industrial and Systems Engineering,University of Iowa,Iowa City, IA 52242 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-020-70149-0",
+    "paperYear": 2020,
+    "pmcId": "PMC7413342",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7413342/"
+  },
+  {
+    "id": "EMAIL-30665d650da70a94b2f",
+    "email": "hs-kumar@uiowa.edu",
+    "oldName": "Sehyun Chun",
+    "expectedName": "H. S. Udaykumar",
+    "givenNames": "H. S.",
+    "familyNames": "Udaykumar",
+    "affiliations": [
+      {
+        "text": "Department of Mechanical Engineering,University of Iowa,Iowa City, IA 52242 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-020-70149-0",
+    "paperYear": 2020,
+    "pmcId": "PMC7413342",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7413342/"
+  },
+  {
+    "id": "EMAIL-bae48624376c8a5e965",
+    "email": "anna.bershteyn@nyulangone.org",
+    "oldName": "Shiying You",
+    "expectedName": "Anna Bershteyn",
+    "givenNames": "Anna",
+    "familyNames": "Bershteyn",
+    "affiliations": [
+      {
+        "text": "Department of Population Health, NYU Grossman School of Medicine, NewYork, New York, USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/ofid/ofag257",
+    "paperYear": 2026,
+    "pmcId": "PMC13280640",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13280640/"
+  },
+  {
+    "id": "EMAIL-b46ff65c84d608b0a65",
+    "email": "un.kang@nyulangone.org",
+    "oldName": "Simone Giaisi",
+    "expectedName": "Un Jung Kang",
+    "givenNames": "Un Jung",
+    "familyNames": "Kang",
+    "affiliations": [
+      {
+        "text": "The Marlene and Paolo Fresco Institute for Parkinson’s & Movement Disorders, Department of Neurology, Department of Neuroscience and Physiology,Neuroscience Institute, The Parekh Center for Interdisciplinary Neurology, NYU Grossman School of Medicine,New York, NY USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1186/s40478-021-01282-8",
+    "paperYear": 2021,
+    "pmcId": "PMC8572469",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8572469/"
+  },
+  {
+    "id": "EMAIL-177f49eb78313df2767",
+    "email": "aravind@bme.iith.ac.in",
+    "oldName": "Sri Amruthaa Sankaranarayanan",
+    "expectedName": "Aravind Kumar Rengan",
+    "givenNames": "Aravind Kumar",
+    "familyNames": "Rengan",
+    "affiliations": [
+      {
+        "text": "Department of Biomedical Engineering,Indian Institute of Technology Hyderabad,Sangareddy, Telangana 502285 India",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-023-33652-8",
+    "paperYear": 2023,
+    "pmcId": "PMC10115846",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10115846/"
+  },
+  {
+    "id": "EMAIL-670b7f028ae1a9b92bd",
+    "email": "wubshet.mekonnen@wu.edu.et",
+    "oldName": "Sri Amruthaa Sankaranarayanan",
+    "expectedName": "Wubshet Mekonnen Girma",
+    "givenNames": "Wubshet Mekonnen",
+    "familyNames": "Girma",
+    "affiliations": [
+      {
+        "text": "Department of Chemistry, College of Natural Science,Wollo University,P.O. Box: 1145, Dessie, Ethiopia",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-023-33652-8",
+    "paperYear": 2023,
+    "pmcId": "PMC10115846",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10115846/"
+  },
+  {
+    "id": "EMAIL-1e7a6a9469813275752",
+    "email": "albers.mark@mgh.harvard.edu",
+    "oldName": "Steve Rodriguez",
+    "expectedName": "Mark W. Albers",
+    "givenNames": "Mark W.",
+    "familyNames": "Albers",
+    "affiliations": [
+      {
+        "text": "Laboratory of Systems Pharmacology, Harvard Program in Therapeutic Science,Harvard Medical School,Boston, MA USA",
+        "countries": []
+      },
+      {
+        "text": "Department of Neurology,Massachusetts General Hospital,Charlestown, MA USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-7855-3455"
+    ],
+    "doi": "10.1038/s41467-021-21330-0",
+    "paperYear": 2021,
+    "pmcId": "PMC7884393",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7884393/"
+  },
+  {
+    "id": "EMAIL-8973f2284237c3a781f",
+    "email": "artem_sokolov@hms.harvard.edu",
+    "oldName": "Steve Rodriguez",
+    "expectedName": "Artem Sokolov",
+    "givenNames": "Artem",
+    "familyNames": "Sokolov",
+    "affiliations": [
+      {
+        "text": "Laboratory of Systems Pharmacology, Harvard Program in Therapeutic Science,Harvard Medical School,Boston, MA USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-8056-0504"
+    ],
+    "doi": "10.1038/s41467-021-21330-0",
+    "paperYear": 2021,
+    "pmcId": "PMC7884393",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7884393/"
+  },
+  {
+    "id": "EMAIL-c3c1fa17c960d2b2a47",
+    "email": "fuliyao@swmu.edu.cn",
+    "oldName": "Wenbing Wu",
+    "expectedName": "Fuli Yao",
+    "givenNames": "Fuli",
+    "familyNames": "Yao",
+    "affiliations": [
+      {
+        "text": "Department of Biochemistry and Molecular Biology, School of Basic Medical Sciences, Southwest Medical University, Luzhou, Sichuan, China.",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.7150/thno.132738",
+    "paperYear": 2026,
+    "pmcId": "PMC13295119",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13295119/"
+  },
+  {
+    "id": "EMAIL-7845a50f2c586c583a3",
+    "email": "sjkzx_liyan@gd.gov.cn",
+    "oldName": "Wenjia Liang",
+    "expectedName": "Yan Li",
+    "givenNames": "Yan",
+    "familyNames": "Li",
+    "affiliations": [
+      {
+        "text": "Guangdong Center for Disease Control and Prevention, Guangzhou, Guangdong, China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1371/journal.pntd.0014360",
+    "paperYear": 2026,
+    "pmcId": "PMC13232944",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13232944/"
+  },
+  {
+    "id": "EMAIL-d3a73674302202575dc",
+    "email": "xiongliming@hust.edu.cn",
+    "oldName": "Xiao Lv",
+    "expectedName": "Liming Xiong",
+    "givenNames": "Liming",
+    "familyNames": "Xiong",
+    "affiliations": [
+      {
+        "text": "Department of Orthopedics, Union Hospital, Tongji Medical College, Huazhong University of Science and Technology, Wuhan, Hubei Province 430022, China.",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.7150/thno.131071",
+    "paperYear": 2026,
+    "pmcId": "PMC13295842",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13295842/"
+  },
+  {
+    "id": "EMAIL-f27e0f33b9c7e52fbf8",
+    "email": "cgratton@illinois.edu",
+    "oldName": "Zach Ladwig",
+    "expectedName": "Caterina Gratton",
+    "givenNames": "Caterina",
+    "familyNames": "Gratton",
+    "affiliations": [
+      {
+        "text": "Department of Psychology, Northwestern University, Evanston, IL 60208, USA",
+        "countries": []
+      },
+      {
+        "text": "Department of Psychology, Urbana, IL, USA",
+        "countries": []
+      },
+      {
+        "text": "Beckman Institute for Advanced Science and Technology, University of Illinois Urbana-Champaign, Urbana, IL 61801, USA",
+        "countries": []
+      },
+      {
+        "text": "Department of Psychology, Florida State University, Tallahassee, FL 32304, USA",
+        "countries": []
+      },
+      {
+        "text": "Lead contact",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1016/j.neuron.2026.04.011",
+    "paperYear": 2026,
+    "pmcId": "PMC13289807",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13289807/"
+  },
+  {
+    "id": "0000-0002-6033-0648",
+    "email": "yangc2@nih.gov",
+    "oldName": "Yang Liu",
+    "expectedName": "Chunzhang Yang",
+    "givenNames": "Chunzhang",
+    "familyNames": "Yang",
+    "affiliations": [
+      {
+        "text": "Neuro-Oncology Branch, Center for Cancer Research,National Cancer Institute,Bethesda, MD 20892 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41416-020-0814-x",
+    "paperYear": 2020,
+    "pmcId": "PMC7250901",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7250901/"
+  },
+  {
+    "id": "0000-0003-3541-488X",
+    "email": "xiachaoming@suda.edu.cn",
+    "oldName": "Jing Xu",
+    "expectedName": "Chao-Ming Xia",
+    "givenNames": "Chao-Ming",
+    "familyNames": "Xia",
+    "affiliations": [
+      {
+        "text": "Department of Parasitology, School of Basic Medical Sciences, Suzhou Medical College, Soochow University, Suzhou, Jiangsu, P. R. China",
+        "countries": []
+      },
+      {
+        "text": "MOE Key Laboratory of Geriatric Diseases and Immunology, Suzhou Key Laboratory of Pathogen Bioscience and Anti-infective Medicine, Suzhou Medical College, Soochow University, Suzhou, Jiangsu, P. R. China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1371/journal.ppat.1014334",
+    "paperYear": 2026,
+    "pmcId": "PMC13293438",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13293438/"
+  },
+  {
+    "id": "0000-0001-7963-0619",
+    "email": "zhengt@exchange.nih.gov",
+    "oldName": "Wei Tian",
+    "expectedName": "Zhi-Ming Zheng",
+    "givenNames": "Zhi-Ming",
+    "familyNames": "Zheng",
+    "affiliations": [
+      {
+        "text": "Tumor Virus RNA Biology Section, HIV DRP,National Cancer Institute, NIH,Frederick, MD USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-5547-7912"
+    ],
+    "doi": "10.1186/s13578-021-00643-z",
+    "paperYear": 2021,
+    "pmcId": "PMC8287290",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8287290/"
+  },
+  {
+    "id": "0000-0002-9123-4974",
+    "email": "sydai@tamu.edu",
+    "oldName": "Yan Liu",
+    "expectedName": "Susie Y Dai",
+    "givenNames": "Susie Y",
+    "familyNames": "Dai",
+    "affiliations": [
+      {
+        "text": "Department of Plant Pathology and Microbiology, Texas A&M University, College Station, TX, United States of America",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1371/journal.pone.0237691",
+    "paperYear": 2020,
+    "pmcId": "PMC7428176",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7428176/"
+  },
+  {
+    "id": "EMAIL-19d275e8d60046e378c",
+    "email": "evilla@ucsd.edu",
+    "oldName": "Eva P Karasmanis",
+    "expectedName": "Elizabeth Villa",
+    "givenNames": "Elizabeth",
+    "familyNames": "Villa",
+    "affiliations": [
+      {
+        "text": "Department of Molecular Biology, University of California San Diego, La Jolla CA",
+        "countries": []
+      },
+      {
+        "text": "Howard Hughes Medical Institute, Chevy Chase MD",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-4677-9809"
+    ],
+    "doi": "10.64898/2026.05.27.728322",
+    "paperYear": 2026,
+    "pmcId": "PMC13232226",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13232226/"
+  },
+  {
+    "id": "0000-0003-1375-1295",
+    "email": "m.r.groves@rug.nl",
+    "oldName": "Kai Gao",
+    "expectedName": "Matthew R. Groves",
+    "givenNames": "Matthew R.",
+    "familyNames": "Groves",
+    "affiliations": [
+      {
+        "text": "Structure Biology in Drug Design, Drug Design Group XB20, Departments of Pharmacy,University of Groningen,Groningen, The Netherlands",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-9859-5177"
+    ],
+    "doi": "10.1007/s12551-020-00619-2",
+    "paperYear": 2020,
+    "pmcId": "PMC7040159",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7040159/"
+  },
+  {
+    "id": "0009-0001-6428-6672",
+    "email": "jeff.xia@mcgill.ca",
+    "oldName": "Lei Xu",
+    "expectedName": "Jianguo Xia",
+    "givenNames": "Jianguo",
+    "familyNames": "Xia",
+    "affiliations": [
+      {
+        "text": "Faculty of Agricultural and Environmental Sciences,McGill University,Ste-Anne-de-Bellevue, QC Canada",
+        "countries": []
+      },
+      {
+        "text": "Department of Microbiology and Immunology,McGill University,Montreal, QC Canada",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-2040-2624"
+    ],
+    "doi": "10.1038/s41467-024-48009-6",
+    "paperYear": 2024,
+    "pmcId": "PMC11063062",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11063062/"
+  },
+  {
+    "id": "0000-0001-6565-4812",
+    "email": "donald.mcdonnell@duke.edu",
+    "oldName": "Wen Liu",
+    "expectedName": "Donald P. McDonnell",
+    "givenNames": "Donald P.",
+    "familyNames": "McDonnell",
+    "affiliations": [
+      {
+        "text": "Department of Pharmacology and Cancer Biology,Duke University School of Medicine,Durham, NC 27710 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-7331-4700"
+    ],
+    "doi": "10.1038/s41467-021-25354-4",
+    "paperYear": 2021,
+    "pmcId": "PMC8385107",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8385107/"
+  },
+  {
+    "id": "0000-0003-2981-3972",
+    "email": "yonghui.wu@ufl.edu",
+    "oldName": "Xi Yang",
+    "expectedName": "Yonghui Wu",
+    "givenNames": "Yonghui",
+    "familyNames": "Wu",
+    "affiliations": [
+      {
+        "text": "Department of Health Outcomes and Biomedical Informatics, College of Medicine,University of Florida,Gainesville, FL USA",
+        "countries": []
+      },
+      {
+        "text": "Cancer Informatics and eHealth core,University of Florida Health Cancer Center,Gainesville, FL USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-6780-6135"
+    ],
+    "doi": "10.1038/s41746-022-00742-2",
+    "paperYear": 2022,
+    "pmcId": "PMC9792464",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9792464/"
+  },
+  {
+    "id": "0000-0002-3956-946X",
+    "email": "zxguo@hku.hk",
+    "oldName": "Xu Liu",
+    "expectedName": "Zhengxiao Guo",
+    "givenNames": "Zhengxiao",
+    "familyNames": "Guo",
+    "affiliations": [
+      {
+        "text": "Department of Chemistry,University College London,20 Gordon Street, London, WC1H 0AJ UK",
+        "countries": []
+      },
+      {
+        "text": "Department of Chemistry, HKU-CAS Joint Laboratory on New Materials,The University of Hong Kong,Hong Kong, China",
+        "countries": []
+      },
+      {
+        "text": "Department of Mechanical Engineering,The University of Hong Kong,Hong Kong, China",
+        "countries": []
+      },
+      {
+        "text": "HKU Zhejiang Institute of Research and Innovation,The University of Hong Kong,Hangzhou, China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-5404-3215"
+    ],
+    "doi": "10.1038/s41467-020-16227-3",
+    "paperYear": 2020,
+    "pmcId": "PMC7242399",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7242399/"
+  },
+  {
+    "id": "0000-0003-2854-6163",
+    "email": "bkante@berkeley.edu",
+    "oldName": "Abdoulaye Ndao",
+    "expectedName": "Boubacar Kanté",
+    "givenNames": "Boubacar",
+    "familyNames": "Kanté",
+    "affiliations": [
+      {
+        "text": "Department of Electrical Engineering and Computer Sciences,University of California,Berkeley, CA 94720 USA",
+        "countries": []
+      },
+      {
+        "text": "Department of Electrical and Computer Engineering,University of California San Diego,La Jolla, CA 92093-0407 USA",
+        "countries": []
+      },
+      {
+        "text": "Materials Sciences Division,Lawrence Berkeley National Laboratory, 1 Cyclotron Road, Berkeley, CA 94720 USA",
+        "countries": []
+      },
+      {
+        "text": "Department of Mechanical Engineering,University of California,Berkeley, CA 94720 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-5633-4163"
+    ],
+    "doi": "10.1038/s41467-020-17015-9",
+    "paperYear": 2020,
+    "pmcId": "PMC7316784",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7316784/"
+  },
+  {
+    "id": "EMAIL-92028cb32ac7e3599dc",
+    "email": "peshi@utmb.edu",
+    "oldName": "Antonio E. Muruato",
+    "expectedName": "Pei-Yong Shi",
+    "givenNames": "Pei-Yong",
+    "familyNames": "Shi",
+    "affiliations": [
+      {
+        "text": "Department of Biochemistry and Molecular Biology,University of Texas Medical Branch,Galveston, TX USA",
+        "countries": []
+      },
+      {
+        "text": "Institute for Human Infections and Immunity,University of Texas Medical Branch,Galveston, TX USA",
+        "countries": []
+      },
+      {
+        "text": "Sealy Institute for Vaccine Sciences,University of Texas Medical Branch,Galveston, TX USA",
+        "countries": []
+      },
+      {
+        "text": "Sealy Center for Structural Biology & Molecular Biophysics,University of Texas Medical Branch,Galveston, TX USA",
+        "countries": []
+      },
+      {
+        "text": "Institute for Translational Science,University of Texas Medical Branch,Galveston, TX USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-5553-1616"
+    ],
+    "doi": "10.1038/s41467-020-17892-0",
+    "paperYear": 2020,
+    "pmcId": "PMC7426916",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7426916/"
+  },
+  {
+    "id": "0000-0003-3535-8494",
+    "email": "cummer@ee.duke.edu",
+    "oldName": "Chen Shen",
+    "expectedName": "Steven A. Cummer",
+    "givenNames": "Steven A.",
+    "familyNames": "Cummer",
+    "affiliations": [
+      {
+        "text": "Department of Electrical and Computer Engineering,Duke University,Durham, NC 27708 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-0002-0613"
+    ],
+    "doi": "10.1038/s41467-020-14553-0",
+    "paperYear": 2020,
+    "pmcId": "PMC7005747",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7005747/"
+  },
+  {
+    "id": "0000-0003-2737-0530",
+    "email": "hgao@civil.tamu.edu",
+    "oldName": "Gang Zhao",
+    "expectedName": "Huilin Gao",
+    "givenNames": "Huilin",
+    "familyNames": "Gao",
+    "affiliations": [
+      {
+        "text": "Zachry Department of Civil and Environmental Engineering,Texas A&M University,College Station, TX 77843 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-7009-8005"
+    ],
+    "doi": "10.1038/s41467-022-31125-6",
+    "paperYear": 2022,
+    "pmcId": "PMC9240014",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9240014/"
+  },
+  {
+    "id": "0000-0003-1890-3825",
+    "email": "tichi@imr.tohoku.ac.jp",
+    "oldName": "Hongyi Li",
+    "expectedName": "Tetsu Ichitsubo",
+    "givenNames": "Tetsu",
+    "familyNames": "Ichitsubo",
+    "affiliations": [
+      {
+        "text": "Institute for Materials Research,Tohoku University,Sendai, 980-8577 Japan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-1127-3034"
+    ],
+    "doi": "10.1038/s41467-020-15452-0",
+    "paperYear": 2020,
+    "pmcId": "PMC7154030",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7154030/"
+  },
+  {
+    "id": "EMAIL-0c69fe94e75ae0e3814",
+    "email": "zhaox@mit.edu",
+    "oldName": "Hyunwoo Yuk",
+    "expectedName": "Xuanhe Zhao",
+    "givenNames": "Xuanhe",
+    "familyNames": "Zhao",
+    "affiliations": [
+      {
+        "text": "Department of Mechanical Engineering,Massachusetts Institute of Technology,Cambridge, MA USA",
+        "countries": []
+      },
+      {
+        "text": "Department of Civil and Environmental Engineering,Massachusetts Institute of Technology,Cambridge, MA USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-5387-6186"
+    ],
+    "doi": "10.1038/s41467-021-23802-9",
+    "paperYear": 2021,
+    "pmcId": "PMC8187649",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8187649/"
+  },
+  {
+    "id": "0000-0002-5751-7241",
+    "email": "sangouk.kim@kaist.ac.kr",
+    "oldName": "In Ho Kim",
+    "expectedName": "Sang Ouk Kim",
+    "givenNames": "Sang Ouk",
+    "familyNames": "Kim",
+    "affiliations": [
+      {
+        "text": "Department of Materials Science and Engineering,Korea Advanced Institute of Science and Technology (KAIST),Daejeon, Republic of Korea",
+        "countries": []
+      },
+      {
+        "text": "National Creative Research Initiative Center for Multi-dimensional Directed Nanoscale Assembly,Korea Advanced Institute of Science and Technology (KAIST),Daejeon, Republic of Korea",
+        "countries": []
+      },
+      {
+        "text": "Materials Creation, Seoul, Republic of Korea",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-1513-6042"
+    ],
+    "doi": "10.1038/s41565-022-01220-2",
+    "paperYear": 2022,
+    "pmcId": "PMC9646516",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9646516/"
+  },
+  {
+    "id": "0000-0003-2499-5877",
+    "email": "okeye@knu.ac.kr",
+    "oldName": "Jeongho Kim",
+    "expectedName": "Hong Kyun Kim",
+    "givenNames": "Hong Kyun",
+    "familyNames": "Kim",
+    "affiliations": [
+      {
+        "text": "Cell and Matrix Research Institute, School of Medicine,Kyungpook National University,Daegu, 41944 Republic of Korea",
+        "countries": []
+      },
+      {
+        "text": "Department of Ophthalmology,Kyungpook National University School of Medicine,Daegu, 41944 Republic of Korea",
+        "countries": []
+      },
+      {
+        "text": "Department of Ophthalmology,Kyungpook National University Hospital,Daegu, 41944 Republic of Korea",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-9283-3506"
+    ],
+    "doi": "10.1038/s41467-024-47123-9",
+    "paperYear": 2024,
+    "pmcId": "PMC10987615",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10987615/"
+  },
+  {
+    "id": "0000-0002-4520-6307",
+    "email": "bu.guojun@mayo.edu",
+    "oldName": "Jing Zhao",
+    "expectedName": "Guojun Bu",
+    "givenNames": "Guojun",
+    "familyNames": "Bu",
+    "affiliations": [
+      {
+        "text": "Department of Neuroscience,Mayo Clinic,Jacksonville, FL 32224 USA",
+        "countries": []
+      },
+      {
+        "text": "Center for Regenerative Medicine, Neuroregeneration Lab,Mayo Clinic,Jacksonville, FL 32224 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-3491-1016"
+    ],
+    "doi": "10.1038/s41467-020-19264-0",
+    "paperYear": 2020,
+    "pmcId": "PMC7608683",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7608683/"
+  },
+  {
+    "id": "EMAIL-66bbe318443e48e0107",
+    "email": "ali.darwich@umm.de",
+    "oldName": "Joao Pinheiro",
+    "expectedName": "Ali Darwich",
+    "givenNames": "Ali",
+    "familyNames": "Darwich",
+    "affiliations": [
+      {
+        "text": "Orthopaedic and Trauma Surgery Center, Mannheim University Hospital, Heidelberg University, Theodor-Kutzer-Ufer 1-3, 68167 Mannheim, Germany",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1093/jscr/rjag488",
+    "paperYear": 2026,
+    "pmcId": "PMC13298870",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13298870/"
+  },
+  {
+    "id": "0000-0002-5355-3974",
+    "email": "cswang@umd.edu",
+    "oldName": "Long Chen",
+    "expectedName": "Chunsheng Wang",
+    "givenNames": "Chunsheng",
+    "familyNames": "Wang",
+    "affiliations": [
+      {
+        "text": "Department of Chemical and Biomolecular Engineering,University of Maryland,College Park, MD 20742 USA",
+        "countries": []
+      },
+      {
+        "text": "Department of Chemistry and Biochemistry,University of Maryland,College Park, MD 20742 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-8626-6381"
+    ],
+    "doi": "10.1038/s41467-020-16460-w",
+    "paperYear": 2020,
+    "pmcId": "PMC7250880",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7250880/"
+  },
+  {
+    "id": "EMAIL-ebb54b0d33e0876df2c",
+    "email": "w.quattrociocchi@unive.it",
+    "oldName": "Matteo Cinelli",
+    "expectedName": "Walter Quattrociocchi",
+    "givenNames": "Walter",
+    "familyNames": "Quattrociocchi",
+    "affiliations": [
+      {
+        "text": "CNR-ISC, Rome, Italy",
+        "countries": []
+      },
+      {
+        "text": "Università Ca’ Foscari di Venezia,Venice, Italy",
+        "countries": []
+      },
+      {
+        "text": "Big Data in Health Society, Rome, Italy",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-020-73510-5",
+    "paperYear": 2020,
+    "pmcId": "PMC7538912",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7538912/"
+  },
+  {
+    "id": "0000-0001-7251-0227",
+    "email": "dimitrios.chronopoulos@kuleuven.be",
+    "oldName": "Mohand O. Saed",
+    "expectedName": "Dimitrios Chronopoulos",
+    "givenNames": "Dimitrios",
+    "familyNames": "Chronopoulos",
+    "affiliations": [
+      {
+        "text": "Department of Mechanical Engineering (LMSD),KU Leuven,Ghent Technology Campus, 9000 Gent, Belgium",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41467-021-27012-1",
+    "paperYear": 2021,
+    "pmcId": "PMC8602409",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8602409/"
+  },
+  {
+    "id": "EMAIL-a56bea83eb531cb8acf",
+    "email": "emt1000@cam.ac.uk",
+    "oldName": "Mohand O. Saed",
+    "expectedName": "Eugene M. Terentjev",
+    "givenNames": "Eugene M.",
+    "familyNames": "Terentjev",
+    "affiliations": [
+      {
+        "text": "Cavendish Laboratory, University of Cambridge, J. J. Thomson Avenue,Cambridge, CB3 0HE United Kingdom",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-020-63508-4",
+    "paperYear": 2020,
+    "pmcId": "PMC7171139",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7171139/"
+  },
+  {
+    "id": "0000-0001-8295-9861",
+    "email": "poom.kum@kmutt.ac.th",
+    "oldName": "Muhammad Shoaib",
+    "expectedName": "Poom Kumam",
+    "givenNames": "Poom",
+    "familyNames": "Kumam",
+    "affiliations": [
+      {
+        "text": "KMUTT Fixed Point Research Laboratory, Room SCL 802 Fixed Point Laboratory, Science Laboratory Building, Department of Mathematics, Faculty of Science,King Mongkut’s University of Technology Thonburi (KMUTT),Bangkok, 10140 Thailand",
+        "countries": []
+      },
+      {
+        "text": "Department of Medical Research, China Medical University Hospital,China Medical University,Taichung, 40402 Taiwan, ROC",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-020-75254-8",
+    "paperYear": 2020,
+    "pmcId": "PMC7595176",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7595176/"
+  },
+  {
+    "id": "EMAIL-dcb670e72a2de832b85",
+    "email": "hanaguri@riken.jp",
+    "oldName": "Nguyen Duy Khanh",
+    "expectedName": "Tetsuo Hanaguri",
+    "givenNames": "Tetsuo",
+    "familyNames": "Hanaguri",
+    "affiliations": [
+      {
+        "text": "RIKEN Center for Emergent Matter Science,Wako, Saitama 351-0198 Japan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-2896-0081"
+    ],
+    "doi": "10.1038/s41467-020-19751-4",
+    "paperYear": 2020,
+    "pmcId": "PMC7684290",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7684290/"
+  },
+  {
+    "id": "0000-0002-6303-9573",
+    "email": "heqian@nus.edu.sg",
+    "oldName": "Qiang Gao",
+    "expectedName": "Qian He",
+    "givenNames": "Qian",
+    "familyNames": "He",
+    "affiliations": [
+      {
+        "text": "Department of Materials Science and Engineering,National University of Singapore,9 Engineering Drive 1, 117575 Singapore, Singapore",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0003-4891-3581"
+    ],
+    "doi": "10.1038/s41467-022-29926-w",
+    "paperYear": 2022,
+    "pmcId": "PMC9054787",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9054787/"
+  },
+  {
+    "id": "0000-0002-2121-1021",
+    "email": "rhamamot@ncc.go.jp",
+    "oldName": "Satoshi Takahashi",
+    "expectedName": "Ryuji Hamamoto",
+    "givenNames": "Ryuji",
+    "familyNames": "Hamamoto",
+    "affiliations": [
+      {
+        "text": "Division of Medical AI Research and Development,National Cancer Center Research Institute,5-1-1 Tsukiji, Chuo-ku, Tokyo, 104-0045 Japan",
+        "countries": []
+      },
+      {
+        "text": "Cancer Translational Research Team, RIKEN Center for Advanced Intelligence Project,1-4-1 Nihonbashi, Chuo-ku, Tokyo, 103-0027 Japan",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s10916-024-02105-8",
+    "paperYear": 2024,
+    "pmcId": "PMC11393140",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC11393140/"
+  },
+  {
+    "id": "0000-0002-5440-2780",
+    "email": "alberto.paccanaro@rhul.ac.uk",
+    "oldName": "Shantao Li",
+    "expectedName": "Alberto Paccanaro",
+    "givenNames": "Alberto",
+    "familyNames": "Paccanaro",
+    "affiliations": [
+      {
+        "text": "Department of Computer Science, Centre for Systems and Synthetic Biology,Royal Holloway, University of London,Egham Hill, Egham, UK",
+        "countries": []
+      },
+      {
+        "text": "School of Applied Mathematics,Fundação Getulio Vargas,Rio de Janeiro, Brazil",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-8059-1346"
+    ],
+    "doi": "10.1038/s41467-020-18305-y",
+    "paperYear": 2020,
+    "pmcId": "PMC7486409",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7486409/"
+  },
+  {
+    "id": "0000-0002-4868-3934",
+    "email": "subburaj.ilangumaran@usherbrooke.ca",
+    "oldName": "Sheela Ramanathan",
+    "expectedName": "Subburaj Ilangumaran",
+    "givenNames": "Subburaj",
+    "familyNames": "Ilangumaran",
+    "affiliations": [
+      {
+        "text": "Department of Immunology and Cell Biology, Faculty of Medicine and Health Sciences, Université de Sherbrooke, Sherbrooke, QC J1H 5N4, Canada",
+        "countries": [
+          {
+            "text": "Canada",
+            "code": "CA"
+          }
+        ]
+      },
+      {
+        "text": "Centre de Recherche, Centre Hospitalier Universitaire de Sherbrooke, Sherbrooke, QC J1H 5N4, Canada",
+        "countries": [
+          {
+            "text": "Canada",
+            "code": "CA"
+          }
+        ]
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-7563-576X"
+    ],
+    "doi": "10.1093/immadv/ltag010",
+    "paperYear": 2026,
+    "pmcId": "PMC13282443",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13282443/"
+  },
+  {
+    "id": "0000-0002-3460-6989",
+    "email": "manjit.kr@yahoo.com",
+    "oldName": "Vijay Kumar",
+    "expectedName": "Manjit Kaur",
+    "givenNames": "Manjit",
+    "familyNames": "Kaur",
+    "affiliations": [
+      {
+        "text": "Computer and Communication Engineering Department, School of Computing and Information Technology,Manipal University Jaipur,Jaipur, India",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s10096-020-03901-z",
+    "paperYear": 2020,
+    "pmcId": "PMC7183816",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7183816/"
+  },
+  {
+    "id": "0000-0001-9850-9339",
+    "email": "haali2@hbku.edu.qa",
+    "oldName": "Waqar Ahmad",
+    "expectedName": "Hazrat Ali",
+    "givenNames": "Hazrat",
+    "familyNames": "Ali",
+    "affiliations": [
+      {
+        "text": "College of Science and Engineering,Hamad Bin Khalifa University,Doha, Qatar",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41598-022-13658-4",
+    "paperYear": 2022,
+    "pmcId": "PMC9184641",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC9184641/"
+  },
+  {
+    "id": "0000-0001-5647-5206",
+    "email": "jinyang.liang@inrs.ca",
+    "oldName": "Xianglei Liu",
+    "expectedName": "Jinyang Liang",
+    "givenNames": "Jinyang",
+    "familyNames": "Liang",
+    "affiliations": [
+      {
+        "text": "Centre Énergie Matériaux Télécommunications,Institut National de la Recherche Scientifique, 1650 boulevard Lionel-Boulet, Varennes,Québec, J3X1S2 Canada",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41467-021-26701-1",
+    "paperYear": 2021,
+    "pmcId": "PMC8568918",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8568918/"
+  },
+  {
+    "id": "0000-0003-4137-3535",
+    "email": "zhaoyanli@ntu.edu.sg",
+    "oldName": "Xiaodong Zhang",
+    "expectedName": "Yanli Zhao",
+    "givenNames": "Yanli",
+    "familyNames": "Zhao",
+    "affiliations": [
+      {
+        "text": "Division of Chemistry and Biological Chemistry, School of Physical and Mathematical Sciences,Nanyang Technological University,21 Nanyang Link, Singapore, 637371 Singapore",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1007/s40820-022-00828-2",
+    "paperYear": 2022,
+    "pmcId": "PMC8986955",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8986955/"
+  },
+  {
+    "id": "EMAIL-71c10b0685101638857",
+    "email": "szfeng@ihcams.ac.cn",
+    "oldName": "Xuyan Zhang",
+    "expectedName": "Sizhou Feng",
+    "givenNames": "Sizhou",
+    "familyNames": "Feng",
+    "affiliations": [
+      {
+        "text": "State Key Laboratory of Experimental Hematology, National Clinical Research Center for Blood Diseases, Haihe Laboratory of Cell Ecosystem, Institute of Hematology & Blood Diseases Hospital, Chinese Academy of Medical Sciences & Peking Union Medical College, Tianjin 300020, China",
+        "countries": []
+      },
+      {
+        "text": "Tianjin Institutes of Health Science, Tianjin 301600, China",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1097/bs9.0000000000000304",
+    "paperYear": 2026,
+    "pmcId": "PMC13300613",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13300613/"
+  },
+  {
+    "id": "0000-0003-1579-7561",
+    "email": "scheres@mrc-lmb.cam.ac.uk",
+    "oldName": "Yang Shi",
+    "expectedName": "Sjors HW Scheres",
+    "givenNames": "Sjors HW",
+    "familyNames": "Scheres",
+    "affiliations": [
+      {
+        "text": "Medical Research Council Laboratory of Molecular Biology, Cambridge, UK",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [],
+    "doi": "10.1038/s41586-022-05319-3",
+    "paperYear": 2022,
+    "pmcId": "PMC7613749",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7613749/"
+  },
+  {
+    "id": "0000-0001-8965-5051",
+    "email": "oliver.gutierrez@pnnl.gov",
+    "oldName": "Yifeng Zhu",
+    "expectedName": "Oliver Y. Gutiérrez",
+    "givenNames": "Oliver Y.",
+    "familyNames": "Gutiérrez",
+    "affiliations": [
+      {
+        "text": "Institute for Integrated Catalysis, and Physical and Computational Sciences Directorate,Pacific Northwest National Laboratory,Richland, WA 99354 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0001-9163-4786"
+    ],
+    "doi": "10.1038/s41467-020-19438-w",
+    "paperYear": 2020,
+    "pmcId": "PMC7674450",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7674450/"
+  },
+  {
+    "id": "0000-0001-8812-3184",
+    "email": "yzhao@corban.edu",
+    "oldName": "Zhe Wang",
+    "expectedName": "Yufeng Zhao",
+    "givenNames": "Yufeng",
+    "familyNames": "Zhao",
+    "affiliations": [
+      {
+        "text": "Department of Materials Science and NanoEngineering,Rice University,Houston, TX 77005 USA",
+        "countries": []
+      },
+      {
+        "text": "Corban University,Salem, Oregon 97317 USA",
+        "countries": []
+      }
+    ],
+    "verifiedOrcids": [
+      "0000-0002-7644-5407"
+    ],
+    "doi": "10.1038/s41467-021-27878-1",
+    "paperYear": 2022,
+    "pmcId": "PMC8752793",
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8752793/"
+  }
+]

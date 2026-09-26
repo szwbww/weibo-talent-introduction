@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "totalRows": 2688,
+  "resolvedRows": 764,
+  "newWrong": 193,
+  "sourceMatches": 571,
+  "stillUnresolved": 1924,
+  "directAuthorProofsChecked": 335,
+  "previousConfirmedRecordsRegressionChecked": 2102,
+  "previousEvidenceConflicts": 0,
+  "historicalRestorationErrorsIdentifiedAndCorrected": 3,
+  "liveNamesAndEmailsUnchanged": true,
+  "liveDocs": 1528
+}

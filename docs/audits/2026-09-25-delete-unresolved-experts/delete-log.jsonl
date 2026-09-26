@@ -1,0 +1,21 @@
+{"stage": "deleted", "documents": 200, "total": 3846}
+{"stage": "deleted", "documents": 400, "total": 3846}
+{"stage": "deleted", "documents": 600, "total": 3846}
+{"stage": "deleted", "documents": 800, "total": 3846}
+{"stage": "deleted", "documents": 1000, "total": 3846}
+{"stage": "deleted", "documents": 1200, "total": 3846}
+{"stage": "deleted", "documents": 1400, "total": 3846}
+{"stage": "deleted", "documents": 1600, "total": 3846}
+{"stage": "deleted", "documents": 1800, "total": 3846}
+{"stage": "deleted", "documents": 2000, "total": 3846}
+{"stage": "deleted", "documents": 2200, "total": 3846}
+{"stage": "deleted", "documents": 2400, "total": 3846}
+{"stage": "deleted", "documents": 2600, "total": 3846}
+{"stage": "deleted", "documents": 2800, "total": 3846}
+{"stage": "deleted", "documents": 3000, "total": 3846}
+{"stage": "deleted", "documents": 3200, "total": 3846}
+{"stage": "deleted", "documents": 3400, "total": 3846}
+{"stage": "deleted", "documents": 3600, "total": 3846}
+{"stage": "deleted", "documents": 3800, "total": 3846}
+{"stage": "deleted", "documents": 3846, "total": 3846}
+{"status": "PASS", "at": "2026-09-25T19:41:40.446216", "expertsDeleted": 1923, "documentsDeleted": 3846, "contactsPreserved": 77, "mailUnchanged": true, "academicJobsPreserved": 483, "protectedExpertsUnchanged": 2919, "excludedPreviouslyConfirmedId": "EMAIL-ecfe6a12ee6c6aec55a", "affectedContactsPreserved": 76, "backupPath": "/opt/talent/backups/expert-identity-20260925-delete-unresolved-1924/before.json", "backupSha256": "99f99952fb2d33908ced0fdbf137ce1b35bf82baad2d596ece562d0ee9f61882"}

@@ -1,0 +1,12 @@
+{
+  "id": "EMAIL-ecfe6a12ee6c6aec55a",
+  "email": "xzhu3@fau.edu",
+  "name": "Xingquan Zhu",
+  "oldVerdict": "UNRESOLVED",
+  "newVerdict": "MATCH",
+  "reason": "Earlier confirmed faculty identity was omitted from later PMC-only pending classification; original correction and official faculty page agree",
+  "evidenceUrl": "https://www.fau.edu/engineering/directory/faculty/zhu/",
+  "productionAction": "Preserved, excluded from delete",
+  "currentSourceMatchCount": 572,
+  "remainingUnconfirmedCountBeforeDeletion": 1923
+}

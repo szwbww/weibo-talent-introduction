@@ -2,8 +2,8 @@
 id: K-initial-outreach-four-gate-paths
 domain: campaign
 created: 2026-08-24
-last_used: 2026-09-03
-hit_count: 1
+last_used: 2026-09-25
+hit_count: 2
 source: create-p:expert-rnd-classification
 ---
 

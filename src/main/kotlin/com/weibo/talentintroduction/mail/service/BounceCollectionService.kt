@@ -37,11 +37,17 @@ class BounceCollectionService(
 ) {
     private val log = LoggerFactory.getLogger(BounceCollectionService::class.java)
 
-    fun collectBounces(account: MailSenderAccount): BounceCollectionResult {
+    fun collectBounces(
+        account: MailSenderAccount,
+        afterUid: Long = 0,
+        expectedUidValidity: Long? = null
+    ): BounceCollectionResult {
         var collected = 0
         var skippedDuplicate = 0
 
-        val messages = mailReceiveService.fetchUnseenMessages(account)
+        val messages = mailReceiveService.fetchUnseenMessages(
+            account, afterUid = afterUid, expectedUidValidity = expectedUidValidity
+        )
         for (message in messages) {
             val from = message.from
                 ?.filterIsInstance<InternetAddress>()

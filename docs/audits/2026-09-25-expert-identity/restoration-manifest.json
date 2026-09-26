@@ -1,0 +1,886 @@
+[
+  {
+    "id": "EMAIL-b60a62182f640d2f952",
+    "email": "a.siddharth.in@gmail.com",
+    "oldName": "David Vlahov",
+    "expectedName": "Siddharth Agarwal",
+    "patch": {
+      "givenNames": "Siddharth",
+      "familyNames": "Agarwal",
+      "employment": "Urban Health Resource Centre, New Delhi, India",
+      "institution": "Urban Health Resource Centre, New Delhi, India",
+      "country": "India",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://ysph.yale.edu/news-article/slum-health-arresting-covid-19-and-improving-well-being-in-urban-informal-settlements/"
+  },
+  {
+    "id": "EMAIL-d2e7dcc8a193c780b99",
+    "email": "aamousavi@gmail.com",
+    "oldName": "Sajjad Abbasi",
+    "expectedName": "Ali Akbar Moosavi",
+    "patch": {
+      "givenNames": "Ali Akbar",
+      "familyNames": "Moosavi",
+      "employment": "Department of Soil Science, College of Agriculture, Shiraz University, Shiraz, Iran",
+      "institution": "Department of Soil Science, College of Agriculture, Shiraz University, Shiraz, Iran",
+      "country": "Iran",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13241006/"
+  },
+  {
+    "id": "EMAIL-2e7289af4c7ae3b3f54",
+    "email": "afnkazemi@gmail.com",
+    "oldName": "Ali-Reza Babapour",
+    "expectedName": "Azita Fathnezhad-Kazemi",
+    "patch": {
+      "givenNames": "Azita",
+      "familyNames": "Fathnezhad-Kazemi",
+      "employment": "Tabriz Medical Sciences, Islamic Azad University",
+      "institution": "Tabriz Medical Sciences, Islamic Azad University",
+      "country": "Iran",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8968092/"
+  },
+  {
+    "id": "EMAIL-0df093857d68797eed1",
+    "email": "alan.ywlin@gmail.com",
+    "oldName": "Andrea Tipold",
+    "expectedName": "Yu-Wei Lin",
+    "patch": {
+      "givenNames": "Yu-Wei",
+      "familyNames": "Lin",
+      "employment": "Naughty Family Animal Hospital, New Ruipeng Pet Healthcare Group, Shanghai, China",
+      "institution": "Naughty Family Animal Hospital, New Ruipeng Pet Healthcare Group, Shanghai, China",
+      "country": "China",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13269065/"
+  },
+  {
+    "id": "EMAIL-8fe9fa5f014dd8ac9e3",
+    "email": "amitai.armon@intel.com",
+    "oldName": "Ravid Shwartz-Ziv",
+    "expectedName": "Amitai Armon",
+    "patch": {
+      "givenNames": "Amitai",
+      "familyNames": "Armon",
+      "employment": "Intel",
+      "institution": "Intel",
+      "country": null,
+      "institutionType": "company"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://workshops.inf.ed.ac.uk/nips2016-ai4datasci/papers/NIPS2016-AI4DataSci_paper_2.pdf"
+  },
+  {
+    "id": "EMAIL-a4ccd6090a049697509",
+    "email": "angelomontana49@gmail.com",
+    "oldName": "Margherita Neri",
+    "expectedName": "Angelo Montana",
+    "patch": {
+      "givenNames": "Angelo",
+      "familyNames": "Montana",
+      "employment": "Department of Biomedical Sciences and Public Health, Faculty of Medicine and Surgery, Marche Polytechnic University, Ancona, Italy",
+      "institution": "Department of Biomedical Sciences and Public Health, Faculty of Medicine and Surgery, Marche Polytechnic University, Ancona, Italy",
+      "country": "Italy",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13270177/"
+  },
+  {
+    "id": "0009-0000-6790-7203",
+    "email": "datta_madamwar@yahoo.com",
+    "oldName": "Avani Bharatkumar Patel",
+    "expectedName": "Datta Madamwar",
+    "patch": {
+      "givenNames": "Datta",
+      "familyNames": "Madamwar",
+      "employment": "Sardar Patel University",
+      "institution": "Sardar Patel University",
+      "country": "India",
+      "institutionType": "education",
+      "hIndex": null,
+      "citationCount": null,
+      "worksCount": null,
+      "researchFields": null,
+      "disciplineCategory": null,
+      "lastPublicationYear": null,
+      "recentWorkTitles": null,
+      "patentTitles": null,
+      "enrichedAt": null,
+      "enrichmentSource": null
+    },
+    "externalIdsMerge": {
+      "orcid": "0000-0003-3301-1120",
+      "openAlexAuthorId": "A5136819051"
+    },
+    "evidenceUrl": "https://www.spuvvn.edu/team/dr-datta-madamwar/"
+  },
+  {
+    "id": "EMAIL-8d35a4836d37d9af38c",
+    "email": "doubleyingtao@gmail.com",
+    "oldName": "Lei Wang",
+    "expectedName": "Tao Han",
+    "patch": {
+      "givenNames": "Tao",
+      "familyNames": "Han",
+      "employment": "The Third Affiliated Hospital of Henan Medical University, Institutes of Health Central Plains, Henan Medical University, Xinxiang, Henan, China; Xinxiang Key Laboratory for Molecular Oncology, Henan Medical University, Xinxiang, Henan, China",
+      "institution": "The Third Affiliated Hospital of Henan Medical University, Institutes of Health Central Plains, Henan Medical University, Xinxiang, Henan, China; Xinxiang Key Laboratory for Molecular Oncology, Henan Medical University, Xinxiang, Henan, China",
+      "country": "China",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13268918/"
+  },
+  {
+    "id": "EMAIL-1c6a239e769938a8688",
+    "email": "etelvina.gandara@gmail.com",
+    "oldName": "Marko Gómez-Hernández",
+    "expectedName": "Etelvina Gándara",
+    "patch": {
+      "givenNames": "Etelvina",
+      "familyNames": "Gándara",
+      "employment": "Facultad de Ciencias Biológicas, Benemérita Universidad Autónoma de Puebla, Av. San Claudio S/N Col. Ciudad Universitaria, Puebla 72592, Puebla, Mexico",
+      "institution": "Facultad de Ciencias Biológicas, Benemérita Universidad Autónoma de Puebla, Av. San Claudio S/N Col. Ciudad Universitaria, Puebla 72592, Puebla, Mexico",
+      "country": "Mexico",
+      "institutionType": null
+    },
+    "externalIdsMerge": {
+      "orcid": "0000-0001-6866-6923"
+    },
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13302147/"
+  },
+  {
+    "id": "EMAIL-14318840d82b7fe58f2",
+    "email": "hanan89md@gmail.com",
+    "oldName": "Omar Alzakholi",
+    "expectedName": "Hanan M. Shukur",
+    "patch": {
+      "givenNames": "Hanan M.",
+      "familyNames": "Shukur",
+      "employment": "Al-Kitab University",
+      "institution": "Al-Kitab University",
+      "country": "Iraq",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://jastt.org/index.php/jasttpath/article/download/19/8/72"
+  },
+  {
+    "id": "EMAIL-61ced8d795a25b53cb5",
+    "email": "hemadate@iimmumbai.ac.in",
+    "oldName": "Minati Rath",
+    "expectedName": "Hema Date",
+    "patch": {
+      "givenNames": "Hema",
+      "familyNames": "Date",
+      "employment": "Indian Institute of Management Mumbai",
+      "institution": "Indian Institute of Management Mumbai",
+      "country": "India",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://iimmumbai.ac.in/faculty/profile/46"
+  },
+  {
+    "id": "EMAIL-095611632371e975ce1",
+    "email": "hsy@knu.ac.kr",
+    "oldName": "Hyun-Sik Yun",
+    "expectedName": "Ho-Sung Yoon",
+    "patch": {
+      "givenNames": "Ho-Sung",
+      "familyNames": "Yoon",
+      "employment": "Kyungpook National University",
+      "institution": "Kyungpook National University",
+      "country": "Republic of Korea",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://www.frontiersin.org/journals/bioengineering-and-biotechnology/articles/10.3389/fbioe.2021.774143/full"
+  },
+  {
+    "id": "EMAIL-c5c1a0017660c29f52b",
+    "email": "jiez1857@gmail.com",
+    "oldName": "Yanping Fu",
+    "expectedName": "Jie Zhang",
+    "patch": {
+      "givenNames": "Jie",
+      "familyNames": "Zhang",
+      "employment": "China Railway Corporation Wuhan Railway Bureau Hankou Railway Station, Wuhan, China",
+      "institution": "China Railway Corporation Wuhan Railway Bureau Hankou Railway Station, Wuhan, China",
+      "country": "China",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13240919/"
+  },
+  {
+    "id": "EMAIL-2c5afefcab1962585de",
+    "email": "john.m.carson@nasa.gov",
+    "oldName": "Michael Szmuk",
+    "expectedName": "John M. Carson III",
+    "patch": {
+      "givenNames": "John M.",
+      "familyNames": "Carson III",
+      "employment": "NASA Johnson Space Center",
+      "institution": "NASA Johnson Space Center",
+      "country": "United States",
+      "institutionType": "government"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://aiaa.org/wp-content/uploads/2025/03/GNC_Additional.pdf"
+  },
+  {
+    "id": "EMAIL-9a84f2fe3f08b8df9fa",
+    "email": "jschaefer@fb2.fra-uas.de",
+    "oldName": "Elis Haruni",
+    "expectedName": "Jörg Schäfer",
+    "patch": {
+      "givenNames": "Jörg",
+      "familyNames": "Schäfer",
+      "employment": "Frankfurt University of Applied Sciences",
+      "institution": "Frankfurt University of Applied Sciences",
+      "country": "Germany",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://idw-online.de/de/news816974"
+  },
+  {
+    "id": "EMAIL-069b03d18160c1d6c46",
+    "email": "kyslhh1228@hanmail.net",
+    "oldName": "Hyun-Sik Yun",
+    "expectedName": "Young-Saeng Kim",
+    "patch": {
+      "givenNames": "Young-Saeng",
+      "familyNames": "Kim",
+      "employment": "Kyungpook National University",
+      "institution": "Kyungpook National University",
+      "country": "Republic of Korea",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://www.frontiersin.org/journals/bioengineering-and-biotechnology/articles/10.3389/fbioe.2021.774143/full"
+  },
+  {
+    "id": "EMAIL-270d5793345cda89dfd",
+    "email": "lailan.haji@uoz.edu.krd",
+    "oldName": "Omar Alzakholi",
+    "expectedName": "Lailan M. Haji",
+    "patch": {
+      "givenNames": "Lailan M.",
+      "familyNames": "Haji",
+      "employment": "University of Zakho",
+      "institution": "University of Zakho",
+      "country": "Iraq",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://jastt.org/index.php/jasttpath/article/download/19/8/72"
+  },
+  {
+    "id": "EMAIL-b176a6b1acde10260a4",
+    "email": "latharadhakrishna@gmail.com",
+    "oldName": "Suvarna Hebbar",
+    "expectedName": "Latha Thimmappa",
+    "patch": {
+      "givenNames": "Latha",
+      "familyNames": "Thimmappa",
+      "employment": "College of Nursing, All India Institute of Medical Sciences (AIIMS), Bibinagar, Telangana, India",
+      "institution": "College of Nursing, All India Institute of Medical Sciences (AIIMS), Bibinagar, Telangana, India",
+      "country": "India",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13293455/"
+  },
+  {
+    "id": "EMAIL-877c716d79d7ed1513f",
+    "email": "luthfihamdani@gmail.com",
+    "oldName": "Hilna Putria",
+    "expectedName": "Luthfi Hamdani Maula",
+    "patch": {
+      "givenNames": "Luthfi Hamdani",
+      "familyNames": "Maula",
+      "employment": "Universitas Muhammadiyah Sukabumi",
+      "institution": "Universitas Muhammadiyah Sukabumi",
+      "country": "Indonesia",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://jbasic.org/index.php/basicedu/article/download/460/pdf/1581"
+  },
+  {
+    "id": "EMAIL-350ea21109ac3288a42",
+    "email": "mallik.k5@gmail.com",
+    "oldName": "Wei Li",
+    "expectedName": "Mallikarjuna Korivi",
+    "patch": {
+      "givenNames": "Mallikarjuna",
+      "familyNames": "Korivi",
+      "employment": "College of Physical Education and Health Sciences, Zhejiang Normal University, Jinhua 321004, China",
+      "institution": "College of Physical Education and Health Sciences, Zhejiang Normal University, Jinhua 321004, China",
+      "country": "China",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256914/"
+  },
+  {
+    "id": "EMAIL-c53d3a4affe33ec79d7",
+    "email": "mesbahi@uw.edu",
+    "oldName": "Michael Szmuk",
+    "expectedName": "Mehran Mesbahi",
+    "patch": {
+      "givenNames": "Mehran",
+      "familyNames": "Mesbahi",
+      "employment": "University of Washington",
+      "institution": "University of Washington",
+      "country": "United States",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://mehran-mesbahi.github.io/"
+  },
+  {
+    "id": "EMAIL-fce307d2d84bcf85892",
+    "email": "mgyyh00@gmail.com",
+    "oldName": "U-Young Lee",
+    "expectedName": "Yonghyun Yoon",
+    "patch": {
+      "givenNames": "Yonghyun",
+      "familyNames": "Yoon",
+      "employment": "Department of Orthopaedic Surgery, Gangnam Sacred Heart Hospital, Hallym University College of Medicine, Seoul 07441, Republic of Korea; Incheon Terminal Orthopedic Surgery Clinic, Incheon 21574, Republic of Korea; International Academy of Regenerative Medicine, Incheon 21574, Republic of Korea; Board of Clinical Research, The International Association of Musculoskeletal Medicine, Hong Kong, China; MSKUS, 1035 E. Vista Way #128, Vista, CA 92084, USA",
+      "institution": "Department of Orthopaedic Surgery, Gangnam Sacred Heart Hospital, Hallym University College of Medicine, Seoul 07441, Republic of Korea; Incheon Terminal Orthopedic Surgery Clinic, Incheon 21574, Republic of Korea; International Academy of Regenerative Medicine, Incheon 21574, Republic of Korea; Board of Clinical Research, The International Association of Musculoskeletal Medicine, Hong Kong, China; MSKUS, 1035 E. Vista Way #128, Vista, CA 92084, USA",
+      "country": "Republic of Korea",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256739/"
+  },
+  {
+    "id": "EMAIL-7e8c8791468abbe8b95",
+    "email": "murtazabotanist@gmail.com",
+    "oldName": "Hassan Mehmood",
+    "expectedName": "Ghulam Murtaza",
+    "patch": {
+      "givenNames": "Ghulam",
+      "familyNames": "Murtaza",
+      "employment": "School of Agriculture, Yunnan University, Kunming, Yunnan, China",
+      "institution": "School of Agriculture, Yunnan University, Kunming, Yunnan, China",
+      "country": "China",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13274135/"
+  },
+  {
+    "id": "EMAIL-904ff2c71b9cf981ca3",
+    "email": "phdamg@nbi.dk",
+    "oldName": "Andrea Cristofoli",
+    "expectedName": "Poul H. Damgaard",
+    "patch": {
+      "givenNames": "Poul H.",
+      "familyNames": "Damgaard",
+      "employment": "Niels Bohr Institute, University of Copenhagen",
+      "institution": "Niels Bohr Institute, University of Copenhagen",
+      "country": "Denmark",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.132.251603"
+  },
+  {
+    "id": "EMAIL-17e7e14c5a353fb25aa",
+    "email": "psuffys@gmail.com",
+    "oldName": "Emilyn Costa Conceiçao",
+    "expectedName": "Philip Noel Suffys",
+    "patch": {
+      "givenNames": "Philip Noel",
+      "familyNames": "Suffys",
+      "employment": "Laboratório de Biologia Molecular Aplicada a Micobactérias, Instituto Oswaldo Cruz, Fundação Oswaldo Cruz, Rio de Janeiro, Brazil",
+      "institution": "Laboratório de Biologia Molecular Aplicada a Micobactérias, Instituto Oswaldo Cruz, Fundação Oswaldo Cruz, Rio de Janeiro, Brazil",
+      "country": "Brazil",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13270926/"
+  },
+  {
+    "id": "EMAIL-7ee64d95f8e2ef9e3ed",
+    "email": "raguvarma@gmail.com",
+    "oldName": "Chaiyavat Chaiyasut",
+    "expectedName": "Durairaj Ragu Varman",
+    "patch": {
+      "givenNames": "Durairaj",
+      "familyNames": "Ragu Varman",
+      "employment": "School of Biomedical Sciences, Sri Balaji Vidyapeeth (Deemed to be University), Puducherry, India",
+      "institution": "School of Biomedical Sciences, Sri Balaji Vidyapeeth (Deemed to be University), Puducherry, India",
+      "country": "India",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13269353/"
+  },
+  {
+    "id": "EMAIL-5a34ea10b946b60abda",
+    "email": "rajeswarishome@gmail.com",
+    "oldName": "Shivasharanappa Nayakvadi",
+    "expectedName": "Rajeswari Shome",
+    "patch": {
+      "givenNames": "Rajeswari",
+      "familyNames": "Shome",
+      "employment": "ICAR-National Institute of Veterinary Epidemiology and Disease Informatics, Bengaluru, India",
+      "institution": "ICAR-National Institute of Veterinary Epidemiology and Disease Informatics, Bengaluru, India",
+      "country": "India",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13260132/"
+  },
+  {
+    "id": "EMAIL-907eae343f28c158050",
+    "email": "sajidjalwan@gmail.com",
+    "oldName": "Hassan Mehmood",
+    "expectedName": "Sajid Ullah",
+    "patch": {
+      "givenNames": "Sajid",
+      "familyNames": "Ullah",
+      "employment": "Department of Water Resources and Environmental Engineering, Nangarhar University, Jalalabad, Nangarhar, Afghanistan",
+      "institution": "Department of Water Resources and Environmental Engineering, Nangarhar University, Jalalabad, Nangarhar, Afghanistan",
+      "country": "Afghanistan",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13274135/"
+  },
+  {
+    "id": "EMAIL-cc65b06492ea3c42a75",
+    "email": "shakirdu@yahoo.com",
+    "oldName": "Omar Alzakholi",
+    "expectedName": "Shakir M. Abas",
+    "patch": {
+      "givenNames": "Shakir M.",
+      "familyNames": "Abas",
+      "employment": "Duhok Polytechnic University",
+      "institution": "Duhok Polytechnic University",
+      "country": "Iraq",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://jastt.org/index.php/jasttpath/article/download/19/8/72"
+  },
+  {
+    "id": "EMAIL-ecfe6a12ee6c6aec55a",
+    "email": "xzhu3@fau.edu",
+    "oldName": "Zhabiz Gharibshah",
+    "expectedName": "Xingquan Zhu",
+    "patch": {
+      "givenNames": "Xingquan",
+      "familyNames": "Zhu",
+      "employment": "Florida Atlantic University",
+      "institution": "Florida Atlantic University",
+      "country": "United States",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://www.fau.edu/engineering/directory/faculty/zhu/"
+  },
+  {
+    "id": "EMAIL-41c63708a070c6d2447",
+    "email": "zhuxinmao@gmail.com",
+    "oldName": "Li Liu",
+    "expectedName": "Zhuxin Mao",
+    "patch": {
+      "givenNames": "Zhuxin",
+      "familyNames": "Mao",
+      "employment": "Xi’an Botanical Garden of Shaanxi Province, Institute of Botany of Shaanxi Province, Xi’an 710061, China; Shaanxi Engineering Research Centre for Conservation and Utilization of Botanical Resources, Xi’an 710061, China",
+      "institution": "Xi’an Botanical Garden of Shaanxi Province, Institute of Botany of Shaanxi Province, Xi’an 710061, China; Shaanxi Engineering Research Centre for Conservation and Utilization of Botanical Resources, Xi’an 710061, China",
+      "country": "China",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13255882/"
+  },
+  {
+    "id": "EMAIL-4000208423e318f2d23",
+    "email": "aamousavi@shirazu.ac.ir",
+    "oldName": "Sajjad Abbasi",
+    "expectedName": "Ali Akbar Moosavi",
+    "patch": {
+      "givenNames": "Ali Akbar",
+      "familyNames": "Moosavi",
+      "employment": "Department of Soil Science, College of Agriculture, Shiraz University, Shiraz, Iran",
+      "institution": "Department of Soil Science, College of Agriculture, Shiraz University, Shiraz, Iran",
+      "country": "Iran",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13241006/"
+  },
+  {
+    "id": "EMAIL-e76191d9ee9e06ef021",
+    "email": "albert.lecube@vallhebron.cat",
+    "oldName": "Raquel Ruano",
+    "expectedName": "Albert Lecube",
+    "patch": {
+      "givenNames": "Albert",
+      "familyNames": "Lecube",
+      "employment": "Department Endocrinology and Nutrition, University Hospital Vall d’Hebron. Diabetes and Metabolism Research Group, Vall d’Hebron Research Institute (VHIR), CIBERDEM (Institute of Health Carlos III), Barcelona, Spain",
+      "institution": "Department Endocrinology and Nutrition, University Hospital Vall d’Hebron. Diabetes and Metabolism Research Group, Vall d’Hebron Research Institute (VHIR), CIBERDEM (Institute of Health Carlos III), Barcelona, Spain",
+      "country": "Spain",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13259888/"
+  },
+  {
+    "id": "EMAIL-89719bd21ac2bd5246f",
+    "email": "cristina.viana@unifesp.br",
+    "oldName": "Emilyn Costa Conceiçao",
+    "expectedName": "Cristina Viana-Niero",
+    "patch": {
+      "givenNames": "Cristina",
+      "familyNames": "Viana-Niero",
+      "employment": "Departamento de Microbiologia, Imunologia e Parasitologia, Universidade Federal de São Paulo, São Paulo, Brazil",
+      "institution": "Departamento de Microbiologia, Imunologia e Parasitologia, Universidade Federal de São Paulo, São Paulo, Brazil",
+      "country": "Brazil",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13270926/"
+  },
+  {
+    "id": "EMAIL-a0a4d20d6abc97b0a6f",
+    "email": "dr_ranad_ms@hotmail.com",
+    "oldName": "Bilal Azab",
+    "expectedName": "Ranad Maswadi",
+    "patch": {
+      "givenNames": "Ranad",
+      "familyNames": "Maswadi",
+      "employment": "Department of Ophthalmology, Nottingham University Hospitals NHS Trust, Nottingham, United Kingdom",
+      "institution": "Department of Ophthalmology, Nottingham University Hospitals NHS Trust, Nottingham, United Kingdom",
+      "country": "United Kingdom",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13269086/"
+  },
+  {
+    "id": "EMAIL-29b665e8d8f3e5b6d06",
+    "email": "emma.draghici@umfcv.ro",
+    "oldName": "Antonia Samia Khaddour",
+    "expectedName": "Emma Cristina Drăghici",
+    "patch": {
+      "givenNames": "Emma Cristina",
+      "familyNames": "Drăghici",
+      "employment": "Department of Oral Rehabilitation, University of Medicine and Pharmacy of Craiova, 200349 Craiova, Romania",
+      "institution": "Department of Oral Rehabilitation, University of Medicine and Pharmacy of Craiova, 200349 Craiova, Romania",
+      "country": "Romania",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13258047/"
+  },
+  {
+    "id": "EMAIL-143ffcf012309e7ee56",
+    "email": "enricospinas@tiscali.it",
+    "oldName": "Alessio Verdecchia",
+    "expectedName": "Enrico Spinas",
+    "patch": {
+      "givenNames": "Enrico",
+      "familyNames": "Spinas",
+      "employment": "Department of Surgical Sciences, Postgraduate School in Orthodontics, University of Cagliari, 09124 Cagliari, Italy",
+      "institution": "Department of Surgical Sciences, Postgraduate School in Orthodontics, University of Cagliari, 09124 Cagliari, Italy",
+      "country": "Italy",
+      "institutionType": null
+    },
+    "externalIdsMerge": {
+      "orcid": "0000-0003-4563-9804"
+    },
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13297725/"
+  },
+  {
+    "id": "EMAIL-fd6b828aebfafdde022",
+    "email": "giwaabdulmoseensegun@ncpu.edu.cn",
+    "oldName": "Ndungutse Jean Maurice",
+    "expectedName": "Abdulmoseen Segun Giwa",
+    "patch": {
+      "givenNames": "Abdulmoseen Segun",
+      "familyNames": "Giwa",
+      "employment": "School of Civil and Environmental Engineering, Nanchang Institute of Science and Technology, Nanchang 330108, China",
+      "institution": "School of Civil and Environmental Engineering, Nanchang Institute of Science and Technology, Nanchang 330108, China",
+      "country": "China",
+      "institutionType": null
+    },
+    "externalIdsMerge": {
+      "orcid": "0000-0001-9905-0312"
+    },
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13258567/"
+  },
+  {
+    "id": "EMAIL-425c0053fdffbc8767c",
+    "email": "ihossain.mbg@nstu.edu.bd",
+    "oldName": "Noimul Hasan Siddiquee",
+    "expectedName": "Imam Hossain",
+    "patch": {
+      "givenNames": "Imam",
+      "familyNames": "Hossain",
+      "employment": "Department of Microbiology, Noakhali Science and Technology University, Noakhali, Bangladesh; Bioinformatics Laboratory (BioLab), Noakhali, Bangladesh",
+      "institution": "Department of Microbiology, Noakhali Science and Technology University, Noakhali, Bangladesh; Bioinformatics Laboratory (BioLab), Noakhali, Bangladesh",
+      "country": "Bangladesh",
+      "institutionType": null
+    },
+    "externalIdsMerge": {
+      "orcid": "0000-0003-2516-8689"
+    },
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13249230/"
+  },
+  {
+    "id": "EMAIL-7dfc86807f3f4eac63d",
+    "email": "luis.ortega@umich.mx",
+    "oldName": "Georgina Ortiz-Martínez",
+    "expectedName": "Luis Fernando Ortega-Varela",
+    "patch": {
+      "givenNames": "Luis Fernando",
+      "familyNames": "Ortega-Varela",
+      "employment": "Laboratorio de Analgesia y Mecanismos del Dolor, Facultad de Atención Integral en Ciencias de la salud y Asistencia Social, Universidad Michoacana de San Nicolás de Hidalgo (UMSNH), Morelia 58030, Mexico",
+      "institution": "Laboratorio de Analgesia y Mecanismos del Dolor, Facultad de Atención Integral en Ciencias de la salud y Asistencia Social, Universidad Michoacana de San Nicolás de Hidalgo (UMSNH), Morelia 58030, Mexico",
+      "country": "Mexico",
+      "institutionType": null
+    },
+    "externalIdsMerge": {
+      "orcid": "0000-0003-1830-7468"
+    },
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13296773/"
+  },
+  {
+    "id": "EMAIL-50eb4142e080ea7e5f4",
+    "email": "mallik@zjnu.edu.cn",
+    "oldName": "Wei Li",
+    "expectedName": "Mallikarjuna Korivi",
+    "patch": {
+      "givenNames": "Mallikarjuna",
+      "familyNames": "Korivi",
+      "employment": "College of Physical Education and Health Sciences, Zhejiang Normal University, Jinhua 321004, China",
+      "institution": "College of Physical Education and Health Sciences, Zhejiang Normal University, Jinhua 321004, China",
+      "country": "China",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256914/"
+  },
+  {
+    "id": "EMAIL-9650dd63ba1e883e8a0",
+    "email": "mohammad.abdulrazaq@dpu.edu.krd",
+    "oldName": "Omar Alzakholi",
+    "expectedName": "Mohammad A. M. Sadeeq",
+    "patch": {
+      "givenNames": "Mohammad A. M.",
+      "familyNames": "Sadeeq",
+      "employment": "Duhok Polytechnic University",
+      "institution": "Duhok Polytechnic University",
+      "country": "Iraq",
+      "institutionType": "education"
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://jastt.org/index.php/jasttpath/article/download/19/8/72"
+  },
+  {
+    "id": "EMAIL-30a09ba3f367bd18af3",
+    "email": "mrfom@ihmt.unl.pt",
+    "oldName": "Érica Manuel",
+    "expectedName": "Maria do Rosário O. Martins",
+    "patch": {
+      "givenNames": "Maria do Rosário O.",
+      "familyNames": "Martins",
+      "employment": "Global Health and Tropical Medicine, GHTM, LA-REAL, Instituto de Higiene e Medicina Tropical, IHMT, Universidade NOVA de Lisboa, Lisboa, Portugal",
+      "institution": "Global Health and Tropical Medicine, GHTM, LA-REAL, Instituto de Higiene e Medicina Tropical, IHMT, Universidade NOVA de Lisboa, Lisboa, Portugal",
+      "country": "Portugal",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13270930/"
+  },
+  {
+    "id": "EMAIL-f393e789db3d206ac12",
+    "email": "msousa@icbas.up.pt",
+    "oldName": "Sara Raimundo",
+    "expectedName": "Mário Sousa",
+    "patch": {
+      "givenNames": "Mário",
+      "familyNames": "Sousa",
+      "employment": "UMIB-Unit for Multidisciplinary Research in Biomedicine, University of Porto, Rua de Jorge de Viterbo Ferreira, 4050-346 Porto, Portugal; ITR-Laboratory for Integrative and Translational Research in Population Health, University of Porto, Rua das Taipas 135, 4050-600 Porto, Portugal; Laboratory of Cell Biology, Department of Microscopy, ICBAS-School of Medicine and Biomedical Sciences, University of Porto, Rua de Jorge de Viterbo Ferreira, 4050-346 Porto, Portugal",
+      "institution": "UMIB-Unit for Multidisciplinary Research in Biomedicine, University of Porto, Rua de Jorge de Viterbo Ferreira, 4050-346 Porto, Portugal; ITR-Laboratory for Integrative and Translational Research in Population Health, University of Porto, Rua das Taipas 135, 4050-600 Porto, Portugal; Laboratory of Cell Biology, Department of Microscopy, ICBAS-School of Medicine and Biomedical Sciences, University of Porto, Rua de Jorge de Viterbo Ferreira, 4050-346 Porto, Portugal",
+      "country": "Portugal",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256310/"
+  },
+  {
+    "id": "EMAIL-0b5103aff7149f06128",
+    "email": "msprong@govst.edu",
+    "oldName": "Dalia Chowdhury",
+    "expectedName": "Matthew Evan Sprong",
+    "patch": {
+      "givenNames": "Matthew Evan",
+      "familyNames": "Sprong",
+      "employment": "Department of Addictions Studies & Behavioral Health, Governors State University, University Park, IL, United States",
+      "institution": "Department of Addictions Studies & Behavioral Health, Governors State University, University Park, IL, United States",
+      "country": "United States",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13270468/"
+  },
+  {
+    "id": "EMAIL-2a1d7f1e07173c2708a",
+    "email": "ogatta@uel.br",
+    "oldName": "Celso Vataru Nakamura",
+    "expectedName": "Sueli Fumie Yamada-Ogatta",
+    "patch": {
+      "givenNames": "Sueli Fumie",
+      "familyNames": "Yamada-Ogatta",
+      "employment": "Programa de Pós-Graduação em Microbiologia, Universidade Estadual de Londrina, Londrina CEP 86057-970, Paraná, Brazil; Laboratório de Biologia Molecular de Microrganismos, Departamento de Microbiologia, Universidade Estadual de Londrina, Londrina CEP 86038-350, Paraná, Brazil",
+      "institution": "Programa de Pós-Graduação em Microbiologia, Universidade Estadual de Londrina, Londrina CEP 86057-970, Paraná, Brazil; Laboratório de Biologia Molecular de Microrganismos, Departamento de Microbiologia, Universidade Estadual de Londrina, Londrina CEP 86038-350, Paraná, Brazil",
+      "country": "Brazil",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256636/"
+  },
+  {
+    "id": "EMAIL-68fa7e6d1850e5c9da5",
+    "email": "raguvarmand@sbms.sbvu.ac.in",
+    "oldName": "Chaiyavat Chaiyasut",
+    "expectedName": "Durairaj Ragu Varman",
+    "patch": {
+      "givenNames": "Durairaj",
+      "familyNames": "Ragu Varman",
+      "employment": "School of Biomedical Sciences, Sri Balaji Vidyapeeth (Deemed to be University), Puducherry, India",
+      "institution": "School of Biomedical Sciences, Sri Balaji Vidyapeeth (Deemed to be University), Puducherry, India",
+      "country": "India",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13269353/"
+  },
+  {
+    "id": "0000-0002-8420-5331",
+    "email": "rizgar.ramadhan@dpu.edu.krd",
+    "oldName": "Hanan M. Shukur",
+    "expectedName": "Rizgar R. Zebari",
+    "patch": {
+      "givenNames": "Rizgar R.",
+      "familyNames": "Zebari",
+      "employment": "Duhok Polytechnic University",
+      "institution": "Duhok Polytechnic University",
+      "country": "Iraq",
+      "institutionType": "education",
+      "hIndex": null,
+      "citationCount": null,
+      "worksCount": null,
+      "researchFields": null,
+      "disciplineCategory": null,
+      "lastPublicationYear": null,
+      "recentWorkTitles": null,
+      "patentTitles": null,
+      "enrichedAt": null,
+      "enrichmentSource": null
+    },
+    "externalIdsMerge": {
+      "orcid": "0000-0003-2353-7428",
+      "openAlexAuthorId": "A5026408327"
+    },
+    "evidenceUrl": "https://jastt.org/index.php/jasttpath/article/download/31/14/183"
+  },
+  {
+    "id": "EMAIL-d1d63bf96cb403fa240",
+    "email": "sabhat@kfu.edu.sa",
+    "oldName": "Hassan Mehmood",
+    "expectedName": "Sajad Ali",
+    "patch": {
+      "givenNames": "Sajad",
+      "familyNames": "Ali",
+      "employment": "Department of Biological Sciences, College of Science, King Faisal University, AI-Ahsa, Saudi Arabia",
+      "institution": "Department of Biological Sciences, College of Science, King Faisal University, AI-Ahsa, Saudi Arabia",
+      "country": "Saudi Arabia",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13274135/"
+  },
+  {
+    "id": "EMAIL-ddca31e7a6718e6f6f2",
+    "email": "stplayer@naver.com",
+    "oldName": "U-Young Lee",
+    "expectedName": "Seungbeom Kim",
+    "patch": {
+      "givenNames": "Seungbeom",
+      "familyNames": "Kim",
+      "employment": "International Academy of Regenerative Medicine, Incheon 21574, Republic of Korea; Miso Pain Clinic, 1569, Bongyeong-Ro, Yeongtong-Gu, Suwon-Si 16703, Republic of Korea",
+      "institution": "International Academy of Regenerative Medicine, Incheon 21574, Republic of Korea; Miso Pain Clinic, 1569, Bongyeong-Ro, Yeongtong-Gu, Suwon-Si 16703, Republic of Korea",
+      "country": "Republic of Korea",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13256739/"
+  },
+  {
+    "id": "EMAIL-2b6e4c6fe08627bbe1d",
+    "email": "wjren1966@163.com",
+    "oldName": "Lei Wang",
+    "expectedName": "Wenjie Ren",
+    "patch": {
+      "givenNames": "Wenjie",
+      "familyNames": "Ren",
+      "employment": "The Third Affiliated Hospital of Henan Medical University, Institutes of Health Central Plains, Henan Medical University, Xinxiang, Henan, China; Tianjin Medical University, Tianjin, China; Clinical Medical Center of Tissue Engineering and Regeneration, Henan Medical University, Xinxiang, Henan, China",
+      "institution": "The Third Affiliated Hospital of Henan Medical University, Institutes of Health Central Plains, Henan Medical University, Xinxiang, Henan, China; Tianjin Medical University, Tianjin, China; Clinical Medical Center of Tissue Engineering and Regeneration, Henan Medical University, Xinxiang, Henan, China",
+      "country": "China",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13268918/"
+  },
+  {
+    "id": "EMAIL-6a76665f0d84c15d74c",
+    "email": "xyfysjnkfy@126.com",
+    "oldName": "Qiuchen Zhao",
+    "expectedName": "Yu Feng",
+    "patch": {
+      "givenNames": "Yu",
+      "familyNames": "Feng",
+      "employment": "Department of Neurology, Affiliated Hospital of Xuzhou Medical University, Xuzhou, Jiangsu, China",
+      "institution": "Department of Neurology, Affiliated Hospital of Xuzhou Medical University, Xuzhou, Jiangsu, China",
+      "country": "China",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13260588/"
+  },
+  {
+    "id": "EMAIL-a8977f115709b6525b8",
+    "email": "yasminebarreto@usp.br",
+    "oldName": "Matheus Paiva Emidio Cavalcanti",
+    "expectedName": "Yasmin Esther Barreto",
+    "patch": {
+      "givenNames": "Yasmin Esther",
+      "familyNames": "Barreto",
+      "employment": "COVID-19 Observatory Brazil and Ireland, School of Medicine, University of Limerick, V94 T9PX Limerick, Ireland; Postgraduate Program in Medical Sciences, Faculty of Medicine, University of São Paulo, Sao Paulo 01246-903, SP, Brazil; Laboratory of Design of Studies and Scientific Writing, Federal University of Espirito Santo, Vitória 29075-910, ES, Brazil",
+      "institution": "COVID-19 Observatory Brazil and Ireland, School of Medicine, University of Limerick, V94 T9PX Limerick, Ireland; Postgraduate Program in Medical Sciences, Faculty of Medicine, University of São Paulo, Sao Paulo 01246-903, SP, Brazil; Laboratory of Design of Studies and Scientific Writing, Federal University of Espirito Santo, Vitória 29075-910, ES, Brazil",
+      "country": "Ireland",
+      "institutionType": null
+    },
+    "externalIdsMerge": {},
+    "evidenceUrl": "https://pmc.ncbi.nlm.nih.gov/articles/PMC13298685/"
+  }
+]

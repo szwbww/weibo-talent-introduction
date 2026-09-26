@@ -1,0 +1,1094 @@
+[
+  {
+    "kind": "ORCID",
+    "id": "0000-0001-6953-0825",
+    "url": "https://pub.orcid.org/v3.0/0000-0001-6953-0825/person",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/0000-0001-6953-0825.json"
+  },
+  {
+    "kind": "ORCID",
+    "id": "0000-0001-9820-9221",
+    "url": "https://pub.orcid.org/v3.0/0000-0001-9820-9221/person",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/0000-0001-9820-9221.json"
+  },
+  {
+    "kind": "ORCID",
+    "id": "0000-0002-5249-6197",
+    "url": "https://pub.orcid.org/v3.0/0000-0002-5249-6197/person",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/0000-0002-5249-6197.json"
+  },
+  {
+    "kind": "ORCID",
+    "id": "0000-0001-7884-448X",
+    "url": "https://pub.orcid.org/v3.0/0000-0001-7884-448X/person",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/0000-0001-7884-448X.json"
+  },
+  {
+    "kind": "ORCID",
+    "id": "0009-0001-4579-3935",
+    "url": "https://pub.orcid.org/v3.0/0009-0001-4579-3935/person",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/0009-0001-4579-3935.json"
+  },
+  {
+    "kind": "ORCID",
+    "id": "0000-0002-6755-5196",
+    "url": "https://pub.orcid.org/v3.0/0000-0002-6755-5196/person",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/0000-0002-6755-5196.json"
+  },
+  {
+    "kind": "ORCID",
+    "id": "0009-0008-5358-7649",
+    "url": "https://pub.orcid.org/v3.0/0009-0008-5358-7649/person",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/0009-0008-5358-7649.json"
+  },
+  {
+    "kind": "ORCID",
+    "id": "0009-0009-9537-2440",
+    "url": "https://pub.orcid.org/v3.0/0009-0009-9537-2440/person",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/0009-0009-9537-2440.json"
+  },
+  {
+    "kind": "ORCID",
+    "id": "0000-0003-3665-5466",
+    "url": "https://pub.orcid.org/v3.0/0000-0003-3665-5466/person",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/0000-0003-3665-5466.json"
+  },
+  {
+    "kind": "ORCID",
+    "id": "0000-0003-2530-410X",
+    "url": "https://pub.orcid.org/v3.0/0000-0003-2530-410X/person",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/0000-0003-2530-410X.json"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21141v1",
+    "url": "https://arxiv.org/html/2609.21141v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21141v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21179v1",
+    "url": "https://arxiv.org/html/2609.21179v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21179v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21227v1",
+    "url": "https://arxiv.org/html/2609.21227v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21227v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21276v1",
+    "url": "https://arxiv.org/html/2609.21276v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21276v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21277v1",
+    "url": "https://arxiv.org/html/2609.21277v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21277v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21285v1",
+    "url": "https://arxiv.org/html/2609.21285v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21285v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21298v1",
+    "url": "https://arxiv.org/html/2609.21298v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21298v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21302v1",
+    "url": "https://arxiv.org/html/2609.21302v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21302v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21317v1",
+    "url": "https://arxiv.org/html/2609.21317v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21317v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21366v1",
+    "url": "https://arxiv.org/html/2609.21366v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21366v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21424v1",
+    "url": "https://arxiv.org/html/2609.21424v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21424v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21425v1",
+    "url": "https://arxiv.org/html/2609.21425v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21425v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21448v1",
+    "url": "https://arxiv.org/html/2609.21448v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21448v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21459v1",
+    "url": "https://arxiv.org/html/2609.21459v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21459v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21483v1",
+    "url": "https://arxiv.org/html/2609.21483v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21483v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21496v1",
+    "url": "https://arxiv.org/html/2609.21496v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21496v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21522v1",
+    "url": "https://arxiv.org/html/2609.21522v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21522v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21565v1",
+    "url": "https://arxiv.org/html/2609.21565v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21565v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21593v1",
+    "url": "https://arxiv.org/html/2609.21593v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21593v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21619v1",
+    "url": "https://arxiv.org/html/2609.21619v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21619v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21686v1",
+    "url": "https://arxiv.org/html/2609.21686v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21686v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21736v1",
+    "url": "https://arxiv.org/html/2609.21736v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21736v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21738v1",
+    "url": "https://arxiv.org/html/2609.21738v1",
+    "ok": false,
+    "error": "404 Client Error: Not Found for url: https://arxiv.org/html/2609.21738v1"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21743v1",
+    "url": "https://arxiv.org/html/2609.21743v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21743v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21749v1",
+    "url": "https://arxiv.org/html/2609.21749v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21749v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.21983v1",
+    "url": "https://arxiv.org/html/2609.21983v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.21983v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22015v2",
+    "url": "https://arxiv.org/html/2609.22015v2",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22015v2.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22039v1",
+    "url": "https://arxiv.org/html/2609.22039v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22039v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22067v1",
+    "url": "https://arxiv.org/html/2609.22067v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22067v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22392v1",
+    "url": "https://arxiv.org/html/2609.22392v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22392v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22487v1",
+    "url": "https://arxiv.org/html/2609.22487v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22487v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22547v1",
+    "url": "https://arxiv.org/html/2609.22547v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22547v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22573v1",
+    "url": "https://arxiv.org/html/2609.22573v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22573v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22576v1",
+    "url": "https://arxiv.org/html/2609.22576v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22576v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22622v1",
+    "url": "https://arxiv.org/html/2609.22622v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22622v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22651v1",
+    "url": "https://arxiv.org/html/2609.22651v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22651v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22684v1",
+    "url": "https://arxiv.org/html/2609.22684v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22684v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22697v1",
+    "url": "https://arxiv.org/html/2609.22697v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22697v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22702v1",
+    "url": "https://arxiv.org/html/2609.22702v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22702v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22752v1",
+    "url": "https://arxiv.org/html/2609.22752v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22752v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22763v1",
+    "url": "https://arxiv.org/html/2609.22763v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22763v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22765v1",
+    "url": "https://arxiv.org/html/2609.22765v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22765v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22785v1",
+    "url": "https://arxiv.org/html/2609.22785v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22785v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22794v1",
+    "url": "https://arxiv.org/html/2609.22794v1",
+    "ok": false,
+    "error": "404 Client Error: Not Found for url: https://arxiv.org/html/2609.22794v1"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22795v1",
+    "url": "https://arxiv.org/html/2609.22795v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22795v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22816v1",
+    "url": "https://arxiv.org/html/2609.22816v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22816v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22862v1",
+    "url": "https://arxiv.org/html/2609.22862v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22862v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.22963v3",
+    "url": "https://arxiv.org/html/2609.22963v3",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.22963v3.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23097v1",
+    "url": "https://arxiv.org/html/2609.23097v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23097v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23111v1",
+    "url": "https://arxiv.org/html/2609.23111v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23111v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23121v1",
+    "url": "https://arxiv.org/html/2609.23121v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23121v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23193v1",
+    "url": "https://arxiv.org/html/2609.23193v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23193v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23226v1",
+    "url": "https://arxiv.org/html/2609.23226v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23226v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23228v1",
+    "url": "https://arxiv.org/html/2609.23228v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23228v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23239v1",
+    "url": "https://arxiv.org/html/2609.23239v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23239v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23240v1",
+    "url": "https://arxiv.org/html/2609.23240v1",
+    "ok": false,
+    "error": "404 Client Error: Not Found for url: https://arxiv.org/html/2609.23240v1"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23301v1",
+    "url": "https://arxiv.org/html/2609.23301v1",
+    "ok": false,
+    "error": "404 Client Error: Not Found for url: https://arxiv.org/html/2609.23301v1"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23323v1",
+    "url": "https://arxiv.org/html/2609.23323v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23323v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23363v1",
+    "url": "https://arxiv.org/html/2609.23363v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23363v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23372v1",
+    "url": "https://arxiv.org/html/2609.23372v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23372v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23414v1",
+    "url": "https://arxiv.org/html/2609.23414v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23414v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23433v1",
+    "url": "https://arxiv.org/html/2609.23433v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23433v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23487v1",
+    "url": "https://arxiv.org/html/2609.23487v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23487v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23565v1",
+    "url": "https://arxiv.org/html/2609.23565v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23565v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23570v1",
+    "url": "https://arxiv.org/html/2609.23570v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23570v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23578v1",
+    "url": "https://arxiv.org/html/2609.23578v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23578v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23587v1",
+    "url": "https://arxiv.org/html/2609.23587v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23587v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23654v1",
+    "url": "https://arxiv.org/html/2609.23654v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23654v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23661v1",
+    "url": "https://arxiv.org/html/2609.23661v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23661v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23666v1",
+    "url": "https://arxiv.org/html/2609.23666v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23666v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23700v1",
+    "url": "https://arxiv.org/html/2609.23700v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23700v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23718v1",
+    "url": "https://arxiv.org/html/2609.23718v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23718v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23735v2",
+    "url": "https://arxiv.org/html/2609.23735v2",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23735v2.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23877v1",
+    "url": "https://arxiv.org/html/2609.23877v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23877v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23902v1",
+    "url": "https://arxiv.org/html/2609.23902v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23902v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23974v1",
+    "url": "https://arxiv.org/html/2609.23974v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23974v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23978v1",
+    "url": "https://arxiv.org/html/2609.23978v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23978v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.23995v1",
+    "url": "https://arxiv.org/html/2609.23995v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.23995v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24006v1",
+    "url": "https://arxiv.org/html/2609.24006v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24006v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24077v1",
+    "url": "https://arxiv.org/html/2609.24077v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24077v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24092v1",
+    "url": "https://arxiv.org/html/2609.24092v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24092v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24120v1",
+    "url": "https://arxiv.org/html/2609.24120v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24120v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24136v1",
+    "url": "https://arxiv.org/html/2609.24136v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24136v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24175v1",
+    "url": "https://arxiv.org/html/2609.24175v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24175v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24224v1",
+    "url": "https://arxiv.org/html/2609.24224v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24224v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24227v1",
+    "url": "https://arxiv.org/html/2609.24227v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24227v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24228v1",
+    "url": "https://arxiv.org/html/2609.24228v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24228v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24229v1",
+    "url": "https://arxiv.org/html/2609.24229v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24229v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24262v1",
+    "url": "https://arxiv.org/html/2609.24262v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24262v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24267v1",
+    "url": "https://arxiv.org/html/2609.24267v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24267v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24311v1",
+    "url": "https://arxiv.org/html/2609.24311v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24311v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24343v1",
+    "url": "https://arxiv.org/html/2609.24343v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24343v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24381v1",
+    "url": "https://arxiv.org/html/2609.24381v1",
+    "ok": false,
+    "error": "404 Client Error: Not Found for url: https://arxiv.org/html/2609.24381v1"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24389v1",
+    "url": "https://arxiv.org/html/2609.24389v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24389v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24398v1",
+    "url": "https://arxiv.org/html/2609.24398v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24398v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24456v1",
+    "url": "https://arxiv.org/html/2609.24456v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24456v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24495v1",
+    "url": "https://arxiv.org/html/2609.24495v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24495v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24592v1",
+    "url": "https://arxiv.org/html/2609.24592v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24592v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24612v1",
+    "url": "https://arxiv.org/html/2609.24612v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24612v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24872v1",
+    "url": "https://arxiv.org/html/2609.24872v1",
+    "ok": false,
+    "error": "404 Client Error: Not Found for url: https://arxiv.org/html/2609.24872v1"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24944v2",
+    "url": "https://arxiv.org/html/2609.24944v2",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24944v2.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24954v1",
+    "url": "https://arxiv.org/html/2609.24954v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24954v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.24983v1",
+    "url": "https://arxiv.org/html/2609.24983v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.24983v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25083v1",
+    "url": "https://arxiv.org/html/2609.25083v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25083v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25115v1",
+    "url": "https://arxiv.org/html/2609.25115v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25115v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25147v1",
+    "url": "https://arxiv.org/html/2609.25147v1",
+    "ok": false,
+    "error": "404 Client Error: Not Found for url: https://arxiv.org/html/2609.25147v1"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25256v1",
+    "url": "https://arxiv.org/html/2609.25256v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25256v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25334v1",
+    "url": "https://arxiv.org/html/2609.25334v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25334v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25381v1",
+    "url": "https://arxiv.org/html/2609.25381v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25381v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25433v1",
+    "url": "https://arxiv.org/html/2609.25433v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25433v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25474v1",
+    "url": "https://arxiv.org/html/2609.25474v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25474v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25492v1",
+    "url": "https://arxiv.org/html/2609.25492v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25492v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25503v1",
+    "url": "https://arxiv.org/html/2609.25503v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25503v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25504v1",
+    "url": "https://arxiv.org/html/2609.25504v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25504v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25538v1",
+    "url": "https://arxiv.org/html/2609.25538v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25538v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25560v1",
+    "url": "https://arxiv.org/html/2609.25560v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25560v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25576v1",
+    "url": "https://arxiv.org/html/2609.25576v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25576v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25613v1",
+    "url": "https://arxiv.org/html/2609.25613v1",
+    "ok": false,
+    "error": "404 Client Error: Not Found for url: https://arxiv.org/html/2609.25613v1"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25649v1",
+    "url": "https://arxiv.org/html/2609.25649v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25649v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25650v1",
+    "url": "https://arxiv.org/html/2609.25650v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25650v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25663v1",
+    "url": "https://arxiv.org/html/2609.25663v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25663v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25682v1",
+    "url": "https://arxiv.org/html/2609.25682v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25682v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25689v1",
+    "url": "https://arxiv.org/html/2609.25689v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25689v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25734v1",
+    "url": "https://arxiv.org/html/2609.25734v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25734v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25749v1",
+    "url": "https://arxiv.org/html/2609.25749v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25749v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25769v1",
+    "url": "https://arxiv.org/html/2609.25769v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25769v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25772v1",
+    "url": "https://arxiv.org/html/2609.25772v1",
+    "ok": false,
+    "error": "404 Client Error: Not Found for url: https://arxiv.org/html/2609.25772v1"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25786v1",
+    "url": "https://arxiv.org/html/2609.25786v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25786v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25790v1",
+    "url": "https://arxiv.org/html/2609.25790v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25790v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25815v1",
+    "url": "https://arxiv.org/html/2609.25815v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25815v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25817v1",
+    "url": "https://arxiv.org/html/2609.25817v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25817v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25856v1",
+    "url": "https://arxiv.org/html/2609.25856v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25856v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25908v1",
+    "url": "https://arxiv.org/html/2609.25908v1",
+    "ok": false,
+    "error": "404 Client Error: Not Found for url: https://arxiv.org/html/2609.25908v1"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25930v1",
+    "url": "https://arxiv.org/html/2609.25930v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25930v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25937v1",
+    "url": "https://arxiv.org/html/2609.25937v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25937v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25960v1",
+    "url": "https://arxiv.org/html/2609.25960v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25960v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.25968v1",
+    "url": "https://arxiv.org/html/2609.25968v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.25968v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.26296v1",
+    "url": "https://arxiv.org/html/2609.26296v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.26296v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.26304v1",
+    "url": "https://arxiv.org/html/2609.26304v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.26304v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.26352v1",
+    "url": "https://arxiv.org/html/2609.26352v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.26352v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.26363v1",
+    "url": "https://arxiv.org/html/2609.26363v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.26363v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.26364v1",
+    "url": "https://arxiv.org/html/2609.26364v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.26364v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.26480v1",
+    "url": "https://arxiv.org/html/2609.26480v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.26480v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.26711v1",
+    "url": "https://arxiv.org/html/2609.26711v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.26711v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.26758v1",
+    "url": "https://arxiv.org/html/2609.26758v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.26758v1.html"
+  },
+  {
+    "kind": "ARXIV",
+    "id": "2609.26814v1",
+    "url": "https://arxiv.org/html/2609.26814v1",
+    "ok": true,
+    "path": "/tmp/deep-discovery-recheck-2688/other_sources/2609.26814v1.html"
+  }
+]

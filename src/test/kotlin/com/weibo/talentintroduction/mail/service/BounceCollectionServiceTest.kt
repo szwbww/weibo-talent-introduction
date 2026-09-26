@@ -23,6 +23,17 @@ import javax.mail.internet.MimeMessage
 import javax.mail.internet.MimeMultipart
 
 class BounceCollectionServiceTest {
+    @Test
+    fun `bounce scan forwards the inbox cutoff and generation`() {
+        val account = senderAccount()
+        Mockito.`when`(mailReceiveService.fetchUnseenMessages(account, afterUid = 250L, expectedUidValidity = 81L))
+            .thenReturn(emptyList())
+        val result = service.collectBounces(account, 250L, 81L)
+        assertEquals(0, result.collected)
+        Mockito.verify(mailReceiveService).fetchUnseenMessages(account, afterUid = 250L, expectedUidValidity = 81L)
+        Mockito.verifyNoInteractions(bounceRecordRepository)
+    }
+
     private val mailReceiveService = Mockito.mock(ImapMailReceiveService::class.java)
     private val bounceDetector = BounceDetector()
     private val bounceRecordRepository = Mockito.mock(BounceRecordRepository::class.java)
