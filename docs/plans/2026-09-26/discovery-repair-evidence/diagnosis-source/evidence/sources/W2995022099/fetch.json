@@ -1,0 +1,19 @@
+{
+  "id": "W2995022099",
+  "title": "Advances and Open Problems in Federated Learning",
+  "doi": "https://doi.org/10.1561/2200000083",
+  "attempts": [
+    {
+      "url": "https://arxiv.org/pdf/1912.04977",
+      "final_url": "https://arxiv.org/pdf/1912.04977",
+      "status": 200,
+      "kind": "pdf"
+    }
+  ],
+  "status": "DOWNLOADED",
+  "path": "/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/audits/2026-09-26-deep-discovery-diagnosis/evidence/sources/W2995022099/source.pdf",
+  "kind": "pdf",
+  "sha256": "e3e9563fe9292d3aa4c8bd470da689698b51d72258ee7a904d8928f965c45c12",
+  "bytes": 1419995,
+  "url": "https://arxiv.org/pdf/1912.04977"
+}

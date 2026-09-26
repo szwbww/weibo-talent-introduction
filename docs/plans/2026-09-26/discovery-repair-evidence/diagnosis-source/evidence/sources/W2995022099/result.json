@@ -1,0 +1,551 @@
+{
+  "id" : "W2995022099",
+  "title" : "Advances and Open Problems in Federated Learning",
+  "authors" : [ {
+    "givenNames" : "Peter",
+    "familyNames" : "Kairouz",
+    "orcidId" : "https://orcid.org/0000-0001-6897-5937",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5064699160",
+    "corresponding" : false
+  }, {
+    "givenNames" : "H.",
+    "familyNames" : "Brendan McMahan",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5040311844",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Brendan",
+    "familyNames" : "Avent",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5035617528",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Aurélien",
+    "familyNames" : "Bellet",
+    "orcidId" : "https://orcid.org/0000-0003-3440-1251",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5014504793",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Mehdi",
+    "familyNames" : "Bennis",
+    "orcidId" : "https://orcid.org/0000-0003-0261-0171",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5061429095",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Arjun",
+    "familyNames" : "Nitin Bhagoji",
+    "orcidId" : "https://orcid.org/0000-0002-2803-5649",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5003032696",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Kallista",
+    "familyNames" : "Bonawitz",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5039153937",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Zachary",
+    "familyNames" : "Charles",
+    "orcidId" : "https://orcid.org/0000-0001-8997-874X",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5034877995",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Graham",
+    "familyNames" : "Cormode",
+    "orcidId" : "https://orcid.org/0000-0002-0698-0922",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5031896681",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Rachel",
+    "familyNames" : "Cummings",
+    "orcidId" : "https://orcid.org/0000-0002-1196-1515",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5077952586",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Rafael",
+    "familyNames" : "G. L. D’Oliveira",
+    "orcidId" : "https://orcid.org/0000-0001-5053-5909",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5017403407",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Hubert",
+    "familyNames" : "Eichner",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5085098992",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Salim",
+    "familyNames" : "El Rouayheb",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "David",
+    "familyNames" : "Evans",
+    "orcidId" : "https://orcid.org/0000-0001-7988-8943",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5027001546",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Joshua",
+    "familyNames" : "Gardner",
+    "orcidId" : "https://orcid.org/0000-0002-4998-5918",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5058755355",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Zachary",
+    "familyNames" : "Garrett",
+    "orcidId" : "https://orcid.org/0000-0001-8158-3997",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5017433837",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Adrià",
+    "familyNames" : "Gascón",
+    "orcidId" : "https://orcid.org/0000-0002-1807-8311",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5015542293",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Badih",
+    "familyNames" : "Ghazi",
+    "orcidId" : "https://orcid.org/0000-0001-8254-3268",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5102807325",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Phillip",
+    "familyNames" : "B. Gibbons",
+    "orcidId" : "https://orcid.org/0000-0001-6967-2735",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5014824446",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Marco",
+    "familyNames" : "Gruteser",
+    "orcidId" : "https://orcid.org/0000-0002-7424-4951",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5078160983",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Zaïd",
+    "familyNames" : "Harchaoui",
+    "orcidId" : "https://orcid.org/0000-0003-1186-1343",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5010613767",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Chaoyang",
+    "familyNames" : "He",
+    "orcidId" : "https://orcid.org/0000-0003-2770-9661",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5003518978",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Lingxiao",
+    "familyNames" : "He",
+    "orcidId" : "https://orcid.org/0000-0002-2395-6035",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5089153368",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Zhouyuan",
+    "familyNames" : "Huo",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5069872293",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Ben",
+    "familyNames" : "Hutchinson",
+    "orcidId" : "https://orcid.org/0000-0003-2253-6204",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5071599724",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Justin",
+    "familyNames" : "Hsu",
+    "orcidId" : "https://orcid.org/0000-0002-8953-7060",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5033286190",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Martin",
+    "familyNames" : "Jaggi",
+    "orcidId" : "https://orcid.org/0000-0003-1579-5558",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5073756389",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Tara",
+    "familyNames" : "Javidi",
+    "orcidId" : "https://orcid.org/0000-0001-7112-1043",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5059310658",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Gauri",
+    "familyNames" : "Joshi",
+    "orcidId" : "https://orcid.org/0000-0002-6372-9697",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5067441201",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Mikhail",
+    "familyNames" : "Khodak",
+    "orcidId" : "https://orcid.org/0000-0003-0089-5361",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5005152458",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Jakub",
+    "familyNames" : "Konečný",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5048916516",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Aleksandra",
+    "familyNames" : "Korolova",
+    "orcidId" : "https://orcid.org/0000-0001-8237-9058",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5005219368",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Farinaz",
+    "familyNames" : "Koushanfar",
+    "orcidId" : "https://orcid.org/0000-0003-0798-3794",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5019931011",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Sanmi",
+    "familyNames" : "Koyejo",
+    "orcidId" : "https://orcid.org/0000-0002-4023-419X",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5091266570",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Tancrède",
+    "familyNames" : "Lepoint",
+    "orcidId" : "https://orcid.org/0000-0003-3796-042X",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5037225703",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Yang",
+    "familyNames" : "Liu",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Prateek",
+    "familyNames" : "Mittal",
+    "orcidId" : "https://orcid.org/0000-0002-4057-0118",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5015619835",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Mehryar",
+    "familyNames" : "Mohri",
+    "orcidId" : "https://orcid.org/0000-0002-3987-9847",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5058849006",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Richard",
+    "familyNames" : "Nock",
+    "orcidId" : "https://orcid.org/0000-0001-8384-9621",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5082414223",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Ayfer",
+    "familyNames" : "Özgür",
+    "orcidId" : "https://orcid.org/0000-0002-4455-4692",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5003322209",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Rasmus",
+    "familyNames" : "Pagh",
+    "orcidId" : "https://orcid.org/0000-0002-1516-9306",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5014293815",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Hang",
+    "familyNames" : "Qi",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Daniel",
+    "familyNames" : "Ramage",
+    "orcidId" : "https://orcid.org/0009-0008-1390-3475",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5071710055",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Ramesh",
+    "familyNames" : "Raskar",
+    "orcidId" : "https://orcid.org/0000-0002-3254-3224",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5023495279",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Mariana",
+    "familyNames" : "Raykova",
+    "orcidId" : "https://orcid.org/0000-0002-1744-4025",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5089603958",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Dawn",
+    "familyNames" : "Xiaodong Song",
+    "orcidId" : "https://orcid.org/0000-0001-9745-6802",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5019426968",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Weikang",
+    "familyNames" : "Song",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5032224643",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Sebastian",
+    "familyNames" : "U. Stich",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5045519627",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Ziteng",
+    "familyNames" : "Sun",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5001128596",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Ananda",
+    "familyNames" : "Theertha Suresh",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Florian",
+    "familyNames" : "Tramèr",
+    "orcidId" : "https://orcid.org/0000-0001-8703-8762",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5006851333",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Praneeth",
+    "familyNames" : "Vepakomma",
+    "orcidId" : "https://orcid.org/0000-0003-2296-9296",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5022815450",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Jianyu",
+    "familyNames" : "Wang",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Li",
+    "familyNames" : "Ping Xiong",
+    "orcidId" : "https://orcid.org/0000-0001-7354-0428",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5078394535",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Zheng",
+    "familyNames" : "Xu",
+    "orcidId" : "https://orcid.org/0000-0002-8362-5991",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5037237895",
+    "corresponding" : false
+  }, {
+    "givenNames" : "Qiang",
+    "familyNames" : "Yang",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Felix",
+    "familyNames" : "X. Yu",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Han",
+    "familyNames" : "Yu",
+    "orcidId" : null,
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Sen",
+    "familyNames" : "Zhao",
+    "orcidId" : "https://orcid.org/0000-0002-5597-1109",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : "https://openalex.org/A5064111411",
+    "corresponding" : false
+  } ],
+  "url" : "https://arxiv.org/pdf/1912.04977",
+  "pages" : 121,
+  "emails" : [ {
+    "email" : "mcmahan@google.com",
+    "givenNames" : null,
+    "familyNames" : null,
+    "affiliation" : null,
+    "orcidId" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "identityEvidence" : null,
+    "corresponding" : false
+  } ],
+  "resolved" : 0,
+  "extracted" : 1
+}

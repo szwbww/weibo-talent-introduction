@@ -1,0 +1,201 @@
+[ {
+  "kind" : "original_brace_email",
+  "paper" : "W3147387781",
+  "text" : "{aarnab, dehghani, heigold, chensun, lucic, cordelias}@google.com",
+  "actual" : [ ]
+}, {
+  "kind" : "original_brace_email",
+  "paper" : "W2993466051",
+  "text" : "{cubuk, barretzoph, shlens, qvl}@google.com",
+  "actual" : [ ]
+}, {
+  "kind" : "original_brace_email",
+  "paper" : "W3045004532",
+  "text" : "Email address: {lyang339, abdallah.shami}@uwo.ca (Li Yang and Abdallah",
+  "actual" : [ ]
+}, {
+  "kind" : "original_brace_email",
+  "paper" : "W3025800305",
+  "text" : "{xuebin,vincent.zhang,chuang8,masood1,zaiane,mj7}@ualberta.ca",
+  "actual" : [ ]
+}, {
+  "kind" : "original_brace_email",
+  "paper" : "W3003265726",
+  "text" : "{shaoxiong.ji; pekka.marttinen}@aalto.fi",
+  "actual" : [ ]
+}, {
+  "kind" : "original_brace_email",
+  "paper" : "W3015883388",
+  "text" : "{vladk, barlaso, plewis, ledell, edunov, scottyih}@fb.com",
+  "actual" : [ ]
+}, {
+  "kind" : "original_brace_email",
+  "paper" : "W4382203079",
+  "text" : "{zengailing, leizhang}@idea.edu.cn,{mxchen21, qxu}@cse.cuhk.edu.hk",
+  "actual" : [ ]
+}, {
+  "kind" : "synthetic_obfuscation_control",
+  "text" : "Jane Doe: opaque(at)uni.edu",
+  "extracted" : [ "opaque@uni.edu" ],
+  "resolved" : [ {
+    "email" : "opaque@uni.edu",
+    "givenNames" : null,
+    "familyNames" : null,
+    "affiliation" : null,
+    "orcidId" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "identityEvidence" : null,
+    "corresponding" : false
+  } ]
+}, {
+  "kind" : "synthetic_obfuscation_control",
+  "text" : "Jane Doe: opaque@uni.edu",
+  "extracted" : [ "opaque@uni.edu" ],
+  "resolved" : [ {
+    "email" : "opaque@uni.edu",
+    "givenNames" : "Jane",
+    "familyNames" : "Doe",
+    "affiliation" : null,
+    "orcidId" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "identityEvidence" : "SOURCE_SHA256:eb62e58fcdf4351ad55c86f716c9ee0befc4b30f71c5260e459232cf6a562743",
+    "corresponding" : false
+  } ]
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W4292779060",
+  "page" : 1,
+  "uri" : "mailto:yuhan.ji@wisc.edu"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W4292779060",
+  "page" : 1,
+  "uri" : "mailto:song.gao@wisc.edu"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W4385245566",
+  "page" : 1,
+  "uri" : "mailto:jakubuv@gmail.com"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W4385245566",
+  "page" : 1,
+  "uri" : "mailto:karel@chvalovsky.cz"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W4385245566",
+  "page" : 1,
+  "uri" : "mailto:cezary.kaliszyk@uibk.ac.at"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W4385245566",
+  "page" : 1,
+  "uri" : "mailto:bartoszpiotrowski@post.pl"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W4385245566",
+  "page" : 1,
+  "uri" : "mailto:martin.suda@cvut.cz"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3043971245",
+  "page" : 1,
+  "uri" : "mailto:campos@unizar.es"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3043971245",
+  "page" : 1,
+  "uri" : "mailto:richard@unizar.es"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3043971245",
+  "page" : 1,
+  "uri" : "mailto:jjgomez@unizar.es"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3043971245",
+  "page" : 1,
+  "uri" : "mailto:josemari@unizar.es"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3043971245",
+  "page" : 1,
+  "uri" : "mailto:tardos@unizar.es"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3012501605",
+  "page" : 1,
+  "uri" : "mailto:nrieke@nvidia.com"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3153990350",
+  "page" : 1,
+  "uri" : "mailto:christian.janiesch@uni-wuerzburg.de"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3000603264",
+  "page" : 1,
+  "uri" : "mailto:rvinuesa@mech.kth.se"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3000603264",
+  "page" : 1,
+  "uri" : "mailto:francesco.fusonerini@energy.kth.se"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3013252775",
+  "page" : 1,
+  "uri" : "mailto:manth@austin.utexas.edu"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W4293584584",
+  "page" : 1,
+  "uri" : "mailto:vejey.pradeep@gmail.com"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W4293584584",
+  "page" : 1,
+  "uri" : "mailto:ib20472@essex.ac.uk"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W4293584584",
+  "page" : 1,
+  "uri" : "mailto:anish.jindal@durham.ac.uk"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W4293584584",
+  "page" : 1,
+  "uri" : "mailto:a.k.singh@essex.ac.uk"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W2910121883",
+  "page" : 1,
+  "uri" : "mailto:asif@pieas.edu.pk"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3021654819",
+  "page" : 1,
+  "uri" : "mailto:tianli@cmu.edu"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3021654819",
+  "page" : 1,
+  "uri" : "mailto:anit.sahu@gmail.com"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3021654819",
+  "page" : 1,
+  "uri" : "mailto:talwalkar@cmu.edu"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W3021654819",
+  "page" : 1,
+  "uri" : "mailto:smithv@cmu.edu"
+}, {
+  "kind" : "pdf_mailto_annotation",
+  "paper" : "W2999309192",
+  "page" : 1,
+  "uri" : "mailto: davidechicco@davidechicco.it"
+} ]
