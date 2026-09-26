@@ -1,0 +1,199 @@
+$ rg -n TaskProgressLogRepository|task_progress_log|progressLogRepository\.|TaskExecutionRepository|task_execution|finishOwned\(|resultSummary|detailsJson src/main scripts
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskExecution.kt:7:@Table("task_execution")
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskExecution.kt:15:    val resultSummary: String?,
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskProgressLog.kt:7:@Table("task_progress_log")
+src/main/kotlin/com/weibo/talentintroduction/task/domain/TaskProgressLog.kt:22:    val detailsJson: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/ExpertAcademicEnrichmentJob.kt:34:    /** 触发本次入队的 task_execution id；未知为 NULL。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2365:     * - [taskType] 只决定进度日志归属；`task_execution` 记录由调用方按自己的 triggerType 写入。
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:6:import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:13:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:184:                progressLogRepository.rebindPendingExecutionId(pendingToken, executionId)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:206:                detailsJson = progress.details?.let { objectMapper.writeValueAsString(it) },
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:209:            progressLogRepository.save(logEntry)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:217:            val latestLog = progressLogRepository.findTopByTaskTypeOrderByIdDesc(taskType)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:241:                details = latestLog.detailsJson?.let {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:7:import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:18: * ① `resultSummary`（终态权威，block 返回后才写入）→
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:19: * ② 该 executionId 最新一条 `task_progress_log.detailsJson` + 该行 `processedCount` →
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:27:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:35:        val fromSummary = parseResultSummary(taskType, execution.resultSummary, execution.id)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:49:    fun detectWasCancelled(resultSummary: String?): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:50:        if (resultSummary.isNullOrBlank()) return false
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:52:            val root = objectMapper.readTree(resultSummary)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:60:     * 第 ① 级：解析 `resultSummary`。规则由 catalog 的 `summaryRule` 决定（I1-4，
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:61:     * 不再分散成多处 `when (taskType)`）。返回 null 仅当 `resultSummary` 为 null/空白
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:64:    private fun parseResultSummary(taskType: String, resultSummary: String?, executionId: Long?): ExecutionTotals? {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:65:        if (resultSummary.isNullOrBlank()) return null
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:67:            val root = objectMapper.readTree(resultSummary)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:117:            log.warn("Failed to parse resultSummary for executionId={} taskType={}: {}", executionId, taskType, e.message)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:152:     * 第 ② 级：读该 executionId 最新一条 `task_progress_log` 的 `detailsJson`。
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:158:        val latestLog = progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(executionId)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:160:        val detailsJson = latestLog.detailsJson
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:163:        if (!detailsJson.isNullOrBlank()) {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:165:                val details = objectMapper.readTree(detailsJson)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:4:import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:5:import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:13: * - I3-1：`task_progress_log` 按 `created_at` 删，无 JOIN / EXISTS / task_execution_id 关联
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:17: * - I3-3：`task_execution` 按 `started_at` 删（有 idx_te_started）；两表共用同一个
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:19: * - I3-4：先子表 `task_progress_log` 后主表 `task_execution`。
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:27:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:28:    private val executionRepository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:42:            progressDeleted = purgeLoop { limit -> progressLogRepository.deleteOlderThan(cutoff, limit) }
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:45:            log.warn("purge task_progress_log failed: {}", e.message)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:52:            log.warn("purge task_execution failed: {}", e.message)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:13:import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:37:    private val taskExecutionRepository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:106:        val (summaryRaw, summaryTruncated) = truncateRaw(exec.resultSummary)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:162:                val experts = parseRepliedExperts(exec.resultSummary)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:214:            val resultSummary = exec.resultSummary
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:221:                    resultSummary?.totalAccountsToPoll,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:222:                    resultSummary?.accountCount,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:223:                    resultSummary?.totalExpertsToCheck
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:226:                    resultSummary?.accountsPolled,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:227:                    resultSummary?.accountCount,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:228:                    resultSummary?.expertsChecked
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:230:                totalFetched = resultSummary?.fetched ?: 0,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:231:                totalRecorded = resultSummary?.recorded ?: 0,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:232:                totalReplied = resultSummary?.replied ?: 0,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:233:                totalManualReview = resultSummary?.manualReview ?: 0,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:234:                expertsWithReply = resultSummary?.expertsWithReply.orEmpty(),
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:250:        val raw = exec.resultSummary
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:293:            log.warn("Failed to parse resultSummary as PollResultSummary: {}", e.message)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:356:    val resultSummary: String?,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:373: * 列表响应投影（M-1）：刻意不含 requestPayload / resultSummary —— 两个 TEXT 列
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:506:        resultSummary = resultSummary,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:8:import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:17:    private val repository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:153:                resultSummary = null,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:190:            val saved = finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:193:                    resultSummary = toJson(resultValue),
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:204:            finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:232:                resultSummary = null,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:269:            finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:272:                    resultSummary = toJson(resultValue),
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:281:            finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:293:    private fun finishOwned(next: TaskExecution): TaskExecution {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:295:        val changed = repository.finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:296:            id, ownerToken, next.status, next.resultSummary,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:9:import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:10:import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:32:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:33:    private val taskExecutionRepository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:73:     * I-3：`pause()` 幂等且无需存在 RUNNING 的 task_execution；随后只为在途窗口发一次进程内取消请求。
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:109:                val latestLog = progressLogRepository.findTopByTaskTypeOrderByIdDesc(taskType)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:113:        val logs = progressLogRepository.findAllByTaskExecutionIdOrderByIdAsc(targetExecutionId)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:135:            val wasCancelled = extractor.detectWasCancelled(exec.resultSummary)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:158:                    parseTraffic(exec.resultSummary)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:159:                        ?: exec.id?.let { progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(it)?.detailsJson }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:43:/** I-7（c2）：流水线窗口的 `task_execution.task_type`（与既有深度发现任务历史同一类型）。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:357:     * I-7：幂等持久化 `PAUSED`（无需存在 RUNNING 的 task_execution），返回 `phase` 与在途工作数。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:472:        // I-4/I-7：先区分「现在就能跑」与「只是被延期」；两者都不该开窗口，更不该建空 task_execution。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1179:     * 建一条空 `task_execution`：
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:55:        // task_execution_id 保持 null（该执行经队列派发，邮件未直接关联）。
+src/main/kotlin/com/weibo/talentintroduction/task/service/MailAutomationScheduler.kt:90:        // 走 runAndRecordWithResult 使对账报告（ReconcileReport）落入 task_execution.result_summary，可在任务面板查看
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityController.kt:5:import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityController.kt:33:    private val taskExecutionRepository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskProgressLogRepository.kt:9:interface TaskProgressLogRepository : CrudRepository<TaskProgressLog, Long> {
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskProgressLogRepository.kt:16:    @Query("UPDATE task_progress_log SET task_execution_id = :executionId WHERE task_execution_id = :pendingToken")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskProgressLogRepository.kt:21:     * **禁止**按 task_execution_id 关联（tryStartWithToken 落的孤儿行 execution_id 为负值，
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskProgressLogRepository.kt:26:    @Query("DELETE FROM task_progress_log WHERE created_at < :cutoff ORDER BY created_at LIMIT :batchSize")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:45:interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:57:    @Query("SELECT * FROM task_execution WHERE task_type = :taskType ORDER BY started_at DESC LIMIT :limit")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:62:        SELECT COUNT(*) FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:72:        SELECT * FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:87:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:96:        SELECT COALESCE(SUM(success_count), 0) FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:111:        UPDATE task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:122:        UPDATE task_execution SET heartbeat_at = :now, updated_at = :now
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:129:        UPDATE task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:141:        UPDATE task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:142:        SET status = :status, result_summary = :resultSummary,
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:148:    fun finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:149:        id: Long, ownerToken: String, status: String, resultSummary: String?,
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:155:        UPDATE task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:180:        DELETE FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:184:                WHERE v.task_execution_id = task_execution.id
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:202:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:214:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:227:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:240:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:263:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:271:    @Query("SELECT COUNT(*) FROM task_execution WHERE status IN ('RUNNING', 'CANCELLING')")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:274:    @Query("SELECT COUNT(*) FROM task_execution")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:285:        FROM task_execution
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:291:    @Query("SELECT COUNT(*) FROM task_execution WHERE task_type = :taskType")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:294:    @Query("SELECT COUNT(*) FROM task_execution WHERE status = :status")
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:297:    @Query("SELECT COUNT(*) FROM task_execution WHERE task_type = :taskType AND status = :status")
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:434:     * 不要求存在 RUNNING 的 task_execution；`phase` 保留在途收尾态（对外 state 优先 PAUSED）。
+src/main/resources/static/app.js:1483:        // detailsJson / errorsJson 的全量账号快照不输出到页面（T-4）。
+src/main/resources/static/app.js:7739:        if (task.resultSummary) {
+src/main/resources/static/app.js:7741:                const summary = typeof task.resultSummary === "string"
+src/main/resources/static/app.js:7742:                    ? JSON.parse(task.resultSummary)
+src/main/resources/static/app.js:7743:                    : task.resultSummary;
+src/main/resources/static/app.js:8059:        const summary = result.resultSummary ? JSON.parse(result.resultSummary) : result;
+src/main/resources/static/app.js:12241:function normalizeDiscoveryResultSummary(resultSummary) {
+src/main/resources/static/app.js:12242:    if (!resultSummary) return null;
+src/main/resources/static/app.js:12245:        summary = typeof resultSummary === "string"
+src/main/resources/static/app.js:12246:            ? JSON.parse(resultSummary)
+src/main/resources/static/app.js:12247:            : resultSummary;
+src/main/resources/static/app.js:12269:function normalizeEnrichmentResultSummary(resultSummary) {
+src/main/resources/static/app.js:12270:    if (!resultSummary) return null;
+src/main/resources/static/app.js:12273:        summary = typeof resultSummary === "string" ? JSON.parse(resultSummary) : resultSummary;
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:5:-- 表存在的原因（子计划 01 I-6/I-9）：现有 task_progress_log 是折叠日志，错误样本最多 20 条，
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:10:--   I-6 task_execution_id + 规范化 ORCID + 规范化邮箱唯一；先插 PENDING，再请求，再写
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:14:--   I-9 外键 task_execution(id) ON DELETE CASCADE，跟随现有 90 天默认保留期清理，不加新清理任务；
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:15:--       分页严格按 (task_execution_id, id) 游标查询，默认 50、最大 100。
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:35:-- 键长：唯一键 (task_execution_id, orcid_id, email) = 8 + (128 + 320) * 4 = 1800 字节 < 3072。
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:41:    task_execution_id BIGINT       NOT NULL,
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:59:    UNIQUE KEY uk_batch_email_verification_target (task_execution_id, orcid_id, email),
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:60:    KEY idx_batch_email_verification_execution (task_execution_id, id),
+src/main/resources/db/migration/V138__create_batch_email_verification.sql:62:        FOREIGN KEY (task_execution_id) REFERENCES task_execution (id) ON DELETE CASCADE
+src/main/resources/db/migration/V22__create_task_progress_log.sql:1:CREATE TABLE task_progress_log (
+src/main/resources/db/migration/V22__create_task_progress_log.sql:4:    task_execution_id BIGINT,
+src/main/resources/db/migration/V22__create_task_progress_log.sql:18:CREATE INDEX idx_tpl_task_type ON task_progress_log(task_type);
+src/main/resources/db/migration/V22__create_task_progress_log.sql:19:CREATE INDEX idx_tpl_execution_id ON task_progress_log(task_execution_id);
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:15: * - 只服务发送前验证链路：一次执行一个专家一行；状态/结果汇总一律来自本表，不塞 task_progress_log。
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:20: * - 审计分页严格按 (task_execution_id, id) 游标；验证复用另按规范化邮箱读取一年内原始结果。
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:178:                (task_execution_id, expert_doc_id, orcid_id, expert_name, email,
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:225:            SELECT id, task_execution_id, expert_doc_id, orcid_id, expert_name, email, decision,
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:229:             WHERE task_execution_id = ? AND id > ?
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:250:             WHERE task_execution_id = ?
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt:276:            taskExecutionId = getLong("task_execution_id"),
+src/main/resources/db/migration/V35__add_task_progress_batch_reject_reasons.sql:1:ALTER TABLE task_progress_log
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:37:-- 不加外键：task_execution 与 expert 相关表都有各自的清理/保留语义，外键会让清理失败；
+src/main/resources/db/migration/V100__add_task_execution_indexes.sql:3:CREATE INDEX idx_te_started ON task_execution (started_at);
+src/main/resources/db/migration/V100__add_task_execution_indexes.sql:4:CREATE INDEX idx_te_type_started ON task_execution (task_type, started_at);
+src/main/resources/db/migration/V100__add_task_execution_indexes.sql:5:CREATE INDEX idx_te_status_started ON task_execution (status, started_at);
+src/main/resources/db/migration/V102__add_task_progress_log_created_at_index.sql:1:-- 保留清理按 created_at 删除（不按 task_execution_id 关联，见计划 I3-1：
+src/main/resources/db/migration/V102__add_task_progress_log_created_at_index.sql:2:-- tryStartWithToken 落的初始化行 task_execution_id 为负值 pendingToken，
+src/main/resources/db/migration/V102__add_task_progress_log_created_at_index.sql:4:CREATE INDEX idx_tpl_created_at ON task_progress_log (created_at);
+src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql:1:ALTER TABLE task_execution
+src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql:4:CREATE INDEX idx_task_execution_batch_config_started
+src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql:5:    ON task_execution (batch_config_id, started_at);
+src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql:7:ALTER TABLE task_execution
+src/main/resources/db/migration/V73__add_batch_config_id_to_task_execution.sql:8:    ADD CONSTRAINT fk_task_execution_batch_config
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql:23:-- task_execution），而 task_execution 有保留期清理，外键会让清理失败。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:183:     * I2b-3（B4）：按 task_execution_id 过滤的收发件箱查询。复用既有行装配
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:185:     * 只在数据来源上多一个 WHERE（仓库派生查询）。不 join task_execution（I2b-4：
+src/main/resources/db/migration/V4__create_task_execution.sql:1:CREATE TABLE task_execution (
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:1:-- 关联邮件到产生它的任务执行。刻意不加外键：task_execution 有 90 天硬删除保留策略
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:4:    ADD COLUMN task_execution_id BIGINT NULL;
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:6:CREATE INDEX idx_mail_record_task_execution
+src/main/resources/db/migration/V101__add_task_execution_id_to_mail_record.sql:7:    ON mail_record (task_execution_id, id);
+src/main/resources/db/migration/V137__task_execution_interruption_recovery.sql:1:ALTER TABLE task_execution
+src/main/resources/db/migration/V137__task_execution_interruption_recovery.sql:9:CREATE INDEX idx_te_active_heartbeat ON task_execution (status, heartbeat_at);
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:22:import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:48:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:264:        val logs = progressLogRepository.findAllByTaskExecutionIdOrderByIdAsc(executionId)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:343:        val outcome = parseOutcome(execution.resultSummary)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:368:        val outcome = parseOutcome(execution.resultSummary)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:371:                parseProgressLogOutcome(progressLogRepository.findTopByTaskExecutionIdOrderByIdDesc(it))
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:418:        val detailsJson = entry.detailsJson ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:420:            val node = objectMapper.readTree(detailsJson)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:441:        val detailsJson = entry.detailsJson ?: return null
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:443:            val node = objectMapper.readTree(detailsJson)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:460:    private fun parseOutcome(resultSummary: String?): ParsedOutcome? {
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:461:        if (resultSummary.isNullOrBlank()) return null
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:463:            val root = objectMapper.readTree(resultSummary)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:859:     * 不 join task_execution（P3 保留清理删除执行行后悬垂 id 仍正常返回邮件）。

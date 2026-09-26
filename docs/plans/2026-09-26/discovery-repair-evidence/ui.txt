@@ -1,0 +1,60 @@
+$ rg -n renderBySourceTable|data-table|table-wrap|20260925-mail-open-tracking src/main/resources/static src/test/js
+exit=0
+src/main/resources/static/app.js:1740:// 修复 V-3：一律复用既有 `.data-table` 呈现，不新增 inline 样式、不新增 class。
+src/main/resources/static/app.js:1764:        <table class="data-table">
+src/main/resources/static/app.js:2371:        renderBySourceTable(progress.details.bySource, contentDiv);
+src/main/resources/static/app.js:2568:                    <table class="data-table compact" style="width:100%;border-collapse:collapse;font-size:11px;">
+src/main/resources/static/app.js:2681:function renderBySourceTable(bySource, container) {
+src/main/resources/static/app.js:5240:        <div class="table-wrap">
+src/main/resources/static/app.js:5931:            <div class="table-wrap">
+src/main/resources/static/app.js:12418:            renderBySourceTable(data.bySource, container);
+src/main/resources/static/app.js:12430:            renderBySourceTable(enrichmentSummary.bySource, container);
+src/test/js/discoveryContinuousRun.test.js:660:            assert.ok(content.innerHTML.includes('class="data-table"'),
+src/test/js/taskRecordsSemantics.test.js:80:        "normalizeDiscoveryResultSummary", "renderDiscoverySummaryText", "renderBySourceTable",
+src/test/js/taskRecordsSemantics.test.js:236:        sandbox.renderBySourceTable(
+src/test/js/batchEmailVerification.test.js:848:            ".batch-email-verification-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--panel-border); border-radius: var(--radius-md); }",
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20260925-mail-open-tracking">
+src/main/resources/static/index.html:12:    <link rel="stylesheet" href="expert-materials.css?v=20260925-mail-open-tracking">
+src/main/resources/static/index.html:13:    <link rel="stylesheet" href="mailbox-chat.css?v=20260925-mail-open-tracking">
+src/main/resources/static/index.html:14:    <link rel="stylesheet" href="meeting-confirmation.css?v=20260925-mail-open-tracking">
+src/main/resources/static/index.html:15:    <link rel="stylesheet" href="world-clock.css?v=20260925-mail-open-tracking">
+src/main/resources/static/index.html:219:                <div class="table-wrap">
+src/main/resources/static/index.html:229:                <div class="table-wrap">
+src/main/resources/static/index.html:283:                    <div class="table-wrap"><table id="motTable"><thead><tr><th>发送时间</th><th>专家</th><th>收件邮箱</th><th>发件账号</th><th>主题</th><th>跟踪状态</th><th>首次信号</th><th>最近信号</th><th>操作</th></tr></thead><tbody></tbody></table></div>
+src/main/resources/static/index.html:288:                <div class="table-wrap">
+src/main/resources/static/index.html:300:                <div class="table-wrap">
+src/main/resources/static/index.html:324:                <div class="table-wrap">
+src/main/resources/static/index.html:365:                    <div class="table-wrap">
+src/main/resources/static/index.html:424:                    <div class="table-wrap">
+src/main/resources/static/index.html:459:                <div class="table-wrap">
+src/main/resources/static/index.html:663:                <div class="table-wrap">
+src/main/resources/static/index.html:664:                    <table class="data-table" style="width: 100%; font-size: 12px;">
+src/main/resources/static/index.html:890:                    <div class="table-wrap">
+src/main/resources/static/index.html:1006:                    <div class="table-wrap">
+src/main/resources/static/index.html:1088:                <div class="table-wrap">
+src/main/resources/static/index.html:1198:                <div class="task-modal-log-table-wrapper">
+src/main/resources/static/index.html:1199:                    <table class="data-table compact">
+src/main/resources/static/index.html:1249:            <div class="batch-task-table-wrap">
+src/main/resources/static/index.html:1250:                <table class="data-table batch-task-table">
+src/main/resources/static/index.html:1760:                <div class="batch-email-verification-table-wrap" id="batchLogEmailVerificationTableWrap" hidden>
+src/main/resources/static/index.html:2286:<script src="trust-reply-workbench.js?v=20260925-mail-open-tracking"></script>
+src/main/resources/static/index.html:2287:<script src="expert-materials.js?v=20260925-mail-open-tracking"></script>
+src/main/resources/static/index.html:2288:<script src="meeting-confirmation.js?v=20260925-mail-open-tracking"></script>
+src/main/resources/static/index.html:2289:<script src="mailbox-chat.js?v=20260925-mail-open-tracking"></script>
+src/main/resources/static/index.html:2290:<script src="app.js?v=20260925-mail-open-tracking"></script>
+src/main/resources/static/index.html:2291:<script src="world-clock.js?v=20260925-mail-open-tracking"></script>
+src/main/resources/static/styles.css:987:.table-wrap {
+src/main/resources/static/styles.css:3421:.data-table {
+src/main/resources/static/styles.css:3427:.data-table th,
+src/main/resources/static/styles.css:3428:.data-table td {
+src/main/resources/static/styles.css:3434:.data-table th {
+src/main/resources/static/styles.css:3446:.data-table td details {
+src/main/resources/static/styles.css:3450:.data-table td details summary {
+src/main/resources/static/styles.css:4558:.task-modal-log-table-wrapper {
+src/main/resources/static/styles.css:4567:.task-modal-log-table-wrapper .data-table.compact {
+src/main/resources/static/styles.css:4571:.task-modal-log-table-wrapper table {
+src/main/resources/static/styles.css:5577:.batch-send-account-table-wrap {
+src/main/resources/static/styles.css:7022:#view-ai-training .ai-training-panel .table-wrap {
+src/main/resources/static/styles.css:9159:.batch-task-table-wrap { overflow: auto; border: 1px solid rgba(15, 23, 42, .08); border-radius: var(--radius-md); }
+src/main/resources/static/styles.css:9185:#batchScheduledPanel.is-editing > .batch-task-table-wrap,
+src/main/resources/static/styles.css:11803:.batch-email-verification-table-wrap { max-width: 100%; overflow-x: auto; border: 1px solid var(--panel-border); border-radius: var(--radius-md); }

@@ -1,0 +1,18 @@
+$ rg -n discovery_source_cursor|cursorRepository\.|persistSourceCheckpoint\(|loadSourceCheckpoint\( src scripts
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoverySourceCursor.kt:7:@Table("discovery_source_cursor")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:123:    private fun loadSourceCheckpoint(sourceName: String, criteria: PaperSearchCriteria): SourceCheckpoint {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:127:            cursorRepository.findBySourceName(key)?.cursorValue
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:148:    private fun persistSourceCheckpoint(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:160:            val existing = cursorRepository.findBySourceName(key)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:177:            cursorRepository.save(entity)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:584:        val checkpoint = loadSourceCheckpoint(source.sourceName, criteria)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:619:            persistSourceCheckpoint(source.sourceName, criteria, nextCursor, pageExhausted, delta)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:878:        val checkpoint = loadSourceCheckpoint(orcid.sourceName, criteria)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:906:            persistSourceCheckpoint(orcid.sourceName, criteria, nextOffset, pageExhausted, delta)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1463:                cursorRepository.findBySourceName(key)?.cursorValue
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt:10: * I-2: 一行 `discovery_source_cursor` 解码后的内容。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt:39:    /** V32 中 `discovery_source_cursor.source_name` 为 VARCHAR(50)。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoverySourceCursorRepository.kt:9:    @Query("SELECT * FROM discovery_source_cursor WHERE source_name = :sourceName")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:921:        Mockito.`when`(cursorRepository.findBySourceName(Mockito.anyString())).thenAnswer { invocation ->
+src/main/resources/db/migration/V32__create_discovery_source_cursor.sql:1:CREATE TABLE discovery_source_cursor (

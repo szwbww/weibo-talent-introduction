@@ -1,0 +1,144 @@
+[
+  {
+    "plan": "discovery-repair-01-page-replay.md",
+    "findings": [
+      "DD-18"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt"
+    ],
+    "version": null
+  },
+  {
+    "plan": "discovery-repair-02-search-retry.md",
+    "findings": [
+      "DD-11"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt"
+    ],
+    "version": null
+  },
+  {
+    "plan": "discovery-repair-03-email-text.md",
+    "findings": [
+      "DD-06",
+      "DD-12",
+      "DD-14"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/PlainTextEmailExtractor.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/PlainTextEmailExtractorTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt",
+      "src/test/resources/discovery/email-text-recall.json"
+    ],
+    "version": 20260927
+  },
+  {
+    "plan": "discovery-repair-04-xml-route.md",
+    "findings": [
+      "DD-07",
+      "DD-19",
+      "DD-20",
+      "DD-21",
+      "DD-22"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSource.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParser.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt",
+      "src/test/resources/discovery/xml-route-recall.zip"
+    ],
+    "version": 20260928
+  },
+  {
+    "plan": "discovery-source-contact-recall.md",
+    "findings": [
+      "DD-01",
+      "DD-02",
+      "DD-03"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt",
+      "src/test/resources/discovery/source-contact-recall.zip",
+      "src/test/resources/discovery/source-contact-recall.md"
+    ],
+    "version": 20260929
+  },
+  {
+    "plan": "discovery-repair-06-pdf-coverage.md",
+    "findings": [
+      "DD-05",
+      "DD-13"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/config/PdfExtractionProperties.kt",
+      "src/main/resources/application.yml",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt",
+      "src/test/resources/discovery/pdf-contact-coverage.zip",
+      "src/test/resources/discovery/pdf-contact-coverage.md"
+    ],
+    "version": 20260930
+  },
+  {
+    "plan": "discovery-repair-07-html-contact.md",
+    "findings": [
+      "DD-04",
+      "DD-09"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractorTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt",
+      "src/test/resources/discovery/html-contact-recall.zip",
+      "src/test/resources/discovery/html-contact-recall.md"
+    ],
+    "version": 20261001
+  },
+  {
+    "plan": "discovery-repair-08-source-report.md",
+    "findings": [
+      "DD-15",
+      "DD-16",
+      "DD-17"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt",
+      "src/main/resources/static/app.js",
+      "src/main/resources/static/index.html",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt",
+      "src/test/js/taskRecordsSemantics.test.js",
+      "src/test/resources/discovery/task-20240-by-source.json"
+    ],
+    "version": null
+  }
+]

@@ -1,0 +1,45 @@
+{
+  "review_type": "document_structure_and_current_source_baseline_only",
+  "head": "64c0394a940bd79c2ecc04e5c497650f045faa75",
+  "child_plans": 8,
+  "covered_findings": 20,
+  "deferred_findings": [
+    "DD-08",
+    "DD-10"
+  ],
+  "unique_execution_files": 31,
+  "per_plan_file_count": {
+    "discovery-repair-01-page-replay.md": 2,
+    "discovery-repair-02-search-retry.md": 2,
+    "discovery-repair-03-email-text.md": 8,
+    "discovery-repair-04-xml-route.md": 10,
+    "discovery-source-contact-recall.md": 10,
+    "discovery-repair-06-pdf-coverage.md": 10,
+    "discovery-repair-07-html-contact.md": 10,
+    "discovery-repair-08-source-report.md": 6
+  },
+  "planned_new_files": [
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt",
+    "src/test/resources/discovery/email-text-recall.json",
+    "src/test/resources/discovery/html-contact-recall.md",
+    "src/test/resources/discovery/html-contact-recall.zip",
+    "src/test/resources/discovery/pdf-contact-coverage.md",
+    "src/test/resources/discovery/pdf-contact-coverage.zip",
+    "src/test/resources/discovery/source-contact-recall.md",
+    "src/test/resources/discovery/source-contact-recall.zip",
+    "src/test/resources/discovery/task-20240-by-source.json",
+    "src/test/resources/discovery/xml-route-recall.zip"
+  ],
+  "issues": [],
+  "product_source_changed": false,
+  "implementation_tests_run": false,
+  "manual_semantic_review": [
+    "existing function names verified and corrected",
+    "final task20240 snapshot source-stop.json verified, not snapshot3.json",
+    "OpenAlex policy deferral versus HTTP attempt accounting explicit",
+    "old extraction cache failure disclosed; no silent migration",
+    "existing pipeline source retry reused; no nested retry framework",
+    "DD-08/DD-10 remain unresolved",
+    "all new CSS avoided; existing styles reused"
+  ]
+}
