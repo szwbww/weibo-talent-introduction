@@ -186,7 +186,9 @@ class OrcidDataSource(
                 familyNames = record.familyNames,
                 isCorresponding = false,
                 affiliation = record.institutionName,
-                orcidId = record.orcidId
+                orcidId = record.orcidId,
+                identityEvidence = "ORCID_RECORD_SHA256:" + com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.hash(
+                    listOf(record.orcidId, record.givenNames, record.familyNames, email, record.institutionName).joinToString("\u0000"))
             )
         }
     }

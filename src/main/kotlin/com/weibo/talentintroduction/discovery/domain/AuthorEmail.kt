@@ -13,5 +13,7 @@ data class AuthorEmail @JvmOverloads constructor(
      * `externalIds.openAlexAuthorId`。邮箱线索与学术身份的绑定必须唯一且强（见 I-2）；
      * 该字段永远不参与专家主键。
      */
-    val openAlexAuthorId: String? = null
+    val openAlexAuthorId: String? = null,
+    /** Explicit source ownership proof; null includes legacy and name-based guesses. */
+    val identityEvidence: String? = null
 )

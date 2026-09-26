@@ -74,6 +74,18 @@ class InitialOutreachServiceTest {
     }
 
     @Test
+    fun `unverified discovery expert cannot create a contact or send even if returned by search`() {
+        val candidate = expert("unverified").copy(emailSource = "PAPER_FULLTEXT")
+        Mockito.`when`(expertSearchService.searchExpertsByTypesWithEmail(1, ExpertIndexLevel.CANDIDATE, listOf("PRODUCTION_RND")))
+            .thenReturn(ExpertSearchResult(listOf(candidate), 1))
+        val result = service.sendInitialBatch(1L, 1)
+        assertEquals(0, result.sent)
+        assertEquals(1, result.skipped)
+        Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
     fun `sendInitialBatch commits each success independently when later send throws`() {
         val experts = listOf(expert("0001"), expert("0002"), expert("0003"))
         Mockito.`when`(expertSearchService.searchExpertsByTypesWithEmail(3, ExpertIndexLevel.CANDIDATE, listOf("PRODUCTION_RND")))

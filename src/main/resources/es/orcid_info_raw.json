@@ -28,6 +28,13 @@
       "emailSource": { "type": "keyword" },
       "emailVerifiedLevel": { "type": "integer" },
       "dataSource": { "type": "keyword" },
+      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+        "status": { "type": "keyword" }, "version": { "type": "integer" },
+        "email": { "type": "keyword", "index": false }, "givenNames": { "type": "keyword", "index": false },
+        "familyNames": { "type": "keyword", "index": false }, "source": { "type": "keyword" },
+        "evidenceHash": { "type": "keyword", "index": false }, "orcid": { "type": "keyword", "index": false },
+        "openAlexAuthorId": { "type": "keyword", "index": false }
+      } },
       "externalIds": { "type": "object", "enabled": false },
       "worksCount": { "type": "integer" },
       "discoveredAt": { "type": "date", "format": "yyyy-MM-dd HH:mm:ss||yyyy-MM-dd||epoch_millis" },

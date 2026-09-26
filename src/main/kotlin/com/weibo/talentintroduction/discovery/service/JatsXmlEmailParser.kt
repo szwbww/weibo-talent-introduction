@@ -1,24 +1,29 @@
 package com.weibo.talentintroduction.discovery.service
 
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
-import org.w3c.dom.Document
 import org.w3c.dom.Element
+import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
+import java.text.Normalizer
 import java.util.Locale
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 
+/** Email ownership is resolved before projecting an author identity. A shared xref is not ownership. */
 object JatsXmlEmailParser {
+    private val EMAIL = Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE)
+    private val CORRESP = Regex("correspondence|corresponding author", RegexOption.IGNORE_CASE)
+    private val LABEL = Regex("\\(([^()]*)\\)")
+    private val WORD = Regex("[\\p{L}\\p{N}]+")
+    private val CONTACT_WORDS = Regex("(?i)\\b(?:correspondence|corresponding\\s+authors?|e-?mails?(?:\\s+addresses?)?|and|or|to)\\b")
 
-    private val EMAIL_REGEX = Regex("[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}", RegexOption.IGNORE_CASE)
-    private val CORRESPONDENCE_PATTERN = Regex(
-        "correspondence|corresponding author",
-        RegexOption.IGNORE_CASE
-    )
-
-    fun parse(xml: String): List<AuthorEmail> {
-        return parse(xml.toByteArray(Charsets.UTF_8))
+    private data class Author(val node: Element, val identity: AuthorEmail) {
+        val name = listOfNotNull(identity.givenNames, identity.familyNames).joinToString(" ")
+        val initials = WORD.findAll(name).map { it.value.first() }.joinToString("")
     }
+    private data class Candidate(val email: String, val author: Author?, val corresponding: Boolean)
+
+    fun parse(xml: String): List<AuthorEmail> = parse(xml.toByteArray(Charsets.UTF_8))
 
     fun parse(bytes: ByteArray): List<AuthorEmail> {
         val factory = DocumentBuilderFactory.newInstance().apply {
@@ -30,285 +35,125 @@ object JatsXmlEmailParser {
             setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "")
             setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "")
         }
-        val builder = factory.newDocumentBuilder()
-        val doc = builder.parse(ByteArrayInputStream(bytes))
-
-        val results = mutableListOf<AuthorEmail>()
-
-        results += parseContribEmails(doc)
-        results += parseAuthorNotesCorresp(doc)
-        results += parseCorrespTextEmails(doc)
-        results += parseXrefCorrespondence(doc)
-
-        return mergeResults(results)
-    }
-
-    private fun isContribAuthor(contrib: Element): Boolean {
-        val contribType = contrib.getAttribute("contrib-type")
-        if (contribType == "author") return true
-        if (contribType.isNotBlank()) return false
-
-        val parent = contrib.parentNode as? Element
-        if (parent != null && parent.tagName == "contrib-group" &&
-            parent.getAttribute("content-type") == "author"
-        ) return true
-
-        if (contrib.getElementsByTagName("name").length > 0) return true
-
-        return false
-    }
-
-    private fun parseContribEmails(doc: Document): List<AuthorEmail> {
-        val results = mutableListOf<AuthorEmail>()
-        val contribs = doc.getElementsByTagName("contrib")
-
-        for (i in 0 until contribs.length) {
-            val contrib = contribs.item(i) as? Element ?: continue
-            if (!isContribAuthor(contrib)) continue
-
-            val emailElements = contrib.getElementsByTagName("email")
-            if (emailElements.length == 0) continue
-
-            val nameElement = contrib.getElementsByTagName("name").item(0) as? Element
-            val surname = nameElement?.getElementsByTagName("surname")?.item(0)?.textContent?.trim()
-            val givenNames = nameElement?.getElementsByTagName("given-names")?.item(0)?.textContent?.trim()
-
-            val isCorresponding = contrib.getAttribute("corresp") == "yes"
-
-            val affiliation = resolveAffiliation(doc, contrib)
-
-            val orcidId = extractOrcid(contrib)
-
-            for (j in 0 until emailElements.length) {
-                val email = emailElements.item(j)?.textContent?.trim() ?: continue
-                if (!EMAIL_REGEX.matches(email)) continue
-
-                results += AuthorEmail(
-                    email = email,
-                    givenNames = givenNames,
-                    familyNames = surname,
-                    isCorresponding = isCorresponding,
-                    affiliation = affiliation,
-                    orcidId = orcidId
-                )
+        val doc = factory.newDocumentBuilder().parse(ByteArrayInputStream(bytes))
+        val article = doc.documentElement.takeIf { it.tagName == "article" } ?: return emptyList()
+        val meta = article.children("front").firstOrNull()?.children("article-meta")?.firstOrNull()
+            ?: return emptyList()
+        val ids = meta.descendants().filter { it.getAttribute("id").isNotBlank() }.groupBy { it.getAttribute("id") }
+        val authors = meta.descendants().filter { it.tagName == "contrib" && isAuthor(it, meta) }.map { node ->
+            val name = node.children("name").singleOrNull()
+            val given = name?.children("given-names")?.singleOrNull()?.textContent?.trim()?.takeIf { it.isNotBlank() }
+            val family = name?.children("surname")?.singleOrNull()?.textContent?.trim()?.takeIf { it.isNotBlank() }
+            val orcids = node.children("contrib-id").filter { it.getAttribute("contrib-id-type") == "orcid" }
+                .mapNotNull { it.textContent.trim().substringAfterLast('/').takeIf { id -> id.matches(Regex("\\d{4}-\\d{4}-\\d{4}-\\d{3}[0-9X]")) } }.distinct()
+            val affs = node.children("aff") + node.children("xref").filter { it.getAttribute("ref-type") == "aff" }
+                .flatMap { refs(it) }.mapNotNull { ids[it]?.singleOrNull()?.takeIf { n -> n.tagName == "aff" } }
+            Author(node, AuthorEmail("", given, family, node.getAttribute("corresp") == "yes",
+                affs.distinct().map { it.textContent.trim() }.filter { it.isNotEmpty() }.distinct().joinToString("; ").takeIf { it.isNotBlank() },
+                orcids.singleOrNull()))
+        }
+        val candidates = mutableListOf<Candidate>()
+        for (author in authors) {
+            val direct = author.node.children("email") + author.node.children("address").flatMap { address ->
+                address.descendants().filter { n -> n.tagName == "email" && n.ancestorsUntil(author.node).none { it.tagName in setOf("aff", "contrib") } }
+            }
+            for (node in direct) {
+                val email = node.textContent.trim()
+                if (EMAIL.matches(email)) candidates += Candidate(email, author.takeIf { it.name.isNotBlank() }, author.identity.isCorresponding)
             }
         }
-
-        return results
-    }
-
-    private fun parseAuthorNotesCorresp(doc: Document): List<AuthorEmail> {
-        val results = mutableListOf<AuthorEmail>()
-        val authorNotes = doc.getElementsByTagName("author-notes")
-
-        for (i in 0 until authorNotes.length) {
-            val notes = authorNotes.item(i) as? Element ?: continue
-
-            val correspList = notes.getElementsByTagName("corresp")
-            for (j in 0 until correspList.length) {
-                val emailElements = correspList.item(j).childNodes
-                for (k in 0 until emailElements.length) {
-                    val node = emailElements.item(k)
-                    if (node.nodeName == "email") {
-                        val email = node.textContent?.trim() ?: continue
-                        if (!EMAIL_REGEX.matches(email)) continue
-                        results += AuthorEmail(
-                            email = email,
-                            givenNames = null,
-                            familyNames = null,
-                            isCorresponding = true,
-                            affiliation = null,
-                            orcidId = null
-                        )
-                    }
+        val claimants = mutableMapOf<Element, MutableList<Author>>()
+        for (author in authors) {
+            for (xref in author.node.children("xref").filter { it.getAttribute("ref-type") in setOf("corresp", "author-notes") }) {
+                for (rid in refs(xref)) {
+                    val target = ids[rid]?.singleOrNull() ?: continue
+                    if (target.tagName !in setOf("corresp", "fn", "p")) continue
+                    claimants.getOrPut(target) { mutableListOf() }.add(author)
                 }
             }
         }
-
-        return results
+        val notes = meta.children("author-notes").flatMap { it.descendants() }.filter {
+            it.tagName == "corresp" || (it.tagName in setOf("fn", "p") && CORRESP.containsMatchIn(it.textContent))
+        }
+        for (note in (notes + claimants.keys).distinct()) {
+            val text = readableText(note)
+            val emails = EMAIL.findAll(text).toList()
+            val owners = claimants[note].orEmpty().distinct()
+            val uniqueId = note.getAttribute("id").let { it.isBlank() || ids[it]?.size == 1 }
+            val available = if (uniqueId) authors else emptyList()
+            val assigned = Array(emails.size) { mutableSetOf<Author>() }
+            val explicitlyLabelled = mutableSetOf<Int>()
+            // Postfix labels can cover a list of emails, but never cross another label or semicolon.
+            for (label in LABEL.findAll(text)) {
+                val previousLabel = LABEL.findAll(text.substring(0, label.range.first)).lastOrNull()?.range?.last?.plus(1) ?: 0
+                val start = maxOf(previousLabel, text.lastIndexOf(';', label.range.first).plus(1))
+                var group = emails.indices.filter { emails[it].range.first >= start && emails[it].range.last < label.range.first }
+                if (group.isEmpty()) continue
+                val residual = EMAIL.replace(text.substring(start, label.range.first), "")
+                if (!punctuationOnly(CONTACT_WORDS.replace(residual, ""))) group = listOf(group.last())
+                explicitlyLabelled.addAll(group)
+                val matches = available.filter { matchesLabel(label.groupValues[1], it) }
+                for (i in group) assigned[i].addAll(matches)
+            }
+            for ((i, email) in emails.withIndex()) {
+                val previousEnd = if (i == 0) 0 else emails[i - 1].range.last + 1
+                var prefix = text.substring(previousEnd, email.range.first)
+                // A preceding email's suffix is never a prefix for this email.
+                prefix = prefix.replace(Regex("^\\s*\\([^()]*\\)"), "")
+                prefix = CONTACT_WORDS.replace(prefix, "").trim { !it.isLetterOrDigit() }
+                // Exact explicit name immediately before email; no nearby-name/substring guessing.
+                val matches = available.filter { normalize(prefix) == normalize(it.name) && normalize(it.name).isNotEmpty() }
+                assigned[i].addAll(matches)
+                if (assigned[i].isEmpty() && i !in explicitlyLabelled && owners.size == 1 && uniqueId) {
+                    val residual = CONTACT_WORDS.replace(EMAIL.replace(text, ""), "")
+                    if (punctuationOnly(residual)) assigned[i].add(owners.single())
+                }
+                if (assigned[i].isEmpty()) candidates += Candidate(email.value, null, true)
+                else assigned[i].forEach { candidates += Candidate(email.value, it, true) }
+            }
+        }
+        val evidenceHash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        return candidates.groupBy { it.email.lowercase(Locale.ROOT) }.map { (_, group) ->
+            val owners = group.mapNotNull { it.author }.distinctBy { it.node }
+            val email = group.first().email
+            val corresponding = group.any { it.corresponding }
+            val owner = owners.singleOrNull()
+            owner?.identity?.copy(email = email, isCorresponding = corresponding,
+                identityEvidence = if (!owner.identity.givenNames.isNullOrBlank() && !owner.identity.familyNames.isNullOrBlank())
+                    "JATS_SHA256:" + evidenceHash else null)
+                ?: AuthorEmail(email, null, null, corresponding, null, null)
+        }
     }
 
-    private fun parseCorrespTextEmails(doc: Document): List<AuthorEmail> {
-        val results = mutableListOf<AuthorEmail>()
-
-        val authorNotes = doc.getElementsByTagName("author-notes")
-        for (i in 0 until authorNotes.length) {
-            val notes = authorNotes.item(i) as? Element ?: continue
-
-            val correspElements = notes.getElementsByTagName("corresp")
-            for (j in 0 until correspElements.length) {
-                val text = correspElements.item(j)?.textContent ?: continue
-                val emails = EMAIL_REGEX.findAll(text)
-                for (match in emails) {
-                    results += AuthorEmail(
-                        email = match.value,
-                        givenNames = null,
-                        familyNames = null,
-                        isCorresponding = true,
-                        affiliation = null,
-                        orcidId = null
-                    )
-                }
-            }
-
-            val fnElements = notes.getElementsByTagName("fn")
-            for (j in 0 until fnElements.length) {
-                val fn = fnElements.item(j) as? Element ?: continue
-                val text = fn.textContent ?: continue
-                if (!CORRESPONDENCE_PATTERN.containsMatchIn(text)) continue
-                val emails = EMAIL_REGEX.findAll(text)
-                for (match in emails) {
-                    results += AuthorEmail(
-                        email = match.value,
-                        givenNames = null,
-                        familyNames = null,
-                        isCorresponding = true,
-                        affiliation = null,
-                        orcidId = null
-                    )
-                }
-            }
-
-            val pElements = notes.getElementsByTagName("p")
-            for (j in 0 until pElements.length) {
-                val p = pElements.item(j) as? Element ?: continue
-                val text = p.textContent ?: continue
-                if (!CORRESPONDENCE_PATTERN.containsMatchIn(text)) continue
-                val emails = EMAIL_REGEX.findAll(text)
-                for (match in emails) {
-                    results += AuthorEmail(
-                        email = match.value,
-                        givenNames = null,
-                        familyNames = null,
-                        isCorresponding = true,
-                        affiliation = null,
-                        orcidId = null
-                    )
-                }
-            }
-        }
-
-        return results
+    private fun isAuthor(node: Element, meta: Element): Boolean {
+        val ancestors = node.ancestorsUntil(meta)
+        if (ancestors.any { it.tagName in setOf("contrib", "ref", "ref-list", "sub-article") }) return false
+        if (ancestors.filter { it.tagName == "contrib-group" }.any {
+                it.getAttribute("content-type").let { type -> type.isNotBlank() && type != "author" }
+            }) return false
+        val type = node.getAttribute("contrib-type")
+        return (type.isBlank() || type == "author") && node.children("name").size == 1
     }
 
-    private fun parseXrefCorrespondence(doc: Document): List<AuthorEmail> {
-        val results = mutableListOf<AuthorEmail>()
-
-        val notesIndex = mutableMapOf<String, Element>()
-        val authorNotes = doc.getElementsByTagName("author-notes")
-        for (i in 0 until authorNotes.length) {
-            val notes = authorNotes.item(i) as? Element ?: continue
-            val children = notes.childNodes
-            for (j in 0 until children.length) {
-                val child = children.item(j) as? Element ?: continue
-                val id = child.getAttribute("id")
-                if (id.isNotBlank()) notesIndex[id] = child
-            }
-        }
-
-        val contribs = doc.getElementsByTagName("contrib")
-        for (i in 0 until contribs.length) {
-            val contrib = contribs.item(i) as? Element ?: continue
-            if (!isContribAuthor(contrib)) continue
-
-            val nameElement = contrib.getElementsByTagName("name").item(0) as? Element
-            val surname = nameElement?.getElementsByTagName("surname")?.item(0)?.textContent?.trim()
-            val givenNames = nameElement?.getElementsByTagName("given-names")?.item(0)?.textContent?.trim()
-            val affiliation = resolveAffiliation(doc, contrib)
-            val orcidId = extractOrcid(contrib)
-
-            val xrefs = contrib.getElementsByTagName("xref")
-            for (j in 0 until xrefs.length) {
-                val xref = xrefs.item(j) as? Element ?: continue
-                val refType = xref.getAttribute("ref-type")
-                if (refType != "corresp" && refType != "author-notes") continue
-                val rid = xref.getAttribute("rid")
-                if (rid.isBlank()) continue
-
-                val target = notesIndex[rid] ?: doc.getElementById(rid) ?: continue
-
-                val emailElements = target.getElementsByTagName("email")
-                for (k in 0 until emailElements.length) {
-                    val email = emailElements.item(k)?.textContent?.trim() ?: continue
-                    if (!EMAIL_REGEX.matches(email)) continue
-
-                    results += AuthorEmail(
-                        email = email,
-                        givenNames = givenNames,
-                        familyNames = surname,
-                        isCorresponding = true,
-                        affiliation = affiliation,
-                        orcidId = orcidId
-                    )
-                }
-
-                if (emailElements.length == 0) {
-                    val text = target.textContent ?: continue
-                    val emails = EMAIL_REGEX.findAll(text)
-                    for (match in emails) {
-                        results += AuthorEmail(
-                            email = match.value,
-                            givenNames = givenNames,
-                            familyNames = surname,
-                            isCorresponding = true,
-                            affiliation = affiliation,
-                            orcidId = orcidId
-                        )
-                    }
-                }
-            }
-        }
-
-        return results
+    private fun refs(xref: Element) = xref.getAttribute("rid").trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    private fun normalize(value: String) = Normalizer.normalize(value, Normalizer.Form.NFKD)
+        .lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
+    private fun matchesLabel(label: String, author: Author): Boolean = normalize(label).let {
+        it.isNotEmpty() && (it == normalize(author.name) || (it.length >= 2 && it == normalize(author.initials)))
     }
-
-    private fun resolveAffiliation(doc: Document, contrib: Element): String? {
-        val directAff = contrib.getElementsByTagName("aff").item(0)?.textContent?.trim()
-        if (!directAff.isNullOrBlank()) return directAff
-
-        val xrefs = contrib.getElementsByTagName("xref")
-        for (j in 0 until xrefs.length) {
-            val xref = xrefs.item(j) as? Element ?: continue
-            if (xref.getAttribute("ref-type") != "aff") continue
-            val rid = xref.getAttribute("rid")
-            if (rid.isBlank()) continue
-
-            val allAffs = doc.getElementsByTagName("aff")
-            for (k in 0 until allAffs.length) {
-                val aff = allAffs.item(k) as? Element ?: continue
-                if (aff.getAttribute("id") == rid) {
-                    return aff.textContent?.trim()
-                }
-            }
-        }
-
-        return null
+    private fun punctuationOnly(value: String) = value.none { it.isLetterOrDigit() }
+    private fun Element.children(tag: String? = null): List<Element> = (0 until childNodes.length)
+        .mapNotNull { childNodes.item(it) as? Element }.filter { tag == null || it.tagName == tag }
+    private fun Element.descendants(): List<Element> = children().flatMap { listOf(it) + it.descendants() }
+    private fun Element.ancestorsUntil(stop: Element): List<Element> {
+        val result = mutableListOf<Element>()
+        var parent = parentNode
+        while (parent is Element && parent !== stop) { result += parent; parent = parent.parentNode }
+        return result
     }
-
-    private fun extractOrcid(contrib: Element): String? {
-        val contribIds = contrib.getElementsByTagName("contrib-id")
-        for (i in 0 until contribIds.length) {
-            val contribId = contribIds.item(i) as? Element ?: continue
-            if (contribId.getAttribute("contrib-id-type") == "orcid") {
-                val raw = contribId.textContent?.trim() ?: continue
-                return raw.substringAfterLast("/").takeIf {
-                    it.matches(Regex("\\d{4}-\\d{4}-\\d{4}-\\d{3}[0-9X]"))
-                }
-            }
-        }
-        return null
-    }
-
-    private fun mergeResults(results: List<AuthorEmail>): List<AuthorEmail> {
-        return results.groupBy { it.email.lowercase(Locale.ROOT) }.map { (_, group) ->
-            AuthorEmail(
-                email = group.first().email,
-                givenNames = group.mapNotNull { it.givenNames }.firstOrNull(),
-                familyNames = group.mapNotNull { it.familyNames }.firstOrNull(),
-                isCorresponding = group.any { it.isCorresponding },
-                affiliation = group.mapNotNull { it.affiliation }.firstOrNull(),
-                orcidId = group.mapNotNull { it.orcidId }.firstOrNull()
-            )
-        }
+    private fun readableText(node: Node): String {
+        if (node.nodeType == Node.TEXT_NODE || node.nodeType == Node.CDATA_SECTION_NODE) return node.nodeValue.orEmpty()
+        val text = (0 until node.childNodes.length).joinToString("") { readableText(node.childNodes.item(it)) }
+        return if (node.nodeName == "email") " $text " else text
     }
 }

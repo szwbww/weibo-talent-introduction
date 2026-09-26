@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
@@ -431,6 +432,10 @@ class ExpertIndexWriterService(
             return false
         }
 
+        if (!DiscoveryIdentity.allowedSource(source)) {
+            expertPromotionAuditService.markFailed(audit, "IDENTITY_UNVERIFIED")
+            return false
+        }
         val now = LocalDateTime.now().format(dateFormatter)
         val firstReplyStr = firstReplyAt
             .let { LocalDateTime.ofInstant(it, ZoneId.systemDefault()).format(dateFormatter) }
@@ -452,7 +457,8 @@ class ExpertIndexWriterService(
             put("updatedAt", now)
         }
 
-        val putUrl = "${properties.baseUrl}/$applicationIndex/_doc/$normalizedOrcid"
+        val putUrl = "${properties.baseUrl}/$applicationIndex/_doc/$normalizedOrcid" +
+            if (source.path("identityVerification").isObject) "?op_type=create" else ""
         return try {
             restTemplate.exchange(
                 putUrl,
@@ -545,6 +551,7 @@ class ExpertIndexWriterService(
         }
 
         val source = rawResponse?.path("_source") ?: return false
+        if (!DiscoveryIdentity.allowedSource(source)) return false
         val now = LocalDateTime.now().format(dateFormatter)
 
         val doc = objectMapper.createObjectNode().apply {
@@ -556,7 +563,8 @@ class ExpertIndexWriterService(
             put("updatedAt", now)
         }
 
-        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$normalizedOrcid"
+        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$normalizedOrcid" +
+            if (source.path("identityVerification").isObject) "?op_type=create" else ""
         try {
             restTemplate.exchange(
                 putUrl,
@@ -597,9 +605,11 @@ class ExpertIndexWriterService(
     }
 
     fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+        if (!DiscoveryIdentity.allowedMap(profile)) return false
         val normalizedOrcid = ExpertIdNormalizer.normalize(orcid)
         val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
-        val putUrl = "${properties.baseUrl}/$rawIndex/_doc/$normalizedOrcid"
+        val putUrl = "${properties.baseUrl}/$rawIndex/_doc/$normalizedOrcid" +
+            if (profile["identityVerification"] != null) "?op_type=create" else ""
         return try {
             restTemplate.exchange(
                 putUrl,
@@ -686,8 +696,10 @@ class ExpertIndexWriterService(
     }
 
     fun writeCandidateDocument(docId: String, doc: Map<String, Any?>): Boolean {
+        if (!DiscoveryIdentity.allowedMap(doc)) return false
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
-        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId"
+        val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId" +
+            if (doc["identityVerification"] != null) "?op_type=create" else ""
         return try {
             restTemplate.exchange(
                 putUrl,

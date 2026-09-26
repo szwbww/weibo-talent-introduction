@@ -22,6 +22,7 @@ import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
 import com.weibo.talentintroduction.discovery.domain.SourceUnit
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.expert.domain.EmailValidationResult
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.CandidateEligibilityService
 import com.weibo.talentintroduction.expert.service.EmailValidationService
@@ -67,6 +68,15 @@ import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
 class ExpertDiscoveryServiceTest {
+
+    private fun verifiedAuthorEmail(email: String, givenNames: String?, familyNames: String?, isCorresponding: Boolean,
+        affiliation: String?, orcidId: String?, institutionType: String? = null, openAlexAuthorId: String? = null): AuthorEmail =
+        AuthorEmail(email, givenNames, familyNames, isCorresponding, affiliation, orcidId, institutionType, openAlexAuthorId,
+            "JATS_SHA256:" + "a".repeat(64))
+    private fun currentExtraction(emails: List<AuthorEmail>, methodUsed: String?, failureReason: String? = null,
+        httpRequests: Int = 0, fulltextObtained: Boolean? = null, downloadFailureCategory: String? = null): EmailExtractionOutcome =
+        EmailExtractionOutcome(emails, methodUsed, failureReason, httpRequests, fulltextObtained, downloadFailureCategory,
+            com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.VERSION)
     private lateinit var revalidationService: ExpertRevalidationService
     private lateinit var europePmc: EuropePmcDataSource
     private lateinit var openAlexProvider: ObjectProvider<OpenAlexDataSource>
@@ -89,7 +99,7 @@ class ExpertDiscoveryServiceTest {
     private val discoveryProperties = ExpertDiscoveryProperties(
         enabled = true, maxPapersPerRun = 100, maxAuthorsPerRun = 200
     )
-    private val objectMapper = ObjectMapper()
+    private val objectMapper = com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
     private val esProperties = ElasticsearchProperties(
         baseUrl = "https://es.example.com:9200",
         username = "elastic", password = "secret",
@@ -350,6 +360,31 @@ class ExpertDiscoveryServiceTest {
         java.net.URLDecoder.decode(url.substringAfter("?q=").substringBefore("&"), "UTF-8")
 
     @Test
+    fun `unproven and deleted identities cannot reach RAW even if eligibility would pass`() {
+        val svc = createService()
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC-BLOCK", "Ownership")), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, listOf(
+            AuthorEmail("guess@example.org", "Guess", "Owner", true, null, null),
+            verifiedAuthorEmail("hanlei1974@sina.com", "New", "Name", true, null, null)))
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        assertEquals(0, result.stats.indexed)
+        assertEquals(0, result.stats.promoted)
+        assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").failureReasons["IDENTITY_UNRESOLVED"])
+        assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").failureReasons["IDENTITY_DELETED_BLOCKED"])
+        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+    }
+
+    @Test
+    fun `legacy extraction cache is rejected before interpreting old author identities`() {
+        val svc = createService()
+        val envelope = QueuedItemEnvelope("EUROPE_PMC", "old-key", "PMCID", "PAPER", 1, "{}", 2, true)
+        val outcome = svc.consumeQueuedItem(envelope, """{"emails":[],"methodUsed":"FULLTEXT_XML"}""", null)
+        assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", outcome.unrecoverableReason)
+        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+    }
+
+    @Test
     fun `resolveEnabledSources excludes EUROPE_PMC when disabled even with empty sources`() {
         // I4-4 核心断言（当前缺陷的回归测试）：EUROPE_PMC_ENABLED=false + sources 为空（定时发现路径）
         // 时，Europe PMC 不得加入启用源列表。修复前 :209 的 add 从不读 enabled，此处必含 EUROPE_PMC。
@@ -446,7 +481,7 @@ class ExpertDiscoveryServiceTest {
 
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
@@ -468,7 +503,7 @@ class ExpertDiscoveryServiceTest {
 
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001",
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001",
                 institutionType = "education")))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
@@ -491,7 +526,7 @@ class ExpertDiscoveryServiceTest {
             "institution", "lastPublicationYear", "emailSource", "emailVerifiedLevel", "dataSource",
             "externalIds", "discoveredAt", "updatedAt", "filterResult", "filterRejectReason", "tags"
         )
-        assertEquals(preChangeKeys + "institutionType", map.keys)
+        assertEquals(preChangeKeys + setOf("institutionType", "identityVerification"), map.keys)
     }
 
     @Test
@@ -502,7 +537,7 @@ class ExpertDiscoveryServiceTest {
 
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001",
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001",
                 openAlexAuthorId = "A5023888391")))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
@@ -520,7 +555,7 @@ class ExpertDiscoveryServiceTest {
 
         svc.discover(PaperSearchCriteria(), "TEST")
 
-        assertEquals("0000-0001", capturedIds.single(), "有 ORCID 时 ES 主键必须仍是 ORCID")
+        assertEquals(ExpertIdGenerator.generate(null, "john@oxford.ac.uk"), capturedIds.single(), "新记录用邮箱键；真实ORCID独立保存")
         assertEquals(
             mapOf(
                 "pmcId" to "PMC1", "doi" to "10.0/PMC1", "pmid" to "pmid-PMC1",
@@ -538,7 +573,7 @@ class ExpertDiscoveryServiceTest {
 
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("no-orcid@oxford.ac.uk", "No", "Orcid", false, "Some Lab", null,
+            listOf(verifiedAuthorEmail("no-orcid@oxford.ac.uk", "No", "Orcid", false, "Some Lab", null,
                 openAlexAuthorId = "A5086928770")))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "no-orcid@oxford.ac.uk", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
@@ -584,7 +619,7 @@ class ExpertDiscoveryServiceTest {
 
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", null,
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", null,
                 openAlexAuthorId = "https://openalex.org/W1234567")))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
@@ -627,7 +662,7 @@ class ExpertDiscoveryServiceTest {
 
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("dup@example.com", "A", "B", false, null, null)))
+            listOf(verifiedAuthorEmail("dup@example.com", "A", "B", false, null, null)))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "dup@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 1)
 
@@ -667,7 +702,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("bad-email", "X", "Y", false, null, null)))
+            listOf(verifiedAuthorEmail("bad-email", "X", "Y", false, null, null)))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "bad-email", EmailValidationResult(0, false, "INVALID_FORMAT"))
 
         val result = svc.discover(PaperSearchCriteria(), "TEST")
@@ -681,7 +716,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("filtered@example.com", "A", "B", false, "China", null)))
+            listOf(verifiedAuthorEmail("filtered@example.com", "A", "B", false, "China", null)))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "filtered@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
@@ -700,7 +735,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
@@ -726,7 +761,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
 
         Mockito.doThrow(org.springframework.web.client.HttpClientErrorException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR))
@@ -748,7 +783,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("John@Oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+            listOf(verifiedAuthorEmail("John@Oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "John@Oxford.ac.uk", EmailValidationResult(3, true))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
         DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
@@ -768,8 +803,8 @@ class ExpertDiscoveryServiceTest {
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
             listOf(
-                AuthorEmail("a1@example.com", "A", "One", false, null, null),
-                AuthorEmail("a2@example.com", "B", "Two", false, null, null)
+                verifiedAuthorEmail("a1@example.com", "A", "One", false, null, null),
+                verifiedAuthorEmail("a2@example.com", "B", "Two", false, null, null)
             ))
 
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "a1@example.com", EmailValidationResult(2, true))
@@ -789,7 +824,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            listOf(AuthorEmail("no-orcid@example.com", "No", "Orcid", false, "Some Lab", null)))
+            listOf(verifiedAuthorEmail("no-orcid@example.com", "No", "Orcid", false, "Some Lab", null)))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "no-orcid@example.com", EmailValidationResult(2, true))
         DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
         DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
@@ -872,7 +907,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
-            EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", "FULLTEXT_FETCH_FAILED", httpRequests = 1))
+            currentExtraction(emptyList(), "FULLTEXT_XML", "FULLTEXT_FETCH_FAILED", httpRequests = 1))
 
         val result = svc.discover(PaperSearchCriteria(), "TEST")
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
@@ -893,10 +928,10 @@ class ExpertDiscoveryServiceTest {
         )
 
         DiscoveryMockHelper.stubExtractAuthorEmailsSequence(europePmc,
-            EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT", httpRequests = 1),
-            EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT", httpRequests = 1),
-            EmailExtractionOutcome(
-                listOf(AuthorEmail("dup@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")),
+            currentExtraction(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT", httpRequests = 1),
+            currentExtraction(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT", httpRequests = 1),
+            currentExtraction(
+                listOf(verifiedAuthorEmail("dup@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")),
                 "FULLTEXT_XML", null, httpRequests = 1
             )
         )
@@ -918,7 +953,7 @@ class ExpertDiscoveryServiceTest {
 
         assertEquals(2, batchProgress.size)
         assertEquals(mapOf("NO_EMAIL_IN_FULLTEXT" to 2), batchProgress[0].batchRejectReasons)
-        assertEquals(mapOf("DUPLICATE" to 1), batchProgress[1].batchRejectReasons)
+        assertEquals(mapOf("DUPLICATE" to 1, "IDENTITY_EXISTING_UNVERIFIED" to 1), batchProgress[1].batchRejectReasons)
     }
 
     @Test
@@ -927,7 +962,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
-            EmailExtractionOutcome(emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED", httpRequests = 1))
+            currentExtraction(emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED", httpRequests = 1))
 
         val result = svc.discover(PaperSearchCriteria(), "TEST")
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
@@ -942,7 +977,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
-            EmailExtractionOutcome(
+            currentExtraction(
                 emptyList(), "HTML_FALLBACK", "NO_EMAIL_IN_HTML",
                 httpRequests = 1, fulltextObtained = true
             ))
@@ -961,7 +996,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
-            EmailExtractionOutcome(emptyList(), "PDF_PARSE", null, httpRequests = 1, fulltextObtained = false))
+            currentExtraction(emptyList(), "PDF_PARSE", null, httpRequests = 1, fulltextObtained = false))
 
         val result = svc.discover(PaperSearchCriteria(), "TEST")
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
@@ -976,7 +1011,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
-            EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", null))
+            currentExtraction(emptyList(), "FULLTEXT_XML", null))
 
         val result = svc.discover(PaperSearchCriteria(), "TEST")
         val sourceStats = result.stats.bySource["EUROPE_PMC"]
@@ -991,7 +1026,7 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
-            EmailExtractionOutcome(
+            currentExtraction(
                 emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED",
                 httpRequests = 1, fulltextObtained = false, downloadFailureCategory = "HTTP_403"
             ))
@@ -1016,8 +1051,8 @@ class ExpertDiscoveryServiceTest {
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmailsOutcome(europePmc,
-            EmailExtractionOutcome(
-                listOf(AuthorEmail("a1@example.com", "A", "One", false, null, null)),
+            currentExtraction(
+                listOf(verifiedAuthorEmail("a1@example.com", "A", "One", false, null, null)),
                 "PDF_PARSE", null, httpRequests = 2, fulltextObtained = true
             ))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "a1@example.com", EmailValidationResult(2, true))
@@ -1041,7 +1076,7 @@ class ExpertDiscoveryServiceTest {
         val orcid = Mockito.mock(OrcidDataSource::class.java)
         Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
         DiscoveryMockHelper.stubOrcidSourceName(orcid)
-        DiscoveryMockHelper.stubOrcidRecordToAuthorEmails(orcid)
+        Mockito.doCallRealMethod().`when`(orcid).orcidRecordToAuthorEmails((Mockito.any(OrcidDataSource.OrcidRecord::class.java) ?: OrcidDataSource.OrcidRecord("test", "A", "B", emptyList(), null, null)))
         DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 25)
 
         val records = (1..10).map { OrcidDataSource.OrcidRecord(
@@ -1078,7 +1113,7 @@ class ExpertDiscoveryServiceTest {
         val orcid = Mockito.mock(OrcidDataSource::class.java)
         Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
         DiscoveryMockHelper.stubOrcidSourceName(orcid)
-        DiscoveryMockHelper.stubOrcidRecordToAuthorEmails(orcid)
+        Mockito.doCallRealMethod().`when`(orcid).orcidRecordToAuthorEmails((Mockito.any(OrcidDataSource.OrcidRecord::class.java) ?: OrcidDataSource.OrcidRecord("test", "A", "B", emptyList(), null, null)))
         DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 5)
 
         val records = (1..20).map { OrcidDataSource.OrcidRecord(
@@ -1116,7 +1151,7 @@ class ExpertDiscoveryServiceTest {
         val orcid = Mockito.mock(OrcidDataSource::class.java)
         Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
         DiscoveryMockHelper.stubOrcidSourceName(orcid)
-        DiscoveryMockHelper.stubOrcidRecordToAuthorEmails(orcid)
+        Mockito.doCallRealMethod().`when`(orcid).orcidRecordToAuthorEmails((Mockito.any(OrcidDataSource.OrcidRecord::class.java) ?: OrcidDataSource.OrcidRecord("test", "A", "B", emptyList(), null, null)))
         DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 10)
 
         val records = (1..5).map { OrcidDataSource.OrcidRecord(
@@ -1156,7 +1191,7 @@ class ExpertDiscoveryServiceTest {
         val papers = (1..3).map { paper("PMC$it", "Paper $it") }
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, 3))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
-            (1..3).map { AuthorEmail("emc$it@oxford.ac.uk", "Author", "$it", true, "Oxford, UK", "0000-000$it") }
+            (1..3).map { verifiedAuthorEmail("emc$it@oxford.ac.uk", "Author", "$it", true, "Oxford, UK", "0000-000$it") }
         )
         for (i in 1..3) {
             DiscoveryMockHelper.stubValidateEmail(emailValidationService, "emc$i@oxford.ac.uk", EmailValidationResult(2, true))
@@ -1170,7 +1205,7 @@ class ExpertDiscoveryServiceTest {
         val orcid = Mockito.mock(OrcidDataSource::class.java)
         Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
         DiscoveryMockHelper.stubOrcidSourceName(orcid)
-        DiscoveryMockHelper.stubOrcidRecordToAuthorEmails(orcid)
+        Mockito.doCallRealMethod().`when`(orcid).orcidRecordToAuthorEmails((Mockito.any(OrcidDataSource.OrcidRecord::class.java) ?: OrcidDataSource.OrcidRecord("test", "A", "B", emptyList(), null, null)))
         DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 25)
         val orcidRecords = (1..10).map { OrcidDataSource.OrcidRecord(
             orcidId = "0000-000$it", givenNames = "O", familyNames = "$it",
@@ -1203,7 +1238,7 @@ class ExpertDiscoveryServiceTest {
         val orcid = Mockito.mock(OrcidDataSource::class.java)
         Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
         DiscoveryMockHelper.stubOrcidSourceName(orcid)
-        DiscoveryMockHelper.stubOrcidRecordToAuthorEmails(orcid)
+        Mockito.doCallRealMethod().`when`(orcid).orcidRecordToAuthorEmails((Mockito.any(OrcidDataSource.OrcidRecord::class.java) ?: OrcidDataSource.OrcidRecord("test", "A", "B", emptyList(), null, null)))
         DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 100)
 
         // API returns 10 records, each with one valid email
@@ -2580,7 +2615,7 @@ class ExpertDiscoveryServiceTest {
         val orcid = Mockito.mock(OrcidDataSource::class.java)
         Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
         DiscoveryMockHelper.stubOrcidSourceName(orcid)
-        DiscoveryMockHelper.stubOrcidRecordToAuthorEmails(orcid)
+        Mockito.doCallRealMethod().`when`(orcid).orcidRecordToAuthorEmails((Mockito.any(OrcidDataSource.OrcidRecord::class.java) ?: OrcidDataSource.OrcidRecord("test", "A", "B", emptyList(), null, null)))
         DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 25)
         val records = (1..2).map {
             OrcidDataSource.OrcidRecord(
@@ -2644,7 +2679,7 @@ class ExpertDiscoveryServiceTest {
         val page = (1..2).map { paper("PMC$it", "Paper $it") }
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(page, "C2", 4))
         DiscoveryMockHelper.stubExtractAuthorEmails(
-            europePmc, listOf(AuthorEmail("rawfail@example.com", "A", "B", false, null, "0000-0009"))
+            europePmc, listOf(verifiedAuthorEmail("rawfail@example.com", "A", "B", false, null, "0000-0009"))
         )
         DiscoveryMockHelper.stubValidateEmail(
             emailValidationService, "rawfail@example.com", EmailValidationResult(2, true)
@@ -2734,10 +2769,10 @@ class ExpertDiscoveryServiceTest {
             DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, paperCount.toLong()))
             val outcomes = papers.mapIndexed { index, _ ->
                 if (index % 3 == 0) {
-                    EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT")
+                    currentExtraction(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT")
                 } else {
-                    EmailExtractionOutcome(
-                        listOf(AuthorEmail("author$index@example.com", "A", "B$index", false, null, null)),
+                    currentExtraction(
+                        listOf(verifiedAuthorEmail("author$index@example.com", "A", "B$index", false, null, null)),
                         "FULLTEXT_XML",
                         null
                     )
@@ -2795,10 +2830,10 @@ class ExpertDiscoveryServiceTest {
             DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, paperCount.toLong()))
             val outcomes = papers.mapIndexed { index, _ ->
                 if (index % 2 == 0) {
-                    EmailExtractionOutcome(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT")
+                    currentExtraction(emptyList(), "FULLTEXT_XML", "NO_EMAIL_IN_FULLTEXT")
                 } else {
-                    EmailExtractionOutcome(
-                        listOf(AuthorEmail("author$index@example.com", "A", "B$index", false, null, null)),
+                    currentExtraction(
+                        listOf(verifiedAuthorEmail("author$index@example.com", "A", "B$index", false, null, null)),
                         "FULLTEXT_XML",
                         null
                     )
@@ -2880,8 +2915,8 @@ class ExpertDiscoveryServiceTest {
             val svc = createService(props, executor)
             DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(papers, null, batchSize.toLong()))
             val outcomes = papers.mapIndexed { index, _ ->
-                EmailExtractionOutcome(
-                    listOf(AuthorEmail("author$index@example.com", "A", "B$index", false, null, null)),
+                currentExtraction(
+                    listOf(verifiedAuthorEmail("author$index@example.com", "A", "B$index", false, null, null)),
                     "FULLTEXT_XML",
                     null
                 )
@@ -3161,6 +3196,49 @@ class ExpertDiscoveryServiceTest {
             .batchEnrichByOrcids(eqValue(listOf("EMAIL-noid")), eqValue(RequestKind.HISTORY_ENRICHMENT))
         Mockito.verify(openAlex, Mockito.never())
             .batchEnrichByAuthorIds(eqValue(listOf("0000-0001")), eqValue(RequestKind.HISTORY_ENRICHMENT))
+    }
+
+    @Test
+    fun `discovery enrichment never treats the old business key or unverified external ids as identity`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val expert = c6Expert("0000-0002-1825-0097", esDocId = "OLD-DOC",
+            externalIds = """{"openAlexAuthorId":"A5023888391"}""").copy(emailSource = "PAPER_FULLTEXT")
+
+        assertEquals(ProfileEnrichmentOutcome.NoId, svc.enrichProfiles(listOf(expert))["OLD-DOC"])
+        Mockito.verify(openAlex, Mockito.never()).batchEnrichByAuthorIds(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        Mockito.verify(openAlex, Mockito.never()).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+    }
+
+    @Test
+    fun `verified discovery enrichment uses proof author id and binds the update to the same identity`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val proof = DiscoveryIdentity.verified("e@example.com", "Test", "User",
+            "JATS_SHA256:" + "a".repeat(64), null, "A5023888391")
+        val expert = c6Expert("0000-0002-1825-0097", esDocId = "OLD-DOC",
+            externalIds = """{"openAlexAuthorId":"A9999999999"}""")
+            .copy(emailSource = "PAPER_FULLTEXT", identityVerification = proof)
+        Mockito.doReturn(mapOf("A5023888391" to EnrichmentOutcome.Success(AuthorEnrichment(hIndex = 10, citationCount = 100, worksCount = 5))))
+            .`when`(openAlex).batchEnrichByAuthorIds(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        stubRawLayerOnly()
+        stubAcademicUpdateOk()
+
+        assertInstanceOf(ProfileEnrichmentOutcome.Success::class.java, svc.enrichProfiles(listOf(expert))["OLD-DOC"])
+        Mockito.verify(openAlex).batchEnrichByAuthorIds(eqValue(listOf("A5023888391")), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        Mockito.verify(openAlex, Mockito.never()).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        val captor = ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.verify(restTemplate).exchange(Mockito.contains("/_update/OLD-DOC"), Mockito.eq(HttpMethod.POST),
+            captor.capture(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        val body = captor.value.body as Map<*, *>
+        assertFalse(body.containsKey("upsert"))
+        val script = body["script"] as Map<*, *>
+        val params = script["params"] as Map<*, *>
+        assertEquals(proof, params["identity"])
+        assertEquals(mapOf("openAlexAuthorId" to "A9999999999"), params["externalIds"])
+        assertTrue(script["source"].toString().contains("ctx.op = 'none'"))
     }
 
     @Test
@@ -3465,6 +3543,11 @@ class ExpertDiscoveryServiceTest {
     /** 让去重命中返回匹配文档的真实 `_id`（I-1 的补建任务依据）。 */
     private fun stubDedupHit(docId: String) {
         val body = objectMapper.readTree("""{"hits":{"total":{"value":1},"hits":[{"_id":"$docId"}]}}""")
+        val hit = body.path("hits").path("hits").first() as com.fasterxml.jackson.databind.node.ObjectNode
+        hit.set<com.fasterxml.jackson.databind.JsonNode>("_source", objectMapper.valueToTree(mapOf(
+            "email" to "replay@example.com", "givenNames" to "A", "familyNames" to "B",
+            "identityVerification" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+                "replay@example.com", "A", "B", "JATS_SHA256:" + "a".repeat(64), null, null))))
         Mockito.doReturn(ResponseEntity.ok(body) as ResponseEntity<*>)
             .`when`(restTemplate).exchange(
                 Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
@@ -3479,7 +3562,7 @@ class ExpertDiscoveryServiceTest {
             europePmc, PaperSearchResult(listOf(paper("PMC1", "Paper 1")), null, 1)
         )
         DiscoveryMockHelper.stubExtractAuthorEmails(
-            europePmc, listOf(AuthorEmail("enqueue@example.com", "A", "B", false, null, "0000-0007"))
+            europePmc, listOf(verifiedAuthorEmail("enqueue@example.com", "A", "B", false, null, "0000-0007"))
         )
         DiscoveryMockHelper.stubValidateEmail(
             emailValidationService, "enqueue@example.com", EmailValidationResult(2, true)
@@ -3494,7 +3577,7 @@ class ExpertDiscoveryServiceTest {
 
         assertEquals(1, result.stats.indexed)
         assertEquals(0, result.stats.duplicates)
-        Mockito.verify(enrichmentJobService).enqueue(eqValue("0000-0007"), eqValue("EUROPE_PMC"), eqValue(77L))
+        Mockito.verify(enrichmentJobService).enqueue(eqValue(ExpertIdGenerator.generate(null, "enqueue@example.com")), eqValue("EUROPE_PMC"), eqValue(77L))
     }
 
     @Test
@@ -3503,7 +3586,7 @@ class ExpertDiscoveryServiceTest {
         val orcid = Mockito.mock(OrcidDataSource::class.java)
         Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
         DiscoveryMockHelper.stubOrcidSourceName(orcid)
-        DiscoveryMockHelper.stubOrcidRecordToAuthorEmails(orcid)
+        Mockito.doCallRealMethod().`when`(orcid).orcidRecordToAuthorEmails((Mockito.any(OrcidDataSource.OrcidRecord::class.java) ?: OrcidDataSource.OrcidRecord("test", "A", "B", emptyList(), null, null)))
         DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 10)
         stubOrcid(
             orcid,
@@ -3526,7 +3609,7 @@ class ExpertDiscoveryServiceTest {
         val result = svc.discover(PaperSearchCriteria(), "TEST", includeRawScan = false)
 
         assertEquals(1, result.stats.bySource["ORCID"]?.indexed)
-        Mockito.verify(enrichmentJobService).enqueue(eqValue("0000-0005"), eqValue("ORCID"), eqValue(77L))
+        Mockito.verify(enrichmentJobService).enqueue(eqValue(ExpertIdGenerator.generate(null, "orcid-job@example.com")), eqValue("ORCID"), eqValue(77L))
     }
 
     @Test
@@ -3538,7 +3621,7 @@ class ExpertDiscoveryServiceTest {
         val page = PaperSearchResult(listOf(paper("PMC1", "Paper 1")), "C2", 4)
         DiscoveryMockHelper.stubSearchPapersSequence(europePmc, page, PaperSearchResult(emptyList(), null, 4))
         DiscoveryMockHelper.stubExtractAuthorEmails(
-            europePmc, listOf(AuthorEmail("replay@example.com", "A", "B", false, null, null))
+            europePmc, listOf(verifiedAuthorEmail("replay@example.com", "A", "B", false, null, null))
         )
         DiscoveryMockHelper.stubValidateEmail(
             emailValidationService, "replay@example.com", EmailValidationResult(2, true)
@@ -3952,7 +4035,7 @@ class ExpertDiscoveryServiceTest {
         val orcid = Mockito.mock(OrcidDataSource::class.java)
         Mockito.doReturn(orcid).`when`(orcidProvider).getIfAvailable()
         DiscoveryMockHelper.stubOrcidSourceName(orcid)
-        DiscoveryMockHelper.stubOrcidRecordToAuthorEmails(orcid)
+        Mockito.doCallRealMethod().`when`(orcid).orcidRecordToAuthorEmails((Mockito.any(OrcidDataSource.OrcidRecord::class.java) ?: OrcidDataSource.OrcidRecord("test", "A", "B", emptyList(), null, null)))
         DiscoveryMockHelper.stubOrcidMaxRecordsPerRun(orcid, 1_000)
         val records = (1..3).map {
             OrcidDataSource.OrcidRecord(

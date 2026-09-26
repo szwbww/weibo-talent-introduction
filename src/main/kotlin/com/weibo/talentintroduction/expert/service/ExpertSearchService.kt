@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.fasterxml.jackson.databind.JsonNode
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
@@ -502,7 +503,8 @@ class ExpertSearchService(
                 ?.map { it.asText() }?.filter { it.isNotBlank() },
             enrichedAt = source.nullableText("enrichedAt"),
             enrichmentSource = source.nullableText("enrichmentSource"),
-            expertClassification = parseExpertClassification(source.path("expertClassification"))
+            expertClassification = parseExpertClassification(source.path("expertClassification")),
+            identityVerification = DiscoveryIdentity.read(source.path("identityVerification"))
         )
     }
 
@@ -587,7 +589,7 @@ class ExpertSearchService(
             "hIndex", "citationCount", "lastPublicationYear",
             "researchFields", "disciplineCategory", "institution", "institutionType",
             "emailSource", "emailVerifiedLevel",
-            "dataSource", "externalIds", "worksCount",
+            "dataSource", "externalIds", "worksCount", "identityVerification",
             "tags",
             "updatedAt",
             "operatorStatus",
@@ -1168,6 +1170,18 @@ class ExpertSearchService(
      * 不得追加任何其他条件（主计划 M-1：唯一收口点）。
      * 调用方保证 expertTypes 非空（I2-2），故这里不处理空集合。
      */
+    /** Re-read immediately before first outreach; a missing or changed identity fails closed. */
+    fun hasCurrentVerifiedIdentity(profile: ExpertProfile, levels: Set<ExpertIndexLevel>): Boolean {
+        if (!DiscoveryIdentity.isDiscovery(profile)) return true
+        if (!DiscoveryIdentity.allowed(profile)) return false
+        return try {
+            val current = levels.flatMap { findByDocumentIds(it, listOf(profile.esDocId ?: profile.orcidId)) }
+            current.isNotEmpty() && current.all { DiscoveryIdentity.allowed(it) &&
+                it.identityVerification == profile.identityVerification && it.email == profile.email &&
+                it.givenNames == profile.givenNames && it.familyNames == profile.familyNames }
+        } catch (_: Exception) { false }
+    }
+
     fun searchExpertsByTypesWithEmail(
         size: Int,
         level: ExpertIndexLevel = ExpertIndexLevel.CANDIDATE,
@@ -1184,7 +1198,7 @@ class ExpertSearchService(
                 "bool" to mapOf(
                     "filter" to listOf(
                         mapOf("exists" to mapOf("field" to "email")),
-                        typesFilter
+                        typesFilter, DiscoveryIdentity.filter()
                     )
                 )
             ),

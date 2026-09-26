@@ -27,6 +27,7 @@ class JatsXmlEmailParserTest {
         assertEquals(1, results.size)
         assertEquals("john.smith@oxford.ac.uk", results[0].email)
         assertEquals("John", results[0].givenNames)
+        assertTrue(results[0].identityEvidence!!.startsWith("JATS_SHA256:"))
         assertEquals("Smith", results[0].familyNames)
         assertTrue(results[0].isCorresponding)
     }
@@ -485,4 +486,92 @@ class JatsXmlEmailParserTest {
         assertEquals(1, results.size)
         assertEquals("safe2@example.com", results[0].email)
     }
+    private fun sharedXml(names: List<Pair<String, String>>, text: String): String =
+        "<article><front><article-meta><contrib-group>" + names.joinToString("") { (given, family) ->
+            "<contrib contrib-type=\"author\"><name><given-names>$given</given-names><surname>$family</surname></name>" +
+                "<xref ref-type=\"corresp\" rid=\"c1\"/></contrib>"
+        } + "</contrib-group><author-notes><corresp id=\"c1\">$text</corresp></author-notes></article-meta></front></article>"
+
+    @Test
+    fun `shared note without explicit ownership must not assign first author`() {
+        val result = JatsXmlEmailParser.parse(sharedXml(listOf("John" to "Smith", "Jane" to "Doe"),
+            "Correspondence: one@example.org, two@example.org"))
+        assertEquals(2, result.size)
+        result.forEach { assertNull(it.identityEvidence); assertNull(it.givenNames); assertNull(it.familyNames); assertNull(it.orcidId); assertNull(it.affiliation) }
+    }
+
+    @Test
+    fun `PMC13280751 postfix name belongs only to preceding email`() {
+        val names = listOf("Shibao" to "Lu", "Jie" to "Lu", "Wei" to "Wang")
+        val text = "Corresponding authors: Shibao Lu, Jie Lu, Wei Wang; E-mail: spinelu@163.com (Shibao Lu), imaginglu@hotmail.com (Jie Lu), wangwei37@buaa.edu.cn (Wei Wang)."
+        for (order in listOf(names, names.reversed())) {
+            val result = JatsXmlEmailParser.parse(sharedXml(order, text)).associateBy { it.email }
+            assertEquals("Shibao", result.getValue("spinelu@163.com").givenNames)
+            assertEquals("Jie", result.getValue("imaginglu@hotmail.com").givenNames)
+            assertEquals("Wei", result.getValue("wangwei37@buaa.edu.cn").givenNames)
+        }
+    }
+
+    @Test
+    fun `PMC13196294 grouped emails and accents retain independent owners`() {
+        val result = JatsXmlEmailParser.parse(sharedXml(listOf("Fuqiang" to "Gao", "Sébastien" to "Lustig", "Weiguo" to "Wang"),
+            "Corresponding authors: gaofuqianghcl@163.com, gaofuqiang@bjmu.edu.cn (Fuqiang Gao); sebastien.lustig@gmail.com (Sébastien Lustig); jointwwg@163.com (Weiguo Wang)"))
+        assertEquals(listOf("Fuqiang", "Fuqiang", "Sébastien", "Weiguo"), result.map { it.givenNames })
+    }
+
+    @Test
+    fun `PMC13241006 explicit initials cover email list not other author`() {
+        val result = JatsXmlEmailParser.parse(sharedXml(listOf("Sajjad" to "Abbasi", "Ali Akbar" to "Moosavi"),
+            "E-mail: sajjad.abbasi@shirazu.ac.ir, sajjad.abbasi@cnrs.fr, sajjad.abbasi.h@gmail.com (SA); aamousavi@gmail.com, aamousavi@shirazu.ac.ir (AAM)"))
+        assertEquals(listOf("Sajjad", "Sajjad", "Sajjad", "Ali Akbar", "Ali Akbar"), result.map { it.givenNames })
+    }
+
+    @Test
+    fun `same name author nodes and duplicate initials remain ambiguous`() {
+        for (names in listOf(listOf("John" to "Smith", "John" to "Smith"), listOf("John" to "Smith", "Jane" to "Smith"))) {
+            val result = JatsXmlEmailParser.parse(sharedXml(names, "contact@example.org (JS)"))
+            assertNull(result.single().givenNames)
+        }
+    }
+
+    @Test
+    fun `exclusive reference cannot override a different named contact`() {
+        val result = JatsXmlEmailParser.parse(sharedXml(listOf("John" to "Smith"), "Correspondence: Jane Doe, other@example.org"))
+        assertNull(result.single().givenNames)
+    }
+
+    @Test
+    fun `multiple rid tokens resolve and duplicate id cannot choose first`() {
+        val xml = sharedXml(listOf("John" to "Smith"), "contact@example.org").replace("rid=\"c1\"", "rid=\"missing c1\"")
+        assertEquals("John", JatsXmlEmailParser.parse(xml).single().givenNames)
+        val duplicate = xml.replace("</author-notes>", "<corresp id=\"c1\">other@example.org</corresp></author-notes>")
+        assertTrue(JatsXmlEmailParser.parse(duplicate).all { it.givenNames == null })
+    }
+
+    @Test
+    fun `direct conflicting authors do not synthesize an identity`() {
+        val xml = sharedXml(listOf("John" to "Smith", "Jane" to "Doe"), "shared@example.org")
+            .replace("<xref ref-type=\"corresp\" rid=\"c1\"/>", "<email>shared@example.org</email>")
+        assertNull(JatsXmlEmailParser.parse(xml).single().givenNames)
+    }
+
+    @Test
+    fun `editor groups references and affiliation mail do not become author identity`() {
+        val xml = """<article><front><article-meta>
+          <contrib-group content-type="editor"><contrib><name><surname>Editor</surname></name><email>editor@example.org</email></contrib></contrib-group>
+          <contrib-group><contrib contrib-type="author"><name><given-names>John</given-names><surname>Smith</surname></name><aff><email>office@example.org</email></aff><address><email>john@example.org</email></address></contrib></contrib-group>
+          </article-meta></front><back><ref-list><contrib><name><surname>Other</surname></name><email>ref@example.org</email></contrib></ref-list></back></article>"""
+        val result = JatsXmlEmailParser.parse(xml)
+        assertEquals(listOf("john@example.org"), result.map { it.email })
+        assertEquals("John", result.single().givenNames)
+    }
+
+    @Test
+    fun `contradictory prefix and postfix author labels never select one owner`() {
+        val result = JatsXmlEmailParser.parse(sharedXml(listOf("John" to "Smith", "Jane" to "Doe"),
+            "John Smith: shared@example.org (Jane Doe)"))
+        assertNull(result.single().givenNames)
+        assertNull(result.single().identityEvidence)
+    }
+
 }

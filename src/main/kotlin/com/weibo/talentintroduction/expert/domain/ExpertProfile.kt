@@ -37,7 +37,8 @@ data class ExpertProfile(
      * - authors 路径（enrichment 时）：该作者的当前已知机构（last_known_institutions[0]）的类型，
      *   与 institution 很可能不是同一个机构（institution 永远停留在发现时的论文署名机构）。
      */
-    val institutionType: String? = null
+    val institutionType: String? = null,
+    val identityVerification: IdentityVerification? = null
 ) {
     val displayName: String
         get() = listOfNotNull(givenNames, familyNames)

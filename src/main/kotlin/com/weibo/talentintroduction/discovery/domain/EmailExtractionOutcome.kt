@@ -16,7 +16,9 @@ data class EmailExtractionOutcome @JvmOverloads constructor(
      * HTTP_403 / HTTP_404 / HTTP_429 / HTTP_5XX / HTTP_4XX / TLS_ERROR / TIMEOUT / INVALID_CONTENT /
      * NETWORK_ERROR。null = 不是下载失败或未分类。
      */
-    val downloadFailureCategory: String? = null
+    val downloadFailureCategory: String? = null,
+    /** Absent on old cached extraction; stamped only after a fresh extraction. */
+    val identityRuleVersion: Int? = null
 )
 
 /** c10（I-3）：内容已取到但其中没有邮箱的失败原因（PDF 文本与 PMC 全文都属于这一类）。 */

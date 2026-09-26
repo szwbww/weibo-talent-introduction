@@ -594,38 +594,18 @@ class EuropePmcDataSourceTest {
     }
 
     @Test
-    fun `extractAuthorEmails reuses search authorEmail without fulltext fetch`() {
+    fun `search metadata cannot bypass explicit fulltext ownership`() {
         val restTemplate = Mockito.mock(RestTemplate::class.java)
         val dataSource = EuropePmcDataSource(restTemplate, properties)
-
+        val xml = "<article><front><article-meta><contrib-group><contrib contrib-type=\"author\"><name><given-names>Actual</given-names><surname>Owner</surname></name><email>john@oxford.ac.uk</email></contrib></contrib-group></article-meta></front></article>"
+        Mockito.`when`(restTemplate.getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))).thenReturn(xml.toByteArray())
         val outcome = dataSource.extractAuthorEmails(PaperMetadata(
             pmcId = "PMC9876543", pmid = "1", doi = "10.0/x", title = "T", pubYear = 2024,
-            journal = "J",
-            authors = listOf(
-                PaperAuthor(
-                    givenNames = "John",
-                    familyNames = "Smith",
-                    orcidId = "0000-0001-2345-6789",
-                    affiliation = "University of Oxford",
-                    isCorresponding = true,
-                    email = "john@oxford.ac.uk"
-                )
-            ),
-            source = "EUROPE_PMC"
+            journal = "J", authors = listOf(PaperAuthor("John", "Smith", null, null, true, "john@oxford.ac.uk")), source = "EUROPE_PMC"
         ))
-
-        assertEquals("SEARCH_FIELD", outcome.methodUsed)
-        assertEquals(0, outcome.httpRequests)
-        assertNull(outcome.failureReason)
-        assertEquals(1, outcome.emails.size)
-        assertEquals("john@oxford.ac.uk", outcome.emails[0].email)
-        assertEquals("John", outcome.emails[0].givenNames)
-        assertEquals("Smith", outcome.emails[0].familyNames)
-        assertEquals("University of Oxford", outcome.emails[0].affiliation)
-        assertEquals("0000-0001-2345-6789", outcome.emails[0].orcidId)
-        assertTrue(outcome.emails[0].isCorresponding)
-        Mockito.verify(restTemplate, Mockito.never())
-            .getForObject(Mockito.anyString(), Mockito.eq(ByteArray::class.java))
+        assertEquals("Actual", outcome.emails.single().givenNames)
+        assertTrue(outcome.emails.single().identityEvidence!!.startsWith("JATS_SHA256:"))
+        assertEquals(1, outcome.httpRequests)
     }
 
     @Test

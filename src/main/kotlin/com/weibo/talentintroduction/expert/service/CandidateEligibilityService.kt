@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.EligibilityResult
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import org.springframework.stereotype.Service
@@ -18,6 +19,7 @@ class CandidateEligibilityService(
         val properties = eligibilityFilterService.getCandidateFilter()
         val academicProperties = eligibilityFilterService.getAcademicFilter()
         val reasons = mutableListOf<String>()
+        if (!DiscoveryIdentity.allowed(expert)) reasons += "IDENTITY_UNVERIFIED"
 
         if (properties.requireOrcid && expert.orcidId.isBlank())
             reasons += "MISSING_ORCID"

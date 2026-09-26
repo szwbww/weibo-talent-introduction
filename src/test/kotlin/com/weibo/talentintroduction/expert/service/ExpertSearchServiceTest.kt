@@ -2220,7 +2220,7 @@ class ExpertSearchServiceTest {
         val query = request["query"] as Map<*, *>
         val bool = query["bool"] as Map<*, *>
         val filter = bool["filter"] as List<*>
-        assertEquals(2, filter.size, "I2-4: types query must carry exactly exists email + types filter")
+        assertEquals(3, filter.size, "types query now additionally requires the discovery identity gate")
         assertTrue(filter.toString().contains("exists") && filter.toString().contains("email"))
         assertEquals(
             ExpertSearchService.expertTypesFilter(types),
@@ -2228,7 +2228,7 @@ class ExpertSearchServiceTest {
         )
         // I2-4: 不得混入 sendable/version 等任何其他条件（M-1）。
         assertFalse(filter.toString().contains("sendable"), "I2-4: types query must not carry the sendable gate")
-        assertFalse(filter.toString().contains("version"), "I2-4: types query must not carry the version gate")
+        assertFalse(filter.toString().contains("expertClassification.version"), "I2-4: types query must not carry the version gate")
         // 排序与旧方法一致 —— CANDIDATE 使用 candidateValidatedAt。
         val sort = request["sort"] as List<*>
         assertTrue(sort.toString().contains("candidateValidatedAt"), "CANDIDATE sort must be candidateValidatedAt: $sort")

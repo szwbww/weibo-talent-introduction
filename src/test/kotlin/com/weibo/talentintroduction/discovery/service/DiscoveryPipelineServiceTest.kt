@@ -959,7 +959,10 @@ class DiscoveryPipelineServiceTest {
         val body = if (existingDocId == null) {
             """{"hits":{"total":{"value":0},"hits":[]}}"""
         } else {
-            """{"hits":{"total":{"value":1},"hits":[{"_id":"$existingDocId"}]}}"""
+            objectMapper.writeValueAsString(mapOf("hits" to mapOf("total" to mapOf("value" to 1), "hits" to listOf(mapOf(
+                "_id" to existingDocId, "_source" to mapOf("email" to "john@ox.ac.uk", "givenNames" to "John", "familyNames" to "Smith",
+                    "identityVerification" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+                        "john@ox.ac.uk", "John", "Smith", "JATS_SHA256:" + "a".repeat(64), "0000-0002-1825-0097", null)))))))
         }
         Mockito.`when`(
             restTemplate.exchange(
@@ -1151,7 +1154,8 @@ class DiscoveryPipelineServiceTest {
 
     private fun extractionJson(email: String = "john@ox.ac.uk") = objectMapper.writeValueAsString(
         EmailExtractionOutcome(
-            listOf(AuthorEmail(email, "John", "Smith", true, "Oxford", "0000-0002-1825-0097")), "FULLTEXT"
+            listOf(AuthorEmail(email, "John", "Smith", true, "Oxford", "0000-0002-1825-0097", identityEvidence = "JATS_SHA256:" + "a".repeat(64))), "FULLTEXT",
+            identityRuleVersion = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.VERSION
         )
     )
 

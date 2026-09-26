@@ -159,7 +159,8 @@ class EuropePmcDataSource(
                 institutionType = author.institutionType
             )
         }
-        if (searchEmails.isNotEmpty()) {
+        // Search metadata alone remains an unverified clue; prefer explicit fulltext ownership.
+        if (searchEmails.isNotEmpty() && paper.pmcId == null) {
             return EmailExtractionOutcome(searchEmails, "SEARCH_FIELD", null, httpRequests = 0)
         }
 

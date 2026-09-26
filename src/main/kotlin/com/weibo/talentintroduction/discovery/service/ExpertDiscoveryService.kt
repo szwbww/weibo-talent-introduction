@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.discovery.service
 
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
 import com.weibo.talentintroduction.config.EuropePmcProperties
@@ -196,7 +197,7 @@ class ExpertDiscoveryService(
      */
     private sealed class DedupResult {
         /** RAW 已有该身份：`docId` = 匹配文档的真实 `_id`。 */
-        data class Exists(val docId: String?) : DedupResult()
+        data class Exists(val docId: String?, val source: com.fasterxml.jackson.databind.JsonNode? = null) : DedupResult()
 
         object NotFound : DedupResult()
         object Error : DedupResult()
@@ -981,6 +982,12 @@ class ExpertDiscoveryService(
                     if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
                     sourceStats.authorsExtracted++
 
+                    val identityReject = identityRejection(authorEmail)
+                    if (identityReject != null) {
+                        sourceStats.failureReasons.merge(identityReject, 1) { a, b -> a + b }
+                        sourceStats.emailsRejected++
+                        continue
+                    }
                     val emailResult = emailValidationService.validate(authorEmail.email)
                     if (!emailResult.valid) { sourceStats.emailsRejected++; continue }
                     sourceStats.emailsValid++
@@ -993,23 +1000,12 @@ class ExpertDiscoveryService(
                     }
                     if (duplicate != null) {
                         sourceStats.duplicates++
-                        duplicate.docId?.let { ensureEnrichmentJob(it, orcid.sourceName, execId, sourceStats) }
+                        recordIdentityDuplicate(duplicate, authorEmail, sourceStats, orcid.sourceName, execId)
                         continue
-                    }
-                    if (authorEmail.orcidId != null) {
-                        when (val orcidDedup = existsInRawIndexByOrcid(authorEmail.orcidId)) {
-                            is DedupResult.Exists -> {
-                                sourceStats.duplicates++
-                                orcidDedup.docId?.let { ensureEnrichmentJob(it, orcid.sourceName, execId, sourceStats) }
-                                continue
-                            }
-                            DedupResult.Error -> { sourceStats.dedupErrors++; continue }
-                            DedupResult.NotFound -> {}
-                        }
                     }
 
                     val profile = buildOrcidProfile(record, authorEmail, emailResult.level)
-                    val esDocId = ExpertIdGenerator.generate(authorEmail.orcidId ?: record.orcidId, authorEmail.email)
+                    val esDocId = ExpertIdGenerator.generate(null, DiscoveryIdentity.normalizedEmail(authorEmail.email))
                     val eligibility = eligibilityService.evaluateEligibility(profile)
                     val filterResult = if (eligibility.eligible) "PASSED" else "REJECTED"
                     val rejectReasons = if (eligibility.eligible) emptyList() else eligibility.rejectReasons
@@ -1119,13 +1115,15 @@ class ExpertDiscoveryService(
     private fun buildOrcidProfile(record: OrcidDataSource.OrcidRecord, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {
         return ExpertProfile(
             orcidId = record.orcidId,
-            email = authorEmail.email.lowercase(Locale.ROOT),
+            email = DiscoveryIdentity.normalizedEmail(authorEmail.email),
             givenNames = record.givenNames,
             familyNames = record.familyNames,
             country = record.country,
             keyword = null, employment = record.institutionName,
             institution = record.institutionName, lastPublicationYear = null,
-            emailSource = "ORCID_PUBLIC", emailVerifiedLevel = emailVerifiedLevel, dataSource = "ORCID"
+            emailSource = "ORCID_PUBLIC", emailVerifiedLevel = emailVerifiedLevel, dataSource = "ORCID",
+            externalIds = objectMapper.writeValueAsString(mapOf("orcid" to authorEmail.orcidId)),
+            identityVerification = proofFor(authorEmail)
         )
     }
 
@@ -1175,7 +1173,7 @@ class ExpertDiscoveryService(
         ConsumeIdentityFactory { authorEmail, emailVerifiedLevel ->
             ConsumeIdentity(
                 profile = buildProfile(paper, authorEmail, emailVerifiedLevel),
-                esDocId = ExpertIdGenerator.generate(authorEmail.orcidId, authorEmail.email),
+                esDocId = ExpertIdGenerator.generate(null, DiscoveryIdentity.normalizedEmail(authorEmail.email)),
                 paper = paper
             )
         }
@@ -1184,7 +1182,7 @@ class ExpertDiscoveryService(
         ConsumeIdentityFactory { authorEmail, emailVerifiedLevel ->
             ConsumeIdentity(
                 profile = buildOrcidProfile(record, authorEmail, emailVerifiedLevel),
-                esDocId = ExpertIdGenerator.generate(authorEmail.orcidId ?: record.orcidId, authorEmail.email),
+                esDocId = ExpertIdGenerator.generate(null, DiscoveryIdentity.normalizedEmail(authorEmail.email)),
                 paper = null
             )
         }
@@ -1306,6 +1304,12 @@ class ExpertDiscoveryService(
             if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
             sourceStats.authorsExtracted++
 
+            val identityReject = identityRejection(authorEmail)
+            if (identityReject != null) {
+                sourceStats.failureReasons.merge(identityReject, 1) { a, b -> a + b }
+                sourceStats.emailsRejected++
+                continue
+            }
             val emailResult = emailValidationService.validate(authorEmail.email)
             if (!emailResult.valid) { sourceStats.emailsRejected++; continue }
             sourceStats.emailsValid++
@@ -1320,20 +1324,8 @@ class ExpertDiscoveryService(
             if (duplicate != null) {
                 sourceStats.duplicates++
                 duplicates++
-                duplicate.docId?.let { ensureEnrichmentJob(it, sourceName, executionId, sourceStats) }
+                recordIdentityDuplicate(duplicate, authorEmail, sourceStats, sourceName, executionId)
                 continue
-            }
-            if (authorEmail.orcidId != null) {
-                when (val orcidDedup = existsInRawIndexByOrcid(authorEmail.orcidId)) {
-                    is DedupResult.Exists -> {
-                        sourceStats.duplicates++
-                        duplicates++
-                        orcidDedup.docId?.let { ensureEnrichmentJob(it, sourceName, executionId, sourceStats) }
-                        continue
-                    }
-                    DedupResult.Error -> { sourceStats.dedupErrors++; dedupFailed = true; continue }
-                    DedupResult.NotFound -> {}
-                }
             }
 
             val identity = identityFactory.create(authorEmail, emailResult.level)
@@ -1610,7 +1602,7 @@ class ExpertDiscoveryService(
                 if (FulltextRequestGate.hostBusyInScope()) {
                     QueuedItemExtraction.HostBusy
                 } else {
-                    val json = objectMapper.writeValueAsString(outcome)
+                    val json = objectMapper.writeValueAsString(outcome.copy(identityRuleVersion = DiscoveryIdentity.VERSION))
                     if (utf8Bytes(json) > extractionMaxBytes) {
                         QueuedItemExtraction.TooLarge
                     } else {
@@ -1650,6 +1642,9 @@ class ExpertDiscoveryService(
             objectMapper.readValue(extractionJson, EmailExtractionOutcome::class.java)
         } catch (e: Exception) {
             return QueuedItemConsumption(unrecoverableReason = QUEUE_EXTRACTION_UNREADABLE)
+        }
+        if (extraction.identityRuleVersion != DiscoveryIdentity.VERSION) {
+            return QueuedItemConsumption(unrecoverableReason = "IDENTITY_EXTRACTION_VERSION_UNSUPPORTED")
         }
         val identityFactory = try {
             when (envelope.unit) {
@@ -1822,17 +1817,45 @@ class ExpertDiscoveryService(
         enqueueEnrichmentJob(docId, sourceName, executionId, sourceStats)
     }
 
+    private fun identityRejection(author: AuthorEmail): String? = when {
+        DiscoveryIdentity.isBlocked(author.email) -> "IDENTITY_DELETED_BLOCKED"
+        author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank() ||
+            !DiscoveryIdentity.validEvidence(author.identityEvidence) -> "IDENTITY_UNRESOLVED"
+        else -> null
+    }
+
+    private fun proofFor(author: AuthorEmail) = author.identityEvidence?.takeIf { identityRejection(author) == null }?.let {
+        DiscoveryIdentity.verified(author.email, author.givenNames, author.familyNames, it, author.orcidId, author.openAlexAuthorId)
+    }
+
+    private fun recordIdentityDuplicate(existing: DedupResult.Exists, incoming: AuthorEmail, stats: SourceStats,
+        sourceName: String, executionId: Long?) {
+        val source = existing.source
+        val proof = source?.let { DiscoveryIdentity.read(it.path("identityVerification")) }
+        val mismatch = source != null && (source.path("givenNames").asText(null) != incoming.givenNames ||
+            source.path("familyNames").asText(null) != incoming.familyNames ||
+            DiscoveryIdentity.normalizedEmail(source.path("email").asText(null)) != DiscoveryIdentity.normalizedEmail(incoming.email) ||
+            (proof?.orcid != null && incoming.orcidId != null && proof.orcid != incoming.orcidId) ||
+            (proof?.openAlexAuthorId != null && incoming.openAlexAuthorId != null && proof.openAlexAuthorId != incoming.openAlexAuthorId))
+        if (mismatch || source == null || proof == null || !DiscoveryIdentity.allowedSource(source)) {
+            stats.failureReasons.merge(if (mismatch) "IDENTITY_EXISTING_CONFLICT" else "IDENTITY_EXISTING_UNVERIFIED", 1) { a, b -> a + b }
+            return
+        }
+        existing.docId?.let { ensureEnrichmentJob(it, sourceName, executionId, stats) }
+    }
+
     private fun buildProfile(paper: PaperMetadata, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {
         return ExpertProfile(
             orcidId = authorEmail.orcidId ?: "",
-            email = authorEmail.email.lowercase(Locale.ROOT),
+            email = DiscoveryIdentity.normalizedEmail(authorEmail.email),
             givenNames = authorEmail.givenNames, familyNames = authorEmail.familyNames,
             country = inferCountryFromAffiliation(authorEmail.affiliation),
             keyword = null, employment = authorEmail.affiliation, institution = authorEmail.affiliation,
             lastPublicationYear = paper.pubYear, emailSource = "PAPER_FULLTEXT",
             emailVerifiedLevel = emailVerifiedLevel, dataSource = paper.source,
             externalIds = buildExternalIds(paper, authorEmail),
-            institutionType = authorEmail.institutionType
+            institutionType = authorEmail.institutionType,
+            identityVerification = proofFor(authorEmail)
         )
     }
 
@@ -1848,6 +1871,7 @@ class ExpertDiscoveryService(
             "lastPublicationYear" to profile.lastPublicationYear,
             "emailSource" to profile.emailSource, "emailVerifiedLevel" to profile.emailVerifiedLevel,
             "dataSource" to profile.dataSource,
+            "identityVerification" to profile.identityVerification,
             "externalIds" to profile.externalIds?.let { objectMapper.readValue(it, Map::class.java) },
             "discoveredAt" to now, "updatedAt" to now,
             "filterResult" to filterResult,
@@ -1857,14 +1881,16 @@ class ExpertDiscoveryService(
     }
 
     private fun promoteDiscoveredToCandidate(esDocId: String, rawDoc: Map<String, Any?>): Boolean {
+        if (!DiscoveryIdentity.allowedMap(rawDoc)) return false
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val now = LocalDateTime.now().format(dateFormatter)
+        if (!DiscoveryIdentity.allowedMap(rawDoc)) return false
         val candidateDoc = rawDoc.toMutableMap().apply {
             put("candidateValidatedAt", now); put("updatedAt", now)
             val existingTags = (get("tags") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
             put("tags", (existingTags + "discovered").distinct())
         }
-        val putUrl = "${esProperties.baseUrl}/$candidateIndex/_doc/$esDocId"
+        val putUrl = "${esProperties.baseUrl}/$candidateIndex/_doc/$esDocId?op_type=create"
         return try {
             restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(candidateDoc, esHeaders()),
                 com.fasterxml.jackson.databind.JsonNode::class.java)
@@ -2532,7 +2558,13 @@ class ExpertDiscoveryService(
             lastPublicationYear = enrichment.lastPublicationYear ?: profile.lastPublicationYear
         )
         doc["expertClassification"] = expertClassificationService.classify(enrichedProfile)
-        val updateBody = mapOf("doc" to doc)
+        val updateBody: Map<String, Any> = if (DiscoveryIdentity.isDiscovery(profile)) {
+            mapOf("script" to mapOf("lang" to "painless", "source" to
+                "if (ctx._source.identityVerification != params.identity || ctx._source.email != params.email || ctx._source.givenNames != params.given || ctx._source.familyNames != params.family || ctx._source.externalIds != params.externalIds) { ctx.op = 'none'; } else { for (entry in params.doc.entrySet()) { ctx._source[entry.getKey()] = entry.getValue(); } }",
+                "params" to mapOf("identity" to profile.identityVerification, "email" to profile.email,
+                    "given" to profile.givenNames, "family" to profile.familyNames,
+                    "externalIds" to profile.externalIds?.let { objectMapper.readValue(it, Map::class.java) }, "doc" to doc)))
+        } else mapOf("doc" to doc)
         return LayerUpdateResult(
             raw = updateAcademicFieldsInLayer(ExpertIndexLevel.RAW, docId, updateBody),
             candidate = updateAcademicFieldsInLayer(ExpertIndexLevel.CANDIDATE, docId, updateBody),
@@ -2564,11 +2596,11 @@ class ExpertDiscoveryService(
             return LayerUpdateStatus.FAILED
         }
         return try {
-            restTemplate.exchange(
+            val response = restTemplate.exchange(
                 "${esProperties.baseUrl}/$index/_update/$docId", HttpMethod.POST,
                 HttpEntity(updateBody, esHeaders()), com.fasterxml.jackson.databind.JsonNode::class.java
             )
-            LayerUpdateStatus.UPDATED
+            if (response.body?.path("result")?.asText() == "noop") LayerUpdateStatus.FAILED else LayerUpdateStatus.UPDATED
         } catch (e: Exception) {
             log.warn("Failed to update academic fields for {} in index {}: {}", docId, level, e.message)
             LayerUpdateStatus.FAILED
@@ -2587,6 +2619,9 @@ class ExpertDiscoveryService(
      * 任何其他形状（含 `EMAIL-*`、W 前缀、空串）都当作「没有作者 ID」，绝不参与查询或文档定位。
      */
     private fun trustedOpenAlexAuthorId(profile: ExpertProfile): String? {
+        if (DiscoveryIdentity.isDiscovery(profile)) {
+            return if (DiscoveryIdentity.allowed(profile)) normalizeOpenAlexAuthorId(profile.identityVerification?.openAlexAuthorId) else null
+        }
         val externalIds = profile.externalIds ?: return null
         val parsed = try {
             objectMapper.readValue(externalIds, Map::class.java)
@@ -2597,8 +2632,14 @@ class ExpertDiscoveryService(
     }
 
     /** I-1：有效 ORCID = 非空且不是 `EMAIL-*` 主键；`EMAIL-*` 绝不能作为 `filter=orcid:` 的值。 */
-    private fun trustedOrcid(profile: ExpertProfile): String? =
-        profile.orcidId.trim().takeIf { it.isNotEmpty() && !it.startsWith(EMAIL_PRIMARY_KEY_PREFIX) }
+    private fun trustedOrcid(profile: ExpertProfile): String? {
+        if (DiscoveryIdentity.isDiscovery(profile)) {
+            return profile.identityVerification?.orcid?.takeIf {
+                DiscoveryIdentity.allowed(profile) && it.matches(Regex("\\d{4}-\\d{4}-\\d{4}-\\d{3}[0-9X]"))
+            }
+        }
+        return profile.orcidId.trim().takeIf { it.isNotEmpty() && !it.startsWith(EMAIL_PRIMARY_KEY_PREFIX) }
+    }
 
     /**
      * I-1/I-3：定向补全共享核心 —— 同一批量核心处理原始库/候选库/申请库中的指定专家。
@@ -2721,11 +2762,12 @@ class ExpertDiscoveryService(
      * 只做去重读取，绝不按新论文的身份改写已入库文档；`_id` 读不到时按 [DedupResult.Exists.docId] 为空处理。
      */
     private fun existsInRawIndexByEmail(email: String): DedupResult {
-        val url = "${esProperties.baseUrl}/${expertIndexService.indexName(ExpertIndexLevel.RAW)}/_search"
+        val indices = ExpertIndexLevel.values().joinToString(",") { expertIndexService.indexName(it) }
+        val url = "${esProperties.baseUrl}/$indices/_search?ignore_unavailable=true"
         val query = mapOf(
-            "query" to mapOf("term" to mapOf("email" to email.lowercase(Locale.ROOT))),
+            "query" to mapOf("term" to mapOf("email" to DiscoveryIdentity.normalizedEmail(email))),
             "size" to 1,
-            "_source" to false
+            "_source" to listOf("email", "givenNames", "familyNames", "identityVerification", "externalIds")
         )
         return try {
             val response = restTemplate.exchange(url, HttpMethod.POST, HttpEntity(query, esHeaders()),
@@ -2733,7 +2775,7 @@ class ExpertDiscoveryService(
             val hits = response?.path("hits")
             val total = hits?.path("total")?.path("value")?.asInt(0) ?: 0
             if (total > 0) {
-                DedupResult.Exists(hits?.path("hits")?.firstOrNull()?.path("_id")?.asText()?.takeIf { it.isNotBlank() })
+                DedupResult.Exists(hits?.path("hits")?.firstOrNull()?.path("_id")?.asText()?.takeIf { it.isNotBlank() }, hits?.path("hits")?.firstOrNull()?.path("_source"))
             } else {
                 DedupResult.NotFound
             }
@@ -2806,6 +2848,7 @@ class ExpertDiscoveryService(
     }
 
     private fun promoteRawToCandidateWithEmail(profile: ExpertProfile): Boolean {
+        if (!DiscoveryIdentity.allowed(profile)) return false
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         try {
             restTemplate.exchange(
@@ -2841,13 +2884,15 @@ class ExpertDiscoveryService(
         }         ?: return false
 
         val now = LocalDateTime.now().format(dateFormatter)
+        if (!DiscoveryIdentity.allowedMap(rawDoc)) return false
         val candidateDoc = rawDoc.toMutableMap().apply {
             put("candidateValidatedAt", now)
             put("updatedAt", now)
             val existingTags = (get("tags") as? List<*>)?.filterIsInstance<String>() ?: emptyList()
             put("tags", (existingTags + "auto_promoted").distinct())
         }
-        val putUrl = "${esProperties.baseUrl}/$candidateIndex/_doc/${profile.orcidId}"
+        val putUrl = "${esProperties.baseUrl}/$candidateIndex/_doc/${profile.orcidId}" +
+            if (DiscoveryIdentity.isDiscovery(profile)) "?op_type=create" else ""
         return try {
             restTemplate.exchange(putUrl, HttpMethod.PUT, HttpEntity(candidateDoc, esHeaders()),
                 com.fasterxml.jackson.databind.JsonNode::class.java)
@@ -2866,6 +2911,7 @@ class ExpertDiscoveryService(
             if (attemptedCount >= limit) return@scrollExperts false
 
             for (profile in batch) {
+                if (DiscoveryIdentity.isDiscovery(profile)) continue
                 if (attemptedCount >= limit) break
                 if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
 
@@ -2976,7 +3022,7 @@ data class QueuedSourcePage(
 /**
  * I-4/I-6：一条工作的抽取结果。
  *
- * - [Extracted] 的 `extractionJson` **非空即可靠**：后续尝试直接消费、不再下载（I-4）；
+ * - [Extracted] 的 `extractionJson` **须通过身份规则版本门禁**：后续尝试直接消费、不再下载（I-4）；
  * - [HostBusy] 只延期、绝不消耗 attempts（I-6）；
  * - [Failed] 是适配器抛出的真实异常：可重试的受 5 次上限与退避约束，不可重试的直接 FAILED；
  * - [TooLarge] 形成 FAILED/EXTRACTION_TOO_LARGE 诊断，绝不写截断专家。

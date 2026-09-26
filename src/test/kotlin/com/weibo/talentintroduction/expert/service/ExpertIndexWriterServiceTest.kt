@@ -44,6 +44,24 @@ class ExpertIndexWriterServiceTest {
     )
 
     @Test
+    fun `unverified discovery cannot enter RAW or candidate through generic writer`() {
+        val unknown = mapOf<String, Any?>("email" to "a@example.org", "emailSource" to "PAPER_FULLTEXT", "givenNames" to "A", "familyNames" to "B")
+        assertFalse(service.indexToRaw("new", unknown))
+        assertFalse(service.writeCandidateDocument("new", unknown))
+        Mockito.verifyNoInteractions(restTemplate)
+    }
+
+    @Test
+    fun `verified discovery uses atomic create instead of overwriting an existing RAW identity`() {
+        val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified("a@example.org", "Jane", "Doe", "JATS_SHA256:" + "a".repeat(64), null, null)
+        val doc = mapOf<String, Any?>("email" to "a@example.org", "emailSource" to "PAPER_FULLTEXT", "givenNames" to "Jane", "familyNames" to "Doe", "identityVerification" to proof)
+        Mockito.`when`(restTemplate.exchange(Mockito.contains("?op_type=create"), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenThrow(HttpClientErrorException(HttpStatus.CONFLICT))
+        assertFalse(service.indexToRaw("EMAIL-existing", doc))
+        Mockito.verify(restTemplate).exchange(Mockito.contains("?op_type=create"), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+    }
+
+    @Test
     fun `readRawDocument preserves number array`() {
         val body = mapper.readTree(
             """
