@@ -2220,7 +2220,8 @@ class ExpertSearchServiceTest {
         val query = request["query"] as Map<*, *>
         val bool = query["bool"] as Map<*, *>
         val filter = bool["filter"] as List<*>
-        assertEquals(3, filter.size, "types query now additionally requires the discovery identity gate")
+        assertEquals(2, filter.size, "types query must use only configured expert types and email presence")
+        assertFalse(filter.toString().contains("identityVerification"))
         assertTrue(filter.toString().contains("exists") && filter.toString().contains("email"))
         assertEquals(
             ExpertSearchService.expertTypesFilter(types),

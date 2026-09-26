@@ -3,7 +3,6 @@ package com.weibo.talentintroduction.campaign.service
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
-import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
@@ -53,7 +52,7 @@ class InitialOutreachService(
             // 创建 contact 前再次检查，查询/缓存/未来重构错误可能绕过。
             val typeName = expert.expertClassification?.type?.name
             val matched = types.any { if (it == "UNCLASSIFIED") typeName == null else typeName == it }
-            if (!matched || !DiscoveryIdentity.allowed(expert)) {
+            if (!matched) {
                 skipped += 1
                 return@forEachIndexed
             }
@@ -69,10 +68,6 @@ class InitialOutreachService(
                 return@forEachIndexed
             }
 
-            if (DiscoveryIdentity.isDiscovery(expert) && !expertSearchService.hasCurrentVerifiedIdentity(expert, setOf(ExpertIndexLevel.CANDIDATE))) {
-                skipped += 1
-                return@forEachIndexed
-            }
             val account = senderAccountAssignmentService.selectAccount(expert, assignments, stock = stock)
             val now = LocalDateTime.now()
             val (boundCode, boundAt) = senderAccountBindingService
@@ -94,10 +89,6 @@ class InitialOutreachService(
             )
 
             val mail = introductionMailComposer.compose(account.accountCode, expert)
-            if (DiscoveryIdentity.isDiscovery(expert) && !expertSearchService.hasCurrentVerifiedIdentity(expert, setOf(ExpertIndexLevel.CANDIDATE))) {
-                skipped += 1
-                return@forEachIndexed
-            }
             val delivered = try {
                 mailDeliveryService.send(account, mail)
             } catch (e: Exception) {

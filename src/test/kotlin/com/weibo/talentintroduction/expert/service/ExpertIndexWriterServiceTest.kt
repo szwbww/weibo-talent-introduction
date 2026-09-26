@@ -44,10 +44,19 @@ class ExpertIndexWriterServiceTest {
     )
 
     @Test
-    fun `unverified discovery cannot enter RAW or candidate through generic writer`() {
+    fun `candidate writer does not add an identity proof eligibility rule`() {
+        val doc = mapOf<String, Any?>("email" to "a@example.org", "emailSource" to "PAPER_FULLTEXT")
+        Mockito.`when`(restTemplate.exchange(Mockito.anyString(), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenReturn(ResponseEntity(mapper.readTree("{}"), HttpStatus.CREATED))
+        assertTrue(service.writeCandidateDocument("existing", doc))
+        Mockito.verify(restTemplate).exchange(eq("https://es.example.com:9200/orcid_info_candidate/_doc/existing"),
+            eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+    }
+
+    @Test
+    fun `new discovery still needs source evidence when entering RAW`() {
         val unknown = mapOf<String, Any?>("email" to "a@example.org", "emailSource" to "PAPER_FULLTEXT", "givenNames" to "A", "familyNames" to "B")
         assertFalse(service.indexToRaw("new", unknown))
-        assertFalse(service.writeCandidateDocument("new", unknown))
         Mockito.verifyNoInteractions(restTemplate)
     }
 

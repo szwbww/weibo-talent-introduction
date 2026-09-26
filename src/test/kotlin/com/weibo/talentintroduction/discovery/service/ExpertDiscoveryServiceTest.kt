@@ -360,19 +360,23 @@ class ExpertDiscoveryServiceTest {
         java.net.URLDecoder.decode(url.substringAfter("?q=").substringBefore("&"), "UTF-8")
 
     @Test
-    fun `unproven and deleted identities cannot reach RAW even if eligibility would pass`() {
+    fun `discovery rejects unproven authors but admits source evidence without a historical blacklist`() {
         val svc = createService()
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC-BLOCK", "Ownership")), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, listOf(
             AuthorEmail("guess@example.org", "Guess", "Owner", true, null, null),
             verifiedAuthorEmail("hanlei1974@sina.com", "New", "Name", true, null, null)))
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "hanlei1974@sina.com", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
         val result = svc.discover(PaperSearchCriteria(), "TEST")
-        assertEquals(0, result.stats.indexed)
-        assertEquals(0, result.stats.promoted)
+        assertEquals(1, result.stats.indexed)
+        assertEquals(1, result.stats.promoted)
         assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").failureReasons["IDENTITY_UNRESOLVED"])
-        assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").failureReasons["IDENTITY_DELETED_BLOCKED"])
-        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        assertFalse(result.stats.bySource.getValue("EUROPE_PMC").failureReasons.containsKey("IDENTITY_DELETED_BLOCKED"))
+        Mockito.verify(indexWriterService, Mockito.times(1)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
     }
 
     @Test

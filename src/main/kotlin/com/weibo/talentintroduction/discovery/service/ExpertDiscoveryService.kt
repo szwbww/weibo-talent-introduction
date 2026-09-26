@@ -1818,7 +1818,6 @@ class ExpertDiscoveryService(
     }
 
     private fun identityRejection(author: AuthorEmail): String? = when {
-        DiscoveryIdentity.isBlocked(author.email) -> "IDENTITY_DELETED_BLOCKED"
         author.givenNames.isNullOrBlank() || author.familyNames.isNullOrBlank() ||
             !DiscoveryIdentity.validEvidence(author.identityEvidence) -> "IDENTITY_UNRESOLVED"
         else -> null
@@ -2848,7 +2847,6 @@ class ExpertDiscoveryService(
     }
 
     private fun promoteRawToCandidateWithEmail(profile: ExpertProfile): Boolean {
-        if (!DiscoveryIdentity.allowed(profile)) return false
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         try {
             restTemplate.exchange(
@@ -2884,7 +2882,6 @@ class ExpertDiscoveryService(
         }         ?: return false
 
         val now = LocalDateTime.now().format(dateFormatter)
-        if (!DiscoveryIdentity.allowedMap(rawDoc)) return false
         val candidateDoc = rawDoc.toMutableMap().apply {
             put("candidateValidatedAt", now)
             put("updatedAt", now)

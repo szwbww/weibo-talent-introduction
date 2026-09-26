@@ -20,11 +20,10 @@ class DiscoveryIdentityTest {
         assertFalse(DiscoveryIdentity.allowed(profile.copy(email = "b@example.org")))
         assertFalse(DiscoveryIdentity.allowed(profile.copy(identityVerification = profile.identityVerification!!.copy(version = 0))))
     }
-    @Test fun `deleted email cannot reenter with new identity and excluded expert remains allowed`() {
-        assertTrue(DiscoveryIdentity.isBlocked(" HANLEI1974@SINA.COM "))
-        assertFalse(DiscoveryIdentity.isBlocked("xzhu3@fau.edu"))
+    @Test fun `source supported identity is accepted without a historical email blacklist`() {
         val p = verified()
-        assertFalse(DiscoveryIdentity.allowed(p.copy(email = "hanlei1974@sina.com", identityVerification = p.identityVerification!!.copy(email = "hanlei1974@sina.com"))))
+        assertTrue(DiscoveryIdentity.allowed(p.copy(email = "hanlei1974@sina.com",
+            identityVerification = p.identityVerification!!.copy(email = "hanlei1974@sina.com"))))
     }
     @Test fun `explicit source review authorizes only the bound stored identity and never automatic discovery`() {
         val p = verified()
@@ -33,12 +32,7 @@ class DiscoveryIdentityTest {
         assertFalse(DiscoveryIdentity.validEvidence("REVIEWED_SOURCE_SHA256:" + "a".repeat(64)))
         assertFalse(DiscoveryIdentity.allowed(reviewed.copy(givenNames = "Other")))
         assertFalse(DiscoveryIdentity.allowed(reviewed.copy(identityVerification = reviewed.identityVerification!!.copy(evidenceHash = null))))
-        assertFalse(DiscoveryIdentity.allowed(reviewed.copy(email = "hanlei1974@sina.com",
+        assertTrue(DiscoveryIdentity.allowed(reviewed.copy(email = "hanlei1974@sina.com",
             identityVerification = reviewed.identityVerification!!.copy(email = "hanlei1974@sina.com"))))
-    }
-    @Test fun `four explicitly reviewed source identities are released from the historical deletion blocklist`() {
-        listOf("raff.edward@umbc.edu", "edward.raff@crowdstrike.com", "hangzhao@hkust-gz.edu.cn", "hangzhao@tsinghua.edu.cn")
-            .forEach { assertFalse(DiscoveryIdentity.isBlocked(it)) }
-        assertTrue(DiscoveryIdentity.isBlocked("hanlei1974@sina.com"))
     }
 }

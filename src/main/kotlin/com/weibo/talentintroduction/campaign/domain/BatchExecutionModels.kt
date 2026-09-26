@@ -86,7 +86,6 @@ data class RecipientScope(
     val researchDirectionFilter: String = ResearchDirectionFilters.ANY
 ) {
     fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
-        if (mailType == BatchSendType.INTRODUCTION.name && !com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.allowed(profile)) return false
         // I3a-5：与 ES 的 operatorStatusesFilter 同口径 —— 多状态取 OR；
         // NOT_CONTACTED = ES 文档无该字段（I3a-1）；空集合不判定（I3a-3）。
         if (operatorStatuses.isNotEmpty()) {

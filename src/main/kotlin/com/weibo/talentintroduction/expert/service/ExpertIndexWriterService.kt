@@ -432,10 +432,6 @@ class ExpertIndexWriterService(
             return false
         }
 
-        if (!DiscoveryIdentity.allowedSource(source)) {
-            expertPromotionAuditService.markFailed(audit, "IDENTITY_UNVERIFIED")
-            return false
-        }
         val now = LocalDateTime.now().format(dateFormatter)
         val firstReplyStr = firstReplyAt
             .let { LocalDateTime.ofInstant(it, ZoneId.systemDefault()).format(dateFormatter) }
@@ -551,7 +547,6 @@ class ExpertIndexWriterService(
         }
 
         val source = rawResponse?.path("_source") ?: return false
-        if (!DiscoveryIdentity.allowedSource(source)) return false
         val now = LocalDateTime.now().format(dateFormatter)
 
         val doc = objectMapper.createObjectNode().apply {
@@ -696,7 +691,6 @@ class ExpertIndexWriterService(
     }
 
     fun writeCandidateDocument(docId: String, doc: Map<String, Any?>): Boolean {
-        if (!DiscoveryIdentity.allowedMap(doc)) return false
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId" +
             if (doc["identityVerification"] != null) "?op_type=create" else ""

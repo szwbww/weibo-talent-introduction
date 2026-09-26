@@ -22,7 +22,6 @@ import com.weibo.talentintroduction.config.WarmupProperties
 import com.weibo.talentintroduction.config.WarmupStep
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
-import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.expert.service.ExpertClassificationService
@@ -189,6 +188,15 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(selfCheckService.checkSendable(anyValue(account("chen")), anyInt())).thenReturn(
             SelfCheckResult("chen", passed = true, message = null, fromCache = true)
         )
+    }
+
+    @Test
+    fun `retry scope ignores identity proof and retains configured expert types`() {
+        val profile = expert("discovery-retry", "retry@example.org").copy(emailSource = "PAPER_FULLTEXT")
+        val scope = RecipientScope("INTRODUCTION", setOf("CANDIDATE"), emptyList(), emptyList(), emptyList(), null,
+            expertTypes = listOf("PRODUCTION_RND"))
+        assertTrue(scope.matchesExpert(profile))
+        assertFalse(scope.copy(expertTypes = emptyList()).matchesExpert(profile))
     }
 
     @Test
@@ -378,13 +386,13 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
-    fun `runBulkOutreach sends mail successfully`() {
+    fun `runBulkOutreach sends discovery without proof under configured filters`() {
         val account = account("chen")
         val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
         Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
 
-        stubScrolledExperts(listOf(expert("0001", "a@b.com")))
+        stubScrolledExperts(listOf(expert("0001", "a@b.com").copy(emailSource = "PAPER_FULLTEXT")))
         Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
         // No SENT introduction for new contact
         Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
@@ -1231,7 +1239,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(null)
         
         val expectedFilters = ExpertSearchService.notContactedWithEmailFilters("gmail.com")
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(5L)
 
         val summary = service.countPending()
@@ -1251,13 +1259,13 @@ class ManualInitialOutreachServiceTest {
         // P2a: 单值配置经 KV 桥接成单元素 list，ES 侧走多域版过滤器；I4-1 追加类型 filter。
         val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters(listOf("gmail.com")).toMutableList()
         expectedFilters.add(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"))!!)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
         assertEquals(0, result.total)
         
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter()))
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
     }
 
     @Test
@@ -1267,7 +1275,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(null)
 
         val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "STEM")
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(3L)
 
         val summary = service.countPending()
@@ -1286,13 +1294,13 @@ class ManualInitialOutreachServiceTest {
 
         val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters(listOf("gmail.com"), "HUMANITIES").toMutableList()
         expectedFilters.add(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"))!!)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
         assertEquals(0, result.total)
 
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter()))
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
     }
 
     @Test
@@ -1314,7 +1322,7 @@ class ManualInitialOutreachServiceTest {
             )
         )
         val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "STEM")
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
         // I4-2: legacy countPending 的 config 派生快照无 expertTypes（恒 fail-closed），
@@ -1363,7 +1371,7 @@ class ManualInitialOutreachServiceTest {
         )
 
         val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "STEM")
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
         stubPagedExperts(emptyList())
 
@@ -2862,13 +2870,13 @@ class ManualInitialOutreachServiceTest {
         ExpertSearchService.regionsFilter(listOf("Europe"))?.let { expectedFilters.add(it) }
         // I4-2: 快照无 expertTypes → 追加恒不命中项（fail-closed）。
         expectedFilters.add(ExpertSearchService.MATCH_NONE_FILTER)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter()))
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
     }
 
     @Test
@@ -2951,13 +2959,13 @@ class ManualInitialOutreachServiceTest {
         assertTrue(expectedFilters.none { it.containsKey("term") })
         // I4-2: 快照无 expertTypes → 追加恒不命中项（fail-closed）。
         expectedFilters.add(ExpertSearchService.MATCH_NONE_FILTER)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter()))
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
     }
 
     @Test
@@ -2975,7 +2983,7 @@ class ManualInitialOutreachServiceTest {
             listOf(expert("UNC1", "u@x.com"))
         )
         val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "UNCLASSIFIED")
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
         // I4-2: legacy countPending 的 config 派生快照无 expertTypes（恒 fail-closed），
@@ -3000,7 +3008,7 @@ class ManualInitialOutreachServiceTest {
             listOf(expert("STEM1", "s@x.com").copy(disciplineCategory = "STEM"))
         )
         val expectedFilters = ExpertSearchService.notContactedWithEmailFilters(null, "UNCLASSIFIED")
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
         val summary = service.countPending()
@@ -3129,13 +3137,13 @@ class ManualInitialOutreachServiceTest {
         )
         // I4-2: 快照无 expertTypes → 追加恒不命中项（fail-closed）。
         expectedFilters.add(ExpertSearchService.MATCH_NONE_FILTER)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter()))
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
     }
 
     @Test
@@ -3161,13 +3169,13 @@ class ManualInitialOutreachServiceTest {
         assertTrue(expectedFilters.none { it.containsKey("term") })
         // I4-2: 快照无 expertTypes → 追加恒不命中项（fail-closed）。
         expectedFilters.add(ExpertSearchService.MATCH_NONE_FILTER)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter()))
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
     }
 
     @Test
@@ -3251,13 +3259,13 @@ class ManualInitialOutreachServiceTest {
         // 状态过滤条件与升级前逐字一致（不多不少）；I4-2 快照无 expertTypes → 追加恒不命中项。
         val expectedFilters = ExpertSearchService.notContactedWithEmailFilters().toMutableList()
         expectedFilters.add(ExpertSearchService.MATCH_NONE_FILTER)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(0L)
 
         val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(0, result.total)
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter()))
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
     }
 
     @Test
@@ -3747,7 +3755,7 @@ class ManualInitialOutreachServiceTest {
         // 预期 filter 列表：notContacted 基座 + 类型 filter（I4-1 唯一收口点）。
         val expectedFilters = ExpertSearchService.notContactedWithEmailFilters().toMutableList()
         expectedFilters.add(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND"))!!)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(1L)
 
         val snapshot = BatchExecutionSnapshot(
@@ -3776,7 +3784,7 @@ class ManualInitialOutreachServiceTest {
         // 调用次数 = 预估 countEsTargets(1) + 执行 countEsTargets(1) + 执行 fetchEsPage
         // 首页预取(1)；全部命中同一列表。
         Mockito.verify(expertSearchService, Mockito.times(3))
-            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter()))
+            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
     }
 
     // ── P4a: 邮件模版门禁过滤（I4a-1..I4a-6 / M-1 / M-2 / M-4）────────────────────
@@ -3967,7 +3975,7 @@ class ManualInitialOutreachServiceTest {
         val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters().toMutableList()
         expectedFilters.add(mapOf("exists" to mapOf("field" to "institution")))
         expectedFilters.add(ExpertSearchService.MATCH_NONE_FILTER)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(1L)
 
         val snapshot = BatchExecutionSnapshot(
@@ -3997,7 +4005,7 @@ class ManualInitialOutreachServiceTest {
         // 调用次数 = 预估 countEsTargets(1) + 执行 countEsTargets(1) + 执行 fetchEsPage
         // 首页预取(1，OutreachTargetIterator.hasNext 在轮次闸口前拉首页)；全部命中同一列表。
         Mockito.verify(expertSearchService, Mockito.times(3))
-            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter()))
+            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
     }
 
     @Test
@@ -4384,7 +4392,7 @@ class ManualInitialOutreachServiceTest {
         val absentFilters = ExpertSearchService.notContactedWithEmailDomainsFilters().toMutableList()
         absentFilters.add(researchFieldsAbsenceFilter())
         absentFilters.add(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"))!!)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(absentFilters + DiscoveryIdentity.filter()))).thenReturn(0L)
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(absentFilters))).thenReturn(0L)
         val absentSummary = service.countBySnapshot(runScheduledSnapshot(researchDirectionFilter = "ABSENT"))
         assertEquals(1, absentSummary.retryable)
         assertEquals(1, absentSummary.totalSendable)
@@ -4393,14 +4401,14 @@ class ManualInitialOutreachServiceTest {
         val presentFilters = ExpertSearchService.notContactedWithEmailDomainsFilters().toMutableList()
         presentFilters.add(researchFieldsPresenceFilter())
         presentFilters.add(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"))!!)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(presentFilters + DiscoveryIdentity.filter()))).thenReturn(0L)
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(presentFilters))).thenReturn(0L)
         val presentSummary = service.countBySnapshot(runScheduledSnapshot(researchDirectionFilter = "PRESENT"))
         assertEquals(0, presentSummary.retryable)
         assertEquals(0, presentSummary.totalSendable)
 
         // I-2: 两条路径只认这两个精确 filter 列表（内存重试与 ES 同口径）。
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(absentFilters + DiscoveryIdentity.filter()))
-        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(presentFilters + DiscoveryIdentity.filter()))
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(absentFilters))
+        Mockito.verify(expertSearchService).countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(presentFilters))
     }
 
     @Test
@@ -4414,7 +4422,7 @@ class ManualInitialOutreachServiceTest {
         val expectedFilters = ExpertSearchService.notContactedWithEmailDomainsFilters().toMutableList()
         expectedFilters.add(researchFieldsAbsenceFilter())
         expectedFilters.add(ExpertSearchService.expertTypesFilter(listOf("PRODUCTION_RND"))!!)
-        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter())))
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters)))
             .thenReturn(2L)
 
         val snapshot = BatchExecutionSnapshot(
@@ -4439,7 +4447,7 @@ class ManualInitialOutreachServiceTest {
         // I-2: 调用次数 = 预估 countEsTargets(1) + 执行 countEsTargets(1) + 执行 fetchEsPage 首页(1)，
         // 全部命中同一 filter 列表 —— 预估人数与实际收件筛选同口径。
         Mockito.verify(expertSearchService, Mockito.times(3))
-            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters + DiscoveryIdentity.filter()))
+            .countExperts(eqValue(ExpertIndexLevel.CANDIDATE), eqValue(expectedFilters))
     }
 
     @Test
@@ -5541,12 +5549,7 @@ class ManualInitialOutreachServiceTest {
         method.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         val actual = method.invoke(service, scope, level) as List<Map<String, Any>>
-        if (scope.mailType == "INTRODUCTION") {
-            assertEquals(DiscoveryIdentity.filter(), actual.last(), "every first-outreach query must include identity protection")
-            assertEquals(1, actual.count { it == DiscoveryIdentity.filter() })
-            return actual.dropLast(1)
-        }
-        assertFalse(actual.contains(DiscoveryIdentity.filter()), "material reminder policy must not change")
+        assertFalse(actual.toString().contains("identityVerification"), "batch selection must use configured filters only")
         return actual
     }
 

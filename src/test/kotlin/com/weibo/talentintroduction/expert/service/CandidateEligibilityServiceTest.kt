@@ -23,6 +23,14 @@ class CandidateEligibilityServiceTest {
     }
 
     @Test
+    fun `discovery source does not add a hidden eligibility requirement`() {
+        val profile = expert().copy(emailSource = "PAPER_FULLTEXT")
+        assertTrue(service().evaluateEligibility(profile).eligible)
+        assertFalse(service(CandidateFilterProperties(requireDoctoralDegree = true))
+            .evaluateEligibility(profile.copy(degree = null)).eligible)
+    }
+
+    @Test
     fun `candidate must have non chinese country and valid email by default`() {
         val svc = service()
         assertTrue(svc.isEligibleForCandidateIndex(expert(age = null, degree = null)))

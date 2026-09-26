@@ -16,7 +16,6 @@ import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationSe
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
 import com.weibo.talentintroduction.config.ManualOutreachProperties
-import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
@@ -126,7 +125,7 @@ class ManualInitialOutreachService(
             filters = ExpertSearchService.notContactedWithEmailFilters(
                 config.emailDomain.ifBlank { null },
                 config.discipline.ifBlank { null }
-            ) + DiscoveryIdentity.filter()
+            )
         )
 
         return PendingOutreachSummary(pending = pending.toInt(), retryable = retryable, totalSendable = pending.toInt() + retryable)
@@ -649,7 +648,7 @@ class ManualInitialOutreachService(
 
                 // I4-1/I4-4: 发送前最后门禁 —— 与 ES 查询、内存重试过滤共用同一份类型判定。
                 // 查询/缓存/未来重构错误可能绕过 ES 侧，创建 contact 前再判一次。
-                if (!scope.matchesExpertType(expert) || !DiscoveryIdentity.allowed(expert)) {
+                if (!scope.matchesExpertType(expert)) {
                     accumulator.recordSkipped(
                         BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE,
                         "研发类型不在本次选择范围内：${expert.orcidId}"
@@ -785,16 +784,6 @@ class ManualInitialOutreachService(
                 // I-6：区分「SMTP 前失败（NOT_SENT）」与「SMTP 结果不明（保持 SENDING）」。
                 var smtpAttempted = false
 
-                if (DiscoveryIdentity.isDiscovery(expert) && !expertSearchService.hasCurrentVerifiedIdentity(
-                        expert, scope.funnelLevels.map { ExpertIndexLevel.valueOf(it) }.toSet())) {
-                    accumulator.recordSkipped(BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE, "身份来源未确认或已变化")
-                    processedTotal++
-                    roundProcessed++
-                    roundRejected++
-                    recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE)
-                    continue
-                }
-
                 try {
                     // 1. Create or reuse contact (occupy the slot) — I-7
                     val contact = existingContact ?: run {
@@ -881,16 +870,6 @@ class ManualInitialOutreachService(
                         midRoundStop = true
                         break
                     }
-
-                    if (DiscoveryIdentity.isDiscovery(expert) && !expertSearchService.hasCurrentVerifiedIdentity(
-                        expert, scope.funnelLevels.map { ExpertIndexLevel.valueOf(it) }.toSet())) {
-                    accumulator.recordSkipped(BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE, "身份来源未确认或已变化")
-                    processedTotal++
-                    roundProcessed++
-                    roundRejected++
-                    recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.EXPERT_NOT_SENDABLE)
-                    continue
-                }
 
                     // 4. Persist attempt as PREPARED (audit trail) — upsert to respect UNIQUE(orcid_id, mail_type) (I-7)
                     val now = LocalDateTime.now()
@@ -1642,7 +1621,6 @@ class ManualInitialOutreachService(
                     ?: ExpertSearchService.MATCH_NONE_FILTER
             )
         }
-        if (scope.mailType == BatchSendType.INTRODUCTION.name) filters.add(DiscoveryIdentity.filter())
         return filters
     }
 
