@@ -1,0 +1,33 @@
+# Fast-P Ledger — master: docs/plans/2026-09-26/discovery-repair-00-master.md
+
+- Status: RUNNING
+- Master plan: docs/plans/2026-09-26/discovery-repair-00-master.md (commit b8789cb6062d9110218c08ce8099dba8dddd73e4)
+- Amendments: N/A
+- Master base: 64c0394a940bd79c2ecc04e5c497650f045faa75
+- Branch: fast/2026-09-26-discovery-repair-00-master
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-26-discovery-repair-00-master
+- Finalization mode: NORMAL
+- Finalization repair parent: N/A
+- Started: 2026-09-26
+- Current child: 01
+- Waiting role: N/A
+- Agent attempt: 0
+- Last agent error: N/A
+- Pause reason: N/A
+- Resume from: N/A
+
+## Children
+| ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
+|---|---|---|---|---:|---|---|---|---:|---|---|---|---|
+| 01 | docs/plans/2026-09-26/discovery-repair-01-page-replay.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | none | 1 | LIGHT_PASS | 64c0394a940bd79c2ecc04e5c497650f045faa75 | 56f153df3f42d9ab5149b986c621ccf784184539 | 1 | 29db24e66b8cb98eceb782812da34d1acbd6da06 | 29db24e66b8cb98eceb782812da34d1acbd6da06 | — | N/A |
+| 02 | docs/plans/2026-09-26/discovery-repair-02-search-retry.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 01 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 03 | docs/plans/2026-09-26/discovery-repair-03-email-text.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 02 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 04 | docs/plans/2026-09-26/discovery-repair-04-xml-route.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 03 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 05 | docs/plans/2026-09-26/discovery-source-contact-recall.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 04 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 06 | docs/plans/2026-09-26/discovery-repair-06-pdf-coverage.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 05 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 07 | docs/plans/2026-09-26/discovery-repair-07-html-contact.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 06 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 08 | docs/plans/2026-09-26/discovery-repair-08-source-report.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 07 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+
+## Amendments
+| ID | Plan | Before | After | Master rule | Reason | Approval |
+|---|---|---|---|---|---|---|
