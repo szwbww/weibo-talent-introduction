@@ -1,0 +1,26 @@
+{
+  "approval": "用户2026-09-26要求删除本批错误数据，并去掉额外逻辑；覆盖旧计划的首发、存量晋升、静态删除名单要求。",
+  "code_commit": "2bcfdf8faeefaa2c167bb8a74714eec6d617d3f3",
+  "base_commit": "d3986f2462b396c6ec07155dcb37919baadfee10",
+  "files": [
+    "src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt",
+    "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt",
+    "src/main/resources/discovery/identity-deletion-blocklist.sha256",
+    "src/test/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachServiceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt",
+    "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt"
+  ],
+  "retained": "来源解析、导入姓名邮箱归属验证、原子创建、队列版本和学术补全防错绑；原有可配置筛选和发信基础约束。",
+  "removed": "首发查询/计数/分页/重试/发送前新增身份门禁；存量候选资格/通用晋升身份门禁；静态邮箱哈希黑名单。",
+  "data_scope": "上次隔离的938条RAW；4条来源确认专家保留；此前68条已删除不重复计算。"
+}

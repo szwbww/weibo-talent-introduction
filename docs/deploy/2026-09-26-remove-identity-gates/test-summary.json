@@ -1,0 +1,23 @@
+{
+  "command": "JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package",
+  "exit_code": 0,
+  "source_commit": "2bcfdf8faeefaa2c167bb8a74714eec6d617d3f3",
+  "jvm": {
+    "tests": 4057,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 13
+  },
+  "js": {
+    "tests": 1193,
+    "pass": 1193,
+    "fail": 0
+  },
+  "log_sha256": "5f93a7e85025981bc71eeb63d9ec8669ada74ecfd62986dd1d1a9ef6ed31802e",
+  "negative_control": {
+    "tests": 269,
+    "failures": 39,
+    "errors": 0,
+    "purpose": "Old production code violates revised tests for removed hidden gates"
+  }
+}

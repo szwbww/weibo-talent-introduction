@@ -1,0 +1,366 @@
+{
+  "code_commit": "2bcfdf8faeefaa2c167bb8a74714eec6d617d3f3",
+  "before_war_sha256": "dcca6ce9996a35972f5c2d7891c6240c089c0509eb236d0d7777c05b0f1e840f",
+  "updates": {
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.class": {
+      "before": "efc623a7701c2a82d207a5c3c90d48aef4861e9c8136697cc7e4d6e9a412ed33",
+      "after": "d29dc5c02542fcf52e866b68cd5873af5eea5a2bcc869b80f1ed58cc87713fb9"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ExpertSearchResult.class": {
+      "before": "bc87af8e9a85150a5bfc6a77a396af0a30d7a428e4ad7e666563beb36c9ae583",
+      "after": "9c696d85db31878c5df74bde071089d5dc75581fc29ca86e7b6f2fed9070aa8b"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/FieldPresenceMode.class": {
+      "before": "7908d9c5aa3736eaa25281e22cf1bb1f654f51c902d4bb0ed836f887eead934f",
+      "after": "94056d508e1010d6091f83450460c3f5a62fef4802ec1b4d2a40eb085ff9bf98"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ExpertSearchService.class": {
+      "before": "212f89964cd90f147afd2217d99003263a549fb194a7094abe1ab0f920080066",
+      "after": "0a1283f011a1d771364f0e037799554dab3a5185c3bdf742a1b806a125cf93ec"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/CandidateEligibilityService$Companion.class": {
+      "before": "3dfe9ee16484dbb82a1b8711f9e987f84142754b2ebac3a3c80db17b84b76d10",
+      "after": "69927b1f9d009794369c23099891e8ed17c52ed2a8ee706cb3fdad2003e3e48d"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService$toStringMap$1.class": {
+      "before": "a239eb158302e94a0828c76faa5511b2c459c400aa13bd739ed26acde61720aa",
+      "after": "d9c2694035aaf5a4029564fb0e4ac73c2a87ea388740753c7ac2f40f57f2f166"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/EmailDomainCount.class": {
+      "before": "b17eb8ed5b17d49e7b496348f3d60041e4720c20979765ee3d40f4cd914871ae",
+      "after": "2b6b75ebe3e2825b9720407465e0d1cc92349073bff9bad521ec112cbd8bd5e3"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ClassificationBulkItem.class": {
+      "before": "07e3b3ec728be926906fe3386147f9d5abd707c85d2448187660520db04e52d4",
+      "after": "83892690199b4084c6b0a2eb810b8353603aa6c7c4d480036350ebead004001f"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ClassificationBulkItemResult.class": {
+      "before": "f5568e5a2d495679890a29d123a01d928467ef2b77c83996cfc58de720fb14bd",
+      "after": "a41f59c2f09c7eb62c6b22ba9677e42ada79e25adfbca379d0ab00e7aa18fac6"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/RegionCount.class": {
+      "before": "89c54c01dcd62f580bb471cc2dc7ecd00a2f916c2f53183d51e2d38beee98704",
+      "after": "8320782138059158b6bc81f37bdd56658be2d967bafc979e310bb9cd94036053"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService$promoteToCandidate$doc$1$1.class": {
+      "before": "d66aa470797e04e9c44230e1f42c90aae29790d6ecb77e828b59509044cb764e",
+      "after": "4f325482c631c1816583741887d3749794874461431ae36595c89a72e8d2fef8"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService$promoteToApplication$doc$1$1.class": {
+      "before": "0da6fdb7ea93d0c6289bc2c9ef9e7fed1bea1f6cd737959db08521d5f50739ff",
+      "after": "d47d64a398591d0f07720873e438d013ee0d0f771a3d067b7ad9e8fbea996ee7"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService$retryFailedPromotion$contact$1.class": {
+      "before": "1e093f7dd5a3115f432b5b3346183e3e0bd25f6a7835b5388e6222e4a6bc0026",
+      "after": "078d22f9a9527a4c4cac6e6f56e07a86dd50ecfbb16901a1b5b2cb3caef4ce39"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ExpertSearchService$Companion.class": {
+      "before": "a91981a6e4ffe5f37619a985d25b3987a6606e2e7856eaf51b5203743e98e3d5",
+      "after": "ed94c0bc3794af1ad724827fc8daef80d1d089f7e76dcdcd5c9debb4acb98b58"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/TagCount.class": {
+      "before": "09ed5e323d8dd1aba8287251b90099ef12d6ffd007388b161e8030c3b13005e6",
+      "after": "fa0f75f979c8d3907b8d17841c4f6347754eb89826d36a616cafa918c632c37c"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ClassificationBulkResult.class": {
+      "before": "2f365eeb3fa0a1f102151c8fff81918d0b3b88d1adacb9cede051872841001a6",
+      "after": "896a46f23d89bdd1d208b679d4a8a001e88bca94e4f8ef7846e45cc7ca15b7a9"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/SingleSyncResult.class": {
+      "before": "57291d6aadebc053f58b9e19950111c14665784f6a1b2708512a0194a95a94a7",
+      "after": "0e0ea901358b895816b629b6b1d59883598c891af9f0c24edf0fd90cc980454f"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/CandidateEligibilityService.class": {
+      "before": "6acb849cf418794dc5c205b0a5a278eca566bc707f8770947b1f9952db486fef",
+      "after": "416dcc39e11ca30ea9ca63c5f622ad17197bd828fcd92572fecf9a5deabbe092"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/ClassificationBulkItemStatus.class": {
+      "before": "93e90c2ee644c92c624faa88924dbf65827df7a31dcbe8769edf391347d598d0",
+      "after": "6e7a0a6983247e3d2c574a5b2a5138a1930a023cc85c9d32af654449de6aa549"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/service/BulkSyncResult.class": {
+      "before": "326affcde62c33b309b381ab6a765006a7223d726e5a99d642fbe469bed79580",
+      "after": "9cd7c68a7e5b186f1fe166ec04fc188790dfeb5212efbe6f55131e782b7fe77c"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity$hash$1.class": {
+      "before": "4860a3d0e3eec11ea8ccedbd903d2896754da4d8b8acca74a4bf86dc3dea19f0",
+      "after": "0f550330bc4714208e3755f71dbbc0aa4cd5378e189488500dfefe7d5e9875c8"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.class": {
+      "before": "2d01daea381738ff43c77961a87c49aafbec30d6de1238ca807f252ca54a64ba",
+      "after": "1e1e5a604a628a1248d1c636428e9d856042d30cfce8a33038ea79ab2890ce11"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/ExecutionMode.class": {
+      "before": "89f50fc3f7c80bab61d3875035930ffb6cf21bd931a1b4215dd195d56da3ecf6",
+      "after": "c01263fbdc545baf5cfd3c9334820501a2327a4929b0afc47fef4bb470a52387"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService$buildRetryableTargets$profile$1.class": {
+      "before": "a58fa84097a90340ff3b224cb9e675352e1c497e58a2637a0b9a118348162954",
+      "after": "663eee9529247a1b8940814ea09d645af9f6f1db09bc767dbceb812ff06f82af"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService$MaterialReminderSnapshot.class": {
+      "before": "436822b8c7604ce05ee9cf36081c80f73ac88136df72933f0f3fbeeda49a943d",
+      "after": "0ab81ac9569dc675d78cd65b5e10ad47c46fc307cc45e970f98cc856e1eacc9a"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/ManualOutreachResult.class": {
+      "before": "77b8d77b88ff3b412868033f795a8e0506d5fe9a0ce55e47f82c7596a374d853",
+      "after": "08955837a590c6bd74ba4d48d03e28b70358cd3d35882219a45898fac13a9e41"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService$StopOutcome.class": {
+      "before": "3e17b348f2979096bee8002bb69f99a72993fe4242b7716fda37d7ab15bac70d",
+      "after": "28e3f745d1aa1ff69e088349ea48f69c7a1210b381956a270401a71718e4fa04"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService$runIntroductionFromSnapshot$verificationContext$1.class": {
+      "before": "7833ccf0969c5fbab44832beabd286b54f28e1030c2c451487af9d50d942907a",
+      "after": "46e1e64c2c29d7a41fb47f16c86f87db4894be5d56ef1b38dfa1358adda3d3de"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/InitialOutreachSendResult.class": {
+      "before": "1f647ba500d50eeac7f3679215064ac3e5ba91e1329302f47228756be13c1507",
+      "after": "fd8225ae0dfb9b5160126a949b7c00e8ca1c8b7e138865471bc7d793fef457be"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/InitialOutreachBatchResult.class": {
+      "before": "d808080fa23fdcb03a50261cf2198a92f918412bd4b81f0a0eac472f26df2053",
+      "after": "8116eee051cfad6c4f74e6bf305a4ed0f502b293090ea79c3f43662f4f31c242"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/AccountStatRow.class": {
+      "before": "16fe860f4ffb2970813aa2c49d5326bbaf0fe84a0bc0ec5a3142a27ab215dc09",
+      "after": "f6cba78334b839baaa314ae0fdb3075bb32ddd00129ce4aef8b35e25021ad3cb"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.class": {
+      "before": "645f6ba0774d333322cd8670bb945a44ebae65e9d21eae2e1a3ba7df267367e8",
+      "after": "e4ff81a80865cde6f047f5ba2eb83deb10aec1241155623cd8caadf11bb7156f"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/AccountRunStat.class": {
+      "before": "fe65ed67f41082bbd8e4115d6864be3741f4af7f5775049783d634532f9864b1",
+      "after": "73d23c1e799fc136f8cdfd509cf8f21e4e4cc08ed2de07f902560d98b72e1fdf"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService$runIntroductionFromSnapshot$targetIterator$1.class": {
+      "before": "81fb46318c3094d183599ee5eb11eca84a7872495b94274d99b5510e6a510736",
+      "after": "5a9f48e78cb067948e388e5ea7791b547b8d18e030660f922db646ee41a981db"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/PendingOutreachSummary.class": {
+      "before": "1108d598f800b7df50e7a495c1b09d93e7d29d2e0a53d6ebe5c5931943784af8",
+      "after": "56143aef58e32bbcf4c68103f06f52aad223a6f8411c4427233e2f8f4228e8a6"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/service/InitialOutreachService.class": {
+      "before": "234b087a9c5a5e04b27595fbd6cfbd88058055759fa741f2dab9d4a65885bd82",
+      "after": "2585e2db4fad1887026404d5214855ae3291c468c424972ccb33f7d2743e3a1c"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/OutcomeAccumulator$recordFailure$1.class": {
+      "before": "49b3ece5f26222fcffeff8e6a0f065237efbbd4ebe161b906755d563c168ade8",
+      "after": "2e6b17c3be7e1c2f2c0bbc5bc4ed76b21720a9da604beadb374025476e632495"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/BatchExecutionModelsKt$toExecutionSnapshot$tags$1.class": {
+      "before": "8825437f9b6c467e9bf1e708754b4b6e84ea6c4e418dc534d5ddf5b92abc2e52",
+      "after": "2f673ebd20cb5e91b206b879909c1bee17ed23b062b999d2aec883c1c0f84031"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/RecipientScope$Companion.class": {
+      "before": "e0e7a3b115c019bf6f89f68ec7caaa976c3636235ee3ad126f26487e900b7922",
+      "after": "aa688893e6857ada8c48b65600bef5ec236d3aaa6fd8c5546df7bd3782b26429"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/OutcomeAccumulator$recordSkipped$1.class": {
+      "before": "0c9616fbdc123e703b53d39a2b7fef7c3865454be4ffecb5665409dfde9508eb",
+      "after": "4051ac45a87510ce233b49fde4f9e255a3cfa56e09c8cbeabd05c5dec580738b"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/BatchExecutionModelsKt$toExecutionSnapshot$regions$1.class": {
+      "before": "17ed00b18101228b5e825f7efa3af4fe1b6e074982f30a3f747af9e586e86b3e",
+      "after": "2da76535c8e47da014e2507136e8ec1ebdeb90655b2c96df98b4bc877160985d"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/BatchExecutionModelsKt$toExecutionSnapshot$expertTypes$1.class": {
+      "before": "d6927390fa773ea1e33a357c764510d2c7a0a24f9bbddc25a10efb6904034605",
+      "after": "e2c1717abc97ea9678d6631158770cdf2cd880006d36e898e8633aaa935d8ca5"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/OutcomeAccumulator.class": {
+      "before": "ff2bcc6e8d03ddb558746ce91861a8465266a92db8fadedb1e141aac17e02797",
+      "after": "1e63e0c7d989d0bb163bb6f878b2652ccd33eb51bb11bfab845c108312aa3753"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/RecipientScope.class": {
+      "before": "0ab3cf2247c66a8954af2c7b89330e2023ba3ef4e92d1ede1e0027da0f13de80",
+      "after": "97bf141428b98314d79edd04758f6521016029632c2c8895a994a57a4300e688"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/BatchExecutionModelsKt.class": {
+      "before": "83c9b023a579d93f80f11bc188c407de86be788c92ec56d1862fb54c1cfb6799",
+      "after": "c52807d7ac20e39a1e8f02a5e260dc97bbc4a157a504eba45a75628a93de84ad"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/BatchOutcomeReasonCodes.class": {
+      "before": "4ec4b315fab0a52e6631d5d9c80ba69fc0bb2c7403918fa41087cac76c2593aa",
+      "after": "2b7d99a819f255fc6a71ba3a5c336b3f3961bf9c380918a093dfcea9aca6487b"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/BatchExecutionModelsKt$toExecutionSnapshot$emailDomains$1.class": {
+      "before": "f98d3d2fbacca6b051d8bc5a795e15020ee792150f1dbfe1505e8d791ccad884",
+      "after": "72c3ad50b9acf6e869848d0610a51a6794523f20aa95040062cb48e8d43d90aa"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/campaign/domain/BatchExecutionModelsKt$toExecutionSnapshot$operatorStatuses$1.class": {
+      "before": "2a83a1f21ca818338b2379ec014063752b7dd286572ee6f3024e626ca264c8fa",
+      "after": "0d901e9c503481b9c4de061b99f7c838cc032a23e85ba543e1f9a3f69bd4cf57"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$existsInRawIndexByEmail$indices$1.class": {
+      "before": "f8406d5a0faf8b5b8b222e967606aa598d84588ca61942726ab187de67c19fb4",
+      "after": "0e432c38c267d66e2e52a47c67b18fe9cb3d22fb829854abcdeb4cca1ffa68ca"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$backfillRawEmailsAndPromote$1.class": {
+      "before": "333f8fcd1560840802f14c801d753e56c3dbdd6a129786982c4b65a54415c6ac",
+      "after": "8b30c8db7b9d31739fec03b55405c84cba2b29340792244f96e92dd2dedf2e74"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/QueuedItemConsumption.class": {
+      "before": "c2445be92ad07a596c2369b24d069b79bfbffaf32c19a48e27154d2c497f567a",
+      "after": "0171988b89660091442848efb9a258f2b8920e526a96b8e4d1737c95810b2746"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/LayerUpdateResult.class": {
+      "before": "160a8b9119c652a7de3ddff1a7d67dd38f18c1bfb3e2492cf87a18a2e0623085",
+      "after": "1776858d1e218bcf989cd0bd433e1f49ec22d1419c33167883d7e98e2d1b5a72"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/EnrichmentStats.class": {
+      "before": "07a37e43a0f28f7fba36dacf66a46f3da33b225fcb4e72deff87a3fbacbbe92d",
+      "after": "7d21d810a9aedda6e671ac1de6b0e48acc99eeae0764f1102b6106c6d3f2cf82"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$enrichExistingExperts$1.class": {
+      "before": "a2232c228c273ef0689ef4d399e1c04c1219b3f659673c50260306e83fd119af",
+      "after": "ffe2cbd46611858eb598fefac8abfb1c8c53afcf4e61fcf2d349eb0eceaf2fd9"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ProfileEnrichmentOutcome.class": {
+      "before": "73164f9d20e9937cee724d02d07e96b195cbb31e9606e683039229733cec2d6f",
+      "after": "93dae059b7d326078e6a109afed76acc08e22b476991ae238dfa970e613bce50"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ProfileEnrichmentOutcome$RetryableError.class": {
+      "before": "a7e11dafee65e664a2899faac3c7a903ff67e73b33931f698416b87561f286a2",
+      "after": "af4b810f5419874ea7e0361ec06fd4891961db0c0aeaaf06214c7205cd94be82"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/EnrichmentResult.class": {
+      "before": "780a2e4aa5abf70d720d73f2c3ae9a5fe63ba1384891532b006857bbb9cff45f",
+      "after": "53ee5a3dfe6b4a45017647f1360efd7ce59fcab7366422060536341e3cf87763"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$SourceBucket.class": {
+      "before": "7c3d6189faf80f7c8c0584c73bd4049685456d295577349670de6bfc950acbd8",
+      "after": "24156f6480623eb21fe446cfb3cdf3ab45d84c9e8b1bb9ba21e91300dbea4fea"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ProfileEnrichmentOutcome$Success.class": {
+      "before": "a219d990a5a47f2d7c8475e590666fee031f8cdff4849a56b87184c55bdeea30",
+      "after": "19442bc8b9ac76b4464f14fa2c686545554e0fc53215dbd05d7037587130a154"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/QueuedItemExtraction$TooLarge.class": {
+      "before": "05470f013abedf1efae32314aac81caf15684a7a30b02f93aa71abc9494c9729",
+      "after": "88ac4616203982852b7aa89a3589cf64531b595dea432d9a2034e4e6a3e738c5"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$enrichProfiles$deferredResetAt$1.class": {
+      "before": "77de4a7056ae22fe612474a972338ce33e901803d0f032fc0bd299b6f8f478ef",
+      "after": "eab282d46ed39cd5ece9f53cd7d4a3cef0af22cefacc657fcaa1cd2c03aec0b9"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$BatchOutcomeBucket.class": {
+      "before": "992785599431c8fc7e2d759541e97b3e21e298488d4a9e10020635b58b0b773b",
+      "after": "51b0c55c57fbb48867e88afb746aea6df03f5e169b6e23e45d95af7652f0054b"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ProfileEnrichmentOutcome$NotFound.class": {
+      "before": "e74503c0e02ca60251c2f07a33d4c0f9d243ee5da5ac0775ce9b44833409d75f",
+      "after": "16740f6eca08b486d3d54c71ad41970e594380ce76825dd0fac9464f1cb24d85"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceKt.class": {
+      "before": "54a61bee71594003ac55c843d1dee74c8556337683394ebcf95bd2a54e4aa315",
+      "after": "14ac45f7bf0e0702975e65aa28e1b6b414315fec60005d71d21b156a44139957"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.class": {
+      "before": "98cd2b2a65a55bcbb1ef16b7277cbb4ec49c3840c86dac94b35b50a670a83556",
+      "after": "c6129f3009cdbfcc248380410ce8253f0c1a5317e4c10aa090f4bda4717dc4ba"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/AutoEnrichmentSourceCounts.class": {
+      "before": "51b1411215665a20a2c0cb1adff5202044b0d515bda420aa94d1977c6fe9654b",
+      "after": "d7f816ca8dfc9488ecb4bbdb88e8de962c236606f2cebcf199a51ea5468ae35d"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$recordIdentityDuplicate$1.class": {
+      "before": "820207ac879110610c6fda513130a6fcab0d1767b213de1ed07b70a74e82b5b3",
+      "after": "89bbada0401f4b3cde4ea9cc3fe3d5c27086898fce98cbc383fad981084eb9b5"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/DiscoveryStopReason.class": {
+      "before": "ef32163ae07ddb897f02534154d5be4e63954b6aafcd05da005b1f7ce4bf8166",
+      "after": "322c2814a73918067d9491ad19a8ce63191b6642ed3baffe12be3d7574ba1604"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$enrichExistingExperts$1$1.class": {
+      "before": "0c4de4633aaf70c021ae6d0adb7625235c6dcbab8465becd54389e98bbf53ea7",
+      "after": "7137d11c9d67ea1a4d115082da2a6e064c1191ec48b0b853f121ade126fd48f6"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/AutoEnrichmentBatchResult.class": {
+      "before": "c69ec5021212a2024e14a75af77a8a861298f61f8a4c7b54496b6466ce65cb27",
+      "after": "f38c26057d8c048721f81719f5720889a84e4609d9da5c5797fc54c511b55f85"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/QueuedItemExtraction.class": {
+      "before": "3991db648af002c3418814adf407fc46113fee46b8040bf1b6e88a8c9cae1051",
+      "after": "4a3495035e7574885b83f095a50cbd2bcd5e714b533248ae76176bca651e04fe"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$enrichExistingExperts$1$3.class": {
+      "before": "722115e6c0b5b04ad107a955f4be9c71490b8021cbc338d4fb34700d3a506eb9",
+      "after": "c9e686a18c30b52fef8e17af00f2ee9eeffb841745495932bd83e5eb6b666922"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ProfileEnrichmentOutcome$Partial.class": {
+      "before": "e0881191e434ddc67a76d7f5fd333fa386b28aaf3f52a26034a170af31371dcc",
+      "after": "00d7e93e08fb7ba8747ab8d459db3315ed0f80dc2389f55ef883be9eb50493c5"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/QueuedItemEnvelope.class": {
+      "before": "5cb024e282eaaa70d18a59e7ed895778aed2063ee99bfe57cdb98e57f127de0d",
+      "after": "1049d8787b09a9b56ff35e794b6bde0c74d0cf42171f9845409bcb22db74444e"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$BatchCounters.class": {
+      "before": "746332b27bcf3658c9e04d3aba5a0bdc79dba16a4b7940cbc531056e9290e5cd",
+      "after": "a2dfdd957d9320812092f3da62636798914c6382205aa0351d59c5a6ed217071"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/QueuedSourcePage.class": {
+      "before": "3051590cf3e9b46979e4b929f06fb91bfeaaf664ce6d0d2bc650d479452936fd",
+      "after": "b9c672ea8add51db9cecefa0aaec76fc8caf68930ffa5cf8ff0a2936f3efec5a"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/LayerUpdateStatus.class": {
+      "before": "f9f9521e4aa1d1d4400a70a21f501cd554db99833f879687512b32bee4384c60",
+      "after": "1b09218b6dcb945a8ec2b4c518f654e0a6305d2f67f175f750791c3c77cdf6c5"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$enrichExistingExperts$1$5.class": {
+      "before": "1a4418846a51d724f49d94d028c26ad65f4c5168876c959d04cfe657594f83a4",
+      "after": "124c25cf40ff69095940abc6697d7dca1c1d4803f561278a3007bbfa1cfbdff4"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ConsumeOutcomeResult.class": {
+      "before": "3b2682308c98ae25c6dcc452c93811930d95d8f235b6cc2a75b25a226df3c62e",
+      "after": "599d0f17f76dae54622cd76d6c9ced2550d0b253e941a28b5386989255160506"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$enrichExistingExperts$1$2.class": {
+      "before": "4fa54a1d106c81f534e434a7cf6629ef536484756d64718bb325cc89e6bc8c18",
+      "after": "d2e60b7602bf9c386e3ff1b32139ae5140c73a790c97740cee3550c05952fab9"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ProfileEnrichmentOutcome$NoId.class": {
+      "before": "0b7e65e1563a248ef34e2459d9378f9a1210de6bd13979cd178bc61188fe0f48",
+      "after": "c0ce97441e7b9b699767f03f21c8452f90faf970ed36ee8a5a3ee3313a6c1193"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$enrichExistingExperts$1$4.class": {
+      "before": "c02948bb9a10b2189110e48fbb46eead26fc2b2391e14586be9e49dc0f263885",
+      "after": "26a27091d7e23c048bab3fd2ed446734891e4de91dc8c36d0d26f409056800bd"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/SourceRunOutcome.class": {
+      "before": "f27fd749f3b8df2ef161da00d41e2bda4bcf26ef5dcc2a6fc192ace3b4b932c6",
+      "after": "44b3af8fbde629a62a099629a3a54588e6a9cb48e90f9d9868e09d3a8b9992d1"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/QueuedItemExtraction$Extracted.class": {
+      "before": "645e217301ba29a0a53e42657dd719bbdcc480d6d43fc141ff7c609af9374fab",
+      "after": "f9f2e67b464aecbd3716ab7da7c5ec594f3c8f4dba1f3ac429ebea12530bbfef"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService$enrichProfiles$4.class": {
+      "before": "117f1fe2d18d4d1ef9f3492765b1866ffcd5043f41bf2ceb529d5e14565f8ee0",
+      "after": "3b9b8054c75003cfa9c6974a30faa105de8c94002cc524ff13d7d8560da6c280"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/ProfileEnrichmentOutcome$Deferred.class": {
+      "before": "daa72531096c64698fd116b0994188f4e1af6ad4d6c3bd65e84eec0c2c51f911",
+      "after": "e0b4e9c2a562986c8f96193510fe4731da4b550e4fc7de350b8ba510ae2c0a79"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/QueuedItemExtraction$HostBusy.class": {
+      "before": "dcf5cdb8a2f47067d86504f0697e2b21389b2bd2f3b0c75be640b27cb0d81bea",
+      "after": "c5859457c3da512e38912dc97a620a2325b351d1445a7bfea28a4a71d7b7eea7"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/EnrichmentScope.class": {
+      "before": "0cf0e9b41ca00e097e530090d56e5cff674a8694da67b18ca3a0c49d3fc2e198",
+      "after": "08487a3cfe7bfbedeb1db83c3428699ac5aca5708de9f287765cfb22c84542fd"
+    },
+    "WEB-INF/classes/com/weibo/talentintroduction/discovery/service/QueuedItemExtraction$Failed.class": {
+      "before": "f92ac9281a9d66ca0ae52960be5a3a66fccf8607c0439407ff79e8a39ad478d5",
+      "after": "450609782e28df251369e446e4c7d6ae40519d61d126b8063e1f312ce16ae164"
+    }
+  },
+  "removals": {
+    "WEB-INF/classes/discovery/identity-deletion-blocklist.sha256": "dcdaab9fb10634847f6d740d28b2999be1c4788aa7545de0f604c11c92196fcb",
+    "WEB-INF/classes/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity$blockedHashes$2.class": "226eab81b04195eaea39d5c502372c28cafc779919779f8c86fc44354dadf3d2"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "status": "NOT_DEPLOYED_APPROVAL_REQUIRED",
+  "code_commit": "2bcfdf8faeefaa2c167bb8a74714eec6d617d3f3",
+  "current_war_sha256": "dcca6ce9996a35972f5c2d7891c6240c089c0509eb236d0d7777c05b0f1e840f",
+  "uploaded_only": [
+    "/tmp/identity-remove-gates-patch.zip",
+    "/tmp/identity-remove-gates-manifest.json"
+  ],
+  "blocked_action": "Run production WAR patch installer to remove hidden outreach/promotion identity gates and static email blacklist",
+  "review_reason": "用户授权了删除代码逻辑，但未明确授权将此安全弱化部署到线上；移除会扩大可发送和晋升范围。",
+  "next_required_authorization": "Explicit user approval to deploy this removal to production; sending remains paused."
+}
