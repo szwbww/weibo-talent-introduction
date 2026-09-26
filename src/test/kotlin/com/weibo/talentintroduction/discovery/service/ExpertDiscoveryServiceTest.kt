@@ -143,6 +143,8 @@ class ExpertDiscoveryServiceTest {
         cursorRepository = Mockito.mock(DiscoverySourceCursorRepository::class.java)
         enrichmentJobService = Mockito.mock(ExpertAcademicEnrichmentJobService::class.java)
         enrichmentJobRepository = Mockito.mock(ExpertAcademicEnrichmentJobRepository::class.java)
+        storedCheckpoints.clear()
+        cursorStoreInstalled = false
 
         DiscoveryMockHelper.stubSourceInfo(europePmc)
         Mockito.doReturn(null).`when`(openAlexProvider).getIfAvailable()
@@ -890,25 +892,180 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
-    fun `dedup search error counts dedupErrors and skips`() {
+    fun `dedup search error retains entering page and records actionable partial status`() {
         val svc = createService()
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
             listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        installInMemoryCursorStore()
 
-        Mockito.doThrow(org.springframework.web.client.HttpClientErrorException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR))
+        val dedupRequests = mutableListOf<Any?>()
+        Mockito.doAnswer { invocation ->
+            dedupRequests += (invocation.getArgument<HttpEntity<*>>(2)).body
+            throw org.springframework.web.client.HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR)
+        }.`when`(restTemplate).exchange(
+            Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val source = result.stats.bySource["EUROPE_PMC"]!!
+        val checkpoint = storedCheckpointFor("EUROPE_PMC")
+        assertEquals(0, result.stats.indexed)
+        assertEquals(1, source.dedupErrors)
+        assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, source.stopReason)
+        assertTrue(source.pendingWork)
+        assertEquals(CheckpointState.ACTIVE, checkpoint.state)
+        assertNull(checkpoint.cursor)
+        assertEquals("PARTIAL_SUCCESS", result.taskFinalStatus)
+
+        val report = mapOf(
+            "fixture" to "paper-page-dedup-http-500",
+            "fixtureSha256" to java.security.MessageDigest.getInstance("SHA-256")
+                .digest("PMC1|john@oxford.ac.uk|cursor=null|next=null".toByteArray())
+                .joinToString("") { "%02x".format(it) },
+            "actual" to mapOf(
+                "pageRequest" to mapOf("source" to "EUROPE_PMC", "cursor" to null, "paperId" to p1.pmcId),
+                "dedupSearchRequest" to dedupRequests.single(),
+                "dedupSearchResponse" to "HTTP_500",
+                "dedupErrors" to source.dedupErrors,
+                "indexed" to source.indexed,
+                "stopReason" to source.stopReason,
+                "checkpoint" to DiscoveryCheckpointCodec.encode(checkpoint.cursor, checkpoint.state == CheckpointState.EXHAUSTED),
+                "terminalStatus" to result.taskFinalStatus,
+                "pendingWork" to source.pendingWork
+            )
+        )
+        val output = java.nio.file.Paths.get("target/discovery-plan-acceptance/01.json")
+        java.nio.file.Files.createDirectories(output.parent)
+        java.nio.file.Files.write(output, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+    }
+
+    @Test
+    fun `dedup failure keeps active entering cursor for every page cursor combination`() {
+        val observations = mutableListOf<Map<String, Any?>>()
+        for (entering in listOf(null, "ENTERING-PAGE")) {
+            for (next in listOf(null, "NEXT-PAGE")) {
+                setUp()
+                installInMemoryCursorStore()
+                val criteria = PaperSearchCriteria(sources = listOf("EUROPE_PMC"))
+                if (entering != null) stubStoredCheckpoint("EUROPE_PMC", entering, criteria)
+                DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC-$entering-$next", "Test")), next, 1))
+                DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+                    listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+                Mockito.doThrow(org.springframework.web.client.HttpClientErrorException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR))
+                    .`when`(restTemplate).exchange(
+                        Mockito.contains("/_search"), Mockito.eq(org.springframework.http.HttpMethod.POST), Mockito.any(),
+                        Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+                    )
+
+                val result = createService().discover(criteria, "TEST")
+                val source = result.stats.bySource["EUROPE_PMC"]!!
+                val checkpoint = storedCheckpointFor("EUROPE_PMC", criteria)
+                assertEquals(entering, checkpoint.cursor)
+                assertEquals(CheckpointState.ACTIVE, checkpoint.state)
+                assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, source.stopReason)
+                assertTrue(source.pendingWork)
+                observations += mapOf("enteringCursor" to entering, "pageNextCursor" to next,
+                    "savedCursor" to checkpoint.cursor, "state" to checkpoint.state.name)
+            }
+        }
+        assertEquals(4, observations.size)
+    }
+    @Test
+    fun `replaying a dedup-failed page preserves existing identity and indexes the remaining author`() {
+        val criteria = PaperSearchCriteria(sources = listOf("EUROPE_PMC"))
+        val pageCriteria = mutableListOf<PaperSearchCriteria>()
+        val p1 = paper("PMC-REPLAY", "Replay").copy(
+            authors = listOf(PaperAuthor("First", "Author", "0000-0001", "Oxford, UK"),
+                PaperAuthor("Second", "Author", "0000-0002", "Oxford, UK"))
+        )
+        Mockito.doAnswer { invocation ->
+            pageCriteria += invocation.getArgument(0) as PaperSearchCriteria
+            if (pageCriteria.size <= 2) PaperSearchResult(listOf(p1), "NEXT", 1)
+            else PaperSearchResult(emptyList(), null, 0)
+        }.`when`(europePmc).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val authors = listOf(
+            verifiedAuthorEmail("first@ox.ac.uk", "First", "Author", true, "Oxford, UK", "0000-0001"),
+            verifiedAuthorEmail("second@ox.ac.uk", "Second", "Author", true, "Oxford, UK", "0000-0002")
+        )
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, authors)
+        authors.forEach { DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email, EmailValidationResult(2, true)) }
+        val rawIds = mutableListOf<String>()
+        Mockito.doAnswer { invocation ->
+            rawIds += invocation.getArgument(0) as String
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        installInMemoryCursorStore()
+
+        var searchCall = 0
+        val existingResponse = objectMapper.readTree(
+            """{"hits":{"total":{"value":1},"hits":[{"_id":"EXISTING-FIRST","_source":{"email":"first@ox.ac.uk","givenNames":"Original","familyNames":"Identity"}}]}}"""
+        )
+        Mockito.doAnswer {
+            when (searchCall++) {
+                0 -> ResponseEntity.ok(objectMapper.readTree("""{"hits":{"total":{"value":0}}}"""))
+                1 -> throw org.springframework.web.client.HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR)
+                2 -> ResponseEntity.ok(existingResponse)
+                else -> ResponseEntity.ok(objectMapper.readTree("""{"hits":{"total":{"value":0}}}"""))
+            }
+        }.`when`(restTemplate).exchange(
+            Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+
+        val svc = createService()
+        val first = svc.discover(criteria, "TEST")
+        assertEquals(1, first.stats.bySource["EUROPE_PMC"]?.indexed)
+        assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, first.stats.bySource["EUROPE_PMC"]?.stopReason)
+        val replay = svc.discover(criteria, "TEST")
+        assertEquals(1, replay.stats.bySource["EUROPE_PMC"]?.duplicates)
+        assertEquals(1, replay.stats.bySource["EUROPE_PMC"]?.indexed)
+        assertEquals(2, rawIds.size, "first author is written once; only second author is added on replay")
+        assertEquals(setOf(
+            ExpertIdGenerator.generate(null, "first@ox.ac.uk"),
+            ExpertIdGenerator.generate(null, "second@ox.ac.uk")
+        ), rawIds.toSet())
+        assertEquals(listOf(null, null), pageCriteria.take(2).map { it.cursor },
+            "replay starts at the retained entering cursor")
+        assertEquals(CheckpointState.EXHAUSTED, storedCheckpointFor("EUROPE_PMC", criteria).state)
+    }
+
+    @Test
+    fun `ORCID dedup failure preserves entering offset and does not report exhaustion`() {
+        val criteria = PaperSearchCriteria(
+            pageSize = 100, subjectScope = SubjectScopeCatalog.RND_TARGET,
+            sources = listOf("ORCID"), cursor = "100"
+        )
+        stubStoredCheckpoint("ORCID", "100", criteria)
+        val template = Mockito.mock(RestTemplate::class.java)
+        Mockito.doAnswer { invocation ->
+            val url = invocation.getArgument<String>(0)
+            objectMapper.readTree(if (url.contains("start=100")) orcidPageBody(1, "found@ox.ac.uk") else """{"expanded-result": []}""")
+        }.`when`(template).getForObject(
+            Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        Mockito.doReturn(OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0)))
+            .`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "found@ox.ac.uk", EmailValidationResult(2, true))
+        Mockito.doThrow(org.springframework.web.client.HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR))
             .`when`(restTemplate).exchange(
-                Mockito.contains("/_search"),
-                Mockito.eq(org.springframework.http.HttpMethod.POST),
-                Mockito.any(),
+                Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
                 Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
-        assertEquals(0, result.stats.indexed)
-        assertTrue(result.stats.dedupErrors >= 1)
+        val result = createService(c4Props()).discover(criteria, "TEST")
+        val source = result.stats.bySource["ORCID"]!!
+        val checkpoint = storedCheckpointFor("ORCID", criteria)
+        assertEquals(1, source.dedupErrors)
+        assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, source.stopReason)
+        assertEquals(CheckpointState.ACTIVE, checkpoint.state)
+        assertEquals("100", checkpoint.cursor)
+        assertTrue(source.pendingWork)
     }
 
     @Test

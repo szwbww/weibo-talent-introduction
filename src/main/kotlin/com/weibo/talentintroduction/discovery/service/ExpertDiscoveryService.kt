@@ -724,6 +724,7 @@ class ExpertDiscoveryService(
             val indexedBefore = sourceStats.indexed
             val rawWriteFailedBefore = sourceStats.rawWriteFailed
             val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
+            val dedupErrorsBefore = sourceStats.dedupErrors
             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             var limitReached = false
@@ -759,9 +760,10 @@ class ExpertDiscoveryService(
                 consumeOutcome(paper, extraction, source, stats, sourceStats, execId)
             }
 
-            // I-1: 完整消费页 = 页内全部论文处理完且 RAW 持久化/补全入队都未失败；任一失败都保留进入该页的 cursor 以便重放。
             val rawWriteFailedInPage = sourceStats.rawWriteFailed - rawWriteFailedBefore
             val enqueueFailedInPage = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) - enqueueFailedBefore
+            // I-1: dedup lookup failures also make this page incomplete and replayable.
+            val dedupErrorsInPage = sourceStats.dedupErrors - dedupErrorsBefore
             if (rawWriteFailedInPage > 0) {
                 log.warn("[{}] 批次 {} 内有 {} 篇 RAW 写入失败，保留进入该页的 cursor 以便重放",
                     source.sourceName, batchNumber, rawWriteFailedInPage)
@@ -770,7 +772,8 @@ class ExpertDiscoveryService(
                 log.warn("[{}] 批次 {} 内有 {} 条补全任务入队失败，保留进入该页的 cursor 以便重放补建",
                     source.sourceName, batchNumber, enqueueFailedInPage)
             }
-            if (!limitReached && !timeBudgetExpired && rawWriteFailedInPage == 0 && enqueueFailedInPage == 0) {
+            if (!limitReached && !timeBudgetExpired && rawWriteFailedInPage == 0 &&
+                enqueueFailedInPage == 0 && dedupErrorsInPage == 0) {
                 val nextCursor = batch.nextCursor
                 // 没有下一页即穷尽；完整消费的页在进入下一页前立即落盘。
                 persistCheckpoint(
@@ -812,12 +815,20 @@ class ExpertDiscoveryService(
                 batchRejectReasons = batchRejectReasons
             ), execId)
 
+            if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
+                stopReason = DiscoveryStopReason.CANCELLED
+                break
+            }
             if (rawWriteFailedInPage > 0) {
                 stopReason = DiscoveryStopReason.RAW_WRITE_INCOMPLETE
                 break
             }
             if (enqueueFailedInPage > 0) {
                 stopReason = DiscoveryStopReason.ENQUEUE_INCOMPLETE
+                break
+            }
+            if (dedupErrorsInPage > 0) {
+                stopReason = DiscoveryStopReason.DEDUP_INCOMPLETE
                 break
             }
             if (limitReached || circuitBreakerTripped || timeBudgetExpired) {
@@ -958,20 +969,28 @@ class ExpertDiscoveryService(
                 continue
             }
             batchNumber++
-
             val indexedBefore = sourceStats.indexed
             val recordsProcessedBeforeBatch = recordsProcessed
             val rawWriteFailedBefore = sourceStats.rawWriteFailed
             val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
+            val dedupErrorsBefore = sourceStats.dedupErrors
             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             // c9（I-3）：页内到点单独标记 —— 部分页按「进入该页」落盘，停止原因按 TIME_BUDGET 命名。
             var timeBudgetExpired = false
+            var limitReason: String? = null
             for (record in records) {
-                if (recordsProcessed >= orcidLimit) break
+                if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
+                if (recordsProcessed >= orcidLimit) {
+                    limitReason = DiscoveryStopReason.SOURCE_LIMIT
+                    break
+                }
                 if (timeBudgetReached(deadline)) { timeBudgetExpired = true; break }
                 stats.refreshGlobalCounts()
-                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+                    limitReason = DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT
+                    break
+                }
                 sourceStats.papersSearched++
                 sourceStats.fulltextObtained++
                 recordsProcessed++
@@ -979,8 +998,10 @@ class ExpertDiscoveryService(
                 val authorEmails = orcid.orcidRecordToAuthorEmails(record)
 
                 for (authorEmail in authorEmails) {
-                    stats.refreshGlobalCounts()
-                    if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+                    if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+                        limitReason = DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT
+                        break
+                    }
                     sourceStats.authorsExtracted++
 
                     val identityReject = identityRejection(authorEmail)
@@ -1027,6 +1048,7 @@ class ExpertDiscoveryService(
                         }
                     }
                 }
+                if (limitReason != null) break
             }
 
             val batchProcessed = recordsProcessed - recordsProcessedBeforeBatch
@@ -1056,6 +1078,7 @@ class ExpertDiscoveryService(
             val pageFullyConsumed = recordsProcessed - recordsProcessedBeforeBatch == records.size
             val rawWriteFailedInPage = sourceStats.rawWriteFailed - rawWriteFailedBefore
             val enqueueFailedInPage = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) - enqueueFailedBefore
+            val dedupErrorsInPage = sourceStats.dedupErrors - dedupErrorsBefore
             if (rawWriteFailedInPage > 0) {
                 log.warn("[{}] 批次 {} 内有 {} 条记录 RAW 写入失败，保留进入该页的 offset 以便重放",
                     orcid.sourceName, batchNumber, rawWriteFailedInPage)
@@ -1064,7 +1087,8 @@ class ExpertDiscoveryService(
                 log.warn("[{}] 批次 {} 内有 {} 条补全任务入队失败，保留进入该页的 offset 以便重放补建",
                     orcid.sourceName, batchNumber, enqueueFailedInPage)
             }
-            if (pageFullyConsumed && !timeBudgetExpired && rawWriteFailedInPage == 0 && enqueueFailedInPage == 0) {
+            if (pageFullyConsumed && limitReason == null && !timeBudgetExpired && rawWriteFailedInPage == 0 &&
+                enqueueFailedInPage == 0 && dedupErrorsInPage == 0) {
                 // I-2: 推进量由数据源按原始返回条数算好（不受邮箱过滤影响），这里只搬运它的游标。
                 cursor = page.nextCursor
                 persistCheckpoint(
@@ -1074,17 +1098,17 @@ class ExpertDiscoveryService(
                 )
                 if (exhausted) break
             } else {
-                // I-1: 部分页、页内 RAW 持久化未完成或补全入队未完成都保留进入该页的 offset，绝不跳过未消费记录。
+                // I-1: partial, interrupted, or failed pages retain their entering offset.
                 persistCheckpoint(
                     resumeCursor,
-                    if (rawWriteFailedInPage > 0) {
-                        DiscoveryStopReason.RAW_WRITE_INCOMPLETE
-                    } else if (enqueueFailedInPage > 0) {
-                        DiscoveryStopReason.ENQUEUE_INCOMPLETE
-                    } else if (timeBudgetExpired) {
-                        DiscoveryStopReason.TIME_BUDGET
-                    } else {
-                        DiscoveryStopReason.PAGE_PARTIAL
+                    when {
+                        progressStore.isCancelled("EXPERT_DISCOVERY") -> DiscoveryStopReason.CANCELLED
+                        rawWriteFailedInPage > 0 -> DiscoveryStopReason.RAW_WRITE_INCOMPLETE
+                        enqueueFailedInPage > 0 -> DiscoveryStopReason.ENQUEUE_INCOMPLETE
+                        dedupErrorsInPage > 0 -> DiscoveryStopReason.DEDUP_INCOMPLETE
+                        timeBudgetExpired -> DiscoveryStopReason.TIME_BUDGET
+                        limitReason != null -> limitReason!!
+                        else -> DiscoveryStopReason.PAGE_PARTIAL
                     },
                     false
                 )
@@ -3108,6 +3132,7 @@ object DiscoveryStopReason {
     const val BUDGET_DEFERRED = "BUDGET_DEFERRED"
     const val CIRCUIT_BREAKER = "CIRCUIT_BREAKER"
     const val CANCELLED = "CANCELLED"
+    const val DEDUP_INCOMPLETE = "DEDUP_INCOMPLETE"
     const val GLOBAL_PAPER_LIMIT = "GLOBAL_PAPER_LIMIT"
     const val GLOBAL_AUTHOR_LIMIT = "GLOBAL_AUTHOR_LIMIT"
     const val SOURCE_LIMIT = "SOURCE_LIMIT"
