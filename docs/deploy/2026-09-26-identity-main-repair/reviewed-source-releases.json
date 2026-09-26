@@ -1,0 +1,42 @@
+{
+  "14f742136c5d09e0985e7ad5dc74a7ec6b6eacb93186981b62d0d5180358edcc": {
+    "givenNames": "Edward",
+    "familyNames": "Raff",
+    "doi": "arXiv:2609.21306v1",
+    "source_url": "https://arxiv.org/html/2609.21306v1",
+    "evidence_sha256": "0d004a644bae5f8e5d7bcdb24eb8d8edd6a7930bbfa02bd5369bb4b962ca8719",
+    "evidence_file": "2609.21306v1.html",
+    "reviewed_at": "2026-09-26",
+    "review_basis": "Explicit author/email association independently checked against the published author block."
+  },
+  "4038c86640ffbd2a309fd4eb0a0e1f2a9d9b85e5e7fbeca96fd49ae2b94415a9": {
+    "givenNames": "Edward",
+    "familyNames": "Raff",
+    "doi": "arXiv:2609.21306v1",
+    "source_url": "https://arxiv.org/html/2609.21306v1",
+    "evidence_sha256": "0d004a644bae5f8e5d7bcdb24eb8d8edd6a7930bbfa02bd5369bb4b962ca8719",
+    "evidence_file": "2609.21306v1.html",
+    "reviewed_at": "2026-09-26",
+    "review_basis": "Explicit author/email association independently checked against the published author block."
+  },
+  "3b65ed1e128d700281c5669bc255bf0c9d412d04247b0bdccd1a285c963264ab": {
+    "givenNames": "Hang",
+    "familyNames": "Zhao",
+    "doi": "arXiv:2609.22795v1",
+    "source_url": "https://arxiv.org/html/2609.22795v1",
+    "evidence_sha256": "ec9716bedbec44c2cf24344da9596d69b74dc268b64a03e7be9bf623eee10717",
+    "evidence_file": "2609.22795v1.html",
+    "reviewed_at": "2026-09-26",
+    "review_basis": "Explicit author/email association independently checked against the published author block."
+  },
+  "745cc1039b12527263f4008e33b3da5407c93291ae02db4f3905d91b2f950d00": {
+    "givenNames": "Hang",
+    "familyNames": "Zhao",
+    "doi": "arXiv:2609.21983v1",
+    "source_url": "https://arxiv.org/html/2609.21983v1",
+    "evidence_sha256": "2e4804014bbeba79db0f2212cb63bedfc89ac8323fd49e37b65e1000c76287ff",
+    "evidence_file": "2609.21983v1.html",
+    "reviewed_at": "2026-09-26",
+    "review_basis": "Explicit author/email association independently checked against the published author block."
+  }
+}

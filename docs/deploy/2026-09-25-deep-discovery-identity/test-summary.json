@@ -1,0 +1,13 @@
+{
+  "tests": 4030,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 13,
+  "javascript_tests": 1185,
+  "javascript_failed": 0,
+  "build": "PASS",
+  "command": "JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package",
+  "log_sha256": "0c259c46b6c49ff48eee160d3b0eb29e5b8f54e7019cca57d479cffde0a787ed",
+  "manual_new_batch_validation": "PENDING_USER_REQUEST",
+  "automated_followup": "DELETED"
+}

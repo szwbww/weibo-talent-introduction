@@ -1,0 +1,26 @@
+{
+  "new_cohort_mail_today": [],
+  "existing_and_new_contact_counts": [
+    "1\t0"
+  ],
+  "send_config_state": [
+    "1\t0",
+    "3\t0",
+    "4\t0",
+    "5\t0"
+  ],
+  "reintroduced_missing_name": 22,
+  "reintroduced_full_name": 50,
+  "missing_name_by_source": {
+    "OPENALEX": 221,
+    "CROSSREF": 191,
+    "ARXIV": 291
+  },
+  "discovery_task_counts": {
+    "indexed": 1015,
+    "promoted": 1015,
+    "rawWriteFailed": 0,
+    "promotionFailed": 0,
+    "filtered": 0
+  }
+}

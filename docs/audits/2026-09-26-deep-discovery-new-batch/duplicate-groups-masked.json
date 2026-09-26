@@ -1,0 +1,58 @@
+{
+  "duplicate_groups_for_source_review": [
+    [
+      {
+        "name": "Edward Raff",
+        "email_masked": "ra***@umbc.edu",
+        "email_sha256": "14f742136c5d09e0985e7ad5dc74a7ec6b6eacb93186981b62d0d5180358edcc",
+        "source": "ARXIV",
+        "externalIds": {
+          "doi": "arXiv:2609.21306v1"
+        },
+        "discoveredAt": "2026-09-26 02:55:11"
+      },
+      {
+        "name": "Edward Raff",
+        "email_masked": "ed***@crowdstrike.com",
+        "email_sha256": "4038c86640ffbd2a309fd4eb0a0e1f2a9d9b85e5e7fbeca96fd49ae2b94415a9",
+        "source": "ARXIV",
+        "externalIds": {
+          "doi": "arXiv:2609.21306v1"
+        },
+        "discoveredAt": "2026-09-26 02:55:11"
+      }
+    ],
+    [
+      {
+        "name": "Hang Zhao",
+        "email_masked": "ha***@hkust-gz.edu.cn",
+        "email_sha256": "3b65ed1e128d700281c5669bc255bf0c9d412d04247b0bdccd1a285c963264ab",
+        "source": "ARXIV",
+        "externalIds": {
+          "doi": "arXiv:2609.22795v1"
+        },
+        "discoveredAt": "2026-09-26 02:50:44"
+      },
+      {
+        "name": "Hang Zhao",
+        "email_masked": "ha***@tsinghua.edu.cn",
+        "email_sha256": "745cc1039b12527263f4008e33b3da5407c93291ae02db4f3905d91b2f950d00",
+        "source": "ARXIV",
+        "externalIds": {
+          "doi": "arXiv:2609.21983v1"
+        },
+        "discoveredAt": "2026-09-26 02:52:41"
+      }
+    ]
+  ],
+  "name_completeness": {
+    "empty": 703,
+    "full": 307
+  },
+  "external_id_fields": {
+    "doi": 1010,
+    "orcid": 53,
+    "openAlexAuthorId": 56,
+    "pmid": 73
+  }
+}

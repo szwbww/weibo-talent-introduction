@@ -1,0 +1,55 @@
+{
+  "server_time": "2026-09-26T09:48:20.530634",
+  "war_sha256": "bee031087e6a268bc42d50628165ec384503096b82b4592032bd7f65f3898d95",
+  "deployed_blocklist_present": false,
+  "indices": {
+    "orcid_info": {
+      "total": {
+        "value": 1010,
+        "relation": "eq"
+      },
+      "retrieved": 1010
+    },
+    "orcid_info_candidate": {
+      "total": {
+        "value": 1010,
+        "relation": "eq"
+      },
+      "retrieved": 1010
+    },
+    "orcid_info_application": {
+      "total": {
+        "value": 0,
+        "relation": "eq"
+      },
+      "retrieved": 0
+    }
+  },
+  "unique_email_experts": 1010,
+  "name_duplicate_groups": 2,
+  "experts_in_duplicate_groups": 4,
+  "cross_layer_email_name_conflicts": 0,
+  "identity_anomalies": {
+    "status_or_version": 1010,
+    "missing_name": 703,
+    "binding_mismatch": 1010,
+    "missing_evidence_hash": 1010,
+    "deleted_email_reintroduced": 72
+  },
+  "sources": {
+    "OPENALEX": 287,
+    "ARXIV": 491,
+    "CROSSREF": 232
+  },
+  "hours": {
+    "2026-09-26 02": 972,
+    "2026-09-26 03": 38
+  },
+  "evidence_sources": {
+    "MISSING": 1010
+  },
+  "unique_public_pmc_count": 0,
+  "tasks": [
+    "20077\tEXPERT_DISCOVERY\tPARTIAL_SUCCESS\t2026-09-26 02:00:00\t2026-09-26 03:01:22\t1015\t23"
+  ]
+}
