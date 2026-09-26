@@ -1,0 +1,21 @@
+## Light Verification: LIGHT_PASS
+Child: 02 — `docs/plans/2026-09-26/discovery-repair-02-search-retry.md`
+Boundary: `29db24e66b8cb98eceb782812da34d1acbd6da06..ddc26e020ec692d381b33fe5f575ccb6b14fd595`
+Verifier: OpenAlexRetryVerifier (fresh independent verification)
+
+### Four Gates
+| Gate | Result | Evidence |
+|---|---|---|
+| Authorized scope | PASS | Implementation commit `ddc26e020ec692d381b33fe5f575ccb6b14fd595` contains exactly the two authorized files: `src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt` and `src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt` (`git show --stat`); no policy, queue, schema, sender, configuration, migration, or other product/test file was changed by the implementation commit. The cumulative boundary also displays child 01 evidence/ledger artifacts committed between the product base and this implementation; these are predecessor fast-p evidence, not child 02 implementation changes.
+| Plan and invariants | PASS | The service keeps a per-page OpenAlex attempt counter (maximum 3; `ExpertDiscoveryService.kt:621-622,667-668,693-697,725-729`), retries only the explicit HTTP 500/502/503/504 set or the bounded cause-chain network classifier (`:2064-2111`, constants `:3273-3274`), and excludes certificate, peer verification, protocol, and parse failures. The wait uses 1s/2s plus 0–200ms jitter, slices ≤100ms, and checks cancellation/deadline before and after waiting; interruption restores the thread flag (`:2064-2081`). OA429 stops as `BUDGET_DEFERRED`; `OpenAlexBudgetDeferredException` also exits without search failure (`:680-684`). Failures do not advance the cursor or consume papers; exhausted attempts record one terminal failure, and success resets both per-page attempts and failure streak before handling even an empty page (`:715-746`). The new test cases at `ExpertDiscoveryServiceTest.kt:2842-3080` cover same-cursor temporary failure then success/count-once, three timeouts, all four approved HTTP statuses, certificate/403, 429, deadline, cancellation, and interruption. Existing budget-deferred coverage at `:3190-3224` verifies retained cursor/no failure. Fresh run generated `target/discovery-plan-acceptance/02.json` with two actual OPENALEX/C1 requests, `apiRequests=2`, `papersSearched=1`, zero source failures, and actual checkpoint/task outcomes. The only modified production code is the synchronous discovery loop; no M1–M3 identity/admission/persistence/sender behavior or child 01 checkpoint/status contract was changed.
+| Required command | PASS | Fresh run from the target worktree with JDK 11.0.15 Zulu: `export JAVA_HOME=/Library/Java/VirtualMachines/zulu-11.jdk/Contents/Home; "$JAVA_HOME/bin/java" -version && /opt/homebrew/Cellar/maven/3.9.11/libexec/bin/mvn test -Dtest=ExpertDiscoveryServiceTest,OpenAlexDataSourceTest,OpenAlexRequestPolicyTest,DiscoveryPipelineServiceTest` — exit 0; 295 tests, 0 failures, 0 errors, 0 skipped; `BUILD SUCCESS`. The initial direct assignment invocation reproduced the documented JAVA_HOME launcher validation issue; the required fresh retry using exported JAVA_HOME and the absolute Maven launcher passed.
+| Downstream interfaces | PASS | Every synchronous retry re-enters `OpenAlexDataSource.searchPapers()` and its `getJson()`/request-policy `reserve` path (`OpenAlexDataSource.kt:54-89`); network failure is recorded UNKNOWN rather than refunded, and the existing request-policy retry test proves a subsequent invocation reserves again (`OpenAlexDataSourceTest.kt:1196-1228`). The queue path is unchanged: `collectQueuePage()` makes one page call and maps budget deferral or search errors to the existing deferred/error result (`ExpertDiscoveryService.kt:1557-1621`); `DiscoveryPipelineService.kt:853-870,1434-1442` continues to defer budget and source errors without adopting synchronous retries. Child 01 retained-cursor and `DEDUP_INCOMPLETE` string/checkpoint/status interfaces remain unchanged.
+
+### Findings
+- N/A
+
+### Evidence Boundaries
+- Manual acceptance A-1–A-3 remains pending as specified by the plan; this light verification covers only the four machine-verification gates. No broader build or whole-project suite was run.
+
+### Required Action
+- COMPLETE_CHILD
