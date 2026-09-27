@@ -1420,6 +1420,17 @@
                             </div>
                             <div class="batch-gate-keys" id="batchConfigEditorGateFilterKeys" hidden></div>
                         </div>
+                        <div class="batch-config-field batch-gate-field" id="editorFieldExcludeVerifiedUnavailableEmails">
+                            <span class="batch-config-field-label">排除已验证不可用邮箱</span>
+                            <div class="batch-gate-row">
+                                <label class="batch-task-status-toggle batch-gate-toggle">
+                                    <input type="checkbox" id="batchConfigEditorExcludeVerifiedUnavailableEmails" aria-label="排除已验证不可用邮箱" aria-describedby="batchConfigEditorExcludeVerifiedUnavailableEmailsHint">
+                                    <span class="batch-task-status-switch" aria-hidden="true"></span>
+                                    <span class="batch-task-status-label" id="batchConfigEditorExcludeVerifiedUnavailableEmailsLabel">已开启</span>
+                                </label>
+                                <span class="batch-gate-hint" id="batchConfigEditorExcludeVerifiedUnavailableEmailsHint">按最近一年内的最新有效验证结果，排除不可投递邮箱；不发起新的验证请求。</span>
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -1665,6 +1676,19 @@
                             <span class="batch-gate-hint" id="batchManualGateFilterHint">仅影响本次执行，不修改原定时任务。</span>
                         </div>
                         <div class="batch-gate-keys" id="batchManualGateFilterKeys" hidden></div>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </div>
+                    <div class="batch-config-field batch-gate-field" id="manualFieldExcludeVerifiedUnavailableEmails">
+                        <span class="batch-config-field-label">排除已验证不可用邮箱</span>
+                        <div class="batch-gate-row">
+                            <label class="batch-task-status-toggle batch-gate-toggle">
+                                <input type="checkbox" id="batchManualExcludeVerifiedUnavailableEmails" aria-label="排除已验证不可用邮箱" aria-describedby="batchManualExcludeVerifiedUnavailableEmailsHint">
+                                <span class="batch-task-status-switch" aria-hidden="true"></span>
+                                <span class="batch-task-status-label" id="batchManualExcludeVerifiedUnavailableEmailsLabel">已开启</span>
+                            </label>
+                            <span class="batch-gate-hint" id="batchManualExcludeVerifiedUnavailableEmailsHint">按最近一年内的最新有效验证结果，排除不可投递邮箱；不发起新的验证请求。仅影响本次执行，不修改原定时任务。</span>
+                        </div>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
                     </div>

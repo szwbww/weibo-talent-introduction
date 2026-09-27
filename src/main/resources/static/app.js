@@ -17913,6 +17913,9 @@ function renderBatchConfigRow(c) {
     scopeHtml += '<span class="batch-task-scope-line">' + (c.emailVerificationEnabled === true
         ? '<span class="batch-gate-pill">邮箱验证 · 开</span>'
         : '<span class="batch-gate-pill is-off">邮箱验证 · 关</span>') + '</span>';
+    scopeHtml += '<span class="batch-task-scope-line">' + (c.excludeVerifiedUnavailableEmails === true
+        ? '<span class="batch-gate-pill">过滤已验证不可用邮箱 · 开</span>'
+        : '<span class="batch-gate-pill is-off">过滤已验证不可用邮箱 · 关</span>') + '</span>';
 
     var planHtml = cronToDisplayText(c.cron);
     var statusHtml = renderBatchConfigStatusToggle(c);
@@ -18062,6 +18065,13 @@ function showBatchConfigEditor(config) {
     var emailVerificationCheckbox = document.getElementById("batchConfigEditorEmailVerification");
     if (emailVerificationCheckbox) {
         emailVerificationCheckbox.checked = Boolean(config && config.emailVerificationEnabled === true);
+    }
+    var excludeVerifiedUnavailableCheckbox = document.getElementById("batchConfigEditorExcludeVerifiedUnavailableEmails");
+    if (excludeVerifiedUnavailableCheckbox) {
+        excludeVerifiedUnavailableCheckbox.checked = !config || config.excludeVerifiedUnavailableEmails === true;
+        if (typeof updateExcludeVerifiedUnavailableToggleLabel === "function") {
+            updateExcludeVerifiedUnavailableToggleLabel("editor");
+        }
     }
 
     // Cron 回显走白名单反解（I1-1）：只有完全匹配预设格式的表达式才映射到
@@ -18889,6 +18899,20 @@ function refreshEmailVerificationState(kind) {
     updateEmailVerificationToggleLabel(kind);
 }
 
+function excludeVerifiedUnavailableToggleId(kind) {
+    return kind === "editor"
+        ? "batchConfigEditorExcludeVerifiedUnavailableEmails"
+        : "batchManualExcludeVerifiedUnavailableEmails";
+}
+
+function updateExcludeVerifiedUnavailableToggleLabel(kind) {
+    var checkbox = document.getElementById(excludeVerifiedUnavailableToggleId(kind));
+    var label = document.getElementById(kind === "editor"
+        ? "batchConfigEditorExcludeVerifiedUnavailableEmailsLabel"
+        : "batchManualExcludeVerifiedUnavailableEmailsLabel");
+    if (checkbox && label) label.textContent = checkbox.checked ? "已开启" : "已关闭";
+}
+
 // ── Recipient-count preview (P-F / 06) ──────────────────────────────────────────────
 // 与执行共用同一入参 BatchExecutionSnapshot（I-2）：后端 countBySnapshot 复用执行路径
 // 的同一套目标计算（I-1），前端此处只负责把面板当前过滤条件组装成该 snapshot。
@@ -18921,6 +18945,7 @@ function buildConfigEditorRecipientSnapshot() {
         researchDirectionFilter: val("batchConfigEditorResearchDirectionFilter") || "ANY",
         gateFilterEnabled: gateToggleChecked("editor"),
         emailVerificationEnabled: Boolean(emailVerificationEl && emailVerificationEl.checked),
+        excludeVerifiedUnavailableEmails: document.getElementById("batchConfigEditorExcludeVerifiedUnavailableEmails")?.checked === true,
         templateId: templateId
     };
 }
@@ -18946,6 +18971,7 @@ function buildManualExecutionSnapshot() {
         gateFilterEnabled: values.gateFilterEnabled,
         // I-1：与预估/执行共用同一完整快照，手动覆盖不回写原配置。
         emailVerificationEnabled: values.emailVerificationEnabled,
+        excludeVerifiedUnavailableEmails: values.excludeVerifiedUnavailableEmails,
         templateId: values.templateId
     };
 }
@@ -18962,12 +18988,17 @@ function scheduleRecipientPreview(kind) {
     }, 500);
 }
 
-/* baseHintHtml：与改动前逐字一致的既有命中行（P4b T4b-4）。 */
-function baseHintHtml(total, res) {
+/* baseHintHtml preserves the original summary and appends the selected response count. */
+function baseHintHtml(total, res, excludeVerifiedUnavailableEmails) {
     var pending = Number(res.pending || 0);
     var retryable = Number(res.retryable || 0);
-    return "当前条件命中 <strong>" + total + "</strong> 位专家（其中未联系 " + pending +
+    var hint = "当前条件命中 <strong>" + total + "</strong> 位专家（其中未联系 " + pending +
         "、可重试 " + retryable + "）";
+    if (excludeVerifiedUnavailableEmails) {
+        hint += "；已排除不可用邮箱 <strong>" +
+            Number(res.excludedVerifiedUnavailable || 0) + "</strong> 位";
+    }
+    return hint;
 }
 
 function refreshRecipientPreview(kind) {
@@ -18997,17 +19028,20 @@ function refreshRecipientPreview(kind) {
         var off = results[0];
         var offTotal = totalOf(off);
         var gateOn = gateAvailable && document.getElementById(gateToggleId(kind)).checked;
+        var selectedResponse = gateOn ? results[1] : off;
+        var selectedTotal = gateOn ? totalOf(results[1]) : offTotal;
+        var excludeVerifiedUnavailable = snapshot.excludeVerifiedUnavailableEmails === true;
         if (!gateAvailable) {
-            hint.innerHTML = baseHintHtml(offTotal, off);
+            hint.innerHTML = baseHintHtml(offTotal, off, excludeVerifiedUnavailable);
             return;
         }
         var onTotal = totalOf(results[1]);
-        var excluded = Math.max(0, offTotal - onTotal);        // I4b-1
+        var excluded = Math.max(0, offTotal - onTotal);
         if (gateOn) {
-            hint.innerHTML = baseHintHtml(onTotal, results[1]) +
+            hint.innerHTML = baseHintHtml(selectedTotal, selectedResponse, excludeVerifiedUnavailable) +
                 "；门禁过滤已排除 <span class=\"batch-gate-excluded\">" + excluded + "</span> 位";
         } else {
-            hint.innerHTML = baseHintHtml(offTotal, off) +
+            hint.innerHTML = baseHintHtml(selectedTotal, selectedResponse, excludeVerifiedUnavailable) +
                 (excluded > 0
                     ? "<span class=\"batch-gate-warnline\">其中 " + excluded +
                       " 位缺少该模板必填字段，发送时会被门禁拦下并计入失败。</span>"
@@ -19067,6 +19101,7 @@ async function saveBatchConfigEditor() {
         operatorStatuses: readBatchMultiPickerValue("batchConfigEditorOperatorStatuses"),
         expertTypes: readBatchMultiPickerValue("batchConfigEditorExpertTypes"),
         senderAccountCodes: readBatchMultiPickerValue("batchConfigEditorSenderAccounts"),
+        excludeVerifiedUnavailableEmails: document.getElementById("batchConfigEditorExcludeVerifiedUnavailableEmails")?.checked === true,
         researchDirectionFilter: val("batchConfigEditorResearchDirectionFilter") || "ANY",
         gateFilterEnabled: gateToggleChecked("editor"),
         emailVerificationEnabled: Boolean(emailVerificationEl && emailVerificationEl.checked),
@@ -19164,6 +19199,7 @@ function deepCloneConfig(c) {
         researchDirectionFilter: c.researchDirectionFilter || "ANY",
         gateFilterEnabled: c.gateFilterEnabled === true,
         emailVerificationEnabled: c.emailVerificationEnabled === true,
+        excludeVerifiedUnavailableEmails: c.excludeVerifiedUnavailableEmails === true,
         roundSize: c.roundSize || 50,
         roundsPerRun: c.roundsPerRun || 1,
         perMailIntervalMs: c.perMailIntervalMs || 1000,
@@ -19186,6 +19222,7 @@ function fillManualFormDefaults() {
         operatorStatuses: [],
         expertTypes: ["PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"],
         senderAccountCodes: [],
+        excludeVerifiedUnavailableEmails: true,
         researchDirectionFilter: "ANY",
         gateFilterEnabled: false,
         emailVerificationEnabled: false,
@@ -19220,6 +19257,13 @@ function fillManualFormFromDraft() {
     setVal("batchManualPerMailIntervalSec", Math.round((d.perMailIntervalMs || 1000) / 1000));
     setVal("batchManualPerRoundIntervalSec", Math.round((d.perRoundIntervalMs || 60000) / 1000));
     setVal("batchManualSelfCheckTtlMin", d.selfCheckTtlMinutes);
+    var excludeVerifiedUnavailableCheckbox = document.getElementById("batchManualExcludeVerifiedUnavailableEmails");
+    if (excludeVerifiedUnavailableCheckbox) {
+        excludeVerifiedUnavailableCheckbox.checked = d.excludeVerifiedUnavailableEmails === true;
+        if (typeof updateExcludeVerifiedUnavailableToggleLabel === "function") {
+            updateExcludeVerifiedUnavailableToggleLabel("manual");
+        }
+    }
 
     var gateCheckbox = document.getElementById("batchManualGateFilter");
     if (gateCheckbox) gateCheckbox.checked = Boolean(d.gateFilterEnabled);
@@ -19308,6 +19352,7 @@ function readManualFormValues() {
         senderAccountCodes: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualSenderAccounts") : [],
         gateFilterEnabled: Boolean(gateCheckboxEl && gateCheckboxEl.checked),
         emailVerificationEnabled: Boolean(emailVerificationEl && emailVerificationEl.checked),
+        excludeVerifiedUnavailableEmails: document.getElementById("batchManualExcludeVerifiedUnavailableEmails")?.checked === true,
         roundSize: parseNum("batchManualRoundSize"),
         roundsPerRun: parseNum("batchManualRoundsPerRun"),
         perMailIntervalMs: parseNumSec("batchManualPerMailIntervalSec"),
@@ -19320,6 +19365,7 @@ function normalizeManualSnapshot(v) {
     return {
         templateId: v.templateId || null,
         funnelLevel: (v.funnelLevel || "").trim() || null,
+        excludeVerifiedUnavailableEmails: v.excludeVerifiedUnavailableEmails === true,
         tags: (Array.isArray(v.tags) ? v.tags.slice() : []).map(function(t) { return t.trim(); }).filter(function(t) { return t.length > 0; }).sort().filter(function(t, i, arr) { return arr.indexOf(t) === i; }),
         regions: (Array.isArray(v.regions) ? v.regions.slice() : []).map(function(r) { return r.trim(); }).filter(function(r) { return r.length > 0; }).sort().filter(function(r, i, arr) { return arr.indexOf(r) === i; }),
         emailDomains: (Array.isArray(v.emailDomains) ? v.emailDomains : []).map(function(s) { return String(s).trim(); }).filter(Boolean).slice().sort(),
@@ -19341,6 +19387,7 @@ function normalizeManualSnapshot(v) {
 function formatManualDiffValue(key, value) {
     if (key === "gateFilterEnabled") return value ? "开启" : "关闭";
     if (key === "emailVerificationEnabled") return value ? "开启" : "关闭";
+    if (key === "excludeVerifiedUnavailableEmails") return value ? "开启" : "关闭";
     if (key === "templateId") {
         if (!value) return "系统默认介绍邮件模板";
         var template = supportedBatchComposeTemplates().find(function(item) {
@@ -19384,6 +19431,7 @@ function computeManualDiffs() {
     var fieldDefs = [
         { key: "templateId", label: "模板" },
         { key: "funnelLevel", label: "漏斗层级" },
+        { key: "excludeVerifiedUnavailableEmails", label: "排除已验证不可用邮箱" },
         { key: "tags", label: "标签" },
         { key: "regions", label: "地区" },
         { key: "emailDomains", label: "邮箱服务商" },
@@ -19445,6 +19493,7 @@ function computeAndRenderDiffs() {
         senderAccountCodes: "manualFieldSenderAccounts",
         gateFilterEnabled: "manualFieldGateFilter",
         emailVerificationEnabled: "manualFieldEmailVerification",
+        excludeVerifiedUnavailableEmails: "manualFieldExcludeVerifiedUnavailableEmails",
         roundsPerRun: "manualFieldRoundsPerRun",
         roundSize: "manualFieldRoundSize",
         perMailIntervalMs: "manualFieldPerMailIntervalSec",
@@ -19474,7 +19523,7 @@ function computeAndRenderDiffs() {
 
 function clearAllDiffMarkers() {
     var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldRegions", "manualFieldEmailDomain",
-        "manualFieldDiscipline", "manualFieldResearchDirectionFilter", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldSenderAccounts", "manualFieldGateFilter", "manualFieldEmailVerification", "manualFieldRoundsPerRun", "manualFieldRoundSize",
+        "manualFieldDiscipline", "manualFieldResearchDirectionFilter", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldSenderAccounts", "manualFieldGateFilter", "manualFieldEmailVerification", "manualFieldExcludeVerifiedUnavailableEmails", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
         var el = document.getElementById(id);
@@ -19500,6 +19549,8 @@ function showBatchManualConfirm() {
     // I-1：确认页显示本次执行的开关值（同源读取勾选状态，不回写原配置）。
     var emailVerificationEl = document.getElementById("batchManualEmailVerification");
     var emailVerificationText = emailVerificationEl && emailVerificationEl.checked ? "开启" : "关闭";
+    var excludeVerifiedUnavailableEl = document.getElementById("batchManualExcludeVerifiedUnavailableEmails");
+    var excludeVerifiedUnavailableText = excludeVerifiedUnavailableEl && excludeVerifiedUnavailableEl.checked ? "开启" : "关闭";
 
     if (source && diffs.length > 0) {
         title.textContent = "确认按修改后的配置执行？";
@@ -19520,6 +19571,7 @@ function showBatchManualConfirm() {
             '<strong>' + escapeHtml(source.configName) + '</strong><br>' +
             '轮次: ' + source.roundsPerRun + ' 轮 · 每轮: ' + source.roundSize + ' 封<br>' +
             '发送前验证邮箱: ' + emailVerificationText + '<br>' +
+            '排除已验证不可用邮箱: ' + excludeVerifiedUnavailableText + '<br>' +
             '来源配置: ' + escapeHtml(source.configName) +
             '</div>';
     } else {
@@ -19529,6 +19581,7 @@ function showBatchManualConfirm() {
             '未关联定时配置，本次参数不会保存。<br>' +
             '每轮: ' + escapeHtml(String(document.getElementById("batchManualRoundSize")?.value || "50")) + ' 封<br>' +
             '发送前验证邮箱: ' + emailVerificationText + '<br>' +
+            '排除已验证不可用邮箱: ' + excludeVerifiedUnavailableText + '<br>' +
             '</div>' +
             '<p class="batch-manual-confirm-warning">此为独立执行，不关联任何定时配置。</p>';
     }
@@ -20512,6 +20565,15 @@ function bindBatchSendTaskEvents() {
     if (editorGateToggle) editorGateToggle.addEventListener("change", function() { updateGateToggleLabel("editor"); scheduleRecipientPreview("editor"); });
     var manualGateToggle = document.getElementById("batchManualGateFilter");
     if (manualGateToggle) manualGateToggle.addEventListener("change", function() { updateGateToggleLabel("manual"); scheduleRecipientPreview("manual"); });
+    var editorExcludeVerifiedUnavailableToggle = document.getElementById("batchConfigEditorExcludeVerifiedUnavailableEmails");
+    if (editorExcludeVerifiedUnavailableToggle) editorExcludeVerifiedUnavailableToggle.addEventListener("change", function() {
+        updateExcludeVerifiedUnavailableToggleLabel("editor");
+        scheduleRecipientPreview("editor");
+    });
+    var manualExcludeVerifiedUnavailableToggle = document.getElementById("batchManualExcludeVerifiedUnavailableEmails");
+    if (manualExcludeVerifiedUnavailableToggle) manualExcludeVerifiedUnavailableToggle.addEventListener("change", function() {
+        updateExcludeVerifiedUnavailableToggleLabel("manual");
+    });
     // 03 T2：开关 label 同步（手动面板的差异标记由既有 input/change 监听负责）。
     var editorEmailVerificationToggle = document.getElementById("batchConfigEditorEmailVerification");
     if (editorEmailVerificationToggle) editorEmailVerificationToggle.addEventListener("change", function() { updateEmailVerificationToggleLabel("editor"); });

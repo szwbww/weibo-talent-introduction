@@ -225,19 +225,26 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
         elements.get("batchConfigEditorTime").value = "07:30";
 
         elements.get("batchConfigEditorEmailVerification").checked = true;
+        elements.get("batchConfigEditorExcludeVerifiedUnavailableEmails").checked = true;
         await sandbox.saveBatchConfigEditor();
         assert.strictEqual(bodies[0].emailVerificationEnabled, true,
             "an enabled switch must reach the config payload");
+        assert.strictEqual(bodies[0].excludeVerifiedUnavailableEmails, true,
+            "the independent historical filter must reach the config payload");
 
         const enabledSnapshot = sandbox.buildConfigEditorRecipientSnapshot();
         assert.strictEqual(enabledSnapshot.emailVerificationEnabled, true,
             "the recipient preview uses the same switch value as the save path");
+        assert.strictEqual(enabledSnapshot.excludeVerifiedUnavailableEmails, true);
 
         elements.get("batchConfigEditorEmailVerification").checked = false;
+        elements.get("batchConfigEditorExcludeVerifiedUnavailableEmails").checked = false;
         await sandbox.saveBatchConfigEditor();
         assert.strictEqual(bodies[1].emailVerificationEnabled, false,
             "an unset switch must be submitted as false, never omitted");
         assert.strictEqual(sandbox.buildConfigEditorRecipientSnapshot().emailVerificationEnabled, false);
+        assert.strictEqual(bodies[1].excludeVerifiedUnavailableEmails, false);
+        assert.strictEqual(sandbox.buildConfigEditorRecipientSnapshot().excludeVerifiedUnavailableEmails, false);
     });
 
     it("V2: MATERIAL_REMINDER disables the switch and forces it off", () => {
@@ -251,6 +258,7 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
 
         elements.get("batchManualTemplateId").value = "7";
         elements.get("batchManualEmailVerification").checked = true;
+        elements.get("batchManualExcludeVerifiedUnavailableEmails").checked = true;
 
         sandbox.refreshEmailVerificationState("manual");
 
@@ -263,6 +271,9 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
         assert.strictEqual(elements.get("batchManualEmailVerificationHint").textContent, "仅介绍邮件支持发送前验证");
         assert.strictEqual(elements.get("editorFieldEmailVerification").classList.contains("is-disabled"), false,
             "the other panel must not be touched");
+        assert.strictEqual(elements.get("batchManualExcludeVerifiedUnavailableEmails").checked, true,
+            "template type must not disable the independent historical filter");
+        assert.strictEqual(elements.get("batchManualExcludeVerifiedUnavailableEmails").disabled, false);
     });
 
     it("V3: switching back to an introduction template re-enables without turning it on", () => {
@@ -350,10 +361,10 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
             perMailIntervalMs: 1000, perRoundIntervalMs: 60000, selfCheckTtlMinutes: 30,
             funnelLevel: "CANDIDATE", tags: [], regions: [], emailDomains: [], discipline: null,
             operatorStatuses: [], expertTypes: [], senderAccountCodes: [], researchDirectionFilter: "ANY",
-            gateFilterEnabled: false, emailVerificationEnabled: true, templateId: 7
+            gateFilterEnabled: false, emailVerificationEnabled: true, excludeVerifiedUnavailableEmails: true, templateId: 7
         };
         const sandbox = {
-            batchTaskState: { manualSource: { id: 7 }, manualDraft: {} },
+            batchTaskState: { manualSource: { id: 7, excludeVerifiedUnavailableEmails: true }, manualDraft: {} },
             readManualFormValues: () => values,
             document: { getElementById: () => null },
             closeBatchManualConfirmDialog: () => {},
@@ -369,13 +380,17 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
         vm.runInContext(extractFn("buildManualExecutionSnapshot"), sandbox);
         vm.runInContext(extractFn("confirmManualExecution"), sandbox);
 
-        assert.strictEqual(sandbox.buildManualExecutionSnapshot().emailVerificationEnabled, true,
-            "the execution snapshot must carry the switch for this run only");
+        assert.strictEqual(sandbox.buildManualExecutionSnapshot().emailVerificationEnabled, true);
+        assert.strictEqual(sandbox.buildManualExecutionSnapshot().excludeVerifiedUnavailableEmails, true,
+            "the execution snapshot must carry both independent switches for this run");
 
         await sandbox.confirmManualExecution();
 
         assert.strictEqual(calls.length, 1, "a manual run must not touch the config endpoints");
         assert.strictEqual(calls[0].body.snapshot.emailVerificationEnabled, true);
+        assert.strictEqual(calls[0].body.snapshot.excludeVerifiedUnavailableEmails, true);
+        assert.strictEqual(sandbox.batchTaskState.manualSource.excludeVerifiedUnavailableEmails, true,
+            "execution does not update the source config");
         assert.ok(calls[0].url.indexOf("/manual-executions") >= 0,
             "a manual run must post to the manual-executions route");
     });
@@ -392,14 +407,19 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
         vm.runInContext(extractFn("showBatchManualConfirm"), sandbox);
 
         elements.get("batchManualEmailVerification").checked = true;
+        elements.get("batchManualExcludeVerifiedUnavailableEmails").checked = true;
         sandbox.showBatchManualConfirm();
         assert.ok(elements.get("batchManualConfirmBody").innerHTML.includes("发送前验证邮箱: 开启"),
             "the confirmation must spell out this run's value");
         assert.ok(!elements.get("batchManualConfirmBody").innerHTML.includes("undefined"));
+        assert.ok(elements.get("batchManualConfirmBody").innerHTML.includes("排除已验证不可用邮箱: 开启"));
 
         elements.get("batchManualEmailVerification").checked = false;
         sandbox.showBatchManualConfirm();
         assert.ok(elements.get("batchManualConfirmBody").innerHTML.includes("发送前验证邮箱: 关闭"));
+        elements.get("batchManualExcludeVerifiedUnavailableEmails").checked = false;
+        sandbox.showBatchManualConfirm();
+        assert.ok(elements.get("batchManualConfirmBody").innerHTML.includes("排除已验证不可用邮箱: 关闭"));
     });
 
     it("V7: the task row shows the verification pill next to the gate pill", () => {
@@ -414,11 +434,17 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
         vm.runInContext(extractFn("renderBatchConfigRow"), sandbox);
 
         const base = { id: 1, configName: "任务", mailType: "INTRODUCTION", cron: null, nextFireTime: null, lastExecutedAt: null };
-        const on = sandbox.renderBatchConfigRow(Object.assign({}, base, { emailVerificationEnabled: true }));
-        const off = sandbox.renderBatchConfigRow(Object.assign({}, base, { emailVerificationEnabled: false }));
+        const on = sandbox.renderBatchConfigRow(Object.assign({}, base, {
+            emailVerificationEnabled: true, excludeVerifiedUnavailableEmails: true
+        }));
+        const off = sandbox.renderBatchConfigRow(Object.assign({}, base, {
+            emailVerificationEnabled: false, excludeVerifiedUnavailableEmails: false
+        }));
 
         assert.ok(on.includes('<span class="batch-gate-pill">邮箱验证 · 开</span>'));
         assert.ok(off.includes('<span class="batch-gate-pill is-off">邮箱验证 · 关</span>'));
+        assert.ok(on.includes('<span class="batch-gate-pill">过滤已验证不可用邮箱 · 开</span>'));
+        assert.ok(off.includes('<span class="batch-gate-pill is-off">过滤已验证不可用邮箱 · 关</span>'));
     });
 });
 
@@ -898,5 +924,261 @@ describe("batch email verification static contract (S-1 / S-2 / I-5)", () => {
         assert.ok(!/method:\s*"(POST|PUT|PATCH|DELETE)"/.test(area),
             "the detail area must never issue a write request");
         assert.ok(!/apiKey|api_key|secret/i.test(area), "no credential may be referenced");
+    });
+});
+
+function exclusionFilterSandbox(extra = {}) {
+    const elements = createElementStore();
+    const sandbox = Object.assign({
+        document: { getElementById: (id) => elements.get(id) },
+        batchTaskState: { manualSource: null, manualDraft: null, configs: [] },
+        readBatchTagPickerValue: () => [],
+        readBatchRegionPickerValue: () => [],
+        readBatchMultiPickerValue: () => [],
+        setBatchTagPickerValue: () => {},
+        setBatchRegionPickerValue: () => {},
+        setBatchMultiPickerValue: () => {},
+        resolveBatchTemplateMailType: () => "INTRODUCTION",
+        fillBatchManualTemplateSelector: () => {},
+        fillBatchConfigEditorTemplateSelector: () => {},
+        refreshBatchGateState: () => {},
+        refreshEmailVerificationState: () => {},
+        syncBatchConfigEditorScheduleFields: () => {},
+        updateBatchConfigVolumeHint: () => {},
+        computeAndRenderDiffs: () => {},
+        scheduleRecipientPreview: () => {},
+        updateGateToggleLabel: () => {},
+        console: { warn: () => {} }
+    }, extra);
+    vm.createContext(sandbox);
+    [
+        "deepCloneConfig",
+        "fillManualFormDefaults",
+        "fillManualFormFromDraft",
+        "readManualFormValues",
+        "buildManualExecutionSnapshot",
+        "normalizeManualSnapshot",
+        "formatManualDiffValue",
+        "computeManualDiffs",
+        "computeAndRenderDiffs",
+        "clearAllDiffMarkers",
+        "excludeVerifiedUnavailableToggleId",
+        "updateExcludeVerifiedUnavailableToggleLabel",
+        "showBatchConfigEditor",
+        "buildConfigEditorRecipientSnapshot",
+        "baseHintHtml",
+        "refreshRecipientPreview"
+    ].forEach((name) => vm.runInContext(extractFn(name), sandbox));
+    return { sandbox, elements };
+}
+
+describe("verified-unavailable email filter UI (04-filter-ui)", () => {
+    it("uses the approved, keyboard-operable filter markup and real DOM ids", () => {
+        const ids = [
+            "editorFieldExcludeVerifiedUnavailableEmails",
+            "batchConfigEditorExcludeVerifiedUnavailableEmails",
+            "batchConfigEditorExcludeVerifiedUnavailableEmailsLabel",
+            "batchConfigEditorExcludeVerifiedUnavailableEmailsHint",
+            "manualFieldExcludeVerifiedUnavailableEmails",
+            "batchManualExcludeVerifiedUnavailableEmails",
+            "batchManualExcludeVerifiedUnavailableEmailsLabel",
+            "batchManualExcludeVerifiedUnavailableEmailsHint"
+        ];
+        ids.forEach((id) => {
+            assert.strictEqual(indexSource.split('id="' + id + '"').length - 1, 1,
+                id + " must exist exactly once in the real index.html");
+        });
+        for (const [id, hintId] of [
+            ["batchConfigEditorExcludeVerifiedUnavailableEmails", "batchConfigEditorExcludeVerifiedUnavailableEmailsHint"],
+            ["batchManualExcludeVerifiedUnavailableEmails", "batchManualExcludeVerifiedUnavailableEmailsHint"]
+        ]) {
+            const at = indexSource.indexOf('id="' + id + '"');
+            const start = indexSource.lastIndexOf("<label", at);
+            const end = indexSource.indexOf("</label>", at) + "</label>".length;
+            const label = indexSource.slice(start, end);
+            const input = indexSource.slice(indexSource.lastIndexOf("<input", at), indexSource.indexOf(">", at));
+            assert.ok(label.includes('class="batch-task-status-toggle batch-gate-toggle"'), "reuse the existing switch label");
+            assert.ok(input.includes('type="checkbox"') && input.includes('aria-label="排除已验证不可用邮箱"'));
+            assert.ok(input.includes('aria-describedby="' + hintId + '"'));
+            assert.ok(!input.includes("style="), "the switch has no inline styling");
+        }
+        assert.ok(indexSource.includes("按最近一年内的最新有效验证结果，排除不可投递邮箱；不发起新的验证请求。"));
+        assert.ok(indexSource.includes("按最近一年内的最新有效验证结果，排除不可投递邮箱；不发起新的验证请求。仅影响本次执行，不修改原定时任务。"));
+    });
+
+    it("defaults new forms on, keeps missing source values off, and carries manual overrides only in the execution snapshot", () => {
+        const { sandbox, elements } = exclusionFilterSandbox();
+        vm.runInContext(extractFn("computeAndRenderDiffs"), sandbox);
+        vm.runInContext(extractFn("showBatchConfigEditor"), sandbox);
+        sandbox.showBatchConfigEditor(null);
+        assert.strictEqual(elements.get("batchConfigEditorExcludeVerifiedUnavailableEmails").checked, true);
+        sandbox.showBatchConfigEditor({ id: 1, configName: "旧配置" });
+        assert.strictEqual(elements.get("batchConfigEditorExcludeVerifiedUnavailableEmails").checked, false,
+            "a stored config that lacks the field displays off");
+        assert.strictEqual(elements.get("batchConfigEditorExcludeVerifiedUnavailableEmailsLabel").textContent, "已关闭");
+        sandbox.showBatchConfigEditor({ id: 2, configName: "新配置", excludeVerifiedUnavailableEmails: true });
+        assert.strictEqual(elements.get("batchConfigEditorExcludeVerifiedUnavailableEmails").checked, true);
+
+        assert.strictEqual(sandbox.deepCloneConfig({ id: 1 }).excludeVerifiedUnavailableEmails, false,
+            "legacy source configs must default false");
+        sandbox.fillManualFormDefaults();
+        assert.strictEqual(sandbox.batchTaskState.manualDraft.excludeVerifiedUnavailableEmails, true,
+            "an independent manual form defaults on");
+        assert.strictEqual(elements.get("batchManualExcludeVerifiedUnavailableEmails").checked, true);
+        assert.strictEqual(elements.get("batchManualExcludeVerifiedUnavailableEmailsLabel").textContent, "已开启");
+
+        const source = sandbox.deepCloneConfig({ id: 7, configName: "来源", excludeVerifiedUnavailableEmails: true });
+        sandbox.batchTaskState.manualSource = source;
+        sandbox.batchTaskState.manualDraft = sandbox.deepCloneConfig(source);
+        sandbox.fillManualFormFromDraft();
+        const toggle = elements.get("batchManualExcludeVerifiedUnavailableEmails");
+        assert.strictEqual(toggle.checked, true, "the chosen source populates the manual draft");
+        toggle.checked = false;
+        sandbox.computeAndRenderDiffs();
+        const field = elements.get("manualFieldExcludeVerifiedUnavailableEmails");
+        assert.strictEqual(field.classList.contains("is-config-diff"), true);
+        assert.strictEqual(field.querySelector(".batch-config-diff-original").textContent, "原：开启");
+        const diffs = sandbox.computeManualDiffs();
+        const filterDiff = diffs.find((item) => item.key === "excludeVerifiedUnavailableEmails");
+        assert.deepStrictEqual(JSON.parse(JSON.stringify(filterDiff)), {
+            key: "excludeVerifiedUnavailableEmails",
+            label: "排除已验证不可用邮箱",
+            oldDisplay: "开启",
+            newDisplay: "关闭"
+        });
+        const snapshot = sandbox.buildManualExecutionSnapshot();
+        assert.strictEqual(snapshot.excludeVerifiedUnavailableEmails, false);
+        assert.strictEqual(sandbox.batchTaskState.manualSource.excludeVerifiedUnavailableEmails, true,
+            "overriding this run must not mutate its source");
+
+        sandbox.batchTaskState.manualSource = null;
+        sandbox.fillManualFormDefaults();
+        assert.strictEqual(elements.get("batchManualExcludeVerifiedUnavailableEmails").checked, true,
+            "clearing the source restores the independent default");
+
+        sandbox.batchTaskState.manualSource = sandbox.deepCloneConfig({ id: 8, configName: "旧来源" });
+        sandbox.batchTaskState.manualDraft = sandbox.deepCloneConfig(sandbox.batchTaskState.manualSource);
+        sandbox.fillManualFormFromDraft();
+        assert.strictEqual(elements.get("batchManualExcludeVerifiedUnavailableEmails").checked, false,
+            "an old source with no field must not inherit the independent default");
+        assert.strictEqual(elements.get("batchManualExcludeVerifiedUnavailableEmailsLabel").textContent, "已关闭");
+        assert.strictEqual(sandbox.computeManualDiffs().some((item) => item.key === "excludeVerifiedUnavailableEmails"), false);
+    });
+
+    it("uses the selected gate response's total and exclusion count without an additional request", async () => {
+        const elements = createElementStore();
+        const calls = [];
+        const responses = [
+            { totalSendable: 18, excludedVerifiedUnavailable: 4, pending: 18, retryable: 0 },
+            { totalSendable: 11, excludedVerifiedUnavailable: 2, pending: 11, retryable: 0 }
+        ];
+        const sandbox = Object.assign({
+            document: { getElementById: (id) => elements.get(id) },
+            recipientPreviewRequestSeq: { editor: 0 },
+            batchGateState: { editor: { available: true } },
+            recipientPreviewHintId: () => "preview",
+            buildConfigEditorRecipientSnapshot: () => ({ excludeVerifiedUnavailableEmails: true }),
+            gateToggleId: () => "gate",
+            api: async (url, options) => {
+                calls.push({ url, body: JSON.parse(options.body) });
+                return responses.shift();
+            },
+            console: { warn: () => {} }
+        }, {});
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("baseHintHtml"), sandbox);
+        vm.runInContext(extractFn("refreshRecipientPreview"), sandbox);
+        elements.get("gate").checked = true;
+        sandbox.refreshRecipientPreview("editor");
+        await flush();
+        assert.strictEqual(calls.length, 2, "the existing gate preview remains two requests");
+        assert.ok(calls.every((call) => call.url === "/api/mail/batch-send/recipients/preview"));
+        assert.ok(calls.every((call) => call.body.excludeVerifiedUnavailableEmails === true));
+        assert.ok(elements.get("preview").innerHTML.includes("<strong>11</strong>"));
+        assert.ok(elements.get("preview").innerHTML.includes("已排除不可用邮箱 <strong>2</strong> 位"),
+            "use the selected response's count, not a difference between gate branches");
+    });
+
+    it("renders the historical exclusion count when the template gate is unavailable and defaults a missing count to zero", async () => {
+        const elements = createElementStore();
+        const calls = [];
+        const sandbox = {
+            document: { getElementById: (id) => elements.get(id) },
+            recipientPreviewRequestSeq: { manual: 0 },
+            batchGateState: { manual: { available: false } },
+            recipientPreviewHintId: () => "preview",
+            buildManualExecutionSnapshot: () => ({ excludeVerifiedUnavailableEmails: true }),
+            gateToggleId: () => "gate",
+            api: async (url, options) => {
+                calls.push(JSON.parse(options.body));
+                return { totalSendable: 6, pending: 6, retryable: 0 };
+            },
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("baseHintHtml"), sandbox);
+        vm.runInContext(extractFn("refreshRecipientPreview"), sandbox);
+        sandbox.refreshRecipientPreview("manual");
+        await flush();
+        assert.strictEqual(calls.length, 1, "unavailable gate state retains its one-request path");
+        assert.strictEqual(calls[0].excludeVerifiedUnavailableEmails, true);
+        assert.ok(elements.get("preview").innerHTML.includes("<strong>6</strong>"));
+        assert.ok(elements.get("preview").innerHTML.includes("已排除不可用邮箱 <strong>0</strong> 位"));
+    });
+
+    it("uses the gate-off branch when selected and clears counts on error without accepting an older response", async () => {
+        const elements = createElementStore();
+        const requests = [];
+        let filterEnabled = true;
+        const sandbox = {
+            document: { getElementById: (id) => elements.get(id) },
+            recipientPreviewRequestSeq: { editor: 0 },
+            batchGateState: { editor: { available: true } },
+            recipientPreviewHintId: () => "preview",
+            buildConfigEditorRecipientSnapshot: () => ({ excludeVerifiedUnavailableEmails: filterEnabled }),
+            gateToggleId: () => "gate",
+            api: (url, options) => new Promise((resolve, reject) => {
+                requests.push({ body: JSON.parse(options.body), resolve, reject });
+            }),
+            console: { warn: () => {} }
+        };
+        vm.createContext(sandbox);
+        vm.runInContext(extractFn("baseHintHtml"), sandbox);
+        vm.runInContext(extractFn("refreshRecipientPreview"), sandbox);
+
+        elements.get("gate").checked = false;
+        sandbox.refreshRecipientPreview("editor");
+        requests[0].resolve({ totalSendable: 18, excludedVerifiedUnavailable: 4, pending: 18 });
+        requests[1].resolve({ totalSendable: 11, excludedVerifiedUnavailable: 2, pending: 11 });
+        await flush();
+        assert.ok(elements.get("preview").innerHTML.includes("命中 <strong>18</strong>"));
+        assert.ok(elements.get("preview").innerHTML.includes("已排除不可用邮箱 <strong>4</strong> 位"));
+
+        sandbox.refreshRecipientPreview("editor");
+        assert.ok(elements.get("preview").innerHTML.includes("计算中"));
+        filterEnabled = false;
+        sandbox.refreshRecipientPreview("editor");
+        assert.strictEqual(requests.length, 6, "one existing pair per preview, never a third filter request");
+        assert.ok(requests.slice(4).every((request) => request.body.excludeVerifiedUnavailableEmails === false));
+        requests[4].resolve({ totalSendable: 22, excludedVerifiedUnavailable: 7, pending: 22 });
+        requests[5].resolve({ totalSendable: 12, excludedVerifiedUnavailable: 5, pending: 12 });
+        await flush();
+        assert.ok(elements.get("preview").innerHTML.includes("命中 <strong>22</strong>"));
+        assert.ok(!elements.get("preview").innerHTML.includes("已排除不可用邮箱"),
+            "the disabled filter must not display the response's excluded count");
+        requests[2].resolve({ totalSendable: 100, excludedVerifiedUnavailable: 80 });
+        requests[3].resolve({ totalSendable: 90, excludedVerifiedUnavailable: 70 });
+        await flush();
+        assert.ok(elements.get("preview").innerHTML.includes("命中 <strong>22</strong>"),
+            "an older preview must not overwrite the latest value");
+
+        filterEnabled = true;
+        sandbox.refreshRecipientPreview("editor");
+        requests[6].reject(new Error("ES unavailable"));
+        requests[7].resolve({ totalSendable: 9, excludedVerifiedUnavailable: 3 });
+        await flush();
+        assert.strictEqual(elements.get("preview").textContent, "预估失败：ES unavailable");
+        assert.ok(!elements.get("preview").innerHTML.includes("已排除不可用邮箱"),
+            "failed preview must not retain a stale count");
     });
 });
