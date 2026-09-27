@@ -1,0 +1,33 @@
+{
+  "type": "DOCUMENT_STRUCTURE_ONLY",
+  "not_implementation_verification": true,
+  "plans": [
+    {
+      "plan": "discovery-repair-09a-orcid-query.md",
+      "files": 6,
+      "sections_ordered": true
+    },
+    {
+      "plan": "discovery-repair-09b-scope-facts.md",
+      "files": 10,
+      "sections_ordered": true
+    },
+    {
+      "plan": "discovery-repair-09c-scope-classification.md",
+      "files": 9,
+      "sections_ordered": true
+    },
+    {
+      "plan": "discovery-repair-09d-scope-admission.md",
+      "files": 9,
+      "sections_ordered": true
+    }
+  ],
+  "execution_slices": 12,
+  "unique_files": 56,
+  "covered_unique_findings": 24,
+  "new_group_unique_files": 29,
+  "errors": [],
+  "source_worktree_status_at_review": "",
+  "scope_note": "No implementation tests or production mutations in this planning turn."
+}

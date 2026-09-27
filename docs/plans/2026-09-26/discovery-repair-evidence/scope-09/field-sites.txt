@@ -1,0 +1,90 @@
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:18:    val researchFields: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:33:    val expertClassification: ExpertClassification? = null,
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:82:     * `PRESENT` 命中 `fieldPresenceFilter("researchFields")`（`exists AND NOT term ""`），
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:114:        // I-2: 方向三态与 ES 的 researchFields 存在性判据同口径。keyword 字段下
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:115:        // `fieldPresenceFilter("researchFields")` = `exists AND NOT term ""`，
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:119:            ResearchDirectionFilters.PRESENT -> if (profile.researchFields.isNullOrEmpty()) return false
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:120:            ResearchDirectionFilters.ABSENT -> if (!profile.researchFields.isNullOrEmpty()) return false
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:132:        // （researchFields / recentWorkTitles / patentTitles / degree）在 ES 侧是
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:141:                    "researchFields" -> !profile.researchFields.isNullOrBlank()
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchExecutionModels.kt:159:        val typeName = profile.expertClassification?.type?.name
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationScheduler.kt:25: *   与同一 `expertClassificationExecutor`：抢锁失败只记 skip，不排队第二个任务（I4-3）。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationScheduler.kt:42:    @Qualifier("expertClassificationExecutor")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationScheduler.kt:43:    private val expertClassificationExecutor: Executor
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationScheduler.kt:88:            expertClassificationExecutor.execute {
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendTaskConfig.kt:144: * - `PRESENT`（有）：命中 ES `fieldPresenceFilter("researchFields")`；
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendTaskConfig.kt:155:    const val ES_FIELD = "researchFields"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:36:        val ALLOWED_HAS_FIELDS = setOf("employment", "degree", "institution", "researchFields", "patentTitles", "recentWorkTitles")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:48:            "researchFields", "recentWorkTitles", "patentTitles", "degree", "country"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:97:         * 语义为 `expertClassification.type` 字段**不存在**（见 [expertTypePredicate]）。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:131:         * （K-batch-multi-value-filter-seams）。`UNCLASSIFIED` = `expertClassification.type`
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:138:                        "must_not" to listOf(mapOf("exists" to mapOf("field" to "expertClassification.type")))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:142:                mapOf("term" to mapOf("expertClassification.type" to type))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:486:            researchFields = source.nullableText("researchFields"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:506:            expertClassification = parseExpertClassification(source.path("expertClassification")),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:512:     * 显式解析 ES 中的 `expertClassification` 对象（I1-5）。缺失/null → null；
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:523:                "Unknown expertClassification type '{}'; treating whole classification as null (fail closed)",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:590:            "researchFields", "disciplineCategory", "institution", "institutionType",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:597:            "expertClassification"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:960:            "researchFields" -> !researchFields.isNullOrBlank()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillService.kt:73: * - onlyPending 过滤 = `must_not exists expertClassification.version OR must_not term version=rnd-v2-2026`
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillService.kt:93:            val result = failImmediately(request, executionId, "分类 mapping 缺失：索引缺少 expertClassification 字段（type/sendable/version），已停止")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillService.kt:182:                            "must_not" to listOf(mapOf("exists" to mapOf("field" to "expertClassification.version")))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillService.kt:188:                                mapOf("term" to mapOf("expertClassification.version" to ExpertClassificationService.VERSION))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:25:    private val expertClassificationService: ExpertClassificationService = ExpertClassificationService(),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:26:    private val expertClassificationProperties: ExpertClassificationProperties = ExpertClassificationProperties()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:256:            put("expertClassification", expertIndexWriterService.classificationNode(classification))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:273:        // I3-3: 现算，不读 profile.expertClassification（RAW 层几乎恒为 null）。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:274:        val classification = expertClassificationService.classify(profile)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:277:        if (expertClassificationProperties.promotionGateEnabled &&
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:227:     * `{"doc":{"expertClassification":{...}},"doc_as_upsert":false}` —— 只写分类对象，
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:248:                    "doc" to mapOf("expertClassification" to classificationNode(item.classification)),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:321:     * `expertClassification.type`（keyword）。缺失/异常 → false，调用方应在扫描前停止。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:336:                    .path("expertClassification")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:347:            log.warn("Failed to check expertClassification mapping for index {}", index, e)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:76:        val researchFields: String,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:85:            listOf(employment, keyword, researchFields, institution, recentWorkTitles, patentTitles)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:94:            researchFields = normalizeText(profile.researchFields),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:116:        if (PRODUCTION_THEME_TERMS.any { containsTerm(n.keyword, it) || containsTerm(n.researchFields, it) }) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:145:        if (n.researchFields.isNotEmpty()) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:180:            n.employment, n.keyword, n.researchFields, n.institution,
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminController.kt:27: * 提交单线程 `expertClassificationExecutor` 异步执行 → 立即返回 202；任务运行中 409；
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminController.kt:37:    @Qualifier("expertClassificationExecutor")
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminController.kt:38:    private val expertClassificationExecutor: Executor
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminController.kt:82:            expertClassificationExecutor.execute {
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:398:    val researchFields: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:447:                researchFields = expert.researchFields,
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:452:                expertType = expert.expertClassification?.type?.name,
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:453:                expertProductionScore = expert.expertClassification?.productionScore,
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:454:                expertResearchScore = expert.expertClassification?.researchScore
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt:27: * `source_name` = `<SOURCE>:v2:<24 位 SHA256>`，hash 覆盖规范化后的真实查询条件、scope、年份、
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt:29: * [MAX_SOURCE_NAME_LENGTH] 约束（V32 的 `source_name VARCHAR(50)`）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt:32: * （裸 source_name + 裸游标）不会被 [decode] 采信，只保留在表中作备份。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt:39:    /** V32 中 `discovery_source_cursor.source_name` 为 VARCHAR(50)。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt:54:    fun sourceKey(sourceName: String, criteria: PaperSearchCriteria): String {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:666:        // stream 身份取**本来源**的规范化 hash（`queueQueryHash` 内部把 sources 归一为 `[source]`，
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:672:                queryHash = expertDiscoveryService.queueQueryHash(source, criteria),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1169:        val seeded = expertDiscoveryService.queueLegacySeedCursor(stream.source, criteria) ?: return
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:80:    private val expertClassificationService: ExpertClassificationService,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:120:     * I-2: 只读本次查询条件对应的 v2 key。旧条件写下的历史行（裸 source_name）不会被挪用，
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:125:        val key = DiscoveryCheckpointCodec.sourceKey(sourceName, criteria)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:156:        val key = DiscoveryCheckpointCodec.sourceKey(sourceName, criteria)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1429:     * I-1：某一来源的规范化 query_hash —— 覆盖关键词、机构、国家排除、年份、OA、scope、页大小
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1433:    fun queueQueryHash(sourceName: String, criteria: PaperSearchCriteria): String {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1453:    fun queueLegacySeedCursor(sourceName: String, criteria: PaperSearchCriteria): String? {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1461:            val key = DiscoveryCheckpointCodec.sourceKey(sourceName, form)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1941:                                    mapOf("exists" to mapOf("field" to "researchFields"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2546:        enrichment.topics?.takeIf { it.isNotEmpty() }?.let { doc["researchFields"] = it.joinToString(", ") }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2558:            researchFields = enrichment.topics?.takeIf { it.isNotEmpty() }?.joinToString(", ")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2559:                ?: profile.researchFields,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2566:        doc["expertClassification"] = expertClassificationService.classify(enrichedProfile)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:422:                   query_hash = ?, execution_id = NULL, window_until = NULL, next_wake_at = ?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:637:    /** 幂等建流：`UNIQUE(query_hash, source, epoch)` 保证同条件同源只有一行。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:652:                (pipeline_id, query_hash, source, epoch, criteria_json, cursor_state, created_at, updated_at)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:664:        "$STREAM_COLUMNS WHERE query_hash = ? AND source = ? AND epoch = ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1453:        queryHash = rs.getString("query_hash"),
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1478:        queryHash = rs.getString("query_hash"),
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1522:            "SELECT desired_state, phase, criteria_json, criteria_version, query_hash, generation, " +
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1529:            "SELECT id, pipeline_id, query_hash, source, epoch, criteria_json, cursor_value, cursor_state, " +
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoverySourceCursorRepository.kt:9:    @Query("SELECT * FROM discovery_source_cursor WHERE source_name = :sourceName")
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:53:            val typeName = expert.expertClassification?.type?.name

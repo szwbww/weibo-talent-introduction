@@ -1,19 +1,23 @@
 # 深度发现联合修复开发计划
 
-状态：**待评审，未实施**。create-p；2026-09-26；目标 main。
+状态：**01～08 用户告知已由另一 agent 执行，完成状态以其台账为准；09 为 2026-09-27 新追加计划，尚未实施**。create-p；原计划2026-09-26；目标 main。
 代码基线：`64c0394a940bd79c2ecc04e5c497650f045faa75`。
 本文件是顺序和范围索引，**不是允许一次修改所有文件的执行计划**；每次执行以对应子计划的文件清单和不变量为边界。
+
+
+> **执行agent重读入口（2026-09-27追加）**：当前正在执行的01～08继续按各自文件清单完成；新增[09 专业范围修复](discovery-repair-09-subject-scope.md)排在08之后，按09a→09b→09c→09d执行。09必须基于前序实际产物，不从旧HEAD覆盖共享文件。09修改了此前“资格完全不变”的边界，仅按下述明确例外生效；原计划的解析/身份验收真值保持。当前开发/验证台账不因本次改文档自动标完成。
 
 ## 需求描述
 
 1. 可恢复的元数据故障先有限重试，去重失败不再跳过未完成页或误报成功。
 2. 恢复原文中已经证明的姓名—邮箱关系，补足合法邮箱线索；不以数量目标牺牲归属正确性。
 3. 执行记录区分身份未确认、抓取失败、来源停止及首选方式，避免将解析损失解释成人才资格不符。
+4. **2026-09-27追加09**：恢复ORCID真实专业检索，统一深度发现专业准入与补全后候选复评。用户已确认沿用工程/材料/计算机/化工/能源/物理六类，保留相关高校科研人员。
 
 必须保持：
 
 - M1：有唯一来源证据才绑定身份；同名不合并，共享/冲突不绑定；姓名、邮箱、ORCID/OpenAlex ID不得拼装不同人。
-- M2：现有邮箱验证、人才资格、重复不覆盖、create写与批量发送配置；不增加隐藏发送/晋升规则。
+- M2：01～08保持现有邮箱验证、人才资格、重复不覆盖、create写与批量发送配置。09仅按新增明确授权修复discovery自动专业准入：未知留RAW、补全确认后晋升、范围外条件撤下候选副本；不加隐藏首发规则、不改可见类型勾选。人工override及非discovery资格不在09自动规则内。
 - M3：人工暂停、额度账本、下载大小/时限；新批次仍由用户手动通知验证，不建定时任务。
 - M4：此计划不授权清洗存量、删除数据、数据库迁移、切换运行模式、部署或推送远端。
 
@@ -26,19 +30,19 @@
 ## 关键不变量
 
 ### Invariant I-1：证据分级不能变成产量承诺
-- Rule：每项关联现有代码、原始证据与可执行验收。构造输入只证明规则行为，真实少量样本不代表整体失败率；“找到邮箱”“确认归属”“邮箱有效”“人才合格”“新增专家”分别报告。22项发现中20项进入修复，2项明确保留，不宣称22项都已解决。
+- Rule：每项关联现有代码、原始证据与可执行验收。构造输入只证明规则行为，真实少量样本不代表整体失败率；“找到邮箱”“确认归属”“邮箱有效”“人才合格”“新增专家”分别报告。原22项发现中20项进入01～08；新增DD-23～26进入09。合计26项、24项纳入，DD-08/DD-10仍保留，不宣称全部已解决。
 - Applies to：所有子计划、夹具、最终验证报告、缺陷关闭记录。
 - Violation consequence：重复统计、承诺无法证实的恢复数量。
 - 来源：K-named-fixture-must-use-real-row；K-plan-quantified-claims-need-grep-receipts。
 
 ### Invariant I-2：最小改动和顺序基线
-- Rule：按01→02→03→04→05→06→07→08顺序。共享生产/测试文件的后计划以已验证前计划产物为基线，不并行从旧基线实现。每份≤10文件、≤2子系统，清单外变动先修订计划；发现新问题不能临时塞入本批。
+- Rule：按01→02→03→04→05→06→07→08→09a→09b→09c→09d顺序。共享生产/测试文件的后计划以已验证前计划产物为基线，不并行从旧基线实现。每份≤10文件、≤2子系统，清单外变动先修订计划；发现新问题不能临时塞入本批。
 - Applies to：每个子计划执行、验证、合并与回滚。
 - Violation consequence：互相覆盖规则、文件范围膨胀。(来源: K-master-plan-shared-file-sequential-gates)
 - 来源：create-p硬限制。
 
 ### Invariant I-3：复用既有持久化语义
-- Rule：本组不新增数据库/ES字段，不改query hash、lease/generation、email主键或历史ORCID关联键。01新增DEDUP_INCOMPLETE是既有stopReason字段的值；03～07更新现有EXTRACTION_VERSION，证据VERSION不变；06新增公开配置tailPages，不是业务准入门禁。
+- Rule：01～08不新增数据库/ES字段，不改query hash、lease/generation、email主键或历史ORCID关联键。01新增DEDUP_INCOMPLETE是既有stopReason值；03～07更新EXTRACTION_VERSION，证据VERSION不变；06新增公开配置tailPages。09限定例外：三层只新增researchFieldIds事实字段；仅ORCID同步/队列来源query hash增加编码语义标记；分类规则版本升为rnd-v3-20260927；复用既有候选层与filterResult/filterRejectReason。09不改身份/抽取版本、数据库schema、其他来源key、全局流水线hash、发送配置。
 - Applies to：checkpoint、队列抽取结果、专家层、任务详情与配置读取。
 - Violation consequence：修解析却改变数据权威/发信选择。
 - 来源：K-identity-cache-version-and-admission；K-historical-identity-orcid-fallback。
@@ -50,7 +54,7 @@
 - 来源：代码审计DD-15～17。
 
 ### Invariant I-5：回归与发布分开
-- Rule：每份有独立机器验证和人工清单；机器通过≠人工通过≠已上线。每份可在其前置基线上独立部署验证；部署不是本次授权。解析子计划都包含版本兼容用例；旧缓存不会自动重抽，发布前必须只读清点旧版本活跃结果并报告，不能擅自清理。
+- Rule：每份有独立机器验证和人工清单；机器通过≠人工通过≠已上线。每份可在其前置基线上独立验证；09各片改善范围见09索引，09d及联合回归前不能宣称专业准入闭环；部署不是本次授权。解析子计划都包含版本兼容用例；旧缓存不会自动重抽，发布前必须只读清点旧版本活跃结果并报告，不能擅自清理。
 - Applies to：03～07缓存变动、全部发布/验证记录。
 - Violation consequence：旧缓存失败被掩盖或声称线上已修复。
 - 来源：会话要求；K-identity-cache-version-and-admission。
@@ -79,7 +83,7 @@
 
 ### 顺序、独立范围和验证门禁
 
-执行每份前：核对前置产物、确认工作树无冲突改动；复核该份触及的方法和schema仍与审计一致。顺序门禁不要求重新请求已经给出的授权；本次用户只要求计划，因此尚不实施。
+执行每份前：核对前置产物、确认工作树无冲突改动；复核该份触及的方法和schema仍与审计一致。顺序门禁不要求重新请求已经给出的授权；本线程只追加计划，不代替当前执行agent实施。用户将通知执行agent重读；不要中断或重做已通过的01～08。
 
 | 顺序 | 子计划 | 对应发现 | 文件数 | 验证重点 |
 |---|---|---|---:|---|
@@ -91,6 +95,7 @@
 | 06 | [discovery-repair-06-pdf-coverage](discovery-repair-06-pdf-coverage.md) | DD-05、DD-13 | 10 | 前2+末1页、5对明确联系人、11个mailto线索 |
 | 07 | [discovery-repair-07-html-contact](discovery-repair-07-html-contact.md) | DD-04、DD-09 | 10 | Springer3篇2人；真实挑战页触发回退 |
 | 08 | [discovery-repair-08-source-report](discovery-repair-08-source-report.md) | DD-15、DD-16、DD-17 | 6 | 真实20240已存原因、首选方式、两处日志 |
+| 09 | [专业范围与候选准入](discovery-repair-09-subject-scope.md)（含09a～09d） | DD-23、DD-24、DD-25、DD-26 | 每片6/10/9/9 | 查询真实URI与旧游标隔离、六类事实、分类、补全后资格闭环 |
 
 每份完成后：对应定向测试→fix-v独立机器验证→记录结果；人工验收从该计划A项导出，不提前生成副本。失败只在本份范围修复；若需要第11个文件或第三子系统，回到create-p拆分。最终机器检查跑JDK11 `mvn clean package`（含仓库配置的JS测试），不把每份重复全量构建当额外质量证据。
 
@@ -122,6 +127,14 @@
 兼容版本是规则标识，不代表实施日期。若实际执行时main已有更高抽取版本，先统一修订此表和相关用例，禁止版本倒退。源码改动和对应测试/夹具为每份原子单元，不能只上线parser不带同份版本修改。无需等08界面才能使用01修复，旧界面也能经现有任务详情看到终态。
 
 回滚：只能回滚**最近一个已上线前缀之后的完整子计划**，不能越过共享文件后的修改单独revert早期补丁；优先前向小修。回滚解析版本会使较新缓存不兼容，同样先报告缓存清点结果；不回滚/覆盖专家数据，不做队列批量清空。
+
+### 09共享文件补充与原验收口径衔接
+
+- ExpertDiscoveryService.kt / Test：原01→02→08，随后09a（仅来源query规范化接线）→09c（事实写入）→09d（准入/复评）。
+- OpenAlexDataSource.kt / Test：原04→07，随后09c。不得覆盖04的PMC路由或07的回退修复。
+- OperatorStatusWriteSeamGuardTest：09b→09d，仅机械行号修正，不扩大运营写入口。
+- 原01～08故障/原文解析验收记录是各自完成时的事实，不倒改成09结果。最终consumer测试中“立即晋升”的预期由09d调整为“先RAW、专业补全后晋升”；原始姓名邮箱识别结果保持不变。
+- 09不用新队列/判定平台，只给已有作者响应增加一个结构化字段并接入现有分类/资格。无可信作者ID者仍留RAW，不能为提高产量猜ID。
 
 ### 不过度设计的具体约束
 
@@ -160,11 +173,20 @@
 | DD-21 OpenAlex 已返回PMC链接却未利用其编号 | 真实元数据及实际解析函数已复现 | 子计划04 | 该子计划对应原始/合成用例及防错回归通过；生产影响数仍不外推 |
 | DD-22 JATS 正文贡献者信息区明确邮箱未解析 | 真实公开XML已复现 | 子计划04 | 该子计划对应原始/合成用例及防错回归通过；生产影响数仍不外推 |
 
+新增发现及关闭边界：
+
+| 发现 | 已有证据 | 处理 | 关闭条件 |
+| --- | --- | --- | --- |
+| DD-23 ORCID重复URL编码使专业查询扩散 | 最终URI+公开API对照，部署class一致 | 09a | 单次编码且同步/队列旧ORCID查询位置隔离 |
+| DD-24 深度发现直接晋升未检查目标专业 | 生产时序+自动写路径代码 | 09d | 所有discovery自动入口统一准入，未知留RAW |
+| DD-25 补全范围外仍留候选、任务成功先于资格复评 | 75条生产候选+完成顺序代码 | 09d | 资格复评先于Success，条件撤副本、故障重试 |
+| DD-26 STEM/科研分无法证明六类专业 | 真实专业样本+分类计分代码 | 09b/09c | 结构化field进入三层/画像/分类；六类高校保留，非目标不判研发 |
+
 DD-08/DD-10延期不是“无需处理”，也不能在最终报告合并成已完成。未知真实影响数量（DD-14/19/20、DD-18线上发生与否）保留未知。新增4+5+3+HTML2对不能直接相加当预计新增专家：有重复、验证、资格和已有记录多重影响。
 
 ## 变更文件清单
 
-本master本身不授权生产改动，执行文件数=0。8份子计划分别为2/2/8/10/10/10/10/6个文件；总计去重31个：生产13、测试代码9、测试资源9。其逐文件全集如下，**仅供总范围核对，不能代替各子计划≤10文件的边界**。
+本master本身执行文件数=0。原01～08分别2/2/8/10/10/10/10/6个文件，去重31个：生产13、测试代码9、测试资源9。新增09a～09d分别6/10/9/9个文件，去重29个（生产14、测试代码14、资源1），其中4个与原计划重叠。**联合总去重56个：生产25、测试代码21、测试资源10。** 下表保留原01～08全集，后表列新增25个；只是范围索引，不能代替各子计划≤10文件边界。
 
 | 文件 | 分类 |
 |---|---|
@@ -200,17 +222,48 @@ DD-08/DD-10延期不是“无需处理”，也不能在最终报告合并成已
 | `src/test/resources/discovery/task-20240-by-source.json` | 测试资源 |
 | `src/test/resources/discovery/xml-route-recall.zip` | 测试资源 |
 
-本次实际写入是计划/审计/知识文档；上述31个文件是**拟实施范围**，不是已改动文件。没有迁移SQL、发送服务、候选资格服务、线上修数据脚本。测试夹具新增源自已存原始字节，容量以复制后的实际文件为准，不猜测新ZIP大小。
+
+09在原31个之外新增的25个文件（重叠4个已在原表）：
+
+| 文件 | 分类 |
+| --- | --- |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/domain/SubjectScopeCatalog.kt` | 生产 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt` | 生产 |
+| `src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSource.kt` | 生产 |
+| `src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt` | 生产 |
+| `src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityService.kt` | 生产 |
+| `src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt` | 生产 |
+| `src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt` | 生产 |
+| `src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt` | 生产 |
+| `src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt` | 生产 |
+| `src/main/resources/es/orcid_info_application.json` | 生产 |
+| `src/main/resources/es/orcid_info_candidate.json` | 生产 |
+| `src/main/resources/es/orcid_info_raw.json` | 生产 |
+| `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 测试代码 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/domain/SubjectScopeCatalogTest.kt` | 测试代码 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodecTest.kt` | 测试代码 |
+| `src/test/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSourceTest.kt` | 测试代码 |
+| `src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminControllerTest.kt` | 测试代码 |
+| `src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceTest.kt` | 测试代码 |
+| `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationSchedulerTest.kt` | 测试代码 |
+| `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationServiceTest.kt` | 测试代码 |
+| `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexServiceTest.kt` | 测试代码 |
+| `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt` | 测试代码 |
+| `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt` | 测试代码 |
+| `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt` | 测试代码 |
+| `src/test/resources/discovery/rnd-scope-evidence.json` | 测试资源 |
+
+本线程本次实际写入只有计划/审计/知识文档；以上为**计划范围**，不代表另一agent的实际完成清单。09新增候选资格服务改动，01～08保持原范围。没有迁移SQL、发送服务或线上修数据脚本。测试夹具新增源自已存原始字节，容量以复制后的实际文件为准，不猜测新ZIP大小。
 
 ## 验收标准
 
-- I-1：plan-scope.json覆盖20个唯一DD编号；DD-08/DD-10明确不关闭。每个原文命名测试有原始SHA；不拿受控重排文本替代PDF。
-- I-2：逐份清单≤10、子系统≤2；共享文件按序执行，最终diff属于31文件集合；08 CSS文件diff=0（复用样式）。计划外机械修复仍先补清单，不用总集合给当前子计划越权。
-- I-3：无schema变更/新持久化字段；新stopReason两路径和历史读取覆盖；既有身份VERSION不变、抽取版本按表单调；新增配置只有明确tailPages。
+- I-1：联合plan-scope.json覆盖24个唯一DD编号；原01～08台账覆盖20个、新增09覆盖DD-23～26；DD-08/DD-10明确不关闭。每个原文命名测试有原始SHA；不拿受控重排文本替代PDF。
+- I-2：逐份清单≤10、子系统≤2；共享文件按序执行，最终联合diff属于56文件集合（原01～08仍为31文件）；08 CSS文件diff=0（复用样式）。计划外机械修复仍先补清单，不用总集合给当前子计划越权。
+- I-3：01～08无schema/新字段；09只增加researchFieldIds的三层mapping并隔离ORCID来源查询语义，按09的限定例外验收；DB迁移0。既有身份VERSION不变、抽取版本按表单调，分类版本由09c单独升级；新增配置只有tailPages。
 - S-1：逐字继承08的DOM契约，源码CSS diff=0，来源表无inline style，人工检查padding/字体/展开行为。
 - I-4：真实任务最终快照635邮箱/6有效/4收录/4晋升，能查看IDENTITY_UNRESOLVED:629和SEARCH_FAILED；没有用1000篇中间快照代替最终值。
 - I-5：每份独立验证记录、人工结果单独记录；最终JDK11完整构建通过；旧缓存行为有实际测试结果，生产新批次由用户手动通知后检查。测试通过不能写“已上线”。
-- M1～M4：共享/同名/缩写冲突负例无新增错绑；同邮箱重放不覆盖；邮箱无效RAW=0、人才资格拒绝RAW=1候选=0；发送配置/迁移/存量数据/自动化改动均为0。
+- M1～M4：共享/同名/缩写冲突负例无新增错绑；同邮箱重放不覆盖；邮箱无效RAW=0、资格拒绝RAW=1候选=0；09之后专业未确认也为RAW=1候选=0且正常补全入队，补全合格才晋升。发送配置/DB迁移/人工生产清洗/自动化新增均0；09d运行时代码可按明确规则撤下候选副本，但执行本计划不触发线上复评。
 
 全量门禁命令：
 
@@ -218,7 +271,7 @@ DD-08/DD-10延期不是“无需处理”，也不能在最终报告合并成已
 JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package
 ```
 
-验收结果需注明所用提交、实际测试数/跳过数/失败数；不能搬用先前4072后端或1193前端测试结果。本次规划阶段未运行实现测试。
+验收结果需注明所用提交、实际测试数/跳过数/失败数；不能搬用先前4072后端或1193前端测试结果。本线程此次规划未运行实现测试；另一agent的已运行结果以其执行台账为准。
 
 ## 人工验收清单
 
@@ -234,10 +287,10 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean 
 - 预期结果：明确关系逐对等于各子计划真值；无归属线索姓名为空，不生成专家；源错配负例不继承错误metadata；不同姓名归属冲突仍未知。
 - 覆盖：需求2、I-1/I-3、M1、X2/X4/X8。
 
-### A-3：现有业务不变
+### A-3：原业务保护与09明确变化
 - 前置条件：隔离consumer回归结果中有验证失败、资格拒绝、同邮箱重复、同名不同邮箱及一人多邮箱样例；变更diff可读。
 - 操作步骤：1. 检查各组RAW/候选结果与原身份；2. 查看发送配置/发送服务/schema/线上脚本diff；3. 在既有配置界面核对没有新增首发黑名单或资格开关。
-- 预期结果：无效RAW=0；资格拒绝RAW=1候选=0；重复新增0且原身份不变；同名不同邮箱2条，一人两明确邮箱2条；未新增隐藏首发逻辑；无线上数据写入/部署动作。
+- 预期结果：无效RAW=0；资格拒绝RAW=1候选=0；重复新增0且原身份不变；同名不同邮箱2条、一人两明确邮箱2条仍可写RAW；09最终未知先RAW，补全达到六类研发条件才晋升；未新增隐藏首发逻辑；无人工线上数据写入/部署动作。
 - 覆盖：M1/M2/M4、I-3/I-5、X4/X5。
 
 ### A-4：可读的执行记录
@@ -252,11 +305,24 @@ JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean 
 - 预期结果：旧结果IDENTITY_EXTRACTION_VERSION_UNSUPPORTED/FAILED，新结果按原规则消费；没有把旧结果伪装成本版，也没有自动清空队列；本计划阶段发布/自动化新增0。用户通知后才核验新生产批次。
 - 覆盖：I-3/I-5、M3/M4、X2。
 
+### A-6：09专业范围与资格闭环
+- 前置条件：09a～09d机器验证完成，实际09a/09b/09c/09d.json可读；使用隔离数据，不调用生产复评。
+- 操作步骤：1. 查看实际ORCID URI和新旧游标；2. 查看六类高校样本；3. 查看兽医/艺术/商务、无专业字段样本；4. 查看补全后候选变化及409/500重试；5. 对照联系人、邮件、申请层和发送勾选快照。
+- 预期结果：查询一次解码还原原q且不继承旧ORCID offset；六类高校足够科研证据→ACADEMIC_RND；已知非目标→OUT_OF_SCOPE/候选0；未知→RAW保留/候选0；失败不报SUCCEEDED；联系人/邮件/申请层/发送配置不变。
+- 覆盖：需求4、09 I-1～I-3、DD-23～26、X9-1～X9-6。
+
 人工验收开始时，从本节导出discovery-repair-00-master-acceptance.md；子计划同理。此时不生成任何人工勾选结果或把验收标通过。
 
 ## 自查与知识回写
 
 - 范围/编号/链接/文件存在性通过脚本核对，见discovery-repair-evidence/plan-review.json；它只证明文档结构及引用，不证明代码修复完成。
-- 代码审计收敛为8份切片；无单计划>10文件，含前端的08有S-1与逐字DOM，无新增CSS。
+- 原代码审计为8份切片；追加09含4份，合计12份执行切片；无单计划>10文件，含前端的08有S-1与逐字DOM，无新增CSS。
 - 新沉淀：页完成判据必须覆盖所有可重试消费失败；队列与同步恢复不能混用。写入K-page-commit-must-cover-consumer-failures，供以后修改检查点引用。
 - 已有知识9条已加载更新；未因历史经验直接假定代码仍存在。没有本轮需要归档的过期匹配项，没有满足同题5条的合并；已经推广的计数规则不重复写CLAUDE。仓库没有agents/或templates/目录，不创建额外角色基础设施。
+
+## 2026-09-27修订记录
+
+- 用户追加专业范围修复并确认六类高校科研保留；新增09入口与四个受限子计划，不中断/重写其他agent的01～08工作。
+- M2与I-3只有09所列专业准入/一个事实字段/ORCID查询语义/分类版本例外，M1身份与发送配置保护保持。
+- 联合清单56个文件；原01～08清单已留存为 `discovery-repair-evidence/plan-scope-01-08.json`，新的plan-scope.json兼容追加09a～09d；旧plan-review.json仅代表原8片，09追加自查另见scope-09/plan-review.json。
+- 本次未修改生产代码、未执行数据清洗/部署；75条已标范围外记录的实际处理仍需另行产出可复核操作清单，不能由计划追加视为已经删除。
