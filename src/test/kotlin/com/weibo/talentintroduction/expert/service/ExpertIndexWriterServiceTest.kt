@@ -1057,6 +1057,10 @@ class ExpertIndexWriterServiceTest {
     }
     @Test
     fun `discovery replica removal uses RAW and candidate CAS and retains other fields`() {
+        discoveryReplicaEvidence()
+    }
+
+    internal fun discoveryReplicaEvidence(): Map<String, Any> {
         val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
             "a@example.org", "Jane", "Doe", "JATS_SHA256:" + "a".repeat(64), null, "A123"
         )
@@ -1074,9 +1078,10 @@ class ExpertIndexWriterServiceTest {
         val candidateUrl = "https://es.example.com:9200/orcid_info_candidate/_doc/DOC"
         val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
         val classification = ExpertClassificationService().classify(service.discoveryProfile("DOC", source))
+        val postUpdateRaw = source + mapOf("filterResult" to "REJECTED")
         Mockito.`when`(restTemplate.exchange(eq(rawUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
             .thenReturn(ResponseEntity(doc(3, source), HttpStatus.OK))
-            .thenReturn(ResponseEntity(doc(4, source + mapOf("filterResult" to "REJECTED")), HttpStatus.OK))
+            .thenReturn(ResponseEntity(doc(4, postUpdateRaw), HttpStatus.OK))
         Mockito.`when`(restTemplate.exchange(eq(candidateUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
             .thenReturn(ResponseEntity(doc(8, source), HttpStatus.OK))
         val updateUrl = "https://es.example.com:9200/orcid_info/_update/DOC?if_seq_no=3&if_primary_term=2"
@@ -1101,9 +1106,13 @@ class ExpertIndexWriterServiceTest {
             "after" to mapOf("RAW" to 1, "CANDIDATE" to 0, "APPLICATION" to 0),
             "rawReason" to "RND_OUT_OF_SCOPE", "classification" to classification.type.name,
             "candidateDelete" to "CAS_DELETED",
-            "fieldSnapshots" to mapOf("before" to mapOf("operatorStatus" to source["operatorStatus"],
-                "customOperatorNote" to source["customOperatorNote"]),
-                "afterRawPartial" to (partial["doc"] as Map<*, *>).keys)
+            "fieldSnapshots" to mapOf(
+                "before" to mapOf("operatorStatus" to source["operatorStatus"],
+                    "customOperatorNote" to source["customOperatorNote"]),
+                "afterRawPartial" to mapOf("operatorStatus" to postUpdateRaw["operatorStatus"],
+                    "customOperatorNote" to postUpdateRaw["customOperatorNote"]),
+                "updatedRawKeys" to (partial["doc"] as Map<*, *>).keys
+            )
         )
         for ((status, expected) in listOf(
             HttpStatus.NOT_FOUND to "IDEMPOTENT", HttpStatus.CONFLICT to "RETRY",
@@ -1135,9 +1144,7 @@ class ExpertIndexWriterServiceTest {
         Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("orcid_info_candidate"),
             eq(HttpMethod.DELETE), any<HttpEntity<*>>(), eq(JsonNode::class.java))
         observed["identityChanged"] = "RETRY_WITHOUT_DELETE"
-        val acceptance = java.nio.file.Paths.get("target/discovery-plan-acceptance/09d.json")
-        java.nio.file.Files.createDirectories(acceptance.parent)
-        java.nio.file.Files.writeString(acceptance, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(observed))
+        return observed
     }
 
     @Test

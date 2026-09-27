@@ -1557,6 +1557,10 @@ class ExpertDiscoveryServiceTest {
 
     @Test
     fun `unknown discovery persists RAW and enrichment job without premature candidate`() {
+        initialAdmissionEvidence()
+    }
+
+    internal fun initialAdmissionEvidence(): Map<String, Any> {
         val filters = Mockito.mock(com.weibo.talentintroduction.expert.service.EligibilityFilterService::class.java)
         Mockito.doReturn(com.weibo.talentintroduction.config.CandidateFilterProperties())
             .`when`(filters).getCandidateFilter()
@@ -1591,6 +1595,29 @@ class ExpertDiscoveryServiceTest {
         Mockito.verify(enrichmentJobService).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
         Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("/orcid_info_candidate/_doc/"),
             Mockito.eq(HttpMethod.PUT), Mockito.any(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        return mapOf(
+            "before" to mapOf("RAW" to 0, "CANDIDATE" to 0, "APPLICATION" to 0),
+            "after" to mapOf("RAW" to captured.size, "CANDIDATE" to result.stats.promoted, "APPLICATION" to 0),
+            "rawFilterResult" to captured.single()["filterResult"]!!,
+            "rawReason" to captured.single()["filterRejectReason"]!!,
+            "classification" to (captured.single()["expertClassification"] as com.fasterxml.jackson.databind.JsonNode).path("type").asText(),
+            "enrichmentJobs" to 1
+        )
+    }
+
+    @Test
+    fun `09d acceptance captures admission worker and replica in one isolated artifact`() {
+        val acceptance = Paths.get("target/discovery-plan-acceptance/09d.json")
+        Files.deleteIfExists(acceptance)
+        val initial = initialAdmissionEvidence()
+        setUp()
+        val worker = workerRetryEvidence()
+        val replica = com.weibo.talentintroduction.expert.service.ExpertIndexWriterServiceTest()
+            .discoveryReplicaEvidence()
+        Files.createDirectories(acceptance.parent)
+        Files.writeString(acceptance, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+            mapOf("initialAdmission" to initial, "worker" to worker, "replica" to replica)
+        ))
     }
 
     @Test
@@ -5453,6 +5480,10 @@ class ExpertDiscoveryServiceTest {
 
     @Test
     fun `discovery worker retries revalidation failure before job completion`() {
+        workerRetryEvidence()
+    }
+
+    internal fun workerRetryEvidence(): Map<String, Any> {
         val svc = createService()
         val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
         Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
@@ -5487,17 +5518,16 @@ class ExpertDiscoveryServiceTest {
         )
         assertEquals(1, retried.succeeded)
         assertEquals(1, retried.promoted)
-        val acceptance = java.nio.file.Paths.get("target/discovery-plan-acceptance/09d-worker.json")
-        java.nio.file.Files.createDirectories(acceptance.parent)
-        java.nio.file.Files.writeString(acceptance,
-            com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(
-                mapOf("jobTransitions" to listOf(
-                    mapOf("lease" to "lease-10", "outcome" to captured.value.javaClass.simpleName,
-                        "succeeded" to result.succeeded, "pending" to result.pending),
-                    mapOf("lease" to "lease-11", "outcome" to "Success",
-                        "succeeded" to retried.succeeded, "promoted" to retried.promoted)
-                ))
-            ))
+        val success = org.mockito.ArgumentCaptor.forClass(ProfileEnrichmentOutcome::class.java)
+        Mockito.verify(enrichmentJobService).complete(eqValue(10L), eqValue("lease-11"),
+            success.capture() ?: ProfileEnrichmentOutcome.NoId)
+        assertTrue(success.value is ProfileEnrichmentOutcome.Success)
+        return mapOf("jobTransitions" to listOf(
+            mapOf("lease" to "lease-10", "outcome" to captured.value.javaClass.simpleName,
+                "succeeded" to result.succeeded, "pending" to result.pending),
+            mapOf("lease" to "lease-11", "outcome" to success.value.javaClass.simpleName,
+                "succeeded" to retried.succeeded, "promoted" to retried.promoted)
+        ))
     }
 
     @Test
