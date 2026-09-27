@@ -88,3 +88,61 @@ Obtain a human-approved plan amendment; then resume `execute-p` against its new 
 - Human approved cache-key amendment A2: bump all eleven existing versioned index.html URLs, preserve order and other content.
 - Revised plan identity: commit:37e1ed05a5654735f6c763536c7a0a198b637965; exact product base remains a5cf6fcbc2af3567c0b39203be6452b8921a4bee.
 - Epoch 1 six authorized working-tree edits retained unstaged; continue without replaying 01–07.
+
+## Execution Result: READY_FOR_VERIFICATION — Epoch 2
+
+Plan: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-26-discovery-repair-00-master/docs/plans/2026-09-26/discovery-repair-08-source-report.md`
+Plan SHA-256: `2e1331a05a7533e5eedf20db3051dd5c0edd8b9f6e561ca320e4e65fdc6b643c`
+Execution ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-26-discovery-repair-00-master/docs/plans/2026-09-26/discovery-repair-08-source-report.md@2e1331a05a7533e5eedf20db3051dd5c0edd8b9f6e561ca320e4e65fdc6b643c`
+Execution epoch: NEW (new amended-plan bytes; retained epoch-1 changes reconciled against them)
+Approval basis: human A2 approval; amended plan commit `37e1ed05a5654735f6c763536c7a0a198b637965`
+Executor: SourceReportResumeImplementer
+Target worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-26-discovery-repair-00-master`
+Target branch: `fast/2026-09-26-discovery-repair-00-master`
+Worktree ID: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-26-discovery-repair-00-master@fast/2026-09-26-discovery-repair-00-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-2026-09-26-discovery-repair-00-master`
+Pre-execution code SHA: `a5cf6fcbc2af3567c0b39203be6452b8921a4bee`
+Epoch-2 starting HEAD: `681502ac743fbfb47bc31b002f2997e571a25542` (controller evidence/preparation commits separate from product base)
+Post-execution code SHA: `9c6d84430ec0f5f25e3fa06468ad7dcde260fe67`
+Evidence HEAD: N/A — controller commits this report, not the product executor
+Implementation boundary: `a5cf6fcbc2af3567c0b39203be6452b8921a4bee..9c6d84430ec0f5f25e3fa06468ad7dcde260fe67` for lineage; this execution's product commit is `9c6d84430ec0f5f25e3fa06468ad7dcde260fe67` only.
+
+### Task Status
+| Requirement | Status | Evidence |
+|---|---|---|
+| T-1 original task20240 replay | IMPLEMENTED | Retained fixture compares exactly to `task[0].split('\t', 5)[4]` → `stats.bySource` in the original source audit; original file SHA-256 is `64f6bb57bd2046399416f29db8a07f6ea08687f5ebcf180f1bbf0c2c3fa42508`. Source audit resides in the original project worktree; fixture has three sources and all 14 OPENALEX failure keys. |
+| T-2 source table and A2 cache amendment | IMPLEMENTED | Shared renderer preserves all stored reasons, escaped strings, missing-value semantics, and enrichment branch. Exactly eleven existing `index.html` versioned references now share `20260926-discovery-repair`; asset order and remaining content unchanged, with no old key. |
+| T-3 two new funnel log labels and regression | IMPLEMENTED | Both source terminal logs carry `过滤（含身份未确认）` with existing filterReasons and no counter changes; captured log tests pass. The authorized JS test now derives the cache key from `index.html` and checks all eleven values, rather than embedding a duplicate release-key literal; no unlisted tests edited. |
+| T-4 generated actual acceptance output | IMPLEMENTED | `target/discovery-plan-acceptance/08.html` (6,932 bytes, real renderer and local `styles.css`), `08.json` (12,868 bytes, input/output and retained boundary cases). The generated OPENALEX table has 635 email, 6 valid, 4 indexed, 4 promoted, IDENTITY_UNRESOLVED:629, HTTP_403:323, SEARCH_FAILED stop. Epoch-1 Chromium visual evidence at 800px/560px remains applicable; epoch-2 only changed asset query keys and test source, not renderer/CSS/DOM. |
+
+### Commands
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Users/lukai/.jenv/versions/zulu64-11.0.15 /opt/homebrew/Cellar/maven/3.9.11/libexec/bin/mvn test -Dtest=ExpertDiscoveryServiceTest` | PASS, exit 0 | Fresh after final edit: Kotlin 145 run, 0 failures/errors/skipped; Maven-bound Node 1,194 run, 1,194 pass, 0 fail/skipped; `BUILD SUCCESS`, `artifact://660`. First epoch-2 attempt failed 1/1,194 Node assertions because the retained authorized JS test embedded the new cache key; fixed within that test, then reran successfully. |
+| `node --test src/test/js/taskRecordsSemantics.test.js` | PASS, exit 0 | Fresh after final edit: 10 run, 10 pass, 0 fail/skipped; regenerated 08.html/08.json. |
+| `node --check src/main/resources/static/app.js` | PASS, exit 0 | No syntax error after final edit. |
+| `git diff --check` / `git diff --cached --check` | PASS, exit 0 | No whitespace errors. |
+
+### Changed Files
+- `src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt` — two source-log labels and existing filterReasons.
+- `src/main/resources/static/app.js` — shared, safe by-source reasons table.
+- `src/main/resources/static/index.html` — all eleven existing version query keys, no reordered/extra assets.
+- `src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt` — captured two source-log cases.
+- `src/test/js/taskRecordsSemantics.test.js` — actual renderer replay, legacy/enrichment/hostile cases, generated reports, dynamic eleven-key contract.
+- `src/test/resources/discovery/task-20240-by-source.json` — exact original-audit bySource replay.
+
+### Deviations
+- One initial post-A2 Maven run failed only an existing cross-file cache-literal scanner; the authorized child08 test was corrected, and all three focused commands passed after that final edit. No unlisted product/test edits, broad suites, formatter, linter, push, merge, reset, or rebase.
+- The previously modified `docs/plans/fast/2026-09-26-discovery-repair-00-master/ledger.md` remains untouched and unstaged. This report is unstaged for controller's evidence commit; no report/log entered the product commit.
+
+### Freshness
+- Plan identity rechecked: YES, unchanged `2e1331a05a7533e5eedf20db3051dd5c0edd8b9f6e561ca320e4e65fdc6b643c`.
+- Worktree identity rechecked before staging and commit: YES, exact root/branch/git-dir.
+- Product commit reachable as target branch HEAD: YES, `9c6d84430ec0f5f25e3fa06468ad7dcde260fe67`.
+- Required commands run this invocation after final implementation: YES.
+- Historical epoch-1 visual evidence used only for unchanged rendering: YES.
+
+### Remaining Blocker
+None.
+
+### Next Action
+Controller commits evidence and runs independent `verify-p` for this amended plan.
