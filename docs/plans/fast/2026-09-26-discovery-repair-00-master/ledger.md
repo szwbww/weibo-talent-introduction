@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-09-26
 - Current child: 09d
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -30,7 +30,7 @@
 | 09a | docs/plans/2026-09-26/discovery-repair-09a-orcid-query.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 08 | 1 | LIGHT_PASS_WITH_NOTES | 9c6d84430ec0f5f25e3fa06468ad7dcde260fe67 | f9caa0b6fa5a1893aa37a6dd8612c8b930635eaf | 0 | — | f9caa0b6fa5a1893aa37a6dd8612c8b930635eaf | 56af96e1e3d80b53e9b41c7838c512360b5cb2db | O-1: pre-existing ACTIVE legacy streams remain runnable independently, not inherited by new ORCID cursor. | N/A |
 | 09b | docs/plans/2026-09-26/discovery-repair-09b-scope-facts.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 09a | 1 | LIGHT_PASS | f9caa0b6fa5a1893aa37a6dd8612c8b930635eaf | 3df3d79a1806081639ad318fb6b638c59f5bca85 | 0 | — | 3df3d79a1806081639ad318fb6b638c59f5bca85 | 0d45f3bdf231202c8a4ad49edd46cbcbcbdabdd4 | N/A |
 | 09c | docs/plans/2026-09-26/discovery-repair-09c-scope-classification.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 09b | 1 | LIGHT_PASS_WITH_NOTES | 3df3d79a1806081639ad318fb6b638c59f5bca85 | 5724b4ff34619acf8abd8ee68c724ea25669742c | 0 | — | 5724b4ff34619acf8abd8ee68c724ea25669742c | 93abb2716b4dfce3aaa5299da709e2b287048976 | Release: disabled onlyPending scheduler would treat prior rnd-v2 as pending under rnd-v3; no automatic backfill. | N/A |
-| 09d | docs/plans/2026-09-26/discovery-repair-09d-scope-admission.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 09c | 1 | WAITING_FOR_AGENT | 5724b4ff34619acf8abd8ee68c724ea25669742c | — | 0 | — | — | — | N/A |
+| 09d | docs/plans/2026-09-26/discovery-repair-09d-scope-admission.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 09c | 1 | LIGHT_PASS | 5724b4ff34619acf8abd8ee68c724ea25669742c | 3f27b1bab8be159339e237eae8522df2c006b448 | 1 | 4ad9e79b034798ee78f12c3285faf5882991b3bc | 4ad9e79b034798ee78f12c3285faf5882991b3bc | — | F-01 closed by AdmissionEvidenceReVerifier after test-only round1; 271 backend and 1194 Node passed. | N/A |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
