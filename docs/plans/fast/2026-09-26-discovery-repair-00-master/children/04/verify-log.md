@@ -1,0 +1,23 @@
+## Light Verification: LIGHT_FAIL
+Child: 04 — `docs/plans/2026-09-26/discovery-repair-04-xml-route.md` (approved SHA-256 `0551cd1d533a2f4bb127bc17e8807793e6b6e38d9bf000fb0adcde94712cb2b2`)
+Boundary: `3fc33d82463cb63602ff41e8a633ef1cd57b4d8e..5f3599b519952e036a48a05d0398ed7ca141c060`
+Verifier: XmlRouteVerifierEpoch2
+
+### Four Gates
+| Gate | Result | Evidence |
+|---|---|---|
+| Authorized scope | PASS | `git diff --name-status <base> <head> -- src/main src/test` lists precisely the brief's four product files, five test files and `src/test/resources/discovery/xml-route-recall.zip`; ancillary commits add the child brief/evidence seed, not additional changed product/test files. Base is merge-base of the boundary; current HEAD's subsequent docs-only commit does not change `src/main` or `src/test`; worktree/index clean. |
+| Plan and invariants | FAIL | Plan I-1/I-3 and T-5/A-3/A-4 discrepancies F-01–F-03 below. Positives: `DiscoveryIdentity.kt:21-24` keeps VERSION=20260925 and advances EXTRACTION_VERSION=20260928; `OpenAlexDataSource.kt:193-199` author ID requires unique ORCID; actual `target/discovery-plan-acceptance/04.json:4-35` contains PMC7759461, the exact three real contacts, RAW=3/CANDIDATE=3, and old-version rejection. `JatsXmlEmailParserTest.kt:495-575,577-680` exercises shared notes, duplicate ID, numeric label and alternatives. |
+| Required commands | PASS | Fresh worktree-root `/opt/homebrew/Cellar/maven/3.9.11/libexec/bin/mvn test -Dtest=OpenAlexDataSourceTest,CoreDataSourceTest,JatsXmlEmailParserTest,EuropePmcDataSourceTest,PmcOaDataSourceTest,ExpertDiscoveryServiceTest,DiscoveryIdentityTest,DiscoveryPipelineServiceTest`: exit 0, BUILD SUCCESS, 350 backend tests/0 failures/0 errors/1 skipped, configured Node 1193 passed/0 failed/0 skipped (`artifact://284`, result lines 1699,3373-3378,3386). The absolute launcher `mvn -version` reported Maven 3.9.11 and Java 11.0.15 under `/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home`. Base evidence in brief: exit 0, 342/0/0/1 backend and 1193/0/0 Node; no baseline failure regression. Acceptance JSON regenerated at 2026-09-27T10:06:25+0800. |
+| Downstream interfaces | PASS | `DiscoveryIdentity.kt:9-24` identity envelope and evidence VERSION unchanged, extraction output now v20260928; `ExpertDiscoveryService.kt:1719-1722` still rejects old extraction cache. `JatsXmlEmailParser.kt:133-142` still resolves candidates per email/author Element; `OpenAlexDataSource.kt:193-199` retains unique-ORCID-only OA author ID binding. No child-05 PDF/parser or consumer-interface files changed. |
+
+### AUTO_FIX
+- F-01 — Plan I-1 (`:21-24`) and brief `:28`: `OpenAlexDataSource.kt:264-275` sends **both** `ids.pmcid` and `locations[].landing_page_url` through a normalizer accepting bare `PMC[0-9]+`. Thus a bare landing-page value `PMC123` is treated as a trusted candidate although a landing page must be an approved structured URL with exact protocol/host/path. Smallest authorized correction: accept bare PMCID only from `ids.pmcid`; require validated URL for location values, and add the missing bare-landing rejection case in `OpenAlexDataSourceTest.kt`.
+- F-02 — Plan I-3 (`:33-36`) and brief `:30` permit stripping **numeric** direct `label` text only and require explicit conflicts not to bind. `JatsXmlEmailParser.kt:196-202` strips *every* direct `label` of a `corresp`/`fn`, including a textual author label. A unique xref to author A with `<label>Jane Doe</label>` and the note's email thereby loses the conflicting explicit label and can bind A via `:107-109`; the existing numeric-label tests `JatsXmlEmailParserTest.kt:577-598,668-680` cannot detect it. Smallest authorized correction: filter only numeric direct labels; add a nonnumeric conflicting-label negative in the authorized parser test.
+- F-03 — Plan T-5/A-3/A-4 (`:77-79,129-139`) requires actual isolated acceptance output for the boundary matrix, checkpoint/terminal state and necessary request results. Fresh `target/discovery-plan-acceptance/04.json:1-40` contains no `boundaryCases` or `versionCases`, and `pipelineCheckpoint` explicitly says `not exercised by direct consumeQueuedItem invocation`; `ExpertDiscoveryServiceTest.kt:479,514-546` hard-codes `httpRequests=1` into the XML outcome and writes only the direct-consumer summary, not an observed XML HTTP request/checkpoint. Smallest authorized correction: extend the listed tests' isolated scenarios/report to emit the specified observed boundary and old/new-version checkpoint/terminal cases and actual request results, without presenting a direct-consumer call as a pipeline run.
+
+### RECORD_ONLY
+- N/A
+
+### Required Action
+- AUTO_FIX
