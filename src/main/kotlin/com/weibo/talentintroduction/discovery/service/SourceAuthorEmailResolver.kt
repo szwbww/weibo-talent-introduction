@@ -26,6 +26,19 @@ internal object SourceAuthorEmailResolver {
         return results(emails.extract(normalized, blacklist), claims, authors)
     }
 
+    fun resolvePdf(
+        text: String,
+        authors: List<PaperAuthor>,
+        contacts: List<PdfAuthorContactLayout.Contact>,
+        blacklist: List<String> = emptyList()
+    ): List<AuthorEmail> {
+        val normalized = emails.normalizeContactText(text)
+        val claims = textClaims(text, authors) + contacts.map {
+            Claim(it.email.lowercase(Locale.ROOT), it.authorIndex, it.evidenceText)
+        }
+        return results(emails.extract(normalized, blacklist), claims, authors)
+    }
+
     fun resolveHtml(html: String, authors: List<PaperAuthor>, blacklist: List<String> = emptyList()): List<AuthorEmail> {
         val root = parseHtml(html)
         val originalText = root.visibleText()

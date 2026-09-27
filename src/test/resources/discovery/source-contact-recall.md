@@ -1,0 +1,9 @@
+# Source-contact recall fixture
+
+`source-contact-recall.zip` contains three **REAL_ORIGINAL** PDF files, copied byte for byte from the read-only diagnostic archive `docs/audits/2026-09-26-deep-discovery-diagnosis/evidence/original-sources.zip` in the original checkout, and each work's original OpenAlex metadata JSON from the corresponding `evidence/sources/<work-id>/metadata.json`. The archive's `manifest.json` records work IDs, paths, SHA-256 values, original archive provenance, manually reviewed positive relationships, and shared contacts expected to remain unbound. The PDF pages were neither regenerated nor reordered; extraction tests must exercise their actual bytes through the download stub and PDFBox.
+
+- `W3014974815`: unique starred author/contact footnote binds Klaus H. Maier-Hein to `k.maier-hein@dkfz.de`.
+- `W2999309192`: starred correspondence footnote binds Davide Chicco to `davidechicco@davidechicco.it`.
+- `W2907492528`: independent, explicitly labeled email contact paragraphs bind S. Pan to Shirui Pan (`shirui.pan@monash.edu`) and P. S. Yu to Philip S. Yu (`psyu@uic.edu`). The four addresses grouped in the Z. Wu / F. Chen / G. Long / C. Zhang institutional list are **not** uniquely bound by that shared paragraph and must retain empty identity.
+
+The manifest labels the original files `REAL_ORIGINAL`. Generated `ownershipPdf` pages and inline XML/text used elsewhere in the test suite are **SYNTHETIC controls**, not copies of these originals; no synthetic PDF is included in this ZIP. Metadata may contain correspondence fields or emails, but tests derive `PaperAuthor` names/IDs from it only: email ownership must come from the PDF parser, never from metadata email fields. External email validation, eligibility, and Elasticsearch transport may be replaced by isolated test doubles.

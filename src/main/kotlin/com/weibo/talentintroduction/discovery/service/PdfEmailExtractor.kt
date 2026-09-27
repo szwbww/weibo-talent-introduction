@@ -271,13 +271,12 @@ class PdfEmailExtractor(
                 stripper.startPage = 1
                 stripper.endPage = minOf(properties.maxPages, doc.numberOfPages)
                 val text = stripper.getText(doc)
-                return associateEmailsWithAuthors(text, knownAuthors)
+                val contacts = PdfAuthorContactLayout.collect(doc, stripper.endPage, knownAuthors)
+                return SourceAuthorEmailResolver.resolvePdf(text, knownAuthors, contacts, properties.blacklistPrefixes)
             }
         }
     }
 
-    private fun associateEmailsWithAuthors(text: String, knownAuthors: List<PaperAuthor>): List<AuthorEmail> =
-        SourceAuthorEmailResolver.resolveText(text, knownAuthors, properties.blacklistPrefixes)
 
 }
 

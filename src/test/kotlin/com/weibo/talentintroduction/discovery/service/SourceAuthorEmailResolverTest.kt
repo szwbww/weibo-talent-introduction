@@ -18,6 +18,39 @@ class SourceAuthorEmailResolverTest {
     private val jane = PaperAuthor("Jane", "Doe", "0000-0002-1825-0097", "Jane Lab", true, openAlexAuthorId = "A123")
     private val john = PaperAuthor("John", "Smith", null, "John Lab", false)
 
+    @Test fun `PDF contact claims are rejected when they conflict with existing source claims`() {
+        val contact = PdfAuthorContactLayout.Contact("opaque@uni.edu", 1, 1,
+            "Jane Doe* John Smith", "*Correspondence: opaque@uni.edu")
+        val result = SourceAuthorEmailResolver.resolvePdf(
+            "Jane Doe: opaque@uni.edu", listOf(jane, john), listOf(contact))
+        assertNull(result.single().givenNames)
+        assertNull(result.single().identityEvidence)
+    }
+
+    @Test fun `layout rejects shared markers duplicate names ambiguous initials and a cross-column mailbox`() {
+        val cases = pdfLayoutNegativeCases()
+        for ((authors, lines, label) in cases) {
+            val bytes = positionedPdf(lines)
+            val contacts = org.apache.pdfbox.pdmodel.PDDocument.load(bytes).use {
+                PdfAuthorContactLayout.collect(it, 1, authors)
+            }
+            assertTrue(contacts.isEmpty(), "$label: $contacts")
+            val resolved = extractOwnershipContent(bytes, org.springframework.http.MediaType.APPLICATION_PDF, authors)
+                .emails.single { it.email == "opaque@uni.edu" }
+            assertNull(resolved.givenNames, label)
+        }
+    }
+
+    @Test fun `one unique PDF contact marker retains two explicit mailboxes`() {
+        val pdf = positionedPdf(listOf(
+            Triple(50f, 720f, "Jane Doe*"),
+            Triple(50f, 600f, "*Email: first@uni.edu; second@uni.edu")))
+        val result = extractOwnershipContent(pdf, org.springframework.http.MediaType.APPLICATION_PDF, listOf(jane))
+        assertEquals(setOf("first@uni.edu", "second@uni.edu"), result.emails.map { it.email }.toSet())
+        assertTrue(result.emails.all { it.givenNames == "Jane" && it.familyNames == "Doe" &&
+            it.identityEvidence?.startsWith("SOURCE_SHA256:") == true })
+    }
+
     @Test fun `published source blocks preserve two owned mailboxes and reject shared correspondence`() {
         for (case in sourceOwnershipCases()) {
             val result = SourceAuthorEmailResolver.resolveHtml(case.path("html").asText(), sourceOwnershipAuthors(case))
@@ -179,4 +212,43 @@ internal fun ownershipPdf(vararg lines: String): ByteArray {
         doc.save(output)
     }
     return output.toByteArray()
+}
+
+/** Synthetic coordinate controls; the archived published PDFs remain byte-for-byte unchanged. */
+internal fun positionedPdf(lines: List<Triple<Float, Float, String>>): ByteArray {
+    val output = java.io.ByteArrayOutputStream()
+    org.apache.pdfbox.pdmodel.PDDocument().use { doc ->
+        val page = org.apache.pdfbox.pdmodel.PDPage()
+        doc.addPage(page)
+        org.apache.pdfbox.pdmodel.PDPageContentStream(doc, page).use { stream ->
+            stream.setFont(org.apache.pdfbox.pdmodel.font.PDType1Font.HELVETICA, 11f)
+            for ((x, y, text) in lines) {
+                stream.beginText()
+                stream.newLineAtOffset(x, y)
+                stream.showText(text)
+                stream.endText()
+            }
+        }
+        doc.save(output)
+    }
+    return output.toByteArray()
+}
+
+/** Each control has the same PDFBox path, but is expressly synthetic rather than a source-paper claim. */
+internal fun pdfLayoutNegativeCases(): List<Triple<List<PaperAuthor>, List<Triple<Float, Float, String>>, String>> {
+    val jane = PaperAuthor("Jane", "Doe", "0000-0002-1825-0097", "Jane Lab", true, openAlexAuthorId = "A123")
+    val john = PaperAuthor("John", "Smith", null, "John Lab", false)
+    return listOf(
+        Triple(listOf(jane, john), listOf(
+            Triple(50f, 720f, "Jane Doe* John Smith*"), Triple(50f, 600f, "*Email: opaque@uni.edu")), "shared marker"),
+        Triple(listOf(jane, jane.copy(orcidId = "other")), listOf(
+            Triple(50f, 720f, "Jane Doe*"), Triple(50f, 600f, "*Email: opaque@uni.edu")), "duplicate name"),
+        Triple(listOf(PaperAuthor("Shirui", "Pan", null, null), PaperAuthor("Samantha", "Pan", null, null)),
+            listOf(Triple(50f, 720f, "Shirui Pan Samantha Pan"),
+                Triple(50f, 220f, "S. Pan is with University (Email: opaque@uni.edu).")), "ambiguous initials"),
+        Triple(listOf(jane), listOf(
+            Triple(50f, 720f, "Jane Doe*"), Triple(350f, 600f, "*Email: opaque@uni.edu")), "cross-column"),
+        Triple(listOf(jane), listOf(
+            Triple(50f, 720f, "Jane Doe"), Triple(50f, 220f, "References: Jane Doe Email: opaque@uni.edu")), "references")
+    )
 }

@@ -28,6 +28,9 @@ import java.io.ByteArrayInputStream
 import java.net.SocketTimeoutException
 import java.net.URI
 import java.time.Instant
+import java.util.zip.ZipInputStream
+import org.apache.pdfbox.pdmodel.PDDocument
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import javax.net.ssl.SSLHandshakeException
 
 class PdfEmailExtractorTest {
@@ -60,6 +63,62 @@ class PdfEmailExtractorTest {
 
     private val extractor = PdfEmailExtractor(restTemplate, plainTextExtractor, properties, passThroughBoundedHttp)
 
+    @Test
+    fun `original PDFs retain page and contact provenance for only four author mailboxes`() {
+        val expected = mapOf(
+            "W3014974815" to mapOf("k.maier-hein@dkfz.de" to "Klaus H. Maier-Hein"),
+            "W2999309192" to mapOf("davidechicco@davidechicco.it" to "Davide Chicco"),
+            "W2907492528" to mapOf(
+                "shirui.pan@monash.edu" to "Shirui Pan",
+                "psyu@uic.edu" to "Philip S. Yu"
+            )
+        )
+        val entries = mutableMapOf<String, ByteArray>()
+        ZipInputStream(requireNotNull(javaClass.getResourceAsStream("/discovery/source-contact-recall.zip"))).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                entries[entry.name] = zip.readBytes()
+            }
+        }
+        for ((id, pairs) in expected) {
+            val pdf = requireNotNull(entries["sources/$id/source.pdf"])
+            val metadata = jacksonObjectMapper().readTree(requireNotNull(entries["sources/$id/metadata.json"]))
+            val authors = metadata.path("authorships").map {
+                val name = it.path("author").path("display_name").asText()
+                PaperAuthor(name.substringBeforeLast(' '), name.substringAfterLast(' '),
+                    it.path("author").path("orcid").asText(null), null, it.path("is_corresponding").asBoolean(),
+                    openAlexAuthorId = it.path("author").path("id").asText(null))
+            }
+            val contacts = PDDocument.load(pdf).use { PdfAuthorContactLayout.collect(it, 2, authors) }
+            for ((mailbox, name) in pairs) {
+                val contact = contacts.singleOrNull { it.email == mailbox }
+                    ?: error("$id $mailbox layout contacts: $contacts")
+                assertEquals(1, contact.page)
+                assertTrue(contact.authorText.contains(name), "$id author region: ${contact.authorText}")
+                assertTrue(contact.contactText.contains(mailbox), "$id contact: ${contact.contactText}")
+                if (id == "W2907492528") {
+                    assertTrue(!contact.contactText.contains("graphs and manifolds") &&
+                        !contact.contactText.contains("Hamilton"), contact.contactText)
+                }
+                val resolved = extractOwnershipContent(pdf, MediaType.APPLICATION_PDF, authors)
+                    .emails.single { it.email == mailbox }
+                assertEquals(name, "${resolved.givenNames} ${resolved.familyNames}", "$id $mailbox")
+                assertEquals("SOURCE_SHA256:" +
+                    com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.hash(contact.evidenceText),
+                    resolved.identityEvidence)
+            }
+            if (id == "W2907492528") {
+                val resolved = extractOwnershipContent(pdf, MediaType.APPLICATION_PDF, authors).emails
+                for (mailbox in listOf("zonghan.wu-3@student.uts.edu.au",
+                    "fengwen.chen@student.uts.edu.au", "guodong.long@uts.edu.au",
+                    "chengqi.zhang@uts.edu.au")) {
+                    val unknown = resolved.single { it.email == mailbox }
+                    assertNull(unknown.givenNames, mailbox)
+                    assertNull(unknown.identityEvidence, mailbox)
+                }
+            }
+        }
+    }
     @Test
     fun `contact entry resolves an opaque mailbox from the original name`() {
         stubPdfDownload("<p>Jane Doe: r142@university.edu</p>".toByteArray(), MediaType.TEXT_HTML)
