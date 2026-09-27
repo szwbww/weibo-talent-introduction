@@ -21,3 +21,27 @@ Verifier: XmlRouteVerifierEpoch2
 
 ### Required Action
 - AUTO_FIX
+
+## Epoch 2 — Re-verification after round 1
+
+## Light Verification: LIGHT_PASS
+Child: 04 — `docs/plans/2026-09-26/discovery-repair-04-xml-route.md` (approved SHA-256 `0551cd1d533a2f4bb127bc17e8807793e6b6e38d9bf000fb0adcde94712cb2b2`)
+Boundary: `3fc33d82463cb63602ff41e8a633ef1cd57b4d8e..6e2244be0f20d7af0ee710a734f7d252d7160f36`
+Verifier: XmlRouteReVerifierRound1
+
+### Four Gates
+| Gate | Result | Evidence |
+|---|---|---|
+| Authorized scope | PASS | `git merge-base <base> <head>` equals the exact base; `git diff --name-status <base> <head> -- src/main src/test` contains exactly the brief's four production files, five test files, and `src/test/resources/discovery/xml-route-recall.zip`. Current HEAD's subsequent docs-only commit changes no product/test files versus the review head; worktree/index clean. |
+| Plan and invariants | PASS | F-01 closed: `OpenAlexDataSource.kt:264-287` accepts bare PMC only from `ids.pmcid`, validates location URLs against exact schemes/hosts/full paths and rejects conflicting candidates; `OpenAlexDataSourceTest.kt:119-169` includes bare-location, forged host, query, and conflicting IDs. F-02 closed: `JatsXmlEmailParser.kt:196-204` removes only numeric direct target labels; `JatsXmlEmailParserTest.kt:668-695` protects textual conflicting label and ordinary numeric body. F-03 closed: `ExpertDiscoveryServiceTest.kt:445-568,570-797` observes a real local HTTP XML GET, real metadata→XML parser→consumer output, isolated validation/RAW/CANDIDATE and duplicate/pause cases, and cached-version pipeline checkpoints/terminals; regenerated `target/discovery-plan-acceptance/04.json:1-39,40-348` records XML GET=1, exactly three named contacts, RAW=3/CANDIDATE=3, seven boundary cases plus pause, and current SUCCEEDED/old FAILED `IDENTITY_EXTRACTION_VERSION_UNSUPPORTED` with zero old-version writes/re-extractions. `DiscoveryIdentity.kt:21-24` preserves evidence VERSION=20260925 and sets extraction version=20260928. `JatsXmlEmailParser.kt:43-53,65-142,157-178` retains per-contributor identity, unique target/owner and candidate conflict resolution, scoped contrib-info, and name-alternatives rules; `CoreDataSource.kt:194-215` and `OpenAlexDataSource.kt:240-298` use the narrow comma rule. Existing shared-note controls `JatsXmlEmailParserTest.kt:495-575` passed. |
+| Required commands | PASS | Fresh worktree-root `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home /opt/homebrew/Cellar/maven/3.9.11/libexec/bin/mvn test -Dtest=OpenAlexDataSourceTest,CoreDataSourceTest,JatsXmlEmailParserTest,EuropePmcDataSourceTest,PmcOaDataSourceTest,ExpertDiscoveryServiceTest,DiscoveryIdentityTest,DiscoveryPipelineServiceTest`: exit 0, BUILD SUCCESS, backend 351 tests/0 failures/0 errors/1 skipped (`artifact://335:1703-1705,3391-3395`); configured Node 1193 passed/0 failed/0 skipped (`artifact://335:3379-3385`). `mvn -version` with that JAVA_HOME reported Maven 3.9.11 and Java 11.0.15. Baseline 342/0/0/1 backend, Node 1193/0/0; previous verification 350/0/0/1. Acceptance JSON regenerated at 2026-09-27T10:51:23+0800 during this run. |
+| Downstream interfaces | PASS | `DiscoveryIdentity.kt:9-24` retains identity envelope and evidence VERSION, changes extraction output to exactly 20260928; unchanged `ExpertDiscoveryService.kt:1707-1722` rejects old cache; `JatsXmlEmailParser.kt:132-142` returns existing per-email author result, and `OpenAlexDataSource.kt:193-199` binds OpenAlex author IDs only through unique ORCID. No child-05 PDF/parser or consumer-interface files changed. |
+
+### AUTO_FIX
+- N/A — F-01, F-02, and F-03 from the previous verify-log are closed by the cited fix and fresh evidence.
+
+### RECORD_ONLY
+- N/A
+
+### Required Action
+- COMPLETE_CHILD
