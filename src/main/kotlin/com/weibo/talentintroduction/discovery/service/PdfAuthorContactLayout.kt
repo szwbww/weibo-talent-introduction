@@ -19,24 +19,41 @@ internal object PdfAuthorContactLayout {
     private val paragraphStart = Regex("^\\s*((?:[A-Z]\\.\\s*){1,4}[A-Z][A-Za-z'-]+|[A-Z][A-Za-z'-]+(?:\\s+[A-Z][A-Za-z.'-]+){1,3})\\s+is\\s+with\\b", RegexOption.IGNORE_CASE)
     private val emailLabel = Regex("\\be-?mail\\s*:", RegexOption.IGNORE_CASE)
 
-    fun collect(document: PDDocument, maxPages: Int, authors: List<PaperAuthor>): List<Contact> {
-        if (authors.isEmpty() || maxPages < 1) return emptyList()
-        val end = minOf(maxPages, document.numberOfPages)
-        val glyphs = Array(end) { mutableListOf<TextPosition>() }
-        val stripper = object : PDFTextStripper() {
-            override fun processTextPosition(text: TextPosition) {
-                if (text.dir == 0f) glyphs[currentPageNo - 1] += text
-                super.processTextPosition(text)
-            }
-        }
-        stripper.startPage = 1
-        stripper.endPage = end
-        stripper.getText(document)
+    fun selectedPages(pageCount: Int, maxPages: Int, tailPages: Int): List<Int> {
+        if (pageCount < 1) return emptyList()
+        return ((1..minOf(maxPages, pageCount)).toList() +
+            (if (tailPages == 1) listOf(pageCount) else emptyList())).distinct()
+    }
+
+    fun collect(
+        document: PDDocument,
+        maxPages: Int,
+        authors: List<PaperAuthor>,
+        tailPages: Int = 0,
+        beforePage: () -> Unit = {},
+        onPage: (Int, String) -> Unit = { _, _ -> }
+    ): List<Contact> {
+        if (document.numberOfPages < 1) return emptyList()
+        val pages = selectedPages(document.numberOfPages, maxPages, tailPages)
         val contacts = mutableListOf<Contact>()
-        for (page in 1..end) {
+        for (page in pages) {
+            beforePage()
+            val glyphs = mutableListOf<TextPosition>()
+            val stripper = object : PDFTextStripper() {
+                override fun processTextPosition(text: TextPosition) {
+                    if (authors.isNotEmpty() && text.dir == 0f) glyphs += text
+                    super.processTextPosition(text)
+                }
+            }
+            stripper.startPage = page
+            stripper.endPage = page
+            val pageText = stripper.getText(document)
+            onPage(page, pageText)
+            if (authors.isEmpty()) continue
             val height = document.getPage(page - 1).mediaBox.height
             val width = document.getPage(page - 1).mediaBox.width
-            val lines = toLines(page, glyphs[page - 1], width)
+            val lines = toLines(page, glyphs, width)
+            contacts += endContactBlocks(page, pageText, authors)
             val header = authorHeader(lines, height, authors) ?: continue
             val owners = markerOwners(header.text, authors)
             for (line in lines) {
@@ -70,6 +87,32 @@ internal object PdfAuthorContactLayout {
                 val addresses = mailbox.findAll(text).map { it.value }.toList()
                 for (address in addresses) contacts += Contact(address, owner, page, header.text, text)
             }
+        }
+        return contacts
+    }
+
+    /** Section heading + actual metadata author roster + independent name/mailbox records. */
+    private fun endContactBlocks(page: Int, text: String, authors: List<PaperAuthor>): List<Contact> {
+        val lines = text.lines().map(String::trim)
+        val section = lines.indexOfFirst { it.matches(Regex("(?i)authors\\s+and\\s+affiliations")) }
+        if (section < 0) return emptyList()
+        val remainder = lines.drop(section + 1)
+        val roster = remainder.takeWhile { line ->
+            !authors.any { normalize(line) == normalize(fullName(it).orEmpty()) }
+        }.take(5)
+        val rosterText = roster.joinToString(" ")
+        if (authors.count { containsName(rosterText, it) } < 2) return emptyList()
+        val contacts = mutableListOf<Contact>()
+        var index = roster.size
+        while (index + 1 < remainder.size) {
+            val line = remainder[index]
+            val owner = authors.indices.singleOrNull { author ->
+                normalize(line) == normalize(fullName(authors[author]).orEmpty()) &&
+                    containsName(rosterText, authors[author])
+            } ?: break
+            val address = mailbox.matchEntire(remainder[index + 1])?.value ?: break
+            contacts += Contact(address, owner, page, rosterText, "$line\n$address")
+            index += 2
         }
         return contacts
     }

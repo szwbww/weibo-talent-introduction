@@ -64,6 +64,120 @@ class PdfEmailExtractorTest {
     private val extractor = PdfEmailExtractor(restTemplate, plainTextExtractor, properties, passThroughBoundedHttp)
 
     @Test
+    fun `original 62 page contact section and selected page mailto remain bounded evidence`() {
+        val entries = mutableMapOf<String, ByteArray>()
+        ZipInputStream(requireNotNull(javaClass.getResourceAsStream("/discovery/pdf-contact-coverage.zip"))).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                entries[entry.name] = zip.readBytes()
+            }
+        }
+        val expected = mapOf(
+            "salvatore.cuomo@unina.it" to "Salvatore Cuomo",
+            "vincenzo.schianodicola@unina.it" to "Vincenzo Schiano Di Cola",
+            "fabio.giampaolo@unina.it" to "Fabio Giampaolo",
+            "grozza@sissa.it" to "Gianluigi Rozza",
+            "mara4513@colorado.edu" to "Maziar Raissi"
+        )
+        val id = "W4288039037"
+        val pdf = requireNotNull(entries["sources/$id/source.pdf"])
+        val metadata = jacksonObjectMapper().readTree(requireNotNull(entries["sources/$id/metadata.json"]))
+        val authors = metadata.path("authorships").map {
+            val name = it.path("author").path("display_name").asText()
+            PaperAuthor(name.substringBeforeLast(' '), name.substringAfterLast(' '), null, null, false)
+        }
+        PDDocument.load(pdf).use { document ->
+            assertEquals(62, document.numberOfPages)
+            assertEquals(listOf(1, 2, 62), extractor.selectedPages(document.numberOfPages))
+            val contacts = PdfAuthorContactLayout.collect(document, 2, authors, 1)
+            for ((email, name) in expected) {
+                val contact = contacts.singleOrNull { it.email == email }
+                    ?: error("missing $email, observed contacts: $contacts")
+                assertEquals(62, contact.page)
+                assertEquals(name, "${authors[contact.authorIndex].givenNames} ${authors[contact.authorIndex].familyNames}")
+            }
+        }
+        assertEquals(listOf(1), extractor.selectedPages(1))
+        assertEquals(listOf(1, 2), extractor.selectedPages(2))
+        assertEquals(listOf(1, 2), PdfEmailExtractor(restTemplate, plainTextExtractor,
+            PdfExtractionProperties(tailPages = 0), passThroughBoundedHttp).selectedPages(62))
+        stubPdfDownload(pdf, MediaType.APPLICATION_PDF)
+        val withoutTail = PdfEmailExtractor(restTemplate, plainTextExtractor,
+            PdfExtractionProperties(tailPages = 0), passThroughBoundedHttp)
+            .extract("https://paper.test/no-tail", authors, "TEST")
+        assertEquals(1, withoutTail.httpRequests)
+        assertTrue(withoutTail.emails.none { it.email in expected.keys })
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException::class.java) {
+            PdfExtractionProperties(tailPages = 2)
+        }
+        val parsed = extractOwnershipContent(pdf, MediaType.APPLICATION_PDF, authors)
+        for ((email, name) in expected) {
+            val result = parsed.emails.single { it.email == email }
+            assertEquals(name, "${result.givenNames} ${result.familyNames}")
+            assertNotNull(result.identityEvidence)
+        }
+        assertEquals(expected.size, parsed.emails.count { it.email in expected.keys && it.identityEvidence != null })
+        val links = jacksonObjectMapper().readTree(requireNotNull(entries["missed-pdf-links.json"]))
+        assertEquals(11, links.size())
+        for (paper in listOf("W4292779060", "W4385245566", "W4293584584")) {
+            val source = requireNotNull(entries["sources/$paper/source.pdf"])
+            val sourceMetadata = jacksonObjectMapper().readTree(requireNotNull(entries["sources/$paper/metadata.json"]))
+            val sourceAuthors = sourceMetadata.path("authorships").map {
+                val name = it.path("author").path("display_name").asText()
+                PaperAuthor(name.substringBeforeLast(' '), name.substringAfterLast(' '), null, null, false)
+            }
+            val result = extractOwnershipContent(source, MediaType.APPLICATION_PDF, sourceAuthors)
+            for (link in links.filter { it.path("paper").asText() == paper }) {
+                val email = link.path("uri").asText().removePrefix("mailto:").lowercase()
+                assertEquals(1, result.emails.count { it.email == email }, "$paper $email")
+                if (paper == "W4292779060") {
+                    assertNull(result.emails.single { it.email == email }.givenNames)
+                    assertNull(result.emails.single { it.email == email }.identityEvidence)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `mailto URI is a single filtered clue and cannot override text ownership`() {
+        val pdf = PDDocument.load(ownershipPdf("Jane Doe: owner@uni.edu")).use { doc ->
+            for (uri in listOf(
+                "mailto:owner@uni.edu?subject=hello&cc=other@uni.edu",
+                "mailto:unknown@uni.edu?bcc=secret@uni.edu",
+                "mailto:one@uni.edu,two@uni.edu",
+                "mailto:support@uni.edu",
+                "https://example.edu/?email=web@uni.edu"
+            )) {
+                val annotation = org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink()
+                annotation.action = org.apache.pdfbox.pdmodel.interactive.action.PDActionURI().apply { this.uri = uri }
+                doc.getPage(0).annotations.add(annotation)
+            }
+            java.io.ByteArrayOutputStream().also { doc.save(it) }.toByteArray()
+        }
+        val result = extractOwnershipContent(pdf, MediaType.APPLICATION_PDF,
+            listOf(PaperAuthor("Jane", "Doe", null, null, false)))
+        assertEquals(1, result.emails.count { it.email == "owner@uni.edu" })
+        assertEquals("Jane", result.emails.single { it.email == "owner@uni.edu" }.givenNames)
+        val unknown = result.emails.single { it.email == "unknown@uni.edu" }
+        assertNull(unknown.givenNames)
+        assertNull(unknown.identityEvidence)
+        assertTrue(result.emails.none { it.email in setOf("other@uni.edu", "secret@uni.edu",
+            "one@uni.edu", "two@uni.edu", "support@uni.edu", "web@uni.edu") })
+    }
+    @Test
+    fun `contact section stops before affiliations and cannot bind a later reference author`() {
+        val pdf = ownershipPdf("Authors and Affiliations", "Jane Doe and John Smith",
+            "Jane Doe", "owner@uni.edu", "1 Department of Physics",
+            "References", "John Smith", "foreign@uni.edu")
+        val result = extractOwnershipContent(pdf, MediaType.APPLICATION_PDF,
+            listOf(PaperAuthor("Jane", "Doe", null, null, false),
+                PaperAuthor("John", "Smith", null, null, false)))
+        assertEquals("Jane", result.emails.single { it.email == "owner@uni.edu" }.givenNames)
+        assertNull(result.emails.single { it.email == "foreign@uni.edu" }.givenNames)
+    }
+
+
+    @Test
     fun `original PDFs retain page and contact provenance for only four author mailboxes`() {
         val expected = mapOf(
             "W3014974815" to mapOf("k.maier-hein@dkfz.de" to "Klaus H. Maier-Hein"),

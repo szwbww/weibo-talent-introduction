@@ -800,6 +800,189 @@ class ExpertDiscoveryServiceTest {
         return cases
     }
 
+    @Test
+    fun `original tail contacts pass consumer and isolated pipeline with bounded link clues`() {
+        val archive = requireNotNull(javaClass.getResourceAsStream("/discovery/pdf-contact-coverage.zip")).readBytes()
+        val members = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(archive.inputStream()).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                members[entry.name] = zip.readBytes()
+            }
+        }
+        val sha256: (ByteArray) -> String = { bytes ->
+            java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        }
+        val manifest = objectMapper.readTree(requireNotNull(members["manifest.json"]))
+        val links = objectMapper.readTree(requireNotNull(members["missed-pdf-links.json"]))
+        assertEquals(11, links.size())
+        val docs = installOwnershipStorage()
+        val service = createService()
+        val cases = mutableListOf<Map<String, Any?>>()
+        val observedLinks = mutableListOf<Map<String, Any?>>()
+        val pageSelector = PdfEmailExtractor(restTemplate, PlainTextEmailExtractor(),
+            com.weibo.talentintroduction.config.PdfExtractionProperties(),
+            com.weibo.talentintroduction.config.BoundedFulltextHttp)
+        var qualifiedPaper: PaperMetadata? = null
+        var qualifiedExtraction: EmailExtractionOutcome? = null
+        var mismatchedIndexed: Int? = null
+        var downloadRequests = 0
+        for (id in listOf("W4288039037", "W4292779060", "W4385245566", "W4293584584")) {
+            val pdfPath = "sources/$id/source.pdf"
+            val metadataPath = "sources/$id/metadata.json"
+            val pdf = requireNotNull(members[pdfPath])
+            val metadataBytes = requireNotNull(members[metadataPath])
+            assertEquals(manifest.path("members").path(pdfPath).path("sha256").asText(), sha256(pdf))
+            assertEquals(manifest.path("members").path(metadataPath).path("sha256").asText(), sha256(metadataBytes))
+            val metadata = objectMapper.readTree(metadataBytes)
+            val authors = metadata.path("authorships").map {
+                val author = it.path("author")
+                val name = author.path("display_name").asText()
+                PaperAuthor(name.substringBeforeLast(' '), name.substringAfterLast(' '),
+                    author.path("orcid").asText(null), null, it.path("is_corresponding").asBoolean(),
+                    openAlexAuthorId = author.path("id").asText(null))
+            }
+            val paper = PaperMetadata(null, null, metadata.path("doi").asText().removePrefix("https://doi.org/"),
+                metadata.path("title").asText(), metadata.path("publication_year").asInt(), null, authors, "OPENALEX")
+            val parsed = extractOwnershipContent(pdf, org.springframework.http.MediaType.APPLICATION_PDF, authors)
+            assertEquals("PDF_PARSE", parsed.methodUsed, id)
+            assertEquals(1, parsed.httpRequests, id)
+            downloadRequests += parsed.httpRequests
+            val selectedPages = org.apache.pdfbox.pdmodel.PDDocument.load(pdf).use { document ->
+                val pages = pageSelector.selectedPages(document.numberOfPages)
+                for (page in pages) for (annotation in document.getPage(page - 1).annotations) {
+                    val uri = ((annotation as? org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink)
+                        ?.action as? org.apache.pdfbox.pdmodel.interactive.action.PDActionURI)?.uri ?: continue
+                    if (uri.startsWith("mailto:", ignoreCase = true))
+                        observedLinks += mapOf("paper" to id, "page" to page, "uri" to uri)
+                }
+                pages
+            }
+            val expectedUris = links.filter { it.path("paper").asText() == id }.map { it.path("uri").asText() }
+            val actualUris = observedLinks.filter { it["paper"] == id }.map { it["uri"] as String }
+            assertTrue(actualUris.containsAll(expectedUris), "$id original PDF mailto annotations")
+            val clues = actualUris.map { it.removePrefix("mailto:") }
+            for (clue in clues) assertEquals(1, parsed.emails.count { it.email == clue }, "$id $clue")
+            if (id == "W4288039037") {
+                val expected = mapOf(
+                    "salvatore.cuomo@unina.it" to "Salvatore Cuomo",
+                    "vincenzo.schianodicola@unina.it" to "Vincenzo Schiano Di Cola",
+                    "fabio.giampaolo@unina.it" to "Fabio Giampaolo",
+                    "grozza@sissa.it" to "Gianluigi Rozza",
+                    "mara4513@colorado.edu" to "Maziar Raissi"
+                )
+                assertEquals(listOf(1, 2, 62), selectedPages)
+                for ((email, name) in expected) {
+                    val owned = parsed.emails.single { it.email == email }
+                    assertEquals(name, "${owned.givenNames} ${owned.familyNames}")
+                    assertTrue(DiscoveryIdentity.validEvidence(owned.identityEvidence))
+                    DiscoveryMockHelper.stubValidateEmail(emailValidationService, email, EmailValidationResult(3, true))
+                }
+                qualifiedPaper = paper
+                qualifiedExtraction = parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
+                val result = service.consumeQueuedItem(ownershipEnvelope(paper),
+                    objectMapper.writeValueAsString(qualifiedExtraction), null)
+                assertTrue(result.succeeded)
+                assertEquals(5, result.indexedExperts)
+                assertEquals(5, result.promoted)
+                cases += mapOf("id" to id, "pdfSha256" to sha256(pdf), "metadataSha256" to sha256(metadataBytes),
+                    "selectedPages" to selectedPages, "mailtoClues" to clues,
+                    "parsedContacts" to parsed.emails.map {
+                        mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+                            "identityEvidence" to it.identityEvidence)
+                    }, "downloadRequests" to parsed.httpRequests, "indexed" to result.indexedExperts,
+                    "promoted" to result.promoted, "failureReasons" to result.failureReasons)
+            } else {
+                if (id == "W4292779060") {
+                    for (clue in clues) {
+                        assertNull(parsed.emails.single { it.email == clue }.givenNames)
+                        assertNull(parsed.emails.single { it.email == clue }.identityEvidence)
+                    }
+                    val docsBefore = docs.toMap()
+                    val validationBefore = Mockito.mockingDetails(emailValidationService).invocations.count {
+                        it.method.name == "validate"
+                    }
+                    val rejected = service.consumeQueuedItem(ownershipEnvelope(paper),
+                        objectMapper.writeValueAsString(parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+                    mismatchedIndexed = rejected.indexedExperts
+                    assertEquals(0, rejected.indexedExperts)
+                    assertEquals(docsBefore, docs)
+                    assertEquals(validationBefore, Mockito.mockingDetails(emailValidationService).invocations.count {
+                        it.method.name == "validate"
+                    })
+                }
+                cases += mapOf("id" to id, "pdfSha256" to sha256(pdf), "metadataSha256" to sha256(metadataBytes),
+                    "selectedPages" to selectedPages, "mailtoClues" to clues,
+                    "parsedContacts" to parsed.emails.map {
+                        mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+                            "identityEvidence" to it.identityEvidence)
+                    }, "downloadRequests" to parsed.httpRequests)
+            }
+        }
+        assertEquals(4, downloadRequests)
+        assertEquals(5, docs.keys.count { it.contains("/orcid_info/") })
+        assertEquals(5, docs.keys.count { it.contains("/orcid_info_candidate/") })
+        val validated = Mockito.mockingDetails(emailValidationService).invocations.filter { it.method.name == "validate" }
+            .map { it.arguments.first() as String }
+        assertEquals(5, validated.size)
+        val before = docs.toMap()
+        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(qualifiedPaper)),
+            objectMapper.writeValueAsString(requireNotNull(qualifiedExtraction)), null)
+        assertEquals(0, replay.indexedExperts)
+        assertEquals(before, docs)
+        val previous = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(qualifiedPaper)),
+            objectMapper.writeValueAsString(requireNotNull(qualifiedExtraction).copy(identityRuleVersion = 20260929)), null)
+        assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", previous.unrecoverableReason)
+        assertEquals(before, docs)
+        val previousNewRaw = docs.keys.count { it.contains("/orcid_info/") } -
+            before.keys.count { it.contains("/orcid_info/") }
+        val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                (it.arguments.firstOrNull() as? String)?.contains("/orcid_info/_doc/") == true
+        }
+        val candidateRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                (it.arguments.firstOrNull() as? String)?.contains("/orcid_info_candidate/_doc/") == true
+        }
+        assertEquals(5, rawRequests)
+        assertEquals(5, candidateRequests)
+        val boundaries = isolatedXmlBoundaryCases(requireNotNull(qualifiedPaper))
+        val versions = isolatedCachedVersionCases(requireNotNull(qualifiedPaper),
+            requireNotNull(qualifiedExtraction), previousVersion = 20260929)
+        val report = mapOf(
+            "task" to "child-06", "inputArchiveSha256" to sha256(archive),
+            "sourceArchiveSha256" to manifest.path("provenance").path("sha256").asText(),
+            "linkEvidenceSha256" to sha256(requireNotNull(members["missed-pdf-links.json"])),
+            "realPdfCases" to cases, "downloadRequests" to downloadRequests,
+            "pageSelectionCases" to mapOf(
+                "singlePage" to pageSelector.selectedPages(1),
+                "twoPages" to pageSelector.selectedPages(2),
+                "tailDisabled62" to PdfEmailExtractor(restTemplate, PlainTextEmailExtractor(),
+                    com.weibo.talentintroduction.config.PdfExtractionProperties(tailPages = 0),
+                    com.weibo.talentintroduction.config.BoundedFulltextHttp).selectedPages(62)),
+            "mailtoClues" to observedLinks.map { mapOf("paper" to it["paper"], "page" to it["page"],
+                "email" to (it["uri"] as String).removePrefix("mailto:")) },
+            "extractionVersion" to DiscoveryIdentity.EXTRACTION_VERSION, "evidenceVersion" to DiscoveryIdentity.VERSION,
+            "validatedAddresses" to validated, "rawDocuments" to before.keys.count { it.contains("/orcid_info/") },
+            "candidateDocuments" to before.keys.count { it.contains("/orcid_info_candidate/") },
+            "boundaryCases" to (boundaries + listOf(
+                mapOf("case" to "realQualified", "raw" to cases.first()["indexed"],
+                    "candidate" to cases.first()["promoted"], "validated" to validated.size),
+                mapOf("case" to "realDuplicate", "newRaw" to replay.indexedExperts, "documentsUnchanged" to (before == docs)),
+                mapOf("case" to "mismatchedSource", "emailClues" to cases[1]["mailtoClues"],
+                    "validated" to validated.count { it in (cases[1]["mailtoClues"] as List<*>) },
+                    "newRaw" to mismatchedIndexed),
+                mapOf("case" to "pausedQueuedItem", "tickSkipReason" to versions.last()["tickSkipReason"],
+                    "rawCreateRequests" to versions.last()["rawCreateRequests"]))),
+            "versionCases" to (versions + listOf(mapOf("consumer" to "direct", "version" to 20260929,
+                "terminalReason" to previous.unrecoverableReason, "newRaw" to previousNewRaw))),
+            "esCreateRequests" to mapOf("raw" to rawRequests, "candidate" to candidateRequests)
+        )
+        val path = Paths.get("target/discovery-plan-acceptance/06.json")
+        Files.createDirectories(path.parent)
+        Files.write(path, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+    }
+
     /** Published PDF bytes and metadata; only download transport and external dependencies are substituted. */
     @Test
     fun `original PDF contacts enter consumer and create-only writer while shared addresses stay unknown`() {

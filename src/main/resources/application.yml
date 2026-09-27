@@ -269,6 +269,7 @@ talent-introduction:
       max-pdf-size-bytes: ${PDF_MAX_SIZE:10485760}
       download-timeout-ms: ${PDF_DOWNLOAD_TIMEOUT_MS:60000}
       max-pages: 2
+      tail-pages: ${PDF_TAIL_PAGES:1}
       max-retries: ${PDF_MAX_RETRIES:2}
       retry-backoff-ms: ${PDF_RETRY_BACKOFF_MS:500}
       html-fallback-enabled: ${PDF_HTML_FALLBACK_ENABLED:true}
