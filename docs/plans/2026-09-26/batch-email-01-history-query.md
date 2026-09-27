@@ -1,7 +1,7 @@
 # 子计划 01：历史邮箱结论批量读取与保留一致性
 
 状态：DRAFT，仅创建开发计划，未实施、未运行测试、未部署。
-目标工作区：`/Users/lukai/IdeaProjects/weibo-talent-introduction`，审计分支 `main`，HEAD `d6f54c25b228ee2e9e0317d053957ae3f56984b5`。当前已有其他未提交改动，见证据 E-00；执行前重查，禁止覆盖。
+目标工作区：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-email-reliability-rerun`，执行分支 `fast/batch-email-reliability-rerun`。执行基线与逐子计划产品 SHA 以本次 fast-p ledger 为准；保留其它工作区中的改动，禁止覆盖。
 证据：[源码快照](batch-email-reliability-evidence.md)。E-n 均包含读取命令/原始输出或带原文件行号的摘录；下文“拟改”是设计决策，不是现状事实。
 
 ## 需求描述
