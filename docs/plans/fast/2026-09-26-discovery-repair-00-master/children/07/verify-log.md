@@ -1,0 +1,21 @@
+## Light Verification: LIGHT_PASS
+Child: 07 — `docs/plans/2026-09-26/discovery-repair-07-html-contact.md` (SHA-256 `9647e1085053004b515fb6b92244d83c16326fd894d5f6fb50f10aa0fcbba63e`)
+Boundary: `d5a98877b18e321c61b2dd3295521d049af360f2..a5cf6fcbc2af3567c0b39203be6452b8921a4bee`
+Verifier: HtmlContactVerifier (independent of HtmlContactImplementer)
+
+### Four Gates
+| Gate | Result | Evidence |
+|---|---|---|
+| Authorized scope | PASS | Implementation commit `a5cf6fc` (parent `ca98e1a`) changes exactly the ten files enumerated in brief: 3 production, 5 Kotlin tests, 2 recall resources. `git diff --name-status` across the specified product boundary includes interleaved fast-p evidence documents, not additional product/test files; branch HEAD is implementation SHA and working tree has only pre-existing execution/ledger document changes. No migration, send configuration, UI, or data script changed. |
+| Plan and invariants | PASS | Original archive SHA-256 `0607b402b9ffdeadcc8726710d3031277fbc7ee05f1989caf2c7da25bc0f4205`; all four HTML and metadata members in `html-contact-recall.zip` are byte-identical to original archive/source metadata, and each matches manifest hash; fixture ZIP SHA-256 `6835ddc65538df59274e522f89981a71f4f40771e27150d773245ba919bc7963`. I-1: `SourceAuthorEmailResolver.kt:25-27,48-105,158-168` restricts named mailto claims to heading/list and unique visible metadata name, adds mailbox to found set, rejects ambiguous/multiple recipients and shares conflict resolution; `SourceAuthorEmailResolverTest.kt:46-105,141-160` covers original three relations, Edward/Hang and negatives. Fresh `07.json:10-92` shows Vijay and twice Iqbal, 3 paper relations, 2 unique identities, RAW=2/CANDIDATE=2, duplicate=1. I-2: `PdfEmailExtractor.kt:43-47,161-180`, `PdfEmailExtractorTest.kt:269-293`, and `OpenAlexDataSourceTest.kt:959-1035` cover original Anubis combined markers, empty HTML, nonchallenge academic prose, real PDF fallback, duplicate URL and shared deadline; `07.json:75-104` records INVALID_CONTENT/false and exactly two requests, versus readable email-less HTML true/NO_EMAIL_IN_HTML and one request. I-3: `DiscoveryIdentity.kt:21-24` keeps proof VERSION=20260925 and upgrades extraction version to 20261001; `07.json:379-441` records old cached version FAILED/unsupported with zero writes/extraction, current version SUCCEEDED with RAW/CANDIDATE=1, and pause QUEUED/no writes. Existing three-URL/deadline controls remain covered in `OpenAlexDataSourceTest.kt:1061-1102`; no OA production change. I-4/M1–M3: `07.json:107-378` records unknown 0 validations/0 writes, validation reject 0 RAW, qualification reject RAW=1/CANDIDATE=0, duplicate unchanged, distinct same-name emails and two explicit emails each 2/2, pause 0 writes; `ExpertDiscoveryServiceTest.kt:992-1115` derives real cases through extractor/consumer and isolated ES create requests, not mocked identity parsing. |
+| Required commands | PASS | Fresh after committed implementation: `JAVA_HOME=/Users/lukai/.jenv/versions/zulu64-11.0.15 /opt/homebrew/Cellar/maven/3.9.11/libexec/bin/mvn test -Dtest=SourceAuthorEmailResolverTest,PdfEmailExtractorTest,OpenAlexDataSourceTest,ExpertDiscoveryServiceTest,DiscoveryIdentityTest,CoreDataSourceTest,DiscoveryPipelineServiceTest` exited 0, 341 JVM tests/0 failures/0 errors/0 skips, configured Node phase 1193 passed/0 failed/0 skipped, BUILD SUCCESS (`artifact://568:1715-1719,3389-3406`). Baseline `artifact://510:1711-1715,3385-3401` was 336 JVM tests/0 failures/0 errors/0 skips and exit 0; five additional tests, no regression. Actual generated `target/discovery-plan-acceptance/07.json` contains fixture hashes, parsed outcomes, request sequence, consumer/ES counts, boundary and version cases. |
+| Downstream interfaces | PASS | Child08's source-report plan changes only discovery funnel log wording and task by-source renderer/static cache keys; child07 did not change `ExpertDiscoveryService.kt`, static assets, statistical fields, or sending. Existing result/counter/failureReason shapes and consumer version boundary remain available; child08 may extend the shared `ExpertDiscoveryServiceTest.kt` without changing child07 production contracts. No 09 subject behavior implemented. |
+
+### AUTO_FIX
+- N/A
+
+### RECORD_ONLY
+- N/A
+
+### Required Action
+- COMPLETE_CHILD
