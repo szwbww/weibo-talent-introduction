@@ -8,7 +8,8 @@ import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import org.apache.pdfbox.pdmodel.PDDocument
-import org.apache.pdfbox.text.PDFTextStripper
+import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink
+import org.apache.pdfbox.pdmodel.interactive.action.PDActionURI
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.http.HttpHeaders
@@ -38,6 +39,12 @@ class PdfEmailExtractor(
 ) {
     private val log = LoggerFactory.getLogger(PdfEmailExtractor::class.java)
     private val magicBytes = byteArrayOf(0x25, 0x50, 0x44, 0x46)
+    private val mailboxUri = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
+    private val anubisScript = Regex("""<script\b[^>]*\bid\s*=\s*["']anubis_challenge["']""",
+        RegexOption.IGNORE_CASE)
+    private val anubisTitle = Regex(
+        """<title\b[^>]*>\s*Making sure you(?:'|&#39;|&#x27;|&apos;)re not a bot!\s*</title>""",
+        RegexOption.IGNORE_CASE)
 
     /**
      * c10（I-1/I-3）：单个全文地址的提取。
@@ -103,7 +110,7 @@ class PdfEmailExtractor(
         }
 
         return when (downloaded.kind) {
-            ContentKind.PDF -> extractFromPdf(downloaded.bytes, knownAuthors, pdfUrl, sourceName)
+            ContentKind.PDF -> extractFromPdf(downloaded.bytes, knownAuthors, pdfUrl, sourceName, deadline)
             ContentKind.HTML -> extractFromHtml(downloaded.bytes, knownAuthors)
             ContentKind.OTHER -> EmailExtractionOutcome(
                 emptyList(), "PDF_PARSE", "PDF_DOWNLOAD_FAILED",
@@ -118,10 +125,17 @@ class PdfEmailExtractor(
         bytes: ByteArray,
         knownAuthors: List<PaperAuthor>,
         pdfUrl: String,
-        sourceName: String
+        sourceName: String,
+        deadline: Instant?
     ): EmailExtractionOutcome {
         val emails = try {
-            extractEmailsFromBytes(bytes, knownAuthors)
+            extractEmailsFromBytes(bytes, knownAuthors, deadline)
+        } catch (e: FulltextDeadlineExceededException) {
+            return EmailExtractionOutcome(
+                emptyList(), "PDF_PARSE", "PDF_PARSE_FAILED",
+                httpRequests = 1, fulltextObtained = false,
+                downloadFailureCategory = FULLTEXT_FAILURE_TIMEOUT
+            )
         } catch (e: Exception) {
             log.debug("[{}] Failed to parse PDF {}: {}", sourceName, pdfUrl, e.message)
             return EmailExtractionOutcome(
@@ -141,13 +155,17 @@ class PdfEmailExtractor(
     }
 
     /**
-     * I-3（c10）：取到的 HTML 只说明**这个地址返回了可读内容**，并不保证它就是论文全文（可能是落地页/摘要页）：
-     * 因此它计入「获取内容成功」（[EmailExtractionOutcome.fulltextObtained] = true），没有邮箱时单列
-     * `NO_EMAIL_IN_HTML`，绝不与下载失败混为一谈。
+     * A known challenge or truly empty page is not obtained fulltext; ordinary readable HTML
+     * without an address still ends this source's existing fallback chain.
      */
     private fun extractFromHtml(bytes: ByteArray, knownAuthors: List<PaperAuthor>): EmailExtractionOutcome {
         val html = String(bytes, StandardCharsets.UTF_8)
-        val emails = SourceAuthorEmailResolver.resolveHtml(html, knownAuthors, properties.blacklistPrefixes)
+        if (anubisScript.containsMatchIn(html) && anubisTitle.containsMatchIn(html)) {
+            return invalidHtml()
+        }
+        val (visible, emails) = SourceAuthorEmailResolver.resolveHtmlWithVisibility(
+            html, knownAuthors, properties.blacklistPrefixes)
+        if (!visible) return invalidHtml()
         if (emails.isEmpty()) {
             return EmailExtractionOutcome(
                 emptyList(), "HTML_FALLBACK", "NO_EMAIL_IN_HTML", httpRequests = 1, fulltextObtained = true
@@ -155,6 +173,11 @@ class PdfEmailExtractor(
         }
         return EmailExtractionOutcome(emails, "HTML_FALLBACK", null, httpRequests = 1, fulltextObtained = true)
     }
+
+    private fun invalidHtml() = EmailExtractionOutcome(
+        emptyList(), "HTML_FALLBACK", "PDF_DOWNLOAD_FAILED", httpRequests = 1,
+        fulltextObtained = false, downloadFailureCategory = FULLTEXT_FAILURE_INVALID_CONTENT
+    )
 
     private enum class ContentKind { PDF, HTML, OTHER }
 
@@ -264,20 +287,40 @@ class PdfEmailExtractor(
         return prefix.startsWith("<!doctype html") || prefix.startsWith("<html")
     }
 
-    private fun extractEmailsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>): List<AuthorEmail> {
+    internal fun selectedPages(pageCount: Int): List<Int> =
+        PdfAuthorContactLayout.selectedPages(pageCount, properties.maxPages, properties.tailPages)
+
+    private fun extractEmailsFromBytes(bytes: ByteArray, knownAuthors: List<PaperAuthor>, deadline: Instant?): List<AuthorEmail> {
         ByteArrayInputStream(bytes).use { stream ->
             PDDocument.load(stream).use { doc ->
-                val stripper = PDFTextStripper()
-                stripper.startPage = 1
-                stripper.endPage = minOf(properties.maxPages, doc.numberOfPages)
-                val text = stripper.getText(doc)
-                return associateEmailsWithAuthors(text, knownAuthors)
+                val text = StringBuilder()
+                val clues = linkedSetOf<String>()
+                val contacts = PdfAuthorContactLayout.collect(
+                    doc, properties.maxPages, knownAuthors, properties.tailPages,
+                    beforePage = {
+                        if (deadlineExpired(deadline)) throw FulltextDeadlineExceededException(requestIssued = true)
+                    },
+                    onPage = { page, pageText ->
+                        if (page <= properties.maxPages) text.append(pageText).append('\n')
+                        else clues += plainTextExtractor.extract(pageText, properties.blacklistPrefixes)
+                        for (annotation in doc.getPage(page - 1).annotations) {
+                            val uri = ((annotation as? PDAnnotationLink)?.action as? PDActionURI)?.uri ?: continue
+                            if (!uri.startsWith("mailto:", ignoreCase = true)) continue
+                            val address = uri.substring(7).substringBefore('?').trim()
+                            if (!mailboxUri.matches(address)) continue
+                            if (plainTextExtractor.extract(address, properties.blacklistPrefixes).singleOrNull() ==
+                                address.lowercase()) clues += address.lowercase()
+                        }
+                    }
+                )
+                return SourceAuthorEmailResolver.resolvePdf(
+                    text.append('\n').append(clues.joinToString("\n")).toString(),
+                    knownAuthors, contacts, properties.blacklistPrefixes
+                )
             }
         }
     }
 
-    private fun associateEmailsWithAuthors(text: String, knownAuthors: List<PaperAuthor>): List<AuthorEmail> =
-        SourceAuthorEmailResolver.resolveText(text, knownAuthors, properties.blacklistPrefixes)
 
 }
 

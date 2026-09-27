@@ -1,0 +1,69 @@
+[
+  {
+    "plan": "discovery-repair-09a-orcid-query.md",
+    "findings": [
+      "DD-23"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSource.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSourceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodecTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt"
+    ]
+  },
+  {
+    "plan": "discovery-repair-09b-scope-facts.md",
+    "findings": [
+      "DD-26"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/SubjectScopeCatalog.kt",
+      "src/main/resources/es/orcid_info_raw.json",
+      "src/main/resources/es/orcid_info_candidate.json",
+      "src/main/resources/es/orcid_info_application.json",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/domain/SubjectScopeCatalogTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt"
+    ]
+  },
+  {
+    "plan": "discovery-repair-09c-scope-classification.md",
+    "findings": [
+      "DD-26"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationSchedulerTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/controller/ExpertClassificationAdminControllerTest.kt",
+      "src/test/resources/discovery/rnd-scope-evidence.json"
+    ]
+  },
+  {
+    "plan": "discovery-repair-09d-scope-admission.md",
+    "findings": [
+      "DD-24",
+      "DD-25"
+    ],
+    "files": [
+      "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt",
+      "src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceBehaviorTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt",
+      "src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt"
+    ]
+  }
+]

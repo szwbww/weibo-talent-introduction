@@ -574,4 +574,123 @@ class JatsXmlEmailParserTest {
         assertNull(result.single().identityEvidence)
     }
 
+    @Test
+    fun `XML numeric labels and name alternatives preserve only unambiguous author identity`() {
+        val loader = javaClass.classLoader
+        val alternatives = loader.getResource("discovery/xml-route-recall.zip")!!.openStream().use { input ->
+            java.util.zip.ZipInputStream(input).use { zip ->
+                generateSequence { zip.nextEntry }.first { it.name.endsWith("round2/jats_name_alternatives.xml") }
+                zip.readBytes().toString(Charsets.UTF_8)
+            }
+        }
+        val numeric = loader.getResource("discovery/xml-route-recall.zip")!!.openStream().use { input ->
+            java.util.zip.ZipInputStream(input).use { zip ->
+                generateSequence { zip.nextEntry }.first { it.name.endsWith("round2/jats_numeric_label.xml") }
+                zip.readBytes().toString(Charsets.UTF_8)
+            }
+        }
+        val alt = JatsXmlEmailParser.parse(alternatives).single()
+        assertEquals("Jane", alt.givenNames)
+        assertEquals("Doe", alt.familyNames)
+        val numbered = JatsXmlEmailParser.parse(numeric).single()
+        assertEquals("Jane", numbered.givenNames)
+        assertEquals("Doe", numbered.familyNames)
+    }
+
+    @Test
+    fun `real contributor information paragraphs bind the three explicit emails`() {
+        val fixtureEntries = java.util.LinkedHashMap<String, ByteArray>()
+        javaClass.classLoader.getResource("discovery/xml-route-recall.zip")!!.openStream().use { input ->
+            java.util.zip.ZipInputStream(input).use { zip ->
+                generateSequence { zip.nextEntry }.forEach { entry ->
+                    if (!entry.isDirectory) fixtureEntries[entry.name] = zip.readBytes()
+                }
+            }
+        }
+        val manifest = fixtureEntries.getValue("manifest.sha").toString(Charsets.UTF_8).lines()
+            .filter { it.isNotBlank() }
+            .associate { line ->
+                val (sha, name) = line.split("  ", limit = 2)
+                name to sha
+            }
+        assertEquals(fixtureEntries.keys - "manifest.sha", manifest.keys)
+        manifest.forEach { (name, expectedSha) ->
+            val actualSha = java.security.MessageDigest.getInstance("SHA-256").digest(fixtureEntries.getValue(name))
+                .joinToString("") { "%02x".format(it) }
+            assertEquals(expectedSha, actualSha, name)
+        }
+
+        val xml = javaClass.classLoader.getResource("discovery/xml-route-recall.zip")!!.openStream().use { input ->
+            java.util.zip.ZipInputStream(input).use { zip ->
+                generateSequence { zip.nextEntry }.first { it.name.endsWith("round2/PMC7759461.xml") }
+                zip.readBytes().toString(Charsets.UTF_8)
+            }
+        }
+        val results = JatsXmlEmailParser.parse(xml).associateBy { it.email }
+        assertEquals(setOf("millman@berkeley.edu", "stefanv@berkeley.edu", "ralf.gommers@gmail.com"),
+            results.keys.intersect(setOf("millman@berkeley.edu", "stefanv@berkeley.edu", "ralf.gommers@gmail.com")))
+        assertEquals("K. Jarrod Millman", listOf(results.getValue("millman@berkeley.edu").givenNames,
+            results.getValue("millman@berkeley.edu").familyNames).joinToString(" "))
+        assertEquals("Stéfan J. van der Walt", listOf(results.getValue("stefanv@berkeley.edu").givenNames,
+            results.getValue("stefanv@berkeley.edu").familyNames).joinToString(" "))
+        assertEquals("Ralf Gommers", listOf(results.getValue("ralf.gommers@gmail.com").givenNames,
+            results.getValue("ralf.gommers@gmail.com").familyNames).joinToString(" "))
+    }
+
+    @Test
+    fun `name alternatives require a single complete identity or one unique complete English choice`() {
+        val xml = """
+            <article><front><article-meta><contrib-group>
+              <contrib contrib-type="author"><name-alternatives>
+                <name xml:lang="fr"><given-names>Jeanne</given-names><surname>Dupont</surname></name>
+                <name xml:lang="en"><given-names>Jane</given-names><surname>Doe</surname></name>
+              </name-alternatives><email>english@example.org</email></contrib>
+              <contrib contrib-type="author"><name-alternatives>
+                <name xml:lang="en"><given-names>Jane</given-names><surname>Doe</surname></name>
+                <name xml:lang="en"><given-names>J.</given-names><surname>Doe</surname></name>
+              </name-alternatives><email>ambiguous@example.org</email></contrib>
+              <contrib contrib-type="author"><name-alternatives>
+                <name xml:lang="de"><given-names>Johann</given-names><surname>Doe</surname></name>
+                <name xml:lang="fr"><given-names>Jean</given-names><surname>Doe</surname></name>
+              </name-alternatives><email>no-english@example.org</email></contrib>
+            </contrib-group></article-meta></front></article>
+        """.trimIndent()
+        val results = JatsXmlEmailParser.parse(xml).associateBy { it.email }
+        assertEquals("Jane", results.getValue("english@example.org").givenNames)
+        assertEquals("Doe", results.getValue("english@example.org").familyNames)
+        for (email in listOf("ambiguous@example.org", "no-english@example.org")) {
+            assertNull(results.getValue(email).givenNames)
+            assertNull(results.getValue(email).familyNames)
+            assertNull(results.getValue(email).identityEvidence)
+        }
+    }
+
+    @Test
+    fun `textual target label conflicting with sole xref owner is not discarded`() {
+        val xml = """<article><front><article-meta><contrib-group>
+          <contrib contrib-type="author"><name><given-names>John</given-names><surname>Smith</surname></name>
+            <xref ref-type="corresp" rid="c1"/></contrib>
+          </contrib-group><author-notes><corresp id="c1"><label>Jane Doe</label>
+            <email>contact@example.org</email></corresp></author-notes>
+          </article-meta></front></article>"""
+        val contact = JatsXmlEmailParser.parse(xml).single()
+        assertEquals("contact@example.org", contact.email)
+        assertNull(contact.givenNames)
+        assertNull(contact.identityEvidence)
+    }
+
+    @Test
+    fun `ordinary numeric text in a contact target still prevents inferred ownership`() {
+        val xml = """
+            <article><front><article-meta><contrib-group>
+              <contrib contrib-type="author"><name><given-names>Jane</given-names><surname>Doe</surname></name>
+                <xref ref-type="corresp" rid="c1"/></contrib>
+            </contrib-group><author-notes><corresp id="c1"><label>1</label>Room 42 <email>jane@example.org</email></corresp>
+            </author-notes></article-meta></front></article>
+        """.trimIndent()
+        val result = JatsXmlEmailParser.parse(xml).single()
+        assertEquals("jane@example.org", result.email)
+        assertNull(result.givenNames)
+        assertNull(result.identityEvidence)
+    }
 }

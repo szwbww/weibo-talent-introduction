@@ -504,7 +504,8 @@ class ExpertSearchService(
             enrichedAt = source.nullableText("enrichedAt"),
             enrichmentSource = source.nullableText("enrichmentSource"),
             expertClassification = parseExpertClassification(source.path("expertClassification")),
-            identityVerification = DiscoveryIdentity.read(source.path("identityVerification"))
+            identityVerification = DiscoveryIdentity.read(source.path("identityVerification")),
+            researchFieldIds = stringArrayOrNull(source, "researchFieldIds")
         )
     }
 
@@ -587,7 +588,7 @@ class ExpertSearchService(
             "country", "keyword", "employment",
             "age", "degree", "nationality",
             "hIndex", "citationCount", "lastPublicationYear",
-            "researchFields", "disciplineCategory", "institution", "institutionType",
+            "researchFields", "researchFieldIds", "disciplineCategory", "institution", "institutionType",
             "emailSource", "emailVerifiedLevel",
             "dataSource", "externalIds", "worksCount", "identityVerification",
             "tags",

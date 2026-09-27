@@ -1,0 +1,103 @@
+$ rg -n ExpertIndexLevel\.(RAW|CANDIDATE|APPLICATION)|rawIndexName|candidateIndexName|applicationIndexName|orcid_info src/main scripts
+exit=0
+scripts/test_build_sbir_expert_import.py:273:            {"create": {"_index": "orcid_info", "_id": expected_id}},
+scripts/test_build_sbir_expert_import.py:277:            {"create": {"_index": "orcid_info_candidate", "_id": expected_id}},
+scripts/test_build_sbir_research_fields_update.py:61:                {"update": {"_index": "orcid_info_candidate", "_id": "EMAIL-one"}},
+scripts/build_sbir_research_fields_update.py:36:    parser.add_argument("--index", default="orcid_info_candidate")
+scripts/import_contactout_visible_candidates.py:44:    parser.add_argument("--index", default="orcid_info_candidate")
+scripts/diagnose-reject-reasons.sh:10:RAW="${ES_RAW_INDEX_NAME:-orcid_info}"
+scripts/update_sbir_employment.py:15:DEFAULT_INDEXES = ("orcid_info", "orcid_info_candidate")
+scripts/build_contactout_enterprise_es_import.py:50:    parser.add_argument("--index", default="orcid_info_candidate")
+scripts/build_sbir_expert_import.py:456:    parser.add_argument("--raw-index", default="orcid_info")
+scripts/build_sbir_expert_import.py:457:    parser.add_argument("--candidate-index", default="orcid_info_candidate")
+scripts/build_sbir_expert_import.py:464:        default="orcid_info,orcid_info_candidate,orcid_info_application",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationScheduler.kt:50:            level = ExpertIndexLevel.CANDIDATE,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:52:        val applicationIndex = expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:82:        for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:128:        for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:414:        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:415:        val applicationIndex = expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:500:        val applicationIndex = expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:533:        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:534:        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:578:        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:604:        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:674:        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:693:        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:712:        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:713:        val applicationIndex = expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexService.kt:31:            ExpertIndexLevel.RAW -> properties.rawIndexName
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexService.kt:32:            ExpertIndexLevel.CANDIDATE -> properties.candidateIndexName
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexService.kt:33:            ExpertIndexLevel.APPLICATION -> properties.applicationIndexName
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexService.kt:39:            val applicationIndex = indexName(ExpertIndexLevel.APPLICATION)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexService.kt:49:                val mappingContent = ClassPathResource("es/orcid_info_application.json").inputStream
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexService.kt:67:            updateMappingIfNeeded(ExpertIndexLevel.RAW, "es/orcid_info_raw.json")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexService.kt:68:            updateMappingIfNeeded(ExpertIndexLevel.CANDIDATE, "es/orcid_info_candidate.json")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexService.kt:69:            updateMappingIfNeeded(ExpertIndexLevel.APPLICATION, "es/orcid_info_application.json")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexService.kt:173:        for (level in listOf(ExpertIndexLevel.RAW, ExpertIndexLevel.CANDIDATE, ExpertIndexLevel.APPLICATION)) {
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:360:    val level: ExpertIndexLevel = ExpertIndexLevel.CANDIDATE
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:422:                    ExpertIndexLevel.RAW -> "原始"
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:423:                    ExpertIndexLevel.CANDIDATE -> "筛选"
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:424:                    ExpertIndexLevel.APPLICATION -> "有效"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:36:            expertSearchService.scrollExperts(ExpertIndexLevel.CANDIDATE) { batch, batchNumber, totalHits ->
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:81:                        val tagged = expertIndexWriterService.addTag(docId, "verified", ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:145:            expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:170:                                    ExpertIndexLevel.CANDIDATE, docId
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:312:            expertIndexWriterService.documentExistsInIndex(ExpertIndexLevel.APPLICATION, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:320:            expertIndexWriterService.documentExistsInIndex(ExpertIndexLevel.CANDIDATE, docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:328:        val raw = expertSearchService.findByDocumentIds(ExpertIndexLevel.RAW, listOf(docId)).firstOrNull()
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:366:        level: ExpertIndexLevel = ExpertIndexLevel.CANDIDATE
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:602:            ExpertIndexLevel.CANDIDATE ->
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:605:            ExpertIndexLevel.APPLICATION ->
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:608:            ExpertIndexLevel.RAW ->
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:635:        level: ExpertIndexLevel = ExpertIndexLevel.CANDIDATE
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:1175:        level: ExpertIndexLevel = ExpertIndexLevel.CANDIDATE,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexPromotionService.kt:12:    fun candidateIndexName(): String =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexPromotionService.kt:13:        expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexPromotionService.kt:15:    fun applicationIndexName(): String =
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexPromotionService.kt:16:        expertIndexService.indexName(ExpertIndexLevel.APPLICATION)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:96:            ExpertIndexLevel.CANDIDATE.name -> ExpertIndexLevel.CANDIDATE
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ContactCountryBackfillService.kt:97:            ExpertIndexLevel.APPLICATION.name -> ExpertIndexLevel.APPLICATION
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1892:        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1912:        val total = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1913:        val pending = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, buildEnrichmentFilters(cutoff))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1915:            ExpertIndexLevel.CANDIDATE,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1919:            ExpertIndexLevel.CANDIDATE, buildInstitutionTypeBackfillFilters()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1922:            ExpertIndexLevel.CANDIDATE, buildLastPublicationYearBackfillFilters()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2011:        val pendingCount = expertSearchService.countExperts(ExpertIndexLevel.CANDIDATE, filters)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2040:            expertSearchService.searchAfterExpertsFiltered(ExpertIndexLevel.CANDIDATE, filters) { batch ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2375:        val profiles = expertSearchService.findByDocumentIds(ExpertIndexLevel.RAW, claimed.map { it.expertDocId })
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2575:            raw = updateAcademicFieldsInLayer(ExpertIndexLevel.RAW, docId, updateBody),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2576:            candidate = updateAcademicFieldsInLayer(ExpertIndexLevel.CANDIDATE, docId, updateBody),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2577:            application = updateAcademicFieldsInLayer(ExpertIndexLevel.APPLICATION, docId, updateBody)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2757:        val url = "${esProperties.baseUrl}/${expertIndexService.indexName(ExpertIndexLevel.RAW)}/_doc/$orcid"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2837:        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2857:        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2877:        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2913:        expertSearchService.scrollExperts(ExpertIndexLevel.RAW) { batch, batchNumber, totalHits ->
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/InitialOutreachService.kt:44:            .searchExpertsByTypesWithEmail(size, ExpertIndexLevel.CANDIDATE, types).experts
+scripts/expert_discovery/enterprise_batch/import_personal_email_candidates.py:34:    parser.add_argument("--index", default="orcid_info_candidate")
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:229:            queryEsOperatorStatus(properties.candidateIndexName, batch, candidate)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:230:            queryEsOperatorStatus(properties.applicationIndexName, batch, application)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt:231:            queryEsOperatorStatus(properties.rawIndexName, batch, raw)
+scripts/expert_discovery/enterprise_batch/import_es_documents.py:88:    parser.add_argument("--index", default="orcid_info_candidate")
+scripts/expert_discovery/enterprise_batch/update_es_research_fields.py:23:    parser.add_argument("--index", default="orcid_info_candidate")
+src/main/kotlin/com/weibo/talentintroduction/config/ElasticsearchProperties.kt:12:    val rawIndexName: String,
+src/main/kotlin/com/weibo/talentintroduction/config/ElasticsearchProperties.kt:13:    val candidateIndexName: String,
+src/main/kotlin/com/weibo/talentintroduction/config/ElasticsearchProperties.kt:14:    val applicationIndexName: String,
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt:124:            level = ExpertIndexLevel.CANDIDATE,
+scripts/expert_discovery/enterprise_batch/import_candidate_es.py:32:    parser.add_argument("--index", default="orcid_info_candidate")
+src/main/kotlin/com/weibo/talentintroduction/qa/controller/QaRuleManagementController.kt:199:            .getOrDefault(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyContextService.kt:77:                ?: if (level == ExpertIndexLevel.APPLICATION) {
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyContextService.kt:78:                    expertSearchService.findByOrcidId(orcidId, ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyContextService.kt:102:        runCatching { ExpertIndexLevel.valueOf(level) }.getOrDefault(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:292:            if (level == ExpertIndexLevel.APPLICATION) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:293:                expertSearchService.findByOrcidId(orcidId, ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt:304:        runCatching { ExpertIndexLevel.valueOf(level) }.getOrDefault(ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:379:            level = ExpertIndexLevel.CANDIDATE,
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:384:            level = ExpertIndexLevel.APPLICATION,
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:392:        val candidate = expertSearchService.searchByOrcidIds(orcidIds, ExpertIndexLevel.CANDIDATE)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:394:        val application = expertSearchService.searchByOrcidIds(orcidIds, ExpertIndexLevel.APPLICATION)
+src/main/resources/application.yml:55:    raw-index-name: ${ES_RAW_INDEX_NAME:orcid_info}
+src/main/resources/application.yml:56:    candidate-index-name: ${ES_CANDIDATE_INDEX_NAME:orcid_info_candidate}
+src/main/resources/application.yml:57:    application-index-name: ${ES_APPLICATION_INDEX_NAME:orcid_info_application}

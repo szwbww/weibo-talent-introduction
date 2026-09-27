@@ -49,6 +49,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
@@ -58,6 +59,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.ResourceAccessException
+import org.springframework.boot.test.system.CapturedOutput
+import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.web.client.RestTemplate
 import java.time.Duration
 import java.time.Instant
@@ -66,6 +69,22 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
+import java.nio.file.Files
+import java.nio.file.Paths
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import javax.net.ssl.SSLHandshakeException
+import java.security.cert.CertificateException
+import java.net.SocketTimeoutException
+import java.util.concurrent.atomic.AtomicReference
+import java.net.URI
+import java.net.URLDecoder
+import java.security.MessageDigest
+import org.springframework.http.MediaType
+import org.springframework.test.web.client.MockRestServiceServer
+import org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess
 
 class ExpertDiscoveryServiceTest {
 
@@ -143,6 +162,8 @@ class ExpertDiscoveryServiceTest {
         cursorRepository = Mockito.mock(DiscoverySourceCursorRepository::class.java)
         enrichmentJobService = Mockito.mock(ExpertAcademicEnrichmentJobService::class.java)
         enrichmentJobRepository = Mockito.mock(ExpertAcademicEnrichmentJobRepository::class.java)
+        storedCheckpoints.clear()
+        cursorStoreInstalled = false
 
         DiscoveryMockHelper.stubSourceInfo(europePmc)
         Mockito.doReturn(null).`when`(openAlexProvider).getIfAvailable()
@@ -263,6 +284,15 @@ class ExpertDiscoveryServiceTest {
         Mockito.verify(cursorRepository, Mockito.atLeastOnce()).save(captor.capture())
         return result to captor.allValues
     }
+    private fun mockOpenAlex(): OpenAlexDataSource {
+        val source = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn("OPENALEX").`when`(source).sourceName
+        Mockito.doReturn("FULLTEXT_XML").`when`(source).emailExtractionMethod
+        Mockito.doReturn(100).`when`(source).maxPapersPerSource
+        Mockito.doReturn(source).`when`(openAlexProvider).getIfAvailable()
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(source, "NO_EMAIL_IN_FULLTEXT")
+        return source
+    }
 
     private fun savedCheckpoints(saved: List<DiscoverySourceCursor>, sourceName: String): List<DiscoverySourceCursor> =
         saved.filter { it.sourceName.startsWith("$sourceName:v2:") }
@@ -360,7 +390,8 @@ class ExpertDiscoveryServiceTest {
         java.net.URLDecoder.decode(url.substringAfter("?q=").substringBefore("&"), "UTF-8")
 
     @Test
-    fun `discovery separates missing ownership from invalid email and accepts parsed identity without proof`() {
+    @ExtendWith(OutputCaptureExtension::class)
+    fun `discovery separates missing ownership from invalid email and accepts parsed identity without proof`(output: CapturedOutput) {
         val svc = createService()
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC-BLOCK", "Ownership")), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, listOf(
@@ -377,6 +408,8 @@ class ExpertDiscoveryServiceTest {
         assertEquals(1, result.stats.indexed)
         assertEquals(1, result.stats.promoted)
         assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").filterReasons["IDENTITY_UNRESOLVED"])
+        assertTrue(output.out.contains("过滤（含身份未确认） 1, 过滤原因 {IDENTITY_UNRESOLVED=1}"))
+        assertFalse(output.out.contains("资格淘汰"))
         assertEquals(1, result.stats.filtered)
         assertEquals(1, result.stats.emailRejected)
         assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").emailsValid)
@@ -419,6 +452,880 @@ class ExpertDiscoveryServiceTest {
     private fun ownershipEnvelope(paper: PaperMetadata): QueuedItemEnvelope {
         val json = objectMapper.writeValueAsString(paper)
         return QueuedItemEnvelope(paper.source, paper.doi ?: "test", "DOI", "PAPER", 1, json, json.toByteArray().size.toLong(), true)
+    }
+
+    @Test
+    fun `real OpenAlex PMC metadata flows through XML parser and isolated consumer`() {
+        val archive = requireNotNull(javaClass.getResourceAsStream("/discovery/xml-route-recall.zip")).use { it.readBytes() }
+        fun fixture(suffix: String): ByteArray = java.util.zip.ZipInputStream(archive.inputStream()).use { zip ->
+            generateSequence { zip.nextEntry }.first { it.name.endsWith(suffix) }
+            zip.readBytes()
+        }
+        val workBytes = fixture("round2/openalex-pmc-work.json")
+        val xmlBytes = fixture("round2/PMC7759461.xml")
+        val work = objectMapper.readTree(workBytes)
+        val apiResponse = objectMapper.createObjectNode().apply {
+            putObject("meta").put("count", 1)
+            putArray("results").add(work)
+        }
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET),
+                Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(apiResponse))
+        val props = openAlexProperties.copy(requestDelayMs = 0)
+        val source = OpenAlexDataSource(restTemplate, props, europePmc,
+            Mockito.mock(PdfEmailExtractor::class.java), Mockito.mock(UnpaywallClient::class.java))
+        val paper = source.searchPapers(PaperSearchCriteria()).papers.single()
+        val metadataUrls = Mockito.mockingDetails(restTemplate).invocations
+            .filter { it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.GET }
+            .map { it.arguments.first() as String }
+        assertEquals(1, metadataUrls.size)
+
+        assertEquals("PMC7759461", paper.pmcId)
+
+        val parsed = JatsXmlEmailParser.parse(xmlBytes)
+        val parsedByEmail = parsed.associateBy { it.email }
+        assertEquals(3, parsedByEmail.keys.intersect(setOf(
+            "millman@berkeley.edu", "stefanv@berkeley.edu", "ralf.gommers@gmail.com"
+        )).size)
+        val xmlRequests = mutableListOf<String>()
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { request ->
+            xmlRequests += "${request.requestMethod} ${request.requestURI.path}"
+            val bytes = if (request.requestURI.path == "/PMC7759461/fullTextXML") xmlBytes else ByteArray(0)
+            request.sendResponseHeaders(if (bytes.isNotEmpty()) 200 else 404, bytes.size.toLong())
+            request.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        val enriched = try {
+            val xmlSource = EuropePmcDataSource(RestTemplate(), EuropePmcProperties(
+                baseUrl = "http://127.0.0.1:${server.address.port}", requestDelayMs = 0, maxRetries = 0))
+            val routed = OpenAlexDataSource(restTemplate, props, xmlSource,
+                Mockito.mock(PdfEmailExtractor::class.java), Mockito.mock(UnpaywallClient::class.java))
+            routed.extractAuthorEmails(paper, Instant.now().plusSeconds(30))
+        } finally {
+            server.stop(0)
+        }
+        assertEquals(listOf("GET /PMC7759461/fullTextXML"), xmlRequests)
+
+        assertEquals(setOf("millman@berkeley.edu", "stefanv@berkeley.edu", "ralf.gommers@gmail.com"),
+            enriched.emails.map { it.email }.toSet())
+        assertEquals("FULLTEXT_XML", enriched.methodUsed)
+        assertEquals(xmlRequests.size, enriched.httpRequests)
+        assertNull(enriched.emails.single { it.email == "millman@berkeley.edu" }.openAlexAuthorId)
+
+        val docs = installOwnershipStorage()
+        val service = createService()
+        enriched.emails.forEach {
+            DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email, EmailValidationResult(3, true))
+        }
+        val envelope = ownershipEnvelope(paper.copy(source = "OPENALEX"))
+        val consumed = service.consumeQueuedItem(envelope, objectMapper.writeValueAsString(
+            enriched.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+        assertTrue(consumed.succeeded)
+        assertEquals(3, consumed.indexedExperts)
+        assertEquals(3, consumed.promoted)
+        assertEquals(3, docs.keys.count { it.contains("/orcid_info/") })
+        assertEquals(3, docs.keys.count { it.contains("/orcid_info_candidate/") })
+        val validationCalls = Mockito.mockingDetails(emailValidationService).invocations.count {
+            it.method.name == "validate"
+        }
+        assertEquals(3, validationCalls)
+
+        val rawWritesBeforeOldVersion = docs.keys.count { it.contains("/orcid_info/") }
+
+        val old = service.consumeQueuedItem(envelope,
+            """{"emails":[],"methodUsed":"FULLTEXT_XML","identityRuleVersion":20260927}""", null)
+        assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", old.unrecoverableReason)
+        assertEquals(rawWritesBeforeOldVersion, docs.keys.count { it.contains("/orcid_info/") })
+        val report = objectMapper.createObjectNode().apply {
+            put("task", "child-04")
+            put("paper", paper.doi)
+            put("pmcId", paper.pmcId)
+            put("firstFulltextRoute", enriched.methodUsed)
+            put("xmlHttpRequests", enriched.httpRequests)
+            put("xmlFixtureSha256", java.security.MessageDigest.getInstance("SHA-256").digest(xmlBytes)
+                .joinToString("") { "%02x".format(it) })
+            put("metadataFixtureSha256", java.security.MessageDigest.getInstance("SHA-256").digest(workBytes)
+                .joinToString("") { "%02x".format(it) })
+            put("parsedContacts", objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(
+                enriched.emails.map { mapOf("email" to it.email, "givenNames" to it.givenNames,
+                    "familyNames" to it.familyNames, "orcidId" to it.orcidId, "openAlexAuthorId" to it.openAlexAuthorId) }))
+            put("consumerSucceeded", consumed.succeeded)
+            put("consumerIndexedExperts", consumed.indexedExperts)
+            put("consumerPromoted", consumed.promoted)
+            put("rawDocuments", docs.keys.count { it.contains("/orcid_info/") })
+            put("candidateDocuments", docs.keys.count { it.contains("/orcid_info_candidate/") })
+            put("oldVersionTerminalReason", old.unrecoverableReason)
+            put("rawDocumentsBeforeOldVersion", rawWritesBeforeOldVersion)
+            put("rawDocumentsAfterOldVersion", docs.keys.count { it.contains("/orcid_info/") })
+            put("metadataRequestCount", metadataUrls.size)
+            put("metadataRequestUrls", objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(metadataUrls))
+            put("xmlRequests", objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(xmlRequests))
+            put("emailValidationCalls", validationCalls)
+        }
+        val boundaryCases = isolatedXmlBoundaryCases(paper)
+        val versionCases = isolatedCachedVersionCases(paper, enriched)
+        report.set<com.fasterxml.jackson.databind.JsonNode>("boundaryCases", objectMapper.valueToTree(
+            boundaryCases + mapOf("case" to "pausedQueuedItem",
+                "tickSkipReason" to versionCases.last()["tickSkipReason"],
+                "rawCreateRequests" to versionCases.last()["rawCreateRequests"],
+                "candidateCreateRequests" to versionCases.last()["candidateCreateRequests"],
+                "rawDocuments" to versionCases.last()["rawDocuments"],
+                "candidateDocuments" to versionCases.last()["candidateDocuments"])))
+        report.set<com.fasterxml.jackson.databind.JsonNode>("versionCases", objectMapper.valueToTree(versionCases))
+        val reportPath = java.nio.file.Paths.get("target/discovery-plan-acceptance/04.json")
+        java.nio.file.Files.createDirectories(reportPath.parent)
+        java.nio.file.Files.write(reportPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+    }
+
+    private fun isolatedXmlBoundaryCases(paper: PaperMetadata): List<Map<String, Any?>> {
+        val reports = mutableListOf<Map<String, Any?>>()
+        val owner = verifiedAuthorEmail("owner@example.org", "Jane", "Doe", true, null, null)
+        val sameName = JatsXmlEmailParser.parse("""<article><front><article-meta><contrib-group>
+            <contrib><name><given-names>Jane</given-names><surname>Doe</surname></name><email>owner@example.org</email></contrib>
+            <contrib><name><given-names>Jane</given-names><surname>Doe</surname></name><email>second@example.org</email></contrib>
+            </contrib-group></article-meta></front></article>""")
+        val twoEmails = JatsXmlEmailParser.parse("""<article><front><article-meta><contrib-group>
+            <contrib><name><given-names>Jane</given-names><surname>Doe</surname></name>
+              <email>owner@example.org</email><email>third@example.org</email></contrib>
+            </contrib-group></article-meta></front></article>""")
+        assertEquals(2, sameName.size)
+        assertEquals(2, twoEmails.size)
+        val cases = linkedMapOf(
+            "unknownIdentity" to listOf(owner.copy(givenNames = null, familyNames = null, identityEvidence = null)),
+            "invalidEmail" to listOf(owner),
+            "ineligible" to listOf(owner),
+            "qualified" to listOf(owner),
+            "duplicate" to listOf(owner),
+            "sameNameDifferentEmails" to sameName,
+            "twoExplicitEmails" to twoEmails
+        )
+        for ((name, contacts) in cases) {
+            setUp()
+            val docs = installOwnershipStorage()
+            val service = createService()
+            contacts.forEach {
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email,
+                    EmailValidationResult(if (name == "invalidEmail") 0 else 3, name != "invalidEmail"))
+            }
+            if (name == "ineligible") DiscoveryMockHelper.stubEligibilityFalse(eligibilityService, listOf("TEST_INELIGIBLE"))
+            val payload = objectMapper.writeValueAsString(currentExtraction(contacts, "FULLTEXT_XML"))
+            val envelope = ownershipEnvelope(paper.copy(source = "OPENALEX",
+                doi = "10.04/$name", authors = emptyList()))
+            val first = service.consumeQueuedItem(envelope, payload, null)
+            val original = docs.toMap()
+            val second = if (name == "duplicate") service.consumeQueuedItem(envelope,
+                objectMapper.writeValueAsString(currentExtraction(
+                    listOf(owner.copy(givenNames = "Changed")), "FULLTEXT_XML")), null) else null
+            val validationCalls = Mockito.mockingDetails(emailValidationService).invocations.count { it.method.name == "validate" }
+            val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+                it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                    (it.arguments.firstOrNull() as? String)?.contains("/orcid_info/_doc/") == true
+            }
+            val candidateRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+                it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                    (it.arguments.firstOrNull() as? String)?.contains("/orcid_info_candidate/_doc/") == true
+            }
+            reports += mapOf(
+                "case" to name, "inputContacts" to contacts.map {
+                    mapOf("email" to it.email, "givenNames" to it.givenNames,
+                        "familyNames" to it.familyNames, "identityEvidence" to it.identityEvidence) },
+                "validationCalls" to validationCalls, "rawCreateRequests" to rawRequests,
+                "candidateCreateRequests" to candidateRequests, "indexed" to first.indexedExperts,
+                "promoted" to first.promoted, "failureReasons" to first.failureReasons,
+                "duplicateFailureReasons" to second?.failureReasons,
+                "documentsBeforeReplay" to original.entries.map { (key, doc) ->
+                    mapOf("document" to key, "email" to doc["email"], "givenNames" to doc["givenNames"]) },
+                "documentsAfterReplay" to docs.entries.map { (key, doc) ->
+                    mapOf("document" to key, "email" to doc["email"], "givenNames" to doc["givenNames"]) },
+                "unchangedOnReplay" to (if (second == null) null else original == docs)
+            )
+            when (name) {
+                "unknownIdentity" -> { assertEquals(0, validationCalls); assertEquals(0, rawRequests) }
+                "invalidEmail" -> { assertEquals(1, validationCalls); assertEquals(0, rawRequests) }
+                "ineligible" -> { assertEquals(1, rawRequests); assertEquals(0, candidateRequests) }
+                "qualified" -> { assertEquals(1, rawRequests); assertEquals(1, candidateRequests) }
+                "duplicate" -> { assertEquals(1, rawRequests); assertEquals(original, docs) }
+                else -> { assertEquals(2, rawRequests); assertEquals(2, candidateRequests) }
+            }
+        }
+        return reports
+    }
+
+    private fun isolatedCachedVersionCases(paper: PaperMetadata, extraction: EmailExtractionOutcome,
+        previousVersion: Int = 20260927): List<Map<String, Any?>> {
+        val cases = mutableListOf<Map<String, Any?>>()
+        val expectedOwned = extraction.emails.count { it.givenNames != null && it.familyNames != null }
+        for (version in listOf(DiscoveryIdentity.EXTRACTION_VERSION, previousVersion, null)) {
+            setUp()
+            val docs = installOwnershipStorage()
+            val source = mockOpenAlex()
+            val discovery = createService()
+            extraction.emails.forEach {
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email, EmailValidationResult(3, true))
+            }
+            val paused = version == null
+            val criteria = PaperSearchCriteria(sources = listOf("OPENALEX"), subjectScope = SubjectScopeCatalog.RND_TARGET)
+            val now = Instant.now()
+            val stream = com.weibo.talentintroduction.discovery.repository.StreamRow(
+                id = 10L, pipelineId = 1L, queryHash = discovery.queueQueryHash("OPENALEX", criteria),
+                source = "OPENALEX", epoch = 1L, criteriaJson = objectMapper.writeValueAsString(criteria),
+                cursorValue = when (extraction.methodUsed) {
+                    "PDF_PARSE" -> "CACHED_PDF"
+                    "HTML_FALLBACK" -> "CACHED_HTML"
+                    else -> "CACHED_XML"
+                },
+                cursorState = com.weibo.talentintroduction.discovery.repository.StreamCursorState.EXHAUSTED,
+                nextAttemptAt = null, leaseToken = null, leaseUntil = null, sourceError = null,
+                queuedPapers = 1, queuedRecords = 0, processedPapers = 0, processedRecords = 0,
+                indexedExperts = 0, duplicateExperts = 0, failedItems = 0
+            )
+            var pipelineRow = com.weibo.talentintroduction.discovery.repository.PipelineRow(
+                desiredState = if (paused) com.weibo.talentintroduction.discovery.repository.PipelineDesiredState.PAUSED
+                    else com.weibo.talentintroduction.discovery.repository.PipelineDesiredState.RUNNING,
+                phase = com.weibo.talentintroduction.discovery.repository.PipelinePhase.QUEUED,
+                criteriaJson = objectMapper.writeValueAsString(criteria), criteriaVersion = PIPELINE_CRITERIA_VERSION,
+                queryHash = "isolated-version-$version", generation = 1L,
+                ownerToken = null, ownerUntil = null, executionId = null, windowUntil = null,
+                nextWakeAt = null, waitReason = null, rawScanDone = true,
+                queuedPapers = 1, queuedRecords = 0, processedPapers = 0, processedRecords = 0,
+                indexedExperts = 0, duplicateExperts = 0, failedItems = 0, activeCount = 1,
+                payloadBytes = 0, reservedResultBytes = 0, capacityPaused = false
+            )
+            val cached = extraction.copy(identityRuleVersion = version ?: DiscoveryIdentity.EXTRACTION_VERSION)
+            val metadata = paper.copy(source = "OPENALEX")
+            val payload = objectMapper.writeValueAsString(metadata)
+            val job = com.weibo.talentintroduction.discovery.repository.JobRow(
+                id = 20L, streamId = stream.id, itemKey = metadata.doi ?: "PMC7759461",
+                identityQuality = "DOI", unit = "PAPER", payloadVersion = 1, priority = 1,
+                metadataJson = payload, extractionJson = objectMapper.writeValueAsString(cached),
+                payloadBytes = payload.toByteArray().size.toLong(), reservedResultBytes = 0,
+                status = com.weibo.talentintroduction.discovery.repository.QueueJobStatus.PENDING,
+                attempts = 0, nextAttemptAt = now.minusSeconds(1), leaseToken = null, leaseUntil = null,
+                generation = 1L, lastError = null
+            )
+            val store = Mockito.mock(com.weibo.talentintroduction.discovery.repository.DiscoveryPaperQueueStore::class.java)
+            var terminal: String? = null
+            var terminalReason: String? = null
+            Mockito.doAnswer { pipelineRow }.`when`(store).findPipeline()
+            Mockito.doReturn(listOf(stream)).`when`(store).findStreams(1L)
+            Mockito.doReturn(stream).`when`(store).ensureStream(Mockito.anyLong(), Mockito.anyString(),
+                Mockito.anyString(), Mockito.anyLong(), Mockito.anyString(), Mockito.any(Instant::class.java) ?: now)
+            Mockito.doAnswer { if (terminal == null) job else null }.`when`(store)
+                .nextDueJob(Mockito.anyList<Long>(), Mockito.anyBoolean(), Mockito.any(Instant::class.java) ?: now)
+            assertNotNull(store.nextDueJob(listOf(stream.id), true, now), "cached job must be due in isolated store")
+            Mockito.doReturn(true).`when`(store).claimOwner(Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: now, Mockito.any(Instant::class.java) ?: now,
+                Mockito.any(Instant::class.java) ?: now)
+            Mockito.doReturn(true).`when`(store).claimJob(Mockito.anyLong(), Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: now, Mockito.anyLong(), Mockito.any(Instant::class.java) ?: now)
+            Mockito.doAnswer { call ->
+                pipelineRow = pipelineRow.copy(phase = call.getArgument(1), waitReason = call.getArgument(2))
+                1
+            }.`when`(store).releaseOwner(Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
+                Mockito.nullable(Instant::class.java), Mockito.any(Instant::class.java) ?: now)
+            Mockito.doAnswer {
+                pipelineRow = pipelineRow.copy(phase = com.weibo.talentintroduction.discovery.repository.PipelinePhase.DRAINED)
+                true
+            }.`when`(store).markDrained(Mockito.any(Instant::class.java) ?: now)
+            Mockito.doAnswer { call ->
+                terminal = call.getArgument(3)
+                terminalReason = call.getArgument(6)
+                pipelineRow = pipelineRow.copy(activeCount = 0, failedItems = 1)
+                com.weibo.talentintroduction.discovery.repository.CompletionOutcome(true, 1, 0)
+            }.`when`(store).completeJob(Mockito.anyLong(), Mockito.anyString(), Mockito.anyLong(),
+                Mockito.anyString(), Mockito.anyInt(), Mockito.any(Instant::class.java) ?: now,
+                Mockito.anyString(), Mockito.any(Instant::class.java) ?: now)
+            Mockito.doAnswer { call ->
+                terminal = com.weibo.talentintroduction.discovery.repository.QueueJobStatus.SUCCEEDED
+                pipelineRow = pipelineRow.copy(activeCount = 0, indexedExperts = call.getArgument<Int>(3).toLong())
+                com.weibo.talentintroduction.discovery.repository.CompletionOutcome(true, 0, call.getArgument(3))
+            }.`when`(store).completeJobWithExperts(Mockito.anyLong(), Mockito.anyString(), Mockito.anyLong(),
+                Mockito.anyInt(), Mockito.anyInt(), Mockito.anyInt(), Mockito.any(Instant::class.java) ?: now,
+                Mockito.any(Instant::class.java) ?: now)
+            val task = Mockito.mock(com.weibo.talentintroduction.task.service.TaskExecutionService::class.java)
+            var window: PipelineWindowResult? = null
+            Mockito.doAnswer { call ->
+                val onStarted = call.getArgument<((Long) -> Unit)?>(3)
+                onStarted?.invoke(77L)
+                val result = call.getArgument<() -> PipelineWindowResult>(5)()
+                window = result
+                Pair(com.weibo.talentintroduction.task.domain.TaskExecution(
+                    id = 77L, taskType = DISCOVERY_PIPELINE_TASK_TYPE, triggerType = "PIPELINE",
+                    status = result.taskFinalStatus ?: "SUCCESS", requestPayload = null, resultSummary = null,
+                    successCount = result.taskSuccessCount, failureCount = result.taskFailureCount,
+                    startedAt = LocalDateTime.now()), result)
+            }.`when`(task).runAndRecordWithResult<PipelineWindowResult>(
+                Mockito.anyString(), Mockito.anyString(), Mockito.any(Any::class.java) ?: emptyMap<String, Any>(),
+                Mockito.any(), Mockito.any(), Mockito.any<() -> PipelineWindowResult>() ?: { error("unused") })
+            val settings = discoveryProperties.copy(pipelineEnabled = true, timeBudget = Duration.ofSeconds(10))
+            val pipeline = DiscoveryPipelineService(store, discovery, task, progressStore, settings,
+                objectMapper, com.weibo.talentintroduction.config.OpenAlexRequestPolicy(OpenAlexProperties(enabled = false)),
+                Executor { it.run() }, Executor { it.run() }, Executor { it.run() },
+                object : PipelineTimeSource { override fun now(): Instant = now })
+            val checkpointBefore = store.findStreams(1L).single().cursorValue
+            val tick = pipeline.tick()
+            val checkpointAfter = store.findStreams(1L).single().cursorValue
+            val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+                it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                    (it.arguments.firstOrNull() as? String)?.contains("/orcid_info/_doc/") == true
+            }
+            val candidateRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+                it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                    (it.arguments.firstOrNull() as? String)?.contains("/orcid_info_candidate/_doc/") == true
+            }
+            cases += mapOf(
+                "cachedExtractionVersion" to cached.identityRuleVersion,
+                "evidenceVersion" to DiscoveryIdentity.VERSION,
+                "checkpointBefore" to checkpointBefore, "checkpointAfter" to checkpointAfter,
+                "checkpointState" to store.findStreams(1L).single().cursorState,
+                "pipelinePhaseAfter" to store.findPipeline()?.phase,
+                "tickDispatched" to tick.dispatched, "tickSkipReason" to tick.skipReason,
+                "jobTerminal" to terminal, "jobTerminalReason" to terminalReason,
+                "windowTermination" to window?.terminationReason,
+                "rawCreateRequests" to rawRequests, "candidateCreateRequests" to candidateRequests,
+                "rawDocuments" to docs.keys.count { it.contains("/orcid_info/") },
+                "candidateDocuments" to docs.keys.count { it.contains("/orcid_info_candidate/") },
+                "sourceExtractionCalls" to Mockito.mockingDetails(source).invocations.count { it.method.name == "extractAuthorEmails" },
+                "xmlExtractionCalls" to Mockito.mockingDetails(source).invocations.count { it.method.name == "extractAuthorEmails" }
+            )
+            if (!paused) assertTrue(tick.dispatched && window != null, "cached pipeline window must execute")
+            assertEquals(checkpointBefore, checkpointAfter)
+            when {
+                paused -> {
+                    assertEquals(PipelineTickSkipReason.PAUSED, tick.skipReason)
+                    assertNull(terminal)
+                    assertEquals(0, rawRequests)
+                    assertEquals(0, candidateRequests)
+                }
+                version == DiscoveryIdentity.EXTRACTION_VERSION -> {
+                    assertEquals(com.weibo.talentintroduction.discovery.repository.QueueJobStatus.SUCCEEDED, terminal)
+                    assertEquals(expectedOwned, rawRequests)
+                    assertEquals(expectedOwned, candidateRequests)
+                }
+                else -> {
+                    assertEquals(com.weibo.talentintroduction.discovery.repository.QueueJobStatus.FAILED, terminal)
+                    assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", terminalReason)
+                    assertEquals(0, rawRequests)
+                    assertEquals(0, candidateRequests)
+                }
+            }
+            Mockito.verify(source, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: metadata)
+        }
+        return cases
+    }
+
+    @Test
+    fun `original tail contacts pass consumer and isolated pipeline with bounded link clues`() {
+        val archive = requireNotNull(javaClass.getResourceAsStream("/discovery/pdf-contact-coverage.zip")).readBytes()
+        val members = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(archive.inputStream()).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                members[entry.name] = zip.readBytes()
+            }
+        }
+        val sha256: (ByteArray) -> String = { bytes ->
+            java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        }
+        val manifest = objectMapper.readTree(requireNotNull(members["manifest.json"]))
+        val links = objectMapper.readTree(requireNotNull(members["missed-pdf-links.json"]))
+        assertEquals(11, links.size())
+        val docs = installOwnershipStorage()
+        val service = createService()
+        val cases = mutableListOf<Map<String, Any?>>()
+        val observedLinks = mutableListOf<Map<String, Any?>>()
+        val pageSelector = PdfEmailExtractor(restTemplate, PlainTextEmailExtractor(),
+            com.weibo.talentintroduction.config.PdfExtractionProperties(),
+            com.weibo.talentintroduction.config.BoundedFulltextHttp)
+        var qualifiedPaper: PaperMetadata? = null
+        var qualifiedExtraction: EmailExtractionOutcome? = null
+        var mismatchedIndexed: Int? = null
+        var downloadRequests = 0
+        for (id in listOf("W4288039037", "W4292779060", "W4385245566", "W4293584584")) {
+            val pdfPath = "sources/$id/source.pdf"
+            val metadataPath = "sources/$id/metadata.json"
+            val pdf = requireNotNull(members[pdfPath])
+            val metadataBytes = requireNotNull(members[metadataPath])
+            assertEquals(manifest.path("members").path(pdfPath).path("sha256").asText(), sha256(pdf))
+            assertEquals(manifest.path("members").path(metadataPath).path("sha256").asText(), sha256(metadataBytes))
+            val metadata = objectMapper.readTree(metadataBytes)
+            val authors = metadata.path("authorships").map {
+                val author = it.path("author")
+                val name = author.path("display_name").asText()
+                PaperAuthor(name.substringBeforeLast(' '), name.substringAfterLast(' '),
+                    author.path("orcid").asText(null), null, it.path("is_corresponding").asBoolean(),
+                    openAlexAuthorId = author.path("id").asText(null))
+            }
+            val paper = PaperMetadata(null, null, metadata.path("doi").asText().removePrefix("https://doi.org/"),
+                metadata.path("title").asText(), metadata.path("publication_year").asInt(), null, authors, "OPENALEX")
+            val parsed = extractOwnershipContent(pdf, org.springframework.http.MediaType.APPLICATION_PDF, authors)
+            assertEquals("PDF_PARSE", parsed.methodUsed, id)
+            assertEquals(1, parsed.httpRequests, id)
+            downloadRequests += parsed.httpRequests
+            val selectedPages = org.apache.pdfbox.pdmodel.PDDocument.load(pdf).use { document ->
+                val pages = pageSelector.selectedPages(document.numberOfPages)
+                for (page in pages) for (annotation in document.getPage(page - 1).annotations) {
+                    val uri = ((annotation as? org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink)
+                        ?.action as? org.apache.pdfbox.pdmodel.interactive.action.PDActionURI)?.uri ?: continue
+                    if (uri.startsWith("mailto:", ignoreCase = true))
+                        observedLinks += mapOf("paper" to id, "page" to page, "uri" to uri)
+                }
+                pages
+            }
+            val expectedUris = links.filter { it.path("paper").asText() == id }.map { it.path("uri").asText() }
+            val actualUris = observedLinks.filter { it["paper"] == id }.map { it["uri"] as String }
+            assertTrue(actualUris.containsAll(expectedUris), "$id original PDF mailto annotations")
+            val clues = actualUris.map { it.removePrefix("mailto:") }
+            for (clue in clues) assertEquals(1, parsed.emails.count { it.email == clue }, "$id $clue")
+            if (id == "W4288039037") {
+                val expected = mapOf(
+                    "salvatore.cuomo@unina.it" to "Salvatore Cuomo",
+                    "vincenzo.schianodicola@unina.it" to "Vincenzo Schiano Di Cola",
+                    "fabio.giampaolo@unina.it" to "Fabio Giampaolo",
+                    "grozza@sissa.it" to "Gianluigi Rozza",
+                    "mara4513@colorado.edu" to "Maziar Raissi"
+                )
+                assertEquals(listOf(1, 2, 62), selectedPages)
+                for ((email, name) in expected) {
+                    val owned = parsed.emails.single { it.email == email }
+                    assertEquals(name, "${owned.givenNames} ${owned.familyNames}")
+                    assertTrue(DiscoveryIdentity.validEvidence(owned.identityEvidence))
+                    DiscoveryMockHelper.stubValidateEmail(emailValidationService, email, EmailValidationResult(3, true))
+                }
+                qualifiedPaper = paper
+                qualifiedExtraction = parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
+                val result = service.consumeQueuedItem(ownershipEnvelope(paper),
+                    objectMapper.writeValueAsString(qualifiedExtraction), null)
+                assertTrue(result.succeeded)
+                assertEquals(5, result.indexedExperts)
+                assertEquals(5, result.promoted)
+                cases += mapOf("id" to id, "pdfSha256" to sha256(pdf), "metadataSha256" to sha256(metadataBytes),
+                    "selectedPages" to selectedPages, "mailtoClues" to clues,
+                    "parsedContacts" to parsed.emails.map {
+                        mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+                            "identityEvidence" to it.identityEvidence)
+                    }, "downloadRequests" to parsed.httpRequests, "indexed" to result.indexedExperts,
+                    "promoted" to result.promoted, "failureReasons" to result.failureReasons)
+            } else {
+                if (id == "W4292779060") {
+                    for (clue in clues) {
+                        assertNull(parsed.emails.single { it.email == clue }.givenNames)
+                        assertNull(parsed.emails.single { it.email == clue }.identityEvidence)
+                    }
+                    val docsBefore = docs.toMap()
+                    val validationBefore = Mockito.mockingDetails(emailValidationService).invocations.count {
+                        it.method.name == "validate"
+                    }
+                    val rejected = service.consumeQueuedItem(ownershipEnvelope(paper),
+                        objectMapper.writeValueAsString(parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+                    mismatchedIndexed = rejected.indexedExperts
+                    assertEquals(0, rejected.indexedExperts)
+                    assertEquals(docsBefore, docs)
+                    assertEquals(validationBefore, Mockito.mockingDetails(emailValidationService).invocations.count {
+                        it.method.name == "validate"
+                    })
+                }
+                cases += mapOf("id" to id, "pdfSha256" to sha256(pdf), "metadataSha256" to sha256(metadataBytes),
+                    "selectedPages" to selectedPages, "mailtoClues" to clues,
+                    "parsedContacts" to parsed.emails.map {
+                        mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+                            "identityEvidence" to it.identityEvidence)
+                    }, "downloadRequests" to parsed.httpRequests)
+            }
+        }
+        assertEquals(4, downloadRequests)
+        assertEquals(5, docs.keys.count { it.contains("/orcid_info/") })
+        assertEquals(5, docs.keys.count { it.contains("/orcid_info_candidate/") })
+        val validated = Mockito.mockingDetails(emailValidationService).invocations.filter { it.method.name == "validate" }
+            .map { it.arguments.first() as String }
+        assertEquals(5, validated.size)
+        val before = docs.toMap()
+        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(qualifiedPaper)),
+            objectMapper.writeValueAsString(requireNotNull(qualifiedExtraction)), null)
+        assertEquals(0, replay.indexedExperts)
+        assertEquals(before, docs)
+        val previous = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(qualifiedPaper)),
+            objectMapper.writeValueAsString(requireNotNull(qualifiedExtraction).copy(identityRuleVersion = 20260929)), null)
+        assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", previous.unrecoverableReason)
+        assertEquals(before, docs)
+        val previousNewRaw = docs.keys.count { it.contains("/orcid_info/") } -
+            before.keys.count { it.contains("/orcid_info/") }
+        val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                (it.arguments.firstOrNull() as? String)?.contains("/orcid_info/_doc/") == true
+        }
+        val candidateRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                (it.arguments.firstOrNull() as? String)?.contains("/orcid_info_candidate/_doc/") == true
+        }
+        assertEquals(5, rawRequests)
+        assertEquals(5, candidateRequests)
+        val boundaries = isolatedXmlBoundaryCases(requireNotNull(qualifiedPaper))
+        val versions = isolatedCachedVersionCases(requireNotNull(qualifiedPaper),
+            requireNotNull(qualifiedExtraction), previousVersion = 20260929)
+        val report = mapOf(
+            "task" to "child-06", "inputArchiveSha256" to sha256(archive),
+            "sourceArchiveSha256" to manifest.path("provenance").path("sha256").asText(),
+            "linkEvidenceSha256" to sha256(requireNotNull(members["missed-pdf-links.json"])),
+            "realPdfCases" to cases, "downloadRequests" to downloadRequests,
+            "pageSelectionCases" to mapOf(
+                "singlePage" to pageSelector.selectedPages(1),
+                "twoPages" to pageSelector.selectedPages(2),
+                "tailDisabled62" to PdfEmailExtractor(restTemplate, PlainTextEmailExtractor(),
+                    com.weibo.talentintroduction.config.PdfExtractionProperties(tailPages = 0),
+                    com.weibo.talentintroduction.config.BoundedFulltextHttp).selectedPages(62)),
+            "mailtoClues" to observedLinks.map { mapOf("paper" to it["paper"], "page" to it["page"],
+                "email" to (it["uri"] as String).removePrefix("mailto:")) },
+            "extractionVersion" to DiscoveryIdentity.EXTRACTION_VERSION, "evidenceVersion" to DiscoveryIdentity.VERSION,
+            "validatedAddresses" to validated, "rawDocuments" to before.keys.count { it.contains("/orcid_info/") },
+            "candidateDocuments" to before.keys.count { it.contains("/orcid_info_candidate/") },
+            "boundaryCases" to (boundaries + listOf(
+                mapOf("case" to "realQualified", "raw" to cases.first()["indexed"],
+                    "candidate" to cases.first()["promoted"], "validated" to validated.size),
+                mapOf("case" to "realDuplicate", "newRaw" to replay.indexedExperts, "documentsUnchanged" to (before == docs)),
+                mapOf("case" to "mismatchedSource", "emailClues" to cases[1]["mailtoClues"],
+                    "validated" to validated.count { it in (cases[1]["mailtoClues"] as List<*>) },
+                    "newRaw" to mismatchedIndexed),
+                mapOf("case" to "pausedQueuedItem", "tickSkipReason" to versions.last()["tickSkipReason"],
+                    "rawCreateRequests" to versions.last()["rawCreateRequests"]))),
+            "versionCases" to (versions + listOf(mapOf("consumer" to "direct", "version" to 20260929,
+                "terminalReason" to previous.unrecoverableReason, "newRaw" to previousNewRaw))),
+            "esCreateRequests" to mapOf("raw" to rawRequests, "candidate" to candidateRequests)
+        )
+        val path = Paths.get("target/discovery-plan-acceptance/06.json")
+        Files.createDirectories(path.parent)
+        Files.write(path, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+    }
+
+    /** Published PDF bytes and metadata; only download transport and external dependencies are substituted. */
+    @Test
+    fun `original HTML contacts create two identities and emit child 07 acceptance evidence`() {
+        val archive = requireNotNull(javaClass.getResourceAsStream("/discovery/html-contact-recall.zip")).readBytes()
+        val members = htmlContactEntries()
+        val manifest = objectMapper.readTree(requireNotNull(members["manifest.json"]))
+        val docs = installOwnershipStorage()
+        val service = createService()
+        val cases = mutableListOf<Map<String, Any?>>()
+        var relations = 0
+        var firstPaper: PaperMetadata? = null
+        var firstExtraction: EmailExtractionOutcome? = null
+        for (fixture in manifest.path("fixtures")) {
+            val id = fixture.path("id").asText()
+            val html = requireNotNull(members[fixture.path("html").path("path").asText()])
+            val metadataBytes = requireNotNull(members[fixture.path("metadata").path("path").asText()])
+            assertEquals("REAL_ORIGINAL", fixture.path("designation").asText())
+            assertEquals(fixture.path("html").path("sha256").asText(), fixtureSha256(html), id)
+            assertEquals(fixture.path("metadata").path("sha256").asText(), fixtureSha256(metadataBytes), id)
+            val metadata = objectMapper.readTree(metadataBytes)
+            val authors = htmlContactAuthors(metadata)
+            val parsed = extractOwnershipContent(html, org.springframework.http.MediaType.TEXT_HTML, authors)
+            val expected = fixture.path("expectedExplicitContacts").fields().asSequence()
+                .associate { it.key to it.value.asText() }
+            if (fixture.path("expectedChallenge").asBoolean()) {
+                assertEquals("PDF_DOWNLOAD_FAILED", parsed.failureReason)
+                assertEquals("INVALID_CONTENT", parsed.downloadFailureCategory)
+                assertEquals(false, parsed.fulltextObtained)
+                assertTrue(parsed.emails.isEmpty())
+                cases += mapOf("id" to id, "designation" to "REAL_ORIGINAL", "htmlSha256" to fixtureSha256(html),
+                    "metadataSha256" to fixtureSha256(metadataBytes), "failureReason" to parsed.failureReason,
+                    "downloadFailureCategory" to parsed.downloadFailureCategory,
+                    "fulltextObtained" to parsed.fulltextObtained, "httpRequests" to parsed.httpRequests,
+                    "parsedContacts" to emptyList<String>())
+                continue
+            }
+            assertEquals("HTML_FALLBACK", parsed.methodUsed, id)
+            assertEquals(1, parsed.httpRequests, id)
+            assertEquals(expected.keys, parsed.emails.filter { it.givenNames != null }.map { it.email }.toSet(), id)
+            val paper = PaperMetadata(null, null, metadata.path("doi").asText().removePrefix("https://doi.org/"),
+                metadata.path("title").asText(), metadata.path("publication_year").asInt(), null, authors, "OPENALEX")
+            for ((address, name) in expected) {
+                val contact = parsed.emails.single { it.email == address }
+                assertEquals(name, "${contact.givenNames} ${contact.familyNames}", id)
+                assertTrue(DiscoveryIdentity.validEvidence(contact.identityEvidence))
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, address, EmailValidationResult(3, true))
+            }
+            relations += expected.size
+            val cached = parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
+            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper),
+                objectMapper.writeValueAsString(cached), null)
+            assertTrue(outcome.succeeded, "$id: ${outcome.failureReasons}")
+            assertEquals(if (id == "W3194730353") 0 else 1, outcome.indexedExperts, id)
+            assertEquals(outcome.indexedExperts, outcome.promoted, id)
+            if (firstPaper == null) {
+                firstPaper = paper
+                firstExtraction = cached
+            }
+            cases += mapOf("id" to id, "designation" to "REAL_ORIGINAL",
+                "htmlSha256" to fixtureSha256(html), "metadataSha256" to fixtureSha256(metadataBytes),
+                "doi" to paper.doi, "expectedContacts" to expected, "parsedContacts" to parsed.emails.map {
+                    mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+                        "authorId" to it.openAlexAuthorId, "identityEvidence" to it.identityEvidence)
+                }, "httpRequests" to parsed.httpRequests, "indexed" to outcome.indexedExperts,
+                "promoted" to outcome.promoted, "duplicate" to outcome.duplicateExperts,
+                "failureReasons" to outcome.failureReasons)
+        }
+        assertEquals(3, relations)
+        assertEquals(2, docs.keys.count { it.contains("/orcid_info/_doc/") })
+        assertEquals(2, docs.keys.count { it.contains("/orcid_info_candidate/_doc/") })
+        val validated = Mockito.mockingDetails(emailValidationService).invocations
+            .filter { it.method.name == "validate" }.map { it.arguments.first() as String }
+        assertEquals(3, validated.size, "the repeated paper is validated but never rewritten")
+        assertEquals(2, validated.toSet().size)
+        val unchanged = docs.toMap()
+        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+            objectMapper.writeValueAsString(requireNotNull(firstExtraction)), null)
+        assertEquals(0, replay.indexedExperts)
+        assertEquals(unchanged, docs)
+        val previous = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+            objectMapper.writeValueAsString(requireNotNull(firstExtraction).copy(identityRuleVersion = 20260930)), null)
+        assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", previous.unrecoverableReason)
+        assertEquals(unchanged, docs)
+        val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                (it.arguments.firstOrNull() as? String)?.contains("/orcid_info/_doc/") == true
+        }
+        val candidateRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                (it.arguments.firstOrNull() as? String)?.contains("/orcid_info_candidate/_doc/") == true
+        }
+        assertEquals(2, rawRequests)
+        assertEquals(2, candidateRequests)
+        val boundaries = isolatedXmlBoundaryCases(requireNotNull(firstPaper)).map {
+            it + mapOf("designation" to "SYNTHETIC_XML_CONTROL")
+        }
+        val versions = isolatedCachedVersionCases(requireNotNull(firstPaper),
+            requireNotNull(firstExtraction), previousVersion = 20260930).map {
+            it.filterKeys { key -> key != "xmlExtractionCalls" } +
+                mapOf("designation" to "REAL_ORIGINAL_CACHED_HTML", "fixtureId" to "W3094704314")
+        }
+        val fallback = OpenAlexDataSourceTest().challengeFallbackEvidence()
+        val report = mapOf(
+            "task" to "child-07", "inputArchiveSha256" to fixtureSha256(archive),
+            "provenance" to objectMapper.treeToValue(manifest.path("provenance"), Map::class.java),
+            "realHtmlCases" to cases, "paperRelations" to relations, "uniqueExpertEmails" to validated.toSet().size,
+            "validatedAddresses" to validated, "rawCreateRequests" to rawRequests,
+            "candidateCreateRequests" to candidateRequests, "rawDocuments" to unchanged.keys.count {
+                it.contains("/orcid_info/_doc/") }, "candidateDocuments" to unchanged.keys.count {
+                it.contains("/orcid_info_candidate/_doc/") },
+            "fallback" to fallback, "extractionVersion" to DiscoveryIdentity.EXTRACTION_VERSION,
+            "evidenceVersion" to DiscoveryIdentity.VERSION,
+            "boundaryCases" to (listOf(
+                mapOf("case" to "realQualifiedAndDuplicate", "designation" to "REAL_ORIGINAL",
+                    "paperRelations" to relations, "newRaw" to rawRequests, "newCandidate" to candidateRequests),
+                mapOf("case" to "realReplay", "designation" to "REAL_ORIGINAL",
+                    "newRaw" to replay.indexedExperts, "documentsUnchanged" to (unchanged == docs))) + boundaries +
+                mapOf("case" to "pausedQueuedItem", "tickSkipReason" to versions.last()["tickSkipReason"],
+                    "rawCreateRequests" to versions.last()["rawCreateRequests"])),
+            "versionCases" to (listOf(mapOf("consumer" to "direct", "version" to 20260930,
+                "unrecoverableReason" to previous.unrecoverableReason, "newRaw" to 0)) + versions),
+            "esCreateRequests" to mapOf("raw" to rawRequests, "candidate" to candidateRequests)
+        )
+        val path = Paths.get("target/discovery-plan-acceptance/07.json")
+        Files.createDirectories(path.parent)
+        Files.write(path, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+    }
+
+    @Test
+    fun `original PDF contacts enter consumer and create-only writer while shared addresses stay unknown`() {
+        val archive = requireNotNull(javaClass.getResourceAsStream("/discovery/source-contact-recall.zip")).use { it.readBytes() }
+        val members = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(archive.inputStream()).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                members[entry.name] = zip.readBytes()
+            }
+        }
+        val manifest = objectMapper.readTree(requireNotNull(members["manifest.json"]))
+        val sha256: (ByteArray) -> String = { bytes ->
+            java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+        }
+        val expected = mapOf(
+            "k.maier-hein@dkfz.de" to "Klaus H. Maier-Hein",
+            "davidechicco@davidechicco.it" to "Davide Chicco",
+            "shirui.pan@monash.edu" to "Shirui Pan",
+            "psyu@uic.edu" to "Philip S. Yu"
+        )
+        val reports = mutableListOf<Map<String, Any?>>()
+        val docs = installOwnershipStorage()
+        val service = createService()
+        var indexed = 0
+        var promoted = 0
+        var sharedUnbound = 0
+        var downloadRequests = 0
+        var firstPaper: PaperMetadata? = null
+        var firstExtraction: EmailExtractionOutcome? = null
+        for (fixture in manifest.path("fixtures")) {
+            assertEquals("REAL_ORIGINAL", fixture.path("designation").asText())
+            val id = fixture.path("id").asText()
+            val pdf = requireNotNull(members[fixture.path("pdf").path("path").asText()])
+            val metadataBytes = requireNotNull(members[fixture.path("metadata").path("path").asText()])
+            assertEquals(fixture.path("pdf").path("sha256").asText(), sha256(pdf), "$id PDF bytes")
+            assertEquals(fixture.path("metadata").path("sha256").asText(), sha256(metadataBytes), "$id metadata bytes")
+            val metadata = objectMapper.readTree(metadataBytes)
+            assertEquals(metadata.path("id").asText(), fixture.path("openAlexId").asText())
+            val authors = metadata.path("authorships").map { entry ->
+                val author = entry.path("author")
+                val fullName = author.path("display_name").asText()
+                PaperAuthor(fullName.substringBeforeLast(" "), fullName.substringAfterLast(" "),
+                    author.path("orcid").takeIf { !it.isNull }?.asText()?.substringAfterLast("/"),
+                    null, entry.path("is_corresponding").asBoolean(),
+                    openAlexAuthorId = author.path("id").takeIf { !it.isNull }?.asText()?.substringAfterLast("/"))
+            }
+            val paper = PaperMetadata(null, null, metadata.path("doi").asText().removePrefix("https://doi.org/"),
+                metadata.path("title").asText(), metadata.path("publication_year").asInt(), null, authors, "OPENALEX")
+            val parsed = extractOwnershipContent(pdf, org.springframework.http.MediaType.APPLICATION_PDF, authors)
+            // A fresh extractor result is stamped when entering the cached consumer envelope.
+            val cached = parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
+            downloadRequests += parsed.httpRequests
+            assertEquals("PDF_PARSE", parsed.methodUsed, id)
+            assertEquals(1, parsed.httpRequests, id)
+            val explicit = fixture.path("expectedExplicitContacts").fields().asSequence()
+                .associate { it.key to it.value.asText() }
+            for ((email, name) in explicit) {
+                val result = parsed.emails.single { it.email == email }
+                assertEquals(name, "${result.givenNames} ${result.familyNames}", "$id: $email")
+                assertTrue(result.identityEvidence?.matches(Regex("SOURCE_SHA256:[0-9a-f]{64}")) == true, "$id: $email")
+            }
+            val shared = fixture.path("expectedSharedUnbound").map { it.asText() }
+            for (email in shared) {
+                val result = parsed.emails.single { it.email == email }
+                assertNull(result.givenNames, "$id: $email")
+                assertNull(result.familyNames, "$id: $email")
+                assertNull(result.openAlexAuthorId, "$id: $email")
+                assertNull(result.identityEvidence, "$id: $email")
+            }
+            sharedUnbound += shared.size
+            assertTrue(parsed.emails.filter { it.givenNames != null }.all { it.email in explicit },
+                "$id unexpected author binding: ${parsed.emails}")
+            for (email in parsed.emails.filter { it.givenNames != null }) {
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, email.email, EmailValidationResult(3, true))
+            }
+            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper),
+                objectMapper.writeValueAsString(cached), null)
+            assertTrue(outcome.succeeded, "$id: ${outcome.failureReasons}")
+            assertEquals(explicit.size, outcome.indexedExperts, id)
+            assertEquals(explicit.size, outcome.promoted, id)
+            indexed += outcome.indexedExperts
+            promoted += outcome.promoted
+            if (firstPaper == null) {
+                firstPaper = paper
+                firstExtraction = cached
+            }
+            // Human-review excerpt from page one of the actual PDF, not a fabricated resolver claim.
+            val pageText = org.apache.pdfbox.pdmodel.PDDocument.load(pdf).use { document ->
+                org.apache.pdfbox.text.PDFTextStripper().apply { startPage = 1; endPage = 1 }.getText(document)
+            }
+            val lines = pageText.lines()
+            reports += mapOf(
+                "id" to id, "designation" to fixture.path("designation").asText(),
+                "pdfSha256" to sha256(pdf), "metadataSha256" to sha256(metadataBytes),
+                "openAlexId" to metadata.path("id").asText(), "doi" to paper.doi,
+                "page" to 1, "authorRegionExcerpt" to lines.take(12).joinToString("\n").take(1200),
+                "contactExcerpts" to (explicit.keys + shared).map { email ->
+                    val line = lines.indexOfFirst { it.contains(email) }
+                    mapOf("email" to email, "page" to 1,
+                        "pdfBoxExcerpt" to if (line < 0) null else lines.subList(
+                            maxOf(0, line - 1), minOf(lines.size, line + 2)).joinToString("\n"))
+                },
+                "parsedContacts" to parsed.emails.map { email ->
+                    mapOf("email" to email.email, "givenNames" to email.givenNames,
+                        "familyNames" to email.familyNames, "authorId" to email.openAlexAuthorId,
+                        "identityEvidence" to email.identityEvidence)
+                },
+                "downloadRequests" to parsed.httpRequests, "consumerSucceeded" to outcome.succeeded,
+                "indexed" to outcome.indexedExperts, "promoted" to outcome.promoted,
+                "failureReasons" to outcome.failureReasons
+            )
+        }
+        assertEquals(4, indexed)
+        assertEquals(4, promoted)
+        assertEquals(4, sharedUnbound)
+        assertEquals(3, downloadRequests)
+        assertEquals(4, docs.keys.count { it.contains("/orcid_info/") })
+        assertEquals(4, docs.keys.count { it.contains("/orcid_info_candidate/") })
+        assertEquals(expected.keys, docs.values.mapNotNull { it["email"] as? String }.toSet())
+        val validatedAddresses = Mockito.mockingDetails(emailValidationService).invocations
+            .filter { it.method.name == "validate" }.map { it.arguments.first() as String }
+        val validations = validatedAddresses.size
+        assertEquals(4, validations, "shared/unknown addresses must not reach validation")
+        assertEquals(expected.keys, validatedAddresses.toSet())
+        val originalDocs = docs.toMap()
+        val duplicate = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+            objectMapper.writeValueAsString(requireNotNull(firstExtraction)), null)
+        assertEquals(0, duplicate.indexedExperts)
+        assertEquals(originalDocs, docs, "replay must not overwrite existing identity")
+        val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                (it.arguments.firstOrNull() as? String)?.contains("/orcid_info/_doc/") == true
+        }
+        val candidateRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                (it.arguments.firstOrNull() as? String)?.contains("/orcid_info_candidate/_doc/") == true
+        }
+        assertEquals(4, rawRequests)
+        assertEquals(4, candidateRequests)
+        val oldVersion = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+            objectMapper.writeValueAsString(requireNotNull(firstExtraction).copy(identityRuleVersion = 20260928)), null)
+        assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", oldVersion.unrecoverableReason)
+        assertEquals(originalDocs, docs)
+        // Reuse the established isolated consumer/writer boundary matrix; these XML controls
+        // are synthetic and must never be presented as observations from the published PDFs.
+        val syntheticBoundaries = isolatedXmlBoundaryCases(requireNotNull(firstPaper)).map {
+            it + mapOf("designation" to "SYNTHETIC_XML_CONTROL")
+        }
+        val layoutBoundaries = pdfLayoutNegativeCases().map { (authors, lines, label) ->
+            val parsed = extractOwnershipContent(positionedPdf(lines),
+                org.springframework.http.MediaType.APPLICATION_PDF, authors)
+            val email = parsed.emails.single { it.email == "opaque@uni.edu" }
+            assertNull(email.givenNames, label)
+            assertNull(email.identityEvidence, label)
+            mapOf("case" to label, "designation" to "SYNTHETIC_PDF_CONTROL",
+                "methodUsed" to parsed.methodUsed, "email" to email.email,
+                "givenNames" to email.givenNames, "familyNames" to email.familyNames,
+                "identityEvidence" to email.identityEvidence)
+        }
+        val cachedPipelineCases = isolatedCachedVersionCases(requireNotNull(firstPaper),
+            requireNotNull(firstExtraction), previousVersion = 20260928).map {
+            it.filterKeys { key -> key != "xmlExtractionCalls" } +
+                mapOf("designation" to "REAL_ORIGINAL_CACHED_PDF", "fixtureId" to reports.first()["id"])
+        }
+        val report = mapOf(
+            "task" to "child-05", "inputArchiveSha256" to sha256(archive),
+            "provenance" to objectMapper.treeToValue(manifest.path("provenance"), Map::class.java),
+            "realPdfCases" to reports, "extractionVersion" to DiscoveryIdentity.EXTRACTION_VERSION,
+            "evidenceVersion" to DiscoveryIdentity.VERSION,
+            "downloadRequests" to downloadRequests, "emailValidationCalls" to validations,
+            "validatedAddresses" to validatedAddresses,
+            "rawCreateRequests" to rawRequests, "candidateCreateRequests" to candidateRequests,
+            "rawDocuments" to docs.keys.count { it.contains("/orcid_info/") },
+            "candidateDocuments" to docs.keys.count { it.contains("/orcid_info_candidate/") },
+            "rawDocumentSummaries" to docs.filterKeys { it.contains("/orcid_info/_doc/") }.map { (url, doc) ->
+                mapOf("createUrl" to url, "email" to doc["email"],
+                    "givenNames" to doc["givenNames"], "familyNames" to doc["familyNames"],
+                    "identityVerification" to doc["identityVerification"])
+            },
+            "boundaryCases" to (listOf(mapOf("case" to "realQualified", "designation" to "REAL_ORIGINAL",
+                "validated" to validations, "raw" to indexed, "candidate" to promoted),
+                mapOf("case" to "realDuplicate", "designation" to "REAL_ORIGINAL",
+                    "newRaw" to duplicate.indexedExperts, "documentsUnchanged" to (originalDocs == docs)),
+                mapOf("case" to "sharedUnknown", "designation" to "REAL_ORIGINAL",
+                    "count" to sharedUnbound, "validationCallsForShared" to (validations - indexed),
+                    "newRaw" to (rawRequests - indexed))) + syntheticBoundaries + layoutBoundaries),
+            "versionCases" to listOf(mapOf("consumer" to "direct", "version" to DiscoveryIdentity.EXTRACTION_VERSION,
+                    "indexed" to indexed, "promoted" to promoted),
+                mapOf("consumer" to "direct", "version" to 20260928,
+                    "unrecoverableReason" to oldVersion.unrecoverableReason,
+                    "newRaw" to (docs.keys.count { it.contains("/orcid_info/") } - indexed))) + cachedPipelineCases,
+            "pipelineDistinction" to mapOf("directConsumer" to "All four original PDF relationships plus four shared unknown contacts",
+                "cachedPipeline" to "First original PDF cached extraction: latest, previous, paused",
+                "pipelineCases" to cachedPipelineCases.size,
+                "checkpointAndTerminal" to "Observed from isolated DiscoveryPipelineService.tick and queue-store callbacks")
+        )
+        val path = Paths.get("target/discovery-plan-acceptance/05.json")
+        Files.createDirectories(path.parent)
+        Files.write(path, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
     }
 
     @Test
@@ -513,9 +1420,27 @@ class ExpertDiscoveryServiceTest {
     fun `legacy extraction cache is rejected before interpreting old author identities`() {
         val svc = createService()
         val envelope = QueuedItemEnvelope("EUROPE_PMC", "old-key", "PMCID", "PAPER", 1, "{}", 2, true)
-        val outcome = svc.consumeQueuedItem(envelope, """{"emails":[],"methodUsed":"FULLTEXT_XML"}""", null)
+        val outcome = svc.consumeQueuedItem(envelope,
+            """{"emails":[],"methodUsed":"FULLTEXT_XML","identityRuleVersion":20260926}""", null)
         assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", outcome.unrecoverableReason)
         Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+    }
+
+    @Test
+    fun `real extracted brace email without owner is rejected before validation or raw write`() {
+        val docs = installOwnershipStorage()
+        val svc = createService()
+        val sourceFixture = objectMapper.readTree(
+            requireNotNull(javaClass.getResourceAsStream("/discovery/email-text-recall.json")).use { it.readBytes() })
+        val source = sourceFixture.path("sourceBrace").path("cases").first().path("text").asText()
+        val parsed = extractOwnershipContent(ownershipPdf(source), org.springframework.http.MediaType.APPLICATION_PDF, emptyList())
+        assertEquals(6, parsed.emails.size)
+        val paper = paper("unbound-brace", "Unbound brace source").copy(authors = emptyList(), source = "CORE")
+        val result = svc.consumeQueuedItem(ownershipEnvelope(paper),
+            objectMapper.writeValueAsString(parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+        assertEquals(6, result.failureReasons["IDENTITY_UNRESOLVED"])
+        assertTrue(docs.isEmpty())
+        Mockito.verifyNoInteractions(emailValidationService)
     }
 
     @Test
@@ -631,6 +1556,71 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `unknown discovery persists RAW and enrichment job without premature candidate`() {
+        initialAdmissionEvidence()
+    }
+
+    internal fun initialAdmissionEvidence(): Map<String, Any> {
+        val filters = Mockito.mock(com.weibo.talentintroduction.expert.service.EligibilityFilterService::class.java)
+        Mockito.doReturn(com.weibo.talentintroduction.config.CandidateFilterProperties())
+            .`when`(filters).getCandidateFilter()
+        Mockito.doReturn(com.weibo.talentintroduction.config.AcademicFilterProperties())
+            .`when`(filters).getAcademicFilter()
+        eligibilityService = CandidateEligibilityService(filters, emailValidationService, expertClassificationService)
+        val svc = createService()
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC1", "Test")), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        val captured = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            captured += invocation.getArgument(1) as Map<String, Any?>
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        Mockito.doAnswer {
+            objectMapper.createObjectNode().put("type", it.getArgument<com.weibo.talentintroduction.expert.domain.ExpertClassification>(0).type.name)
+        }.`when`(indexWriterService).classificationNode(
+            Mockito.any(com.weibo.talentintroduction.expert.domain.ExpertClassification::class.java)
+                ?: expertClassificationService.classify(c6Expert("fallback"))
+        )
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        assertEquals(1, result.stats.indexed)
+        assertEquals(0, result.stats.promoted)
+        assertEquals("REJECTED", captured.single()["filterResult"])
+        assertEquals("RND_SCOPE_UNCONFIRMED", captured.single()["filterRejectReason"])
+        assertEquals("UNKNOWN", (captured.single()["expertClassification"] as com.fasterxml.jackson.databind.JsonNode).path("type").asText())
+        Mockito.verify(enrichmentJobService).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+        Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("/orcid_info_candidate/_doc/"),
+            Mockito.eq(HttpMethod.PUT), Mockito.any(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        return mapOf(
+            "before" to mapOf("RAW" to 0, "CANDIDATE" to 0, "APPLICATION" to 0),
+            "after" to mapOf("RAW" to captured.size, "CANDIDATE" to result.stats.promoted, "APPLICATION" to 0),
+            "rawFilterResult" to captured.single()["filterResult"]!!,
+            "rawReason" to captured.single()["filterRejectReason"]!!,
+            "classification" to (captured.single()["expertClassification"] as com.fasterxml.jackson.databind.JsonNode).path("type").asText(),
+            "enrichmentJobs" to 1
+        )
+    }
+
+    @Test
+    fun `09d acceptance captures admission worker and replica in one isolated artifact`() {
+        val acceptance = Paths.get("target/discovery-plan-acceptance/09d.json")
+        Files.deleteIfExists(acceptance)
+        val initial = initialAdmissionEvidence()
+        setUp()
+        val worker = workerRetryEvidence()
+        val replica = com.weibo.talentintroduction.expert.service.ExpertIndexWriterServiceTest()
+            .discoveryReplicaEvidence()
+        Files.createDirectories(acceptance.parent)
+        Files.writeString(acceptance, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(
+            mapOf("initialAdmission" to initial, "worker" to worker, "replica" to replica)
+        ))
+    }
+
+    @Test
     fun `discover writes institutionType into RAW index map (I5a-3 I5a-4)`() {
         val svc = createService()
         val p1 = paper("PMC1", "Test Paper")
@@ -660,7 +1650,7 @@ class ExpertDiscoveryServiceTest {
             "institution", "lastPublicationYear", "emailSource", "emailVerifiedLevel", "dataSource",
             "externalIds", "discoveredAt", "updatedAt", "filterResult", "filterRejectReason", "tags"
         )
-        assertEquals(preChangeKeys + setOf("institutionType", "identityVerification"), map.keys)
+        assertEquals(preChangeKeys + setOf("institutionType", "identityVerification", "expertClassification"), map.keys)
     }
 
     @Test
@@ -890,25 +1880,271 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
-    fun `dedup search error counts dedupErrors and skips`() {
+    fun `dedup search error retains entering page and records actionable partial status`() {
         val svc = createService()
         val p1 = paper("PMC1", "Test")
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
             listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
         DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        installInMemoryCursorStore()
 
-        Mockito.doThrow(org.springframework.web.client.HttpClientErrorException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR))
+        val dedupRequests = mutableListOf<Any?>()
+        Mockito.doAnswer { invocation ->
+            dedupRequests += (invocation.getArgument<HttpEntity<*>>(2)).body
+            throw org.springframework.web.client.HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR)
+        }.`when`(restTemplate).exchange(
+            Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        val source = result.stats.bySource["EUROPE_PMC"]!!
+        val checkpoint = storedCheckpointFor("EUROPE_PMC")
+        assertEquals(0, result.stats.indexed)
+        assertEquals(1, source.dedupErrors)
+        assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, source.stopReason)
+        assertTrue(source.pendingWork)
+        assertEquals(CheckpointState.ACTIVE, checkpoint.state)
+        assertNull(checkpoint.cursor)
+        assertEquals("PARTIAL_SUCCESS", result.taskFinalStatus)
+
+        val report = mapOf(
+            "fixture" to "paper-page-dedup-http-500",
+            "fixtureSha256" to java.security.MessageDigest.getInstance("SHA-256")
+                .digest("PMC1|john@oxford.ac.uk|cursor=null|next=null".toByteArray())
+                .joinToString("") { "%02x".format(it) },
+            "actual" to mapOf(
+                "pageRequest" to mapOf("source" to "EUROPE_PMC", "cursor" to null, "paperId" to p1.pmcId),
+                "dedupSearchRequest" to dedupRequests.single(),
+                "dedupSearchResponse" to "HTTP_500",
+                "dedupErrors" to source.dedupErrors,
+                "indexed" to source.indexed,
+                "stopReason" to source.stopReason,
+                "checkpoint" to DiscoveryCheckpointCodec.encode(checkpoint.cursor, checkpoint.state == CheckpointState.EXHAUSTED),
+                "terminalStatus" to result.taskFinalStatus,
+                "pendingWork" to source.pendingWork
+            )
+        )
+        val output = java.nio.file.Paths.get("target/discovery-plan-acceptance/01.json")
+        java.nio.file.Files.createDirectories(output.parent)
+        java.nio.file.Files.write(output, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+    }
+
+    @Test
+    fun `dedup failure keeps active entering cursor for every page cursor combination`() {
+        val observations = mutableListOf<Map<String, Any?>>()
+        for (entering in listOf(null, "ENTERING-PAGE")) {
+            for (next in listOf(null, "NEXT-PAGE")) {
+                setUp()
+                installInMemoryCursorStore()
+                val criteria = PaperSearchCriteria(sources = listOf("EUROPE_PMC"))
+                if (entering != null) stubStoredCheckpoint("EUROPE_PMC", entering, criteria)
+                DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC-$entering-$next", "Test")), next, 1))
+                DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+                    listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+                Mockito.doThrow(org.springframework.web.client.HttpClientErrorException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR))
+                    .`when`(restTemplate).exchange(
+                        Mockito.contains("/_search"), Mockito.eq(org.springframework.http.HttpMethod.POST), Mockito.any(),
+                        Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+                    )
+
+                val result = createService().discover(criteria, "TEST")
+                val source = result.stats.bySource["EUROPE_PMC"]!!
+                val checkpoint = storedCheckpointFor("EUROPE_PMC", criteria)
+                assertEquals(entering, checkpoint.cursor)
+                assertEquals(CheckpointState.ACTIVE, checkpoint.state)
+                assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, source.stopReason)
+                assertTrue(source.pendingWork)
+                observations += mapOf("enteringCursor" to entering, "pageNextCursor" to next,
+                    "savedCursor" to checkpoint.cursor, "state" to checkpoint.state.name)
+            }
+        }
+        assertEquals(4, observations.size)
+    }
+    @Test
+    fun `replaying a dedup-failed page preserves existing identity and indexes the remaining author`() {
+        val criteria = PaperSearchCriteria(sources = listOf("EUROPE_PMC"))
+        val pageCriteria = mutableListOf<PaperSearchCriteria>()
+        val p1 = paper("PMC-REPLAY", "Replay").copy(
+            authors = listOf(PaperAuthor("First", "Author", "0000-0001", "Oxford, UK"),
+                PaperAuthor("Second", "Author", "0000-0002", "Oxford, UK"))
+        )
+        Mockito.doAnswer { invocation ->
+            pageCriteria += invocation.getArgument(0) as PaperSearchCriteria
+            if (pageCriteria.size <= 2) PaperSearchResult(listOf(p1), "NEXT", 1)
+            else PaperSearchResult(emptyList(), null, 0)
+        }.`when`(europePmc).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val authors = listOf(
+            verifiedAuthorEmail("first@ox.ac.uk", "First", "Author", true, "Oxford, UK", "0000-0001"),
+            verifiedAuthorEmail("second@ox.ac.uk", "Second", "Author", true, "Oxford, UK", "0000-0002")
+        )
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, authors)
+        authors.forEach { DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email, EmailValidationResult(2, true)) }
+        val rawIds = mutableListOf<String>()
+        Mockito.doAnswer { invocation ->
+            rawIds += invocation.getArgument(0) as String
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        installInMemoryCursorStore()
+
+        var searchCall = 0
+        val existingResponse = objectMapper.readTree(
+            """{"hits":{"total":{"value":1},"hits":[{"_id":"EXISTING-FIRST","_source":{"email":"first@ox.ac.uk","givenNames":"Original","familyNames":"Identity"}}]}}"""
+        )
+        Mockito.doAnswer {
+            when (searchCall++) {
+                0 -> ResponseEntity.ok(objectMapper.readTree("""{"hits":{"total":{"value":0}}}"""))
+                1 -> throw org.springframework.web.client.HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR)
+                2 -> ResponseEntity.ok(existingResponse)
+                else -> ResponseEntity.ok(objectMapper.readTree("""{"hits":{"total":{"value":0}}}"""))
+            }
+        }.`when`(restTemplate).exchange(
+            Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+
+        val svc = createService()
+        val first = svc.discover(criteria, "TEST")
+        assertEquals(1, first.stats.bySource["EUROPE_PMC"]?.indexed)
+        assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, first.stats.bySource["EUROPE_PMC"]?.stopReason)
+        val replay = svc.discover(criteria, "TEST")
+        assertEquals(1, replay.stats.bySource["EUROPE_PMC"]?.duplicates)
+        assertEquals(1, replay.stats.bySource["EUROPE_PMC"]?.indexed)
+        assertEquals(2, rawIds.size, "first author is written once; only second author is added on replay")
+        assertEquals(setOf(
+            ExpertIdGenerator.generate(null, "first@ox.ac.uk"),
+            ExpertIdGenerator.generate(null, "second@ox.ac.uk")
+        ), rawIds.toSet())
+        assertEquals(listOf(null, null), pageCriteria.take(2).map { it.cursor },
+            "replay starts at the retained entering cursor")
+        assertEquals(CheckpointState.EXHAUSTED, storedCheckpointFor("EUROPE_PMC", criteria).state)
+    }
+
+    @Test
+    fun `ORCID dedup failure preserves entering offset and does not report exhaustion`() {
+        val criteria = PaperSearchCriteria(
+            pageSize = 100, subjectScope = SubjectScopeCatalog.RND_TARGET,
+            sources = listOf("ORCID"), cursor = "100"
+        )
+        stubStoredCheckpoint("ORCID", "100", criteria)
+        val template = Mockito.mock(RestTemplate::class.java)
+        Mockito.doAnswer { invocation ->
+            val uri = invocation.getArgument<URI>(0)
+            objectMapper.readTree(if (uri.rawQuery.contains("start=100")) orcidPageBody(1, "found@ox.ac.uk") else """{"expanded-result": []}""")
+        }.`when`(template).getForObject(
+            Mockito.any(URI::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        Mockito.doReturn(OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0)))
+            .`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "found@ox.ac.uk", EmailValidationResult(2, true))
+        Mockito.doThrow(org.springframework.web.client.HttpClientErrorException(HttpStatus.INTERNAL_SERVER_ERROR))
             .`when`(restTemplate).exchange(
-                Mockito.contains("/_search"),
-                Mockito.eq(org.springframework.http.HttpMethod.POST),
-                Mockito.any(),
+                Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST), Mockito.any(),
                 Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
 
-        val result = svc.discover(PaperSearchCriteria(), "TEST")
-        assertEquals(0, result.stats.indexed)
-        assertTrue(result.stats.dedupErrors >= 1)
+        val result = createService(c4Props()).discover(criteria, "TEST")
+        val source = result.stats.bySource["ORCID"]!!
+        val checkpoint = storedCheckpointFor("ORCID", criteria)
+        assertEquals(1, source.dedupErrors)
+        assertEquals(DiscoveryStopReason.DEDUP_INCOMPLETE, source.stopReason)
+        assertEquals(CheckpointState.ACTIVE, checkpoint.state)
+        assertEquals("100", checkpoint.cursor)
+        assertTrue(source.pendingWork)
+    }
+
+    @Test
+    fun `ORCID new key replays from first page then resumes itself without deleting old rows`() {
+        val criteria = PaperSearchCriteria(
+            pageSize = 1, subjectScope = SubjectScopeCatalog.RND_TARGET, sources = listOf("ORCID"))
+        installInMemoryCursorStore()
+        fun oldKey(source: String, form: PaperSearchCriteria): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(DiscoveryCheckpointCodec.canonicalCriteria(form).toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }.take(DiscoveryCheckpointCodec.HASH_LENGTH)
+            return "$source:v2:$digest"
+        }
+        val oldOrcidKey = oldKey("ORCID", criteria)
+        val oldAllKey = oldKey("ORCID", criteria.copy(sources = emptyList()))
+        val oldRows = listOf(oldOrcidKey, oldAllKey).map { key ->
+            DiscoverySourceCursor(sourceName = key, cursorValue = DiscoveryCheckpointCodec.encode("3|9000", false))
+        }
+        oldRows.forEach { storedCheckpoints[it.sourceName] = it }
+        val oldKeys = storedCheckpoints.keys.toSet()
+        val newKey = DiscoveryCheckpointCodec.sourceKey("ORCID", criteria)
+        assertNotEquals(oldOrcidKey, newKey)
+        val service = createService()
+        val oldQueueHash = MessageDigest.getInstance("SHA-256").digest(
+            DiscoveryCheckpointCodec.canonicalCriteria(criteria).toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        val newQueueHash = service.queueQueryHash("ORCID", criteria)
+        assertNotEquals(oldQueueHash, newQueueHash)
+        assertNull(service.queueLegacySeedCursor("ORCID", criteria))
+
+        val template = RestTemplate()
+        val server = MockRestServiceServer.createServer(template)
+        val actualUris = mutableListOf<URI>()
+        val oneRecord = orcidPageBody(1, "found@ox.ac.uk")
+        repeat(2) {
+            server.expect { request -> actualUris.add(request.uri) }
+                .andRespond(withSuccess(oneRecord, MediaType.APPLICATION_JSON))
+        }
+        server.expect { request -> actualUris.add(request.uri) }
+            .andRespond(withSuccess("""{"expanded-result":[]}""", MediaType.APPLICATION_JSON))
+        val source = OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0, maxRecordsPerRun = 1))
+        Mockito.doReturn(source).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "found@ox.ac.uk", EmailValidationResult(0, false))
+        val first = service.discover(criteria, "TEST")
+        val firstCursor = storedCheckpoint(newKey)
+        assertEquals("0|1", firstCursor.cursor)
+        assertEquals(CheckpointState.ACTIVE, firstCursor.state)
+        val firstQueueSeed = service.queueLegacySeedCursor("ORCID", criteria)
+        assertEquals("0|1", firstQueueSeed)
+        val second = service.discover(criteria, "TEST")
+        val secondCursor = storedCheckpoint(newKey)
+        assertEquals("0|2", secondCursor.cursor)
+        assertEquals("0|2", service.queueLegacySeedCursor("ORCID", criteria))
+        source.searchOrcidPage(criteria.copy(cursor = "2|0"))
+        server.verify()
+        val decodedQueries = actualUris.map {
+            URLDecoder.decode(it.rawQuery.substringAfter("q=").substringBefore("&"), "UTF-8")
+        }
+        assertEquals(listOf("keyword:\"engineering\"", "keyword:\"engineering\"",
+            "keyword:\"computer science\""), decodedQueries)
+        assertEquals(listOf("0", "1", "0"), actualUris.map {
+            it.rawQuery.substringAfter("&start=").substringBefore("&")
+        })
+        assertEquals(oldKeys, oldKeys.intersect(storedCheckpoints.keys))
+        assertEquals(oldRows, oldRows.map { storedCheckpoints.getValue(it.sourceName) })
+        val openAlexCriteria = criteria.copy(sources = listOf("OPENALEX"))
+        val oldOpenAlexKey = oldKey("OPENALEX", openAlexCriteria)
+        val newOpenAlexKey = DiscoveryCheckpointCodec.sourceKey("OPENALEX", openAlexCriteria)
+        assertEquals(oldOpenAlexKey, newOpenAlexKey)
+        val oldOpenAlexQueueHash = MessageDigest.getInstance("SHA-256").digest(
+            DiscoveryCheckpointCodec.canonicalCriteria(openAlexCriteria).toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        assertEquals(oldOpenAlexQueueHash, service.queueQueryHash("OPENALEX", openAlexCriteria))
+
+        val report = mapOf(
+            "actualRequests" to actualUris.mapIndexed { index, uri ->
+                mapOf("actualUri" to uri.toASCIIString(), "decodedQuery" to decodedQueries[index],
+                    "start" to uri.rawQuery.substringAfter("&start=").substringBefore("&"),
+                    "rows" to uri.rawQuery.substringAfter("&rows=").substringBefore("&")) },
+            "oldOrcidKey" to oldOrcidKey, "newOrcidKey" to newKey,
+            "oldOrcidQueueHash" to oldQueueHash, "newOrcidQueueHash" to newQueueHash,
+            "oldOpenAlexKey" to oldOpenAlexKey, "newOpenAlexKey" to newOpenAlexKey,
+            "firstCursor" to firstCursor.cursor, "secondCursor" to secondCursor.cursor,
+            "firstQueueSeed" to firstQueueSeed, "oldRowsRemaining" to oldKeys.count { it in storedCheckpoints },
+            "oldRowsDeleted" to oldKeys.count { it !in storedCheckpoints },
+            "firstRunRequests" to first.stats.bySource["ORCID"]?.apiRequests,
+            "secondRunRequests" to second.stats.bySource["ORCID"]?.apiRequests
+        )
+        val path = Paths.get("target/discovery-plan-acceptance/09a.json")
+        Files.createDirectories(path.parent)
+        Files.write(path, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
     }
 
     @Test
@@ -2663,6 +3899,249 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `OpenAlex remote handshake interruption retries the entering cursor and counts success once`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C1")
+        stubStoredCheckpoint("OPENALEX", "C1", criteria)
+        val openAlex = mockOpenAlex()
+        val requests = mutableListOf<PaperSearchCriteria>()
+        val page = PaperSearchResult(listOf(paper("OA-1", "OpenAlex paper").copy(source = "OPENALEX")), null, 1)
+        Mockito.doAnswer { invocation ->
+            requests += invocation.getArgument(0) as PaperSearchCriteria
+            if (requests.size == 1) {
+                throw ResourceAccessException(
+                    "handshake interrupted",
+                    SSLHandshakeException("Remote host terminated the handshake")
+                )
+            }
+            page
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(listOf("C1", "C1"), requests.map { it.cursor })
+        assertEquals(2, sourceStats?.apiRequests)
+        assertEquals(1, sourceStats?.papersSearched)
+        assertEquals(0, sourceStats?.sourceFailureCount)
+        assertEquals("EXHAUSTED", sourceStats?.stopReason)
+        assertNull(storedCheckpointFor("OPENALEX", criteria).cursor)
+        assertTrue(storedCheckpointFor("OPENALEX", criteria).exhausted)
+        val output = Paths.get("target/discovery-plan-acceptance/02.json")
+        Files.createDirectories(output.parent)
+        Files.write(output, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(mapOf(
+            "fixture" to "openalex-same-page-remote-handshake-retry",
+            "requests" to requests.map { mapOf("source" to "OPENALEX", "cursor" to it.cursor) },
+            "apiRequests" to sourceStats?.apiRequests,
+            "papersSearched" to sourceStats?.papersSearched,
+            "sourceFailureCount" to sourceStats?.sourceFailureCount,
+            "checkpoint" to mapOf("cursor" to storedCheckpointFor("OPENALEX", criteria).cursor,
+                "exhausted" to storedCheckpointFor("OPENALEX", criteria).exhausted),
+            "stopReason" to sourceStats?.stopReason,
+            "taskStatus" to result.taskFinalStatus
+        )))
+    }
+
+    @Test
+    fun `OpenAlex three timeouts fail once and retain the same cursor`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C7")
+        stubStoredCheckpoint("OPENALEX", "C7", criteria)
+        val openAlex = mockOpenAlex()
+        val requests = mutableListOf<PaperSearchCriteria>()
+        Mockito.doAnswer { invocation ->
+            requests += invocation.getArgument(0) as PaperSearchCriteria
+            throw ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(listOf("C7", "C7", "C7"), requests.map { it.cursor })
+        assertEquals(3, sourceStats?.apiRequests)
+        assertEquals(1, sourceStats?.sourceFailureCount)
+        assertEquals(1, sourceStats?.failureReasons?.get("SEARCH_FAILED"))
+        assertEquals(1, result.stats.sourceFailures)
+        assertEquals("C7", storedCheckpointFor("OPENALEX", criteria).cursor)
+        assertFalse(storedCheckpointFor("OPENALEX", criteria).exhausted)
+    }
+
+    @Test
+    fun `OpenAlex retries each approved server status on its same page`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C1")
+        stubStoredCheckpoint("OPENALEX", "C1", criteria)
+        val openAlex = mockOpenAlex()
+        val requests = mutableListOf<PaperSearchCriteria>()
+        val statuses = listOf(500, 502, 503, 504)
+        Mockito.doAnswer { invocation ->
+            val index = requests.size
+            requests += invocation.getArgument(0) as PaperSearchCriteria
+            if (index % 2 == 0) {
+                throw org.springframework.web.client.HttpServerErrorException(HttpStatus.valueOf(statuses[index / 2]))
+            }
+            val next = if (index / 2 == statuses.lastIndex) null else "C${index / 2 + 2}"
+            PaperSearchResult(emptyList(), next, 0)
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(8, requests.size)
+        assertEquals(listOf("C1", "C1", "C2", "C2", "C3", "C3", "C4", "C4"), requests.map { it.cursor })
+        assertEquals(8, sourceStats?.apiRequests)
+        assertEquals(0, sourceStats?.sourceFailureCount)
+        assertEquals("EXHAUSTED", sourceStats?.stopReason)
+    }
+
+    @Test
+    fun `OpenAlex certificate failures and forbidden responses are not retried`() {
+        val cases = listOf(
+            ResourceAccessException(
+                "certificate rejected",
+                java.io.IOException("certificate rejected", CertificateException("certificate rejected"))
+            ),
+            org.springframework.web.client.HttpClientErrorException(HttpStatus.FORBIDDEN)
+        )
+        for ((index, error) in cases.withIndex()) {
+            val svc = createService(ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+            ))
+            val criteria = PaperSearchCriteria(cursor = "C$index")
+            stubStoredCheckpoint("OPENALEX", criteria.cursor, criteria)
+            val openAlex = mockOpenAlex()
+            val calls = AtomicInteger()
+            Mockito.doAnswer {
+                calls.incrementAndGet()
+                throw error
+            }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+            val (result, _) = runAndCapture(svc, criteria)
+
+            assertEquals(1, calls.get())
+            assertEquals(1, result.stats.bySource["OPENALEX"]?.sourceFailureCount)
+            assertEquals(criteria.cursor, storedCheckpointFor("OPENALEX", criteria).cursor)
+            assertFalse(storedCheckpointFor("OPENALEX", criteria).exhausted)
+        }
+    }
+
+    @Test
+    fun `OpenAlex 429 defers without retry or terminal search failure`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C429")
+        stubStoredCheckpoint("OPENALEX", "C429", criteria)
+        val openAlex = mockOpenAlex()
+        val calls = AtomicInteger()
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            throw org.springframework.web.client.HttpClientErrorException(HttpStatus.TOO_MANY_REQUESTS)
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        assertEquals(1, calls.get())
+        assertEquals(1, result.stats.bySource["OPENALEX"]?.apiRequests)
+        assertEquals(DiscoveryStopReason.BUDGET_DEFERRED, result.stats.bySource["OPENALEX"]?.stopReason)
+        assertEquals(0, result.stats.sourceFailures)
+        assertEquals("C429", storedCheckpointFor("OPENALEX", criteria).cursor)
+    }
+
+    @Test
+    fun `OpenAlex retry wait stops at the run deadline before another request`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false,
+            timeBudget = Duration.ofMillis(500)
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C-deadline")
+        stubStoredCheckpoint("OPENALEX", "C-deadline", criteria)
+        val openAlex = mockOpenAlex()
+        val calls = AtomicInteger()
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            throw ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        assertEquals(1, calls.get())
+        assertEquals(DiscoveryStopReason.TIME_BUDGET, result.stats.bySource["OPENALEX"]?.stopReason)
+        assertEquals(0, result.stats.sourceFailures)
+        assertEquals("C-deadline", storedCheckpointFor("OPENALEX", criteria).cursor)
+    }
+
+    @Test
+    fun `OpenAlex retry wait observes cancellation without another request`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C-cancel")
+        stubStoredCheckpoint("OPENALEX", "C-cancel", criteria)
+        val openAlex = mockOpenAlex()
+        val cancelled = AtomicBoolean(false)
+        val firstFailure = CountDownLatch(1)
+        val calls = AtomicInteger()
+        Mockito.doAnswer { cancelled.get() }.`when`(progressStore).isCancelled(Mockito.anyString())
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            firstFailure.countDown()
+            throw ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val resultRef = AtomicReference<DiscoveryResult>()
+        val worker = Thread { resultRef.set(svc.discover(criteria, "TEST")) }
+        worker.start()
+        assertTrue(firstFailure.await(2, TimeUnit.SECONDS), "first page request should fail")
+        Thread.sleep(150)
+        cancelled.set(true)
+        worker.join(3000)
+
+        assertFalse(worker.isAlive)
+        assertEquals(1, calls.get())
+        assertEquals(DiscoveryStopReason.CANCELLED, resultRef.get().stats.bySource["OPENALEX"]?.stopReason)
+        assertEquals("C-cancel", storedCheckpointFor("OPENALEX", criteria).cursor)
+    }
+
+    @Test
+    fun `OpenAlex retry wait restores interruption and exits without another request`() {
+        val svc = createService(ExpertDiscoveryProperties(
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+        ))
+        val criteria = PaperSearchCriteria(cursor = "C-interrupt")
+        stubStoredCheckpoint("OPENALEX", "C-interrupt", criteria)
+        val openAlex = mockOpenAlex()
+        val firstFailure = CountDownLatch(1)
+        val calls = AtomicInteger()
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            firstFailure.countDown()
+            throw ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val resultRef = AtomicReference<DiscoveryResult>()
+        val interrupted = AtomicBoolean(false)
+        val worker = Thread {
+            resultRef.set(svc.discover(criteria, "TEST"))
+            interrupted.set(Thread.currentThread().isInterrupted)
+        }
+        worker.start()
+        assertTrue(firstFailure.await(2, TimeUnit.SECONDS), "first page request should fail")
+        Thread.sleep(150)
+        worker.interrupt()
+        worker.join(3000)
+
+        assertFalse(worker.isAlive)
+        assertTrue(interrupted.get(), "retry wait must restore the interrupt flag")
+        assertEquals(1, calls.get())
+        assertEquals(DiscoveryStopReason.CANCELLED, resultRef.get().stats.bySource["OPENALEX"]?.stopReason)
+        assertEquals("C-interrupt", storedCheckpointFor("OPENALEX", criteria).cursor)
+    }
+    @Test
     fun `different keywords persist to different checkpoint keys`() {
         // V-2 / A-3: 不同关键词不共用检查点
         val svc = createService()
@@ -3197,7 +4676,8 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
-    fun `ORCID pages past a whole page without public emails and still acquires the next page expert`() {
+    @ExtendWith(OutputCaptureExtension::class)
+    fun `ORCID pages past a whole page without public emails and still acquires the next page expert`(output: CapturedOutput) {
         // V-2/I-2：首页 100 条无公开邮箱、次页 1 条有公开邮箱 —— 必须覆盖两页并最终收录 1 人。
         val criteria = PaperSearchCriteria(
             pageSize = 100, subjectScope = SubjectScopeCatalog.RND_TARGET, sources = listOf("ORCID")
@@ -3205,7 +4685,7 @@ class ExpertDiscoveryServiceTest {
         val template = Mockito.mock(RestTemplate::class.java)
         val urls = mutableListOf<String>()
         Mockito.doAnswer { invocation ->
-            val url = invocation.getArgument<String>(0)
+            val url = invocation.getArgument<URI>(0).toASCIIString()
             urls.add(url)
             objectMapper.readTree(
                 when {
@@ -3215,7 +4695,7 @@ class ExpertDiscoveryServiceTest {
                 }
             )
         }.`when`(template).getForObject(
-            Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            Mockito.any(URI::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
         )
         Mockito.doReturn(OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0)))
             .`when`(orcidProvider).getIfAvailable()
@@ -3229,6 +4709,8 @@ class ExpertDiscoveryServiceTest {
         val (result, saved) = runAndCapture(createService(c4Props()), criteria)
 
         assertEquals(1, result.stats.bySource["ORCID"]?.indexed, "次页的 1 位专家必须被收录")
+        assertTrue(output.out.contains("[ORCID] 完成:") && output.out.contains("过滤（含身份未确认） 0, 过滤原因 {}"))
+        assertFalse(output.out.contains("资格淘汰"))
         assertEquals(1, result.stats.bySource["ORCID"]?.papersSearched)
         assertEquals(listOf("0", "100"), urls.take(2).map { urlStart(it) },
             "整页无公开邮箱后 offset 必须继续前进到 100")
@@ -3359,6 +4841,8 @@ class ExpertDiscoveryServiceTest {
             .`when`(openAlex).batchEnrichByAuthorIds(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
         stubRawLayerOnly()
         stubAcademicUpdateOk()
+        Mockito.doReturn(PromotionOutcome.Rejected(listOf("RND_SCOPE_UNCONFIRMED")))
+            .`when`(revalidationService).revalidateDiscovery("OLD-DOC")
 
         assertInstanceOf(ProfileEnrichmentOutcome.Success::class.java, svc.enrichProfiles(listOf(expert))["OLD-DOC"])
         Mockito.verify(openAlex).batchEnrichByAuthorIds(eqValue(listOf("A5023888391")), eqValue(RequestKind.HISTORY_ENRICHMENT))
@@ -3373,6 +4857,86 @@ class ExpertDiscoveryServiceTest {
         assertEquals(proof, params["identity"])
         assertEquals(mapOf("openAlexAuthorId" to "A9999999999"), params["externalIds"])
         assertTrue(script["source"].toString().contains("ctx.op = 'none'"))
+    }
+
+    @Test
+    fun `09c one trusted ORCID updates both emails across existing layers and preserves prior field on null`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val orcid = "0000-0002-1240-1405"
+        val emails = listOf("first@example.com", "second@example.com")
+        val profiles = emails.mapIndexed { index, email ->
+            c6Expert(orcid, esDocId = "DOC-${index + 1}").copy(
+                email = email, emailSource = "ORCID_PUBLIC",
+                identityVerification = DiscoveryIdentity.verified(email, "Test", "User",
+                    "ORCID_RECORD_SHA256:" + "a".repeat(64), orcid, null),
+                researchFieldIds = listOf("31"))
+        }
+        val fact = AuthorEnrichment(hIndex = 20, citationCount = 30, worksCount = 40,
+            researchFieldIds = listOf("17", "22"))
+        Mockito.doReturn(mapOf(orcid to EnrichmentOutcome.Success(fact)))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        listOf("orcid_info", "orcid_info_candidate", "orcid_info_application").forEach(::stubLayerExists)
+        stubAcademicUpdateOk()
+        Mockito.doReturn(PromotionOutcome.AlreadyPresent).`when`(revalidationService).revalidateDiscovery("DOC-1")
+        Mockito.doReturn(PromotionOutcome.AlreadyPresent).`when`(revalidationService).revalidateDiscovery("DOC-2")
+
+        val results = svc.enrichProfiles(profiles)
+        assertEquals(setOf("DOC-1", "DOC-2"), results.keys)
+        val layerEvidence = results.mapValues { (_, value) ->
+            val layers = (value as ProfileEnrichmentOutcome.Success).layers
+            assertEquals(LayerUpdateStatus.UPDATED, layers.raw)
+            assertEquals(LayerUpdateStatus.UPDATED, layers.candidate)
+            assertEquals(LayerUpdateStatus.UPDATED, layers.application)
+            listOf(layers.raw.name, layers.candidate.name, layers.application.name)
+        }
+        Mockito.verify(openAlex, Mockito.times(1)).batchEnrichByOrcids(
+            eqValue(listOf(orcid)), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        Mockito.verify(openAlex, Mockito.never()).batchEnrichByAuthorIds(
+            Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        val updates = Mockito.mockingDetails(restTemplate).invocations.filter {
+            it.method.name == "exchange" && (it.arguments[0] as? String)?.contains("/_update/") == true
+        }
+        assertEquals(6, updates.size)
+        updates.forEach { invocation ->
+            val body = (invocation.arguments[2] as HttpEntity<*>).body as Map<*, *>
+            assertFalse(body.containsKey("upsert"))
+            val script = body["script"] as Map<*, *>
+            assertTrue(script["source"].toString().contains("ctx.op = 'none'"))
+            val params = script["params"] as Map<*, *>
+            val id = (invocation.arguments[0] as String).substringAfterLast('/')
+            val original = profiles.single { it.esDocId == id }
+            assertEquals(original.identityVerification, params["identity"])
+            assertEquals(original.email, params["email"])
+            assertEquals(original.givenNames, params["given"])
+            assertEquals(original.familyNames, params["family"])
+            val doc = params["doc"] as Map<*, *>
+            assertEquals(listOf("17", "22"), doc["researchFieldIds"])
+            assertEquals(ExpertClassificationService.VERSION,
+                (doc["expertClassification"] as com.weibo.talentintroduction.expert.domain.ExpertClassification).version)
+            for (identityKey in listOf("email", "givenNames", "familyNames", "externalIds", "identityVerification")) {
+                assertFalse(doc.containsKey(identityKey))
+            }
+        }
+        Mockito.doReturn(mapOf(orcid to EnrichmentOutcome.Success(AuthorEnrichment(null, null, null))))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        val nullResult = svc.enrichProfiles(listOf(profiles.first()))
+        assertInstanceOf(ProfileEnrichmentOutcome.Success::class.java, nullResult["DOC-1"])
+        val lastBody = (Mockito.mockingDetails(restTemplate).invocations.last {
+            it.method.name == "exchange" && (it.arguments[0] as? String)?.contains("/_update/") == true
+        }.arguments[2] as HttpEntity<*>).body as Map<*, *>
+        val nullDoc = ((lastBody["script"] as Map<*, *>)["params"] as Map<*, *>)["doc"] as Map<*, *>
+        assertFalse(nullDoc.containsKey("researchFieldIds"))
+        assertEquals(ExpertClassificationService.VERSION,
+            (nullDoc["expertClassification"] as com.weibo.talentintroduction.expert.domain.ExpertClassification).version)
+        val output = Paths.get("target/discovery-plan-acceptance/09c-layers.json")
+        Files.createDirectories(output.parent)
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), mapOf(
+            "source" to "constructed", "lookupIdentity" to orcid,
+            "authorLookupRequests" to 1, "documents" to layerEvidence,
+            "threeLayerUpdateCount" to updates.size, "identityCas" to true,
+            "nullOmitted" to true, "nullRetainedPriorFieldIds" to profiles.first().researchFieldIds))
     }
 
     @Test
@@ -3495,7 +5059,8 @@ class ExpertDiscoveryServiceTest {
         Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
 
         val expert = c6Expert("0000-PARTIAL", esDocId = "DOC-PARTIAL")
-        Mockito.doReturn(mapOf("0000-PARTIAL" to EnrichmentOutcome.Success(AuthorEnrichment(10, 100, 5))))
+        Mockito.doReturn(mapOf("0000-PARTIAL" to EnrichmentOutcome.Success(
+            AuthorEnrichment(10, 100, 5, researchFieldIds = listOf("22")))))
             .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
         stubRawLayerOnly()
         stubLayerExists("orcid_info_candidate")
@@ -3515,6 +5080,12 @@ class ExpertDiscoveryServiceTest {
         assertEquals(LayerUpdateStatus.ABSENT, partial.layers.application)
         assertTrue(partial.layers.hasFailedLayer())
         assertTrue(partial.layers.updatedAnyLayer())
+        val output = Paths.get("target/discovery-plan-acceptance/09c-partial.json")
+        Files.createDirectories(output.parent)
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), mapOf(
+            "source" to "constructed", "fieldIds" to listOf("22"),
+            "raw" to partial.layers.raw.name, "candidate" to partial.layers.candidate.name,
+            "application" to partial.layers.application.name, "outcome" to "Partial"))
     }
 
     @Test
@@ -3905,6 +5476,58 @@ class ExpertDiscoveryServiceTest {
 
         // 附加计数同时出现在 stats 响应里（历史任务详情仍是当时快照）
         assertEquals(2, svc.getEnrichmentStats().autoEnrichment?.succeeded)
+    }
+
+    @Test
+    fun `discovery worker retries revalidation failure before job completion`() {
+        workerRetryEvidence()
+    }
+
+    internal fun workerRetryEvidence(): Map<String, Any> {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val job = enrichmentJob(10L, "DISCOVERY-DOC", "ORCID", "lease-10")
+        val profile = c6Expert("DISCOVERY-DOC", esDocId = "DISCOVERY-DOC")
+            .copy(emailSource = "PAPER_FULLTEXT",
+                identityVerification = DiscoveryIdentity.verified("e@example.com", "Test", "User",
+                    "JATS_SHA256:" + "a".repeat(64), null, "A123"))
+        Mockito.doReturn(listOf(profile)).`when`(expertSearchService)
+            .findByDocumentIds(eqValue(ExpertIndexLevel.RAW), Mockito.anyList())
+        Mockito.doReturn(mapOf("A123" to EnrichmentOutcome.Success(
+            AuthorEnrichment(hIndex = 9, citationCount = 90, worksCount = 4, researchFieldIds = listOf("22"))
+        ))).`when`(openAlex).batchEnrichByAuthorIds(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        stubLayerPresence()
+        stubAcademicUpdateOk()
+        Mockito.doReturn(PromotionOutcome.WriteFailed).`when`(revalidationService).revalidateDiscovery("DISCOVERY-DOC")
+        Mockito.doReturn(true).`when`(enrichmentJobService).complete(eqValue(10L), eqValue("lease-10"), anyOutcome())
+
+        val result = svc.processClaimedEnrichmentJobBatch(listOf(job), RequestKind.HISTORY_ENRICHMENT)
+        assertEquals(0, result.succeeded)
+        assertEquals(1, result.pending)
+        val captured = org.mockito.ArgumentCaptor.forClass(ProfileEnrichmentOutcome::class.java)
+        Mockito.verify(enrichmentJobService).complete(eqValue(10L), eqValue("lease-10"),
+            captured.capture() ?: ProfileEnrichmentOutcome.NoId)
+        assertTrue(captured.value is ProfileEnrichmentOutcome.RetryableError)
+        Mockito.verify(revalidationService).revalidateDiscovery("DISCOVERY-DOC")
+        Mockito.doReturn(PromotionOutcome.Promoted).`when`(revalidationService).revalidateDiscovery("DISCOVERY-DOC")
+        Mockito.doReturn(true).`when`(enrichmentJobService).complete(eqValue(10L), eqValue("lease-11"), anyOutcome())
+        val retried = svc.processClaimedEnrichmentJobBatch(
+            listOf(enrichmentJob(10L, "DISCOVERY-DOC", "ORCID", "lease-11", attempts = 1)),
+            RequestKind.HISTORY_ENRICHMENT
+        )
+        assertEquals(1, retried.succeeded)
+        assertEquals(1, retried.promoted)
+        val success = org.mockito.ArgumentCaptor.forClass(ProfileEnrichmentOutcome::class.java)
+        Mockito.verify(enrichmentJobService).complete(eqValue(10L), eqValue("lease-11"),
+            success.capture() ?: ProfileEnrichmentOutcome.NoId)
+        assertTrue(success.value is ProfileEnrichmentOutcome.Success)
+        return mapOf("jobTransitions" to listOf(
+            mapOf("lease" to "lease-10", "outcome" to captured.value.javaClass.simpleName,
+                "succeeded" to result.succeeded, "pending" to result.pending),
+            mapOf("lease" to "lease-11", "outcome" to success.value.javaClass.simpleName,
+                "succeeded" to retried.succeeded, "promoted" to retried.promoted)
+        ))
     }
 
     @Test

@@ -1,0 +1,91 @@
+{
+  "id" : "W4385245566",
+  "title" : "Exploiting Generative AI to Scale up Intelligent Tutoring Systems",
+  "authors" : [ {
+    "givenNames" : "Jakubův,",
+    "familyNames" : "Jan",
+    "orcidId" : "https://orcid.org/0000-0002-8848-5537",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Chvalovský,",
+    "familyNames" : "Karel",
+    "orcidId" : "https://orcid.org/0000-0002-0541-3889",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Goertzel,",
+    "familyNames" : "Zarathustra",
+    "orcidId" : "https://orcid.org/0000-0002-8458-2786",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Kaliszyk,",
+    "familyNames" : "Cezary",
+    "orcidId" : "https://orcid.org/0000-0002-8273-6059",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Olšák,",
+    "familyNames" : "Mirek",
+    "orcidId" : "https://orcid.org/0000-0002-9361-1921",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Piotrowski,",
+    "familyNames" : "Bartosz",
+    "orcidId" : "https://orcid.org/0000-0002-1699-018X",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Schulz,",
+    "familyNames" : "Stephan",
+    "orcidId" : "https://orcid.org/0000-0001-6262-8555",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Suda,",
+    "familyNames" : "Martin",
+    "orcidId" : "https://orcid.org/0000-0003-0989-5800",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  }, {
+    "givenNames" : "Urban,",
+    "familyNames" : "Josef",
+    "orcidId" : "https://orcid.org/0000-0002-1384-1613",
+    "affiliation" : null,
+    "email" : null,
+    "institutionType" : null,
+    "openAlexAuthorId" : null,
+    "corresponding" : false
+  } ],
+  "url" : "https://drops.dagstuhl.de/storage/00lipics/lipics-vol268-itp2023/LIPIcs.ITP.2023.19/LIPIcs.ITP.2023.19.pdf",
+  "pages" : 22,
+  "emails" : [ ],
+  "resolved" : 0,
+  "extracted" : 0
+}

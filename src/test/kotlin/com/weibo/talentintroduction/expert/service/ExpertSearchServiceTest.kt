@@ -2334,4 +2334,66 @@ class ExpertSearchServiceTest {
         assertTrue(service.findByDocumentIds(ExpertIndexLevel.RAW, listOf("  ")).isEmpty())
         org.mockito.Mockito.verifyNoInteractions(restTemplate)
     }
+
+    @Test
+    fun `all three layers project structured field IDs without inventing evidence for old documents`() {
+        val body = mapper.readTree(
+            """
+            {"hits":{"total":{"value":4},"hits":[
+              {"_id":"REAL-1","_source":{"orcidId":"legacy","researchFields":"Physics","disciplineCategory":"STEM","institution":"University"}},
+              {"_id":"REAL-2","_source":{"orcidId":"explicit-null","researchFieldIds":null}},
+              {"_id":"REAL-3","_source":{"orcidId":"empty","researchFieldIds":[]}},
+              {"_id":"REAL-4","_source":{"orcidId":"structured","researchFieldIds":["17","22"]}}
+            ]}}
+            """.trimIndent()
+        )
+        val layers = linkedMapOf<String, Any>()
+        for (level in ExpertIndexLevel.values()) {
+            val url = "https://es.example.com:9200/${serviceIndexName(level)}/_search"
+            val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+            Mockito.`when`(
+                restTemplate.exchange(
+                    eq(url), eq(HttpMethod.POST), capture.capture(),
+                    eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+                )
+            ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+            val profiles = service.searchExperts(10, level).experts
+            assertEquals(listOf("REAL-1", "REAL-2", "REAL-3", "REAL-4"), profiles.map { it.esDocId })
+            assertNull(profiles[0].researchFieldIds, "old documents cannot infer evidence from free text")
+            assertNull(profiles[1].researchFieldIds)
+            assertEquals(emptyList<String>(), profiles[2].researchFieldIds)
+            assertEquals(listOf("17", "22"), profiles[3].researchFieldIds)
+            val request = capture.value.body as Map<*, *>
+            assertTrue((request["_source"] as List<*>).contains("researchFieldIds"), "$level must project field IDs")
+            val mapping = mapper.readTree(
+                javaClass.getResourceAsStream("/es/orcid_info_${level.name.lowercase()}.json")!!
+            ).path("mappings")
+            val fieldType = mapping.path("properties").path("researchFieldIds").path("type").asText()
+            assertFalse(mapping.path("dynamic").asBoolean(), "$level mapping must stay dynamic=false")
+            assertEquals("keyword", fieldType)
+            layers[level.name] = mapOf(
+                "index" to serviceIndexName(level),
+                "mappingType" to fieldType,
+                "dynamic" to mapping.path("dynamic").asBoolean(),
+                "projected" to (request["_source"] as List<*>).contains("researchFieldIds"),
+                "readback" to profiles.map { mapOf("_id" to it.esDocId, "researchFieldIds" to it.researchFieldIds) }
+            )
+        }
+        val output = java.nio.file.Paths.get("target/discovery-plan-acceptance/09b.json")
+        java.nio.file.Files.createDirectories(output.parent)
+        val report = mapOf(
+            "fixture" to "isolated-three-layer-structured-field-readback",
+            "layers" to layers,
+            "targetOpenAlexFieldIds" to
+                com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog.targetOpenAlexFieldIds().sorted()
+        )
+        java.nio.file.Files.write(output, mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+    }
+
+    private fun serviceIndexName(level: ExpertIndexLevel): String = when (level) {
+        ExpertIndexLevel.RAW -> properties.rawIndexName
+        ExpertIndexLevel.CANDIDATE -> properties.candidateIndexName
+        ExpertIndexLevel.APPLICATION -> properties.applicationIndexName
+    }
 }

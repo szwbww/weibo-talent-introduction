@@ -100,7 +100,7 @@ class ExpertClassificationSchedulerTest {
     private fun result() = ExpertClassificationBackfillResult(
         level = ExpertIndexLevel.CANDIDATE,
         mode = BackfillMode.EXECUTE,
-        policyVersion = "rnd-v2-2026",
+        policyVersion = ExpertClassificationService.VERSION,
         scanned = 5,
         byType = mapOf(ExpertType.PRODUCTION_RND.name to 1L),
         writeSuccess = 5,
@@ -124,7 +124,7 @@ class ExpertClassificationSchedulerTest {
     )
 
     @Test
-    fun `fixed request CANDIDATE EXECUTE rnd-v2-2026 onlyPending with property bounds (I4-2 I4-4)`() {
+    fun `fixed request CANDIDATE EXECUTE current version onlyPending with property bounds (I4-2 I4-4)`() {
         properties = ExpertClassificationProperties(batchSize = 1000, delayMs = 5000, maxDocsPerRun = 12345L)
         stubTryStart(started = true, token = -12345L)
         stubBackfillRun(result())
@@ -137,9 +137,9 @@ class ExpertClassificationSchedulerTest {
         val request = capturedRequest!!
         assertThat(request.level).isEqualTo(ExpertIndexLevel.CANDIDATE)
         assertThat(request.mode).isEqualTo(BackfillMode.EXECUTE)
-        assertThat(request.version).isEqualTo("rnd-v2-2026")
+        assertThat(request.version).isEqualTo(ExpertClassificationService.VERSION)
         assertThat(request.onlyPending).isTrue()
-        assertThat(request.confirmation).isEqualTo("EXECUTE_CANDIDATE:rnd-v2-2026")
+        assertThat(request.confirmation).isEqualTo("EXECUTE_CANDIDATE:${ExpertClassificationService.VERSION}")
         // I4-4：batch/delay/maxDocs 取自 properties（此处为边界值）
         assertThat(request.batchSize).isEqualTo(1000)
         assertThat(request.delayMs).isEqualTo(5000)
@@ -150,7 +150,7 @@ class ExpertClassificationSchedulerTest {
         assertThat(initial.details).containsEntry("level", "CANDIDATE")
         assertThat(initial.details).containsEntry("mode", "EXECUTE")
         assertThat(initial.details).containsEntry("onlyPending", true)
-        assertThat(initial.details).containsEntry("policyVersion", "rnd-v2-2026")
+        assertThat(initial.details).containsEntry("policyVersion", ExpertClassificationService.VERSION)
 
         // I4-3：token 绑定 + 结束后清理（与人工路径共用 taskType）
         Mockito.verify(progressStore)

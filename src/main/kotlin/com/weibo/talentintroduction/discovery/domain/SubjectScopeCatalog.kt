@@ -23,6 +23,13 @@ object SubjectScopeCatalog {
      * 实测多值 `|` 语法可用：`primary_topic.field.id:22|31|17|25|21|15` count = 1,473,809。
      */
     private val RND_TARGET_OPENALEX_FIELD_IDS = listOf("22", "31", "17", "25", "21", "15")
+    private val RND_TARGET_OPENALEX_FIELD_ID_SET =
+        java.util.Collections.unmodifiableSet(RND_TARGET_OPENALEX_FIELD_IDS.toSet())
+
+    /** 与 OpenAlex 查询片段共用同一六类 field ID；仅供事实判断，不推断缺失证据。 */
+    fun targetOpenAlexFieldIds(): Set<String> = RND_TARGET_OPENALEX_FIELD_ID_SET
+
+    fun isTargetOpenAlexFieldId(fieldId: String): Boolean = fieldId in RND_TARGET_OPENALEX_FIELD_ID_SET
 
     /**
      * RND_TARGET 的 arXiv 分类前缀（arXiv 官方分类命名，来源 docs/plans/2026-08-25/04-discovery-subject-scope.md Task 1）：

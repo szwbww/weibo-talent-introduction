@@ -1,0 +1,145 @@
+$ rg -n resolveText\(|resolveHtml\(|JatsXmlEmailParser\.parse|pdfEmailExtractor\.extract|plainTextExtractor\.extract|searchPapers\( src/main src/test
+exit=0
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:26:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:55:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:76:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:102:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:128:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:153:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:175:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:182:            JatsXmlEmailParser.parse("not xml at all")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:204:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:229:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:256:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:279:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:302:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:323:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:345:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:374:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:401:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:431:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:457:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:485:        val results = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:497:        val result = JatsXmlEmailParser.parse(sharedXml(listOf("John" to "Smith", "Jane" to "Doe"),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:508:            val result = JatsXmlEmailParser.parse(sharedXml(order, text)).associateBy { it.email }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:517:        val result = JatsXmlEmailParser.parse(sharedXml(listOf("Fuqiang" to "Gao", "Sébastien" to "Lustig", "Weiguo" to "Wang"),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:524:        val result = JatsXmlEmailParser.parse(sharedXml(listOf("Sajjad" to "Abbasi", "Ali Akbar" to "Moosavi"),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:532:            val result = JatsXmlEmailParser.parse(sharedXml(names, "contact@example.org (JS)"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:539:        val result = JatsXmlEmailParser.parse(sharedXml(listOf("John" to "Smith"), "Correspondence: Jane Doe, other@example.org"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:546:        assertEquals("John", JatsXmlEmailParser.parse(xml).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:548:        assertTrue(JatsXmlEmailParser.parse(duplicate).all { it.givenNames == null })
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:555:        assertNull(JatsXmlEmailParser.parse(xml).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:564:        val result = JatsXmlEmailParser.parse(xml)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/JatsXmlEmailParserTest.kt:571:        val result = JatsXmlEmailParser.parse(sharedXml(listOf("John" to "Smith", "Jane" to "Doe"),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:91:        val result = dataSource.searchPapers(criteria)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:200:        dataSource.searchPapers(criteria)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:228:        dataSource.searchPapers(criteria)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:258:        dataSource.searchPapers(criteria)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:274:        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException::class.java) { dataSource.searchPapers(PaperSearchCriteria()) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:646:        val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:668:        val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:690:        val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:712:        val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:774:        val authors = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:874:        val paper = dataSource.searchPapers(PaperSearchCriteria()).papers.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1182:        dataSource.searchPapers(PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1186:        dataSource.searchPapers(PaperSearchCriteria(keywords = listOf("alloy")))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1351:        dataSource.searchPapers(PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1369:            dataSource.searchPapers(PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSourceTest.kt:1385:        assertThrows(RuntimeException::class.java) { dataSource.searchPapers(PaperSearchCriteria()) }
+src/test/java/com/weibo/talentintroduction/discovery/service/DiscoveryMockHelper.java:38:        Mockito.when(mock.searchPapers(
+src/test/java/com/weibo/talentintroduction/discovery/service/DiscoveryMockHelper.java:44:        var stub = Mockito.when(mock.searchPapers(Mockito.any(PaperSearchCriteria.class)));
+src/test/java/com/weibo/talentintroduction/discovery/service/DiscoveryMockHelper.java:169:        Mockito.doThrow(exception).when(mock).searchPapers(Mockito.any(PaperSearchCriteria.class));
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:23:    fun resolveText(text: String, authors: List<PaperAuthor>, blacklist: List<String> = emptyList()): List<AuthorEmail> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:28:    fun resolveHtml(html: String, authors: List<PaperAuthor>, blacklist: List<String> = emptyList()): List<AuthorEmail> {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:76:        val result = dataSource.searchPapers(criteria)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:104:        val result = dataSource.searchPapers(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:120:        val result = dataSource.searchPapers(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:131:        val result = dataSource.searchPapers(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:164:        val result = dataSource.searchPapers(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:178:        dataSource.searchPapers(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:195:        dataSource.searchPapers(PaperSearchCriteria(pageSize = 2))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:281:        val paper = dataSource.searchPapers(PaperSearchCriteria(pageSize = 2)).papers.single()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSourceTest.kt:312:        assertThrows(RuntimeException::class.java) { dataSource.searchPapers(PaperSearchCriteria()) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:666:                    batch = source.searchPapers(runCriteria.copy(cursor = cursor))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1530:                    val page = requireNotNull(paperSource).searchPapers(pageCriteria)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PmcOaDataSource.kt:31:    override fun searchPapers(criteria: PaperSearchCriteria): PaperSearchResult {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PmcOaDataSource.kt:59:            val emails = JatsXmlEmailParser.parse(xml)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSource.kt:39:    override fun searchPapers(criteria: PaperSearchCriteria): PaperSearchResult {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSource.kt:83:        return pdfEmailExtractor.extract(pdfUrl, paper.authors, sourceName)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:253:        }.`when`(source).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2544:            .`when`(europePmc).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2608:            .`when`(europePmc).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2794:            .`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:2863:            .`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4130:        }.`when`(europePmc).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:4165:            .searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:34:    override fun searchPapers(criteria: PaperSearchCriteria): PaperSearchResult {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:128:            JatsXmlEmailParser.parse(bytes)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSource.kt:187:            val emails = JatsXmlEmailParser.parse(xml)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSource.kt:40:    override fun searchPapers(criteria: PaperSearchCriteria): PaperSearchResult {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSource.kt:100:        val result = pdfEmailExtractor.extract(pdfUrl, paper.authors, sourceName)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:23:            val result = SourceAuthorEmailResolver.resolveHtml(case.path("html").asText(), sourceOwnershipAuthors(case))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:43:        val result = SourceAuthorEmailResolver.resolveText(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:49:        val wrapped = SourceAuthorEmailResolver.resolveText("Contact: Jane Doe\nEmail: opaque@uni.edu", listOf(jane))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:60:            val result = SourceAuthorEmailResolver.resolveText(text, listOf(jane))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:73:        assertNull(SourceAuthorEmailResolver.resolveText("Jane Doe: opaque@uni.edu", duplicateNames).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:74:        val shared = SourceAuthorEmailResolver.resolveText("Jane Doe: same@uni.edu\nJohn Smith: same@uni.edu", listOf(jane, john))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:78:            assertEquals(author.orcidId, SourceAuthorEmailResolver.resolveText(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:85:        assertNull(SourceAuthorEmailResolver.resolveHtml(html, listOf(jane)).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:91:        val result = SourceAuthorEmailResolver.resolveHtml(html,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:103:        assertNull(SourceAuthorEmailResolver.resolveHtml(node, listOf(jane, jane.copy(orcidId = "different"))).single().givenNames)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolverTest.kt:105:        assertEquals("Jane", SourceAuthorEmailResolver.resolveHtml(nested, listOf(jane, john)).single().givenNames)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:48:    override fun searchPapers(criteria: PaperSearchCriteria): PaperSearchResult {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:160:            val outcome = pdfEmailExtractor.extract(url, paper.authors, sourceName, deadline) { }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:150:        val emails = SourceAuthorEmailResolver.resolveHtml(html, knownAuthors, properties.blacklistPrefixes)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:280:        SourceAuthorEmailResolver.resolveText(text, knownAuthors, properties.blacklistPrefixes)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt:66:        dataSource.searchPapers(criteria)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt:140:        dataSource.searchPapers(PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt:171:        val result = dataSource.searchPapers(PaperSearchCriteria(keywords = listOf("machine learning")))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt:264:        val result = dataSource.searchPapers(PaperSearchCriteria())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSource.kt:124:    override fun searchPapers(criteria: PaperSearchCriteria): PaperSearchResult = searchCorePage(criteria).result
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSource.kt:161:            val emails = plainTextExtractor.extract(paper.fullText, emptyList())
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSource.kt:164:                    SourceAuthorEmailResolver.resolveText(paper.fullText, paper.authors), "FULLTEXT_TEXT", null, httpRequests = 0
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSource.kt:169:                return pdfEmailExtractor.extract(paper.downloadUrl, paper.authors, sourceName)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSource.kt:174:            return pdfEmailExtractor.extract(paper.downloadUrl, paper.authors, sourceName)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:51:        dataSource.searchPapers(PaperSearchCriteria(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:85:        dataSource.searchPapers(PaperSearchCriteria(cursor = "AoE/+EDE5MzM5NTMy="))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:111:        val result = dataSource.searchPapers(criteria)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:165:        val result = dataSource.searchPapers(PaperSearchCriteria(keywords = listOf("test")))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:182:        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException::class.java) { dataSource.searchPapers(criteria) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:198:        val result = dataSource.searchPapers(criteria)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:218:        org.junit.jupiter.api.Assertions.assertThrows(java.lang.Exception::class.java) { dataSource.searchPapers(criteria) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:227:        val result = dataSource.searchPapers(PaperSearchCriteria(keywords = listOf("test")))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:454:        val result = dataSource.searchPapers(PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/EuropePmcDataSourceTest.kt:701:        val result = dataSource.searchPapers(criteria)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/AcademicDataSource.kt:12:    fun searchPapers(criteria: PaperSearchCriteria): PaperSearchResult
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:47:            dataSource.searchPapers(criteria)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:71:            .searchPapers(PaperSearchCriteria(publicationYearFrom = 2020, publicationYearTo = 2026))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:134:        harness.dataSource.searchPapers(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:137:        harness.dataSource.searchPapers(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:167:            harness.dataSource.searchPapers(PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:178:            harness.dataSource.searchPapers(PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:189:            harness.dataSource.searchPapers(PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:199:            harness.dataSource.searchPapers(PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt:210:            harness.dataSource.searchPapers(PaperSearchCriteria())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PmcOaDataSourceTest.kt:30:        val result = dataSource.searchPapers(criteria)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/PmcOaDataSourceTest.kt:53:        org.junit.jupiter.api.Assertions.assertThrows(RuntimeException::class.java) { dataSource.searchPapers(PaperSearchCriteria()) }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1169:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1241:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1260:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1277:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1294:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1307:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenThrow(IllegalStateException("不得再次请求"))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1350:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1362:        Mockito.verify(openAlex, Mockito.atLeastOnce()).searchPapers(captor.capture() ?: FALLBACK_CRITERIA)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1379:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1398:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1432:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(PaperSearchResult(listOf(big), null, 1L))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1458:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1678:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1810:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1896:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1914:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1934:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2317:        Mockito.`when`(openAlex.searchPapers(anyCriteria())).thenReturn(

@@ -1,0 +1,30 @@
+{
+  "sourceBrace": {
+    "sourcePath": "docs/plans/2026-09-26/discovery-repair-evidence/diagnosis-source/evidence/more-probes.json",
+    "sourceSha256": "0ba57f83e303bc26bd68a585eb71449ae50d862b553ad12b6e07fafd600c2273",
+    "cases": [
+      {"paper":"W3147387781","text":"{aarnab, dehghani, heigold, chensun, lucic, cordelias}@google.com","expected":["aarnab@google.com","dehghani@google.com","heigold@google.com","chensun@google.com","lucic@google.com","cordelias@google.com"]},
+      {"paper":"W2993466051","text":"{cubuk, barretzoph, shlens, qvl}@google.com","expected":["cubuk@google.com","barretzoph@google.com","shlens@google.com","qvl@google.com"]},
+      {"paper":"W3045004532","text":"Email address: {lyang339, abdallah.shami}@uwo.ca (Li Yang and Abdallah","expected":["lyang339@uwo.ca","abdallah.shami@uwo.ca"]},
+      {"paper":"W3025800305","text":"{xuebin,vincent.zhang,chuang8,masood1,zaiane,mj7}@ualberta.ca","expected":["xuebin@ualberta.ca","vincent.zhang@ualberta.ca","chuang8@ualberta.ca","masood1@ualberta.ca","zaiane@ualberta.ca","mj7@ualberta.ca"]},
+      {"paper":"W3003265726","text":"{shaoxiong.ji; pekka.marttinen}@aalto.fi","expected":["shaoxiong.ji@aalto.fi","pekka.marttinen@aalto.fi"]},
+      {"paper":"W3015883388","text":"{vladk, barlaso, plewis, ledell, edunov, scottyih}@fb.com","expected":["vladk@fb.com","barlaso@fb.com","plewis@fb.com","ledell@fb.com","edunov@fb.com","scottyih@fb.com"]},
+      {"paper":"W4382203079","text":"{zengailing, leizhang}@idea.edu.cn,{mxchen21, qxu}@cse.cuhk.edu.hk","expected":["zengailing@idea.edu.cn","leizhang@idea.edu.cn","mxchen21@cse.cuhk.edu.hk","qxu@cse.cuhk.edu.hk"]}
+    ]
+  },
+  "wrappedSource": {
+    "paper":"W2995022099",
+    "sourcePath":"docs/plans/2026-09-26/discovery-repair-evidence/diagnosis-source/evidence/sources/W2995022099/first-two-pages.txt",
+    "sourceSha256":"b7814841b104fe08cf95f099831a145d58cf0abeb45c5327fb8498311e92f66c",
+    "originalPdfSha256":"e3e9563fe9292d3aa4c8bd470da689698b51d72258ee7a904d8928f965c45c12",
+    "text":"*Peter Kairouz and H. Brendan McMahan conceived, coordinated, and edited this work. Correspondence to kairouz@\ngoogle.com and mcmahan@google.com.",
+    "expected":["kairouz@google.com","mcmahan@google.com"]
+  },
+  "syntheticControls": [
+    {"kind":"synthetic-obfuscation-control","text":"Jane Doe: opaque(at)uni.edu","expected":["opaque@uni.edu"],"givenNames":"Jane","familyNames":"Doe"},
+    {"kind":"synthetic-negative-control","text":"Jane Doe: {opaque,,second}@uni.edu","expected":[]},
+    {"kind":"synthetic-negative-control","text":"opaque@\n\nuni.edu","expected":[]},
+    {"kind":"synthetic-negative-control","text":"opaque@\nintervening\nuni.edu","expected":[]},
+    {"kind":"synthetic-negative-control","text":"support@uni.edu","expected":[]}
+  ]
+}

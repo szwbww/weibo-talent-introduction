@@ -1,0 +1,40 @@
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:52:                            val deleted = expertIndexWriterService.removeFromCandidateIndex(docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:67:                        val deleted = expertIndexWriterService.removeFromCandidateIndex(docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:182:                            val success = promoteRawToCandidate(profile, gate.classification)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:240:    private fun promoteRawToCandidate(profile: ExpertProfile, classification: ExpertClassification): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:242:        val rawDoc = expertIndexWriterService.readRawDocument(docId)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:259:        return expertIndexWriterService.writeCandidateDocument(docId, doc)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:306:     * - 候选正文始终来自写入时刻的最新 RAW 文档（[promoteRawToCandidate] 内部再读一次），旧快照不会覆盖它。
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:334:                return if (promoteRawToCandidate(raw, gate.classification)) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillService.kt:71: * - 只扫描、分类、聚合（DRY_RUN）；EXECUTE 时调用 [ExpertIndexWriterService.bulkUpdateExpertClassifications]
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillService.kt:131:                val bulkResult = indexWriter.bulkUpdateExpertClassifications(level, writeItems)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:77:        // ExpertDiscoveryService.updateExpertAcademicFields pattern — skip layers whose
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:234:    fun bulkUpdateExpertClassifications(
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:465:            val removedFromCandidate = removeFromCandidateIndex(normalizedOrcid)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:531:    fun promoteToCandidate(orcid: String, contact: ExpertContact): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:577:    fun removeFromCandidateIndex(esDocId: String): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:602:    fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:673:    fun readRawDocument(docId: String): Map<String, Any?>? {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:692:    fun writeCandidateDocument(docId: String, doc: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:710:    fun demoteToRaw(orcid: String, contact: ExpertContact): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1015:                    if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1021:                        if (promoteDiscoveredToCandidate(esDocId, profileMap)) sourceStats.promoted++
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1338:            if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1349:                if (promoteDiscoveredToCandidate(identity.esDocId, profileMap)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1891:    private fun promoteDiscoveredToCandidate(esDocId: String, rawDoc: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2534:    private fun updateExpertAcademicFields(profile: ExpertProfile, enrichment: AuthorEnrichment): LayerUpdateResult {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2727:                            val layers = updateExpertAcademicFields(profile, found.data)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2856:    private fun promoteRawToCandidateWithEmail(profile: ExpertProfile): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2935:                                        if (promoteRawToCandidateWithEmail(profile.copy(email = validEmail))) {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:35:            oldLevel == "RAW" && targetLevel == "CANDIDATE" -> promoteRawToCandidate(contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:38:            targetLevel == "RAW" -> demoteToRaw(contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:65:    private fun promoteRawToCandidate(contact: ExpertContact): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:67:        val ok = expertIndexWriterService.promoteToCandidate(contact.orcidId, contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:106:    private fun demoteToRaw(contact: ExpertContact): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertIndexLevelOperationService.kt:108:        val ok = expertIndexWriterService.demoteToRaw(contact.orcidId, contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:134:    fun promoteToCandidate(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/controller/ExpertContactManagementController.kt:138:    fun demoteToRaw(@PathVariable contactId: Long): ExpertContactResponse =
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:282:    fun promoteToCandidate(contactId: Long): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:285:        val ok = expertIndexWriterService.promoteToCandidate(contact.orcidId, contact)
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:291:    fun demoteToRaw(contactId: Long): ExpertContact {
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/ExpertContactManagementService.kt:294:        val ok = expertIndexWriterService.demoteToRaw(contact.orcidId, contact)

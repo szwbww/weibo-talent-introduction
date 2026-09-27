@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.expert.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.ExpertType
@@ -16,6 +17,8 @@ import java.time.Clock
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneOffset
+import java.nio.file.Files
+import java.nio.file.Paths
 
 class ExpertClassificationServiceTest {
 
@@ -472,5 +475,74 @@ class ExpertClassificationServiceTest {
             )
         )
         assertEquals(a, withPersonalData)
+    }
+    @Test
+    fun `09c real snapshots and constructed scope cases remain distinctly labeled`() {
+        val mapper = ObjectMapper().registerKotlinModule().registerModule(JavaTimeModule())
+        val fixture = mapper.readTree(javaClass.classLoader.getResource("discovery/rnd-scope-evidence.json"))
+        val evidence = mutableListOf<Map<String, Any?>>()
+        for (record in fixture.path("real_snapshot")) {
+            assertFalse(record.has("researchFieldIds"), "original production snapshot cannot acquire invented IDs")
+            val input = profile(
+                employment = record.path("employment").asText(),
+                institution = record.path("institution").asText(),
+                researchFields = record.path("researchFields").asText(),
+                hIndex = record.path("hIndex").asInt(),
+                worksCount = record.path("worksCount").asInt(),
+                lastPublicationYear = record.path("lastPublicationYear").asInt()
+            ).copy(orcidId = record.path("orcid").asText(), email = record.path("email").asText(),
+                emailSource = record.path("emailSource").asText())
+            val result = service.classify(input)
+            if (record.path("id").asText().startsWith("EMAIL-a5a") ||
+                record.path("id").asText().startsWith("EMAIL-822")) {
+                assertEquals(ExpertType.OUT_OF_SCOPE, result.type)
+                assertEquals(0, result.productionScore)
+                assertEquals(listOf("MEDICAL_DOMAIN_NO_WHITELIST"), result.negativeEvidence)
+            } else {
+                assertEquals(ExpertType.UNKNOWN, result.type)
+                assertEquals(listOf("RND_SCOPE_UNCONFIRMED"), result.negativeEvidence)
+            }
+            evidence += mapOf("source" to "real_snapshot", "id" to record.path("id").asText(),
+                "originalFingerprint" to record.path("originalFingerprint").asText(),
+                "researchFieldIds" to null, "classification" to result)
+        }
+        for (record in fixture.path("constructed")) {
+            if (!record.has("expectedType")) continue // the parser-only missing/invalid field cases
+            val ids = record.path("researchFieldIds").takeIf { it.isArray }?.map { it.asText() }
+            val input = profile(
+                employment = record.path("employment").asText("Researcher, University"),
+                institution = "University",
+                researchFields = "Research across academic disciplines",
+                hIndex = 20, worksCount = 30, lastPublicationYear = 2025
+            ).copy(emailSource = "ORCID_PUBLIC", researchFieldIds = ids)
+            val result = service.classify(input)
+            assertEquals(record.path("expectedType").asText(), result.type.name, record.path("case").asText())
+            assertTrue(result.researchScore >= 50)
+            if (ids != null && ids.none { it in setOf("15", "17", "21", "22", "25", "31") }) {
+                assertEquals(listOf("RND_SCOPE_OUTSIDE_TARGET"), result.negativeEvidence)
+                assertTrue(result.researchScore > 0)
+            }
+            evidence += mapOf("source" to "constructed", "case" to record.path("case").asText(),
+                "researchFieldIds" to ids, "classification" to result)
+        }
+        val base = profile(institution = "University", lastPublicationYear = 2025)
+            .copy(emailSource = "ORCID_PUBLIC", researchFieldIds = listOf("22", "031"))
+        assertEquals(service.classify(base).sourceFingerprint,
+            service.classify(base.copy(researchFieldIds = listOf("31", "022", "22"))).sourceFingerprint)
+        assertNotEquals(service.classify(base).sourceFingerprint,
+            service.classify(base.copy(researchFieldIds = listOf("17", "31"))).sourceFingerprint)
+        assertNotEquals(service.classify(base).sourceFingerprint,
+            service.classify(base.copy(emailSource = null)).sourceFingerprint)
+        assertEquals(ExpertType.ACADEMIC_RND, service.classify(base.copy(emailSource = null,
+            researchFieldIds = null, hIndex = 20, worksCount = 30)).type,
+            "non-discovery imported profiles retain their former score-based classification")
+        assertEquals(ExpertClassificationService.VERSION, service.classify(base).version)
+        val old = classification(ExpertType.ACADEMIC_RND).copy(version = "rnd-v2-2026")
+        assertEquals(old, mapper.readValue(mapper.writeValueAsString(old), ExpertClassification::class.java))
+        val output = Paths.get("target/discovery-plan-acceptance/09c-classification.json")
+        Files.createDirectories(output.parent)
+        mapper.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), mapOf(
+            "version" to ExpertClassificationService.VERSION,
+            "cases" to evidence, "oldJsonReadable" to true))
     }
 }

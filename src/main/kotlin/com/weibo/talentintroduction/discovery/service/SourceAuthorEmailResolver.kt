@@ -4,6 +4,7 @@ import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import java.io.StringReader
+import java.net.URLDecoder
 import java.text.Normalizer
 import java.util.Locale
 import javax.swing.text.MutableAttributeSet
@@ -19,16 +20,42 @@ internal object SourceAuthorEmailResolver {
     private val separator = Regex("(?i)^\\s*(?::|[–—]|<|\\(|\\[|(?:e-?mail|email address)\\s*:)\\s*(?:e-?mail\\s*:\\s*)?")
     private val emailLine = Regex("(?i)^e-?mail\\s*:")
     private val shared = Regex("(?i)\\b(?:the authors|corresponding authors|equal contribution|all authors)\\b")
+    // Swing's legacy HTML parser can discard late elements in a complete HTML5 article.
+    // Bound the observed adjacent heading/list region before parsing its named links.
+    private val namedContactRegion = Regex(
+        """<h3\b[^>]*\bid\s*=\s*["']corresponding-author["'][^>]*>\s*Corresponding authors?\s*</h3>\s*<p\b[^>]*\bid\s*=\s*["']corresponding-author-list["'][^>]*>.*?</p>""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
 
     fun resolveText(text: String, authors: List<PaperAuthor>, blacklist: List<String> = emptyList()): List<AuthorEmail> {
+        val normalized = emails.normalizeContactText(text)
         val claims = textClaims(text, authors)
-        return results(emails.extract(text, blacklist), claims, authors)
+        return results(emails.extract(normalized, blacklist), claims, authors)
     }
 
-    fun resolveHtml(html: String, authors: List<PaperAuthor>, blacklist: List<String> = emptyList()): List<AuthorEmail> {
+    fun resolvePdf(
+        text: String,
+        authors: List<PaperAuthor>,
+        contacts: List<PdfAuthorContactLayout.Contact>,
+        blacklist: List<String> = emptyList()
+    ): List<AuthorEmail> {
+        val normalized = emails.normalizeContactText(text)
+        val claims = textClaims(text, authors) + contacts.map {
+            Claim(it.email.lowercase(Locale.ROOT), it.authorIndex, it.evidenceText)
+        }
+        return results(emails.extract(normalized, blacklist), claims, authors)
+    }
+
+    fun resolveHtml(html: String, authors: List<PaperAuthor>, blacklist: List<String> = emptyList()): List<AuthorEmail> =
+        resolveHtmlWithVisibility(html, authors, blacklist).second
+
+    internal fun resolveHtmlWithVisibility(
+        html: String, authors: List<PaperAuthor>, blacklist: List<String> = emptyList()
+    ): Pair<Boolean, List<AuthorEmail>> {
         val root = parseHtml(html)
-        val text = root.visibleText()
-        val claims = textClaims(text, authors).toMutableList()
+        val originalText = root.visibleText()
+        val normalized = emails.normalizeContactText(originalText)
+        val claims = textClaims(originalText, authors).toMutableList()
+        val found = LinkedHashSet(emails.extract(normalized, blacklist))
         for (node in root.descendants().filter { it.isAuthor() }) {
             // Shared notes often sit under the last author in arXiv HTML. That is not ownership.
             if (node.descendants().any { it !== node && (it.isAuthor() || it.hasClass("ltx_note")) }) continue
@@ -50,22 +77,63 @@ internal object SourceAuthorEmailResolver {
                 for (email in emails.extract(contact.visibleText())) claims += Claim(email, owner, content)
             }
         }
-        return results(emails.extract(text, blacklist), claims, authors)
+        for (region in namedContactRegion.findAll(html)) {
+            val list = parseHtml(region.value).descendants()
+                .singleOrNull { it.tag == "p" && it.attr("id") == "corresponding-author-list" } ?: continue
+            for (anchor in list.descendants().filter { it.tag == "a" }) {
+                val email = mailtoMailbox(anchor.attr("href"), blacklist) ?: continue
+                found += email
+                val name = normalize(anchor.visibleText())
+                val owner = authors.indices.singleOrNull { fullName(authors[it]) == name } ?: continue
+                claims += Claim(email, owner, "${anchor.visibleText().trim()} <${anchor.attr("href")}>")
+            }
+        }
+        return originalText.isNotBlank() to results(found.toList(), claims, authors)
+    }
+
+    private fun mailtoMailbox(href: String, blacklist: List<String>): String? {
+        if (!href.startsWith("mailto:", ignoreCase = true)) return null
+        val encoded = href.substring(7).substringBefore('?')
+        val address = try {
+            URLDecoder.decode(encoded.replace("+", "%2B"), Charsets.UTF_8.name())
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        if (!mailbox.matches(address)) return null
+        val normalized = address.lowercase(Locale.ROOT)
+        return normalized.takeIf { emails.extract(address, blacklist).singleOrNull() == it }
     }
 
     private data class Claim(val email: String, val authorIndex: Int, val entry: String)
 
-    private fun textClaims(text: String, authors: List<PaperAuthor>): List<Claim> {
-        val lines = text.replace('\u00a0', ' ').lines().map { it.trim() }
-        val entries = lines.toMutableList()
+    private fun textClaims(originalText: String, authors: List<PaperAuthor>): List<Claim> {
+        val originalLines = originalText.replace('\u00a0', ' ').lines().map { it.trim() }
+        val entries = mutableListOf<Pair<String, String>>()
+        var line = 0
+        while (line < originalLines.size) {
+            if (line + 1 < originalLines.size) {
+                val originalPair = originalLines[line] + "\n" + originalLines[line + 1]
+                val normalizedPair = emails.normalizeContactText(originalPair)
+                if (!normalizedPair.contains('\n')) {
+                    entries += originalPair to normalizedPair.trim()
+                    line += 2
+                    continue
+                }
+            }
+            entries += originalLines[line] to emails.normalizeContactText(originalLines[line]).trim()
+            line++
+        }
         // Require an explicit contact label: an author list next to Email: is not ownership.
-        for (i in 0 until lines.lastIndex) {
-            if (prefix.find(lines[i])?.value?.isNotBlank() == true &&
-                authors.any { fullName(it) == normalize(prefix.replaceFirst(lines[i], "")) } &&
-                emailLine.containsMatchIn(lines[i + 1])) entries += lines[i] + ": " + lines[i + 1]
+        for (i in 0 until entries.lastIndex) {
+            if (prefix.find(entries[i].second)?.value?.isNotBlank() == true &&
+                authors.any { fullName(it) == normalize(prefix.replaceFirst(entries[i].second, "")) } &&
+                emailLine.containsMatchIn(entries[i + 1].second)) {
+                entries += (entries[i].first + ": " + entries[i + 1].first) to
+                    (entries[i].second + ": " + entries[i + 1].second)
+            }
         }
         val claims = mutableListOf<Claim>()
-        for (entry in entries) {
+        for ((originalEntry, entry) in entries) {
             if (entry.length > 1000 || shared.containsMatchIn(entry)) continue
             val body = prefix.replaceFirst(entry, "").trim()
             for ((index, author) in authors.withIndex()) {
@@ -81,7 +149,7 @@ internal object SourceAuthorEmailResolver {
                 val residue = mailbox.replace(addressField, "").replace(Regex("[\\s,;<>()\\[\\].]+"), "")
                 if (residue.isNotEmpty()) continue
                 val owner = authors.indices.singleOrNull { fullName(authors[it]) == fullName(author) } ?: continue
-                for (email in emails.extract(addressField)) claims += Claim(email, owner, entry)
+                for (email in emails.extract(addressField)) claims += Claim(email, owner, originalEntry)
             }
         }
         return claims

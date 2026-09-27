@@ -13,7 +13,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
 import org.springframework.web.client.RestTemplate
+import java.net.URI
 import java.net.URLDecoder
+import org.springframework.test.web.client.MockRestServiceServer
+import org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess
+import org.springframework.http.MediaType
 
 class OrcidDataSourceTest {
     private val restTemplate = Mockito.mock(RestTemplate::class.java)
@@ -21,17 +25,17 @@ class OrcidDataSourceTest {
     private val mapper = ObjectMapper()
     private val dataSource = OrcidDataSource(restTemplate, properties)
 
-    /** 真实发出的 URL（断言请求边界：start/rows/查询串）。 */
-    private val requests = mutableListOf<String>()
+    /** Captured URI at the HTTP request boundary. */
+    private val requests = mutableListOf<URI>()
 
     private fun stubResponses(vararg responses: String) {
         var index = 0
         Mockito.doAnswer { invocation ->
-            requests.add(invocation.getArgument<String>(0))
+            requests.add(invocation.getArgument(0))
             val body = responses[minOf(index, responses.size - 1)]
             index++
             mapper.readTree(body)
-        }.`when`(restTemplate).getForObject(Mockito.anyString(), Mockito.eq(JsonNode::class.java))
+        }.`when`(restTemplate).getForObject(Mockito.any(URI::class.java), Mockito.eq(JsonNode::class.java))
     }
 
     private fun expandedSearchResponse(vararg records: Pair<String, List<String>>): String {
@@ -52,12 +56,47 @@ class OrcidDataSourceTest {
     private fun recordsWithoutEmail(count: Int): String =
         expandedSearchResponse(*Array(count) { i -> "0000-0001-%04d".format(i) to emptyList<String>() })
 
-    private fun decodedQuery(url: String): String {
-        val queryPart = url.substringAfter("?q=").substringBefore("&")
-        return URLDecoder.decode(queryPart, "UTF-8")
-    }
+    private fun decodedQuery(uri: URI): String =
+        URLDecoder.decode(uri.rawQuery.substringAfter("q=").substringBefore("&"), "UTF-8")
 
-    private fun startParam(url: String): String = url.substringAfter("&start=").substringBefore("&")
+    private fun startParam(uri: URI): String = uri.rawQuery.substringAfter("&start=").substringBefore("&")
+
+    @Test
+    fun `real RestTemplate sends each ORCID shard query exactly once encoded`() {
+        val realTemplate = RestTemplate()
+        val server = MockRestServiceServer.createServer(realTemplate)
+        val actual = mutableListOf<URI>()
+        val expressions = listOf(
+            "keyword:\"engineering\"", "keyword:\"computer science\"",
+            "\"化学工程\"", "\"a+b%\\\"c\""
+        )
+        repeat(expressions.size) {
+            server.expect { request -> actual.add(request.uri) }
+                .andRespond(withSuccess("""{"expanded-result":[]}""", MediaType.APPLICATION_JSON))
+        }
+        val realSource = OrcidDataSource(realTemplate, properties)
+        for ((index, expression) in expressions.withIndex()) {
+            val criteria = if (index < 2) PaperSearchCriteria(
+                subjectScope = SubjectScopeCatalog.RND_TARGET, pageSize = 7, cursor = "${if (index == 0) 0 else 2}|13"
+            ) else PaperSearchCriteria(keywords = listOf(expression.removeSurrounding("\"")),
+                pageSize = 7, cursor = "0|13")
+            realSource.searchOrcidPage(criteria)
+        }
+        server.verify()
+        assertEquals(expressions, actual.map(::decodedQuery))
+        assertTrue(actual.all { it.rawQuery.contains("&start=13&rows=7") })
+        assertTrue(actual.none { "%253A" in it.rawQuery || "%2522" in it.rawQuery })
+
+        val lookupTemplate = RestTemplate()
+        val lookupServer = MockRestServiceServer.createServer(lookupTemplate)
+        val lookupRequests = mutableListOf<URI>()
+        lookupServer.expect { request -> lookupRequests.add(request.uri) }
+            .andRespond(withSuccess("""{"expanded-result":[]}""", MediaType.APPLICATION_JSON))
+        OrcidDataSource(lookupTemplate, properties).searchOrcidRecords(
+            PaperSearchCriteria(keywords = listOf("orcid:0000-0001-0000-0001"), pageSize = 5))
+        lookupServer.verify()
+        assertEquals("\"orcid:0000-0001-0000-0001\"", decodedQuery(lookupRequests.single()))
+    }
 
     @Test
     fun `searchOrcidPage advances by the raw count when a whole page has no public email`() {
@@ -183,7 +222,7 @@ class OrcidDataSourceTest {
     @Test
     fun `searchOrcidPage throws on API error`() {
         Mockito.doThrow(RuntimeException("API unavailable"))
-            .`when`(restTemplate).getForObject(Mockito.anyString(), Mockito.eq(JsonNode::class.java))
+            .`when`(restTemplate).getForObject(Mockito.any(URI::class.java), Mockito.eq(JsonNode::class.java))
 
         assertThrows(RuntimeException::class.java) {
             dataSource.searchOrcidPage(PaperSearchCriteria(keywords = listOf("test")))

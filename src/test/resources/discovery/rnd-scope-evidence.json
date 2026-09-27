@@ -1,0 +1,27 @@
+{
+  "provenance": "docs/audits/2026-09-27-deep-discovery-scope/candidate-scope-records.json; captured 2026-09-27. Real records have no captured OpenAlex field IDs; constructed cases below are not production records.",
+  "real_snapshot": [
+    {"id":"EMAIL-a5a6103034769f35b9c","email":"gebeyaawu2015@gmail.com","emailSource":"ORCID_PUBLIC","orcid":"0000-0002-1240-1405","employment":"Addis Ababa University College of Veterinary Medicine and Agriculture","institution":"Addis Ababa University College of Veterinary Medicine and Agriculture","researchFields":"Helminth infection and control, Genetic and phenotypic traits in livestock, Coccidia and coccidiosis research, Animal Diversity and Health Studies, Animal Nutrition and Physiology","disciplineCategory":"STEM","hIndex":2,"worksCount":8,"lastPublicationYear":2026,"originalType":"OUT_OF_SCOPE","originalFingerprint":"1026d120bad3cae4b3f0a0f7a8be212327a510db8b3346276bc11ae84ae2a89d"},
+    {"id":"EMAIL-822875ca23ce2454c78","email":"gebeyehu.alkadir@aau.edu.et","emailSource":"ORCID_PUBLIC","orcid":"0000-0002-1240-1405","employment":"Addis Ababa University College of Veterinary Medicine and Agriculture","institution":"Addis Ababa University College of Veterinary Medicine and Agriculture","researchFields":"Helminth infection and control, Genetic and phenotypic traits in livestock, Coccidia and coccidiosis research, Animal Diversity and Health Studies, Animal Nutrition and Physiology","disciplineCategory":"STEM","hIndex":2,"worksCount":8,"lastPublicationYear":2026,"originalType":"OUT_OF_SCOPE","originalFingerprint":"1026d120bad3cae4b3f0a0f7a8be212327a510db8b3346276bc11ae84ae2a89d"},
+    {"id":"EMAIL-f3be3fa164278a06ee5","email":"mehmeteminaksaray@aydin.edu.tr","emailSource":"ORCID_PUBLIC","orcid":"0009-0003-2929-9245","employment":"Istanbul Aydın University","institution":"Istanbul Aydın University","researchFields":"Art, Politics, and Modernism, Visual Culture and Art Theory, Photography and Visual Culture","disciplineCategory":"HUMANITIES","hIndex":1,"worksCount":1,"lastPublicationYear":2024,"originalType":"ACADEMIC_RND","originalFingerprint":"d6b8bf20a7df0aa46d880bab2f3e4eb4f2d42abb56cea8ae95707c082e819989"},
+    {"id":"EMAIL-1116e3dcbaa9c420b74","email":"nils.quetschlich@tum.de","emailSource":"PAPER_FULLTEXT","orcid":"0000-0002-4369-5207","employment":"Technical University of Munich","institution":"Technical University of Munich","researchFields":"Quantum Computing Algorithms and Architecture, Quantum Information and Cryptography, Cloud Computing and Resource Management, Parallel Computing and Optimization Techniques, Low-power high-performance VLSI design","disciplineCategory":"STEM","hIndex":11,"worksCount":43,"lastPublicationYear":2026,"originalType":"ACADEMIC_RND","originalFingerprint":"b2f5e75751282f59f86bdca703e667cc845783846faeee060340d58425609116"},
+    {"id":"EMAIL-cf63d8fa840dcec384b","email":"pollybuthelezi@gmail.com","emailSource":"ORCID_PUBLIC","orcid":"0000-0002-7753-3724","employment":"Durban Institute of Technology","institution":"Durban Institute of Technology","researchFields":"International Business and FDI, Global trade, sustainability, and social impact, Marketing and Advertising Strategies, E-commerce and Technology Innovations, Technology Adoption and User Behaviour","disciplineCategory":"HUMANITIES","hIndex":1,"worksCount":5,"lastPublicationYear":2026,"originalType":"ACADEMIC_RND","originalFingerprint":"fec35e08cbca97527cc607f762ea02869faccdc5163e6bf58308c0a4bfb2e73e"}
+  ],
+  "constructed": [
+    {"case":"engineering","researchFieldIds":["22"],"expectedType":"ACADEMIC_RND"},
+    {"case":"materials","researchFieldIds":["25"],"expectedType":"ACADEMIC_RND"},
+    {"case":"computer","researchFieldIds":["17"],"expectedType":"ACADEMIC_RND"},
+    {"case":"chemical","researchFieldIds":["15"],"expectedType":"ACADEMIC_RND"},
+    {"case":"energy","researchFieldIds":["21"],"expectedType":"ACADEMIC_RND"},
+    {"case":"physics","researchFieldIds":["31"],"expectedType":"ACADEMIC_RND"},
+    {"case":"mixed","researchFieldIds":["29","22"],"expectedType":"ACADEMIC_RND"},
+    {"case":"medical","researchFieldIds":["27"],"expectedType":"OUT_OF_SCOPE"},
+    {"case":"agriculture","researchFieldIds":["11"],"expectedType":"OUT_OF_SCOPE"},
+    {"case":"art","researchFieldIds":["12"],"expectedType":"OUT_OF_SCOPE"},
+    {"case":"business","researchFieldIds":["14"],"expectedType":"OUT_OF_SCOPE"},
+    {"case":"top5_missing_field","authorTopics":[{"count":10,"display_name":"Unknown","field":{}},{"count":9,"display_name":"Engineering","field":{"id":"22"}}],"expectedFieldIds":null},
+    {"case":"top5_invalid_field","authorTopics":[{"count":10,"display_name":"Unknown","field":{"id":"https://openalex.org/topics/22"}},{"count":9,"display_name":"Engineering","field":{"id":"22"}}],"expectedFieldIds":null},
+    {"case":"no_field_ids","researchFieldIds":null,"expectedType":"UNKNOWN"},
+    {"case":"clinical_strong_negative","employment":"Surgeon, University","researchFieldIds":["22"],"expectedType":"SERVICE_ONLY"}
+  ]
+}

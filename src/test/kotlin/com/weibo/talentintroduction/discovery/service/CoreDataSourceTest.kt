@@ -325,4 +325,21 @@ class CoreDataSourceTest {
         val validProperties = CoreProperties(enabled = true, apiKey = "valid-key", requestDelayMs = 0)
         assertNotNull(CoreDataSource(restTemplate, validProperties, plainTextExtractor, pdfExtractor))
     }
+    @Test
+    fun `comma display names split only a single nonempty family given pair`() {
+        stubSearchResponses(
+            """{"totalHits":1,"results":[{"title":"Names","yearPublished":2024,"authors":[
+              {"name":"Jakubův, Jan"},{"name":"Jane Doe"},{"name":"Family, Given, Middle"},{"name":", Empty"},{"name":"Family, "}]}]}"""
+        )
+        val authors = dataSource.searchPapers(PaperSearchCriteria(pageSize = 10)).papers.single().authors
+        assertEquals("Jan", authors[0].givenNames)
+        assertEquals("Jakubův", authors[0].familyNames)
+        assertEquals("Jane", authors[1].givenNames)
+        assertEquals("Doe", authors[1].familyNames)
+        for (ambiguous in authors.drop(2)) {
+            assertNull(ambiguous.givenNames)
+            assertNull(ambiguous.familyNames)
+        }
+    }
+
 }

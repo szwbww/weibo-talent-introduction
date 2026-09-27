@@ -52,7 +52,7 @@ object DiscoveryCheckpointCodec {
      * 累计论文数（`papersProcessedTotal`）同样不参与 —— 不能用它反推恢复位置。
      */
     fun sourceKey(sourceName: String, criteria: PaperSearchCriteria): String {
-        val key = "$sourceName$KEY_SEPARATOR$QUERY_VERSION$KEY_SEPARATOR${hash(canonicalCriteria(criteria))}"
+        val key = "$sourceName$KEY_SEPARATOR$QUERY_VERSION$KEY_SEPARATOR${hash(sourceCanonicalCriteria(sourceName, criteria))}"
         require(key.length <= MAX_SOURCE_NAME_LENGTH) {
             "检查点 key 超出 $MAX_SOURCE_NAME_LENGTH 字符: $key"
         }
@@ -72,6 +72,12 @@ object DiscoveryCheckpointCodec {
         "scope=" + criteria.subjectScope.orEmpty().trim(),
         "src=" + normalizeSet(criteria.sources)
     ).joinToString(CRITERIA_SEPARATOR.toString())
+
+    /** ORCID's corrected wire query cannot inherit an offset from its formerly double-encoded query. */
+    fun sourceCanonicalCriteria(sourceName: String, criteria: PaperSearchCriteria): String {
+        val canonical = canonicalCriteria(criteria)
+        return if (sourceName == "ORCID") "$canonical${CRITERIA_SEPARATOR}orcidQueryEncoding=uri-v1" else canonical
+    }
 
     /** I-2: 把检查点写成版本化 envelope。 */
     fun encode(cursor: String?, exhausted: Boolean): String {

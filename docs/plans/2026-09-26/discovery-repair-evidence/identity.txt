@@ -1,0 +1,120 @@
+$ rg -n identityVerification|DiscoveryIdentity\.|indexToRaw\(|writeCandidateDocument\(|promoteDiscoveredToCandidate\( src scripts
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:30:    fun isDiscovery(profile: ExpertProfile) = profile.identityVerification != null ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:38:    fun isDiscoveryMap(source: Map<String, Any?>): Boolean = source["identityVerification"] != null ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:42:        (!source.path("identityVerification").isMissingNode && !source.path("identityVerification").isNull) ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:49:        val proof = profile.identityVerification ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:68:        identityVerification = read(source.path("identityVerification"))
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:41:    val identityVerification: IdentityVerification? = null
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:507:            identityVerification = DiscoveryIdentity.read(source.path("identityVerification"))
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:592:            "dataSource", "externalIds", "worksCount", "identityVerification",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationService.kt:259:        return expertIndexWriterService.writeCandidateDocument(docId, doc)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:457:            if (source.path("identityVerification").isObject) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:562:            if (source.path("identityVerification").isObject) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:602:    fun indexToRaw(orcid: String, profile: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:606:            if (DiscoveryIdentity.isDiscoveryMap(profile)) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:692:    fun writeCandidateDocument(docId: String, doc: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:695:            if (doc["identityVerification"] != null) "?op_type=create" else ""
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:9:    private fun verified() = legacy.copy(emailSource = "PAPER_FULLTEXT", identityVerification =
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:10:        DiscoveryIdentity.verified(legacy.email!!, "Jane", "Doe", "JATS_SHA256:" + "a".repeat(64), null, null))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:12:        assertTrue(DiscoveryIdentity.allowed(legacy))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:13:        assertFalse(DiscoveryIdentity.allowed(legacy.copy(tags = listOf("discovered"))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:14:        assertFalse(DiscoveryIdentity.allowed(legacy.copy(emailSource = "PAPER_FULLTEXT")))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:17:        val profile = legacy.copy(emailSource = "PAPER_FULLTEXT", identityVerification =
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:18:            DiscoveryIdentity.verified(legacy.email!!, "Jane", "Doe", "SOURCE_SHA256:" + "b".repeat(64), "real-orcid", "A123"))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:19:        assertTrue(DiscoveryIdentity.allowed(profile))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:20:        assertFalse(DiscoveryIdentity.allowed(profile.copy(givenNames = "Other")))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:24:        assertEquals(20260925, DiscoveryIdentity.VERSION)
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:25:        assertNotEquals(DiscoveryIdentity.VERSION, DiscoveryIdentity.EXTRACTION_VERSION)
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:26:        assertTrue(DiscoveryIdentity.allowed(verified()))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:31:        assertTrue(DiscoveryIdentity.allowed(profile))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:32:        assertFalse(DiscoveryIdentity.allowed(profile.copy(givenNames = "John")))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:33:        assertFalse(DiscoveryIdentity.allowed(profile.copy(email = "b@example.org")))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:34:        assertFalse(DiscoveryIdentity.allowed(profile.copy(identityVerification = profile.identityVerification!!.copy(version = 0))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:38:        assertTrue(DiscoveryIdentity.allowed(p.copy(email = "hanlei1974@sina.com",
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:39:            identityVerification = p.identityVerification!!.copy(email = "hanlei1974@sina.com"))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:43:        val reviewed = p.copy(identityVerification = p.identityVerification!!.copy(source = "REVIEWED_SOURCE_SHA256"))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:44:        assertTrue(DiscoveryIdentity.allowed(reviewed))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:45:        assertFalse(DiscoveryIdentity.validEvidence("REVIEWED_SOURCE_SHA256:" + "a".repeat(64)))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:46:        assertFalse(DiscoveryIdentity.allowed(reviewed.copy(givenNames = "Other")))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:47:        assertFalse(DiscoveryIdentity.allowed(reviewed.copy(identityVerification = reviewed.identityVerification!!.copy(evidenceHash = null))))
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:48:        assertTrue(DiscoveryIdentity.allowed(reviewed.copy(email = "hanlei1974@sina.com",
+src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt:49:            identityVerification = reviewed.identityVerification!!.copy(email = "hanlei1974@sina.com"))))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt:2224:        assertFalse(filter.toString().contains("identityVerification"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:99:                    "SOURCE_SHA256:" + DiscoveryIdentity.hash(matches.first().entry))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexServiceTest.kt:169:        // I-2: identityVerification adds the 35th declared field; fallback must still cover every field.
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:5552:        assertFalse(actual.toString().contains("identityVerification"), "batch selection must use configured filters only")
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:51:        assertTrue(service.writeCandidateDocument("existing", doc))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:61:        assertTrue(service.indexToRaw("new", unknown))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:72:            assertFalse(service.indexToRaw("EMAIL-existing", doc))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:80:        val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified("a@example.org", "Jane", "Doe", "JATS_SHA256:" + "a".repeat(64), null, null)
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:81:        val doc = mapOf<String, Any?>("email" to "a@example.org", "emailSource" to "PAPER_FULLTEXT", "givenNames" to "Jane", "familyNames" to "Doe", "identityVerification" to proof)
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterServiceTest.kt:84:        assertFalse(service.indexToRaw("EMAIL-existing", doc))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1009:                    val esDocId = ExpertIdGenerator.generate(null, DiscoveryIdentity.normalizedEmail(authorEmail.email))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1015:                    if (!expertIndexWriterService.indexToRaw(esDocId, profileMap)) { sourceStats.rawWriteFailed++; continue }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1021:                        if (promoteDiscoveredToCandidate(esDocId, profileMap)) sourceStats.promoted++
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1119:            email = DiscoveryIdentity.normalizedEmail(authorEmail.email),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1127:            identityVerification = proofFor(authorEmail)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1177:                esDocId = ExpertIdGenerator.generate(null, DiscoveryIdentity.normalizedEmail(authorEmail.email)),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1186:                esDocId = ExpertIdGenerator.generate(null, DiscoveryIdentity.normalizedEmail(authorEmail.email)),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1338:            if (!expertIndexWriterService.indexToRaw(identity.esDocId, profileMap)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1349:                if (promoteDiscoveredToCandidate(identity.esDocId, profileMap)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1606:                    val json = objectMapper.writeValueAsString(outcome.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1647:        if (extraction.identityRuleVersion != DiscoveryIdentity.EXTRACTION_VERSION) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1826:    private fun proofFor(author: AuthorEmail) = author.identityEvidence?.takeIf { identityRejection(author) == null && DiscoveryIdentity.validEvidence(it) }?.let {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1827:        DiscoveryIdentity.verified(author.email, author.givenNames, author.familyNames, it, author.orcidId, author.openAlexAuthorId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1833:        val proof = source?.let { DiscoveryIdentity.read(it.path("identityVerification")) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1841:            DiscoveryIdentity.normalizedEmail(source.path("email").asText(null)) != DiscoveryIdentity.normalizedEmail(incoming.email) ||
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1848:        if (mismatch || source == null || !DiscoveryIdentity.isDiscoverySource(source)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1858:            email = DiscoveryIdentity.normalizedEmail(authorEmail.email),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1866:            identityVerification = proofFor(authorEmail)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1882:            "identityVerification" to profile.identityVerification,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1891:    private fun promoteDiscoveredToCandidate(esDocId: String, rawDoc: Map<String, Any?>): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2567:        val updateBody: Map<String, Any> = if (DiscoveryIdentity.isDiscovery(profile)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2569:                "if (ctx._source.identityVerification != params.identity || ctx._source.email != params.email || ctx._source.givenNames != params.given || ctx._source.familyNames != params.family || ctx._source.externalIds != params.externalIds) { ctx.op = 'none'; } else { for (entry in params.doc.entrySet()) { ctx._source[entry.getKey()] = entry.getValue(); } }",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2570:                "params" to mapOf("identity" to profile.identityVerification, "email" to profile.email,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2628:        if (DiscoveryIdentity.isDiscovery(profile)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2629:            return if (DiscoveryIdentity.allowed(profile)) normalizeOpenAlexAuthorId(profile.identityVerification?.openAlexAuthorId) else null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2642:        if (DiscoveryIdentity.isDiscovery(profile)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2643:            return profile.identityVerification?.orcid?.takeIf {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2644:                DiscoveryIdentity.allowed(profile) && it.matches(Regex("\\d{4}-\\d{4}-\\d{4}-\\d{3}[0-9X]"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2774:            "query" to mapOf("term" to mapOf("email" to DiscoveryIdentity.normalizedEmail(email))),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2776:            "_source" to listOf("email", "givenNames", "familyNames", "identityVerification", "externalIds", "emailSource", "tags")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2899:            if (DiscoveryIdentity.isDiscovery(profile)) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2918:                if (DiscoveryIdentity.isDiscovery(profile)) continue
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:253:        verify(writerService).writeCandidateDocument(eqValue("0008"), captureValue(docCaptor, emptyMap<String, Any>()))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:314:        verify(writerService).writeCandidateDocument(eqValue("0010"), captureValue(docCaptor, emptyMap<String, Any>()))
+src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertRevalidationServiceTest.kt:410:        verify(writerService).writeCandidateDocument(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OrcidDataSource.kt:190:                identityEvidence = "ORCID_RECORD_SHA256:" + com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.hash(
+src/main/resources/es/orcid_info_candidate.json:32:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:927:        Mockito.`when`(indexWriterService.indexToRaw(Mockito.anyString(), Mockito.anyMap())).thenReturn(true)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:964:                    "identityVerification" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1158:            identityRuleVersion = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.EXTRACTION_VERSION
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1839:        old.put("identityRuleVersion", com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.VERSION)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1846:        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1908:        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1926:        Mockito.verify(indexWriterService, Mockito.times(1)).indexToRaw(docIdCaptor.capture() ?: "", Mockito.anyMap())
+src/main/resources/es/orcid_info_application.json:43:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_raw.json:31:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:79:            com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.EXTRACTION_VERSION)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:389:        Mockito.verify(indexWriterService, Mockito.times(1)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:436:                parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), 12L)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:461:            val noProof = parsed.copy(emails = parsed.emails.map { it.copy(identityEvidence = null) }, identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:486:        val payload = objectMapper.writeValueAsString(parsed.copy(emails = parsed.emails.map { it.copy(identityEvidence = null) }, identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:499:        val conflicting = parsed.copy(emails = listOf(parsed.emails.single().copy(givenNames = "Other")), identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:506:        docs[key] = docs.getValue(key) - "identityVerification" - "emailSource" - "tags"
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:518:        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:651:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:663:        assertEquals(preChangeKeys + setOf("institutionType", "identityVerification"), map.keys)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:688:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:723:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:768:        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3353:        val proof = DiscoveryIdentity.verified("e@example.com", "Test", "User",
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3357:            .copy(emailSource = "PAPER_FULLTEXT", identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3390:            emailSource = "PAPER_FULLTEXT", identityVerification = proof)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt:3705:            "identityVerification" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+src/test/java/com/weibo/talentintroduction/expert/service/ScrollExpertsMockHelper.java:187:        Mockito.when(mock.writeCandidateDocument(Mockito.anyString(), Mockito.anyMap())).thenReturn(success);
+src/test/java/com/weibo/talentintroduction/expert/service/ScrollExpertsMockHelper.java:191:        Mockito.verify(mock).writeCandidateDocument(Mockito.eq(docId), Mockito.anyMap());
+src/test/java/com/weibo/talentintroduction/expert/service/ScrollExpertsMockHelper.java:195:        Mockito.verify(mock).writeCandidateDocument(Mockito.eq(docId), Mockito.argThat(doc -> orcidId.equals(doc.get("orcidId"))));
+src/test/java/com/weibo/talentintroduction/expert/service/ScrollExpertsMockHelper.java:199:        Mockito.verify(mock, Mockito.never()).writeCandidateDocument(Mockito.eq(docId), Mockito.anyMap());
+src/test/java/com/weibo/talentintroduction/discovery/service/DiscoveryMockHelper.java:88:        Mockito.when(mock.indexToRaw(Mockito.anyString(), Mockito.anyMap())).thenReturn(success);

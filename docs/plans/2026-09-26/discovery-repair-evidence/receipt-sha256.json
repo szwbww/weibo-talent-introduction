@@ -1,0 +1,14 @@
+{
+  "baseline-sha256.json": "d9c6bbd016d6cdf63349b1a187f142bf5bc04104b4b982b554525e6e40855e3c",
+  "cursor.txt": "5ee23d8448a46b8f37eefb8382f71f80ffc833e22bfdd9e98187b28e26ca99c2",
+  "es-sites.txt": "ea40d122e88bf8967e5394ecdd236823e2f0d4f2b9ad9ececd4055d1e93d8621",
+  "identity.txt": "c01b5aefca0383c2c8a1e80c825a66975738962890591d9ee1552b3e80d63f0a",
+  "method-check.txt": "5c166bc4c1138e873f6bb4da855517b9985d997c6a11b7c8de72a3aeb258ed4a",
+  "parser.txt": "3986cecffc78cba621f68b3ce09c3422d5500da68ccc0c3d38711896730b51b6",
+  "plan-review.json": "f575cabd1224549dee9a25bac949e58e1dd00ee711c55e756dd891575f78fc9b",
+  "plan-scope.json": "3e5f59c63c6ec59300ed4fdcbb4f59af0eeb69b45dafe70ef5afba87d2412caf",
+  "progress.txt": "69a3a69685650de35c6e890119a1dd2c7bfc19f929bb75aff59376582e4d2169",
+  "queue.txt": "191b7c587b5e568346aff8c6055fb5e6e99f219c41e2202aac37ba674162e407",
+  "renderer-before.js": "eea35aa98f4f509b50340d1b1a7afd6727262dfbc40b9d906bf32dfd3fed4d79",
+  "ui.txt": "1c86d0fca67e79b546525bf3113a350db8d41e6e0728247503e44d21041fb168"
+}

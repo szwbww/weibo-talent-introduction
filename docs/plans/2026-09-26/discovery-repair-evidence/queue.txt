@@ -1,0 +1,92 @@
+$ rg -n extraction_json|extractionJson|saveExtraction|clearTerminalPayloads|deleteTerminalJobs|enqueuePage\(|recordStreamError\(|deferStream\( src scripts
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1611:                            extractionJson = json,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1636:        extractionJson: String,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1643:            objectMapper.readValue(extractionJson, EmailExtractionOutcome::class.java)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3029: * - [Extracted] 的 `extractionJson` **须通过身份规则版本门禁**：后续尝试直接消费、不再下载（I-4）；
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3036:        val extractionJson: String,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:603:        val payloads = repository.clearTerminalPayloads(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:608:        val deleted = repository.deleteTerminalJobs(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:786:            repository.recordStreamError(stream.id, NO_PROGRESS_REASON, at.plus(SOURCE_ERROR_BACKOFF), at)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:848:                repository.deferStream(stream.id, leaseToken, page.deferredUntil, reason, at)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:853:                repository.recordStreamError(stream.id, page.errorReason, at.plus(SOURCE_ERROR_BACKOFF), at)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:870:            val result = repository.enqueuePage(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:907:                    repository.deferStream(stream.id, leaseToken, at.plus(QUEUE_FULL_BACKOFF), PipelineWaitReason.QUEUE_FULL, at)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:981:     * 已保存的抽取结果（`extraction_json` 非空）**直接消费、不再下载**；消费前重新读取 pipeline 的
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1005:            var extractionJson = job.extractionJson
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1006:            if (extractionJson.isNullOrEmpty()) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1021:                        val bytes = extraction.extractionJson.toByteArray(Charsets.UTF_8).size.toLong()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1022:                        val saved = repository.saveExtraction(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1024:                            extractionJson = extraction.extractionJson, extractionBytes = bytes, now = now()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1031:                        extractionJson = extraction.extractionJson
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1074:            val consumption = expertDiscoveryService.consumeQueuedItem(envelope, extractionJson!!, executionId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:161:    val extractionJson: String?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:261:    fun deferStream(streamId: Long, leaseToken: String, nextAttemptAt: Instant, reason: String, now: Instant): Int
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:262:    fun recordStreamError(streamId: Long, reason: String, nextAttemptAt: Instant, now: Instant): Int
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:265:    fun enqueuePage(
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:281:    fun saveExtraction(
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:285:        extractionJson: String,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:343:    fun clearTerminalPayloads(completedBefore: Instant, batchSize: Int, now: Instant): Int
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:344:    fun deleteTerminalJobs(completedBefore: Instant, batchSize: Int, now: Instant): Int
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:741:    override fun deferStream(streamId: Long, leaseToken: String, nextAttemptAt: Instant, reason: String, now: Instant): Int =
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:752:    override fun recordStreamError(streamId: Long, reason: String, nextAttemptAt: Instant, now: Instant): Int =
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:775:    override fun enqueuePage(
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1009:    override fun saveExtraction(
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1013:        extractionJson: String,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1025:               SET extraction_json = ?, payload_bytes = payload_bytes + ?,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1029:            extractionJson, extractionBytes, toDb(now), jobId,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1086:        val releasedReserved = if (job.extractionJson.isNullOrEmpty()) job.reservedResultBytes else 0L
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1149:        val releasedReserved = if (job.extractionJson.isNullOrEmpty()) job.reservedResultBytes else 0L
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1351:    override fun clearTerminalPayloads(completedBefore: Instant, batchSize: Int, now: Instant): Int {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1373:            "UPDATE discovery_paper_job SET metadata_json = '', extraction_json = NULL, payload_bytes = 0, reserved_result_bytes = 0, updated_at = ? WHERE id IN ($placeholders)",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1391:    override fun deleteTerminalJobs(completedBefore: Instant, batchSize: Int, now: Instant): Int {
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1506:        extractionJson = rs.getString("extraction_json"),
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1536:                "extraction_json, payload_bytes, reserved_result_bytes, status, attempts, next_attempt_at, " +
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:18:--       saveExtraction 全部是 lease_token + generation 条件 CAS（代码层 WHERE，本迁移不引入触发器）；
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:127:    extraction_json       MEDIUMTEXT   NULL,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:199:        var extractionJson: String? = null,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:213:            metadataJson = metadataJson, extractionJson = extractionJson, payloadBytes = payloadBytes,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:242:            extractionJson: String? = null
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:248:                extractionJson = extractionJson,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:249:                reservedResultBytes = if (extractionJson == null) PIPELINE_RESERVED_RESULT_BYTES else 0L,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:475:        override fun deferStream(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:491:        override fun recordStreamError(streamId: Long, reason: String, nextAttemptAt: Instant, now: Instant): Int {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:500:        override fun enqueuePage(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:618:        override fun saveExtraction(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:622:            extractionJson: String,
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:628:            job.extractionJson = extractionJson
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:653:            val released = if (job.extractionJson.isNullOrEmpty()) job.reservedResultBytes else 0L
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:812:        override fun clearTerminalPayloads(completedBefore: Instant, batchSize: Int, now: Instant): Int {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:822:                it.extractionJson = null
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:827:        override fun deleteTerminalJobs(completedBefore: Instant, batchSize: Int, now: Instant): Int {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1155:    private fun extractionJson(email: String = "john@ox.ac.uk") = objectMapper.writeValueAsString(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1497:        val job = h.store.seedJob(stream.id, "DOI:x", priority = 0, extractionJson = null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1563:        val payload = extractionJson()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1573:        assertEquals(payload, h.store.jobs[job.id]!!.extractionJson, "暂停后的旧 job 仍能保存可靠抽取结果")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1714:        h.store.seedJob(stream.id, "DOI:x", extractionJson = "{}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1787:            h.store.seedJob(stream.id, "DOI:deadline", extractionJson = "{}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1838:        val old = objectMapper.readTree(extractionJson()) as com.fasterxml.jackson.databind.node.ObjectNode
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1840:        val job = h.store.seedJob(stream.id, "DOI:old", extractionJson = objectMapper.writeValueAsString(old))
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1855:        h.store.seedJob(stream.id, "DOI:x", extractionJson = extractionJson())
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1873:        val job = h.store.seedJob(stream.id, "DOI:x", extractionJson = "{}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1902:        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), 42L)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1920:        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), 7L)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:1942:        val consumption = discovery.consumeQueuedItem(envelope, extractionJson(), null)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2216:        repeat(25) { h.store.seedJob(stream.id, "PRIORITY-$it", priority = 1, extractionJson = "{}") }
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2217:        h.store.seedJob(stream.id, "ORDINARY", priority = 0, extractionJson = "{}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2265:        h.store.seedJob(paperStream.id, "DOI:a", unit = QueueItemUnit.PAPER, extractionJson = "{}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2266:        h.store.seedJob(recordStream.id, "0000-0002-1825-0097", unit = QueueItemUnit.RECORD, extractionJson = "{}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:2287:        h.store.seedJob(stream.id, "DOI:x", extractionJson = "{}")
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:167:    ): EnqueuePageResult = repository.enqueuePage(
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:425:            repository.saveExtraction(jobId, "old", 0L, """{"emails":[]}""", 20, NOW.plusSeconds(61)),
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:434:        assertTrue(repository.saveExtraction(jobId, "new", 0L, """{"emails":[]}""", 20, NOW.plusSeconds(62)))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:460:            repository.saveExtraction(jobId, "token", 0L, """{"emails":[{"email":"a@b.c"}]}""", 30, NOW.plusSeconds(2)),
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:475:                "SELECT extraction_json FROM discovery_paper_job WHERE id = ?", String::class.java, jobId
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:590:        assertTrue(repository.saveExtraction(jobId, "t1", 0L, extraction, 300, NOW.plusSeconds(1)))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:670:        val clearedJobs = repository.clearTerminalPayloads(NOW, 1000, NOW)
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:672:        val cleared = repository.clearTerminalPayloads(NOW.plusSeconds(8 * 24 * 3600), 1000, NOW.plusSeconds(8 * 24 * 3600))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:682:        val deleted = repository.deleteTerminalJobs(NOW.plusSeconds(91 * 24 * 3600), 1000, NOW.plusSeconds(91 * 24 * 3600))
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:808:        repository.enqueuePage(
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:933:            repository.enqueuePage(
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:951:            repository.recordStreamError(stream.id, "SEARCH_FAILED", NOW.plusSeconds(600), NOW)
+src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt:966:            repository.deferStream(stream.id, "l3", NOW.plusSeconds(3600), PipelineWaitReason.DAILY_BUDGET, NOW.plusSeconds(601))

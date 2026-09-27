@@ -193,7 +193,7 @@ class CoreDataSource(
                 val downloadUrl = node.path("downloadUrl").asText(null)
                 val authors = node.path("authors").map { authorNode ->
                     val name = authorNode.path("name").asText("")
-                    val parts = name.split(" ", limit = 2)
+                    val parts = splitDisplayName(name)
                     PaperAuthor(givenNames = parts.getOrNull(0), familyNames = parts.getOrNull(1),
                         orcidId = null, affiliation = null, isCorresponding = false)
                 }
@@ -203,6 +203,15 @@ class CoreDataSource(
             } catch (e: Exception) { log.debug("Failed to parse CORE work: {}", e.message); null }
         }
         return CoreParseResult(papers, totalResults, results.size())
+    }
+    private fun splitDisplayName(name: String): List<String> {
+        val commaCount = name.count { it == ',' }
+        if (commaCount > 0) {
+            if (commaCount != 1) return emptyList()
+            val (family, given) = name.split(',', limit = 2)
+            return if (family.isNotBlank() && given.isNotBlank()) listOf(given.trim(), family.trim()) else emptyList()
+        }
+        return name.split(" ", limit = 2)
     }
 
     private fun coreHeaders() = HttpHeaders().apply {

@@ -117,6 +117,81 @@ class OpenAlexDataSourceTest {
     }
 
     @Test
+    fun `PMC routing accepts only approved exact ids and structured landing pages`() {
+        val loader = javaClass.classLoader
+        val fixture = java.util.zip.ZipInputStream(
+            requireNotNull(loader.getResourceAsStream("discovery/xml-route-recall.zip"))
+        ).use { zip ->
+            generateSequence { zip.nextEntry }.first {
+                it.name.endsWith("round2/openalex-pmc-work.json")
+            }.let { zip.readBytes() }
+        }
+        val original = mapper.readTree(fixture)
+        val cases = listOf(
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "PMC123")
+                putArray("locations")
+            } to "PMC123",
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "")
+                putArray("locations").addObject().put("landing_page_url", "https://pmc.ncbi.nlm.nih.gov/articles/PMC7759461/?report=1")
+            } to "PMC7759461",
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "")
+                putArray("locations").addObject().put("landing_page_url", "https://europepmc.org/articles/PMC123")
+            } to "PMC123",
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "")
+                putArray("locations").addObject().put("landing_page_url", "PMC123")
+            } to null,
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "")
+                putArray("locations").addObject().put("landing_page_url", "https://europepmc.org.evil/articles/PMC123")
+            } to null,
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "")
+                putArray("locations").addObject().put("landing_page_url", "https://example.org/article?pmc=PMC123")
+            } to null,
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "PMC111")
+                putArray("locations").addObject().put("landing_page_url", "https://europepmc.org/articles/PMC222")
+            } to null
+        )
+        for ((work, expected) in cases) {
+            stubWorksResponse("""{"meta":{"count":1},"results":[${mapper.writeValueAsString(work)}]}""")
+            val result = dataSource.searchPapers(PaperSearchCriteria())
+            assertEquals(expected, result.papers.single().pmcId)
+        }
+        Mockito.verify(restTemplate, Mockito.times(cases.size)).exchange(
+            Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        assertTrue(fixture.isNotEmpty(), "The exact archived metadata drives route parsing")
+    }
+
+    @Test
+    fun `OpenAlex comma names require one unambiguous nonempty pair`() {
+        stubWorksResponse(
+            """{"meta":{"count":1},"results":[{"authorships":[
+              {"author":{"display_name":"Jakubův, Jan"}},
+              {"author":{"display_name":"Jane Doe"}},
+              {"author":{"display_name":"Family, Given, Middle"}},
+              {"author":{"display_name":", Empty"}},
+              {"author":{"display_name":"Family, "}}
+            ]}]}"""
+        )
+        val authors = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors
+        assertEquals("Jan", authors[0].givenNames)
+        assertEquals("Jakubův", authors[0].familyNames)
+        assertEquals("Jane", authors[1].givenNames)
+        assertEquals("Doe", authors[1].familyNames)
+        for (ambiguous in authors.drop(2)) {
+            assertNull(ambiguous.givenNames)
+            assertNull(ambiguous.familyNames)
+        }
+    }
+
+    @Test
     fun `enrichAuthor returns academic metrics`() {
         val sampleJson = javaClass.classLoader
             .getResource("openalex/author-response-sample.json")!!.readText()
@@ -563,6 +638,56 @@ class OpenAlexDataSourceTest {
         assertEquals("STEM", dataSource.enrichAuthor("A1")!!.disciplineCategory)
     }
 
+    @Test
+    fun `author topic field ids use same count-ranked top five as display topics`() {
+        stubAuthorEnrichment("""{"topics":[
+          {"display_name":"sixth","count":1,"field":{"id":"https://openalex.org/topics/999"}},
+          {"display_name":"material","count":9,"field":{"id":"https://openalex.org/fields/025"}},
+          {"display_name":"computer","count":8,"field":{"id":"17"}},
+          {"display_name":"physics","count":7,"field":{"id":"31"}},
+          {"display_name":"duplicate","count":6,"field":{"id":"https://openalex.org/fields/17"}},
+          {"display_name":"engineering","count":10,"field":{"id":"22"}}
+        ]}""")
+        val result = dataSource.enrichAuthor("A1")!!
+        assertEquals(listOf("engineering", "material", "computer", "physics", "duplicate"), result.topics)
+        assertEquals(listOf("17", "22", "25", "31"), result.researchFieldIds)
+        Mockito.verify(restTemplate, Mockito.times(1)).exchange(
+            Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+    }
+
+    @Test
+    fun `incomplete selected topic field invalidates whole professional fact without losing topics`() {
+        val cases = listOf(
+            """[{"count":5,"display_name":"engineering","field":{"id":"22"}},{"count":4,"display_name":"missing","field":{}}]""",
+            """[{"count":5,"display_name":"engineering","field":{"id":"22"}},{"count":4,"display_name":"wrong level","field":{"id":"https://openalex.org/topics/11"}}]""",
+            """[{"count":5,"display_name":"engineering","field":{"id":"22"}},{"count":4,"display_name":"numeric node","field":{"id":11}}]""",
+            """[]"""
+        )
+        cases.forEach { topics ->
+            stubAuthorEnrichment("""{"topics":$topics}""")
+            val result = dataSource.enrichAuthor("A1")!!
+            assertNull(result.researchFieldIds, topics)
+        }
+        val fixture = mapper.readTree(javaClass.classLoader.getResource("discovery/rnd-scope-evidence.json"))
+        fixture.path("constructed").filter { it.has("authorTopics") }.forEach { record ->
+            stubAuthorEnrichment("""{"topics":${record.path("authorTopics")}}""")
+            assertNull(dataSource.enrichAuthor("A1")!!.researchFieldIds, record.path("case").asText())
+        }
+    }
+
+    @Test
+    fun `batch author identity parses field IDs with shared parser and does not infer for unmatched ids`() {
+        val json = """{"results":[
+          {"id":"https://openalex.org/A1","topics":[{"count":3,"field":{"id":"https://openalex.org/fields/22"}}]},
+          {"id":"https://openalex.org/W2","topics":[{"count":3,"field":{"id":"17"}}]}
+        ]}"""
+        stubAuthorEnrichment(json)
+        val outcomes = dataSource.batchEnrichByAuthorIds(listOf("A1", "A2"))
+        assertEquals(listOf("22"), (outcomes["A1"] as EnrichmentOutcome.Success).data.researchFieldIds)
+        assertEquals(EnrichmentOutcome.NotFound, outcomes["A2"])
+    }
+
     private fun stubAuthorEnrichment(json: String) {
         Mockito.`when`(
             restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
@@ -878,6 +1003,86 @@ class OpenAlexDataSourceTest {
             listOf("https://repo.example/copy.pdf"),
             paper.candidateDownloadUrls,
             "只保留 is_oa 的公开 http(s) 备用地址，去掉首选本身、付费墙、重复项与非 http 协议"
+        )
+    }
+
+    @Test
+    fun `original challenge falls through to original PDF while readable HTML stops fallback`() {
+        challengeFallbackEvidence()
+    }
+
+    internal fun challengeFallbackEvidence(): Map<String, Any?> {
+        val original = htmlContactEntries()
+        val challenge = requireNotNull(original["sources/W4381304672/source.html"])
+        val pdfMembers = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(requireNotNull(javaClass.getResourceAsStream(
+            "/discovery/source-contact-recall.zip"))).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                pdfMembers[entry.name] = zip.readBytes()
+            }
+        }
+        val id = "W3014974815"
+        val pdf = requireNotNull(pdfMembers["sources/$id/source.pdf"])
+        val authors = htmlContactAuthors(mapper.readTree(requireNotNull(pdfMembers["sources/$id/metadata.json"])))
+        val requested = mutableListOf<String>()
+        val deadlines = mutableListOf<Instant?>()
+        val primary = "https://primary.example/challenge"
+        val fallback = "https://repo.example/real.pdf"
+        val transport = Mockito.mock(RestTemplate::class.java)
+        val bounded = object : com.weibo.talentintroduction.config.BoundedHttpExecutor {
+            override fun <T : Any> getForObject(base: RestTemplate, url: String, responseType: Class<T>,
+                connectCapMs: Long, readCapMs: Long, deadline: Instant?): T? = base.getForObject(url, responseType)
+            override fun <T> execute(base: RestTemplate, uri: URI, connectCapMs: Long, readCapMs: Long,
+                deadline: Instant?, responseExtractor: ResponseExtractor<T>): T? {
+                deadlines += deadline
+                return base.execute(uri, HttpMethod.GET, null, responseExtractor)
+            }
+        }
+        val actualExtractor = PdfEmailExtractor(transport, PlainTextEmailExtractor(), PdfExtractionProperties(), bounded)
+        val chain = OpenAlexDataSource(restTemplate, properties, europePmc, actualExtractor, unpaywallClient, policy)
+        var primaryBody = challenge
+        Mockito.doAnswer { invocation: InvocationOnMock ->
+            val uri = invocation.getArgument<URI>(0).toString()
+            requested += uri
+            val body = if (uri == primary) primaryBody else if (uri == fallback) pdf
+                else throw AssertionError("unexpected request $uri")
+            val response = Mockito.mock(ClientHttpResponse::class.java)
+            Mockito.doReturn(HttpHeaders().apply {
+                contentType = if (uri == primary) MediaType.TEXT_HTML else MediaType.APPLICATION_PDF
+            }).`when`(response).headers
+            Mockito.doReturn(java.io.ByteArrayInputStream(body)).`when`(response).body
+            invocation.getArgument<ResponseExtractor<*>>(3).extractData(response)
+        }.`when`(transport).execute(Mockito.any(URI::class.java), Mockito.eq(HttpMethod.GET),
+            Mockito.any(), Mockito.any(ResponseExtractor::class.java))
+        val paper = openAlexPaper(primary, listOf(primary, fallback, "https://repo.example/unused.pdf"), authors)
+        val deadline = Instant.now().plusSeconds(120)
+        val outcome = chain.extractAuthorEmails(paper, deadline)
+        assertEquals(listOf(primary, fallback), requested)
+        assertEquals(listOf(deadline, deadline), deadlines)
+        assertEquals(2, outcome.httpRequests)
+        assertEquals("PDF_PARSE", outcome.methodUsed)
+        assertEquals("Klaus H. Maier-Hein", "${outcome.emails.single { it.email == "k.maier-hein@dkfz.de" }.givenNames} " +
+            outcome.emails.single { it.email == "k.maier-hein@dkfz.de" }.familyNames)
+        val fallbackRequests = requested.toList()
+        val sharedDeadlineCount = deadlines.distinct().size
+
+        requested.clear()
+        deadlines.clear()
+        primaryBody = "<html><body>Research on bot challenge methods without email.</body></html>".toByteArray()
+        val readable = chain.extractAuthorEmails(paper, deadline)
+        assertEquals(listOf(primary), requested)
+        assertEquals("NO_EMAIL_IN_HTML", readable.failureReason)
+        assertEquals(true, readable.fulltextObtained)
+        assertEquals(1, readable.httpRequests)
+        return mapOf(
+            "challengeHtmlSha256" to fixtureSha256(challenge),
+            "candidateUrls" to (listOfNotNull(paper.downloadUrl) + paper.candidateDownloadUrls),
+            "requestedUrls" to fallbackRequests, "requestCount" to outcome.httpRequests,
+            "sharedDeadlineCount" to sharedDeadlineCount, "fallbackMethod" to outcome.methodUsed,
+            "fallbackEmail" to outcome.emails.single { it.email == "k.maier-hein@dkfz.de" }.email,
+            "readableHtmlRequests" to requested.toList(), "readableHtmlReason" to readable.failureReason,
+            "readableHtmlObtained" to readable.fulltextObtained
         )
     }
 

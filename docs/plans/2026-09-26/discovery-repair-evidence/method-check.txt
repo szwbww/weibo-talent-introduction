@@ -1,0 +1,17 @@
+$ rg -n private fun sleepInterruptible|fun discoverFromSource|fun queueLegacySeedCursor|fun buildProfile|fun trustedOpenAlexAuthorId|SOURCE_ERROR_BACKOFF|MAX_FULLTEXT_ADDRESSES|FULLTEXT_PER_PAPER_DEADLINE_MS src/main
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:93:     * DOI→Unpaywall 开放位置；整篇共享一个 [FULLTEXT_PER_PAPER_DEADLINE_MS] 总时限，URL 侧最多
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:94:     * [MAX_FULLTEXT_ADDRESSES] 个地址（正文里说的「全文地址」就是 URL，PMC XML 按 ID 取，不算地址），
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:99:        extractAuthorEmails(paper, Instant.now().plusMillis(FULLTEXT_PER_PAPER_DEADLINE_MS))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:128:        while (attemptedUrls.size < MAX_FULLTEXT_ADDRESSES) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:607:internal const val FULLTEXT_PER_PAPER_DEADLINE_MS = 90_000L
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:610:internal const val MAX_FULLTEXT_ADDRESSES = 3
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:569:    private fun discoverFromSource(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1453:    fun queueLegacySeedCursor(sourceName: String, criteria: PaperSearchCriteria): String? {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1855:    private fun buildProfile(paper: PaperMetadata, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1980:    private fun sleepInterruptible(taskType: String, ms: Long): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2627:    private fun trustedOpenAlexAuthorId(profile: ExpertProfile): String? {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:786:            repository.recordStreamError(stream.id, NO_PROGRESS_REASON, at.plus(SOURCE_ERROR_BACKOFF), at)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:853:                repository.recordStreamError(stream.id, page.errorReason, at.plus(SOURCE_ERROR_BACKOFF), at)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1434:        private val SOURCE_ERROR_BACKOFF: Duration = Duration.ofMinutes(5)
+src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt:267: *   `OpenAlexDataSource.FULLTEXT_PER_PAPER_DEADLINE_MS` 同值），到点即 `NoRemainingBudgetException`；

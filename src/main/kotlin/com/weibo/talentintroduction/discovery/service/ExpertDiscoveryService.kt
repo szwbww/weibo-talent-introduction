@@ -58,6 +58,16 @@ import java.time.Instant
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Base64
+import java.io.EOFException
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.security.cert.CertificateException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
+import javax.net.ssl.SSLProtocolException
+import java.util.concurrent.ThreadLocalRandom
 import java.util.Locale
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.Executor
@@ -609,6 +619,7 @@ class ExpertDiscoveryService(
         var batchNumber = 0
         var sourcePapersProcessed = 0
         var consecutiveFailures = 0
+        var openAlexPageAttempts = 0
         var circuitBreakerTripped = false
         var exhausted = false
         var stopReason = DiscoveryStopReason.EXHAUSTED
@@ -653,6 +664,7 @@ class ExpertDiscoveryService(
                 break
             }
 
+            if (source is OpenAlexDataSource) openAlexPageAttempts++
             sourceStats.apiRequests++
 
             var batch: PaperSearchResult? = null
@@ -673,7 +685,23 @@ class ExpertDiscoveryService(
                 break
             } catch (e: HttpStatusCodeException) {
                 val code = e.statusCode.value()
-                if (code == 429 || code == 503) {
+                if (source is OpenAlexDataSource && code == 429) {
+                    // OpenAlex already records response cooling in its request policy; don't wait for Retry-After.
+                    stopReason = DiscoveryStopReason.BUDGET_DEFERRED
+                    break
+                }
+                val retryableOpenAlex = source is OpenAlexDataSource && code in OPENALEX_RETRYABLE_HTTP_STATUS
+                if (retryableOpenAlex && openAlexPageAttempts < OPENALEX_MAX_PAGE_ATTEMPTS) {
+                    log.warn("[{}] 同页重试 {}/{}，异常类型={}", source.sourceName, openAlexPageAttempts,
+                        OPENALEX_MAX_PAGE_ATTEMPTS, e.javaClass.simpleName)
+                    val waitStop = waitForOpenAlexRetry(openAlexPageAttempts, deadline)
+                    if (waitStop != null) {
+                        stopReason = waitStop
+                        break
+                    }
+                    continue
+                }
+                if (source !is OpenAlexDataSource && (code == 429 || code == 503)) {
                     consecutiveFailures++
                     sourceStats.failureReasons.merge("RATE_LIMITED", 1) { a, b -> a + b }
                     if (consecutiveFailures >= 5) {
@@ -687,14 +715,35 @@ class ExpertDiscoveryService(
                     continue
                 }
                 recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
+                log.error("[{}] 搜索失败: attempt={}/{}, 异常类型={}", source.sourceName,
+                    if (source is OpenAlexDataSource) openAlexPageAttempts else 1,
+                    if (source is OpenAlexDataSource) OPENALEX_MAX_PAGE_ATTEMPTS else 1,
+                    e.javaClass.simpleName)
                 stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
             } catch (e: Exception) {
+                if (source is OpenAlexDataSource && isRetryableOpenAlexFailure(e) &&
+                    openAlexPageAttempts < OPENALEX_MAX_PAGE_ATTEMPTS) {
+                    log.warn("[{}] 同页重试 {}/{}，异常类型={}", source.sourceName, openAlexPageAttempts,
+                        OPENALEX_MAX_PAGE_ATTEMPTS, e.javaClass.simpleName)
+                    val waitStop = waitForOpenAlexRetry(openAlexPageAttempts, deadline)
+                    if (waitStop != null) {
+                        stopReason = waitStop
+                        break
+                    }
+                    continue
+                }
                 recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
-                log.error("[{}] 搜索失败: {}", source.sourceName, e.message)
+                log.error("[{}] 搜索失败: attempt={}/{}, 异常类型={}", source.sourceName,
+                    if (source is OpenAlexDataSource) openAlexPageAttempts else 1,
+                    if (source is OpenAlexDataSource) OPENALEX_MAX_PAGE_ATTEMPTS else 1,
+                    e.javaClass.simpleName)
                 stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
             }
+
+            openAlexPageAttempts = 0
+            consecutiveFailures = 0
 
             if (corePage?.windowLimit == true) {
                 // I-4: 分片窗口边界是一次显式事件（不是失败、也不是穷尽）。游标已切到下一分片，
@@ -717,13 +766,13 @@ class ExpertDiscoveryService(
                 persistCheckpoint(next, DiscoveryStopReason.EMPTY_PAGE, false)
                 continue
             }
-            consecutiveFailures = 0
             batchNumber++
 
             val papersBefore = sourceStats.papersSearched
             val indexedBefore = sourceStats.indexed
             val rawWriteFailedBefore = sourceStats.rawWriteFailed
             val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
+            val dedupErrorsBefore = sourceStats.dedupErrors
             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             var limitReached = false
@@ -759,9 +808,10 @@ class ExpertDiscoveryService(
                 consumeOutcome(paper, extraction, source, stats, sourceStats, execId)
             }
 
-            // I-1: 完整消费页 = 页内全部论文处理完且 RAW 持久化/补全入队都未失败；任一失败都保留进入该页的 cursor 以便重放。
             val rawWriteFailedInPage = sourceStats.rawWriteFailed - rawWriteFailedBefore
             val enqueueFailedInPage = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) - enqueueFailedBefore
+            // I-1: dedup lookup failures also make this page incomplete and replayable.
+            val dedupErrorsInPage = sourceStats.dedupErrors - dedupErrorsBefore
             if (rawWriteFailedInPage > 0) {
                 log.warn("[{}] 批次 {} 内有 {} 篇 RAW 写入失败，保留进入该页的 cursor 以便重放",
                     source.sourceName, batchNumber, rawWriteFailedInPage)
@@ -770,7 +820,8 @@ class ExpertDiscoveryService(
                 log.warn("[{}] 批次 {} 内有 {} 条补全任务入队失败，保留进入该页的 cursor 以便重放补建",
                     source.sourceName, batchNumber, enqueueFailedInPage)
             }
-            if (!limitReached && !timeBudgetExpired && rawWriteFailedInPage == 0 && enqueueFailedInPage == 0) {
+            if (!limitReached && !timeBudgetExpired && rawWriteFailedInPage == 0 &&
+                enqueueFailedInPage == 0 && dedupErrorsInPage == 0) {
                 val nextCursor = batch.nextCursor
                 // 没有下一页即穷尽；完整消费的页在进入下一页前立即落盘。
                 persistCheckpoint(
@@ -812,12 +863,20 @@ class ExpertDiscoveryService(
                 batchRejectReasons = batchRejectReasons
             ), execId)
 
+            if (progressStore.isCancelled("EXPERT_DISCOVERY")) {
+                stopReason = DiscoveryStopReason.CANCELLED
+                break
+            }
             if (rawWriteFailedInPage > 0) {
                 stopReason = DiscoveryStopReason.RAW_WRITE_INCOMPLETE
                 break
             }
             if (enqueueFailedInPage > 0) {
                 stopReason = DiscoveryStopReason.ENQUEUE_INCOMPLETE
+                break
+            }
+            if (dedupErrorsInPage > 0) {
+                stopReason = DiscoveryStopReason.DEDUP_INCOMPLETE
                 break
             }
             if (limitReached || circuitBreakerTripped || timeBudgetExpired) {
@@ -847,16 +906,9 @@ class ExpertDiscoveryService(
             " → 有效 ${sourceStats.emailsValid} (无效 ${sourceStats.emailsRejected})" +
             " → 去重后 ${sourceStats.indexed} (重复 ${sourceStats.duplicates})" +
             " → 收录L3 ${sourceStats.indexed} → 晋升L2 ${sourceStats.promoted}" +
-            " (资格淘汰 ${sourceStats.filtered})" +
+            " (过滤（含身份未确认） ${sourceStats.filtered}, 过滤原因 ${sourceStats.filterReasons})" +
             (if (sourceStats.failureReasons.isNotEmpty()) ", 失败原因 ${sourceStats.failureReasons}" else ""),
-            source.sourceName, elapsed, sourceStats.apiRequests,
-            sourceStats.papersSearched, sourceStats.fulltextAttempted, sourceStats.fulltextObtained,
-            sourceStats.pdfDownloadFailed, sourceStats.pdfParseFailed,
-            sourceStats.authorsExtracted, sourceStats.noEmailInFulltext,
-            sourceStats.emailsValid, sourceStats.emailsRejected,
-            sourceStats.indexed, sourceStats.duplicates,
-            sourceStats.indexed, sourceStats.promoted,
-            sourceStats.filtered)
+            source.sourceName)
 
         return SourceRunOutcome(resumeCursor, exhausted, stopReason)
     }
@@ -958,20 +1010,28 @@ class ExpertDiscoveryService(
                 continue
             }
             batchNumber++
-
             val indexedBefore = sourceStats.indexed
             val recordsProcessedBeforeBatch = recordsProcessed
             val rawWriteFailedBefore = sourceStats.rawWriteFailed
             val enqueueFailedBefore = sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0
+            val dedupErrorsBefore = sourceStats.dedupErrors
             val rejectReasonsBefore = snapshotRejectReasons(sourceStats)
 
             // c9（I-3）：页内到点单独标记 —— 部分页按「进入该页」落盘，停止原因按 TIME_BUDGET 命名。
             var timeBudgetExpired = false
+            var limitReason: String? = null
             for (record in records) {
-                if (recordsProcessed >= orcidLimit) break
+                if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
+                if (recordsProcessed >= orcidLimit) {
+                    limitReason = DiscoveryStopReason.SOURCE_LIMIT
+                    break
+                }
                 if (timeBudgetReached(deadline)) { timeBudgetExpired = true; break }
                 stats.refreshGlobalCounts()
-                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+                    limitReason = DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT
+                    break
+                }
                 sourceStats.papersSearched++
                 sourceStats.fulltextObtained++
                 recordsProcessed++
@@ -980,7 +1040,10 @@ class ExpertDiscoveryService(
 
                 for (authorEmail in authorEmails) {
                     stats.refreshGlobalCounts()
-                    if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+                    if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+                        limitReason = DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT
+                        break
+                    }
                     sourceStats.authorsExtracted++
 
                     val identityReject = identityRejection(authorEmail)
@@ -1027,6 +1090,7 @@ class ExpertDiscoveryService(
                         }
                     }
                 }
+                if (limitReason != null) break
             }
 
             val batchProcessed = recordsProcessed - recordsProcessedBeforeBatch
@@ -1056,6 +1120,7 @@ class ExpertDiscoveryService(
             val pageFullyConsumed = recordsProcessed - recordsProcessedBeforeBatch == records.size
             val rawWriteFailedInPage = sourceStats.rawWriteFailed - rawWriteFailedBefore
             val enqueueFailedInPage = (sourceStats.failureReasons[ENRICHMENT_ENQUEUE_FAILED] ?: 0) - enqueueFailedBefore
+            val dedupErrorsInPage = sourceStats.dedupErrors - dedupErrorsBefore
             if (rawWriteFailedInPage > 0) {
                 log.warn("[{}] 批次 {} 内有 {} 条记录 RAW 写入失败，保留进入该页的 offset 以便重放",
                     orcid.sourceName, batchNumber, rawWriteFailedInPage)
@@ -1064,7 +1129,8 @@ class ExpertDiscoveryService(
                 log.warn("[{}] 批次 {} 内有 {} 条补全任务入队失败，保留进入该页的 offset 以便重放补建",
                     orcid.sourceName, batchNumber, enqueueFailedInPage)
             }
-            if (pageFullyConsumed && !timeBudgetExpired && rawWriteFailedInPage == 0 && enqueueFailedInPage == 0) {
+            if (pageFullyConsumed && limitReason == null && !timeBudgetExpired && rawWriteFailedInPage == 0 &&
+                enqueueFailedInPage == 0 && dedupErrorsInPage == 0) {
                 // I-2: 推进量由数据源按原始返回条数算好（不受邮箱过滤影响），这里只搬运它的游标。
                 cursor = page.nextCursor
                 persistCheckpoint(
@@ -1074,17 +1140,17 @@ class ExpertDiscoveryService(
                 )
                 if (exhausted) break
             } else {
-                // I-1: 部分页、页内 RAW 持久化未完成或补全入队未完成都保留进入该页的 offset，绝不跳过未消费记录。
+                // I-1: partial, interrupted, or failed pages retain their entering offset.
                 persistCheckpoint(
                     resumeCursor,
-                    if (rawWriteFailedInPage > 0) {
-                        DiscoveryStopReason.RAW_WRITE_INCOMPLETE
-                    } else if (enqueueFailedInPage > 0) {
-                        DiscoveryStopReason.ENQUEUE_INCOMPLETE
-                    } else if (timeBudgetExpired) {
-                        DiscoveryStopReason.TIME_BUDGET
-                    } else {
-                        DiscoveryStopReason.PAGE_PARTIAL
+                    when {
+                        progressStore.isCancelled("EXPERT_DISCOVERY") -> DiscoveryStopReason.CANCELLED
+                        rawWriteFailedInPage > 0 -> DiscoveryStopReason.RAW_WRITE_INCOMPLETE
+                        enqueueFailedInPage > 0 -> DiscoveryStopReason.ENQUEUE_INCOMPLETE
+                        dedupErrorsInPage > 0 -> DiscoveryStopReason.DEDUP_INCOMPLETE
+                        timeBudgetExpired -> DiscoveryStopReason.TIME_BUDGET
+                        limitReason != null -> limitReason!!
+                        else -> DiscoveryStopReason.PAGE_PARTIAL
                     },
                     false
                 )
@@ -1103,12 +1169,9 @@ class ExpertDiscoveryService(
             " → 有效 ${sourceStats.emailsValid} (无效 ${sourceStats.emailsRejected})" +
             " → 去重后 ${sourceStats.indexed} (重复 ${sourceStats.duplicates})" +
             " → 收录L3 ${sourceStats.indexed} → 晋升L2 ${sourceStats.promoted}" +
-            " (资格淘汰 ${sourceStats.filtered})" +
+            " (过滤（含身份未确认） ${sourceStats.filtered}, 过滤原因 ${sourceStats.filterReasons})" +
             (if (sourceStats.failureReasons.isNotEmpty()) ", 失败原因 ${sourceStats.failureReasons}" else ""),
-            orcid.sourceName, elapsed, recordsProcessed, sourceStats.authorsExtracted,
-            sourceStats.emailsValid, sourceStats.emailsRejected,
-            sourceStats.indexed, sourceStats.duplicates,
-            sourceStats.indexed, sourceStats.promoted, sourceStats.filtered)
+            orcid.sourceName)
 
         return SourceRunOutcome(resumeCursor, exhausted, stopReason)
     }
@@ -1432,7 +1495,7 @@ class ExpertDiscoveryService(
      */
     fun queueQueryHash(sourceName: String, criteria: PaperSearchCriteria): String {
         require(sourceName.isNotBlank()) { "队列来源名不得为空" }
-        val canonical = DiscoveryCheckpointCodec.canonicalCriteria(
+        val canonical = DiscoveryCheckpointCodec.sourceCanonicalCriteria(sourceName,
             queueCriteria(criteria).copy(sources = listOf(sourceName))
         )
         return sha256Hex(canonical)
@@ -1883,6 +1946,7 @@ class ExpertDiscoveryService(
             "externalIds" to profile.externalIds?.let { objectMapper.readValue(it, Map::class.java) },
             "discoveredAt" to now, "updatedAt" to now,
             "filterResult" to filterResult,
+            "expertClassification" to expertIndexWriterService.classificationNode(expertClassificationService.classify(profile)),
             "filterRejectReason" to rejectReasons.takeIf { it.isNotEmpty() }?.joinToString("; "),
             "tags" to listOf("discovered")
         )
@@ -1987,6 +2051,53 @@ class ExpertDiscoveryService(
             remaining -= slice
         }
         return progressStore.isCancelled(taskType)
+    }
+    private fun waitForOpenAlexRetry(attempt: Int, deadline: Instant): String? {
+        var remaining = attempt * 1000L + ThreadLocalRandom.current().nextLong(201L)
+        while (remaining > 0L) {
+            if (progressStore.isCancelled("EXPERT_DISCOVERY")) return DiscoveryStopReason.CANCELLED
+            if (timeBudgetReached(deadline)) return DiscoveryStopReason.TIME_BUDGET
+            val slice = minOf(remaining, 100L)
+            try {
+                Thread.sleep(slice)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return DiscoveryStopReason.CANCELLED
+            }
+            remaining -= slice
+        }
+        return when {
+            progressStore.isCancelled("EXPERT_DISCOVERY") -> DiscoveryStopReason.CANCELLED
+            timeBudgetReached(deadline) -> DiscoveryStopReason.TIME_BUDGET
+            else -> null
+        }
+    }
+
+    private fun isRetryableOpenAlexFailure(error: Throwable): Boolean {
+        val causes = generateSequence(error) { it.cause }.toList()
+        if (causes.any {
+                it is CertificateException || it is SSLPeerUnverifiedException || it is SSLProtocolException ||
+                    it is com.fasterxml.jackson.core.JsonProcessingException ||
+                    it is org.springframework.http.converter.HttpMessageNotReadableException
+            }) return false
+        val handshake = causes.filterIsInstance<SSLHandshakeException>().firstOrNull()
+        if (handshake != null) {
+            return handshake.message?.lowercase(Locale.ROOT)?.contains("remote host terminated the handshake") == true
+        }
+        return causes.any { cause ->
+            when (cause) {
+                is SocketTimeoutException, is ConnectException, is EOFException -> true
+                is SocketException -> cause.message?.lowercase(Locale.ROOT)?.let {
+                    it.contains("reset") || it.contains("aborted") || it.contains("broken pipe")
+                } == true
+                is IOException -> cause.javaClass.simpleName == "ConnectTimeoutException" ||
+                    cause.message?.lowercase(Locale.ROOT)?.let {
+                        it.contains("connection reset") || it.contains("unexpected end of file") ||
+                            it.contains("connection closed")
+                    } == true
+                else -> false
+            }
+        }
     }
 
     private fun computeEnrichmentBackoffMs(consecutiveRateLimits: Int, retryAfterMs: Long?): Long {
@@ -2397,7 +2508,18 @@ class ExpertDiscoveryService(
             bucket.enqueued++
             counters.enqueued++
             // 文档读不到（ES 查无此 `_id`）：算可重试失败，绝不伪造成功；故障尝试用尽后由 07 记为 FAILED。
-            val outcome = profile?.let { outcomes[enrichmentDocId(it)] } ?: ProfileEnrichmentOutcome.RetryableError()
+            val initial = profile?.let { outcomes[enrichmentDocId(it)] } ?: ProfileEnrichmentOutcome.RetryableError()
+            val outcome = if (initial is ProfileEnrichmentOutcome.Success && isRawOnly(initial.layers) &&
+                profile != null && !DiscoveryIdentity.isDiscovery(profile)) {
+                counters.revalidated++
+                if (revalidateRawOnlySuccess(job.expertDocId)) counters.promoted++
+                initial
+            } else initial
+            if (initial is ProfileEnrichmentOutcome.Success && profile != null &&
+                DiscoveryIdentity.isDiscovery(profile)) {
+                counters.revalidated++
+                if (initial.promoted && outcome is ProfileEnrichmentOutcome.Success) counters.promoted++
+            }
             if (outcome is ProfileEnrichmentOutcome.Deferred && deferredUntil == null) {
                 deferredUntil = outcome.resetAt.toString()
             }
@@ -2412,11 +2534,6 @@ class ExpertDiscoveryService(
                 BatchOutcomeBucket.PENDING -> { counters.pending++; bucket.pending++ }
                 BatchOutcomeBucket.UNMATCHED -> { counters.unmatched++; bucket.unmatched++ }
                 BatchOutcomeBucket.FAILED -> { counters.failed++; bucket.failed++ }
-            }
-            // I-3：只有「成功且 RAW-only」的专家才做定向复评。
-            if (outcome is ProfileEnrichmentOutcome.Success && isRawOnly(outcome.layers)) {
-                counters.revalidated++
-                if (revalidateRawOnlySuccess(job.expertDocId)) counters.promoted++
             }
         }
 
@@ -2439,8 +2556,8 @@ class ExpertDiscoveryService(
     }
 
     /**
-     * I-3（08）：定向复评的适用对象 —— 只对**RAW-only**（CANDIDATE/APPLICATION 都不存在）的专家执行，
-     * 已有候选/申请的专家不重建、不降级。
+     * Legacy non-discovery RAW-only promotion after enrichment. Discovery records instead use
+     * targeted revalidation inside enrichProfiles, before their job may become SUCCEEDED.
      */
     private fun isRawOnly(layers: LayerUpdateResult): Boolean =
         layers.updatedAnyLayer() &&
@@ -2448,8 +2565,8 @@ class ExpertDiscoveryService(
             layers.application == LayerUpdateStatus.ABSENT
 
     /**
-     * I-3（08）：补全成功后的定向复评（06 的核心，门禁与候选写入都不变）。
-     * 复评失败不影响已按真实 `_id` 写回的补全事实，也不把补全结果改判为失败。
+     * Legacy RAW-only revalidation retains its historical best-effort semantics.
+     * Discovery revalidation errors are retryable outcomes and cannot report success.
      */
     private fun revalidateRawOnlySuccess(docId: String): Boolean = try {
         revalidationService.revalidateEnrichedRaw(docId) == PromotionOutcome.Promoted
@@ -2544,6 +2661,7 @@ class ExpertDiscoveryService(
         enrichment.citationCount?.let { doc["citationCount"] = it }
         enrichment.worksCount?.let { doc["worksCount"] = it }
         enrichment.topics?.takeIf { it.isNotEmpty() }?.let { doc["researchFields"] = it.joinToString(", ") }
+        enrichment.researchFieldIds?.let { doc["researchFieldIds"] = it }
         enrichment.recentWorkTitles?.takeIf { it.isNotEmpty() }?.let { doc["recentWorkTitles"] = it }
         enrichment.patentTitles?.takeIf { it.isNotEmpty() }?.let { doc["patentTitles"] = it }
         enrichment.disciplineCategory?.let { doc["disciplineCategory"] = it }
@@ -2557,6 +2675,7 @@ class ExpertDiscoveryService(
             worksCount = enrichment.worksCount ?: profile.worksCount,
             researchFields = enrichment.topics?.takeIf { it.isNotEmpty() }?.joinToString(", ")
                 ?: profile.researchFields,
+            researchFieldIds = enrichment.researchFieldIds ?: profile.researchFieldIds,
             recentWorkTitles = enrichment.recentWorkTitles?.takeIf { it.isNotEmpty() }
                 ?: profile.recentWorkTitles,
             patentTitles = enrichment.patentTitles?.takeIf { it.isNotEmpty() } ?: profile.patentTitles,
@@ -2725,13 +2844,23 @@ class ExpertDiscoveryService(
                     is EnrichmentOutcome.Success -> {
                         for (profile in profiles) {
                             val layers = updateExpertAcademicFields(profile, found.data)
-                            // I-2/I-3：层写入失败或附加标题子请求失败都只算部分完成，绝不报成整体成功。
-                            val partial = layers.hasFailedLayer() || found.titlesFailed
-                            outcomes[enrichmentDocId(profile)] = if (partial) {
-                                ProfileEnrichmentOutcome.Partial(layers, recentWorksFailed = found.titlesFailed)
-                            } else {
-                                ProfileEnrichmentOutcome.Success(layers)
-                            }
+                            val docId = enrichmentDocId(profile)
+                            if (layers.hasFailedLayer() || found.titlesFailed) {
+                                outcomes[docId] = ProfileEnrichmentOutcome.Partial(layers, recentWorksFailed = found.titlesFailed)
+                            } else if (DiscoveryIdentity.isDiscovery(profile)) {
+                                val result = try {
+                                    revalidationService.revalidateDiscovery(docId)
+                                } catch (e: Exception) {
+                                    log.warn("Discovery admission retry required for {}: {}", docId, e.message)
+                                    PromotionOutcome.WriteFailed
+                                }
+                                outcomes[docId] = when (result) {
+                                    PromotionOutcome.Promoted -> ProfileEnrichmentOutcome.Success(layers, promoted = true)
+                                    PromotionOutcome.AlreadyPresent, is PromotionOutcome.Rejected ->
+                                        ProfileEnrichmentOutcome.Success(layers)
+                                    else -> ProfileEnrichmentOutcome.RetryableError()
+                                }
+                            } else outcomes[docId] = ProfileEnrichmentOutcome.Success(layers)
                         }
                     }
                     is EnrichmentOutcome.NotFound ->
@@ -3108,6 +3237,7 @@ object DiscoveryStopReason {
     const val BUDGET_DEFERRED = "BUDGET_DEFERRED"
     const val CIRCUIT_BREAKER = "CIRCUIT_BREAKER"
     const val CANCELLED = "CANCELLED"
+    const val DEDUP_INCOMPLETE = "DEDUP_INCOMPLETE"
     const val GLOBAL_PAPER_LIMIT = "GLOBAL_PAPER_LIMIT"
     const val GLOBAL_AUTHOR_LIMIT = "GLOBAL_AUTHOR_LIMIT"
     const val SOURCE_LIMIT = "SOURCE_LIMIT"
@@ -3148,6 +3278,9 @@ private const val EMAIL_PRIMARY_KEY_PREFIX = "EMAIL-"
 
 /** I-1：OpenAlex 的 `filter=...|...` 每批最多 100 个不同身份。 */
 private const val MAX_ENRICHMENT_IDENTITIES_PER_BATCH = 100
+
+private const val OPENALEX_MAX_PAGE_ATTEMPTS = 3
+private val OPENALEX_RETRYABLE_HTTP_STATUS = setOf(500, 502, 503, 504)
 
 /** I-1（08）：补全入队的失败原因码（与 [DiscoveryStopReason.ENQUEUE_INCOMPLETE] 配对）。 */
 private const val ENRICHMENT_ENQUEUE_FAILED = "ENRICHMENT_ENQUEUE_FAILED"
@@ -3193,7 +3326,7 @@ data class LayerUpdateResult(
  */
 sealed class ProfileEnrichmentOutcome {
     /** 学术事实已按真实 `_id` 局部写入全部现存层。 */
-    data class Success(val layers: LayerUpdateResult) : ProfileEnrichmentOutcome()
+    data class Success(val layers: LayerUpdateResult, val promoted: Boolean = false) : ProfileEnrichmentOutcome()
 
     /**
      * 基础事实已拿到，但仍有未完成部分：

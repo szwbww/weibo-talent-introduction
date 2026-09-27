@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestTemplate
+import java.net.URI
 import java.net.URLEncoder
 
 @Service
@@ -98,7 +99,7 @@ class OrcidDataSource(
 
         val response = try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
-            restTemplate.getForObject(url, JsonNode::class.java)
+            restTemplate.getForObject(URI.create(url), JsonNode::class.java)
         } catch (e: Exception) {
             log.error("ORCID search failed: {}", e.message)
             throw e
