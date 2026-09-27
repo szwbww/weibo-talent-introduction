@@ -166,8 +166,8 @@ class ExpertIndexServiceTest {
         }
         // I-2: all three indices still get their batch PUT attempt
         org.junit.jupiter.api.Assertions.assertEquals(3, batchPuts, "each index must get one batch PUT attempt")
-        // I-2: identityVerification adds the 35th declared field; fallback must still cover every field.
-        org.junit.jupiter.api.Assertions.assertEquals(35, singleFieldPuts, "RAW batch failure must degrade to per-field PUTs for every declared field")
+        // researchFieldIds is now declared alongside the existing RAW properties.
+        org.junit.jupiter.api.Assertions.assertEquals(36, singleFieldPuts, "RAW batch failure must degrade to per-field PUTs for every declared field")
     }
 
     @Test
@@ -229,6 +229,94 @@ class ExpertIndexServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(candidateFound, "Candidate index PUT mapping not called")
         org.junit.jupiter.api.Assertions.assertTrue(rawFound, "Raw index PUT mapping not called")
         org.junit.jupiter.api.Assertions.assertTrue(appFound, "Application index PUT mapping not called")
+    }
+
+    @Test
+    fun `bootstrap creates application and updates all three layers with keyword field IDs`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.eq("https://es.example.com:9200/orcid_info_application"),
+                Mockito.eq(HttpMethod.GET), Mockito.any(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.anyString(), Mockito.eq(HttpMethod.HEAD), Mockito.any(), Mockito.eq(Void::class.java)
+            )
+        ).thenReturn(ResponseEntity(HttpStatus.OK))
+        val urls = ArgumentCaptor.forClass(String::class.java)
+        val entities = ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.`when`(
+            restTemplate.exchange(
+                urls.capture(), Mockito.eq(HttpMethod.PUT), entities.capture(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(mapper.createObjectNode(), HttpStatus.OK))
+
+        service.bootstrapMappings()
+
+        val requests = urls.allValues.zip(entities.allValues)
+        val created = requests.single { it.first == "https://es.example.com:9200/orcid_info_application" }
+            .second.body as com.fasterxml.jackson.databind.JsonNode
+        org.junit.jupiter.api.Assertions.assertEquals(false, created.path("mappings").path("dynamic").asBoolean())
+        org.junit.jupiter.api.Assertions.assertEquals(
+            "keyword", created.path("mappings").path("properties").path("researchFieldIds").path("type").asText()
+        )
+        for (index in listOf("orcid_info", "orcid_info_candidate", "orcid_info_application")) {
+            val body = requests.single { it.first == "https://es.example.com:9200/$index/_mapping" }
+                .second.body as Map<*, *>
+            val fields = body["properties"] as Map<*, *>
+            org.junit.jupiter.api.Assertions.assertEquals(
+                "keyword", (fields["researchFieldIds"] as Map<*, *>)["type"], index
+            )
+        }
+    }
+
+    @Test
+    fun `mapping conflict on raw field IDs is reported while other layers still update`() {
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.anyString(), Mockito.eq(HttpMethod.HEAD), Mockito.any(), Mockito.eq(Void::class.java)
+            )
+        ).thenReturn(ResponseEntity(HttpStatus.OK))
+        val urls = ArgumentCaptor.forClass(String::class.java)
+        val entities = ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.`when`(
+            restTemplate.exchange(
+                urls.capture(), Mockito.eq(HttpMethod.PUT), entities.capture(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenAnswer { invocation ->
+            val url = invocation.getArgument<String>(0)
+            val props = (invocation.getArgument<HttpEntity<*>>(2).body as Map<*, *>)["properties"] as Map<*, *>
+            if (url == "https://es.example.com:9200/orcid_info/_mapping" &&
+                (props.size > 1 || props.containsKey("researchFieldIds"))
+            ) throw HttpClientErrorException(HttpStatus.BAD_REQUEST)
+            ResponseEntity(mapper.createObjectNode(), HttpStatus.OK)
+        }
+        val logger = org.slf4j.LoggerFactory.getLogger(ExpertIndexService::class.java) as ch.qos.logback.classic.Logger
+        val logs = ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>()
+        logs.start()
+        logger.addAppender(logs)
+        try {
+            service.bootstrapMappings()
+            org.junit.jupiter.api.Assertions.assertTrue(
+                logs.list.any {
+                    it.formattedMessage.contains("Field mapping conflict for index orcid_info field researchFieldIds")
+                }, "conflict must be reported, not silently accepted"
+            )
+            org.junit.jupiter.api.Assertions.assertTrue(
+                urls.allValues.containsAll(
+                    listOf(
+                        "https://es.example.com:9200/orcid_info_candidate/_mapping",
+                        "https://es.example.com:9200/orcid_info_application/_mapping"
+                    )
+                )
+            )
+        } finally {
+            logger.detachAppender(logs)
+            logs.stop()
+        }
     }
 
     @Test

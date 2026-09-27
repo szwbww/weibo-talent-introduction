@@ -57,6 +57,21 @@ class SubjectScopeCatalogTest {
     }
 
     @Test
+    fun `target field IDs reuse exactly the six queried OpenAlex fields`() {
+        val ids = SubjectScopeCatalog.targetOpenAlexFieldIds()
+        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException::class.java) {
+            (ids as MutableSet<String>).add("99")
+        }
+        assertEquals(setOf("15", "17", "21", "22", "25", "31"), ids)
+        assertEquals(
+            listOf("primary_topic.field.id:22|31|17|25|21|15"),
+            SubjectScopeCatalog.openAlexFilterParts(SubjectScopeCatalog.RND_TARGET)
+        )
+        assertTrue(ids.all(SubjectScopeCatalog::isTargetOpenAlexFieldId))
+        assertTrue(listOf("16", "32", "", "engineering").none(SubjectScopeCatalog::isTargetOpenAlexFieldId))
+    }
+
+    @Test
     fun `excludedSources RND_TARGET is exactly two`() {
         // I4-3：RND_TARGET 下生物医学两源「本次不参与」，恰好两项。
         assertEquals(
