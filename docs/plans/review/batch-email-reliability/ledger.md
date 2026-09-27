@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-09-26/batch-email-reliability-plan.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
 - Master plan: docs/plans/2026-09-26/batch-email-reliability-plan.md (sha256 d0226d4fd73fd6e542d77a85ceab3d9285e0aacef4047668c0e7983735890a77)
 - Governing master identity: sha256 d0226d4fd73fd6e542d77a85ceab3d9285e0aacef4047668c0e7983735890a77; commit 38ba555b4147970ee77569e71f863955e2c4a2b5
 - Invoked master identity: sha256 6f4905cd9be32b1db62bea9d2d79e3c1bad050c3627fbfdaa2d8f31334bb6f10
@@ -11,26 +11,26 @@
 - Fast-p ledger: docs/plans/fast/batch-email-reliability/ledger.md (sha256 036f9ba7613eb1bbaa8432ed7dc1156642a32bfc8324c0b156dd2720842492e7)
 - Fast-p handoff: docs/plans/fast/batch-email-reliability/human-review-handoff.md (sha256 3010b6956cfdd236136563ef93ec9a47990b343099e712a9fd36ee214edd7e28)
 - Master base: 64c0394a940bd79c2ecc04e5c497650f045faa75
-- Final code head: 418c77ff35fff6a570ded92f5bb64e523a603f50
-- Evidence parent before next commit: ef652f6402692d9b722992c2f8bfbe1fcb3616eb
-- Previous evidence commit: N/A
+- Final code head: 9b381affc1a1654628bae1f71394ea37c1366c18
+- Evidence parent before next commit: 58f3ffc7a852839d2bd50919fce98689505daef0
+- Previous evidence commit: 58f3ffc7a852839d2bd50919fce98689505daef0
 - Branch: fast/batch-email-reliability-rerun
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-email-reliability-rerun
-- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
-- Discovery evidence: discover_fast_p.py --repo /Users/lukai/IdeaProjects/weibo-talent-introduction --master-plan /Users/lukai/IdeaProjects/weibo-talent-introduction/docs/plans/2026-09-26/batch-email-reliability-plan.md; exit 0, SELECTED exactly one candidate; four terminal LIGHT_PASS children; returned identities recorded above.
-- Misdirected review evidence: N/A; invoked worktree has no same-slug review ledger.
-- Reviewer: /root/aggregate_reviewer; fresh fork_turns=none, created after final code commit; distinct from recorded fast-p writers/verifiers.
+- Worktree resolution: EXPLICIT (current human invocation names the retained fast-p handoff and worktree)
+- Discovery evidence: Epoch 1 discovery result retained below; current exact handoff names the same selected worktree.
+- Misdirected review evidence: N/A
+- Reviewer: Aggregatere-reviewbatchemailreliability; fresh after product repair; distinct from executor Main and Epoch 1 reviewer /root/aggregate_reviewer.
 - Reviewer attempt: 1
-- Machine result: FAIL; convergence INITIAL; V-1 P1 NEW
-- Machine report epoch: docs/plans/review/batch-email-reliability/machine-verification.md — Epoch 1 (2026-09-27T08:01:47Z)
-- Repair artifact: docs/plans/fix/batch-email-reliability-plan/repair.md (sha256 08f7a73c8c2534af1aec773bad78fe8e3d79dccb6afb5edfcf2d6b45a00fad78); DRAFT_READY
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
-- Manual status: PENDING
+- Machine result: PASS; convergence PROGRESSING; V-1 RESOLVED, no new P1/P2.
+- Machine report epoch: docs/plans/review/batch-email-reliability/machine-verification.md — Epoch 2 (2026-09-27T10:06:57Z)
+- Repair artifact: docs/plans/fix/batch-email-reliability-plan/repair.md (sha256 08f7a73c8c2534af1aec773bad78fe8e3d79dccb6afb5edfcf2d6b45a00fad78); executed; no further repair plan.
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: Human-originated current `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-email-reliability-rerun/docs/plans/fix/batch-email-reliability-plan/repair.md` invocation.
+- Repair executor: Main
+- Repair code head: 9b381affc1a1654628bae1f71394ea37c1366c18
+- Manual status: PENDING (12 mandatory items in manual-acceptance.md Epoch 2)
 - Human sign-off boundary: N/A
-- Blocker/next action: Human-originated execute-p of the exact repair artifact; approve its two-file repair, specified local product/evidence commits, durable repair-execution.md handoff and same-task return to aggregate review. No repair execution authorized by this review.
+- Blocker/next action: Human completes the 12 child-plan acceptance checks using isolated fixtures/SMTP sink and records item verdicts and explicit boundary/master-identity sign-off. Machine PASS is not integration authority.
 
 ## Preflight
 
@@ -55,3 +55,10 @@ Only the target-worktree line changes between invoked and governing master:
 - Exact command outputs, complete contract matrix, stable finding lineage, reproduction source and RECORD_ONLY re-evaluation retained in machine-verification.md.
 - Repair scope: only ManualInitialOutreachService.kt and ManualInitialOutreachServiceTest.kt; no product edits performed. Human acceptance remains PENDING for all 12 original items; no manual checklist epoch created because machine result is FAIL.
 - Controller checked returned boundary, mandatory command completeness, governing amendment, single repair scope and one-approval handoff before evidence commit. Evidence parent remains ef652f6402692d9b722992c2f8bfbe1fcb3616eb; final code head unchanged.
+
+## Epoch 2 Post-Repair Result
+
+- Human-approved exact repair `08f7a73c8c2534af1aec773bad78fe8e3d79dccb6afb5edfcf2d6b45a00fad78` produced one product commit `9b381affc1a1654628bae1f71394ea37c1366c18` (only the two repair-authorized Kotlin source/test files), followed by docs-only handoff commit `58f3ffc7a852839d2bd50919fce98689505daef0`. Both descend from the prior code/evidence lineage; index/worktree clean at review dispatch.
+- Independent reviewer Aggregatere-reviewbatchemailreliability used `review-p`/`verify-p` on the cumulative `64c0394a940bd79c2ecc04e5c497650f045faa75..9b381affc1a1654628bae1f71394ea37c1366c18` boundary. Complete output and master contract matrix in machine-verification.md Epoch 2; fresh full Maven JVM 4114/0/0/13, JS 1198/0, focused suites 39/274/226, real MySQL 14 and Flyway 33 with zero skips, focused JS 33, diff checks pass. External compiled-service reproduction: one historical page, `CANCELLED` result/task status and `wasCancelled=true`.
+- Prior P1 V-1 resolved; no new mandatory machine failure or repair proposal. Four child RECORD_ONLY indexes contain N/A. Human checks remain 12/12 PENDING in manual-acceptance.md Epoch 2; Chromium static smoke did not substitute for real operator acceptance.
+- Product code head remains `9b381affc1a1654628bae1f71394ea37c1366c18`; current evidence parent is `58f3ffc7a852839d2bd50919fce98689505daef0`. This epoch's evidence commit will be recorded as previous evidence commit in the next ledger update, not self-referenced here.

@@ -359,3 +359,99 @@ No implementation was performed. No product code was modified.
 $execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-email-reliability-rerun/docs/plans/fix/batch-email-reliability-plan/repair.md
 完成计划授权的本地提交和 repair-execution.md 交接后，在同一任务继续 $review-fast-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-email-reliability-rerun/docs/plans/fast/batch-email-reliability/human-review-handoff.md；使用持久化交接，无需我转述执行者元数据。
 ~~~
+
+## Epoch 2 — 2026-09-27T10:06:57Z
+
+- Master plan: docs/plans/2026-09-26/batch-email-reliability-plan.md (sha256 d0226d4fd73fd6e542d77a85ceab3d9285e0aacef4047668c0e7983735890a77; recorded identity commit 38ba555b4147970ee77569e71f863955e2c4a2b5)
+- Master identity state: AMENDMENT_RECORDED; A1–A5 § 分解与执行次序, human-approved distinct worktree/branch binding; invoked sha256 6f4905cd9be32b1db62bea9d2d79e3c1bad050c3627fbfdaa2d8f31334bb6f10; no retroactively authorized product/test files. Governing diff remains in review ledger.
+- Boundary: 64c0394a940bd79c2ecc04e5c497650f045faa75..9b381affc1a1654628bae1f71394ea37c1366c18
+- Evidence HEAD at independent review: 58f3ffc7a852839d2bd50919fce98689505daef0
+- Reviewer: Aggregatere-reviewbatchemailreliability (fresh task agent after repair commit; distinct from executor Main and prior /root/aggregate_reviewer)
+- Requested phase: aggregate/master via review-p and verify-p
+- Result: PASS; convergence PROGRESSING; V-1 RESOLVED
+- Repair artifact/result: docs/plans/fix/batch-email-reliability-plan/repair.md (sha256 08f7a73c8c2534af1aec773bad78fe8e3d79dccb6afb5edfcf2d6b45a00fad78) / N/A, no further repair planning
+- Repair evidence mode: DURABLE_HANDOFF; docs/plans/review/batch-email-reliability/repair-execution.md; executor Main; human-originated exact execute-p invocation in handoff.
+- Manual acceptance: PENDING (12 items)
+
+The following is the complete independent reviewer output; no product/test or review evidence was modified by that reviewer.
+
+## Independent aggregate verification — PASS
+
+**Scope and identity.** Reviewed only `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-batch-email-reliability-rerun`, branch `fast/batch-email-reliability-rerun`, clean HEAD `58f3ffc7a852839d2bd50919fce98689505daef0`. Governing approved master-plan SHA-256 `d0226d4fd73fd6e542d77a85ceab3d9285e0aacef4047668c0e7983735890a77`; original approved plan SHA-256 `6f4905cd9be32b1db62bea9d2d79e3c1bad050c3627fbfdaa2d8f31334bb6f10`, with only the recorded five worktree/branch-binding amendments. Approved repair artifact SHA-256 `08f7a73c8c2534af1aec773bad78fe8e3d79dccb6afb5edfcf2d6b45a00fad78`. Product boundary `64c0394a940bd79c2ecc04e5c497650f045faa75..9b381affc1a1654628bae1f71394ea37c1366c18` changes exactly the master-authorized 21 source/test files. Repair product delta `418c77ff35fff6a570ded92f5bb64e523a603f50..9b381affc1a1654628bae1f71394ea37c1366c18` changes only `ManualInitialOutreachService.kt` and `ManualInitialOutreachServiceTest.kt`, the two repair-authorized files. Subsequent commits to current HEAD change no `src/main` or `src/test` paths; they are evidence, not the product boundary. I inspected the complete production and test diff. No unauthorized product change or dirty worktree.
+
+### Fresh commands and observations
+
+All commands ran in the specified worktree, with JDK 11; MySQL commands explicitly enabled their opt-in tests and used the OrbStack Docker socket and Docker API 1.40. Commands were run serially rather than against simultaneous Maven writes.
+
+| ID | Command | Actual result |
+|---|---|---|
+| C1 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn test` | PASS: JVM 4114 run, 0 failures/errors, 13 opt-in skips; bundled JS 1198 passed, 0 failed (`artifact://1418`). |
+| C2 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=BatchEmailVerificationServiceTest,TaskRetentionMigrationTest test` | PASS: JVM 39/0/0/0 (`artifact://1420`). |
+| C3 | `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -DmysqlIt=true -Dtest=BatchEmailVerificationRepositoryIT -Dapi.version=1.40 test` | PASS: real Testcontainers MySQL 8.0.36; 14/0/0/0 (`artifact://1423`). |
+| C4 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=BatchSendTaskConfigServiceTest,ManualInitialOutreachServiceTest,OutreachTargetIteratorTest,BatchSendTaskRuntimeIntegrationTest test` | PASS: 274/0/0/0, including new two-parameter cancellation regression (`artifact://1425`). |
+| C5 | `DOCKER_HOST=unix:///Users/lukai/.orbstack/run/docker.sock JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -DmigrationIt=true -Dtest=FlywayMigrationIntegrationTest -Dapi.version=1.40 test` | PASS: real MySQL 8.0.36, V141→V142 exercised; 33/0/0/0 (`artifact://1440`). |
+| C6 | `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=BatchEmailVerificationServiceTest,ManualInitialOutreachServiceTest,BatchSendControlServiceTest test` | PASS: 226/0/0/0 (`artifact://1442`). |
+| C7 | `node --test src/test/js/batchEmailVerification.test.js` | PASS: 33 tests, 0 failed/skipped. |
+| C8 | `node --test src/test/js/*.test.js` | PASS: 1198 tests, 0 failed/skipped (`artifact://1417`). |
+| C9–10 | `git diff --check`; `git diff --check 64c0394a940bd79c2ecc04e5c497650f045faa75..9b381affc1a1654628bae1f71394ea37c1366c18` | Both exit 0, no whitespace diagnostics; rechecked with final clean status. |
+
+**Independent V-1 reproduction:** Compiled and ran a disposable external `/private/tmp/IndependentCancelReviewProbe.java` against the actual newly compiled service. Cancellation during the first historical lookup produced `pages=1 finalStatus=CANCELLED taskFinalStatus=CANCELLED wasCancelled=true` (Java exit 0); the pre-repair identical scenario had continued four pages and produced `COMPLETED/SUCCESS`. The permanent two-row test covers `oneRoundOnly=false/true`, no next page/layer, no sender/SMPP action, and persisted cancellation progress. Source `ManualInitialOutreachService.kt:564-588,1667-1693,1917-1922` checks cancellation in the prescan, before empty completion and in task status; existing `ExpertSearchService.kt:748-777` stops scroll on callback=false and clears it. No production mail was sent by this probe.
+
+**Actual-surface smoke, not human sign-off:** Served the unchanged static UI locally and used Chromium at 1100px and 390px. Both editor and independent manual filter switches and labels were present, keyboard Space changed checked state and `已开启`/`已关闭`; hints wrapped without page overflow. Authentication and backend submission were not exercised; temporary static server stopped and tab closed.
+
+### Frozen requirement matrix
+
+Codes S1–S14 and T1–T5 below are explicit source/test paths in the prior aggregate report `docs/plans/review/batch-email-reliability/machine-verification.md:70-95`; I refreshed affected line numbers and confirmed against this product HEAD. Every machine item is mandatory. Manual items remain pending, never converted into machine sign-off.
+
+| ID / source | Mandatory | Required evidence | Verdict | Fresh evidence |
+|---|---|---|---|---|
+| M-1 master identity/boundary | Yes | Approved hashes, ancestry, complete authorized diff | PASS | Clean branch/HEAD, approved SHA, 21/21 authorized files; repair exactly two files. |
+| M-2 master non-goals | Yes | Full diff; no blacklist/cache/ES mapping/extra paid request/retry expansion/auto-reverify/SMTP or cron redesign | PASS | Full `src/main` and `src/test` diff; S2 only read helper, S12 one column, HTTP implementation unchanged. |
+| M-3 master verification | Yes | Full suite, child suites, actual MySQL, JS, diff checks | PASS | C1–C10, with both gated MySQL suites genuinely running. |
+| 01-I1 | Yes | Shared effective original-row predicate and strict one-year bounds in query/retention; actual cleanup | PASS | S1 `BatchEmailVerificationRepository.kt:79-96,209-228`; S3 `TaskExecutionRepository.kt:180-193`; T1 `BatchEmailVerificationRepositoryIT.kt:338-429`; C2/C3. |
+| 01-I2 | Yes | Newest valid checked_at/id before undeliverable classification; ERROR/reuse cannot displace | PASS | S1:209-228, S2 `BatchEmailVerificationService.kt:80-96`; T1:338-379; C3. |
+| 01-I3 | Yes | Normalize/dedupe/+tag, ≤500 SQL inputs, fixed Beijing now, empty zero work, no HTTP/write, DB errors surface | PASS | S2:80-96 and existing normalization; T2 `BatchEmailVerificationServiceTest.kt:68-133`; C2. |
+| 01-PRESERVE | Yes | Single-email reuse, HTTP 249 twice/500ms, audit and ordered/batched retention | PASS | S1:95; S2:231-269 unchanged; S3:180-193; C1–C3/C6. |
+| 02-I1 | Yes | Old false/new true; nullable update, explicit false, legacy/enabled preservation; snapshot and real V142 migration | PASS | S4 `BatchSendTaskConfig.kt:40-145`, S5 `BatchExecutionModels.kt:35-45,166-189,359-381`, S6 `BatchSendTaskConfigService.kt:66-233,532-562,684-705`, S12 `V142__add_exclude_verified_unavailable_emails.sql:1-2`; T4 `FlywayMigrationIntegrationTest.kt:77-116`; C4/C5. |
+| 02-I2 | Yes | Historic filter independent of live paid verification; off avoids new history reads; material permitted | PASS | S7 `ManualInitialOutreachService.kt:480-511,564-598,1622-1693`; S6 field propagation; T3 `ManualInitialOutreachServiceTest.kt:241-407`; C4. |
+| 02-I3 | Yes | Intro profile email, material contact email, common preview/execution helper and fixed now | PASS | S7:480-511,564-598,1307-1319,1592-1619; T3:241-407; C4. |
+| 02-I4-PAGING | Yes | Raw page controls termination/offset; whole filtered/duplicate page not EOF | PASS | S8 `OutreachTargetIterator.kt:26-62`; T3 plus `OutreachTargetIteratorTest.kt:158-248`; C4. |
+| 02-I4-CANCEL | Yes | Prescan and subsequent page/layer obey cancel; return/persist CANCELLED, not COMPLETED | PASS—V-1 resolved | S7:564-588,1667-1693,1917-1922; T3:409-477; C4 plus independent external reproduction (one page, CANCELLED). |
+| 02-I5 | Yes | Filtered pending/retryable/total/excluded, no side effects for excluded targets | PASS | S7:480-511,1307-1319,1592-1619; T3:241-407; C4. |
+| 02-PERF | Yes | 500-item scroll count when on, old `_count` when off, bounded history query | PASS | S7:1622-1693; S2:80-96; S13 `ExpertSearchService.kt:748-777`; C2/C4. |
+| 02-PRESERVE | Yes | Preexisting unsubscribe/sent/gate/account/quota/manual-source semantics; no new cross-layer/deep-page claim | PASS | Full diff, S7 filter before existing send, S9 `BatchSendControlService.kt` unchanged modern entry; C1/C4. |
+| 03-I1 | Yes | INCOMPLETE/TIMEOUT/BAD_RESPONSE defer; auth/credits/rate/service/audit/unknown stop; HTTP mapping unchanged | PASS | S1:414-428; S7:759-805; S2:231-269; T3 failure-classification and unknown-code regressions; C6. |
+| 03-I2 | Yes | ERROR original evidence plus SKIPPED/DEFERRED/NOT_REQUIRED, no bad tag or SMTP | PASS | S2 verification/recordSend; S7:759-805; T3:5383-5458; C6. |
+| 03-I3 | Yes | Strict audit precedes skip; no successful quota consumption; continue next candidates; all-deferred and audit failure | PASS | S7:759-805; T3:5383-5513; C6. |
+| 03-I4 | Yes | Global sent/remaining FAILED/PARTIAL_SUCCESS; legacy runtime PAUSED, SMTP mixed outcome unchanged; modern cron untouched | PASS | S7:1081-1128; S9:311-373,500-539; `TaskExecutionService.kt:163-199`; `BatchSendControlServiceTest.kt:712-764`; C6. |
+| 03-I5 | Yes | Only persisted DEFERRED ERROR warn; historical ERROR remains error; aggregate errors count retained | PASS | S10 `app.js:20105-20119,20207`; T5 `batchEmailVerification.test.js` detail cases; C7/C8. |
+| 03-S1 | Yes | Fixed hint/badge/label, reuse CSS and DOM, no auto-retry promise | PASS | S10:18842,20069-20119; S11 `index.html:1451,1713`; unchanged styles.css; C7, actual-surface smoke. |
+| 04-I1 | Yes | New independent true/old source false, draft/save/preview/execute/diff/confirmation/clear-source/historical JSON | PASS | S10:18069-18075,18902-19055,19104-19119,19199-19390,19431-19612; S5 snapshot; T5 new UI cases; C4/C7. |
+| 04-I2 | Yes | Material/live-off/gate-unavailable do not disable independent historic switch | PASS | S10:18889-18915,20565-20578; T5 material and draft cases; C7. |
+| 04-I3 | Yes | Selected response's own count; absent count→0, still 1/2 preview requests, debounce/sequence/error behavior | PASS | S10:18988-19055; T5 asynchronous preview regressions; C7. |
+| 04-S1 | Yes | Exact two DOM positions, accessible label/Space, no new CSS/inline style, responsive | PASS (machine/smoke only) | S11:1423-1433,1682-1694; T5 actual-HTML-ID assertion; C7; Chromium 1100px/390px. |
+| 04-S2 | Yes | Enabled-only exclusion text, old gate summary preserved, source-diff and parameter/list style | PASS | S10:17913-17920,18992-19055,19387-19587; T5; C7. |
+| HUMAN-01-A1 | Human | Latest result overlay, no paid HTTP/new rows in isolated fixture | PENDING | 01 plan:109-115. |
+| HUMAN-01-A2 | Human | Real retention preserves newer PASS and deletes unrelated expired execution | PENDING | 01 plan:117-121. |
+| HUMAN-02-A1 | Human | Actual old/new config GET/POST/PUT, legacy typed update and enable/disable | PENDING | 02 plan:144-148. |
+| HUMAN-02-A2 | Human | Same-snapshot preview and isolated SMTP sink with five-target 2/1/3/2 fixture | PENDING | 02 plan:150-154. |
+| HUMAN-02-A3 | Human | Material recipient address, page progression, unsubscribe/sent controls and live cancel | PENDING | 02 plan:156-160. |
+| HUMAN-02-A4 | Human | Manual false override, immutable true source, historical request snapshot | PENDING | 02 plan:162-166. |
+| HUMAN-03-A1 | Human | Two 249 responses with 500ms interval, defer first, send two later, inspect details/sink | PENDING | 03 plan:142-146. |
+| HUMAN-03-A2 | Human | First/partial 402, remaining/stop/runtime/modern config | PENDING | 03 plan:148-152. |
+| HUMAN-03-A3 | Human | Audit failure, historic ERROR, undeliverable and risky/unknown detail display | PENDING | 03 plan:154-158. |
+| HUMAN-04-A1 | Human | Real config contexts, keyboard/mobile layout and independent switches | PENDING | 04 plan:140-144. Chromium smoke is supporting machine evidence only. |
+| HUMAN-04-A2 | Human | Fixture counts/network response, source diff/confirmation, stale response behavior | PENDING | 04 plan:146-150. |
+| HUMAN-04-A3 | Human | Executed manual snapshot vs unchanged source and historical missing field | PENDING | 04 plan:152-156. |
+
+### Finding lineage, RECORD_ONLY, and convergence
+
+Earlier aggregate Epoch 1 was **FAIL** with P1 **V-1**: cancellation during the historical prescan continued scanning and falsely finalized `COMPLETED/SUCCESS`. The exact authorized repair and fresh C4 plus independent compiled probe establish **V-1 RESOLVED**. Earlier child 01 **F-1** retention-fixture finding is also **RESOLVED**: `BatchEmailVerificationRepositoryIT.kt:405-429` places the newer PASS in its own 100-day execution and invokes actual repository cleanup, confirmed by C3. Re-evaluated child terminal `RECORD_ONLY`: 01 N/A, 02 N/A, 03 N/A, 04 N/A; combined handoff index N/A. **P1: none. P2: none.** No unresolved scope failure or new repair task. The blocking set decreased from `{V-1}` to `{}` without introducing another P1, so convergence is **PROGRESSING** and independent machine result is **PASS**. Known approved non-goals (cross-layer estimate duplicates and legacy deep pagination) were not silently reclassified as failures. Human acceptance remains **PENDING** for all 12 above; neither MySQL integration nor unauthenticated static UI smoke establishes real operator/live-send sign-off.
+
+**Repair planning: N/A.** Next action: complete the 12 planned human acceptance scenarios in an isolated environment and record operator sign-off before release. **No product code was modified.**
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| 01–04 terminal light-verifier reports and combined handoff index: N/A | No recorded item to map | N/A | Independent reviewer confirmed each child and combined index N/A; matrix above covers all mandatory master items. |
