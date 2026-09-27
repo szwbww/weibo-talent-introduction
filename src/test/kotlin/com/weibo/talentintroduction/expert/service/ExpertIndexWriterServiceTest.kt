@@ -1055,4 +1055,104 @@ class ExpertIndexWriterServiceTest {
 
         assertFalse(service.checkExpertClassificationMapping(ExpertIndexLevel.CANDIDATE))
     }
+    @Test
+    fun `discovery replica removal uses RAW and candidate CAS and retains other fields`() {
+        val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+            "a@example.org", "Jane", "Doe", "JATS_SHA256:" + "a".repeat(64), null, "A123"
+        )
+        val source = mapOf<String, Any?>(
+            "orcidId" to "DOC", "email" to "a@example.org", "givenNames" to "Jane",
+            "familyNames" to "Doe", "emailSource" to "PAPER_FULLTEXT",
+            "identityVerification" to mapper.convertValue(proof, Map::class.java),
+            "researchFieldIds" to listOf("27"), "operatorStatus" to "PAUSED",
+            "customOperatorNote" to "retained"
+        )
+        fun doc(seq: Int, fields: Map<String, Any?>) = mapper.valueToTree<JsonNode>(
+            mapOf("_seq_no" to seq, "_primary_term" to 2, "_source" to fields)
+        )
+        val rawUrl = "https://es.example.com:9200/orcid_info/_doc/DOC"
+        val candidateUrl = "https://es.example.com:9200/orcid_info_candidate/_doc/DOC"
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        val classification = ExpertClassificationService().classify(service.discoveryProfile("DOC", source))
+        Mockito.`when`(restTemplate.exchange(eq(rawUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenReturn(ResponseEntity(doc(3, source), HttpStatus.OK))
+            .thenReturn(ResponseEntity(doc(4, source + mapOf("filterResult" to "REJECTED")), HttpStatus.OK))
+        Mockito.`when`(restTemplate.exchange(eq(candidateUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenReturn(ResponseEntity(doc(8, source), HttpStatus.OK))
+        val updateUrl = "https://es.example.com:9200/orcid_info/_update/DOC?if_seq_no=3&if_primary_term=2"
+        Mockito.`when`(restTemplate.exchange(eq(updateUrl), eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenReturn(ResponseEntity(mapper.readTree("""{"result":"updated","_seq_no":4,"_primary_term":2}"""), HttpStatus.OK))
+        val deleteUrl = "$candidateUrl?if_seq_no=8&if_primary_term=2"
+        Mockito.`when`(restTemplate.exchange(eq(deleteUrl), eq(HttpMethod.DELETE), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenReturn(ResponseEntity(mapper.readTree("""{"result":"deleted"}"""), HttpStatus.OK))
+
+        assertTrue(service.reconcileDiscoveryCandidate("DOC", snapshot, classification, listOf("RND_OUT_OF_SCOPE")))
+        val update = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.verify(restTemplate).exchange(eq(updateUrl), eq(HttpMethod.POST), update.capture(), eq(JsonNode::class.java))
+        @Suppress("UNCHECKED_CAST")
+        val partial = update.value.body as Map<String, Any?>
+        assertEquals(setOf("filterResult", "filterRejectReason", "expertClassification"),
+            (partial["doc"] as Map<*, *>).keys)
+        Mockito.verify(restTemplate).exchange(eq(deleteUrl), eq(HttpMethod.DELETE), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+        assertEquals("PAUSED", source["operatorStatus"])
+        assertEquals("retained", source["customOperatorNote"])
+        val observed = linkedMapOf<String, Any>(
+            "before" to mapOf("RAW" to 1, "CANDIDATE" to 1, "APPLICATION" to 0),
+            "after" to mapOf("RAW" to 1, "CANDIDATE" to 0, "APPLICATION" to 0),
+            "rawReason" to "RND_OUT_OF_SCOPE", "classification" to classification.type.name,
+            "candidateDelete" to "CAS_DELETED",
+            "fieldSnapshots" to mapOf("before" to mapOf("operatorStatus" to source["operatorStatus"],
+                "customOperatorNote" to source["customOperatorNote"]),
+                "afterRawPartial" to (partial["doc"] as Map<*, *>).keys)
+        )
+        for ((status, expected) in listOf(
+            HttpStatus.NOT_FOUND to "IDEMPOTENT", HttpStatus.CONFLICT to "RETRY",
+            HttpStatus.INTERNAL_SERVER_ERROR to "RETRY"
+        )) {
+            Mockito.reset(restTemplate)
+            Mockito.`when`(restTemplate.exchange(eq(rawUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+                .thenReturn(ResponseEntity(doc(3, source), HttpStatus.OK))
+                .thenReturn(ResponseEntity(doc(4, source), HttpStatus.OK))
+            Mockito.`when`(restTemplate.exchange(eq(candidateUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+                .thenReturn(ResponseEntity(doc(8, source), HttpStatus.OK))
+            Mockito.`when`(restTemplate.exchange(eq(updateUrl), eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+                .thenReturn(ResponseEntity(mapper.readTree("""{"result":"updated","_seq_no":4,"_primary_term":2}"""), HttpStatus.OK))
+            Mockito.`when`(restTemplate.exchange(eq(deleteUrl), eq(HttpMethod.DELETE), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+                .thenThrow(HttpClientErrorException(status))
+            if (status == HttpStatus.NOT_FOUND) {
+                assertTrue(service.reconcileDiscoveryCandidate("DOC", snapshot, classification, listOf("RND_OUT_OF_SCOPE")))
+            } else {
+                org.junit.jupiter.api.Assertions.assertThrows(HttpClientErrorException::class.java) {
+                    service.reconcileDiscoveryCandidate("DOC", snapshot, classification, listOf("RND_OUT_OF_SCOPE"))
+                }
+            }
+            observed["delete${status.value()}"] = expected
+        }
+        Mockito.reset(restTemplate)
+        Mockito.`when`(restTemplate.exchange(eq(rawUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenReturn(ResponseEntity(doc(3, source + ("email" to "changed@example.org")), HttpStatus.OK))
+        assertFalse(service.reconcileDiscoveryCandidate("DOC", snapshot, classification, listOf("RND_OUT_OF_SCOPE")))
+        Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("orcid_info_candidate"),
+            eq(HttpMethod.DELETE), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+        observed["identityChanged"] = "RETRY_WITHOUT_DELETE"
+        val acceptance = java.nio.file.Paths.get("target/discovery-plan-acceptance/09d.json")
+        java.nio.file.Files.createDirectories(acceptance.parent)
+        java.nio.file.Files.writeString(acceptance, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(observed))
+    }
+
+    @Test
+    fun `discovery candidate is not deleted if RAW is missing`() {
+        Mockito.`when`(restTemplate.exchange(Mockito.contains("/orcid_info/_doc/DOC"),
+            eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+        assertFalse(service.reconcileDiscoveryCandidate(
+            "DOC", ExpertIndexWriterService.DiscoverySnapshot(mapOf("orcidId" to "DOC"), 1, 1),
+            ExpertClassificationService().classify(com.weibo.talentintroduction.expert.domain.ExpertProfile(
+                orcidId = "DOC", email = "a@example.org", givenNames = "Jane", familyNames = "Doe",
+                country = null, keyword = null, employment = null
+            )), listOf("RND_SCOPE_UNCONFIRMED")
+        ))
+        Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("orcid_info_candidate"),
+            eq(HttpMethod.DELETE), any<HttpEntity<*>>(), eq(JsonNode::class.java))
+    }
 }

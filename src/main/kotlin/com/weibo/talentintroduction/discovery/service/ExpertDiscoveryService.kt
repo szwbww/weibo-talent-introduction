@@ -1946,6 +1946,7 @@ class ExpertDiscoveryService(
             "externalIds" to profile.externalIds?.let { objectMapper.readValue(it, Map::class.java) },
             "discoveredAt" to now, "updatedAt" to now,
             "filterResult" to filterResult,
+            "expertClassification" to expertIndexWriterService.classificationNode(expertClassificationService.classify(profile)),
             "filterRejectReason" to rejectReasons.takeIf { it.isNotEmpty() }?.joinToString("; "),
             "tags" to listOf("discovered")
         )
@@ -2507,7 +2508,18 @@ class ExpertDiscoveryService(
             bucket.enqueued++
             counters.enqueued++
             // 文档读不到（ES 查无此 `_id`）：算可重试失败，绝不伪造成功；故障尝试用尽后由 07 记为 FAILED。
-            val outcome = profile?.let { outcomes[enrichmentDocId(it)] } ?: ProfileEnrichmentOutcome.RetryableError()
+            val initial = profile?.let { outcomes[enrichmentDocId(it)] } ?: ProfileEnrichmentOutcome.RetryableError()
+            val outcome = if (initial is ProfileEnrichmentOutcome.Success && isRawOnly(initial.layers) &&
+                profile != null && !DiscoveryIdentity.isDiscovery(profile)) {
+                counters.revalidated++
+                if (revalidateRawOnlySuccess(job.expertDocId)) counters.promoted++
+                initial
+            } else initial
+            if (initial is ProfileEnrichmentOutcome.Success && profile != null &&
+                DiscoveryIdentity.isDiscovery(profile)) {
+                counters.revalidated++
+                if (initial.promoted && outcome is ProfileEnrichmentOutcome.Success) counters.promoted++
+            }
             if (outcome is ProfileEnrichmentOutcome.Deferred && deferredUntil == null) {
                 deferredUntil = outcome.resetAt.toString()
             }
@@ -2522,11 +2534,6 @@ class ExpertDiscoveryService(
                 BatchOutcomeBucket.PENDING -> { counters.pending++; bucket.pending++ }
                 BatchOutcomeBucket.UNMATCHED -> { counters.unmatched++; bucket.unmatched++ }
                 BatchOutcomeBucket.FAILED -> { counters.failed++; bucket.failed++ }
-            }
-            // I-3：只有「成功且 RAW-only」的专家才做定向复评。
-            if (outcome is ProfileEnrichmentOutcome.Success && isRawOnly(outcome.layers)) {
-                counters.revalidated++
-                if (revalidateRawOnlySuccess(job.expertDocId)) counters.promoted++
             }
         }
 
@@ -2549,8 +2556,8 @@ class ExpertDiscoveryService(
     }
 
     /**
-     * I-3（08）：定向复评的适用对象 —— 只对**RAW-only**（CANDIDATE/APPLICATION 都不存在）的专家执行，
-     * 已有候选/申请的专家不重建、不降级。
+     * Legacy non-discovery RAW-only promotion after enrichment. Discovery records instead use
+     * targeted revalidation inside enrichProfiles, before their job may become SUCCEEDED.
      */
     private fun isRawOnly(layers: LayerUpdateResult): Boolean =
         layers.updatedAnyLayer() &&
@@ -2558,8 +2565,8 @@ class ExpertDiscoveryService(
             layers.application == LayerUpdateStatus.ABSENT
 
     /**
-     * I-3（08）：补全成功后的定向复评（06 的核心，门禁与候选写入都不变）。
-     * 复评失败不影响已按真实 `_id` 写回的补全事实，也不把补全结果改判为失败。
+     * Legacy RAW-only revalidation retains its historical best-effort semantics.
+     * Discovery revalidation errors are retryable outcomes and cannot report success.
      */
     private fun revalidateRawOnlySuccess(docId: String): Boolean = try {
         revalidationService.revalidateEnrichedRaw(docId) == PromotionOutcome.Promoted
@@ -2837,13 +2844,23 @@ class ExpertDiscoveryService(
                     is EnrichmentOutcome.Success -> {
                         for (profile in profiles) {
                             val layers = updateExpertAcademicFields(profile, found.data)
-                            // I-2/I-3：层写入失败或附加标题子请求失败都只算部分完成，绝不报成整体成功。
-                            val partial = layers.hasFailedLayer() || found.titlesFailed
-                            outcomes[enrichmentDocId(profile)] = if (partial) {
-                                ProfileEnrichmentOutcome.Partial(layers, recentWorksFailed = found.titlesFailed)
-                            } else {
-                                ProfileEnrichmentOutcome.Success(layers)
-                            }
+                            val docId = enrichmentDocId(profile)
+                            if (layers.hasFailedLayer() || found.titlesFailed) {
+                                outcomes[docId] = ProfileEnrichmentOutcome.Partial(layers, recentWorksFailed = found.titlesFailed)
+                            } else if (DiscoveryIdentity.isDiscovery(profile)) {
+                                val result = try {
+                                    revalidationService.revalidateDiscovery(docId)
+                                } catch (e: Exception) {
+                                    log.warn("Discovery admission retry required for {}: {}", docId, e.message)
+                                    PromotionOutcome.WriteFailed
+                                }
+                                outcomes[docId] = when (result) {
+                                    PromotionOutcome.Promoted -> ProfileEnrichmentOutcome.Success(layers, promoted = true)
+                                    PromotionOutcome.AlreadyPresent, is PromotionOutcome.Rejected ->
+                                        ProfileEnrichmentOutcome.Success(layers)
+                                    else -> ProfileEnrichmentOutcome.RetryableError()
+                                }
+                            } else outcomes[docId] = ProfileEnrichmentOutcome.Success(layers)
                         }
                     }
                     is EnrichmentOutcome.NotFound ->
@@ -3309,7 +3326,7 @@ data class LayerUpdateResult(
  */
 sealed class ProfileEnrichmentOutcome {
     /** 学术事实已按真实 `_id` 局部写入全部现存层。 */
-    data class Success(val layers: LayerUpdateResult) : ProfileEnrichmentOutcome()
+    data class Success(val layers: LayerUpdateResult, val promoted: Boolean = false) : ProfileEnrichmentOutcome()
 
     /**
      * 基础事实已拿到，但仍有未完成部分：

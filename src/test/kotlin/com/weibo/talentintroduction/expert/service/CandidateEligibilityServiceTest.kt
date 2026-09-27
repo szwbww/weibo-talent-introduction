@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 
@@ -23,11 +24,20 @@ class CandidateEligibilityServiceTest {
     }
 
     @Test
-    fun `discovery source does not add a hidden eligibility requirement`() {
-        val profile = expert().copy(emailSource = "PAPER_FULLTEXT")
-        assertTrue(service().evaluateEligibility(profile).eligible)
-        assertFalse(service(CandidateFilterProperties(requireDoctoralDegree = true))
-            .evaluateEligibility(profile.copy(degree = null)).eligible)
+    fun `discovery admission uses current trusted scope and RND evidence regardless of cached type`() {
+        val unknown = expert().copy(emailSource = "PAPER_FULLTEXT")
+        assertEquals(listOf("RND_SCOPE_UNCONFIRMED"), service().evaluateEligibility(unknown).rejectReasons)
+        assertEquals(listOf("RND_SCOPE_UNCONFIRMED"),
+            service().evaluateEligibility(unknown.copy(researchFieldIds = listOf("not-an-id"))).rejectReasons)
+        val insufficient = unknown.copy(researchFieldIds = listOf("22"), lastPublicationYear = null,
+            employment = null)
+        assertEquals(listOf("RND_EVIDENCE_INSUFFICIENT"),
+            service().evaluateEligibility(insufficient).rejectReasons)
+        val researcher = unknown.copy(researchFieldIds = listOf("22"), lastPublicationYear = 2026)
+        assertTrue(service().evaluateEligibility(researcher).eligible)
+        assertEquals(listOf("RND_OUT_OF_SCOPE"),
+            service().evaluateEligibility(researcher.copy(researchFieldIds = listOf("27"))).rejectReasons)
+        assertTrue(service().evaluateEligibility(expert()).eligible)
     }
 
     @Test

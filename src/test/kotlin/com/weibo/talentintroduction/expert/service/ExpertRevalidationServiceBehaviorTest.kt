@@ -25,6 +25,14 @@ class ExpertRevalidationServiceBehaviorTest {
     private val service = ExpertRevalidationService(
         searchService, eligibilityService, emailValidationService, writerService, progressStore, filterService
     )
+    private fun <T : Any> match(value: T): T = org.mockito.ArgumentMatchers.eq(value) ?: value
+    private fun anyClassification(): com.weibo.talentintroduction.expert.domain.ExpertClassification =
+        org.mockito.ArgumentMatchers.any(com.weibo.talentintroduction.expert.domain.ExpertClassification::class.java)
+            ?: ExpertClassificationService().classify(validExpert("DOC", "researcher@example.org"))
+    private fun anySnapshot(): ExpertIndexWriterService.DiscoverySnapshot =
+        org.mockito.ArgumentMatchers.any(ExpertIndexWriterService.DiscoverySnapshot::class.java)
+            ?: ExpertIndexWriterService.DiscoverySnapshot(emptyMap(), 0, 0)
+    private fun anyReasons(): List<String> = org.mockito.ArgumentMatchers.anyList<String>() ?: emptyList()
 
     private fun validExpert(orcidId: String, email: String, country: String = "GB", esDocId: String? = null): ExpertProfile =
         ExpertProfile(
@@ -261,4 +269,69 @@ class ExpertRevalidationServiceBehaviorTest {
         assertEquals(0, result.stats.emailRejected)
         verify(emailValidationService, never()).validate(anyString())
     }
+    @Test
+    fun `discovery revalidation admits only after current RAW has target research evidence`() {
+        val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+            "researcher@example.org", "Test", "User", "JATS_SHA256:" + "a".repeat(64), null, "A42"
+        )
+        val base = mapOf<String, Any?>(
+            "orcidId" to "DOC", "email" to "researcher@example.org", "givenNames" to "Test",
+            "familyNames" to "User", "emailSource" to "PAPER_FULLTEXT",
+            "identityVerification" to com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().convertValue(proof, Map::class.java),
+            "institution" to "University", "lastPublicationYear" to 2026
+        )
+        val unknown = ExpertIndexWriterService.DiscoverySnapshot(base, 1, 1)
+        val supported = ExpertIndexWriterService.DiscoverySnapshot(base + ("researchFieldIds" to listOf("22")), 2, 1)
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "DOC"))
+            .thenReturn(unknown, supported)
+        `when`(writerService.discoveryProfile("DOC", base))
+            .thenReturn(validExpert("DOC", "researcher@example.org").copy(
+                emailSource = "PAPER_FULLTEXT", institution = "University", lastPublicationYear = 2026
+            ))
+        `when`(writerService.discoveryProfile("DOC", supported.source))
+            .thenReturn(validExpert("DOC", "researcher@example.org").copy(
+                emailSource = "PAPER_FULLTEXT", institution = "University", lastPublicationYear = 2026,
+                researchFieldIds = listOf("22")
+            ))
+        `when`(writerService.reconcileDiscoveryCandidate(
+            match("DOC"), anySnapshot(), anyClassification(), anyReasons(), match(false)
+        )).thenReturn(true)
+        val first = service.revalidateDiscovery("DOC")
+        assertEquals(com.weibo.talentintroduction.expert.service.PromotionOutcome.Rejected(
+            listOf("RND_SCOPE_UNCONFIRMED")), first)
+        val second = service.revalidateDiscovery("DOC")
+        assertEquals(PromotionOutcome.Promoted, second)
+        verify(writerService).reconcileDiscoveryCandidate(
+            match("DOC"), match(unknown), anyClassification(),
+            match(listOf("RND_SCOPE_UNCONFIRMED")), match(false)
+        )
+        verify(writerService).reconcileDiscoveryCandidate(
+            match("DOC"), match(supported), anyClassification(), match(emptyList()), match(false)
+        )
+    }
+
+    @Test
+    fun `application discovery still updates RAW qualification without touching candidate`() {
+        val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+            "researcher@example.org", "Test", "User", "JATS_SHA256:" + "b".repeat(64), null, "A42"
+        )
+        val source = mapOf<String, Any?>(
+            "orcidId" to "APP", "email" to "researcher@example.org", "givenNames" to "Test",
+            "familyNames" to "User", "emailSource" to "PAPER_FULLTEXT",
+            "identityVerification" to com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().convertValue(proof, Map::class.java)
+        )
+        val raw = ExpertIndexWriterService.DiscoverySnapshot(source, 1, 1)
+        `when`(writerService.documentExistsInIndex(ExpertIndexLevel.APPLICATION, "APP")).thenReturn(true)
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "APP")).thenReturn(raw)
+        `when`(writerService.discoveryProfile("APP", source)).thenReturn(
+            validExpert("APP", "researcher@example.org").copy(emailSource = "PAPER_FULLTEXT")
+        )
+        `when`(writerService.reconcileDiscoveryCandidate(
+            match("APP"), match(raw), anyClassification(),
+            match(listOf("RND_SCOPE_UNCONFIRMED")), match(true)
+        )).thenReturn(true)
+        assertEquals(PromotionOutcome.AlreadyPresent, service.revalidateDiscovery("APP"))
+        verify(writerService, never()).readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, "APP")
+    }
+
 }

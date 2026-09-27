@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
+import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.expert.domain.EligibilityResult
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import org.springframework.stereotype.Service
@@ -9,7 +11,8 @@ import java.util.Locale
 @Service
 class CandidateEligibilityService(
     private val eligibilityFilterService: EligibilityFilterService,
-    private val emailValidationService: EmailValidationService
+    private val emailValidationService: EmailValidationService,
+    private val classificationService: ExpertClassificationService = ExpertClassificationService()
 ) {
     fun isEligibleForCandidateIndex(expert: ExpertProfile): Boolean =
         evaluateEligibility(expert).eligible
@@ -47,6 +50,18 @@ class CandidateEligibilityService(
             val cutoff = Year.now().value - academicProperties.recentYearsThreshold
             if ((expert.lastPublicationYear ?: 0) < cutoff)
                 reasons += "INACTIVE"
+        }
+        if (DiscoveryIdentity.isDiscovery(expert)) {
+            val classification = classificationService.classify(expert)
+            val professionalReason = when (classification.type) {
+                ExpertType.PRODUCTION_RND, ExpertType.ACADEMIC_RND, ExpertType.HYBRID_RND -> null
+                ExpertType.UNKNOWN ->
+                    if ("RND_SCOPE_UNCONFIRMED" in classification.negativeEvidence) "RND_SCOPE_UNCONFIRMED"
+                    else "RND_EVIDENCE_INSUFFICIENT"
+                ExpertType.OUT_OF_SCOPE -> "RND_OUT_OF_SCOPE"
+                ExpertType.SERVICE_ONLY -> "RND_SERVICE_ONLY"
+            }
+            if (professionalReason != null) reasons += professionalReason
         }
 
         return EligibilityResult(reasons.isEmpty(), reasons)

@@ -1,6 +1,7 @@
 package com.weibo.talentintroduction.expert.service
 
 import com.weibo.talentintroduction.config.ExpertClassificationProperties
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
@@ -44,6 +45,18 @@ class ExpertRevalidationService(
                 val requireValidEmail = eligibilityFilterService.getCandidateFilter().requireValidEmail
                 for (profile in batch) {
                     stats.total++
+                    if (DiscoveryIdentity.isDiscovery(profile)) {
+                        when (val outcome = revalidateDiscovery(profile.esDocId ?: profile.orcidId)) {
+                            PromotionOutcome.AlreadyPresent -> stats.passed++
+                            PromotionOutcome.Promoted -> stats.passed++
+                            is PromotionOutcome.Rejected -> {
+                                stats.demoted++
+                                outcome.reasons.forEach { stats.demotionReasons.merge(it, 1) { a, b -> a + b } }
+                            }
+                            else -> stats.demotionFailed++
+                        }
+                        continue
+                    }
 
                     if (requireValidEmail) {
                         val emailResult = emailValidationService.validate(profile.email.orEmpty())
@@ -152,6 +165,18 @@ class ExpertRevalidationService(
                 val promotedBefore = stats.promoted
                 for (profile in batch) {
                     stats.total++
+                    if (DiscoveryIdentity.isDiscovery(profile)) {
+                        when (val outcome = revalidateDiscovery(profile.esDocId ?: profile.orcidId)) {
+                            PromotionOutcome.Promoted -> stats.promoted++
+                            PromotionOutcome.AlreadyPresent -> stats.alreadyPromoted++
+                            is PromotionOutcome.Rejected -> {
+                                stats.filtered++
+                                outcome.reasons.forEach { stats.filterReasons.merge(it, 1) { a, b -> a + b } }
+                            }
+                            else -> stats.promotionFailed++
+                        }
+                        continue
+                    }
 
                     when (val gate = evaluateRawPromotionGate(profile)) {
                         is RawPromotionGate.Rejected -> {
@@ -260,9 +285,8 @@ class ExpertRevalidationService(
     }
 
     /**
-     * I-4：RAW → CANDIDATE 的门禁唯一实现（邮箱、资格、分类），[promoteEligibleRawExperts] 与
-     * [revalidateEnrichedRaw] 共用，禁止任何一条晋升路径另写一份。
-     * 顺序固定：资格 → 分类（资格不过绝不调分类）→ 邮箱；原因词汇沿用既有 filterReasons。
+     * Historical non-discovery RAW gate. Discovery always uses revalidateDiscovery and its
+     * current professional criterion, irrespective of promotionGateEnabled.
      */
     private fun evaluateRawPromotionGate(profile: ExpertProfile): RawPromotionGate {
         val eligibility = eligibilityService.evaluateEligibility(profile)
@@ -272,8 +296,7 @@ class ExpertRevalidationService(
 
         // I3-3: 现算，不读 profile.expertClassification（RAW 层几乎恒为 null）。
         val classification = expertClassificationService.classify(profile)
-        // I3-1/I3-5: 宽档——只拒证据充分的两类，UNKNOWN 放行；开关关闭时不拒绝，但下方仍写入。
-        // I3-2: 被拒不可逆——补全只扫 CANDIDATE，被挡回 RAW 的文档永不补数据，故只拒证据充分者。
+        // Historical non-discovery gate only; discovery UNKNOWN must not pass.
         if (expertClassificationProperties.promotionGateEnabled &&
             (classification.type == ExpertType.SERVICE_ONLY || classification.type == ExpertType.OUT_OF_SCOPE)
         ) {
@@ -298,12 +321,39 @@ class ExpertRevalidationService(
         data class Rejected(val reasons: List<String>, val emailRejected: Boolean = false) : RawPromotionGate()
     }
 
+    /** Re-read the real RAW _id, recompute admission, and persist qualification before success. */
+    fun revalidateDiscovery(docId: String): PromotionOutcome {
+        val applied = try {
+            expertIndexWriterService.documentExistsInIndex(ExpertIndexLevel.APPLICATION, docId)
+        } catch (e: Exception) {
+            return PromotionOutcome.ExistenceCheckFailed
+        }
+        return try {
+            val snapshot = expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
+                ?: return PromotionOutcome.RawMissing
+            if (snapshot.source["orcidId"] != docId || !DiscoveryIdentity.allowedMap(snapshot.source))
+                return PromotionOutcome.WriteFailed
+            val profile = expertIndexWriterService.discoveryProfile(docId, snapshot.source)
+            val candidateBefore = if (applied) null
+                else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+            val eligibility = eligibilityService.evaluateEligibility(profile)
+            val classification = expertClassificationService.classify(profile)
+            if (!expertIndexWriterService.reconcileDiscoveryCandidate(
+                    docId, snapshot, classification, eligibility.rejectReasons, preserveApplication = applied
+                )) return PromotionOutcome.WriteFailed
+            if (applied) PromotionOutcome.AlreadyPresent
+            else if (!eligibility.eligible) PromotionOutcome.Rejected(eligibility.rejectReasons)
+            else if (candidateBefore != null) PromotionOutcome.AlreadyPresent
+            else PromotionOutcome.Promoted
+        } catch (e: Exception) {
+            log.warn("Discovery revalidation failed for {}: {}", docId, e.message)
+            PromotionOutcome.WriteFailed
+        }
+    }
+
     /**
-     * I-4：补全后的单人定向复评。补全使 RAW 里的学术事实变化后，用最新 RAW 源重新过一遍当前门禁：
-     * - APPLICATION 或 CANDIDATE 已存在 ⇒ [PromotionOutcome.AlreadyPresent]（已申请者绝不重建候选，
-     *   已有候选者不重复写入，本轮也不自动降级任何既有专家）；
-     * - 否则读最新 RAW（真实 `_id`）→ 现算门禁 → 仅在通过时创建候选；
-     * - 候选正文始终来自写入时刻的最新 RAW 文档（[promoteRawToCandidate] 内部再读一次），旧快照不会覆盖它。
+     * Single-RAW revalidation: discovery follows the CAS qualification/replica path, while
+     * non-discovery retains the historical promotion behavior and outcome vocabulary.
      */
     fun revalidateEnrichedRaw(docId: String): PromotionOutcome {
         require(docId.isNotBlank()) { "docId must not be blank" }
@@ -315,6 +365,13 @@ class ExpertRevalidationService(
             return PromotionOutcome.ExistenceCheckFailed
         }
         if (alreadyApplied) return PromotionOutcome.AlreadyPresent
+        val discoveryRaw = try {
+            expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
+        } catch (e: Exception) {
+            return PromotionOutcome.ExistenceCheckFailed
+        }
+        if (discoveryRaw != null && DiscoveryIdentity.isDiscoveryMap(discoveryRaw.source))
+            return revalidateDiscovery(docId)
 
         val alreadyCandidate = try {
             expertIndexWriterService.documentExistsInIndex(ExpertIndexLevel.CANDIDATE, docId)

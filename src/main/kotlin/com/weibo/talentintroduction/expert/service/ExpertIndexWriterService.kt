@@ -689,6 +689,104 @@ class ExpertIndexWriterService(
         }
     }
 
+    data class DiscoverySnapshot(val source: Map<String, Any?>, val seqNo: Long, val primaryTerm: Long)
+
+    /** Unlike readRawDocument, a transport failure is never mistaken for missing RAW. */
+    fun readDiscoveryDocument(level: ExpertIndexLevel, docId: String): DiscoverySnapshot? {
+        val index = expertIndexService.indexName(level)
+        val response = try {
+            restTemplate.exchange(
+                "${properties.baseUrl}/$index/_doc/$docId", HttpMethod.GET,
+                HttpEntity(null, headers()), JsonNode::class.java
+            ).body ?: error("Empty ES GET response for $level/$docId")
+        } catch (e: HttpClientErrorException) {
+            if (e.statusCode == HttpStatus.NOT_FOUND) return null
+            throw e
+        }
+        val source = response.path("_source")
+        require(source.isObject && response.path("_seq_no").isIntegralNumber &&
+            response.path("_primary_term").isIntegralNumber) { "Incomplete ES snapshot for $level/$docId" }
+        return DiscoverySnapshot(toStringMap(source), response.path("_seq_no").asLong(), response.path("_primary_term").asLong())
+    }
+
+    private fun sameDiscoveryIdentity(raw: Map<String, Any?>, candidate: Map<String, Any?>): Boolean =
+        listOf("orcidId", "email", "givenNames", "familyNames", "externalIds", "identityVerification")
+            .all { raw[it] == candidate[it] }
+    fun discoveryProfile(docId: String, source: Map<String, Any?>): com.weibo.talentintroduction.expert.domain.ExpertProfile {
+        fun text(key: String) = source[key] as? String
+        fun number(key: String) = (source[key] as? Number)?.toInt()
+        fun strings(key: String) = (source[key] as? List<*>)?.filterIsInstance<String>()
+        return com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            esDocId = docId, orcidId = text("orcidId").orEmpty(), email = text("email"),
+            givenNames = text("givenNames"), familyNames = text("familyNames"), country = text("country"),
+            keyword = text("keyword"), employment = text("employment"), age = number("age"),
+            degree = text("degree"), nationality = text("nationality"), hIndex = number("hIndex"),
+            citationCount = number("citationCount"), lastPublicationYear = number("lastPublicationYear"),
+            researchFields = text("researchFields"), disciplineCategory = text("disciplineCategory"),
+            institution = text("institution"), emailSource = text("emailSource"),
+            emailVerifiedLevel = number("emailVerifiedLevel"), dataSource = text("dataSource"),
+            externalIds = source["externalIds"]?.let { objectMapper.writeValueAsString(it) },
+            worksCount = number("worksCount"), tags = strings("tags"), updatedAt = text("updatedAt"),
+            recentWorkTitles = strings("recentWorkTitles"),
+            patentTitles = strings("patentTitles"), enrichedAt = text("enrichedAt"),
+            enrichmentSource = text("enrichmentSource"), institutionType = text("institutionType"),
+            identityVerification = source["identityVerification"]?.let {
+                DiscoveryIdentity.read(objectMapper.valueToTree(it))
+            }, researchFieldIds = strings("researchFieldIds")
+        )
+    }
+
+
+    /**
+     * CAS both writes; an unchanged RAW identity and factual snapshot is a prerequisite to removing
+     * a candidate replica. Missing RAW or ambiguous GET/UPDATE/DELETE is retryable, never success.
+     */
+    fun reconcileDiscoveryCandidate(
+        docId: String, snapshot: DiscoverySnapshot, classification: ExpertClassification,
+        reasons: List<String>, preserveApplication: Boolean = false
+    ): Boolean {
+        val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
+        val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
+        val current = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+        if (current != snapshot || current.source["orcidId"] != docId ||
+            !DiscoveryIdentity.isDiscoveryMap(current.source) || !DiscoveryIdentity.allowedMap(current.source)) return false
+        val candidate = if (preserveApplication) null else readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
+        if (candidate != null && !sameDiscoveryIdentity(current.source, candidate.source)) return false
+        val qualification = mapOf(
+            "filterResult" to if (reasons.isEmpty()) "PASSED" else "REJECTED",
+            "filterRejectReason" to reasons.takeIf { it.isNotEmpty() }?.joinToString("; "),
+            "expertClassification" to classificationNode(classification)
+        )
+        val update = restTemplate.exchange(
+            "${properties.baseUrl}/$rawIndex/_update/$docId?if_seq_no=${snapshot.seqNo}&if_primary_term=${snapshot.primaryTerm}",
+            HttpMethod.POST, HttpEntity(mapOf("doc" to qualification), headers()), JsonNode::class.java
+        ).body ?: return false
+        if (update.path("result").asText() == "noop") return false
+        val stableRaw = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
+        if (stableRaw.seqNo != update.path("_seq_no").asLong(-1) ||
+            stableRaw.primaryTerm != update.path("_primary_term").asLong(-1) ||
+            !sameDiscoveryIdentity(snapshot.source, stableRaw.source)) return false
+        if (preserveApplication) return true
+        if (reasons.isEmpty()) {
+            if (candidate != null) return true // never overwrite operator-owned candidate fields
+            val candidateDoc = stableRaw.source.toMutableMap().apply {
+                put("candidateValidatedAt", LocalDateTime.now().format(dateFormatter))
+                put("tags", ((this["tags"] as? List<*>)?.filterIsInstance<String>().orEmpty() + "auto_promoted").distinct())
+            }
+            return writeCandidateDocument(docId, candidateDoc)
+        }
+        if (candidate == null) return true
+        return try {
+            restTemplate.exchange(
+                "${properties.baseUrl}/$candidateIndex/_doc/$docId?if_seq_no=${candidate.seqNo}&if_primary_term=${candidate.primaryTerm}",
+                HttpMethod.DELETE, HttpEntity(null, headers()), JsonNode::class.java
+            )
+            true
+        } catch (e: HttpClientErrorException) {
+            if (e.statusCode == HttpStatus.NOT_FOUND) true else throw e
+        }
+    }
+
     fun writeCandidateDocument(docId: String, doc: Map<String, Any?>): Boolean {
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val putUrl = "${properties.baseUrl}/$candidateIndex/_doc/$docId" +

@@ -1556,6 +1556,44 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `unknown discovery persists RAW and enrichment job without premature candidate`() {
+        val filters = Mockito.mock(com.weibo.talentintroduction.expert.service.EligibilityFilterService::class.java)
+        Mockito.doReturn(com.weibo.talentintroduction.config.CandidateFilterProperties())
+            .`when`(filters).getCandidateFilter()
+        Mockito.doReturn(com.weibo.talentintroduction.config.AcademicFilterProperties())
+            .`when`(filters).getAcademicFilter()
+        eligibilityService = CandidateEligibilityService(filters, emailValidationService, expertClassificationService)
+        val svc = createService()
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC1", "Test")), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        val captured = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            captured += invocation.getArgument(1) as Map<String, Any?>
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        Mockito.doAnswer {
+            objectMapper.createObjectNode().put("type", it.getArgument<com.weibo.talentintroduction.expert.domain.ExpertClassification>(0).type.name)
+        }.`when`(indexWriterService).classificationNode(
+            Mockito.any(com.weibo.talentintroduction.expert.domain.ExpertClassification::class.java)
+                ?: expertClassificationService.classify(c6Expert("fallback"))
+        )
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+        assertEquals(1, result.stats.indexed)
+        assertEquals(0, result.stats.promoted)
+        assertEquals("REJECTED", captured.single()["filterResult"])
+        assertEquals("RND_SCOPE_UNCONFIRMED", captured.single()["filterRejectReason"])
+        assertEquals("UNKNOWN", (captured.single()["expertClassification"] as com.fasterxml.jackson.databind.JsonNode).path("type").asText())
+        Mockito.verify(enrichmentJobService).enqueue(Mockito.anyString(), Mockito.anyString(), Mockito.any())
+        Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("/orcid_info_candidate/_doc/"),
+            Mockito.eq(HttpMethod.PUT), Mockito.any(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+    }
+
+    @Test
     fun `discover writes institutionType into RAW index map (I5a-3 I5a-4)`() {
         val svc = createService()
         val p1 = paper("PMC1", "Test Paper")
@@ -1585,7 +1623,7 @@ class ExpertDiscoveryServiceTest {
             "institution", "lastPublicationYear", "emailSource", "emailVerifiedLevel", "dataSource",
             "externalIds", "discoveredAt", "updatedAt", "filterResult", "filterRejectReason", "tags"
         )
-        assertEquals(preChangeKeys + setOf("institutionType", "identityVerification"), map.keys)
+        assertEquals(preChangeKeys + setOf("institutionType", "identityVerification", "expertClassification"), map.keys)
     }
 
     @Test
@@ -4776,6 +4814,8 @@ class ExpertDiscoveryServiceTest {
             .`when`(openAlex).batchEnrichByAuthorIds(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
         stubRawLayerOnly()
         stubAcademicUpdateOk()
+        Mockito.doReturn(PromotionOutcome.Rejected(listOf("RND_SCOPE_UNCONFIRMED")))
+            .`when`(revalidationService).revalidateDiscovery("OLD-DOC")
 
         assertInstanceOf(ProfileEnrichmentOutcome.Success::class.java, svc.enrichProfiles(listOf(expert))["OLD-DOC"])
         Mockito.verify(openAlex).batchEnrichByAuthorIds(eqValue(listOf("A5023888391")), eqValue(RequestKind.HISTORY_ENRICHMENT))
@@ -4812,6 +4852,8 @@ class ExpertDiscoveryServiceTest {
             .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
         listOf("orcid_info", "orcid_info_candidate", "orcid_info_application").forEach(::stubLayerExists)
         stubAcademicUpdateOk()
+        Mockito.doReturn(PromotionOutcome.AlreadyPresent).`when`(revalidationService).revalidateDiscovery("DOC-1")
+        Mockito.doReturn(PromotionOutcome.AlreadyPresent).`when`(revalidationService).revalidateDiscovery("DOC-2")
 
         val results = svc.enrichProfiles(profiles)
         assertEquals(setOf("DOC-1", "DOC-2"), results.keys)
@@ -5407,6 +5449,55 @@ class ExpertDiscoveryServiceTest {
 
         // 附加计数同时出现在 stats 响应里（历史任务详情仍是当时快照）
         assertEquals(2, svc.getEnrichmentStats().autoEnrichment?.succeeded)
+    }
+
+    @Test
+    fun `discovery worker retries revalidation failure before job completion`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val job = enrichmentJob(10L, "DISCOVERY-DOC", "ORCID", "lease-10")
+        val profile = c6Expert("DISCOVERY-DOC", esDocId = "DISCOVERY-DOC")
+            .copy(emailSource = "PAPER_FULLTEXT",
+                identityVerification = DiscoveryIdentity.verified("e@example.com", "Test", "User",
+                    "JATS_SHA256:" + "a".repeat(64), null, "A123"))
+        Mockito.doReturn(listOf(profile)).`when`(expertSearchService)
+            .findByDocumentIds(eqValue(ExpertIndexLevel.RAW), Mockito.anyList())
+        Mockito.doReturn(mapOf("A123" to EnrichmentOutcome.Success(
+            AuthorEnrichment(hIndex = 9, citationCount = 90, worksCount = 4, researchFieldIds = listOf("22"))
+        ))).`when`(openAlex).batchEnrichByAuthorIds(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        stubLayerPresence()
+        stubAcademicUpdateOk()
+        Mockito.doReturn(PromotionOutcome.WriteFailed).`when`(revalidationService).revalidateDiscovery("DISCOVERY-DOC")
+        Mockito.doReturn(true).`when`(enrichmentJobService).complete(eqValue(10L), eqValue("lease-10"), anyOutcome())
+
+        val result = svc.processClaimedEnrichmentJobBatch(listOf(job), RequestKind.HISTORY_ENRICHMENT)
+        assertEquals(0, result.succeeded)
+        assertEquals(1, result.pending)
+        val captured = org.mockito.ArgumentCaptor.forClass(ProfileEnrichmentOutcome::class.java)
+        Mockito.verify(enrichmentJobService).complete(eqValue(10L), eqValue("lease-10"),
+            captured.capture() ?: ProfileEnrichmentOutcome.NoId)
+        assertTrue(captured.value is ProfileEnrichmentOutcome.RetryableError)
+        Mockito.verify(revalidationService).revalidateDiscovery("DISCOVERY-DOC")
+        Mockito.doReturn(PromotionOutcome.Promoted).`when`(revalidationService).revalidateDiscovery("DISCOVERY-DOC")
+        Mockito.doReturn(true).`when`(enrichmentJobService).complete(eqValue(10L), eqValue("lease-11"), anyOutcome())
+        val retried = svc.processClaimedEnrichmentJobBatch(
+            listOf(enrichmentJob(10L, "DISCOVERY-DOC", "ORCID", "lease-11", attempts = 1)),
+            RequestKind.HISTORY_ENRICHMENT
+        )
+        assertEquals(1, retried.succeeded)
+        assertEquals(1, retried.promoted)
+        val acceptance = java.nio.file.Paths.get("target/discovery-plan-acceptance/09d-worker.json")
+        java.nio.file.Files.createDirectories(acceptance.parent)
+        java.nio.file.Files.writeString(acceptance,
+            com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsString(
+                mapOf("jobTransitions" to listOf(
+                    mapOf("lease" to "lease-10", "outcome" to captured.value.javaClass.simpleName,
+                        "succeeded" to result.succeeded, "pending" to result.pending),
+                    mapOf("lease" to "lease-11", "outcome" to "Success",
+                        "succeeded" to retried.succeeded, "promoted" to retried.promoted)
+                ))
+            ))
     }
 
     @Test
