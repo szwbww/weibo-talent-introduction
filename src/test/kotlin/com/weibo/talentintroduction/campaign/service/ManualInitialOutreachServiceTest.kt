@@ -59,6 +59,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.ArgumentMatchers.anyLong
@@ -402,6 +404,76 @@ class ManualInitialOutreachServiceTest {
             anyValue(verificationContext), anyValue(verificationTarget())
         )
         Mockito.verifyNoInteractions(expertIndexWriterService)
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = [false, true])
+    fun `cancellation during historical prescan stops later pages and layers even when all are excluded`(oneRoundOnly: Boolean) {
+        val campaign = Campaign(
+            id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach",
+            description = null, senderAccountId = 1L
+        )
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+        var cancelled = false
+        Mockito.`when`(progressStore.isCancelled(eqValue("MANUAL_INITIAL_OUTREACH"), eqValue(12345L)))
+            .thenAnswer { cancelled }
+        val first = expert("E081", "excluded@example.com")
+        val later = expert("E082", "later@example.com")
+        val otherLevel = expert("E083", "other@example.com")
+        Mockito.doAnswer { invocation ->
+            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
+            if (handler(listOf(first))) handler(listOf(later))
+            null
+        }.`when`(expertSearchService).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(500),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+        Mockito.doAnswer { invocation ->
+            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
+            handler(listOf(otherLevel))
+            null
+        }.`when`(expertSearchService).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(500),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+        Mockito.`when`(batchEmailVerificationService.findKnownUndeliverableEmails(
+            anyValue(emptyList<String?>()), anyValue(LocalDateTime.now())
+        )).thenAnswer { invocation ->
+            assertEquals(listOf("excluded@example.com"), invocation.getArgument<Collection<String>>(0).toList())
+            cancelled = true
+            setOf("excluded@example.com")
+        }
+
+        val result = service.run(
+            introSnapshot(roundSize = 10, roundsPerRun = 1).copy(excludeVerifiedUnavailableEmails = true),
+            12345L, ExecutionMode.MANUAL, oneRoundOnly
+        )
+
+        assertTrue(result.wasCancelled)
+        assertEquals("CANCELLED", result.finalStatus)
+        assertEquals("CANCELLED", result.taskFinalStatus)
+        assertEquals("CANCELLED", result.stopReason)
+        Mockito.verify(expertSearchService, Mockito.never()).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(500),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+        Mockito.verify(batchEmailVerificationService, Mockito.times(1)).findKnownUndeliverableEmails(
+            anyValue(emptyList<String?>()), anyValue(LocalDateTime.now())
+        )
+        Mockito.verifyNoInteractions(senderAccountAssignmentService, mailDeliveryService)
+        Mockito.verify(batchEmailVerificationService, Mockito.never()).verify(
+            anyValue(verificationContext), anyValue(verificationTarget())
+        )
+        val progress = ArgumentCaptor.forClass(TaskProgress::class.java)
+        Mockito.verify(progressStore, Mockito.atLeastOnce()).update(
+            eqValue("MANUAL_INITIAL_OUTREACH"),
+            captureValue(progress, TaskProgress("MANUAL_INITIAL_OUTREACH", "CANCELLED", 0, 0, 0)),
+            eqValue(12345L)
+        )
+        assertEquals("CANCELLED", progress.value.status)
+        assertEquals("CANCELLED", progress.value.details?.get("stopReason"))
     }
 
     @Test

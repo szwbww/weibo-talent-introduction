@@ -563,20 +563,29 @@ class ManualInitialOutreachService(
         }
         val filterNow = verificationFilterNow()
         val (retryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow)
-        val (esEstimate, _) = countEsTargets(scope, filterNow)
+        val (esEstimate, _) = countEsTargets(scope, filterNow) {
+            progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
+        }
         val totalEstimate = retryableTargets.size + esEstimate
         log.info("Outreach targets: {} retryable, {} ES estimate, {} total estimate; config: roundSize={}, perMailMs={}, perRoundMs={}",
             retryableTargets.size, esEstimate, totalEstimate,
             config.roundSize, config.perMailIntervalMs, config.perRoundIntervalMs)
 
-        if (totalEstimate == 0) {
-            val emptyFinal = if (oneRoundOnly) "PAUSED" else "COMPLETED"
-            val emptyReason = if (oneRoundOnly) "EMPTY_SNAPSHOT" else null
+        val cancelledBeforeSend = progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
+        if (totalEstimate == 0 || (scope.excludeVerifiedUnavailableEmails && cancelledBeforeSend)) {
+            val emptyFinal = if (cancelledBeforeSend) "CANCELLED" else if (oneRoundOnly) "PAUSED" else "COMPLETED"
+            val emptyReason = if (cancelledBeforeSend) "CANCELLED" else if (oneRoundOnly) "EMPTY_SNAPSHOT" else null
+            // A cancelled prescan has no complete target count; do not report its partial estimate.
             val accumulator = OutcomeAccumulator(0)
+            val message = if (cancelledBeforeSend) "发送任务已被取消" else "没有需要发送的专家"
             updateProgressWithAccumulator(executionId, accumulator, 0, 0,
-                emptyFinal, "没有需要发送的专家", emptyList(), mode, 0, config, emptyMap(),
+                emptyFinal, message, emptyList(), mode, 0, config, emptyMap(),
                 stopReason = emptyReason, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
-            return emptyResult(emptyFinal, emptyReason)
+            return if (cancelledBeforeSend) {
+                buildResult(0, accumulator, true, emptyFinal, emptyReason)
+            } else {
+                emptyResult(emptyFinal, emptyReason)
+            }
         }
 
         val targetIterator = OutreachTargetIterator(
@@ -1655,20 +1664,29 @@ class ManualInitialOutreachService(
         return filtered to (targets.size - filtered.size)
     }
 
-    private fun countEsTargets(scope: RecipientScope, now: LocalDateTime): Pair<Int, Int> {
+    private fun countEsTargets(
+        scope: RecipientScope,
+        now: LocalDateTime,
+        shouldStop: () -> Boolean = { false }
+    ): Pair<Int, Int> {
         if (!scope.excludeVerifiedUnavailableEmails) return countEsTargets(scope) to 0
         var sendable = 0
         var excluded = 0
         for (level in scope.funnelLevels) {
+            if (shouldStop()) break
             expertSearchService.scrollExpertsFiltered(
                 level = ExpertIndexLevel.valueOf(level),
                 filters = buildEsFiltersForLevel(scope, level),
                 batchSize = 500
             ) { batch ->
-                val filtered = filterKnownProfiles(batch, true, now)
-                sendable += filtered.size
-                excluded += batch.size - filtered.size
-                true
+                if (shouldStop()) {
+                    false
+                } else {
+                    val filtered = filterKnownProfiles(batch, true, now)
+                    sendable += filtered.size
+                    excluded += batch.size - filtered.size
+                    !shouldStop()
+                }
             }
         }
         return sendable to excluded
