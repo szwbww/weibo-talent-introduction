@@ -1,8 +1,8 @@
 # Fast-P Ledger — master: docs/plans/2026-09-26/discovery-repair-00-master.md
 
-- Status: PAUSED_FOR_HUMAN
+- Status: RUNNING
 - Master plan: docs/plans/2026-09-26/discovery-repair-00-master.md (commit 152028fb4f6adf467a5254ed3627bf84c561f6bc)
-- Amendments: A1
+- Amendments: A1,A2
 - Master base: 64c0394a940bd79c2ecc04e5c497650f045faa75
 - Branch: fast/2026-09-26-discovery-repair-00-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-26-discovery-repair-00-master
@@ -10,11 +10,11 @@
 - Finalization repair parent: N/A
 - Started: 2026-09-26
 - Current child: 08
-- Waiting role: N/A
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: Child 08 approved plan permits only three index.html cache-key updates; the required Maven-bound Node suite rejects the resulting split among eleven assets (19 failures). Human approval of a plan amendment is required.
-- Resume from: 152028fb4f6adf467a5254ed3627bf84c561f6bc
+- Pause reason: N/A
+- Resume from: N/A
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
@@ -26,7 +26,7 @@
 | 05 | docs/plans/2026-09-26/discovery-source-contact-recall.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 04 | 1 | LIGHT_PASS | 6e2244be0f20d7af0ee710a734f7d252d7160f36 | 0c1489dd3734965918ef0271754480967391b38f | 0 | — | 0c1489dd3734965918ef0271754480967391b38f | 234e6256e3014ea6a6365d01fa31f232c78f2a51 | PdfContactVerifier LIGHT_PASS; original source PDFs byte-compared with audit bundle. |
 | 06 | docs/plans/2026-09-26/discovery-repair-06-pdf-coverage.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 05 | 1 | LIGHT_PASS | 0c1489dd3734965918ef0271754480967391b38f | d5a98877b18e321c61b2dd3295521d049af360f2 | 0 | — | d5a98877b18e321c61b2dd3295521d049af360f2 | 69d32cf0c7fd342d106de9e232a3597013d5b6b5 | PdfCoverageVerifier LIGHT_PASS; baseline 332 and fresh 336 backend tests; Node 1193 passed. |
 | 07 | docs/plans/2026-09-26/discovery-repair-07-html-contact.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 06 | 1 | LIGHT_PASS | d5a98877b18e321c61b2dd3295521d049af360f2 | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | 0 | — | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | 472ab2d4a0828896dab01c0e90e9468b25a47230 | HtmlContactVerifier LIGHT_PASS; baseline 336 and fresh 341 backend tests; Node 1193 passed. |
-| 08 | docs/plans/2026-09-26/discovery-repair-08-source-report.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 07 | 1 | PAUSED_FOR_HUMAN | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | — | 0 | — | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | — | Epoch 1 PLAN_CONFLICT: plan changes three cache URLs; 19 Maven-bound Node tests require all eleven equal. Six authorized file edits remain unstaged/uncommitted; no verifier or fix round. |
+| 08 | docs/plans/2026-09-26/discovery-repair-08-source-report.md | commit:37e1ed05a5654735f6c763536c7a0a198b637965 | 07 | 2 | WAITING_FOR_AGENT | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | — | 0 | — | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | — | Epoch 1 PLAN_CONFLICT and pause evidence 5631c9571e8dbaa16bfa9930ea7c7001a199d524; A2 authorizes eleven existing cache keys. Six authorized uncommitted edits retained for epoch 2. |
 | 09a | docs/plans/2026-09-26/discovery-repair-09a-orcid-query.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 08 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 09b | docs/plans/2026-09-26/discovery-repair-09b-scope-facts.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 09a | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 09c | docs/plans/2026-09-26/discovery-repair-09c-scope-classification.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 09b | 1 | PENDING | — | — | 0 | — | — | — | N/A |
@@ -36,3 +36,4 @@
 | ID | Plan | Before | After | Master rule | Reason | Approval |
 |---|---|---|---|---|---|---|
 | A1 | docs/plans/2026-09-26/discovery-repair-00-master.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | I-2/I-3; 09 index | Add ordered 09a–09d subject-scope recovery after verified 08 without rewriting 01–08. | HUMAN:我新增了 09 这个子计划 你读取一下 继续 (recorded 2026-09-27T13:06:04+08:00) |
+| A2 | docs/plans/2026-09-26/discovery-repair-08-source-report.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | commit:37e1ed05a5654735f6c763536c7a0a198b637965 | S-1/I-2 | Match existing eleven-asset single cache key required by Maven-bound tests; no additional files. | HUMAN:Bump all 11 keys (recorded 2026-09-27T15:31:33+08:00) |

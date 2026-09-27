@@ -82,3 +82,9 @@ Human approval must resolve the contradiction between plan S-1 / T-2 (`index.htm
 
 ### Next Action
 Obtain a human-approved plan amendment; then resume `execute-p` against its new plan identity, rerun all required focused commands, and only then create the requested `feat(fast-p): implement 08` product/test-only commit. Independent `verify-p` follows successful execution, not this conflict report.
+
+## Epoch 2 Resume
+
+- Human approved cache-key amendment A2: bump all eleven existing versioned index.html URLs, preserve order and other content.
+- Revised plan identity: commit:37e1ed05a5654735f6c763536c7a0a198b637965; exact product base remains a5cf6fcbc2af3567c0b39203be6452b8921a4bee.
+- Epoch 1 six authorized working-tree edits retained unstaged; continue without replaying 01–07.
