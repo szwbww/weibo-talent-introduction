@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.campaign.repository
 
+import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -85,6 +87,10 @@ class BatchEmailVerificationRepositoryIT {
 
     @Autowired
     private lateinit var repository: BatchEmailVerificationRepository
+
+    @Autowired
+    private lateinit var taskExecutionRepository: TaskExecutionRepository
+
 
     @Autowired
     private lateinit var jdbcTemplate: JdbcTemplate
@@ -333,6 +339,37 @@ class BatchEmailVerificationRepositoryIT {
     }
 
     @Test
+    fun `batch history chooses newest effective row per email before filtering undeliverable`() {
+        fun original(
+            email: String, orcid: String, at: LocalDateTime, decision: String, state: String?, error: String? = null
+        ): Long {
+            val id = repository.insertPending(EXECUTION_ID, null, orcid, "Name", email, NOW)
+            repository.recordDecision(id, decision, state, null, error, 1, at, NOW)
+            return id
+        }
+        val oldUndeliverable = original("allow@example.com", "old-deny", NOW.minusDays(10), "SKIP", "undeliverable")
+        val latestPass = original("allow@example.com", "new-pass", NOW.minusDays(2), "PASS", "risky")
+        original("deny@example.com", "old-pass", NOW.minusDays(10), "PASS", "deliverable")
+        val latestDeny = original("deny@example.com", "new-deny", NOW.minusDays(2), "SKIP", "undeliverable")
+        original("tie@example.com", "tie-first", NOW.minusDays(1), "PASS", "deliverable")
+        val tieWinner = original("tie@example.com", "tie-second", NOW.minusDays(1), "SKIP", "undeliverable")
+        original("allow@example.com", "newer-error", NOW.minusHours(1), "ERROR", null, "EMAIL_VERIFY_TIMEOUT")
+
+        val rows = repository.findReusableByEmails(
+            listOf("allow@example.com", "deny@example.com", "tie@example.com", "missing@example.com"), NOW
+        ).associateBy { it.email }
+
+        assertEquals(setOf("allow@example.com", "deny@example.com", "tie@example.com"), rows.keys)
+        assertEquals(latestPass, rows.getValue("allow@example.com").id)
+        assertEquals(latestDeny, rows.getValue("deny@example.com").id)
+        assertEquals(tieWinner, rows.getValue("tie@example.com").id)
+        assertTrue(oldUndeliverable < latestPass)
+        assertFalse(rows.getValue("allow@example.com").providerState == "undeliverable")
+        assertTrue(rows.values.any { it.providerState == "undeliverable" })
+        assertTrue(repository.findReusableByEmails(emptyList(), NOW).isEmpty())
+    }
+
+    @Test
     fun `one calendar year is a strict boundary and a reuse cannot renew it`() {
         val id = repository.insertPending(EXECUTION_ID, null, "boundary", null, "year@b.com", NOW)
         repository.recordDecision(id, "PASS", "deliverable", null, null, 1, NOW.minusYears(1), NOW)
@@ -350,23 +387,45 @@ class BatchEmailVerificationRepositoryIT {
         repository.recordDecision(original, "PASS", "deliverable", null, null, 1, now.minusDays(200), now)
         val copy = repository.insertPending(OTHER_EXECUTION_ID, null, "copy", null, "keep@b.com", now)
         repository.recordReusedDecision(copy, original, "PASS", "deliverable", null, now.minusDays(200), now)
-        val repoClass = com.weibo.talentintroduction.task.repository.TaskExecutionRepository::class.java
-        val method = repoClass.methods.single { it.name == "deleteOlderThan" }
-        val sql = method.getAnnotation(org.springframework.data.jdbc.repository.query.Query::class.java).value
-            .replace(":cutoff", "?").replace(":batchSize", "?")
-        assertEquals(1, jdbcTemplate.update(sql, now.minusDays(90), 10))
+        assertEquals(1, taskExecutionRepository.deleteOlderThan(now.minusDays(90), 10))
         assertEquals(1L, countRows(EXECUTION_ID))
         assertEquals(0L, countRows(OTHER_EXECUTION_ID))
         assertEquals(original, repository.findReusable("keep@b.com", now)!!.id)
         // 原结果一旦过期，可随执行清理，复用过不会续期。
         jdbcTemplate.update("UPDATE batch_email_verification SET checked_at = ? WHERE id = ?", now.minusYears(1).minusDays(1), original)
-        assertEquals(1, jdbcTemplate.update(sql, now.minusDays(90), 10))
+        assertEquals(1, taskExecutionRepository.deleteOlderThan(now.minusDays(90), 10))
         assertEquals(0L, countRows(EXECUTION_ID))
         seedExecution(EXECUTION_ID)
         jdbcTemplate.update("UPDATE task_execution SET started_at = ?", now.minusDays(200))
         val error = repository.insertPending(EXECUTION_ID, null, "error", null, "error@b.com", now)
         repository.recordDecision(error, "ERROR", null, null, "EMAIL_VERIFY_TIMEOUT", 1, now.minusDays(100), now)
-        assertEquals(1, jdbcTemplate.update(sql, now.minusDays(90), 10))
+        assertEquals(1, taskExecutionRepository.deleteOlderThan(now.minusDays(90), 10))
+    }
+
+    @Test
+    fun `retention keeps old denial and newer pass risky or unknown while deleting unprotected work`() {
+        val now = jdbcTemplate.queryForObject(
+            "SELECT CONVERT_TZ(UTC_TIMESTAMP(3), '+00:00', '+08:00')", LocalDateTime::class.java)!!
+        val expiredExecutionId = 9003L
+        seedExecution(expiredExecutionId)
+        jdbcTemplate.update("UPDATE task_execution SET started_at = ?", now.minusDays(110))
+        val oldDenial = repository.insertPending(EXECUTION_ID, null, "old-denial", null, "shared@b.com", now)
+        repository.recordDecision(oldDenial, "SKIP", "undeliverable", null, null, 1, now.minusDays(110), now)
+        val newerPass = repository.insertPending(OTHER_EXECUTION_ID, null, "new-pass", null, "shared@b.com", now)
+        repository.recordDecision(newerPass, "PASS", "risky", null, null, 1, now.minusDays(100), now)
+        val unknownPass = repository.insertPending(OTHER_EXECUTION_ID, null, "unknown", null, "unknown@b.com", now)
+        repository.recordDecision(unknownPass, "PASS", "unknown", null, null, 1, now.minusDays(100), now)
+        val expired = repository.insertPending(expiredExecutionId, null, "expired", null, "expired@b.com", now)
+        repository.recordDecision(expired, "PASS", "deliverable", null, null, 1, now.minusYears(1), now)
+
+        assertEquals(1, taskExecutionRepository.deleteOlderThan(now.minusDays(90), 10))
+        assertEquals(1L, countRows(EXECUTION_ID))
+        assertEquals(2L, countRows(OTHER_EXECUTION_ID))
+        assertEquals(0L, countRows(expiredExecutionId))
+        assertEquals(newerPass, repository.findReusable("shared@b.com", now)!!.id)
+        assertEquals("risky", repository.findReusable("shared@b.com", now)!!.providerState)
+        assertEquals(unknownPass, repository.findReusable("unknown@b.com", now)!!.id)
+        assertNull(repository.findReusable("expired@b.com", now))
     }
 
     private fun seedExecution(executionId: Long) {

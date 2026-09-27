@@ -75,9 +75,25 @@ class BatchEmailVerificationRepository(private val jdbcTemplate: JdbcTemplate) {
         id
     )
 
-    /** 最近一年内的原始已完成结果；按邮箱跨执行复用，不拿复用行延长有效期。 */
+    /** Recently checked original results for a bounded set of normalized emails. */
+    fun findReusableByEmails(emails: List<String>, now: LocalDateTime): List<BatchEmailVerificationRow> {
+        require(emails.size <= MAX_HISTORY_EMAILS) { "history query accepts at most $MAX_HISTORY_EMAILS emails" }
+        if (emails.isEmpty()) return emptyList()
+        val placeholders = emails.joinToString(",") { "?" }
+        val sql = FIND_REUSABLE_BY_EMAILS_SQL.replace(EMAIL_PLACEHOLDERS, placeholders)
+        val cutoff = now.minusYears(1)
+        val arguments = ArrayList<Any>(emails.size + 4)
+        arguments.addAll(emails)
+        arguments.add(cutoff)
+        arguments.add(now)
+        arguments.add(cutoff)
+        arguments.add(now)
+        return jdbcTemplate.query(sql, ROW_MAPPER, *arguments.toTypedArray())
+    }
+
+    /** One-email compatibility entry point uses the same validity and newest-row logic. */
     fun findReusable(email: String, now: LocalDateTime): BatchEmailVerificationRow? =
-        jdbcTemplate.query(FIND_REUSABLE_SQL, ROW_MAPPER, email, now.minusYears(1), now).firstOrNull()
+        findReusableByEmails(listOf(email), now).firstOrNull()
 
     /** 复制验证结论及原始时间，不复制其它专家的发送/标签结果。 */
     fun recordReusedDecision(
@@ -156,6 +172,9 @@ class BatchEmailVerificationRepository(private val jdbcTemplate: JdbcTemplate) {
 
     companion object {
         const val DEFAULT_PAGE_SIZE = 50
+        const val MAX_HISTORY_EMAILS = 500
+        private const val EMAIL_PLACEHOLDERS = "/* EMAILS */"
+
         const val MAX_PAGE_SIZE = 100
 
         const val COLUMN_EMAIL = "email"
@@ -187,13 +206,25 @@ class BatchEmailVerificationRepository(private val jdbcTemplate: JdbcTemplate) {
              WHERE id = ? AND decision = 'PENDING'
         """
 
-        private const val FIND_REUSABLE_SQL = """
-            SELECT * FROM batch_email_verification
-             WHERE email = ? AND checked_at > ? AND checked_at <= ?
-               AND request_count > 0 AND reused_from_id IS NULL AND error_code IS NULL
-               AND ((decision = 'PASS' AND provider_state IN ('deliverable', 'risky', 'unknown'))
-                 OR (decision = 'SKIP' AND provider_state IN ('undeliverable', 'risky', 'unknown')))
-             ORDER BY checked_at DESC, id DESC LIMIT 1
+        private const val FIND_REUSABLE_BY_EMAILS_SQL = """
+            SELECT v.*
+              FROM batch_email_verification v
+             WHERE v.email IN (/* EMAILS */)
+               AND v.checked_at > ? AND v.checked_at <= ?
+               AND v.request_count > 0 AND v.reused_from_id IS NULL AND v.error_code IS NULL
+               AND ((v.decision = 'PASS' AND v.provider_state IN ('deliverable', 'risky', 'unknown'))
+                 OR (v.decision = 'SKIP' AND v.provider_state IN ('undeliverable', 'risky', 'unknown')))
+               AND NOT EXISTS (
+                    SELECT 1
+                      FROM batch_email_verification n
+                     WHERE n.email = v.email
+                       AND n.checked_at > ? AND n.checked_at <= ?
+                       AND n.request_count > 0 AND n.reused_from_id IS NULL AND n.error_code IS NULL
+                       AND ((n.decision = 'PASS' AND n.provider_state IN ('deliverable', 'risky', 'unknown'))
+                         OR (n.decision = 'SKIP' AND n.provider_state IN ('undeliverable', 'risky', 'unknown')))
+                       AND (n.checked_at > v.checked_at OR (n.checked_at = v.checked_at AND n.id > v.id))
+               )
+             ORDER BY v.email
         """
 
         private const val RECORD_REUSED_DECISION_SQL = """

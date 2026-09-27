@@ -65,6 +65,71 @@ class BatchEmailVerificationServiceTest {
             Mockito.any(), Mockito.any(), anyTime(), anyTime())).thenReturn(1)
     }
 
+    @Test
+    fun `known undeliverable lookup normalizes deduplicates and remains read only`() {
+        val now = LocalDateTime.of(2026, 9, 20, 12, 0)
+        val row = history(42L, "SKIP", "undeliverable").copy(email = "name+tag@example.com")
+        Mockito.`when`(repository.findReusableByEmails(listOf("name+tag@example.com"), now)).thenReturn(listOf(row))
+
+        val result = subject().findKnownUndeliverableEmails(
+            listOf(" Name+Tag@Example.com ", "name+tag@example.com", null, "  "), now
+        )
+
+        assertEquals(setOf("name+tag@example.com"), result)
+        Mockito.verify(repository).findReusableByEmails(listOf("name+tag@example.com"), now)
+
+        Mockito.verify(repository, Mockito.never()).insertPending(
+            Mockito.anyLong(), Mockito.any(), Mockito.anyString(), Mockito.any(), Mockito.anyString(), anyTime()
+        )
+        Mockito.verifyNoMoreInteractions(repository)
+        assertTrue(client.requests.isEmpty())
+        Mockito.verifyNoInteractions(expertIndexWriterService, expertSearchService)
+    }
+
+    @Test
+    fun `known undeliverable lookup skips empty input and batches at five hundred`() {
+        val now = LocalDateTime.of(2026, 9, 20, 12, 0)
+        val subject = subject()
+        assertTrue(subject.findKnownUndeliverableEmails(listOf(null, " ", ""), now).isEmpty())
+        Mockito.verifyNoInteractions(repository)
+
+        val emails = (1..501).map { "user$it@example.com" }
+        Mockito.`when`(repository.findReusableByEmails(Mockito.anyList(), eqValue(now))).thenReturn(emptyList())
+        assertTrue(subject.findKnownUndeliverableEmails(emails, now).isEmpty())
+
+        val captor = listCaptor<String>()
+        Mockito.verify(repository, Mockito.times(2)).findReusableByEmails(
+            captureValue(captor, emptyList()), eqValue(now)
+        )
+        val batches = captor.allValues
+        assertEquals(listOf(500, 1), batches.map { it.size })
+        assertEquals(emails.take(500), batches[0])
+        assertEquals(emails.last(), batches[1].single())
+        assertTrue(client.requests.isEmpty())
+        Mockito.verifyNoMoreInteractions(repository)
+        Mockito.verifyNoInteractions(expertIndexWriterService, expertSearchService)
+    }
+
+    @Test
+    fun `known undeliverable lookup ignores non-undeliverable history and surfaces database errors`() {
+        val now = LocalDateTime.of(2026, 9, 20, 12, 0)
+        val emails = listOf("old-skip@example.com", "pass@example.com", "denied@example.com")
+        Mockito.`when`(repository.findReusableByEmails(emails, now)).thenReturn(listOf(
+            history(40L, "SKIP", "risky").copy(email = emails[0]),
+            history(41L, "PASS", "unknown").copy(email = emails[1]),
+            history(42L, "SKIP", "undeliverable").copy(email = emails[2])
+        ))
+        assertEquals(setOf("denied@example.com"), subject().findKnownUndeliverableEmails(emails, now))
+
+        val failure = IllegalStateException("database unavailable")
+        Mockito.`when`(repository.findReusableByEmails(emails, now)).thenThrow(failure)
+        assertEquals(failure, assertThrows(IllegalStateException::class.java) {
+            subject().findKnownUndeliverableEmails(emails, now)
+        })
+        assertTrue(client.requests.isEmpty())
+        Mockito.verifyNoInteractions(expertIndexWriterService, expertSearchService)
+    }
+
     // ──── I-2：结果矩阵 ────
 
     @Test
@@ -595,6 +660,13 @@ class BatchEmailVerificationServiceTest {
     }
 
     // ──── 夹具 ────
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> listCaptor(): ArgumentCaptor<List<T>> =
+        ArgumentCaptor.forClass(List::class.java) as ArgumentCaptor<List<T>>
+
+    private fun <T> captureValue(captor: ArgumentCaptor<T>, defaultValue: T): T =
+        captor.capture() ?: defaultValue
 
     /** 每个用例重置行 id 序列，让断言里的明细 id 稳定可读。 */
     private fun subject(apiKey: String = LIVE_KEY): BatchEmailVerificationService {

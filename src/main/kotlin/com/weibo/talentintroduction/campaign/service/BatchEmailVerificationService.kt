@@ -74,6 +74,28 @@ class BatchEmailVerificationService(
         ExecutionVerificationContext(executionId, isCancelled)
 
     /**
+     * Read-only evidence for downstream batch filtering. Normalizes and de-duplicates once, then
+     * queries bounded batches using the same Beijing-time snapshot for the complete call chain.
+     */
+    fun findKnownUndeliverableEmails(
+        emails: Collection<String?>,
+        now: LocalDateTime = verificationNow()
+    ): Set<String> {
+        val normalized = emails.asSequence()
+            .map(::normalizeVerificationEmail)
+            .filter(String::isNotEmpty)
+            .distinct()
+            .toList()
+        if (normalized.isEmpty()) return emptySet()
+        return normalized.chunked(BatchEmailVerificationRepository.MAX_HISTORY_EMAILS)
+            .asSequence()
+            .flatMap { repository.findReusableByEmails(it, now).asSequence() }
+            .filter { it.providerState == STATE_UNDELIVERABLE }
+            .map { it.email }
+            .toSet()
+    }
+
+    /**
      * 验证一个目标：先落 PENDING 明细，再出结论，SKIP 追加标签并写标签结果。
      * 审计写入失败抛 [EmailVerificationAuditException]；调用方据此停止本次执行且不得发信。
      */

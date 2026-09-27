@@ -57,6 +57,25 @@ class TaskRetentionMigrationTest {
     }
 
     @Test
+    fun `task execution retention protects all effective pass provider states`() {
+        val queryBlock = queryBlockOf(executionRepoSource, "deleteOlderThan")
+        assertTrue(
+            queryBlock.contains("v.provider_state IN ('deliverable', 'risky', 'unknown')"),
+            "retention must protect the same PASS states as reusable history"
+        )
+        assertTrue(
+            queryBlock.contains("v.checked_at > DATE_SUB") && queryBlock.contains("v.checked_at <="),
+            "retention must keep the strict lower and inclusive upper history window"
+        )
+        assertTrue(
+            queryBlock.contains("v.request_count > 0") &&
+                queryBlock.contains("v.reused_from_id IS NULL") &&
+                queryBlock.contains("v.error_code IS NULL"),
+            "retention must only preserve effective original rows"
+        )
+    }
+
+    @Test
     fun `production flyway config disables placeholder replacement`() {
         val yml = Files.readString(Path.of("src/main/resources/application.yml"))
         assertTrue(yml.contains("placeholder-replacement: false"), "flyway placeholder replacement must be disabled")
