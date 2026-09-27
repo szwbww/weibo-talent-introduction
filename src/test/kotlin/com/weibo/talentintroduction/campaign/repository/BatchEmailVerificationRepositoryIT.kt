@@ -409,6 +409,7 @@ class BatchEmailVerificationRepositoryIT {
         val expiredExecutionId = 9003L
         seedExecution(expiredExecutionId)
         jdbcTemplate.update("UPDATE task_execution SET started_at = ?", now.minusDays(110))
+        jdbcTemplate.update("UPDATE task_execution SET started_at = ? WHERE id = ?", now.minusDays(100), OTHER_EXECUTION_ID)
         val oldDenial = repository.insertPending(EXECUTION_ID, null, "old-denial", null, "shared@b.com", now)
         repository.recordDecision(oldDenial, "SKIP", "undeliverable", null, null, 1, now.minusDays(110), now)
         val newerPass = repository.insertPending(OTHER_EXECUTION_ID, null, "new-pass", null, "shared@b.com", now)
