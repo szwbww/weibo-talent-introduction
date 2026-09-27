@@ -821,7 +821,7 @@ class OpenAlexRequestPolicy(
         var attempt = 0
         var syncRetried = false
         while (true) {
-            val now = time.now()
+            var now = time.now()
             val ledger = try {
                 // I-4：0 成本操作（SINGLETON/RATE_LIMIT）不依赖额度，但账本不可用时仍然延期（冷却/限速是共享的）。
                 if (operation.costCredits == 0L) store.ledger(properties.accountScope, configuredFreeLimitCredits(), now)
@@ -831,6 +831,9 @@ class OpenAlexRequestPolicy(
                 return defer(DeferredReason.BUDGET_STORE_UNAVAILABLE, now.plusMillis(STORE_RETRY_MS))
             } ?: return defer(DeferredReason.BUDGET_SYNC, now.plusMillis(SYNC_RETRY_MS))
 
+            // Official balance synchronization may take seconds. Never reserve a rate slot with
+            // the timestamp captured before that network round trip.
+            now = time.now()
             val permitId = UUID.randomUUID().toString()
             val floor = try {
                 if (kind.mayUseReservedBudget) 0L else enrichmentReserveCredits(ledger, now)
@@ -849,7 +852,7 @@ class OpenAlexRequestPolicy(
                         reservedFloorCredits = floor,
                         rateIntervalMs = rateIntervalMs(),
                         configuredFreeLimitCredits = configuredFreeLimitCredits(),
-                        now = now
+                        now = time.now()
                     )
                 )
             } catch (e: DataAccessException) {
@@ -871,12 +874,12 @@ class OpenAlexRequestPolicy(
                     // I-4：429 冷却（官方 `Retry-After` / 指数退避，分钟级）一律**立刻**返回 Deferred(retryAt)，
                     // 绝不在 HTTP worker 或调度线程里睡冷却（V-4）。只有账号共享限速的**子秒槽位**
                     // （≤ 一个速率间隔，且 ≤ [MAX_INLINE_WAIT_MS]）仍在调用线程内等待，以维持 5/s 的节奏；
-                    // 非正等待（存储往返已越过槽位）一律直接延期。
+                    // 已过槽位重新申请许可（同样计入重试上限），不 sleep，也不绕过共享账本。
                     if (result.reason == DeferredReason.RATE_LIMIT) {
                         val waitMs = Duration.between(time.now(), result.retryAt).toMillis()
                         val pacingMs = minOf(rateIntervalMs(), MAX_INLINE_WAIT_MS)
-                        if (waitMs > 0L && waitMs <= pacingMs && attempt < MAX_RATE_WAIT_RETRIES) {
-                            time.sleep(waitMs)
+                        if (waitMs <= pacingMs && attempt < MAX_RATE_WAIT_RETRIES) {
+                            if (waitMs > 0L) time.sleep(waitMs)
                             attempt++
                             continue
                         }

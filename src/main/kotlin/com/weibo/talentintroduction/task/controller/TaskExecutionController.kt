@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.task.controller
 
+import com.weibo.talentintroduction.discovery.service.DiscoveryPromotionProgressService
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
@@ -38,7 +39,8 @@ class TaskExecutionController(
     private val extractor: TaskExecutionSummaryExtractor,
     private val objectMapper: ObjectMapper,
     /** B4（T2b-4）：drilldownCount（MAIL_BY_EXECUTION）计数；可空默认值兼容既有直构测试。 */
-    private val mailRecordRepository: MailRecordRepository? = null
+    private val mailRecordRepository: MailRecordRepository? = null,
+    private val promotionProgress: DiscoveryPromotionProgressService? = null
 ) {
     private val log = LoggerFactory.getLogger(TaskExecutionController::class.java)
 
@@ -99,8 +101,9 @@ class TaskExecutionController(
      */
     @GetMapping("/{id}/detail")
     fun executionDetail(@PathVariable id: Long): TaskExecutionDetailResponse {
-        val exec = taskExecutionRepository.findById(id)
+        val stored = taskExecutionRepository.findById(id)
             .orElseThrow { NoSuchElementException("Task execution not found: $id") }
+        val exec = promotionProgress?.refresh(stored) ?: stored
         val totals: ExecutionTotals = extractor.extract(exec.taskType, exec)
         val (requestRaw, requestTruncated) = truncateRaw(exec.requestPayload)
         val (summaryRaw, summaryTruncated) = truncateRaw(exec.resultSummary)

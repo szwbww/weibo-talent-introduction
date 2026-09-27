@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.task.controller
 
+import com.weibo.talentintroduction.discovery.service.DiscoveryPromotionProgressService
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.discovery.service.DISCOVERY_PIPELINE_TASK_TYPE
 import com.weibo.talentintroduction.discovery.service.DiscoveryPipelineService
@@ -33,7 +34,8 @@ class TaskProgressController(
     private val taskExecutionRepository: TaskExecutionRepository,
     private val objectMapper: ObjectMapper,
     /** I-3（c3）：02 协调者；末尾可选参数，既有构造调用逐字兼容（开关关闭时走原进程内取消）。 */
-    private val pipelineService: DiscoveryPipelineService? = null
+    private val pipelineService: DiscoveryPipelineService? = null,
+    private val promotionProgress: DiscoveryPromotionProgressService? = null
 ) {
 
     private val log = LoggerFactory.getLogger(TaskProgressController::class.java)
@@ -51,7 +53,7 @@ class TaskProgressController(
     @GetMapping("/{taskType}")
     fun getProgress(@PathVariable taskType: String): ResponseEntity<TaskProgress> {
         val progress = progressStore.get(taskType) ?: return ResponseEntity.noContent().build()
-        return ResponseEntity.ok(progress)
+        return ResponseEntity.ok(promotionProgress?.refresh(progress) ?: progress)
     }
 
     @PostMapping("/{taskType}/cancel")
@@ -130,7 +132,8 @@ class TaskProgressController(
         }
         val clampedLimit = limit.coerceIn(1, 50)
         val executions = taskExecutionRepository.findRecentByTaskType(taskType, clampedLimit)
-        val responses = executions.map { exec ->
+        val responses = executions.map { stored ->
+            val exec = promotionProgress?.refresh(stored) ?: stored
             val totals: ExecutionTotals = extractor.extract(taskType, exec)
             val wasCancelled = extractor.detectWasCancelled(exec.resultSummary)
             val status = when {

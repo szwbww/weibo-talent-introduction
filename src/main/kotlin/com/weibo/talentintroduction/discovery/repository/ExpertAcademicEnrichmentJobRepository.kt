@@ -28,6 +28,9 @@ import java.time.LocalDateTime
  */
 interface ExpertAcademicEnrichmentJobRepository : CrudRepository<ExpertAcademicEnrichmentJob, Long> {
 
+    @Query("SELECT expert_doc_id, source FROM expert_academic_enrichment_job WHERE discovery_execution_id = :executionId")
+    fun findDiscoveryDocuments(executionId: Long): List<DiscoveryJobDocument>
+
     @Query("SELECT * FROM expert_academic_enrichment_job WHERE expert_doc_id = :docId")
     fun findByExpertDocId(docId: String): ExpertAcademicEnrichmentJob?
 
@@ -182,3 +185,5 @@ interface ExpertAcademicEnrichmentJobRepository : CrudRepository<ExpertAcademicE
     )
     fun reopenFailedById(id: Long, now: LocalDateTime): Int
 }
+
+data class DiscoveryJobDocument(val expertDocId: String, val source: String)

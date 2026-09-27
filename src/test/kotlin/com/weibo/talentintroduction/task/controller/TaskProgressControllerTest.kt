@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.task.controller
 
+import com.weibo.talentintroduction.discovery.service.DiscoveryPromotionProgressService
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.discovery.repository.PipelineDesiredState
 import com.weibo.talentintroduction.discovery.repository.PipelinePhase
@@ -44,6 +45,20 @@ class TaskProgressControllerTest {
     /** c3（I-3）：02 协调者；未启用（`enabled=false`）时走原进程内取消。 */
     @MockBean
     private lateinit var pipeline: DiscoveryPipelineService
+
+    @MockBean
+    private lateinit var promotionProgress: DiscoveryPromotionProgressService
+
+    @Test
+    fun `progress endpoint returns asynchronous promotion projection`() {
+        val stored = TaskProgress("EXPERT_DISCOVERY", "RUNNING", 3, 300, 10000,
+            executionId = 42L, details = mapOf("promoted" to 0))
+        Mockito.`when`(progressStore.get("EXPERT_DISCOVERY")).thenReturn(stored)
+        Mockito.`when`(promotionProgress.refresh(stored)).thenReturn(stored.copy(details = mapOf("promoted" to 3)))
+        mockMvc.perform(get("/api/task-progress/EXPERT_DISCOVERY"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.details.promoted").value(3))
+    }
 
     private fun usePipeline() {
         Mockito.`when`(pipeline.enabled).thenReturn(true)

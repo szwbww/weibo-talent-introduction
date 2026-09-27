@@ -654,22 +654,57 @@ class OpenAlexRequestPolicyTest {
     }
 
     @Test
-    fun `a rate-limit rejection whose retryAt already elapsed defers instead of sleeping (I-4)`() {
+    fun `elapsed rate slot is reacquired without sleeping`() {
         val real = InMemoryOpenAlexBudgetStore()
         val slot = time.current.plusMillis(200)
-        // 存储往返（锁等待 / 校准 HTTP）耗时超过剩余槽位：reserve 返回的共享 retryAt 在计算等待时已经过去，
-        // 于是 waitMs 为负 —— 非正等待绝不允许交给 Thread.sleep（负值抛 IllegalArgumentException）。
+        var calls = 0
         val store = object : OpenAlexBudgetStore by real {
             override fun reserve(request: BudgetReserveRequest): BudgetReserveResult {
-                time.current = time.current.plusSeconds(5)
-                return BudgetReserveResult.Rejected(DeferredReason.RATE_LIMIT, slot)
+                calls++
+                if (calls == 1) {
+                    time.current = time.current.plusSeconds(5)
+                    return BudgetReserveResult.Rejected(DeferredReason.RATE_LIMIT, slot)
+                }
+                assertEquals(time.current, request.now)
+                return real.reserve(request)
             }
         }
-        val policy = policy(store = store)
+        assertTrue(policy(store = store).reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Allowed)
+        assertEquals(2, calls)
+        assertTrue(time.sleeps.isEmpty())
+    }
 
-        val deferred = policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget)
-        assertEquals(Permit.Deferred(DeferredReason.RATE_LIMIT, slot), deferred)
-        assertTrue(time.sleeps.isEmpty(), "非正等待绝不允许 sleep（实际 ${time.sleeps}）")
+    @Test
+    fun `expired slot retries remain bounded under repeated contention`() {
+        val real = InMemoryOpenAlexBudgetStore()
+        var calls = 0
+        val store = object : OpenAlexBudgetStore by real {
+            override fun reserve(request: BudgetReserveRequest): BudgetReserveResult {
+                calls++
+                return BudgetReserveResult.Rejected(DeferredReason.RATE_LIMIT, time.current)
+            }
+        }
+        assertTrue(policy(store = store).reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Deferred)
+        assertEquals(4, calls)
+        assertTrue(time.sleeps.isEmpty())
+    }
+
+    @Test
+    fun `slow official synchronization reserves using current time`() {
+        val real = InMemoryOpenAlexBudgetStore()
+        var reservedAt: Instant? = null
+        val store = object : OpenAlexBudgetStore by real {
+            override fun reserve(request: BudgetReserveRequest): BudgetReserveResult {
+                reservedAt = request.now
+                return real.reserve(request)
+            }
+        }
+        val policy = policy(store = store, syncSource = {
+            time.current = time.current.plusSeconds(5)
+            OpenAlexOfficialBalance(10000, 9995, time.current.plusSeconds(3600))
+        })
+        assertTrue(policy.reserve(RequestKind.DISCOVERY, Operation.LIST, listTarget) is Permit.Allowed)
+        assertEquals(time.current, reservedAt)
     }
 
     /** 两次连续请求之间策略实际等待的限速槽位（毫秒）。 */
