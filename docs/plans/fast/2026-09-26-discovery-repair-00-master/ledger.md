@@ -10,7 +10,7 @@
 - Finalization repair parent: N/A
 - Started: 2026-09-26
 - Current child: 09c
-- Waiting role: IMPLEMENTER
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -29,7 +29,7 @@
 | 08 | docs/plans/2026-09-26/discovery-repair-08-source-report.md | commit:37e1ed05a5654735f6c763536c7a0a198b637965 | 07 | 2 | LIGHT_PASS | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | 9c6d84430ec0f5f25e3fa06468ad7dcde260fe67 | 0 | — | 9c6d84430ec0f5f25e3fa06468ad7dcde260fe67 | ac69b495ed545bfa7573ec20895294025cbb4364 | Epoch 1 PLAN_CONFLICT and pause evidence 5631c9571e8dbaa16bfa9930ea7c7001a199d524; A2 authorizes eleven existing cache keys. Six authorized uncommitted edits retained for epoch 2. |
 | 09a | docs/plans/2026-09-26/discovery-repair-09a-orcid-query.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 08 | 1 | LIGHT_PASS_WITH_NOTES | 9c6d84430ec0f5f25e3fa06468ad7dcde260fe67 | f9caa0b6fa5a1893aa37a6dd8612c8b930635eaf | 0 | — | f9caa0b6fa5a1893aa37a6dd8612c8b930635eaf | 56af96e1e3d80b53e9b41c7838c512360b5cb2db | O-1: pre-existing ACTIVE legacy streams remain runnable independently, not inherited by new ORCID cursor. | N/A |
 | 09b | docs/plans/2026-09-26/discovery-repair-09b-scope-facts.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 09a | 1 | LIGHT_PASS | f9caa0b6fa5a1893aa37a6dd8612c8b930635eaf | 3df3d79a1806081639ad318fb6b638c59f5bca85 | 0 | — | 3df3d79a1806081639ad318fb6b638c59f5bca85 | 0d45f3bdf231202c8a4ad49edd46cbcbcbdabdd4 | N/A |
-| 09c | docs/plans/2026-09-26/discovery-repair-09c-scope-classification.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 09b | 1 | WAITING_FOR_AGENT | 3df3d79a1806081639ad318fb6b638c59f5bca85 | — | 0 | — | — | — | N/A |
+| 09c | docs/plans/2026-09-26/discovery-repair-09c-scope-classification.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 09b | 1 | LIGHT_PASS_WITH_NOTES | 3df3d79a1806081639ad318fb6b638c59f5bca85 | 5724b4ff34619acf8abd8ee68c724ea25669742c | 0 | — | 5724b4ff34619acf8abd8ee68c724ea25669742c | — | Release: disabled onlyPending scheduler would treat prior rnd-v2 as pending under rnd-v3; no automatic backfill. | N/A |
 | 09d | docs/plans/2026-09-26/discovery-repair-09d-scope-admission.md | commit:152028fb4f6adf467a5254ed3627bf84c561f6bc | 09c | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 
 ## Amendments
