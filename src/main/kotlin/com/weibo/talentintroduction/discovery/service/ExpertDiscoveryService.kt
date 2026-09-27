@@ -2654,6 +2654,7 @@ class ExpertDiscoveryService(
         enrichment.citationCount?.let { doc["citationCount"] = it }
         enrichment.worksCount?.let { doc["worksCount"] = it }
         enrichment.topics?.takeIf { it.isNotEmpty() }?.let { doc["researchFields"] = it.joinToString(", ") }
+        enrichment.researchFieldIds?.let { doc["researchFieldIds"] = it }
         enrichment.recentWorkTitles?.takeIf { it.isNotEmpty() }?.let { doc["recentWorkTitles"] = it }
         enrichment.patentTitles?.takeIf { it.isNotEmpty() }?.let { doc["patentTitles"] = it }
         enrichment.disciplineCategory?.let { doc["disciplineCategory"] = it }
@@ -2667,6 +2668,7 @@ class ExpertDiscoveryService(
             worksCount = enrichment.worksCount ?: profile.worksCount,
             researchFields = enrichment.topics?.takeIf { it.isNotEmpty() }?.joinToString(", ")
                 ?: profile.researchFields,
+            researchFieldIds = enrichment.researchFieldIds ?: profile.researchFieldIds,
             recentWorkTitles = enrichment.recentWorkTitles?.takeIf { it.isNotEmpty() }
                 ?: profile.recentWorkTitles,
             patentTitles = enrichment.patentTitles?.takeIf { it.isNotEmpty() } ?: profile.patentTitles,

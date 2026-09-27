@@ -638,6 +638,56 @@ class OpenAlexDataSourceTest {
         assertEquals("STEM", dataSource.enrichAuthor("A1")!!.disciplineCategory)
     }
 
+    @Test
+    fun `author topic field ids use same count-ranked top five as display topics`() {
+        stubAuthorEnrichment("""{"topics":[
+          {"display_name":"sixth","count":1,"field":{"id":"https://openalex.org/topics/999"}},
+          {"display_name":"material","count":9,"field":{"id":"https://openalex.org/fields/025"}},
+          {"display_name":"computer","count":8,"field":{"id":"17"}},
+          {"display_name":"physics","count":7,"field":{"id":"31"}},
+          {"display_name":"duplicate","count":6,"field":{"id":"https://openalex.org/fields/17"}},
+          {"display_name":"engineering","count":10,"field":{"id":"22"}}
+        ]}""")
+        val result = dataSource.enrichAuthor("A1")!!
+        assertEquals(listOf("engineering", "material", "computer", "physics", "duplicate"), result.topics)
+        assertEquals(listOf("17", "22", "25", "31"), result.researchFieldIds)
+        Mockito.verify(restTemplate, Mockito.times(1)).exchange(
+            Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+    }
+
+    @Test
+    fun `incomplete selected topic field invalidates whole professional fact without losing topics`() {
+        val cases = listOf(
+            """[{"count":5,"display_name":"engineering","field":{"id":"22"}},{"count":4,"display_name":"missing","field":{}}]""",
+            """[{"count":5,"display_name":"engineering","field":{"id":"22"}},{"count":4,"display_name":"wrong level","field":{"id":"https://openalex.org/topics/11"}}]""",
+            """[{"count":5,"display_name":"engineering","field":{"id":"22"}},{"count":4,"display_name":"numeric node","field":{"id":11}}]""",
+            """[]"""
+        )
+        cases.forEach { topics ->
+            stubAuthorEnrichment("""{"topics":$topics}""")
+            val result = dataSource.enrichAuthor("A1")!!
+            assertNull(result.researchFieldIds, topics)
+        }
+        val fixture = mapper.readTree(javaClass.classLoader.getResource("discovery/rnd-scope-evidence.json"))
+        fixture.path("constructed").filter { it.has("authorTopics") }.forEach { record ->
+            stubAuthorEnrichment("""{"topics":${record.path("authorTopics")}}""")
+            assertNull(dataSource.enrichAuthor("A1")!!.researchFieldIds, record.path("case").asText())
+        }
+    }
+
+    @Test
+    fun `batch author identity parses field IDs with shared parser and does not infer for unmatched ids`() {
+        val json = """{"results":[
+          {"id":"https://openalex.org/A1","topics":[{"count":3,"field":{"id":"https://openalex.org/fields/22"}}]},
+          {"id":"https://openalex.org/W2","topics":[{"count":3,"field":{"id":"17"}}]}
+        ]}"""
+        stubAuthorEnrichment(json)
+        val outcomes = dataSource.batchEnrichByAuthorIds(listOf("A1", "A2"))
+        assertEquals(listOf("22"), (outcomes["A1"] as EnrichmentOutcome.Success).data.researchFieldIds)
+        assertEquals(EnrichmentOutcome.NotFound, outcomes["A2"])
+    }
+
     private fun stubAuthorEnrichment(json: String) {
         Mockito.`when`(
             restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))

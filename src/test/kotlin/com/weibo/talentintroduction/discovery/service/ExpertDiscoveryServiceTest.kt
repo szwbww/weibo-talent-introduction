@@ -4793,6 +4793,84 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `09c one trusted ORCID updates both emails across existing layers and preserves prior field on null`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+        val orcid = "0000-0002-1240-1405"
+        val emails = listOf("first@example.com", "second@example.com")
+        val profiles = emails.mapIndexed { index, email ->
+            c6Expert(orcid, esDocId = "DOC-${index + 1}").copy(
+                email = email, emailSource = "ORCID_PUBLIC",
+                identityVerification = DiscoveryIdentity.verified(email, "Test", "User",
+                    "ORCID_RECORD_SHA256:" + "a".repeat(64), orcid, null),
+                researchFieldIds = listOf("31"))
+        }
+        val fact = AuthorEnrichment(hIndex = 20, citationCount = 30, worksCount = 40,
+            researchFieldIds = listOf("17", "22"))
+        Mockito.doReturn(mapOf(orcid to EnrichmentOutcome.Success(fact)))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        listOf("orcid_info", "orcid_info_candidate", "orcid_info_application").forEach(::stubLayerExists)
+        stubAcademicUpdateOk()
+
+        val results = svc.enrichProfiles(profiles)
+        assertEquals(setOf("DOC-1", "DOC-2"), results.keys)
+        val layerEvidence = results.mapValues { (_, value) ->
+            val layers = (value as ProfileEnrichmentOutcome.Success).layers
+            assertEquals(LayerUpdateStatus.UPDATED, layers.raw)
+            assertEquals(LayerUpdateStatus.UPDATED, layers.candidate)
+            assertEquals(LayerUpdateStatus.UPDATED, layers.application)
+            listOf(layers.raw.name, layers.candidate.name, layers.application.name)
+        }
+        Mockito.verify(openAlex, Mockito.times(1)).batchEnrichByOrcids(
+            eqValue(listOf(orcid)), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        Mockito.verify(openAlex, Mockito.never()).batchEnrichByAuthorIds(
+            Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        val updates = Mockito.mockingDetails(restTemplate).invocations.filter {
+            it.method.name == "exchange" && (it.arguments[0] as? String)?.contains("/_update/") == true
+        }
+        assertEquals(6, updates.size)
+        updates.forEach { invocation ->
+            val body = (invocation.arguments[2] as HttpEntity<*>).body as Map<*, *>
+            assertFalse(body.containsKey("upsert"))
+            val script = body["script"] as Map<*, *>
+            assertTrue(script["source"].toString().contains("ctx.op = 'none'"))
+            val params = script["params"] as Map<*, *>
+            val id = (invocation.arguments[0] as String).substringAfterLast('/')
+            val original = profiles.single { it.esDocId == id }
+            assertEquals(original.identityVerification, params["identity"])
+            assertEquals(original.email, params["email"])
+            assertEquals(original.givenNames, params["given"])
+            assertEquals(original.familyNames, params["family"])
+            val doc = params["doc"] as Map<*, *>
+            assertEquals(listOf("17", "22"), doc["researchFieldIds"])
+            assertEquals(ExpertClassificationService.VERSION,
+                (doc["expertClassification"] as com.weibo.talentintroduction.expert.domain.ExpertClassification).version)
+            for (identityKey in listOf("email", "givenNames", "familyNames", "externalIds", "identityVerification")) {
+                assertFalse(doc.containsKey(identityKey))
+            }
+        }
+        Mockito.doReturn(mapOf(orcid to EnrichmentOutcome.Success(AuthorEnrichment(null, null, null))))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        val nullResult = svc.enrichProfiles(listOf(profiles.first()))
+        assertInstanceOf(ProfileEnrichmentOutcome.Success::class.java, nullResult["DOC-1"])
+        val lastBody = (Mockito.mockingDetails(restTemplate).invocations.last {
+            it.method.name == "exchange" && (it.arguments[0] as? String)?.contains("/_update/") == true
+        }.arguments[2] as HttpEntity<*>).body as Map<*, *>
+        val nullDoc = ((lastBody["script"] as Map<*, *>)["params"] as Map<*, *>)["doc"] as Map<*, *>
+        assertFalse(nullDoc.containsKey("researchFieldIds"))
+        assertEquals(ExpertClassificationService.VERSION,
+            (nullDoc["expertClassification"] as com.weibo.talentintroduction.expert.domain.ExpertClassification).version)
+        val output = Paths.get("target/discovery-plan-acceptance/09c-layers.json")
+        Files.createDirectories(output.parent)
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), mapOf(
+            "source" to "constructed", "lookupIdentity" to orcid,
+            "authorLookupRequests" to 1, "documents" to layerEvidence,
+            "threeLayerUpdateCount" to updates.size, "identityCas" to true,
+            "nullOmitted" to true, "nullRetainedPriorFieldIds" to profiles.first().researchFieldIds))
+    }
+
+    @Test
     fun `PDF source ownership author ID reaches academic lookup with bound audit`() {
         val svc = createService()
         val parsed = extractOwnershipContent(ownershipPdf("Test User: opaque@uni.edu"),
@@ -4912,7 +4990,8 @@ class ExpertDiscoveryServiceTest {
         Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
 
         val expert = c6Expert("0000-PARTIAL", esDocId = "DOC-PARTIAL")
-        Mockito.doReturn(mapOf("0000-PARTIAL" to EnrichmentOutcome.Success(AuthorEnrichment(10, 100, 5))))
+        Mockito.doReturn(mapOf("0000-PARTIAL" to EnrichmentOutcome.Success(
+            AuthorEnrichment(10, 100, 5, researchFieldIds = listOf("22")))))
             .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
         stubRawLayerOnly()
         stubLayerExists("orcid_info_candidate")
@@ -4932,6 +5011,12 @@ class ExpertDiscoveryServiceTest {
         assertEquals(LayerUpdateStatus.ABSENT, partial.layers.application)
         assertTrue(partial.layers.hasFailedLayer())
         assertTrue(partial.layers.updatedAnyLayer())
+        val output = Paths.get("target/discovery-plan-acceptance/09c-partial.json")
+        Files.createDirectories(output.parent)
+        objectMapper.writerWithDefaultPrettyPrinter().writeValue(output.toFile(), mapOf(
+            "source" to "constructed", "fieldIds" to listOf("22"),
+            "raw" to partial.layers.raw.name, "candidate" to partial.layers.candidate.name,
+            "application" to partial.layers.application.name, "outcome" to "Partial"))
     }
 
     @Test

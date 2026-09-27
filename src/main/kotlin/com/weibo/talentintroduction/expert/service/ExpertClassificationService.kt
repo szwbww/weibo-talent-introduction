@@ -1,5 +1,7 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.ExpertType
@@ -12,7 +14,7 @@ import java.time.LocalDateTime
 import java.util.Locale
 
 /**
- * rnd-v2-2026 专家研发类型分类策略（I1-1 ~ I1-4，M-2）。
+ * rnd-v3-20260927 专家研发类型分类策略（I1-1 ~ I1-4，M-2）。
  *
  * 确定性的纯函数：同一输入 + 同一 [clock] 产出逐字一致的结果；只有
  * [ExpertClassification.classifiedAt] 来自注入的 [clock]。
@@ -50,6 +52,10 @@ class ExpertClassificationService(
         val (type, negativeEvidence) = when {
             clinical -> ExpertType.SERVICE_ONLY to listOf(E_CLINICAL_ROLE)
             medicalDomain && !whitelist -> ExpertType.OUT_OF_SCOPE to listOf(E_MEDICAL_DOMAIN_NO_WHITELIST)
+            normalized.discovery && normalized.fieldIds.isEmpty() ->
+                ExpertType.UNKNOWN to listOf(E_RND_SCOPE_UNCONFIRMED)
+            normalized.discovery && normalized.fieldIds.none(SubjectScopeCatalog::isTargetOpenAlexFieldId) ->
+                ExpertType.OUT_OF_SCOPE to listOf(E_RND_SCOPE_OUTSIDE_TARGET)
             production.score >= PRODUCTION_THRESHOLD && research.score >= RESEARCH_THRESHOLD ->
                 ExpertType.HYBRID_RND to emptyList()
             production.score >= PRODUCTION_THRESHOLD -> ExpertType.PRODUCTION_RND to emptyList()
@@ -79,7 +85,9 @@ class ExpertClassificationService(
         val patentTitles: String,
         val lastPublicationYear: Int?,
         val hIndex: Int?,
-        val worksCount: Int?
+        val worksCount: Int?,
+        val fieldIds: List<String>,
+        val discovery: Boolean
     ) {
         val allText: List<String> =
             listOf(employment, keyword, researchFields, institution, recentWorkTitles, patentTitles)
@@ -97,7 +105,11 @@ class ExpertClassificationService(
             patentTitles = normalizeList(profile.patentTitles),
             lastPublicationYear = profile.lastPublicationYear,
             hIndex = profile.hIndex,
-            worksCount = profile.worksCount
+            worksCount = profile.worksCount,
+            fieldIds = profile.researchFieldIds.orEmpty().mapNotNull { raw ->
+                raw.takeIf { FIELD_ID.matches(it) }?.trimStart('0')?.ifEmpty { "0" }
+            }.distinct().sortedWith(compareBy<String> { it.length }.thenBy { it }),
+            discovery = DiscoveryIdentity.isDiscovery(profile)
         )
 
     /** 生产分：五类证据各最多计一次，封顶 100（计划 Task 2 第 7 条）。 */
@@ -172,8 +184,8 @@ class ExpertClassificationService(
     }
 
     /**
-     * sourceFingerprint：对"归一化后的六个文本字段 + 三个数值字段"做 SHA-256
-     * （I1-4）。分隔符使用 NUL，归一化后任何字段都不可能含 NUL，保证一一映射。
+     * sourceFingerprint：对归一化文本、数值、可信专业 ID 和 discovery 标记做 SHA-256。
+     * 分隔符使用 NUL，归一化后任何字段都不可能含 NUL，保证一一映射。
      */
     private fun fingerprint(n: NormalizedInputs): String {
         val input = listOf(
@@ -181,7 +193,8 @@ class ExpertClassificationService(
             n.recentWorkTitles, n.patentTitles,
             n.lastPublicationYear?.toString() ?: "",
             n.hIndex?.toString() ?: "",
-            n.worksCount?.toString() ?: ""
+            n.worksCount?.toString() ?: "",
+            n.fieldIds.joinToString(","), n.discovery.toString()
         ).joinToString("\u0000")
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(input.toByteArray(StandardCharsets.UTF_8))
@@ -217,7 +230,7 @@ class ExpertClassificationService(
     }
 
     companion object {
-        const val VERSION = "rnd-v2-2026"
+        const val VERSION = "rnd-v3-20260927"
 
         const val RECENT_PAPER_CUTOFF_YEAR = 2021
         const val PRODUCTION_THRESHOLD = 50
@@ -226,6 +239,7 @@ class ExpertClassificationService(
 
         private val CJK_RANGE = 0x4E00..0x9FFF
         private val WHITESPACE = Regex("\\s+")
+        private val FIELD_ID = Regex("[0-9]+")
 
         // 稳定证据 code（声明顺序即输出顺序）。
         private const val E_PROD_PATENTS = "PROD_PATENTS"
@@ -243,6 +257,8 @@ class ExpertClassificationService(
         private const val E_MEDICAL_DOMAIN_NO_WHITELIST = "MEDICAL_DOMAIN_NO_WHITELIST"
         private const val E_SERVICE_ROLE = "SERVICE_ROLE"
         private const val E_INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+        private const val E_RND_SCOPE_UNCONFIRMED = "RND_SCOPE_UNCONFIRMED"
+        private const val E_RND_SCOPE_OUTSIDE_TARGET = "RND_SCOPE_OUTSIDE_TARGET"
 
         // 明确临床职业词（I1-2；计划 Task 2 第 2 条，逐字规范）。
         // 裸 doctor / MD / PhD / doctorate 明确禁止加入（第 3 条）。

@@ -520,10 +520,15 @@ class OpenAlexDataSource(
      */
     private fun parseAuthorBase(node: JsonNode): AuthorEnrichment {
         val topicsNode = node.path("topics").takeIf { it.isArray }
-        val topics = topicsNode
-            ?.sortedByDescending { it.path("count").asInt(0) }
-            ?.take(5)
-            ?.mapNotNull { it.path("display_name").asText(null) }
+        val topTopics = topicsNode?.sortedByDescending { it.path("count").asInt(0) }?.take(5)
+        val topics = topTopics?.mapNotNull { it.path("display_name").asText(null) }
+        val researchFieldIds = topTopics?.takeIf { it.isNotEmpty() }?.map { topic ->
+            val fieldId = topic.path("field").path("id")
+            val raw = if (fieldId.isTextual) fieldId.asText() else null
+            raw?.let { FIELD_ID_PATTERN.matchEntire(it)?.groupValues?.get(1) }
+                ?.trimStart('0')?.ifEmpty { "0" }
+        }?.takeIf { ids -> ids.all { it != null } }
+            ?.filterNotNull()?.distinct()?.sortedWith(compareBy<String> { it.length }.thenBy { it })
         val disciplineCategory = resolveDisciplineCategory(topicsNode)
         // I5a-2/I5a-7: 取 last_known_institutions 第一项的 type（与 works 路径的署名机构不同源）；
         // I5a-3: 数组为空、无 type 键、type 为空串均产出 null。
@@ -542,7 +547,8 @@ class OpenAlexDataSource(
             topics = topics,
             disciplineCategory = disciplineCategory,
             institutionType = institutionType,
-            lastPublicationYear = lastPublicationYear
+            lastPublicationYear = lastPublicationYear,
+            researchFieldIds = researchFieldIds
         )
     }
 
@@ -607,6 +613,7 @@ internal fun normalizeOpenAlexAuthorId(raw: String?): String? {
 }
 
 private val OPENALEX_AUTHOR_ID_PATTERN = Regex("A\\d+")
+private val FIELD_ID_PATTERN = Regex("(?:https://openalex\\.org/fields/)?([0-9]+)")
 
 sealed class EnrichmentOutcome {
     /**
@@ -653,5 +660,6 @@ data class AuthorEnrichment(
     val patentTitles: List<String>? = null,
     val disciplineCategory: String? = null,
     val institutionType: String? = null,
-    val lastPublicationYear: Int? = null
+    val lastPublicationYear: Int? = null,
+    val researchFieldIds: List<String>? = null
 )
