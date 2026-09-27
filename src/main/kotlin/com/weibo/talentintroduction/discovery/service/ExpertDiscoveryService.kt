@@ -906,16 +906,9 @@ class ExpertDiscoveryService(
             " → 有效 ${sourceStats.emailsValid} (无效 ${sourceStats.emailsRejected})" +
             " → 去重后 ${sourceStats.indexed} (重复 ${sourceStats.duplicates})" +
             " → 收录L3 ${sourceStats.indexed} → 晋升L2 ${sourceStats.promoted}" +
-            " (资格淘汰 ${sourceStats.filtered})" +
+            " (过滤（含身份未确认） ${sourceStats.filtered}, 过滤原因 ${sourceStats.filterReasons})" +
             (if (sourceStats.failureReasons.isNotEmpty()) ", 失败原因 ${sourceStats.failureReasons}" else ""),
-            source.sourceName, elapsed, sourceStats.apiRequests,
-            sourceStats.papersSearched, sourceStats.fulltextAttempted, sourceStats.fulltextObtained,
-            sourceStats.pdfDownloadFailed, sourceStats.pdfParseFailed,
-            sourceStats.authorsExtracted, sourceStats.noEmailInFulltext,
-            sourceStats.emailsValid, sourceStats.emailsRejected,
-            sourceStats.indexed, sourceStats.duplicates,
-            sourceStats.indexed, sourceStats.promoted,
-            sourceStats.filtered)
+            source.sourceName)
 
         return SourceRunOutcome(resumeCursor, exhausted, stopReason)
     }
@@ -1176,12 +1169,9 @@ class ExpertDiscoveryService(
             " → 有效 ${sourceStats.emailsValid} (无效 ${sourceStats.emailsRejected})" +
             " → 去重后 ${sourceStats.indexed} (重复 ${sourceStats.duplicates})" +
             " → 收录L3 ${sourceStats.indexed} → 晋升L2 ${sourceStats.promoted}" +
-            " (资格淘汰 ${sourceStats.filtered})" +
+            " (过滤（含身份未确认） ${sourceStats.filtered}, 过滤原因 ${sourceStats.filterReasons})" +
             (if (sourceStats.failureReasons.isNotEmpty()) ", 失败原因 ${sourceStats.failureReasons}" else ""),
-            orcid.sourceName, elapsed, recordsProcessed, sourceStats.authorsExtracted,
-            sourceStats.emailsValid, sourceStats.emailsRejected,
-            sourceStats.indexed, sourceStats.duplicates,
-            sourceStats.indexed, sourceStats.promoted, sourceStats.filtered)
+            orcid.sourceName)
 
         return SourceRunOutcome(resumeCursor, exhausted, stopReason)
     }

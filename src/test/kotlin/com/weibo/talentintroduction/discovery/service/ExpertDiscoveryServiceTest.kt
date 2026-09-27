@@ -49,6 +49,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.ExtendWith
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.springframework.beans.factory.ObjectProvider
@@ -58,6 +59,8 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.ResourceAccessException
+import org.springframework.boot.test.system.CapturedOutput
+import org.springframework.boot.test.system.OutputCaptureExtension
 import org.springframework.web.client.RestTemplate
 import java.time.Duration
 import java.time.Instant
@@ -381,7 +384,8 @@ class ExpertDiscoveryServiceTest {
         java.net.URLDecoder.decode(url.substringAfter("?q=").substringBefore("&"), "UTF-8")
 
     @Test
-    fun `discovery separates missing ownership from invalid email and accepts parsed identity without proof`() {
+    @ExtendWith(OutputCaptureExtension::class)
+    fun `discovery separates missing ownership from invalid email and accepts parsed identity without proof`(output: CapturedOutput) {
         val svc = createService()
         DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(paper("PMC-BLOCK", "Ownership")), null, 1))
         DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, listOf(
@@ -398,6 +402,8 @@ class ExpertDiscoveryServiceTest {
         assertEquals(1, result.stats.indexed)
         assertEquals(1, result.stats.promoted)
         assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").filterReasons["IDENTITY_UNRESOLVED"])
+        assertTrue(output.out.contains("过滤（含身份未确认） 1, 过滤原因 {IDENTITY_UNRESOLVED=1}"))
+        assertFalse(output.out.contains("资格淘汰"))
         assertEquals(1, result.stats.filtered)
         assertEquals(1, result.stats.emailRejected)
         assertEquals(1, result.stats.bySource.getValue("EUROPE_PMC").emailsValid)
@@ -4508,7 +4514,8 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
-    fun `ORCID pages past a whole page without public emails and still acquires the next page expert`() {
+    @ExtendWith(OutputCaptureExtension::class)
+    fun `ORCID pages past a whole page without public emails and still acquires the next page expert`(output: CapturedOutput) {
         // V-2/I-2：首页 100 条无公开邮箱、次页 1 条有公开邮箱 —— 必须覆盖两页并最终收录 1 人。
         val criteria = PaperSearchCriteria(
             pageSize = 100, subjectScope = SubjectScopeCatalog.RND_TARGET, sources = listOf("ORCID")
@@ -4540,6 +4547,8 @@ class ExpertDiscoveryServiceTest {
         val (result, saved) = runAndCapture(createService(c4Props()), criteria)
 
         assertEquals(1, result.stats.bySource["ORCID"]?.indexed, "次页的 1 位专家必须被收录")
+        assertTrue(output.out.contains("[ORCID] 完成:") && output.out.contains("过滤（含身份未确认） 0, 过滤原因 {}"))
+        assertFalse(output.out.contains("资格淘汰"))
         assertEquals(1, result.stats.bySource["ORCID"]?.papersSearched)
         assertEquals(listOf("0", "100"), urls.take(2).map { urlStart(it) },
             "整页无公开邮箱后 offset 必须继续前进到 100")

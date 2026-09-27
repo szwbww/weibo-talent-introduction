@@ -272,4 +272,100 @@ describe("task records semantics (b2)", () => {
         assert.ok(!/option value="[A-Z]/.test(section),
             "#taskTypeFilter must contain no hardcoded taskType options (I1-1)");
     });
+    it("08: task20240 preserves every source reason, safe legacy values, and the shared renderer", async () => {
+        const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "resources", "discovery", "task-20240-by-source.json"), "utf8"));
+        assert.strictEqual(fixture.sourceSha256, "64f6bb57bd2046399416f29db8a07f6ea08687f5ebcf180f1bbf0c2c3fa42508");
+        assert.strictEqual(fixture.taskId, "20240");
+        const { sandbox } = createSandbox({ apiImpl: async () => null });
+        const live = { innerHTML: "" };
+        sandbox.renderBySourceTable(fixture.bySource, live);
+        const openAlex = fixture.bySource.OPENALEX;
+        for (const value of [openAlex.authorsExtracted, openAlex.emailsValid, openAlex.indexed, openAlex.promoted]) {
+            assert.ok(live.innerHTML.includes(`>${value}</td>`));
+        }
+        assert.ok(live.innerHTML.includes("<th>首选方式</th>"));
+        assert.ok(live.innerHTML.includes(">FULLTEXT_XML</td>"));
+        for (const [reason, count] of Object.entries(openAlex.filterReasons)) {
+            assert.ok(live.innerHTML.includes(`${reason}:${count}`));
+        }
+        for (const [reason, count] of Object.entries(openAlex.failureReasons)) {
+            assert.ok(live.innerHTML.includes(`${reason}:${count}`), `persisted failure missing: ${reason}`);
+        }
+        assert.ok(live.innerHTML.includes(`停止：${openAlex.stopReason}`));
+        assert.ok(live.innerHTML.includes('<div class="table-wrap"><table class="data-table">'));
+        assert.ok(!/style=|<script/i.test(live.innerHTML));
+
+        let historical = null;
+        const { sandbox: history } = createSandbox({
+            apiImpl: async () => ({ rawResultSummary: JSON.stringify({ stats: { bySource: fixture.bySource } }) })
+        });
+        await history.toggleTaskDetail({
+            dataset: { taskId: "20240", taskType: "EXPERT_DISCOVERY" },
+            nextElementSibling: null,
+            after: (row) => { historical = row; }
+        });
+        assert.ok(historical.innerHTML.includes(live.innerHTML), "historical view reuses live source table");
+
+        const legacy = { innerHTML: "" };
+        sandbox.renderBySourceTable({ OLD: { papersSearched: 0, authorsExtracted: -1, emailsValid: Infinity,
+            indexed: "42", promoted: NaN, filterReasons: null } }, legacy);
+        assert.ok(legacy.innerHTML.includes(">0</td>"));
+        assert.ok(legacy.innerHTML.includes("过滤：未记录"));
+        assert.ok(legacy.innerHTML.includes("失败：未记录"));
+        assert.ok(legacy.innerHTML.includes("停止：未记录"));
+        assert.ok(!legacy.innerHTML.includes("Infinity") && !legacy.innerHTML.includes("NaN"));
+        assert.ok(!legacy.innerHTML.includes(">42</td>"));
+
+        const hostile = { innerHTML: "" };
+        sandbox.renderBySourceTable({ "<script>alert(1)</script>": {
+            extractionMethod: '<img src=x onerror=alert(1)>',
+            papersSearched: 1, filterReasons: { '<script>alert(2)</script>': 2 },
+            failureReasons: { '<img src=x onerror=alert(3)>': 3 },
+            stopReason: '<svg onload=alert(4)>'
+        } }, hostile);
+        assert.ok(!/<script|<img|<svg/i.test(hostile.innerHTML));
+        for (const safe of ["&lt;script&gt;", "&lt;img", "&lt;svg"]) {
+            assert.ok(hostile.innerHTML.includes(safe));
+        }
+        assert.ok(!/style=/.test(hostile.innerHTML));
+
+        const enrichment = { innerHTML: "" };
+        sandbox.renderBySourceTable({ OPENALEX: { enqueued: 3, succeeded: 1, pending: 1, unmatched: 1, failed: 0 } }, enrichment);
+        assert.ok(enrichment.innerHTML.includes(">入队</th>") && !enrichment.innerHTML.includes(">论文</th>"));
+        const versionedAssets = [...html.matchAll(/(?:href|src)="([^"]+\?v=([^"]+))"/g)];
+        assert.strictEqual(versionedAssets.length, 11);
+        const assetKey = versionedAssets[0][2];
+        assert.ok(versionedAssets.every((asset) => asset[2] === assetKey));
+        for (const asset of ["styles.css", "trust-reply-workbench.js", "app.js"]) {
+            assert.ok(versionedAssets.some((match) => match[1] === `${asset}?v=${assetKey}`));
+        }
+
+        const acceptanceDir = path.join(__dirname, "..", "..", "..", "target", "discovery-plan-acceptance");
+        const boundaryReportPath = path.join(acceptanceDir, "04.json");
+        const boundaryCases = fs.existsSync(boundaryReportPath)
+            ? JSON.parse(fs.readFileSync(boundaryReportPath, "utf8")).boundaryCases : [];
+        const acceptanceHtml = `<!doctype html><html lang="zh"><head><meta charset="utf-8">`
+            + `<meta name="viewport" content="width=device-width,initial-scale=1">`
+            + `<link rel="stylesheet" href="../../src/main/resources/static/styles.css?v=${assetKey}">`
+            + `</head><body><main><h2>实时 · 任务 ${fixture.taskId}</h2>${live.innerHTML}`
+            + `<h2>历史 · 任务 ${fixture.taskId}</h2>${historical.innerHTML}`
+            + `<h2>旧记录 · 未记录</h2>${legacy.innerHTML}`
+            + `<h2>学术补全 · 独立列</h2>${enrichment.innerHTML}`
+            + `<h2>注入字符 · 仅文本</h2>${hostile.innerHTML}</main></body></html>`;
+        fs.mkdirSync(acceptanceDir, { recursive: true });
+        fs.writeFileSync(path.join(acceptanceDir, "08.html"), acceptanceHtml);
+        fs.writeFileSync(path.join(acceptanceDir, "08.json"), JSON.stringify({
+            task: fixture.taskId, source: fixture.source, sourceSha256: fixture.sourceSha256,
+            input: { OPENALEX: openAlex, sourceCount: Object.keys(fixture.bySource).length },
+            output: { preferredMethod: openAlex.extractionMethod, emails: openAlex.authorsExtracted,
+                valid: openAlex.emailsValid, indexed: openAlex.indexed, promoted: openAlex.promoted,
+                renderedFilterReasons: Object.keys(openAlex.filterReasons),
+                renderedFailureReasons: Object.keys(openAlex.failureReasons),
+                stopReason: openAlex.stopReason, liveHistoricalSameTable: historical.innerHTML.includes(live.innerHTML),
+                legacyMissing: "未记录", enrichmentColumns: "入队/成功/待补/未匹配/失败",
+                hostileStringsEscaped: !/<script|<img|<svg/i.test(hostile.innerHTML) },
+            boundaryCasesSource: fs.existsSync(boundaryReportPath) ? "target/discovery-plan-acceptance/04.json" : null,
+            boundaryCases
+        }, null, 2) + "\n");
+    });
 });

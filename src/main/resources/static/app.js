@@ -2687,39 +2687,33 @@ function renderBySourceTable(bySource, container) {
         renderEnrichmentSourceTable(bySource, container);
         return;
     }
-    const rows = Object.entries(bySource).map(([name, stats]) => {
-        const failures = stats.failureReasons ? Object.entries(stats.failureReasons)
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3)
-            .map(([reason, count]) => `${reason}:${count}`)
-            .join(", ") : "-";
+    const count = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0
+        ? escapeHtml(value) : "未记录";
+    const text = (value) => typeof value === "string" && value.length > 0
+        ? escapeHtml(value) : "未记录";
+    const reasons = (values) => values && typeof values === "object" && !Array.isArray(values)
+        ? Object.entries(values).map(([reason, value]) => `${escapeHtml(reason)}:${count(value)}`).join("、") || "未记录"
+        : "未记录";
+    const rows = Object.entries(bySource).map(([name, sourceStats]) => {
+        const stats = sourceStats && typeof sourceStats === "object" ? sourceStats : {};
         return `
             <tr>
-                <td style="padding:3px 8px;">${escapeHtml(name)}</td>
-                <td style="padding:3px 8px;">${escapeHtml(stats.extractionMethod || "-")}</td>
-                <td style="padding:3px 8px;">${stats.papersSearched || 0}</td>
-                <td style="padding:3px 8px;">${stats.authorsExtracted || 0}</td>
-                <td style="padding:3px 8px;">${stats.emailsValid || 0}</td>
-                <td style="padding:3px 8px;">${stats.indexed || 0}</td>
-                <td style="padding:3px 8px;">${stats.promoted || 0}</td>
-                <td style="padding:3px 8px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(failures)}</td>
+                <td>${escapeHtml(name)}</td>
+                <td>${text(stats.extractionMethod)}</td>
+                <td>${count(stats.papersSearched)}</td>
+                <td>${count(stats.authorsExtracted)}</td>
+                <td>${count(stats.emailsValid)}</td>
+                <td>${count(stats.indexed)}</td>
+                <td>${count(stats.promoted)}</td>
+                <td><details><summary>查看原因</summary><div>过滤：${reasons(stats.filterReasons)}</div><div>失败：${reasons(stats.failureReasons)}</div><div>停止：${text(stats.stopReason)}</div></details></td>
             </tr>
         `;
     }).join("");
     container.innerHTML = `
-        <table style="width:100%;border-collapse:collapse;font-size:11px;">
-            <thead><tr style="background:var(--panel-bg);border-bottom:1px solid var(--panel-border);">
-                <th style="padding:4px 8px;text-align:left;">平台</th>
-                <th style="padding:4px 8px;text-align:left;">方式</th>
-                <th style="padding:4px 8px;text-align:left;">论文</th>
-                <th style="padding:4px 8px;text-align:left;">邮箱</th>
-                <th style="padding:4px 8px;text-align:left;">有效</th>
-                <th style="padding:4px 8px;text-align:left;">收录</th>
-                <th style="padding:4px 8px;text-align:left;">晋升</th>
-                <th style="padding:4px 8px;text-align:left;">失败原因</th>
-            </tr></thead>
+        <div class="table-wrap"><table class="data-table">
+            <thead><tr><th>平台</th><th>首选方式</th><th>论文</th><th>邮箱</th><th>有效</th><th>收录</th><th>晋升</th><th>原因详情</th></tr></thead>
             <tbody>${rows}</tbody>
-        </table>
+        </table></div>
     `;
 }
 
