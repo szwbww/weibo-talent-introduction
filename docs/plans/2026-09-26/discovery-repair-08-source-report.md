@@ -61,7 +61,7 @@
 </div>
 ```
 
-- 禁止：inline style、未声明class、修改全局表格/其他data-table样式、额外tooltip/弹窗库。新DOM都映射到S-1。index.html只改现有3个资源URL缓存值，不新增DOM。
+- 禁止：inline style、未声明class、修改全局表格/其他data-table样式、额外tooltip/弹窗库。新DOM都映射到S-1。index.html现有11个带版本的资源URL缓存键须同时改为20260926-discovery-repair，不新增DOM或改变资源顺序；其余内容不改。
 
 ## 现状审计
 
@@ -77,11 +77,11 @@ src/test/resources/discovery/task-20240-by-source.json：从审计source-stop.js
 
 ### T-2：修共享表格（I-1/I-2/I-3/S-1，I-4）
 
-src/main/resources/static/app.js：移除slice(0,3)与截断cell，使用S-1既有class，末列改“原因详情”，details分块列出所有已存原因及stopReason；表头首选方式。src/main/resources/static/index.html：三引用缓存键同时改20260926-discovery-repair，不改资源加载顺序。
+src/main/resources/static/app.js：移除slice(0,3)与截断cell，使用S-1既有class，末列改“原因详情”，details分块列出所有已存原因及stopReason；表头首选方式。src/main/resources/static/index.html：现有11个带版本资源引用缓存键同时改20260926-discovery-repair，不改资源加载顺序或其他内容。
 
 ### T-3：修两处日志与回归（I-1/I-2/I-3/S-1，I-4）
 
-src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt：只改两处漏斗总结文案，输出既有filterReasons，不改counter；src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt捕获日志检查；src/test/js/taskRecordsSemantics.test.js回归历史无字段、补全分支、注入字符与三缓存键一致。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt：只改两处漏斗总结文案，输出既有filterReasons，不改counter；src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt捕获日志检查；src/test/js/taskRecordsSemantics.test.js回归历史无字段、补全分支、注入字符与11个缓存键一致。
 
 ### T-4：生成可核验的验收输出（I-1～I-4）
 
@@ -105,7 +105,7 @@ src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySe
 - I-1：真实task20240详情能看到IDENTITY_UNRESOLVED:629、SEARCH_FAILED与原HTTP_403:323；原635邮箱/6有效/4收录/4晋升不改变；四个以上失败键均能查看。
 - I-2：首选方式=FULLTEXT_XML；新日志含“过滤（含身份未确认）”，不再输出“资格淘汰629”；旧result_summary不重写。
 - I-3：补全仍显示入队/成功/待补而非论文；未知旧字段为未记录；恶意原因字符串被转义；实时与历史同事实同文本。
-- S-1：renderer生成DOM无style属性，无未声明class；CSS文件diff为0；缓存三引用一致；实际浏览器视觉检查滚动/展开/字体与样式契约。
+- S-1：renderer生成DOM无style属性，无未声明class；CSS文件diff为0；现有11个缓存键同值且无旧键残留；实际浏览器视觉检查滚动/展开/字体与样式契约。
 - I-4 / M1～M3：未知邮箱验证调用0/RAW写0；明确邮箱验证拒绝RAW=0；资格拒绝RAW=1候选=0；同邮箱重复新增0且原字段不变；同名不同邮箱各1条；一人两个明确邮箱各1条。暂停后新的消费写入0；源码diff不涉及发送配置、发送服务、迁移或线上数据脚本。
 - 交互覆盖：每条人工A项中标明X路径；真实案例必须完整原文/metadata，允许mock外部HTTP/验证/资格/ES，不允许mock身份解析。
 
