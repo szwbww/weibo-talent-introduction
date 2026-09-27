@@ -1359,7 +1359,7 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
-    fun `run pauses account and stops round on non-rate-limit TRANSIENT SMTP error`() {
+    fun `run records an explicit stop reason when the last account faults`() {
         val account = account("chen")
         val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
         Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
@@ -1383,10 +1383,19 @@ class ManualInitialOutreachServiceTest {
         )
         Mockito.`when`(batchSendSettingService.getConfig()).thenReturn(fastConfig(roundSize = 10, dailyCap = 100))
 
+        Mockito.doAnswer {
+            Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenReturn(emptyList())
+            null
+        }.`when`(mailSenderAccountService).pauseAutoSend(eqValue("chen"), Mockito.anyString())
+
         val result = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
 
         assertEquals(1, result.failed)
         assertEquals(0, result.sent)
+        assertEquals("NO_AVAILABLE_ACCOUNT", result.stopReason)
+        assertEquals("PAUSED", result.finalStatus)
+        assertEquals(0, result.remaining)
+        assertEquals(1, result.skippedNoAccount)
         Mockito.verify(mailSenderAccountService).pauseAutoSend(
             eqValue("chen"),
             eqValue("SMTP_TRANSIENT:450:450 mailbox busy")
@@ -1402,6 +1411,88 @@ class ManualInitialOutreachServiceTest {
             attemptId = Mockito.eq(77L),
             taskExecutionId = Mockito.eq(12345L)
         )
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["TRANSIENT", "INFRASTRUCTURE"])
+    fun `healthy selected account fills twenty successes after another account faults`(category: String) {
+        val failedAccount = account("chen")
+        val healthyAccount = account("backup")
+        val experts = (1..23).map { expert("fault-test-$it", "target$it@example.com") }
+        stubIntroSendPipeline(failedAccount, experts)
+        stubVerificationDecision()
+        var paused = false
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenAnswer {
+            if (paused) listOf(healthyAccount) else listOf(failedAccount, healthyAccount)
+        }
+        Mockito.doAnswer { paused = true; null }.`when`(mailSenderAccountService)
+            .pauseAutoSend(eqValue("chen"), Mockito.anyString())
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(),
+            anyValue(SenderBindingStock.EMPTY), eqValue(setOf("chen", "backup"))
+        )).thenAnswer { if (paused) healthyAccount else failedAccount }
+        Mockito.`when`(introductionMailComposer.compose(Mockito.anyString(), anyValue(expert("", "")), Mockito.isNull()))
+            .thenAnswer { invocation -> ComposedMail(invocation.getArgument<ExpertProfile>(1).email!!, "Subject", "Body") }
+        val submissions = mutableListOf<Pair<String, String>>()
+        Mockito.`when`(mailDeliveryService.send(anyValue(failedAccount), anyValue(ComposedMail("", "", ""))))
+            .thenAnswer { invocation ->
+                val account = invocation.getArgument<MailSenderAccount>(0)
+                val mail = invocation.getArgument<ComposedMail>(1)
+                submissions.add(account.accountCode to mail.to)
+                if (account.accountCode == "chen") {
+                    DeliveredMail(mail.messageId, "FAILED", SmtpErrorCategory.valueOf(category),
+                        errorDetail = "connection unavailable")
+                } else DeliveredMail(mail.messageId, "SENT")
+            }
+
+        val result = service.run(
+            introSnapshotWithVerification(roundSize = 20).copy(senderAccountCodes = listOf("chen", "backup")),
+            12345L, ExecutionMode.MANUAL, oneRoundOnly = false
+        )
+
+        assertEquals(20, result.sent)
+        assertEquals(1, result.failed)
+        assertEquals(2, result.remaining)
+        assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
+        assertEquals(21, submissions.size)
+        assertEquals(21, submissions.map { it.second }.distinct().size, "failed recipient must not be resubmitted")
+        assertEquals(1, submissions.count { it.first == "chen" })
+        assertEquals(20, submissions.count { it.first == "backup" })
+        Mockito.verify(txHelper, Mockito.times(20)).recordSuccess(
+            anyValue(ExpertContact(campaignId = 10L, orcidId = "", expertEmail = "", expertName = null, currentStatus = "NEW")),
+            Mockito.anyString(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
+            Mockito.anyLong(), Mockito.anyLong(), Mockito.isNull()
+        )
+    }
+
+    @Test
+    fun `unselected healthy account cannot keep a faulted batch running`() {
+        val selected = account("chen")
+        val unselected = account("outside")
+        stubIntroSendPipeline(selected, listOf(expert("0001", "a@b.com"), expert("0002", "b@b.com")))
+        var paused = false
+        Mockito.`when`(mailSenderAccountService.listSendableAccounts(anyBooleanValue())).thenAnswer {
+            if (paused) listOf(unselected) else listOf(selected, unselected)
+        }
+        Mockito.doAnswer { paused = true; null }.`when`(mailSenderAccountService)
+            .pauseAutoSend(eqValue("chen"), Mockito.anyString())
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(),
+            anyValue(SenderBindingStock.EMPTY), eqValue(setOf("chen"))
+        )).thenReturn(selected)
+        Mockito.`when`(mailDeliveryService.send(anyValue(selected), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg", "FAILED", SmtpErrorCategory.INFRASTRUCTURE))
+
+        val result = service.run(
+            introSnapshotWithVerification().copy(emailVerificationEnabled = false, senderAccountCodes = listOf("chen")),
+            12345L, ExecutionMode.MANUAL, oneRoundOnly = false
+        )
+        assertEquals("NO_AVAILABLE_ACCOUNT", result.stopReason)
+        assertEquals("PAUSED", result.finalStatus)
+        assertEquals(1, result.failed)
+        assertEquals(0, result.remaining)
+        assertEquals(1, result.skippedNoAccount)
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(selected), anyValue(ComposedMail("", "", "")))
     }
 
     @Test

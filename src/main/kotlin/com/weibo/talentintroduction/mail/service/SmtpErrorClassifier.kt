@@ -1,8 +1,11 @@
 package com.weibo.talentintroduction.mail.service
 
 import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
+import com.sun.mail.smtp.SMTPAddressFailedException
+import com.sun.mail.smtp.SMTPSendFailedException
 import org.springframework.mail.MailAuthenticationException
 import org.springframework.mail.MailException
+import org.springframework.mail.MailSendException
 import javax.mail.AuthenticationFailedException
 import javax.mail.MessagingException
 import javax.mail.SendFailedException
@@ -28,7 +31,7 @@ internal object SmtpErrorClassifier {
         )
 
     fun fromMessagingException(e: MessagingException, messageId: String?): DeliveredMail {
-        val code = extractSmtpCode(e.message)
+        val code = extractSmtpCode(e)
         return DeliveredMail(
             messageId = messageId,
             status = "FAILED",
@@ -48,7 +51,10 @@ internal object SmtpErrorClassifier {
             )
         }
 
-        val nestedMessagingException = generateSequence(e.cause) { it.cause }
+        // Spring stores per-message SMTP failures in failedMessages, often without
+        // a cause. Read the exception itself instead of parsing its rendered text.
+        val failure = if (e is MailSendException) e.failedMessages.values.firstOrNull() ?: e else e
+        val nestedMessagingException = generateSequence<Throwable>(failure) { it.cause }
             .filterIsInstance<MessagingException>()
             .firstOrNull()
         if (nestedMessagingException != null) {
@@ -70,11 +76,24 @@ internal object SmtpErrorClassifier {
     }
 
     fun extractSmtpCode(e: MessagingException): Int? {
-        return extractSmtpCode(e.message)
+        // Prefer protocol fields; nested exceptions may hold the actual reply.
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<Throwable, Boolean>())
+        var current: Throwable? = e
+        while (current != null && seen.add(current)) {
+            val code = when (current) {
+                is SMTPSendFailedException -> current.returnCode
+                is SMTPAddressFailedException -> current.returnCode
+                else -> extractSmtpCode(current.message)
+            }
+            if (code != null) return code
+            current = if (current is MessagingException) current.nextException ?: current.cause else current.cause
+        }
+        return null
     }
 
     private fun extractSmtpCode(message: String?): Int? {
-        val match = Regex("""(?:^|\s)(\d{3})\b""").find(message ?: "")
+        // Only a reply at the start of a line, never a port embedded in prose.
+        val match = Regex("""(?m)^[ \t]*([245]\d{2})(?:[ -]|$)""").find(message ?: "")
         return match?.groupValues?.get(1)?.toIntOrNull()
     }
 

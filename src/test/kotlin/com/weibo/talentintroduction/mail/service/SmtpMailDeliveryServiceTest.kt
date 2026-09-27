@@ -51,6 +51,45 @@ class SmtpMailDeliveryServiceTest {
     private val disabledTokenService = UnsubscribeTokenService(
         UnsubscribeProperties(baseUrl = "", secret = "")
     )
+
+    @Test
+    fun `connection ports and timeout values are not SMTP reply codes`() {
+        for (port in listOf(465, 587, 2525)) {
+            val delivered = SmtpErrorClassifier.fromMailException(
+                MailSendException("send failed", MessagingException(
+                    "Couldn't connect to host, port: smtp.gmail.com, $port; timeout 30000"
+                )), "msg-1"
+            )
+            assertNull(delivered.smtpResponseCode)
+            assertEquals(SmtpErrorCategory.TRANSIENT, delivered.errorCategory)
+        }
+    }
+
+    @Test
+    fun `typed nested SMTP reply takes its code from protocol fields`() {
+        val nested = com.sun.mail.smtp.SMTPAddressFailedException(
+            javax.mail.internet.InternetAddress("bad@example.com"), "RCPT TO", 550, "Recipient rejected"
+        )
+        val outer = MessagingException("SMTP send failed", nested)
+        assertEquals(550, SmtpErrorClassifier.fromMessagingException(outer, "msg-1").smtpResponseCode)
+        val dataFailure = com.sun.mail.smtp.SMTPSendFailedException(
+            "DATA", 452, "Insufficient storage", null, null, null, null
+        )
+        assertEquals(452, SmtpErrorClassifier.fromSendFailedException(dataFailure, "msg-2").smtpResponseCode)
+    }
+
+    @Test
+    fun `Spring per-message failure map preserves the SMTP reply without a cause`() {
+        val failure = com.sun.mail.smtp.SMTPSendFailedException(
+            "RCPT TO", 550, "Recipient rejected", null, null, null, null
+        )
+        val wrapped = MailSendException(mapOf(Any() to failure))
+        assertNull(wrapped.cause)
+        val delivered = SmtpErrorClassifier.fromMailException(wrapped, "msg-1")
+        assertEquals(550, delivered.smtpResponseCode)
+        assertEquals(SmtpErrorCategory.PERMANENT, delivered.errorCategory)
+    }
+
     @Test
     fun `SendFailedException with 550 returns PERMANENT`() {
         val delivered = SmtpErrorClassifier.fromSendFailedException(

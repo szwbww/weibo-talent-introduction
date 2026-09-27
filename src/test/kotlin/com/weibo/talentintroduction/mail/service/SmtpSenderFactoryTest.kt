@@ -3,10 +3,19 @@ package com.weibo.talentintroduction.mail.service
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertSame
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 class SmtpSenderFactoryTest {
     private val factory = SmtpSenderFactory()
+
+    @Test
+    fun `sender uses extended connect read and write timeouts`() {
+        val properties = factory.getSender(testAccount()).javaMailProperties
+        assertEquals("60000", properties.getProperty("mail.smtp.connectiontimeout"))
+        assertEquals("120000", properties.getProperty("mail.smtp.timeout"))
+        assertEquals("120000", properties.getProperty("mail.smtp.writetimeout"))
+    }
 
     @Test
     fun `getSender returns same instance for same account`() {

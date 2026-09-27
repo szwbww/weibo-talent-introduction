@@ -40,7 +40,7 @@ class SmtpSenderFactory {
         "${account.smtpHost}:${account.smtpPort}:${account.smtpUsername}:${account.smtpPassword}"
 
     private fun buildSender(account: MailSenderAccount): JavaMailSenderImpl =
-        JavaMailSenderImpl().apply {
+        SmtpConnectionRetrySender().apply {
             host = account.smtpHost
             port = account.smtpPort
             username = account.smtpUsername
@@ -52,9 +52,9 @@ class SmtpSenderFactory {
         Properties().apply {
             put("mail.smtp.auth", "true")
             put("mail.smtp.auth.mechanisms", "LOGIN")
-            put("mail.smtp.connectiontimeout", "30000")
-            put("mail.smtp.timeout", "60000")
-            put("mail.smtp.writetimeout", "60000")
+            put("mail.smtp.connectiontimeout", SMTP_CONNECT_TIMEOUT_MS.toString())
+            put("mail.smtp.timeout", SMTP_IO_TIMEOUT_MS.toString())
+            put("mail.smtp.writetimeout", SMTP_IO_TIMEOUT_MS.toString())
             if (port == 465) {
                 put("mail.smtp.ssl.enable", "true")
             } else {

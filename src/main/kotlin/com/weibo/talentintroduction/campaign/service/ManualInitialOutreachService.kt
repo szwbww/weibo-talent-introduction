@@ -832,6 +832,7 @@ class ManualInitialOutreachService(
                 val provider = providerResolver.resolve(expert.email)
                 // I-6：区分「SMTP 前失败（NOT_SENT）」与「SMTP 结果不明（保持 SENDING）」。
                 var smtpAttempted = false
+                var accountFaulted = false
 
                 try {
                     // 1. Create or reuse contact (occupy the slot) — I-7
@@ -1012,8 +1013,7 @@ class ManualInitialOutreachService(
                                     stat.failed++
                                     roundRejected++
                                     recordVerificationSend(verified, BatchEmailVerificationSendStatus.FAILED, BatchOutcomeReasonCodes.SEND_EXCEPTION)
-                                    midRoundStop = true
-                                    break
+                                    accountFaulted = true
                                 }
                             }
                             SmtpErrorCategory.INFRASTRUCTURE -> {
@@ -1031,8 +1031,7 @@ class ManualInitialOutreachService(
                                 stat.failed++
                                 roundRejected++
                                 recordVerificationSend(verified, BatchEmailVerificationSendStatus.FAILED, BatchOutcomeReasonCodes.SEND_EXCEPTION)
-                                midRoundStop = true
-                                break
+                                accountFaulted = true
                             }
                             else -> {
                                 txHelper.recordFailure(
@@ -1083,6 +1082,14 @@ class ManualInitialOutreachService(
                     "RUNNING", "正在发送：${expert.email}", errors, mode, roundNumber, config, runAccountStats,
                     roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
 
+                // A fault pauses only this account. Continue with subsequent targets;
+                // never resubmit the failed mail through another sender here.
+                if (accountFaulted && listSendableWithin(ignoreWarmup, allowedAccountCodes).isEmpty()) {
+                    stopReason = "NO_AVAILABLE_ACCOUNT"
+                    finalStatus = "PAUSED"
+                    midRoundStop = true
+                    break
+                }
                 // Throttle per mail (I-6 + dynamic rate limiter)
                 val intervalMs = accountRateLimiter.getIntervalMs(account.accountCode, provider, config.perMailIntervalMs)
                 if (intervalMs > 0 && roundPassed < roundQuota && targetIterator.hasNext()) {
