@@ -1,9 +1,11 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
+import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
 import com.weibo.talentintroduction.campaign.domain.toExecutionSnapshot
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
@@ -102,7 +104,8 @@ class BatchSendTaskConfigServiceTest {
         senderAccountCodes: List<String> = emptyList(),
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false,
-        emailVerificationEnabled: Boolean = false
+        emailVerificationEnabled: Boolean = false,
+        excludeVerifiedUnavailableEmails: Boolean = true
     ) = BatchSendTaskConfigCreateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -122,7 +125,8 @@ class BatchSendTaskConfigServiceTest {
         senderAccountCodes = senderAccountCodes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
-        emailVerificationEnabled = emailVerificationEnabled
+        emailVerificationEnabled = emailVerificationEnabled,
+        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails
     )
 
     private fun updateCmd(
@@ -144,7 +148,8 @@ class BatchSendTaskConfigServiceTest {
         senderAccountCodes: List<String> = emptyList(),
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false,
-        emailVerificationEnabled: Boolean? = null
+        emailVerificationEnabled: Boolean? = null,
+        excludeVerifiedUnavailableEmails: Boolean? = null
     ) = BatchSendTaskConfigUpdateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -164,7 +169,8 @@ class BatchSendTaskConfigServiceTest {
         senderAccountCodes = senderAccountCodes,
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
-        emailVerificationEnabled = emailVerificationEnabled
+        emailVerificationEnabled = emailVerificationEnabled,
+        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails
     )
 
     private fun row(
@@ -184,6 +190,7 @@ class BatchSendTaskConfigServiceTest {
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false,
         emailVerificationEnabled: Boolean = false,
+        excludeVerifiedUnavailableEmails: Boolean = false,
         deletedAt: LocalDateTime? = null,
         updatedAt: LocalDateTime = LocalDateTime.of(2026, 7, 14, 10, 0)
     ) = BatchSendTaskConfig(
@@ -207,6 +214,7 @@ class BatchSendTaskConfigServiceTest {
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         emailVerificationEnabled = emailVerificationEnabled,
+        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails,
         deletedAt = deletedAt,
         createdAt = updatedAt,
         updatedAt = updatedAt
@@ -1758,6 +1766,7 @@ class BatchSendTaskConfigServiceTest {
             expertTypesJson = """["PRODUCTION_RND"]""",
             senderAccountCodesJson = "[]",
             emailVerificationEnabled = true,
+            excludeVerifiedUnavailableEmails = true,
             discipline = null, templateId = null, legacyCode = "INTRODUCTION",
             createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
         )
@@ -1788,6 +1797,7 @@ class BatchSendTaskConfigServiceTest {
         verify(repository).save(captor.capture())
         // I-1: 旧 typed API 不传该字段 —— 漏写会把已开启的验证策略静默关掉。
         assertTrue(captor.value.emailVerificationEnabled)
+        assertTrue(captor.value.excludeVerifiedUnavailableEmails)
     }
 
     @Test
@@ -1828,10 +1838,116 @@ class BatchSendTaskConfigServiceTest {
     }
 
     @Test
+    fun `historical exclusion is allowed for material reminder independently of live verification`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("材料历史过滤")).thenReturn(null)
+        `when`(mailComposeTemplateService.getById(42L)).thenReturn(templateDetail(42L, "MATERIAL_REMINDER"))
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 94L)
+        }
+
+        val created = service().create(createCmd(
+            name = "材料历史过滤", templateId = 42L,
+            emailVerificationEnabled = false, excludeVerifiedUnavailableEmails = true,
+            expertTypes = emptyList()
+        ))
+
+        assertEquals("MATERIAL_REMINDER", created.mailType)
+        assertTrue(created.excludeVerifiedUnavailableEmails)
+        assertFalse(created.emailVerificationEnabled)
+    }
+
+    @Test
+    fun `historical unavailable exclusion defaults on for create and snapshots`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("历史过滤")).thenReturn(null)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 90L)
+        }
+        val created = service().create(createCmd(name = "历史过滤"))
+        val createdRow = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        verify(repository).save(createdRow.capture())
+
+        assertTrue(created.excludeVerifiedUnavailableEmails)
+        assertTrue(createdRow.value.excludeVerifiedUnavailableEmails)
+        val snapshot = createdRow.value.toExecutionSnapshot(objectMapper)
+        assertTrue(snapshot.excludeVerifiedUnavailableEmails)
+        assertTrue(com.weibo.talentintroduction.campaign.domain.RecipientScope.fromSnapshot(snapshot).excludeVerifiedUnavailableEmails)
+
+    }
+
+    @Test
+    fun `historical unavailable exclusion explicit false disables stored true`() {
+        val existing = row(id = 91L, name = "历史过滤", excludeVerifiedUnavailableEmails = true)
+        `when`(repository.findByIdAndDeletedAtIsNull(91L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("历史过滤")).thenReturn(existing)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 91L)
+        }
+
+        val updated = service().update(
+            91L,
+            updateCmd(name = "历史过滤", excludeVerifiedUnavailableEmails = false)
+        )
+
+        assertFalse(updated.excludeVerifiedUnavailableEmails)
+    }
+
+    @Test
+    fun `historical unavailable exclusion nullable update preserves enabled value`() {
+        val existing = row(id = 93L, excludeVerifiedUnavailableEmails = true)
+        `when`(repository.findByIdAndDeletedAtIsNull(93L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull(existing.configName)).thenReturn(existing)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 93L)
+        }
+
+        val updated = service().update(93L, updateCmd(excludeVerifiedUnavailableEmails = null))
+
+        assertTrue(updated.excludeVerifiedUnavailableEmails)
+    }
+
+    @Test
+    fun `legacy configuration update retains historical unavailable exclusion`() {
+        val existing = row(
+            id = 92L,
+            expertTypesJson = """["PRODUCTION_RND"]""",
+            excludeVerifiedUnavailableEmails = true
+        ).copy(legacyCode = "INTRODUCTION")
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(92L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull(existing.configName)).thenReturn(existing)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 92L)
+        }
+
+        service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = false, cron = "0 0 9 * * ?", dailyCap = 10,
+                roundSize = 10, perMailIntervalMs = 1, perRoundIntervalMs = 1,
+                selfCheckTtlMinutes = 1, emailDomain = "", discipline = "", templateId = null
+            )
+        )
+
+        val saved = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        verify(repository).save(saved.capture())
+        assertTrue(saved.value.excludeVerifiedUnavailableEmails)
+    }
+    @Test
+    fun `historical manual request defaults exclusion off and retains explicit override on roundtrip`() {
+        val mapper = ObjectMapper().registerKotlinModule()
+        val oldJson = """{"snapshot":{"mailType":"INTRODUCTION","roundSize":10,"perMailIntervalMs":0,"perRoundIntervalMs":0,"selfCheckTtlMinutes":30}}"""
+        val old = mapper.readValue(oldJson, ManualBatchExecutionRequest::class.java)
+        assertFalse(old.snapshot.excludeVerifiedUnavailableEmails)
+        val override = old.copy(snapshot = old.snapshot.copy(excludeVerifiedUnavailableEmails = true))
+        val restored = mapper.readValue(mapper.writeValueAsString(override), ManualBatchExecutionRequest::class.java)
+        assertTrue(restored.snapshot.excludeVerifiedUnavailableEmails)
+    }
+
+    @Test
     fun `legacy row without the column reads switch false in view and snapshot (I-1)`() {
         `when`(repository.findByIdAndDeletedAtIsNull(1L)).thenReturn(row(id = 1L))
 
-        assertFalse(service().get(1L).emailVerificationEnabled)
-        assertFalse(row(id = 1L).toExecutionSnapshot(objectMapper).emailVerificationEnabled)
+        assertFalse(service().get(1L).excludeVerifiedUnavailableEmails)
+        assertFalse(row(id = 1L).toExecutionSnapshot(objectMapper).excludeVerifiedUnavailableEmails)
     }
 }

@@ -39,7 +39,9 @@ data class BatchExecutionSnapshot(
      * 只有 INTRODUCTION 允许 true；MATERIAL_REMINDER + true 在任何业务写入前拒绝。
      * 关闭时不调用验证 HTTP / 验证明细仓储，也不要求密钥。
      */
-    val emailVerificationEnabled: Boolean = false
+    val emailVerificationEnabled: Boolean = false,
+    /** Historical verified-undeliverable filtering is independent of live verification. */
+    val excludeVerifiedUnavailableEmails: Boolean = false
 )
 
 data class ManualBatchExecutionRequest(
@@ -83,7 +85,8 @@ data class RecipientScope(
      * `ABSENT` 为其补集，`ANY` 不判定。与研发类型（`UNKNOWN`/`UNCLASSIFIED`）和模板门禁
      * 是彼此独立的 AND 维度（I-3）。
      */
-    val researchDirectionFilter: String = ResearchDirectionFilters.ANY
+    val researchDirectionFilter: String = ResearchDirectionFilters.ANY,
+    val excludeVerifiedUnavailableEmails: Boolean = false
 ) {
     fun matchesExpert(profile: com.weibo.talentintroduction.expert.domain.ExpertProfile): Boolean {
         // I3a-5：与 ES 的 operatorStatusesFilter 同口径 —— 多状态取 OR；
@@ -181,7 +184,8 @@ data class RecipientScope(
                 // I4-2：trim、丢空、去重保序；空集合在发信判定中 fail-closed（发给零个人）。
                 expertTypes = snapshot.expertTypes.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
                 // I-1/I-2：三态原样传递（空白/未传值归一为 ANY）；非法值已在校验层被拒。
-                researchDirectionFilter = ResearchDirectionFilters.normalize(snapshot.researchDirectionFilter)
+                researchDirectionFilter = ResearchDirectionFilters.normalize(snapshot.researchDirectionFilter),
+                excludeVerifiedUnavailableEmails = snapshot.excludeVerifiedUnavailableEmails
             )
         }
     }
@@ -370,7 +374,8 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         researchDirectionFilter = researchDirectionFilter,
         oneRoundOnly = oneRoundOnly,
         // I-1/I-4: 配置实体是快照的唯一来源；启动时逐字复制，运行中改配置/软删不改本次快照。
-        emailVerificationEnabled = emailVerificationEnabled
+        emailVerificationEnabled = emailVerificationEnabled,
+        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails
     )
 }
 

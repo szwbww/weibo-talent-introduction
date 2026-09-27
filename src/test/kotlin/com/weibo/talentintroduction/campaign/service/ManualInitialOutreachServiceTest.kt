@@ -234,6 +234,174 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, summary.retryable)
         assertEquals(1, summary.totalSendable)
     }
+    @Test
+    fun `historical exclusion removes retry target by its current profile email without live verification`() {
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        val contact = ExpertContact(
+            id = 4L, campaignId = 10L, orcidId = "R004", expertEmail = "old@example.com",
+            expertName = "Retry", currentStatus = "NEW"
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(contact))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(4L)).thenReturn(emptyList())
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("R004"), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(expert("R004", "Current@Example.com")))
+        Mockito.`when`(
+            batchEmailVerificationService.findKnownUndeliverableEmails(
+                anyValue(emptyList<String?>()),
+                anyValue(LocalDateTime.now())
+            )
+        ).thenReturn(setOf("current@example.com"))
+
+        val summary = service.countBySnapshot(
+            runScheduledSnapshot().copy(excludeVerifiedUnavailableEmails = true)
+        )
+
+        assertEquals(0, summary.retryable)
+        assertEquals(0, summary.totalSendable)
+        assertEquals(1, summary.excludedVerifiedUnavailable)
+        Mockito.verify(batchEmailVerificationService, Mockito.never()).requireConfiguredApiKey()
+        Mockito.verify(batchEmailVerificationService, Mockito.never()).verify(
+            anyValue(verificationContext),
+            anyValue(verificationTarget())
+        )
+    }
+
+    @Test
+    fun `preview counts filtered ES and retry targets and disabled filter uses count fast path`() {
+        val retry = listOf(
+            ExpertContact(id = 61L, campaignId = 10L, orcidId = "R061", expertEmail = "retry-good@example.com", expertName = null, currentStatus = "NEW"),
+            ExpertContact(id = 62L, campaignId = 10L, orcidId = "R062", expertEmail = "retry-bad@example.com", expertName = null, currentStatus = "NEW")
+        )
+        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(
+            Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
+        )
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(retry)
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("R061", "R062"), ExpertIndexLevel.CANDIDATE))
+            .thenReturn(listOf(expert("R061", "retry-good@example.com"), expert("R062", "retry-bad@example.com")))
+        val es = listOf(
+            expert("E061", "es-good-1@example.com"),
+            expert("E062", "ES-BAD@example.com"),
+            expert("E063", "es-good-2@example.com")
+        )
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())))
+            .thenReturn(3L)
+        Mockito.doAnswer { invocation ->
+            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
+            assertTrue(handler(es.take(2)))
+            assertTrue(handler(es.drop(2)))
+            null
+        }.`when`(expertSearchService).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(500),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+        Mockito.`when`(batchEmailVerificationService.findKnownUndeliverableEmails(
+            anyValue(emptyList<String?>()), anyValue(LocalDateTime.now())
+        )).thenReturn(setOf("retry-bad@example.com", "es-bad@example.com"))
+
+        val snapshot = runScheduledSnapshot().copy(excludeVerifiedUnavailableEmails = true)
+        val filtered = service.countBySnapshot(snapshot)
+        assertEquals(2, filtered.pending)
+        assertEquals(1, filtered.retryable)
+        assertEquals(3, filtered.totalSendable)
+        assertEquals(2, filtered.excludedVerifiedUnavailable)
+        Mockito.verify(expertSearchService).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(500),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+        Mockito.verify(expertSearchService, Mockito.never()).countExperts(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())
+        )
+
+        Mockito.clearInvocations(batchEmailVerificationService, expertSearchService)
+        val unfiltered = service.countBySnapshot(snapshot.copy(excludeVerifiedUnavailableEmails = false))
+        assertEquals(3, unfiltered.pending)
+        assertEquals(2, unfiltered.retryable)
+        assertEquals(5, unfiltered.totalSendable)
+        assertEquals(0, unfiltered.excludedVerifiedUnavailable)
+        Mockito.verifyNoInteractions(batchEmailVerificationService)
+        Mockito.verify(expertSearchService, Mockito.never()).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(500),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+    }
+
+    @Test
+    fun `material preview and execution exclude by contact recipient instead of ES profile address`() {
+        val contact = ExpertContact(
+            id = 64L, campaignId = 10L, orcidId = "M064", expertEmail = "recipient-bad@example.com",
+            expertName = "Material", currentStatus = "WAITING_REPLY"
+        )
+        Mockito.`when`(expertSearchService.countExperts(eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())))
+            .thenReturn(1L)
+        Mockito.`when`(expertSearchService.searchExpertsFiltered(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), eqValue(0), anyInt()
+        )).thenReturn(listOf(expert("M064", "profile-good@example.com")))
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(listOf("M064"))).thenReturn(listOf(contact))
+        Mockito.`when`(batchEmailVerificationService.findKnownUndeliverableEmails(
+            anyValue(emptyList<String?>()), anyValue(LocalDateTime.now())
+        )).thenAnswer { invocation ->
+            val emails = invocation.getArgument<Collection<String>>(0)
+            assertEquals(listOf("recipient-bad@example.com"), emails.toList())
+            setOf("recipient-bad@example.com")
+        }
+        val snapshot = BatchExecutionSnapshot(
+            mailType = "MATERIAL_REMINDER", roundSize = 10, roundsPerRun = 1,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            templateId = 42L, excludeVerifiedUnavailableEmails = true
+        )
+
+        val preview = service.countBySnapshot(snapshot)
+        val result = service.run(snapshot, 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+        assertEquals(0, preview.totalSendable)
+        assertEquals(1, preview.excludedVerifiedUnavailable)
+        assertEquals(0, result.sent)
+        Mockito.verifyNoInteractions(manualExpertMailService)
+        Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
+        Mockito.verify(batchEmailVerificationService, Mockito.never()).requireConfiguredApiKey()
+    }
+
+    @Test
+    fun `execution sends only retained candidates without recording skipped excluded address`() {
+        val account = account("chen")
+        val es = listOf(
+            expert("E071", "good-1@example.com"),
+            expert("E072", "bad@example.com"),
+            expert("E073", "good-2@example.com")
+        )
+        stubIntroSendPipeline(account, es)
+        Mockito.doAnswer { invocation ->
+            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
+            handler(es)
+            null
+        }.`when`(expertSearchService).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), eqValue(500),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+        Mockito.`when`(batchEmailVerificationService.findKnownUndeliverableEmails(
+            anyValue(emptyList<String?>()), anyValue(LocalDateTime.now())
+        )).thenReturn(setOf("bad@example.com"))
+
+        val result = service.run(
+            introSnapshot(roundSize = 10, roundsPerRun = 1).copy(excludeVerifiedUnavailableEmails = true),
+            12345L, ExecutionMode.MANUAL, oneRoundOnly = false
+        )
+
+        assertEquals(2, result.total)
+        assertEquals(2, result.sent)
+        assertEquals(0, result.skipped)
+        Mockito.verify(mailDeliveryService, Mockito.times(2))
+            .send(anyValue(account), anyValue(ComposedMail("", "", "")))
+        val saved = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository, Mockito.times(2)).save(saved.capture())
+        assertEquals(setOf("E071", "E073"), saved.allValues.map { it.orcidId }.toSet())
+        Mockito.verify(batchEmailVerificationService, Mockito.never()).verify(
+            anyValue(verificationContext), anyValue(verificationTarget())
+        )
+        Mockito.verifyNoInteractions(expertIndexWriterService)
+    }
 
     @Test
     fun `countPending skips contacts with SENT introduction`() {

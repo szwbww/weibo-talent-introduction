@@ -38,6 +38,8 @@ data class BatchSendTaskConfig(
      * 旧行/未传字段 = false；只有 INTRODUCTION 允许 true；启动时逐字固定进执行快照。
      */
     val emailVerificationEnabled: Boolean = false,
+    /** I-1: only excludes targets with a current verified-undeliverable history; default off for old rows. */
+    val excludeVerifiedUnavailableEmails: Boolean = false,
     val legacyCode: String? = null,
     val deletedAt: LocalDateTime? = null,
     val createdAt: LocalDateTime? = null,
@@ -72,6 +74,7 @@ data class BatchSendTaskConfigView(
      * I-1: 发送前邮箱验证开关回显（c3 列表 pill / 编辑回填的读取面）；旧任务恒 false。
      */
     val emailVerificationEnabled: Boolean = false,
+    val excludeVerifiedUnavailableEmails: Boolean = false,
     val createdAt: LocalDateTime?,
     val updatedAt: LocalDateTime?,
     /** Next planned trigger time; null when the cron is invalid (I-1/I-2/I-3). */
@@ -106,7 +109,9 @@ data class BatchSendTaskConfigCreateCommand(
      * I-1: 发送前邮箱验证开关；未传值 = false（默认关闭，旧客户端同义）。
      * 仅 INTRODUCTION 允许 true，配置服务在模板解析后拒绝 MATERIAL_REMINDER + true。
      */
-    val emailVerificationEnabled: Boolean = false
+    val emailVerificationEnabled: Boolean = false,
+    /** New task default enables historical exclusion; existing tasks remain false via the entity/migration. */
+    val excludeVerifiedUnavailableEmails: Boolean = true
 )
 
 data class BatchSendTaskConfigUpdateCommand(
@@ -135,7 +140,8 @@ data class BatchSendTaskConfigUpdateCommand(
      * I-1: 缺省或 null = 保留现值（旧客户端与旧 typed API 不清空开启状态）；显式 false = 关闭。
      * 合并由 `BatchSendTaskConfigService.update` 显式完成（`cmd.x ?: existing.x`），不走空值清空逻辑。
      */
-    val emailVerificationEnabled: Boolean? = null
+    val emailVerificationEnabled: Boolean? = null,
+    val excludeVerifiedUnavailableEmails: Boolean? = null
 )
 
 /**

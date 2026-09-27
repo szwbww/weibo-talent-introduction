@@ -158,6 +158,90 @@ class OutreachTargetIteratorTest {
 
         assertFalse(iterator.hasNext())
     }
+    @Test
+    fun `fully excluded raw page advances offset and preserves later sendable candidates`() {
+        val offsets = mutableListOf<Int>()
+        val iterator = OutreachTargetIterator(
+            retryableTargets = emptyList(),
+            pageSize = 2,
+            seenOrcids = mutableSetOf(),
+            fetchNextPage = { offset, _ ->
+                offsets += offset
+                when (offset) {
+                    0 -> listOf(expert("0001"), expert("0002"))
+                    2 -> listOf(expert("0003"))
+                    else -> emptyList()
+                }
+            },
+            filterPage = { page -> page.filter { it.orcidId == "0003" } }
+        )
+
+        assertTrue(iterator.hasNext())
+        assertEquals("0003", iterator.next().second.orcidId)
+        assertFalse(iterator.hasNext())
+        assertEquals(listOf(0, 2), offsets)
+    }
+
+    @Test
+    fun `cancellation callback prevents fetching another page`() {
+        var stopped = true
+        var fetchCount = 0
+        val iterator = OutreachTargetIterator(
+            retryableTargets = emptyList(),
+            pageSize = 2,
+            seenOrcids = mutableSetOf(),
+            fetchNextPage = { _, _ ->
+                fetchCount++
+                listOf(expert("0001"))
+            },
+            shouldStop = { stopped }
+        )
+
+        assertFalse(iterator.hasNext())
+        assertEquals(0, fetchCount)
+    }
+
+    @Test
+    fun `cancellation after excluded page prevents the next ES fetch`() {
+        var cancelled = false
+        val offsets = mutableListOf<Int>()
+        val iterator = OutreachTargetIterator(
+            retryableTargets = emptyList(),
+            pageSize = 2,
+            seenOrcids = mutableSetOf(),
+            fetchNextPage = { offset, _ ->
+                offsets += offset
+                listOf(expert("0001"), expert("0002"))
+            },
+            filterPage = {
+                cancelled = true
+                emptyList()
+            },
+            shouldStop = { cancelled }
+        )
+
+        assertFalse(iterator.hasNext())
+        assertEquals(listOf(0), offsets)
+    }
+
+    @Test
+    fun `filtered terminal page finishes without refetching it`() {
+        val offsets = mutableListOf<Int>()
+        val iterator = OutreachTargetIterator(
+            retryableTargets = emptyList(),
+            pageSize = 2,
+            seenOrcids = mutableSetOf(),
+            fetchNextPage = { offset, _ ->
+                offsets += offset
+                if (offset == 0) listOf(expert("0001")) else emptyList()
+            },
+            filterPage = { emptyList() }
+        )
+
+        assertFalse(iterator.hasNext())
+        assertEquals(listOf(0), offsets)
+    }
+
 
     private fun expert(orcidId: String): ExpertProfile =
         ExpertProfile(

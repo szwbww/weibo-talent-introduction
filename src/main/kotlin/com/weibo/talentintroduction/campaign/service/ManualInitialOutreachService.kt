@@ -54,6 +54,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.UUID
 import kotlin.math.ceil
 
@@ -200,7 +201,7 @@ class ManualInitialOutreachService(
         // I-1/I-2: 本次执行的唯一发件账号范围快照。
         val allowedAccountCodes = allowedAccountCodesOf(snapshot)
 
-        val materialSnapshot = buildMaterialReminderSnapshot(scope, config)
+        val materialSnapshot = buildMaterialReminderSnapshot(scope, verificationFilterNow())
         val targets = materialSnapshot.targets
         val totalEstimate = targets.size
         log.info("Material reminder snapshot: esHits={}, sendable={}, scope={}",
@@ -478,22 +479,35 @@ class ManualInitialOutreachService(
      */
     fun countBySnapshot(snapshot: BatchExecutionSnapshot): PendingOutreachSummary = when (snapshot.mailType) {
         BatchSendType.MATERIAL_REMINDER.name -> {
-            val config = snapshot.toBatchSendConfig(BatchSendType.MATERIAL_REMINDER)
             val scope = resolveScope(snapshot)
-            val materialSnapshot = buildMaterialReminderSnapshot(scope, config)
-            PendingOutreachSummary(pending = materialSnapshot.targets.size, retryable = 0, totalSendable = materialSnapshot.targets.size)
+            val materialSnapshot = buildMaterialReminderSnapshot(scope, verificationFilterNow())
+            PendingOutreachSummary(
+                pending = materialSnapshot.targets.size,
+                retryable = 0,
+                totalSendable = materialSnapshot.targets.size,
+                excludedVerifiedUnavailable = materialSnapshot.excludedVerifiedUnavailable
+            )
         }
         else -> {
             val scope = resolveScope(snapshot)
+            val now = verificationFilterNow()
             var retryable = 0
+            var excluded = 0
             val campaign = campaignRepository.findByCampaignCode("MANUAL_OUTREACH")
             if (campaign != null) {
                 val campaignId = campaign.id ?: error("Campaign ID is null")
-                val (retryableTargets, _) = buildRetryableTargets(campaignId, scope)
+                val (retryableTargets, _, retryableExcluded) = buildFilteredRetryableTargets(campaignId, scope, now)
                 retryable = retryableTargets.size
+                excluded += retryableExcluded
             }
-            val esEstimate = countEsTargets(scope)
-            PendingOutreachSummary(pending = esEstimate, retryable = retryable, totalSendable = esEstimate + retryable)
+            val (esEstimate, esExcluded) = countEsTargets(scope, now)
+            excluded += esExcluded
+            PendingOutreachSummary(
+                pending = esEstimate,
+                retryable = retryable,
+                totalSendable = esEstimate + retryable,
+                excludedVerifiedUnavailable = excluded
+            )
         }
     }
 
@@ -547,8 +561,9 @@ class ManualInitialOutreachService(
         } else {
             null
         }
-        val (retryableTargets, seenOrcids) = buildRetryableTargets(campaignId, scope)
-        val esEstimate = countEsTargets(scope)
+        val filterNow = verificationFilterNow()
+        val (retryableTargets, seenOrcids, _) = buildFilteredRetryableTargets(campaignId, scope, filterNow)
+        val (esEstimate, _) = countEsTargets(scope, filterNow)
         val totalEstimate = retryableTargets.size + esEstimate
         log.info("Outreach targets: {} retryable, {} ES estimate, {} total estimate; config: roundSize={}, perMailMs={}, perRoundMs={}",
             retryableTargets.size, esEstimate, totalEstimate,
@@ -568,9 +583,9 @@ class ManualInitialOutreachService(
             retryableTargets = retryableTargets,
             pageSize = config.roundSize * 2,
             seenOrcids = seenOrcids,
-            fetchNextPage = { offset, size ->
-                fetchEsPage(scope, offset, size)
-            }
+            fetchNextPage = { offset, size -> fetchEsPage(scope, offset, size) },
+            filterPage = { profiles -> filterKnownProfiles(profiles, scope.excludeVerifiedUnavailableEmails, filterNow) },
+            shouldStop = { progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId) }
         )
 
         val accumulator = OutcomeAccumulator(totalEstimate)
@@ -1062,7 +1077,10 @@ class ManualInitialOutreachService(
             }
         }
 
-        // Resolve final status
+        if (progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)) {
+            wasCancelled = true
+            stopReason = "CANCELLED"
+        }
         val resolvedFinalStatus = when {
             wasCancelled -> "CANCELLED"
             finalStatus != null -> finalStatus
@@ -1252,6 +1270,21 @@ class ManualInitialOutreachService(
     private fun hasBoundContact(normOrcid: String): Boolean =
         expertContactRepository.findByOrcidIdIn(listOf(normOrcid))
             .any { !it.boundSenderAccountCode.isNullOrBlank() }
+    private fun buildFilteredRetryableTargets(
+        campaignId: Long,
+        scope: RecipientScope,
+        now: LocalDateTime
+    ): Triple<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>, Int> {
+        val (targets, seen) = buildRetryableTargets(campaignId, scope)
+        val (filtered, excluded) = filterTargets(
+            targets,
+            enabled = scope.excludeVerifiedUnavailableEmails,
+            now = now,
+            email = { it.second.email }
+        )
+        return Triple(filtered, seen, excluded)
+    }
+
 
     /**
      * I-3/I-4: 批量判定一组 ORCID 是否已绑定（预估与目标构造共用，保证同源）。
@@ -1448,11 +1481,14 @@ class ManualInitialOutreachService(
      * Rejects outright if ES total exceeds 10000 (I-6 — no partial sends on oversized scope).
      * Paginates ES in 1000-item pages, then joins to MySQL contacts and applies exclusion rules.
      */
-    private fun buildMaterialReminderSnapshot(scope: RecipientScope, config: BatchSendConfig): MaterialReminderSnapshot {
+    private fun buildMaterialReminderSnapshot(
+        scope: RecipientScope,
+        now: LocalDateTime
+    ): MaterialReminderSnapshot {
         val scopeDescription = scope.funnelLevels.joinToString("+") + " + tags=${scope.tags}" +
             (scope.emailDomains.takeIf { it.isNotEmpty() }?.let { " + domains=" + it.joinToString(",") } ?: "") +
             (scope.discipline?.let { " + discipline=$it" } ?: "")
-        return buildMaterialReminderSnapshotFromScope(scope, scopeDescription)
+        return buildMaterialReminderSnapshotFromScope(scope, scopeDescription, now)
     }
 
     private fun buildMaterialReminderSnapshot(config: BatchSendConfig): MaterialReminderSnapshot {
@@ -1468,13 +1504,14 @@ class ManualInitialOutreachService(
         val scopeDescription = "APPLICATION + tag=承诺回复材料 + email" +
             (scope.emailDomains.takeIf { it.isNotEmpty() }?.let { " + domains=" + it.joinToString(",") } ?: "") +
             (if (config.discipline.isNotBlank()) " + discipline=${config.discipline}" else "")
-        return buildMaterialReminderSnapshotFromScope(scope, scopeDescription)
+        return buildMaterialReminderSnapshotFromScope(scope, scopeDescription, verificationFilterNow())
     }
 
     /** Material targets honor [RecipientScope.funnelLevels] (I-3), not a hard-coded APPLICATION-only search. */
     private fun buildMaterialReminderSnapshotFromScope(
         scope: RecipientScope,
-        scopeDescription: String
+        scopeDescription: String,
+        now: LocalDateTime
     ): MaterialReminderSnapshot {
         var totalHits = 0L
         val allExperts = mutableListOf<ExpertProfile>()
@@ -1534,7 +1571,18 @@ class ManualInitialOutreachService(
             sendableTargets.add(Pair(contact, expert))
         }
 
-        return MaterialReminderSnapshot(targets = sendableTargets, totalEsHits = totalHits, scopeDescription = scopeDescription)
+        val (filteredTargets, excluded) = filterTargets(
+            sendableTargets,
+            enabled = scope.excludeVerifiedUnavailableEmails,
+            now = now,
+            email = { it.first.expertEmail }
+        )
+        return MaterialReminderSnapshot(
+            targets = filteredTargets,
+            totalEsHits = totalHits,
+            scopeDescription = scopeDescription,
+            excludedVerifiedUnavailable = excluded
+        )
     }
 
     private fun countEsTargets(scope: RecipientScope): Int {
@@ -1544,6 +1592,61 @@ class ManualInitialOutreachService(
             total += expertSearchService.countExperts(ExpertIndexLevel.valueOf(level), filters).toInt()
         }
         return total
+    }
+
+    private fun verificationFilterNow(): LocalDateTime = LocalDateTime.now(ZoneId.of("Asia/Shanghai"))
+
+    private fun findKnownUndeliverable(emails: Collection<String?>, now: LocalDateTime): Set<String> {
+        val distinctEmails = emails.asSequence()
+            .map(::normalizeVerificationEmail)
+            .filter(String::isNotEmpty)
+            .distinct()
+            .toList()
+        if (distinctEmails.isEmpty()) return emptySet()
+        return distinctEmails.asSequence()
+            .chunked(500)
+            .flatMap { batchEmailVerificationService.findKnownUndeliverableEmails(it, now).asSequence() }
+            .toSet()
+    }
+
+    private fun filterKnownProfiles(
+        profiles: List<ExpertProfile>,
+        enabled: Boolean,
+        now: LocalDateTime
+    ): List<ExpertProfile> {
+        if (!enabled || profiles.isEmpty()) return profiles
+        val known = findKnownUndeliverable(profiles.map { it.email }, now)
+        return profiles.filter { normalizeVerificationEmail(it.email) !in known }
+    }
+    private fun <T> filterTargets(
+        targets: List<T>,
+        enabled: Boolean,
+        now: LocalDateTime,
+        email: (T) -> String?
+    ): Pair<List<T>, Int> {
+        if (!enabled || targets.isEmpty()) return targets to 0
+        val known = findKnownUndeliverable(targets.map(email), now)
+        val filtered = targets.filter { normalizeVerificationEmail(email(it)) !in known }
+        return filtered to (targets.size - filtered.size)
+    }
+
+    private fun countEsTargets(scope: RecipientScope, now: LocalDateTime): Pair<Int, Int> {
+        if (!scope.excludeVerifiedUnavailableEmails) return countEsTargets(scope) to 0
+        var sendable = 0
+        var excluded = 0
+        for (level in scope.funnelLevels) {
+            expertSearchService.scrollExpertsFiltered(
+                level = ExpertIndexLevel.valueOf(level),
+                filters = buildEsFiltersForLevel(scope, level),
+                batchSize = 500
+            ) { batch ->
+                val filtered = filterKnownProfiles(batch, true, now)
+                sendable += filtered.size
+                excluded += batch.size - filtered.size
+                true
+            }
+        }
+        return sendable to excluded
     }
 
     private fun fetchEsPage(scope: RecipientScope, offset: Int, size: Int): List<ExpertProfile> {
@@ -1564,8 +1667,6 @@ class ManualInitialOutreachService(
                 from = pageOffset,
                 size = remaining
             )
-            // 必须返回原始页：迭代器按原始长度判断末页，并统一处理 seenOrcids 去重。
-            // 先去重会把仍含后续候选的完整页误判成末页，导致未补足轮次额度就停止。
             results.addAll(page)
             remaining -= page.size
             pageOffset = 0
@@ -1744,14 +1845,16 @@ class ManualInitialOutreachService(
     private data class MaterialReminderSnapshot(
         val targets: List<Pair<ExpertContact, ExpertProfile>>,
         val totalEsHits: Long,
-        val scopeDescription: String
+        val scopeDescription: String,
+        val excludedVerifiedUnavailable: Int = 0
     )
 }
 
 data class PendingOutreachSummary(
     val pending: Int,
     val retryable: Int,
-    val totalSendable: Int
+    val totalSendable: Int,
+    val excludedVerifiedUnavailable: Int = 0
 )
 
 data class ManualOutreachResult(

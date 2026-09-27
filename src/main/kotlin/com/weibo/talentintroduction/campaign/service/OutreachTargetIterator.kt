@@ -12,7 +12,9 @@ class OutreachTargetIterator(
     retryableTargets: List<Pair<ExpertContact?, ExpertProfile>>,
     private val pageSize: Int,
     private val seenOrcids: MutableSet<String>,
-    private val fetchNextPage: (offset: Int, size: Int) -> List<ExpertProfile>
+    private val fetchNextPage: (offset: Int, size: Int) -> List<ExpertProfile>,
+    private val filterPage: (List<ExpertProfile>) -> List<ExpertProfile> = { it },
+    private val shouldStop: () -> Boolean = { false }
 ) : Iterator<Pair<ExpertContact?, ExpertProfile>> {
 
     private val retryableIterator = retryableTargets.iterator()
@@ -22,6 +24,7 @@ class OutreachTargetIterator(
     private var esExhausted = false
 
     override fun hasNext(): Boolean {
+        if (shouldStop()) return false
         if (retryableIterator.hasNext()) return true
         if (esBufferIndex < esBuffer.size) return true
         if (esExhausted) return false
@@ -37,25 +40,23 @@ class OutreachTargetIterator(
     }
 
     private fun loadNextEsPage() {
-        while (!esExhausted) {
+        while (!esExhausted && !shouldStop()) {
             val page = fetchNextPage(esOffset, pageSize)
             if (page.size < pageSize) esExhausted = true
             if (page.isEmpty()) return
 
-            esBuffer = mutableListOf()
-            esBufferIndex = 0
+            val unseen = mutableListOf<ExpertProfile>()
             for (expert in page) {
                 val normOrcid = ExpertIdNormalizer.normalize(expert.orcidId)
-                if (seenOrcids.add(normOrcid)) {
-                    esBuffer.add(Pair(null, expert))
-                }
+                if (seenOrcids.add(normOrcid)) unseen.add(expert)
             }
-
+            val filtered = if (unseen.isEmpty()) emptyList() else filterPage(unseen)
+            esBuffer = filtered.mapTo(mutableListOf()) { Pair(null, it) }
+            esBufferIndex = 0
             if (esBuffer.isNotEmpty()) {
                 esOffset = 0
                 return
             }
-
             esOffset += page.size
         }
     }

@@ -89,6 +89,7 @@ class BatchSendTaskConfigService(
                 gateFilterEnabled = normalized.gateFilterEnabled,
                 researchDirectionFilter = normalized.researchDirectionFilter,
                 emailVerificationEnabled = normalized.emailVerificationEnabled,
+                excludeVerifiedUnavailableEmails = normalized.excludeVerifiedUnavailableEmails,
                 createdAt = now,
                 updatedAt = now
             ),
@@ -106,7 +107,8 @@ class BatchSendTaskConfigService(
         // 绝不走「空值即清空」逻辑（旧客户端不传该字段时必须保住开启状态）。
         val normalized = normalizeAndValidate(
             cmd.toFields(
-                mergedEmailVerificationEnabled = cmd.emailVerificationEnabled ?: existing.emailVerificationEnabled
+                mergedEmailVerificationEnabled = cmd.emailVerificationEnabled ?: existing.emailVerificationEnabled,
+                mergedExcludeVerifiedUnavailableEmails = cmd.excludeVerifiedUnavailableEmails ?: existing.excludeVerifiedUnavailableEmails
             ),
             excludeId = id
         )
@@ -134,6 +136,7 @@ class BatchSendTaskConfigService(
                 gateFilterEnabled = normalized.gateFilterEnabled,
                 researchDirectionFilter = normalized.researchDirectionFilter,
                 emailVerificationEnabled = normalized.emailVerificationEnabled,
+                excludeVerifiedUnavailableEmails = normalized.excludeVerifiedUnavailableEmails,
                 updatedAt = now
             ),
             configName = normalized.configName
@@ -226,6 +229,7 @@ class BatchSendTaskConfigService(
                 // I-1: 旧 typed API 不传邮箱验证开关，必须显式保留存量值（漏写会命中 null→现值合并之外
                 // 的默认值，把已开启的验证策略静默关掉）。
                 emailVerificationEnabled = existing.emailVerificationEnabled,
+                excludeVerifiedUnavailableEmails = existing.excludeVerifiedUnavailableEmails,
             )
         )
         return BatchSendConfig(
@@ -399,7 +403,8 @@ class BatchSendTaskConfigService(
             templateId = fields.templateId,
             gateFilterEnabled = fields.gateFilterEnabled,
             researchDirectionFilter = researchDirectionFilter,
-            emailVerificationEnabled = fields.emailVerificationEnabled
+            emailVerificationEnabled = fields.emailVerificationEnabled,
+            excludeVerifiedUnavailableEmails = fields.excludeVerifiedUnavailableEmails
         )
     }
 
@@ -549,6 +554,7 @@ class BatchSendTaskConfigService(
             gateFilterEnabled = row.gateFilterEnabled,
             researchDirectionFilter = row.researchDirectionFilter,
             emailVerificationEnabled = row.emailVerificationEnabled,
+            excludeVerifiedUnavailableEmails = row.excludeVerifiedUnavailableEmails,
             createdAt = row.createdAt,
             updatedAt = row.updatedAt,
             nextFireTime = computeNextFireTime(row.cron),
@@ -645,7 +651,8 @@ class BatchSendTaskConfigService(
         val gateFilterEnabled: Boolean = false,
         val researchDirectionFilter: String = ResearchDirectionFilters.ANY,
         /** I-1: 合并后的权威开关值（update 路径先与实体现值合并再进入 ConfigFields）。 */
-        val emailVerificationEnabled: Boolean = false
+        val emailVerificationEnabled: Boolean = false,
+        val excludeVerifiedUnavailableEmails: Boolean = false
     )
 
     private data class NormalizedConfig(
@@ -670,7 +677,8 @@ class BatchSendTaskConfigService(
         val gateFilterEnabled: Boolean = false,
         val researchDirectionFilter: String = ResearchDirectionFilters.ANY,
         /** I-1: 校验通过后的权威开关值，原样落到实体列。 */
-        val emailVerificationEnabled: Boolean = false
+        val emailVerificationEnabled: Boolean = false,
+        val excludeVerifiedUnavailableEmails: Boolean = false
     )
 
     private fun BatchSendTaskConfigCreateCommand.toFields() = ConfigFields(
@@ -693,7 +701,8 @@ class BatchSendTaskConfigService(
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter,
-        emailVerificationEnabled = emailVerificationEnabled
+        emailVerificationEnabled = emailVerificationEnabled,
+        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails
     )
 
     /**
@@ -701,7 +710,8 @@ class BatchSendTaskConfigService(
      * 命令上的 nullable 字段不在这里做「空值即清空」推断。
      */
     private fun BatchSendTaskConfigUpdateCommand.toFields(
-        mergedEmailVerificationEnabled: Boolean
+        mergedEmailVerificationEnabled: Boolean,
+        mergedExcludeVerifiedUnavailableEmails: Boolean
     ) = ConfigFields(
         configName = configName,
         autoEnabled = autoEnabled,
@@ -722,7 +732,8 @@ class BatchSendTaskConfigService(
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter,
-        emailVerificationEnabled = mergedEmailVerificationEnabled
+        emailVerificationEnabled = mergedEmailVerificationEnabled,
+        excludeVerifiedUnavailableEmails = mergedExcludeVerifiedUnavailableEmails
     )
 
     private fun BatchSendTaskConfig.toFields() = ConfigFields(
@@ -745,7 +756,8 @@ class BatchSendTaskConfigService(
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter,
-        emailVerificationEnabled = emailVerificationEnabled
+        emailVerificationEnabled = emailVerificationEnabled,
+        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails
     )
 
     private companion object {
