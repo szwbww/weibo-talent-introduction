@@ -9,8 +9,8 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-09-26
-- Current child: 07
-- Waiting role: N/A
+- Current child: 08
+- Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
 - Pause reason: N/A
@@ -25,8 +25,8 @@
 | 04 | docs/plans/2026-09-26/discovery-repair-04-xml-route.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 03 | 2 | LIGHT_PASS | 3fc33d82463cb63602ff41e8a633ef1cd57b4d8e | 5f3599b519952e036a48a05d0398ed7ca141c060 | 1 | 6e2244be0f20d7af0ee710a734f7d252d7160f36 | 6e2244be0f20d7af0ee710a734f7d252d7160f36 | 55e4e13068eb936fe7021e4cda842e94dcfae67b | F-01–F-03 closed by XmlRouteReVerifierRound1; epoch 1 pause evidence 53e359ba60f74dc7c60547dbd2fbcae0a3ff302f. |
 | 05 | docs/plans/2026-09-26/discovery-source-contact-recall.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 04 | 1 | LIGHT_PASS | 6e2244be0f20d7af0ee710a734f7d252d7160f36 | 0c1489dd3734965918ef0271754480967391b38f | 0 | — | 0c1489dd3734965918ef0271754480967391b38f | 234e6256e3014ea6a6365d01fa31f232c78f2a51 | PdfContactVerifier LIGHT_PASS; original source PDFs byte-compared with audit bundle. |
 | 06 | docs/plans/2026-09-26/discovery-repair-06-pdf-coverage.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 05 | 1 | LIGHT_PASS | 0c1489dd3734965918ef0271754480967391b38f | d5a98877b18e321c61b2dd3295521d049af360f2 | 0 | — | d5a98877b18e321c61b2dd3295521d049af360f2 | 69d32cf0c7fd342d106de9e232a3597013d5b6b5 | PdfCoverageVerifier LIGHT_PASS; baseline 332 and fresh 336 backend tests; Node 1193 passed. |
-| 07 | docs/plans/2026-09-26/discovery-repair-07-html-contact.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 06 | 1 | LIGHT_PASS | d5a98877b18e321c61b2dd3295521d049af360f2 | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | 0 | — | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | — | HtmlContactVerifier LIGHT_PASS; baseline 336 and fresh 341 backend tests; Node 1193 passed. |
-| 08 | docs/plans/2026-09-26/discovery-repair-08-source-report.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 07 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
+| 07 | docs/plans/2026-09-26/discovery-repair-07-html-contact.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 06 | 1 | LIGHT_PASS | d5a98877b18e321c61b2dd3295521d049af360f2 | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | 0 | — | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | 472ab2d4a0828896dab01c0e90e9468b25a47230 | HtmlContactVerifier LIGHT_PASS; baseline 336 and fresh 341 backend tests; Node 1193 passed. |
+| 08 | docs/plans/2026-09-26/discovery-repair-08-source-report.md | commit:b8789cb6062d9110218c08ce8099dba8dddd73e4 | 07 | 1 | WAITING_FOR_AGENT | a5cf6fcbc2af3567c0b39203be6452b8921a4bee | — | 0 | — | — | — | N/A |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
