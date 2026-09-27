@@ -1495,7 +1495,7 @@ class ExpertDiscoveryService(
      */
     fun queueQueryHash(sourceName: String, criteria: PaperSearchCriteria): String {
         require(sourceName.isNotBlank()) { "队列来源名不得为空" }
-        val canonical = DiscoveryCheckpointCodec.canonicalCriteria(
+        val canonical = DiscoveryCheckpointCodec.sourceCanonicalCriteria(sourceName,
             queueCriteria(criteria).copy(sources = listOf(sourceName))
         )
         return sha256Hex(canonical)

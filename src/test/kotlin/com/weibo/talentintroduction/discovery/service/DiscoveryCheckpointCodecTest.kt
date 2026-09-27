@@ -72,6 +72,23 @@ class DiscoveryCheckpointCodecTest {
     }
 
     @Test
+    fun `only ORCID canonical criteria changes and its old checkpoint stays addressable`() {
+        val canonical = DiscoveryCheckpointCodec.canonicalCriteria(criteria)
+        assertEquals(canonical + ";orcidQueryEncoding=uri-v1",
+            DiscoveryCheckpointCodec.sourceCanonicalCriteria("ORCID", criteria))
+        val newKey = DiscoveryCheckpointCodec.sourceKey("ORCID", criteria)
+        assertNotEquals("ORCID:v2:8211c89415df49eb8fe489d5", newKey)
+        assertEquals(newKey, DiscoveryCheckpointCodec.sourceKey("ORCID", criteria.copy(cursor = "5|9000")))
+        assertTrue(newKey.length <= DiscoveryCheckpointCodec.MAX_SOURCE_NAME_LENGTH)
+        for (source in listOf("EUROPE_PMC", "PMC_OA", "OPENALEX", "CROSSREF", "CORE", "ARXIV")) {
+            assertEquals(canonical, DiscoveryCheckpointCodec.sourceCanonicalCriteria(source, criteria))
+            assertEquals("$source:v2:8211c89415df49eb8fe489d5",
+                DiscoveryCheckpointCodec.sourceKey(source, criteria))
+        }
+        assertEquals(canonical, DiscoveryCheckpointCodec.canonicalCriteria(criteria))
+    }
+
+    @Test
     fun `envelope round trips ACTIVE with a resume cursor`() {
         val decoded = DiscoveryCheckpointCodec.decode(DiscoveryCheckpointCodec.encode("C7", exhausted = false))
 

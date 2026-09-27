@@ -79,6 +79,12 @@ import javax.net.ssl.SSLHandshakeException
 import java.security.cert.CertificateException
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicReference
+import java.net.URI
+import java.net.URLDecoder
+import java.security.MessageDigest
+import org.springframework.http.MediaType
+import org.springframework.test.web.client.MockRestServiceServer
+import org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess
 
 class ExpertDiscoveryServiceTest {
 
@@ -1961,10 +1967,10 @@ class ExpertDiscoveryServiceTest {
         stubStoredCheckpoint("ORCID", "100", criteria)
         val template = Mockito.mock(RestTemplate::class.java)
         Mockito.doAnswer { invocation ->
-            val url = invocation.getArgument<String>(0)
-            objectMapper.readTree(if (url.contains("start=100")) orcidPageBody(1, "found@ox.ac.uk") else """{"expanded-result": []}""")
+            val uri = invocation.getArgument<URI>(0)
+            objectMapper.readTree(if (uri.rawQuery.contains("start=100")) orcidPageBody(1, "found@ox.ac.uk") else """{"expanded-result": []}""")
         }.`when`(template).getForObject(
-            Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            Mockito.any(URI::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
         )
         Mockito.doReturn(OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0)))
             .`when`(orcidProvider).getIfAvailable()
@@ -1983,6 +1989,97 @@ class ExpertDiscoveryServiceTest {
         assertEquals(CheckpointState.ACTIVE, checkpoint.state)
         assertEquals("100", checkpoint.cursor)
         assertTrue(source.pendingWork)
+    }
+
+    @Test
+    fun `ORCID new key replays from first page then resumes itself without deleting old rows`() {
+        val criteria = PaperSearchCriteria(
+            pageSize = 1, subjectScope = SubjectScopeCatalog.RND_TARGET, sources = listOf("ORCID"))
+        installInMemoryCursorStore()
+        fun oldKey(source: String, form: PaperSearchCriteria): String {
+            val digest = MessageDigest.getInstance("SHA-256")
+                .digest(DiscoveryCheckpointCodec.canonicalCriteria(form).toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }.take(DiscoveryCheckpointCodec.HASH_LENGTH)
+            return "$source:v2:$digest"
+        }
+        val oldOrcidKey = oldKey("ORCID", criteria)
+        val oldAllKey = oldKey("ORCID", criteria.copy(sources = emptyList()))
+        val oldRows = listOf(oldOrcidKey, oldAllKey).map { key ->
+            DiscoverySourceCursor(sourceName = key, cursorValue = DiscoveryCheckpointCodec.encode("3|9000", false))
+        }
+        oldRows.forEach { storedCheckpoints[it.sourceName] = it }
+        val oldKeys = storedCheckpoints.keys.toSet()
+        val newKey = DiscoveryCheckpointCodec.sourceKey("ORCID", criteria)
+        assertNotEquals(oldOrcidKey, newKey)
+        val service = createService()
+        val oldQueueHash = MessageDigest.getInstance("SHA-256").digest(
+            DiscoveryCheckpointCodec.canonicalCriteria(criteria).toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        val newQueueHash = service.queueQueryHash("ORCID", criteria)
+        assertNotEquals(oldQueueHash, newQueueHash)
+        assertNull(service.queueLegacySeedCursor("ORCID", criteria))
+
+        val template = RestTemplate()
+        val server = MockRestServiceServer.createServer(template)
+        val actualUris = mutableListOf<URI>()
+        val oneRecord = orcidPageBody(1, "found@ox.ac.uk")
+        repeat(2) {
+            server.expect { request -> actualUris.add(request.uri) }
+                .andRespond(withSuccess(oneRecord, MediaType.APPLICATION_JSON))
+        }
+        server.expect { request -> actualUris.add(request.uri) }
+            .andRespond(withSuccess("""{"expanded-result":[]}""", MediaType.APPLICATION_JSON))
+        val source = OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0, maxRecordsPerRun = 1))
+        Mockito.doReturn(source).`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "found@ox.ac.uk", EmailValidationResult(0, false))
+        val first = service.discover(criteria, "TEST")
+        val firstCursor = storedCheckpoint(newKey)
+        assertEquals("0|1", firstCursor.cursor)
+        assertEquals(CheckpointState.ACTIVE, firstCursor.state)
+        val firstQueueSeed = service.queueLegacySeedCursor("ORCID", criteria)
+        assertEquals("0|1", firstQueueSeed)
+        val second = service.discover(criteria, "TEST")
+        val secondCursor = storedCheckpoint(newKey)
+        assertEquals("0|2", secondCursor.cursor)
+        assertEquals("0|2", service.queueLegacySeedCursor("ORCID", criteria))
+        source.searchOrcidPage(criteria.copy(cursor = "2|0"))
+        server.verify()
+        val decodedQueries = actualUris.map {
+            URLDecoder.decode(it.rawQuery.substringAfter("q=").substringBefore("&"), "UTF-8")
+        }
+        assertEquals(listOf("keyword:\"engineering\"", "keyword:\"engineering\"",
+            "keyword:\"computer science\""), decodedQueries)
+        assertEquals(listOf("0", "1", "0"), actualUris.map {
+            it.rawQuery.substringAfter("&start=").substringBefore("&")
+        })
+        assertEquals(oldKeys, oldKeys.intersect(storedCheckpoints.keys))
+        assertEquals(oldRows, oldRows.map { storedCheckpoints.getValue(it.sourceName) })
+        val openAlexCriteria = criteria.copy(sources = listOf("OPENALEX"))
+        val oldOpenAlexKey = oldKey("OPENALEX", openAlexCriteria)
+        val newOpenAlexKey = DiscoveryCheckpointCodec.sourceKey("OPENALEX", openAlexCriteria)
+        assertEquals(oldOpenAlexKey, newOpenAlexKey)
+        val oldOpenAlexQueueHash = MessageDigest.getInstance("SHA-256").digest(
+            DiscoveryCheckpointCodec.canonicalCriteria(openAlexCriteria).toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        assertEquals(oldOpenAlexQueueHash, service.queueQueryHash("OPENALEX", openAlexCriteria))
+
+        val report = mapOf(
+            "actualRequests" to actualUris.mapIndexed { index, uri ->
+                mapOf("actualUri" to uri.toASCIIString(), "decodedQuery" to decodedQueries[index],
+                    "start" to uri.rawQuery.substringAfter("&start=").substringBefore("&"),
+                    "rows" to uri.rawQuery.substringAfter("&rows=").substringBefore("&")) },
+            "oldOrcidKey" to oldOrcidKey, "newOrcidKey" to newKey,
+            "oldOrcidQueueHash" to oldQueueHash, "newOrcidQueueHash" to newQueueHash,
+            "oldOpenAlexKey" to oldOpenAlexKey, "newOpenAlexKey" to newOpenAlexKey,
+            "firstCursor" to firstCursor.cursor, "secondCursor" to secondCursor.cursor,
+            "firstQueueSeed" to firstQueueSeed, "oldRowsRemaining" to oldKeys.count { it in storedCheckpoints },
+            "oldRowsDeleted" to oldKeys.count { it !in storedCheckpoints },
+            "firstRunRequests" to first.stats.bySource["ORCID"]?.apiRequests,
+            "secondRunRequests" to second.stats.bySource["ORCID"]?.apiRequests
+        )
+        val path = Paths.get("target/discovery-plan-acceptance/09a.json")
+        Files.createDirectories(path.parent)
+        Files.write(path, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
     }
 
     @Test
@@ -4523,7 +4620,7 @@ class ExpertDiscoveryServiceTest {
         val template = Mockito.mock(RestTemplate::class.java)
         val urls = mutableListOf<String>()
         Mockito.doAnswer { invocation ->
-            val url = invocation.getArgument<String>(0)
+            val url = invocation.getArgument<URI>(0).toASCIIString()
             urls.add(url)
             objectMapper.readTree(
                 when {
@@ -4533,7 +4630,7 @@ class ExpertDiscoveryServiceTest {
                 }
             )
         }.`when`(template).getForObject(
-            Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            Mockito.any(URI::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
         )
         Mockito.doReturn(OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0)))
             .`when`(orcidProvider).getIfAvailable()
