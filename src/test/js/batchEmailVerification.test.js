@@ -287,7 +287,7 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
         assert.strictEqual(checkbox.checked, false, "re-enabling must never silently turn verification on");
         assert.strictEqual(elements.get("editorFieldEmailVerification").classList.contains("is-disabled"), false);
         assert.strictEqual(elements.get("batchConfigEditorEmailVerificationHint").textContent,
-            "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。服务异常停止本次执行。会消耗 Emailable 额度。");
+            "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。");
     });
 
     it("V4: the manual draft keeps the switch and reports it as a diff against the source", () => {
@@ -467,12 +467,14 @@ describe("batch email verification detail area (I-2 / I-3 / I-4 / S-2)", () => {
         assert.ok(metrics.includes('<div class="batch-log-metric is-success">'), "passed keeps is-success");
         assert.ok(metrics.includes('<div class="batch-log-metric is-skipped">'), "rejected keeps is-skipped");
         assert.ok(metrics.includes('<div class="batch-log-metric is-failure">'), "service errors keep is-failure");
-        assert.ok(metrics.includes("策略放行") && metrics.includes("未通过") && metrics.includes("服务异常"));
+        assert.ok(metrics.includes("策略放行") && metrics.includes("未通过") && metrics.includes("验证异常"));
+        assert.ok(metrics.includes('<div class="batch-log-metric-label">验证异常</div><div class="batch-log-metric-value">1</div>'),
+            "the renamed aggregate label keeps the original summary.errors count");
         assert.strictEqual(metrics.split('class="batch-log-metric ').length - 1, 3, "exactly three cells");
 
         const note = elements.get("batchLogEmailVerificationNote").textContent;
         assert.ok(note.includes("当前有 1 条仍在验证中"), "pending is reported as text, not as passed");
-        assert.ok(note.includes("服务异常会停止本次执行"));
+        assert.ok(note.includes("单邮箱验证未完成") && note.includes("鉴权、额度、限流或服务故障"));
     });
 
     it("risky and unknown are displayed as policy permission with provider evidence", () => {
@@ -495,7 +497,8 @@ describe("batch email verification detail area (I-2 / I-3 / I-4 / S-2)", () => {
                     verificationRow({ id: 1, decision: "PASS", sendStatus: "NOT_SENT", sendReason: "TEMPLATE_RENDER_FAILED", providerState: "deliverable" }),
                     verificationRow({ id: 2, decision: "SKIP", providerState: "undeliverable", providerReason: "rejected_email", sendStatus: "SKIPPED", sendReason: "EMAIL_VERIFICATION_REJECTED", tagStatus: "APPLIED" }),
                     verificationRow({ id: 3, decision: "ERROR", providerState: null, providerReason: null, errorCode: "EMAIL_VERIFY_AUTH_ERROR", sendStatus: "NOT_SENT", tagStatus: "NOT_REQUIRED" }),
-                    verificationRow({ id: 4, decision: "SKIP", providerState: "risky", providerReason: null, sendStatus: "SKIPPED", sendReason: "EMAIL_VERIFICATION_REJECTED", tagStatus: "FAILED", tagError: "ES_WRITE_FAILED:CANDIDATE" })
+                    verificationRow({ id: 4, decision: "ERROR", providerState: null, providerReason: null, errorCode: "EMAIL_VERIFY_INCOMPLETE", sendStatus: "SKIPPED", sendReason: "EMAIL_VERIFICATION_DEFERRED", tagStatus: "NOT_REQUIRED" }),
+                    verificationRow({ id: 5, decision: "SKIP", providerState: "risky", providerReason: null, sendStatus: "SKIPPED", sendReason: "EMAIL_VERIFICATION_REJECTED", tagStatus: "FAILED", tagError: "ES_WRITE_FAILED:CANDIDATE" })
                 ]
             }),
             "SUCCESS"
@@ -510,6 +513,9 @@ describe("batch email verification detail area (I-2 / I-3 / I-4 / S-2)", () => {
         assert.ok(html.includes('<span class="badge error">验证服务异常</span>'));
         assert.ok(html.includes("验证服务鉴权失败（EMAIL_VERIFY_AUTH_ERROR）"),
             "controlled error codes get a Chinese meaning plus the code");
+        assert.ok(html.includes('<span class="badge warn">验证暂缓</span>'), "only explicitly deferred ERROR rows use the warning badge");
+        assert.ok(html.includes("验证服务未返回结果（EMAIL_VERIFY_INCOMPLETE）"), "deferred rows retain their original error code");
+        assert.ok(html.includes("邮箱验证暂缓，本次未发送（EMAIL_VERIFICATION_DEFERRED）"), "deferred send reason is explicit");
         assert.ok(html.includes("已标记邮箱异常"));
         assert.ok(html.includes("标签写入失败（写入标签失败（ES_WRITE_FAILED:CANDIDATE））"));
         assert.ok(html.includes('<span class="badge error">标签写入失败'),
@@ -804,8 +810,8 @@ describe("batch email verification static contract (S-1 / S-2 / I-5)", () => {
         });
         assert.strictEqual(indexSource.split('<span class="batch-config-field-label">发送前验证邮箱（Emailable）</span>').length - 1, 2,
             "both panels must label the switch identically");
-        assert.ok(indexSource.includes("仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。服务异常停止本次执行。会消耗 Emailable 额度。仅影响本次执行。"),
-            "the manual hint must spell out that it only affects this run");
+        assert.ok(indexSource.includes("仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。仅影响本次执行。"),
+            "the manual hint must spell out local defer and global stop behavior");
         ["batchConfigEditorEmailVerification", "batchManualEmailVerification"].forEach((id) => {
             const at = indexSource.indexOf('id="' + id + '"');
             const tag = indexSource.slice(indexSource.lastIndexOf("<", at), indexSource.indexOf(">", at));

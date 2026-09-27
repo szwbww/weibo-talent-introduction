@@ -419,4 +419,11 @@ object BatchEmailVerificationErrorCodes {
     const val INCOMPLETE = "EMAIL_VERIFY_INCOMPLETE"
     const val BAD_RESPONSE = "EMAIL_VERIFY_BAD_RESPONSE"
     const val SERVICE_ERROR = "EMAIL_VERIFY_SERVICE_ERROR"
+    const val AUDIT_FAILED = "EMAIL_VERIFY_AUDIT_FAILED"
+
+    private val recipientFailures = setOf(INCOMPLETE, TIMEOUT, BAD_RESPONSE)
+    private val globalFailures = setOf(AUTH_ERROR, NO_CREDITS, RATE_LIMITED, SERVICE_ERROR, AUDIT_FAILED)
+
+    fun isRecipientFailure(code: String): Boolean = code in recipientFailures
+    fun isGlobalFailure(code: String): Boolean = code in globalFailures
 }

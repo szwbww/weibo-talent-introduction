@@ -1437,7 +1437,7 @@
                                     <span class="batch-task-status-switch" aria-hidden="true"></span>
                                     <span class="batch-task-status-label" id="batchConfigEditorEmailVerificationLabel">已关闭</span>
                                 </label>
-                                <span class="batch-gate-hint" id="batchConfigEditorEmailVerificationHint">仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。服务异常停止本次执行。会消耗 Emailable 额度。</span>
+                                <span class="batch-gate-hint" id="batchConfigEditorEmailVerificationHint">仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。</span>
                             </div>
                         </div>
                         <label class="batch-config-field">
@@ -1686,7 +1686,7 @@
                                 <span class="batch-task-status-switch" aria-hidden="true"></span>
                                 <span class="batch-task-status-label" id="batchManualEmailVerificationLabel">已关闭</span>
                             </label>
-                            <span class="batch-gate-hint" id="batchManualEmailVerificationHint">仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。服务异常停止本次执行。会消耗 Emailable 额度。仅影响本次执行。</span>
+                            <span class="batch-gate-hint" id="batchManualEmailVerificationHint">仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。仅影响本次执行。</span>
                         </div>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>

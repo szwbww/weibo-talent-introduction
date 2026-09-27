@@ -750,7 +750,32 @@ class ManualInitialOutreachService(
                             continue
                         }
                         is VerificationResult.ServiceFailure -> {
-                            // I-4：服务故障停止本次执行，不批量标坏邮箱、不伪增 SMTP 失败/跳过。
+                            if (BatchEmailVerificationErrorCodes.isRecipientFailure(outcome.errorCode)) {
+                                log.warn("Email verification deferred for ORCID {}: {}", normOrcid, outcome.errorCode)
+                                try {
+                                    batchEmailVerificationService.recordSend(
+                                        outcome.rowId, BatchEmailVerificationSendStatus.SKIPPED,
+                                        BatchOutcomeReasonCodes.EMAIL_VERIFICATION_DEFERRED
+                                    )
+                                } catch (e: EmailVerificationAuditException) {
+                                    errors.add("验证审计写入失败：${e.message.orEmpty().take(120)}")
+                                    stopReason = STOP_EMAIL_VERIFY_AUDIT_FAILED
+                                    finalStatus = if (accumulator.success > 0) "PARTIAL_SUCCESS" else "FAILED"
+                                    midRoundStop = true
+                                    break
+                                }
+                                accumulator.recordSkipped(
+                                    BatchOutcomeReasonCodes.EMAIL_VERIFICATION_DEFERRED,
+                                    "邮箱验证暂缓：${outcome.errorCode}（$email）"
+                                )
+                                processedTotal++
+                                roundProcessed++
+                                roundRejected++
+                                updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                                    "RUNNING", "邮箱验证暂缓：${outcome.errorCode}（$email）", errors, mode, roundNumber, config, runAccountStats,
+                                    roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
+                                continue
+                            }
                             log.warn("Email verification service failure for ORCID {}: {}", normOrcid, outcome.errorCode)
                             errors.add("邮箱验证服务故障：${outcome.errorCode}（$email）")
                             stopReason = outcome.errorCode

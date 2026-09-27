@@ -213,6 +213,7 @@ object BatchOutcomeReasonCodes {
      * 明细行的 send_status=SKIPPED 使用同一码。
      */
     const val EMAIL_VERIFICATION_REJECTED = "EMAIL_VERIFICATION_REJECTED"
+    const val EMAIL_VERIFICATION_DEFERRED = "EMAIL_VERIFICATION_DEFERRED"
 
     val LABELS = mapOf(
         SEND_EXCEPTION to "发送异常",
@@ -226,7 +227,8 @@ object BatchOutcomeReasonCodes {
         PERSONALIZATION_INCOMPLETE to "个性化字段缺失",
         EXPERT_NOT_SENDABLE to "研发类型不在本次选择范围内",
         BOUND_SENDER_ALREADY_SET to "专家已绑定发件账号",
-        EMAIL_VERIFICATION_REJECTED to "邮箱验证未通过"
+        EMAIL_VERIFICATION_REJECTED to "邮箱验证未通过",
+        EMAIL_VERIFICATION_DEFERRED to "邮箱验证暂缓"
     )
 
     fun label(code: String): String = LABELS[code] ?: code

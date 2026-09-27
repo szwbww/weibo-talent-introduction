@@ -712,6 +712,52 @@ class BatchSendControlServiceTest {
 
         Mockito.verify(batchSendSettingService).setRuntimeStatus("IDLE", "MANUAL", "")
     }
+    @Test
+    fun `global verification stop pauses legacy runtime before any success`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+            .thenReturn(BatchSendRuntimeState("RUNNING", "AUTO", ""))
+        Mockito.doReturn(ManualOutreachResult(
+            total = 3, sent = 0, failed = 0, skippedNoAccount = 0, wasCancelled = false,
+            finalStatus = "FAILED", stopReason = "EMAIL_VERIFY_NO_CREDITS"
+        )).`when`(manualInitialOutreachService)
+            .run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.AUTO), eqValue(false))
+
+        control.startAuto()
+
+        Mockito.verify(batchSendSettingService).setRuntimeStatus("PAUSED", "AUTO", "EMAIL_VERIFY_NO_CREDITS")
+    }
+    @Test
+    fun `global verification stop pauses legacy runtime after partial success with original reason`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+            .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
+        Mockito.doReturn(ManualOutreachResult(
+            total = 3, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false,
+            finalStatus = "PARTIAL_SUCCESS", stopReason = "EMAIL_VERIFY_NO_CREDITS"
+        )).`when`(manualInitialOutreachService)
+            .run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), eqValue(false))
+
+        control.startManual()
+
+        Mockito.verify(batchSendSettingService).setRuntimeStatus("PAUSED", "MANUAL", "EMAIL_VERIFY_NO_CREDITS")
+    }
+
+    @Test
+    fun `ordinary smtp partial success retains existing idle runtime behavior`() {
+        Mockito.`when`(batchSendSettingService.getRuntimeStatus())
+            .thenReturn(BatchSendRuntimeState("IDLE", "NONE", ""))
+            .thenReturn(BatchSendRuntimeState("RUNNING", "MANUAL", ""))
+        Mockito.doReturn(ManualOutreachResult(
+            total = 3, sent = 1, failed = 1, skippedNoAccount = 0, wasCancelled = false,
+            finalStatus = "PARTIAL_SUCCESS", stopReason = null
+        )).`when`(manualInitialOutreachService)
+            .run(anySnapshot(), eqValue(99L), eqValue(ExecutionMode.MANUAL), eqValue(false))
+
+        control.startManual()
+
+        Mockito.verify(batchSendSettingService).setRuntimeStatus("IDLE", "MANUAL", "")
+    }
 
     @Test
     fun `startManual rejects snapshot with roundsPerRun below 1 with 422`() {

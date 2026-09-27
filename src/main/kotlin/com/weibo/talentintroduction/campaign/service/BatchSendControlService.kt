@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest
 import com.weibo.talentintroduction.campaign.domain.ResearchDirectionFilters
 import com.weibo.talentintroduction.campaign.domain.toExecutionSnapshot
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
+import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationErrorCodes
 import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import com.weibo.talentintroduction.task.service.TaskExecutionService
 import com.weibo.talentintroduction.task.service.TaskProgress
@@ -506,6 +507,14 @@ class BatchSendControlService(
         val current = getRuntimeStatusInternal(sendType)
         if (current.status != "RUNNING") {
             log.info("Runtime status is {} (not RUNNING) after execution for {}; skipping transition (finalStatus={})", current.status, sendType, finalStatus)
+            return
+        }
+        val verificationStop = result.stopReason?.startsWith("EMAIL_VERIFY_") == true &&
+            !BatchEmailVerificationErrorCodes.isRecipientFailure(result.stopReason)
+        if (verificationStop) {
+            val reason = result.stopReason!!
+            setRuntimeStatusInternal("PAUSED", mode.name, reason, sendType)
+            log.info("Batch send {} transitioned to PAUSED after global email verification failure: reason={}", sendType, reason)
             return
         }
         if (!returnToPausedAfterOneRound && finalStatus == "PAUSED" && result.stopReason in idleSafeOneRoundStopReasons) {

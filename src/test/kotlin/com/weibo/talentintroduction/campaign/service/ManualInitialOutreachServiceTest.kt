@@ -14,6 +14,7 @@ import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.domain.toExecutionSnapshot
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationTagStatus
+import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationErrorCodes
 import com.weibo.talentintroduction.campaign.repository.CampaignRepository
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.campaign.repository.MailSendAttemptRepository
@@ -5310,6 +5311,151 @@ class ManualInitialOutreachServiceTest {
         assertEquals("FAILED", result.taskFinalStatus)
         Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
     }
+    @Test
+    fun `recipient verification failures defer and continue to fill successful quota`() {
+        val account = account("chen")
+        stubIntroSendPipeline(account, listOf(
+            expert("0001", "a@b.com"), expert("0002", "b@b.com"), expert("0003", "c@b.com")
+        ))
+        Mockito.`when`(introductionMailComposer.compose(anyValue("chen"), anyValue(expert("", "")), Mockito.any()))
+            .thenAnswer { invocation ->
+                val profile = invocation.getArgument<ExpertProfile>(1)
+                ComposedMail(profile.email.orEmpty(), "Subject", "Body")
+            }
+        stubVerificationDecision(failing = "a@b.com", failureCode = BatchEmailVerificationErrorCodes.INCOMPLETE)
+
+        val result = service.run(introSnapshotWithVerification(roundSize = 2), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals("SUCCESS", result.taskFinalStatus)
+        assertEquals(2, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.skipped)
+        assertEquals(0, result.remaining)
+        assertEquals("COMPLETED", result.finalStatus)
+        assertNull(result.stopReason)
+        assertEquals(1, result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_DEFERRED)?.count)
+        Mockito.verify(batchEmailVerificationService).recordSend(
+            555L, "SKIPPED", BatchOutcomeReasonCodes.EMAIL_VERIFICATION_DEFERRED
+        )
+        val targets = ArgumentCaptor.forClass(EmailVerificationTarget::class.java)
+        Mockito.verify(batchEmailVerificationService, Mockito.times(3))
+            .verify(anyValue(verificationContext), captureValue(targets, verificationTarget()))
+        assertEquals(listOf("a@b.com", "b@b.com", "c@b.com"), targets.allValues.map { it.email })
+        val sentMails = ArgumentCaptor.forClass(ComposedMail::class.java)
+        Mockito.verify(mailDeliveryService, Mockito.times(2))
+            .send(anyValue(account), captureValue(sentMails, ComposedMail("", "", "")))
+        assertEquals(listOf("b@b.com", "c@b.com"), sentMails.allValues.map { it.to })
+        val savedContacts = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository, Mockito.times(2)).save(savedContacts.capture())
+        assertEquals(setOf("0002", "0003"), savedContacts.allValues.map { it.orcidId }.toSet())
+        Mockito.verify(expertIndexWriterService, Mockito.never()).syncOperatorStatus(Mockito.anyString(), Mockito.anyString())
+    }
+
+    @Test
+    fun `all deferred verification targets complete without sending or stopping`() {
+        stubIntroSendPipeline(account("chen"), listOf(expert("0001", "a@b.com")))
+        stubVerificationDecision(failing = "a@b.com", failureCode = BatchEmailVerificationErrorCodes.TIMEOUT)
+
+        val result = service.run(introSnapshotWithVerification(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.sent)
+        assertEquals("SUCCESS", result.taskFinalStatus)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.skipped)
+        assertEquals(0, result.remaining)
+        assertEquals("COMPLETED", result.finalStatus)
+        assertNull(result.stopReason)
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `cancellation after a deferred verification stops before the next candidate`() {
+        stubIntroSendPipeline(account("chen"), listOf(expert("0001", "a@b.com"), expert("0002", "b@b.com")))
+        stubVerificationDecision(failing = "a@b.com", failureCode = BatchEmailVerificationErrorCodes.BAD_RESPONSE)
+        var cancelled = false
+        Mockito.`when`(progressStore.isCancelled(eqValue("MANUAL_INITIAL_OUTREACH"), eqValue(12345L)))
+            .thenAnswer { cancelled }
+        Mockito.doAnswer {
+            cancelled = true
+            null
+        }.`when`(batchEmailVerificationService).recordSend(
+            555L, "SKIPPED", BatchOutcomeReasonCodes.EMAIL_VERIFICATION_DEFERRED
+        )
+
+        val result = service.run(introSnapshotWithVerification(roundSize = 2), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertTrue(result.wasCancelled)
+        assertEquals("CANCELLED", result.finalStatus)
+        assertEquals(2, result.skipped)
+        assertEquals(0, result.remaining)
+        assertEquals(1, result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_DEFERRED)?.count)
+        assertEquals(1, result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.CANCELLED)?.count)
+        Mockito.verify(batchEmailVerificationService, Mockito.times(1))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+        Mockito.verifyNoInteractions(mailDeliveryService)
+    }
+
+    @Test
+    fun `deferred verification audit failure stops before the next candidate`() {
+        val account = account("chen")
+        stubIntroSendPipeline(account, listOf(expert("0001", "a@b.com"), expert("0002", "b@b.com")))
+        stubVerificationDecision(failing = "a@b.com", failureCode = BatchEmailVerificationErrorCodes.BAD_RESPONSE)
+        Mockito.doThrow(EmailVerificationAuditException("audit unavailable"))
+            .`when`(batchEmailVerificationService).recordSend(
+                555L, "SKIPPED", BatchOutcomeReasonCodes.EMAIL_VERIFICATION_DEFERRED
+            )
+
+        val result = service.run(introSnapshotWithVerification(roundSize = 2), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.sent)
+        assertEquals(0, result.skipped)
+        assertEquals(2, result.remaining)
+        assertEquals("FAILED", result.finalStatus)
+        assertEquals("EMAIL_VERIFY_AUDIT_FAILED", result.stopReason)
+        Mockito.verify(batchEmailVerificationService, Mockito.times(1))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `verification failure helpers classify only the approved codes`() {
+        listOf(
+            BatchEmailVerificationErrorCodes.INCOMPLETE,
+            BatchEmailVerificationErrorCodes.TIMEOUT,
+            BatchEmailVerificationErrorCodes.BAD_RESPONSE
+        ).forEach {
+            assertTrue(BatchEmailVerificationErrorCodes.isRecipientFailure(it), it)
+            assertFalse(BatchEmailVerificationErrorCodes.isGlobalFailure(it), it)
+        }
+        listOf(
+            BatchEmailVerificationErrorCodes.AUTH_ERROR,
+            BatchEmailVerificationErrorCodes.NO_CREDITS,
+            BatchEmailVerificationErrorCodes.RATE_LIMITED,
+            BatchEmailVerificationErrorCodes.SERVICE_ERROR,
+            BatchEmailVerificationErrorCodes.AUDIT_FAILED
+        ).forEach {
+            assertFalse(BatchEmailVerificationErrorCodes.isRecipientFailure(it), it)
+            assertTrue(BatchEmailVerificationErrorCodes.isGlobalFailure(it), it)
+        }
+        assertFalse(BatchEmailVerificationErrorCodes.isRecipientFailure("EMAIL_VERIFY_UNKNOWN"))
+        assertFalse(BatchEmailVerificationErrorCodes.isGlobalFailure("EMAIL_VERIFY_UNKNOWN"))
+    }
+    @Test
+    fun `unknown verification failure code stops the execution and is preserved`() {
+        val account = account("chen")
+        stubIntroSendPipeline(account, listOf(expert("0001", "a@b.com"), expert("0002", "b@b.com")))
+        stubVerificationDecision(failing = "a@b.com", failureCode = "EMAIL_VERIFY_FUTURE_CODE")
+
+        val result = service.run(introSnapshotWithVerification(roundSize = 2), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.sent)
+        assertEquals(2, result.remaining)
+        assertEquals("FAILED", result.finalStatus)
+        assertEquals("EMAIL_VERIFY_FUTURE_CODE", result.stopReason)
+        Mockito.verify(batchEmailVerificationService, Mockito.times(1))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
 
     @Test
     fun `a passed address reserves sending before smtp and records the sent result after (I-6)`() {
@@ -5607,6 +5753,7 @@ class ManualInitialOutreachServiceTest {
     private fun stubVerificationDecision(
         rejected: Set<String> = emptySet(),
         failing: String? = null,
+        failureCode: String = BatchEmailVerificationErrorCodes.NO_CREDITS,
         passedRowId: Long = 555L
     ) {
         Mockito.`when`(
@@ -5616,7 +5763,7 @@ class ManualInitialOutreachServiceTest {
             .thenAnswer { invocation ->
                 val target = invocation.getArgument<EmailVerificationTarget>(1)
                 when (target.email) {
-                    failing -> VerificationResult.ServiceFailure(passedRowId, "EMAIL_VERIFY_NO_CREDITS")
+                    failing -> VerificationResult.ServiceFailure(passedRowId, failureCode)
                     in rejected -> VerificationResult.Rejected(passedRowId, BatchEmailVerificationTagStatus.APPLIED)
                     else -> VerificationResult.Passed(passedRowId, normalizeVerificationEmail(target.email))
                 }

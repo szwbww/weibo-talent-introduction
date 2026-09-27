@@ -18832,8 +18832,8 @@ async function refreshBatchGateState(kind) {
 // 不新增 CSS。只有介绍邮件支持；材料提醒在 UI 层禁用并置回 false（后端另有同口径 require）。
 
 var BATCH_EMAIL_VERIFICATION_HINT = {
-    editor: "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。服务异常停止本次执行。会消耗 Emailable 额度。",
-    manual: "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。服务异常停止本次执行。会消耗 Emailable 额度。仅影响本次执行。"
+    editor: "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。",
+    manual: "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。仅影响本次执行。"
 };
 var BATCH_EMAIL_VERIFICATION_UNSUPPORTED_HINT = "仅介绍邮件支持发送前验证";
 
@@ -20016,7 +20016,7 @@ function clearBatchLogDisplay() {
 // 分页游标、请求序号与展开行都挂在本区域自己的状态上，轮询只刷新当前页。
 
 var BATCH_EMAIL_VERIFICATION_PAGE_SIZE = 50;
-var BATCH_EMAIL_VERIFICATION_NOTE = "仅列出已进入邮箱验证的明细；预筛选跳过见原跳过原因。服务异常会停止本次执行。";
+var BATCH_EMAIL_VERIFICATION_NOTE = "仅列出已进入邮箱验证的明细；预筛选跳过见原跳过原因。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障会停止本次执行。";
 
 /* 受控码 → 中文解释（其余一律原样展示，不猜含义）。来源：
    BatchEmailVerificationErrorCodes / BatchOutcomeReasonCodes / appendEmailAbnormalTag。 */
@@ -20031,6 +20031,7 @@ var BATCH_EMAIL_VERIFICATION_ERROR_LABELS = {
 };
 var BATCH_EMAIL_VERIFICATION_SEND_REASON_LABELS = {
     EMAIL_VERIFICATION_REJECTED: "验证未通过，未发送",
+    EMAIL_VERIFICATION_DEFERRED: "邮箱验证暂缓，本次未发送",
     SEND_EXCEPTION: "发送异常",
     TEMPLATE_RENDER_FAILED: "模板渲染失败",
     PERSONALIZATION_INCOMPLETE: "个性化字段缺失",
@@ -20051,6 +20052,7 @@ var BATCH_EMAIL_VERIFICATION_TAG_ERROR_LABELS = {
 function emailVerificationDecisionText(row, running) {
     if (row.decision === "PASS") return "按策略放行";
     if (row.decision === "SKIP") return "未通过";
+    if (row.decision === "ERROR" && row.sendReason === "EMAIL_VERIFICATION_DEFERRED") return "验证暂缓";
     if (row.decision === "ERROR") return "验证服务异常";
     if (row.decision === "PENDING") return running ? "验证中" : "验证未完成";
     return String(row.decision || "—");
@@ -20059,6 +20061,7 @@ function emailVerificationDecisionText(row, running) {
 function emailVerificationDecisionBadgeClass(row) {
     if (row.decision === "PASS") return "ok";
     if (row.decision === "SKIP") return "warn";
+    if (row.decision === "ERROR" && row.sendReason === "EMAIL_VERIFICATION_DEFERRED") return "warn";
     if (row.decision === "ERROR") return "error";
     return "info";
 }
@@ -20151,7 +20154,7 @@ function batchEmailVerificationMetricsHtml(summary) {
     var cells = [
         { label: "策略放行", value: summary.passed, cls: "is-success" },
         { label: "未通过", value: summary.rejected, cls: "is-skipped" },
-        { label: "服务异常", value: summary.errors, cls: "is-failure" }
+        { label: "验证异常", value: summary.errors, cls: "is-failure" }
     ];
     return cells.map(function(cell) {
         return '<div class="batch-log-metric ' + cell.cls + '">' +
