@@ -748,8 +748,8 @@ class ExpertIndexWriterService(
         val rawIndex = expertIndexService.indexName(ExpertIndexLevel.RAW)
         val candidateIndex = expertIndexService.indexName(ExpertIndexLevel.CANDIDATE)
         val current = readDiscoveryDocument(ExpertIndexLevel.RAW, docId) ?: return false
-        if (current != snapshot || current.source["orcidId"] != docId ||
-            !DiscoveryIdentity.isDiscoveryMap(current.source) || !DiscoveryIdentity.allowedMap(current.source)) return false
+        if (current != snapshot || !DiscoveryIdentity.isDiscoveryMap(current.source) ||
+            !DiscoveryIdentity.allowedMap(current.source)) return false
         val candidate = if (preserveApplication) null else readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
         if (candidate != null && !sameDiscoveryIdentity(current.source, candidate.source)) return false
         val qualification = mapOf(

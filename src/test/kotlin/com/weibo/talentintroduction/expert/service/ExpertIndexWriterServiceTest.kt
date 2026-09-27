@@ -1060,12 +1060,131 @@ class ExpertIndexWriterServiceTest {
         discoveryReplicaEvidence()
     }
 
-    internal fun discoveryReplicaEvidence(): Map<String, Any> {
+    @Test
+    fun `real discovery revalidation creates historical candidate under the actual ES id`() {
+        val outcome = revalidateHistoricalDiscovery(emailValid = true)
+        assertEquals(PromotionOutcome.Promoted, outcome)
+        val put = ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_doc/OLD-DOC?op_type=create"),
+            eq(HttpMethod.PUT), put.capture(), eq(JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val candidate = put.value.body as Map<String, Any?>
+        assertEquals("HISTORICAL-ORCID", candidate["orcidId"])
+        assertEquals("Jane", candidate["givenNames"])
+        assertEquals("a@example.org", candidate["email"])
+        assertEquals("PAUSED", candidate["operatorStatus"])
+        assertEquals("retained", candidate["customOperatorNote"])
+        assertEquals("PASSED", candidate["filterResult"])
+        assertEquals("A123", (candidate["identityVerification"] as Map<*, *>)["openAlexAuthorId"])
+    }
+
+    @Test
+    fun `real discovery revalidation rejects invalid email and conditionally removes historical candidate`() {
+        val outcome = revalidateHistoricalDiscovery(emailValid = false)
+        assertEquals(PromotionOutcome.Rejected(listOf("EMAIL:NO_MX_RECORD")), outcome)
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_doc/OLD-DOC?if_seq_no=8&if_primary_term=2"),
+            eq(HttpMethod.DELETE), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+        )
+        val update = ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.verify(restTemplate).exchange(
+            eq("https://es.example.com:9200/orcid_info/_update/OLD-DOC?if_seq_no=3&if_primary_term=2"),
+            eq(HttpMethod.POST), update.capture(), eq(JsonNode::class.java)
+        )
+        @Suppress("UNCHECKED_CAST")
+        val doc = (update.value.body as Map<String, Any?>)["doc"] as Map<String, Any?>
+        assertEquals("REJECTED", doc["filterResult"])
+        assertEquals("EMAIL:NO_MX_RECORD", doc["filterRejectReason"])
+        assertEquals(setOf("filterResult", "filterRejectReason", "expertClassification"), doc.keys)
+        Mockito.verify(restTemplate, Mockito.never()).exchange(
+            Mockito.contains("orcid_info_candidate/_doc/OLD-DOC"), eq(HttpMethod.PUT),
+            any<HttpEntity<*>>(), eq(JsonNode::class.java)
+        )
+    }
+
+    private fun revalidateHistoricalDiscovery(emailValid: Boolean): PromotionOutcome {
         val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
             "a@example.org", "Jane", "Doe", "JATS_SHA256:" + "a".repeat(64), null, "A123"
         )
         val source = mapOf<String, Any?>(
-            "orcidId" to "DOC", "email" to "a@example.org", "givenNames" to "Jane",
+            "orcidId" to "HISTORICAL-ORCID", "email" to "a@example.org",
+            "givenNames" to "Jane", "familyNames" to "Doe", "emailSource" to "PAPER_FULLTEXT",
+            "identityVerification" to mapper.convertValue(proof, Map::class.java),
+            "researchFieldIds" to listOf("22"), "institution" to "University",
+            "lastPublicationYear" to 2026, "operatorStatus" to "PAUSED",
+            "customOperatorNote" to "retained"
+        )
+        fun raw(seq: Int, fields: Map<String, Any?>) = ResponseEntity(
+            mapper.valueToTree<JsonNode>(mapOf("_seq_no" to seq, "_primary_term" to 2, "_source" to fields)),
+            HttpStatus.OK
+        )
+        val rawUrl = "https://es.example.com:9200/orcid_info/_doc/OLD-DOC"
+        val candidateUrl = "https://es.example.com:9200/orcid_info_candidate/_doc/OLD-DOC"
+        Mockito.`when`(restTemplate.exchange(
+            eq("https://es.example.com:9200/orcid_info_application/_doc/OLD-DOC"),
+            eq(HttpMethod.HEAD), any<HttpEntity<*>>(), eq(Void::class.java)
+        )).thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+        Mockito.`when`(restTemplate.exchange(eq(rawUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+            .thenReturn(raw(3, source), raw(3, source),
+                raw(4, source + ("filterResult" to if (emailValid) "PASSED" else "REJECTED")))
+        if (emailValid) {
+            Mockito.`when`(restTemplate.exchange(eq(candidateUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+                .thenThrow(HttpClientErrorException(HttpStatus.NOT_FOUND))
+            Mockito.`when`(restTemplate.exchange(
+                eq("$candidateUrl?op_type=create"), eq(HttpMethod.PUT), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+            )).thenReturn(ResponseEntity(mapper.readTree("""{"result":"created"}"""), HttpStatus.CREATED))
+        } else {
+            Mockito.`when`(restTemplate.exchange(eq(candidateUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
+                .thenReturn(raw(8, source))
+            Mockito.`when`(restTemplate.exchange(
+                eq("$candidateUrl?if_seq_no=8&if_primary_term=2"), eq(HttpMethod.DELETE),
+                any<HttpEntity<*>>(), eq(JsonNode::class.java)
+            )).thenReturn(ResponseEntity(mapper.readTree("""{"result":"deleted"}"""), HttpStatus.OK))
+        }
+        Mockito.`when`(restTemplate.exchange(
+            eq("https://es.example.com:9200/orcid_info/_update/OLD-DOC?if_seq_no=3&if_primary_term=2"),
+            eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java)
+        )).thenReturn(ResponseEntity(
+            mapper.readTree("""{"result":"updated","_seq_no":4,"_primary_term":2}"""), HttpStatus.OK
+        ))
+        val filters = Mockito.mock(EligibilityFilterService::class.java)
+        Mockito.`when`(filters.getCandidateFilter()).thenReturn(
+            com.weibo.talentintroduction.config.CandidateFilterProperties(requireValidEmail = true)
+        )
+        Mockito.`when`(filters.getAcademicFilter()).thenReturn(
+            com.weibo.talentintroduction.config.AcademicFilterProperties()
+        )
+        val email = Mockito.mock(EmailValidationService::class.java)
+        Mockito.`when`(email.isDisposableEmail("a@example.org")).thenReturn(false)
+        Mockito.`when`(email.validate("a@example.org")).thenReturn(
+            com.weibo.talentintroduction.expert.domain.EmailValidationResult(
+                2, emailValid, if (emailValid) null else "NO_MX_RECORD"
+            )
+        )
+        val revalidator = ExpertRevalidationService(
+            Mockito.mock(ExpertSearchService::class.java),
+            CandidateEligibilityService(filters, email), email, service,
+            Mockito.mock(com.weibo.talentintroduction.task.service.TaskProgressStore::class.java), filters
+        )
+        return revalidator.revalidateDiscovery("OLD-DOC")
+    }
+
+    @Test
+    fun `historical business key does not prevent conditional candidate removal`() {
+        discoveryReplicaEvidence("OLD-DOC", "HISTORICAL-ORCID")
+    }
+
+
+    internal fun discoveryReplicaEvidence(
+        docId: String = "DOC", orcidId: String = "DOC"
+    ): Map<String, Any> {
+        val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+            "a@example.org", "Jane", "Doe", "JATS_SHA256:" + "a".repeat(64), null, "A123"
+        )
+        val source = mapOf<String, Any?>(
+            "orcidId" to orcidId, "email" to "a@example.org", "givenNames" to "Jane",
             "familyNames" to "Doe", "emailSource" to "PAPER_FULLTEXT",
             "identityVerification" to mapper.convertValue(proof, Map::class.java),
             "researchFieldIds" to listOf("27"), "operatorStatus" to "PAUSED",
@@ -1074,24 +1193,24 @@ class ExpertIndexWriterServiceTest {
         fun doc(seq: Int, fields: Map<String, Any?>) = mapper.valueToTree<JsonNode>(
             mapOf("_seq_no" to seq, "_primary_term" to 2, "_source" to fields)
         )
-        val rawUrl = "https://es.example.com:9200/orcid_info/_doc/DOC"
-        val candidateUrl = "https://es.example.com:9200/orcid_info_candidate/_doc/DOC"
+        val rawUrl = "https://es.example.com:9200/orcid_info/_doc/$docId"
+        val candidateUrl = "https://es.example.com:9200/orcid_info_candidate/_doc/$docId"
         val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
-        val classification = ExpertClassificationService().classify(service.discoveryProfile("DOC", source))
+        val classification = ExpertClassificationService().classify(service.discoveryProfile(docId, source))
         val postUpdateRaw = source + mapOf("filterResult" to "REJECTED")
         Mockito.`when`(restTemplate.exchange(eq(rawUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
             .thenReturn(ResponseEntity(doc(3, source), HttpStatus.OK))
             .thenReturn(ResponseEntity(doc(4, postUpdateRaw), HttpStatus.OK))
         Mockito.`when`(restTemplate.exchange(eq(candidateUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
             .thenReturn(ResponseEntity(doc(8, source), HttpStatus.OK))
-        val updateUrl = "https://es.example.com:9200/orcid_info/_update/DOC?if_seq_no=3&if_primary_term=2"
+        val updateUrl = "https://es.example.com:9200/orcid_info/_update/$docId?if_seq_no=3&if_primary_term=2"
         Mockito.`when`(restTemplate.exchange(eq(updateUrl), eq(HttpMethod.POST), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
             .thenReturn(ResponseEntity(mapper.readTree("""{"result":"updated","_seq_no":4,"_primary_term":2}"""), HttpStatus.OK))
         val deleteUrl = "$candidateUrl?if_seq_no=8&if_primary_term=2"
         Mockito.`when`(restTemplate.exchange(eq(deleteUrl), eq(HttpMethod.DELETE), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
             .thenReturn(ResponseEntity(mapper.readTree("""{"result":"deleted"}"""), HttpStatus.OK))
 
-        assertTrue(service.reconcileDiscoveryCandidate("DOC", snapshot, classification, listOf("RND_OUT_OF_SCOPE")))
+        assertTrue(service.reconcileDiscoveryCandidate(docId, snapshot, classification, listOf("RND_OUT_OF_SCOPE")))
         val update = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
         Mockito.verify(restTemplate).exchange(eq(updateUrl), eq(HttpMethod.POST), update.capture(), eq(JsonNode::class.java))
         @Suppress("UNCHECKED_CAST")
@@ -1129,10 +1248,10 @@ class ExpertIndexWriterServiceTest {
             Mockito.`when`(restTemplate.exchange(eq(deleteUrl), eq(HttpMethod.DELETE), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
                 .thenThrow(HttpClientErrorException(status))
             if (status == HttpStatus.NOT_FOUND) {
-                assertTrue(service.reconcileDiscoveryCandidate("DOC", snapshot, classification, listOf("RND_OUT_OF_SCOPE")))
+                assertTrue(service.reconcileDiscoveryCandidate(docId, snapshot, classification, listOf("RND_OUT_OF_SCOPE")))
             } else {
                 org.junit.jupiter.api.Assertions.assertThrows(HttpClientErrorException::class.java) {
-                    service.reconcileDiscoveryCandidate("DOC", snapshot, classification, listOf("RND_OUT_OF_SCOPE"))
+                    service.reconcileDiscoveryCandidate(docId, snapshot, classification, listOf("RND_OUT_OF_SCOPE"))
                 }
             }
             observed["delete${status.value()}"] = expected
@@ -1140,7 +1259,7 @@ class ExpertIndexWriterServiceTest {
         Mockito.reset(restTemplate)
         Mockito.`when`(restTemplate.exchange(eq(rawUrl), eq(HttpMethod.GET), any<HttpEntity<*>>(), eq(JsonNode::class.java)))
             .thenReturn(ResponseEntity(doc(3, source + ("email" to "changed@example.org")), HttpStatus.OK))
-        assertFalse(service.reconcileDiscoveryCandidate("DOC", snapshot, classification, listOf("RND_OUT_OF_SCOPE")))
+        assertFalse(service.reconcileDiscoveryCandidate(docId, snapshot, classification, listOf("RND_OUT_OF_SCOPE")))
         Mockito.verify(restTemplate, Mockito.never()).exchange(Mockito.contains("orcid_info_candidate"),
             eq(HttpMethod.DELETE), any<HttpEntity<*>>(), eq(JsonNode::class.java))
         observed["identityChanged"] = "RETRY_WITHOUT_DELETE"

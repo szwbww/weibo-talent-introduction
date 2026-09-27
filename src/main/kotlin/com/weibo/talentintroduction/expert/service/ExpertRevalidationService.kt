@@ -331,18 +331,23 @@ class ExpertRevalidationService(
         return try {
             val snapshot = expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.RAW, docId)
                 ?: return PromotionOutcome.RawMissing
-            if (snapshot.source["orcidId"] != docId || !DiscoveryIdentity.allowedMap(snapshot.source))
+            if (!DiscoveryIdentity.allowedMap(snapshot.source))
                 return PromotionOutcome.WriteFailed
             val profile = expertIndexWriterService.discoveryProfile(docId, snapshot.source)
             val candidateBefore = if (applied) null
                 else expertIndexWriterService.readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, docId)
             val eligibility = eligibilityService.evaluateEligibility(profile)
+            val reasons = if (eligibilityFilterService.getCandidateFilter().requireValidEmail) {
+                val emailResult = emailValidationService.validate(profile.email.orEmpty())
+                if (emailResult.valid) eligibility.rejectReasons
+                else eligibility.rejectReasons + "EMAIL:${emailResult.rejectReason}"
+            } else eligibility.rejectReasons
             val classification = expertClassificationService.classify(profile)
             if (!expertIndexWriterService.reconcileDiscoveryCandidate(
-                    docId, snapshot, classification, eligibility.rejectReasons, preserveApplication = applied
+                    docId, snapshot, classification, reasons, preserveApplication = applied
                 )) return PromotionOutcome.WriteFailed
             if (applied) PromotionOutcome.AlreadyPresent
-            else if (!eligibility.eligible) PromotionOutcome.Rejected(eligibility.rejectReasons)
+            else if (reasons.isNotEmpty()) PromotionOutcome.Rejected(reasons)
             else if (candidateBefore != null) PromotionOutcome.AlreadyPresent
             else PromotionOutcome.Promoted
         } catch (e: Exception) {

@@ -269,6 +269,137 @@ class ExpertRevalidationServiceBehaviorTest {
         assertEquals(0, result.stats.emailRejected)
         verify(emailValidationService, never()).validate(anyString())
     }
+
+    private fun discoverySource(orcidId: String = "HISTORICAL-ORCID"): Map<String, Any?> {
+        val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
+            "researcher@example.org", "Test", "User", "JATS_SHA256:" + "a".repeat(64), null, "A42"
+        )
+        return mapOf(
+            "orcidId" to orcidId, "email" to "researcher@example.org",
+            "givenNames" to "Test", "familyNames" to "User", "emailSource" to "PAPER_FULLTEXT",
+            "identityVerification" to com.fasterxml.jackson.module.kotlin.jacksonObjectMapper().convertValue(proof, Map::class.java),
+            "researchFieldIds" to listOf("22"), "institution" to "University", "lastPublicationYear" to 2026
+        )
+    }
+
+    @Test
+    fun `discovery promotion rejects full email validation failure despite valid format and research`() {
+        val source = discoverySource()
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        val profile = validExpert("HISTORICAL-ORCID", "researcher@example.org", esDocId = "OLD-DOC").copy(
+            emailSource = "PAPER_FULLTEXT", researchFieldIds = listOf("22"), institution = "University",
+            lastPublicationYear = 2026
+        )
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "OLD-DOC")).thenReturn(snapshot)
+        `when`(writerService.discoveryProfile("OLD-DOC", source)).thenReturn(profile)
+        `when`(emailValidationService.validate("researcher@example.org"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(2, false, "NO_MX_RECORD"))
+        `when`(writerService.reconcileDiscoveryCandidate(
+            match("OLD-DOC"), match(snapshot), anyClassification(), anyReasons(), match(false)
+        )).thenReturn(true)
+        ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(profile)))
+
+        val result = service.promoteEligibleRawExperts()
+
+        assertEquals(0, result.stats.promoted)
+        assertEquals(0, result.stats.alreadyPromoted)
+        assertEquals(1, result.stats.filtered)
+        assertEquals(1, result.stats.filterReasons["EMAIL:NO_MX_RECORD"])
+        verify(emailValidationService).validate("researcher@example.org")
+        verify(writerService).reconcileDiscoveryCandidate(
+            match("OLD-DOC"), match(snapshot), anyClassification(),
+            match(listOf("EMAIL:NO_MX_RECORD")), match(false)
+        )
+    }
+
+    @Test
+    fun `discovery candidate revalidation rejects invalid email through the same gate`() {
+        val source = discoverySource()
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        val profile = validExpert("HISTORICAL-ORCID", "researcher@example.org", esDocId = "OLD-DOC").copy(
+            emailSource = "PAPER_FULLTEXT", researchFieldIds = listOf("22"), institution = "University",
+            lastPublicationYear = 2026
+        )
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "OLD-DOC")).thenReturn(snapshot)
+        `when`(writerService.discoveryProfile("OLD-DOC", source)).thenReturn(profile)
+        `when`(emailValidationService.validate("researcher@example.org"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(2, false, "NO_MX_RECORD"))
+        `when`(writerService.reconcileDiscoveryCandidate(
+            match("OLD-DOC"), match(snapshot), anyClassification(), anyReasons(), match(false)
+        )).thenReturn(true)
+        ScrollExpertsMockHelper.stubScrollExperts(searchService, listOf(listOf(profile)))
+
+        val result = service.revalidateCandidates()
+
+        assertEquals(0, result.stats.passed)
+        assertEquals(1, result.stats.demoted)
+        assertEquals(1, result.stats.demotionReasons["EMAIL:NO_MX_RECORD"])
+        verify(writerService).reconcileDiscoveryCandidate(
+            match("OLD-DOC"), match(snapshot), anyClassification(),
+            match(listOf("EMAIL:NO_MX_RECORD")), match(false)
+        )
+    }
+
+    @Test
+    fun `discovery validation exception is retryable and never writes a candidate`() {
+        val source = discoverySource()
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "OLD-DOC")).thenReturn(snapshot)
+        `when`(writerService.discoveryProfile("OLD-DOC", source)).thenReturn(
+            validExpert("HISTORICAL-ORCID", "researcher@example.org").copy(
+                emailSource = "PAPER_FULLTEXT", researchFieldIds = listOf("22")
+            )
+        )
+        `when`(emailValidationService.validate("researcher@example.org")).thenThrow(IllegalStateException("MX unavailable"))
+
+        assertEquals(PromotionOutcome.WriteFailed, service.revalidateDiscovery("OLD-DOC"))
+        verify(writerService, never()).reconcileDiscoveryCandidate(
+            match("OLD-DOC"), anySnapshot(), anyClassification(), anyReasons(), match(false)
+        )
+    }
+
+    @Test
+    fun `discovery email check disabled preserves professional admission`() {
+        val source = discoverySource()
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "OLD-DOC")).thenReturn(snapshot)
+        `when`(writerService.discoveryProfile("OLD-DOC", source)).thenReturn(
+            validExpert("HISTORICAL-ORCID", "researcher@example.org").copy(
+                emailSource = "PAPER_FULLTEXT", researchFieldIds = listOf("22"),
+                institution = "University", lastPublicationYear = 2026
+            )
+        )
+        `when`(writerService.reconcileDiscoveryCandidate(
+            match("OLD-DOC"), match(snapshot), anyClassification(), anyReasons(), match(false)
+        )).thenReturn(true)
+
+        assertEquals(PromotionOutcome.Promoted, serviceWithEmailFilterOff().revalidateDiscovery("OLD-DOC"))
+        verify(emailValidationService, never()).validate(anyString())
+    }
+
+    @Test
+    fun `discovery valid email permits historical document promotion`() {
+        val source = discoverySource()
+        val snapshot = ExpertIndexWriterService.DiscoverySnapshot(source, 3, 2)
+        `when`(writerService.readDiscoveryDocument(ExpertIndexLevel.RAW, "OLD-DOC")).thenReturn(snapshot)
+        `when`(writerService.discoveryProfile("OLD-DOC", source)).thenReturn(
+            validExpert("HISTORICAL-ORCID", "researcher@example.org").copy(
+                emailSource = "PAPER_FULLTEXT", researchFieldIds = listOf("22"),
+                institution = "University", lastPublicationYear = 2026
+            )
+        )
+        `when`(emailValidationService.validate("researcher@example.org"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(3, true))
+        `when`(writerService.reconcileDiscoveryCandidate(
+            match("OLD-DOC"), match(snapshot), anyClassification(), anyReasons(), match(false)
+        )).thenReturn(true)
+
+        assertEquals(PromotionOutcome.Promoted, service.revalidateDiscovery("OLD-DOC"))
+        verify(writerService).reconcileDiscoveryCandidate(
+            match("OLD-DOC"), match(snapshot), anyClassification(), match(emptyList()), match(false)
+        )
+    }
+
     @Test
     fun `discovery revalidation admits only after current RAW has target research evidence`() {
         val proof = com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.verified(
@@ -296,6 +427,8 @@ class ExpertRevalidationServiceBehaviorTest {
         `when`(writerService.reconcileDiscoveryCandidate(
             match("DOC"), anySnapshot(), anyClassification(), anyReasons(), match(false)
         )).thenReturn(true)
+        `when`(emailValidationService.validate("researcher@example.org"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(3, true))
         val first = service.revalidateDiscovery("DOC")
         assertEquals(com.weibo.talentintroduction.expert.service.PromotionOutcome.Rejected(
             listOf("RND_SCOPE_UNCONFIRMED")), first)
@@ -330,6 +463,8 @@ class ExpertRevalidationServiceBehaviorTest {
             match("APP"), match(raw), anyClassification(),
             match(listOf("RND_SCOPE_UNCONFIRMED")), match(true)
         )).thenReturn(true)
+        `when`(emailValidationService.validate("researcher@example.org"))
+            .thenReturn(com.weibo.talentintroduction.expert.domain.EmailValidationResult(3, true))
         assertEquals(PromotionOutcome.AlreadyPresent, service.revalidateDiscovery("APP"))
         verify(writerService, never()).readDiscoveryDocument(ExpertIndexLevel.CANDIDATE, "APP")
     }
