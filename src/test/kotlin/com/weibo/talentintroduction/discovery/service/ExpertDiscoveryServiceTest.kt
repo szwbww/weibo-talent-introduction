@@ -464,10 +464,10 @@ class ExpertDiscoveryServiceTest {
         val source = OpenAlexDataSource(restTemplate, props, europePmc,
             Mockito.mock(PdfEmailExtractor::class.java), Mockito.mock(UnpaywallClient::class.java))
         val paper = source.searchPapers(PaperSearchCriteria()).papers.single()
-        val metadataRequests = Mockito.mockingDetails(restTemplate).invocations.count {
-            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.GET
-        }
-        assertEquals(1, metadataRequests)
+        val metadataUrls = Mockito.mockingDetails(restTemplate).invocations
+            .filter { it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.GET }
+            .map { it.arguments.first() as String }
+        assertEquals(1, metadataUrls.size)
 
         assertEquals("PMC7759461", paper.pmcId)
 
@@ -476,19 +476,30 @@ class ExpertDiscoveryServiceTest {
         assertEquals(3, parsedByEmail.keys.intersect(setOf(
             "millman@berkeley.edu", "stefanv@berkeley.edu", "ralf.gommers@gmail.com"
         )).size)
-        val xmlOutcome = currentExtraction(parsed, "FULLTEXT_XML", httpRequests = 1, fulltextObtained = true)
-        Mockito.doReturn(xmlOutcome).`when`(europePmc)
-            .extractAuthorEmails(Mockito.eq(paper) ?: paper, Mockito.any())
-        val enriched = source.extractAuthorEmails(paper, Instant.now().plusSeconds(30))
-        val xmlCalls = Mockito.mockingDetails(europePmc).invocations.count {
-            it.method.name == "extractAuthorEmails"
+        val xmlRequests = mutableListOf<String>()
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/") { request ->
+            xmlRequests += "${request.requestMethod} ${request.requestURI.path}"
+            val bytes = if (request.requestURI.path == "/PMC7759461/fullTextXML") xmlBytes else ByteArray(0)
+            request.sendResponseHeaders(if (bytes.isNotEmpty()) 200 else 404, bytes.size.toLong())
+            request.responseBody.use { it.write(bytes) }
         }
-        assertEquals(1, xmlCalls)
+        server.start()
+        val enriched = try {
+            val xmlSource = EuropePmcDataSource(RestTemplate(), EuropePmcProperties(
+                baseUrl = "http://127.0.0.1:${server.address.port}", requestDelayMs = 0, maxRetries = 0))
+            val routed = OpenAlexDataSource(restTemplate, props, xmlSource,
+                Mockito.mock(PdfEmailExtractor::class.java), Mockito.mock(UnpaywallClient::class.java))
+            routed.extractAuthorEmails(paper, Instant.now().plusSeconds(30))
+        } finally {
+            server.stop(0)
+        }
+        assertEquals(listOf("GET /PMC7759461/fullTextXML"), xmlRequests)
 
         assertEquals(setOf("millman@berkeley.edu", "stefanv@berkeley.edu", "ralf.gommers@gmail.com"),
             enriched.emails.map { it.email }.toSet())
         assertEquals("FULLTEXT_XML", enriched.methodUsed)
-        assertEquals(1, enriched.httpRequests)
+        assertEquals(xmlRequests.size, enriched.httpRequests)
         assertNull(enriched.emails.single { it.email == "millman@berkeley.edu" }.openAlexAuthorId)
 
         val docs = installOwnershipStorage()
@@ -536,14 +547,253 @@ class ExpertDiscoveryServiceTest {
             put("oldVersionTerminalReason", old.unrecoverableReason)
             put("rawDocumentsBeforeOldVersion", rawWritesBeforeOldVersion)
             put("rawDocumentsAfterOldVersion", docs.keys.count { it.contains("/orcid_info/") })
-            put("metadataRequestCount", metadataRequests)
-            put("xmlParserEntryCalls", xmlCalls)
+            put("metadataRequestCount", metadataUrls.size)
+            put("metadataRequestUrls", objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(metadataUrls))
+            put("xmlRequests", objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(xmlRequests))
             put("emailValidationCalls", validationCalls)
-            put("pipelineCheckpoint", "not exercised by direct consumeQueuedItem invocation")
         }
+        val boundaryCases = isolatedXmlBoundaryCases(paper)
+        val versionCases = isolatedCachedVersionCases(paper, enriched)
+        report.set<com.fasterxml.jackson.databind.JsonNode>("boundaryCases", objectMapper.valueToTree(
+            boundaryCases + mapOf("case" to "pausedQueuedItem",
+                "tickSkipReason" to versionCases.last()["tickSkipReason"],
+                "rawCreateRequests" to versionCases.last()["rawCreateRequests"],
+                "candidateCreateRequests" to versionCases.last()["candidateCreateRequests"],
+                "rawDocuments" to versionCases.last()["rawDocuments"],
+                "candidateDocuments" to versionCases.last()["candidateDocuments"])))
+        report.set<com.fasterxml.jackson.databind.JsonNode>("versionCases", objectMapper.valueToTree(versionCases))
         val reportPath = java.nio.file.Paths.get("target/discovery-plan-acceptance/04.json")
         java.nio.file.Files.createDirectories(reportPath.parent)
         java.nio.file.Files.write(reportPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+    }
+
+    private fun isolatedXmlBoundaryCases(paper: PaperMetadata): List<Map<String, Any?>> {
+        val reports = mutableListOf<Map<String, Any?>>()
+        val owner = verifiedAuthorEmail("owner@example.org", "Jane", "Doe", true, null, null)
+        val sameName = JatsXmlEmailParser.parse("""<article><front><article-meta><contrib-group>
+            <contrib><name><given-names>Jane</given-names><surname>Doe</surname></name><email>owner@example.org</email></contrib>
+            <contrib><name><given-names>Jane</given-names><surname>Doe</surname></name><email>second@example.org</email></contrib>
+            </contrib-group></article-meta></front></article>""")
+        val twoEmails = JatsXmlEmailParser.parse("""<article><front><article-meta><contrib-group>
+            <contrib><name><given-names>Jane</given-names><surname>Doe</surname></name>
+              <email>owner@example.org</email><email>third@example.org</email></contrib>
+            </contrib-group></article-meta></front></article>""")
+        assertEquals(2, sameName.size)
+        assertEquals(2, twoEmails.size)
+        val cases = linkedMapOf(
+            "unknownIdentity" to listOf(owner.copy(givenNames = null, familyNames = null, identityEvidence = null)),
+            "invalidEmail" to listOf(owner),
+            "ineligible" to listOf(owner),
+            "qualified" to listOf(owner),
+            "duplicate" to listOf(owner),
+            "sameNameDifferentEmails" to sameName,
+            "twoExplicitEmails" to twoEmails
+        )
+        for ((name, contacts) in cases) {
+            setUp()
+            val docs = installOwnershipStorage()
+            val service = createService()
+            contacts.forEach {
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email,
+                    EmailValidationResult(if (name == "invalidEmail") 0 else 3, name != "invalidEmail"))
+            }
+            if (name == "ineligible") DiscoveryMockHelper.stubEligibilityFalse(eligibilityService, listOf("TEST_INELIGIBLE"))
+            val payload = objectMapper.writeValueAsString(currentExtraction(contacts, "FULLTEXT_XML"))
+            val envelope = ownershipEnvelope(paper.copy(source = "OPENALEX",
+                doi = "10.04/$name", authors = emptyList()))
+            val first = service.consumeQueuedItem(envelope, payload, null)
+            val original = docs.toMap()
+            val second = if (name == "duplicate") service.consumeQueuedItem(envelope,
+                objectMapper.writeValueAsString(currentExtraction(
+                    listOf(owner.copy(givenNames = "Changed")), "FULLTEXT_XML")), null) else null
+            val validationCalls = Mockito.mockingDetails(emailValidationService).invocations.count { it.method.name == "validate" }
+            val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+                it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                    (it.arguments.firstOrNull() as? String)?.contains("/orcid_info/_doc/") == true
+            }
+            val candidateRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+                it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                    (it.arguments.firstOrNull() as? String)?.contains("/orcid_info_candidate/_doc/") == true
+            }
+            reports += mapOf(
+                "case" to name, "inputContacts" to contacts.map {
+                    mapOf("email" to it.email, "givenNames" to it.givenNames,
+                        "familyNames" to it.familyNames, "identityEvidence" to it.identityEvidence) },
+                "validationCalls" to validationCalls, "rawCreateRequests" to rawRequests,
+                "candidateCreateRequests" to candidateRequests, "indexed" to first.indexedExperts,
+                "promoted" to first.promoted, "failureReasons" to first.failureReasons,
+                "duplicateFailureReasons" to second?.failureReasons,
+                "documentsBeforeReplay" to original.entries.map { (key, doc) ->
+                    mapOf("document" to key, "email" to doc["email"], "givenNames" to doc["givenNames"]) },
+                "documentsAfterReplay" to docs.entries.map { (key, doc) ->
+                    mapOf("document" to key, "email" to doc["email"], "givenNames" to doc["givenNames"]) },
+                "unchangedOnReplay" to (if (second == null) null else original == docs)
+            )
+            when (name) {
+                "unknownIdentity" -> { assertEquals(0, validationCalls); assertEquals(0, rawRequests) }
+                "invalidEmail" -> { assertEquals(1, validationCalls); assertEquals(0, rawRequests) }
+                "ineligible" -> { assertEquals(1, rawRequests); assertEquals(0, candidateRequests) }
+                "qualified" -> { assertEquals(1, rawRequests); assertEquals(1, candidateRequests) }
+                "duplicate" -> { assertEquals(1, rawRequests); assertEquals(original, docs) }
+                else -> { assertEquals(2, rawRequests); assertEquals(2, candidateRequests) }
+            }
+        }
+        return reports
+    }
+
+    private fun isolatedCachedVersionCases(paper: PaperMetadata, extraction: EmailExtractionOutcome): List<Map<String, Any?>> {
+        val cases = mutableListOf<Map<String, Any?>>()
+        for (version in listOf(DiscoveryIdentity.EXTRACTION_VERSION, 20260927, null)) {
+            setUp()
+            val docs = installOwnershipStorage()
+            val source = mockOpenAlex()
+            val discovery = createService()
+            extraction.emails.forEach {
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email, EmailValidationResult(3, true))
+            }
+            val paused = version == null
+            val criteria = PaperSearchCriteria(sources = listOf("OPENALEX"), subjectScope = SubjectScopeCatalog.RND_TARGET)
+            val now = Instant.now()
+            val stream = com.weibo.talentintroduction.discovery.repository.StreamRow(
+                id = 10L, pipelineId = 1L, queryHash = discovery.queueQueryHash("OPENALEX", criteria),
+                source = "OPENALEX", epoch = 1L, criteriaJson = objectMapper.writeValueAsString(criteria),
+                cursorValue = "CACHED_XML", cursorState = com.weibo.talentintroduction.discovery.repository.StreamCursorState.EXHAUSTED,
+                nextAttemptAt = null, leaseToken = null, leaseUntil = null, sourceError = null,
+                queuedPapers = 1, queuedRecords = 0, processedPapers = 0, processedRecords = 0,
+                indexedExperts = 0, duplicateExperts = 0, failedItems = 0
+            )
+            var pipelineRow = com.weibo.talentintroduction.discovery.repository.PipelineRow(
+                desiredState = if (paused) com.weibo.talentintroduction.discovery.repository.PipelineDesiredState.PAUSED
+                    else com.weibo.talentintroduction.discovery.repository.PipelineDesiredState.RUNNING,
+                phase = com.weibo.talentintroduction.discovery.repository.PipelinePhase.QUEUED,
+                criteriaJson = objectMapper.writeValueAsString(criteria), criteriaVersion = PIPELINE_CRITERIA_VERSION,
+                queryHash = "isolated-version-$version", generation = 1L,
+                ownerToken = null, ownerUntil = null, executionId = null, windowUntil = null,
+                nextWakeAt = null, waitReason = null, rawScanDone = true,
+                queuedPapers = 1, queuedRecords = 0, processedPapers = 0, processedRecords = 0,
+                indexedExperts = 0, duplicateExperts = 0, failedItems = 0, activeCount = 1,
+                payloadBytes = 0, reservedResultBytes = 0, capacityPaused = false
+            )
+            val cached = extraction.copy(identityRuleVersion = version ?: DiscoveryIdentity.EXTRACTION_VERSION)
+            val metadata = paper.copy(source = "OPENALEX")
+            val payload = objectMapper.writeValueAsString(metadata)
+            val job = com.weibo.talentintroduction.discovery.repository.JobRow(
+                id = 20L, streamId = stream.id, itemKey = metadata.doi ?: "PMC7759461",
+                identityQuality = "DOI", unit = "PAPER", payloadVersion = 1, priority = 1,
+                metadataJson = payload, extractionJson = objectMapper.writeValueAsString(cached),
+                payloadBytes = payload.toByteArray().size.toLong(), reservedResultBytes = 0,
+                status = com.weibo.talentintroduction.discovery.repository.QueueJobStatus.PENDING,
+                attempts = 0, nextAttemptAt = now.minusSeconds(1), leaseToken = null, leaseUntil = null,
+                generation = 1L, lastError = null
+            )
+            val store = Mockito.mock(com.weibo.talentintroduction.discovery.repository.DiscoveryPaperQueueStore::class.java)
+            var terminal: String? = null
+            var terminalReason: String? = null
+            Mockito.doAnswer { pipelineRow }.`when`(store).findPipeline()
+            Mockito.doReturn(listOf(stream)).`when`(store).findStreams(1L)
+            Mockito.doReturn(stream).`when`(store).ensureStream(Mockito.anyLong(), Mockito.anyString(),
+                Mockito.anyString(), Mockito.anyLong(), Mockito.anyString(), Mockito.any(Instant::class.java) ?: now)
+            Mockito.doAnswer { if (terminal == null) job else null }.`when`(store)
+                .nextDueJob(Mockito.anyList<Long>(), Mockito.anyBoolean(), Mockito.any(Instant::class.java) ?: now)
+            assertNotNull(store.nextDueJob(listOf(stream.id), true, now), "cached job must be due in isolated store")
+            Mockito.doReturn(true).`when`(store).claimOwner(Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: now, Mockito.any(Instant::class.java) ?: now,
+                Mockito.any(Instant::class.java) ?: now)
+            Mockito.doReturn(true).`when`(store).claimJob(Mockito.anyLong(), Mockito.anyString(),
+                Mockito.any(Instant::class.java) ?: now, Mockito.anyLong(), Mockito.any(Instant::class.java) ?: now)
+            Mockito.doAnswer { call ->
+                pipelineRow = pipelineRow.copy(phase = call.getArgument(1), waitReason = call.getArgument(2))
+                1
+            }.`when`(store).releaseOwner(Mockito.anyString(), Mockito.anyString(), Mockito.anyString(),
+                Mockito.nullable(Instant::class.java), Mockito.any(Instant::class.java) ?: now)
+            Mockito.doAnswer {
+                pipelineRow = pipelineRow.copy(phase = com.weibo.talentintroduction.discovery.repository.PipelinePhase.DRAINED)
+                true
+            }.`when`(store).markDrained(Mockito.any(Instant::class.java) ?: now)
+            Mockito.doAnswer { call ->
+                terminal = call.getArgument(3)
+                terminalReason = call.getArgument(6)
+                pipelineRow = pipelineRow.copy(activeCount = 0, failedItems = 1)
+                com.weibo.talentintroduction.discovery.repository.CompletionOutcome(true, 1, 0)
+            }.`when`(store).completeJob(Mockito.anyLong(), Mockito.anyString(), Mockito.anyLong(),
+                Mockito.anyString(), Mockito.anyInt(), Mockito.any(Instant::class.java) ?: now,
+                Mockito.anyString(), Mockito.any(Instant::class.java) ?: now)
+            Mockito.doAnswer { call ->
+                terminal = com.weibo.talentintroduction.discovery.repository.QueueJobStatus.SUCCEEDED
+                pipelineRow = pipelineRow.copy(activeCount = 0, indexedExperts = call.getArgument<Int>(3).toLong())
+                com.weibo.talentintroduction.discovery.repository.CompletionOutcome(true, 0, call.getArgument(3))
+            }.`when`(store).completeJobWithExperts(Mockito.anyLong(), Mockito.anyString(), Mockito.anyLong(),
+                Mockito.anyInt(), Mockito.anyInt(), Mockito.anyInt(), Mockito.any(Instant::class.java) ?: now,
+                Mockito.any(Instant::class.java) ?: now)
+            val task = Mockito.mock(com.weibo.talentintroduction.task.service.TaskExecutionService::class.java)
+            var window: PipelineWindowResult? = null
+            Mockito.doAnswer { call ->
+                val onStarted = call.getArgument<((Long) -> Unit)?>(3)
+                onStarted?.invoke(77L)
+                val result = call.getArgument<() -> PipelineWindowResult>(5)()
+                window = result
+                Pair(com.weibo.talentintroduction.task.domain.TaskExecution(
+                    id = 77L, taskType = DISCOVERY_PIPELINE_TASK_TYPE, triggerType = "PIPELINE",
+                    status = result.taskFinalStatus ?: "SUCCESS", requestPayload = null, resultSummary = null,
+                    successCount = result.taskSuccessCount, failureCount = result.taskFailureCount,
+                    startedAt = LocalDateTime.now()), result)
+            }.`when`(task).runAndRecordWithResult<PipelineWindowResult>(
+                Mockito.anyString(), Mockito.anyString(), Mockito.any(Any::class.java) ?: emptyMap<String, Any>(),
+                Mockito.any(), Mockito.any(), Mockito.any<() -> PipelineWindowResult>() ?: { error("unused") })
+            val settings = discoveryProperties.copy(pipelineEnabled = true, timeBudget = Duration.ofSeconds(10))
+            val pipeline = DiscoveryPipelineService(store, discovery, task, progressStore, settings,
+                objectMapper, com.weibo.talentintroduction.config.OpenAlexRequestPolicy(OpenAlexProperties(enabled = false)),
+                Executor { it.run() }, Executor { it.run() }, Executor { it.run() },
+                object : PipelineTimeSource { override fun now(): Instant = now })
+            val checkpointBefore = store.findStreams(1L).single().cursorValue
+            val tick = pipeline.tick()
+            val checkpointAfter = store.findStreams(1L).single().cursorValue
+            val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+                it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                    (it.arguments.firstOrNull() as? String)?.contains("/orcid_info/_doc/") == true
+            }
+            val candidateRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+                it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                    (it.arguments.firstOrNull() as? String)?.contains("/orcid_info_candidate/_doc/") == true
+            }
+            cases += mapOf(
+                "cachedExtractionVersion" to cached.identityRuleVersion,
+                "evidenceVersion" to DiscoveryIdentity.VERSION,
+                "checkpointBefore" to checkpointBefore, "checkpointAfter" to checkpointAfter,
+                "checkpointState" to store.findStreams(1L).single().cursorState,
+                "pipelinePhaseAfter" to store.findPipeline()?.phase,
+                "tickDispatched" to tick.dispatched, "tickSkipReason" to tick.skipReason,
+                "jobTerminal" to terminal, "jobTerminalReason" to terminalReason,
+                "windowTermination" to window?.terminationReason,
+                "rawCreateRequests" to rawRequests, "candidateCreateRequests" to candidateRequests,
+                "rawDocuments" to docs.keys.count { it.contains("/orcid_info/") },
+                "candidateDocuments" to docs.keys.count { it.contains("/orcid_info_candidate/") },
+                "xmlExtractionCalls" to Mockito.mockingDetails(source).invocations.count { it.method.name == "extractAuthorEmails" }
+            )
+            if (!paused) assertTrue(tick.dispatched && window != null, "cached pipeline window must execute")
+            assertEquals(checkpointBefore, checkpointAfter)
+            when {
+                paused -> {
+                    assertEquals(PipelineTickSkipReason.PAUSED, tick.skipReason)
+                    assertNull(terminal)
+                    assertEquals(0, rawRequests)
+                    assertEquals(0, candidateRequests)
+                }
+                version == DiscoveryIdentity.EXTRACTION_VERSION -> {
+                    assertEquals(com.weibo.talentintroduction.discovery.repository.QueueJobStatus.SUCCEEDED, terminal)
+                    assertEquals(3, rawRequests)
+                    assertEquals(3, candidateRequests)
+                }
+                else -> {
+                    assertEquals(com.weibo.talentintroduction.discovery.repository.QueueJobStatus.FAILED, terminal)
+                    assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", terminalReason)
+                    assertEquals(0, rawRequests)
+                    assertEquals(0, candidateRequests)
+                }
+            }
+            Mockito.verify(source, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: metadata)
+        }
+        return cases
     }
 
     @Test

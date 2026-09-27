@@ -263,15 +263,16 @@ class OpenAlexDataSource(
     }
     private fun extractPmcId(work: JsonNode): String? {
         val candidates = buildList {
-            add(work.path("ids").path("pmcid").asText(null))
-            work.path("locations").forEach { add(it.path("landing_page_url").asText(null)) }
-        }.mapNotNull(::normalizePmcCandidate).toSet()
+            val id = work.path("ids").path("pmcid").asText(null)?.trim()
+            if (id?.matches(Regex("PMC[0-9]+")) == true) add(id)
+            else add(normalizePmcLocation(id))
+            work.path("locations").forEach { add(normalizePmcLocation(it.path("landing_page_url").asText(null))) }
+        }.filterNotNull().toSet()
         return candidates.singleOrNull()
     }
 
-    private fun normalizePmcCandidate(value: String?): String? {
+    private fun normalizePmcLocation(value: String?): String? {
         val candidate = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-        if (candidate.matches(Regex("PMC[0-9]+"))) return candidate
         val uri = runCatching { URI(candidate) }.getOrNull() ?: return null
         if (uri.scheme !in setOf("http", "https")) return null
         val host = uri.host?.lowercase() ?: return null

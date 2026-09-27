@@ -197,7 +197,8 @@ object JatsXmlEmailParser {
         if (node.nodeType == Node.TEXT_NODE || node.nodeType == Node.CDATA_SECTION_NODE) return node.nodeValue.orEmpty()
         val isTarget = node is Element && node.tagName in setOf("corresp", "fn")
         val text = (0 until node.childNodes.length).map { node.childNodes.item(it) }
-            .filterNot { isTarget && it is Element && it.tagName == "label" }
+            .filterNot { isTarget && it is Element && it.tagName == "label" &&
+                it.textContent.trim().matches(Regex("[0-9]+")) }
             .joinToString("") { readableText(it) }
         return if (node.nodeName == "email") " $text " else text
     }

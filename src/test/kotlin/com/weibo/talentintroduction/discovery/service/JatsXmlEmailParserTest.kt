@@ -666,6 +666,20 @@ class JatsXmlEmailParserTest {
     }
 
     @Test
+    fun `textual target label conflicting with sole xref owner is not discarded`() {
+        val xml = """<article><front><article-meta><contrib-group>
+          <contrib contrib-type="author"><name><given-names>John</given-names><surname>Smith</surname></name>
+            <xref ref-type="corresp" rid="c1"/></contrib>
+          </contrib-group><author-notes><corresp id="c1"><label>Jane Doe</label>
+            <email>contact@example.org</email></corresp></author-notes>
+          </article-meta></front></article>"""
+        val contact = JatsXmlEmailParser.parse(xml).single()
+        assertEquals("contact@example.org", contact.email)
+        assertNull(contact.givenNames)
+        assertNull(contact.identityEvidence)
+    }
+
+    @Test
     fun `ordinary numeric text in a contact target still prevents inferred ownership`() {
         val xml = """
             <article><front><article-meta><contrib-group>

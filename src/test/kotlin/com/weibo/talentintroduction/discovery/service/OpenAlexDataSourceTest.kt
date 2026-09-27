@@ -142,6 +142,10 @@ class OpenAlexDataSourceTest {
             } to "PMC123",
             original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
                 putObject("ids").put("pmcid", "")
+                putArray("locations").addObject().put("landing_page_url", "PMC123")
+            } to null,
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "")
                 putArray("locations").addObject().put("landing_page_url", "https://europepmc.org.evil/articles/PMC123")
             } to null,
             original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
