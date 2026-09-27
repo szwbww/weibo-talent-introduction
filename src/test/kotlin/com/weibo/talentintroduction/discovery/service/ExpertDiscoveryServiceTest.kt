@@ -443,6 +443,110 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `real OpenAlex PMC metadata flows through XML parser and isolated consumer`() {
+        val archive = requireNotNull(javaClass.getResourceAsStream("/discovery/xml-route-recall.zip")).use { it.readBytes() }
+        fun fixture(suffix: String): ByteArray = java.util.zip.ZipInputStream(archive.inputStream()).use { zip ->
+            generateSequence { zip.nextEntry }.first { it.name.endsWith(suffix) }
+            zip.readBytes()
+        }
+        val workBytes = fixture("round2/openalex-pmc-work.json")
+        val xmlBytes = fixture("round2/PMC7759461.xml")
+        val work = objectMapper.readTree(workBytes)
+        val apiResponse = objectMapper.createObjectNode().apply {
+            putObject("meta").put("count", 1)
+            putArray("results").add(work)
+        }
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET),
+                Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenReturn(ResponseEntity.ok(apiResponse))
+        val props = openAlexProperties.copy(requestDelayMs = 0)
+        val source = OpenAlexDataSource(restTemplate, props, europePmc,
+            Mockito.mock(PdfEmailExtractor::class.java), Mockito.mock(UnpaywallClient::class.java))
+        val paper = source.searchPapers(PaperSearchCriteria()).papers.single()
+        val metadataRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.GET
+        }
+        assertEquals(1, metadataRequests)
+
+        assertEquals("PMC7759461", paper.pmcId)
+
+        val parsed = JatsXmlEmailParser.parse(xmlBytes)
+        val parsedByEmail = parsed.associateBy { it.email }
+        assertEquals(3, parsedByEmail.keys.intersect(setOf(
+            "millman@berkeley.edu", "stefanv@berkeley.edu", "ralf.gommers@gmail.com"
+        )).size)
+        val xmlOutcome = currentExtraction(parsed, "FULLTEXT_XML", httpRequests = 1, fulltextObtained = true)
+        Mockito.doReturn(xmlOutcome).`when`(europePmc)
+            .extractAuthorEmails(Mockito.eq(paper) ?: paper, Mockito.any())
+        val enriched = source.extractAuthorEmails(paper, Instant.now().plusSeconds(30))
+        val xmlCalls = Mockito.mockingDetails(europePmc).invocations.count {
+            it.method.name == "extractAuthorEmails"
+        }
+        assertEquals(1, xmlCalls)
+
+        assertEquals(setOf("millman@berkeley.edu", "stefanv@berkeley.edu", "ralf.gommers@gmail.com"),
+            enriched.emails.map { it.email }.toSet())
+        assertEquals("FULLTEXT_XML", enriched.methodUsed)
+        assertEquals(1, enriched.httpRequests)
+        assertNull(enriched.emails.single { it.email == "millman@berkeley.edu" }.openAlexAuthorId)
+
+        val docs = installOwnershipStorage()
+        val service = createService()
+        enriched.emails.forEach {
+            DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email, EmailValidationResult(3, true))
+        }
+        val envelope = ownershipEnvelope(paper.copy(source = "OPENALEX"))
+        val consumed = service.consumeQueuedItem(envelope, objectMapper.writeValueAsString(
+            enriched.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+        assertTrue(consumed.succeeded)
+        assertEquals(3, consumed.indexedExperts)
+        assertEquals(3, consumed.promoted)
+        assertEquals(3, docs.keys.count { it.contains("/orcid_info/") })
+        assertEquals(3, docs.keys.count { it.contains("/orcid_info_candidate/") })
+        val validationCalls = Mockito.mockingDetails(emailValidationService).invocations.count {
+            it.method.name == "validate"
+        }
+        assertEquals(3, validationCalls)
+
+        val rawWritesBeforeOldVersion = docs.keys.count { it.contains("/orcid_info/") }
+
+        val old = service.consumeQueuedItem(envelope,
+            """{"emails":[],"methodUsed":"FULLTEXT_XML","identityRuleVersion":20260927}""", null)
+        assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", old.unrecoverableReason)
+        assertEquals(rawWritesBeforeOldVersion, docs.keys.count { it.contains("/orcid_info/") })
+        val report = objectMapper.createObjectNode().apply {
+            put("task", "child-04")
+            put("paper", paper.doi)
+            put("pmcId", paper.pmcId)
+            put("firstFulltextRoute", enriched.methodUsed)
+            put("xmlHttpRequests", enriched.httpRequests)
+            put("xmlFixtureSha256", java.security.MessageDigest.getInstance("SHA-256").digest(xmlBytes)
+                .joinToString("") { "%02x".format(it) })
+            put("metadataFixtureSha256", java.security.MessageDigest.getInstance("SHA-256").digest(workBytes)
+                .joinToString("") { "%02x".format(it) })
+            put("parsedContacts", objectMapper.valueToTree<com.fasterxml.jackson.databind.JsonNode>(
+                enriched.emails.map { mapOf("email" to it.email, "givenNames" to it.givenNames,
+                    "familyNames" to it.familyNames, "orcidId" to it.orcidId, "openAlexAuthorId" to it.openAlexAuthorId) }))
+            put("consumerSucceeded", consumed.succeeded)
+            put("consumerIndexedExperts", consumed.indexedExperts)
+            put("consumerPromoted", consumed.promoted)
+            put("rawDocuments", docs.keys.count { it.contains("/orcid_info/") })
+            put("candidateDocuments", docs.keys.count { it.contains("/orcid_info_candidate/") })
+            put("oldVersionTerminalReason", old.unrecoverableReason)
+            put("rawDocumentsBeforeOldVersion", rawWritesBeforeOldVersion)
+            put("rawDocumentsAfterOldVersion", docs.keys.count { it.contains("/orcid_info/") })
+            put("metadataRequestCount", metadataRequests)
+            put("xmlParserEntryCalls", xmlCalls)
+            put("emailValidationCalls", validationCalls)
+            put("pipelineCheckpoint", "not exercised by direct consumeQueuedItem invocation")
+        }
+        val reportPath = java.nio.file.Paths.get("target/discovery-plan-acceptance/04.json")
+        java.nio.file.Files.createDirectories(reportPath.parent)
+        java.nio.file.Files.write(reportPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+    }
+
+    @Test
     fun `published HTML through parser consumer and writer admits two owned emails and zero shared ones`() {
         val docs = installOwnershipStorage()
         val svc = createService()

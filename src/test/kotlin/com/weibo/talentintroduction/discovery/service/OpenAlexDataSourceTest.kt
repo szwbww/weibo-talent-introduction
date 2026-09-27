@@ -117,6 +117,77 @@ class OpenAlexDataSourceTest {
     }
 
     @Test
+    fun `PMC routing accepts only approved exact ids and structured landing pages`() {
+        val loader = javaClass.classLoader
+        val fixture = java.util.zip.ZipInputStream(
+            requireNotNull(loader.getResourceAsStream("discovery/xml-route-recall.zip"))
+        ).use { zip ->
+            generateSequence { zip.nextEntry }.first {
+                it.name.endsWith("round2/openalex-pmc-work.json")
+            }.let { zip.readBytes() }
+        }
+        val original = mapper.readTree(fixture)
+        val cases = listOf(
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "PMC123")
+                putArray("locations")
+            } to "PMC123",
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "")
+                putArray("locations").addObject().put("landing_page_url", "https://pmc.ncbi.nlm.nih.gov/articles/PMC7759461/?report=1")
+            } to "PMC7759461",
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "")
+                putArray("locations").addObject().put("landing_page_url", "https://europepmc.org/articles/PMC123")
+            } to "PMC123",
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "")
+                putArray("locations").addObject().put("landing_page_url", "https://europepmc.org.evil/articles/PMC123")
+            } to null,
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "")
+                putArray("locations").addObject().put("landing_page_url", "https://example.org/article?pmc=PMC123")
+            } to null,
+            original.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().apply {
+                putObject("ids").put("pmcid", "PMC111")
+                putArray("locations").addObject().put("landing_page_url", "https://europepmc.org/articles/PMC222")
+            } to null
+        )
+        for ((work, expected) in cases) {
+            stubWorksResponse("""{"meta":{"count":1},"results":[${mapper.writeValueAsString(work)}]}""")
+            val result = dataSource.searchPapers(PaperSearchCriteria())
+            assertEquals(expected, result.papers.single().pmcId)
+        }
+        Mockito.verify(restTemplate, Mockito.times(cases.size)).exchange(
+            Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        assertTrue(fixture.isNotEmpty(), "The exact archived metadata drives route parsing")
+    }
+
+    @Test
+    fun `OpenAlex comma names require one unambiguous nonempty pair`() {
+        stubWorksResponse(
+            """{"meta":{"count":1},"results":[{"authorships":[
+              {"author":{"display_name":"Jakubův, Jan"}},
+              {"author":{"display_name":"Jane Doe"}},
+              {"author":{"display_name":"Family, Given, Middle"}},
+              {"author":{"display_name":", Empty"}},
+              {"author":{"display_name":"Family, "}}
+            ]}]}"""
+        )
+        val authors = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors
+        assertEquals("Jan", authors[0].givenNames)
+        assertEquals("Jakubův", authors[0].familyNames)
+        assertEquals("Jane", authors[1].givenNames)
+        assertEquals("Doe", authors[1].familyNames)
+        for (ambiguous in authors.drop(2)) {
+            assertNull(ambiguous.givenNames)
+            assertNull(ambiguous.familyNames)
+        }
+    }
+
+    @Test
     fun `enrichAuthor returns academic metrics`() {
         val sampleJson = javaClass.classLoader
             .getResource("openalex/author-response-sample.json")!!.readText()

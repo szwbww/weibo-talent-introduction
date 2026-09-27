@@ -25,6 +25,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
+import java.net.URI
 import java.time.Instant
 
 @Service
@@ -224,8 +225,7 @@ class OpenAlexDataSource(
         val papers = response.path("results").mapNotNull { node ->
             try {
                 val doi = node.path("doi").asText(null)?.removePrefix("https://doi.org/")
-                val pmcId = node.path("ids").path("pmcid")?.asText(null)
-                    ?.removePrefix("https://www.ncbi.nlm.nih.gov/pmc/articles/")
+                val pmcId = extractPmcId(node)
                 val pmid = node.path("ids").path("pmid")?.asText(null)
                     ?.removePrefix("https://pubmed.ncbi.nlm.nih.gov/")
                 val pdfUrl = node.path("best_oa_location").path("pdf_url").asText(null)
@@ -240,7 +240,7 @@ class OpenAlexDataSource(
                 val authors = node.path("authorships").map { authorship ->
                     val author = authorship.path("author")
                     val orcid = author.path("orcid").asText(null)?.removePrefix("https://orcid.org/")
-                    val nameParts = author.path("display_name").asText("").split(" ", limit = 2)
+                    val nameParts = splitDisplayName(author.path("display_name").asText(""))
                     val institution = authorship.path("institutions").firstOrNull()
                     // I5a-2: 与 affiliation 取自同一个（第一个）机构对象；I5a-3: 无 type/空串均产出 null。
                     val institutionType = institution?.path("type")?.asText(null)?.takeIf { it.isNotBlank() }
@@ -260,6 +260,40 @@ class OpenAlexDataSource(
             } catch (e: Exception) { log.debug("Failed to parse OpenAlex: {}", e.message); null }
         }
         return PaperSearchResult(papers, nextCursor, totalResults)
+    }
+    private fun extractPmcId(work: JsonNode): String? {
+        val candidates = buildList {
+            add(work.path("ids").path("pmcid").asText(null))
+            work.path("locations").forEach { add(it.path("landing_page_url").asText(null)) }
+        }.mapNotNull(::normalizePmcCandidate).toSet()
+        return candidates.singleOrNull()
+    }
+
+    private fun normalizePmcCandidate(value: String?): String? {
+        val candidate = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (candidate.matches(Regex("PMC[0-9]+"))) return candidate
+        val uri = runCatching { URI(candidate) }.getOrNull() ?: return null
+        if (uri.scheme !in setOf("http", "https")) return null
+        val host = uri.host?.lowercase() ?: return null
+        val path = uri.rawPath.orEmpty().trimEnd('/')
+        val id = when {
+            host in setOf("pmc.ncbi.nlm.nih.gov", "www.ncbi.nlm.nih.gov") &&
+                path.matches(Regex("/(?:pmc/)?articles/PMC[0-9]+")) -> path.substringAfterLast('/')
+            host in setOf("europepmc.org", "www.europepmc.org") &&
+                path.matches(Regex("/(?:pmc/)?articles/PMC[0-9]+")) -> path.substringAfterLast('/')
+            else -> null
+        }
+        return id
+    }
+
+    private fun splitDisplayName(name: String): List<String> {
+        val commas = name.count { it == ',' }
+        if (commas > 0) {
+            if (commas != 1) return emptyList()
+            val (family, given) = name.split(',', limit = 2)
+            return if (family.isNotBlank() && given.isNotBlank()) listOf(given.trim(), family.trim()) else emptyList()
+        }
+        return name.split(" ", limit = 2)
     }
 
     /** Legacy entry point: the existing backfill callers are history enrichment (lowest priority). */

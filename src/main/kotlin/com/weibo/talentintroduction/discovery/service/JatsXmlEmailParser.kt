@@ -41,8 +41,8 @@ object JatsXmlEmailParser {
             ?: return emptyList()
         val ids = meta.descendants().filter { it.getAttribute("id").isNotBlank() }.groupBy { it.getAttribute("id") }
         val authors = meta.descendants().filter { it.tagName == "contrib" && isAuthor(it, meta) }.map { node ->
-            val name = node.children("name").singleOrNull()
-            val given = name?.children("given-names")?.singleOrNull()?.textContent?.trim()?.takeIf { it.isNotBlank() }
+            val name = identityName(node)
+            val given = name?.let(::givenNames)?.takeIf { it.isNotBlank() }
             val family = name?.children("surname")?.singleOrNull()?.textContent?.trim()?.takeIf { it.isNotBlank() }
             val orcids = node.children("contrib-id").filter { it.getAttribute("contrib-id-type") == "orcid" }
                 .mapNotNull { it.textContent.trim().substringAfterLast('/').takeIf { id -> id.matches(Regex("\\d{4}-\\d{4}-\\d{4}-\\d{3}[0-9X]")) } }.distinct()
@@ -112,6 +112,23 @@ object JatsXmlEmailParser {
                 else assigned[i].forEach { candidates += Candidate(email.value, it, true) }
             }
         }
+        val contributorSections = article.descendants().filter { section ->
+            section.tagName == "sec" && section.getAttribute("sec-type") == "contrib-info" &&
+                section.ancestorsUntil(article).none { it.tagName in setOf("sub-article", "ref-list") }
+        }
+        for (section in contributorSections) {
+            for (paragraph in section.children("p")) {
+                val emails = EMAIL.findAll(paragraph.textContent).toList()
+                if (emails.size != 1) continue
+                val nameText = paragraph.textContent.substring(0, emails.single().range.first)
+                    .replace(Regex("(?i)\\b(?:e-?mail|email\\s+address)\\s*:\\s*"), "")
+                    .trim().trimEnd(',', ';', ':', '.', ' ')
+                val matches = authors.filter { normalize(it.name).isNotEmpty() && normalize(it.name) == normalize(nameText) }
+                matches.singleOrNull()?.let { owner ->
+                    candidates += Candidate(emails.single().value, owner, owner.identity.isCorresponding)
+                }
+            }
+        }
         val evidenceHash = java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
         return candidates.groupBy { it.email.lowercase(Locale.ROOT) }.map { (_, group) ->
             val owners = group.mapNotNull { it.author }.distinctBy { it.node }
@@ -125,6 +142,18 @@ object JatsXmlEmailParser {
         }
     }
 
+    private fun givenNames(name: Element): String? {
+        val given = name.children("given-names").singleOrNull() ?: return null
+        val text = given.textContent.trim().takeIf { it.isNotBlank() } ?: return null
+        val initials = given.getAttribute("initials").filter { it.isLetter() }
+        if (initials.isEmpty()) return text
+        return text.split(Regex("\\s+")).mapIndexed { index, part ->
+            if (part.length == 1 && part[0].isLetter() &&
+                initials.getOrNull(index)?.equals(part[0], ignoreCase = true) == true
+            ) "$part." else part
+        }.joinToString(" ")
+    }
+
     private fun isAuthor(node: Element, meta: Element): Boolean {
         val ancestors = node.ancestorsUntil(meta)
         if (ancestors.any { it.tagName in setOf("contrib", "ref", "ref-list", "sub-article") }) return false
@@ -132,8 +161,21 @@ object JatsXmlEmailParser {
                 it.getAttribute("content-type").let { type -> type.isNotBlank() && type != "author" }
             }) return false
         val type = node.getAttribute("contrib-type")
-        return (type.isBlank() || type == "author") && node.children("name").size == 1
+        return (type.isBlank() || type == "author") &&
+            (node.children("name").size == 1 || node.children("name-alternatives").size == 1)
     }
+    private fun identityName(node: Element): Element? {
+        val direct = node.children("name")
+        if (direct.size == 1) return direct.single().takeIf(::completeName)
+        if (direct.isNotEmpty()) return null
+        val alternatives = node.children("name-alternatives").singleOrNull() ?: return null
+        val complete = alternatives.children("name").filter(::completeName)
+        if (complete.size == 1) return complete.single()
+        return complete.filter { it.getAttribute("xml:lang").equals("en", ignoreCase = true) }.singleOrNull()
+    }
+    private fun completeName(name: Element) =
+        name.children("given-names").singleOrNull()?.textContent?.isNotBlank() == true &&
+            name.children("surname").singleOrNull()?.textContent?.isNotBlank() == true
 
     private fun refs(xref: Element) = xref.getAttribute("rid").trim().split(Regex("\\s+")).filter { it.isNotBlank() }
     private fun normalize(value: String) = Normalizer.normalize(value, Normalizer.Form.NFKD)
@@ -153,7 +195,10 @@ object JatsXmlEmailParser {
     }
     private fun readableText(node: Node): String {
         if (node.nodeType == Node.TEXT_NODE || node.nodeType == Node.CDATA_SECTION_NODE) return node.nodeValue.orEmpty()
-        val text = (0 until node.childNodes.length).joinToString("") { readableText(node.childNodes.item(it)) }
+        val isTarget = node is Element && node.tagName in setOf("corresp", "fn")
+        val text = (0 until node.childNodes.length).map { node.childNodes.item(it) }
+            .filterNot { isTarget && it is Element && it.tagName == "label" }
+            .joinToString("") { readableText(it) }
         return if (node.nodeName == "email") " $text " else text
     }
 }
