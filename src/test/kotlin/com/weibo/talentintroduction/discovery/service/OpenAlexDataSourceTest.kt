@@ -957,6 +957,86 @@ class OpenAlexDataSourceTest {
     }
 
     @Test
+    fun `original challenge falls through to original PDF while readable HTML stops fallback`() {
+        challengeFallbackEvidence()
+    }
+
+    internal fun challengeFallbackEvidence(): Map<String, Any?> {
+        val original = htmlContactEntries()
+        val challenge = requireNotNull(original["sources/W4381304672/source.html"])
+        val pdfMembers = mutableMapOf<String, ByteArray>()
+        java.util.zip.ZipInputStream(requireNotNull(javaClass.getResourceAsStream(
+            "/discovery/source-contact-recall.zip"))).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                pdfMembers[entry.name] = zip.readBytes()
+            }
+        }
+        val id = "W3014974815"
+        val pdf = requireNotNull(pdfMembers["sources/$id/source.pdf"])
+        val authors = htmlContactAuthors(mapper.readTree(requireNotNull(pdfMembers["sources/$id/metadata.json"])))
+        val requested = mutableListOf<String>()
+        val deadlines = mutableListOf<Instant?>()
+        val primary = "https://primary.example/challenge"
+        val fallback = "https://repo.example/real.pdf"
+        val transport = Mockito.mock(RestTemplate::class.java)
+        val bounded = object : com.weibo.talentintroduction.config.BoundedHttpExecutor {
+            override fun <T : Any> getForObject(base: RestTemplate, url: String, responseType: Class<T>,
+                connectCapMs: Long, readCapMs: Long, deadline: Instant?): T? = base.getForObject(url, responseType)
+            override fun <T> execute(base: RestTemplate, uri: URI, connectCapMs: Long, readCapMs: Long,
+                deadline: Instant?, responseExtractor: ResponseExtractor<T>): T? {
+                deadlines += deadline
+                return base.execute(uri, HttpMethod.GET, null, responseExtractor)
+            }
+        }
+        val actualExtractor = PdfEmailExtractor(transport, PlainTextEmailExtractor(), PdfExtractionProperties(), bounded)
+        val chain = OpenAlexDataSource(restTemplate, properties, europePmc, actualExtractor, unpaywallClient, policy)
+        var primaryBody = challenge
+        Mockito.doAnswer { invocation: InvocationOnMock ->
+            val uri = invocation.getArgument<URI>(0).toString()
+            requested += uri
+            val body = if (uri == primary) primaryBody else if (uri == fallback) pdf
+                else throw AssertionError("unexpected request $uri")
+            val response = Mockito.mock(ClientHttpResponse::class.java)
+            Mockito.doReturn(HttpHeaders().apply {
+                contentType = if (uri == primary) MediaType.TEXT_HTML else MediaType.APPLICATION_PDF
+            }).`when`(response).headers
+            Mockito.doReturn(java.io.ByteArrayInputStream(body)).`when`(response).body
+            invocation.getArgument<ResponseExtractor<*>>(3).extractData(response)
+        }.`when`(transport).execute(Mockito.any(URI::class.java), Mockito.eq(HttpMethod.GET),
+            Mockito.any(), Mockito.any(ResponseExtractor::class.java))
+        val paper = openAlexPaper(primary, listOf(primary, fallback, "https://repo.example/unused.pdf"), authors)
+        val deadline = Instant.now().plusSeconds(120)
+        val outcome = chain.extractAuthorEmails(paper, deadline)
+        assertEquals(listOf(primary, fallback), requested)
+        assertEquals(listOf(deadline, deadline), deadlines)
+        assertEquals(2, outcome.httpRequests)
+        assertEquals("PDF_PARSE", outcome.methodUsed)
+        assertEquals("Klaus H. Maier-Hein", "${outcome.emails.single { it.email == "k.maier-hein@dkfz.de" }.givenNames} " +
+            outcome.emails.single { it.email == "k.maier-hein@dkfz.de" }.familyNames)
+        val fallbackRequests = requested.toList()
+        val sharedDeadlineCount = deadlines.distinct().size
+
+        requested.clear()
+        deadlines.clear()
+        primaryBody = "<html><body>Research on bot challenge methods without email.</body></html>".toByteArray()
+        val readable = chain.extractAuthorEmails(paper, deadline)
+        assertEquals(listOf(primary), requested)
+        assertEquals("NO_EMAIL_IN_HTML", readable.failureReason)
+        assertEquals(true, readable.fulltextObtained)
+        assertEquals(1, readable.httpRequests)
+        return mapOf(
+            "challengeHtmlSha256" to fixtureSha256(challenge),
+            "candidateUrls" to (listOfNotNull(paper.downloadUrl) + paper.candidateDownloadUrls),
+            "requestedUrls" to fallbackRequests, "requestCount" to outcome.httpRequests,
+            "sharedDeadlineCount" to sharedDeadlineCount, "fallbackMethod" to outcome.methodUsed,
+            "fallbackEmail" to outcome.emails.single { it.email == "k.maier-hein@dkfz.de" }.email,
+            "readableHtmlRequests" to requested.toList(), "readableHtmlReason" to readable.failureReason,
+            "readableHtmlObtained" to readable.fulltextObtained
+        )
+    }
+
+    @Test
     fun `a dead primary address falls back to the next open pdf and counts one paper once (V-1, I-1, I-3)`() {
         val primary = "https://primary.example/gone.pdf"
         val fallback = "https://repo.example/copy.pdf"

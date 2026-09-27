@@ -659,7 +659,11 @@ class ExpertDiscoveryServiceTest {
             val stream = com.weibo.talentintroduction.discovery.repository.StreamRow(
                 id = 10L, pipelineId = 1L, queryHash = discovery.queueQueryHash("OPENALEX", criteria),
                 source = "OPENALEX", epoch = 1L, criteriaJson = objectMapper.writeValueAsString(criteria),
-                cursorValue = if (extraction.methodUsed == "PDF_PARSE") "CACHED_PDF" else "CACHED_XML",
+                cursorValue = when (extraction.methodUsed) {
+                    "PDF_PARSE" -> "CACHED_PDF"
+                    "HTML_FALLBACK" -> "CACHED_HTML"
+                    else -> "CACHED_XML"
+                },
                 cursorState = com.weibo.talentintroduction.discovery.repository.StreamCursorState.EXHAUSTED,
                 nextAttemptAt = null, leaseToken = null, leaseUntil = null, sourceError = null,
                 queuedPapers = 1, queuedRecords = 0, processedPapers = 0, processedRecords = 0,
@@ -984,6 +988,133 @@ class ExpertDiscoveryServiceTest {
     }
 
     /** Published PDF bytes and metadata; only download transport and external dependencies are substituted. */
+    @Test
+    fun `original HTML contacts create two identities and emit child 07 acceptance evidence`() {
+        val archive = requireNotNull(javaClass.getResourceAsStream("/discovery/html-contact-recall.zip")).readBytes()
+        val members = htmlContactEntries()
+        val manifest = objectMapper.readTree(requireNotNull(members["manifest.json"]))
+        val docs = installOwnershipStorage()
+        val service = createService()
+        val cases = mutableListOf<Map<String, Any?>>()
+        var relations = 0
+        var firstPaper: PaperMetadata? = null
+        var firstExtraction: EmailExtractionOutcome? = null
+        for (fixture in manifest.path("fixtures")) {
+            val id = fixture.path("id").asText()
+            val html = requireNotNull(members[fixture.path("html").path("path").asText()])
+            val metadataBytes = requireNotNull(members[fixture.path("metadata").path("path").asText()])
+            assertEquals("REAL_ORIGINAL", fixture.path("designation").asText())
+            assertEquals(fixture.path("html").path("sha256").asText(), fixtureSha256(html), id)
+            assertEquals(fixture.path("metadata").path("sha256").asText(), fixtureSha256(metadataBytes), id)
+            val metadata = objectMapper.readTree(metadataBytes)
+            val authors = htmlContactAuthors(metadata)
+            val parsed = extractOwnershipContent(html, org.springframework.http.MediaType.TEXT_HTML, authors)
+            val expected = fixture.path("expectedExplicitContacts").fields().asSequence()
+                .associate { it.key to it.value.asText() }
+            if (fixture.path("expectedChallenge").asBoolean()) {
+                assertEquals("PDF_DOWNLOAD_FAILED", parsed.failureReason)
+                assertEquals("INVALID_CONTENT", parsed.downloadFailureCategory)
+                assertEquals(false, parsed.fulltextObtained)
+                assertTrue(parsed.emails.isEmpty())
+                cases += mapOf("id" to id, "designation" to "REAL_ORIGINAL", "htmlSha256" to fixtureSha256(html),
+                    "metadataSha256" to fixtureSha256(metadataBytes), "failureReason" to parsed.failureReason,
+                    "downloadFailureCategory" to parsed.downloadFailureCategory,
+                    "fulltextObtained" to parsed.fulltextObtained, "httpRequests" to parsed.httpRequests,
+                    "parsedContacts" to emptyList<String>())
+                continue
+            }
+            assertEquals("HTML_FALLBACK", parsed.methodUsed, id)
+            assertEquals(1, parsed.httpRequests, id)
+            assertEquals(expected.keys, parsed.emails.filter { it.givenNames != null }.map { it.email }.toSet(), id)
+            val paper = PaperMetadata(null, null, metadata.path("doi").asText().removePrefix("https://doi.org/"),
+                metadata.path("title").asText(), metadata.path("publication_year").asInt(), null, authors, "OPENALEX")
+            for ((address, name) in expected) {
+                val contact = parsed.emails.single { it.email == address }
+                assertEquals(name, "${contact.givenNames} ${contact.familyNames}", id)
+                assertTrue(DiscoveryIdentity.validEvidence(contact.identityEvidence))
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, address, EmailValidationResult(3, true))
+            }
+            relations += expected.size
+            val cached = parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)
+            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper),
+                objectMapper.writeValueAsString(cached), null)
+            assertTrue(outcome.succeeded, "$id: ${outcome.failureReasons}")
+            assertEquals(if (id == "W3194730353") 0 else 1, outcome.indexedExperts, id)
+            assertEquals(outcome.indexedExperts, outcome.promoted, id)
+            if (firstPaper == null) {
+                firstPaper = paper
+                firstExtraction = cached
+            }
+            cases += mapOf("id" to id, "designation" to "REAL_ORIGINAL",
+                "htmlSha256" to fixtureSha256(html), "metadataSha256" to fixtureSha256(metadataBytes),
+                "doi" to paper.doi, "expectedContacts" to expected, "parsedContacts" to parsed.emails.map {
+                    mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+                        "authorId" to it.openAlexAuthorId, "identityEvidence" to it.identityEvidence)
+                }, "httpRequests" to parsed.httpRequests, "indexed" to outcome.indexedExperts,
+                "promoted" to outcome.promoted, "duplicate" to outcome.duplicateExperts,
+                "failureReasons" to outcome.failureReasons)
+        }
+        assertEquals(3, relations)
+        assertEquals(2, docs.keys.count { it.contains("/orcid_info/_doc/") })
+        assertEquals(2, docs.keys.count { it.contains("/orcid_info_candidate/_doc/") })
+        val validated = Mockito.mockingDetails(emailValidationService).invocations
+            .filter { it.method.name == "validate" }.map { it.arguments.first() as String }
+        assertEquals(3, validated.size, "the repeated paper is validated but never rewritten")
+        assertEquals(2, validated.toSet().size)
+        val unchanged = docs.toMap()
+        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+            objectMapper.writeValueAsString(requireNotNull(firstExtraction)), null)
+        assertEquals(0, replay.indexedExperts)
+        assertEquals(unchanged, docs)
+        val previous = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+            objectMapper.writeValueAsString(requireNotNull(firstExtraction).copy(identityRuleVersion = 20260930)), null)
+        assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", previous.unrecoverableReason)
+        assertEquals(unchanged, docs)
+        val rawRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                (it.arguments.firstOrNull() as? String)?.contains("/orcid_info/_doc/") == true
+        }
+        val candidateRequests = Mockito.mockingDetails(restTemplate).invocations.count {
+            it.method.name == "exchange" && it.arguments.getOrNull(1) == HttpMethod.PUT &&
+                (it.arguments.firstOrNull() as? String)?.contains("/orcid_info_candidate/_doc/") == true
+        }
+        assertEquals(2, rawRequests)
+        assertEquals(2, candidateRequests)
+        val boundaries = isolatedXmlBoundaryCases(requireNotNull(firstPaper)).map {
+            it + mapOf("designation" to "SYNTHETIC_XML_CONTROL")
+        }
+        val versions = isolatedCachedVersionCases(requireNotNull(firstPaper),
+            requireNotNull(firstExtraction), previousVersion = 20260930).map {
+            it.filterKeys { key -> key != "xmlExtractionCalls" } +
+                mapOf("designation" to "REAL_ORIGINAL_CACHED_HTML", "fixtureId" to "W3094704314")
+        }
+        val fallback = OpenAlexDataSourceTest().challengeFallbackEvidence()
+        val report = mapOf(
+            "task" to "child-07", "inputArchiveSha256" to fixtureSha256(archive),
+            "provenance" to objectMapper.treeToValue(manifest.path("provenance"), Map::class.java),
+            "realHtmlCases" to cases, "paperRelations" to relations, "uniqueExpertEmails" to validated.toSet().size,
+            "validatedAddresses" to validated, "rawCreateRequests" to rawRequests,
+            "candidateCreateRequests" to candidateRequests, "rawDocuments" to unchanged.keys.count {
+                it.contains("/orcid_info/_doc/") }, "candidateDocuments" to unchanged.keys.count {
+                it.contains("/orcid_info_candidate/_doc/") },
+            "fallback" to fallback, "extractionVersion" to DiscoveryIdentity.EXTRACTION_VERSION,
+            "evidenceVersion" to DiscoveryIdentity.VERSION,
+            "boundaryCases" to (listOf(
+                mapOf("case" to "realQualifiedAndDuplicate", "designation" to "REAL_ORIGINAL",
+                    "paperRelations" to relations, "newRaw" to rawRequests, "newCandidate" to candidateRequests),
+                mapOf("case" to "realReplay", "designation" to "REAL_ORIGINAL",
+                    "newRaw" to replay.indexedExperts, "documentsUnchanged" to (unchanged == docs))) + boundaries +
+                mapOf("case" to "pausedQueuedItem", "tickSkipReason" to versions.last()["tickSkipReason"],
+                    "rawCreateRequests" to versions.last()["rawCreateRequests"])),
+            "versionCases" to (listOf(mapOf("consumer" to "direct", "version" to 20260930,
+                "unrecoverableReason" to previous.unrecoverableReason, "newRaw" to 0)) + versions),
+            "esCreateRequests" to mapOf("raw" to rawRequests, "candidate" to candidateRequests)
+        )
+        val path = Paths.get("target/discovery-plan-acceptance/07.json")
+        Files.createDirectories(path.parent)
+        Files.write(path, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+    }
+
     @Test
     fun `original PDF contacts enter consumer and create-only writer while shared addresses stay unknown`() {
         val archive = requireNotNull(javaClass.getResourceAsStream("/discovery/source-contact-recall.zip")).use { it.readBytes() }

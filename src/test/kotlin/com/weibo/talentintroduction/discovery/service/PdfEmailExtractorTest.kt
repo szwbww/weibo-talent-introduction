@@ -267,6 +267,32 @@ class PdfEmailExtractorTest {
     }
 
     @Test
+    fun `original Anubis challenge and genuinely empty HTML are invalid content while academic prose is readable`() {
+        val entries = htmlContactEntries()
+        val challenge = requireNotNull(entries["sources/W4381304672/source.html"])
+        val original = extractOwnershipContent(challenge, MediaType.TEXT_HTML, emptyList())
+        assertEquals("PDF_DOWNLOAD_FAILED", original.failureReason)
+        assertEquals("INVALID_CONTENT", original.downloadFailureCategory)
+        assertEquals(false, original.fulltextObtained)
+        assertTrue(original.emails.isEmpty())
+        for (html in listOf("<html><head><script>const x = 1</script><style>p{color:red}</style></head>" +
+            "<body><!-- comment -->  </body></html>", "<html><body>&nbsp; </body></html>")) {
+            val empty = extractOwnershipContent(html.toByteArray(), MediaType.TEXT_HTML, emptyList())
+            assertEquals("PDF_DOWNLOAD_FAILED", empty.failureReason)
+            assertEquals("INVALID_CONTENT", empty.downloadFailureCategory)
+            assertEquals(false, empty.fulltextObtained)
+        }
+        for (html in listOf("<html><body><article>We measured a bot challenge in our research.</article></body></html>",
+            "<html><head><title>Making sure you're not a bot!</title></head>" +
+                "<body>Research on bot challenge protocols.</body></html>",
+            "<html><script id='anubis_challenge'>data</script><body>Challenge-response research.</body></html>")) {
+            val readable = extractOwnershipContent(html.toByteArray(), MediaType.TEXT_HTML, emptyList())
+            assertEquals("NO_EMAIL_IN_HTML", readable.failureReason)
+            assertEquals(true, readable.fulltextObtained)
+        }
+    }
+
+    @Test
     fun `PDF contact field resolves ownership while bare mailbox remains unresolved`() {
         val result = extractOwnershipContent(ownershipPdf("Jane Doe: opaque@uni.edu", "thirdparty@uni.edu"),
             MediaType.APPLICATION_PDF, listOf(PaperAuthor("Jane", "Doe", "real-id", "Lab", true)))

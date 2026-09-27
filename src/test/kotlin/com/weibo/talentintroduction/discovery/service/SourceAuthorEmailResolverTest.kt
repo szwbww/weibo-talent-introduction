@@ -5,6 +5,31 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import java.security.MessageDigest
+import java.util.zip.ZipInputStream
+
+internal fun htmlContactEntries(): Map<String, ByteArray> {
+    val entries = mutableMapOf<String, ByteArray>()
+    ZipInputStream(requireNotNull(SourceAuthorEmailResolverTest::class.java.getResourceAsStream(
+        "/discovery/html-contact-recall.zip"))).use { zip ->
+        while (true) {
+            val entry = zip.nextEntry ?: break
+            entries[entry.name] = zip.readBytes()
+        }
+    }
+    return entries
+}
+
+internal fun htmlContactAuthors(metadata: JsonNode): List<PaperAuthor> = metadata.path("authorships").map {
+    val name = it.path("author").path("display_name").asText()
+    PaperAuthor(name.substringBeforeLast(' '), name.substringAfterLast(' '),
+        it.path("author").path("orcid").asText(null)?.substringAfterLast('/'), null,
+        it.path("is_corresponding").asBoolean(),
+        openAlexAuthorId = it.path("author").path("id").asText(null)?.substringAfterLast('/'))
+}
+
+internal fun fixtureSha256(bytes: ByteArray): String =
+    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
 internal fun sourceOwnershipCases(): List<JsonNode> = jacksonObjectMapper().readTree(
     requireNotNull(SourceAuthorEmailResolverTest::class.java.getResourceAsStream("/discovery/source-email-ownership-cases.json"))
@@ -17,6 +42,68 @@ internal fun sourceOwnershipAuthors(case: JsonNode): List<PaperAuthor> = case.pa
 class SourceAuthorEmailResolverTest {
     private val jane = PaperAuthor("Jane", "Doe", "0000-0002-1825-0097", "Jane Lab", true, openAlexAuthorId = "A123")
     private val john = PaperAuthor("John", "Smith", null, "John Lab", false)
+
+    @Test fun `original Springer named mailto anchors bind only unique metadata authors`() {
+        val entries = htmlContactEntries()
+        val manifest = jacksonObjectMapper().readTree(requireNotNull(entries["manifest.json"]))
+        val relations = mutableListOf<Pair<String, String>>()
+        for (fixture in manifest.path("fixtures")) {
+            val id = fixture.path("id").asText()
+            val bytes = requireNotNull(entries[fixture.path("html").path("path").asText()])
+            val metadataBytes = requireNotNull(entries[fixture.path("metadata").path("path").asText()])
+            assertEquals(fixture.path("html").path("sha256").asText(), fixtureSha256(bytes))
+            assertEquals(fixture.path("metadata").path("sha256").asText(), fixtureSha256(metadataBytes))
+            if (fixture.path("expectedChallenge").asBoolean()) continue
+            val resolved = SourceAuthorEmailResolver.resolveHtml(String(bytes, Charsets.UTF_8),
+                htmlContactAuthors(jacksonObjectMapper().readTree(metadataBytes)))
+            for (expected in fixture.path("expectedExplicitContacts").fields()) {
+                val email = resolved.single { it.email == expected.key }
+                assertEquals(expected.value.asText(), "${email.givenNames} ${email.familyNames}", id)
+                assertTrue(email.identityEvidence!!.startsWith("SOURCE_SHA256:"), id)
+                relations += id to email.email
+            }
+        }
+        assertEquals(3, relations.size)
+        assertEquals(2, relations.map { it.second }.toSet().size)
+    }
+
+    @Test fun `named mailto requires corresponding region exact visible name and single safe recipient`() {
+        fun result(heading: String, anchor: String, authors: List<PaperAuthor> = listOf(jane, john)) =
+            SourceAuthorEmailResolver.resolveHtml(
+                "<div><h3 id='corresponding-author'>$heading</h3>" +
+                    "<p id='corresponding-author-list'>Correspondence to $anchor.</p></div>", authors)
+        val link = "<a href='mailto:opaque@uni.edu'>Jane Doe</a>"
+        assertEquals("Jane", result("Corresponding author", link).single().givenNames)
+        assertTrue(result("Author biographies", link).none { it.givenNames != null })
+        assertTrue(result("Corresponding author", "<a href='mailto:opaque@uni.edu' aria-label='Jane Doe'>Contact</a>")
+            .none { it.givenNames != null })
+        assertTrue(result("Corresponding author", link, listOf(jane, jane.copy(orcidId = "other")))
+            .none { it.givenNames != null })
+        assertTrue(result("Corresponding author", "<a href='mailto:opaque@uni.edu'>Jane Doe and John Smith</a>")
+            .none { it.givenNames != null })
+        assertTrue(result("Corresponding author", "<a href='mailto:opaque@uni.edu'>Jane Doe</a>" +
+            "<a href='mailto:opaque@uni.edu'>John Smith</a>").none { it.givenNames != null })
+        assertEquals("jane+lab@uni.edu", result("Corresponding author",
+            "<a href='mailto:jane%2Blab@uni.edu?subject=ignore'>Jane Doe</a>").single().email)
+        assertEquals("jane+lab@uni.edu", result("Corresponding author",
+            "<a href='mailto:jane+lab@uni.edu'>Jane Doe</a>").single().email)
+        val independent = result("Corresponding authors",
+            "<a href='mailto:jane@uni.edu'>Jane Doe</a> and <a href='mailto:john@uni.edu'>John Smith</a>")
+        assertEquals(mapOf("jane@uni.edu" to "Jane", "john@uni.edu" to "John"),
+            independent.associate { it.email to it.givenNames })
+        val conflicting = SourceAuthorEmailResolver.resolveHtml("<div><h3 id='corresponding-author'>" +
+            "Corresponding author</h3><p id='corresponding-author-list'>" +
+            "<a href='mailto:opaque@uni.edu'>Jane Doe</a></p></div><p>John Smith: opaque@uni.edu</p>",
+            listOf(jane, john))
+        assertNull(conflicting.single { it.email == "opaque@uni.edu" }.givenNames)
+        for (href in listOf("mailto:first@uni.edu,second@uni.edu", "mailto:opaque@uni.edu%0d%0abcc:other@uni.edu",
+            "mailto:opaque@uni.edu;other@uni.edu")) {
+            assertTrue(result("Corresponding author", "<a href='$href'>Jane Doe</a>")
+                .none { it.givenNames != null }, href)
+        }
+        assertTrue(result("Corresponding author", "<a href='mailto:support@uni.edu'>Jane Doe</a>")
+            .none { it.givenNames != null })
+    }
 
     @Test fun `PDF contact claims are rejected when they conflict with existing source claims`() {
         val contact = PdfAuthorContactLayout.Contact("opaque@uni.edu", 1, 1,
