@@ -1,7 +1,7 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-09-26/discovery-repair-00-master.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
 - Master plan: docs/plans/2026-09-26/discovery-repair-00-master.md
 - Governing master identity: sha256 0a40f221660ecc0008394126ae029e869c6078e725f2585cd2d55ba938be67fd; commit 152028fb4f6adf467a5254ed3627bf84c561f6bc
 - Invoked master identity: SAME
@@ -11,26 +11,26 @@
 - Fast-p ledger: docs/plans/fast/2026-09-26-discovery-repair-00-master/ledger.md; sha256 c0e01fdb3b3dc967353f1eb785f9879d20ce9c2325c1d38a205bfa481435fda5
 - Fast-p handoff: docs/plans/fast/2026-09-26-discovery-repair-00-master/human-review-handoff.md; sha256 12f79c948fc0d91261955db0788630bb6c155da6755591c5942a499ff1ff0784
 - Master base: 64c0394a940bd79c2ecc04e5c497650f045faa75
-- Final code head: 4ad9e79b034798ee78f12c3285faf5882991b3bc
-- Evidence parent before next commit: 075425401b1f5d401a7ec2bf8549a2d53033c703
-- Previous evidence commit: N/A
+- Final code head: 8051fa894d96f065b8b9ef2b39463262b2cf8c50
+- Evidence parent before next commit: 039ac9bfc527b90659a3928dc82094f183301ab4
+- Previous evidence commit: 039ac9bfc527b90659a3928dc82094f183301ab4 (repair execution); previous review ac3278345bfba9257218bd88d7d395c3325f60ad
 - Branch: fast/2026-09-26-discovery-repair-00-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-26-discovery-repair-00-master
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES; exact registered worktree retained under explicit user preflight waiver
 - Discovery evidence: discover_fast_p.py result NONE; exact matching ledger reasons: ledger status is BLOCKED_PREFLIGHT; handoff outcome is not READY_FOR_HUMAN_REVIEW
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_design_review; fresh fork_turns=none, created after code commit
+- Reviewer: /root/aggregate_rereview_epoch2; fresh fork_turns=none, created after repair commit
 - Reviewer attempt: 1
-- Machine result: FAIL
-- Machine report epoch: machine-verification.md, Epoch 1; sha256 31701d968337267fb5b58b748919a9453d671ca243d8ce3eaff5399d9f812509
-- Repair artifact: docs/plans/fix/discovery-repair-00-master/repair.md; sha256 e2a4a5dbeb94037791020193c77d2a01b3a9ebe303bcd796db054696a21c9c86; DRAFT_READY
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Machine result: PASS
+- Machine report epoch: machine-verification.md, Epoch 2; epoch source sha256 6133f5df976f29dea6253ad0c4d1ad33c15b2f6aea03a03b540910a193cacf27
+- Repair artifact: docs/plans/fix/discovery-repair-00-master/repair.md; sha256 e2a4a5dbeb94037791020193c77d2a01b3a9ebe303bcd796db054696a21c9c86; executed in 8051fa894d96f065b8b9ef2b39463262b2cf8c50, independently verified in Epoch 2
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: Exact human-originated execute-p invocation recorded in repair-execution.md
+- Repair executor: Main (execute-p invocation), as recorded in durable handoff
+- Repair code head: 8051fa894d96f065b8b9ef2b39463262b2cf8c50
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: V-1 and V-2 confirmed P1; human may approve the exact bounded repair through execute-p. No repair execution authorized by this review.
+- Blocker/next action: Human results for master A1–A6 and explicit sign-off of 8051fa894d96f065b8b9ef2b39463262b2cf8c50 are pending.
 
 ## User-authorized preflight exception
 
@@ -53,3 +53,23 @@ Human instruction in this chat: “能不能暂时忽略这个问题 你来复�
 - Manual A1–A6 and human sign-off remain PENDING.
 - Fast-p ledger/handoff and global rules unchanged under the user's explicit temporary preflight exception.
 - Product/test tracked state and index were clean at reviewer return; final_code_head unchanged.
+
+## Epoch 2 preflight
+
+- Human request: 修复完了 再次复验. Existing user-authorized fast-p evidence-format/READY exception remains applicable; no product requirement waived.
+- Prior code boundary: 4ad9e79b034798ee78f12c3285faf5882991b3bc.
+- Candidate code boundary: 8051fa894d96f065b8b9ef2b39463262b2cf8c50, descendant of prior code; subsequent 039ac9b is repair execution evidence only.
+- Repair identity unchanged: sha256 e2a4a5dbeb94037791020193c77d2a01b3a9ebe303bcd796db054696a21c9c86.
+- Cumulative repair product delta consists of exactly the four Authorized Files; product tree and index clean before epoch evidence update.
+- Governance master identity unchanged. Prior epoch/report/findings preserved.
+- Durable handoff: repair-execution.md records exact approval, pre/post code identities, commands and executor; independent reviewer created fresh after repaired commit.
+
+## Epoch 2 completed
+
+- Machine PASS / PROGRESSING; V-1 and V-2 RESOLVED, no new mandatory findings.
+- Fresh full JDK11 build: exit 0; JUnit 4149 / 0 failures / 0 errors / 13 skipped; Node 1194 passed, 0 failures/skipped.
+- Required targeted verification: exit 0, 279 tests, no failures/errors/skips. Independent nine-scenario real revalidator/writer probe and cancellation/lease-CAS probe passed.
+- Reviewer interrupted by usage limit and resumed at explicit human “继续”; only the interrupted targeted command was rerun. Completed full build/probes remained valid for unchanged code.
+- Manual acceptance: new Epoch 2 checklist generated from master A1–A6 only, all PENDING. No human result or sign-off inferred.
+- Original fast-p format/READY blocker remains unchanged under the recorded user exception; global rules unchanged.
+- No product/test/repair edits, push, merge, deployment or production operations performed by review.
