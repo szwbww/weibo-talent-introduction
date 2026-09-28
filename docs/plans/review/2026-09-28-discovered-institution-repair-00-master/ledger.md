@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-28/discovered-institution-repair-00-master.md
+
+- Status: REPAIR_PLAN_READY
+- Review epoch: 1
+- Master plan: docs/plans/2026-09-28/discovered-institution-repair-00-master.md (sha256 2f7fdb23cdfa016795827416d9d43f73d19798457a9c32c20605ea3a42d404c6)
+- Governing master identity: worktree sha256 2f7fdb23cdfa016795827416d9d43f73d19798457a9c32c20605ea3a42d404c6; recorded commit 2e9639df7947bc5f3057ca08e1445b155aba7cd7
+- Invoked master identity: SAME (sha256 2f7fdb23cdfa016795827416d9d43f73d19798457a9c32c20605ea3a42d404c6)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: A1 (`docs/plans/2026-09-28/discovered-institution-repair-02-evidence.md`, I-3 + implementation scheme 1, approved 2026-09-28T17:19:33+08:00); A2 (`docs/plans/2026-09-28/discovered-institution-repair-03-outreach.md`, I-2 + 03 I-3, approved 2026-09-28T18:40:47+08:00)
+- Fast-p ledger: docs/plans/fast/2026-09-28-discovered-institution-repair-00-master/ledger.md (sha256 a823cbc0e7351b18a10beaf143d731f5ac4bb9de7aca2fed79c205894f28ac79)
+- Fast-p handoff: docs/plans/fast/2026-09-28-discovered-institution-repair-00-master/human-review-handoff.md (sha256 2d97cd01b7891ea25683a69b14053bd9547fb6c8897403148835a94cd7785b37)
+- Master base: d90084841d400e75eb0f2b6c4c6726e54307260a
+- Final code head: 70e6144065335beee72dbd22a84e4bb975a68928
+- Evidence parent before next commit: f455045ef153b047baa5c60b0a4cbd2a691c8019
+- Previous evidence commit: N/A
+- Branch: fast/2026-09-28-discovered-institution-repair-00-master
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-28-discovered-institution-repair-00-master
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: mandated `discover_fast_p.py` invocation; selected registered worktree identity verified against matching fast-p ledger/handoff, terminal child table, evidence commits, clean index, and `d900848..70e614` ancestry
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: FAIL
+- Machine report epoch: machine-verification.md, Epoch 1
+- Repair artifact: docs/plans/fix/discovered-institution-repair-00-master/repair.md
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human approval required for `docs/plans/fix/discovered-institution-repair-00-master/repair.md`.
