@@ -51,7 +51,7 @@ class DiscoveryIdentityTest {
 
     @Test fun `new extraction cache version is accepted and prior version remains rejected`() {
         assertEquals(20260925, DiscoveryIdentity.VERSION)
-        assertEquals(20261001, DiscoveryIdentity.EXTRACTION_VERSION)
+        assertEquals(20261002, DiscoveryIdentity.EXTRACTION_VERSION)
         val profile = verified()
         assertTrue(DiscoveryIdentity.allowed(profile))
         assertFalse(DiscoveryIdentity.allowed(profile.copy(identityVerification =

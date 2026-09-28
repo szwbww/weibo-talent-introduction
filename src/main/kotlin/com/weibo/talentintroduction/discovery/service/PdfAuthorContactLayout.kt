@@ -15,6 +15,7 @@ internal object PdfAuthorContactLayout {
 
     private data class Line(val page: Int, val x: Float, val right: Float, val y: Float, val text: String)
     private val mailbox = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
+    private val emailExtractor = PlainTextEmailExtractor()
     private val markerContact = Regex("^\\s*([*†‡])\\s*(?:(?:correspondence|e-?mail)\\s*:\\s*)?", RegexOption.IGNORE_CASE)
     private val paragraphStart = Regex("^\\s*((?:[A-Z]\\.\\s*){1,4}[A-Z][A-Za-z'-]+|[A-Z][A-Za-z'-]+(?:\\s+[A-Z][A-Za-z.'-]+){1,3})\\s+is\\s+with\\b", RegexOption.IGNORE_CASE)
     private val emailLabel = Regex("\\be-?mail\\s*:", RegexOption.IGNORE_CASE)
@@ -56,13 +57,19 @@ internal object PdfAuthorContactLayout {
             contacts += endContactBlocks(page, pageText, authors)
             val header = authorHeader(lines, height, authors) ?: continue
             val owners = markerOwners(header.text, authors)
+            // The geometric header may contain only the first lines of a long author roster.
+            // Check the full pre-abstract roster before assigning a shared correspondence marker.
+            val abstractStart = Regex("(?im)^\\s*abstract\\b").find(pageText)?.range?.first ?: pageText.length
+            val rosterOwners = markerOwners(pageText.substring(0, minOf(abstractStart, 6000)), authors)
             for (line in lines) {
                 if (line.y <= header.y || line.y > height * .90f) continue
                 if (header.right < width * .48f && line.x > width * .52f) continue
                 if (header.x > width * .52f && line.right < width * .48f) continue
                 val marker = markerContact.find(line.text)?.groupValues?.get(1) ?: continue
-                val addresses = mailbox.findAll(line.text).map { it.value }.toList()
+                val addresses = emailExtractor.extract(line.text)
                 val owner = owners[marker]?.singleOrNull() ?: continue
+                val rosterMatches = rosterOwners[marker]?.distinct().orEmpty()
+                if (rosterMatches.size > 1 || (rosterMatches.isNotEmpty() && rosterMatches.single() != owner)) continue
                 for (address in addresses) contacts += Contact(address, owner, page, header.text, line.text)
             }
             // A contact paragraph is its own column-local record, not a line chosen by nearest email.
@@ -84,7 +91,7 @@ internal object PdfAuthorContactLayout {
                 if (!emailLabel.containsMatchIn(text)) continue
                 // A second author's explicit mention or a shared contact list defeats the single owner.
                 if (authors.indices.any { it != owner && mentionsAuthor(text, authors[it]) }) continue
-                val addresses = mailbox.findAll(text).map { it.value }.toList()
+                val addresses = emailExtractor.extract(text)
                 for (address in addresses) contacts += Contact(address, owner, page, header.text, text)
             }
         }

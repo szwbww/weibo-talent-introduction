@@ -43,6 +43,34 @@ class SourceAuthorEmailResolverTest {
     private val jane = PaperAuthor("Jane", "Doe", "0000-0002-1825-0097", "Jane Lab", true, openAlexAuthorId = "A123")
     private val john = PaperAuthor("John", "Smith", null, "John Lab", false)
 
+    @Test fun `five published PDFs cannot certify wrong owner or truncated mailbox`() {
+        val entries = mutableMapOf<String, ByteArray>()
+        ZipInputStream(requireNotNull(javaClass.getResourceAsStream(
+            "/discovery/identity-regression-pdfs.zip"))).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                entries[entry.name] = zip.readBytes()
+            }
+        }
+        val manifest = jacksonObjectMapper().readTree(requireNotNull(entries["manifest.json"]))
+        assertEquals(5, manifest.size())
+        for ((id, case) in manifest.fields()) {
+            val authors = case.path("authors").map { node ->
+                val parts = node.asText().split(" ", limit = 2)
+                PaperAuthor(parts[0], parts.getOrElse(1) { "" }, null, null, false)
+            }
+            val result = extractOwnershipContent(requireNotNull(entries["$id.pdf"]),
+                org.springframework.http.MediaType.APPLICATION_PDF, authors)
+            val badEmail = case.path("badEmail").asText()
+            org.apache.pdfbox.pdmodel.PDDocument.load(requireNotNull(entries["$id.pdf"])).use { pdf ->
+                val contacts = PdfAuthorContactLayout.collect(pdf, 3, authors)
+                assertTrue(contacts.none { it.email == badEmail }, "$id contact: $contacts")
+            }
+            assertTrue(result.emails.none { it.email == badEmail && it.identityEvidence != null },
+                "$id $badEmail: ${result.emails}")
+        }
+    }
+
     @Test fun `original Springer named mailto anchors bind only unique metadata authors`() {
         val entries = htmlContactEntries()
         val manifest = jacksonObjectMapper().readTree(requireNotNull(entries["manifest.json"]))
@@ -136,6 +164,31 @@ class SourceAuthorEmailResolverTest {
         assertEquals(setOf("first@uni.edu", "second@uni.edu"), result.emails.map { it.email }.toSet())
         assertTrue(result.emails.all { it.givenNames == "Jane" && it.familyNames == "Doe" &&
             it.identityEvidence?.startsWith("SOURCE_SHA256:") == true })
+    }
+
+    @Test fun `shared marker on later author line cannot claim both correspondence mailboxes`() {
+        val pdf = positionedPdf(listOf(
+            Triple(50f, 720f, "Jane Doe* Alice Brown"),
+            Triple(50f, 680f, "John Smith*"),
+            Triple(50f, 600f, "*Correspondence: jane@uni.edu, john@uni.edu"),
+            Triple(50f, 530f, "Abstract")))
+        val resolved = extractOwnershipContent(pdf, org.springframework.http.MediaType.APPLICATION_PDF,
+            listOf(jane, PaperAuthor("Alice", "Brown", null, null, false), john)).emails
+        assertEquals(setOf("jane@uni.edu", "john@uni.edu"), resolved.map { it.email }.toSet())
+        assertTrue(resolved.all { it.givenNames == null && it.identityEvidence == null })
+    }
+
+    @Test fun `broken local part must not become a verified suffix mailbox`() {
+        val cases = listOf(
+            "*Email: lixingwang- bupt@gmail.com" to "bupt@gmail.com",
+            "*Email: yin- qiu001@e.ntu.edu.sg" to "qiu001@e.ntu.edu.sg",
+            "*Email: tangde math@connect.hku.hk" to "math@connect.hku.hk",
+            "*Email: feng shaohan@mail.zjgsu.edu.cn" to "shaohan@mail.zjgsu.edu.cn")
+        for ((contact, suffix) in cases) {
+            val pdf = positionedPdf(listOf(Triple(50f, 720f, "Jane Doe*"), Triple(50f, 600f, contact)))
+            val resolved = extractOwnershipContent(pdf, org.springframework.http.MediaType.APPLICATION_PDF, listOf(jane)).emails
+            assertTrue(resolved.none { it.email == suffix && it.identityEvidence != null }, "$contact: $resolved")
+        }
     }
 
     @Test fun `published source blocks preserve two owned mailboxes and reject shared correspondence`() {

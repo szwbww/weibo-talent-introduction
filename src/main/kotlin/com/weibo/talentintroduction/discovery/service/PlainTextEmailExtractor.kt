@@ -13,6 +13,11 @@ class PlainTextEmailExtractor {
     private val bracePattern = Regex("\\{([^{}\\r\\n]+)}\\s*@\\s*([A-Za-z0-9.-]+\\.[A-Za-z]{2,})")
     private val validLocalPart = Regex("[A-Za-z0-9._%+-]+")
     private val wrappedAddress = Regex("([A-Za-z0-9._%+-]+@)\\r?\\n([A-Za-z0-9.-]+\\.[A-Za-z]{2,})")
+    // PDF text extraction can split a local part before '@'. The remaining suffix is syntactically
+    // valid, but it is not the address printed in the source (e.g. "Email: yin-\nqiu001@...").
+    private val splitLocalPartBeforeMailbox = Regex(
+        "(?i)(?:e-?mail|email address)\\s*:\\s*[A-Za-z0-9._%+-]+(?:\\s+|[-_]\\s*)$"
+    )
     private val atObfuscation = Regex("\\(at\\)|\\[at\\]|\\{at\\}|\\s+at\\s+")
     private val dotObfuscation = Regex("\\(dot\\)|\\[dot\\]|\\{dot\\}|\\s+dot\\s+")
     private val blacklistDomains = setOf("example.com", "example.org", "domain.com")
@@ -28,6 +33,10 @@ class PlainTextEmailExtractor {
         val allPrefixes = operationalPrefixes + blacklistPrefixes
 
         return emailRegex.findAll(cleaned)
+            .filterNot { match ->
+                val before = cleaned.substring(maxOf(0, match.range.first - 120), match.range.first)
+                splitLocalPartBeforeMailbox.containsMatchIn(before)
+            }
             .map { it.value.lowercase(Locale.ROOT) }
             .filter { email ->
                 val localPart = email.substringBefore("@").lowercase(Locale.ROOT)
