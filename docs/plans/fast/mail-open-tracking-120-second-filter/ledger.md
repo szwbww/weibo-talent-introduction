@@ -41,7 +41,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01-backend | docs/plans/2026-09-28/mail-open-tracking-120-second-filter.md | commit:3237f07e694565bda5e0e2d6a453fc654d695014 | none | 1 | LIGHT_PASS | 3237f07e694565bda5e0e2d6a453fc654d695014 | 84560652c3227cf95f50ddd12bd285c54ece96cb | 0 | — | 84560652c3227cf95f50ddd12bd285c54ece96cb | 5df5d0e07921ae15f94e28ac0aa5629bda33b911 | 单文件 master 的阶段 1（task 1-3）：120 秒谓词 + 列表/汇总/详情状态 + MySQL 边界 IT；授权 2 文件；实现者 Impl01Backend，验证者 Verify01Backend 四门全 PASS（IT 6/0、定向 47/0），无 AUTO_FIX；RECORD_ONLY O-1/O-2 见 verify-log |
-| 02-ui | docs/plans/2026-09-28/mail-open-tracking-120-second-filter.md | commit:3237f07e694565bda5e0e2d6a453fc654d695014 | 01-backend | 1 | IMPLEMENTING | 84560652c3227cf95f50ddd12bd285c54ece96cb | — | 0 | — | — | — | 单文件 master 的阶段 2（task 4-6）：S-1/S-2 文案 + 缓存键 + JS 断言；授权 3 文件；实现者 Impl02Ui |
+| 02-ui | docs/plans/2026-09-28/mail-open-tracking-120-second-filter.md | commit:3237f07e694565bda5e0e2d6a453fc654d695014 | 01-backend | 1 | LIGHT_VERIFYING | 84560652c3227cf95f50ddd12bd285c54ece96cb | e0b002076b92d3e1e543040fb5640585fc2869aa | 0 | — | e0b002076b92d3e1e543040fb5640585fc2869aa | — | 单文件 master 的阶段 2（task 4-6）：S-1/S-2 文案 + 缓存键 + JS 断言；授权 3 文件；实现者 Impl02Ui，验证者 Verify02Ui |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
