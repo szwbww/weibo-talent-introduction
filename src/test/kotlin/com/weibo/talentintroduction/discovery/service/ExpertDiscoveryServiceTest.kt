@@ -3328,6 +3328,60 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `enrichExistingExperts never writes root updatedAt in any layer update payload (V-1, I-3)`() {
+        val svc = createService()
+        val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
+        Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
+
+        val expert = com.weibo.talentintroduction.expert.domain.ExpertProfile(
+            orcidId = "0000-UPD", email = "upd@example.com",
+            givenNames = "Test", familyNames = "Upd",
+            country = "US", keyword = null, employment = null
+        )
+        val enrichment = AuthorEnrichment(
+            hIndex = 10, citationCount = 100, worksCount = 5,
+            disciplineCategory = "STEM"
+        )
+
+        ScrollExpertsMockHelper.stubSearchAfterExpertsFiltered(expertSearchService, listOf(listOf(expert)))
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 1L, 1L)
+        Mockito.doReturn(mapOf("0000-UPD" to EnrichmentOutcome.Success(enrichment)))
+            .`when`(openAlex).batchEnrichByOrcids(Mockito.anyList(), eqValue(RequestKind.HISTORY_ENRICHMENT))
+        DiscoveryMockHelper.stubEsEnrichmentHeadExists(restTemplate)
+        Mockito.doReturn(ResponseEntity.ok(objectMapper.createObjectNode()) as ResponseEntity<*>)
+            .`when`(restTemplate).exchange(
+                Mockito.anyString(),
+                Mockito.eq(HttpMethod.POST),
+                Mockito.any(),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+
+        svc.enrichExistingExperts()
+
+        @Suppress("UNCHECKED_CAST")
+        val entityCaptor = ArgumentCaptor.forClass(HttpEntity::class.java) as ArgumentCaptor<HttpEntity<*>>
+        Mockito.verify(restTemplate, Mockito.atLeastOnce()).exchange(
+            Mockito.contains("/_update/"),
+            Mockito.eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        // V-1/I-3：学术补全只允许写学术事实与 enrichedAt；根级 updatedAt 属于发现/运营写入语义，
+        // 补全不得推进它 —— 每个已存在层的 _update 载荷都要成立（不止第一层）。
+        assertTrue(entityCaptor.allValues.size >= 2, "RAW 与候选层都应收到 _update：${entityCaptor.allValues.size}")
+        entityCaptor.allValues.forEach { entity ->
+            @Suppress("UNCHECKED_CAST")
+            val doc = (entity.body as Map<*, *>)["doc"] as Map<*, *>
+            assertFalse(doc.containsKey("updatedAt"), "补全不得写根级 updatedAt：$doc")
+            assertNotNull(doc["enrichedAt"], "补全时间戳仍须写入：$doc")
+            assertEquals(10, doc["hIndex"], "学术字段仍须写入：$doc")
+            assertEquals("STEM", doc["disciplineCategory"], "学术字段仍须写入：$doc")
+            assertFalse(doc.containsKey("institutionType"), "补全不得写异源 institutionType：$doc")
+            assertFalse(doc.containsKey("institutionEvidence"), "补全不得写机构证据：$doc")
+        }
+    }
+
+    @Test
     fun `enrichExistingExperts omits disciplineCategory key when null`() {
         val svc = createService()
         val openAlex = Mockito.mock(OpenAlexDataSource::class.java)

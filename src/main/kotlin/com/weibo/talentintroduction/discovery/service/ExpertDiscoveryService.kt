@@ -3005,7 +3005,7 @@ class ExpertDiscoveryService(
         val docId = enrichmentDocId(profile)
         val now = LocalDateTime.now().format(dateFormatter)
         val doc = mutableMapOf<String, Any?>(
-            "updatedAt" to now,
+            // V-1/I-3：补全只写学术事实与 enrichedAt，不推进根级 `updatedAt`（那是发现/运营写入的语义）。
             "enrichedAt" to now,
             "enrichmentSource" to "OPENALEX"
         )
