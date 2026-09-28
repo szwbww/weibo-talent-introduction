@@ -52,6 +52,8 @@
 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt` | 分页及 ES 地区粗筛 |
 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/CandidateEligibilityServiceTest.kt` | 国籍语义回归 |
 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 若搜索文件移行，仅改排除清单行号 |
+| `src/test/kotlin/com/weibo/talentintroduction/mail/service/MailOpenTrackingPersistenceTest.kt` | A2：预估改走 scroll 后，仅补 `scrollExpertsFiltered` stub（沿用同一 expert fixture），断言与语义不变 |
+| `src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt` | A2：`countEsTargets` 旧签名删除后，反射目标改为新签名 `countEsTargets(RecipientScope, LocalDateTime, () -> Boolean)`，「每个 funnel level 都被查询」断言不变 |
 
 ## 验收标准
 
