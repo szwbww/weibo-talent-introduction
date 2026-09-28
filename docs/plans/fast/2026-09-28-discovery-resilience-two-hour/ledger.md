@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-09-28/discovery-resilience-two-hour.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-09-28/discovery-resilience-two-hour.md (commit 3f167a2820c3f9bdb344f19da2123d6a9ff2f12a)
 - Amendments: N/A
 - Master base: f98e27c7538d091bfcdecfcb6ffc10360a35ba04
@@ -19,7 +19,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-09-28/discovery-resilience-two-hour.md | commit:3f167a2820c3f9bdb344f19da2123d6a9ff2f12a | none | 1 | LIGHT_PASS_WITH_NOTES | f98e27c7538d091bfcdecfcb6ffc10360a35ba04 | 8700a605427aaedb4c31be63a72e22a657b94208 | 0 | — | 8700a605427aaedb4c31be63a72e22a657b94208 | — | 单子计划 run（master 计划即唯一 child 计划，T-1..T-4 共享 8 个授权文件，无下游 child）。Implementer Implement01；verifier Verify01；一次 light verification 即 COMPLETE_CHILD，未消耗自动修复轮次；5 条 RECORD_ONLY（O-1..O-5）见 verify-log.md 与 handoff。 |
+| 01 | docs/plans/2026-09-28/discovery-resilience-two-hour.md | commit:3f167a2820c3f9bdb344f19da2123d6a9ff2f12a | none | 1 | LIGHT_PASS_WITH_NOTES | f98e27c7538d091bfcdecfcb6ffc10360a35ba04 | 8700a605427aaedb4c31be63a72e22a657b94208 | 0 | — | 8700a605427aaedb4c31be63a72e22a657b94208 | fff78c30a995950896db6c9308401dc64ea433c7 | 单子计划 run（master 计划即唯一 child 计划，T-1..T-4 共享 8 个授权文件，无下游 child）。Implementer Implement01；verifier Verify01；一次 light verification 即 COMPLETE_CHILD，未消耗自动修复轮次；5 条 RECORD_ONLY（O-1..O-5）见 verify-log.md 与 handoff。 |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
