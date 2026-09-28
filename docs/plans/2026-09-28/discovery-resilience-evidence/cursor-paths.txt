@@ -1,0 +1,12 @@
+$ rg -n discovery_source_cursor|cursorRepository\. src/main src/test scripts ops
+exit=0
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt:921:        Mockito.`when`(cursorRepository.findBySourceName(Mockito.anyString())).thenAnswer { invocation ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoverySourceCursor.kt:7:@Table("discovery_source_cursor")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:137:            cursorRepository.findBySourceName(key)?.cursorValue
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:170:            val existing = cursorRepository.findBySourceName(key)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:187:            cursorRepository.save(entity)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1526:                cursorRepository.findBySourceName(key)?.cursorValue
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt:10: * I-2: 一行 `discovery_source_cursor` 解码后的内容。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt:39:    /** V32 中 `discovery_source_cursor.source_name` 为 VARCHAR(50)。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoverySourceCursorRepository.kt:9:    @Query("SELECT * FROM discovery_source_cursor WHERE source_name = :sourceName")
+src/main/resources/db/migration/V32__create_discovery_source_cursor.sql:1:CREATE TABLE discovery_source_cursor (

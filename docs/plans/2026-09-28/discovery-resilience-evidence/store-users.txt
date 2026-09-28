@@ -1,0 +1,31 @@
+$ rg -n TaskProgressLogRepository|TaskExecutionRepository|DiscoverySourceCursorRepository src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:41:import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:97:    private val cursorRepository: DiscoverySourceCursorRepository,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt:9:import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt:10:import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt:27:    private val executions: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPromotionProgressService.kt:28:    private val logs: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoverySourceCursorRepository.kt:7:interface DiscoverySourceCursorRepository : CrudRepository<DiscoverySourceCursor, Long> {
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:22:import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/BatchSendConfigController.kt:48:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:6:import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:13:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:7:import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionSummaryExtractor.kt:27:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:14:import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskExecutionController.kt:38:    private val taskExecutionRepository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:4:import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:5:import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:27:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:28:    private val executionRepository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:10:import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:11:import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:33:    private val progressLogRepository: TaskProgressLogRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:34:    private val taskExecutionRepository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityController.kt:5:import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskActivityController.kt:33:    private val taskExecutionRepository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskProgressLogRepository.kt:9:interface TaskProgressLogRepository : CrudRepository<TaskProgressLog, Long> {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:8:import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:17:    private val repository: TaskExecutionRepository,
+src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt:45:interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {

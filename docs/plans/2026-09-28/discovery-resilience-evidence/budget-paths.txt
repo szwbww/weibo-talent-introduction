@@ -1,0 +1,33 @@
+$ rg -n override fun|UPDATE openalex_budget|INSERT INTO openalex_budget|DELETE FROM openalex_budget src/main/kotlin/com/weibo/talentintroduction/discovery/repository/OpenAlexBudgetRepository.kt
+exit=0
+71:    override fun ledger(accountScope: String, configuredFreeLimitCredits: Long, now: Instant): OpenAlexBudgetLedger {
+89:    override fun reserve(request: BudgetReserveRequest): BudgetReserveResult {
+121:            INSERT INTO openalex_budget_reservation
+130:            UPDATE openalex_budget_day
+140:    override fun settle(
+155:            UPDATE openalex_budget_reservation
+163:            UPDATE openalex_budget_day
+180:    override fun markUnknown(accountScope: String, permitId: String, now: Instant): Boolean {
+186:            "UPDATE openalex_budget_reservation SET status = 'UNKNOWN' WHERE permit_id = ? AND status = 'RESERVED'",
+192:    override fun applyCooldown(accountScope: String, notBefore: Instant, now: Instant) {
+197:            UPDATE openalex_budget_account
+205:    override fun observeProvider(
+216:            UPDATE openalex_budget_day
+229:    override fun reconcile(
+246:            UPDATE openalex_budget_day
+256:                INSERT INTO openalex_budget_day
+265:                UPDATE openalex_budget_day
+275:            "UPDATE openalex_budget_account SET last_synced_at = ?, updated_at = ? WHERE account_scope = ?",
+282:    override fun claimSyncLease(accountScope: String, token: String, now: Instant, leaseUntil: Instant): Boolean {
+286:            UPDATE openalex_budget_account
+296:    override fun releaseSyncLease(accountScope: String, token: String) {
+299:            UPDATE openalex_budget_account
+307:    override fun recordNewEnrichmentRequest(accountScope: String, now: Instant) {
+310:            "UPDATE openalex_budget_account SET last_new_enrichment_at = ? WHERE account_scope = ?",
+316:    override fun countUnfinishedEnrichmentJobs(): Long =
+326:    override fun recentNewEnrichmentCosts(accountScope: String, limit: Int): List<Long> =
+348:    override fun cleanupClosedCycles(closedBefore: Instant, batchSize: Int): Int {
+363:            "DELETE FROM openalex_budget_reservation WHERE day_id IN ($placeholders)",
+367:            "DELETE FROM openalex_budget_day WHERE id IN ($placeholders)",
+379:            "UPDATE openalex_budget_account SET rate_next_at = ?, updated_at = ? WHERE account_scope = ?",
+387:            INSERT INTO openalex_budget_account (account_scope, rate_next_at, created_at, updated_at)

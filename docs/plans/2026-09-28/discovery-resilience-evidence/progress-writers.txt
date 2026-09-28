@@ -1,0 +1,66 @@
+$ rg -n progressStore\.(update|tryStart|bind|requestCancel|clear)|progressLogRepository\.(save|rebind|delete)|repository\.(save|finishOwned|heartbeatOwned|interrupt|delete) src/main/kotlin/com/weibo/talentintroduction/task src/main/kotlin/com/weibo/talentintroduction/discovery
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:184:                progressLogRepository.rebindPendingExecutionId(pendingToken, executionId)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt:209:            progressLogRepository.save(logEntry)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskAuditRetentionService.kt:42:            progressDeleted = purgeLoop { limit -> progressLogRepository.deleteOlderThan(cutoff, limit) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:368:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:375:                progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:422:                progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:447:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:461:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:852:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1106:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2124:        progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2131:            progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2244:                        progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2269:                progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2294:                progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2317:                progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2340:                progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2359:            progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2373:            progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2406:            progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2581:        progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:26:        repository.heartbeatOwned(ownerToken, now)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:27:        return repository.interruptExpired(now.minusMinutes(5), now)
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:39:        val changed = repository.interruptManually(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:147:        val running = repository.save(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:226:        val running = repository.save(
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:295:        val changed = repository.finishOwned(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:58:        val (started, pendingToken) = progressStore.tryStartWithToken(TASK_TYPE, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:72:            progressStore.clear(TASK_TYPE)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:99:                    progressStore.bindExecutionId(TASK_TYPE, pendingToken, id)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:107:            progressStore.update(TASK_TYPE, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:116:                progressStore.clearExecutionContext(TASK_TYPE, execId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:118:                progressStore.clearExecutionContext(TASK_TYPE, pendingToken)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:121:                progressStore.clear(TASK_TYPE)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:68:        val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:85:                    progressStore.bindExecutionId("EXPERT_DISCOVERY", token, id)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:91:            progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:99:                progressStore.clearExecutionContext("EXPERT_DISCOVERY", execId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:101:                progressStore.clearExecutionContext("EXPERT_DISCOVERY", token)
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:67:        if (!progressStore.requestCancel(taskType)) {
+src/main/kotlin/com/weibo/talentintroduction/task/controller/TaskProgressController.kt:87:        progressStore.requestCancel(DISCOVERY_PIPELINE_TASK_TYPE)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:608:        val deleted = repository.deleteTerminalJobs(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1022:                        val saved = repository.saveExtraction(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1150:        progressStore.update(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:1273:        progressStore.update(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:115:        val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:134:                    progressStore.bindExecutionId("EXPERT_DISCOVERY", token, id)
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:145:                progressStore.update("EXPERT_DISCOVERY", existing?.copy(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:159:            progressStore.update("EXPERT_DISCOVERY", existing?.copy(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:171:                progressStore.clearExecutionContext("EXPERT_DISCOVERY", execId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:173:                progressStore.clearExecutionContext("EXPERT_DISCOVERY", token)
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:204:        val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:228:                    progressStore.bindExecutionId("EXPERT_DISCOVERY", token, id)
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:239:                progressStore.update("EXPERT_DISCOVERY", existing?.copy(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:253:            progressStore.update("EXPERT_DISCOVERY", existing?.copy(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:265:                progressStore.clearExecutionContext("EXPERT_DISCOVERY", execId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:267:                progressStore.clearExecutionContext("EXPERT_DISCOVERY", token)
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:328:        val (started, pendingToken) = progressStore.tryStartWithToken(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:346:                            progressStore.bindExecutionId(taskType, pendingToken, id)
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:352:                    progressStore.update(taskType, TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:361:                        progressStore.clearExecutionContext(taskType, execId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:363:                        progressStore.clearExecutionContext(taskType, pendingToken)
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:367:                        progressStore.clear(taskType)
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:372:            progressStore.clear(taskType)

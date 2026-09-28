@@ -1,0 +1,19 @@
+{
+  "head": "f98e27c7538d091bfcdecfcb6ffc10360a35ba04",
+  "branch": "main",
+  "files": {
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt": "d50f3eb502a98fefb2a75e4e1b0c19509a26c1f2a3d8c863e92d21839d0b3757",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt": "02df1b9a6f758383c3be62dad14c2d6997d87b4b4493ad9df2833e08fce86f84",
+    "src/main/kotlin/com/weibo/talentintroduction/config/ExpertDiscoveryProperties.kt": "f62649cb95f63a851b51180c87ad3da40269cfd59246ebce410cf8cc6a0215bd",
+    "src/main/kotlin/com/weibo/talentintroduction/config/OpenAlexRequestPolicy.kt": "cc576f4fdc921adae7334c14f74010db04c031c5788dd7a723bed97e2ae0bf07",
+    "src/main/kotlin/com/weibo/talentintroduction/config/RestTemplateConfig.kt": "16fb0cba3471c508fa8be0656ccc64e343fcff85c64a199c1ecd1b80d7d5a6d3",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt": "46293b09041871cd427bb5750ac7f312618d8586ca45e673431118f01ee49f41",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/SourceStats.kt": "871b3f8886108287a7033512cb22fdbf72aa96fbeb34ab09fc9e02af7b09c0eb",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/domain/DiscoveryResult.kt": "4051f4e4e4ff5468c69d597fa0ec1b60f6c7aab68b130d0131ab93016fa87b0c",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryCheckpointCodec.kt": "dcf556badc522dcd7e46e791a83d3c90b3c244fd1478ac7c9eb800ddf6e971ee",
+    "src/main/kotlin/com/weibo/talentintroduction/task/service/TaskProgressStore.kt": "10338c759f4b78f3425da7b82e6ecd4402bf94529f29c593359dfb970f7f6936",
+    "src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt": "aa86eaec1f97221aaa3caf007379511682e84c3b2e4b9c44516b2a00fb4a93b5",
+    "src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt": "b4f284b72f8af1464ef04d1182135f793ac3e969a443f29f97fbcc90c989b641",
+    "src/main/resources/application.yml": "8bd286d90e9fb7bbfb4fecfb6b8e60fcb0e02d864e4b86712e5bbaa3dba0afa2"
+  }
+}
