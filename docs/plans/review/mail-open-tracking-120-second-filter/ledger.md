@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-28/mail-open-tracking-120-second-filter.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-09-28/mail-open-tracking-120-second-filter.md (sha256 8b2f24faaa1a11e741c8b3ca9407ee6cfb89cf52ae9c0a1f5467cd62db4693c1)
+- Governing master identity: worktree sha256 8b2f24faaa1a11e741c8b3ca9407ee6cfb89cf52ae9c0a1f5467cd62db4693c1; commit 3237f07e694565bda5e0e2d6a453fc654d695014
+- Invoked master identity: SAME (sha256 8b2f24faaa1a11e741c8b3ca9407ee6cfb89cf52ae9c0a1f5467cd62db4693c1)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/mail-open-tracking-120-second-filter/ledger.md (sha256 92235d473ad73e94255dddb729f306aff4c9f77a0ac207cbdd152ffeab410790)
+- Fast-p handoff: docs/plans/fast/mail-open-tracking-120-second-filter/human-review-handoff.md (sha256 5b1e555d332c7815c75a4aa55baad70c12ec9fcd925960d9a6c50e5f39247e5e)
+- Master base: f98e27c7538d091bfcdecfcb6ffc10360a35ba04
+- Final code head: e0b002076b92d3e1e543040fb5640585fc2869aa
+- Evidence parent before next commit: fabfbd87fac219fbefb5fd67133ecaaedcd0b3e0
+- Previous evidence commit: N/A
+- Branch: fast/mail-open-tracking-120-second-filter
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: prescribed discover_fast_p.py invoked twice but exceeded the command runtime limit before producing JSON; deterministic registered-worktree check found exactly one candidate with exact plan path, matching branch/worktree, READY_FOR_HUMAN_REVIEW ledger/handoff, terminal child table, extant evidence commits, and valid base/code ancestry.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md#epoch-1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human must perform and report A-1..A-6 against an independent clean acceptance database, then explicitly accept boundary e0b002076b92d3e1e543040fb5640585fc2869aa.

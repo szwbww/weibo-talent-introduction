@@ -94,7 +94,7 @@ class MailOpenTrackingRepository(private val jdbc: JdbcTemplate) {
         val total = jdbc.queryForObject("SELECT COUNT(*) $FROM $where", Long::class.java, *args.toTypedArray()) ?: 0L
         val (summaryWhere, summaryArgs) = conditions(filter, includeStatusAndKeyword = false)
         val counts = jdbc.queryForMap(
-            "SELECT COUNT(t.id) AS tracked_sent, COALESCE(SUM(t.first_open_at IS NOT NULL),0) AS opened $FROM $summaryWhere",
+            "SELECT COUNT(t.id) AS tracked_sent, COALESCE(SUM(CASE WHEN $QUALIFIED THEN 1 ELSE 0 END),0) AS opened $FROM $summaryWhere",
             *summaryArgs.toTypedArray()
         )
         val tracked = (counts["tracked_sent"] as Number).toLong()
@@ -120,8 +120,8 @@ class MailOpenTrackingRepository(private val jdbc: JdbcTemplate) {
         }
         if (includeStatusAndKeyword) {
             when (filter.status) {
-                "OPENED" -> where.append(" AND t.first_open_at IS NOT NULL")
-                "NO_SIGNAL" -> where.append(" AND t.id IS NOT NULL AND t.first_open_at IS NULL")
+                "OPENED" -> where.append(" AND $QUALIFIED")
+                "NO_SIGNAL" -> where.append(" AND t.id IS NOT NULL AND (t.last_open_at IS NULL OR t.last_open_at <= $CUTOFF)")
                 "NOT_TRACKED" -> where.append(" AND t.id IS NULL")
             }
             if (filter.keyword != null) {
@@ -135,6 +135,7 @@ class MailOpenTrackingRepository(private val jdbc: JdbcTemplate) {
     private fun row(rs: java.sql.ResultSet, detail: Boolean = false): OpenTrackingRow {
         val first = rs.getTimestamp("first_open_at")?.toLocalDateTime()
         val tracked = rs.getObject("tracking_id") != null
+        val qualified = tracked && rs.getInt("qualified_signal") == 1
         return OpenTrackingRow(
             mailRecordId = rs.getLong("mail_record_id"),
             expertContactId = rs.getLong("expert_contact_id"),
@@ -144,7 +145,7 @@ class MailOpenTrackingRepository(private val jdbc: JdbcTemplate) {
             mailType = rs.getString("mail_type"),
             subject = rs.getString("subject"),
             sentAt = rs.getTimestamp("sent_at").toLocalDateTime(),
-            trackingStatus = if (!tracked) "NOT_TRACKED" else if (first != null) "OPENED" else "NO_SIGNAL",
+            trackingStatus = if (!tracked) "NOT_TRACKED" else if (qualified) "OPENED" else "NO_SIGNAL",
             firstOpenAt = first,
             lastOpenAt = rs.getTimestamp("last_open_at")?.toLocalDateTime(),
             messageId = if (detail) rs.getString("message_id") else null
@@ -153,10 +154,17 @@ class MailOpenTrackingRepository(private val jdbc: JdbcTemplate) {
 
     companion object {
         private const val KEY = "mailOpenTracking.enabled"
+
+        /** I-1: the sole cutoff expression — a request only counts once it is later than sent_at + 120 seconds. */
+        private const val CUTOFF = "DATE_ADD(m.sent_at, INTERVAL 120 SECOND)"
+
+        /** I-1: the sole candidate predicate shared by the list, both filters, the summary and the detail row. */
+        private const val QUALIFIED = "t.last_open_at > $CUTOFF"
         private const val FROM = "FROM mail_record m LEFT JOIN mail_open_tracking t ON t.id = m.open_tracking_id " +
             "LEFT JOIN expert_contact ec ON ec.id = m.expert_contact_id"
         private const val SELECT = "SELECT m.id AS mail_record_id, m.expert_contact_id, ec.expert_name, " +
             "t.id AS tracking_id, t.recipient, m.sender_account_code, m.mail_type, m.subject, " +
-            "m.sent_at, t.first_open_at, t.last_open_at, m.message_id $FROM"
+            "m.sent_at, t.first_open_at, t.last_open_at, m.message_id, " +
+            "CASE WHEN $QUALIFIED THEN 1 ELSE 0 END AS qualified_signal $FROM"
     }
 }

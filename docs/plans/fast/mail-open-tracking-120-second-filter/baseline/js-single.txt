@@ -1,0 +1,16 @@
+✔ settings failures restore server value; no configuration prevents enabling but permits disabling (12.3175ms)
+✔ records are snapshot-isolated, encode keyword, use 20 rows and retain summary when status changes (46.73775ms)
+✔ tab departure and detail A-to-B race cannot overwrite current DOM; errors stay visible (9.220209ms)
+✔ server-owned fields remain escaped and detail action accepts only positive integer IDs (8.631625ms)
+✔ deleted last page re-queries once at the last valid offset and never loops (12.984792ms)
+✔ settings read racing a save must converge on the last server state (8.915375ms)
+✔ query control resets pagination and reloads settings alongside encoded records (8.907666ms)
+✔ closing detail discards late response and 404 is distinguished from a transient failure (8.038459ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 227.524958
