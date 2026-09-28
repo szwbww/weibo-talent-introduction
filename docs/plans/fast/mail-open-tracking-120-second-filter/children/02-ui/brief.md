@@ -5,7 +5,8 @@
 - Master plan（批准版，字节冻结）：`docs/plans/2026-09-28/mail-open-tracking-120-second-filter.md`，identity `commit:3237f07e694565bda5e0e2d6a453fc654d695014`。
 - 本 child 的批准计划 = 同一份计划文件的「实现方案 / 阶段 2」task 4-6 + 「样式契约」S-1/S-2 + 「关键不变量」I-3/I-5 + 验收标准 I-5/S-1/S-2（完整合同，必须先通读全文）。
 - Worktree / branch / `child_base_sha`：见派发消息。
-- 依赖：`01-backend`（已在其 Code head 上；后端仅改判定口径，JSON 字段与端点不变）。
+- 依赖：`01-backend`（已在其 Code head 上；后端仅改判定口径，JSON 字段与端点不变）。`child_base_sha` 由派发消息给出，等于 `01-backend` 的 Code head。
+- 上游已完成事实：`01-backend` 落地单一 120 秒谓词（`DATE_ADD(m.sent_at, INTERVAL 120 SECOND)` / `t.last_open_at > CUTOFF`），列表/筛选/总数/汇总/详情共用；四门轻量验证 LIGHT_PASS（MySQL IT 6/0、定向 47/0）。本 child 只改文案与缓存键，不改后端。
 
 ## 全局约束
 
