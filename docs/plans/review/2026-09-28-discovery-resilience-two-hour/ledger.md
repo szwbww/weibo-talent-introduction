@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-28/discovery-resilience-two-hour.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
+- Master plan: docs/plans/2026-09-28/discovery-resilience-two-hour.md (commit 3f167a2820c3f9bdb344f19da2123d6a9ff2f12a)
+- Governing master identity: sha256 c94fd0e4a8aaaa54ecf1727d8622812666af1df65a64fbde4635cdacf41db88b; recorded commit 3f167a2820c3f9bdb344f19da2123d6a9ff2f12a
+- Invoked master identity: SAME (sha256 c94fd0e4a8aaaa54ecf1727d8622812666af1df65a64fbde4635cdacf41db88b)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/2026-09-28-discovery-resilience-two-hour/ledger.md (sha256 78fc0a61e9493b6e881d1296730041ebaccd6b3c6e11d29d7d915191d2b3c85f)
+- Fast-p handoff: docs/plans/fast/2026-09-28-discovery-resilience-two-hour/human-review-handoff.md (sha256 f114e09d1a54d31e20cbad351585d14b3b49e99c9316c56782c488db8c473066)
+- Master base: f98e27c7538d091bfcdecfcb6ffc10360a35ba04
+- Final code head: 8e622680c9fafeb68c6b220da8ef47c947ff2fcd
+- Evidence parent before next commit: 22e4dd61a28aa2aba128ed7fac7326e091146f9a
+- Previous evidence commit: 22e4dd61a28aa2aba128ed7fac7326e091146f9a
+- Branch: fast/2026-09-28-discovery-resilience-two-hour
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-28-discovery-resilience-two-hour
+- Worktree resolution: EXPLICIT
+- Discovery evidence: resumption from the recorded review ledger in the retained fast-p worktree; branch/worktree, master identity, child terminal table, evidence commits and ancestry revalidated before the repair epoch
+- Misdirected review evidence: N/A
+- Reviewer: AggregateReviewE2
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md — Epoch 2
+- Repair artifact: docs/plans/fix/discovery-resilience-two-hour/repair.md (sha256 830b2ab77e854dd31c9e18259f0545277afd5e160ac60cc8ac910da574779ade; V-1/R-1, executed at 8e62268)
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: HUMAN `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-28-discovery-resilience-two-hour/docs/plans/fix/discovery-resilience-two-hour/repair.md` invocation, 2026-09-28 (recorded in repair-execution.md)
+- Repair executor: RepairExec01 (recorded in repair-execution.md)
+- Repair code head: 8e622680c9fafeb68c6b220da8ef47c947ff2fcd
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: human manual acceptance A-1..A-8 with reported results and an explicit sign-off naming boundary 8e622680c9fafeb68c6b220da8ef47c947ff2fcd; checklist at docs/plans/review/2026-09-28-discovery-resilience-two-hour/manual-acceptance.md (Epoch 2, PENDING)

@@ -9,6 +9,7 @@ import com.weibo.talentintroduction.config.FulltextRequestGate
 import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
 import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.config.PIPELINE_PAGE_SIZE
+import com.weibo.talentintroduction.config.PolicyTimeSource
 import com.weibo.talentintroduction.config.RequestKind
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.DiscoveryResult
@@ -19,6 +20,7 @@ import com.weibo.talentintroduction.discovery.domain.ExpertAcademicEnrichmentJob
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
+import com.weibo.talentintroduction.discovery.domain.SourceRetryState
 import com.weibo.talentintroduction.discovery.domain.SourceStats
 import com.weibo.talentintroduction.discovery.domain.SourceUnit
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
@@ -54,8 +56,10 @@ import org.springframework.stereotype.Service
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpStatusCodeException
 import org.springframework.web.client.RestTemplate
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Base64
 import java.io.EOFException
@@ -107,10 +111,19 @@ class ExpertDiscoveryService(
     private val enrichmentJobRepository: ExpertAcademicEnrichmentJobRepository,
     @Qualifier("discoveryFetchExecutor")
     private val discoveryFetchExecutor: Executor,
-    private val europePmcProperties: EuropePmcProperties
+    private val europePmcProperties: EuropePmcProperties,
+    /**
+     * I-1：可注入的时间/等待接缝。deadline 比较、延迟恢复的安排时刻与实际等待必须共用同一 clock，
+     * 否则「计划 30 秒后回访」在测试里无法证明。生产使用 [PolicyTimeSource.SYSTEM]（默认值），
+     * 既有构造调用逐字兼容。
+     */
+    private val timeSource: PolicyTimeSource = PolicyTimeSource.SYSTEM
 ) {
     private val log = LoggerFactory.getLogger(ExpertDiscoveryService::class.java)
     private val dateFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
+    /** I-5：运营端展示用的时区（计划重试时间按北京时间显示，存储仍是 ISO-8601 UTC）。 */
+    private val displayZone = ZoneId.of("Asia/Shanghai")
 
     /**
      * I-4（08）：最近一批自动/待补批次补全的逐源计数（入队/成功/待补/未匹配）。
@@ -276,7 +289,16 @@ class ExpertDiscoveryService(
                 "sourceFailureCount" to ss.sourceFailureCount,
                 "stopReason" to (ss.stopReason ?: ""),
                 "runBudget" to ss.runBudget,
-                "unit" to ss.unit.name
+                "unit" to ss.unit.name,
+                // I-5：唯一的重试观察对象（等待中的轮次/计划时间/原因），随 details_json/result_summary 序列化。
+                "retry" to (ss.retry?.let { retry ->
+                    mapOf(
+                        "round" to retry.round,
+                        "maxRounds" to retry.maxRounds,
+                        "nextRetryAt" to retry.nextRetryAt,
+                        "reason" to retry.reason
+                    )
+                } ?: emptyMap<String, Any?>())
             )
         }
         return bySource
@@ -292,9 +314,34 @@ class ExpertDiscoveryService(
         } else {
             ""
         }
-        return "发现任务完成[$terminalStatus]: 总耗时 ${totalElapsed}ms | 各平台: $sourceSummaries | " +
-            "合计: ${processedCountsSegment(stats)}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}$sourceFailureSegment"
+        val retrySegment = retryWaitSegment(stats)
+        val headline = if (terminalStatus == SUMMARY_STATUS_RUNNING) {
+            "发现任务进行中"
+        } else {
+            "发现任务完成[$terminalStatus]: 总耗时 ${totalElapsed}ms"
+        }
+        return "$headline | 各平台: $sourceSummaries | " +
+            "合计: ${processedCountsSegment(stats)}, 收录 ${stats.indexed}, 晋升 ${stats.promoted}" +
+            "$sourceFailureSegment$retrySegment"
     }
+
+    /**
+     * I-5：仍在等待延迟恢复的来源必须在 summaryText 里看得见（「不是穷尽，也不是失败」）。
+     * 真正开始/取消/超时/结束时 [SourceRetryState.nextRetryAt] 被清空，这一段自然消失。
+     */
+    private fun retryWaitSegment(stats: DiscoveryStats): String {
+        val waiting = stats.bySource.mapNotNull { (name, sourceStats) ->
+            val retry = sourceStats.retry ?: return@mapNotNull null
+            val nextRetryAt = retry.nextRetryAt ?: return@mapNotNull null
+            "$name 等待恢复 ${retry.round}/${retry.maxRounds}（原因 ${retry.reason}），" +
+                "计划重试时间 ${displayTime(nextRetryAt)}（北京时间）"
+        }
+        return if (waiting.isEmpty()) "" else " | 待恢复: ${waiting.joinToString("; ")}"
+    }
+
+    /** I-5: 存储用 ISO-8601 UTC，展示转运营端时区（北京时间）。 */
+    private fun displayTime(isoUtc: String): String =
+        Instant.parse(isoUtc).atZone(displayZone).format(dateFormatter)
 
     /**
      * c9（I-1）：`papersSearched` 对 ORCID 的历史语义是「记录数」，不能与论文混称。这里按
@@ -314,6 +361,9 @@ class ExpertDiscoveryService(
         )
         if (sourceName != null) details["currentSource"] = sourceName
         if (method != null) details["currentMethod"] = method
+        // I-5：运行中的详情同样带 summaryText —— 等待提示必须随进度一起（并经晋升读投影）保留下来。
+        // 终态更新会在其后覆盖为带真实终态与耗时的版本，不覆盖论文/收录/晋升信息。
+        details["summaryText"] = buildSummaryText(stats, 0L, SUMMARY_STATUS_RUNNING)
         DiscoveryTrafficMeter.currentSession()?.let { details["traffic"] = it.snapshot() }
         return details
     }
@@ -354,7 +404,7 @@ class ExpertDiscoveryService(
         // 不静默饿死后来源，也不把 0 当成无限量。
         validateRunQuota(sources, criteria)
         // I-3（09）：运行级 deadline。请求前与每页内检查，到点按 TIME_BUDGET 停止并保留进入页的检查点。
-        val deadline = Instant.now().plus(discoveryProperties.timeBudget)
+        val deadline = timeSource.now().plus(discoveryProperties.timeBudget)
         val startTime = System.currentTimeMillis()
         // I-3: 结果与进度共用的终态；仅在正常路径赋值（异常路径由 catch 记录 FAILED 后重抛）。
         var terminalStatusOfRun = DiscoveryTerminalStatus.SUCCESS
@@ -381,6 +431,9 @@ class ExpertDiscoveryService(
                 runRawScan()
             }
 
+            // I-1：本轮内存中的待恢复项（不落库、不起后台线程）；跨重启的续跑仍走既有持久化检查点。
+            val deferredRecoveries = LinkedHashMap<String, DeferredSourceRecovery>()
+
             for ((index, source) in sources.withIndex()) {
                 if (progressStore.isCancelled("EXPERT_DISCOVERY")) break
                 stats.refreshGlobalCounts()
@@ -396,11 +449,23 @@ class ExpertDiscoveryService(
                 log.info("[{}] 本次运行结束: stopReason={}, exhausted={}, resumeCursor={}",
                     source.sourceName, outcome.stopReason, outcome.exhausted,
                     outcome.resumeCursor?.take(50) ?: "null")
+                // I-1：待恢复项只登记在本轮内存里，等所有来源（含 ORCID）停稳后才消费。
+                outcome.retry?.let { pending ->
+                    val deferred = DeferredSourceRecovery(source, runQuota, pending)
+                    deferredRecoveries[source.sourceName] = deferred
+                    stats.refreshGlobalCounts()
+                    writeRetryEvent(stats, deferred, retryWaitMessage(deferred), execId)
+                }
             }
 
             DiscoveryTrafficMeter.measure(trafficSession, "ORCID", DiscoveryTrafficMeter.Category.METADATA) {
                 discoverFromOrcid(criteria, stats, deadline)
             }
+            // I-1/I-2：其他来源已经耗过的等待时间就是等待时间，回访时不重复睡；这里也可能因取消/超时
+            // 而一个请求都不发（保留游标并给真实停止原因）。
+            consumeDeferredRecoveries(deferredRecoveries, criteria, stats, deadline, trafficSession, execId)
+            // I-5：本轮结束时清空「仍待执行」的计划时间；轮次与原因保留用于审计。
+            clearRetryWait(stats)
             stats.refreshGlobalCounts()
 
             val totalElapsed = System.currentTimeMillis() - startTime
@@ -454,6 +519,8 @@ class ExpertDiscoveryService(
             ), execId)
         } catch (e: Exception) {
             stats.refreshGlobalCounts()
+            // I-5：异常结束同样清空「仍待执行」的计划时间，避免页面一直显示已过期的等待。
+            clearRetryWait(stats)
             val totalElapsed = System.currentTimeMillis() - startTime
             val details = buildProgressDetails(stats).toMutableMap()
             details["traffic"] = trafficSession.snapshot()
@@ -565,8 +632,8 @@ class ExpertDiscoveryService(
     private fun papersUsedForGlobalCap(stats: DiscoveryStats): Int =
         stats.bySource.values.filter { it.unit == SourceUnit.PAPER }.sumOf { it.papersSearched }
 
-    /** c9（I-3）：运行级时间预算是否已到点。 */
-    private fun timeBudgetReached(deadline: Instant): Boolean = !Instant.now().isBefore(deadline)
+    /** c9（I-3）：运行级时间预算是否已到点（与延迟恢复共用同一 clock，保证测试可驱动）。 */
+    private fun timeBudgetReached(deadline: Instant): Boolean = !timeSource.now().isBefore(deadline)
 
     /**
      * I-1: 单来源运行。每一完整消费页后立即持久化 next cursor；首请求失败、部分页、取消与预算停止
@@ -581,7 +648,9 @@ class ExpertDiscoveryService(
         criteria: PaperSearchCriteria,
         stats: DiscoveryStats,
         runQuota: Int,
-        deadline: Instant
+        deadline: Instant,
+        /** I-1/I-3：同轮延迟恢复的入口上下文；null = 首次进入本源（既有行为逐字保持）。 */
+        resume: SourceRetryPending? = null
     ): SourceRunOutcome {
         val sourceStats = stats.getOrCreateSourceStats(source.sourceName, source.emailExtractionMethod)
         val sourceStartTime = System.currentTimeMillis()
@@ -594,35 +663,52 @@ class ExpertDiscoveryService(
         val checkpoint = loadSourceCheckpoint(source.sourceName, criteria)
         // I-2: 检查点是游标权威；EXHAUSTED 表示本次扫描周期从头重开，
         // 调用方显式给出的 cursor 只在本次运行起点生效（保持既有入口行为）。
-        val enteringCursor: String? = if (checkpoint.exhausted) {
+        // 恢复回访用本轮内存里的确切页入口（[SourceRetryPending.resumeCursor]），不依赖再查库成功；
+        // 其中的 null 是合法的「第一页」，绝不用检查点里的旧值替代。
+        val enteringCursor: String? = if (resume != null) {
+            resume.resumeCursor
+        } else if (checkpoint.exhausted) {
             criteria.cursor
         } else {
             checkpoint.cursor ?: criteria.cursor
         }
-        if (enteringCursor != null) {
+        if (resume == null && enteringCursor != null) {
             log.info("[{}] 从上次检查点继续: {}", source.sourceName, enteringCursor.take(50))
-        } else if (checkpoint.exhausted) {
+        } else if (resume == null && checkpoint.exhausted) {
             log.info("[{}] 上次已穷尽，本次扫描周期从头重开", source.sourceName)
         }
 
-        log.info(
-            "[{}] 开始: 方式={}, 本源限额={}, 本次运行额度={}, 全局剩余={}",
-            source.sourceName, source.emailExtractionMethod, source.maxPapersPerSource, sourceLimit,
-            (discoveryProperties.maxPapersPerRun - papersUsedForGlobalCap(stats)).coerceAtLeast(0)
-        )
+        if (resume != null) {
+            log.info(
+                "[{}] 延迟恢复回访 组 {}/{}: 原因={}, 入口游标={}, 已处理基线={}/{}",
+                source.sourceName, resume.round, resume.maxRounds, resume.reason,
+                enteringCursor?.take(50) ?: "null", resume.processedBaseline, sourceLimit
+            )
+        } else {
+            log.info(
+                "[{}] 开始: 方式={}, 本源限额={}, 本次运行额度={}, 全局剩余={}",
+                source.sourceName, source.emailExtractionMethod, source.maxPapersPerSource, sourceLimit,
+                (discoveryProperties.maxPapersPerRun - papersUsedForGlobalCap(stats)).coerceAtLeast(0)
+            )
+        }
 
         val runCriteria = if (enteringCursor != null) criteria.copy(cursor = enteringCursor) else criteria
         var cursor: String? = enteringCursor
         // I-1: 可安全续跑的位置。进入某页失败时保持该页入口值，绝不用 null 覆盖已有进度。
         var resumeCursor: String? = enteringCursor
-        var persistedPapers = 0
+        // I-3: 恢复片段从上一片段的累计量起步 —— 既不重新获得完整额度，也不重复累计论文
+        // （页面入口停止意味着此前处理量都已落盘，故两个基线同一个值）。
+        var persistedPapers = resume?.processedBaseline ?: 0
         var batchNumber = 0
-        var sourcePapersProcessed = 0
+        var sourcePapersProcessed = resume?.processedBaseline ?: 0
         var consecutiveFailures = 0
         var openAlexPageAttempts = 0
         var circuitBreakerTripped = false
         var exhausted = false
         var stopReason = DiscoveryStopReason.EXHAUSTED
+        // I-1: 已安排的延迟恢复组数（跨片段累计，不因成功一页而重置）。
+        var recoveryGroupsScheduled = resume?.round ?: 0
+        var retryPending: SourceRetryPending? = null
 
         /** 在页边界（或运行结束时）落盘检查点；delta 保证 papers_processed_total 不重复计数。 */
         fun persistCheckpoint(nextCursor: String?, reason: String, pageExhausted: Boolean) {
@@ -701,6 +787,24 @@ class ExpertDiscoveryService(
                     }
                     continue
                 }
+                if (retryableOpenAlex) {
+                    // I-1：短尝试用尽 —— 不立刻判来源失败，先安排有限延迟恢复（恢复组也有限）。
+                    val deferred = planDeferredRecovery(
+                        groupsScheduled = recoveryGroupsScheduled,
+                        reason = retryReasonCode(e),
+                        resumeCursor = resumeCursor,
+                        processedBaseline = sourceStats.papersSearched
+                    )
+                    if (deferred != null) {
+                        recoveryGroupsScheduled = deferred.round
+                        retryPending = deferred
+                        stopReason = DiscoveryStopReason.RETRY_WAIT
+                        log.warn("[{}] 同页短尝试用尽，等待恢复 {}/{}（原因 {}，计划 {}）",
+                            source.sourceName, deferred.round, deferred.maxRounds, deferred.reason,
+                            deferred.nextRetryAt)
+                        break
+                    }
+                }
                 if (source !is OpenAlexDataSource && (code == 429 || code == 503)) {
                     consecutiveFailures++
                     sourceStats.failureReasons.merge("RATE_LIMITED", 1) { a, b -> a + b }
@@ -722,8 +826,8 @@ class ExpertDiscoveryService(
                 stopReason = DiscoveryStopReason.SEARCH_FAILED
                 break
             } catch (e: Exception) {
-                if (source is OpenAlexDataSource && isRetryableOpenAlexFailure(e) &&
-                    openAlexPageAttempts < OPENALEX_MAX_PAGE_ATTEMPTS) {
+                val retryableSearchFailure = source is OpenAlexDataSource && isRetryableOpenAlexFailure(e)
+                if (retryableSearchFailure && openAlexPageAttempts < OPENALEX_MAX_PAGE_ATTEMPTS) {
                     log.warn("[{}] 同页重试 {}/{}，异常类型={}", source.sourceName, openAlexPageAttempts,
                         OPENALEX_MAX_PAGE_ATTEMPTS, e.javaClass.simpleName)
                     val waitStop = waitForOpenAlexRetry(openAlexPageAttempts, deadline)
@@ -732,6 +836,25 @@ class ExpertDiscoveryService(
                         break
                     }
                     continue
+                }
+                if (retryableSearchFailure) {
+                    // I-1：短尝试用尽 —— 先按有限间隔安排恢复组；证书/协议/反序列化错误已在
+                    // [isRetryableOpenAlexFailure] 里被排除，绝不进入这里。
+                    val deferred = planDeferredRecovery(
+                        groupsScheduled = recoveryGroupsScheduled,
+                        reason = retryReasonCode(e),
+                        resumeCursor = resumeCursor,
+                        processedBaseline = sourceStats.papersSearched
+                    )
+                    if (deferred != null) {
+                        recoveryGroupsScheduled = deferred.round
+                        retryPending = deferred
+                        stopReason = DiscoveryStopReason.RETRY_WAIT
+                        log.warn("[{}] 同页短尝试用尽，等待恢复 {}/{}（原因 {}，计划 {}）",
+                            source.sourceName, deferred.round, deferred.maxRounds, deferred.reason,
+                            deferred.nextRetryAt)
+                        break
+                    }
                 }
                 recordTerminalSourceFailure(sourceStats, "SEARCH_FAILED")
                 log.error("[{}] 搜索失败: attempt={}/{}, 异常类型={}", source.sourceName,
@@ -893,11 +1016,22 @@ class ExpertDiscoveryService(
         }
 
         val elapsed = System.currentTimeMillis() - sourceStartTime
-        sourceStats.elapsedMs = elapsed
+        // I-3: 累加真实来源运行片段，不覆盖首段（恢复回访是同一来源的后续片段）。
+        sourceStats.elapsedMs += elapsed
         // I-1: 运行结束时落盘终止状态；失败/部分页/取消都停在 resumeCursor（进入该页的位置）。
         persistCheckpoint(resumeCursor, stopReason, exhausted)
         sourceStats.pendingWork = !exhausted
         sourceStats.stopReason = stopReason
+        // I-5: 唯一的重试观察对象。真正开始/取消/超时/结束时只清空 nextRetryAt，保留轮次与脱敏原因
+        // 用于审计；只有本轮新安排的恢复项才覆盖轮次与计划时间。无恢复历史的来源不产生观察对象。
+        sourceStats.retry = retryPending?.let { pending ->
+            SourceRetryState(
+                round = pending.round,
+                maxRounds = pending.maxRounds,
+                nextRetryAt = pending.nextRetryAt.toString(),
+                reason = pending.reason
+            )
+        } ?: sourceStats.retry?.copy(nextRetryAt = null)
 
         log.info("[{}] 完成: 耗时 ${elapsed}ms, API请求 ${sourceStats.apiRequests} 次 | " +
             "漏斗: 搜索 ${sourceStats.papersSearched} → 尝试全文 ${sourceStats.fulltextAttempted} → 获全文 ${sourceStats.fulltextObtained}" +
@@ -910,7 +1044,207 @@ class ExpertDiscoveryService(
             (if (sourceStats.failureReasons.isNotEmpty()) ", 失败原因 ${sourceStats.failureReasons}" else ""),
             source.sourceName)
 
-        return SourceRunOutcome(resumeCursor, exhausted, stopReason)
+        return SourceRunOutcome(resumeCursor, exhausted, stopReason, retry = retryPending)
+    }
+
+    /**
+     * I-1/I-3：本轮内存中的延迟恢复项。恢复不创建新的 [DiscoveryStats]、executionId 或 deadline，
+     * 因此这里只保存重新进入同一来源所需的最小上下文：本轮固定的 runBudget（绝不重新分配）与
+     * 待恢复信息（页入口游标、已处理基线、恢复组轮次/计划时刻/脱敏原因）。
+     */
+    private class DeferredSourceRecovery(
+        val source: AcademicDataSource,
+        val runBudget: Int,
+        var pending: SourceRetryPending
+    )
+
+    /**
+     * I-1/I-2/I-7：消费本轮待恢复项。只有所有来源（含 ORCID）都停稳后才进入这里，因此长等待不会
+     * 饿死其他来源。每轮先等到该组的计划时刻（≤100ms 片段，取消优先于时间与额度），再按同一页
+     * 入口回访；未到期不发任何请求，到界则保留游标、清等待时间并给真实停止原因。
+     */
+    private fun consumeDeferredRecoveries(
+        deferred: LinkedHashMap<String, DeferredSourceRecovery>,
+        criteria: PaperSearchCriteria,
+        stats: DiscoveryStats,
+        deadline: Instant,
+        trafficSession: DiscoveryTrafficMeter.Session,
+        execId: Long?
+    ) {
+        if (deferred.isEmpty()) return
+        for (round in 1..discoveryProperties.openAlexSearchRecoveryDelays.size) {
+            val waiting = deferred.values.filter { it.pending.round == round }
+            if (waiting.isEmpty()) continue
+            val waitStop = awaitRetryAt(waiting.minOf { it.pending.nextRetryAt }, deadline)
+            if (waitStop != null) {
+                // I-7：取消/时间预算一旦发生，之后不得再发出任何恢复请求。
+                waiting.forEach { stopDeferredRecovery(it, waitStop, stats) }
+                return
+            }
+            for (item in waiting) {
+                stats.refreshGlobalCounts()
+                val blocked = when {
+                    progressStore.isCancelled("EXPERT_DISCOVERY") -> DiscoveryStopReason.CANCELLED
+                    timeBudgetReached(deadline) -> DiscoveryStopReason.TIME_BUDGET
+                    stats.totalPapers >= discoveryProperties.maxPapersPerRun -> DiscoveryStopReason.GLOBAL_PAPER_LIMIT
+                    stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun -> DiscoveryStopReason.GLOBAL_AUTHOR_LIMIT
+                    else -> null
+                }
+                if (blocked != null) {
+                    stopDeferredRecovery(item, blocked, stats)
+                    log.info("[{}] 恢复回访未开始: 停止原因={}, 保留游标 {}",
+                        item.source.sourceName, blocked, item.pending.resumeCursor?.take(50) ?: "null")
+                    continue
+                }
+                beginRetryAttempt(stats, item, execId)
+                val outcome = DiscoveryTrafficMeter.measure(
+                    trafficSession, item.source.sourceName, DiscoveryTrafficMeter.Category.METADATA
+                ) {
+                    discoverFromSource(item.source, criteria, stats, item.runBudget, deadline, resume = item.pending)
+                }
+                log.info("[{}] 恢复回访结束: stopReason={}, exhausted={}, resumeCursor={}",
+                    item.source.sourceName, outcome.stopReason, outcome.exhausted,
+                    outcome.resumeCursor?.take(50) ?: "null")
+                stats.refreshGlobalCounts()
+                val next = outcome.retry
+                if (next == null) {
+                    deferred.remove(item.source.sourceName)
+                    writeRetryEvent(stats, item,
+                        "[${item.source.sourceName}] 恢复结束: 停止原因 ${outcome.stopReason}", execId)
+                } else {
+                    item.pending = next
+                    writeRetryEvent(stats, item, retryWaitMessage(item), execId)
+                }
+            }
+        }
+    }
+
+    /**
+     * I-7：等到 [target]（检查粒度 ≤100ms，可中断）。返回非 null 表示等待被取消/时间预算打断，
+     * 调用方必须停止一切恢复请求；取消优先于时间。绝不一次睡满整个退避。
+     */
+    private fun awaitRetryAt(target: Instant, deadline: Instant): String? {
+        while (timeSource.now().isBefore(target)) {
+            if (progressStore.isCancelled("EXPERT_DISCOVERY")) return DiscoveryStopReason.CANCELLED
+            if (timeBudgetReached(deadline)) return DiscoveryStopReason.TIME_BUDGET
+            val remaining = Duration.between(timeSource.now(), target).toMillis().coerceAtLeast(1L)
+            try {
+                timeSource.sleep(minOf(remaining, RETRY_WAIT_SLICE_MS))
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return DiscoveryStopReason.CANCELLED
+            }
+        }
+        return when {
+            progressStore.isCancelled("EXPERT_DISCOVERY") -> DiscoveryStopReason.CANCELLED
+            timeBudgetReached(deadline) -> DiscoveryStopReason.TIME_BUDGET
+            else -> null
+        }
+    }
+
+    /**
+     * I-5：开始一次真正的恢复回访 —— 清空 nextRetryAt（保留轮次/原因），并写一次带
+     * expectedExecutionId 的进度事件（等待期间不按 100ms 落日志）。
+     */
+    private fun beginRetryAttempt(stats: DiscoveryStats, item: DeferredSourceRecovery, execId: Long?) {
+        val sourceStats = stats.bySource[item.source.sourceName]
+        val retry = sourceStats?.retry
+        if (sourceStats != null && retry != null) sourceStats.retry = retry.copy(nextRetryAt = null)
+        writeRetryEvent(stats, item, "[${item.source.sourceName}] 开始恢复回访 " +
+            "${item.pending.round}/${item.pending.maxRounds}（原因 ${item.pending.reason}）", execId)
+    }
+
+    /**
+     * I-4/I-5：到界时保留「未穷尽、可续跑」，清空计划时间并给真实停止原因；
+     * 不因先前的短暂失败记 SEARCH_FAILED，也不新增 sourceFailureCount。
+     */
+    private fun stopDeferredRecovery(item: DeferredSourceRecovery, reason: String, stats: DiscoveryStats) {
+        val sourceStats = stats.bySource[item.source.sourceName] ?: return
+        sourceStats.stopReason = reason
+        sourceStats.pendingWork = true
+        val retry = sourceStats.retry
+        if (retry != null) sourceStats.retry = retry.copy(nextRetryAt = null)
+    }
+
+    /** I-5：运行结束（正常或异常）时清空所有「仍待执行」的计划时间，避免页面一直显示已过期的等待。 */
+    private fun clearRetryWait(stats: DiscoveryStats) {
+        stats.bySource.values.forEach { sourceStats ->
+            val retry = sourceStats.retry ?: return@forEach
+            if (retry.nextRetryAt != null) sourceStats.retry = retry.copy(nextRetryAt = null)
+        }
+    }
+
+    /**
+     * I-5：写一次重试事件（安排等待 / 回访开始 / 恢复结束）。用 [RETRY_EVENT_BATCH_NUMBER] 作为
+     * 非批次日志号：`batchOnly=true` 只聚合 batchNumber>0 的日志，因此既有按批聚合规则逐字不变。
+     */
+    private fun writeRetryEvent(
+        stats: DiscoveryStats,
+        item: DeferredSourceRecovery,
+        message: String,
+        execId: Long?
+    ) {
+        progressStore.update("EXPERT_DISCOVERY", TaskProgress(
+            taskType = "EXPERT_DISCOVERY", status = "RUNNING",
+            batchNumber = RETRY_EVENT_BATCH_NUMBER,
+            processedCount = stats.totalPapers.toLong(),
+            totalCount = discoveryProperties.maxPapersPerRun.toLong(),
+            message = message,
+            details = buildProgressDetails(stats, item.source.sourceName, item.source.emailExtractionMethod),
+            errors = snapshotErrors(stats)
+        ), execId)
+    }
+
+    /** I-5：等待恢复的运营端文案（轮次、计划重试时间按北京时间显示）。 */
+    private fun retryWaitMessage(item: DeferredSourceRecovery): String {
+        val pending = item.pending
+        return "[${item.source.sourceName}] 搜索${retryReasonLabel(pending.reason)}，等待恢复 " +
+            "${pending.round}/${pending.maxRounds}，计划重试时间 ${displayTime(pending.nextRetryAt.toString())}" +
+            "（北京时间）；先处理其他来源"
+    }
+
+    private fun retryReasonLabel(reason: String): String = when {
+        reason == "TIMEOUT" -> "超时"
+        reason.startsWith("HTTP_") -> "服务不可用（$reason）"
+        else -> "连接中断"
+    }
+
+    /**
+     * I-1：短尝试用尽后的延迟恢复决定。返回 null 表示不进入恢复（恢复列表为空或恢复组已用尽），
+     * 调用方按既有逻辑记一次终止性 SEARCH_FAILED。恢复组额度不因成功一页而重置：调用方把
+     * [groupsScheduled] 一直带在本次运行的局部状态里。
+     */
+    private fun planDeferredRecovery(
+        groupsScheduled: Int,
+        reason: String,
+        resumeCursor: String?,
+        processedBaseline: Int
+    ): SourceRetryPending? {
+        val delays = discoveryProperties.openAlexSearchRecoveryDelays
+        if (groupsScheduled >= delays.size) return null
+        val round = groupsScheduled + 1
+        return SourceRetryPending(
+            round = round,
+            maxRounds = delays.size,
+            nextRetryAt = timeSource.now().plus(delays[round - 1]),
+            reason = reason,
+            resumeCursor = resumeCursor,
+            processedBaseline = processedBaseline
+        )
+    }
+
+    /**
+     * I-1：恢复原因只允许脱敏码，绝不携带 URL、查询串或密钥。调用方已确认错误在可重试白名单内
+     * （或属于 500/502/503/504）。
+     */
+    private fun retryReasonCode(error: Throwable?): String {
+        if (error is HttpStatusCodeException) return "HTTP_${error.statusCode.value()}"
+        val causes = generateSequence(error) { it.cause }.toList()
+        if (causes.any { it is SSLHandshakeException }) return "REMOTE_TLS_HANDSHAKE"
+        if (causes.any { it is SocketTimeoutException || it.javaClass.simpleName == "ConnectTimeoutException" }) {
+            return "TIMEOUT"
+        }
+        return "NETWORK_IO"
     }
 
     /**
@@ -2057,9 +2391,10 @@ class ExpertDiscoveryService(
         while (remaining > 0L) {
             if (progressStore.isCancelled("EXPERT_DISCOVERY")) return DiscoveryStopReason.CANCELLED
             if (timeBudgetReached(deadline)) return DiscoveryStopReason.TIME_BUDGET
-            val slice = minOf(remaining, 100L)
+            val slice = minOf(remaining, RETRY_WAIT_SLICE_MS)
             try {
-                Thread.sleep(slice)
+                // I-1：短等待与延迟恢复共用同一等待接缝（生产=Thread.sleep，测试=fake clock）。
+                timeSource.sleep(slice)
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
                 return DiscoveryStopReason.CANCELLED
@@ -3222,12 +3557,31 @@ data class ConsumeOutcomeResult(
  * 时保持进入该页的值）；[exhausted] 只在把来源翻到底时为 true；[stopReason] 见 [DiscoveryStopReason]。
  *
  * c4 的 CORE/ORCID 分页继续使用本类型，异常分支只允许产出 failed/deferred 结果，绝不产出
- * `exhausted = true`。
+ * `exhausted = true`。新增的 [retry] 默认 null，CORE/ORCID 与「不进入恢复」的路径逐字兼容。
  */
 data class SourceRunOutcome(
     val resumeCursor: String?,
     val exhausted: Boolean,
-    val stopReason: String
+    val stopReason: String,
+    /** I-1: 非空表示本来源已安排一次有限延迟恢复，调用方必须回访同一页入口（而不是记终止失败）。 */
+    val retry: SourceRetryPending? = null
+)
+
+/**
+ * I-1/I-3：短尝试用尽后的待恢复信息，同时也是下一次回访的完整入口上下文。
+ *
+ * - [reason] 只允许脱敏码（`REMOTE_TLS_HANDSHAKE`/`TIMEOUT`/`NETWORK_IO`/`HTTP_5xx`），不含 URL 或密钥；
+ * - [resumeCursor] 是本轮内存中的确切页入口（null 是合法的「第一页」）；
+ * - [processedBaseline] 是页面入口停止时已处理（且已提交）的数量，回访时从这里起步 ——
+ *   既不重新获得完整额度，也不会把已计过的论文再加一遍。
+ */
+data class SourceRetryPending(
+    val round: Int,
+    val maxRounds: Int,
+    val nextRetryAt: Instant,
+    val reason: String,
+    val resumeCursor: String?,
+    val processedBaseline: Int
 )
 
 /** I-1: 单来源运行的停止原因，与主方案「每种约束各自给原因」对齐。 */
@@ -3263,6 +3617,13 @@ object DiscoveryStopReason {
      * 不把未消费的半页当成已消费，也绝不置 `exhausted`。
      */
     const val TIME_BUDGET = "TIME_BUDGET"
+
+    /**
+     * I-4：来源正在等待有限延迟恢复 —— 这是**运行中**状态，不是终态错误：不新增 task_execution 状态，
+     * 等待期间 `sourceFailureCount=0`、`pendingWork=true`、`exhausted=false`。真正用尽所有尝试才会记
+     * 一次 [SEARCH_FAILED]；恢复成功则按实际停止原因覆盖本值。
+     */
+    const val RETRY_WAIT = "RETRY_WAIT"
 }
 
 /**
@@ -3281,6 +3642,18 @@ private const val MAX_ENRICHMENT_IDENTITIES_PER_BATCH = 100
 
 private const val OPENALEX_MAX_PAGE_ATTEMPTS = 3
 private val OPENALEX_RETRYABLE_HTTP_STATUS = setOf(500, 502, 503, 504)
+
+/** I-1/I-7：短等待与延迟恢复等待的检查粒度（≤100ms，取消/超时必须在下一片内被观察到）。 */
+private const val RETRY_WAIT_SLICE_MS = 100L
+
+/**
+ * I-5：重试事件（安排等待 / 回访开始 / 恢复结束）用的非批次日志号。
+ * `batchOnly=true` 只聚合 `batchNumber > 0` 的日志，因此既有按批聚合规则逐字不变。
+ */
+private const val RETRY_EVENT_BATCH_NUMBER = 0
+
+/** I-5：运行中详情里 summaryText 的占位终态（不是 task_execution 状态）。 */
+private const val SUMMARY_STATUS_RUNNING = "RUNNING"
 
 /** I-1（08）：补全入队的失败原因码（与 [DiscoveryStopReason.ENQUEUE_INCOMPLETE] 配对）。 */
 private const val ENRICHMENT_ENQUEUE_FAILED = "ENRICHMENT_ENQUEUE_FAILED"

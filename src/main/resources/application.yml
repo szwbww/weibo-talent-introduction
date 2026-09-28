@@ -177,7 +177,12 @@ talent-introduction:
     base-path: ${MAIL_ATTACHMENT_STORAGE_BASE_PATH:/opt/talent/uploads/mail-attachments}
   expert-discovery:
     enabled: ${EXPERT_DISCOVERY_ENABLED:true}
-    cron: ${EXPERT_DISCOVERY_CRON:0 0 2 * * ?}
+    # I-6: 两小时一次（北京时间 00:00、02:00…22:00）；@Scheduled 注解显式 zone=Asia/Shanghai，
+    # 因此部署机默认时区不影响触发点。`-` 仍表示不注册定时触发（永久停定时用这个，并重启生效）。
+    cron: ${EXPERT_DISCOVERY_CRON:0 0 */2 * * ?}
+    # I-1: OpenAlex 元数据搜索的有限延迟恢复间隔（短尝试 3 次用尽后按 30s/2min/5min 各回访一次，
+    # 每来源每轮最多 3 组）。留空 = 关闭延迟恢复，回退既有「3 次短尝试后终止」。
+    open-alex-search-recovery-delays: ${OPENALEX_SEARCH_RECOVERY_DELAYS:30s,120s,300s}
     # c9（I-1）: 运行级上限与单批/单页解耦 —— 全部论文源合计 15000、作者 20000。
     # 论文页 100 与补全批量 100 只是每批大小，不是每日总量；启动校验会要求全局上限
     # 至少覆盖各启用来源的一页，否则拒绝启动（0 不是无限量）。

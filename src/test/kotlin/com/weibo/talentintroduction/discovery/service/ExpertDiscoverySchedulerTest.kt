@@ -16,15 +16,22 @@ import com.weibo.talentintroduction.discovery.repository.PipelinePhase
 import com.weibo.talentintroduction.discovery.repository.PipelineWaitReason
 import com.weibo.talentintroduction.discovery.service.PipelineTickSkipReason
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.springframework.scheduling.TaskScheduler
+import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.scheduling.config.ScheduledTaskRegistrar
+import org.springframework.scheduling.support.CronExpression
+import java.nio.file.Files
+import java.nio.file.Paths
 import java.time.Duration
-import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 
 class ExpertDiscoverySchedulerTest {
     private val discoveryService = Mockito.mock(ExpertDiscoveryService::class.java)
@@ -45,19 +52,6 @@ class ExpertDiscoverySchedulerTest {
     private fun startedToken(): Pair<Boolean, Long> = Pair(true, -1L)
     private fun notStartedToken(): Pair<Boolean, Long> = Pair(false, -1L)
 
-    private val todayStart: LocalDateTime = LocalDate.now().atStartOfDay()
-
-    private fun stubNoScheduledRunToday() {
-        Mockito.`when`(
-            repository.countActiveSince("EXPERT_DISCOVERY", "SCHEDULED", todayStart)
-        ).thenReturn(0L)
-    }
-
-    @BeforeEach
-    fun setUp() {
-        stubNoScheduledRunToday()
-    }
-
     @Test
     fun `scheduleDiscovery does nothing when task already running`() {
         Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
@@ -70,22 +64,35 @@ class ExpertDiscoverySchedulerTest {
             Mockito.anyString(),
             Mockito.anyBoolean()
         )
+        // I-6：抢不到运行槽时没有新 task_execution、不发请求、也不排队补跑。
+        Mockito.verify(repository, Mockito.never()).save(Mockito.any(TaskExecution::class.java))
     }
 
     @Test
-    fun `scheduleDiscovery skips when scheduled discovery already ran today`() {
+    fun `scheduleDiscovery starts a new run when a scheduled run already succeeded today (I-6)`() {
+        // 旧实现（同步分支的本日已执行闸门）在这里直接 return：库里今天已有的 SUCCESS/PARTIAL_SUCCESS
+        // 会封锁当天第二轮。I-6 要求两小时触发只受「当前是否有运行槽」约束。
         Mockito.`when`(
-            repository.countActiveSince("EXPERT_DISCOVERY", "SCHEDULED", todayStart)
+            repository.countActiveSince("EXPERT_DISCOVERY", "SCHEDULED", LocalDateTime.of(2026, 9, 28, 0, 0))
         ).thenReturn(1L)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(startedToken())
+        Mockito.`when`(repository.save(Mockito.any(TaskExecution::class.java)))
+            .thenAnswer { invocation ->
+                val execution = invocation.arguments[0] as TaskExecution
+                execution.copy(id = execution.id ?: 1L)
+            }
+        Mockito.doReturn(DiscoveryResult("SCHEDULED", DiscoveryStats())).`when`(discoveryService).discover(
+            Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
+            Mockito.anyString(),
+            Mockito.anyBoolean()
+        )
 
         scheduler.scheduleDiscovery()
 
-        Mockito.verify(progressStore, Mockito.never()).tryStartWithToken(
-            Mockito.anyString(),
-            anyTaskProgress()
-        )
-        Mockito.verify(repository, Mockito.never()).save(Mockito.any(TaskExecution::class.java))
-        Mockito.verify(discoveryService, Mockito.never()).discover(
+        Mockito.verify(progressStore).tryStartWithToken(Mockito.anyString(), anyTaskProgress())
+        Mockito.verify(repository).save(Mockito.any(TaskExecution::class.java))
+        Mockito.verify(discoveryService).discover(
             Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria(),
             Mockito.anyString(),
             Mockito.anyBoolean()
@@ -240,10 +247,7 @@ class ExpertDiscoverySchedulerTest {
 
     @Test
     fun `continuous cron only dispatches the tick and ignores the once-per-day gate (I-1, I-4)`() {
-        // 库里已经有「今天跑过一次」的 SCHEDULED 执行：旧模式会就此跳过，新模式必须照常续跑。
-        Mockito.`when`(
-            repository.countActiveSince("EXPERT_DISCOVERY", "SCHEDULED", todayStart)
-        ).thenReturn(1L)
+        // I-6：同步分支的「本日已执行」闸门已删除，历史执行记录不再封锁新轮；新模式更不同步 discover。
         usePipeline()
         val scheduler = continuousScheduler(ExpertDiscoveryProperties(pipelineEnabled = true))
 
@@ -335,5 +339,58 @@ class ExpertDiscoverySchedulerTest {
             Mockito.anyBoolean()
         )
         Mockito.verify(progressStore, Mockito.never()).tryStartWithToken(Mockito.anyString(), anyTaskProgress())
+    }
+
+    // ------------------------------------------------------------------
+    // I-6：两小时触发 —— 注解、时区、仓内默认值与初始化文案一起断言
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `the cron annotation pins the two hour schedule in Asia-Shanghai and the repository default matches (I-6)`() {
+        val scheduledMethods = ExpertDiscoveryScheduler::class.java.methods
+            .filter { it.getAnnotation(Scheduled::class.java) != null }
+        assertEquals(1, scheduledMethods.size, "深度发现只能有一个 @Scheduled 触发点，不新增第二个定时任务")
+
+        val annotation = scheduledMethods.first().getAnnotation(Scheduled::class.java)
+        assertEquals("\${talent-introduction.expert-discovery.cron:-}", annotation.cron)
+        assertEquals("Asia/Shanghai", annotation.zone, "触发时区必须显式固定，与部署机默认时区无关")
+
+        // 仓内默认值（不是测试里手写的第二份字符串）：两小时一次。
+        val yaml = Files.readString(Paths.get("src/main/resources/application.yml"))
+        assertTrue(
+            yaml.contains("cron: \${EXPERT_DISCOVERY_CRON:0 0 */2 * * ?}"),
+            "application.yml 的默认 cron 必须是两小时一次（北京时间偶数整点）"
+        )
+
+        // 北京时间 2026-09-28 00:01 起算的下三个触发点。
+        val cron = CronExpression.parse("0 0 */2 * * ?")
+        val zone = ZoneId.of(annotation.zone)
+        var cursor = ZonedDateTime.of(2026, 9, 28, 0, 1, 0, 0, zone)
+        val next = (1..3).map {
+            cursor = cron.next(cursor)!!
+            cursor.format(DateTimeFormatter.ofPattern("MM-dd HH:mm"))
+        }
+        assertEquals(listOf("09-28 02:00", "09-28 04:00", "09-28 06:00"), next)
+    }
+
+    @Test
+    fun `the initialization message states the scheduled trigger its cron zone and recovery delays (I-6)`() {
+        val properties = ExpertDiscoveryProperties(cron = "0 0 */2 * * ?")
+        val scheduler = ExpertDiscoveryScheduler(discoveryService, taskExecutionService, properties, progressStore)
+        val initial = ArgumentCaptor.forClass(TaskProgress::class.java)
+        Mockito.`when`(progressStore.tryStartWithToken(Mockito.anyString(), anyTaskProgress()))
+            .thenReturn(notStartedToken())
+
+        scheduler.scheduleDiscovery()
+
+        Mockito.verify(progressStore).tryStartWithToken(
+            Mockito.anyString(),
+            initial.capture() ?: TaskProgress("", "", 0, 0, 0)
+        )
+        val message = initial.value.message!!
+        assertTrue(message.contains("0 0 */2 * * ?"), "初始化文案必须显示实际生效的 cron：$message")
+        assertTrue(message.contains("Asia/Shanghai"), "初始化文案必须显示触发时区：$message")
+        assertTrue(message.contains("30s/120s/300s"), "初始化文案同时给出搜索恢复间隔：$message")
+        assertFalse(message.contains("EuropePMC"), "不得再写误导性的初始化文案：$message")
     }
 }

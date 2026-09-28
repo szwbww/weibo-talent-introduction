@@ -1,0 +1,42 @@
+$ rg -n discoveryProperties\.|expert-discovery\.cron|EXPERT_DISCOVERY_CRON|openalexRestTemplate|countScheduledSince src/main/kotlin src/main/resources/application.yml
+exit=0
+src/main/resources/application.yml:180:    cron: ${EXPERT_DISCOVERY_CRON:0 0 2 * * ?}
+src/main/kotlin/com/weibo/talentintroduction/config/DiscoveryExecutorConfig.kt:15:        val concurrency = discoveryProperties.fetchConcurrency.coerceAtLeast(1)
+src/main/kotlin/com/weibo/talentintroduction/config/DiscoveryExecutorConfig.kt:19:        executor.setQueueCapacity(discoveryProperties.maxPapersPerRun.coerceAtLeast(100))
+src/main/kotlin/com/weibo/talentintroduction/config/DiscoveryExecutorConfig.kt:116:        val concurrency = discoveryProperties.pipelineFetchConcurrency.coerceAtLeast(1)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:347:        includeRawScan: Boolean = discoveryProperties.includeRawScan
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:357:        val deadline = Instant.now().plus(discoveryProperties.timeBudget)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:364:            "全局限额: 论文 ${discoveryProperties.maxPapersPerRun} / 作者 ${discoveryProperties.maxAuthorsPerRun}, " +
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:365:            "时间预算 ${discoveryProperties.timeBudget}")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:387:                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:388:                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) break
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:509:        val globalCap = discoveryProperties.maxPapersPerRun
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:510:        val authorCap = discoveryProperties.maxAuthorsPerRun
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:511:        val timeBudget = discoveryProperties.timeBudget
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:552:        val globalRemaining = (discoveryProperties.maxPapersPerRun - papersUsed).coerceAtLeast(0)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:611:            (discoveryProperties.maxPapersPerRun - papersUsedForGlobalCap(stats)).coerceAtLeast(0)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:644:            if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:648:            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:790:                if (stats.totalPapers >= discoveryProperties.maxPapersPerRun) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:793:                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:856:                totalCount = discoveryProperties.maxPapersPerRun.toLong(),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:972:            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1031:                if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1043:                    if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1267:        if (discoveryProperties.fetchConcurrency <= 1) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1368:            if (stats.totalAuthors >= discoveryProperties.maxAuthorsPerRun) break
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2403:        val jobs = claimDueEnrichmentJobs(discoveryProperties.autoEnrichmentBatchSize)
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:112:                includeRawScan ?: discoveryProperties.includeRawScan
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:140:                    includeRawScan = includeRawScan ?: discoveryProperties.includeRawScan
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:201:                includeRawScan ?: discoveryProperties.includeRawScan
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:234:                    includeRawScan = includeRawScan ?: discoveryProperties.includeRawScan
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:393:            if (discoveryProperties.pipelineEnabled) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:48:        if (!discoveryProperties.autoEnrichmentEnabled) return
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentWorker.kt:89:            val claimed = discoveryService.claimDueEnrichmentJobs(discoveryProperties.autoEnrichmentBatchSize)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:48:        if (!discoveryProperties.pipelineEnabled) return
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:51:            discoveryProperties.pipelineTick.toMillis()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:55:    @Scheduled(cron = "\${talent-introduction.expert-discovery.cron:-}")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:64:        if (taskExecutionService.countScheduledSince("EXPERT_DISCOVERY", todayStart) > 0) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:88:                discoveryService.discover(criteria, "SCHEDULED", discoveryProperties.includeRawScan)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:132:            check(!discoveryProperties.pipelineEnabled) {
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:124:    fun countScheduledSince(taskType: String, since: LocalDateTime): Long =

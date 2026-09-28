@@ -1,0 +1,12 @@
+$ rg -n tryStartWithToken\("EXPERT_DISCOVERY"|countScheduledSince|@Scheduled\(cron|pipelineEnabled src/main/kotlin/com/weibo/talentintroduction/discovery src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/task/service/TaskExecutionService.kt:124:    fun countScheduledSince(taskType: String, since: LocalDateTime): Long =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:298:    val enabled: Boolean get() = properties.pipelineEnabled
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:48:        if (!discoveryProperties.pipelineEnabled) return
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:55:    @Scheduled(cron = "\${talent-introduction.expert-discovery.cron:-}")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:64:        if (taskExecutionService.countScheduledSince("EXPERT_DISCOVERY", todayStart) > 0) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:68:        val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:132:            check(!discoveryProperties.pipelineEnabled) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:115:        val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:204:        val (started, token) = progressStore.tryStartWithToken("EXPERT_DISCOVERY", TaskProgress(
+src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt:393:            if (discoveryProperties.pipelineEnabled) {
