@@ -14263,8 +14263,8 @@ async function saveOpenTrackingSettings(enabled) {
 }
 
 const openTrackingStatusLabels = {
-    OPENED: ["已收到打开信号", "ok"],
-    NO_SIGNAL: ["暂无打开信号", "warn"],
+    OPENED: ["疑似打开（120秒后请求）", "info"],
+    NO_SIGNAL: ["无120秒后请求", "warn"],
     NOT_TRACKED: ["未跟踪", ""]
 };
 
@@ -14334,8 +14334,8 @@ async function loadOpenTrackingRecords(retried = false) {
         tracking.refreshedAt = new Date();
         const metrics = [
             ["跟踪发出", snapshot.summary.trackedSent],
-            ["收到打开信号", snapshot.summary.opened],
-            ["打开信号率", snapshot.summary.trackedSent ? formatPercent(snapshot.summary.openSignalRate) : "—"]
+            ["120秒后请求", snapshot.summary.opened],
+            ["120秒后请求率", snapshot.summary.trackedSent ? formatPercent(snapshot.summary.openSignalRate) : "—"]
         ];
         $("#motMetrics").innerHTML = metrics.map(([label, value]) =>
             `<div class="metric-card"><div class="metric-label">${label}</div><div class="metric-value">${escapeHtml(value)}</div></div>`
@@ -14375,7 +14375,7 @@ function renderOpenTrackingDetail(row, message = null, error = false) {
     const fields = [
         ["邮件记录", row.mailRecordId], ["主题", row.subject || "—"], ["状态", status],
         ["收件邮箱", row.recipient ?? "未保存收件快照"], ["发送时间", row.sentAt || "—"],
-        ["首次信号", row.firstOpenAt || "—"], ["最近信号", row.lastOpenAt || "—"],
+        ["首次图片请求", row.firstOpenAt || "—"], ["最近图片请求", row.lastOpenAt || "—"],
         ["Message-ID", row.messageId || "—"]
     ];
     detail.innerHTML = `${header}<dl class="mot-detail-grid">${fields.map(([label, value]) =>

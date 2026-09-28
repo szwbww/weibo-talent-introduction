@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260926-discovery-repair">
-    <link rel="stylesheet" href="expert-materials.css?v=20260926-discovery-repair">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20260926-discovery-repair">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20260926-discovery-repair">
-    <link rel="stylesheet" href="world-clock.css?v=20260926-discovery-repair">
+    <link rel="stylesheet" href="styles.css?v=20260928-mail-open-120s">
+    <link rel="stylesheet" href="expert-materials.css?v=20260928-mail-open-120s">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20260928-mail-open-120s">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20260928-mail-open-120s">
+    <link rel="stylesheet" href="world-clock.css?v=20260928-mail-open-120s">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -271,16 +271,16 @@
                     </div>
                     <p class="muted">适用于所有非回复外发邮件；自动回复、人工回信均排除。关闭后停止新邮件跟踪及新信号记录，历史保留。</p>
                     <p id="motConfigStatus" class="muted"></p>
-                    <div id="motMetrics" class="card-grid" aria-live="polite"><div class="metric-card"><div class="metric-label">跟踪发出</div><div class="metric-value">—</div></div><div class="metric-card"><div class="metric-label">收到打开信号</div><div class="metric-value">—</div></div><div class="metric-card"><div class="metric-label">打开信号率</div><div class="metric-value">—</div></div></div>
-                    <p class="muted">打开信号表示图片被加载，不等于本人已读。指标按发送日期和发件账号统计；下方状态与搜索只影响列表。</p>
+                    <div id="motMetrics" class="card-grid" aria-live="polite"><div class="metric-card"><div class="metric-label">跟踪发出</div><div class="metric-value">—</div></div><div class="metric-card"><div class="metric-label">120秒后请求</div><div class="metric-value">—</div></div><div class="metric-card"><div class="metric-label">120秒后请求率</div><div class="metric-value">—</div></div></div>
+                    <p class="muted">发送后120秒内的图片请求按预加载处理；之后的新请求仅表示疑似打开，不等于本人已读。图片可能被缓存，重复打开不一定产生新请求。指标按发送日期和发件账号统计；状态与搜索只影响列表。</p>
                     <div class="toolbar">
-                        <label>状态 <select id="motStatus"><option value="ALL">全部</option><option value="OPENED">已收到打开信号</option><option value="NO_SIGNAL">暂无打开信号</option><option value="NOT_TRACKED">未跟踪</option></select></label>
+                        <label>状态 <select id="motStatus"><option value="ALL">全部</option><option value="OPENED">疑似打开（120秒后请求）</option><option value="NO_SIGNAL">无120秒后请求</option><option value="NOT_TRACKED">未跟踪</option></select></label>
                         <label>搜索 <input id="motKeyword" type="search" maxlength="200" placeholder="专家、收件邮箱或主题"></label>
                         <button id="motQuery" class="button secondary" type="button">查询</button>
                         <span id="motRefreshed" class="muted"></span>
                     </div>
                     <p id="motError" class="mot-error" role="alert" hidden></p>
-                    <div class="table-wrap"><table id="motTable"><thead><tr><th>发送时间</th><th>专家</th><th>收件邮箱</th><th>发件账号</th><th>主题</th><th>跟踪状态</th><th>首次信号</th><th>最近信号</th><th>操作</th></tr></thead><tbody></tbody></table></div>
+                    <div class="table-wrap"><table id="motTable"><thead><tr><th>发送时间</th><th>专家</th><th>收件邮箱</th><th>发件账号</th><th>主题</th><th>跟踪状态</th><th>首次图片请求</th><th>最近图片请求</th><th>操作</th></tr></thead><tbody></tbody></table></div>
                     <div id="motPagination" class="pagination mot-pagination"></div>
                     <section id="motDetail" class="mot-detail" hidden></section>
                 </div>
@@ -2307,11 +2307,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260926-discovery-repair"></script>
-<script src="expert-materials.js?v=20260926-discovery-repair"></script>
-<script src="meeting-confirmation.js?v=20260926-discovery-repair"></script>
-<script src="mailbox-chat.js?v=20260926-discovery-repair"></script>
-<script src="app.js?v=20260926-discovery-repair"></script>
-<script src="world-clock.js?v=20260926-discovery-repair"></script>
+<script src="trust-reply-workbench.js?v=20260928-mail-open-120s"></script>
+<script src="expert-materials.js?v=20260928-mail-open-120s"></script>
+<script src="meeting-confirmation.js?v=20260928-mail-open-120s"></script>
+<script src="mailbox-chat.js?v=20260928-mail-open-120s"></script>
+<script src="app.js?v=20260928-mail-open-120s"></script>
+<script src="world-clock.js?v=20260928-mail-open-120s"></script>
 </body>
 </html>

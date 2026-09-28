@@ -53,7 +53,7 @@ function setup() {
     };
     vm.createContext(sandbox);
     for (const name of names) vm.runInContext(extractFn(name), sandbox);
-    vm.runInContext('const openTrackingStatusLabels = { OPENED: ["已收到打开信号", "ok"], NO_SIGNAL: ["暂无打开信号", "warn"], NOT_TRACKED: ["未跟踪", ""] };', sandbox);
+    vm.runInContext('const openTrackingStatusLabels = { OPENED: ["疑似打开（120秒后请求）", "info"], NO_SIGNAL: ["无120秒后请求", "warn"], NOT_TRACKED: ["未跟踪", ""] };', sandbox);
     return { state, el, requests, sandbox };
 }
 const snapshot = (records = [], totalCount = records.length, trackedSent = 2, opened = 1) => ({
@@ -226,4 +226,53 @@ test("closing detail discards late response and 404 is distinguished from a tran
     await missing;
     assert.match(el("motDetail").innerHTML, /该邮件记录不存在/);
     assert.doesNotMatch(el("motDetail").innerHTML, /加载失败/);
+});
+
+test("static markup pins the 120-second copy and drops every stale signal label", () => {
+    assert.ok(markup.includes('<div id="motMetrics" class="card-grid" aria-live="polite"><div class="metric-card"><div class="metric-label">跟踪发出</div><div class="metric-value">—</div></div><div class="metric-card"><div class="metric-label">120秒后请求</div><div class="metric-value">—</div></div><div class="metric-card"><div class="metric-label">120秒后请求率</div><div class="metric-value">—</div></div></div>'), "three metric cards");
+    assert.ok(markup.includes('<p class="muted">发送后120秒内的图片请求按预加载处理；之后的新请求仅表示疑似打开，不等于本人已读。图片可能被缓存，重复打开不一定产生新请求。指标按发送日期和发件账号统计；状态与搜索只影响列表。</p>'), "explanation paragraph");
+    assert.ok(markup.includes('<select id="motStatus"><option value="ALL">全部</option><option value="OPENED">疑似打开（120秒后请求）</option><option value="NO_SIGNAL">无120秒后请求</option><option value="NOT_TRACKED">未跟踪</option></select>'), "status options");
+    assert.ok(markup.includes('<thead><tr><th>发送时间</th><th>专家</th><th>收件邮箱</th><th>发件账号</th><th>主题</th><th>跟踪状态</th><th>首次图片请求</th><th>最近图片请求</th><th>操作</th></tr></thead>'), "nine columns");
+    assert.match(source, /OPENED:\s*\["疑似打开（120秒后请求）",\s*"info"\]/);
+    assert.match(source, /NO_SIGNAL:\s*\["无120秒后请求",\s*"warn"\]/);
+    assert.match(source, /NOT_TRACKED:\s*\["未跟踪",\s*""\]/);
+    for (const stale of ["已收到打开信号", "打开信号率", "首次信号", "最近信号"]) {
+        assert.equal(markup.includes(stale), false, `index.html must not keep ${stale}`);
+        assert.equal(source.includes(stale), false, `app.js must not keep ${stale}`);
+    }
+    assert.doesNotMatch(source, /OPENED:\s*\[[^\]]*"ok"/);
+});
+
+test("badges, dynamic metrics and detail labels render the 120-second copy", async () => {
+    const { el, requests, sandbox: s } = setup();
+    const pending = s.loadOpenTrackingRecords();
+    requests[0].resolve(snapshot([
+        row(1, { trackingStatus: "OPENED", firstOpenAt: "2026-09-25T10:00:10", lastOpenAt: "2026-09-25T10:02:01" }),
+        row(2, { trackingStatus: "NO_SIGNAL" }),
+        row(3, { trackingStatus: "NOT_TRACKED" })
+    ], 3, 4, 2));
+    await pending;
+    const html = el("motTabletbody").innerHTML;
+    assert.match(html, /<span class="badge info">疑似打开（120秒后请求）<\/span>/);
+    assert.match(html, /<span class="badge warn">无120秒后请求<\/span>/);
+    assert.match(html, /<span class="badge">未跟踪<\/span>/);
+    assert.doesNotMatch(html, /badge ok/);
+    const metrics = el("motMetrics").innerHTML;
+    for (const label of ["跟踪发出", "120秒后请求", "120秒后请求率"]) {
+        assert.ok(metrics.includes(`<div class="metric-label">${label}</div>`), `metric label ${label}`);
+    }
+    assert.ok(metrics.includes('<div class="metric-value">50.0%</div>'), "120-second request rate");
+    const detail = s.loadOpenTrackingDetail(1);
+    requests[1].resolve(row(1, { trackingStatus: "OPENED", firstOpenAt: "2026-09-25T10:00:10", lastOpenAt: "2026-09-25T10:02:01" }));
+    await detail;
+    const detailHtml = el("motDetail").innerHTML;
+    assert.match(detailHtml, /<dt>首次图片请求<\/dt><dd>2026-09-25T10:00:10<\/dd>/);
+    assert.match(detailHtml, /<dt>最近图片请求<\/dt><dd>2026-09-25T10:02:01<\/dd>/);
+    assert.match(detailHtml, /<dt>状态<\/dt><dd>疑似打开（120秒后请求）<\/dd>/);
+});
+
+test("all eleven versioned assets in index.html carry one cache key", () => {
+    const versions = [...markup.matchAll(/\.(?:css|js)\?v=([A-Za-z0-9._-]+)/g)].map(match => match[1]);
+    assert.equal(versions.length, 11, "expected the five stylesheets and six scripts");
+    assert.equal(new Set(versions).size, 1, `assets must share one cache key, saw ${[...new Set(versions)].join(", ")}`);
 });
