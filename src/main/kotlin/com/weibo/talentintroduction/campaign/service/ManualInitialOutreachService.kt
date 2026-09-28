@@ -593,7 +593,15 @@ class ManualInitialOutreachService(
             pageSize = config.roundSize * 2,
             seenOrcids = seenOrcids,
             fetchNextPage = { offset, size -> fetchEsPage(scope, offset, size) },
-            filterPage = { profiles -> filterKnownProfiles(profiles, scope.excludeVerifiedUnavailableEmails, filterNow) },
+            // I-1/I-3: ES 页返回后先过最终谓词（新发现机构证据 + 已证实机构所在地判地区），
+            // 再叠加历史不可达过滤；整页被过滤时迭代器继续推进 offset（I-3）。
+            filterPage = { profiles ->
+                filterKnownProfiles(
+                    profiles.filter { scope.matchesEsTarget(it) },
+                    scope.excludeVerifiedUnavailableEmails,
+                    filterNow
+                )
+            },
             shouldStop = { progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId) }
         )
 
@@ -682,6 +690,22 @@ class ManualInitialOutreachService(
                     roundRejected++
                     updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                         "RUNNING", "研发类型不在本次选择范围内：${expert.orcidId}", errors, mode, roundNumber, config, runAccountStats,
+                        roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
+                    continue
+                }
+
+                // I-1/I-3: 发送前最后门禁 —— 与 ES 取页、预估共用同一最终谓词（[RecipientScope.matchesEsTarget]）。
+                // 目标构造与取页已按该谓词过滤，这里兜住任何绕过查询侧的残余路径：不建联系人、不占名额、不发邮件。
+                if (!scope.matchesEsTarget(expert)) {
+                    accumulator.recordSkipped(
+                        BatchOutcomeReasonCodes.DISCOVERY_EVIDENCE_MISSING,
+                        "新发现机构证据不足：${expert.orcidId}"
+                    )
+                    processedTotal++
+                    roundProcessed++
+                    roundRejected++
+                    updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                        "RUNNING", "已跳过机构证据不足的新发现：${expert.orcidId}", errors, mode, roundNumber, config, runAccountStats,
                         roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                     continue
                 }
@@ -1626,13 +1650,37 @@ class ManualInitialOutreachService(
         )
     }
 
-    private fun countEsTargets(scope: RecipientScope): Int {
-        var total = 0
+    /**
+     * I-3: 预估与实际发送共用同一个最终谓词 —— 走 ES scroll 对每个批次做内存最终筛选，
+     * 绝不把粗筛命中数当成可发送数。`excludeVerifiedUnavailableEmails` 打开时叠加历史不可达过滤；
+     * `shouldStop` 保留取消语义（取消后不再翻页、不再计数）。
+     */
+    private fun countEsTargets(
+        scope: RecipientScope,
+        now: LocalDateTime,
+        shouldStop: () -> Boolean = { false }
+    ): Pair<Int, Int> {
+        var sendable = 0
+        var excluded = 0
         for (level in scope.funnelLevels) {
-            val filters = buildEsFiltersForLevel(scope, level)
-            total += expertSearchService.countExperts(ExpertIndexLevel.valueOf(level), filters).toInt()
+            if (shouldStop()) break
+            expertSearchService.scrollExpertsFiltered(
+                level = ExpertIndexLevel.valueOf(level),
+                filters = buildEsFiltersForLevel(scope, level),
+                batchSize = 500
+            ) { batch ->
+                if (shouldStop()) {
+                    false
+                } else {
+                    val matched = batch.filter { scope.matchesEsTarget(it) }
+                    val retained = filterKnownProfiles(matched, scope.excludeVerifiedUnavailableEmails, now)
+                    sendable += retained.size
+                    excluded += matched.size - retained.size
+                    !shouldStop()
+                }
+            }
         }
-        return total
+        return sendable to excluded
     }
 
     private fun verificationFilterNow(): LocalDateTime = LocalDateTime.now(ZoneId.of("Asia/Shanghai"))
@@ -1669,34 +1717,6 @@ class ManualInitialOutreachService(
         val known = findKnownUndeliverable(targets.map(email), now)
         val filtered = targets.filter { normalizeVerificationEmail(email(it)) !in known }
         return filtered to (targets.size - filtered.size)
-    }
-
-    private fun countEsTargets(
-        scope: RecipientScope,
-        now: LocalDateTime,
-        shouldStop: () -> Boolean = { false }
-    ): Pair<Int, Int> {
-        if (!scope.excludeVerifiedUnavailableEmails) return countEsTargets(scope) to 0
-        var sendable = 0
-        var excluded = 0
-        for (level in scope.funnelLevels) {
-            if (shouldStop()) break
-            expertSearchService.scrollExpertsFiltered(
-                level = ExpertIndexLevel.valueOf(level),
-                filters = buildEsFiltersForLevel(scope, level),
-                batchSize = 500
-            ) { batch ->
-                if (shouldStop()) {
-                    false
-                } else {
-                    val filtered = filterKnownProfiles(batch, true, now)
-                    sendable += filtered.size
-                    excluded += batch.size - filtered.size
-                    !shouldStop()
-                }
-            }
-        }
-        return sendable to excluded
     }
 
     private fun fetchEsPage(scope: RecipientScope, offset: Int, size: Int): List<ExpertProfile> {

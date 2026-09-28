@@ -3,6 +3,8 @@ package com.weibo.talentintroduction.campaign.domain
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.service.BatchSendType
+import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import java.time.LocalDateTime
 
@@ -149,7 +151,23 @@ data class RecipientScope(
             }
             if (!allPresent) return false
         }
+        // I-1/I-3: 新发现/待确认的最终门禁 —— 与 ES 候选页、预估共用同一份谓词（[matchesEsTarget]）。
+        if (!matchesDiscoveryOutreach(profile)) return false
         return true
+    }
+
+    /**
+     * I-1/I-2/I-3: ES 候选页与预估共用的最终谓词（执行取页、预估 scroll、发前兜底）。
+     *
+     * 新发现/待确认档案额外按**已证实机构所在地** `country` 判地区 —— ES 的 `regionFilter`
+     * 只是 country OR nationality 的粗筛，不能让它把国籍当成所在地。非新发现档案在此不收紧
+     * （既有 ES 粗筛语义逐字保留）。
+     */
+    fun matchesEsTarget(profile: ExpertProfile): Boolean {
+        if (!matchesDiscoveryOutreach(profile)) return false
+        if (!isDiscoveryOutreach(profile)) return true
+        return regions.isEmpty() ||
+            CountryContinentMapping.toRegion(profile.country) in regions
     }
 
     /**
@@ -164,6 +182,40 @@ data class RecipientScope(
     }
 
     companion object {
+        /**
+         * I-1: 触发新发现首发门禁的档案标签。与 [DiscoveryIdentity.isDiscovery] 取并集 ——
+         * 由 `discovered` 转为 `待确认` 的存量人群没有身份对象，也必须 fail-closed。
+         */
+        const val DISCOVERY_PENDING_TAG = "待确认"
+
+        /** I-3: ES `filterResult` 的合格值（写入侧同值：`PASSED` / `REJECTED`）。 */
+        private const val FILTER_RESULT_PASSED = "PASSED"
+
+        /**
+         * I-1: 该档案是否按新发现规则发送 —— 身份凭证（[DiscoveryIdentity.isDiscovery]）
+         * 或 `待确认` 标签任一命中。**不改变** [DiscoveryIdentity.isDiscovery] 既有语义。
+         */
+        fun isDiscoveryOutreach(profile: ExpertProfile): Boolean =
+            DiscoveryIdentity.isDiscovery(profile) || profile.tags.orEmpty().contains(DISCOVERY_PENDING_TAG)
+
+        /**
+         * I-1/I-2: 新发现首发的唯一最终谓词（ES 候选页、预估、NEW 重试与旧首发共用）。
+         *
+         * 必须同时成立：身份凭证经 [DiscoveryIdentity.allowed]、`institution` 非空、
+         * `country` 能由 [CountryContinentMapping] 映射（空/未映射值不等于 Other）、
+         * `institutionEvidence` 经 02 的唯一验签函数重算通过（含来源 ID 一致性）、
+         * `filterResult == PASSED`。缺字段绝不等于通过；非新发现档案一律放行。
+         */
+        fun matchesDiscoveryOutreach(profile: ExpertProfile): Boolean {
+            if (!isDiscoveryOutreach(profile)) return true
+            if (!DiscoveryIdentity.allowed(profile)) return false
+            if (profile.institution.isNullOrBlank()) return false
+            if (profile.country.isNullOrBlank()) return false
+            if (CountryContinentMapping.toRegion(profile.country) == CountryContinentMapping.REGION_OTHER) return false
+            if (profile.filterResult != FILTER_RESULT_PASSED) return false
+            return DiscoveryIdentity.validInstitutionEvidence(profile)
+        }
+
         fun fromSnapshot(snapshot: BatchExecutionSnapshot): RecipientScope {
             val levels = when (snapshot.funnelLevel?.trim()?.takeIf { it.isNotEmpty() }) {
                 null -> setOf("CANDIDATE", "APPLICATION")
@@ -203,6 +255,11 @@ object BatchOutcomeReasonCodes {
     const val PERSONALIZATION_INCOMPLETE = "PERSONALIZATION_INCOMPLETE"
     const val EXPERT_NOT_SENDABLE = "EXPERT_NOT_SENDABLE"
     /**
+     * I-1/I-3: 发送前兜底门禁命中 —— 新发现/待确认档案缺身份/机构/可映射国家/机构证据或
+     * `filterResult != PASSED`。ES 取页与 NEW 重试已按同一谓词过滤，此码只覆盖绕过查询侧的残余路径。
+     */
+    const val DISCOVERY_EVIDENCE_MISSING = "DISCOVERY_EVIDENCE_MISSING"
+    /**
      * I-3/I-4: 目标专家已有任一 `expert_contact.bound_sender_account_code`（与绑定值是否在
      * 本次选中集合无关）→ 本次批量任务跳过，不发信、不重选号、不改绑。
      */
@@ -226,6 +283,7 @@ object BatchOutcomeReasonCodes {
         CANCELLED to "被取消",
         PERSONALIZATION_INCOMPLETE to "个性化字段缺失",
         EXPERT_NOT_SENDABLE to "研发类型不在本次选择范围内",
+        DISCOVERY_EVIDENCE_MISSING to "新发现机构证据不足",
         BOUND_SENDER_ALREADY_SET to "专家已绑定发件账号",
         EMAIL_VERIFICATION_REJECTED to "邮箱验证未通过",
         EMAIL_VERIFICATION_DEFERRED to "邮箱验证暂缓"

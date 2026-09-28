@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.expert.service
 
+import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertType
 import com.weibo.talentintroduction.expert.domain.EligibilityResult
@@ -37,7 +38,7 @@ class CandidateEligibilityService(
         if (properties.enableAgeFilter && !isUnderMaxAge(expert.age, properties.maxAgeExclusive))
             reasons += "AGE_EXCEEDED"
 
-        if (properties.excludeChineseNationality && !isNotChineseNationality(expert.nationality ?: expert.country))
+        if (properties.excludeChineseNationality && !isNotChineseNationality(nationalityOf(expert)))
             reasons += "CHINESE_NATIONALITY"
 
         if (academicProperties.enableHIndexFilter && (expert.hIndex ?: 0) < academicProperties.minHIndex)
@@ -66,6 +67,14 @@ class CandidateEligibilityService(
 
         return EligibilityResult(reasons.isEmpty(), reasons)
     }
+
+    /**
+     * I-2: 新发现/待确认档案只读明确 `nationality` —— 机构所在地 `country` 是「机构在哪」，
+     * 不得当作本人国籍。旧非发现档案保留 `nationality ?: country` 原语义。
+     */
+    private fun nationalityOf(expert: ExpertProfile): String? =
+        if (RecipientScope.isDiscoveryOutreach(expert)) expert.nationality
+        else expert.nationality ?: expert.country
 
     fun hasValidEmail(email: String?): Boolean =
         !email.isNullOrBlank() && EMAIL_REGEX.matches(email)

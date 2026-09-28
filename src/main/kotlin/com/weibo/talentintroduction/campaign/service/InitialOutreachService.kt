@@ -1,9 +1,11 @@
 package com.weibo.talentintroduction.campaign.service
 
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
+import com.weibo.talentintroduction.campaign.domain.RecipientScope
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.mail.service.EmailSuppressionService
 import com.weibo.talentintroduction.mail.service.IntroductionMailComposer
@@ -40,8 +42,7 @@ class InitialOutreachService(
         types.forEach {
             require(it in ExpertSearchService.ALLOWED_EXPERT_TYPES) { "Invalid expert type: $it" }
         }
-        val experts = expertSearchService
-            .searchExpertsByTypesWithEmail(size, ExpertIndexLevel.CANDIDATE, types).experts
+        val experts = fetchSendableCandidates(size, ExpertIndexLevel.CANDIDATE, types)
         val assignments = mutableListOf<SenderExpertAssignment>()
         val stock = senderAccountAssignmentService.loadBindingStock()
         val sentResults = mutableListOf<InitialOutreachSendResult>()
@@ -53,6 +54,12 @@ class InitialOutreachService(
             val typeName = expert.expertClassification?.type?.name
             val matched = types.any { if (it == "UNCLASSIFIED") typeName == null else typeName == it }
             if (!matched) {
+                skipped += 1
+                return@forEachIndexed
+            }
+
+            // I-1/I-3：新发现/待确认的发送前门禁与取页同口径（同一谓词）；不合格者不建联系人。
+            if (!RecipientScope.matchesDiscoveryOutreach(expert)) {
                 skipped += 1
                 return@forEachIndexed
             }
@@ -152,6 +159,30 @@ class InitialOutreachService(
             skipped = skipped,
             results = sentResults
         )
+    }
+
+    /**
+     * I-3: 旧首发取目标时对 ES 粗筛页应用同一份新发现最终谓词（[RecipientScope.matchesDiscoveryOutreach]）。
+     * 被整页过滤时必须继续按 offset 取下一页，直到凑足 [size] 名合格候选或用尽 —— 不能先建联系人再判不合格。
+     * 分类/邮箱/国家等粗筛仍由 ES 查询与内存既有门禁负责，这里只补新发现机构证据与地区证据。
+     */
+    private fun fetchSendableCandidates(
+        size: Int,
+        level: ExpertIndexLevel,
+        types: List<String>
+    ): List<ExpertProfile> {
+        val eligible = mutableListOf<ExpertProfile>()
+        var offset = 0
+        while (eligible.size < size) {
+            val result = expertSearchService.searchExpertsByTypesWithEmail(size, level, types, offset)
+            val raw = result.experts
+            if (raw.isEmpty()) break
+            offset += raw.size
+            eligible += raw.filter { RecipientScope.matchesDiscoveryOutreach(it) }
+            // I-3：页 offset 针对粗筛持续推进；只有短页或已越过 totalHits 才算数据耗尽。
+            if (raw.size < size || offset >= result.totalHits) break
+        }
+        return eligible.take(size)
     }
 
     private fun sleepBeforeNextSend() {

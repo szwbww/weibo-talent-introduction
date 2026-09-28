@@ -198,6 +198,13 @@ class MailOpenTrackingPersistenceTest {
             anyValue(emptyList()), Mockito.anyInt(), Mockito.anyInt())).thenAnswer {
             listOf(expert).drop(it.getArgument<Int>(2)).take(it.getArgument(3))
         }
+        // A2: 预估改走 scroll + 最终谓词（03/I-3）—— 仍交回同一 expert fixture，断言与用例主体不变。
+        Mockito.doAnswer { invocation ->
+            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
+            handler(listOf(expert))
+            null
+        }.`when`(search).scrollExpertsFiltered(eqValue(ExpertIndexLevel.CANDIDATE),
+            anyValue(emptyList()), Mockito.anyInt(), anyValue({ _: List<ExpertProfile> -> true }))
         Mockito.`when`(accountService.listSendableAccounts(Mockito.anyBoolean())).thenReturn(listOf(account))
         Mockito.`when`(accountService.listAccounts()).thenReturn(listOf(account))
         Mockito.`when`(accountService.listEnabledAccounts()).thenReturn(listOf(account))

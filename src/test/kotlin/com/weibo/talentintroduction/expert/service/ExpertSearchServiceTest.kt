@@ -2284,6 +2284,34 @@ class ExpertSearchServiceTest {
         assertTrue(sort.toString().contains("applicationPromotedAt"), "APPLICATION sort must be applicationPromotedAt: $sort")
     }
 
+    @Test
+    fun `searchExpertsByTypesWithEmail sends explicit from offset and defaults to zero (I-3)`() {
+        val body = mapper.readTree("""{"hits":{"total":{"value":0},"hits":[]}}""")
+        val entityCaptor = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+                eq(HttpMethod.POST),
+                any(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        service.searchExpertsByTypesWithEmail(1, expertTypes = listOf("PRODUCTION_RND"))
+        service.searchExpertsByTypesWithEmail(1, expertTypes = listOf("PRODUCTION_RND"), from = 7)
+
+        Mockito.verify(restTemplate, Mockito.times(2)).exchange(
+            eq("https://es.example.com:9200/orcid_info_candidate/_search"),
+            eq(HttpMethod.POST),
+            entityCaptor.capture(),
+            eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        val bodies = entityCaptor.allValues.map { it.body as Map<*, *> }
+        // 既有调用行为逐字不变：默认分页起点为 0；旧首发可显式指定页起点。
+        assertEquals(0, (bodies[0]["from"] as Number).toInt())
+        assertEquals(7, (bodies[1]["from"] as Number).toInt())
+    }
+
     // ── 子计划 06：按真实 _id 批量定位文档（I-1）──
 
     @Test

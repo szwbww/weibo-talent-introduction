@@ -85,6 +85,32 @@ class CandidateEligibilityServiceTest {
     }
 
     @Test
+    fun `discovery profiles judge nationality only from the explicit nationality field (I-2)`() {
+        val svc = service()
+        // fixture：机构所在地 country=China，本人 nationality 留空（未知）。
+        val missingNationality = expert(nationality = "China").copy(
+            nationality = null,
+            researchFieldIds = listOf("22"),
+            lastPublicationYear = 2026
+        )
+        // 新发现：机构所在地 China 不得冒充本人国籍。
+        val discovery = missingNationality.copy(emailSource = "PAPER_FULLTEXT")
+        val allowed = svc.evaluateEligibility(discovery)
+        assertFalse(allowed.rejectReasons.contains("CHINESE_NATIONALITY"))
+        assertTrue(allowed.eligible, "机构在中国但本人国籍未知 ≠ 中国籍：${allowed.rejectReasons}")
+
+        // 明确中国国籍仍然被拒。
+        assertTrue(
+            svc.evaluateEligibility(discovery.copy(nationality = "China")).rejectReasons.contains("CHINESE_NATIONALITY")
+        )
+
+        // 非新发现旧档案保留 `nationality ?: country` 原语义（机构所在地继续兜底）。
+        assertTrue(
+            svc.evaluateEligibility(missingNationality).rejectReasons.contains("CHINESE_NATIONALITY")
+        )
+    }
+
+    @Test
     fun `requireOrcid false still rejects chinese nationality and invalid email`() {
         val svc = service()
         val chineseResult = svc.evaluateEligibility(expert(nationality = "China"))
