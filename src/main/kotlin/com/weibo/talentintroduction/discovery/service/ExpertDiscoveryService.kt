@@ -1022,7 +1022,8 @@ class ExpertDiscoveryService(
         persistCheckpoint(resumeCursor, stopReason, exhausted)
         sourceStats.pendingWork = !exhausted
         sourceStats.stopReason = stopReason
-        // I-5: 唯一的重试观察对象。恢复成功/终止/取消都会把它清空（不残留过期等待）。
+        // I-5: 唯一的重试观察对象。真正开始/取消/超时/结束时只清空 nextRetryAt，保留轮次与脱敏原因
+        // 用于审计；只有本轮新安排的恢复项才覆盖轮次与计划时间。无恢复历史的来源不产生观察对象。
         sourceStats.retry = retryPending?.let { pending ->
             SourceRetryState(
                 round = pending.round,
@@ -1030,7 +1031,7 @@ class ExpertDiscoveryService(
                 nextRetryAt = pending.nextRetryAt.toString(),
                 reason = pending.reason
             )
-        }
+        } ?: sourceStats.retry?.copy(nextRetryAt = null)
 
         log.info("[{}] 完成: 耗时 ${elapsed}ms, API请求 ${sourceStats.apiRequests} 次 | " +
             "漏斗: 搜索 ${sourceStats.papersSearched} → 尝试全文 ${sourceStats.fulltextAttempted} → 获全文 ${sourceStats.fulltextObtained}" +

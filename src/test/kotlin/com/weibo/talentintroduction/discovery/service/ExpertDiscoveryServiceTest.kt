@@ -4116,7 +4116,11 @@ class ExpertDiscoveryServiceTest {
         )
         assertTrue(waitEvent.details!!["summaryText"].toString().contains("等待恢复 1/3"), "summary 里必须看得见等待")
         assertEquals(1, captured.count { it.message?.contains("开始恢复回访 1/3") == true })
-        assertNull(sourceStats?.retry, "恢复结束后不残留待执行的重试观察对象")
+        // I-5：恢复成功后清空计划时间，但保留最后一次恢复的轮次与脱敏原因用于审计。
+        assertNull(sourceStats?.retry?.nextRetryAt, "恢复成功后不残留待执行的重试计划时间")
+        assertEquals(1, sourceStats?.retry?.round, "恢复成功后必须保留已知轮次")
+        assertEquals(3, sourceStats?.retry?.maxRounds, "恢复成功后必须保留恢复组总数")
+        assertEquals("REMOTE_TLS_HANDSHAKE", sourceStats?.retry?.reason, "恢复成功后必须保留脱敏原因")
     }
 
     @Test
@@ -4168,7 +4172,11 @@ class ExpertDiscoveryServiceTest {
             "每组安排一次等待事件，轮次递增"
         )
         assertEquals(3, captured.count { it.message?.contains("等待恢复") == true }, "等待期间不得按 100ms 刷屏")
-        assertNull(sourceStats?.retry, "全部恢复组用尽后不残留待执行的重试观察对象")
+        // I-5：全部恢复组用尽后清空计划时间，但保留最后一组的轮次与脱敏原因用于审计。
+        assertNull(sourceStats?.retry?.nextRetryAt, "恢复组用尽后不残留待执行的重试计划时间")
+        assertEquals(3, sourceStats?.retry?.round, "恢复组用尽后必须保留最后一组的轮次")
+        assertEquals(3, sourceStats?.retry?.maxRounds, "恢复组用尽后必须保留恢复组总数")
+        assertEquals("TIMEOUT", sourceStats?.retry?.reason, "恢复组用尽后必须保留脱敏原因")
     }
 
     @Test
@@ -4440,7 +4448,11 @@ class ExpertDiscoveryServiceTest {
         assertEquals(DiscoveryStopReason.BUDGET_DEFERRED, sourceStats?.stopReason)
         assertEquals(0, sourceStats?.sourceFailureCount, "额度延期不是搜索终止失败")
         assertEquals("C7", storedCheckpointFor("OPENALEX", criteria).cursor)
-        assertNull(sourceStats?.retry, "延期后不残留待执行的重试观察对象")
+        // I-5：恢复中的额度延期清空计划时间，但保留该组的轮次与脱敏原因用于审计。
+        assertNull(sourceStats?.retry?.nextRetryAt, "额度延期后不残留待执行的重试计划时间")
+        assertEquals(1, sourceStats?.retry?.round, "额度延期后必须保留已知轮次")
+        assertEquals(3, sourceStats?.retry?.maxRounds, "额度延期后必须保留恢复组总数")
+        assertEquals("REMOTE_TLS_HANDSHAKE", sourceStats?.retry?.reason, "额度延期后必须保留脱敏原因")
         assertEquals(0, result.stats.sourceFailures)
     }
 
