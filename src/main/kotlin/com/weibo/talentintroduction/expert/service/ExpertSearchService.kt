@@ -505,7 +505,10 @@ class ExpertSearchService(
             enrichmentSource = source.nullableText("enrichmentSource"),
             expertClassification = parseExpertClassification(source.path("expertClassification")),
             identityVerification = DiscoveryIdentity.read(source.path("identityVerification")),
-            researchFieldIds = stringArrayOrNull(source, "researchFieldIds")
+            researchFieldIds = stringArrayOrNull(source, "researchFieldIds"),
+            // 02（I-3）：发送模型必须读到证据与资格；旧文档没有这两个键 → null，不默认合格。
+            institutionEvidence = source.nullableText("institutionEvidence"),
+            filterResult = source.nullableText("filterResult")
         )
     }
 
@@ -589,6 +592,7 @@ class ExpertSearchService(
             "age", "degree", "nationality",
             "hIndex", "citationCount", "lastPublicationYear",
             "researchFields", "researchFieldIds", "disciplineCategory", "institution", "institutionType",
+            "filterResult", "institutionEvidence",
             "emailSource", "emailVerifiedLevel",
             "dataSource", "externalIds", "worksCount", "identityVerification",
             "tags",
@@ -1170,17 +1174,21 @@ class ExpertSearchService(
      * I2-4: 旧首发链路专用 —— filter 只有两项：exists email 与研发类型集合。
      * 不得追加任何其他条件（主计划 M-1：唯一收口点）。
      * 调用方保证 expertTypes 非空（I2-2），故这里不处理空集合。
+     * 03（I-3）：支持 `from` 显式分页起点，默认 0 —— 既有调用行为逐字不变；旧首发据此在被过滤页后继续取页。
      */
     fun searchExpertsByTypesWithEmail(
         size: Int,
         level: ExpertIndexLevel = ExpertIndexLevel.CANDIDATE,
-        expertTypes: List<String>
+        expertTypes: List<String>,
+        from: Int = 0
     ): ExpertSearchResult {
         require(size in 1..1000) { "size must be between 1 and 1000" }
+        require(from >= 0) { "from must be >= 0" }
         val typesFilter = expertTypesFilter(expertTypes)
             ?: throw IllegalArgumentException("expertTypes must not be empty")
 
         val requestBody = mapOf(
+            "from" to from,
             "size" to size,
             "_source" to sourceFields(),
             "query" to mapOf(

@@ -3,10 +3,12 @@ package com.weibo.talentintroduction.campaign.service
 import com.weibo.talentintroduction.campaign.domain.ExpertContact
 import com.weibo.talentintroduction.campaign.repository.ExpertContactRepository
 import com.weibo.talentintroduction.config.MailSchedulingProperties
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertClassification
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.ExpertType
+import com.weibo.talentintroduction.expert.domain.IdentityVerification
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
 import com.weibo.talentintroduction.expert.service.ExpertSearchResult
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
@@ -26,6 +28,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.ArgumentCaptor
+import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.Mockito
 import java.time.LocalDateTime
 
@@ -117,8 +120,30 @@ class InitialOutreachServiceTest {
     }
 
     @Test
-    fun `sendInitialBatch uses configured eligibility for discovery without proof`() {
+    fun `sendInitialBatch blocks discovery without institution evidence before contact creation (I-1 I-3)`() {
         val experts = listOf(expert("0001"), expert("0002")).map { it.copy(emailSource = "PAPER_FULLTEXT") }
+        Mockito.`when`(expertSearchService.searchExpertsByTypesWithEmail(2, ExpertIndexLevel.CANDIDATE, listOf("PRODUCTION_RND")))
+            .thenReturn(ExpertSearchResult(experts = experts, totalHits = 2))
+
+        val result = service.sendInitialBatch(campaignId = 1L, size = 2)
+
+        // 无机构证据的新发现：不建联系人、不选号、不渲染、不投递。
+        assertEquals(0, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(0, result.candidates)
+        assertTrue(result.results.isEmpty())
+        Mockito.verify(expertContactRepository, Mockito.never()).save(
+            anyValue(ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null))
+        )
+        Mockito.verify(senderAccountAssignmentService, Mockito.never()).selectAccount(
+            anyValue(expert("0001")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)
+        )
+        Mockito.verifyNoInteractions(introductionMailComposer, mailDeliveryService, txHelper)
+    }
+
+    @Test
+    fun `sendInitialBatch sends discovery with full institution evidence (I-1 I-3)`() {
+        val experts = listOf(signedDiscoveryExpert("0001"), signedDiscoveryExpert("0002"))
         Mockito.`when`(expertSearchService.searchExpertsByTypesWithEmail(2, ExpertIndexLevel.CANDIDATE, listOf("PRODUCTION_RND")))
             .thenReturn(ExpertSearchResult(experts = experts, totalHits = 2))
         Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
@@ -131,11 +156,10 @@ class InitialOutreachServiceTest {
 
         val result = service.sendInitialBatch(campaignId = 1L, size = 2)
 
+        // 三证齐备的新发现不受影响（门禁不得过度拦截）。
         assertEquals(2, result.sent)
-        assertEquals(0, result.failed)
-        assertEquals(2, result.candidates)
         assertEquals(0, result.skipped)
-        assertEquals(listOf("SENT", "SENT"), result.results.map { it.status })
+        assertEquals(2, result.candidates)
         Mockito.verify(txHelper, Mockito.times(2)).recordSuccess(
             anyValue(ExpertContact(campaignId = 0L, orcidId = "", expertEmail = "", expertName = null)),
             eqValue("chen"),
@@ -516,6 +540,42 @@ class InitialOutreachServiceTest {
     // ──── I2: 旧首发链路显式类型集合（child 02） ─────────────────────────────
 
     @Test
+    fun `sendInitialBatch pages past discovery without evidence and sends the next page (I-1 I-3)`() {
+        val blocked = expert("0001").copy(emailSource = "PAPER_FULLTEXT")
+        val eligible = signedDiscoveryExpert("0002")
+        val all = listOf(blocked, eligible)
+        Mockito.`when`(expertSearchService.searchExpertsByTypesWithEmail(
+            anyValue(1), anyValue(ExpertIndexLevel.CANDIDATE), anyValue(listOf("PRODUCTION_RND")), anyInt()
+        )).thenAnswer { invocation ->
+            val size = invocation.getArgument<Int>(0)
+            val from = invocation.getArgument<Int>(3)
+            ExpertSearchResult(experts = all.drop(from).take(size), totalHits = all.size.toLong())
+        }
+        Mockito.`when`(expertContactRepository.existsByCampaignIdAndOrcidId(eqValue(1L), Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("0002")), anyValue(mutableListOf()), eqValue(false), anyValue(SenderBindingStock.EMPTY)))
+            .thenReturn(account("chen"))
+        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("0002")), Mockito.isNull()))
+            .thenReturn(ComposedMail("0002@example.com", "Subject", "Body"))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account("chen")), anyValue(ComposedMail("", "", ""))))
+            .thenReturn(DeliveredMail("msg-2", "SENT"))
+
+        val result = service.sendInitialBatch(campaignId = 1L, size = 1)
+
+        // 第一页（唯一一名无证据新发现）被整页过滤后必须继续取下一 offset，并为第二页专家建联系人。
+        assertEquals(1, result.sent)
+        assertEquals(0, result.skipped)
+        assertEquals(1, result.candidates)
+        val contactCaptor = ArgumentCaptor.forClass(ExpertContact::class.java)
+        Mockito.verify(expertContactRepository).save(captureValue(contactCaptor, ExpertContact(
+            campaignId = 0L, orcidId = "", expertEmail = "", expertName = null
+        )))
+        assertEquals("0002", contactCaptor.value.orcidId, "被过滤页不得建联系人")
+        Mockito.verify(expertSearchService).searchExpertsByTypesWithEmail(
+            anyValue(1), anyValue(ExpertIndexLevel.CANDIDATE), anyValue(listOf("PRODUCTION_RND")), eqValue(1)
+        )
+    }
+
+    @Test
     fun `sendInitialBatch fails fast when initialOutreachExpertTypes not configured (I2-2)`() {
         val unconfiguredService = InitialOutreachService(
             expertSearchService = expertSearchService,
@@ -536,7 +596,7 @@ class InitialOutreachServiceTest {
         assertTrue(ex.message!!.contains("initial-outreach-expert-types"), "I2-2: message must name the missing config: ${ex.message}")
         // 快速失败发生在取目标之前 —— 绝不触碰查询/投递层。
         Mockito.verify(expertSearchService, Mockito.never()).searchExpertsByTypesWithEmail(
-            anyValue(0), anyValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList())
+            anyValue(0), anyValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), anyValue(0)
         )
     }
 
@@ -569,9 +629,9 @@ class InitialOutreachServiceTest {
 
         assertEquals(1, result.sent)
         assertEquals(0, result.skipped)
-        // 第三个参数逐字为配置列表。
+        // 第三个参数逐字为配置列表，分页起点默认 0。
         Mockito.verify(expertSearchService).searchExpertsByTypesWithEmail(
-            eqValue(1), eqValue(ExpertIndexLevel.CANDIDATE), eqValue(listOf("ACADEMIC_RND"))
+            eqValue(1), eqValue(ExpertIndexLevel.CANDIDATE), eqValue(listOf("ACADEMIC_RND")), eqValue(0)
         )
     }
 
@@ -699,6 +759,32 @@ class InitialOutreachServiceTest {
             // I3-1: 默认 fixture 为可发类型；不可发场景用 nonSendableExpert() 显式构造。
             expertClassification = sendableClassification()
         )
+
+    /**
+     * 03：三证齐备的新发现档案 —— 主键 / `externalIds` / 身份凭证逐字一致，机构与证据 token 由
+     * 02 的唯一签发函数产出（发送门禁读同一份验签口径）。
+     */
+    private fun signedDiscoveryExpert(orcidId: String): ExpertProfile {
+        val externalIds = """{"pmcId":"PMC-$orcidId","doi":"10.0/$orcidId","orcid":"$orcidId","openAlexAuthorId":"A-$orcidId"}"""
+        val base = expert(orcidId).copy(
+            institution = "Institute $orcidId",
+            externalIds = externalIds,
+            identityVerification = IdentityVerification(
+                status = "VERIFIED",
+                version = DiscoveryIdentity.VERSION,
+                email = "${orcidId}@example.com",
+                givenNames = "Given",
+                familyNames = "Family",
+                source = "JATS_SHA256",
+                evidenceHash = "a".repeat(64),
+                orcid = orcidId,
+                openAlexAuthorId = "A-$orcidId"
+            )
+        )
+        val token = DiscoveryIdentity.institutionEvidence(base, DiscoveryIdentity.EVIDENCE_SOURCE_JATS)
+            ?: error("fixture 必须能签发机构证据 token: $orcidId")
+        return base.copy(institutionEvidence = token, filterResult = "PASSED")
+    }
 
     private fun nonSendableExpert(orcidId: String): ExpertProfile =
         expert(orcidId).copy(expertClassification = null)

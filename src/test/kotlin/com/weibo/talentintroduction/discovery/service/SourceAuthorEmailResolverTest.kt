@@ -212,6 +212,33 @@ class SourceAuthorEmailResolverTest {
         }
     }
 
+    @Test fun `structured institution travels only with one uniquely owned mailbox (I-1 I-2)`() {
+        val structured = jane.copy(institutionName = "Jane University", institutionCountry = "GB",
+            institutionSource = "OPENALEX")
+        val owned = SourceAuthorEmailResolver.resolveText("Jane Doe: jane@uni.edu", listOf(structured)).single()
+        assertEquals("Jane University", owned.institutionName)
+        assertEquals("GB", owned.institutionCountry)
+        assertEquals("OPENALEX", owned.institutionSource)
+        assertTrue(owned.identityEvidence!!.startsWith("SOURCE_SHA256:"))
+
+        // 没有唯一作者证据的邮箱线索不得携带任何机构字段（邮箱线索不是作者归属）。
+        val clue = SourceAuthorEmailResolver.resolveText("opaque@uni.edu", listOf(structured)).single()
+        assertNull(clue.givenNames)
+        assertNull(clue.institutionName)
+        assertNull(clue.institutionCountry)
+        assertNull(clue.institutionSource)
+
+        // 同名多作者（机构互相矛盾）→ 无法唯一绑定 → 同样不传播。
+        val ambiguous = SourceAuthorEmailResolver.resolveText(
+            "Jane Doe: opaque@uni.edu",
+            listOf(structured, structured.copy(orcidId = "different", institutionName = "Other Lab"))
+        ).single()
+        assertNull(ambiguous.givenNames)
+        assertNull(ambiguous.institutionName)
+        assertNull(ambiguous.institutionCountry)
+        assertNull(ambiguous.institutionSource)
+    }
+
     @Test fun `bounded contact fields carry one whole identity and multiple emails`() {
         val result = SourceAuthorEmailResolver.resolveText(
             "Contact: Jane Doe (e-mail: r142@uni.edu; r143@uni.edu)\nJohn Smith: r144@uni.edu", listOf(jane, john))

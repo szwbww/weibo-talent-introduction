@@ -749,7 +749,7 @@ class OpenAlexDataSourceTest {
     }
 
     @Test
-    fun `works path takes institutionType from first institution same object as affiliation (I5a-2)`() {
+    fun `works path never picks one of several authorship institutions (I-1)`() {
         stubWorksResponse(
             """
             {
@@ -769,8 +769,168 @@ class OpenAlexDataSourceTest {
             """.trimIndent()
         )
         val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
-        assertEquals("First University", author.affiliation)
+        // I-1: 同一 authorship 有多个不同机构时一律 null —— 不取第一家，也不把第一家的类型当作者类型。
+        assertNull(author.affiliation)
+        assertNull(author.institutionType)
+    }
+
+    @Test
+    fun `works path takes the sole institution name country source and type from the same object (I-1 I-2 I-3)`() {
+        stubWorksResponse(
+            """
+            {
+              "meta": {"count": 1, "next_cursor": null},
+              "results": [{
+                "id": "https://openalex.org/W1",
+                "authorships": [{
+                  "author": {"display_name": "Jane Doe"},
+                  "institutions": [
+                    {"display_name": "Korea University", "type": "education", "country_code": "KR"}
+                  ],
+                  "is_corresponding": true
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+        val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
+        assertEquals("Korea University", author.institutionName)
+        assertEquals("KR", author.institutionCountry)
+        assertEquals("OPENALEX", author.institutionSource)
         assertEquals("education", author.institutionType)
+        assertEquals("Korea University", author.affiliation)
+    }
+
+    @Test
+    fun `works path drops a country the region table does not recognise (I-2)`() {
+        stubWorksResponse(
+            """
+            {
+              "meta": {"count": 1, "next_cursor": null},
+              "results": [{
+                "id": "https://openalex.org/W1",
+                "authorships": [{
+                  "author": {"display_name": "Jane Doe"},
+                  "institutions": [
+                    {"display_name": "Korea University", "type": "education", "country_code": "ZZ"}
+                  ],
+                  "is_corresponding": true
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+        val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
+        assertEquals("Korea University", author.institutionName)
+        assertNull(author.institutionCountry, "地区表识别不了的国家一律 null")
+        assertEquals("OPENALEX", author.institutionSource)
+    }
+
+    @Test
+    fun `works path ignores blank institution entries instead of treating them as the sole one (I-1)`() {
+        stubWorksResponse(
+            """
+            {
+              "meta": {"count": 1, "next_cursor": null},
+              "results": [{
+                "id": "https://openalex.org/W1",
+                "authorships": [{
+                  "author": {"display_name": "Jane Doe"},
+                  "institutions": [
+                    {"display_name": "", "type": "company", "country_code": "KR"},
+                    {"display_name": "Real University", "type": "education", "country_code": "US"}
+                  ],
+                  "is_corresponding": true
+                }]
+              }]
+            }
+            """.trimIndent()
+        )
+        val author = dataSource.searchPapers(PaperSearchCriteria()).papers.single().authors.single()
+        assertEquals("Real University", author.institutionName)
+        assertEquals("US", author.institutionCountry)
+        assertEquals("education", author.institutionType)
+        assertEquals("OPENALEX", author.institutionSource)
+    }
+
+    @Test
+    fun `PMC extraction fills the institution from the uniquely bound OpenAlex author when JATS has none (I-1 I-2)`() {
+        val paper = pmcPaper(
+            listOf(
+                PaperAuthor("John", "Smith", "0000-0001-2345-6789", "Oxford, UK", true,
+                    openAlexAuthorId = "A5023888391", institutionName = "University of Oxford",
+                    institutionCountry = "GB", institutionType = "education", institutionSource = "OPENALEX")
+            )
+        )
+        Mockito.doReturn(
+            EmailExtractionOutcome(
+                listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001-2345-6789")),
+                "SEARCH_FIELD", null
+            )
+        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
+
+        val email = dataSource.extractAuthorEmails(paper).emails.single()
+
+        assertEquals("A5023888391", email.openAlexAuthorId)
+        assertEquals("University of Oxford", email.institutionName)
+        assertEquals("GB", email.institutionCountry)
+        assertEquals("education", email.institutionType)
+        assertEquals("OPENALEX", email.institutionSource)
+    }
+
+    @Test
+    fun `PMC extraction keeps the JATS institution and never merges the OpenAlex one (I-1 I-2)`() {
+        val paper = pmcPaper(
+            listOf(
+                PaperAuthor("John", "Smith", "0000-0001-2345-6789", "Oxford, UK", true,
+                    openAlexAuthorId = "A5023888391", institutionName = "University of Oxford",
+                    institutionCountry = "GB", institutionType = "education", institutionSource = "OPENALEX")
+            )
+        )
+        Mockito.doReturn(
+            EmailExtractionOutcome(
+                listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Kyoto, Japan",
+                    "0000-0001-2345-6789", institutionName = "Kyoto Institute of Technology",
+                    institutionCountry = "Japan", institutionSource = "JATS")),
+                "FULLTEXT_XML", null
+            )
+        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
+
+        val email = dataSource.extractAuthorEmails(paper).emails.single()
+
+        // PMC/JATS 分支以 JATS 机构为准：两源不是同一机构时绝不合并、也不覆盖。
+        assertEquals("Kyoto Institute of Technology", email.institutionName)
+        assertEquals("Japan", email.institutionCountry)
+        assertEquals("JATS", email.institutionSource)
+        assertNull(email.institutionType)
+    }
+
+    @Test
+    fun `PMC extraction adds no institution when the ORCID binds to conflicting OpenAlex institutions (I-1)`() {
+        val paper = pmcPaper(
+            listOf(
+                PaperAuthor("John", "Smith", "0000-0001-2345-6789", "Oxford, UK", true,
+                    openAlexAuthorId = "A5023888391", institutionName = "Lab One",
+                    institutionCountry = "GB", institutionSource = "OPENALEX"),
+                PaperAuthor("Johnny", "Smith", "0000-0001-2345-6789", "Cambridge, UK", false,
+                    openAlexAuthorId = "A5023888391", institutionName = "Lab Two",
+                    institutionCountry = "US", institutionSource = "OPENALEX")
+            )
+        )
+        Mockito.doReturn(
+            EmailExtractionOutcome(
+                listOf(AuthorEmail("john@oxford.ac.uk", "John", "Smith", true, null, "0000-0001-2345-6789")),
+                "SEARCH_FIELD", null
+            )
+        ).`when`(europePmc).extractAuthorEmails(eqValue(paper), Mockito.any())
+
+        val email = dataSource.extractAuthorEmails(paper).emails.single()
+
+        assertEquals("A5023888391", email.openAlexAuthorId)
+        assertNull(email.institutionName, "同一作者绑定出现互相矛盾的机构时不得任选一个")
+        assertNull(email.institutionCountry)
+        assertNull(email.institutionType)
+        assertNull(email.institutionSource)
     }
 
     @Test

@@ -1510,19 +1510,21 @@ class ExpertDiscoveryService(
         return SourceRunOutcome(resumeCursor, exhausted, stopReason)
     }
 
+    /** I-1/I-2（01b）：ORCID 的 `institution-name` 只表达来源关联，不证明当前雇主/职位，也不是国籍证据。 */
     private fun buildOrcidProfile(record: OrcidDataSource.OrcidRecord, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {
         return ExpertProfile(
             orcidId = record.orcidId,
             email = DiscoveryIdentity.normalizedEmail(authorEmail.email),
             givenNames = record.givenNames,
             familyNames = record.familyNames,
-            country = record.country,
-            keyword = null, employment = record.institutionName,
+            country = null,
+            keyword = null, employment = null,
             institution = record.institutionName, lastPublicationYear = null,
             emailSource = "ORCID_PUBLIC", emailVerifiedLevel = emailVerifiedLevel, dataSource = "ORCID",
             externalIds = objectMapper.writeValueAsString(mapOf("orcid" to authorEmail.orcidId)),
             identityVerification = proofFor(authorEmail)
-        )
+        // 02（I-1/I-2）：ORCID 证据只能基于 01b 的「唯一机构」判定（机构为 null 时本函数原样返回）。
+        ).withInstitutionEvidence(DiscoveryIdentity.EVIDENCE_SOURCE_ORCID)
     }
 
     private data class PaperExtraction(
@@ -2254,20 +2256,33 @@ class ExpertDiscoveryService(
             orcidId = authorEmail.orcidId ?: "",
             email = DiscoveryIdentity.normalizedEmail(authorEmail.email),
             givenNames = authorEmail.givenNames, familyNames = authorEmail.familyNames,
-            country = inferCountryFromAffiliation(authorEmail.affiliation),
-            keyword = null, employment = authorEmail.affiliation, institution = authorEmail.affiliation,
+            // I-1/I-2：机构与国籍只来自与该作者唯一绑定的结构机构；原文署名只是提取线索，
+            // 既不回填展示字段，也不按逗号末段猜国籍、更不是当前任职。
+            country = authorEmail.institutionCountry,
+            keyword = null, employment = null, institution = authorEmail.institutionName,
             lastPublicationYear = paper.pubYear, emailSource = "PAPER_FULLTEXT",
             emailVerifiedLevel = emailVerifiedLevel, dataSource = paper.source,
             externalIds = buildExternalIds(paper, authorEmail),
             institutionType = authorEmail.institutionType,
             identityVerification = proofFor(authorEmail)
-        )
+        // 02（I-1/I-2）：证据在原始 AuthorEmail 尚在场时签发；toIndexMap 只负责写入，不重算。
+        ).withInstitutionEvidence(authorEmail.institutionSource)
+    }
+
+    /**
+     * 02（I-1/I-2）：机构来源证据的唯一签发调用点。来源种类只认 01 的内部 `institutionSource`
+     * （JATS/OPENALEX）或 ORCID 路径的显式 `ORCID`；其它来源（SBIR/CORE/旧 `dataSource`）一律不签发。
+     * 不满足签发条件时**原样返回**（不写这个键，绝不写 false/UNVERIFIED）。
+     */
+    private fun ExpertProfile.withInstitutionEvidence(source: String?): ExpertProfile {
+        val evidence = source?.let { DiscoveryIdentity.institutionEvidence(this, it) } ?: return this
+        return copy(institutionEvidence = evidence)
     }
 
     private fun toIndexMap(profile: ExpertProfile, paper: PaperMetadata?, esDocId: String,
                            filterResult: String, rejectReasons: List<String>): Map<String, Any?> {
         val now = LocalDateTime.now().format(dateFormatter)
-        return mapOf(
+        val doc = mutableMapOf<String, Any?>(
             "orcidId" to esDocId, "email" to profile.email,
             "givenNames" to profile.givenNames, "familyNames" to profile.familyNames,
             "country" to profile.country, "keyword" to profile.keyword,
@@ -2284,6 +2299,9 @@ class ExpertDiscoveryService(
             "filterRejectReason" to rejectReasons.takeIf { it.isNotEmpty() }?.joinToString("; "),
             "tags" to listOf("discovered")
         )
+        // 02（I-1）：无证据就不写这个键 —— 绝不写 null / false / UNVERIFIED。
+        profile.institutionEvidence?.let { doc["institutionEvidence"] = it }
+        return doc
     }
 
     private fun promoteDiscoveredToCandidate(esDocId: String, rawDoc: Map<String, Any?>): Boolean {
@@ -2987,7 +3005,7 @@ class ExpertDiscoveryService(
         val docId = enrichmentDocId(profile)
         val now = LocalDateTime.now().format(dateFormatter)
         val doc = mutableMapOf<String, Any?>(
-            "updatedAt" to now,
+            // V-1/I-3：补全只写学术事实与 enrichedAt，不推进根级 `updatedAt`（那是发现/运营写入的语义）。
             "enrichedAt" to now,
             "enrichmentSource" to "OPENALEX"
         )
@@ -3000,8 +3018,9 @@ class ExpertDiscoveryService(
         enrichment.recentWorkTitles?.takeIf { it.isNotEmpty() }?.let { doc["recentWorkTitles"] = it }
         enrichment.patentTitles?.takeIf { it.isNotEmpty() }?.let { doc["patentTitles"] = it }
         enrichment.disciplineCategory?.let { doc["disciplineCategory"] = it }
-        // I5a-3: null 时不写入该键，避免覆盖存量值；I5a-8: 无条件 ?.let，enrichment 值覆盖发现时的值。
-        enrichment.institutionType?.let { doc["institutionType"] = it }
+        // I-3：`enrichment.institutionType` 取自作者 `last_known_institutions[0]`，与文档里显示的
+        // 机构（论文 authorship / ORCID 的 institution-name）**不是同一个来源机构对象** ——
+        // 绝不跨源覆盖展示机构的类型，因此这个键根本不出现在补全写入体里。
         // I1-3: null 时不写入该键，避免覆盖发现时的真实值；I1-4: 非 null 时无条件覆盖。
         enrichment.lastPublicationYear?.let { doc["lastPublicationYear"] = it }
         val enrichedProfile = profile.copy(
@@ -3252,12 +3271,6 @@ class ExpertDiscoveryService(
         } catch (e: HttpClientErrorException) {
             if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NotFound else DedupResult.Error
         } catch (e: Exception) { DedupResult.Error }
-    }
-
-    private fun inferCountryFromAffiliation(affiliation: String?): String? {
-        if (affiliation.isNullOrBlank()) return null
-        val parts = affiliation.split(",").map { it.trim() }
-        return parts.lastOrNull()?.takeIf { it.length in 2..30 }
     }
 
     private fun buildExternalIds(paper: PaperMetadata, authorEmail: AuthorEmail): String? {

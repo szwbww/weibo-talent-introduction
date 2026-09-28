@@ -39,7 +39,18 @@ data class ExpertProfile(
      */
     val institutionType: String? = null,
     val identityVerification: IdentityVerification? = null,
-    val researchFieldIds: List<String>? = null
+    val researchFieldIds: List<String>? = null,
+    /**
+     * 02（I-1/I-3）：机构来源证据 token（`JATS:<64位小写SHA256>` / `OPENALEX:<...>` / `ORCID:<...>`）。
+     * 签发与验签的唯一入口是 [DiscoveryIdentity.institutionEvidence] / [DiscoveryIdentity.validInstitutionEvidence]；
+     * 旧文档没有这个键 → null（**不是**合格，缺字段绝不等于通过）。
+     */
+    val institutionEvidence: String? = null,
+    /**
+     * 02（I-3）：ES `filterResult` keyword 的读取投影。发送门禁要求新发现档案为 `PASSED`；
+     * 旧文档没有这个键 → null，不默认合格。
+     */
+    val filterResult: String? = null
 ) {
     val displayName: String
         get() = listOfNotNull(givenNames, familyNames)

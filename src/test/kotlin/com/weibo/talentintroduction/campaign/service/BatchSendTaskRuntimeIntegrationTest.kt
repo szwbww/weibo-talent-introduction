@@ -56,6 +56,7 @@ import org.springframework.scheduling.Trigger
 import java.time.LocalDateTime
 import java.util.concurrent.Executor
 import java.util.concurrent.ScheduledFuture
+import kotlin.jvm.functions.Function0
 
 /**
  * Task 4.1 — batch send runtime + config-scoped execution logs.
@@ -264,6 +265,23 @@ class BatchSendTaskRuntimeIntegrationTest {
             .thenReturn(3L)
         Mockito.`when`(outreach.expertSearchService.countExperts(eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList())))
             .thenReturn(2L)
+        // A2: 预估走 scroll + 最终谓词（03/I-3）—— 每层各交一批，合计仍为 5，断言与主体不变。
+        Mockito.doAnswer { invocation ->
+            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
+            handler((1..3).map { expert("C$it", "c$it@edu.cn", discipline = "STEM") })
+            null
+        }.`when`(outreach.expertSearchService).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.CANDIDATE), anyValue(emptyList()), Mockito.anyInt(),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
+        Mockito.doAnswer { invocation ->
+            val handler = invocation.getArgument<(List<ExpertProfile>) -> Boolean>(3)
+            handler((1..2).map { expert("A$it", "a$it@edu.cn", discipline = "STEM") })
+            null
+        }.`when`(outreach.expertSearchService).scrollExpertsFiltered(
+            eqValue(ExpertIndexLevel.APPLICATION), anyValue(emptyList()), Mockito.anyInt(),
+            anyValue({ _: List<ExpertProfile> -> true })
+        )
 
         assertEquals(5, invokeCountEsTargets(outreach.service, scope))
     }
@@ -733,10 +751,19 @@ class BatchSendTaskRuntimeIntegrationTest {
         return method.invoke(service, campaignId, scope) as Pair<List<Pair<ExpertContact?, ExpertProfile>>, MutableSet<String>>
     }
 
+    /**
+     * A2: 预估 seam 由「每层粗筛计数」改为「scroll + 最终谓词」（03/I-3），反射目标随之更新为
+     * `countEsTargets(RecipientScope, LocalDateTime, () -> Boolean)`，返回值取可发送数（Pair.first）。
+     */
     private fun invokeCountEsTargets(service: ManualInitialOutreachService, scope: RecipientScope): Int {
-        val method = ManualInitialOutreachService::class.java.getDeclaredMethod("countEsTargets", RecipientScope::class.java)
+        val method = ManualInitialOutreachService::class.java.getDeclaredMethod(
+            "countEsTargets",
+            RecipientScope::class.java,
+            LocalDateTime::class.java,
+            Function0::class.java
+        )
         method.isAccessible = true
-        return method.invoke(service, scope) as Int
+        return (method.invoke(service, scope, LocalDateTime.now(), { false }) as Pair<*, *>).first as Int
     }
 
     private fun classification(type: ExpertType): ExpertClassification =

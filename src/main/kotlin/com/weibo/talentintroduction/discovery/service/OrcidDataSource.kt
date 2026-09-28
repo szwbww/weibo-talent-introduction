@@ -163,12 +163,17 @@ class OrcidDataSource(
 
                 if (emails.isEmpty()) null
                 else {
+                    // I-1：`institution-name` 是**没有主次之分的集合**，只有恰好一家非空机构时才可展示；
+                    // 零项或多家一律 null，绝不用 `firstOrNull()` 按数组顺序任选第一家当主机构。
+                    val institutions = node.path("institution-name")
+                        .mapNotNull { it.asText(null)?.trim()?.takeIf { name -> name.isNotEmpty() } }
+                        .distinct()
                     OrcidRecord(
                         orcidId = orcidId,
                         givenNames = node.path("given-names").asText(null),
                         familyNames = node.path("family-names").asText(null),
                         emails = emails,
-                        institutionName = node.path("institution-name").firstOrNull()?.asText(null),
+                        institutionName = institutions.singleOrNull(),
                         country = null
                     )
                 }

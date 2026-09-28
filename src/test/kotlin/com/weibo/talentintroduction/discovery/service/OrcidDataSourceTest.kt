@@ -53,6 +53,33 @@ class OrcidDataSourceTest {
         return mapper.writeValueAsString(root)
     }
 
+    /** I-1：`institution-name` 逐条可配置的一页响应（单/多/空/重复同名机构）。 */
+    private fun expandedSearchResponseWithInstitutions(
+        vararg records: Triple<String, List<String>, List<String>>
+    ): String {
+        val root = mapper.createObjectNode()
+        val results = root.putArray("expanded-result")
+        records.forEach { (orcidId, emails, institutions) ->
+            val node = results.addObject()
+            node.put("orcid-id", orcidId)
+            node.put("given-names", "John")
+            node.put("family-names", "Smith")
+            val emailArray = node.putArray("email")
+            emails.forEach { emailArray.add(it) }
+            val institutionArray = node.putArray("institution-name")
+            institutions.forEach { institutionArray.add(it) }
+        }
+        return mapper.writeValueAsString(root)
+    }
+
+    /** I-1：走唯一分片、只取一条记录的检索（空关键词以外都用显式关键词避免多分片）。 */
+    private fun onlyRecordWithInstitutions(institutions: List<String>): OrcidDataSource.OrcidRecord {
+        stubResponses(expandedSearchResponseWithInstitutions(
+            Triple("0000-0001-0000-0001", listOf("solo@univ.edu"), institutions)
+        ))
+        return dataSource.searchOrcidRecords(PaperSearchCriteria(keywords = listOf("engineering"))).single()
+    }
+
     private fun recordsWithoutEmail(count: Int): String =
         expandedSearchResponse(*Array(count) { i -> "0000-0001-%04d".format(i) to emptyList<String>() })
 
@@ -217,6 +244,42 @@ class OrcidDataSourceTest {
         assertEquals("Smith", emails[0].familyNames)
         assertEquals("0000-0001-0000-0001", emails[0].orcidId)
         assertEquals("Oxford University", emails[0].affiliation)
+    }
+
+    @Test
+    fun `parseOrcidRecords keeps the only distinct non-empty institution trimmed (I-1)`() {
+        val record = onlyRecordWithInstitutions(listOf("  Seoul National University  "))
+        assertEquals("Seoul National University", record.institutionName, "恰一家机构时取 trim 后的原名")
+    }
+
+    @Test
+    fun `parseOrcidRecords writes null institution when two distinct institutions are listed (I-1)`() {
+        val record = onlyRecordWithInstitutions(listOf("Seoul National University", "Korea University"))
+        assertNull(record.institutionName, "多个不同机构不得任选第一家当主机构")
+    }
+
+    @Test
+    fun `parseOrcidRecords writes null institution for an empty institution array (I-1)`() {
+        val record = onlyRecordWithInstitutions(emptyList())
+        assertNull(record.institutionName, "零项机构必须写 null，不得猜机构")
+    }
+
+    @Test
+    fun `parseOrcidRecords counts duplicate identical names as a single institution (I-1)`() {
+        val record = onlyRecordWithInstitutions(listOf("Seoul National University", "Seoul National University"))
+        assertEquals("Seoul National University", record.institutionName, "重复同名只算一家")
+    }
+
+    @Test
+    fun `parseOrcidRecords drops blank institution names before counting (I-1)`() {
+        val record = onlyRecordWithInstitutions(listOf("", "   ", "Korea University"))
+        assertEquals("Korea University", record.institutionName, "空白机构不算一家")
+    }
+
+    @Test
+    fun `parseOrcidRecords writes null institution when every name is blank (I-1)`() {
+        val record = onlyRecordWithInstitutions(listOf("", "   "))
+        assertNull(record.institutionName, "全空白机构等价于零项")
     }
 
     @Test
