@@ -164,7 +164,9 @@ internal object SourceAuthorEmailResolver {
                 val author = authors[owner]
                 AuthorEmail(email, author.givenNames, author.familyNames, author.isCorresponding,
                     author.affiliation, author.orcidId, author.institutionType, author.openAlexAuthorId,
-                    "SOURCE_SHA256:" + DiscoveryIdentity.hash(matches.first().entry))
+                    "SOURCE_SHA256:" + DiscoveryIdentity.hash(matches.first().entry),
+                    // I-1/I-2：机构的展示字段只随唯一作者证据一起传播；邮箱线索分支永远不带机构。
+                    author.institutionName, author.institutionCountry, author.institutionSource)
             }
         }
 

@@ -10,12 +10,14 @@ import com.weibo.talentintroduction.config.Permit
 import com.weibo.talentintroduction.config.RequestKind
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
 import com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
+import com.weibo.talentintroduction.discovery.domain.INSTITUTION_SOURCE_OPENALEX
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import com.weibo.talentintroduction.discovery.domain.PaperMetadata
 import com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria
 import com.weibo.talentintroduction.discovery.domain.PaperSearchResult
 import com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog
 import com.weibo.talentintroduction.discovery.domain.resolvedFulltextObtained
+import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Qualifier
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
@@ -110,8 +112,24 @@ class OpenAlexDataSource(
             val europePmcOutcome = europePmc.extractAuthorEmails(paper, deadline)
             // I-2: PMC/JATS 是另一来源的提取结果，姓名/邮箱相似都不算证据 ——
             // 只有 ORCID 精确等值到一个唯一作者时才允许补接该作者的 OpenAlex ID。
+            // I-1/I-2: 机构同理 —— JATS 没取到机构、且该唯一 ORCID 绑定到的作者身上恰有一个
+            // 结构化 OpenAlex 机构时，才整条（名/类型/国家/来源）取自那个对象；两源矛盾保持 null。
             val xmlOutcome = europePmcOutcome.copy(
-                emails = europePmcOutcome.emails.map { it.copy(openAlexAuthorId = verifiedAuthorIdByOrcid(it, paper.authors)) },
+                emails = europePmcOutcome.emails.map { email ->
+                    val boundAuthorId = verifiedAuthorIdByOrcid(email, paper.authors)
+                    val institution = if (boundAuthorId != null && email.institutionName == null) {
+                        boundOpenAlexInstitution(email, paper.authors)
+                    } else {
+                        null
+                    }
+                    email.copy(
+                        openAlexAuthorId = boundAuthorId,
+                        institutionName = institution?.name ?: email.institutionName,
+                        institutionCountry = institution?.country ?: email.institutionCountry,
+                        institutionType = institution?.type ?: email.institutionType,
+                        institutionSource = institution?.source ?: email.institutionSource
+                    )
+                },
                 methodUsed = "FULLTEXT_XML"
             )
             requests += xmlOutcome.httpRequests
@@ -198,6 +216,26 @@ class OpenAlexDataSource(
         }.distinct().singleOrNull()
     }
 
+    /** I-1/I-2：同一 ORCID 唯一绑定到的作者身上那一个结构化 OpenAlex 机构（名/国家/类型同源）。 */
+    private data class BoundInstitution(val name: String, val country: String?, val type: String?, val source: String)
+
+    /**
+     * I-1/I-2：只有「同一 ORCID 的作者们恰好给出**同一个**结构化 OpenAlex 机构」才返回它。
+     * 缺来源标记、多个不同机构、或来源不是 OpenAlex 结构解析时一律 null（绝不合并半条记录）。
+     */
+    private fun boundOpenAlexInstitution(email: AuthorEmail, authors: List<PaperAuthor>): BoundInstitution? {
+        val orcid = normalizeOrcid(email.orcidId) ?: return null
+        return authors.filter { normalizeOrcid(it.orcidId) == orcid }
+            .mapNotNull { author ->
+                val name = author.institutionName ?: return@mapNotNull null
+                val source = author.institutionSource ?: return@mapNotNull null
+                if (source != INSTITUTION_SOURCE_OPENALEX) return@mapNotNull null
+                BoundInstitution(name, author.institutionCountry, author.institutionType, source)
+            }
+            .distinct()
+            .singleOrNull()
+    }
+
     private fun normalizeOrcid(raw: String?): String? {
         val bare = raw?.trim()?.removePrefix("https://orcid.org/")?.removePrefix("http://orcid.org/")?.trim()
         return bare?.takeIf { it.isNotEmpty() }?.lowercase()
@@ -241,15 +279,24 @@ class OpenAlexDataSource(
                     val author = authorship.path("author")
                     val orcid = author.path("orcid").asText(null)?.removePrefix("https://orcid.org/")
                     val nameParts = splitDisplayName(author.path("display_name").asText(""))
-                    val institution = authorship.path("institutions").firstOrNull()
-                    // I5a-2: 与 affiliation 取自同一个（第一个）机构对象；I5a-3: 无 type/空串均产出 null。
+                    // I-1/I-3：展示机构只能是同一 authorship 里**唯一非空**的机构对象；
+                    // 多个不同机构一律 null（不任取第一项），affiliation 只是同一对象的原文线索。
+                    val institution = soleInstitution(authorship)
+                    val institutionName = institution?.path("display_name")?.asText(null)?.trim()?.takeIf { it.isNotEmpty() }
+                    // I5a-3: 无 type/空串均产出 null。
                     val institutionType = institution?.path("type")?.asText(null)?.takeIf { it.isNotBlank() }
+                    // I-2：国家取同一机构对象的 country_code，且必须能被地区表识别（未知 → null）。
+                    val institutionCountry = institution?.path("country_code")?.asText(null)?.trim()
+                        ?.takeIf { it.isNotEmpty() && CountryContinentMapping.toRegion(it) != CountryContinentMapping.REGION_OTHER }
                     PaperAuthor(
                         givenNames = nameParts.getOrNull(0), familyNames = nameParts.getOrNull(1),
-                        orcidId = orcid, affiliation = institution?.path("display_name")?.asText(null),
+                        orcidId = orcid, affiliation = institutionName,
                         isCorresponding = authorship.path("is_corresponding").asBoolean(false),
                         institutionType = institutionType,
-                        openAlexAuthorId = normalizeOpenAlexAuthorId(author.path("id").asText(null))
+                        openAlexAuthorId = normalizeOpenAlexAuthorId(author.path("id").asText(null)),
+                        institutionName = institutionName,
+                        institutionCountry = institutionCountry,
+                        institutionSource = if (institutionName != null) INSTITUTION_SOURCE_OPENALEX else null
                     )
                 }
                 PaperMetadata(pmcId = pmcId, pmid = pmid, doi = doi,
@@ -261,6 +308,16 @@ class OpenAlexDataSource(
         }
         return PaperSearchResult(papers, nextCursor, totalResults)
     }
+
+    /**
+     * I-1：同一 authorship 里**唯一非空**的机构对象。
+     * 有多个不同机构时返回 null（不任取第一项）；`display_name` 为空的对象不构成第二个机构，
+     * 因此被忽略而不是被当成「唯一」的那个。
+     */
+    private fun soleInstitution(authorship: JsonNode): JsonNode? = authorship.path("institutions")
+        .filter { it.path("display_name").asText(null)?.trim().orEmpty().isNotEmpty() }
+        .singleOrNull()
+
     private fun extractPmcId(work: JsonNode): String? {
         val candidates = buildList {
             val id = work.path("ids").path("pmcid").asText(null)?.trim()

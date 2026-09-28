@@ -1,6 +1,8 @@
 package com.weibo.talentintroduction.discovery.service
 
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
+import com.weibo.talentintroduction.discovery.domain.INSTITUTION_SOURCE_JATS
+import com.weibo.talentintroduction.expert.domain.CountryContinentMapping
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.ByteArrayInputStream
@@ -16,6 +18,11 @@ object JatsXmlEmailParser {
     private val LABEL = Regex("\\(([^()]*)\\)")
     private val WORD = Regex("[\\p{L}\\p{N}]+")
     private val CONTACT_WORDS = Regex("(?i)\\b(?:correspondence|corresponding\\s+authors?|e-?mails?(?:\\s+addresses?)?|and|or|to)\\b")
+    /**
+     * I-1：生产样本里 2,480 个 `<institution>` 中 2,262 个无 `content-type`、125 个 `department`、
+     * 48 个 `dept`、5 个 `org-division` —— 只有这两类标签能证明组织级含义，其余一律不作为机构。
+     */
+    private val ORGANISATION_CONTENT_TYPES = setOf("university", "edu")
 
     private data class Author(val node: Element, val identity: AuthorEmail) {
         val name = listOfNotNull(identity.givenNames, identity.familyNames).joinToString(" ")
@@ -48,9 +55,14 @@ object JatsXmlEmailParser {
                 .mapNotNull { it.textContent.trim().substringAfterLast('/').takeIf { id -> id.matches(Regex("\\d{4}-\\d{4}-\\d{4}-\\d{3}[0-9X]")) } }.distinct()
             val affs = node.children("aff") + node.children("xref").filter { it.getAttribute("ref-type") == "aff" }
                 .flatMap { refs(it) }.mapNotNull { ids[it]?.singleOrNull()?.takeIf { n -> n.tagName == "aff" } }
+            val relatedAffs = affs.distinct()
+            val institution = structuredInstitution(relatedAffs)
             Author(node, AuthorEmail("", given, family, node.getAttribute("corresp") == "yes",
-                affs.distinct().map { it.textContent.trim() }.filter { it.isNotEmpty() }.distinct().joinToString("; ").takeIf { it.isNotBlank() },
-                orcids.singleOrNull()))
+                relatedAffs.map { it.textContent.trim() }.filter { it.isNotEmpty() }.distinct().joinToString("; ").takeIf { it.isNotBlank() },
+                orcids.singleOrNull(),
+                institutionName = institution?.name,
+                institutionCountry = institution?.country,
+                institutionSource = if (institution != null) INSTITUTION_SOURCE_JATS else null))
         }
         val candidates = mutableListOf<Candidate>()
         for (author in authors) {
@@ -178,6 +190,42 @@ object JatsXmlEmailParser {
             name.children("surname").singleOrNull()?.textContent?.isNotBlank() == true
 
     private fun refs(xref: Element) = xref.getAttribute("rid").trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+
+    /** I-1：可证明的组织级机构 = 该 aff 里 `content-type=university|edu` 的唯一非空 `<institution>`。 */
+    private data class StructuredInstitution(val name: String, val country: String?)
+
+    /**
+     * I-1/I-2：该作者关联的全部 `<aff>` 里唯一的结构机构。
+     * 多个不同机构、没有任何 `university|edu` 标签、或机构名不唯一时一律 null（不挑第一个）。
+     * 国家只取承载该机构名的同一个 `<aff>` 里唯一且地区表认得的 `<country>`。
+     */
+    private fun structuredInstitution(affs: List<Element>): StructuredInstitution? {
+        val institutions = affs.flatMap { aff -> institutionNames(aff).map { it to aff } }
+        val name = institutions.map { it.first }.distinct().singleOrNull() ?: return null
+        val country = institutions.filter { it.first == name }
+            .mapNotNull { (_, aff) -> affiliationCountry(aff) }
+            .distinct().singleOrNull()
+        return StructuredInstitution(name, country)
+    }
+
+    /** 脚注里的 `<institution>` 不是作者归属；无类型/院系类型的标签也不构成组织级含义。 */
+    private fun institutionNames(aff: Element): List<String> = aff.descendants()
+        .filter { element ->
+            element.tagName == "institution" &&
+                element.getAttribute("content-type").trim().lowercase(Locale.ROOT) in ORGANISATION_CONTENT_TYPES &&
+                element.ancestorsUntil(aff).none { it.tagName == "fn" }
+        }
+        .map { it.textContent.trim() }
+        .filter { it.isNotEmpty() }
+
+    private fun affiliationCountry(aff: Element): String? = aff.descendants()
+        .filter { it.tagName == "country" && it.ancestorsUntil(aff).none { ancestor -> ancestor.tagName == "fn" } }
+        .map { it.textContent.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+        .singleOrNull()
+        ?.takeIf { CountryContinentMapping.toRegion(it) != CountryContinentMapping.REGION_OTHER }
+
     private fun normalize(value: String) = Normalizer.normalize(value, Normalizer.Form.NFKD)
         .lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
     private fun matchesLabel(label: String, author: Author): Boolean = normalize(label).let {

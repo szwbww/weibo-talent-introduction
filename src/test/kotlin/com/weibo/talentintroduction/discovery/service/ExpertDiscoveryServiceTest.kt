@@ -98,9 +98,11 @@ import java.util.Optional
 class ExpertDiscoveryServiceTest {
 
     private fun verifiedAuthorEmail(email: String, givenNames: String?, familyNames: String?, isCorresponding: Boolean,
-        affiliation: String?, orcidId: String?, institutionType: String? = null, openAlexAuthorId: String? = null): AuthorEmail =
+        affiliation: String?, orcidId: String?, institutionType: String? = null, openAlexAuthorId: String? = null,
+        institutionName: String? = null, institutionCountry: String? = null,
+        institutionSource: String? = null): AuthorEmail =
         AuthorEmail(email, givenNames, familyNames, isCorresponding, affiliation, orcidId, institutionType, openAlexAuthorId,
-            "JATS_SHA256:" + "a".repeat(64))
+            "JATS_SHA256:" + "a".repeat(64), institutionName, institutionCountry, institutionSource)
     private fun currentExtraction(emails: List<AuthorEmail>, methodUsed: String?, failureReason: String? = null,
         httpRequests: Int = 0, fulltextObtained: Boolean? = null, downloadFailureCategory: String? = null): EmailExtractionOutcome =
         EmailExtractionOutcome(emails, methodUsed, failureReason, httpRequests, fulltextObtained, downloadFailureCategory,
@@ -1735,6 +1737,66 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `discover leaves institution country and employment empty without structured evidence (I-1 I-2)`() {
+        val svc = createService()
+        val p1 = paper("PMC1", "Test Paper")
+
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        // 只有原文署名字符串（含逗号末段 "UK"）——没有 JATS/OpenAlex 结构机构节点。
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true, "Oxford, UK", "0000-0001")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        val capturedMaps = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            capturedMaps.add(invocation.getArgument(1) as Map<String, Any?>)
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        val map = capturedMaps.single()
+        // I-1/I-2: 缺结构证据 → 展示字段为空；署名绝不复制成 employment，逗号末段绝不猜国籍。
+        assertNull(map["institution"], "无结构机构时不得把原文署名写进 institution")
+        assertNull(map["country"], "不得按逗号末段猜国家")
+        assertNull(map["employment"], "论文署名不得写成当前任职")
+    }
+
+    @Test
+    fun `discover writes the structured institution with its own country and no employment (I-1 I-2)`() {
+        val svc = createService()
+        val p1 = paper("PMC1", "Test Paper")
+
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, listOf(
+            verifiedAuthorEmail("su.kim@snu.ac.kr", "Su", "Kim", true,
+                "Seoul National University, Seoul, Republic of Korea", "0000-0001",
+                institutionName = "Seoul National University",
+                institutionCountry = "Republic of Korea", institutionSource = "JATS")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "su.kim@snu.ac.kr", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEsCandidatePut(restTemplate, true)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        val capturedMaps = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            capturedMaps.add(invocation.getArgument(1) as Map<String, Any?>)
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        val map = capturedMaps.single()
+        // I-1/I-2：机构名与国籍都来自同一结构机构，原文署名（含逗号）一个都不进展示值。
+        assertEquals("Seoul National University", map["institution"])
+        assertEquals("Republic of Korea", map["country"])
+        assertNull(map["employment"])
+    }
+
+    @Test
     fun `discover merges the OpenAlex author id into externalIds without dropping the import ids (I-1, I-3)`() {
         // I-1/I-3: 作者 ID 只是 externalIds 的一个子键 —— 主键仍是 ORCID，其他导入 ID 一个都不能丢。
         val svc = createService()
@@ -3341,7 +3403,7 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
-    fun `enrichExistingExperts writes institutionType unconditionally overwriting prior value (I5a-8)`() {
+    fun `enrichExistingExperts never overwrites institutionType from another source object (I-3)`() {
         val svc = createService()
         val openAlex = Mockito.mock(OpenAlexDataSource::class.java)
         Mockito.doReturn(openAlex).`when`(openAlexProvider).getIfAvailable()
@@ -3352,8 +3414,9 @@ class ExpertDiscoveryServiceTest {
             country = "US", keyword = null, employment = null,
             institutionType = "education"
         )
-        // I5a-8: 文档已有 institutionType=education，enrichment 返回 company → _update + doc 局部覆盖为 company。
-        // 单元层断言：doc 体无条件携带 institutionType=company（无「已有值则跳过」保护），覆盖由 ES _update 语义完成。
+        // I-3: 文档显示的 institution/institutionType 来自论文 authorship（education）；
+        // 补全读到的 `last_known_institutions[0].type=company` 是**另一个来源机构对象**，
+        // 不得覆盖展示机构类型 —— doc 体里根本不能带这个键（null 才允许保留存量）。
         val enrichment = AuthorEnrichment(
             hIndex = 10, citationCount = 100, worksCount = 5,
             disciplineCategory = "STEM", institutionType = "company"
@@ -3384,7 +3447,7 @@ class ExpertDiscoveryServiceTest {
         )
         @Suppress("UNCHECKED_CAST")
         val doc = (entityCaptor.value.body as Map<*, *>)["doc"] as Map<*, *>
-        assertEquals("company", doc["institutionType"])
+        assertFalse(doc.containsKey("institutionType"), "补全不得写异源 institutionType：$doc")
     }
 
     @Test

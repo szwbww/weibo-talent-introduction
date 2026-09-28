@@ -156,6 +156,146 @@ class JatsXmlEmailParserTest {
     }
 
     @Test
+    fun `university typed institution is the only display institution with its own country (I-1 I-2)`() {
+        val xml = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <article>
+              <front>
+                <article-meta>
+                  <contrib-group>
+                    <contrib contrib-type="author" corresp="yes">
+                      <name><surname>Kim</surname><given-names>Su</given-names></name>
+                      <email>su.kim@snu.ac.kr</email>
+                      <xref ref-type="aff" rid="aff1"/>
+                    </contrib>
+                  </contrib-group>
+                  <aff id="aff1">
+                    <label>1</label>
+                    <institution content-type="university">Seoul National University</institution>
+                    <institution-id institution-id-type="ror">https://ror.org/02a3ej557</institution-id>
+                    <addr-line>1 Gwanak-ro, Gwanak-gu</addr-line>
+                    <postal-code>08826</postal-code>
+                    <email>office@snu.ac.kr</email>
+                    <country>Republic of Korea</country>
+                    <fn><p>Present address: Department of Neurology, Seoul Hospital.</p></fn>
+                  </aff>
+                </article-meta>
+              </front>
+            </article>
+        """.trimIndent()
+
+        val result = JatsXmlEmailParser.parse(xml).single()
+        // I-1/I-2：展示值只来自同一 aff 的 content-type=university institution 与该 aff 的唯一 country。
+        assertEquals("Seoul National University", result.institutionName)
+        assertEquals("Republic of Korea", result.institutionCountry)
+        assertEquals("JATS", result.institutionSource)
+        // ROR/邮箱/邮编/脚注正文只留在原文线索里，绝不进入展示值。
+        val affiliation = result.affiliation.orEmpty()
+        assertTrue(affiliation.contains("https://ror.org/02a3ej557"), "原文线索必须保留")
+        assertTrue(affiliation.contains("office@snu.ac.kr"))
+        assertTrue(affiliation.contains("Present address"))
+    }
+
+    @Test
+    fun `untyped department footnote email and ror never become the display institution (I-1 I-2)`() {
+        val xml = """
+            <article><front><article-meta><contrib-group>
+              <contrib contrib-type="author">
+                <name><given-names>Jane</given-names><surname>Doe</surname></name>
+                <email>jane@example.org</email>
+                <aff id="aff1">
+                  <institution content-type="department">Department of Neurology</institution>
+                  <email>office@example.org</email>
+                  <institution-id institution-id-type="grid">grid.1234.5</institution-id>
+                  <fn><p><institution>Mayo Clinic Alix School of Medicine</institution></p></fn>
+                </aff>
+              </contrib>
+            </contrib-group></article-meta></front></article>
+        """.trimIndent()
+
+        val result = JatsXmlEmailParser.parse(xml).single()
+        assertNull(result.institutionName)
+        assertNull(result.institutionCountry)
+        assertNull(result.institutionSource)
+        val affiliation = result.affiliation.orEmpty()
+        assertTrue(affiliation.contains("Department of Neurology"), "院系标签只留在原文")
+        assertTrue(affiliation.contains("grid.1234.5"))
+    }
+
+    @Test
+    fun `two equally untyped affiliations next to one author never resolve to an institution (I-1)`() {
+        // 反例取自生产样本 PMC13138287：aff1 = 无类型的 Mayo Clinic Alix School of Medicine，
+        // aff2 = 无类型的 Department of Neurologic Surgery —— 两个标签相同，无法仅凭标签证明组织级含义。
+        val xml = """
+            <article><front><article-meta><contrib-group>
+              <contrib contrib-type="author">
+                <name><given-names>John</given-names><surname>Smith</surname></name>
+                <email>john.smith@mayo.edu</email>
+                <xref ref-type="aff" rid="aff1"/>
+                <xref ref-type="aff" rid="aff2"/>
+              </contrib>
+            </contrib-group>
+            <aff id="aff1"><institution>Mayo Clinic Alix School of Medicine</institution></aff>
+            <aff id="aff2"><institution>Department of Neurologic Surgery</institution></aff>
+            </article-meta></front></article>
+        """.trimIndent()
+
+        val result = JatsXmlEmailParser.parse(xml).single()
+        assertNull(result.institutionName)
+        assertNull(result.institutionCountry)
+        assertNull(result.institutionSource)
+        val affiliation = result.affiliation.orEmpty()
+        assertTrue(affiliation.contains("Mayo Clinic Alix School of Medicine"))
+        assertTrue(affiliation.contains("Department of Neurologic Surgery"))
+    }
+
+    @Test
+    fun `edu content type is accepted while several different typed institutions are not (I-1)`() {
+        fun xml(affBody: String) = """
+            <article><front><article-meta><contrib-group>
+              <contrib contrib-type="author"><name><given-names>Jane</given-names><surname>Doe</surname></name>
+                <email>jane@example.org</email><aff id="aff1">$affBody</aff></contrib>
+            </contrib-group></article-meta></front></article>
+        """.trimIndent()
+
+        val edu = JatsXmlEmailParser.parse(xml(
+            """<institution content-type="edu">Kyoto Institute of Technology</institution><country>Japan</country>"""
+        )).single()
+        assertEquals("Kyoto Institute of Technology", edu.institutionName)
+        assertEquals("Japan", edu.institutionCountry)
+        assertEquals("JATS", edu.institutionSource)
+
+        val ambiguous = JatsXmlEmailParser.parse(xml(
+            """<institution content-type="university">Seoul National University</institution>
+               <institution content-type="edu">Kyoto Institute of Technology</institution>"""
+        )).single()
+        assertNull(ambiguous.institutionName)
+        assertNull(ambiguous.institutionCountry)
+        assertNull(ambiguous.institutionSource)
+    }
+
+    @Test
+    fun `unknown or ambiguous country is dropped while the institution stays (I-2)`() {
+        fun xml(countries: String) = """
+            <article><front><article-meta><contrib-group>
+              <contrib contrib-type="author"><name><given-names>Jane</given-names><surname>Doe</surname></name>
+                <email>jane@example.org</email><aff id="aff1">
+                  <institution content-type="university">A University</institution>$countries
+                </aff></contrib>
+            </contrib-group></article-meta></front></article>
+        """.trimIndent()
+
+        val unknown = JatsXmlEmailParser.parse(xml("<country>Mars Colony</country>")).single()
+        assertEquals("A University", unknown.institutionName)
+        assertNull(unknown.institutionCountry)
+        assertEquals("JATS", unknown.institutionSource)
+
+        val ambiguous = JatsXmlEmailParser.parse(xml("<country>Japan</country><country>France</country>")).single()
+        assertEquals("A University", ambiguous.institutionName)
+        assertNull(ambiguous.institutionCountry, "同一 aff 多个国家时不得任选一个")
+    }
+
+    @Test
     fun `returns empty for xml without emails`() {
         val xml = """
             <?xml version="1.0" encoding="UTF-8"?>

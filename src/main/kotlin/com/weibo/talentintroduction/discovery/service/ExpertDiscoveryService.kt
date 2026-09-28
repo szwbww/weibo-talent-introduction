@@ -2254,8 +2254,10 @@ class ExpertDiscoveryService(
             orcidId = authorEmail.orcidId ?: "",
             email = DiscoveryIdentity.normalizedEmail(authorEmail.email),
             givenNames = authorEmail.givenNames, familyNames = authorEmail.familyNames,
-            country = inferCountryFromAffiliation(authorEmail.affiliation),
-            keyword = null, employment = authorEmail.affiliation, institution = authorEmail.affiliation,
+            // I-1/I-2：机构与国籍只来自与该作者唯一绑定的结构机构；原文署名只是提取线索，
+            // 既不回填展示字段，也不按逗号末段猜国籍、更不是当前任职。
+            country = authorEmail.institutionCountry,
+            keyword = null, employment = null, institution = authorEmail.institutionName,
             lastPublicationYear = paper.pubYear, emailSource = "PAPER_FULLTEXT",
             emailVerifiedLevel = emailVerifiedLevel, dataSource = paper.source,
             externalIds = buildExternalIds(paper, authorEmail),
@@ -3000,8 +3002,9 @@ class ExpertDiscoveryService(
         enrichment.recentWorkTitles?.takeIf { it.isNotEmpty() }?.let { doc["recentWorkTitles"] = it }
         enrichment.patentTitles?.takeIf { it.isNotEmpty() }?.let { doc["patentTitles"] = it }
         enrichment.disciplineCategory?.let { doc["disciplineCategory"] = it }
-        // I5a-3: null 时不写入该键，避免覆盖存量值；I5a-8: 无条件 ?.let，enrichment 值覆盖发现时的值。
-        enrichment.institutionType?.let { doc["institutionType"] = it }
+        // I-3：`enrichment.institutionType` 取自作者 `last_known_institutions[0]`，与文档里显示的
+        // 机构（论文 authorship / ORCID 的 institution-name）**不是同一个来源机构对象** ——
+        // 绝不跨源覆盖展示机构的类型，因此这个键根本不出现在补全写入体里。
         // I1-3: null 时不写入该键，避免覆盖发现时的真实值；I1-4: 非 null 时无条件覆盖。
         enrichment.lastPublicationYear?.let { doc["lastPublicationYear"] = it }
         val enrichedProfile = profile.copy(
@@ -3252,12 +3255,6 @@ class ExpertDiscoveryService(
         } catch (e: HttpClientErrorException) {
             if (e.statusCode == HttpStatus.NOT_FOUND) DedupResult.NotFound else DedupResult.Error
         } catch (e: Exception) { DedupResult.Error }
-    }
-
-    private fun inferCountryFromAffiliation(affiliation: String?): String? {
-        if (affiliation.isNullOrBlank()) return null
-        val parts = affiliation.split(",").map { it.trim() }
-        return parts.lastOrNull()?.takeIf { it.length in 2..30 }
     }
 
     private fun buildExternalIds(paper: PaperMetadata, authorEmail: AuthorEmail): String? {
