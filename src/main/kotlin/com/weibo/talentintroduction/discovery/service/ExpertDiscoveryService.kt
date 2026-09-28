@@ -1523,7 +1523,8 @@ class ExpertDiscoveryService(
             emailSource = "ORCID_PUBLIC", emailVerifiedLevel = emailVerifiedLevel, dataSource = "ORCID",
             externalIds = objectMapper.writeValueAsString(mapOf("orcid" to authorEmail.orcidId)),
             identityVerification = proofFor(authorEmail)
-        )
+        // 02（I-1/I-2）：ORCID 证据只能基于 01b 的「唯一机构」判定（机构为 null 时本函数原样返回）。
+        ).withInstitutionEvidence(DiscoveryIdentity.EVIDENCE_SOURCE_ORCID)
     }
 
     private data class PaperExtraction(
@@ -2264,13 +2265,24 @@ class ExpertDiscoveryService(
             externalIds = buildExternalIds(paper, authorEmail),
             institutionType = authorEmail.institutionType,
             identityVerification = proofFor(authorEmail)
-        )
+        // 02（I-1/I-2）：证据在原始 AuthorEmail 尚在场时签发；toIndexMap 只负责写入，不重算。
+        ).withInstitutionEvidence(authorEmail.institutionSource)
+    }
+
+    /**
+     * 02（I-1/I-2）：机构来源证据的唯一签发调用点。来源种类只认 01 的内部 `institutionSource`
+     * （JATS/OPENALEX）或 ORCID 路径的显式 `ORCID`；其它来源（SBIR/CORE/旧 `dataSource`）一律不签发。
+     * 不满足签发条件时**原样返回**（不写这个键，绝不写 false/UNVERIFIED）。
+     */
+    private fun ExpertProfile.withInstitutionEvidence(source: String?): ExpertProfile {
+        val evidence = source?.let { DiscoveryIdentity.institutionEvidence(this, it) } ?: return this
+        return copy(institutionEvidence = evidence)
     }
 
     private fun toIndexMap(profile: ExpertProfile, paper: PaperMetadata?, esDocId: String,
                            filterResult: String, rejectReasons: List<String>): Map<String, Any?> {
         val now = LocalDateTime.now().format(dateFormatter)
-        return mapOf(
+        val doc = mutableMapOf<String, Any?>(
             "orcidId" to esDocId, "email" to profile.email,
             "givenNames" to profile.givenNames, "familyNames" to profile.familyNames,
             "country" to profile.country, "keyword" to profile.keyword,
@@ -2287,6 +2299,9 @@ class ExpertDiscoveryService(
             "filterRejectReason" to rejectReasons.takeIf { it.isNotEmpty() }?.joinToString("; "),
             "tags" to listOf("discovered")
         )
+        // 02（I-1）：无证据就不写这个键 —— 绝不写 null / false / UNVERIFIED。
+        profile.institutionEvidence?.let { doc["institutionEvidence"] = it }
+        return doc
     }
 
     private fun promoteDiscoveredToCandidate(esDocId: String, rawDoc: Map<String, Any?>): Boolean {

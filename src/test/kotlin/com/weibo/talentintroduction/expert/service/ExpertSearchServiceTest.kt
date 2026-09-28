@@ -2,7 +2,9 @@ package com.weibo.talentintroduction.expert.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.config.ElasticsearchProperties
+import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
+import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.domain.ExpertType
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -2389,6 +2391,157 @@ class ExpertSearchServiceTest {
                 com.weibo.talentintroduction.discovery.domain.SubjectScopeCatalog.targetOpenAlexFieldIds().sorted()
         )
         java.nio.file.Files.write(output, mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+    }
+
+    // ──── 02 I-1/I-3：institutionEvidence / filterResult 三层声明与读取 ────────
+
+    @Test
+    fun `all three ES layers declare institutionEvidence as a keyword (I-1)`() {
+        for (name in listOf("orcid_info_raw", "orcid_info_candidate", "orcid_info_application")) {
+            val mapping = mapper.readTree(javaClass.getResourceAsStream("/es/$name.json")!!).path("mappings")
+            val props = mapping.path("properties")
+            assertFalse(mapping.path("dynamic").asBoolean(), "$name 根级必须保持 dynamic=false")
+            assertEquals(
+                "keyword", props.path("institutionEvidence").path("type").asText(),
+                "$name 必须声明 institutionEvidence keyword"
+            )
+            assertEquals(
+                "keyword", props.path("filterResult").path("type").asText(),
+                "$name 必须保留 filterResult keyword"
+            )
+        }
+    }
+
+    /**
+     * 02（I-3）：用真实 `_source` 形状驱动一次读取，返回投影后的 [ExpertProfile]，
+     * 并顺带断言发送投影确实点名了 `institutionEvidence` 与 `filterResult`。
+     */
+    private fun readProfilesFromSources(
+        level: ExpertIndexLevel,
+        docs: List<Pair<String, Map<String, Any?>>>
+    ): List<ExpertProfile> {
+        val hits = mapper.createArrayNode()
+        docs.forEach { (id, source) ->
+            hits.addObject().put("_id", id).replace("_source", mapper.valueToTree(source))
+        }
+        val body = mapper.createObjectNode().apply {
+            replace("hits", mapper.createObjectNode().apply {
+                replace("total", mapper.createObjectNode().put("value", docs.size))
+                replace("hits", hits)
+            })
+        }
+        val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+        val url = "https://es.example.com:9200/${serviceIndexName(level)}/_search"
+        Mockito.`when`(
+            restTemplate.exchange(
+                eq(url), eq(HttpMethod.POST), capture.capture(),
+                eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+        val profiles = service.searchExperts(10, level).experts
+        val request = capture.value.body as Map<*, *>
+        val source = request["_source"] as List<*>
+        assertTrue(source.contains("institutionEvidence"), "$level _source 必须投影 institutionEvidence")
+        assertTrue(source.contains("filterResult"), "$level _source 必须投影 filterResult")
+        return profiles
+    }
+
+    /** 02：一份「单机构 + 三证齐全」的 ES 文档（`externalIds` 与 `identityVerification` 逐字对应）。 */
+    private fun signedInstitutionSource(): Map<String, Any?> {
+        val externalIds = linkedMapOf<String, Any?>(
+            "pmcId" to "PMC1", "doi" to "10.0/PMC1",
+            "orcid" to "0000-0001", "openAlexAuthorId" to "A5023888391"
+        )
+        val identity = linkedMapOf<String, Any?>(
+            "status" to "VERIFIED", "version" to DiscoveryIdentity.VERSION, "email" to "su.kim@snu.ac.kr",
+            "givenNames" to "Su", "familyNames" to "Kim", "source" to "JATS_SHA256",
+            "evidenceHash" to "a".repeat(64), "orcid" to "0000-0001", "openAlexAuthorId" to "A5023888391"
+        )
+        // 写入时的档案主键仍是作者 ORCID 值（buildProfile → toIndexMap 才把它换成 EMAIL-*）。
+        val written = ExpertProfile(
+            esDocId = "EMAIL-signed-1", orcidId = "0000-0001", email = "su.kim@snu.ac.kr",
+            givenNames = "Su", familyNames = "Kim", country = "Republic of Korea", keyword = null,
+            employment = null, institution = "Seoul National University", institutionType = "education",
+            externalIds = mapper.writeValueAsString(externalIds),
+            identityVerification = DiscoveryIdentity.read(mapper.valueToTree(identity))
+        )
+        val token = DiscoveryIdentity.institutionEvidence(
+            written, DiscoveryIdentity.EVIDENCE_SOURCE_JATS
+        ) ?: error("fixture 必须能签发证据 token")
+        return linkedMapOf(
+            "orcidId" to "EMAIL-signed-1", "email" to "su.kim@snu.ac.kr", "givenNames" to "Su",
+            "familyNames" to "Kim", "country" to "Republic of Korea",
+            "institution" to "Seoul National University", "institutionType" to "education",
+            "externalIds" to externalIds, "identityVerification" to identity,
+            "filterResult" to "PASSED", "institutionEvidence" to token, "tags" to listOf("discovered")
+        )
+    }
+
+    @Test
+    fun `all three layers read institutionEvidence and filterResult without inventing evidence for old documents (I-3)`() {
+        val signed = signedInstitutionSource()
+        val token = signed["institutionEvidence"] as String
+        val legacy = linkedMapOf<String, Any?>("orcidId" to "old-business-key", "institution" to "Some University")
+
+        for (level in ExpertIndexLevel.values()) {
+            val profiles = readProfilesFromSources(level, listOf("OLD-1" to legacy, "SIGNED-1" to signed))
+
+            assertEquals(listOf("OLD-1", "SIGNED-1"), profiles.map { it.esDocId })
+            assertNull(profiles[0].institutionEvidence, "$level 旧文档没有该字段 → null，绝不默认合格")
+            assertNull(profiles[0].filterResult, "$level 旧文档没有资格字段 → null")
+            assertEquals(token, profiles[1].institutionEvidence, "$level 必须读出 ES 里的证据 token")
+            assertEquals("PASSED", profiles[1].filterResult, "$level 必须读出 ES 里的资格")
+            assertTrue(
+                DiscoveryIdentity.validInstitutionEvidence(profiles[1]),
+                "$level 读出的档案必须能被唯一验签函数重算通过（签发与读取投影同口径）"
+            )
+        }
+    }
+
+    @Test
+    fun `institution evidence read from ES stops verifying when the institution changed (I-2)`() {
+        val signed = signedInstitutionSource()
+        val tampered = linkedMapOf<String, Any?>().apply {
+            putAll(signed)
+            put("institution", "Korea University")
+        }
+
+        val profiles = readProfilesFromSources(
+            ExpertIndexLevel.RAW, listOf("SIGNED-1" to tampered)
+        )
+
+        assertEquals("Korea University", profiles.single().institution, "机构显示值必须原样读出")
+        assertFalse(
+            DiscoveryIdentity.validInstitutionEvidence(profiles.single()),
+            "保留旧 token 的篡改机构必须验签失败，绝不把历史证据挂到另一家机构上"
+        )
+    }
+
+    @Test
+    fun `all three layers project institutionEvidence and filterResult into the read model (I-3)`() {
+        // ES 只返回 _source 里点名的字段：投影漏掉这两个键，发送模型就永远读不到证据与资格。
+        for (level in ExpertIndexLevel.values()) {
+            val body = mapper.readTree("""{"hits":{"total":{"value":0},"hits":[]}}""")
+            val capture = org.mockito.ArgumentCaptor.forClass(HttpEntity::class.java)
+            val url = "https://es.example.com:9200/${serviceIndexName(level)}/_search"
+            Mockito.`when`(
+                restTemplate.exchange(
+                    eq(url), eq(HttpMethod.POST), capture.capture(),
+                    eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+                )
+            ).thenReturn(ResponseEntity(body, HttpStatus.OK))
+
+            service.searchExperts(10, level)
+
+            val request = capture.value.body as Map<*, *>
+            val source = request["_source"] as List<*>
+            assertTrue(
+                source.contains("institutionEvidence"),
+                "$level _source 必须投影 institutionEvidence: $source"
+            )
+            assertTrue(source.contains("filterResult"), "$level _source 必须投影 filterResult: $source")
+        }
     }
 
     private fun serviceIndexName(level: ExpertIndexLevel): String = when (level) {

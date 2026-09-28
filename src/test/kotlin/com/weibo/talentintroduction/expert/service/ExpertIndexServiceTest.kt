@@ -166,8 +166,8 @@ class ExpertIndexServiceTest {
         }
         // I-2: all three indices still get their batch PUT attempt
         org.junit.jupiter.api.Assertions.assertEquals(3, batchPuts, "each index must get one batch PUT attempt")
-        // researchFieldIds is now declared alongside the existing RAW properties.
-        org.junit.jupiter.api.Assertions.assertEquals(36, singleFieldPuts, "RAW batch failure must degrade to per-field PUTs for every declared field")
+        // researchFieldIds and institutionEvidence (02) are now declared alongside the existing RAW properties.
+        org.junit.jupiter.api.Assertions.assertEquals(37, singleFieldPuts, "RAW batch failure must degrade to per-field PUTs for every declared field")
     }
 
     @Test

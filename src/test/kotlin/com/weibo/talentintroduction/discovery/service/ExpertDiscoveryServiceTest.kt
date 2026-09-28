@@ -6611,4 +6611,231 @@ class ExpertDiscoveryServiceTest {
                 Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
             )
     }
+
+    // ──── 02 I-1/I-2/I-3：机构来源证据签发与晋升透传 ──────────────────────────
+
+    /** 捕获 RAW 文档与 CANDIDATE 晋升文档（论文路径的签发证据读者）。 */
+    private fun captureRawAndCandidate(): Pair<MutableList<Map<String, Any?>>, MutableList<Map<String, Any?>>> {
+        val rawDocs = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            rawDocs.add(invocation.getArgument(1) as Map<String, Any?>)
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+
+        val candidateDocs = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            val entity = invocation.getArgument<HttpEntity<*>>(2)
+            @Suppress("UNCHECKED_CAST")
+            candidateDocs.add(entity.body as Map<String, Any?>)
+            ResponseEntity.ok(objectMapper.createObjectNode())
+        }.`when`(restTemplate).exchange(
+            Mockito.contains("orcid_info_candidate/_doc/"), Mockito.eq(HttpMethod.PUT), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        return rawDocs to candidateDocs
+    }
+
+    @Test
+    fun `discover signs JATS institution evidence and carries it to CANDIDATE (I-1 I-2 I-3)`() {
+        val svc = createService()
+        val p1 = paper("PMC1", "Test Paper")
+
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc, listOf(
+            verifiedAuthorEmail("su.kim@snu.ac.kr", "Su", "Kim", true,
+                "Seoul National University, Seoul, Republic of Korea", "0000-0001",
+                institutionType = "education",
+                institutionName = "Seoul National University",
+                institutionCountry = "Republic of Korea", institutionSource = "JATS")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "su.kim@snu.ac.kr", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        val (rawDocs, candidateDocs) = captureRawAndCandidate()
+
+        val result = svc.discover(PaperSearchCriteria(), "TEST")
+
+        assertEquals(1, result.stats.promoted, "资格通过后必须真的晋升，否则下面的 CANDIDATE 断言会漏掉")
+        val token = rawDocs.single()["institutionEvidence"]
+        assertTrue(
+            token is String && Regex("JATS:[0-9a-f]{64}").matches(token),
+            "结构机构 + 单一来源必须签发规范 token（JATS:<64位小写十六进制>），实际: $token"
+        )
+        assertEquals(token, candidateDocs.single()["institutionEvidence"], "晋升必须原样透传证据")
+    }
+
+    @Test
+    fun `discover never signs institution evidence without a structured source (I-1)`() {
+        // 只有原文署名字符串（没有 JATS/OpenAlex 结构机构，也没有 pmcId 之外的结构来源）→ 不得按 dataSource 补签。
+        val svc = createService()
+        val p1 = paper("PMC1", "Test Paper")
+
+        DiscoveryMockHelper.stubSearchPapers(europePmc, PaperSearchResult(listOf(p1), null, 1))
+        DiscoveryMockHelper.stubExtractAuthorEmails(europePmc,
+            listOf(verifiedAuthorEmail("john@oxford.ac.uk", "John", "Smith", true,
+                "Oxford, UK", "0000-0001", institutionType = "education")))
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "john@oxford.ac.uk", EmailValidationResult(3, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        val (rawDocs, candidateDocs) = captureRawAndCandidate()
+
+        svc.discover(PaperSearchCriteria(), "TEST")
+
+        // I-1：没有内部来源证据就不写这个键（不是写 null / false / UNVERIFIED）。
+        assertFalse(rawDocs.single().containsKey("institutionEvidence"), "无结构来源不得签发证据")
+        assertFalse(candidateDocs.single().containsKey("institutionEvidence"), "无证据不得在晋升时凭空产生")
+    }
+
+    @Test
+    fun `ORCID discovery signs evidence from the unique institution and carries it to CANDIDATE (I-1 I-2 I-3)`() {
+        val (_, raw, candidate) = discoverOrcidAndCapture(listOf("Test University"), "solo@univ.edu")
+
+        val token = raw["institutionEvidence"]
+        assertTrue(
+            token is String && Regex("ORCID:[0-9a-f]{64}").matches(token),
+            "01b 的唯一机构必须签发规范 token（ORCID:<64位小写十六进制>），实际: $token"
+        )
+        assertEquals(token, candidate["institutionEvidence"], "晋升必须原样透传证据")
+    }
+
+    @Test
+    fun `ORCID discovery writes no evidence when the record lists two institutions (I-1 I-2)`() {
+        val (_, raw, candidate) = discoverOrcidAndCapture(
+            listOf("Seoul National University", "Korea University"), "multi@univ.edu")
+
+        assertFalse(raw.containsKey("institutionEvidence"), "多机构无唯一机构时不得签发证据")
+        assertFalse(candidate.containsKey("institutionEvidence"), "晋升不得凭空产生证据")
+    }
+
+    /** 02：一份「单机构 + 三证齐全」的已存档案（JATS 论文来源），字段与 ES 文档一一对应。 */
+    private fun storedExternalIds(
+        pmcId: String? = "PMC1",
+        doi: String? = "10.0/PMC1",
+        orcid: String? = "0000-0001",
+        openAlexAuthorId: String? = "A5023888391"
+    ): String = objectMapper.writeValueAsString(
+        listOfNotNull(
+            pmcId?.let { "pmcId" to it },
+            doi?.let { "doi" to it },
+            orcid?.let { "orcid" to it },
+            openAlexAuthorId?.let { "openAlexAuthorId" to it }
+        ).toMap()
+    )
+
+    private fun storedJatsProfile(
+        orcidKey: String = "0000-0001",
+        externalIds: String = storedExternalIds(),
+        proofOrcid: String = "0000-0001",
+        proofOpenAlexAuthorId: String? = "A5023888391"
+    ): ExpertProfile = ExpertProfile(
+        esDocId = "EMAIL-jats1", orcidId = orcidKey, email = "su.kim@snu.ac.kr",
+        givenNames = "Su", familyNames = "Kim", country = "Republic of Korea",
+        keyword = null, employment = null, institution = "Seoul National University",
+        institutionType = "education", dataSource = "EUROPE_PMC", externalIds = externalIds,
+        identityVerification = DiscoveryIdentity.verified(
+            "su.kim@snu.ac.kr", "Su", "Kim", "JATS_SHA256:" + "a".repeat(64), proofOrcid, proofOpenAlexAuthorId)
+    )
+
+    @Test
+    fun `institution evidence token binds the fixed NUL-separated input order (I-1)`() {
+        // 下游契约（child 03）：token 只认 `来源种类:<64位小写SHA256>`；输入字段与顺序即 token 版本。
+        // 这里逐字钉死一份输入 → 期望值，任何字段/顺序改动都会让旧 token 全部失效并被此测试暴露。
+        val profile = storedJatsProfile()
+
+        val token = DiscoveryIdentity.institutionEvidence(profile, DiscoveryIdentity.EVIDENCE_SOURCE_JATS)
+
+        assertEquals("JATS:38473ba167e1e5703c47eed9263eda9ad2e7a473854a8422c0a7be320780721c", token)
+        assertTrue(
+            DiscoveryIdentity.validInstitutionEvidence(profile.copy(institutionEvidence = token)),
+            "签发出来的 token 必须能被唯一验签函数重算通过"
+        )
+    }
+
+    @Test
+    fun `institution evidence is never signed or accepted while stored ids conflict (I-2)`() {
+        val profile = storedJatsProfile()
+        val token = DiscoveryIdentity.institutionEvidence(profile, DiscoveryIdentity.EVIDENCE_SOURCE_JATS)
+
+        // (1) 线上反例形状：真实 ORCID 主键与 externalIds.orcid 冲突 → 不得把论文机构签给这个主键。
+        val conflictingKey = profile.copy(orcidId = "0000-0002-1111-2222")
+        assertNull(
+            DiscoveryIdentity.institutionEvidence(conflictingKey, DiscoveryIdentity.EVIDENCE_SOURCE_JATS),
+            "主键 ORCID 与 externalIds.orcid 冲突时不得签发"
+        )
+        assertFalse(
+            DiscoveryIdentity.validInstitutionEvidence(conflictingKey.copy(institutionEvidence = token)),
+            "冲突档案带着旧 token 也不能通过验签"
+        )
+        // (2) 身份凭证里的 ORCID 与 externalIds.orcid 冲突。
+        assertNull(
+            DiscoveryIdentity.institutionEvidence(
+                storedJatsProfile(proofOrcid = "0000-0009-9999-9999"), DiscoveryIdentity.EVIDENCE_SOURCE_JATS),
+            "凭证 ORCID 与 externalIds.orcid 冲突时不得签发"
+        )
+        // (3) OpenAlex 作者 ID 冲突。
+        assertNull(
+            DiscoveryIdentity.institutionEvidence(
+                storedJatsProfile(proofOpenAlexAuthorId = "A9999999999"), DiscoveryIdentity.EVIDENCE_SOURCE_JATS),
+            "凭证作者 ID 与 externalIds.openAlexAuthorId 冲突时不得签发"
+        )
+        // (4) 各来源必需的来源 ID：JATS 必须 pmcId；OPENALEX 必须作者 ID 且 doi/pmcId 至少一项；ORCID 必须 externalIds.orcid。
+        assertNull(
+            DiscoveryIdentity.institutionEvidence(
+                profile.copy(externalIds = storedExternalIds(pmcId = null)), DiscoveryIdentity.EVIDENCE_SOURCE_JATS),
+            "JATS 缺 externalIds.pmcId 不得签发"
+        )
+        assertNull(
+            DiscoveryIdentity.institutionEvidence(
+                profile.copy(externalIds = storedExternalIds(pmcId = null, doi = null)),
+                DiscoveryIdentity.EVIDENCE_SOURCE_OPENALEX),
+            "OPENALEX 缺 doi/pmcId 不得签发"
+        )
+        assertNull(
+            DiscoveryIdentity.institutionEvidence(
+                profile.copy(externalIds = storedExternalIds(openAlexAuthorId = null)),
+                DiscoveryIdentity.EVIDENCE_SOURCE_OPENALEX),
+            "OPENALEX 缺 externalIds.openAlexAuthorId 不得签发"
+        )
+        assertNull(
+            DiscoveryIdentity.institutionEvidence(
+                profile.copy(externalIds = storedExternalIds(orcid = null)), DiscoveryIdentity.EVIDENCE_SOURCE_ORCID),
+            "ORCID 缺 externalIds.orcid 不得签发"
+        )
+        // (5) 来源种类不在词表内（例如 SBIR 导入）→ 不签发，绝不按 dataSource 或旧机构文本补签。
+        assertNull(DiscoveryIdentity.institutionEvidence(profile, "SBIR"))
+        // (6) 身份未证实 / 机构为空 → 不签发（也不写 false/UNVERIFIED）。
+        assertNull(
+            DiscoveryIdentity.institutionEvidence(
+                profile.copy(identityVerification = null), DiscoveryIdentity.EVIDENCE_SOURCE_JATS)
+        )
+        assertNull(
+            DiscoveryIdentity.institutionEvidence(profile.copy(institution = null), DiscoveryIdentity.EVIDENCE_SOURCE_JATS)
+        )
+    }
+
+    @Test
+    fun `institution evidence stops verifying when the displayed institution changes (I-2)`() {
+        val profile = storedJatsProfile()
+        val signed = profile.copy(
+            institutionEvidence = DiscoveryIdentity.institutionEvidence(profile, DiscoveryIdentity.EVIDENCE_SOURCE_JATS)
+        )
+
+        assertTrue(DiscoveryIdentity.validInstitutionEvidence(signed), "签发后必须自洽")
+        assertFalse(
+            DiscoveryIdentity.validInstitutionEvidence(signed.copy(institution = "Korea University")),
+            "机构改值后旧证明必须失效"
+        )
+        assertFalse(DiscoveryIdentity.validInstitutionEvidence(signed.copy(country = "Japan")), "国家改值后必须失效")
+        assertFalse(
+            DiscoveryIdentity.validInstitutionEvidence(signed.copy(institutionType = "company")),
+            "机构类型改值后必须失效"
+        )
+        assertFalse(
+            DiscoveryIdentity.validInstitutionEvidence(signed.copy(institutionEvidence = "ORCID:" + "0".repeat(64))),
+            "来源种类不得被改写"
+        )
+        // 旧文档 / 无证据档案：null 或空值都是不合格，绝不默认通过。
+        assertFalse(DiscoveryIdentity.validInstitutionEvidence(profile), "无证据档案不得默认通过")
+        assertFalse(DiscoveryIdentity.validInstitutionEvidence(profile.copy(institutionEvidence = "")))
+    }
 }

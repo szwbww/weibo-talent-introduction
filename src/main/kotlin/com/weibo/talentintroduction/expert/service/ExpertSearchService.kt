@@ -505,7 +505,10 @@ class ExpertSearchService(
             enrichmentSource = source.nullableText("enrichmentSource"),
             expertClassification = parseExpertClassification(source.path("expertClassification")),
             identityVerification = DiscoveryIdentity.read(source.path("identityVerification")),
-            researchFieldIds = stringArrayOrNull(source, "researchFieldIds")
+            researchFieldIds = stringArrayOrNull(source, "researchFieldIds"),
+            // 02（I-3）：发送模型必须读到证据与资格；旧文档没有这两个键 → null，不默认合格。
+            institutionEvidence = source.nullableText("institutionEvidence"),
+            filterResult = source.nullableText("filterResult")
         )
     }
 
@@ -589,6 +592,7 @@ class ExpertSearchService(
             "age", "degree", "nationality",
             "hIndex", "citationCount", "lastPublicationYear",
             "researchFields", "researchFieldIds", "disciplineCategory", "institution", "institutionType",
+            "filterResult", "institutionEvidence",
             "emailSource", "emailVerifiedLevel",
             "dataSource", "externalIds", "worksCount", "identityVerification",
             "tags",
