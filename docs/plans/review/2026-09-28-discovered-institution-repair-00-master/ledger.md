@@ -1,33 +1,33 @@
 # Review-Fast-P Ledger — master: docs/plans/2026-09-28/discovered-institution-repair-00-master.md
 
-- Status: REPAIR_PLAN_READY
-- Review epoch: 1
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 2
 - Master plan: docs/plans/2026-09-28/discovered-institution-repair-00-master.md (sha256 2f7fdb23cdfa016795827416d9d43f73d19798457a9c32c20605ea3a42d404c6)
 - Governing master identity: worktree sha256 2f7fdb23cdfa016795827416d9d43f73d19798457a9c32c20605ea3a42d404c6; recorded commit 2e9639df7947bc5f3057ca08e1445b155aba7cd7
-- Invoked master identity: SAME (sha256 2f7fdb23cdfa016795827416d9d43f73d19798457a9c32c20605ea3a42d404c6)
-- Master identity state: CONSISTENT
+- Invoked master identity: sha256 51b42e2934e165835c26e7dc38414c385792583be8863e5d772f705e24778b0f
+- Master identity state: AMENDMENT_UNRECORDED
 - Governing amendment: N/A
-- Amendments: A1 (`docs/plans/2026-09-28/discovered-institution-repair-02-evidence.md`, I-3 + implementation scheme 1, approved 2026-09-28T17:19:33+08:00); A2 (`docs/plans/2026-09-28/discovered-institution-repair-03-outreach.md`, I-2 + 03 I-3, approved 2026-09-28T18:40:47+08:00)
+- Amendments: A1 (`docs/plans/2026-09-28/discovered-institution-repair-02-evidence.md`, I-3 + implementation scheme 1, approved 2026-09-28T17:19:33+08:00); A2 (`docs/plans/2026-09-28/discovered-institution-repair-03-outreach.md`, I-2 + 03 I-3, approved 2026-09-28T18:40:47+08:00); AMENDMENT_UNAPPROVED: invoked copy changes only the historical online-audit count sentence (Europe PMC/ROR 3 / cumulative 338) versus governing worktree copy (Europe PMC 24 / cumulative 359); retroactively authorized files: N/A.
 - Fast-p ledger: docs/plans/fast/2026-09-28-discovered-institution-repair-00-master/ledger.md (sha256 a823cbc0e7351b18a10beaf143d731f5ac4bb9de7aca2fed79c205894f28ac79)
 - Fast-p handoff: docs/plans/fast/2026-09-28-discovered-institution-repair-00-master/human-review-handoff.md (sha256 2d97cd01b7891ea25683a69b14053bd9547fb6c8897403148835a94cd7785b37)
 - Master base: d90084841d400e75eb0f2b6c4c6726e54307260a
-- Final code head: 70e6144065335beee72dbd22a84e4bb975a68928
-- Evidence parent before next commit: f455045ef153b047baa5c60b0a4cbd2a691c8019
-- Previous evidence commit: N/A
+- Final code head: 5096e0618f7ecdc2224b9b472effd812d5b96828
+- Evidence parent before next commit: 05d315429bf07d1004b778f1f71eb5d87edd6bdb
+- Previous evidence commit: 05d315429bf07d1004b778f1f71eb5d87edd6bdb
 - Branch: fast/2026-09-28-discovered-institution-repair-00-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-28-discovered-institution-repair-00-master
 - Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
-- Discovery evidence: mandated `discover_fast_p.py` invocation; selected registered worktree identity verified against matching fast-p ledger/handoff, terminal child table, evidence commits, clean index, and `d900848..70e614` ancestry
+- Discovery evidence: `discover_fast_p.py` SELECTED this registered worktree; matching fast-p ledger/handoff, terminal child table, evidence commits, clean index, and `d900848..70e614` ancestry. Re-review ancestry: `70e614..5096e06` is committed and the repair delta is exactly the two repair-authorized product/test files.
 - Misdirected review evidence: N/A
-- Reviewer: /root/aggregate_reviewer
+- Reviewer: /root/aggregate_rereviewer_epoch2
 - Reviewer attempt: 1
-- Machine result: FAIL
-- Machine report epoch: machine-verification.md, Epoch 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md, Epoch 2
 - Repair artifact: docs/plans/fix/discovered-institution-repair-00-master/repair.md
-- Repair evidence mode: N/A
-- Repair approval source: N/A
-- Repair executor: N/A
-- Repair code head: N/A
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: HUMAN `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-28-discovered-institution-repair-00-master/docs/plans/fix/discovered-institution-repair-00-master/repair.md` (2026-09-28)
+- Repair executor: Main (fast-p controller session), `execute-p` contract
+- Repair code head: 5096e0618f7ecdc2224b9b472effd812d5b96828
 - Manual status: PENDING
 - Human sign-off boundary: N/A
-- Blocker/next action: Human approval required for `docs/plans/fix/discovered-institution-repair-00-master/repair.md`.
+- Blocker/next action: Human must perform A-1, A-2, A-3 and explicitly accept boundary `5096e0618f7ecdc2224b9b472effd812d5b96828`; because the invoked master identity is unapproved, sign-off must also name governing master sha256 `2f7fdb23cdfa016795827416d9d43f73d19798457a9c32c20605ea3a42d404c6` and accept no retroactively authorized files (N/A).
