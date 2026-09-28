@@ -25,6 +25,13 @@ data class ExpertDiscoveryProperties(
      */
     val timeBudget: Duration = Duration.ofHours(4),
     /**
+     * I-1：OpenAlex 元数据搜索的**有限延迟恢复间隔**。3 次短尝试用尽后，同一页按这些间隔依次安排
+     * 最多 3 个恢复组；空列表表示关闭延迟恢复（回退既有「3 次短尝试后终止」）。每项必须是正数、
+     * 非递减、不超过 5 分钟；超过 3 项、零/负值或递减都会在启动时直接报配置错误。
+     * 它是进程级配置（与数据库字段、补全退避参数无关），不控制任何其他来源。
+     */
+    val openAlexSearchRecoveryDelays: List<Duration> = DEFAULT_OPENALEX_SEARCH_RECOVERY_DELAYS,
+    /**
      * I-2（08）：发现后自动补全 worker 的开关。默认 **false**，验收后在服务器开启；
      * 关闭时 worker 仍可注入但什么都不做，且不影响发现与既有三个手动 scope。
      */
@@ -88,6 +95,27 @@ data class ExpertDiscoveryProperties(
         require(!pipelineTick.isZero && !pipelineTick.isNegative) {
             "深度发现队列配置错误：pipeline-tick 必须为正数，当前为 $pipelineTick"
         }
+        // I-1：搜索延迟恢复必须「有限」：最多 3 组、每组正数、非递减、不超过 5 分钟。
+        // 空列表是合法配置（关闭延迟恢复）；不允许把恢复间隔配成小时级或倒序。
+        require(openAlexSearchRecoveryDelays.size <= MAX_OPENALEX_SEARCH_RECOVERY_GROUPS) {
+            "深度发现配置错误：open-alex-search-recovery-delays 最多 " +
+                "$MAX_OPENALEX_SEARCH_RECOVERY_GROUPS 项，当前 ${openAlexSearchRecoveryDelays.size} 项"
+        }
+        openAlexSearchRecoveryDelays.forEachIndexed { index, delay ->
+            require(!delay.isZero && !delay.isNegative) {
+                "深度发现配置错误：open-alex-search-recovery-delays[$index] 必须为正数，当前为 $delay"
+            }
+            require(delay <= MAX_OPENALEX_SEARCH_RECOVERY_DELAY) {
+                "深度发现配置错误：open-alex-search-recovery-delays[$index]=$delay 超过上限 " +
+                    "$MAX_OPENALEX_SEARCH_RECOVERY_DELAY"
+            }
+            if (index > 0) {
+                require(delay >= openAlexSearchRecoveryDelays[index - 1]) {
+                    "深度发现配置错误：open-alex-search-recovery-delays 必须非递减，" +
+                        "当前为 $openAlexSearchRecoveryDelays"
+                }
+            }
+        }
         // I-5：字节上限必须至少容纳一整页（否则任何一页都永远入不了队 = 静默死锁）。
         val onePageBytes = PIPELINE_PAGE_SIZE.toLong() *
             (metadataMaxBytes.toLong() + PIPELINE_RESERVED_RESULT_BYTES)
@@ -103,6 +131,22 @@ data class ExpertDiscoveryProperties(
 
 /** I-6（c2）：来源生产者每轮每源一页的固定页大小（100 篇 / 100 条记录）。 */
 const val PIPELINE_PAGE_SIZE: Int = 100
+
+/**
+ * I-1：搜索延迟恢复组的上限（每来源每轮最多 3 组）。它与 OpenAlex 单页 3 次短尝试一起给出
+ * 「同一页最多 12 次实际搜索尝试」的硬上限（3 + 3×3）。
+ */
+const val MAX_OPENALEX_SEARCH_RECOVERY_GROUPS: Int = 3
+
+/** I-1：单个恢复间隔的上限（5 分钟）——恢复必须有限，不允许配置成小时级等待。 */
+val MAX_OPENALEX_SEARCH_RECOVERY_DELAY: Duration = Duration.ofMinutes(5)
+
+/** I-1：默认搜索恢复间隔 30 秒 / 2 分钟 / 5 分钟。 */
+val DEFAULT_OPENALEX_SEARCH_RECOVERY_DELAYS: List<Duration> = listOf(
+    Duration.ofSeconds(30),
+    Duration.ofSeconds(120),
+    Duration.ofSeconds(300)
+)
 
 /** I-5（c2）：队列总字节上限的默认值（1 GiB）。 */
 const val PIPELINE_QUEUE_MAX_BYTES_DEFAULT: Long = 1_073_741_824L

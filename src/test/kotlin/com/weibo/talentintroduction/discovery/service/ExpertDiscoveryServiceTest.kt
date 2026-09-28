@@ -8,6 +8,7 @@ import com.weibo.talentintroduction.config.ExpertDiscoveryProperties
 import com.weibo.talentintroduction.config.OpenAlexBudgetDeferredException
 import com.weibo.talentintroduction.config.OpenAlexProperties
 import com.weibo.talentintroduction.config.OrcidProperties
+import com.weibo.talentintroduction.config.PolicyTimeSource
 import com.weibo.talentintroduction.config.RequestKind
 import com.weibo.talentintroduction.config.DiscoveryExecutorConfig
 import com.weibo.talentintroduction.discovery.domain.AuthorEmail
@@ -36,7 +37,12 @@ import com.weibo.talentintroduction.expert.domain.ExpertIndexLevel
 import com.weibo.talentintroduction.expert.service.ExpertRevalidationService
 import com.weibo.talentintroduction.expert.service.PromotionOutcome
 import com.weibo.talentintroduction.discovery.repository.DiscoverySourceCursorRepository
+import com.weibo.talentintroduction.discovery.repository.DiscoveryJobDocument
 import com.weibo.talentintroduction.discovery.repository.ExpertAcademicEnrichmentJobRepository
+import com.weibo.talentintroduction.task.domain.TaskExecution
+import com.weibo.talentintroduction.task.domain.TaskProgressLog
+import com.weibo.talentintroduction.task.repository.TaskExecutionRepository
+import com.weibo.talentintroduction.task.repository.TaskProgressLogRepository
 import com.weibo.talentintroduction.task.service.TaskProgress
 import com.weibo.talentintroduction.task.service.TaskProgressStore
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -84,7 +90,10 @@ import java.net.URLDecoder
 import java.security.MessageDigest
 import org.springframework.http.MediaType
 import org.springframework.test.web.client.MockRestServiceServer
+import org.springframework.test.web.client.match.MockRestRequestMatchers
+import org.springframework.test.web.client.response.MockRestResponseCreators
 import org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess
+import java.util.Optional
 
 class ExpertDiscoveryServiceTest {
 
@@ -185,7 +194,8 @@ class ExpertDiscoveryServiceTest {
         props: ExpertDiscoveryProperties = discoveryProperties,
         executor: Executor = Executor { it.run() },
         openAlexProps: OpenAlexProperties = openAlexProperties,
-        europePmcProps: EuropePmcProperties = EuropePmcProperties()
+        europePmcProps: EuropePmcProperties = EuropePmcProperties(),
+        timeSource: PolicyTimeSource = PolicyTimeSource.SYSTEM
     ): ExpertDiscoveryService {
         return ExpertDiscoveryService(
             europePmc, openAlexProvider, crossrefProvider, arxivProvider,
@@ -193,8 +203,31 @@ class ExpertDiscoveryServiceTest {
             emailValidationService, eligibilityService,
             indexWriterService, indexService, revalidationService, expertSearchService, expertClassificationService, restTemplate, esProperties,
             props, openAlexProps, objectMapper, progressStore, cursorRepository, enrichmentJobService,
-            enrichmentJobRepository, executor, europePmcProps
+            enrichmentJobRepository, executor, europePmcProps, timeSource
         )
+    }
+
+    /**
+     * I-1/I-5/I-7：可控时间源。生产用 [PolicyTimeSource.SYSTEM]；这里把「计划 30 秒后回访」变成可断言的
+     * 确定性事件，并记录每次等待切片（证明等待粒度 ≤100ms）。[realSleepMillisPerSlice] 让每个切片真的
+     * 阻塞一小会儿，用于「等待期间取消」这类必须并发观察的场景。
+     */
+    private class FakeTime(
+        var current: Instant = Instant.parse("2026-09-28T02:00:00Z"),
+        private val realSleepMillisPerSlice: Long = 0L
+    ) : PolicyTimeSource {
+        val sleeps = java.util.concurrent.CopyOnWriteArrayList<Long>()
+
+        override fun now(): Instant = synchronized(this) { current }
+
+        override fun sleep(ms: Long) {
+            if (ms < 0L) throw IllegalArgumentException("timeout value is negative")
+            if (realSleepMillisPerSlice > 0L) Thread.sleep(realSleepMillisPerSlice)
+            synchronized(this) {
+                sleeps += ms
+                current = current.plusMillis(ms)
+            }
+        }
     }
 
     private fun paper(pmcId: String, title: String, pubYear: Int = 2024) =
@@ -301,6 +334,54 @@ class ExpertDiscoveryServiceTest {
         val decoded = DiscoveryCheckpointCodec.decode(entry.cursorValue)
         assertNotNull(decoded, "saved value must be a v2 envelope, was '${entry.cursorValue}'")
         return decoded!!
+    }
+
+    /** I-5：从进度详情的 `bySource` 里取该来源的唯一重试观察对象（空对象视为没有）。 */
+    private fun retryOf(progress: TaskProgress, source: String): Map<*, *>? {
+        val entry = bySourceEntry(progress, source) ?: return null
+        return (entry["retry"] as? Map<*, *>)?.ifEmpty { null }
+    }
+
+    private fun stopReasonOf(progress: TaskProgress, source: String): String? =
+        bySourceEntry(progress, source)?.get("stopReason") as? String
+
+    private fun bySourceEntry(progress: TaskProgress, source: String): Map<*, *>? {
+        val bySource = progress.details?.get("bySource") as? Map<*, *> ?: return null
+        return bySource[source] as? Map<*, *>
+    }
+
+    /**
+     * X-3：真实的晋升读投影实例（本计划不修改它的代码），只桩任务/日志/ES 三处读取。
+     * ES 返回一条发现期间新收录的专家，因此 merge() 会真的重写 summaryText 里的晋升数字 ——
+     * 这正是「更新数字但不得删掉等待提示」需要证明的路径。
+     */
+    private fun promotionProjection(): DiscoveryPromotionProgressService {
+        val jobs = Mockito.mock(ExpertAcademicEnrichmentJobRepository::class.java)
+        val executions = Mockito.mock(TaskExecutionRepository::class.java)
+        val logs = Mockito.mock(TaskProgressLogRepository::class.java)
+        val template = RestTemplate()
+        val server = MockRestServiceServer.createServer(template)
+        val start = LocalDateTime.of(2026, 9, 28, 2, 0, 0)
+        Mockito.`when`(executions.findById(1L)).thenReturn(Optional.of(
+            TaskExecution(1L, "EXPERT_DISCOVERY", "SCHEDULED", "RUNNING", null, null,
+                startedAt = start, finishedAt = start.plusMinutes(20))
+        ))
+        Mockito.`when`(jobs.findDiscoveryDocuments(1L))
+            .thenReturn(listOf(DiscoveryJobDocument("oa-1", "OPENALEX")))
+        Mockito.`when`(logs.findTopByTaskTypeOrderByIdDesc("EXPERT_DISCOVERY"))
+            .thenReturn(TaskProgressLog(
+                id = 7L, taskType = "EXPERT_DISCOVERY", taskExecutionId = 1L, batchNumber = 0, status = "RUNNING"
+            ))
+        // 投影一次 `_mget` 同时查 CANDIDATE 与 APPLICATION 两层（每个 docId 两条），因此响应必须
+        // 逐条对应，否则投影会因「响应不完整」安全退出、数字不会被改写。
+        val docEntry = mapOf(
+            "_id" to "oa-1", "found" to true,
+            "_source" to mapOf("discoveredAt" to "2026-09-28 02:05:00", "tags" to listOf("discovered"))
+        )
+        val body = objectMapper.writeValueAsString(mapOf("docs" to listOf(docEntry, docEntry)))
+        server.expect(MockRestRequestMatchers.requestTo("${esProperties.baseUrl}/_mget"))
+            .andRespond(MockRestResponseCreators.withSuccess(body, MediaType.APPLICATION_JSON))
+        return DiscoveryPromotionProgressService(jobs, executions, logs, template, esProperties, objectMapper)
     }
 
     private fun stubSource(source: AcademicDataSource, name: String) {
@@ -3946,8 +4027,10 @@ class ExpertDiscoveryServiceTest {
 
     @Test
     fun `OpenAlex three timeouts fail once and retain the same cursor`() {
+        // I-1：显式空恢复列表 = 关闭延迟恢复，回退既有「3 次短尝试后终止」的语义。
         val svc = createService(ExpertDiscoveryProperties(
-            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+            enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false,
+            openAlexSearchRecoveryDelays = emptyList()
         ))
         val criteria = PaperSearchCriteria(cursor = "C7")
         stubStoredCheckpoint("OPENALEX", "C7", criteria)
@@ -3968,6 +4051,492 @@ class ExpertDiscoveryServiceTest {
         assertEquals(1, result.stats.sourceFailures)
         assertEquals("C7", storedCheckpointFor("OPENALEX", criteria).cursor)
         assertFalse(storedCheckpointFor("OPENALEX", criteria).exhausted)
+        assertNull(sourceStats?.retry, "空恢复列表不安排任何延迟恢复")
+    }
+
+    @Test
+    fun `OpenAlex deferred recovery revisits the same page after the configured delay (O-1, I-1, I-2)`() {
+        val time = FakeTime()
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+            ),
+            timeSource = time
+        )
+        val criteria = PaperSearchCriteria(cursor = "C7")
+        stubStoredCheckpoint("OPENALEX", "C7", criteria)
+        val openAlex = mockOpenAlex()
+        val requests = mutableListOf<PaperSearchCriteria>()
+        val requestTimes = mutableListOf<Instant>()
+        val page = PaperSearchResult(listOf(paper("OA-9", "Recovered page").copy(source = "OPENALEX")), null, 1)
+        Mockito.doAnswer { invocation ->
+            requests += invocation.getArgument(0) as PaperSearchCriteria
+            requestTimes += time.now()
+            if (requests.size <= 3) {
+                throw ResourceAccessException(
+                    "handshake interrupted",
+                    SSLHandshakeException("Remote host terminated the handshake")
+                )
+            }
+            page
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val captured = mutableListOf<TaskProgress>()
+        DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(4, requests.size, "3 次短尝试失败后必须按恢复间隔回访同一页，而不是立刻终止来源")
+        assertEquals(listOf("C7", "C7", "C7", "C7"), requests.map { it.cursor })
+        assertEquals(4, sourceStats?.apiRequests)
+        assertEquals(1, sourceStats?.papersSearched)
+        assertEquals(0, sourceStats?.sourceFailureCount, "等待恢复不是终止性失败")
+        assertEquals(0, sourceStats?.failureReasons?.get("SEARCH_FAILED") ?: 0)
+        assertEquals(DiscoveryStopReason.EXHAUSTED, sourceStats?.stopReason, "恢复成功后按真实停止原因覆盖")
+        assertEquals(0, result.stats.sourceFailures)
+        assertEquals("SUCCESS", result.taskFinalStatus)
+        assertTrue(storedCheckpointFor("OPENALEX", criteria).exhausted)
+        assertEquals(
+            30_000L, Duration.between(requestTimes[2], requestTimes[3]).toMillis(),
+            "第 3 次失败到回访必须正好是配置的 30 秒"
+        )
+        assertTrue(time.sleeps.all { it <= 100L }, "等待粒度必须 ≤100ms：${time.sleeps.distinct()}")
+
+        // I-5：安排时写一次等待事件（轮次/原因/计划时间），回访开始再写一次。
+        val waitEvent = captured.single { it.message?.contains("等待恢复 1/3") == true }
+        assertTrue(waitEvent.message!!.contains("（北京时间）"), waitEvent.message!!)
+        assertEquals("RETRY_WAIT", stopReasonOf(waitEvent, "OPENALEX"))
+        assertEquals(1, retryOf(waitEvent, "OPENALEX")?.get("round"))
+        assertEquals(3, retryOf(waitEvent, "OPENALEX")?.get("maxRounds"))
+        assertEquals("REMOTE_TLS_HANDSHAKE", retryOf(waitEvent, "OPENALEX")?.get("reason"))
+        val planned = retryOf(waitEvent, "OPENALEX")?.get("nextRetryAt") as String
+        assertEquals(
+            requestTimes[3].toString(), Instant.parse(planned).toString(),
+            "计划重试时间（ISO-8601 UTC）必须等于真实回访时刻"
+        )
+        assertTrue(waitEvent.details!!["summaryText"].toString().contains("等待恢复 1/3"), "summary 里必须看得见等待")
+        assertEquals(1, captured.count { it.message?.contains("开始恢复回访 1/3") == true })
+        assertNull(sourceStats?.retry, "恢复结束后不残留待执行的重试观察对象")
+    }
+
+    @Test
+    fun `OpenAlex permanently failing page uses every allowed attempt then fails once (I-1)`() {
+        val time = FakeTime()
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+            ),
+            timeSource = time
+        )
+        val criteria = PaperSearchCriteria(cursor = "C7")
+        stubStoredCheckpoint("OPENALEX", "C7", criteria)
+        val openAlex = mockOpenAlex()
+        val calls = AtomicInteger()
+        val requestTimes = mutableListOf<Instant>()
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            requestTimes += time.now()
+            throw ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val captured = mutableListOf<TaskProgress>()
+        DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        // 3 次短尝试 + 3 个恢复组 × 3 次 = 同页 12 次请求，之后只记一次 SEARCH_FAILED。
+        assertEquals(12, calls.get())
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(12, sourceStats?.apiRequests)
+        assertEquals(1, sourceStats?.sourceFailureCount)
+        assertEquals(1, sourceStats?.failureReasons?.get("SEARCH_FAILED"))
+        assertEquals(DiscoveryStopReason.SEARCH_FAILED, sourceStats?.stopReason)
+        assertEquals(1, result.stats.sourceFailures)
+        assertEquals("C7", storedCheckpointFor("OPENALEX", criteria).cursor)
+        assertFalse(storedCheckpointFor("OPENALEX", criteria).exhausted)
+        assertEquals(
+            listOf(30_000L, 120_000L, 300_000L),
+            listOf(
+                Duration.between(requestTimes[2], requestTimes[3]).toMillis(),
+                Duration.between(requestTimes[5], requestTimes[6]).toMillis(),
+                Duration.between(requestTimes[8], requestTimes[9]).toMillis()
+            ),
+            "三个恢复组的间隔必须依次是 30s / 120s / 300s"
+        )
+        assertEquals(
+            listOf(1, 2, 3),
+            captured.mapNotNull { retryOf(it, "OPENALEX")?.get("round") as? Int }.distinct(),
+            "每组安排一次等待事件，轮次递增"
+        )
+        assertEquals(3, captured.count { it.message?.contains("等待恢复") == true }, "等待期间不得按 100ms 刷屏")
+        assertNull(sourceStats?.retry, "全部恢复组用尽后不残留待执行的重试观察对象")
+    }
+
+    @Test
+    fun `OpenAlex deferred recovery waits for the remaining sources before revisiting (I-1, I-2)`() {
+        val time = FakeTime()
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 400, maxAuthorsPerRun = 2_000, includeRawScan = false
+            ),
+            timeSource = time
+        )
+        val log = mutableListOf<String>()
+        fun stubLogged(source: AcademicDataSource, name: String, cap: Int, page: PaperSearchResult) {
+            DiscoveryMockHelper.stubMaxPapersPerSource(source, cap)
+            DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(source, "NO_EMAIL_IN_FULLTEXT")
+            Mockito.doAnswer {
+                log += name
+                page
+            }.`when`(source).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        }
+        stubLogged(europePmc, "EUROPE_PMC", 200, pageOf(100, null))
+        val openAlex = mockOpenAlex()
+        DiscoveryMockHelper.stubMaxPapersPerSource(openAlex, 200)
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(openAlex, "NO_EMAIL_IN_FULLTEXT")
+        val openAlexRequests = mutableListOf<PaperSearchCriteria>()
+        Mockito.doAnswer { invocation ->
+            log += "OPENALEX"
+            openAlexRequests += invocation.getArgument(0) as PaperSearchCriteria
+            if (openAlexRequests.size <= 3) {
+                throw ResourceAccessException(
+                    "handshake interrupted",
+                    SSLHandshakeException("Remote host terminated the handshake")
+                )
+            }
+            PaperSearchResult(listOf(paper("OA-1", "OpenAlex paper").copy(source = "OPENALEX")), null, 1)
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val crossref = Mockito.mock(CrossrefDataSource::class.java)
+        stubSource(crossref, "CROSSREF")
+        Mockito.doReturn(crossref).`when`(crossrefProvider).getIfAvailable()
+        stubLogged(crossref, "CROSSREF", 200, pageOf(100, null, offset = 100))
+        val arxiv = Mockito.mock(ArxivDataSource::class.java)
+        stubSource(arxiv, "ARXIV")
+        Mockito.doReturn(arxiv).`when`(arxivProvider).getIfAvailable()
+        stubLogged(arxiv, "ARXIV", 200, pageOf(100, null, offset = 200))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+
+        val result = svc.discover(fourSourceCriteria, "TEST", includeRawScan = false)
+
+        assertEquals(
+            listOf(
+                "EUROPE_PMC", "OPENALEX", "OPENALEX", "OPENALEX",
+                "CROSSREF", "ARXIV", "OPENALEX"
+            ),
+            log,
+            "其他来源先跑完，回访只发生在它们停稳之后（长等待不得饿死其他来源）"
+        )
+        assertEquals(100, result.stats.bySource["EUROPE_PMC"]?.papersSearched)
+        assertEquals(1, result.stats.bySource["OPENALEX"]?.papersSearched)
+        assertEquals(100, result.stats.bySource["CROSSREF"]?.papersSearched)
+        assertEquals(100, result.stats.bySource["ARXIV"]?.papersSearched)
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(0, sourceStats?.sourceFailureCount)
+        assertEquals(DiscoveryStopReason.EXHAUSTED, sourceStats?.stopReason)
+        assertEquals(0, result.stats.sourceFailures)
+        assertEquals(301, result.stats.totalPapers)
+    }
+
+    @Test
+    fun `OpenAlex recovery resumes with the same budget and never re-counts committed papers (I-3)`() {
+        val time = FakeTime()
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 1_000, maxAuthorsPerRun = 2_000, includeRawScan = false
+            ),
+            timeSource = time
+        )
+        val criteria = PaperSearchCriteria(cursor = "C1")
+        stubStoredCheckpoint("OPENALEX", "C1", criteria)
+        val openAlex = mockOpenAlex()
+        DiscoveryMockHelper.stubMaxPapersPerSource(openAlex, 1_000)
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(openAlex, "NO_EMAIL_IN_FULLTEXT")
+        val requests = mutableListOf<PaperSearchCriteria>()
+        Mockito.doAnswer { invocation ->
+            requests += invocation.getArgument(0) as PaperSearchCriteria
+            when (requests.size) {
+                // 第一片段：第 1 页完整消费（真实耗时用于证明 elapsedMs 不丢首段），第 2 页 3 次失败。
+                1 -> {
+                    Thread.sleep(60)
+                    pageOf(100, "C2")
+                }
+                in 2..4 -> throw ResourceAccessException("Read timed out", SocketTimeoutException("Read timed out"))
+                // 回访：消费第 2 页，再翻到空页穷尽。
+                5 -> pageOf(100, "C3", offset = 100)
+                else -> pageOf(0, null, offset = 200)
+            }
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val captured = mutableListOf<TaskProgress>()
+        DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(6, requests.size)
+        assertEquals(1_000, sourceStats?.runBudget, "恢复不重新分配来源份额")
+        assertEquals(200, sourceStats?.papersSearched, "两页 200 篇，绝不重复累加第一片段")
+        assertEquals(200L, storedRowFor("OPENALEX", criteria).papersProcessedTotal, "累计检查点只增 200")
+        assertEquals(DiscoveryStopReason.EXHAUSTED, sourceStats?.stopReason)
+        assertTrue(sourceStats!!.elapsedMs >= 60, "elapsedMs 必须累加首段而不是被恢复片段覆盖：${sourceStats.elapsedMs}")
+        assertEquals(
+            listOf(1, 2),
+            captured.filter { it.batchNumber > 0 }.map { it.batchNumber },
+            "跨来源/跨片段回访的批次号必须唯一递增"
+        )
+        assertEquals(200, result.stats.totalPapers)
+    }
+
+    @Test
+    fun `a recovery that cannot fit the global paper cap sends no request and keeps the entry (I-3, I-7)`() {
+        val time = FakeTime()
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 200, maxAuthorsPerRun = 2_000, includeRawScan = false
+            ),
+            timeSource = time
+        )
+        val criteria = PaperSearchCriteria(sources = listOf("OPENALEX", "CROSSREF"))
+        stubStoredCheckpoint("OPENALEX", "C7", criteria)
+        val openAlex = mockOpenAlex()
+        val openAlexRequests = mutableListOf<PaperSearchCriteria>()
+        Mockito.doAnswer { invocation ->
+            openAlexRequests += invocation.getArgument(0) as PaperSearchCriteria
+            throw ResourceAccessException(
+                "handshake interrupted",
+                SSLHandshakeException("Remote host terminated the handshake")
+            )
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val crossref = Mockito.mock(CrossrefDataSource::class.java)
+        stubSource(crossref, "CROSSREF")
+        Mockito.doReturn(crossref).`when`(crossrefProvider).getIfAvailable()
+        DiscoveryMockHelper.stubMaxPapersPerSource(crossref, 200)
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(crossref, "NO_EMAIL_IN_FULLTEXT")
+        val crossrefRequests = mutableListOf<PaperSearchCriteria>()
+        Mockito.doAnswer { invocation ->
+            crossrefRequests += invocation.getArgument(0) as PaperSearchCriteria
+            if (crossrefRequests.size == 1) pageOf(100, "NEXT", offset = 100) else pageOf(100, null, offset = 200)
+        }.`when`(crossref).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+
+        val result = svc.discover(criteria, "TEST", includeRawScan = false)
+
+        assertEquals(3, openAlexRequests.size, "全局论文上限已满时不得发出恢复回访请求")
+        assertEquals(200, result.stats.totalPapers)
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(DiscoveryStopReason.GLOBAL_PAPER_LIMIT, sourceStats?.stopReason, "到界必须给真实停止原因")
+        assertEquals(0, sourceStats?.sourceFailureCount, "等待中被打断不算搜索终止失败")
+        assertTrue(sourceStats?.pendingWork == true, "保留可续跑工作，不冒充穷尽")
+        assertEquals(1, result.stats.pendingSources)
+        assertEquals(0, result.stats.sourceFailures)
+        val decoded = storedCheckpointFor("OPENALEX", criteria)
+        assertEquals("C7", decoded.cursor)
+        assertFalse(decoded.exhausted)
+        assertNull(sourceStats?.retry?.nextRetryAt, "到界后清空计划时间，保留轮次/原因")
+        assertEquals(1, sourceStats?.retry?.round)
+    }
+
+    @Test
+    fun `OpenAlex recovery observes cancellation during the wait and sends no further request (I-7)`() {
+        val time = FakeTime(realSleepMillisPerSlice = 5L)
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+            ),
+            timeSource = time
+        )
+        val criteria = PaperSearchCriteria(cursor = "C7")
+        stubStoredCheckpoint("OPENALEX", "C7", criteria)
+        val openAlex = mockOpenAlex()
+        val cancelled = AtomicBoolean(false)
+        val calls = AtomicInteger()
+        Mockito.doAnswer { cancelled.get() }.`when`(progressStore).isCancelled(Mockito.anyString())
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            throw ResourceAccessException(
+                "handshake interrupted",
+                SSLHandshakeException("Remote host terminated the handshake")
+            )
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val resultRef = AtomicReference<DiscoveryResult>()
+        val worker = Thread { resultRef.set(svc.discover(criteria, "TEST")) }
+        worker.start()
+        Thread.sleep(400)
+        cancelled.set(true)
+        worker.join(5_000)
+
+        assertFalse(worker.isAlive)
+        assertEquals(3, calls.get(), "取消后不得再发出恢复回访请求")
+        val stats = resultRef.get().stats
+        assertEquals(DiscoveryStopReason.CANCELLED, stats.bySource["OPENALEX"]?.stopReason)
+        assertEquals(0, stats.bySource["OPENALEX"]?.sourceFailureCount)
+        assertTrue(stats.bySource["OPENALEX"]?.pendingWork == true)
+        assertEquals("C7", storedCheckpointFor("OPENALEX", criteria).cursor)
+        assertEquals(1, stats.bySource["OPENALEX"]?.retry?.round)
+        assertNull(stats.bySource["OPENALEX"]?.retry?.nextRetryAt, "取消后清空计划时间")
+    }
+
+    @Test
+    fun `OpenAlex recovery stops at the run deadline without another request (I-7)`() {
+        val time = FakeTime()
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false,
+                timeBudget = Duration.ofSeconds(10)
+            ),
+            timeSource = time
+        )
+        val criteria = PaperSearchCriteria(cursor = "C7")
+        stubStoredCheckpoint("OPENALEX", "C7", criteria)
+        val openAlex = mockOpenAlex()
+        val calls = AtomicInteger()
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            throw ResourceAccessException(
+                "handshake interrupted",
+                SSLHandshakeException("Remote host terminated the handshake")
+            )
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        assertEquals(3, calls.get(), "时间预算不足时不等完退避、也不发下一次请求")
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(DiscoveryStopReason.TIME_BUDGET, sourceStats?.stopReason)
+        assertEquals(0, sourceStats?.sourceFailureCount)
+        assertTrue(sourceStats?.pendingWork == true)
+        assertEquals("C7", storedCheckpointFor("OPENALEX", criteria).cursor)
+        assertNull(sourceStats?.retry?.nextRetryAt)
+        assertEquals(0, result.stats.sourceFailures)
+    }
+
+    @Test
+    fun `a budget deferral during recovery cancels the scheduled network retry (I-8)`() {
+        val time = FakeTime()
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+            ),
+            timeSource = time
+        )
+        val criteria = PaperSearchCriteria(cursor = "C7")
+        stubStoredCheckpoint("OPENALEX", "C7", criteria)
+        val openAlex = mockOpenAlex()
+        val calls = AtomicInteger()
+        Mockito.doAnswer {
+            calls.incrementAndGet()
+            if (calls.get() <= 3) {
+                throw ResourceAccessException(
+                    "handshake interrupted",
+                    SSLHandshakeException("Remote host terminated the handshake")
+                )
+            }
+            // 回访时账本延期（429/余额不足同路）：不得进入 30/120/300 秒网络恢复。
+            throw OpenAlexBudgetDeferredException(Instant.parse("2026-09-28T06:00:00Z"))
+        }.`when`(openAlex).searchPapers(Mockito.any<PaperSearchCriteria>() ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        assertEquals(4, calls.get(), "额度延期必须撤销已安排的网络回访")
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(DiscoveryStopReason.BUDGET_DEFERRED, sourceStats?.stopReason)
+        assertEquals(0, sourceStats?.sourceFailureCount, "额度延期不是搜索终止失败")
+        assertEquals("C7", storedCheckpointFor("OPENALEX", criteria).cursor)
+        assertNull(sourceStats?.retry, "延期后不残留待执行的重试观察对象")
+        assertEquals(0, result.stats.sourceFailures)
+    }
+
+    @Test
+    fun `recovery groups are not reset by a consumed page and the wait survives the promotion projection (I-1, I-5, X-3)`() {
+        val time = FakeTime()
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 1_000, maxAuthorsPerRun = 2_000, includeRawScan = false
+            ),
+            timeSource = time
+        )
+        val criteria = PaperSearchCriteria(cursor = "C1")
+        stubStoredCheckpoint("OPENALEX", "C1", criteria)
+        val openAlex = mockOpenAlex()
+        DiscoveryMockHelper.stubMaxPapersPerSource(openAlex, 1_000)
+        DiscoveryMockHelper.stubExtractAuthorEmailsEmpty(openAlex, "NO_EMAIL_IN_FULLTEXT")
+        val requests = mutableListOf<PaperSearchCriteria>()
+        val requestTimes = mutableListOf<Instant>()
+        Mockito.doAnswer { invocation ->
+            requests += invocation.getArgument(0) as PaperSearchCriteria
+            requestTimes += time.now()
+            when (requests.size) {
+                in 1..3, in 5..7 -> throw ResourceAccessException(
+                    "handshake interrupted",
+                    SSLHandshakeException("Remote host terminated the handshake")
+                )
+                4 -> pageOf(100, "C2")
+                8 -> pageOf(100, null, offset = 100)
+                else -> pageOf(0, null, offset = 200)
+            }
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+        val captured = mutableListOf<TaskProgress>()
+        DiscoveryMockHelper.captureProgressUpdates(progressStore, captured)
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        val sourceStats = result.stats.bySource["OPENALEX"]
+        assertEquals(8, requests.size, "两组恢复各自 3 次短尝试 + 1 次成功")
+        assertEquals(200, sourceStats?.papersSearched)
+        assertEquals(DiscoveryStopReason.EXHAUSTED, sourceStats?.stopReason)
+        assertEquals(
+            listOf(1, 2),
+            captured.mapNotNull { retryOf(it, "OPENALEX")?.get("round") as? Int }.distinct(),
+            "恢复组额度不因成功一页而重置"
+        )
+        assertEquals(
+            listOf(30_000L, 120_000L),
+            listOf(
+                Duration.between(requestTimes[2], requestTimes[3]).toMillis(),
+                Duration.between(requestTimes[6], requestTimes[7]).toMillis()
+            ),
+            "第二组必须用列表里的第二个间隔，而不是退回 30 秒"
+        )
+
+        // X-3：晋升读投影会改 summaryText 里的数字，但不得删掉等待提示。
+        val waitEvent = captured.single { it.message?.contains("等待恢复 1/3") == true }
+        val projected = promotionProjection().refresh(waitEvent)
+        assertEquals(1, projected.details!!["promoted"], "投影必须真的改写了数字，否则本用例证明不了什么")
+        val projectedSummary = projected.details!!["summaryText"].toString()
+        assertTrue(projectedSummary.contains("OPENALEX 收录 0/晋升 1"), projectedSummary)
+        assertTrue(projectedSummary.contains("等待恢复 1/3（原因 REMOTE_TLS_HANDSHAKE）"), projectedSummary)
+        assertTrue(projected.message!!.contains("等待恢复 1/3"), projected.message!!)
+    }
+
+    @Test
+    fun `OpenAlex recovery keeps a null page entry as the first page (I-2)`() {
+        val time = FakeTime()
+        val svc = createService(
+            ExpertDiscoveryProperties(
+                enabled = true, maxPapersPerRun = 300, maxAuthorsPerRun = 2_000, includeRawScan = false
+            ),
+            timeSource = time
+        )
+        val criteria = PaperSearchCriteria()
+        installInMemoryCursorStore()
+        val openAlex = mockOpenAlex()
+        val requests = mutableListOf<PaperSearchCriteria>()
+        val page = PaperSearchResult(listOf(paper("OA-1", "First page").copy(source = "OPENALEX")), null, 1)
+        Mockito.doAnswer { invocation ->
+            requests += invocation.getArgument(0) as PaperSearchCriteria
+            if (requests.size <= 3) {
+                throw ResourceAccessException(
+                    "handshake interrupted",
+                    SSLHandshakeException("Remote host terminated the handshake")
+                )
+            }
+            page
+        }.`when`(openAlex).searchPapers(Mockito.any(PaperSearchCriteria::class.java) ?: PaperSearchCriteria())
+
+        val (result, _) = runAndCapture(svc, criteria)
+
+        assertEquals(4, requests.size)
+        assertTrue(requests.all { it.cursor == null }, "待恢复游标为 null 是合法的「第一页」，不得用别的值替代")
+        assertEquals(1, result.stats.bySource["OPENALEX"]?.papersSearched)
+        assertTrue(storedCheckpointFor("OPENALEX", criteria).exhausted)
     }
 
     @Test
@@ -4309,6 +4878,8 @@ class ExpertDiscoveryServiceTest {
         assertEquals(2, result.stats.rawWriteFailed)
         assertEquals(1, result.stats.pendingSources)
         assertEquals(DiscoveryStopReason.RAW_WRITE_INCOMPLETE, result.stats.bySource["EUROPE_PMC"]?.stopReason)
+        // I-1/I-2：消费类错误（RAW 写入失败）保留进入页游标重放，但绝不进入搜索延迟恢复组。
+        assertNull(result.stats.bySource["EUROPE_PMC"]?.retry)
     }
 
     @Test

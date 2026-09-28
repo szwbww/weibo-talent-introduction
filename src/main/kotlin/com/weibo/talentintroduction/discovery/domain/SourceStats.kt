@@ -7,6 +7,22 @@ package com.weibo.talentintroduction.discovery.domain
  */
 enum class SourceUnit { PAPER, RECORD }
 
+/**
+ * I-5：来源的**重试观察对象**。它只作观察：随 `details_json`/`result_summary` 序列化给运营端看，
+ * 不用于启动恢复、不写专家 ES、也不是第二份恢复依据（恢复只用本轮内存中的上下文）。
+ *
+ * - [round] 是已安排的延迟恢复组序号（1..[maxRounds]）；
+ * - [nextRetryAt] 是 ISO-8601 UTC 的计划重试时刻，**非空表示仍待执行**；真正开始、取消、超时或
+ *   结束都会把它清空（轮次与原因保留用于审计）；
+ * - [reason] 是脱敏错误码（`REMOTE_TLS_HANDSHAKE`/`TIMEOUT`/`NETWORK_IO`/`HTTP_5xx`），不含 URL 或密钥。
+ */
+data class SourceRetryState(
+    val round: Int,
+    val maxRounds: Int,
+    val nextRetryAt: String?,
+    val reason: String
+)
+
 data class SourceStats(
     val sourceName: String,
     val extractionMethod: String,
@@ -43,5 +59,7 @@ data class SourceStats(
     /** c9（I-1）：本源本次运行的计量单位，汇总时据此把论文数与 ORCID 记录数分列。 */
     var unit: SourceUnit = SourceUnit.PAPER,
     /** I-1: 本次运行的停止原因，取值见 DiscoveryStopReason。 */
-    var stopReason: String? = null
+    var stopReason: String? = null,
+    /** I-5: 唯一的重试观察对象（等待时的轮次/计划时间/原因）；null 表示本源本轮没有待恢复项。 */
+    var retry: SourceRetryState? = null
 )
