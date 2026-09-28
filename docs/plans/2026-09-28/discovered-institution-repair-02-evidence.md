@@ -53,6 +53,7 @@
 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt` | 签发/拒签 |
 | `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchServiceTest.kt` | 缺失/存在读取 |
 | `src/test/kotlin/com/weibo/talentintroduction/campaign/OperatorStatusWriteSeamGuardTest.kt` | 若搜索文件移行，仅改排除清单行号 |
+| `src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexServiceTest.kt` | A1：mapping 新增字段致 RAW 顶层属性计数变化时，仅按语义更新计数期望（36→37）与紧邻注释，断言与语义不变 |
 
 ## 验收标准
 
