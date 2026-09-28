@@ -1,0 +1,1996 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ----------------< com.weibo:weibo-talent-introduction >-----------------
+[INFO] Building weibo-talent-introduction 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ war ]---------------------------------
+[INFO] 
+[INFO] --- resources:3.2.0:resources (default-resources) @ weibo-talent-introduction ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Using 'UTF-8' encoding to copy filtered properties files.
+[INFO] Copying 1 resource
+[INFO] Copying 164 resources
+[INFO] 
+[INFO] --- compiler:3.10.1:compile (default-compile) @ weibo-talent-introduction ---
+[INFO] No sources to compile
+[INFO] 
+[INFO] --- kotlin:1.9.25:compile (compile) @ weibo-talent-introduction ---
+[WARNING] Source root doesn't exist: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/java
+[INFO] Applied plugin: 'spring'
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchEmailVerificationService.kt: (183, 9) Parameter 'context' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt: (348, 13) Variable 'taskDescription' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt: (636, 9) Parameter 'sendType' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt: (637, 9) Parameter 'mode' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendControlService.kt: (638, 9) Parameter 'returnToPausedAfterOneRound' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachService.kt: (1451, 25) Parameter 'total' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/campaign/service/OperatorStatusReconcileService.kt: (255, 10) Unnecessary safe call on a non-null receiver of type ResponseEntity<JsonNode!>!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/config/OpenAlexRequestPolicy.kt: (820, 74) Parameter 'targetUrl' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/config/RetryingClientHttpRequestInterceptor.kt: (46, 40) Parameter 'e' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt: (123, 41) Variable 'execution' initializer is redundant
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/controller/ExpertDiscoveryController.kt: (212, 41) Variable 'execution' initializer is redundant
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt: (1074, 96) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt: (1195, 90) Unnecessary non-null assertion (!!) on a non-null receiver of type Instant
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: (360, 35) Variable 'terminalStatusOfRun' initializer is redundant
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: (670, 45) Variable 'batch' initializer is redundant
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: (676, 37) Unnecessary safe call on a non-null receiver of type CoreDataSource.CoreSearchPage?
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: (708, 25) The value 'true' assigned to 'var circuitBreakerTripped: Boolean defined in com.weibo.talentintroduction.discovery.service.ExpertDiscoveryService.discoverFromSource' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: (886, 55) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: (1152, 59) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: (1362, 29) Variable 'enqueueFailed' initializer is redundant
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: (1933, 52) Parameter 'paper' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: (2956, 27) Unnecessary safe call on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt: (3013, 68) Unchecked cast: Map<*, *>! to Map<String, Any?>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt: (241, 37) Unnecessary safe call on a non-null receiver of type String!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt: (139, 19) Variable 'index' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateOperatorStatusSyncService.kt: (20, 30) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/expert/service/CandidateOperatorStatusSyncService.kt: (20, 62) Elvis operator (?:) always returns the left operand of non-nullable type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt: (746, 17) Variable 'totalHits' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt: (928, 81) Unchecked cast: Any? to Map<String, Any>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt: (146, 50) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt: (202, 17) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt: (408, 50) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt: (411, 50) Elvis operator (?:) always returns the left operand of non-nullable type LocalDateTime
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyContextBuilder.kt: (40, 35) Unnecessary safe call on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyContextBuilder.kt: (51, 33) Unnecessary safe call on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyContextBuilder.kt: (68, 46) Unnecessary safe call on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (685, 38) Unnecessary safe call on a non-null receiver of type ClaimValidationResult?
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (704, 9) Parameter 'inboundText' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (862, 9) Parameter 'inboundText' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1287, 32) Variable 'freeFormCallCount' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1379, 30) Variable 'callCount' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1775, 9) Parameter 'budget' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1776, 9) Parameter 'cancellationToken' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1777, 9) Parameter 'progressReporter' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1842, 9) Parameter 'operatorTurns' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1843, 9) Parameter 'lastDraft' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1844, 9) Parameter 'inboundText' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1845, 9) Parameter 'expertProfile' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1846, 9) Parameter 'mailHistory' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1847, 9) Parameter 'operatorInstruction' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (1852, 9) Parameter 'allowedActions' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (2068, 17) The value 'AiReplyActionPolicy.findViolations(text, allowedActions)' assigned to 'var violations: List<ActionViolation> defined in com.weibo.talentintroduction.llm.service.AiReplyDraftService.enforceActionPolicy' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (2134, 9) Parameter 'plan' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (2459, 31) There is more than one label with such a name in this scope
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftService.kt: (2464, 35) There is more than one label with such a name in this scope
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyGroundedContentPlanner.kt: (191, 58) There is more than one label with such a name in this scope
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyGroundedContentPlanner.kt: (258, 51) There is more than one label with such a name in this scope
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyIntentCatalog.kt: (398, 13) Variable 'asksAdvisoryDuration' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyIntentCatalog.kt: (736, 17) Variable 'allRequired' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/AiReplyLetterOrchestrator.kt: (363, 51) There is more than one label with such a name in this scope
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt: (1687, 58) Parameter 'index' is never used, could be renamed to _
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt: (2794, 13) Variable 'bodyById' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt: (2994, 30) Parameter 'item' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchStateStore.kt: (208, 40) Parameter 'message' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt: (582, 34) Parameter 'username' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt: (582, 52) Parameter 'filter' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt: (194, 45) Unnecessary non-null assertion (!!) on a non-null receiver of type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferService.kt: (212, 67) Unnecessary non-null assertion (!!) on a non-null receiver of type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt: (174, 40) Parameter 'now' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorker.kt: (225, 52) Elvis operator (?:) always returns the left operand of non-nullable type Long?
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt: (204, 13) Variable 'accountCode' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/GroundedAutoReplyDecisionService.kt: (214, 98) Unnecessary non-null assertion (!!) on a non-null receiver of type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapAttachmentContentFetcher.kt: (175, 15) Variable 'index' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/MailAttachmentService.kt: (183, 21) Variable 'rowId' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt: (22, 43) Unnecessary safe call on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt: (23, 47) Unnecessary safe call on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/MailVariableService.kt: (57, 49) Unnecessary safe call on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt: (240, 90) Elvis operator (?:) always returns the left operand of non-nullable type List<String>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt: (255, 37) Unnecessary safe call on a non-null receiver of type MailRecord?
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailService.kt: (258, 33) Unnecessary safe call on a non-null receiver of type MailRecord?
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt: (264, 21) Elvis operator (?:) always returns the left operand of non-nullable type VerifiedTrustReplyAssembly
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt: (311, 13) Variable 'primaryRuleId' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt: (1185, 9) Parameter 'finalTextBody' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt: (1342, 9) Parameter 'contact' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt: (51, 44) Unnecessary safe call on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/rag/service/RagPromptConfigService.kt: (357, 16) 'put(String!, JsonNode!): JsonNode!' is deprecated. Deprecated in Java
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/rag/service/RagPromptConfigService.kt: (358, 16) 'put(String!, JsonNode!): JsonNode!' is deprecated. Deprecated in Java
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/rag/service/RagPromptConfigService.kt: (360, 15) 'put(String!, JsonNode!): JsonNode!' is deprecated. Deprecated in Java
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/rag/service/RagPromptConfigService.kt: (361, 15) 'put(String!, JsonNode!): JsonNode!' is deprecated. Deprecated in Java
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/task/service/BatchSendScheduler.kt: (68, 50) Type mismatch: inferred type is ScheduledFuture<*>? but ScheduledFuture<*> was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/main/kotlin/com/weibo/talentintroduction/template/service/MailComposeTemplateService.kt: (264, 9) Parameter 'variantSeed' is never used
+[INFO] 
+[INFO] --- resources:3.2.0:testResources (default-testResources) @ weibo-talent-introduction ---
+[INFO] Using 'UTF-8' encoding to copy filtered resources.
+[INFO] Using 'UTF-8' encoding to copy filtered properties files.
+[INFO] Copying 23 resources
+[INFO] 
+[INFO] --- compiler:3.10.1:testCompile (default-testCompile) @ weibo-talent-introduction ---
+[INFO] Changes detected - recompiling the module!
+[INFO] Compiling 2 source files to /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/target/test-classes
+[INFO] 
+[INFO] --- kotlin:1.9.25:test-compile (test-compile) @ weibo-talent-introduction ---
+[INFO] Applied plugin: 'spring'
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt: (65, 33) 'constructor KotlinModule(Int = ..., Boolean = ..., Boolean = ..., Boolean = ..., SingletonSupport = ..., Boolean = ...)' is deprecated. Use KotlinModule.Builder instead of named constructor parameters.
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt: (334, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type String!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt: (349, 26) Type mismatch: inferred type is Long? but Long was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt: (455, 26) Type mismatch: inferred type is Long? but Long was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt: (456, 26) Type mismatch: inferred type is Long? but Long was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/campaign/controller/MeetingCalendarControllerTest.kt: (461, 26) Type mismatch: inferred type is Long? but Long was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/campaign/repository/FlywayMigrationIntegrationTest.kt: (1995, 50) Parameter 'table' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt: (6051, 67) Elvis operator (?:) always returns the left operand of non-nullable type Boolean
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt: (601, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type String!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt: (774, 26) Type mismatch: inferred type is Long? but Long was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/campaign/service/MeetingCalendarServiceTest.kt: (888, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type String!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/config/SchedulingConfigTest.kt: (16, 20) Check for instance is always 'true'
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt: (327, 26) Type mismatch: inferred type is Int? but Int was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepositoryIT.kt: (406, 25) Type mismatch: inferred type is Int? but Int was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/repository/OpenAlexBudgetRepositoryIT.kt: (177, 13) Type mismatch: inferred type is Long? but Long was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/repository/OpenAlexBudgetRepositoryIT.kt: (185, 13) Type mismatch: inferred type is Long? but Long was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/repository/OpenAlexBudgetRepositoryIT.kt: (481, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/repository/OpenAlexBudgetRepositoryIT.kt: (496, 117) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/service/ArxivDataSourceTest.kt: (67, 17) The expression is unused
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt: (47, 17) The expression is unused
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/service/CrossrefDataSourceTest.kt: (133, 17) The expression is unused
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt: (2055, 13) Variable 'blocked' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt: (551, 13) 'put(String!, JsonNode!): JsonNode!' is deprecated. Deprecated in Java
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt: (563, 13) 'put(String!, JsonNode!): JsonNode!' is deprecated. Deprecated in Java
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt: (564, 13) 'put(String!, JsonNode!): JsonNode!' is deprecated. Deprecated in Java
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt: (1693, 9) Name contains characters which can cause problems on Windows: *
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt: (1756, 61) Unchecked cast: Any! to Map<String, Any?>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt: (4396, 21) Variable 'email' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryServiceTest.kt: (5230, 67) Elvis operator (?:) always returns the left operand of non-nullable type LocalDateTime
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentAnalysisServiceTest.kt: (28, 83) Unchecked cast: ObjectProvider<*>! to ObjectProvider<LlmDraftClient>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseServiceTest.kt: (222, 13) Variable 'att' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseServiceTest.kt: (234, 13) Variable 'att' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertDocumentBrowseServiceTest.kt: (342, 13) Variable 'att' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialServiceTest.kt: (811, 13) Variable 'candidates' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationBackfillServiceTest.kt: (308, 76) Unchecked cast: Any? to Map<String, Any>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftServiceTest.kt: (3520, 13) Variable 'gapItems' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftServiceTest.kt: (4115, 28) Parameter 'request' is never used, could be renamed to _
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftServiceTest.kt: (4415, 40) Parameter 'extracted' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyDraftServiceTest.kt: (4660, 32) Parameter 'inbound' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyGenerationCoordinatorTest.kt: (274, 41) Parameter 'mediaType' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyHighRiskClaimValidatorTest.kt: (31, 13) Variable 'sections' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyHighRiskClaimValidatorTest.kt: (36, 13) Variable 'facts' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyHighRiskClaimValidatorTest.kt: (278, 13) Variable 'sections' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/AiReplyHighRiskClaimValidatorTest.kt: (283, 13) Variable 'facts' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/AiTrainingQaSeederTest.kt: (75, 51) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/HttpLlmDraftClientTest.kt: (303, 63) Unchecked cast: HttpResponse<*>! to HttpResponse<InputStream>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/HttpLlmDraftClientTest.kt: (642, 63) Unchecked cast: HttpResponse<*>! to HttpResponse<InputStream>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/HttpLlmDraftClientTest.kt: (767, 63) Unchecked cast: HttpResponse<*>! to HttpResponse<InputStream>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/HttpLlmDraftClientTest.kt: (777, 63) Unchecked cast: HttpResponse<*>! to HttpResponse<InputStream>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchItemFlowTest.kt: (2036, 28) Parameter 'fixture' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (614, 98) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (614, 124) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (647, 31) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (648, 31) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (726, 98) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (726, 124) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (750, 31) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (751, 31) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (789, 98) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (789, 124) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (805, 31) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (806, 31) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (982, 31) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (983, 31) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (1039, 98) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (1039, 124) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (2157, 98) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (2157, 124) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (3158, 98) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (3158, 124) Elvis operator (?:) always returns the left operand of non-nullable type Long
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (3338, 13) Variable 'perRequest1' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchServiceTest.kt: (3474, 69) Unchecked cast: ObjectProvider<*>! to ObjectProvider<LlmDraftClient>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationControllerTest.kt: (668, 52) Unnecessary safe call on a non-null receiver of type Map<*, *>?
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationControllerTest.kt: (689, 52) Unnecessary safe call on a non-null receiver of type Map<*, *>?
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailAutomationControllerTest.kt: (694, 52) Unnecessary safe call on a non-null receiver of type Map<*, *>?
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt: (137, 33) 'constructor KotlinModule(Int = ..., Boolean = ..., Boolean = ..., Boolean = ..., SingletonSupport = ..., Boolean = ...)' is deprecated. Use KotlinModule.Builder instead of named constructor parameters.
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt: (1217, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt: (1233, 14) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt: (1250, 14) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt: (1260, 14) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt: (1315, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt: (1852, 14) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt: (1869, 14) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt: (1879, 14) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationControllerTest.kt: (1935, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundTrustWorkbenchTest.kt: (383, 13) Variable 'request' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepositoryIT.kt: (79, 25) Type mismatch: inferred type is Int? but Int was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepositoryIT.kt: (102, 25) Type mismatch: inferred type is Int? but Int was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepositoryIT.kt: (112, 25) Type mismatch: inferred type is Int? but Int was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepositoryIT.kt: (124, 25) Type mismatch: inferred type is Int? but Int was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepositoryIT.kt: (175, 73) Unnecessary safe call on a non-null receiver of type LocalDateTime!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (329, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (335, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type String!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (353, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type Int!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (452, 31) Unnecessary non-null assertion (!!) on a non-null receiver of type String!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (512, 26) Type mismatch: inferred type is Long? but Long was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (546, 26) Type mismatch: inferred type is Long? but Long was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (809, 26) Type mismatch: inferred type is Long? but Long was expected
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (823, 29) Unnecessary non-null assertion (!!) on a non-null receiver of type String!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (873, 32) Unnecessary non-null assertion (!!) on a non-null receiver of type String!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (1110, 31) Unnecessary non-null assertion (!!) on a non-null receiver of type String!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (1337, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type Long!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (1665, 9) Parameter 'reader' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (1751, 38) Unnecessary non-null assertion (!!) on a non-null receiver of type FixturePart
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerIT.kt: (1752, 38) Unnecessary non-null assertion (!!) on a non-null receiver of type FixturePart
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AttachmentTransferWorkerLifecycleTest.kt: (28, 34) 'constructor ApplicationReadyEvent(SpringApplication!, Array<(out) String!>!, ConfigurableApplicationContext!)' is deprecated. Deprecated in Java
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt: (2340, 21) Variable 'alias' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyServiceTest.kt: (2391, 21) Variable 'alias' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyServiceTest.kt: (378, 25) Parameter 'invocation' is never used, could be renamed to _
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/BatchAutoMailReplyServiceTest.kt: (384, 25) Parameter 'invocation' is never used, could be renamed to _
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveServiceTest.kt: (528, 25) No cast needed
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveServiceTest.kt: (551, 25) No cast needed
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt: (139, 13) Variable 'box' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/ImapMetadataFetchIT.kt: (189, 13) Variable 'box' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt: (137, 71) Unchecked cast: Class<Map<*, *>> to Class<Map<String, String>>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt: (202, 71) Unchecked cast: Class<Map<*, *>> to Class<Map<String, String>>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt: (267, 71) Unchecked cast: Class<Map<*, *>> to Class<Map<String, String>>
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt: (529, 30) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt: (552, 30) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt: (553, 30) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/IntroductionMailComposerTest.kt: (585, 29) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/MailInboxCursorServiceTest.kt: (53, 13) Variable 'captor' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/MailSenderAccountServiceTest.kt: (1154, 9) Parameter 'accountCode' is never used
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceGateTest.kt: (220, 38) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceGateTest.kt: (221, 37) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceGateTest.kt: (224, 30) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/ManualExpertMailServiceGateTest.kt: (228, 37) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/MeetingCalendarSendIntegrationTest.kt: (607, 10) Unnecessary non-null assertion (!!) on a non-null receiver of type String!
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/OutboundAttachmentServiceTest.kt: (395, 35) Unnecessary non-null assertion (!!) on a non-null receiver of type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountSelfCheckServiceTest.kt: (73, 50) Elvis operator (?:) always returns the left operand of non-nullable type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountSelfCheckServiceTest.kt: (73, 67) Elvis operator (?:) always returns the left operand of non-nullable type LocalDateTime
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountSelfCheckServiceTest.kt: (83, 40) Elvis operator (?:) always returns the left operand of non-nullable type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountSelfCheckServiceTest.kt: (83, 59) Elvis operator (?:) always returns the left operand of non-nullable type String
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/SenderAccountSelfCheckServiceTest.kt: (83, 76) Elvis operator (?:) always returns the left operand of non-nullable type LocalDateTime
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/mail/service/SmtpMailDeliveryServiceTest.kt: (929, 20) Check for instance is always 'true'
+[WARNING] /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/kotlin/com/weibo/talentintroduction/qa/service/QaMatchServiceTest.kt: (32, 29) Parameter 'mainBody' is never used
+[INFO] 
+[INFO] --- surefire:2.22.2:test (default-test) @ weibo-talent-introduction ---
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.weibo.talentintroduction.mail.controller.MailOpenTrackingControllerTest
+2026-09-28 10:43:13.724 [main] INFO  o.s.b.t.a.w.s.WebMvcTestContextBootstrapper - Neither @ContextConfiguration nor @ContextHierarchy found for test class [com.weibo.talentintroduction.mail.controller.MailOpenTrackingControllerTest], using SpringBootContextLoader
+2026-09-28 10:43:13.728 [main] INFO  o.s.t.c.s.AbstractContextLoader - Could not detect default resource locations for test class [com.weibo.talentintroduction.mail.controller.MailOpenTrackingControllerTest]: no resource found for suffixes {-context.xml, Context.groovy}.
+2026-09-28 10:43:13.728 [main] INFO  o.s.t.c.s.AnnotationConfigContextLoaderUtils - Could not detect default configuration classes for test class [com.weibo.talentintroduction.mail.controller.MailOpenTrackingControllerTest]: MailOpenTrackingControllerTest does not declare any static, non-private, non-final, nested classes annotated with @Configuration.
+2026-09-28 10:43:13.903 [main] INFO  o.s.b.t.c.SpringBootTestContextBootstrapper - Found @SpringBootConfiguration com.weibo.talentintroduction.TalentIntroductionApplication for test class com.weibo.talentintroduction.mail.controller.MailOpenTrackingControllerTest
+2026-09-28 10:43:13.905 [main] INFO  o.s.b.t.a.w.s.WebMvcTestContextBootstrapper - Loaded default TestExecutionListener class names from location [META-INF/spring.factories]: [org.springframework.boot.test.mock.mockito.MockitoTestExecutionListener, org.springframework.boot.test.mock.mockito.ResetMocksTestExecutionListener, org.springframework.boot.test.autoconfigure.restdocs.RestDocsTestExecutionListener, org.springframework.boot.test.autoconfigure.web.client.MockRestServiceServerResetTestExecutionListener, org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrintOnlyOnFailureTestExecutionListener, org.springframework.boot.test.autoconfigure.web.servlet.WebDriverTestExecutionListener, org.springframework.boot.test.autoconfigure.webservices.client.MockWebServiceServerTestExecutionListener, org.springframework.test.context.web.ServletTestExecutionListener, org.springframework.test.context.support.DirtiesContextBeforeModesTestExecutionListener, org.springframework.test.context.event.ApplicationEventsTestExecutionListener, org.springframework.test.context.support.DependencyInjectionTestExecutionListener, org.springframework.test.context.support.DirtiesContextTestExecutionListener, org.springframework.test.context.transaction.TransactionalTestExecutionListener, org.springframework.test.context.jdbc.SqlScriptsTestExecutionListener, org.springframework.test.context.event.EventPublishingTestExecutionListener]
+2026-09-28 10:43:13.916 [main] INFO  o.s.b.t.a.w.s.WebMvcTestContextBootstrapper - Using TestExecutionListeners: [org.springframework.test.context.web.ServletTestExecutionListener@2a39fe6a, org.springframework.test.context.support.DirtiesContextBeforeModesTestExecutionListener@410ae9a3, org.springframework.test.context.event.ApplicationEventsTestExecutionListener@319988b0, org.springframework.boot.test.mock.mockito.MockitoTestExecutionListener@d5ae57e, org.springframework.boot.test.autoconfigure.SpringBootDependencyInjectionTestExecutionListener@68759011, org.springframework.test.context.support.DirtiesContextTestExecutionListener@7e242b4d, org.springframework.test.context.transaction.TransactionalTestExecutionListener@305f031, org.springframework.test.context.jdbc.SqlScriptsTestExecutionListener@592e843a, org.springframework.test.context.event.EventPublishingTestExecutionListener@1d1f7216, org.springframework.boot.test.mock.mockito.ResetMocksTestExecutionListener@423e4cbb, org.springframework.boot.test.autoconfigure.restdocs.RestDocsTestExecutionListener@6e16b8b5, org.springframework.boot.test.autoconfigure.web.client.MockRestServiceServerResetTestExecutionListener@43b4fe19, org.springframework.boot.test.autoconfigure.web.servlet.MockMvcPrintOnlyOnFailureTestExecutionListener@25ddbbbb, org.springframework.boot.test.autoconfigure.web.servlet.WebDriverTestExecutionListener@1536602f, org.springframework.boot.test.autoconfigure.webservices.client.MockWebServiceServerTestExecutionListener@4ebea12c]
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+ :: Spring Boot ::               (v2.7.18)
+
+2026-09-28 10:43:14.377 [main] INFO  c.w.t.m.c.MailOpenTrackingControllerTest - Starting MailOpenTrackingControllerTest using Java 11.0.15 on lukaideMacBook-Pro.local with PID 7665 (started by lukai in /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter)
+2026-09-28 10:43:14.378 [main] INFO  c.w.t.m.c.MailOpenTrackingControllerTest - No active profile set, falling back to 1 default profile: "default"
+2026-09-28 10:43:17.021 [main] INFO  o.s.b.a.w.s.WelcomePageHandlerMapping - Adding welcome page: class path resource [static/index.html]
+2026-09-28 10:43:17.288 [main] INFO  o.s.b.t.m.w.SpringBootMockServletContext - Initializing Spring TestDispatcherServlet ''
+2026-09-28 10:43:17.288 [main] INFO  o.s.t.w.s.TestDispatcherServlet - Initializing Servlet ''
+2026-09-28 10:43:17.289 [main] INFO  o.s.t.w.s.TestDispatcherServlet - Completed initialization in 1 ms
+2026-09-28 10:43:17.320 [main] INFO  c.w.t.m.c.MailOpenTrackingControllerTest - Started MailOpenTrackingControllerTest in 3.358 seconds (JVM running for 5.113)
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.073 s - in com.weibo.talentintroduction.mail.controller.MailOpenTrackingControllerTest
+[INFO] Running com.weibo.talentintroduction.mail.service.MailOpenTrackingServiceTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.021 s - in com.weibo.talentintroduction.mail.service.MailOpenTrackingServiceTest
+[INFO] Running com.weibo.talentintroduction.mail.service.SmtpMailDeliveryServiceTest
+2026-09-28 10:43:18.263 [main] WARN  c.w.t.m.s.SmtpMailDeliveryService - Mail open tracking preparation unavailable: IllegalStateException
+[INFO] Tests run: 40, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.605 s - in com.weibo.talentintroduction.mail.service.SmtpMailDeliveryServiceTest
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 47, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] 
+[INFO] --- exec:3.1.0:exec (node-test) @ weibo-talent-introduction ---
+✔ actual account markup fills all settings and preserves shared source when saving (3.346875ms)
+✔ switching source restores independent inputs and required fields without erasing values (3.86225ms)
+✔ view mode remains read-only and missing source field cannot clear stored ownership (1.238084ms)
+✔ footer is outside the scrolling form and save still submits that form (0.1475ms)
+▶ trust workbench adopt send path (from app.js semantics)
+  ✔ sends only qaRuleIds without suggestedRuleIds authority fields (1.442583ms)
+  ✔ marks edited when operator changes adopted draft (0.088834ms)
+✔ trust workbench adopt send path (from app.js semantics) (2.323542ms)
+▶ adopt-direct-send UI contracts
+  ✔ shared completion has simulation and live adapters without a send call (0.896416ms)
+  ✔ live adapter adopts the same raw/rendered/hash assembly (1.334625ms)
+  ✔ HTML does not contain aiReplyReviewModal (0.354917ms)
+  ✔ app.js does not contain review-event or review confirmation payload (3.316334ms)
+  ✔ adopt button uses fixed label 采用此草稿 (0.414334ms)
+  ✔ has submitManualRichReply extracted function (0.189541ms)
+  ✔ send-manual-rich-reply calls submitManualRichReply directly (0.183209ms)
+  ✔ archive snapshot deep copies the canonical matrix and frame without claim fallback (0.38125ms)
+  ✔ preserves raw template across live adoption→send only when editor matches baseline (0.308792ms)
+  ✔ submitManualRichReply surfaces archive warnings without treating them as send failure (0.659583ms)
+  ✔ manual safety warnings require confirmation before a single retry (0.613792ms)
+  ✔ api() exposes response body as error.data (0.183208ms)
+  ✔ confirm-typed dialog schema validates exact 确认发送 input (0.690583ms)
+  ✔ warning labels cover the two new action codes (0.138458ms)
+  ✔ warning labels cover the four manual-send QA fact degradation codes (2.950625ms)
+  ✔ training host never constructs manual-rich-reply payload (16.9635ms)
+  ✔ send path has no section numbering gate after adopt (0.774333ms)
+  ✔ quality panel hides deprecated review metrics (0.202333ms)
+  ✔ send-manual-rich-reply does not gate on generationState or usedLlm (0.153541ms)
+  ✔ existing manual send handler structure preserved (0.409375ms)
+✔ adopt-direct-send UI contracts (33.262ms)
+▶ Phase 9 regression: existing tests
+  ✔ batchSendTaskConsoleVisualFix.test.js still exists and references unchanged (0.089208ms)
+✔ Phase 9 regression: existing tests (0.137375ms)
+▶ mergeExpertTagAggregations (P1-2)
+  ✔ includes CANDIDATE-only tags and sums duplicate counts (19.908334ms)
+✔ mergeExpertTagAggregations (P1-2) (23.517042ms)
+▶ loadAiTrainingTagOptions (P1-2)
+  ✔ loads CANDIDATE and APPLICATION aggregations into expertTagOptions (1.450125ms)
+✔ loadAiTrainingTagOptions (P1-2) (1.566334ms)
+▶ AI training unsupported answer index
+  ✔ uses the approved six-column read-only tab skeleton without new CSS (2.035625ms)
+  ✔ whitelists the panel and keeps optional ES loading out of the main loader (0.616ms)
+  ✔ loads only after activation and sends bounded filter and page parameters (2.475792ms)
+  ✔ lets a forced filter request supersede an in-flight request (3.745584ms)
+  ✔ escapes content, delegates translation per cell, and exposes no mutation actions (0.817291ms)
+  ✔ wires the topic filter and pending-topics view without new CSS (0.347916ms)
+  ✔ keeps evaluation saved while showing independent archive status (3.790542ms)
+✔ AI training unsupported answer index (19.575084ms)
+▶ auth state machine tests
+  ✔ checkAuth unauthenticated -> hides shell, shows login, clears watchers (48.471959ms)
+  ✔ checkAuth authenticated but needs change password -> hides shell, shows change password overlay (9.367084ms)
+  ✔ checkAuth authenticated and password changed -> shows shell, sets username, starts app (8.3635ms)
+  ✔ unauthenticated bootstrap: only /api/auth/me is called, no business data loading (118.904625ms)
+  ✔ mustChangePassword=true bootstrap: no business data loading (57.3355ms)
+  ✔ fully authenticated bootstrap: loads badge, polling, and default view once (54.993375ms)
+  ✔ repeated startAuthenticatedApp after bootstrap does not re-trigger badge or view (60.258833ms)
+✔ auth state machine tests (362.013334ms)
+▶ task activity observer teardown
+  ✔ checkAuth unauthenticated clears the observer (13.181625ms)
+  ✔ checkAuth mustChangePassword clears the observer (6.987291ms)
+  ✔ handleAuthResponse 401 clears the observer (7.501042ms)
+  ✔ handleAuthResponse 403 PASSWORD_CHANGE_REQUIRED clears the observer (12.772167ms)
+  ✔ explicit stopAuthenticatedApp clears the observer (4.038917ms)
+  ✔ unauthenticated bootstrap never starts the observer (59.81125ms)
+  ✔ authenticated bootstrap starts the observer once and repeated start keeps it single (62.903708ms)
+✔ task activity observer teardown (168.009708ms)
+▶ pre-auth init safety scan
+  ✔ bindEvents contains no network calls (5.353458ms)
+  ✔ initBulkAutoReply contains no network calls (0.400125ms)
+  ✔ initPollLogPanel contains no network calls (0.116375ms)
+  ✔ initLayoutResizer contains no network calls (0.099208ms)
+  ✔ bindAuthEvents contains no network calls (0.1555ms)
+✔ pre-auth init safety scan (6.327959ms)
+▶ auth function unit tests
+  ✔ handleAuthResponse intercepts 401 and stops app (9.10375ms)
+  ✔ handleAuthResponse intercepts 403 PASSWORD_CHANGE_REQUIRED and stops app (4.873ms)
+  ✔ stopAuthenticatedApp clears monitoring autoRefreshTimer (6.909875ms)
+  ✔ 401 after timer stops rescheduling (38.563292ms)
+  ✔ re-login only creates one timer (8.601709ms)
+  ✔ repeated startAuthenticatedApp does not recreate initialization chain (4.099584ms)
+  ✔ startAuthenticatedApp calls updateUnmatchedBadge on first start (8.917583ms)
+✔ auth function unit tests (81.2965ms)
+▶ AUTO_PREVIEW workbench host (retired in P1)
+  ✔ I-4: no retired identifier survives in app.js / index.html / styles.css (4.192959ms)
+  ✔ I-4: the degraded copy of the removed preview is gone too (0.399542ms)
+  ✔ I-4: app.js no longer calls the auto-reply-preview endpoint (0.898208ms)
+  ✔ I-5: unmountMailboxTrustReplyHosts survives as the single teardown seam (2.638917ms)
+  ✔ I-4: the LIVE workbench host is untouched (18.485375ms)
+✔ AUTO_PREVIEW workbench host (retired in P1) (44.388916ms)
+▶ batch email verification switch propagation (I-1 / S-1)
+  ✔ V1: editor save payload and recipient preview both carry the switch state (3.299541ms)
+  ✔ V2: MATERIAL_REMINDER disables the switch and forces it off (146.509708ms)
+  ✔ V3: switching back to an introduction template re-enables without turning it on (60.031292ms)
+  ✔ V4: the manual draft keeps the switch and reports it as a diff against the source (9.47575ms)
+  ✔ V5: the manual execution posts this run's switch and never rewrites the source config (14.183667ms)
+  ✔ V6: the confirm dialog shows this run's switch value (4.930958ms)
+  ✔ V7: the task row shows the verification pill next to the gate pill (4.926375ms)
+✔ batch email verification switch propagation (I-1 / S-1) (244.334125ms)
+▶ batch email verification detail area (I-2 / I-3 / I-4 / S-2)
+  ✔ V8: a snapshot without the switch reports 未启用邮箱验证 and never fabricates zeros (53.498041ms)
+  ✔ V9: an enabled run with no rows yet reports 尚未进入邮箱验证 (26.201542ms)
+  ✔ V10: the three cells come from the whole-execution aggregate and pending stays out of them (29.463334ms)
+  ✔ risky and unknown are displayed as policy permission with provider evidence (22.450334ms)
+  ✔ V11: PASS is not send success, SKIP keeps the provider verdict, ERROR is a service fault, tag failures are labelled (33.094125ms)
+  ✔ history reuse shows the original time, zero requests and escaped source id (27.276084ms)
+  ✔ V12: a still-SENDING row only becomes 结果未确认 once the run reaches a final state (23.894625ms)
+  ✔ V13: a pending row is never rendered as passed, and says so plainly after the run ends (40.562375ms)
+  ✔ V14: provider text is escaped, so a hostile reason cannot become markup (83.748541ms)
+  ✔ V15: next pushes a cursor and prev pops it, and each request carries afterId/limit (53.133959ms)
+  ✔ V16: polling never duplicates an in-flight page request and keeps the operator's page (38.142167ms)
+  ✔ V17: switching execution discards the previous in-flight page (30.408ms)
+  ✔ V18: a failed request reports the failure and never shows fabricated zeros (41.8715ms)
+  ✔ V19: expanded rows are remembered by id so polling keeps them open (50.594834ms)
+  ✔ V20: paging controls are locked while loading and at the cursor boundaries (38.192292ms)
+  ✔ V21: closing the drawer invalidates in-flight detail responses (25.4855ms)
+✔ batch email verification detail area (I-2 / I-3 / I-4 / S-2) (618.955375ms)
+▶ batch email verification static contract (S-1 / S-2 / I-5)
+  ✔ S1: both switches render the declared skeleton ids (0.395416ms)
+  ✔ S2: the drawer carries the declared detail area between the metrics and the integrity warning (0.403125ms)
+  ✔ S2: the appended stylesheet block is verbatim and the reused rules stay untouched (0.239834ms)
+  ✔ I5: every versioned static asset shares one release key (0.29425ms)
+  ✔ I5: the new area only reads — it never issues a write request of its own (1.29325ms)
+✔ batch email verification static contract (S-1 / S-2 / I-5) (2.747125ms)
+▶ verified-unavailable email filter UI (04-filter-ui)
+  ✔ uses the approved, keyboard-operable filter markup and real DOM ids (0.51175ms)
+  ✔ defaults new forms on, keeps missing source values off, and carries manual overrides only in the execution snapshot (17.072167ms)
+  ✔ uses the selected gate response's total and exclusion count without an additional request (11.495042ms)
+  ✔ renders the historical exclusion count when the template gate is unavailable and defaults a missing count to zero (3.191875ms)
+  ✔ uses the gate-off branch when selected and clears counts on error without accepting an older response (9.193708ms)
+✔ verified-unavailable email filter UI (04-filter-ui) (41.764209ms)
+▶ batch entry relocation (a3)
+  ✔ M-4: id=bulkOutreachBtn appears exactly once in index.html (0.696833ms)
+  ✔ I3-3: button sits inside the mailbox panel, between view-mailbox and view-inbound-summary (0.122542ms)
+  ✔ I3-2: both head buttons live in .panel-head-actions, 检查回复 before 批量发送 (0.295459ms)
+  ✔ I3-2: 自动回复 sits immediately after 批量发送 inside the same actions container (0.090333ms)
+  ✔ I3-2: button tag keeps class, onclick, and label verbatim (0.066125ms)
+  ✔ I3-1: contacts view region no longer contains the bulk outreach button (0.087959ms)
+  ✔ I3-1: nav tab for contacts shows 专家列表 (0.0805ms)
+  ✔ I3-1: viewMeta.contacts title is 专家列表 and the quad registration stays contacts (0.107125ms)
+✔ batch entry relocation (a3) (2.410833ms)
+▶ renderBatchTimeline (I-5 / S-1)
+  ✔ reads createdAt only and never references updatedAt or startedAt (7.870625ms)
+  ✔ renders INIT/FINAL rows with phase label and is-phase class (3.181792ms)
+  ✔ renders ROUND rows with batch label (30.80975ms)
+  ✔ renders a concrete time from createdAt for every row (9.986ms)
+  ✔ escapes message, stopReason and errors via escapeHtml (5.222459ms)
+  ✔ omits stop and error elements when absent (16.214416ms)
+  ✔ marks FAILED and CANCELLED rows as is-failed (4.913375ms)
+  ✔ shows muted empty state without inline styles (2.689541ms)
+  ✔ omits status element for INIT rows while running (I-1) (2.630917ms)
+  ✔ omits status element for ROUND rows while running (I-1) (4.856166ms)
+  ✔ keeps status element and Chinese label for terminal statuses (I-1) (3.4455ms)
+  ✔ never reads execution-level d.live or d.status (I-2) (3.748834ms)
+✔ renderBatchTimeline (I-5 / S-1) (98.820459ms)
+▶ renderIntegrityWarning (I-4)
+  ✔ hides warning while running or cancelling (3.68025ms)
+  ✔ shows warning in terminal state when counts disagree (2.675584ms)
+✔ renderIntegrityWarning (I-4) (6.460041ms)
+▶ statusLabel (S-2)
+  ✔ maps new statuses to Chinese labels (2.6115ms)
+  ✔ keeps existing mappings and fallbacks (2.532375ms)
+✔ statusLabel (S-2) (5.22725ms)
+▶ Batch ExpertType Filter (child 02)
+  ✔ registry registers both expert-type pickers with correct previewKind (2.465834ms)
+  ✔ batchExpertTypeOptions lists enum values plus UNCLASSIFIED with child-01 chip labels (2.004ms)
+  ✔ readBatchMultiPickerValue returns empty array for empty hidden input (2.171959ms)
+  ✔ editor preview snapshot payload includes expertTypes key (1.408666ms)
+  ✔ editor save payload includes expertTypes key (2.779959ms)
+  ✔ editor save allows empty expertTypes for MATERIAL_REMINDER (R1) (2.314625ms)
+  ✔ editor save still blocks empty expertTypes for INTRODUCTION with exact error (R1) (4.728334ms)
+  ✔ manual form values payload includes expertTypes key (2.096542ms)
+✔ Batch ExpertType Filter (child 02) (21.137ms)
+▶ batch log drawer layout
+  ✔ I-1: renderBatchConfigRow keeps exactly 7 <td> cells with 6 filter conditions (2.145ms)
+  ✔ I-1: scope cell is truncated at the array layer, never by character count (1.150333ms)
+  ✔ S-3: 4+ filters fold into exactly one details.log-detail.batch-task-scope-more with 展开剩余 N 项 (1.293042ms)
+  ✔ I-2: gate pill line stays after the </details> fold, never inside it (2.135792ms)
+  ✔ I-1/I-2: no <details> at 3 or fewer filters; 无限制 and pill still render at 0 (1.384416ms)
+  ✔ I-4: empty reasons/errorSamples hide the three exception sections but never the timeline (2.147042ms)
+  ✔ I-4: non-empty data keeps the three exception sections visible (1.378667ms)
+✔ batch log drawer layout (12.799875ms)
+▶ batch manual execution log drawer
+  ✔ confirmManualExecution without source calls openBatchExecutionLogs (I-6) (17.78325ms)
+  ✔ confirmManualExecution with source still calls openBatchConfigLogs(source.id) (I-6 regression) (2.828042ms)
+  ✔ openBatchExecutionLogs opens the recent-logs drawer with identity written first (I-4/S-2) (24.739ms)
+  ✔ openBatchExecutionLogs with no executionId degrades with a status message (2.40225ms)
+  ✔ loadBatchLogDetail uses the executions route for configId null (I-3 routing) (1.525834ms)
+  ✔ loadBatchLogDetail keeps the config route when configId is set (4.925791ms)
+  ✔ late response from an earlier open does not overwrite the current render (I-4) (5.228792ms)
+  ✔ switchBatchSendTab never tears down the log drawer (I2-2) (0.908208ms)
+  ✔ dropdown change dispatches by logMode so execution mode still reloads (I2-1) (1.972875ms)
+  ✔ renderBatchLiveSection hides the block when live is null (1.353833ms)
+  ✔ renderBatchLiveSection renders counts with estimated total and no fake percent (I-5) (1.541708ms)
+  ✔ renderBatchLiveSection with totalCount 0 shows no percent (I-5) (1.112583ms)
+  ✔ renderBatchLiveSection renders raw message and escapes accountCode (1.0185ms)
+  ✔ renderBatchLiveSection hides the cancel button when not cancellable (1.015625ms)
+  ✔ handleBatchLiveCancel posts to the executions cancel route only (I-2) (2.009333ms)
+  ✔ handleBatchLiveCancel declines when the user cancels the confirm (1.143625ms)
+  ✔ closeBatchLogDrawer hides the live block and cleans the timer (I-7) (2.49125ms)
+  ✔ only one setInterval handle exists for the log drawer (I-7) (9.681375ms)
+  ✔ renderBatchLiveSection writes no inline styles except the fill width (S-1) (0.821958ms)
+✔ batch manual execution log drawer (88.16525ms)
+▶ Batch Send Controls (phase 04)
+  ▶ L4-1 button state machine
+    ✔ IDLE: 开始 and 手动 enabled; 暂停 disabled (17.547125ms)
+    ✔ RUNNING: only 暂停 enabled; 开始/手动 disabled (11.60325ms)
+    ✔ PAUSED: 开始(继续) and 手动 enabled; 暂停 disabled (15.360416ms)
+    ✔ unknown status: all disabled (safe default) (10.48025ms)
+  ✔ L4-1 button state machine (58.158041ms)
+  ▶ I-2 mode badge labels
+    ✔ AUTO -> 自动定时 (5.495542ms)
+    ✔ MANUAL -> 手动 (5.202834ms)
+    ✔ NONE/other -> — (12.195292ms)
+  ✔ I-2 mode badge labels (23.077834ms)
+  ▶ I-9 status badge labels
+    ✔ RUNNING -> 运行中, PAUSED -> 已暂停, IDLE -> 空闲 (5.1235ms)
+  ✔ I-9 status badge labels (5.226375ms)
+  ▶ L4-2 banner visibility (I-5)
+    ✔ PAUSED + NO_AVAILABLE_ACCOUNT shows banner (25.408167ms)
+    ✔ PAUSED + other reason hides banner (8.186042ms)
+    ✔ RUNNING hides banner (5.594125ms)
+    ✔ IDLE hides banner (refresh after recovery clears it) (10.184125ms)
+    ✔ null statusView hides banner (5.651667ms)
+  ✔ L4-2 banner visibility (I-5) (55.309917ms)
+  ▶ applyBatchSendControls end-to-end (L4-1 + I-2 + I-8 + L4-2)
+    ✔ IDLE: 切换按钮 enabled labeled 开始执行(action=start); 暂停按钮隐藏; 手动 enabled; badges set; banner hidden (10.325709ms)
+    ✔ RUNNING + AUTO: 切换按钮 labeled 暂停(action=pause) enabled; mode badge 自动定时; status badge 运行中 (12.099ms)
+    ✔ PAUSED + NO_AVAILABLE_ACCOUNT: 切换(继续)+手动 enabled/visible, 暂停按钮隐藏; banner shown (4.948959ms)
+    ✔ PAUSED with empty accounts still shows progress panel (status-driven) (4.803792ms)
+    ✔ manual button disabled only while RUNNING or unknown (9.623875ms)
+    ✔ IDLE + autoEnabled: schedule is active so toggle button shows pause (5.014625ms)
+  ✔ applyBatchSendControls end-to-end (L4-1 + I-2 + I-8 + L4-2) (47.095416ms)
+  ▶ daily cap UI removal (04b)
+    ✔ index.html no longer exposes batchSendDailyCap or batchConfigEditorDailyCap inputs (0.640917ms)
+  ✔ daily cap UI removal (04b) (0.710083ms)
+  ▶ template selector I-4
+    ✔ rejects non-INTRODUCTION selectedId from dropdown and save payload (5.1675ms)
+    ✔ shows disabled INTRODUCTION template with (已禁用) label (11.554708ms)
+    ✔ does not persist tampered non-INTRODUCTION templateId on save (6.00725ms)
+  ✔ template selector I-4 (22.839125ms)
+  ▶ schedule start behavior
+    ✔ launch modal binds the start button to the toggle handler (0.374667ms)
+    ✔ IDLE start enables schedule without launching manual outreach (5.098084ms)
+    ✔ PAUSED resume enables schedule and clears pause without immediate execution (17.033792ms)
+    ✔ pause while timer is active disables schedule without pausing an execution (8.669ms)
+    ✔ toggle rechecks status so stale start action does not restart an active timer (5.00075ms)
+  ✔ schedule start behavior (36.324833ms)
+✔ Batch Send Controls (phase 04) (250.350666ms)
+▶ batch send task console interactions
+  ✔ selects and displays the clicked config before opening the manual tab (6.706959ms)
+  ✔ loads all task options when the searchable combobox opens with an empty query (2.151417ms)
+  ✔ shows every enabled supported batch template and derives its mail type (13.254417ms)
+  ✔ builds manual execution mail type from the currently selected template (5.051958ms)
+  ✔ refreshes template selectors after asynchronous lookup loading (0.8975ms)
+  ✔ retains the manual draft template when async templates arrive (5.1875ms)
+  ✔ rechecks editor gate state after async templates arrive (1.756292ms)
+  ✔ detaches a selected task when its search text is cleared and removes diff state (4.350125ms)
+  ✔ merges tag aggregations and retains configured tags without duplicates (1.978584ms)
+  ✔ toggles multiple tag picker values and exposes a string array (3.608542ms)
+  ✔ shows semantic original values for unrestricted filters (21.767333ms)
+  ✔ toggles multiple region picker values in BATCH_REGION_OPTIONS order (I-1) (13.666625ms)
+  ✔ BATCH_REGION_OPTIONS values are the 9 English region constants verbatim (G-1) (3.196041ms)
+  ✔ REGION_LABELS keys are the 9 English region constants verbatim (I-1/I-2) (1.032375ms)
+  ✔ regionLabel returns the raw value for unknown regions (I-2) (1.798292ms)
+  ✔ saveBatchConfigEditor sends English region constants even though the UI shows Chinese (I-1) (1.679084ms)
+  ✔ saveBatchConfigEditor assembles cron from frequency+time, not the cron input (I-2) (1.231291ms)
+  ✔ saveBatchConfigEditor takes the cron input as the single source in custom mode (I-2) (11.315ms)
+  ✔ showBatchConfigEditor echoes a daily cron as daily frequency (I-2) (3.073375ms)
+  ✔ refreshes editor gate state only after the template selector is populated (5.306917ms)
+  ✔ U1: echoes a range cron (0 0 9-17 * * ?) as custom with the raw expression (I1-1) (2.543208ms)
+  ✔ U2: echoes a list cron (0 0 9,12,15 * * ?) as custom with the raw expression (I1-1) (10.358875ms)
+  ✔ U3: does not drop the day-of-month field (0 0 9 1 * ? stays custom) (I1-1) (5.569333ms)
+  ✔ U4: echoes a weekday-range cron (0 0 9 ? * MON-FRI) as custom with the raw expression (I1-1) (2.408875ms)
+  ✔ U5: echoes hourly cron (0 0 * * * ?) as hourly with empty time and cron box (N1-1) (2.392375ms)
+  ✔ U6: echoes daily cron (0 15 3 * * ?) as daily 03:15 with empty cron box (N1-1) (2.383875ms)
+  ✔ U7: echoes weekly cron (0 30 9 ? * MON) as weekly 09:30 with empty cron box (N1-1) (2.392958ms)
+  ✔ U8: rejects an out-of-range minute (0 70 9 * * ?) as custom (I1-1) (2.92125ms)
+  ✔ U9: clears the cron box when the reused DOM switches from custom to daily (I1-2) (2.484ms)
+  ✔ U10: new task (null config) keeps daily 09:00 defaults with an empty cron box (I1-3) (3.231041ms)
+  ✔ U11: custom mode saves the raw range cron verbatim through saveBatchConfigEditor (N1-2) (3.128375ms)
+  ✔ showBatchConfigEditor echoes an unmatched cron as custom with the raw expression (I-2) (2.465ms)
+  ✔ updateBatchConfigVolumeHint renders rounds × size (S-2) (1.288792ms)
+  ✔ cronToDisplayText falls back to the raw expression for custom cron (X-4) (3.984083ms)
+  ✔ deepCloneConfig preserves roundsPerRun from the selected source config (V-1) (1.194958ms)
+  ✔ independent manual draft defaults roundsPerRun to 1 (V-1) (5.288083ms)
+  ✔ configured-source manual confirmation renders the round count, not undefined (V-1) (3.207375ms)
+  ✔ schedules recipient previews when either region picker changes (I-1) (1.151416ms)
+  ✔ uses one complete manual snapshot for preview and execution (I-2) (7.184708ms)
+  ✔ renders the current recipient preview error but ignores an obsolete failure (I-3) (28.731084ms)
+  ✔ V1: setBatchMultiPickerValue + readBatchMultiPickerValue roundtrip keeps the comma contract (I2b-3) (2.022542ms)
+  ✔ V2: renderBatchMultiPicker draws one chip per value and marks selected options (S2b-1) (2.556833ms)
+  ✔ V3: renderBatchMultiPicker shows the registry emptyText when no option matches (I2b-1) (2.339709ms)
+  ✔ V4: showBatchConfigEditor echoes emailDomains into the picker hidden input (IP-1) (7.750792ms)
+  ✔ V5: saveBatchConfigEditor payload carries emailDomains from the picker (IP-1) (1.346417ms)
+  ✔ V6: normalizeManualSnapshot sorts emailDomains so order never reads as changed (I2b-5) (2.471417ms)
+  ✔ V7: formatManualDiffValue renders the emailDomains list or 全部服务商 (I2b-4 #2) (1.101042ms)
+  ✔ V8: computeManualDiffs flags emailDomains only when the domain set differs (I2b-4 #3) (2.8935ms)
+  ✔ V9: renderBatchConfigRow joins emailDomains into the scope line (S2b-3) (1.886ms)
+  ✔ V10: existing tag and region picker readers keep their exact behavior (I2b-2) (2.847125ms)
+  ✔ W1: batchOperatorStatusOptions derives English values and Chinese labels from operatorStatusOptions (I3b-2/I3b-3) (1.328209ms)
+  ✔ W2: operator status values stay English enum names in the hidden input (I3b-2) (1.029333ms)
+  ✔ W3: picker chips show Chinese labels while data-remove-tag keeps English values (I3b-2) (2.292958ms)
+  ✔ W4: showBatchConfigEditor echoes operatorStatuses into the picker hidden input (IP-1) (7.736708ms)
+  ✔ W5: saveBatchConfigEditor payload carries English operatorStatuses from the picker (IP-1) (1.327875ms)
+  ✔ W6: formatManualDiffValue renders status list or 全部状态 with Chinese labels (I3b-4 #2) (2.504459ms)
+  ✔ W7: normalizeManualSnapshot sorts operatorStatuses so order never reads as changed (I3b-5) (2.103916ms)
+  ✔ W8: computeManualDiffs flags operatorStatuses once the field participates in diffs (I3b-4 #3 gap fix) (9.83025ms)
+  ✔ W9: renderBatchConfigRow adds the 状态 scope line with Chinese labels (S3b-3) (4.241292ms)
+  ✔ W10: regression — P2b email-domain picker behavior stays intact (N3b-2) (2.243125ms)
+  ✔ G1: empty esFields disables the gate toggle with the warn hint (I4b-3) (2.233709ms)
+  ✔ G2: empty template id sends no gate-fields request and stays unavailable (I4b-3) (6.328958ms)
+  ✔ G3: a failing gate-fields request falls back to unavailable without a dialog (I4b-3) (20.116583ms)
+  ✔ G4: filterable esFields enable the toggle and render one chip per field (I4b-4/S4b-1) (4.519708ms)
+  ✔ G5: non-filterable esFields are flagged as dropped alongside the chips (I4b-4) (6.053041ms)
+  ✔ G6: esFields with no filterable overlap stay unavailable with the all-dropped hint (I4b-3) (14.341083ms)
+  ✔ G7: unavailable gate state sends a single preview request (I4b-6) (33.471958ms)
+  ✔ G8: available gate with toggle off sends two requests and renders the warnline (I4b-1) (4.289709ms)
+  ✔ G9: available gate with toggle on renders the excluded span with the gated total (I4b-1) (11.763125ms)
+  ✔ G10: a stale dual-response round is discarded by seq and never renders (I4b-2) (15.875542ms)
+  ✔ G11: a rejected dual request renders the failure, never a partial result (I4b-2) (5.159541ms)
+  ✔ G12: gateFilterEnabled participates in manual diffs with 开启/关闭 values (I4b-5) (3.387958ms)
+  ✔ G13: batchGatePillHtml renders the three list states (S4b-2) (1.137625ms)
+  ✔ G14: regression — P2b (V1-V9) and P3b (W1-W9) behaviors stay green (2.79025ms)
+  ✔ H1: showBatchConfigEditor echoes the direction state and defaults to ANY (I-1) (3.625ms)
+  ✔ H2: saveBatchConfigEditor payload carries the direction select value (I-1) (4.457125ms)
+  ✔ H3: deepCloneConfig and the independent manual draft carry the direction state (I-1) (1.884ms)
+  ✔ H4: readManualFormValues reads the manual direction select and defaults to ANY (I-1) (4.277ms)
+  ✔ H5: the direction state participates in manual diffs with 不限/有研究方向/无研究方向 (I-1/S-1) (6.771042ms)
+  ✔ H6: both direction selects exist in index.html with only the S-1 classes, no inline style (S-1) (0.550709ms)
+  ✔ H7: the manual direction field is wired into the diff node map and marker cleanup (S-1) (1.486958ms)
+✔ batch send task console interactions (422.8625ms)
+▶ batch send task console visual repair
+  ✔ uses a scoped horizontal modal header with subtitle (1.112542ms)
+  ✔ renders compact scoped status switches instead of global checkboxes (1.632042ms)
+  ✔ uses content-adaptive modal height and a task count footer (1.153542ms)
+  ✔ keeps the scheduled-task list compact and gives every table column a stable role (1.4365ms)
+  ✔ bumps the stylesheet cache key (0.450542ms)
+  ✔ uses an opaque surface for every standard modal while preserving its overlay (I-4) (1.090041ms)
+  ✔ removes send-type controls and template filtering from the config editor (1.499167ms)
+  ✔ groups the config editor into clear task sections (7.355ms)
+  ✔ keeps enable control outside the config editor (0.809834ms)
+  ✔ hides the manual tab only while the editor is open (0.638083ms)
+  ✔ uses a searchable task combobox on the manual page (0.180917ms)
+  ✔ groups and stabilizes the manual execution form (0.245583ms)
+  ✔ uses searchable multi-select tag pickers in editor and manual forms (2.290167ms)
+  ✔ repairs legacy seed names with an ASCII-only utf8mb4 migration (0.905333ms)
+  ✔ uses an opaque drawer surface that no longer references the translucent panel token (I-3/S-2) (0.213916ms)
+  ✔ keeps the log drawer inside the .batch-send-task-body positioning container (I-3/S-1) (0.135917ms)
+  ✔ places the recent-log button before the execute button with a secondary style (S2-1) (0.224042ms)
+✔ batch send task console visual repair (22.7055ms)
+Failed to load sender accounts Error: network down
+    at /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/js/batchSenderFilter.test.js:329:60
+    at Object.preloadBatchSendLookups (evalmachine.<anonymous>:13:30)
+    at async TestContext.<anonymous> (/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-mail-open-tracking-120-second-filter/src/test/js/batchSenderFilter.test.js:334:9)
+    at async Test.run (node:internal/test_runner/test:1127:7)
+    at async Suite.processPendingSubtests (node:internal/test_runner/test:789:7)
+▶ batch sender account filter: real DOM contract (S-1/S-2, I-3)
+  ✔ registers every new id and data-tag-picker exactly once in the real index.html (0.916375ms)
+  ✔ matches the S-1/S-2 DOM blocks verbatim (1.363917ms)
+  ✔ reuses only existing classes, adds no inline style and keeps the picker contract (S-1/S-2) (1.096334ms)
+  ✔ replaces both section sub-texts while keeping the parent element and class (S-1/S-2) (0.356791ms)
+  ✔ keeps the 11 versioned static asset keys on one common value (I-3) (0.156625ms)
+✔ batch sender account filter: real DOM contract (S-1/S-2, I-3) (4.662167ms)
+▶ batch sender account filter: registration and read paths (I-1/I-2/I-3)
+  ✔ registers both pickers in the registry and binds them in the batch events (4.061584ms)
+  ✔ wires every snapshot and form path to its own picker id (14.868333ms)
+✔ batch sender account filter: registration and read paths (I-1/I-2/I-3) (19.191958ms)
+▶ batch sender account filter: options come from the live logical accounts (I-1)
+  ✔ keeps two logical codes of one physical inbox as two options and labels disabled accounts (12.500333ms)
+  ✔ shows a historical code that is missing from the live list instead of wiping it (4.321708ms)
+  ✔ preloads the live account list into both pickers (1.641292ms)
+  ✔ keeps the previously loaded accounts when the account request fails (3.876875ms)
+✔ batch sender account filter: options come from the live logical accounts (I-1) (22.55675ms)
+▶ batch sender account filter: config save/echo and manual inheritance (I-2)
+  ✔ saves selection A, echoes it back from the config GET and inherits it into the manual panel (8.188791ms)
+  ✔ keeps a historical code that the live account list no longer offers through echo and re-save (12.286792ms)
+✔ batch sender account filter: config save/echo and manual inheritance (I-2) (20.743833ms)
+▶ batch sender account filter: manual diff and execution snapshots (I-2/S-2)
+  ✔ reports 已修改 with the original value A against the new value B (10.927709ms)
+  ✔ carries the changed selection B into the estimate and execution snapshots (8.889792ms)
+  ✔ posts an empty selection for a standalone manual run (3.46075ms)
+✔ batch sender account filter: manual diff and execution snapshots (I-2/S-2) (23.426375ms)
+▶ check replies relocation (p1)
+  ✔ I-1: id="checkRepliesBtn" appears exactly once in index.html, inside the mailbox view (0.810208ms)
+  ✔ I-1: the button tag is preserved verbatim (0.082792ms)
+  ✔ I-1: all five app.js reference sites stay verbatim (0.523792ms)
+  ✔ I-2: cross-view selection and view switching are untouched (0.524ms)
+  ✔ I-3: all eleven cache-busted assets share one current key (0.347709ms)
+  ✔ S-1: exactly one .panel-head-actions in index.html, 检查回复 to the left of 批量发送 (0.127875ms)
+  ✔ S-1: .panel-head-actions rule block is present verbatim in styles.css (0.069666ms)
+  ✔ I-6/S-4: bulkAutoReplyBtn lives exactly once, in the mailbox actions after 批量发送 (0.175667ms)
+  ✔ I-6: auto-reply summary refresh moved out of loadContacts into the mailbox view refresh (0.496375ms)
+  ✔ I-1/S-1: funnel options are pure Chinese with RAW/CANDIDATE/APPLICATION values (0.117125ms)
+  ✔ I-2/S-1: expertIndexSize appears exactly once, inside contactPager; pager is not statically hidden (0.19925ms)
+  ✔ I-5/S-2: both chip rows keep all data-value buttons inside .toolbar-chip-row (0.149375ms)
+  ✔ I-5: H-Index / citation / recent-years / gate-template filters each appear exactly once (0.210583ms)
+  ✔ S-2: the .toolbar-chip-row rules are present verbatim in styles.css (0.062709ms)
+  ✔ I-3: contact detail title no longer mentions the mail timeline (0.102334ms)
+  ✔ I-3: loadContactDetail source no longer maps detail.mails into renderMailItem (0.290417ms)
+  ✔ I-4: mailbox focus helpers exist and are wired (0.43025ms)
+✔ check replies relocation (p1) (5.70875ms)
+▶ compose template server preview
+  ✔ docks compose template preview inside the editor (21.177459ms)
+  ✔ renders server preview response in drawer (11.28025ms)
+  ✔ strict placeholder mode shows skipped blocks from server (11.626792ms)
+  ✔ refresh calls preview-draft endpoint (11.498333ms)
+  ✔ sends the referenced snippet ID and source text for draft preview (12.031333ms)
+  ✔ random sample uses preview random-expert endpoint (8.476625ms)
+  ✔ compose block editor omits QA_RULE option and defaults to CUSTOM_TEXT (8.40125ms)
+  ✔ allows the last compose block to be removed without recreating an empty block (21.413291ms)
+  ✔ compose block row keeps QA sample text branch for legacy preview (8.898375ms)
+✔ compose template server preview (118.245292ms)
+▶ compose template variable editor (I-1/I-4)
+  ✔ relaxes bare tokens for the template editor but keeps QA rules strict (7.459541ms)
+  ✔ inserts a bare token in the template editor and the defaulted token elsewhere (3.065084ms)
+  ✔ every variable-meta key reaches the insert menu, including institution/primaryResearchField (4.709ms)
+  ✔ index.html documents the mandatory form of a template placeholder (0.075458ms)
+  ✔ reopening the editor keeps block order and custom text (29.601959ms)
+✔ compose template variable editor (I-1/I-4) (45.195542ms)
+▶ reply snippet placeholder validation
+  ✔ replySnippetContent inserts bare variables and warns without disabling save (2.960917ms)
+  ✔ replySnippetVariant-0 inserts bare variables and warns without disabling save (2.679459ms)
+✔ reply snippet placeholder validation (5.724458ms)
+▶ composed reply legacy removal (negative contract)
+  ✔ removed segment ordering and drag/drop handlers (2.057541ms)
+✔ composed reply legacy removal (negative contract) (4.616791ms)
+▶ contact head layout C (P2 S-8)
+  ✔ loadContactDetail source contains all S-8 ids and no removed artifacts (1.172042ms)
+  ✔ updateSenderBindingDirtyState drives all three guards together (I-2) (2.021875ms)
+  ✔ unbound expert with a selected account is judged dirty (I-3) (0.918958ms)
+  ✔ whitespace-only boundSenderAccountCode renders unbound and empty (R-1/V-1) (1.179041ms)
+  ✔ send-manual-mail keeps senderAccountCode null and never reads the select (I-1) (1.723833ms)
+  ✔ toggle-contact-head-more flips state.contactHeadExpanded without reset (I-4) (1.510625ms)
+  ✔ updateExpertTagEditor passes dataset.layout back to the renderer (I-7) (1.254375ms)
+  ✔ detail sub-tab data-panel counts are unchanged (I-10) (0.668083ms)
+  ✔ styles.css declares every S-1..S-6 class and I-8/I-9 rules (1.396458ms)
+  ✔ DOM-stub trap guard: container and select generator still exist (K-dom-stub-tests-hide-dangling-refs) (0.701ms)
+✔ contact head layout C (P2 S-8) (13.527708ms)
+▶ expert material tags (plan 02)
+  ✔ loadContactDetail fetches materials with isolated catch and renders the row after contactHeadMoreRow (I2-1/I2-5/S2-1) (0.610875ms)
+  ✔ materials GET rejection is isolated: siblings resolve, one error status, materials null (I2-5) (1.027542ms)
+  ✔ renderExpertMaterialRow renders exactly 5 ordered Chinese tags with tri-state visuals (I-1/S-1) (1.654625ms)
+  ✔ saveExpertMaterialStatus PUTs once and replaces the row silently on success (I2-2/I2-3) (3.558625ms)
+  ✔ saveExpertMaterialStatus keeps old DOM and restores buttons on failure (I2-3) (1.589917ms)
+  ✔ toggleExpertMaterialMenu opens one menu and closes others; outside click and Escape close all (I2-6) (6.641042ms)
+  ✔ material branch precedes generic action in the contact-head click handler (I2-6/I2-3) (0.255417ms)
+  ✔ styles.css appends the S2-2 rules verbatim and leaves shared rules intact (S2-1/S2-2/S2-3) (0.193ms)
+  ✔ showExpertDetail hides and clears head actions without fetching materials (I2-8) (0.467583ms)
+✔ expert material tags (plan 02) (16.359875ms)
+▶ contacts layout default
+  ✔ uses the middle 500px preset for a fresh layout and every reset path (2.698083ms)
+  ✔ preserves a saved personal list width (0.784458ms)
+  ✔ matches the 500px runtime default in both desktop CSS rules (0.503042ms)
+  ✔ labels the reset button with the middle preset width (0.081208ms)
+✔ contacts layout default (4.853791ms)
+▶ c3 deep discovery continuous run (frontend)
+  ▶ I-6 per-task run lock
+    ✔ allows deep discovery and check replies to coexist in both directions (3.475916ms)
+    ✔ still blocks the same type and every other combination (6.1485ms)
+    ✔ surfaces a failed state query instead of reporting an idle system (0.9915ms)
+    ✔ keeps legacy no-argument callers tolerant of a failed query (0.904625ms)
+  ✔ I-6 per-task run lock (12.023416ms)
+  ▶ I-1/I-2 continuous launch
+    ✔ freezes the operator selections before switching views and posts with a finite timeout (6.471459ms)
+    ✔ renders acceptance for 202 and keeps tracking the pipeline instead of notifying (5.67225ms)
+    ✔ restores the retryable configuration when a different query is refused (5.530375ms)
+    ✔ refuses to start when the source list never loaded (1.940917ms)
+  ✔ I-1/I-2 continuous launch (19.839917ms)
+  ▶ I-5 honest status surface
+    ✔ maps every state onto the existing status classes and hides the daily percentage (1.214958ms)
+    ✔ shows real numbers, 待同步 for unsynced budget and tolerates unknown wait reasons (9.511292ms)
+    ✔ binds only a non-null currentExecutionId from the status snapshot (1.799833ms)
+    ✔ never renders into a closed or switched dialog (0.568208ms)
+  ✔ I-5 honest status surface (13.270334ms)
+  ▶ I-3/S-2 pause and resume
+    ✔ pauses a running pipeline through the persisted cancel endpoint (0.995958ms)
+    ✔ resumes an explicitly paused pipeline instead of cancelling it (3.247417ms)
+    ✔ disables the button while the pause request is pending (1.68175ms)
+    ✔ keeps the legacy cancel wording for other task types (0.793917ms)
+  ✔ I-3/S-2 pause and resume (6.950375ms)
+  ▶ I-7 source loading
+    ✔ reports a load failure with a retry hint and leaves no stale selection (6.587167ms)
+    ✔ marks itself ready with the operator's defaults when the request succeeds (3.569792ms)
+  ✔ I-7 source loading (10.281917ms)
+  ▶ S-1/S-2 node contract
+    ✔ initializes the same nodes for continuous mode and restores the legacy display afterwards (8.676208ms)
+    ✔ keeps using the existing status nodes and the existing track element (0.286209ms)
+  ✔ S-1/S-2 node contract (9.022125ms)
+  ▶ repair V-1/V-2/V-3/V-5 (visibility, trigger restore, no inline styles, pending-sync budget)
+    ✔ surfaces a pipeline-info load failure on the page-level status bar (V-1) (1.266917ms)
+    ✔ restores the page trigger on every rejected continuous launch path (V-2) (6.990583ms)
+    ✔ renders per-source detail with the existing table class and no inline styles (V-3) (1.463625ms)
+    ✔ renders an unconfirmed budget as pending sync instead of local credits (V-5) (0.553ms)
+  ✔ repair V-1/V-2/V-3/V-5 (visibility, trigger restore, no inline styles, pending-sync budget) (10.378875ms)
+✔ c3 deep discovery continuous run (frontend) (82.432209ms)
+▶ expert filter layout
+  ✔ keeps all primary dropdown filters, including discipline, in one row (0.814917ms)
+  ✔ groups research type and data completeness into the styled second row (0.295583ms)
+  ✔ puts metric filters in a dedicated third row (0.126292ms)
+  ✔ uses a complete three-column grid at medium desktop widths (0.320458ms)
+  ✔ hides the one-time discovery actions while keeping their ids available (0.121792ms)
+  ✔ removes the pager's visible row-count label (0.08475ms)
+✔ expert filter layout (3.299542ms)
+▶ expert detail mail preview tab
+  ✔ renderDetailSubTabs renders exactly 4 tabs, mail-preview last, first 3 unchanged (N-4) (2.364083ms)
+  ✔ renderExpertMailPreview sends strictPlaceholders=false (I-6) (1.387791ms)
+  ✔ renderExpertMailPreview maps blocks to exactly 4 explicit fields (I-1) (1.732792ms)
+  ✔ renderExpertMailPreview only calls POST /api/compose-templates/preview-draft (I-1) (1.703208ms)
+  ✔ renderExpertMailPreview exposes the server-provided refDisplayName for preview blocks (V-1) (0.879708ms)
+  ✔ renderExpertMailPreview sends the stored subject snippet ID without a fixed variant seed (I-5) (0.839541ms)
+  ✔ resolves a saved subject snippet to its source text and ID in expert preview (5.393ms)
+  ✔ renderExpertMailPreview takes contactId from state.contacts into payload (I-3) (0.972084ms)
+  ✔ renderExpertMailPreview sends contactId null when state.contacts has no matching orcid (I-3) (0.907916ms)
+  ✔ renderExpertMailPreview resolves contactId without extra requests and keeps senderAccountCode null (I-2) (0.928459ms)
+  ✔ openTemplateEditorForExpert loads templates before setView; no setView when template missing (I-3) (3.693917ms)
+  ✔ openTemplateEditorForExpert double-writes input value and previewDrawer state (I-4) (1.740834ms)
+  ✔ renders the mail-preview panel in both detail render functions (I-5) (2.59425ms)
+  ✔ declares S-3/S-4 CSS rules and panel DOM without inline styles (1.598709ms)
+✔ expert detail mail preview tab (28.026791ms)
+▶ expert-material-analysis-flow: I-1 打开只 GET、带入/默认勾选、>500 提示
+  ✔ 打开 AI：零 POST、零文件内容抓取（只 GET 材料元数据 + 历史结果） (44.215542ms)
+  ✔ app.js 源文本包含 S-2 渲染模板标记（防 DOM stub 假绿） (0.929042ms)
+  ✔ 有已选：带入可分析子集；JPEG 行禁选并说明 当前不支持图片文字识别 (33.473666ms)
+  ✔ 无已选：默认勾选跨完整专家集合的 CV/学位（跨页可见） (25.821833ms)
+  ✔ 默认候选 >500：明确提示分批选择，绝不悄悄勾选前 500 (22.09175ms)
+  ✔ 提交冻结快照：提交后取消勾选/翻页不改变分析名单 (195.322459ms)
+✔ expert-material-analysis-flow: I-1 打开只 GET、带入/默认勾选、>500 提示 (322.975584ms)
+▶ expert-material-analysis-flow: I-2 获取后分析 / 失败 0 次分析 / 重试失败项
+  ✔ 缺 1 件先获取，全部 STORED 后恰好一次 ai-analysis（body=冻结名单） (324.904167ms)
+  ✔ 获取失败：0 次分析，展示失败 attachmentId/文件名/原因；重试只请求失败项并最终一次分析 (389.684375ms)
+  ✔ M=0（全部已存）→ 直接开始分析；空文本 PDF 逐文件原因展示且旧结果不被清空 (85.462542ms)
+✔ expert-material-analysis-flow: I-2 获取后分析 / 失败 0 次分析 / 重试失败项 (800.422833ms)
+▶ expert-material-analysis-flow: I-3 关窗意图销毁 / 历史结果 / 旧版回落
+  ✔ 获取中关窗：token 销毁、下载继续、零后续自动分析；重开不自动提交 (239.170583ms)
+  ✔ 历史结果：前端绝不先清空（重开仍可见、可经 PUT 编辑原接口） (11.297209ms)
+  ✔ 组件缺失/无 09 API → 回退旧路径（documents + 历史 GET、零 POST；footer 原按钮） (11.160666ms)
+✔ expert-material-analysis-flow: I-3 关窗意图销毁 / 历史结果 / 旧版回落 (261.951875ms)
+▶ expert-materials: I-1 同一 store 跨 inline/drawer host（无第二 fetch 队列）
+  ✔ 两 host 同一 contactId：一次初始 GET、同一行数据、提交只产生一次 POST (38.90925ms)
+  ✔ selectionOnly 与 inline 共享同一 store 与行渲染，只隐藏传输 footer (10.469458ms)
+✔ expert-materials: I-1 同一 store 跨 inline/drawer host（无第二 fetch 队列） (50.222042ms)
+▶ expert-materials: I-2 请求 epoch / 陈旧响应 / 防抖 / GET 只读
+  ✔ 请求 epoch：先发搜索 q1 挂起，再发 q2 完成，迟到的 q1 响应被丢弃 (251.057125ms)
+  ✔ 跨专家切换：A 的迟到响应绝不写入 B 的 DOM (10.188ms)
+  ✔ 搜索 300ms 防抖：连续输入只产生一次最终 q 的请求 (195.442291ms)
+  ✔ 打开清单只 GET：无任何 POST/文件请求 (4.667166ms)
+✔ expert-materials: I-2 请求 epoch / 陈旧响应 / 防抖 / GET 只读 (462.04725ms)
+▶ expert-materials: I-3 1000 附件窗口 / 跨页选择 / 筛选保留 / 提交隔离 / 500 上限
+  ✔ 1000 条目录只渲染当前页 10 行，长文件名 title 可查看全文 (173.719541ms)
+  ✔ 翻两页勾 20 份，POST 恰好 20 个去重 id；筛选清空后仍显示已选 20 (853.058375ms)
+  ✔ 专家 B 永不收到专家 A 的提交；清空选择只清当前联系人 (36.073292ms)
+  ✔ 超过 500 份上限：不发出 POST，错误区给出明确原因，选择保留 (129.653958ms)
+✔ expert-materials: I-3 1000 附件窗口 / 跨页选择 / 筛选保留 / 提交隔离 / 500 上限 (1193.405333ms)
+▶ expert-materials: 轮询 / unmount 释放 / 抽屉关闭队列继续
+  ✔ 活动任务可见时按 2s 轮询（测试注入短周期），unmount 停止轮询并释放全部监听 (279.814125ms)
+  ✔ drawer 关闭（Esc/关闭按钮同路径）只释放 UI：另一 host 轮询继续、重开状态一致 (175.253708ms)
+✔ expert-materials: 轮询 / unmount 释放 / 抽屉关闭队列继续 (455.254709ms)
+▶ expert-materials: I-4 app.js 宿主 —— 无 contactId 空态与真实 contactId 挂载
+  ✔ app.js 的 loadContactDetail 在 DOM 写入前释放旧视图、写入后按真实 contactId 挂载 (20.152459ms)
+  ✔ showExpertDetail（无 contactId 的 ES 专家）渲染静态空态，零材料请求、零挂载 (7.103417ms)
+  ✔ showExpertDetail 不挂载网络组件（入口真实挂载只发生在 loadContactDetail） (1.0485ms)
+  ✔ mountExpertMaterialsInline 只对真实正 contactId 挂载并注入 api/contextPath (3.5705ms)
+  ✔ app.js 旧路径（无 window.ExpertMaterials）保持原渲染：renderExpertDocuments 仍输出 document-row (1.317333ms)
+✔ expert-materials: I-4 app.js 宿主 —— 无 contactId 空态与真实 contactId 挂载 (34.221ms)
+▶ expert-materials: 手动上传入口（I-6/S-1）
+  ✔ inline/drawer 各一个入口并保留既有按钮；selectionOnly 无入口；点击由组件消费 (3.631625ms)
+✔ expert-materials: 手动上传入口（I-6/S-1） (3.725542ms)
+▶ expert-materials: 手动上传串行队列与共享刷新（I-1/I-3/I-4）
+  ✔ 多选严格串行、一请求一文件、headers 为 {}；上传中禁用控件且 Esc 不关闭 (175.905208ms)
+✔ expert-materials: 手动上传串行队列与共享刷新（I-1/I-3/I-4） (176.050625ms)
+▶ expert-materials: 手动上传 100 MiB 预检与部分失败重试（I-2/I-4）
+  ✔ 104857600 可提交、104857601 直接 blocked 且零请求；后端 413 message 逐字落到行 (43.853625ms)
+  ✔ 部分失败：失败项不阻塞后续、重试只重发 failed、成功与 blocked 不重发 (167.630209ms)
+✔ expert-materials: 手动上传 100 MiB 预检与部分失败重试（I-2/I-4） (211.648625ms)
+▶ expert-materials: 手动上传经共享 GET 进入列表（I-3）
+  ✔ 上传成功前列表不增加；成功后只经一次 page=0 GET 刷新并保留筛选与 selection，三视图同步 (410.170208ms)
+✔ expert-materials: 手动上传经共享 GET 进入列表（I-3） (410.320041ms)
+▶ expert-materials: I-5 手动来源与既有来源并存
+  ✔ 行来源固定三段式、筛选只生成一个手动上传选项、query 成对、邮件来源不变 (2.192583ms)
+✔ expert-materials: I-5 手动来源与既有来源并存 (2.293958ms)
+▶ S-1: 落地 CSS 与计划契约逐字一致
+  ✔ expert-materials.css 字节等于计划 08 的 S-1 代码块 (1.406875ms)
+  ✔ expert-materials.css 字节等于 ui-style-contract 的 S-1 代码块 (0.786666ms)
+✔ S-1: 落地 CSS 与计划契约逐字一致 (3.064ms)
+▶ S-1: DOM 白名单 —— 渲染产物 class/id/inline-style 全量核对
+  ✔ inline / drawer / selectionOnly 渲染树：全部 class 已声明，无 id，无 inline style，data-state 合法 (22.761542ms)
+  ✔ 文件名可访问名称/标题保留全文，省略由 CSS 完成（无 JS 截断字符） (3.954583ms)
+✔ S-1: DOM 白名单 —— 渲染产物 class/id/inline-style 全量核对 (27.131875ms)
+▶ S-1/S-2: 手动上传 CSS 逐字追加（I-7）
+  ✔ S-1 与 S-2 代码块逐字出现在 styles.css，顺序 S-1 → S-2，且既有末尾块仍在最后 (1.161584ms)
+  ✔ 复用规则未被就地修改：.button 族与 .modal-close-btn 保持既有定义 (0.855208ms)
+  ✔ dialog 实色白底、状态色与响应式规则逐字存在 (0.591584ms)
+✔ S-1/S-2: 手动上传 CSS 逐字追加（I-7） (2.886958ms)
+▶ S-1/S-2: 手动上传入口与 dialog 渲染契约
+  ✔ inline/drawer 各一个入口并保留既有 AI/关闭按钮；selectionOnly 无入口 (8.023917ms)
+  ✔ dialog 结构/文案/状态白名单：无 id、无 inline style、全部 class 已声明、状态取值合法 (8.323166ms)
+✔ S-1/S-2: 手动上传入口与 dialog 渲染契约 (16.676625ms)
+▶ S-3: 材料说明与来源筛选文案
+  ✔ policy 逐字、来源筛选 aria-label/全部来源、MANUAL_UPLOAD 行与单选项、query 成对 (6.3525ms)
+✔ S-3: 材料说明与来源筛选文案 (6.726792ms)
+▶ expertProfileAbsence: found=false renders S-1 degraded editor (I-3/S-1)
+  ✔ produces the S-1 DOM verbatim: no write actions, muted notice, data-profile-missing (1.896625ms)
+✔ expertProfileAbsence: found=false renders S-1 degraded editor (I-3/S-1) (2.580292ms)
+▶ expertProfileAbsence: found=true renders S-2 editor verbatim (S-2)
+  ✔ keeps the present-profile DOM identical to the S-2 baseline (0.855625ms)
+✔ expertProfileAbsence: found=true renders S-2 editor verbatim (S-2) (0.928083ms)
+▶ expertProfileAbsence: found === undefined falls back to present-profile (I-4)
+  ✔ fetchExpertTagsFromEs treats a missing found field as found (1.843541ms)
+  ✔ renderExpertTagEditor with undefined profileMissing renders the S-2 branch (1.1055ms)
+✔ expertProfileAbsence: found === undefined falls back to present-profile (I-4) (3.048541ms)
+▶ expertProfileAbsence: api errors propagate, never degrade to found=false (I-1)
+  ✔ fetchExpertTagsFromEs rethrows the api error (1.249958ms)
+  ✔ found=false is only produced by an explicit profile response (4.553833ms)
+✔ expertProfileAbsence: api errors propagate, never degrade to found=false (I-1) (5.945666ms)
+▶ expertProfileAbsence: S-1 classes exist in styles.css
+  ✔ muted and inbound-tag-editor-chips are real CSS classes (0.189ms)
+✔ expertProfileAbsence: S-1 classes exist in styles.css (0.256333ms)
+▶ expertProfileAbsence: rejected tag fetch degrades to S-1 and reports (V-1 repair)
+  ✔ showExpertDetail completes and renders the S-1 notice when the tag fetch rejects (30.065208ms)
+  ✔ loadContactDetail completes and renders the S-1 notice when the tag fetch rejects (7.964209ms)
+  ✔ showMailDetail read-only branch keeps the panel rendered with the S-1 notice when the tag fetch rejects (7.961084ms)
+  ✔ showUnmatchedDetail keeps the panel rendered with the S-1 notice when the tag fetch rejects (7.380292ms)
+✔ expertProfileAbsence: rejected tag fetch degrades to S-1 and reports (V-1 repair) (53.749041ms)
+▶ expertProfileAbsence: inline layout (P2 S-7)
+  ✔ layout="inline" + profileMissing=false renders the inline editor (S-7/I-6) (3.125167ms)
+  ✔ layout="inline" + profileMissing=true renders the nodoc pill without actions (0.905208ms)
+  ✔ both inline outputs keep id/data-orcid/data-level (I-6) (0.842417ms)
+  ✔ non-inline layout values keep the S-2 output byte-identical (I-5) (1.131666ms)
+✔ expertProfileAbsence: inline layout (P2 S-7) (6.442625ms)
+▶ fetchExpertTagsFromEs authoritative tags (P1-2)
+  ✔ loads tags from /api/experts/profile instead of list cache (3.460333ms)
+  ✔ renders ES tags in editor even when list cache has no tags (1.046834ms)
+  ✔ can render a mailbox-scoped expert tag editor (15.575375ms)
+  ✔ renders mailbox expert tags from unmatched processing contact payload (1.120792ms)
+✔ fetchExpertTagsFromEs authoritative tags (P1-2) (22.020917ms)
+▶ Batch send toolbar and type routing (S-1/S-2/I-11)
+  ✔ S-1: toolbar has exactly one bulkOutreachBtn entry (0.160834ms)
+  ✔ S-1: no old 'batchTagMailBtn' button in index.html (0.112208ms)
+  ✔ S-2: batchSendTaskModal exists and contains scheduled/manual tabs (0.121584ms)
+  ✔ batchSendTypeBase returns /api/mail/batch-send/types/{sendType} (1.037625ms)
+  ✔ batchSendTypeBase() with no argument uses batchSendType variable (0.67475ms)
+  ✔ I-11 type default logic: MATERIAL_REMINDER when tag filter is 承诺回复材料, else INTRODUCTION (0.339083ms)
+  ✔ I-11 config/status/count/start/pause APIs have type-based routing (1.592416ms)
+  ✔ no inline style= in batch send type functions (S-3) (6.626792ms)
+✔ Batch send toolbar and type routing (S-1/S-2/I-11) (10.951917ms)
+▶ fillBatchSendProviderSelect saved value retention (S-2)
+  ✔ inserts fallback option when savedValue is not in provider list (1.95825ms)
+  ✔ does not insert fallback when savedValue matches an option (0.687667ms)
+  ✔ select.value stays at savedValue after fallback inserted (2.0175ms)
+  ✔ renders provider list items as option elements in innerHTML (1.031875ms)
+✔ fillBatchSendProviderSelect saved value retention (S-2) (5.930417ms)
+▶ refreshBatchSendPendingCountDisplay stale token discard (I-11)
+  ✔ discards response when token changes before resolution (16.894375ms)
+  ✔ discards response when sendType changes before resolution (3.065792ms)
+  ✔ applies summary when token and type are unchanged (4.553792ms)
+  ✔ request URL includes /types/{sendType}/pending-count (2.574375ms)
+✔ refreshBatchSendPendingCountDisplay stale token discard (I-11) (27.312542ms)
+▶ normalizeManualSnapshot tag dedup (P1-1)
+  ✔ same tags with whitespace and duplicate produce no diff (2.918708ms)
+  ✔ truly different tags still produce diff (2.363833ms)
+  ✔ empty tags vs whitespace-only tags produce no diff (1.7545ms)
+✔ normalizeManualSnapshot tag dedup (P1-1) (7.132542ms)
+▶ readManualFormValues NaN-on-empty (P1-1)
+  ✔ zero selfCheckTtlMinutes returns 0 (valid number), not 30 (5.849083ms)
+  ✔ valid values are returned as-is (intervals in ms) (4.879209ms)
+  ✔ zero interval seconds returns 0 ms, not swallowed (4.957875ms)
+✔ readManualFormValues NaN-on-empty (P1-1) (15.889334ms)
+▶ interval diff normalization (I-1)
+  ▶ baseline 1000/60000 vs form 1/60 sec produces no interval diff
+    ▶ log execution identity (I-2)
+      ✔ default selection writes logExecutionId and starts RUNNING interval (9.512375ms)
+      ✔ stale response from old configId does not overwrite current (7.955125ms)
+    ✔ log execution identity (I-2) (18.198ms)
+  ✔ baseline 1000/60000 vs form 1/60 sec produces no interval diff (20.838875ms)
+  ✔ baseline 1000 vs form 2000 produces interval diff (2.670208ms)
+  ✔ baseline 60000 vs form 90000 produces interval diff (3.232959ms)
+✔ interval diff normalization (I-1) (26.861708ms)
+▶ expert type filter (01-expert-list-type-filter)
+  ✔ chip click toggles .active, expertTypeActiveValues reflects it, and reload is requested (8.916584ms)
+  ✔ loadContacts omits expertType param when no chip is selected (5.839959ms)
+  ✔ loadContacts appends one expertType param per active chip (multi-value) (2.197125ms)
+  ✔ updateFilterBadge counts active expert type chips and hides at zero (1.473041ms)
+✔ expert type filter (01-expert-list-type-filter) (19.268708ms)
+▶ renderFilterReasonsTable (XSS safety)
+  ✔ escapes <script> tags in unknown reason keys (13.282375ms)
+  ✔ escapes HTML in known reason values (count is safe) (0.129625ms)
+  ✔ returns empty string for empty object (0.0795ms)
+  ✔ returns empty string for null input (0.07775ms)
+  ✔ renders known reason with label (0.118625ms)
+  ✔ sorts by count descending (0.0805ms)
+✔ renderFilterReasonsTable (XSS safety) (14.580084ms)
+▶ escapeHtml for progress messages
+  ✔ escapes <script> tags (0.114542ms)
+  ✔ escapes <img> onerror vectors (0.075292ms)
+  ✔ preserves normal text (0.073541ms)
+  ✔ handles empty string (0.091416ms)
+✔ escapeHtml for progress messages (0.483542ms)
+▶ expert gate template filter
+  ✔ app.js gate code has no hardcoded required-field fallback and no 可发送 wording (1.258375ms)
+  ✔ batch gate copy never mentions the legacy required_keys column (S-2) (0.852125ms)
+  ✔ gate-fields 500 applies no filter: no chip selection, no hasField param, summary hidden, one notice (1.783042ms)
+  ✔ selecting a template applies esFields chips and shows 符合 N / M from totalHits (2.63375ms)
+  ✔ switching back to 不限 restores the manual chip snapshot and hides the summary (3.170083ms)
+  ✔ failed switch to another template clears the prior gate chips, summary, and gate-derived hasField (V-2) (2.389791ms)
+✔ expert gate template filter (12.972584ms)
+▶ inbound summary expert grouping defaults
+  ✔ renders expert groups collapsed by default (0.787625ms)
+✔ inbound summary expert grouping defaults (3.049875ms)
+▶ inbound summary stats date scope
+  ✔ loads stats and tag options with same date range as mail list (6.621125ms)
+✔ inbound summary stats date scope (7.403166ms)
+▶ loadContacts with contactNeedsAttentionFilter + expertEmailDomainFilter
+  ✔ filters contacts by emailDomain in needsAttention branch and sets correct totalHits (5.024042ms)
+  ✔ does not filter when emailDomain is empty (1.142583ms)
+✔ loadContacts with contactNeedsAttentionFilter + expertEmailDomainFilter (7.182125ms)
+▶ loadEmailProviders batch config dropdown full results (I-5)
+  ✔ uses level-only URL for batchSendEmailDomain when refreshConfigDropdown is true (1.081833ms)
+  ✔ does not request full providers when refreshConfigDropdown is false (0.689791ms)
+✔ loadEmailProviders batch config dropdown full results (I-5) (1.874625ms)
+▶ loadContacts level change keeps batchSendEmailDomain full (I-5)
+  ✔ requests filtered and full email-providers when level changes with active filters (3.301125ms)
+✔ loadContacts level change keeps batchSendEmailDomain full (I-5) (3.376458ms)
+▶ loadRegions localizes option labels but keeps English values (child 05)
+  ✔ loadRegions renders Chinese labels while option values stay English (I-1/S-1) (5.222666ms)
+  ✔ selecting the Chinese-labeled option sends the English region constant to /api/experts (I-1) (1.231958ms)
+✔ loadRegions localizes option labels but keeps English values (child 05) (7.579708ms)
+✔ settings failures restore server value; no configuration prevents enabling but permits disabling (14.281667ms)
+✔ records are snapshot-isolated, encode keyword, use 20 rows and retain summary when status changes (45.29225ms)
+✔ tab departure and detail A-to-B race cannot overwrite current DOM; errors stay visible (10.756417ms)
+✔ server-owned fields remain escaped and detail action accepts only positive integer IDs (18.714792ms)
+✔ deleted last page re-queries once at the last valid offset and never loops (15.968125ms)
+✔ settings read racing a save must converge on the last server state (15.670125ms)
+✔ query control resets pagination and reloads settings alongside encoded records (10.951083ms)
+✔ closing detail discards late response and 404 is distinguished from a transient failure (9.125208ms)
+▶ S-3: 收发件箱排期源文本契约
+  ✔ 列表卡片追加 calendar-summary 骨架（属性逐字、内容由 textContent 填充） (0.833083ms)
+  ✔ 头部操作区追加三个骨架按钮（逐字，含 danger） (0.47225ms)
+  ✔ 全部经宿主 adapter 走同一套表单/API（组件不自建排期真值） (0.713458ms)
+  ✔ 页面内变更广播的订阅与 unmount 解绑对称 (0.227166ms)
+  ✔ 草稿卡时间不再回显原 IANA zone 串/英文本地串 (1.324333ms)
+✔ S-3: 收发件箱排期源文本契约 (4.402042ms)
+▶ I-2: 会议草稿卡时间文案
+  ✔ 同日与跨日均输出中文北京串，无英文周/月与 IANA zone (45.834041ms)
+  ✔ 缺少 UTC 值或 formatter 缺席时返回空串（不伪造时间） (3.323791ms)
+✔ I-2: 会议草稿卡时间文案 (49.306583ms)
+▶ I-3/I-4: 列表页排期摘要
+  ✔ 一次批量传当前页专家 id，并落到卡片 (16.446ms)
+  ✔ 摘要读取失败显示“排期暂不可用”，不冒充 0 场 (5.674542ms)
+  ✔ 陈旧列表 epoch 的慢回包不得覆盖新筛选结果 (6.623375ms)
+✔ I-3/I-4: 列表页排期摘要 (29.002709ms)
+▶ I-1/I-4: 头部排期操作（S-3）
+  ✔ 头部显示摘要；0 场隐藏改期/取消，保留新增 (9.891417ms)
+  ✔ 有排期时三个操作可用，并按 mode 调同一宿主表单 adapter (6.655458ms)
+  ✔ 宿主 adapter 缺席时降级提示，不伪造成功 (8.670709ms)
+✔ I-1/I-4: 头部排期操作（S-3） (25.421083ms)
+▶ I-1/I-3: 页面内变更广播
+  ✔ 广播只刷新当前 owner：摘要失效回读，草稿/时间线区域不重建 (8.032584ms)
+  ✔ unmount 后解绑广播，不再回读 (5.478166ms)
+✔ I-1/I-3: 页面内变更广播 (14.050459ms)
+▶ mailbox chat mount + S-1 skeleton + S-7 expert tag rows
+  ✔ mounts S-1 骨架：两栏、搜索行、⋯ popover、三 tab、分页 (30.244334ms)
+  ✔ S-7：专家标签单行渲染 —— [] 无占位、null 显示「标签暂不可用」、卡片无 waiting/pending badge (2.481041ms)
+  ✔ S-7：未知/特殊字符标签原值转义、title 完整 (3.00325ms)
+✔ mailbox chat mount + S-1 skeleton + S-7 expert tag rows (36.861375ms)
+▶ I-1 tab 参数与服务端排序（无 waitingReply）
+  ✔ 三个 tab 参数：全部无参、关注 followed=true、待处理 pendingOnly=true，永不发 waitingReply (15.215084ms)
+  ✔ 外部 onlyPending 只初始化首次；用户点过 tab 后 tab 是唯一权威 (8.274417ms)
+✔ I-1 tab 参数与服务端排序（无 waitingReply） (23.717458ms)
+▶ S-2 高级筛选 popover（草稿语义）
+  ✔ 应用筛选：recipientEmail/keyword/label/日期/账号/方向 映射 01 接口；角标与摘要更新 (8.591583ms)
+  ✔ 草稿：字段修改不触发请求；× 关闭未应用恢复已生效值 (7.574167ms)
+  ✔ 非法日期：应用时提示且不请求 (6.676375ms)
+  ✔ Enter 应用；重置/清除立即清空高级筛选并查询，保持 tab 与 q (18.014334ms)
+✔ S-2 高级筛选 popover（草稿语义） (41.576833ms)
+▶ S-1 宿主 chrome：唯一筛选节点迁移与还原、刷新按钮迁移
+  ✔ 聊天挂载：七字段+查询按钮移入 popover、view 加 mc-refined、刷新按钮进 panel-head-actions (3.233666ms)
+  ✔ unmount：字段/按钮还原旧 toolbar、mc-refined 移除、portal 移除 (2.739459ms)
+✔ S-1 宿主 chrome：唯一筛选节点迁移与还原、刷新按钮迁移 (6.159167ms)
+▶ mailbox chat conversation (source,id) keys + S-4 卡片
+  ✔ timeline 按 (source,id) 键渲染；正文安全；处理态/按钮按 S-4 (11.506666ms)
+  ✔ S-4：同数字 id 不同 source —— 只有 INBOUND_PROCESSING 显示其 tags；删除走 DELETE tagId，失败保留 chips (10.553542ms)
+  ✔ S-4：删除失败保留原 chips 并原位报错 (58.473208ms)
+  ✔ I-3：添加标签走宿主 adapter（inboundId/source/contactId/onTagsChanged），回包 tags 直显 (64.380458ms)
+  ✔ I-4：翻译一次点击一次请求，收起再开零请求；空正文无翻译按钮 (48.047792ms)
+  ✔ I-4：翻译失败按钮显示「翻译失败，重试」，重试成功；翻译不重建 manual DOM (26.513ms)
+  ✔ mark-resolved 成功后服务端重查当前页；编辑器草稿保留 (19.371667ms)
+  ✔ mark-resolved 空页回退：第 1 页处理完服务器第 1 页为空则回退第 0 页 (12.744833ms)
+✔ mailbox chat conversation (source,id) keys + S-4 卡片 (252.863416ms)
+▶ S-3/I-6 管理 overlay
+  ✔ 管理 overlay portal 到 body（不在 .mc-scroll / 带 backdrop-filter 的 panel 内），选项来自真实目录 (9.492666ms)
+  ✔ 取消（×）零请求；状态/层级未变化时保存零请求 (10.215625ms)
+  ✔ 保存只发变化字段的两端点；成功回读 dataset 与头部 (11.512291ms)
+  ✔ 部分失败如实提示「部分变更未保存」，失败端 dataset 不回写，按钮恢复 (16.549958ms)
+  ✔ 专家标签经共享 seam 即时保存：编辑器在 portal 内渲染、加/删后静默刷新列表与头部 (14.057958ms)
+  ✔ 缺画像专家：管理标签区显示不可用文案 (7.708916ms)
+  ✔ 切换专家自动关闭管理 overlay (13.282333ms)
+✔ S-3/I-6 管理 overlay (83.389375ms)
+▶ mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/send
+  ✔ workbench 默认折叠不挂载；展开一次挂载真实 processingId；切专家销毁旧实例 (6.278458ms)
+  ✔ 无来信但有真实 SENT 发件（sentCount=2）：显示自由回复编辑器并走会话 adapter (16.807042ms)
+  ✔ pendingCount=0 且真实来信（PROCESSED 已处理）：编辑器存在并走旧 processingId adapter (4.681458ms)
+  ✔ 仅失败发件（sentCount=0）：不显示编辑器，保留说明与模板跟进 (6.182375ms)
+  ✔ outbound 草稿 requestId：失败/取消复用、编辑后换新、跨专家切换恢复 (22.796334ms)
+  ✔ outbound 安全取消（false）保留正文与 requestId；成功删除草稿 (29.60075ms)
+  ✔ 草稿跨专家切换恢复；unmount/重挂载后同专家草稿仍恢复 (67.22075ms)
+  ✔ 采用 → 人工发送：QA 载荷原样进发送 payload；成功清草稿，失败保留 (35.73325ms)
+  ✔ 来信人工富文本发送：5 个 LF / CRLF / 空白行压成一个空行，HTML 保留两个 <br> (22.166958ms)
+  ✔ 来信人工富文本发送：空白行与空 <p>/<div> 同样保留一个 (41.163917ms)
+  ✔ 会话回信：canonical 正文与 requestId 在取消重提后不漂移 (22.885833ms)
+  ✔ 采用 AI 草稿：正文换行先收敛，仅换行差异不令 edited=true (30.853042ms)
+  ✔ 新来信 + 已编辑草稿：提示选择目标；取消保留原目标与草稿 (21.290542ms)
+  ✔ 关注乐观更新；失败回滚星标并报错 (11.019833ms)
+  ✔ header 材料按钮打开 child-08 drawer；查看专家详情走 openContactInList 适配 (10.492959ms)
+✔ mailbox chat 既有业务（I-7）：workbench/manual/drafts/adopt/send (353.886833ms)
+▶ I-5 位置/窗口缓存与异步守卫
+  ✔ A 慢响应晚于 B 选中到达：不得写入 B (13.3275ms)
+  ✔ quiet refresh 合并保留已加载窗口：按 source:id 替换、不重复、服务端状态胜 (17.538292ms)
+  ✔ loadOlder：busy 防重入、合并去重、滚动不跳（0 偏差路径） (10.582625ms)
+  ✔ scrollTop 保存/恢复：0 有效；不同 accountScope/用户不复用 (25.026709ms)
+  ✔ 「最新消息」按钮不标记处理、不发送 (7.127041ms)
+  ✔ 首次进入（无缓存）不报错且滚动落在合法范围（0..max） (14.2695ms)
+✔ I-5 位置/窗口缓存与异步守卫 (88.5005ms)
+▶ app.js 宿主守卫：任务钻取/脚本缺失保持旧分支 (I-7)
+  ✔ 组件存在且无 taskExecutionId → 挂载聊天；重复 loadMailbox 不再重放快照 (13.142833ms)
+  ✔ 任务钻取（taskExecutionId）→ 卸载聊天并保持旧平铺列表端点与参数 (6.465292ms)
+  ✔ 脚本未加载（无 MailboxChat）→ 完全旧行为 (16.4155ms)
+✔ app.js 宿主守卫：任务钻取/脚本缺失保持旧分支 (I-7) (36.172584ms)
+▶ mcHostOpenMaterials app 适配器（drawer/store 契约）
+  ✔ configure + mount({host, contactId, mode:'drawer'})；无 ExpertMaterials 时不动作 (1.423291ms)
+✔ mcHostOpenMaterials app 适配器（drawer/store 契约） (1.483417ms)
+▶ 待匹配 Tab：第四 chip、请求契约与邮件级列表
+  ✔ S-1：四个 tab 顺序/anchor 固定，待匹配只请求 unmatched-inbound（offset=page*20、无专家参数） (5.506833ms)
+  ✔ S-2：卡片渲染主题/发件人/时间/账号/待匹配 badge，分页单位为「封」 (3.45875ms)
+  ✔ S-2：空列表与加载失败文案；分页 0 条为「第 1/1 页 · 共 0 封」 (6.537208ms)
+  ✔ I-8：搜索走服务端 query，切页 offset=page*20；待匹配不做客户端过滤 (7.371708ms)
+  ✔ I-5：点击卡片把 .mc-scroll 宿主交给宿主函数；同一卡片不重复请求 (5.147875ms)
+  ✔ I-5：记录消失/切占位 Tab/unmount 都先归还节点，右栏回落空态 (4.814875ms)
+  ✔ I-3：晚到的专家列表响应不得覆盖待匹配列表（反之亦然） (7.766041ms)
+  ✔ I-6：待匹配选择不写 selectedContactId/sessionStore；切回专家仍恢复草稿 (11.277458ms)
+  ✔ 无宿主函数时右栏给出明确不可用提示，不伪造处理 UI (3.9195ms)
+✔ 待匹配 Tab：第四 chip、请求契约与邮件级列表 (56.707333ms)
+▶ app.js mcHostMountUnmatchedDetail / mcHostReleaseUnmatchedDetail（lease）
+  ✔ 挂载：同一节点挂进右栏，原父节点/兄弟位置被登记；释放后逐字归位 (3.379166ms)
+  ✔ 重复释放无副作用；非法 id/宿主直接拒绝且不动节点 (1.527875ms)
+  ✔ 详情加载失败：先归还节点再抛错（供右栏显示错误） (1.054208ms)
+  ✔ I-4：面板节点迁移后既有 click 委托仍生效（处理动作不新增入口） (0.828417ms)
+  ✔ focusMailboxProcessingPanel：面板在 .mc-scroll 内只重置该容器，不滚动整页 (0.731708ms)
+✔ app.js mcHostMountUnmatchedDetail / mcHostReleaseUnmatchedDetail（lease） (7.705292ms)
+▶ followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S-3）
+  ✔ S-1：跟进按钮只在有成功发件时渲染，位于工具栏末位且 class 严格为 button (59.571875ms)
+  ✔ I-1/I-2：弹窗默认不选择、只列合法 SENT，且不改变主题与正文 (42.212292ms)
+  ✔ I-2：INBOUND/FAILED/其他账号/空账号/模拟器行永不出现在候选里；账号范围生效 (17.253292ms)
+  ✔ I-1/I-5/I-6：选择引用邮件后仍须人工选择文案，主题和引用随邮件同步 (50.357125ms)
+  ✔ I-5：四种跟进文案使用发件人名称落款；不读取专家标签 (113.795084ms)
+  ✔ 账号接口提供落款名称，选择不同账号引用时使用对应名称 (10.92525ms)
+  ✔ 发件人名称缺失时不把账号代码用作落款 (7.220416ms)
+  ✔ I-5：称呼只复用所选邮件首行的 Dear/Hi 且不超过 100 字符 (64.793708ms)
+  ✔ I-6：HTML 正文确定性转纯文本，脚本内容不生成 DOM script (13.293459ms)
+  ✔ I-7/S-3：取消不改状态；填入是全文替换并写入锚点提示 (11.489209ms)
+  ✔ I-8：有锚点的来信草稿只走会话接口，无锚点来信仍走 processingId 接口 (36.236666ms)
+  ✔ I-3/I-8：无来信会话（outbound）不带 anchorMailRecordId，填入后携带所选 id (19.6825ms)
+  ✔ I-4：换锚点清 requestId，同锚点失败重试复用同一 requestId (23.514625ms)
+  ✔ I-7：采用可信草稿清除锚点提示并回落到无锚点发送 (23.015333ms)
+  ✔ I-4/S-3：切走再切回按草稿恢复主题、正文与锚点提示 (13.959834ms)
+  ✔ I-1/I-2：hasMore 时提示更早邮件；切专家关闭弹窗 (6.704875ms)
+  ✔ I-8：发送成功删除草稿与提示；失败保留草稿与提示 (16.630208ms)
+✔ followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S-3） (531.639792ms)
+▶ S-6: 落地 CSS 与 02 evidence 逐字一致
+  ✔ mailbox-chat.css 与 evidence/mailbox-chat.target.css 字节一致 (1.345958ms)
+✔ S-6: 落地 CSS 与 02 evidence 逐字一致 (2.1055ms)
+▶ S-1/S-2: index.html 宿主 id 与唯一筛选节点（源文本断言）
+  ✔ S-1 宿主标识在 index.html 源文本各出现一次 (0.346792ms)
+  ✔ S-2 七个筛选字段 + 查询按钮在 index.html 源文本各出现一次（不复制 DOM） (0.345542ms)
+  ✔ 筛选字段已删除旧 inline width（聊天 popover 内由 .mc-field 控制宽度） (0.248125ms)
+  ✔ mailboxLegacyToolbar 内保留七字段与查询按钮（任务钻取恢复旧 toolbar） (0.128ms)
+✔ S-1/S-2: index.html 宿主 id 与唯一筛选节点（源文本断言） (1.20675ms)
+▶ 收发件箱静态资源版本
+  ✔ 正文行距更新必须刷新 mailbox-chat.css 缓存版本 (0.129083ms)
+✔ 收发件箱静态资源版本 (0.207292ms)
+▶ S-6: DOM class 白名单与模板卫生
+  ✔ 模板字面量 class 全部命中 mailbox-chat.css 或既有 styles.css (6.968458ms)
+  ✔ 模板不写 inline style (0.46375ms)
+  ✔ 样式契约无新增未授权全局规则（mailbox view 宿主钩子除外） (0.226583ms)
+✔ S-6: DOM class 白名单与模板卫生 (7.896583ms)
+▶ S-7: 专家标签单行关键规则
+  ✔ 正文最终行高为紧凑的 1.55，且保留真实换行 (0.189875ms)
+  ✔ mc-person-meta 强制 nowrap + min-width:0 + 100% 上限 (0.0545ms)
+  ✔ mc-person-counts flex:none（收发数字不被标签挤压） (0.056583ms)
+  ✔ mc-person-tags 单行容器：flex:1/min-width:0/nowrap/ellipsis (0.143792ms)
+  ✔ 标签行高 20px，标签 chip 字号 10px 且不换行 (0.071458ms)
+  ✔ null 专家标签显示单行「标签暂不可用」 (0.045333ms)
+✔ S-7: 专家标签单行关键规则 (0.663875ms)
+▶ S-2: 跟进弹窗逐字样式（followup 01 合同）
+  ✔ styles.css 逐字包含 S-2 合同样式块（不删一行、不改一个值） (0.084334ms)
+  ✔ S-2 桌面/窄屏网格、焦点与禁用实值 (0.230875ms)
+  ✔ 跟进弹窗全部 class 已在 styles.css 声明（无未声明 class） (1.148458ms)
+  ✔ S-2 不写入字节锁定的 mailbox-chat.css，也不引入 inline style (0.349666ms)
+  ✔ S-3 复用既有 .mc-note，不新增锚点提示 class (0.122917ms)
+  ✔ S-1 复用 .button，不新增按钮 class (7.084583ms)
+✔ S-2: 跟进弹窗逐字样式（followup 01 合同） (9.141708ms)
+▶ mailbox date default
+  ✔ state.mailbox tracks one-time date default initialization (3.984208ms)
+  ✔ first loadMailbox fills default date range (37.236042ms)
+  ✔ cleared dates stay empty on subsequent loadMailbox calls (4.277083ms)
+  ✔ onlyPending skips date params and disables date inputs (4.131958ms)
+  ✔ pending-only first load then uncheck applies default dates on next load (7.152916ms)
+✔ mailbox date default (57.785708ms)
+▶ mailbox expert grouping
+  ✔ index.html places view and scope segmented controls together (0.740334ms)
+  ✔ styles.css renders both controls as one compact cluster (0.158125ms)
+  ✔ EXPERT plus ALL calls by-expert with normal filters and no pending flag (8.0045ms)
+  ✔ EXPERT plus PENDING keeps the pending scope independent (7.827042ms)
+  ✔ renderMailboxExpertGroups outputs nested expert group and mailbox card actions (5.137125ms)
+  ✔ renderMailboxPagination uses expert unit label (9.767375ms)
+  ✔ openExpertMailbox sets focus, EXPERT+ALL, clears filters and dates, then enters mailbox (7.682333ms)
+  ✔ loadMailbox sends the exact expertContactId and no dates when focused (11.019375ms)
+  ✔ loadMailbox omits expertContactId when no focus is set (4.606875ms)
+  ✔ renderMailboxExpertGroups opens only the focused group and tags it with the contact id (7.252708ms)
+  ✔ clearMailboxExpertFocus resets the focus fields (4.964042ms)
+  ✔ contact detail summary renders given counts and the open-mailbox button (1.316625ms)
+✔ mailbox expert grouping (73.634208ms)
+▶ mailbox inbound tag actions
+  ✔ tells the operator when auto QA tag matching adds nothing (6.878958ms)
+  ✔ shows loading while mailbox auto QA tags are applying (2.664792ms)
+  ✔ keeps newly added expert tag visible when ES refresh lags (2.739ms)
+  ✔ uses the standard modal panel structure for inbound add tag dialog (0.132417ms)
+✔ mailbox inbound tag actions (13.265875ms)
+▶ mailbox chat inbound tag adapter (02)
+  ✔ adapter 打开旧 modal：记录 {inboundId,source,contactId,onTagsChanged}，不依赖 detailContext (2.907125ms)
+  ✔ adapter 非法 id 拒绝打开 (2.233041ms)
+  ✔ 提交成功后把服务器 POST 回包 tags 回调给 adapter；adapter 被清理 (2.45775ms)
+  ✔ 无 adapter（旧来信汇总/详情分支）：detailContext 存在时走 refreshMailboxInboundTagsAfterChange (5.431292ms)
+  ✔ modal 关闭/取消清空 adapter（hide 清理） (5.990042ms)
+✔ mailbox chat inbound tag adapter (02) (19.273875ms)
+▶ fast-p 07 · I-1/S-1: 仅回形针入口与隐藏 file input
+  ✔ 按钮无可见文字、title/aria=上传附件；input multiple 无 accept；工具栏顺序 B/I/列表/链接/回形针/会议/跟进 (71.791917ms)
+  ✔ 点击图标只打开同一个隐藏 input；取消选择零请求、零草稿变化、不影响发送可用性 (22.210375ms)
+✔ fast-p 07 · I-1/S-1: 仅回形针入口与隐藏 file input (94.902ms)
+▶ fast-p 07 · I-2: 上传状态、顺序队列与草稿归属
+  ✔ 多选顺序上传：一次一个文件；uploading 禁发且无下载；ready 显示大小+待发送，payload 顺序一致 (19.269ms)
+  ✔ 移除在途/失败项：立即消失、迟到回包不复活、不发服务器删除请求 (40.233167ms)
+  ✔ 上传期间切专家：回包只落原 owner；B 的正文/按钮/草稿不受影响 (20.291041ms)
+  ✔ LRU 淘汰后迟到回包被忽略：会话草稿消失，不复活也不阻塞发送 (72.726542ms)
+✔ fast-p 07 · I-2: 上传状态、顺序队列与草稿归属 (152.882292ms)
+▶ fast-p 07 · I-3: 发送快照、阻塞与 requestId 边界
+  ✔ uploading/failed 禁止发送；失败项必须移除后才能发送（绝不静默漏发） (23.738333ms)
+  ✔ 会话发送：ready 顺序提交；失败重试复用 requestId；只有用户改附件才失效 (18.843166ms)
+  ✔ 带附件发送期间当前 owner 编辑/附件增删禁用；其他专家仍可编辑 (20.042042ms)
+  ✔ 成功且草稿未变：清稿清卡；发送期间草稿已变：保留新草稿 (26.184875ms)
+  ✔ 发送中切专家：成功只清捕获 owner 的草稿，B 的新草稿保留 (13.552458ms)
+✔ fast-p 07 · I-3: 发送快照、阻塞与 requestId 边界 (102.766583ms)
+▶ fast-p 07 · I-4: 已发消息原件卡
+  ✔ 按快照顺序渲染 + contextPath 前缀下载 + 无移除按钮 + 文件名转义 (8.853583ms)
+  ✔ ICS 与通用附件互不影响：只有 ICS / 只有通用 / 两者并存 (5.95575ms)
+  ✔ 已发卡只消费服务端快照：草稿里的附件不冒充已发件 (19.561125ms)
+✔ fast-p 07 · I-4: 已发消息原件卡 (34.7995ms)
+▶ fast-p 07 · I-2/I-5: 草稿重建写点保留附件
+  ✔ 会议填入与移除：ICS 与通用附件各删各的 (56.4815ms)
+  ✔ 会议 + 附件一起发送：payload 同时带 meeting 与顺序 attachmentIds (67.492584ms)
+  ✔ 采用可信草稿（全文替换）与跟进填入都保留通用附件 (61.107583ms)
+  ✔ 同专家换回复目标：已 ready 附件随草稿迁移 (17.135791ms)
+✔ fast-p 07 · I-2/I-5: 草稿重建写点保留附件 (202.857875ms)
+▶ fast-p 07 · S-1/S-2: 样式与 DOM 合同
+  ✔ S-2 全文逐字保留在 styles.css (0.2265ms)
+  ✔ mailbox-chat.css 未被 outbound-* 规则污染（独立边界） (0.059167ms)
+  ✔ 模板不含 inline style，状态文案与 S-2 逐字一致 (0.427792ms)
+✔ fast-p 07 · S-1/S-2: 样式与 DOM 合同 (0.862459ms)
+▶ manual reply subject prefill (p3)
+  ✔ I-1: buildManualReplySubject mirrors the server buildReplySubject rules (9 cases) (1.789292ms)
+  ✔ I-2: the result is truncated to 255 characters via slice(0, 255) (0.578334ms)
+  ✔ I-4: ${...} placeholders pass through verbatim, with no replace logic in the function (0.829625ms)
+  ✔ I-3/S-1: the subject input renders the escaped prefill value in one verbatim line (0.5375ms)
+  ✔ I-3: manualReplySubject appears exactly 2x in app.js (render + read), with no post-render assignment (12.248542ms)
+  ✔ I-5: all eleven cache-busted assets share one current key (0.74575ms)
+✔ manual reply subject prefill (p3) (17.930709ms)
+▶ S-2: 工具栏入口与样式合同
+  ✔ 材料索取位于会议确认与跟进之间，复用 .button (48.178875ms)
+  ✔ 会议组件缺席：不渲染材料索取入口 (9.433166ms)
+  ✔ styles.css 逐字包含 S-2 块且未追加到文件末尾；mailbox-chat.css 保持字节锁定 (1.373041ms)
+✔ S-2: 工具栏入口与样式合同 (59.901792ms)
+▶ I-2: 弹窗每次重读五项、只勾待提供、预览逐字
+  ✔ 每次打开重读五项；仅 PENDING 默认勾选，已提供/暂不愿提供禁选并标注状态 (16.217334ms)
+  ✔ 预览逐字使用响应 requestText：固定引言 + 无编号项目符号，只含选中项、按目录顺序 (8.609292ms)
+  ✔ 勾选变化实时重算预览与计数；全部取消后确认禁用 (5.671167ms)
+  ✔ 五项接口失败：错误留在弹窗内、确认禁用、不写编辑器 (9.14125ms)
+✔ I-2: 弹窗每次重读五项、只勾待提供、预览逐字 (40.429166ms)
+▶ I-3: 只操作当前草稿
+  ✔ 取消：零请求、零状态写、草稿不变 (7.869291ms)
+  ✔ 确认：只追加 <p> + <ul><li>，零状态写、零发送，重挂载后仍在 (11.758458ms)
+  ✔ 确认前编辑器 revision 变化：不得追加 (36.29375ms)
+  ✔ 迟到 GET：响应前切到另一专家，响应不得写入该专家草稿 (10.492416ms)
+  ✔ 已有会议块：追加材料不改写会议块，且会议块与材料段一起经草稿恢复 (12.66075ms)
+✔ I-3: 只操作当前草稿 (79.814667ms)
+▶ I-4: label/requestText 只作文本（XSS）
+  ✔ 恶意 HTML 在预览与草稿里都是字面文本 (6.872833ms)
+✔ I-4: label/requestText 只作文本（XSS） (6.992666ms)
+▶ S-1/S-2: 注册与源文本契约
+  ✔ index.html 含计划 S-1 的会议日历 Tab 与空 view 骨架（各唯一） (0.850083ms)
+  ✔ 会议日历 Tab 紧跟在收发件箱 Tab 之后（不改变既有 Tab 顺序） (0.121125ms)
+  ✔ index.html 含共享排期 dialog 的全部 S-2 合同片段（含取消确认态替换区） (0.311959ms)
+  ✔ 新增 index 片段无 inline style，且未新增静态资源缓存键 (0.378083ms)
+  ✔ app.js 四点注册齐全：viewMeta + refreshCurrentView 分支 (0.148375ms)
+  ✔ styles.css 逐字追加 S-2 CSS 块；mailbox-chat.css 未吸收 calendar-* 规则 (0.219125ms)
+  ✔ 新增日历模块不含 inline style (0.125083ms)
+✔ S-1/S-2: 注册与源文本契约 (3.035ms)
+▶ I-2: 唯一中文北京时间 formatter
+  ✔ UTC / America/Los_Angeles / Asia/Shanghai 三时区显示与提交完全一致 (153.924375ms)
+  ✔ 显示串不含英文周/月与 IANA zone 串 (32.205875ms)
+  ✔ datetime-local 文本显式按 +08:00 解析，非法值拒绝而不是被 Date 归一化 (36.321792ms)
+✔ I-2: 唯一中文北京时间 formatter (222.631208ms)
+▶ I-2/I-4: 月历 42 格与北京月份
+  ✔ 固定 7 周 42 格、周一开头、跨月带 outside 标记 (35.735917ms)
+  ✔ 区间按整格北京日期转 UTC 瞬时（月初/月末以北京日期计算） (19.094875ms)
+  ✔ 今天标记由北京日期决定，且只落在当前网格 (22.337375ms)
+  ✔ 月份前后翻页跨年正确 (19.048667ms)
+✔ I-2/I-4: 月历 42 格与北京月份 (96.39625ms)
+▶ I-2/I-4: 跨午夜与列表/月历文本
+  ✔ 跨午夜事件在涉及的每个北京日期格都出现，并显示起止完整日期 (30.423625ms)
+  ✔ 同日事件月历只显示时段、列表显示完整中文日期 (19.988791ms)
+✔ I-2/I-4: 跨午夜与列表/月历文本 (50.506958ms)
+▶ I-1/I-4: API adapter 分页、摘要与外链白名单
+  ✔ 区间事件按 cursor 翻页取全 (23.931834ms)
+  ✔ 服务端持续返回 cursor 时分页有上限（不无限循环） (19.074792ms)
+  ✔ 摘要 adapter 过滤非法 id 且无 id 时不发请求 (25.900458ms)
+  ✔ 外链仅 http/https，409 冲突给出可重试提示 (21.390584ms)
+✔ I-1/I-4: API adapter 分页、摘要与外链白名单 (90.706584ms)
+▶ S-2: 渲染骨架常量
+  ✔ 预览对齐后的 toolbar 保留全部操作、统计栏及会议侧栏 (25.185542ms)
+  ✔ 日期格与事件按钮骨架逐字、空槽、无样例数据与 inline style (24.980416ms)
+✔ S-2: 渲染骨架常量 (50.334291ms)
+▶ 预览对齐：真实排期统计
+  ✔ 北京月份交界只计相交排期，取消项不影响有效统计，午夜结束不多算一天 (35.940042ms)
+✔ 预览对齐：真实排期统计 (36.047625ms)
+▶ fast-p 04 纯导出：filterZones（I-5 搜索语义）
+  ✔ 空查询返回全部（不截断） (1.251333ms)
+  ✔ 中文/别名/id 联合命中：土耳其、Türkiye、istanbul、Europe/Istanbul (0.4225ms)
+  ✔ 偏移归一：UTC+03:00、utc+3、UTC−3（Unicode 减号）、+5:30 半小时间隔 (0.211125ms)
+  ✔ 大小写/空白/全角归一后匹配；结果不截断 (0.144209ms)
+✔ fast-p 04 纯导出：filterZones（I-5 搜索语义） (2.957416ms)
+▶ fast-p 04 纯导出：normalizeMeetingText
+  ✔ NBSP/全角/回车/多空格/空行归一，行间边界保留 (0.161208ms)
+✔ fast-p 04 纯导出：normalizeMeetingText (0.22575ms)
+▶ fast-p 04 纯导出：sanitizeDraftHtml（I-6 白名单）
+  ✔ 保留 p/b/strong/i/em/u/ul/ol/li/br/span；href 白名单 + target/rel 固定 (0.875833ms)
+  ✔ script/style/iframe/object 连内容删除；事件/style 属性删除；未知标签 unwrap (0.170666ms)
+  ✔ javascript: 链接去 href 保留文本；其它 div class/data 剥除 (0.232917ms)
+  ✔ 脏邮件 HTML 只显示文本/去事件，不把事件脚本带进编辑器 (0.103292ms)
+  ✔ 空/无文档输入为空串（防注入） (0.094458ms)
+✔ fast-p 04 纯导出：sanitizeDraftHtml（I-6 白名单） (1.620791ms)
+▶ fast-p 04 纯导出：planMeetingInsertion（T3 插入语义）
+  ✔ 空正文 → replace（qaClear）；正文已存在 → append（保留 QA） (0.486792ms)
+  ✔ 显式 replace：始终 replace + qaClear (0.10375ms)
+  ✔ 已保存 + 唯一未手改块 → update（原位替换，不清 QA） (0.159ms)
+  ✔ 已保存但块被手改 → allowed=false reason=hand-edited（禁止追加/静默覆盖） (0.095833ms)
+  ✔ 块内容经 sanitize 白名单（script 剥离） (0.07125ms)
+✔ fast-p 04 纯导出：planMeetingInsertion（T3 插入语义） (0.99825ms)
+▶ fast-p 04 组件：create/open/close/dispose 生命周期（S-2）
+  ✔ open 创建唯一 dialog 于 body；options/zones 请求发生；取消可关闭；dispose 移除 (54.900458ms)
+  ✔ 重复 create 先 dispose 旧实例（全局 id 唯一） (4.47875ms)
+  ✔ backdrop（dialog 自身点击）不关闭；Esc 在列表关闭态才关弹窗 (2.685583ms)
+  ✔ loading 阶段字段禁用、确认/下载禁用；成功后可填并预览 (7.622291ms)
+✔ fast-p 04 组件：create/open/close/dispose 生命周期（S-2） (70.731959ms)
+▶ fast-p 04 组件：时区搜索键盘状态（S-4/I-5）
+  ✔ focus 展开全部、输入过滤、Enter 单选/多选不自动选、Tab 恢复标签 (5.89325ms)
+  ✔ 键盘 active/selected 分离：Arrow 移动 focused 但不改 selected；aria 同步 (2.0105ms)
+  ✔ 鼠标 mousedown 选择候选项：先选定再关列表（不依赖迟到的 click） (5.643208ms)
+  ✔ Escape 两级与 Tab 恢复：先关列表再关弹窗；无结果不吞已选值 (2.983417ms)
+  ✔ 日期 change 只重载目录偏移、保留 zone id；endDate 为空时跟随 startDate (2.119084ms)
+✔ fast-p 04 组件：时区搜索键盘状态（S-4/I-5） (18.952417ms)
+▶ fast-p 04 组件：apply 契约（onApply 参数/返回值）
+  ✔ apply 携带 {preview, mode, capturedEditorRevision}；true 关闭、false 显示目标变化错误 (3.721125ms)
+✔ fast-p 04 组件：apply 契约（onApply 参数/返回值） (3.835209ms)
+▶ T3: 11 个带版本资源统一键与注册（I-1/S-1）
+  ✔ 恰好 11 个带 ?v= 资源且全部等于 20260926-discovery-repair，无旧键残留 (0.77875ms)
+  ✔ 11 个资源 = 9 旧资源 + world-clock.css/.js，各恰好注册 1 次（无重复） (1.529709ms)
+  ✔ link 全在 head、script 全在 body；task-modal-runtime.js 未版本化且位于组件脚本之前 (0.507834ms)
+  ✔ CSS 顺序：meeting-confirmation.css 紧跟 mailbox-chat.css 之后（S-1） (0.11325ms)
+  ✔ 脚本顺序：meeting-confirmation.js 在 mailbox-chat.js 之前、app.js 之前（S-1） (0.556583ms)
+✔ T3: 11 个带版本资源统一键与注册（I-1/S-1） (21.473708ms)
+▶ T3: 组件被引用且不注入样例/预览 mock 数据（I-2）
+  ✔ meeting-confirmation.css/.js 均以统一键注册且作为独立文件存在 (1.331875ms)
+  ✔ meeting 注册行仅相对路径 + 单一版本查询串，无样例/预览 mock 数据引用（I-2） (7.504833ms)
+  ✔ 组件脚本自身不携带样例/模拟数据或 fetch 改写痕迹（I-2） (0.441625ms)
+✔ T3: 组件被引用且不注入样例/预览 mock 数据（I-2） (9.924625ms)
+▶ T4: 02 注册新资源与顶栏入口回归（I-7/I-8/S-5/S-6）
+  ✔ 新资源各自作为独立文件存在、以正确标签注册 1 次且携带统一键（I-8/S-6） (0.609208ms)
+  ✔ world-clock.css 在最后一个旧 CSS 之后；world-clock.js 在 app.js 之后且为最后一个带版本脚本（I-8/S-6） (0.394375ms)
+  ✔ 删除轮询日志入口但保留用户名/退出/日志面板（I-7/S-5） (0.204542ms)
+  ✔ 顶栏侧栏只剩用户名与退出登录一个按钮，顺序为用户在前（S-5） (0.079875ms)
+  ✔ 导航 data-view 集合与顺序：会议日历插入邮箱之后，其余不变（I-1/S-5） (1.045125ms)
+✔ T4: 02 注册新资源与顶栏入口回归（I-7/I-8/S-5/S-6） (2.476625ms)
+▶ fast-p 04: 组件门禁与 S-3 人工回复区（trigger/附件卡）
+  ✔ 组件缺席：不渲染 trigger/附件卡，旧按钮顺序与发送路径不变 (47.291917ms)
+  ✔ 组件缺席：历史 calendarAttachment 卡仍由服务端数据渲染并可下载 (7.940417ms)
+  ✔ 组件在场：trigger 位于五个富文本/附件按钮之后，附件容器在 editor 与 footer 之间 (6.610416ms)
+  ✔ dialog 唯一、body 直属；unmount 移除 dialog (12.139083ms)
+✔ fast-p 04: 组件门禁与 S-3 人工回复区（trigger/附件卡） (75.222084ms)
+▶ fast-p 04: 弹窗加载与表单默认值（options/zones 只读）
+  ✔ 并行拉 options/zones；上下文/默认值正确；只剩时区与时间字段；确认禁用 (9.375041ms)
+  ✔ options 不带模板目录也能继续：表单可用，模板缺失由 preview 400 呈现 (15.551583ms)
+  ✔ 配置加载失败：状态文案 + 重试可用；重试成功进入 ready (19.643333ms)
+✔ fast-p 04: 弹窗加载与表单默认值（options/zones 只读） (45.117041ms)
+▶ fast-p 04: 时区搜索（S-4/I-5 键盘与显式选择）
+  ✔ 搜索过滤与空结果固定文案；清空不丢已选 id (9.11025ms)
+  ✔ 中文/别名/偏移命中；显式选择后 input=labelZh (offsetLabel)、hint=zoneId (14.835375ms)
+  ✔ 键盘：ArrowDown/Up + focused；Enter 显式选中；Escape 两级；Esc/Tab 恢复已选标签 (12.440875ms)
+  ✔ 鼠标 mousedown 选时区：从上海切到 Istanbul，标签/选中值/预览 payload 同步 (107.142458ms)
+  ✔ 日期变化：重拉目录且保留 zone id；endDate 自动跟随不隐式改时区 (41.686125ms)
+✔ fast-p 04: 时区搜索（S-4/I-5 键盘与显式选择） (185.630375ms)
+▶ fast-p 04: 预览生成与右栏（T2/S-2 绑定）
+  ✔ 完整表单 debounce 后 POST；右栏值均来自响应 (48.493583ms)
+  ✔ 本地 URL 非法：不发 preview、aria-invalid 标记、下载不可点 (23.162875ms)
+  ✔ 服务端 400：message 进错误区、字段值保留；网络错误：状态文案 + 重试出 ready (75.807375ms)
+  ✔ startUtc 已过当前时间：状态条提示核对，提示不阻断确认 (28.6185ms)
+  ✔ 陈旧预览响应不覆盖新值（双重序号保护） (30.621125ms)
+✔ fast-p 04: 预览生成与右栏（T2/S-2 绑定） (207.175334ms)
+▶ fast-p 04: 确认填入草稿（I-1/I-3/T3/S-3 块与卡）
+  ✔ 空正文首填：1 块 1 卡 ready；只写草稿不调用发送/旧确认接口 (34.459666ms)
+  ✔ 草稿恢复：切专家再回，会议块+富文本+卡恢复且不产生无意义 stale (28.367792ms)
+  ✔ 已有正文 + 编辑会议：原内容保留；未手改块原地更新仍 1 块 1 卡 (25.396958ms)
+  ✔ 手改会议块 → stale 卡、禁止带附件发送；replace 恢复 ready (31.368291ms)
+  ✔ 移除附件：0 卡但正文保留；再发送走旧 payload (45.695084ms)
+  ✔ QA：append 保留 QA —— meeting 与 ragFactCodes 同 payload (60.418208ms)
+  ✔ QA：replace 清旧 QA；采用工作台先移除旧日历并提示 (72.728791ms)
+✔ fast-p 04: 确认填入草稿（I-1/I-3/T3/S-3 块与卡） (298.867333ms)
+▶ fast-p 04: retarget 迁移与新来信目标（I-2/T3）
+  ✔ 切换新来信：meeting stale、正文保留、禁止带附件发送；重新编辑后 ready (156.64625ms)
+✔ fast-p 04: retarget 迁移与新来信目标（I-2/T3） (157.768ms)
+▶ fast-p 04: 发送锁与异步隔离（T4/I-2）
+  ✔ 带 meeting 发送：payload 带 meeting.input + sha；成功后该份草稿清除 (39.922959ms)
+  ✔ 发送中锁 UI；失败恢复且草稿保留 (20.94025ms)
+  ✔ A 发送中切 B：A 完成后只清 A 快照，B 目标不受影响 (50.922917ms)
+  ✔ 发送失败不删草稿不自动重试；再点成功 (42.754708ms)
+✔ fast-p 04: 发送锁与异步隔离（T4/I-2） (155.106291ms)
+▶ fast-p 04: 历史下载错误经宿主状态提示
+  ✔ 下载适配错误 → hostShowStatus error；下载参数原样传递 (11.104708ms)
+✔ fast-p 04: 历史下载错误经宿主状态提示 (11.240042ms)
+▶ S-1: 落地 CSS 与 04 evidence 逐字（字节）一致
+  ✔ meeting-confirmation.css 与 evidence/meeting-confirmation.target.css 字节一致 (1.212333ms)
+  ✔ 文件是独立资源（index.html 注册检查见 meetingConfirmationAssets.test.js） (0.17575ms)
+✔ S-1: 落地 CSS 与 04 evidence 逐字（字节）一致 (2.170666ms)
+▶ S-1/I-6: DOM class 白名单与模板卫生
+  ✔ meeting-confirmation.js 模板字面量 class 全部命中 S-1/既有样式 (1.809042ms)
+  ✔ mailbox-chat.js 会议模板的字面量 class 不越过旧样式白名单（meeting-* 只经运行时拼接） (1.094084ms)
+  ✔ 新文件模板不写 inline style；宿主不写 element.style (0.573791ms)
+  ✔ S-1 不复制预览导航/rev 类/mock 数据/fetch 拦截 (0.100917ms)
+  ✔ 既有 mailbox-chat.css 未被会议规则污染（独立 CSS 边界） (0.332542ms)
+✔ S-1/I-6: DOM class 白名单与模板卫生 (4.105916ms)
+▶ S-2/S-3/S-4/S-5: 关键 id 与 data-role 源文本存在性（DOM stub 防悬空）
+  ✔ S-2 组件关键 id 在源文本唯一存在 (0.752042ms)
+  ✔ I-5 废弃节点与模板专用语法不在组件源文本出现 (0.351542ms)
+  ✔ S-3/S-5 宿主 data-action/data-role 在 mailbox-chat.js 源文本存在 (0.323375ms)
+  ✔ S-4 时区候选结构与文案在组件源文本存在 (0.072291ms)
+  ✔ 空结果/加载/错误/ready/stale/sending 均有确定文案源 (0.146959ms)
+✔ S-2/S-3/S-4/S-5: 关键 id 与 data-role 源文本存在性（DOM stub 防悬空） (1.804666ms)
+▶ provider distribution unattributed footer
+  ✔ renders the footer after present data rows when unattributed count is positive (3.041417ms)
+  ✔ omits the footer when unattributed count is zero (1.102333ms)
+✔ provider distribution unattributed footer (5.024ms)
+▶ monitoring date default
+  ✔ initializes monitoring state date and range window (3.090541ms)
+  ✔ monitoringToday returns Asia/Shanghai calendar date (29.447625ms)
+  ✔ monitoringRangeParams uses Shanghai today when date is unset (2.591ms)
+  ✔ monitoringRangeParams keeps explicit monitoring date and derives 7-day window (4.908375ms)
+  ✔ monitoringRangeParams collapses window to the anchor day for rangeDays 1 (5.416417ms)
+  ✔ monitoringRangeParams spans 29 days for rangeDays 30 (2.468417ms)
+  ✔ monitoringRangeParams crosses month boundaries with pure calendar math (4.419625ms)
+  ✔ loadMonitoring syncs monitoringDate input from state (1.098416ms)
+  ✔ triggeredByLabels includes MANUAL (0.678125ms)
+  ✔ overlap monitoring cards include hint text (0.084042ms)
+✔ monitoring date default (57.5005ms)
+▶ normalizeDiscoveryResultSummary (from app.js)
+  ✔ new structure preserves both bySource and summaryText (0.770625ms)
+  ✔ old structure returns bySource directly (0.103583ms)
+  ✔ string and object inputs produce same result (0.089166ms)
+  ✔ null input returns null (0.066042ms)
+  ✔ malformed JSON string returns null (0.078833ms)
+✔ normalizeDiscoveryResultSummary (from app.js) (1.943083ms)
+▶ renderDiscoverySummaryText (from app.js)
+  ✔ produces escaped HTML for summary text (0.159917ms)
+  ✔ escapes XSS payload in summaryText (0.069ms)
+  ✔ returns empty string for null/undefined summaryText (0.08225ms)
+✔ renderDiscoverySummaryText (from app.js) (0.449833ms)
+▶ P2 overlay + dialog contrast (source contract)
+  ✔ I-7: .action-dialog and the overlay use opaque backgrounds with dark-mode pairs (0.944209ms)
+  ✔ I-8: the eleven cache-busted assets share one key, in order (0.501291ms)
+  ✔ S-1: .trust-reply-workbench .reply-workflow-content block matches the contract verbatim (0.183083ms)
+  ✔ S-2: the four overlay rules are verbatim and no spinner/keyframe is duplicated (0.468458ms)
+  ✔ S-3: dialog body paragraphs get scoped contrast overrides; global p untouched (0.223041ms)
+✔ P2 overlay + dialog contrast (source contract) (3.2015ms)
+▶ provider distribution — 未送达列 (I-5)
+  ✔ 表头恰好 7 列，且不再有硬退率 / 软退 (12.163916ms)
+  ✔ 空状态行 colspan 为 7 (5.456291ms)
+  ✔ 每个数据行恰好 7 个单元格 (7.16675ms)
+✔ provider distribution — 未送达列 (I-5) (25.939584ms)
+▶ provider distribution — 队列为 0 仍显示未送达 (I-9)
+  ✔ cohort=0 且 undelivered=4 时，未送达格渲染 4 而不是 - (3.806791ms)
+  ✔ undelivered=0 时渲染 0，不是空白也不是 - (8.567458ms)
+  ✔ 渲染未送达格的代码不含任何以 cohort 为条件的分支 (0.574208ms)
+✔ provider distribution — 队列为 0 仍显示未送达 (I-9) (13.123084ms)
+▶ provider distribution — 未归因表尾 (I-4 / S-2)
+  ✔ unattributedBounceCount > 0 时渲染表尾行，文案逐字且 colspan=7 (4.806541ms)
+  ✔ unattributedBounceCount = 0 时不渲染表尾行 (5.56975ms)
+  ✔ 有数据行时表尾行仍然存在（防 || 短路吞掉表尾） (3.683208ms)
+  ✔ 无数据行但有未归因退信时，空状态行与表尾行并存 (7.063417ms)
+✔ provider distribution — 未归因表尾 (I-4 / S-2) (21.340917ms)
+▶ 最高未送达服务商卡片 (I-9)
+  ✔ 按未送达人数降序选取，而不是按队列人数或比率 (5.755167ms)
+  ✔ 队列为 0 但有未送达的服务商必须能被选中 (4.040959ms)
+  ✔ 全部未送达为 0 时显示 - (4.084ms)
+  ✔ 卡片标题已改名，旧名不再出现 (0.721041ms)
+  ✔ 候选集与排序不含任何除法 (0.596291ms)
+✔ 最高未送达服务商卡片 (I-9) (15.357625ms)
+▶ 接口返回形状解包 (I-7)
+  ✔ provider-distribution 的 catch 兜底是对象而非数组 (0.471042ms)
+  ✔ state.providerDistribution 取的是 rows，仍是数组 (0.213708ms)
+  ✔ region-distribution 的数组兜底未被误改 (0.466166ms)
+  ✔ state.monitoring 初值含 unattributedBounceCount (0.039833ms)
+  ✔ renderMonitoringCards 仍把 providerDistribution 当数组用 (0.548375ms)
+✔ 接口返回形状解包 (I-7) (1.82625ms)
+▶ 后端字段已彻底移除
+  ✔ app.js 不再引用 hardBounceCount / softBounceCount (0.730334ms)
+✔ 后端字段已彻底移除 (0.788ms)
+▶ Phase 10 AI reply quality metrics
+  ✔ has renderQualityMetrics function in app.js (0.775292ms)
+  ✔ has AI reply quality section label (0.159458ms)
+  ✔ has only initial-draft quality metric cards (0.204375ms)
+  ✔ renders 无数据 when aiReplyQuality is null/missing (0.114709ms)
+  ✔ uses formatPercent for rate values (0.157834ms)
+  ✔ uses safeNum fallback for count values (0.172ms)
+  ✔ renderQualityMetrics called in renderQaAuditPanel template (0.094625ms)
+  ✔ formatPercent returns 0% for null (1.523417ms)
+  ✔ formatPercent returns 0% for NaN (1.098666ms)
+  ✔ formatPercent returns 0.0% for zero (1.581166ms)
+  ✔ formatPercent returns 50.0% for 0.5 (4.262708ms)
+  ✔ formatPercent returns 33.3% for 0.333 (1.790917ms)
+  ✔ formatPercent returns 100.0% for 1.0 (2.236875ms)
+  ✔ safeNum falls back to 0 for null and undefined (0.11775ms)
+  ✔ reuses metadata-grid class for quality cards (0.085792ms)
+✔ Phase 10 AI reply quality metrics (15.690041ms)
+▶ qa coverage key labels (legacy helper)
+  ✔ renders warn badge for empty coverage keys (3.594625ms)
+  ✔ renders up to three labels joined by dot separator (0.834292ms)
+  ✔ shows overflow count for more than three keys (0.969917ms)
+  ✔ falls back to raw key when label not found (1.612084ms)
+✔ qa coverage key labels (legacy helper) (8.140917ms)
+▶ qa coverage key editor (p4)
+  ✔ index.html contains the coverage key editor elements (0.347458ms)
+  ✔ qa rules table uses fact title column not coverage column (0.242334ms)
+  ✔ loadQa fetches coverage-keys endpoint (0.29175ms)
+  ✔ saveQaRule sends coverageKeys collected from the DOM (I-3) (0.251708ms)
+  ✔ fillQaRuleForm renders coverage options (0.165709ms)
+  ✔ save flow keeps the backend as the authority: no bypass flag, error toast stays (I-2) (1.945375ms)
+  ✔ table colspan matches nine-column fact-card layout (0.169708ms)
+  ✔ no coverage key constants hardcoded in app.js (0.593ms)
+  ✔ collectQaCoverageKeys returns checked keys in DOM order (I-7) (2.040375ms)
+  ✔ collectQaCoverageKeys returns [] when nothing is checked (I-3) (0.6415ms)
+  ✔ renderQaCoverageKeyOptions renders every catalog key as a resident checkbox (I-7) (1.346042ms)
+  ✔ evaluateQaCoverageGate returns none when no controlled key is selected (0.753125ms)
+  ✔ evaluateQaCoverageGate returns aligned for an exact controlled group with matching body (0.5225ms)
+  ✔ evaluateQaCoverageGate returns drift for an exact controlled group with drifted body (0.498334ms)
+  ✔ evaluateQaCoverageGate returns partial for controlled keys that do not form a group (I-1) (0.44225ms)
+  ✔ partial state does not disable the save button (I-1 alignment with backend) (0.993875ms)
+  ✔ drift state disables the save button and shows the save-block message (S-6) (0.918084ms)
+  ✔ revoke card flags impact-bad when this rule is the last authority (I-5) (0.739625ms)
+  ✔ revoke card flags impact-ok when another enabled rule covers the key (I-5) (0.690958ms)
+  ✔ opening the revoke card does not change the save button state (I-5) (0.676083ms)
+  ✔ revoke-do unchecks every key of the controlled group together (I-4) (0.607625ms)
+✔ qa coverage key editor (p4) (15.570125ms)
+▶ qa fact card editor
+  ✔ index modal uses answerBody and replyPolicy select (0.997791ms)
+  ✔ renderQaRulesTable shows policy badges (6.345334ms)
+  ✔ saveQaRule sends replyPolicy (0.438292ms)
+  ✔ fillQaRuleForm round-trips replyPolicy (0.295791ms)
+  ✔ app.js does not reference legacy route badge (0.640167ms)
+  ✔ reply snippet variant helpers remain available (0.29575ms)
+✔ qa fact card editor (10.295166ms)
+▶ rag adopt -> send bridge (03b T5)
+  ✔ I-44: usedFactCodes shape builds ragFactCodes context, carries fingerprint, and never schedules preflight (5.889375ms)
+  ✔ I-44: empty usedFactCodes still selects the RAG shape (evidence-free draft keeps the fingerprint gate) (3.589959ms)
+  ✔ canonicalFactIds shape behaves exactly as before (qaRuleIds context + snapshot + preflight) (1.749292ms)
+  ✔ send request assembly carries ragFactCodes+ragCorpusFingerprint on RAG shape and keeps the qaRuleIds branch verbatim (0.458125ms)
+  ✔ G-8: the ids adopt and RAG preflight-skip touch are still produced by app.js templates (1.850916ms)
+✔ rag adopt -> send bridge (03b T5) (15.405625ms)
+▶ RAG 知识库页 (plan 04)
+  ✔ G-6 三点同步：按钮 data-tab=ragKb / 面板 aiTabRagKb / app.js 白名单链 (3.257917ms)
+  ✔ G-8 + S-2 骨架：渲染函数按 id 取元素，这些 id 必须真实存在于 index.html (0.257541ms)
+  ✔ loadAiTraining 改调 loadRagKb；旧 QA 渲染函数已随 07 清理 (1.883375ms)
+  ✔ S-1：三个 verbatim token 与 :root 契约逐字一致 (0.603417ms)
+  ✔ S-2..S-5：新增规则块与契约逐字一致（含全部状态选择器） (2.056542ms)
+  ✔ G-5：11 处 ?v= 缓存键同值且等于 20260926-discovery-repair，注册顺序合规 (0.620458ms)
+  ✔ VERBATIM 事实渲染顶部逐字警示条（DOM stub 跑 renderRagKbDetail） (8.792125ms)
+  ✔ COMPOSE 事实不渲染警示条，仍给出可编辑表单与保存按钮（DOM stub） (1.734792ms)
+  ✔ 列表渲染输出契约类名与选中/停用标记（DOM stub 跑 renderRagKbList/Filter） (5.43475ms)
+✔ RAG 知识库页 (plan 04) (25.720833ms)
+▶ AI 提示词与约束页 (plan 06)
+  ✔ G-8 + DOM 骨架：渲染用 id 全部真实存在于 index.html；旧表单两 textarea 原样保留（S-5/D-14） (0.956833ms)
+  ✔ T4：loadAiTraining 追加 loadRagPromptConfig；五个新函数就位 (0.496375ms)
+  ✔ I-31：默认 22 行渲染，第 18/19/21 行 readonly、无 contenteditable、无操作按钮 (3.891458ms)
+  ✔ markRagPromptDirty：改 1 处亮起保存栏与「已改」徽章，撤销后复原 (3.004084ms)
+  ✔ I-32：删除第 3 条后原第 4 条渲染编号变 3.，删除计入未保存状态 (6.086208ms)
+  ✔ S-1..S-4：styles.css 追加块与计划 css 栅格逐字一致（含全部新增 class） (1.947583ms)
+  ✔ S-4：保存栏 background 字面不透明白 + 禁 var(--panel-bg) (0.333792ms)
+✔ AI 提示词与约束页 (plan 06) (17.74ms)
+▶ rag workbench render contracts (计划 05)
+  ✔ G-8: index.html keeps the shared workbench script include and the G-5 single key (1.093667ms)
+  ✔ I-26: a VERBATIM body paragraph renders class trust-reply-para verbatim from renderMode only (1.389125ms)
+  ✔ I-27: dirty=true regenerate calls the injected confirm and skips the request on cancel (8.645958ms)
+  ✔ I-28: removeFact only mutates request params, never the local paragraph array (1.614542ms)
+  ✔ I-28 (flow): clicking × re-composes with excludedFactCodes and paragraphs length stays stable (2.773708ms)
+  ✔ I-29: send stays enabled with unaddressed questions present (2.431ms)
+  ✔ S-2..S-4: new class CSS blocks match the contract verbatim and send bar never uses --panel-bg (1.18425ms)
+✔ rag workbench render contracts (计划 05) (20.184375ms)
+▶ reply snippet display label
+  ✔ uses the name when present (1.954167ms)
+  ✔ falls back to the content excerpt when name is empty or whitespace (0.654375ms)
+  ✔ returns the first line verbatim without ellipsis when it fits 40 chars (0.612375ms)
+  ✔ truncates a first line longer than 40 chars to 40 plus ellipsis (0.610208ms)
+  ✔ skips leading blank lines and uses the first non-empty line (3.224666ms)
+  ✔ keeps EXCERPT_MAX_CHARS in sync between Kotlin and JS (3.519208ms)
+✔ reply snippet display label (12.678125ms)
+▶ reply snippet single-editor variants
+  ✔ keeps original outside variants and preserves all raw values across navigation and redraw (16.45475ms)
+  ✔ reveals and focuses the first invalid hidden version before rejecting save validation (18.383833ms)
+✔ reply snippet single-editor variants (38.053417ms)
+▶ subject snippet identity and custom fallback
+  ✔ uses the exact ID-bearing label to distinguish same-name snippets and custom text clears the ID (12.119792ms)
+  ✔ uses combobox keyboard focus and Enter to select the exact ID-bearing option without form submission (14.494209ms)
+  ✔ retains an invalid saved reference instead of falling back to its old snapshot (9.7745ms)
+  ✔ saves reference source text and explicit null for custom subject payloads (20.582125ms)
+✔ subject snippet identity and custom fallback (57.207167ms)
+▶ snippet save with real placeholder validation
+  ✔ accepts bare variables across versions and rejects a malformed hidden variant (12.428666ms)
+✔ snippet save with real placeholder validation (12.540333ms)
+▶ senderBindingDisplay list rendering
+  ✔ renders binding account text for bound contact (4.164084ms)
+  ✔ renders 未绑定 when no binding (0.829583ms)
+  ✔ renders sender-changed tag only when flag is true (1.681875ms)
+  ✔ escapes account code (0.879708ms)
+  ✔ expert-row-sub renders even when only binding exists (0.774667ms)
+✔ senderBindingDisplay list rendering (9.208083ms)
+▶ senderBindingDisplay accounts table
+  ✔ account row renders bound expert count (4.374042ms)
+  ✔ renders 硬退率过高 warn badge without resume action when only warning (3.291042ms)
+  ✔ keeps 自动暂停 and resume action orthogonal to 硬退率过高 warning (4.950125ms)
+✔ senderBindingDisplay accounts table (12.88075ms)
+▶ SharePoint 文件卡展示
+  ✔ 将有效文件卡移出正文并恢复被切断单词 (2.749667ms)
+  ✔ 保持翻译输入和未启用的普通正文不变 (2.766959ms)
+  ✔ 拒绝非 HTTPS SharePoint、伪造主机和注入型文件名 (1.758125ms)
+  ✔ 仅邮件展示点启用文件卡转换 (0.815834ms)
+  ✔ 邮件箱聊天视图复用安全的文件卡展示并更新缓存版本 (0.862167ms)
+  ✔ 链接样式遵守现有正文主色契约 (0.082ms)
+✔ SharePoint 文件卡展示 (10.233417ms)
+▶ task activity center static contract
+  ✔ S-0: the contract block is appended once and nothing follows it (0.900917ms)
+  ✔ S-0: three/two/one column breakpoints and dark theme are declared verbatim (0.104709ms)
+  ✔ S-1: the topnav keeps its ten entries plus logout and both task entries (0.2415ms)
+  ✔ S-1: the global entry is a standalone control, not a nav tab (0.13875ms)
+  ✔ S-2: the running section carries the fixed skeleton and independent pager (0.55ms)
+  ✔ S-3: exactly one in-page detail section, no overlay, plain-text log sink (0.179542ms)
+  ✔ manual interruption has one real reason form and an interrupted history filter (0.561958ms)
+  ✔ S-4: the history table keeps its seven columns, filters and pager (0.622958ms)
+  ✔ I-8: all eleven versioned assets share the same cache key and the old one is gone (23.007166ms)
+  ✔ I-8: the new markup carries no inline style or inline handler (0.23875ms)
+  ✔ I-8: production sources carry no preview fixture data (0.80325ms)
+  ✔ I-8: every id the observer reaches for exists in the real index.html (5.42575ms)
+  ✔ S-2/I-8: card rendering uses native progress value and never style.width (0.297041ms)
+✔ task activity center static contract (34.762667ms)
+▶ task activity observer is non-intrusive
+  ✔ I-1: login, ticks and new active rows never open a modal (24.025583ms)
+  ✔ I-1: the resume entry point only starts the observer (3.867334ms)
+  ✔ I-5: repeated start keeps exactly one polling chain (6.840125ms)
+  ✔ I-5: a tick never reloads the history table or resets its filters (7.376458ms)
+  ✔ I-5: an unresolved request is never followed by a second one (5.638542ms)
+  ✔ I-5: hidden pages stop requesting and visible resumes exactly once (6.053666ms)
+  ✔ I-5: a failed request keeps the previous numbers and marks them stale (11.590291ms)
+  ✔ I-5: the first failure reports an unavailable state instead of an empty list (4.360958ms)
+  ✔ I-5: responses that land after stop or re-login never write the UI (4.364458ms)
+  ✔ I-5: a stale page response cannot overwrite the new page (21.597834ms)
+✔ task activity observer is non-intrusive (96.338875ms)
+▶ task activity collection semantics
+  ✔ I-2: two runs of the same type stay two cards and the count is the record total (4.130041ms)
+  ✔ I-2: the request carries the page and size for the current view (6.892125ms)
+  ✔ I-2: an unknown type keeps its raw code and shows the raw trigger (4.668833ms)
+  ✔ I-2: 99+ keeps the exact count in the aria label (4.365833ms)
+  ✔ I-2: a success with total=0 hides both entries and shows the empty state (5.548459ms)
+  ✔ I-2: total>0 with an empty page is a transient refresh, not an empty state (10.250917ms)
+  ✔ I-2: a page beyond the new maximum is clamped and re-queried once (8.856458ms)
+  ✔ I-2: the active pager never touches the history pager (24.433667ms)
+✔ task activity collection semantics (69.801459ms)
+▶ task activity progress binding
+  ✔ I-3: a matching execution id renders the live percentage (30.616375ms)
+  ✔ I-3: no live data means no bar, no invented state and no fabricated counters (16.533416ms)
+  ✔ I-3: totalCount<=0 yields an unknown percentage but keeps the processed count (9.2945ms)
+  ✔ I-3: the progress bar disappears when a later tick loses its live data (11.267958ms)
+  ✔ I-3: a cancelling memory status only adds the label, never rewrites the record status (5.210875ms)
+  ✔ I-3: metric text reuses the catalog label with persisted counts only (3.9955ms)
+  ✔ I-3: elapsed seconds format as mm:ss or hh:mm:ss (2.909708ms)
+✔ task activity progress binding (80.126875ms)
+▶ task activity detail
+  ✔ I-6: opening B while A is in flight keeps B even when A resolves later (10.49475ms)
+  ✔ I-6: a same-type replacement never re-targets the open detail (10.342333ms)
+  ✔ I-6: closing or stopping does not let a late response revive the panel (4.968625ms)
+  ✔ S-3: closing restores focus to the card button that opened it (5.655542ms)
+  ✔ I-6: a 404 keeps an explicit empty state and stops retrying (6.603083ms)
+  ✔ I-7: a terminal detail is kept on screen and stops the detail polling (7.426625ms)
+  ✔ I-6: the control entry is gated on taskButtonMapping and re-checks the identity (13.766709ms)
+  ✔ I-6: the control entry is hidden for types without a launch button (4.965291ms)
+  ✔ I-6: batch logs are loaded on demand for the selected execution only (6.108291ms)
+  ✔ I-6: more than 50 batch logs are capped and labelled (7.267709ms)
+  ✔ I-6: an empty batch log list is reported explicitly (8.707834ms)
+  ✔ I-7: membership changes only surface the refresh hint, and it never notifies (5.094ms)
+  ✔ I-7: a status flip on the same page also surfaces the hint (3.881ms)
+✔ task activity detail (95.96675ms)
+▶ task activity injection safety
+  ✔ I-8: server text is escaped on creation and written as text on update (5.675875ms)
+  ✔ I-8: a non-numeric execution id is ignored instead of being addressed (6.655ms)
+  ✔ I-8: out-of-range percentages are clamped before they reach the DOM (3.136084ms)
+✔ task activity injection safety (15.596625ms)
+▶ task drilldown (b4)
+  ✔ I2b-1: drilldownState NONE renders the verbatim disabled span without data-action/href/button (13.9795ms)
+  ✔ I2b-2: PRE_FEATURE renders its distinct disabled text (2.259667ms)
+  ✔ I2b-2: QUEUE_DISPATCHED renders its distinct disabled text (1.547667ms)
+  ✔ I2b-2: the three disabled wordings are distinct from each other (4.275917ms)
+  ✔ S2b-1: AVAILABLE MAIL_BY_EXECUTION renders the verbatim link-btn button (1.865084ms)
+  ✔ S2b-1: AVAILABLE EXPERT_BY_POLL_DETAIL renders one clickable button per expert (1.4675ms)
+  ✔ T2b-5: mail drilldown click sets taskExecutionId, label and resets page (1.08375ms)
+  ✔ T2b-5: contact drilldown handler reuses openContactInList (0.9745ms)
+  ✔ N2b-2: setMailboxPendingOnly(true) clears the batch filter state (1.160417ms)
+  ✔ S2b-3: hint bar shows the normal form with a known label (3.808125ms)
+  ✔ S2b-3: hint bar shows the retention form without a label (I2b-4) (8.700708ms)
+  ✔ S2b-3: hint bar stays hidden and empty without a filter (N2b-1) (2.860792ms)
+  ✔ S2b-3: filtered load sends taskExecutionId in the query (2.919834ms)
+  ✔ S2b-3: index.html carries the hint bar skeleton after the existing toolbar (0.147708ms)
+✔ task drilldown (b4) (48.480584ms)
+▶ task modal lifecycle integration
+  ✔ running task opened from real handler starts watcher on immediate close and restores on terminal (12.528875ms)
+  ✔ A/B watcher replacement keeps B alive and only completes/notifies on B (6.263958ms)
+✔ task modal lifecycle integration (19.690208ms)
+▶ Task Modal State Machine & Runtime Tests
+  ▶ generation lifecycle
+    ✔ closed and reopened modal does not reuse generation (6.448541ms)
+    ✔ stale response isolation: ignores old response for same taskType (1.523125ms)
+    ✔ ignores response for different taskType (1.279167ms)
+  ✔ generation lifecycle (9.899875ms)
+  ▶ executionId binding
+    ✔ bindTaskModalExecution binds executionId from launch response (1.345792ms)
+    ✔ bindTaskModalExecution returns false if generation mismatch (1.192542ms)
+  ✔ executionId binding (2.717375ms)
+  ▶ terminal reconciliation and retry delay
+    ✔ refreshRunListUntilExecutionTerminal delays on failure (avoids busy loops) (1.493708ms)
+  ✔ terminal reconciliation and retry delay (1.596333ms)
+  ▶ final logs synchronization
+    ✔ fetchAndCacheBatchLogs caches logs and updates DOM if expanded (3.866458ms)
+  ✔ final logs synchronization (4.608ms)
+  ▶ watcher lifecycle
+    ✔ watcher starts when PROGRESS modal is closed with running status (4.570917ms)
+    ✔ watcher does NOT start when CONFIG modal is closed (1.285125ms)
+    ✔ watcher starts when known active modal is closed before first progress (1.182667ms)
+    ✔ watcher does not start for unknown non-launch modal with no progress (1.121708ms)
+  ✔ watcher lifecycle (8.288917ms)
+  ▶ R5 run-list binding and notifications
+    ✔ selectExecutionForCurrentModal binds newest running execution for known active modal (3.343ms)
+    ✔ selectExecutionForCurrentModal binds newest terminal only after known active modal observes terminal (2.304542ms)
+    ✔ selectExecutionForCurrentModal does not guess for CONFIG or unknown progress modals (1.156917ms)
+    ✔ fetchRunList adopts execution from run list and finalizes known-active fast terminal (6.916375ms)
+    ✔ finalization returns the same promise for concurrent callers (1.3985ms)
+    ✔ notifyTaskCompletionOnce deduplicates generic and detailed notifications (1.26425ms)
+    ✔ handle task entrypoints pass knownActiveAtOpen when isTaskRunning is true (2.7485ms)
+  ✔ R5 run-list binding and notifications (19.321916ms)
+  ▶ R4 verification test cases
+    ✔ Case 1: progress terminal arrives first, executionId binds later (54.534333ms)
+    ✔ Case 2: executionId binds first, progress terminal arrives later (55.91425ms)
+    ✔ Case 3: duplicate terminal progress does not re-trigger finalization (106.313166ms)
+    ✔ Case 4: POST response binds after modal is closed, should do nothing (2.332625ms)
+    ✔ Case 5: POST response binds after new generation has opened (1.479542ms)
+    ✔ Case 6: closing terminal modal does NOT start watcher (1.4775ms)
+    ✔ Case 7: closing modal while launch in flight (no progress yet) starts watcher (1.57575ms)
+    ✔ Case 8: runListTimer is cleared even when executions fails continuously (1.61275ms)
+    ✔ Case 9: final logs fetch succeeds on 3rd attempt (2.447667ms)
+    ✔ Case 10: final logs fetch fails all 3 attempts but terminates successfully (1.598584ms)
+  ✔ R4 verification test cases (229.802417ms)
+  ▶ 204 launch race condition tests
+    ✔ Case 1: 启动阶段首次 204 不停止 watcher (3.503583ms)
+    ✔ Case 2: 多个 204 后观察到 RUNNING (2.596084ms)
+    ✔ Case 3: RUNNING 后再收到 204 (1.916333ms)
+    ✔ Case 4: 启动宽限期耗尽 (次数耗尽) (1.635792ms)
+    ✔ Case 4b: 启动宽限期耗尽 (时间耗尽) (1.54675ms)
+    ✔ Case 5: 启动阶段直接观察到终态 (1.899542ms)
+    ✔ Case 6: 非 awaitingLaunch watcher 收到 204 (3.315917ms)
+    ✔ Case 7: 重复 start 不创建多个 interval (1.552541ms)
+    ✔ Case 8: fetch 期间 watcher 被删除 (1.55925ms)
+    ✔ Case 9: POST 成功时弹窗已关闭 (1.2665ms)
+    ✔ Case 10: POST 失败清理 awaitingLaunch watcher (1.536125ms)
+  ✔ 204 launch race condition tests (22.730542ms)
+  ▶ 204 launch race condition identity tests
+    ✔ Case 11: 旧 204 不得停止新 watcher (2.181334ms)
+    ✔ Case 12: 旧 RUNNING 不得修改新 watcher (1.987333ms)
+    ✔ Case 13: 旧 COMPLETED 不得停止或通知新 watcher (2.892042ms)
+    ✔ Case 14: JSON 解析期间替换 watcher (1.589ms)
+    ✔ Case 15: expected watcher 防止误删 (1.180166ms)
+    ✔ Case 16: 当前实例终态仍正常停止 (1.868459ms)
+  ✔ 204 launch race condition identity tests (11.897208ms)
+  ▶ Second reverification fix plan tests
+    ✔ handleBackfillOperatorStatus displays ok status when failure = 0 (1.772667ms)
+    ✔ handleBackfillOperatorStatus displays warn status when success > 0 && failure > 0 (1.419709ms)
+    ✔ handleBackfillOperatorStatus displays error status when success = 0 && failure > 0 (1.376208ms)
+    ✔ handleBulkOutreach opens batchSendTaskModal when task is running (1.675791ms)
+    ✔ handleCheckReplies passes knownActiveAtOpen = true if task is running (1.53025ms)
+    ✔ executeManualOutreach is a no-op (batch send handled by new console) (1.489958ms)
+    ✔ executeCheckReplies starts watcher and does not notify completion upon acceptance (1.813666ms)
+  ✔ Second reverification fix plan tests (11.271083ms)
+  ▶ Third reverification fix plan tests
+    ✔ getProgressStatusMeta returns correct label and level (1.124333ms)
+    ✔ updateTaskModalFromProgress sets warning style and label for PARTIAL_SUCCESS (1.14575ms)
+  ✔ Third reverification fix plan tests (2.322583ms)
+✔ Task Modal State Machine & Runtime Tests (326.84475ms)
+▶ discovery traffic detail
+  ✔ shows measured categories, oversized downloads and discarded bytes (0.687083ms)
+✔ discovery traffic detail (1.395917ms)
+▶ renderBatchTable (from app.js)
+  ✔ empty array returns placeholder (0.1715ms)
+  ✔ null returns placeholder (0.06ms)
+  ✔ renders all rows for normal logs (0.300042ms)
+  ✔ keeps only the latest log for each batchNumber (0.158417ms)
+  ✔ batchNumber values rendered after frontend dedupe (0.077875ms)
+  ✔ handles null createdAt (0.064959ms)
+✔ renderBatchTable (from app.js) (1.002416ms)
+▶ renderRunRow (from app.js)
+  ✔ renders RUNNING status correctly (1.049584ms)
+  ✔ renders SUCCESS status correctly (0.170167ms)
+  ✔ renders CANCELLED status correctly (0.192833ms)
+  ✔ renders FAILED status correctly (0.1025ms)
+  ✔ shows measured discovery bytes and marks historical executions unmeasured (0.092375ms)
+  ✔ null durationSeconds renders dash (0.061542ms)
+  ✔ XSS-safe: triggerType with script tags escaped (0.097209ms)
+  ✔ unknown status renders as-is (safe fallback) (0.056541ms)
+  ✔ escapes XSS in startedAt (0.060583ms)
+  ✔ expanded row shows down arrow (0.055333ms)
+  ✔ data attributes set correctly (0.048042ms)
+  ✔ CANCELLING status renders as 取消中 (0.044541ms)
+  ✔ empty execution list shows placeholder (0.046083ms)
+✔ renderRunRow (from app.js) (2.320667ms)
+▶ state machine helpers (from app.js)
+  ✔ isProgressTerminal recognizes terminal states (0.080708ms)
+  ✔ isExecutionTerminal recognizes non-active states (0.047958ms)
+  ✔ isCurrentTaskModal matches taskType and generation (0.049625ms)
+  ✔ isCurrentTaskModal returns false when modal is null (0.046958ms)
+  ✔ isCurrentTaskModal handles undefined generation (0.034458ms)
+✔ state machine helpers (from app.js) (0.334334ms)
+▶ task records paging (b1)
+  ✔ S0-2: total=0 keeps #taskPager hidden (3.489333ms)
+  ✔ S0-2: first page disables prev and shows 第 1 页 / 共 137 条 (2.101125ms)
+  ✔ S0-2: last page disables next (2.003917ms)
+  ✔ T0-5: filter changes and the query button reset tasksPage to 0 (1.00175ms)
+  ✔ N0-1: seven table columns render verbatim from the pre-change baseline (9.647791ms)
+  ✔ S0-1: index.html carries the taskPager skeleton verbatim (0.272917ms)
+✔ task records paging (b1) (19.521583ms)
+▶ task records semantics (b2)
+  ✔ I1-2: metricLabel null renders 无统计 and never 0/0 (12.274917ms)
+  ✔ S1-3: metricLabel present renders count plus muted semantic label in one cell (4.711208ms)
+  ✔ I1-1: column 2 renders taskTypeLabel with raw code fallback (5.88825ms)
+  ✔ S1-4: detail without renderer renders the two verbatim pre blocks (5.8625ms)
+  ✔ I1-6: rawTruncated appends the truncation notice after the pre blocks (4.615042ms)
+  ✔ V-2/R-2: automatic enrichment details render enrichment stages, not discovery zeros (4.879958ms)
+  ✔ V-2/R-2: the shared bySource renderer keeps the discovery table for discovery run data (4.916667ms)
+  ✔ S1-1: task type dropdown keeps the placeholder option and preserves selection (5.80775ms)
+  ✔ I1-1: index.html keeps no concrete taskType option in #taskTypeFilter (0.444458ms)
+  ✔ 08: task20240 preserves every source reason, safe legacy values, and the shared renderer (13.312125ms)
+✔ task records semantics (b2) (63.90725ms)
+▶ shared trust reply workbench mount contract (计划 05 改写)
+  ✔ I-24: mount is exposed with an unmount-returning instance and renders the workbench shell (3.161ms)
+  ✔ I-24: app.js keeps both mount call sites with the unchanged option key set (0.674417ms)
+  ✔ G-5: the eleven cache-busted assets share one key (20260926-discovery-repair) (0.373ms)
+  ✔ I-25: unmount aborts the in-flight compose and no late response rewrites the host (8.211667ms)
+  ✔ I-25: unmount aborts the request signal so the fetch is cancelled (3.364625ms)
+✔ shared trust reply workbench mount contract (计划 05 改写) (17.190292ms)
+▶ unmatched detail resolved action
+  ✔ renders the resolved button only for manual-review mail and reuses the existing action (0.847625ms)
+  ✔ keeps the detail action on the same mark-resolved endpoint as the list action (0.198625ms)
+✔ unmatched detail resolved action (1.795083ms)
+▶ inbound cancel-resolved mailbox button (I-1, S-1)
+  ✔ renders the S-1 cancel button only for the exact eligible row and nowhere else (5.966084ms)
+  ✔ keeps the process branch for MANUAL_REVIEW and the view button ordering (S-1) (1.640542ms)
+✔ inbound cancel-resolved mailbox button (I-1, S-1) (7.729458ms)
+▶ inbound cancel-resolved dialog schema (S-2)
+  ✔ registers the schema verbatim in ACTION_DIALOG_SCHEMAS (0.958667ms)
+✔ inbound cancel-resolved dialog schema (S-2) (1.039958ms)
+▶ inbound cancel-resolved action flow (I-2, I-3)
+  ✔ POSTs once to cancel-resolved with the exact body and refreshes once on success (4.564125ms)
+  ✔ sends zero requests when the dialog is cancelled and never refreshes (0.735917ms)
+  ✔ surfaces API failure without the success branch (1.125583ms)
+  ✔ never mutates row/DOM or closes the detail context itself (I-3) (0.119666ms)
+✔ inbound cancel-resolved action flow (I-2, I-3) (6.753417ms)
+▶ inbound cancel-resolved audit log (I-4)
+  ✔ shares the MARK processStatus transition renderer and shows PROCESSED → MANUAL_REVIEW (1.641625ms)
+  ✔ labels CANCEL_INBOUND_RESOLVED as 取消处理 (1.756583ms)
+✔ inbound cancel-resolved audit log (I-4) (3.513458ms)
+▶ inbound cancel-resolved event routing
+  ✔ routes the action through the shared #mailboxList delegation whitelist (0.413041ms)
+✔ inbound cancel-resolved event routing (0.521875ms)
+▶ mail processing reply workflow source
+  ✔ renders history and all supported reply modes as collapsed workflow details (1.187709ms)
+  ✔ does not render the unsupported single-rule QA reply (0.822834ms)
+  ✔ collapses original body and opens cleaned body by default (0.219375ms)
+  ✔ I-4: the retired AUTO_PREVIEW workbench host identifiers are absent from source (1.2645ms)
+  ✔ adds visible page groups and folds operation logs (0.81575ms)
+  ✔ integrates mail, tags, expert, and controls into one compact overview (0.954458ms)
+  ✔ saves changed expert status and level through their existing endpoints (0.509709ms)
+  ✔ moves the mailbox scroll container to the processing panel after opening a mail (0.310459ms)
+✔ mail processing reply workflow source (7.001875ms)
+▶ insertVarAtCursor unfocused append (I-2)
+  ✔ appends at end when target never focused / no saved selection (3.965209ms)
+  ✔ uses current selection when target is focused (2.053291ms)
+  ✔ uses remembered selection when target is not focused (1.840584ms)
+  ✔ renders metadata keys outside sender and expert groups (1.893208ms)
+✔ insertVarAtCursor unfocused append (I-2) (10.718916ms)
+▶ template variable coverage
+  ✔ counts only expert variables, not sender or system variables (1.885083ms)
+✔ template variable coverage (1.978291ms)
+▶ T1 纯换算：parseBeijingInput / projectZones（I-4）
+  ✔ 按计划换算表逐格硬编码断言（含 DST 跳时/回拨/跨日/45 分钟区） (16.98525ms)
+  ✔ 同一 epoch 换算：epoch 与北京日历严格互逆 (0.359709ms)
+  ✔ 拒绝非法输入：日/时/年越界、格式错误、空串一律 invalid (0.369667ms)
+  ✔ 目录条目不被修改：拒绝不合契约条目、统计 Intl 不支持的 id (1.211792ms)
+  ✔ 非数组/非法 epoch 输入返回空投影 (0.751041ms)
+✔ T1 纯换算：parseBeijingInput / projectZones（I-4） (20.515958ms)
+▶ T4 契约：world-clock.css 与模板（S-4/I-9）
+  ✔ CSS 与计划 WORLD_CLOCK_CSS 标记块逐字一致 (0.237583ms)
+  ✔ CSS 全部规则限定在组件作用域，且含 1100px 单行覆盖与暗色/窄屏/粗指针分支 (0.60225ms)
+  ✔ 模块模板常量与计划三份标记块逐字一致（仅末尾换行差异） (0.388584ms)
+  ✔ 初始隐藏态挂载：trigger 与 panel 与计划模板结构一致（无缺节点/inline style/额外 class） (3.03575ms)
+  ✔ 结果行与计划 ROW 模板结构一致，动态内容只走 textContent (7.490208ms)
+✔ T4 契约：world-clock.css 与模板（S-4/I-9） (11.987291ms)
+▶ T3 宿主集成与单行布局（I-1/I-2）
+  ✔ trigger 插在 #logoutBtn 之前、panel 是 .topnav 直接子节点、导航节点不变 (1.383334ms)
+  ✔ 初始 hidden shell 不启动计时器也不请求目录 (1.029208ms)
+  ✔ 重复 mount 只保留一个实例与一份 DOM；destroy 后可重新挂载 (1.187709ms)
+  ✔ 缺少宿主依赖（api/filterZones/side/logout）时不挂载且不加 header class (0.165958ms)
+  ✔ 原导航点击只走宿主监听，组件不绑定原导航也不产生请求/计时器（I-1） (1.502166ms)
+  ✔ fitHeader：按所需宽度降级图标态，同宽重算不抖动，且不依赖已压缩的 nav.clientWidth (2.122459ms)
+✔ T3 宿主集成与单行布局（I-1/I-2） (7.680041ms)
+▶ T2 目录加载、筛选与分页（I-3/I-5）
+  ✔ 打开时单次 GET 目录，加载中/成功后重复打开不再请求（复用元信息） (2.836333ms)
+  ✔ 常用六区按计划顺序渲染，目录缺失的条目按真实响应显示 (3.252958ms)
+  ✔ 全球范围按目录顺序分页：每页 6 行、页码与边界按钮 (2.87725ms)
+  ✔ 搜索自动切全球、命中中文/别名/IANA，清空搜索保留 scope（I-5） (2.71ms)
+  ✔ UTC 偏移串按投影 offsetSeconds 精确匹配：+5:30 不含 +5:45 (2.299167ms)
+  ✔ 区域分组与搜索是交集，切 common/global 清空搜索与区域并回第 1 页 (1.770708ms)
+  ✔ UTC 偏移串由组件自身精确筛选，不依赖宿主 filterZones 的数值分支（I-5/R-3） (2.437542ms)
+  ✔ 无结果显示显式空态且不残留上次行 (1.922083ms)
+  ✔ 非法输入隐藏结果并显示输入错误，合法后恢复（I-4） (3.649208ms)
+  ✔ 搜索与分组在 loading/error 中禁用，日期/时间/关闭/使用当前时间可用 (0.511ms)
+✔ T2 目录加载、筛选与分页（I-3/I-5） (24.737084ms)
+▶ I-3 实时钟与所选换算时间分离
+  ✔ fake now 前进 60 秒只更新当前钟面，选择、输入与换算结果不变 (1.216583ms)
+  ✔ 使用当前时间换算更新输入与结果；关闭重开保留选择 (2.84675ms)
+  ✔ 键盘与指针交互：Escape/关闭按钮回焦 trigger，外部点击不抢焦点 (2.852084ms)
+✔ I-3 实时钟与所选换算时间分离 (7.065833ms)
+▶ I-6 失败/重试/认证/销毁
+  ✔ 加载失败显示错误与显式重试入口，当前钟面仍显示 (1.327584ms)
+  ✔ 重试成功回到 ready；重试进行中不可重复触发 (1.434666ms)
+  ✔ 非数组或没有合法条目的响应视为 error，不使用常见假数据 (1.0885ms)
+  ✔ 认证隐藏：关闭浮层、中止请求、清空目录与选择、停表；晚到回包不写 DOM (1.006958ms)
+  ✔ visibilitychange 暂停后台 tick，回来立即刷新当前时间 (0.626583ms)
+  ✔ destroy 解绑监听/observer/计时器/请求与新增 DOM，且保留宿主节点与监听 (2.221208ms)
+✔ I-6 失败/重试/认证/销毁 (7.968333ms)
+▶ I-7 只读边界
+  ✔ transport 只收到目录 GET，路径为相对路径且无重复前缀 (2.10625ms)
+  ✔ 目录文本一律 textContent：恶意 label 不产生元素、无 inline style (1.480542ms)
+  ✔ 生产模块不含静态目录数据、持久化偏好、fetch 或 ES module 语法 (0.852916ms)
+  ✔ 页面未被注册（01 不激活）：index.html 不含组件节点 (0.653875ms)
+✔ I-7 只读边界 (5.214792ms)
+▶ 脚本自启动与独立导出（T1/I-8 边界）
+  ✔ 普通 script：浏览器挂 window.WorldClock，Node 导出 mount/parseBeijingInput/projectZones (1.307875ms)
+  ✔ readyState=loading 时注册 DOMContentLoaded；宿主缺失时不挂载也不报错 (1.002875ms)
+✔ 脚本自启动与独立导出（T1/I-8 边界） (2.37525ms)
+ℹ tests 1199
+ℹ suites 236
+ℹ pass 1199
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3947.189666
+[INFO] 
+[INFO] --- exec:3.1.0:exec (node-check-app) @ weibo-talent-introduction ---
+[INFO] 
+[INFO] --- exec:3.1.0:exec (node-check-task-modal-runtime) @ weibo-talent-introduction ---
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  03:44 min
+[INFO] Finished at: 2026-09-28T10:43:23+08:00
+[INFO] ------------------------------------------------------------------------
