@@ -1510,14 +1510,15 @@ class ExpertDiscoveryService(
         return SourceRunOutcome(resumeCursor, exhausted, stopReason)
     }
 
+    /** I-1/I-2（01b）：ORCID 的 `institution-name` 只表达来源关联，不证明当前雇主/职位，也不是国籍证据。 */
     private fun buildOrcidProfile(record: OrcidDataSource.OrcidRecord, authorEmail: AuthorEmail, emailVerifiedLevel: Int): ExpertProfile {
         return ExpertProfile(
             orcidId = record.orcidId,
             email = DiscoveryIdentity.normalizedEmail(authorEmail.email),
             givenNames = record.givenNames,
             familyNames = record.familyNames,
-            country = record.country,
-            keyword = null, employment = record.institutionName,
+            country = null,
+            keyword = null, employment = null,
             institution = record.institutionName, lastPublicationYear = null,
             emailSource = "ORCID_PUBLIC", emailVerifiedLevel = emailVerifiedLevel, dataSource = "ORCID",
             externalIds = objectMapper.writeValueAsString(mapOf("orcid" to authorEmail.orcidId)),

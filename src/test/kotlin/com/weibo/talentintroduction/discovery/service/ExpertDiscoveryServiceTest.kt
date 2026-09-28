@@ -451,8 +451,12 @@ class ExpertDiscoveryServiceTest {
         return objectMapper.writeValueAsString(root)
     }
 
-    /** ORCID 一页响应：[rawCount] 条原始记录，只有第一条带公开邮箱（可选）。 */
-    private fun orcidPageBody(rawCount: Int, publicEmail: String? = null): String {
+    /** ORCID 一页响应：[rawCount] 条原始记录，只有第一条带公开邮箱（可选）。[institutionNames] 逐条可配置（I-1）。 */
+    private fun orcidPageBody(
+        rawCount: Int,
+        publicEmail: String? = null,
+        institutionNames: List<String> = listOf("Test University")
+    ): String {
         val root = objectMapper.createObjectNode()
         val results = root.putArray("expanded-result")
         for (i in 1..rawCount) {
@@ -462,9 +466,61 @@ class ExpertDiscoveryServiceTest {
             node.put("family-names", "Expert$i")
             val emails = node.putArray("email")
             if (i == 1 && publicEmail != null) emails.add(publicEmail)
-            node.putArray("institution-name").add("Test University")
+            val names = node.putArray("institution-name")
+            institutionNames.forEach { names.add(it) }
         }
         return objectMapper.writeValueAsString(root)
+    }
+
+    /** 只首个请求返回 [firstBody]、其余返回空页的 ORCID 模板 stub（真实 [OrcidDataSource] 在此之上解析）。 */
+    private fun orcidTemplate(firstBody: String): RestTemplate {
+        val template = Mockito.mock(RestTemplate::class.java)
+        var calls = 0
+        Mockito.doAnswer { _ ->
+            objectMapper.readTree(if (calls++ == 0) firstBody else """{"expanded-result": []}""")
+        }.`when`(template).getForObject(
+            Mockito.any(URI::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        return template
+    }
+
+    /** 用真实 [OrcidDataSource]（唯一机构判定在来源解析层）跑一次 ORCID 发现并捕获 RAW/候选两层文档。 */
+    private fun discoverOrcidAndCapture(
+        institutionNames: List<String>,
+        publicEmail: String
+    ): Triple<DiscoveryResult, Map<String, Any?>, Map<*, *>> {
+        val criteria = PaperSearchCriteria(
+            pageSize = 100, subjectScope = SubjectScopeCatalog.RND_TARGET, sources = listOf("ORCID")
+        )
+        val template = orcidTemplate(orcidPageBody(1, publicEmail, institutionNames))
+        Mockito.doReturn(OrcidDataSource(template, OrcidProperties(enabled = true, requestDelayMs = 0)))
+            .`when`(orcidProvider).getIfAvailable()
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, publicEmail, EmailValidationResult(2, true))
+        DiscoveryMockHelper.stubEsDedupSearch(restTemplate, 0)
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        DiscoveryMockHelper.stubIndexToRaw(indexWriterService, true)
+
+        val rawDocs = mutableListOf<Map<String, Any?>>()
+        Mockito.doAnswer { invocation ->
+            @Suppress("UNCHECKED_CAST")
+            rawDocs.add(invocation.getArgument(1) as Map<String, Any?>)
+            true
+        }.`when`(indexWriterService).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+
+        val candidateDocs = mutableListOf<Map<*, *>>()
+        Mockito.doAnswer { invocation ->
+            val entity = invocation.getArgument<HttpEntity<*>>(2)
+            candidateDocs.add(entity.body as Map<*, *>)
+            ResponseEntity.ok(objectMapper.createObjectNode())
+        }.`when`(restTemplate).exchange(
+            Mockito.contains("orcid_info_candidate/_doc/"), Mockito.eq(HttpMethod.PUT), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+
+        val result = createService(c4Props()).discover(criteria, "TEST")
+        assertEquals(1, result.stats.bySource["ORCID"]?.indexed, "该页的 1 位专家必须被收录")
+        assertEquals(1, result.stats.bySource["ORCID"]?.promoted, "资格通过后必须晋升候选")
+        return Triple(result, rawDocs.single(), candidateDocs.single())
     }
 
     private fun urlStart(url: String): String = url.substringAfter("&start=").substringBefore("&")
@@ -5388,6 +5444,60 @@ class ExpertDiscoveryServiceTest {
             .getForObject(Mockito.anyString(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         assertEquals(0, result.stats.bySource["ORCID"]?.papersSearched)
         assertEquals(0, result.stats.sourceFailures, "跳过不是失败")
+    }
+
+    @Test
+    fun `ORCID discovery writes the single institution and never invents employment or country (I-1 I-2)`() {
+        val (_, raw, candidate) = discoverOrcidAndCapture(listOf("Test University"), "solo@univ.edu")
+
+        // I-1：恰一家机构才写入展示机构。
+        assertEquals("Test University", raw["institution"], "唯一机构必须原样写入 RAW")
+        // I-2：机构名只表达来源关联，既不是当前任职也不是国籍证据。
+        assertNull(raw["employment"], "ORCID 机构名不得写成当前任职")
+        assertNull(raw["country"], "ORCID 记录不得推断国籍")
+        assertEquals("ORCID", raw["dataSource"])
+        assertEquals("ORCID_PUBLIC", raw["emailSource"])
+
+        // 身份绑定不变：主键仍由邮箱生成，ORCID 只作 externalIds 子键，姓名/邮箱原样透传。
+        assertEquals(ExpertIdGenerator.generate(null, "solo@univ.edu"), raw["orcidId"])
+        assertEquals("0000-0001-0001", (raw["externalIds"] as Map<*, *>)["orcid"])
+        assertEquals("Test", raw["givenNames"])
+        assertEquals("Expert1", raw["familyNames"])
+        assertEquals("solo@univ.edu", raw["email"])
+        val proof = raw["identityVerification"] as com.weibo.talentintroduction.expert.domain.IdentityVerification
+        assertEquals("VERIFIED", proof.status)
+        assertEquals("ORCID_RECORD_SHA256", proof.source)
+        assertEquals("0000-0001-0001", proof.orcid)
+        assertEquals("solo@univ.edu", proof.email)
+
+        // 候选层与 RAW 同值：晋升只复制，不得再引入任职/国家。
+        assertEquals(raw["institution"], candidate["institution"])
+        assertNull(candidate["employment"])
+        assertNull(candidate["country"])
+        assertEquals(raw["identityVerification"], candidate["identityVerification"])
+    }
+
+    @Test
+    fun `ORCID discovery writes no institution when the record lists two different institutions (I-1 I-2)`() {
+        val (_, raw, candidate) = discoverOrcidAndCapture(
+            listOf("Seoul National University", "Korea University"), "multi@univ.edu")
+
+        assertNull(raw["institution"], "两个不同机构时不得任选第一家当主机构")
+        assertNull(raw["employment"])
+        assertNull(raw["country"])
+
+        // 机构为空不影响身份绑定：主键、ORCID 子键、姓名、邮箱照旧。
+        assertEquals(ExpertIdGenerator.generate(null, "multi@univ.edu"), raw["orcidId"])
+        assertEquals("0000-0001-0001", (raw["externalIds"] as Map<*, *>)["orcid"])
+        assertEquals("Test", raw["givenNames"])
+        assertEquals("multi@univ.edu", raw["email"])
+        val proof = raw["identityVerification"] as com.weibo.talentintroduction.expert.domain.IdentityVerification
+        assertEquals("VERIFIED", proof.status)
+        assertEquals("0000-0001-0001", proof.orcid)
+
+        assertNull(candidate["institution"], "候选层同样不得回填来源机构")
+        assertNull(candidate["employment"])
+        assertNull(candidate["country"])
     }
 
     // ---------------- c6: 定向补全与三层结果契约 ----------------
