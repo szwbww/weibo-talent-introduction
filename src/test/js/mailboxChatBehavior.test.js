@@ -1214,7 +1214,7 @@ function queryOf(url) {
 // ════════════════════════════════════════════════════════════════════════
 
 describe("mailbox chat mount + S-1 skeleton + S-7 expert tag rows", () => {
-    it("mounts S-1 骨架：两栏、搜索行、⋯ popover、三 tab、分页", async () => {
+    it("mounts S-1 骨架：两栏、搜索行、⋯ popover、五 tab、分页", async () => {
         const conversations = { items: [expertA(), expertB(), expertCTagsNull()], total: 3 };
         const ctx = await bootChat({ conversations });
         const html = ctx.host.innerHTML;
@@ -1223,8 +1223,8 @@ describe("mailbox chat mount + S-1 skeleton + S-7 expert tag rows", () => {
         assert.ok(ctx.host.querySelector('section.mc-conversation[aria-label="专家往来信件"]'));
         assert.ok(ctx.host.querySelector('.mc-search-row input[aria-label="搜索专家"]'));
         const chips = ctx.host.querySelectorAll(".mc-filter");
-        assert.deepStrictEqual(chips.map((chip) => chip.textContent), ["全部", "关注", "待处理", "待匹配"]);
-        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "pending", "unmatched"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.textContent), ["全部", "关注", "已回复", "待处理", "待匹配"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "replied", "pending", "unmatched"]);
         assert.strictEqual(chips[0].getAttribute("aria-pressed"), "true");
         const popover = ctx.host.querySelector("#mcFilterPopover");
         assert.ok(popover, "⋯ popover 存在");
@@ -1281,6 +1281,36 @@ describe("mailbox chat mount + S-1 skeleton + S-7 expert tag rows", () => {
 });
 
 describe("I-1 tab 参数与服务端排序（无 waitingReply）", () => {
+    it("已回复独立请求并可人工移出；刷新后从已回复消失", async () => {
+        let dismissed = false;
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            route: (url, method, body, entry, next) => {
+                if (url.startsWith("/api/mail/mailbox/conversations?") && queryOf(url).get("repliedOnly") === "true") {
+                    return Promise.resolve(dismissed ? { items: [], total: 0 } : { items: [expertA()], total: 1 });
+                }
+                if (url === "/api/mail/mailbox/conversations/1/replied-dismissal" && method === "PUT") {
+                    dismissed = true;
+                    return Promise.resolve({ dismissed: true });
+                }
+                return next(url, method, body);
+            }
+        });
+        click(chipButton(ctx, "replied"));
+        await flush();
+        assert.strictEqual(queryOf(lastConversationsRequest(ctx).url).get("repliedOnly"), "true");
+        assert.strictEqual(queryOf(lastConversationsRequest(ctx).url).get("followed"), null);
+        const remove = ctx.host.querySelector('[data-action="mc-dismiss-replied"]');
+        assert.ok(remove, "已回复卡片有移出操作");
+        click(remove);
+        await flush();
+        assert.ok(ctx.calls.api.some((entry) => entry.url.endsWith("/1/replied-dismissal") && entry.method === "PUT"));
+        assert.strictEqual(ctx.host.querySelectorAll(".mc-person").length, 0);
+        click(chipButton(ctx, "all"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelectorAll(".mc-person").length, 1, "全部视图仍保留专家");
+    });
+
     it("三个 tab 参数：全部无参、关注 followed=true、待处理 pendingOnly=true，永不发 waitingReply", async () => {
         let served = 0;
         const conversations = { items: [expertA()], total: 1 };
@@ -2734,21 +2764,21 @@ function createUnmatchedPanelDom() {
     return { doc, host, panel };
 }
 
-describe("待匹配 Tab：第四 chip、请求契约与邮件级列表", () => {
+describe("待匹配 Tab：第五 chip、请求契约与邮件级列表", () => {
     const conversations = { items: [expertA()], total: 1 };
 
-    it("S-1：四个 tab 顺序/anchor 固定，待匹配只请求 unmatched-inbound（offset=page*20、无专家参数）", async () => {
+    it("S-1：五个 tab 顺序/anchor 固定，待匹配只请求 unmatched-inbound（offset=page*20、无专家参数）", async () => {
         const ctx = await bootChat({ conversations, unmatched: { records: [unmatchedMail(901)], totalCount: 1 } });
         const chips = ctx.host.querySelectorAll(".mc-filter");
-        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "pending", "unmatched"]);
-        assert.deepStrictEqual(chips.map((chip) => chip.textContent), ["全部", "关注", "待处理", "待匹配"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "replied", "pending", "unmatched"]);
+        assert.deepStrictEqual(chips.map((chip) => chip.textContent), ["全部", "关注", "已回复", "待处理", "待匹配"]);
         assert.strictEqual(chips[0].getAttribute("aria-pressed"), "true", "默认全部");
         assert.strictEqual(chips[3].getAttribute("aria-pressed"), "false");
 
-        click(chips[3]);
+        click(chips[4]);
         await flush();
 
-        assert.strictEqual(chips[3].getAttribute("aria-pressed"), "true", "待匹配选中态");
+        assert.strictEqual(chips[4].getAttribute("aria-pressed"), "true", "待匹配选中态");
         assert.strictEqual(chips[0].getAttribute("aria-pressed"), "false");
         const q = queryOf(lastUnmatchedRequest(ctx).url);
         assert.strictEqual(q.get("unmatchedOnly"), "true");

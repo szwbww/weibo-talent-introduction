@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.controller
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
 import com.weibo.talentintroduction.common.controller.ApiErrorResponse
 import com.weibo.talentintroduction.mail.service.ExpertFollowService
+import com.weibo.talentintroduction.mail.service.ExpertRepliedDismissalService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
 import com.weibo.talentintroduction.mail.service.PendingMailSendResult
@@ -181,6 +182,7 @@ data class ConversationOutboundAttachment(
 class MailboxConversationController(
     private val conversationService: MailboxConversationService,
     private val expertFollowService: ExpertFollowService,
+    private val expertRepliedDismissalService: ExpertRepliedDismissalService,
     private val pendingMailOperationService: PendingMailOperationService
 ) {
     @GetMapping
@@ -190,6 +192,7 @@ class MailboxConversationController(
         @RequestParam(defaultValue = "20") size: Int,
         @RequestParam(required = false) q: String?,
         @RequestParam(defaultValue = "false") followed: Boolean,
+        @RequestParam(defaultValue = "false") repliedOnly: Boolean,
         @RequestParam(defaultValue = "false") pendingOnly: Boolean,
         @RequestParam(defaultValue = "false") waitingReply: Boolean,
         @RequestParam(required = false) accountCode: String?,
@@ -204,6 +207,7 @@ class MailboxConversationController(
         username = sessionUsername(request),
         q = q,
         followed = followed,
+        repliedOnly = repliedOnly,
         pendingOnly = pendingOnly,
         waitingReply = waitingReply,
         accountCode = accountCode,
@@ -239,6 +243,15 @@ class MailboxConversationController(
         val username = sessionUsername(request)
             ?: return unauthorized()
         return ResponseEntity.ok(expertFollowService.setFollowed(username, contactId, true))
+    }
+
+    @PutMapping("/{contactId}/replied-dismissal")
+    fun dismissReplied(
+        request: HttpServletRequest,
+        @PathVariable contactId: Long
+    ): ResponseEntity<Any> {
+        val username = sessionUsername(request) ?: return unauthorized()
+        return ResponseEntity.ok(expertRepliedDismissalService.dismiss(username, contactId))
     }
 
     // ------------------------------------------------------------------

@@ -22,6 +22,7 @@ import com.weibo.talentintroduction.mail.repository.MailboxConversationRepositor
 import com.weibo.talentintroduction.mail.service.CalendarAttachmentCodec
 import com.weibo.talentintroduction.mail.service.CalendarAttachmentSnapshot
 import com.weibo.talentintroduction.mail.service.ExpertFollowService
+import com.weibo.talentintroduction.mail.service.ExpertRepliedDismissalService
 import com.weibo.talentintroduction.mail.service.InboundMailTagService
 import com.weibo.talentintroduction.mail.service.MailContentService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
@@ -119,7 +120,8 @@ import org.springframework.test.web.servlet.MvcResult
     MailboxConversationRealJdbcConfig::class,
     MailboxConversationRepository::class,
     MailboxConversationService::class,
-    ExpertFollowService::class
+    ExpertFollowService::class,
+    ExpertRepliedDismissalService::class
 )
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class MailboxConversationControllerTest {
@@ -338,6 +340,38 @@ class MailboxConversationControllerTest {
         )
         assertEquals(1, followedBody["total"].asInt())
         assertEquals(1L, followedBody["items"][0]["contactId"].asLong())
+    }
+
+    @Test
+    fun `replied dismissal is session scoped and new inbound restores the replied tab`() {
+        insertOutbound(1, "SENT", "2026-09-01 09:00:00")
+        insertProcessing(1, "PROCESSED", "2026-09-02 09:00:00", "first-reply")
+        val repliedUrl = "/api/mail/mailbox/conversations?repliedOnly=true"
+        mockMvc.perform(get(repliedUrl).session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(1))
+        mockMvc.perform(put("/api/mail/mailbox/conversations/1/replied-dismissal"))
+            .andExpect(status().isUnauthorized)
+        mockMvc.perform(put("/api/mail/mailbox/conversations/1/replied-dismissal").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.dismissed").value(true))
+        mockMvc.perform(get(repliedUrl).session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(0))
+        mockMvc.perform(get(repliedUrl).session(sessionOf("op2")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(1))
+        mockMvc.perform(get("/api/mail/mailbox/conversations").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(1))
+        insertProcessingRow(1, 1901, "PROCESSED", "2026-09-03 09:00:00", "second-reply")
+        mockMvc.perform(get(repliedUrl).session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(1))
+        expertFollowService.setFollowed("op1", 1, true)
+        mockMvc.perform(get(repliedUrl).session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.total").value(0))
     }
 
     // ------------------------------------------------------------------
@@ -1217,6 +1251,7 @@ class MailboxConversationControllerTest {
         )!!
 
     private fun cleanup() {
+        jdbcTemplate.update("DELETE FROM expert_replied_dismissal")
         jdbcTemplate.update("DELETE FROM expert_follow")
         jdbcTemplate.update("DELETE FROM mail_attachment")
         jdbcTemplate.update("DELETE FROM inbound_mail_tag")
@@ -1478,6 +1513,9 @@ class CalendarAttachmentIntegrationTest {
 
     @MockBean
     private lateinit var expertFollowService: ExpertFollowService
+
+    @MockBean
+    private lateinit var expertRepliedDismissalService: ExpertRepliedDismissalService
 
     private val meetingTemplateId = 9001L
     private val variableServiceForMeeting = Mockito.mock(MailVariableService::class.java)
@@ -1836,6 +1874,7 @@ class CalendarAttachmentIntegrationTest {
         )
 
     private fun cleanup() {
+        jdbcTemplate.update("DELETE FROM expert_replied_dismissal")
         jdbcTemplate.update("DELETE FROM expert_follow")
         jdbcTemplate.update("DELETE FROM mail_attachment")
         jdbcTemplate.update("DELETE FROM inbound_mail_tag")

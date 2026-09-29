@@ -33,6 +33,7 @@ class MailboxConversationRepository(
         val accountCode: String? = null,
         val q: String? = null,
         val followed: Boolean = false,
+        val repliedOnly: Boolean = false,
         val waitingReply: Boolean = false,
         val pendingOnly: Boolean = false,
         val direction: String? = null,
@@ -234,7 +235,7 @@ class MailboxConversationRepository(
             "$latestReply DESC",
             "u.expert_contact_id DESC"
         )
-        val pendingFirst = if (filter.followed || filter.pendingOnly || filter.waitingReply) {
+        val pendingFirst = if (filter.followed || filter.repliedOnly || filter.pendingOnly || filter.waitingReply) {
             emptyList()
         } else {
             listOf("CASE WHEN SUM(u.pending_flag) > 0 THEN 0 ELSE 1 END ASC")
@@ -592,6 +593,35 @@ class MailboxConversationRepository(
                  WHERE eff.username = :username
                    AND eff.expert_contact_id = u.expert_contact_id))
         """.trimIndent()
+        if (filter.repliedOnly) {
+            clauses += """
+                NOT EXISTS (
+                    SELECT 1 FROM expert_follow ef_replied
+                     WHERE ef_replied.username = :username
+                       AND ef_replied.expert_contact_id = u.expert_contact_id)
+            """.trimIndent()
+            clauses += """
+                EXISTS (
+                    SELECT 1 FROM mail_record mr_replied
+                     WHERE mr_replied.expert_contact_id = u.expert_contact_id
+                       AND mr_replied.direction = 'OUTBOUND'
+                       AND mr_replied.send_status = 'SENT'
+                       AND mr_replied.sender_account_code IN (:accountCodes)
+                       AND (:accountCode IS NULL OR mr_replied.sender_account_code = :accountCode))
+            """.trimIndent()
+            clauses += """
+                EXISTS (
+                    SELECT 1 FROM inbound_mail_processing imp_replied
+                     WHERE imp_replied.expert_contact_id = u.expert_contact_id
+                       AND imp_replied.sender_account_code IN (:accountCodes)
+                       AND (:accountCode IS NULL OR imp_replied.sender_account_code = :accountCode)
+                       AND imp_replied.id > COALESCE((
+                           SELECT erd.last_inbound_id FROM expert_replied_dismissal erd
+                            WHERE erd.username = :username
+                              AND erd.expert_contact_id = u.expert_contact_id
+                       ), 0))
+            """.trimIndent()
+        }
         val membershipClauses = listOfNotNull(eligibility.outboundClause, eligibility.inboundClause)
         if (membershipClauses.isNotEmpty()) {
             clauses += "(\n${membershipClauses.joinToString("\n      OR ")}\n      )"

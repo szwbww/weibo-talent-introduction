@@ -11860,6 +11860,14 @@ body.preview-available:not(.preview-docked) .preview-rail {
     margin: 0;
     overflow-wrap: anywhere;
 }
+/* 收发件箱：已回复专家的人工移出入口。 */
+.mail-chat .mc-person[data-replied=true] { grid-template-columns: minmax(0, 1fr) 42px; }
+.mail-chat .mc-person [data-role=person-actions] { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0; }
+.mail-chat .mc-person [data-role=person-actions] .mc-follow { margin-right: 0; }
+.mail-chat .mc-person [data-action=mc-dismiss-replied] { padding: 2px 0; color: #71839d; font-size: 10px; }
+.mail-chat .mc-person [data-action=mc-dismiss-replied]:hover { color: #244ca9; }
+.mail-chat .mc-person [data-action=mc-dismiss-replied]:disabled { opacity: .45; cursor: not-allowed; }
+
 /* task-center-contract:start */
 .topnav.task-center-nav {
     flex-wrap: wrap;

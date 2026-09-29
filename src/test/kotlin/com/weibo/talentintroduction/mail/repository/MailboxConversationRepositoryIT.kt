@@ -214,6 +214,27 @@ class MailboxConversationRepositoryIT {
     }
 
     @Test
+    fun `replied filter excludes followed and dismissed experts until a new inbound arrives`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "Intro A", "2026-09-01 09:00:00")
+        insertProcessing(1, "acc-a", 1801, "PROCESSED", "Re A", "2026-09-02 09:00:00", "reply-a", "alice@example.org")
+        insertOutbound(2, "acc-a", "INTRODUCTION", "SENT", "Intro B", "2026-09-01 09:00:00")
+        val bInbound = insertProcessing(2, "acc-a", 1802, "PROCESSED", "Re B", "2026-09-02 09:00:00", "reply-b", "bob@example.org")
+        insertOutbound(3, "acc-a", "INTRODUCTION", "SENT", "Intro C", "2026-09-01 09:00:00")
+        insertProcessing(4, "acc-a", 1804, "PROCESSED", "Incoming only", "2026-09-02 09:00:00", "incoming-d", "dan@example.org")
+        jdbcTemplate.update("INSERT INTO expert_follow (username, expert_contact_id, created_at) VALUES ('op1', 1, NOW())")
+        jdbcTemplate.update("INSERT INTO expert_replied_dismissal (username, expert_contact_id, last_inbound_id) VALUES ('op1', 2, ?)", bInbound)
+
+        val replied = MailboxConversationRepository.ConversationFilter(accountCodes = allAccounts, repliedOnly = true)
+        assertTrue(page(replied, username = "op1").isEmpty())
+        assertEquals(listOf(1L, 2L, 3L, 4L), page(emptyFilter()).map { it.expertContactId }.sorted())
+        assertEquals(listOf(1L, 2L), page(replied, username = "op2").map { it.expertContactId }.sorted())
+
+        insertProcessing(2, "acc-a", 1805, "PROCESSED", "Re B again", "2026-09-03 09:00:00", "reply-b2", "bob@example.org")
+        assertEquals(listOf(2L), page(replied, username = "op1").map { it.expertContactId })
+        assertEquals(1L, repository.countConversations("op1", replied))
+    }
+
+    @Test
     fun `multi-label membership never duplicates rows and label filters by source`() {
         // E(5) 两封来信打不同 CUSTOM label
         seedContact(5, "Eve Expert", "eve@example.org", "0000-0000-0000-0005")
@@ -721,6 +742,7 @@ class MailboxConversationRepositoryIT {
     }
 
     private fun cleanup() {
+        jdbcTemplate.update("DELETE FROM expert_replied_dismissal")
         jdbcTemplate.update("DELETE FROM expert_follow")
         jdbcTemplate.update("DELETE FROM inbound_mail_tag")
         jdbcTemplate.update("DELETE FROM mail_attachment_transfer")

@@ -7,9 +7,9 @@
  * 字段修改只是草稿，应用/Enter 才生效，重置/清除保留 tab 与 q；退出聊天还原父节点。
  *
  * 关键约束（与宿主/既有模块的关系）：
- * - 全部/关注/待处理专家请求走 conversations API；列表排序唯一权威在服务端（01），
- *   UI 不 sort、不发 waitingReply。三 tab = 全部(无参)/关注(followed)/待处理(pendingOnly)。
- * - 第四个 tab「待匹配」是邮件级队列（I-1/I-3/I-8）：只请求
+ * - 全部/关注/已回复/待处理专家请求走 conversations API；列表排序唯一权威在服务端（01），
+ *   UI 不 sort、不发 waitingReply。
+ * - 第五个 tab「待匹配」是邮件级队列（I-1/I-3/I-8）：只请求
  *   /api/mail/unmatched-inbound?unmatchedOnly=true（未关联专家的 MANUAL_REVIEW 来信），
  *   选中键为独立 selectedUnmatchedId（不写 selectedContactId/sessionStore），
  *   详情复用唯一 #unmatchedDetailPanel —— 经宿主 mcHostMountUnmatchedDetail 挂入右栏
@@ -50,12 +50,14 @@
 
     const CHIP_ALL = "all";
     const CHIP_FOLLOWED = "followed";
+    const CHIP_REPLIED = "replied";
     const CHIP_PENDING = "pending";
     const CHIP_UNMATCHED = "unmatched";
 
     const FILTER_CHIPS = [
         { key: CHIP_ALL, label: "全部" },
         { key: CHIP_FOLLOWED, label: "关注" },
+        { key: CHIP_REPLIED, label: "已回复" },
         { key: CHIP_PENDING, label: "待处理" },
         { key: CHIP_UNMATCHED, label: "待匹配" }
     ];
@@ -350,6 +352,7 @@
 
     function chipParams(chip) {
         if (chip === CHIP_FOLLOWED) return { followed: true };
+        if (chip === CHIP_REPLIED) return { repliedOnly: true };
         if (chip === CHIP_PENDING) return { pendingOnly: true };
         return {};
     }
@@ -1161,6 +1164,7 @@
             if (q) params.set("q", q);
             const chipValues = chipParams(instance.chip);
             if (chipValues.followed) params.set("followed", "true");
+            if (chipValues.repliedOnly) params.set("repliedOnly", "true");
             if (chipValues.pendingOnly) params.set("pendingOnly", "true");
             const filters = instance.filters || {};
             if (filters.accountCode) params.set("accountCode", filters.accountCode);
@@ -1213,7 +1217,7 @@
                 ? `查看${item.name || item.email || ""}往来邮件；专家标签：${tagNames.join("、")}`
                 : `查看${item.name || item.email || ""}往来邮件`;
             return `
-                <div class="mc-person" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
+                <div class="mc-person" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
                         <span class="mc-person-heading"><strong>${escapeText(item.name || item.email || "-")}</strong></span>
                         <small>${escapeText(accounts)}</small>
@@ -1224,7 +1228,10 @@
                         </span>
                         <span class="calendar-summary" data-role="meeting-summary"></span>
                     </button>
-                    <button class="mc-follow" type="button" data-action="mc-toggle-follow" data-contact-id="${escapeText(item.contactId)}" aria-label="${item.followed ? "取消关注该专家" : "关注该专家"}" aria-pressed="${item.followed ? "true" : "false"}">${item.followed ? "★" : "☆"}</button>
+                    <span data-role="person-actions">
+                        <button class="mc-follow" type="button" data-action="mc-toggle-follow" data-contact-id="${escapeText(item.contactId)}" aria-label="${item.followed ? "取消关注该专家" : "关注该专家"}" aria-pressed="${item.followed ? "true" : "false"}">${item.followed ? "★" : "☆"}</button>
+                        ${instance.chip === CHIP_REPLIED ? `<button class="mc-text-button" type="button" data-action="mc-dismiss-replied" data-contact-id="${escapeText(item.contactId)}" aria-label="将${escapeText(item.name || item.email || "该专家")}移出已回复" title="移出已回复，仍可在全部查看">移出</button>` : ""}
+                    </span>
                 </div>
             `;
         }
@@ -2994,6 +3001,22 @@
                 setFollowControlsDisabled(false);
                 renderFollowButtons();
                 hostShowStatus((err && err.message) ? `关注操作失败：${err.message}` : "关注操作失败", "error");
+            });
+        }
+
+        function dismissReplied(contactId, button) {
+            if (instance.chip !== CHIP_REPLIED || !button || button.disabled) return;
+            const id = Number(contactId);
+            if (!Number.isSafeInteger(id) || id <= 0) return;
+            button.disabled = true;
+            hostApi()(`/api/mail/mailbox/conversations/${id}/replied-dismissal`, { method: "PUT" }).then(() => {
+                if (instance.disposed) return;
+                hostShowStatus("已移出已回复，仍可在全部查看", "ok");
+                refreshListWithFallback();
+            }).catch((err) => {
+                if (instance.disposed) return;
+                button.disabled = false;
+                hostShowStatus((err && err.message) ? `移出已回复失败：${err.message}` : "移出已回复失败", "error");
             });
         }
 
@@ -5357,6 +5380,10 @@
             }
             if (action === "mc-toggle-follow") {
                 toggleFollow(data.contactId);
+                return;
+            }
+            if (action === "mc-dismiss-replied") {
+                dismissReplied(data.contactId, button);
                 return;
             }
             if (action === "mc-select-unmatched") {
