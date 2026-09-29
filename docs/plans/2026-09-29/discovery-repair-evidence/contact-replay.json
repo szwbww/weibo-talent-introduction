@@ -1,0 +1,469 @@
+[
+  {
+    "case": "crea",
+    "contacts": [
+      {
+        "email": "simona.crea@santannapisa.it",
+        "authorIndex": 0,
+        "page": 1,
+        "authorText": "exoskeletons to workplaces Simona Crea1,2* , Philipp Beckerle3,4, Michiel De Looze5, Kevin De Pauw6, Lorenzo Grazi1 ,",
+        "contactText": "*Corresponding author. Email: simona.crea@santannapisa.it; ristic@iat.uni-bremen.de; jan.veneman.cost@gmail.com",
+        "evidenceText": "PDF_PAGE:1\nAUTHOR:exoskeletons to workplaces Simona Crea1,2* , Philipp Beckerle3,4, Michiel De Looze5, Kevin De Pauw6, Lorenzo Grazi1 ,\nCONTACT:*Corresponding author. Email: simona.crea@santannapisa.it; ristic@iat.uni-bremen.de; jan.veneman.cost@gmail.com"
+      },
+      {
+        "email": "ristic@iat.uni-bremen.de",
+        "authorIndex": 0,
+        "page": 1,
+        "authorText": "exoskeletons to workplaces Simona Crea1,2* , Philipp Beckerle3,4, Michiel De Looze5, Kevin De Pauw6, Lorenzo Grazi1 ,",
+        "contactText": "*Corresponding author. Email: simona.crea@santannapisa.it; ristic@iat.uni-bremen.de; jan.veneman.cost@gmail.com",
+        "evidenceText": "PDF_PAGE:1\nAUTHOR:exoskeletons to workplaces Simona Crea1,2* , Philipp Beckerle3,4, Michiel De Looze5, Kevin De Pauw6, Lorenzo Grazi1 ,\nCONTACT:*Corresponding author. Email: simona.crea@santannapisa.it; ristic@iat.uni-bremen.de; jan.veneman.cost@gmail.com"
+      },
+      {
+        "email": "jan.veneman.cost@gmail.com",
+        "authorIndex": 0,
+        "page": 1,
+        "authorText": "exoskeletons to workplaces Simona Crea1,2* , Philipp Beckerle3,4, Michiel De Looze5, Kevin De Pauw6, Lorenzo Grazi1 ,",
+        "contactText": "*Corresponding author. Email: simona.crea@santannapisa.it; ristic@iat.uni-bremen.de; jan.veneman.cost@gmail.com",
+        "evidenceText": "PDF_PAGE:1\nAUTHOR:exoskeletons to workplaces Simona Crea1,2* , Philipp Beckerle3,4, Michiel De Looze5, Kevin De Pauw6, Lorenzo Grazi1 ,\nCONTACT:*Corresponding author. Email: simona.crea@santannapisa.it; ristic@iat.uni-bremen.de; jan.veneman.cost@gmail.com"
+      }
+    ],
+    "resolved": [
+      {
+        "email": "simona.crea@santannapisa.it",
+        "givenNames": "Simona",
+        "familyNames": "Crea",
+        "affiliation": null,
+        "orcidId": "0000-0001-9833-4401",
+        "institutionType": null,
+        "openAlexAuthorId": "A5008055713",
+        "identityEvidence": "SOURCE_SHA256:9512f60fcbd86120f30e3d2d12729fd824a8eb83cb1262410e5086d757f1fdf0",
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": true
+      },
+      {
+        "email": "ristic@iat.uni-bremen.de",
+        "givenNames": "Simona",
+        "familyNames": "Crea",
+        "affiliation": null,
+        "orcidId": "0000-0001-9833-4401",
+        "institutionType": null,
+        "openAlexAuthorId": "A5008055713",
+        "identityEvidence": "SOURCE_SHA256:9512f60fcbd86120f30e3d2d12729fd824a8eb83cb1262410e5086d757f1fdf0",
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": true
+      },
+      {
+        "email": "jan.veneman.cost@gmail.com",
+        "givenNames": "Simona",
+        "familyNames": "Crea",
+        "affiliation": null,
+        "orcidId": "0000-0001-9833-4401",
+        "institutionType": null,
+        "openAlexAuthorId": "A5008055713",
+        "identityEvidence": "SOURCE_SHA256:9512f60fcbd86120f30e3d2d12729fd824a8eb83cb1262410e5086d757f1fdf0",
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": true
+      }
+    ]
+  },
+  {
+    "case": "nguyen",
+    "contacts": [],
+    "resolved": [
+      {
+        "email": "christophe.lohr@imt-atlantique.fr",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "ioannis.kanellos@imt-atlantique.fr",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "bleduc@deltadore.com",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "damien.bouchabou@imt-atlantique.fr",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "nguyensmai@gmail.com",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      }
+    ]
+  },
+  {
+    "case": "everett",
+    "contacts": [],
+    "resolved": [
+      {
+        "email": "samaneh.hoseini@cc.iut.ac.ir",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "liu@utias.utoronto.ca",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "mfe@mit.edu",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "jhow@mit.edu",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "aderuiter@ryerson.ca",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      }
+    ]
+  },
+  {
+    "case": "lumma",
+    "contacts": [],
+    "resolved": [
+      {
+        "email": "mark.hindmarsh@helsinki.fi",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "mlueben@mpp.mpg.de",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "j.lumma@thphys.uni-heidelberg.de",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "m.pauly@thphys.uni-heidelberg.de",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      }
+    ]
+  },
+  {
+    "case": "kumar",
+    "contacts": [
+      {
+        "email": "jitendra@nitt.edu",
+        "authorIndex": 1,
+        "page": 1,
+        "authorText": "Deepika Saxena, Jitendra Kumar, Ashutosh Kumar Singh, Senior member IEEE, and Stefan Schmid",
+        "contactText": "J.Kumar is with the Department of Computer Applications, NIT Tiruchi- rappalli, Tamilnadu, India. E-mail: jitendra@nitt.edu A. K. Singh are with the Department of Computer Applications, NIT Kurukshetra. E-mail: ashutosh@nitkkr.ac.in",
+        "evidenceText": "PDF_PAGE:1\nAUTHOR:Deepika Saxena, Jitendra Kumar, Ashutosh Kumar Singh, Senior member IEEE, and Stefan Schmid\nCONTACT:J.Kumar is with the Department of Computer Applications, NIT Tiruchi- rappalli, Tamilnadu, India. E-mail: jitendra@nitt.edu A. K. Singh are with the Department of Computer Applications, NIT Kurukshetra. E-mail: ashutosh@nitkkr.ac.in"
+      },
+      {
+        "email": "ashutosh@nitkkr.ac.in",
+        "authorIndex": 1,
+        "page": 1,
+        "authorText": "Deepika Saxena, Jitendra Kumar, Ashutosh Kumar Singh, Senior member IEEE, and Stefan Schmid",
+        "contactText": "J.Kumar is with the Department of Computer Applications, NIT Tiruchi- rappalli, Tamilnadu, India. E-mail: jitendra@nitt.edu A. K. Singh are with the Department of Computer Applications, NIT Kurukshetra. E-mail: ashutosh@nitkkr.ac.in",
+        "evidenceText": "PDF_PAGE:1\nAUTHOR:Deepika Saxena, Jitendra Kumar, Ashutosh Kumar Singh, Senior member IEEE, and Stefan Schmid\nCONTACT:J.Kumar is with the Department of Computer Applications, NIT Tiruchi- rappalli, Tamilnadu, India. E-mail: jitendra@nitt.edu A. K. Singh are with the Department of Computer Applications, NIT Kurukshetra. E-mail: ashutosh@nitkkr.ac.in"
+      },
+      {
+        "email": "stefan.schmid@tu-berlin.de",
+        "authorIndex": 3,
+        "page": 1,
+        "authorText": "Deepika Saxena, Jitendra Kumar, Ashutosh Kumar Singh, Senior member IEEE, and Stefan Schmid",
+        "contactText": "S. Schmid is with TU Berlin, Germany, University of Vienna, Austria, and Fraunhofer SIT, Germany. E-mail: stefan.schmid@tu-berlin.de. This article has been accepted in IEEE Transactions on Parallel and Distributed Systems Journal © 2023 IEEE. Personal use of this material is permitted. Permission",
+        "evidenceText": "PDF_PAGE:1\nAUTHOR:Deepika Saxena, Jitendra Kumar, Ashutosh Kumar Singh, Senior member IEEE, and Stefan Schmid\nCONTACT:S. Schmid is with TU Berlin, Germany, University of Vienna, Austria, and Fraunhofer SIT, Germany. E-mail: stefan.schmid@tu-berlin.de. This article has been accepted in IEEE Transactions on Parallel and Distributed Systems Journal © 2023 IEEE. Personal use of this material is permitted. Permission"
+      }
+    ],
+    "resolved": [
+      {
+        "email": "13deepikasaxena@gmail.com",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "d.saxena@em.uni-frankfurt.de",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "jitendra@nitt.edu",
+        "givenNames": "Jitendra",
+        "familyNames": "Kumar",
+        "affiliation": null,
+        "orcidId": "0000-0002-2938-6432",
+        "institutionType": null,
+        "openAlexAuthorId": "A5038146323",
+        "identityEvidence": "SOURCE_SHA256:fe6eac5c8fa2bc314e7593c82dc3b1c55bfada003e45cce89462feb2a2c69482",
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "ashutosh@nitkkr.ac.in",
+        "givenNames": "Jitendra",
+        "familyNames": "Kumar",
+        "affiliation": null,
+        "orcidId": "0000-0002-2938-6432",
+        "institutionType": null,
+        "openAlexAuthorId": "A5038146323",
+        "identityEvidence": "SOURCE_SHA256:fe6eac5c8fa2bc314e7593c82dc3b1c55bfada003e45cce89462feb2a2c69482",
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "stefan.schmid@tu-berlin.de",
+        "givenNames": "Stefan",
+        "familyNames": "Schmid",
+        "affiliation": null,
+        "orcidId": "0000-0002-7798-1711",
+        "institutionType": null,
+        "openAlexAuthorId": "A5066080641",
+        "identityEvidence": "SOURCE_SHA256:8c3f6f9ad066d486adbb7ea911f13d657f670309e998694114b56187086d4bac",
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      }
+    ]
+  },
+  {
+    "case": "debie",
+    "contacts": [
+      {
+        "email": "e.debie@unsw.edu.au",
+        "authorIndex": 2,
+        "page": 1,
+        "authorText": "Nour Moustafa∗, Marwa Keshk†, Essam Debie‡ and Helge Janicke§ School of Engineering and Information Technology, University of New South Wales, Canberra, Australia ∗†‡",
+        "contactText": "‡e.debie@unsw.edu.au, §helge.janicke@cybersecuritycrc.org.au",
+        "evidenceText": "PDF_PAGE:1\nAUTHOR:Nour Moustafa∗, Marwa Keshk†, Essam Debie‡ and Helge Janicke§ School of Engineering and Information Technology, University of New South Wales, Canberra, Australia ∗†‡\nCONTACT:‡e.debie@unsw.edu.au, §helge.janicke@cybersecuritycrc.org.au"
+      },
+      {
+        "email": "helge.janicke@cybersecuritycrc.org.au",
+        "authorIndex": 2,
+        "page": 1,
+        "authorText": "Nour Moustafa∗, Marwa Keshk†, Essam Debie‡ and Helge Janicke§ School of Engineering and Information Technology, University of New South Wales, Canberra, Australia ∗†‡",
+        "contactText": "‡e.debie@unsw.edu.au, §helge.janicke@cybersecuritycrc.org.au",
+        "evidenceText": "PDF_PAGE:1\nAUTHOR:Nour Moustafa∗, Marwa Keshk†, Essam Debie‡ and Helge Janicke§ School of Engineering and Information Technology, University of New South Wales, Canberra, Australia ∗†‡\nCONTACT:‡e.debie@unsw.edu.au, §helge.janicke@cybersecuritycrc.org.au"
+      }
+    ],
+    "resolved": [
+      {
+        "email": "nour.moustafa@unsw.edu.au",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "marwa.hassan@student.unsw.edu.au",
+        "givenNames": null,
+        "familyNames": null,
+        "affiliation": null,
+        "orcidId": null,
+        "institutionType": null,
+        "openAlexAuthorId": null,
+        "identityEvidence": null,
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "e.debie@unsw.edu.au",
+        "givenNames": "Essam",
+        "familyNames": "Debie",
+        "affiliation": null,
+        "orcidId": "0000-0003-4954-3631",
+        "institutionType": null,
+        "openAlexAuthorId": "A5087557540",
+        "identityEvidence": "SOURCE_SHA256:1c18d8adf2a5dabf8a940a2203fc20f4cf5426303eba64a06cc420481c882d79",
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      },
+      {
+        "email": "helge.janicke@cybersecuritycrc.org.au",
+        "givenNames": "Essam",
+        "familyNames": "Debie",
+        "affiliation": null,
+        "orcidId": "0000-0003-4954-3631",
+        "institutionType": null,
+        "openAlexAuthorId": "A5087557540",
+        "identityEvidence": "SOURCE_SHA256:1c18d8adf2a5dabf8a940a2203fc20f4cf5426303eba64a06cc420481c882d79",
+        "institutionName": null,
+        "institutionCountry": null,
+        "institutionSource": null,
+        "corresponding": false
+      }
+    ]
+  }
+]

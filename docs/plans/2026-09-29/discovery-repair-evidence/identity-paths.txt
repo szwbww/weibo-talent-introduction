@@ -1,0 +1,55 @@
+$ rg -n SourceAuthorEmailResolver|PdfAuthorContactLayout|EXTRACTION_VERSION|identityRuleVersion|identityVerification|institutionEvidence src/main/kotlin/com/weibo/talentintroduction/discovery src/main/kotlin/com/weibo/talentintroduction/expert src/main/resources/es
+exit=0
+src/main/resources/es/orcid_info_candidate.json:30:      "institutionEvidence": { "type": "keyword" },
+src/main/resources/es/orcid_info_candidate.json:34:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_raw.json:29:      "institutionEvidence": { "type": "keyword" },
+src/main/resources/es/orcid_info_raw.json:33:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/resources/es/orcid_info_application.json:41:      "institutionEvidence": { "type": "keyword" },
+src/main/resources/es/orcid_info_application.json:45:      "identityVerification": { "type": "object", "dynamic": false, "properties": {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:16:internal object SourceAuthorEmailResolver {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt:38:        contacts: List<PdfAuthorContactLayout.Contact>,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:507:            identityVerification = DiscoveryIdentity.read(source.path("identityVerification")),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:510:            institutionEvidence = source.nullableText("institutionEvidence"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:595:            "filterResult", "institutionEvidence",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:597:            "dataSource", "externalIds", "worksCount", "identityVerification",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/CoreDataSource.kt:164:                    SourceAuthorEmailResolver.resolveText(paper.fullText, paper.authors), "FULLTEXT_TEXT", null, httpRequests = 0
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:41:    val identityVerification: IdentityVerification? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:45:     * 签发与验签的唯一入口是 [DiscoveryIdentity.institutionEvidence] / [DiscoveryIdentity.validInstitutionEvidence]；
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:48:    val institutionEvidence: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:1525:            identityVerification = proofFor(authorEmail)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2005:                    val json = objectMapper.writeValueAsString(outcome.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2046:        if (extraction.identityRuleVersion != DiscoveryIdentity.EXTRACTION_VERSION) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2047:            return QueuedItemConsumption(unrecoverableReason = "IDENTITY_EXTRACTION_VERSION_UNSUPPORTED")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2232:        val proof = source?.let { DiscoveryIdentity.read(it.path("identityVerification")) }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2267:            identityVerification = proofFor(authorEmail)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2278:        val evidence = source?.let { DiscoveryIdentity.institutionEvidence(this, it) } ?: return this
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2279:        return copy(institutionEvidence = evidence)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2294:            "identityVerification" to profile.identityVerification,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2303:        profile.institutionEvidence?.let { doc["institutionEvidence"] = it }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3042:                "if (ctx._source.identityVerification != params.identity || ctx._source.email != params.email || ctx._source.givenNames != params.given || ctx._source.familyNames != params.family || ctx._source.externalIds != params.externalIds) { ctx.op = 'none'; } else { for (entry in params.doc.entrySet()) { ctx._source[entry.getKey()] = entry.getValue(); } }",
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3043:                "params" to mapOf("identity" to profile.identityVerification, "email" to profile.email,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3102:            return if (DiscoveryIdentity.allowed(profile)) normalizeOpenAlexAuthorId(profile.identityVerification?.openAlexAuthorId) else null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3116:            return profile.identityVerification?.orcid?.takeIf {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3259:            "_source" to listOf("email", "givenNames", "familyNames", "identityVerification", "externalIds", "emailSource", "tags")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:457:            if (source.path("identityVerification").isObject) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:562:            if (source.path("identityVerification").isObject) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:713:        listOf("orcidId", "email", "givenNames", "familyNames", "externalIds", "identityVerification")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:733:            identityVerification = source["identityVerification"]?.let {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:793:            if (doc["identityVerification"] != null) "?op_type=create" else ""
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:24:    const val EXTRACTION_VERSION = 20261002
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:30:    fun isDiscovery(profile: ExpertProfile) = profile.identityVerification != null ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:38:    fun isDiscoveryMap(source: Map<String, Any?>): Boolean = source["identityVerification"] != null ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:42:        (!source.path("identityVerification").isMissingNode && !source.path("identityVerification").isNull) ||
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:49:        val proof = profile.identityVerification ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:68:        identityVerification = read(source.path("identityVerification"))
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:93:    fun institutionEvidence(profile: ExpertProfile, source: String): String? {
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:96:        val proof = profile.identityVerification ?: return null
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:117:        val token = profile.institutionEvidence ?: return false
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:120:        return token == institutionEvidence(profile, source)
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentity.kt:153:     * I-2 的签发前置：`identityVerification` 中非空的 ORCID/OpenAlex 作者 ID 与 `externalIds` 对应 ID 不得冲突；
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/EmailExtractionOutcome.kt:21:    val identityRuleVersion: Int? = null
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:166:        val (visible, emails) = SourceAuthorEmailResolver.resolveHtmlWithVisibility(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:291:        PdfAuthorContactLayout.selectedPages(pageCount, properties.maxPages, properties.tailPages)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:298:                val contacts = PdfAuthorContactLayout.collect(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt:316:                return SourceAuthorEmailResolver.resolvePdf(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt:11:internal object PdfAuthorContactLayout {
