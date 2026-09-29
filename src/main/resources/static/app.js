@@ -3278,16 +3278,28 @@ async function refreshCurrentView() {
 
 async function loadAccounts() {
     state.accounts = await api("/api/mail/sender-accounts");
+    // I-4：告警只依据服务端一次统计快照；数字必须是有限数值且样本充足，否则原位回退旧徽标，
+    // 绝不把缺失字段渲染成 NaN 或伪造的 0/0。是否告警由 API 布尔值决定，不用四舍五入后的百分比判定。
+    const hardBounceBadge = (account) => {
+        if (account.hardBounceRateHigh !== true) return "";
+        const statsUsable = account.hardBounceSampleSufficient === true
+            && typeof account.hardBounceCount === "number" && Number.isFinite(account.hardBounceCount)
+            && typeof account.sentCount === "number" && Number.isFinite(account.sentCount)
+            && typeof account.hardBounceRate === "number" && Number.isFinite(account.hardBounceRate);
+        if (!statsUsable) {
+            return ` <span class="badge warn" title="近7天硬退率超过5%（已发至少20封）；仅提示，不影响自动发送">硬退率过高</span>`;
+        }
+        const percent = (account.hardBounceRate * 100).toFixed(2);
+        const tooltip = `近7天退信事件${account.hardBounceCount}条 / 近7天成功发信${account.sentCount}封＝${percent}%；两者可能不是同一批邮件；阈值>5%，至少20封；仅提示，不影响自动发送`;
+        return ` <span class="badge warn" title="${escapeHtml(tooltip)}">永久退信偏高 ${account.hardBounceCount}/${account.sentCount}（${percent}%）</span>`;
+    };
     $("#accountsTable").innerHTML = state.accounts.map((account) => {
         const autoPaused = account.autoSendPaused === true;
-        const hardBounceRateHigh = account.hardBounceRateHigh === true;
         const statusCell = badge(account.enabled ? "启用" : "禁用", account.enabled ? "ok" : "error")
             + (autoPaused
                 ? ` <span class="badge warn" title="${escapeHtml(account.autoSendPausedReason || "自动暂停")}">自动暂停</span>`
                 : "")
-            + (hardBounceRateHigh
-                ? ` <span class="badge warn" title="近7天硬退率超过5%（已发至少20封）；仅提示，不影响自动发送">硬退率过高</span>`
-                : "");
+            + hardBounceBadge(account);
         const actions = [
             `<button class="button" data-action="view-account" data-code="${escapeHtml(account.accountCode)}">查看</button>`,
             `<button class="button" data-action="edit-account" data-code="${escapeHtml(account.accountCode)}">编辑</button>`,

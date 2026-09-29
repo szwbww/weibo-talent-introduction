@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.service.BounceRateMonitorService
+import com.weibo.talentintroduction.mail.service.HardBounceStats
 import com.weibo.talentintroduction.mail.service.MailAccountConnectivityService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountCreateCommand
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
@@ -12,6 +13,7 @@ import com.weibo.talentintroduction.mail.service.SelfCheckResult
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.hamcrest.Matchers.nullValue
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
@@ -57,8 +59,8 @@ class MailSenderAccountControllerMvcTest {
         Mockito.`when`(service.listAccounts()).thenReturn(accounts)
         Mockito.`when`(service.effectiveDailyLimitFor(accounts[0])).thenReturn(100)
         Mockito.`when`(service.effectiveDailyLimitFor(accounts[1])).thenReturn(80)
-        Mockito.`when`(bounceRateMonitorService.isHardBounceRateHigh("a1")).thenReturn(true)
-        Mockito.`when`(bounceRateMonitorService.isHardBounceRateHigh("a2")).thenReturn(false)
+        stubBounceStats("a1", hardBounceCount = 9, sentCount = 160, rate = 0.05625, high = true)
+        stubBounceStats("a2", hardBounceCount = 0, sentCount = 40, rate = 0.0, high = false)
 
         mockMvc.perform(get("/api/mail/sender-accounts"))
             .andExpect(status().isOk)
@@ -67,11 +69,83 @@ class MailSenderAccountControllerMvcTest {
             .andExpect(jsonPath("$[0].autoSendPausedReason").value("SELF_CHECK_FAILED:boom"))
             .andExpect(jsonPath("$[0].effectiveDailyLimit").value(100))
             .andExpect(jsonPath("$[0].hardBounceRateHigh").value(true))
+            .andExpect(jsonPath("$[0].hardBounceCount").isNumber)
+            .andExpect(jsonPath("$[0].hardBounceCount").value(9))
+            .andExpect(jsonPath("$[0].sentCount").isNumber)
+            .andExpect(jsonPath("$[0].sentCount").value(160))
+            .andExpect(jsonPath("$[0].hardBounceRate").isNumber)
+            .andExpect(jsonPath("$[0].hardBounceRate").value(0.05625))
+            .andExpect(jsonPath("$[0].hardBounceSampleSufficient").isBoolean)
+            .andExpect(jsonPath("$[0].hardBounceSampleSufficient").value(true))
+            .andExpect(jsonPath("$[0].hardBounceWindowDays").isNumber)
+            .andExpect(jsonPath("$[0].hardBounceWindowDays").value(7))
             .andExpect(jsonPath("$[1].accountCode").value("a2"))
             .andExpect(jsonPath("$[1].autoSendPaused").value(false))
             .andExpect(jsonPath("$[1].autoSendPausedReason").isEmpty)
             .andExpect(jsonPath("$[1].effectiveDailyLimit").value(80))
             .andExpect(jsonPath("$[1].hardBounceRateHigh").value(false))
+            .andExpect(jsonPath("$[1].hardBounceCount").value(0))
+            .andExpect(jsonPath("$[1].sentCount").value(40))
+            .andExpect(jsonPath("$[1].hardBounceRate").value(0.0))
+            .andExpect(jsonPath("$[1].hardBounceSampleSufficient").value(true))
+            .andExpect(jsonPath("$[1].hardBounceWindowDays").value(7))
+
+        // I-3：GET 是只读路径，服务层只被读取，没有任何写操作被新增。
+        Mockito.verify(service).bindingCountsByAccount()
+        Mockito.verify(service).listAccounts()
+        Mockito.verify(service, Mockito.times(1))
+            .effectiveDailyLimitFor(accounts[0])
+        Mockito.verify(service, Mockito.times(1))
+            .effectiveDailyLimitFor(accounts[1])
+        Mockito.verifyNoMoreInteractions(service)
+
+        // I-1：每个账号恰好一次统计计算，数字与比率来自同一次结果。
+        Mockito.verify(bounceRateMonitorService, Mockito.times(1))
+            .getStats(Mockito.eq("a1") ?: "a1", Mockito.anyInt())
+        Mockito.verify(bounceRateMonitorService, Mockito.times(1))
+            .getStats(Mockito.eq("a2") ?: "a2", Mockito.anyInt())
+    }
+
+    @Test
+    fun `detail and management endpoints reuse the same bounce statistics response`() {
+        val account = account("a1")
+        Mockito.`when`(service.getAccount("a1")).thenReturn(account)
+        Mockito.`when`(service.setEnabled("a1", true)).thenReturn(account)
+        Mockito.`when`(service.setEnabled("a1", false)).thenReturn(account)
+        Mockito.`when`(service.resetTodaySentCount("a1")).thenReturn(account)
+        Mockito.`when`(service.effectiveDailyLimitFor(account)).thenReturn(100)
+        // I-2：2/19 样本不足 → 三个告警字段分别是 null / false / false。
+        stubBounceStats("a1", hardBounceCount = 2, sentCount = 19, rate = null, sampleSufficient = false, high = false)
+
+        mockMvc.perform(get("/api/mail/sender-accounts/a1"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.hardBounceRateHigh").value(false))
+            .andExpect(jsonPath("$.hardBounceCount").value(2))
+            .andExpect(jsonPath("$.sentCount").value(19))
+            .andExpect(jsonPath("$.hardBounceRate").value(nullValue()))
+            .andExpect(jsonPath("$.hardBounceSampleSufficient").value(false))
+            .andExpect(jsonPath("$.hardBounceWindowDays").value(7))
+
+        mockMvc.perform(post("/api/mail/sender-accounts/a1/enable"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.hardBounceCount").value(2))
+            .andExpect(jsonPath("$.hardBounceRate").value(nullValue()))
+
+        mockMvc.perform(post("/api/mail/sender-accounts/a1/disable"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.hardBounceCount").value(2))
+            .andExpect(jsonPath("$.hardBounceRate").value(nullValue()))
+
+        mockMvc.perform(post("/api/mail/sender-accounts/a1/reset-today-sent-count"))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.hardBounceCount").value(2))
+            .andExpect(jsonPath("$.hardBounceRate").value(nullValue()))
+
+        Mockito.verify(service, Mockito.times(1)).setEnabled("a1", true)
+        Mockito.verify(service, Mockito.times(1)).setEnabled("a1", false)
+        Mockito.verify(service, Mockito.times(1)).resetTodaySentCount("a1")
+        Mockito.verify(bounceRateMonitorService, Mockito.times(4))
+            .getStats(Mockito.eq("a1") ?: "a1", Mockito.anyInt())
     }
 
     @Test
@@ -79,6 +153,7 @@ class MailSenderAccountControllerMvcTest {
         val account = account("a1")
         Mockito.`when`(service.getAccount("a1")).thenReturn(account)
         Mockito.`when`(service.effectiveDailyLimitFor(account)).thenReturn(100)
+        stubBounceStats("a1")
 
         mockMvc.perform(post("/api/mail/sender-accounts/a1/resume-auto-send"))
             .andExpect(status().isOk)
@@ -120,7 +195,7 @@ class MailSenderAccountControllerMvcTest {
             )
         ).thenReturn(created)
         Mockito.`when`(service.effectiveDailyLimitFor(created)).thenReturn(100)
-        Mockito.`when`(bounceRateMonitorService.isHardBounceRateHigh("alias")).thenReturn(false)
+        stubBounceStats("alias")
 
         mockMvc.perform(
             post("/api/mail/sender-accounts")
@@ -147,7 +222,7 @@ class MailSenderAccountControllerMvcTest {
             )
         ).thenReturn(created)
         Mockito.`when`(service.effectiveDailyLimitFor(created)).thenReturn(100)
-        Mockito.`when`(bounceRateMonitorService.isHardBounceRateHigh("alias")).thenReturn(false)
+        stubBounceStats("alias")
 
         mockMvc.perform(
             post("/api/mail/sender-accounts")
@@ -172,7 +247,7 @@ class MailSenderAccountControllerMvcTest {
             )
         ).thenReturn(updated)
         Mockito.`when`(service.effectiveDailyLimitFor(updated)).thenReturn(100)
-        Mockito.`when`(bounceRateMonitorService.isHardBounceRateHigh("alias")).thenReturn(false)
+        stubBounceStats("alias")
 
         mockMvc.perform(
             put("/api/mail/sender-accounts/alias")
@@ -207,6 +282,33 @@ class MailSenderAccountControllerMvcTest {
             .andExpect(status().isBadRequest)
             .andExpect(jsonPath("$.code").value("BAD_REQUEST"))
             .andExpect(jsonPath("$.message").value("共享收件箱主账号不能指向自己：alias"))
+    }
+
+    /** I-4：控制器每个响应只取一次统计快照，MVC 测试按账号提供固定的快照值。 */
+    private fun stubBounceStats(
+        accountCode: String,
+        hardBounceCount: Long = 0,
+        sentCount: Long = 200,
+        rate: Double? = 0.0,
+        sampleSufficient: Boolean = true,
+        windowDays: Int = 7,
+        high: Boolean = false
+    ) {
+        Mockito.`when`(
+            bounceRateMonitorService.getStats(
+                Mockito.eq(accountCode) ?: accountCode,
+                Mockito.anyInt()
+            )
+        ).thenReturn(
+            HardBounceStats(
+                hardBounceCount = hardBounceCount,
+                sentCount = sentCount,
+                rate = rate,
+                sampleSufficient = sampleSufficient,
+                windowDays = windowDays,
+                high = high
+            )
+        )
     }
 
     private fun createRequestBody(inboundMailboxCode: String? = null): String =

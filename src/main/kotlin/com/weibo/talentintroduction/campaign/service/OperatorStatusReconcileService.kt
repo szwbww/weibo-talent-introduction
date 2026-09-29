@@ -11,6 +11,7 @@ import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.repository.BounceRecordRepository
 import com.weibo.talentintroduction.mail.repository.MailAttachmentRepository
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
+import com.weibo.talentintroduction.mail.service.RecipientAddressFailureClassifier
 import com.weibo.talentintroduction.task.service.TaskExecutionSummaryProvider
 import org.slf4j.LoggerFactory
 import org.springframework.http.HttpEntity
@@ -67,11 +68,18 @@ class OperatorStatusReconcileService(
         val recordsByContact = mailRecords.groupBy { it.expertContactId }
         // 材料附件挂在 INBOUND mail_record 上（MailAttachmentService.saveInboundAttachments 以 mailRecordId 关联）
         val attachedMailRecordIds = attachments.mapNotNull { it.mailRecordId }.toSet()
-        // I-4 EMAIL_INVALID 判据（两条旁路终态证据）：
-        // ① HARD 退信记录（BounceCollectionService:105-107）；② 首封外发 PERMANENT 失败
-        // （ManualInitialOutreachService:697,706 + ManualOutreachTxHelper.recordFailure:96 的 errorSummary "PERMANENT:…"）
-        val hardBounceContactIds = bounces
-            .filter { it.bounceType == "HARD" && it.originalExpertContactId != null }
+        // I-4 EMAIL_INVALID 地址证据（只读重算，与在线 ingest 同一判据）：
+        // ① HARD 且 dsn_status 构成明确收件地址证据的退信记录（BounceCollectionService.ingest
+        //    的同一白名单；策略/路由/容量类 5xx 与未知码在此不构成证据）；
+        // ② 首封外发 PERMANENT 失败且 error_summary 内含可信行首增强码（03 收口：不再只凭
+        //    `PERMANENT:` 前缀——政策拒绝 5.7.1、裸 550、截断详情都不构成地址证据）
+        // （ManualInitialOutreachService 永久失败分支 + ManualOutreachTxHelper.recordFailure 的同一摘要）
+        val addressEvidenceBounceContactIds = bounces
+            .filter {
+                it.bounceType == "HARD" &&
+                    it.originalExpertContactId != null &&
+                    RecipientAddressFailureClassifier.isInvalidDsnStatus(it.dsnStatus)
+            }
             .map { it.originalExpertContactId!! }
             .toSet()
         val permanentFailureContactIds = mailRecords
@@ -79,7 +87,7 @@ class OperatorStatusReconcileService(
                 it.direction == "OUTBOUND" &&
                     it.mailType == "INTRODUCTION" &&
                     it.sendStatus == "FAILED" &&
-                    (it.errorSummary?.startsWith("PERMANENT:") == true)
+                    RecipientAddressFailureClassifier.isInvalidPermanentSummary(it.errorSummary)
             }
             .map { it.expertContactId }
             .toSet()
@@ -100,7 +108,7 @@ class OperatorStatusReconcileService(
                 contactId,
                 recordsByContact[contactId].orEmpty(),
                 attachedMailRecordIds,
-                hardBounceContactIds,
+                addressEvidenceBounceContactIds,
                 permanentFailureContactIds
             )
             val esStatus = contact.orcidId.takeIf { it.isNotBlank() }
@@ -168,23 +176,23 @@ class OperatorStatusReconcileService(
      * - REPLIED：存在 INBOUND mail_record（AutoMailReplyService:802）
      * - MATERIALS_RECEIVED：INBOUND 邮件有材料附件（AutomaticApplicationPromotionService:50,57；
      *   附件经 MailAttachmentService.saveInboundAttachments 以 mailRecordId 落 mail_attachment）
-     * - EMAIL_INVALID：HARD 退信记录（BounceCollectionService:105）或首封外发 PERMANENT 失败
-     *   （ManualInitialOutreachService:706）——旁路终态，优先于一切枚举推进
+     * - EMAIL_INVALID：合格地址证据的 HARD 退信（`RecipientAddressFailureClassifier.isInvalidDsnStatus`）
+     *   或具备同一地址证据的首封外发 PERMANENT 失败（`isInvalidPermanentSummary`）
      * - COMPLETED：不可派生（I-3），由调用方单独豁免
      *
-     * 多个判据同时成立时取最大 ordinal（与 updateAutomatically 单调不回退语义一致：
-     * 系统沿 CONTACTED→REPLIED→MATERIALS_RECEIVED→INVITED 正向推进，期望状态即已达最高里程碑）。
+     * **里程碑优先（I-4）**：先计算现有最高通信里程碑。已达 REPLIED 及以上（REPLIED /
+     * MATERIALS_RECEIVED / INVITED）时直接返回该里程碑——已有回复/材料/邀请事实不被退信遮盖；
+     * 否则才回退到地址证据（退信 / 首封永久失败）推导 EMAIL_INVALID，
+     * 最后才是低于 REPLIED 的里程碑或 NOT_CONTACTED。
+     * 不从 DB 既有 EMAIL_INVALID 反推证据。
      */
     private fun deriveExpectedStatus(
         contactId: Long,
         records: List<MailRecord>,
         attachedMailRecordIds: Set<Long>,
-        hardBounceContactIds: Set<Long>,
+        addressEvidenceBounceContactIds: Set<Long>,
         permanentFailureContactIds: Set<Long>
     ): String {
-        if (hardBounceContactIds.contains(contactId) || permanentFailureContactIds.contains(contactId)) {
-            return "EMAIL_INVALID"
-        }
         var maxOrdinal = -1
         val hasIntroductionSent = records.any {
             it.direction == "OUTBOUND" && it.mailType == "INTRODUCTION" && it.sendStatus == "SENT"
@@ -205,6 +213,13 @@ class OperatorStatusReconcileService(
         }
         if (hasMeetingInvitationSent) {
             maxOrdinal = maxOf(maxOrdinal, OperatorStatus.INVITED.ordinal)
+        }
+
+        if (maxOrdinal >= OperatorStatus.REPLIED.ordinal) {
+            return OperatorStatus.entries[maxOrdinal].name
+        }
+        if (addressEvidenceBounceContactIds.contains(contactId) || permanentFailureContactIds.contains(contactId)) {
+            return "EMAIL_INVALID"
         }
         return if (maxOrdinal >= 0) OperatorStatus.entries[maxOrdinal].name else "NOT_CONTACTED"
     }

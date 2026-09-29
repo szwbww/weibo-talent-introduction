@@ -15,6 +15,8 @@ import com.weibo.talentintroduction.mail.repository.MailRecordRepository
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import org.springframework.http.HttpEntity
@@ -99,7 +101,7 @@ class OperatorStatusReconcileServiceTest {
             storagePath = "/tmp/$id.pdf"
         )
 
-    private fun hardBounce(id: Long, contactId: Long): BounceRecord =
+    private fun hardBounce(id: Long, contactId: Long, dsnStatus: String = "5.1.1"): BounceRecord =
         BounceRecord(
             id = id,
             senderAccountCode = "ACC",
@@ -107,7 +109,7 @@ class OperatorStatusReconcileServiceTest {
             originalMessageId = "orig-$id",
             originalExpertContactId = contactId,
             bounceType = "HARD",
-            dsnStatus = "5.1.1",
+            dsnStatus = dsnStatus,
             bounceReason = "user unknown",
             receivedAt = java.time.LocalDateTime.now()
         )
@@ -234,12 +236,93 @@ class OperatorStatusReconcileServiceTest {
         stubRepositories(
             contacts = listOf(contact(1, "ORCID-1")),
             records = listOf(
-                mail(10, 1, "OUTBOUND", "INTRODUCTION", sendStatus = "FAILED", errorSummary = "PERMANENT:550:user unknown")
+                mail(10, 1, "OUTBOUND", "INTRODUCTION", sendStatus = "FAILED", errorSummary = "PERMANENT:550:550 5.1.1 User unknown")
             )
         )
         val report = service.reconcile()
         assertEquals(1, report.dbVsExpected)
         assertEquals("EMAIL_INVALID", sampleOf(report, OperatorStatusReconcileService.CATEGORY_DB_VS_EXPECTED).expectedStatus)
+    }
+
+    /**
+     * 03 I-1/I-5：对账与在线判定共用同一份持久化摘要（`PERMANENT:<5xx>:<详情>`），
+     * 只有行首可信增强码落在白名单才构成地址证据；政策拒绝/裸码/英文说明都不算。
+     */
+    @ParameterizedTest
+    @ValueSource(
+        strings = [
+            "PERMANENT:550:550 5.7.1 Blocked",
+            "PERMANENT:550:5.7.1 policy rejection",
+            "PERMANENT:550:user unknown",
+            "PERMANENT:550:550",
+            "PERMANENT:554:550 5.1.1 User unknown",
+            "PERMANENT:550:550 5.1.1 User unknown\n550 5.1.2 mailbox unavailable",
+            "PERMANENT:550:reason: 5.1.1 user unknown",
+            "TRANSIENT:421:421 5.1.1 slow down"
+        ]
+    )
+    fun `permanent smtp failure without address evidence never implies EMAIL_INVALID`(errorSummary: String) {
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1")),
+            records = listOf(mail(10, 1, "OUTBOUND", "INTRODUCTION", sendStatus = "FAILED", errorSummary = errorSummary))
+        )
+        val report = service.reconcile()
+        assertEquals(0, report.dbVsExpected)
+        assertEquals(1, report.consistent)
+    }
+
+    @Test
+    fun `a truncated permanent summary detail is never address evidence`() {
+        // 详情恰好 200 字符 = buildSmtpErrorSummary 的截断上限：尾部 5.1.10 可能被截成 5.1.1 → 保守 false。
+        val protocolLine = "550 5.1.1 User unknown "
+        val truncatedDetail = protocolLine + "x".repeat(200 - protocolLine.length)
+        assertEquals(200, truncatedDetail.length)
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1")),
+            records = listOf(
+                mail(
+                    10, 1, "OUTBOUND", "INTRODUCTION", sendStatus = "FAILED",
+                    errorSummary = "PERMANENT:550:$truncatedDetail"
+                )
+            )
+        )
+        val report = service.reconcile()
+        assertEquals(0, report.dbVsExpected)
+        assertEquals(1, report.consistent)
+    }
+
+    @Test
+    fun `permanent smtp failure never overrides a replied milestone`() {
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1", operatorStatus = "REPLIED")),
+            records = listOf(
+                mail(10, 1, "OUTBOUND", "INTRODUCTION", sendStatus = "FAILED", errorSummary = "PERMANENT:550:550 5.1.1 User unknown"),
+                mail(11, 1, "INBOUND", "REPLY")
+            )
+        )
+        stubEs(listOf("ORCID-1" to "REPLIED"))
+        val report = service.reconcile()
+        assertEquals(0, report.dbVsExpected)
+        assertEquals(0, report.esVsDb)
+        assertEquals(1, report.consistent)
+    }
+
+    @Test
+    fun `permanent smtp failure of a reply or inbound record is not first-mail evidence`() {
+        // 同一 PERMANENT 文本只在 OUTBOUND+INTRODUCTION+FAILED 上构成首封地址证据：
+        // 回复失败行与 INBOUND 行达不到该条件，期望值只由既有通信事实（INBOUND → REPLIED）决定。
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1", operatorStatus = "REPLIED")),
+            records = listOf(
+                mail(10, 1, "OUTBOUND", "REPLY", sendStatus = "FAILED", errorSummary = "PERMANENT:550:550 5.1.1 User unknown"),
+                mail(11, 1, "INBOUND", "REPLY", sendStatus = "FAILED", errorSummary = "PERMANENT:550:550 5.1.1 User unknown")
+            )
+        )
+        stubEs(listOf("ORCID-1" to "REPLIED"))
+        val report = service.reconcile()
+        assertEquals(0, report.dbVsExpected)
+        assertEquals(0, report.esVsDb)
+        assertEquals(1, report.consistent)
     }
 
     @Test
@@ -268,6 +351,113 @@ class OperatorStatusReconcileServiceTest {
         val report = service.reconcile()
         assertEquals(1, report.dbVsExpected)
         assertEquals("INVITED", sampleOf(report, OperatorStatusReconcileService.CATEGORY_DB_VS_EXPECTED).expectedStatus)
+    }
+
+    // ── I-4 里程碑优先：合格地址退信不得遮盖已有通信事实 ────────────────────────
+
+    @Test
+    fun `qualifying address evidence does not override the replied milestone`() {
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1", operatorStatus = "REPLIED")),
+            records = listOf(mail(10, 1, "INBOUND", "REPLY")),
+            bounces = listOf(hardBounce(100, contactId = 1, dsnStatus = "5.1.1"))
+        )
+        stubEs(listOf("ORCID-1" to "REPLIED"))
+        val report = service.reconcile()
+        assertEquals(0, report.dbVsExpected)
+        assertEquals(0, report.esVsDb)
+        assertEquals(1, report.consistent)
+    }
+
+    @Test
+    fun `qualifying address evidence does not override the materials received milestone`() {
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1", operatorStatus = "MATERIALS_RECEIVED")),
+            records = listOf(mail(10, 1, "INBOUND", "REPLY")),
+            attachments = listOf(attachment(100, mailRecordId = 10)),
+            bounces = listOf(hardBounce(100, contactId = 1, dsnStatus = "5.1.10"))
+        )
+        stubEs(listOf("ORCID-1" to "MATERIALS_RECEIVED"))
+        val report = service.reconcile()
+        assertEquals(0, report.dbVsExpected)
+        assertEquals(0, report.esVsDb)
+        assertEquals(1, report.consistent)
+    }
+
+    @Test
+    fun `qualifying address evidence does not override the invited milestone`() {
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1", operatorStatus = "INVITED")),
+            records = listOf(mail(10, 1, "OUTBOUND", "MEETING_INVITATION", sendStatus = "SENT")),
+            bounces = listOf(hardBounce(100, contactId = 1, dsnStatus = "5.1.2"))
+        )
+        stubEs(listOf("ORCID-1" to "INVITED"))
+        val report = service.reconcile()
+        assertEquals(0, report.dbVsExpected)
+        assertEquals(0, report.esVsDb)
+        assertEquals(1, report.consistent)
+    }
+
+    @Test
+    fun `contacted with qualifying address evidence expects EMAIL_INVALID`() {
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1", operatorStatus = "CONTACTED")),
+            records = listOf(mail(10, 1, "OUTBOUND", "INTRODUCTION", sendStatus = "SENT")),
+            bounces = listOf(hardBounce(100, contactId = 1, dsnStatus = "5.1.1"))
+        )
+        val report = service.reconcile()
+        assertEquals(1, report.dbVsExpected)
+        assertEquals("EMAIL_INVALID", sampleOf(report, OperatorStatusReconcileService.CATEGORY_DB_VS_EXPECTED).expectedStatus)
+    }
+
+    @Test
+    fun `non address permanent bounce with a sent introduction still expects CONTACTED`() {
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1")),
+            records = listOf(mail(10, 1, "OUTBOUND", "INTRODUCTION", sendStatus = "SENT")),
+            bounces = listOf(hardBounce(100, contactId = 1, dsnStatus = "5.7.1"))
+        )
+        val report = service.reconcile()
+        assertEquals(1, report.dbVsExpected)
+        assertEquals("CONTACTED", sampleOf(report, OperatorStatusReconcileService.CATEGORY_DB_VS_EXPECTED).expectedStatus)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["5.1.1", "5.1.2", "5.1.3", "5.1.10"])
+    fun `hard bounce with address evidence expects EMAIL_INVALID`(dsnStatus: String) {
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1")),
+            records = emptyList(),
+            bounces = listOf(hardBounce(100, contactId = 1, dsnStatus = dsnStatus))
+        )
+        val report = service.reconcile()
+        assertEquals(1, report.dbVsExpected)
+        assertEquals("EMAIL_INVALID", sampleOf(report, OperatorStatusReconcileService.CATEGORY_DB_VS_EXPECTED).expectedStatus)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["5.7.1", "5.4.1", "5.2.2", "5.0.0", "5.1.100"])
+    fun `hard bounce without address evidence never implies EMAIL_INVALID`(dsnStatus: String) {
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1")),
+            records = emptyList(),
+            bounces = listOf(hardBounce(100, contactId = 1, dsnStatus = dsnStatus))
+        )
+        val report = service.reconcile()
+        assertEquals(0, report.dbVsExpected)
+        assertEquals(1, report.consistent)
+    }
+
+    @Test
+    fun `soft bounce is never address evidence for reconcile`() {
+        stubRepositories(
+            contacts = listOf(contact(1, "ORCID-1")),
+            records = emptyList(),
+            bounces = listOf(hardBounce(100, contactId = 1, dsnStatus = "5.1.1").copy(bounceType = "SOFT"))
+        )
+        val report = service.reconcile()
+        assertEquals(0, report.dbVsExpected)
+        assertEquals(1, report.consistent)
     }
 
     // ── I-2 人工覆盖 ──────────────────────────────────────────────────────────

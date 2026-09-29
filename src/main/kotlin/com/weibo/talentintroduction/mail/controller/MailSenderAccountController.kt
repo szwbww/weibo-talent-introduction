@@ -93,8 +93,10 @@ class MailSenderAccountController(
         service.deleteAccount(accountCode)
     }
 
-    private fun toResponse(account: MailSenderAccount, boundExpertCount: Long = 0): MailSenderAccountResponse =
-        MailSenderAccountResponse(
+    // I-1：每个账号的响应只取一次统计快照，数字与比率来自同一次计算结果，不重复查询。
+    private fun toResponse(account: MailSenderAccount, boundExpertCount: Long = 0): MailSenderAccountResponse {
+        val bounceStats = bounceRateMonitorService.getStats(account.accountCode)
+        return MailSenderAccountResponse(
             id = account.id,
             accountCode = account.accountCode,
             senderEmail = account.senderEmail,
@@ -120,11 +122,17 @@ class MailSenderAccountController(
             autoSendPaused = account.autoSendPaused,
             autoSendPausedReason = account.autoSendPausedReason,
             autoSendPausedAt = account.autoSendPausedAt?.toString(),
-            hardBounceRateHigh = bounceRateMonitorService.isHardBounceRateHigh(account.accountCode),
+            hardBounceRateHigh = bounceStats.high,
+            hardBounceCount = bounceStats.hardBounceCount,
+            sentCount = bounceStats.sentCount,
+            hardBounceRate = bounceStats.rate,
+            hardBounceSampleSufficient = bounceStats.sampleSufficient,
+            hardBounceWindowDays = bounceStats.windowDays,
             warmupEnabled = account.warmupEnabled,
             warmupStartedAt = account.warmupStartedAt?.toString(),
             warmupStepsJson = account.warmupStepsJson
         )
+    }
 }
 
 data class MailSenderAccountCreateRequest(
@@ -253,6 +261,16 @@ data class MailSenderAccountResponse(
     val autoSendPausedReason: String?,
     val autoSendPausedAt: String?,
     val hardBounceRateHigh: Boolean,
+    /** I-4：窗口内 HARD 退信事件数（含无法归因到专家的退信）。 */
+    val hardBounceCount: Long,
+    /** I-4：窗口内成功发信数（OUTBOUND + SENT + sent_at）。 */
+    val sentCount: Long,
+    /** I-4：0～非限定上界的小数比率；null 表示样本不足，禁止当作 0。 */
+    val hardBounceRate: Double?,
+    /** I-4：样本是否达到 MIN_SAMPLE_SIZE。 */
+    val hardBounceSampleSufficient: Boolean,
+    /** I-4：统计窗口天数。 */
+    val hardBounceWindowDays: Int,
     val warmupEnabled: Boolean?,
     val warmupStartedAt: String?,
     val warmupStepsJson: String?

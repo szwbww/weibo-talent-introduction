@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-29/bounce-repair-master.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-09-29/bounce-repair-master.md (sha256 ece7a3567cf898708ba3b388df88539393fe6c59a3f6698f41826ac55d24a26b)
+- Governing master identity: worktree sha256 ece7a3567cf898708ba3b388df88539393fe6c59a3f6698f41826ac55d24a26b; recorded commit 4dccc7404dad92fc3a1dfe3224e2e6fe03feb331
+- Invoked master identity: sha256 ece7a3567cf898708ba3b388df88539393fe6c59a3f6698f41826ac55d24a26b (SAME)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: A1 — docs/plans/2026-09-29/bounce-alert-observability.md, before commit 4dccc7404dad92fc3a1dfe3224e2e6fe03feb331, after commit 9f5eb6818502c9b7079b771ee56464e8c4bff485; master rule 实现方案 / 变更文件清单; reason child 01 I-4 required the account DTO field `hardBounceCount` while an out-of-scope global guard prohibited it; approval HUMAN:批准 A1（推荐） (recorded 2026-09-29T20:18:32+08:00)
+- Fast-p ledger: docs/plans/fast/2026-09-29-bounce-repair-master/ledger.md (sha256 219c43edb2b0489e3076f583ad83ca5fe1699f6dbe3063fae53e37db5ebb98d4)
+- Fast-p handoff: docs/plans/fast/2026-09-29-bounce-repair-master/human-review-handoff.md (sha256 9d80e774994b6a2cf6bb4d50983202ff4bfb37e88ed9267850043c09dd0d24d6)
+- Master base: ca55f0e37ca2d61cdcf362d4d64c5658e4dc34b3
+- Final code head: 46d7e17ddb4b71093a1faca156300335a442ddc4
+- Evidence parent before next commit: aa944b4b4e3e1c7da943902d9b123a074966590a
+- Previous evidence commit: N/A
+- Branch: fast/2026-09-29-bounce-repair-master
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-29-bounce-repair-master
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED exactly one registered worktree; fast-p ledger/handoff READY_FOR_HUMAN_REVIEW; 3 terminal children; master base ca55f0e37ca2d61cdcf362d4d64c5658e4dc34b3; final code head 46d7e17ddb4b71093a1faca156300335a442ddc4; matching recorded branch/worktree and valid ancestry.
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_bounce_review_e1
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md / Epoch 1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human completes mandatory A-1 and A-2 and explicitly accepts boundary 46d7e17ddb4b71093a1faca156300335a442ddc4.

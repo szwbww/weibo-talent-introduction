@@ -195,6 +195,7 @@ describe("senderBindingDisplay accounts table", () => {
     });
 
     it("renders 硬退率过高 warn badge without resume action when only warning", async () => {
+        // I-4：旧 API 只给 hardBounceRateHigh 而不带统计字段时的回退分支（原徽标文案逐字保留）。
         const store = new Map();
         const sandbox = {
             $: createElStub(store),
@@ -225,6 +226,8 @@ describe("senderBindingDisplay accounts table", () => {
         assert.ok(html.includes("badge warn"));
         assert.ok(html.includes("硬退率过高"));
         assert.ok(html.includes('title="近7天硬退率超过5%（已发至少20封）；仅提示，不影响自动发送"'));
+        assert.ok(!html.includes("永久退信偏高"));
+        assert.ok(!html.includes("NaN"));
         assert.ok(!html.includes('data-action="resume-auto-send"'));
     });
 
@@ -260,5 +263,146 @@ describe("senderBindingDisplay accounts table", () => {
         assert.ok(html.includes("SELF_CHECK_FAILED:timeout"));
         assert.ok(html.includes("硬退率过高"));
         assert.ok(html.includes('data-action="resume-auto-send"'));
+    });
+});
+
+function createAccountsSandbox(accounts) {
+    const store = new Map();
+    const sandbox = {
+        $: createElStub(store),
+        state: { accounts: [] },
+        badge: (v, t) => `<span class="badge ${t || ""}">${v}</span>`,
+        api: async () => accounts
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(extractFn("escapeHtml"), sandbox);
+    vm.runInContext(extractFn("loadAccounts"), sandbox);
+    return sandbox;
+}
+
+function bounceAccount(overrides = {}) {
+    return Object.assign({
+        accountCode: "ACC_B",
+        senderEmail: "b@example.com",
+        strategyWeight: 100,
+        todaySentCount: 1,
+        effectiveDailyLimit: 100,
+        dailySendLimit: 100,
+        enabled: true,
+        autoSendPaused: false,
+        boundExpertCount: 3
+    }, overrides);
+}
+
+const staticDir = path.join(__dirname, "..", "..", "main", "resources", "static");
+const indexHtmlPath = path.join(staticDir, "index.html");
+const indexHtmlSource = fs.readFileSync(indexHtmlPath, "utf-8");
+
+// K-frontend-cache-key-triad：缓存键不写死在测试里——从随包发布的 index.html 派生，
+// 键字面量只允许出现在 index.html（taskActivityCenter.test.js 对 src 与 test 两侧做落单扫描）。
+const CACHE_KEY = (() => {
+    const match = indexHtmlSource.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
+
+describe("bounce alert badge (O-1/I-4/S-1)", () => {
+    it("renders 永久退信偏高 with counts, percent and the two-window tooltip", async () => {
+        const sb = createAccountsSandbox([bounceAccount({
+            hardBounceRateHigh: true,
+            hardBounceCount: 9,
+            sentCount: 160,
+            hardBounceRate: 0.05625,
+            hardBounceSampleSufficient: true,
+            hardBounceWindowDays: 7
+        })]);
+        await sb.loadAccounts();
+        const html = sb.$("#accountsTable").innerHTML;
+
+        assert.ok(html.includes("永久退信偏高 9/160（5.63%）"), html);
+        assert.ok(html.includes('<span class="badge warn" title='), "原位复用 span.badge.warn");
+        assert.ok(html.includes("近7天退信事件9条 / 近7天成功发信160封＝5.63%"), html);
+        assert.ok(html.includes("两者可能不是同一批邮件"), html);
+        // S-1 要求 title 走 escapeHtml，故 `>` 在源码里是 `&gt;`，浏览器属性值仍是「阈值>5%，至少20封」。
+        assert.ok(html.includes("阈值&gt;5%，至少20封"), html);
+        assert.ok(html.includes("仅提示，不影响自动发送"), html);
+        assert.ok(!html.includes("style="), "S-1：不得新增 inline style");
+        assert.ok(!html.includes("NaN"));
+        assert.strictEqual((html.match(/<td[ >]/g) || []).length, 7, "S-1：不新增表格列");
+        assert.ok(!html.includes('data-action="resume-auto-send"'));
+    });
+
+    it("renders no third segment for an insufficient sample instead of a fake 0/0", async () => {
+        const sb = createAccountsSandbox([bounceAccount({
+            hardBounceRateHigh: false,
+            hardBounceCount: 2,
+            sentCount: 19,
+            hardBounceRate: null,
+            hardBounceSampleSufficient: false,
+            hardBounceWindowDays: 7
+        })]);
+        await sb.loadAccounts();
+        const html = sb.$("#accountsTable").innerHTML;
+
+        assert.ok(html.includes("启用"));
+        assert.ok(!html.includes("badge warn"), html);
+        assert.ok(!html.includes("永久退信偏高"));
+        assert.ok(!html.includes("硬退率过高"));
+        assert.ok(!html.includes("NaN"));
+        assert.ok(!html.includes("null/"));
+    });
+
+    it("falls back to the original badge when statistics fields are missing or not numbers", async () => {
+        const missing = createAccountsSandbox([bounceAccount({ hardBounceRateHigh: true })]);
+        await missing.loadAccounts();
+        const missingHtml = missing.$("#accountsTable").innerHTML;
+        assert.ok(missingHtml.includes("硬退率过高"), missingHtml);
+        assert.ok(missingHtml.includes('title="近7天硬退率超过5%（已发至少20封）；仅提示，不影响自动发送"'));
+        assert.ok(!missingHtml.includes("永久退信偏高"));
+        assert.ok(!missingHtml.includes("NaN"));
+
+        const notNumeric = createAccountsSandbox([bounceAccount({
+            hardBounceRateHigh: true,
+            hardBounceCount: "<img src=x>",
+            sentCount: 160,
+            hardBounceRate: 0.05625,
+            hardBounceSampleSufficient: true
+        })]);
+        await notNumeric.loadAccounts();
+        const notNumericHtml = notNumeric.$("#accountsTable").innerHTML;
+        assert.ok(notNumericHtml.includes("硬退率过高"), notNumericHtml);
+        assert.ok(!notNumericHtml.includes("<img"));
+        assert.ok(!notNumericHtml.includes("永久退信偏高"));
+
+        const nullRate = createAccountsSandbox([bounceAccount({
+            hardBounceRateHigh: true,
+            hardBounceCount: 9,
+            sentCount: 160,
+            hardBounceRate: null,
+            hardBounceSampleSufficient: true
+        })]);
+        await nullRate.loadAccounts();
+        const nullRateHtml = nullRate.$("#accountsTable").innerHTML;
+        assert.ok(nullRateHtml.includes("硬退率过高"), nullRateHtml);
+        assert.ok(!nullRateHtml.includes("NaN"));
+        assert.ok(!nullRateHtml.includes("永久退信偏高"));
+    });
+});
+
+describe("static resource cache keys (I-5)", () => {
+    it("switches every already-versioned resource to the one current key without adding or retiring one", () => {
+        const keys = indexHtmlSource.match(/\?v=[^"']+/g) || [];
+        assert.strictEqual(keys.length, 11, `expected 11 versioned assets, found ${keys.length}`);
+        keys.forEach((key) => assert.strictEqual(key, `?v=${CACHE_KEY}`));
+        assert.ok(/^[0-9]{8}-[a-z0-9-]+$/.test(CACHE_KEY), `cache key must be <yyyymmdd>-<slug>, got: ${CACHE_KEY}`);
+    });
+
+    it("retires the previous key from index.html", () => {
+        assert.ok(!indexHtmlSource.includes("20260929-discovery-schedule"));
+    });
+
+    it("leaves the unversioned task-modal-runtime script untouched", () => {
+        assert.ok(indexHtmlSource.includes('<script src="task-modal-runtime.js"></script>'));
+        assert.ok(!indexHtmlSource.includes("task-modal-runtime.js?v="));
     });
 });
