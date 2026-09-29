@@ -31,6 +31,7 @@
 - Manual status: PENDING
 - Human sign-off boundary: N/A
 - Blocker/next action: human acceptance of master 人工验收 A-1 on boundary 075dc3e0c014a0cae6a908f871e65784fb944881 (checklist in manual-acceptance.md); machine PASS is not final acceptance
+- Integration note (controller, 2026-09-29): the human operator instructed 「合并到本地main分支」 after the machine PASS. The branch `fast/2026-09-29-discovery-repair-00-master` was merged into local `main` with `--no-ff` in the main checkout; this records the instruction only and does NOT constitute the human acceptance gate (A-1 remains PENDING, no sign-off was given, no `final-decision.md` was written).
 
 ## Reviewer Dispatch Events
 | Timestamp | Epoch | Attempt | Error | Product head | Action |
