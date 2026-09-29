@@ -302,6 +302,65 @@ class BounceCollectionServiceTest {
     }
 
     // ------------------------------------------------------------------
+    // I-1/I-2 端到端：真实 MIME DSN → BounceDetector → ingest 判据
+    // （fixture 只提供邮件原文，dsnStatus/bounceType 全部由生产链路解析）
+    // ------------------------------------------------------------------
+
+    @ParameterizedTest
+    @ValueSource(strings = ["5.1.1", "5.1.10"])
+    fun `collectBounces marks the expert for address evidence statuses parsed from real MIME`(status: String) {
+        val account = senderAccount()
+        val message = mimeDsnReferencing(
+            originalMessageId = "<full-status-outbound@example.com>",
+            bounceMessageId = "<bounce-full-status@example.com>",
+            status = status
+        )
+        val c = contactFixture()
+        Mockito.`when`(mailReceiveService.fetchUnseenMessages(account)).thenReturn(listOf(message))
+        stubIngestSave(id = 22L)
+        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+            .thenReturn(listOf(outboundCandidate(130L, "acc1", "<full-status-outbound@example.com>")))
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(c))
+
+        val result = service.collectBounces(account)
+
+        assertEquals(1, result.collected)
+        val captor = ArgumentCaptor.forClass(BounceRecord::class.java)
+        Mockito.verify(bounceRecordRepository).save(captor.capture())
+        assertEquals(status, captor.value.dsnStatus, "检测器不得截断增强码")
+        assertEquals("HARD", captor.value.bounceType)
+        assertEquals(10L, captor.value.originalExpertContactId)
+        Mockito.verify(expertOperatorStatusService).markEmailInvalid(c, "HARD_BOUNCE")
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["5.7.1", "5.4.1", "5.2.2", "5.0.0", "5.1.100"])
+    fun `collectBounces keeps HARD bounces from real MIME without address evidence without marking`(status: String) {
+        val account = senderAccount()
+        val message = mimeDsnReferencing(
+            originalMessageId = "<policy-outbound@example.com>",
+            bounceMessageId = "<bounce-policy@example.com>",
+            status = status
+        )
+        val c = contactFixture()
+        Mockito.`when`(mailReceiveService.fetchUnseenMessages(account)).thenReturn(listOf(message))
+        stubIngestSave(id = 23L)
+        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId(Mockito.anyString()))
+            .thenReturn(listOf(outboundCandidate(131L, "acc1", "<policy-outbound@example.com>")))
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(c))
+
+        val result = service.collectBounces(account)
+
+        assertEquals(1, result.collected)
+        val captor = ArgumentCaptor.forClass(BounceRecord::class.java)
+        Mockito.verify(bounceRecordRepository).save(captor.capture())
+        assertEquals("HARD", captor.value.bounceType)
+        assertEquals(status, captor.value.dsnStatus)
+        assertEquals(10L, captor.value.originalExpertContactId, "退信与归因照常保存")
+        Mockito.verifyNoInteractions(expertOperatorStatusService)
+    }
+
+    // ------------------------------------------------------------------
     // I-1/I-2：退信归属只凭唯一 OUTBOUND 原始发信，且只改逻辑账号
     // ------------------------------------------------------------------
 
@@ -567,7 +626,11 @@ class BounceCollectionServiceTest {
         )
 
     /** 物理邮箱里的一封 DSN：带引用原始发信的 Message-ID 与顶层 `Message-ID` 头。 */
-    private fun mimeDsnReferencing(originalMessageId: String, bounceMessageId: String): MimeMessage {
+    private fun mimeDsnReferencing(
+        originalMessageId: String,
+        bounceMessageId: String,
+        status: String = "5.1.1"
+    ): MimeMessage {
         val session = Session.getDefaultInstance(Properties())
         val message = MimeMessage(session)
         message.setFrom(InternetAddress("mailer-daemon@example.com"))
@@ -584,7 +647,7 @@ class BounceCollectionServiceTest {
             """
             Reporting-MTA: dns; example.com
             Original-Message-ID: $originalMessageId
-            Status: 5.1.1
+            Status: $status
             """.trimIndent(),
             "message/delivery-status"
         )
