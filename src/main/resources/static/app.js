@@ -2091,6 +2091,161 @@ function setTaskButtonRunning(btnId) {
     btn.innerHTML = `<span class="btn-running-indicator">执行中</span>`;
 }
 
+// ---------------------------------------------------------------------------
+// c4（I-1/I-2/I-3）：深度发现的「执行间隔（小时）」设置面板
+// I-1 唯一写路径是“保存定时”按钮的 PUT /api/expert-discovery/schedule（打开/输入/立即执行都不写）；
+// I-2 只有 EXPERT_DISCOVERY 弹窗显示，以打开代次丢弃旧响应，进度轮询绝不刷新输入；
+// I-3 不能设置（连续/停用/加载失败/保存中）时绝不展示可保存假象。
+// ---------------------------------------------------------------------------
+const DISCOVERY_SCHEDULE_PATH = "/api/expert-discovery/schedule";
+const DISCOVERY_SCHEDULE_TIMEOUT_MS = 10000;
+const DISCOVERY_SCHEDULE_MIN_HOURS = 1;
+const DISCOVERY_SCHEDULE_MAX_HOURS = 168;
+/** I-2：每次打开/关闭递增；异步响应回写前必须仍等于发出请求时的代次。 */
+let discoveryScheduleRequestSeq = 0;
+
+function discoveryScheduleElements() {
+    return {
+        panel: $("#discoverySchedulePanel"),
+        controls: $("#discoveryScheduleControls"),
+        hours: $("#discoveryScheduleHours"),
+        save: $("#discoveryScheduleSave"),
+        hint: $("#discoveryScheduleHint")
+    };
+}
+
+/**
+ * S-1/I-3：唯一的渲染接缝（文案一律 textContent，不用 innerHTML）。
+ * - view：服务端 GET/PUT 的 view（409/503 的错误体同样是 view）；
+ * - localHint 非空 = 本地状态（加载中/保存中/校验失败/无响应体失败），保留输入，编辑权由 localEditable 决定；
+ * - 服务端 view.editable=false（连续/停用/cron 停用）隐藏小时控件，只留服务端说明。
+ */
+function renderDiscoveryScheduleView(view, localHint, localEditable) {
+    const els = discoveryScheduleElements();
+    const local = localHint != null;
+    const editable = local ? localEditable === true : view != null && view.editable === true;
+    if (els.panel) els.panel.hidden = false;
+    if (els.controls) els.controls.hidden = !local && !editable;
+    if (els.hours) {
+        els.hours.disabled = !editable;
+        // 本地状态保留用户正在输入的值；服务端 view 才回写小时数。
+        if (!local) els.hours.value = view != null && view.intervalHours != null ? String(view.intervalHours) : "";
+    }
+    if (els.save) els.save.disabled = !editable;
+    if (!els.hint) return;
+    if (local) {
+        els.hint.textContent = localHint;
+        return;
+    }
+    if (!editable) {
+        els.hint.textContent = (view && view.message) || "当前无法设置执行间隔小时数";
+        return;
+    }
+    // I-1/I-3：只有 applied=true 才宣称已生效；已保存但未应用必须给服务端原因而不是成功文案。
+    if (view.applied !== true) {
+        els.hint.textContent = view.saved === true && view.message
+            ? String(view.message)
+            : "当前沿用系统定时；可设置整数小时周期。";
+        return;
+    }
+    if (view.source === "OVERRIDE" && view.intervalHours != null) {
+        const nextTriggerAt = formatBeijingInstant(view.nextTriggerAt);
+        els.hint.textContent = `已设置每 ${view.intervalHours} 小时执行一次。` + (nextTriggerAt
+            ? `下次计划触发：${nextTriggerAt}（北京时间）；运行中将跳过。`
+            : "下次时间暂不可用。");
+        return;
+    }
+    els.hint.textContent = view.intervalHours != null
+        ? `当前沿用系统定时：每 ${view.intervalHours} 小时整点尝试执行。保存后按保存时间重新计时。`
+        : "当前沿用系统定时；可设置整数小时周期。";
+}
+
+/** I-2：关闭弹窗或切到其他任务时隐藏面板并失效在途 GET/PUT（不取消任何后台任务）。 */
+function resetDiscoverySchedulePanel() {
+    discoveryScheduleRequestSeq += 1;
+    const els = discoveryScheduleElements();
+    if (els.panel) els.panel.hidden = true;
+    if (els.controls) els.controls.hidden = false;
+    if (els.hours) {
+        els.hours.disabled = true;
+        els.hours.value = "";
+    }
+    if (els.save) els.save.disabled = true;
+    if (els.hint) els.hint.textContent = "";
+}
+
+/**
+ * T-2/I-1/I-2：两个打开入口在 modal context 建立后调用。
+ * 只有 EXPERT_DISCOVERY 显示面板并只读取一次；其他任务立即隐藏并作废旧响应。
+ */
+async function initDiscoverySchedulePanel(taskType, generation) {
+    if (taskType !== DISCOVERY_TASK_TYPE) {
+        resetDiscoverySchedulePanel();
+        return;
+    }
+    if (!isCurrentTaskModal(taskType, generation)) return;
+    const els = discoveryScheduleElements();
+    // 节点复用：只在 save 按钮上绑一次监听，避免重复打开叠加出多次 PUT。
+    if (els.save && els.save.discoveryScheduleBound !== true && typeof els.save.addEventListener === "function") {
+        els.save.addEventListener("click", () => { saveDiscoverySchedule(); });
+        els.save.discoveryScheduleBound = true;
+    }
+    const seq = ++discoveryScheduleRequestSeq;
+    renderDiscoveryScheduleView(null, "正在读取定时配置…", false);
+    let view;
+    try {
+        view = await api(DISCOVERY_SCHEDULE_PATH, { timeoutMs: DISCOVERY_SCHEDULE_TIMEOUT_MS });
+    } catch (e) {
+        if (seq !== discoveryScheduleRequestSeq || !isCurrentTaskModal(taskType, generation)) return;
+        // I-3：加载失败禁止保存（原手动立即执行不受设置读取失败影响）。
+        const serverMessage = e && e.data && e.data.message ? String(e.data.message) : "";
+        renderDiscoveryScheduleView(null, "定时配置加载失败，请重新打开弹窗重试"
+            + (serverMessage ? `（${serverMessage}）` : ""), false);
+        return;
+    }
+    if (seq !== discoveryScheduleRequestSeq || !isCurrentTaskModal(taskType, generation)) return;
+    renderDiscoveryScheduleView(view);
+}
+
+/**
+ * I-1/I-3：唯一会改定时的入口。只接受十进制整数 1～168；保存中防重复提交；
+ * 失败保留输入供重试；只有服务端 applied=true 才显示已生效。
+ */
+async function saveDiscoverySchedule() {
+    const els = discoveryScheduleElements();
+    if (els.save && els.save.disabled) return;
+    const raw = els.hours ? String(els.hours.value == null ? "" : els.hours.value).trim() : "";
+    const hours = /^\d+$/.test(raw) ? Number(raw) : NaN;
+    if (!Number.isInteger(hours) || hours < DISCOVERY_SCHEDULE_MIN_HOURS || hours > DISCOVERY_SCHEDULE_MAX_HOURS) {
+        // 空白、1.5、0、169、字母一律不发请求。
+        renderDiscoveryScheduleView(null, `请输入 ${DISCOVERY_SCHEDULE_MIN_HOURS}～${DISCOVERY_SCHEDULE_MAX_HOURS} 的整数小时`, true);
+        return;
+    }
+    const seq = discoveryScheduleRequestSeq;
+    renderDiscoveryScheduleView(null, "正在保存定时设置…", false);
+    try {
+        const view = await api(DISCOVERY_SCHEDULE_PATH, {
+            method: "PUT",
+            body: JSON.stringify({ intervalHours: hours }),
+            timeoutMs: DISCOVERY_SCHEDULE_TIMEOUT_MS
+        });
+        if (seq !== discoveryScheduleRequestSeq) return;
+        renderDiscoveryScheduleView(view);
+    } catch (e) {
+        if (seq !== discoveryScheduleRequestSeq) return;
+        const data = e && e.data ? e.data : null;
+        if (data && data.editable === false) {
+            // I-3：连续/停用等模式不可编辑 —— 隐藏小时控件，显示服务端原因。
+            renderDiscoveryScheduleView(data);
+            return;
+        }
+        // 400 无 editable 字段 / 503 已保存但未应用 / 无响应体失败：保留输入并按最新权限允许重试。
+        renderDiscoveryScheduleView(null, data && data.message
+            ? String(data.message)
+            : "保存失败：" + ((e && e.message) || "未知原因") + "，请重试保存", true);
+    }
+}
+
 function openTaskModal(taskType, label, btnId, options = {}) {
     try {
         if (typeof options === "boolean") {
@@ -2171,6 +2326,9 @@ function openTaskModal(taskType, label, btnId, options = {}) {
         currentTaskModal.pipelineMode = pipelineMode;
         const capturedGeneration = currentTaskModal.generation;
 
+        // c4/I-2：设置面板只在 EXPERT_DISCOVERY 显示；其他任务立即隐藏并作废旧响应。
+        initDiscoverySchedulePanel(taskType, capturedGeneration);
+
     // 启动进度轮询（每 1s）—— 连续模式改由 GET /pipeline 轮询，绝不用旧 task 记录冒充流水线状态。
     const progressTimer = pipelineMode ? null : setInterval(async () => {
         try {
@@ -2234,6 +2392,8 @@ function closeTaskModal() {
 
     stopTaskModalPolling();
     stopBatchSendStatusPoll();
+    // c4/I-2：关闭即隐藏面板并失效在途 GET/PUT（继续执行的后台任务不因此被取消/暂停）。
+    resetDiscoverySchedulePanel();
     $("#taskProgressModal").hidden = true;
     document.body.classList.remove("modal-open");
     currentTaskModal = null;
@@ -7705,6 +7865,9 @@ async function openTaskLaunchModal(taskType) {
     // Initialize currentTaskModal structure to fetch logs
     currentTaskModal = createTaskModalContext(taskType, config.title, config.btnId, "CONFIG");
     const capturedGeneration = currentTaskModal.generation;
+
+    // c4/I-2：设置面板跟随刚建立的弹窗代次（其他任务立即隐藏并作废旧响应）。
+    initDiscoverySchedulePanel(taskType, capturedGeneration);
 
     // Immediately load execution list
     fetchRunList(taskType, capturedGeneration);

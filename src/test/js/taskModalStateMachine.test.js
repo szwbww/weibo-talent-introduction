@@ -18,6 +18,7 @@ function extractFn(name) {
 }
 
 function createFreshSandbox() {
+    const schedulePanelResets = [];
     const sandbox = {
         contextPath: "/subpath",
         TASK_WATCHER_INTERVAL_MS: 3000,
@@ -59,6 +60,8 @@ function createFreshSandbox() {
         startTaskWatcher: () => {},
         stopTaskModalPolling: () => {},
         stopBatchSendStatusPoll: () => {},
+        // c4/I-2：设置面板的清理接缝（真实函数在 app.js 内，本文件只验证关闭入口调用它）。
+        resetDiscoverySchedulePanel: () => { schedulePanelResets.push(true); },
         fetchRunList: async () => {},
         loadOperatorStatusSyncTooltip: async () => {},
 
@@ -91,6 +94,7 @@ function createFreshSandbox() {
     vm.runInContext(extractFn("markTaskWatcherLaunchSucceeded"), sandbox);
     vm.runInContext(extractFn("executeRevalidate"), sandbox);
     vm.runInContext(extractFn("isCurrentTaskWatcher"), sandbox);
+    sandbox.schedulePanelResets = schedulePanelResets;
     return sandbox;
 }
 
@@ -108,6 +112,20 @@ describe("Task Modal State Machine & Runtime Tests", () => {
 
             const ctx2 = sandbox.createTaskModalContext("EXPERT_REVALIDATION", "重新验证", "btn1", "PROGRESS");
             assert.strictEqual(ctx2.generation, 2);
+        });
+
+        it("closing the modal clears the discovery schedule panel exactly once (c4/I-2)", () => {
+            const sandbox = createFreshSandbox();
+            const ctx = sandbox.createTaskModalContext("EXPERT_DISCOVERY", "深度发现（外部数据源）", "discoverBtn", "PROGRESS");
+            sandbox.currentTaskModal = ctx;
+
+            sandbox.closeTaskModal();
+            assert.strictEqual(sandbox.schedulePanelResets.length, 1,
+                "closeTaskModal must return the schedule panel to its hidden state");
+
+            // 无弹窗上下文时不得重复清理（也不得抛错）。
+            sandbox.closeTaskModal();
+            assert.strictEqual(sandbox.schedulePanelResets.length, 1);
         });
 
         it("stale response isolation: ignores old response for same taskType", async () => {

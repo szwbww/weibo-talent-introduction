@@ -24,6 +24,15 @@ function c3Section() {
     return appJsSource.slice(start, end);
 }
 
+// c4 的定时设置面板同样是连续源码段（常量 + 渲染/读取/保存/清理）：整段载入，
+// 让两个打开入口的沙箱跑的就是生产实现，而不是测试副本。
+function c4ScheduleSection() {
+    const start = appJsSource.indexOf("// c4（I-1/I-2/I-3）：深度发现的「执行间隔（小时）」设置面板");
+    const end = appJsSource.indexOf("function openTaskModal");
+    assert.ok(start > 0 && end > start, "the c4 schedule section must stay in app.js");
+    return appJsSource.slice(start, end);
+}
+
 function makeElement() {
     return {
         textContent: "",
@@ -142,6 +151,7 @@ function loadSandbox(overrides = {}, fnNames = []) {
 };`;
     const source = [
         c3Section(),
+        c4ScheduleSection(),
         ...fnNames.map(extractFn),
         epilogue
     ].join("\n");
@@ -558,7 +568,17 @@ describe("c3 deep discovery continuous run (frontend)", () => {
             sandbox.$("#taskModalFill");
             sandbox.elements["#taskModalFill"] = fill;
 
+            const scheduleReads = () => sandbox.apiCalls.filter(
+                (call) => call.path === "/api/expert-discovery/schedule"
+                    && (!call.options || call.options.method !== "PUT"));
+            const schedulePuts = () => sandbox.apiCalls.filter(
+                (call) => call.options && call.options.method === "PUT");
+
             sandbox.openTaskModal("EXPERT_DISCOVERY", "深度发现（外部数据源）", null, { pipelineMode: true });
+            assert.strictEqual(sandbox.$("#discoverySchedulePanel").hidden, false,
+                "the schedule panel follows the discovery modal (c4/I-2)");
+            assert.strictEqual(scheduleReads().length, 1, "opening discovery reads the schedule exactly once");
+            assert.deepStrictEqual(schedulePuts(), [], "opening must never save the schedule (c4/I-1)");
             assert.strictEqual(sandbox.$("#taskModalPercent").textContent, "持续运行",
                 "continuous mode must not show a daily percentage");
             assert.strictEqual(sandbox.$("#taskModalStatus").textContent, "QUEUED");
@@ -573,6 +593,9 @@ describe("c3 deep discovery continuous run (frontend)", () => {
 
             sandbox.setIntervalCalls.length = 0;
             sandbox.openTaskModal("EXPERT_REVALIDATION", "重新验证", null, {});
+            assert.strictEqual(sandbox.$("#discoverySchedulePanel").hidden, true,
+                "opening any other task hides the discovery schedule panel (c4/I-2)");
+            assert.strictEqual(sandbox.$("#discoveryScheduleHours").value, "");
             assert.strictEqual(sandbox.$("#taskModalPercent").textContent, "0%");
             assert.strictEqual(sandbox.$("#taskModalStatus").textContent, "RUNNING");
             assert.strictEqual(sandbox.$("#taskModalCancelBtn").textContent, "取消任务");
