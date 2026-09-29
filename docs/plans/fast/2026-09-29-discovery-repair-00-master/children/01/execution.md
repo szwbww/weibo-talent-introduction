@@ -98,3 +98,68 @@ Implementation boundary: b9ec45b008f5c4f965679b99575db0ea8fe50731..b944ccf0f4c1b
 ## Next Action
 
 - PLAN_CONFLICT → 取得上述 amendment 后在同一 child 的新 epoch 里改这一行 pin，重跑 brief 的 required command 即可 READY_FOR_VERIFICATION；本 epoch 的实现提交 `b944ccf` 保留为 epoch-1 佐证。
+
+---
+
+# Epoch 2 — RESUMED UNDER AMENDMENT A1
+
+## Execution Result: READY_FOR_VERIFICATION
+
+Plan: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-29-discovery-repair-00-master/docs/plans/2026-09-29/discovery-repair-01-contact-ownership.md
+Plan SHA-256: 2caee4e2c0f9f99cc769e73abfd460624a03a40208bf925daf9cab27474b2265
+Execution ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-29-discovery-repair-00-master/docs/plans/2026-09-29/discovery-repair-01-contact-ownership.md@2caee4e2c0f9f99cc769e73abfd460624a03a40208bf925daf9cab27474b2265
+Execution epoch: RESUME（同路径新内容：A1 把授权文件由 7 个扩到 8 个；epoch-1 的 `734c3623…` 不属于本 plan 身份）
+Approval basis: 人工批准 A1（2026-09-29T14:00:40+08:00）；amended child plan `cc57128f3c2dc1f4bbadd86d2809a1ce787d7e7c`（与磁盘字节 sha256 一致）；`children/01/brief.md` 已同步为 8 个授权文件
+Executor: Child01Implementer
+Target worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-29-discovery-repair-00-master
+Target branch: fast/2026-09-29-discovery-repair-00-master
+Worktree ID: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-29-discovery-repair-00-master@fast/2026-09-29-discovery-repair-00-master@/Users/lukai/IdeaProjects/weibo-talent-introduction/.git/worktrees/weibo-talent-introduction-fast-2026-09-29-discovery-repair-00-master
+Pre-execution HEAD: `843337d`（A1 记录提交）；产品基线 `b9ec45b008f5c4f965679b99575db0ea8fe50731`；epoch-1 实现提交 `b944ccf0f4c1b395706a6add6d869ff59eed1a75`
+Post-execution code SHA: 93308663e593177a7d6a7631dc4f90aea6f98c80
+Evidence HEAD: N/A（本报告由 controller 单独提交）
+Implementation boundary: b944ccf0f4c1b395706a6add6d869ff59eed1a75..93308663e593177a7d6a7631dc4f90aea6f98c80（仅 1 个授权测试文件的一行断言）
+
+## Task Status
+
+| Requirement | Status | Files | Evidence |
+|---|---|---|---|
+| A1-1：同步 `EXTRACTION_VERSION` pin `20261002 → 20261003`，只改该一行 | IMPLEMENTED | `DiscoveryIdentityTest.kt`（A1 新增的第 8 个授权文件） | `git diff --stat` = 1 file changed, 1 insertion(+), 1 deletion(-)；该行以外无任何改动；`DiscoveryIdentity.VERSION == 20260925` 断言保持原样并通过 |
+| T-1/T-2/T-3（epoch 1 已实现，本 epoch 未触碰） | IMPLEMENTED | epoch-1 提交 `b944ccf` 的 7 个文件 | 本 epoch 工作区除该 pin 外无产品/测试改动；required command 中相关三个类 24/173/47 全绿 |
+
+## Commands
+
+| Command | Result | Evidence |
+|---|---|---|
+| `JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn -Dtest=SourceAuthorEmailResolverTest,ExpertDiscoveryServiceTest,DiscoveryPipelineServiceTest,DiscoveryIdentityTest test` | PASS | exit 0 / BUILD SUCCESS（日志 `/tmp/child01-epoch2-required.log`）；total 251 tests / 0 failures / 0 errors / 0 skipped。`target/surefire-reports` 逐类：SourceAuthorEmailResolverTest 24/0/0/0、ExpertDiscoveryServiceTest 173/0/0/0、DiscoveryPipelineServiceTest 47/0/0/0、DiscoveryIdentityTest 7/0/0/0（与 brief 基线的 19/172/46/7 相比新增 7 例，全部通过） |
+| `git diff --stat -- src/`（提交前） | PASS | 仅 `DiscoveryIdentityTest.kt`：1 file changed, 1 insertion(+), 1 deletion(-) |
+| `python3 -c "sha256(plan)"` + `git show cc57128:plan \| shasum -a 256` | PASS | 磁盘字节与 A1 提交字节同为 `2caee4e2c0f9f99cc769e73abfd460624a03a40208bf925daf9cab27474b2265` |
+| `git merge-base --is-ancestor HEAD fast/2026-09-29-discovery-repair-00-master` | PASS | exit 0；`9330866` 是目标分支 HEAD |
+
+未运行 `mvn clean package`、未跑全量套件、无真实发信、无线上写入、无迁移/ES 改动。
+
+## Changed Files
+
+- `src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt` — 第 54 行 `assertEquals(20261002, DiscoveryIdentity.EXTRACTION_VERSION)` → `assertEquals(20261003, DiscoveryIdentity.EXTRACTION_VERSION)`（仅此一行）
+
+（epoch 1 的 7 个文件未在本 epoch 改动；`docs/plans/**` 未进入提交。）
+
+## Deviations
+
+- None。未触碰授权清单之外的文件、未改 `SourceAuthorEmailResolver`、未改 `DiscoveryIdentity.VERSION`、未推送/合并/rebase/amend、未动其他 worktree。
+
+## Freshness
+
+- Plan identity rechecked: YES（执行前后均为 `2caee4e2c0f9f99cc769e73abfd460624a03a40208bf925daf9cab27474b2265`，等于 A1 提交 `cc57128` 的该文件字节）
+- Worktree identity rechecked: YES（root/branch/git-dir 与 epoch 1 一致）
+- Reported commits reachable from target branch: YES（`9330866` = `fast/2026-09-29-discovery-repair-00-master` HEAD，`merge-base --is-ancestor` 通过；`git diff-tree` 显示提交只含 1 个授权文件）
+- Required commands run this invocation: YES（最终实现状态之后；逐类计数取自 `target/surefire-reports`）
+- Historical evidence used only as baseline: YES（epoch-1 的 244 例绿与 baseline.md 只作对照）
+
+## Remaining Blocker
+
+- None.
+
+## Next Action
+
+- READY_FOR_VERIFICATION → 运行 `verify-p`（轻量门禁：授权范围＝8 文件、A1 一行 pin、required command 全绿、下游接口＝`consumeQueuedItem` 版本门禁与 `PdfAuthorContactLayout.collect` 签名均未变）。
+

@@ -19,7 +19,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-09-29/discovery-repair-01-contact-ownership.md | commit:cc57128f3c2dc1f4bbadd86d2809a1ce787d7e7c | none | 2 | IMPLEMENTING | b9ec45b008f5c4f965679b99575db0ea8fe50731 | — | 0 | — | — | — | Epoch 1 stopped PLAN_CONFLICT at b944ccf0f4c1b395706a6add6d869ff59eed1a75 (see children/01/pause.md); A1 widened authorized files for the DiscoveryIdentityTest pin. |
+| 01 | docs/plans/2026-09-29/discovery-repair-01-contact-ownership.md | commit:cc57128f3c2dc1f4bbadd86d2809a1ce787d7e7c | none | 2 | LIGHT_PASS_WITH_NOTES | b9ec45b008f5c4f965679b99575db0ea8fe50731 | 93308663e593177a7d6a7631dc4f90aea6f98c80 | 0 | — | 93308663e593177a7d6a7631dc4f90aea6f98c80 | EVIDENCE_PENDING | Epoch 1 PLAN_CONFLICT pause b944ccf0f4c1b395706a6add6d869ff59eed1a75 (children/01/pause.md); A1 widened authorized files. RECORD_ONLY O-1 (preexisting mailbox/HTML positives cover two T-3 synthetic classes). |
 | 02 | docs/plans/2026-09-29/discovery-repair-02-orcid-enrichment.md | commit:70f550658d078b228fe619b735d81f0e740c4db3 | 01 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 03 | docs/plans/2026-09-29/discovery-repair-03-schedule-backend.md | commit:70f550658d078b228fe619b735d81f0e740c4db3 | none | 1 | PENDING | — | — | 0 | — | — | — | N/A |
 | 04 | docs/plans/2026-09-29/discovery-repair-04-schedule-ui.md | commit:70f550658d078b228fe619b735d81f0e740c4db3 | 03 | 1 | PENDING | — | — | 0 | — | — | — | N/A |
