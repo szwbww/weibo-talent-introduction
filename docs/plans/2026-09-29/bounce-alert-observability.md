@@ -115,7 +115,8 @@ index.html:11-15、2323-2328资源旧key为20260929-discovery-schedule；全src/
 | src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorServiceTest.kt | 门槛/查询/兼容 |
 | src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailSenderAccountControllerMvcTest.kt | 完整字段和低样本 |
 | src/test/js/senderBindingDisplay.test.js | loadAccounts输出及资源key |
-共7文件，后端统计/API与前端两个子系统；无存储新增字段。
+| src/test/js/providerUndeliveredColumn.test.js | 守卫断言收敛为服务商分布链路（修订 A1） |
+共8文件（含 A1 追加的守卫测试收敛），后端统计/API与前端两个子系统；无存储新增字段。
 
 ## 验收标准
 
@@ -158,3 +159,7 @@ index.html:11-15、2323-2328资源旧key为20260929-discovery-schedule；全src/
 - 覆盖: I-5/S-1、IP-3。
 
 人工验收开始时从本节导出bounce-alert-observability-acceptance.md，保留A编号、验收人、日期、结果/备注；现在不生成空勾选表。
+
+## 修订记录
+
+- A1（2026-09-29，人工批准）：白名单追加 `src/test/js/providerUndeliveredColumn.test.js`。原因：本计划 I-4 冻结账号响应字段名 `hardBounceCount`，`app.js` 的 `loadAccounts` 必须读取该字段；该文件既有的全局源码否定断言（`!appJsSource.includes("hardBounceCount")`）与本条不可同时成立。其来源计划 `docs/plans/2026-09-02/provider-undelivered-column.md` 的 I-6「范围限定（必读）」只约束服务商分布链路，故本次只将该断言收敛回该范围：断言 `renderMonitoringProviderDistribution` 与 `renderMonitoringCards` 的 `worstUndeliveredProvider` 链不再引用 `hardBounceCount`/`softBounceCount`，不放松 `ProviderStatRow` 链路的原有保护，也不禁止账号页消费同名字段。产品实现无需返工。
