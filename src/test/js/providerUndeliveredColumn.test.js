@@ -229,8 +229,19 @@ describe("接口返回形状解包 (I-7)", () => {
 });
 
 describe("后端字段已彻底移除", () => {
-    it("app.js 不再引用 hardBounceCount / softBounceCount", () => {
-        assert.ok(!appJsSource.includes("hardBounceCount"));
-        assert.ok(!appJsSource.includes("softBounceCount"));
+    it("服务商分布链路不再引用 hardBounceCount / softBounceCount", () => {
+        // I-6 的「后端字段已彻底移除」限定在服务商分布链路（providerDistribution 的两个消费点），
+        // 不构成全仓零命中断言：其它页面（如发件账号列表）可能消费同名的独立 DTO 字段。
+        const providerFn = extractFn("renderMonitoringProviderDistribution");
+        assert.ok(!providerFn.includes("hardBounceCount"), "服务商分布表不得引用 hardBounceCount");
+        assert.ok(!providerFn.includes("softBounceCount"), "服务商分布表不得引用 softBounceCount");
+
+        const cardsFn = extractFn("renderMonitoringCards");
+        const start = cardsFn.indexOf("worstUndeliveredProvider");
+        const end = cardsFn.indexOf("const cards");
+        assert.ok(start >= 0 && end > start, "worstUndeliveredProvider 链路定位失败");
+        const chain = cardsFn.slice(start, end);
+        assert.ok(!chain.includes("hardBounceCount"), "最高未送达服务商卡片不得引用 hardBounceCount：" + chain);
+        assert.ok(!chain.includes("softBounceCount"), "最高未送达服务商卡片不得引用 softBounceCount：" + chain);
     });
 });

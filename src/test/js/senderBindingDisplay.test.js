@@ -294,8 +294,17 @@ function bounceAccount(overrides = {}) {
     }, overrides);
 }
 
-const indexHtmlPath = path.join(__dirname, "..", "..", "main", "resources", "static", "index.html");
+const staticDir = path.join(__dirname, "..", "..", "main", "resources", "static");
+const indexHtmlPath = path.join(staticDir, "index.html");
 const indexHtmlSource = fs.readFileSync(indexHtmlPath, "utf-8");
+
+// K-frontend-cache-key-triad：缓存键不写死在测试里——从随包发布的 index.html 派生，
+// 键字面量只允许出现在 index.html（taskActivityCenter.test.js 对 src 与 test 两侧做落单扫描）。
+const CACHE_KEY = (() => {
+    const match = indexHtmlSource.match(/styles\.css\?v=([^"'&<>]+)/);
+    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+    return match[1];
+})();
 
 describe("bounce alert badge (O-1/I-4/S-1)", () => {
     it("renders 永久退信偏高 with counts, percent and the two-window tooltip", async () => {
@@ -381,9 +390,14 @@ describe("bounce alert badge (O-1/I-4/S-1)", () => {
 });
 
 describe("static resource cache keys (I-5)", () => {
-    it("switches every already-versioned resource to the new key without adding one", () => {
-        assert.strictEqual((indexHtmlSource.match(/\?v=/g) || []).length, 11);
-        assert.strictEqual((indexHtmlSource.match(/\?v=20260929-bounce-alert/g) || []).length, 11);
+    it("switches every already-versioned resource to the one current key without adding or retiring one", () => {
+        const keys = indexHtmlSource.match(/\?v=[^"']+/g) || [];
+        assert.strictEqual(keys.length, 11, `expected 11 versioned assets, found ${keys.length}`);
+        keys.forEach((key) => assert.strictEqual(key, `?v=${CACHE_KEY}`));
+        assert.ok(/^[0-9]{8}-[a-z0-9-]+$/.test(CACHE_KEY), `cache key must be <yyyymmdd>-<slug>, got: ${CACHE_KEY}`);
+    });
+
+    it("retires the previous key from index.html", () => {
         assert.ok(!indexHtmlSource.includes("20260929-discovery-schedule"));
     });
 
