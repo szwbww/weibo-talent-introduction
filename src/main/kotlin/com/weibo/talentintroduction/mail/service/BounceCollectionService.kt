@@ -161,7 +161,13 @@ class BounceCollectionService(
             )
         )
 
-        if (signal.bounceType == "HARD" && originalContact != null) {
+        // I-1/I-2：HARD 只是协议分类，不是地址判据。保存退信之后，只有「HARD + 已归因到 contact
+        // + dsn_status 构成明确收件地址证据」才写专家状态；策略/路由/容量类永久码（5.7.1/5.4.1/
+        // 5.2.2/5.0.0…）与未知码仍保留退信记录与告警计数。
+        if (signal.bounceType == "HARD" &&
+            originalContact != null &&
+            RecipientAddressFailureClassifier.isInvalidDsnStatus(signal.dsnStatus)
+        ) {
             // I-3：先落 MySQL + ES（唯一写入口 markEmailInvalid），再增量写 reachability
             try {
                 expertOperatorStatusService?.markEmailInvalid(originalContact, "HARD_BOUNCE")

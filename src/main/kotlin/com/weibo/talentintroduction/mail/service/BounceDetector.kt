@@ -242,9 +242,11 @@ class BounceDetector {
     }
 
     companion object {
-        private val STATUS_PATTERN = Regex("""\d\.\d\.\d""")
-        private val DSN_STATUS_PATTERN = Regex("""\b5\d\d[\s-]+5\.\d\.\d\b""")
-        private val HARD_SMTP_CODE_PATTERN = Regex("""\b5\d\d[\s-]+5\.\d\.\d\b""")
+        // I-3：class 一位、subject/detail 各 1～3 位，且两侧禁止紧邻数字/点，
+        // 不得把 5.1.100 / 5.1.1000 / 5.1.10.1 / 15.1.1 截成 5.1.1 / 5.1.10。
+        private val STATUS_PATTERN = Regex("""(?<![\d.])\d\.\d{1,3}\.\d{1,3}(?![\d.])""")
+        private val DSN_STATUS_PATTERN = Regex("""\b5\d\d[\s-]+5\.\d{1,3}\.\d{1,3}(?![\d.])""")
+        private val HARD_SMTP_CODE_PATTERN = Regex("""\b5\d\d[\s-]+5\.\d{1,3}\.\d{1,3}(?![\d.])""")
         private val MESSAGE_ID_HEADER_PATTERN = Regex("""Message-ID:\s*<?([^>\s]+@[^>\s]+)>?""", RegexOption.IGNORE_CASE)
 
         private val BOUNCE_SUBJECT_KEYWORDS = listOf(

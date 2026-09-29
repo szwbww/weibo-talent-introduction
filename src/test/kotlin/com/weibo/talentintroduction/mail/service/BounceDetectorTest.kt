@@ -76,6 +76,78 @@ class BounceDetectorTest {
     }
 
     @Test
+    fun `parseBounceDetails keeps the full 5_1_10 enhanced status after MIME round trip`() {
+        val message = roundTrip(dsnBounce(status = "5.1.10", originalMessageId = "orig-510@example.com"))
+        val signal = detector.parseBounceDetails(message)
+        assertNotNull(signal)
+        assertEquals("5.1.10", signal!!.dsnStatus)
+        assertEquals("HARD", signal.bounceType)
+        assertEquals("orig-510@example.com", signal.originalMessageId)
+        assertTrue(RecipientAddressFailureClassifier.isInvalidDsnStatus(signal.dsnStatus))
+    }
+
+    @Test
+    fun `parseBounceDetails keeps a three digit detail intact but it is not address evidence`() {
+        val message = roundTrip(dsnBounce(status = "5.1.100"))
+        val signal = detector.parseBounceDetails(message)
+        assertNotNull(signal)
+        assertEquals("5.1.100", signal!!.dsnStatus)
+        assertEquals("HARD", signal.bounceType)
+        assertFalse(RecipientAddressFailureClassifier.isInvalidDsnStatus(signal.dsnStatus))
+    }
+
+    @Test
+    fun `parseBounceDetails does not truncate a dotted suffix status into a whitelisted code`() {
+        val message = roundTrip(dsnBounce(status = "5.1.10.1"))
+        val signal = detector.parseBounceDetails(message)
+        assertNotNull(signal)
+        assertNull(signal!!.dsnStatus)
+        assertFalse(RecipientAddressFailureClassifier.isInvalidDsnStatus(signal.dsnStatus))
+    }
+
+    @Test
+    fun `parseBounceDetails rejects a two digit class`() {
+        val message = roundTrip(dsnBounce(status = "15.1.1"))
+        val signal = detector.parseBounceDetails(message)
+        assertNotNull(signal)
+        assertNull(signal!!.dsnStatus)
+    }
+
+    @Test
+    fun `parseBounceDetails prefers the MIME delivery status over a conflicting body status`() {
+        val message = roundTrip(mimeDsnWithBodyStatus(mimeStatus = "5.7.1", bodyStatus = "5.1.1"))
+        val signal = detector.parseBounceDetails(message)
+        assertNotNull(signal)
+        assertEquals("5.7.1", signal!!.dsnStatus)
+        assertEquals("HARD", signal.bounceType)
+        assertFalse(RecipientAddressFailureClassifier.isInvalidDsnStatus(signal.dsnStatus))
+    }
+
+    @Test
+    fun `detect keeps the full enhanced status from a text Status line`() {
+        val signal = detector.detect(
+            from = "mailer-daemon@example.com",
+            subject = "Undelivered Mail Returned to Sender",
+            body = "Status: 5.1.10\nOriginal-Message-ID: <orig-text@example.com>"
+        )
+        assertNotNull(signal)
+        assertEquals("5.1.10", signal!!.dsnStatus)
+        assertEquals("HARD", signal.bounceType)
+    }
+
+    @Test
+    fun `detect keeps the full enhanced status from an smtp status line`() {
+        val signal = detector.detect(
+            from = "mailer-daemon@example.com",
+            subject = "Undelivered Mail Returned to Sender",
+            body = "550 5.1.10 User unknown"
+        )
+        assertNotNull(signal)
+        assertEquals("550 5.1.10", signal!!.dsnStatus)
+        assertEquals("HARD", signal.bounceType)
+    }
+
+    @Test
     fun `detect recognizes Chinese bounce subject`() {
         val signal = detector.detect(
             from = "postmaster@mail.example.com",
@@ -154,6 +226,34 @@ class BounceDetectorTest {
             Reporting-MTA: dns; example.com
             Status: $status
             $originalLine
+            """.trimIndent(),
+            "message/delivery-status"
+        )
+        multipart.addBodyPart(dsnPart)
+
+        message.setContent(multipart)
+        message.saveChanges()
+        return message
+    }
+
+    /** MIME delivery-status 与正文 `Status:` 行冲突：I-3 要求 MIME 优先。 */
+    private fun mimeDsnWithBodyStatus(mimeStatus: String, bodyStatus: String): MimeMessage {
+        val session = Session.getDefaultInstance(Properties())
+        val message = MimeMessage(session)
+        message.setFrom(InternetAddress("mailer-daemon@example.com"))
+        message.subject = "Undelivered Mail Returned to Sender"
+        message.setHeader("Message-ID", "<conflict-bounce@example.com>")
+
+        val multipart = MimeMultipart("report; report-type=delivery-status")
+        val textPart = MimeBodyPart()
+        textPart.setText("Status: $bodyStatus")
+        multipart.addBodyPart(textPart)
+
+        val dsnPart = MimeBodyPart()
+        dsnPart.setContent(
+            """
+            Reporting-MTA: dns; example.com
+            Status: $mimeStatus
             """.trimIndent(),
             "message/delivery-status"
         )

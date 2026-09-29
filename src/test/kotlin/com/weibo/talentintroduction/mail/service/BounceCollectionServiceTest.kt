@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito
 import java.time.LocalDateTime
@@ -104,6 +106,8 @@ class BounceCollectionServiceTest {
         Mockito.verify(bounceRecordRepository).save(captor.capture())
         assertEquals("unknown@example.com", captor.value.failedRecipient)
         assertNull(captor.value.originalExpertContactId)
+        // I-5：无归因仍保存 HARD，但不得触碰任何专家状态
+        Mockito.verifyNoInteractions(expertOperatorStatusService)
     }
 
     @Test
@@ -213,6 +217,64 @@ class BounceCollectionServiceTest {
         )
 
         Mockito.verify(expertOperatorStatusService).markEmailInvalid(c, "HARD_BOUNCE")
+        Mockito.verifyNoMoreInteractions(expertOperatorStatusService)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["5.7.1", "5.4.1", "5.2.2", "5.0.0", "5.1.100"])
+    fun `ingest keeps HARD bounces without address evidence and never marks the expert`(dsnStatus: String) {
+        Mockito.`when`(bounceRecordRepository.existsByBounceMessageId(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId("orig-nonaddress@example.com"))
+            .thenReturn(listOf(outboundCandidate(120L, "acc1", "<orig-nonaddress@example.com>")))
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contactFixture()))
+        Mockito.`when`(bounceRecordRepository.save(Mockito.any(BounceRecord::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<BounceRecord>(0).copy(id = 20L) }
+
+        val result = service.ingest(
+            signal = bounceSignal(originalMessageId = "orig-nonaddress@example.com", dsnStatus = dsnStatus),
+            senderAccountCode = "acc1",
+            bounceMessageId = "bounce-nonaddress@example.com",
+            from = "mailer-daemon@example.com",
+            subject = "Undelivered",
+            receivedAt = LocalDateTime.of(2026, 6, 26, 12, 0)
+        )
+
+        assertEquals(BounceIngestResult.INGESTED, result)
+        val captor = ArgumentCaptor.forClass(BounceRecord::class.java)
+        Mockito.verify(bounceRecordRepository).save(captor.capture())
+        assertEquals("HARD", captor.value.bounceType)
+        assertEquals(dsnStatus, captor.value.dsnStatus, "退信记录必须保留原始 DSN")
+        assertEquals(10L, captor.value.originalExpertContactId, "无地址证据只保留归因，不改专家状态")
+        Mockito.verifyNoInteractions(expertOperatorStatusService)
+    }
+
+    @Test
+    fun `ingest does not mark a SOFT bounce even when it carries an address evidence code`() {
+        Mockito.`when`(bounceRecordRepository.existsByBounceMessageId(Mockito.anyString())).thenReturn(false)
+        Mockito.`when`(mailRecordRepository.findOutboundCandidatesByMessageId("orig-soft-511@example.com"))
+            .thenReturn(listOf(outboundCandidate(121L, "acc1", "<orig-soft-511@example.com>")))
+        Mockito.`when`(expertContactRepository.findById(10L)).thenReturn(Optional.of(contactFixture()))
+        Mockito.`when`(bounceRecordRepository.save(Mockito.any(BounceRecord::class.java)))
+            .thenAnswer { invocation -> invocation.getArgument<BounceRecord>(0).copy(id = 21L) }
+
+        service.ingest(
+            signal = bounceSignal(
+                originalMessageId = "orig-soft-511@example.com",
+                bounceType = "SOFT",
+                dsnStatus = "5.1.1"
+            ),
+            senderAccountCode = "acc1",
+            bounceMessageId = "bounce-soft-511@example.com",
+            from = "mailer-daemon@example.com",
+            subject = "Undelivered",
+            receivedAt = LocalDateTime.of(2026, 6, 26, 12, 0)
+        )
+
+        val captor = ArgumentCaptor.forClass(BounceRecord::class.java)
+        Mockito.verify(bounceRecordRepository).save(captor.capture())
+        assertEquals("SOFT", captor.value.bounceType)
+        assertEquals(10L, captor.value.originalExpertContactId)
+        Mockito.verifyNoInteractions(expertOperatorStatusService)
     }
 
     @Test
@@ -426,6 +488,8 @@ class BounceCollectionServiceTest {
         assertEquals(BounceIngestResult.DUPLICATE, result)
         Mockito.verify(bounceRecordRepository, Mockito.never()).save(Mockito.any(BounceRecord::class.java))
         Mockito.verifyNoInteractions(mailRecordRepository)
+        // I-5：重复退信不触发第二次状态写入
+        Mockito.verifyNoInteractions(expertOperatorStatusService)
     }
 
     @Test
@@ -477,6 +541,12 @@ class BounceCollectionServiceTest {
         failedRecipient = failedRecipient,
         reason = "Undelivered",
         originalMessageId = originalMessageId
+    )
+
+    /** I-1/I-2：地址证据门槛用例的固定专家联系人（id 与 [outboundCandidate] 的 expertContactId 一致）。 */
+    private fun contactFixture() = ExpertContact(
+        id = 10L, campaignId = 10L, orcidId = "orcid-10",
+        expertEmail = "expert@example.com", expertName = null
     )
 
     private fun outboundCandidate(id: Long, accountCode: String?, messageId: String): MailRecord =
