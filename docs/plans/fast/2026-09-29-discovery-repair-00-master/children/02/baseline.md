@@ -25,4 +25,5 @@ exit 0, BUILD SUCCESS. Relevant per-class results (`target/surefire-reports/*.tx
 
 - Fully green baseline; post-implementation failures in these classes are regressions.
 - The verifier must additionally run the fresh command at child 02's actual base (child 01 code head) when judging count deltas, since child 01 adds tests to `ExpertDiscoveryServiceTest`.
+- Child-01-head comparison base (measured at `93308663e593177a7d6a7631dc4f90aea6f98c80`, see child 01 verify-log): `SourceAuthorEmailResolverTest` 24/0/0/0, `ExpertDiscoveryServiceTest` 173/0/0/0, `DiscoveryPipelineServiceTest` 47/0/0/0, `DiscoveryIdentityTest` 7/0/0/0 (251 tests total, 0 failures).
 - No `mvn clean package` was run here; the controller runs it once after the last child.
