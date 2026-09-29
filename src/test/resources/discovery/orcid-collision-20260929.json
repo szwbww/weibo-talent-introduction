@@ -1,0 +1,93 @@
+{
+  "_note": "由真实摘录构造的测试响应。作者 id / orcid / display_name / topics 逐字取自 docs/plans/2026-09-29/discovery-repair-evidence/openalex-orcid-collision.json（2026-09-29 11:25 Asia/Shanghai 的 OpenAlex authors ORCID 批量接口摘录，主题已由审计脚本缩减为 count 降序前 5）。本文件补入的 meta.count / summary_stats / works_count / cited_by_count / topics[].count 是为传输层测试构造的值，不是在线抓取的原始响应，不得被引用为真实 API 输出。",
+  "collidingOrcid": "0000-0002-2132-1327",
+  "collisionResponse": {
+    "meta": {
+      "count": 3
+    },
+    "results": [
+      {
+        "id": "https://openalex.org/A5021048066",
+        "display_name": "Nobuhiro Tsuji",
+        "orcid": "https://orcid.org/0000-0002-2132-1327",
+        "works_count": 310,
+        "cited_by_count": 9100,
+        "summary_stats": {
+          "h_index": 46
+        },
+        "topics": [
+          {"display_name": "Microstructure and mechanical properties", "count": 5},
+          {"display_name": "Microstructure and Mechanical Properties of Steels", "count": 4},
+          {"display_name": "Metallurgy and Material Forming", "count": 3},
+          {"display_name": "Aluminum Alloys Composites Properties", "count": 2},
+          {"display_name": "Metal Forming Simulation Techniques", "count": 1}
+        ]
+      },
+      {
+        "id": "https://openalex.org/A5132247741",
+        "display_name": "N. Tsuji",
+        "orcid": "https://orcid.org/0000-0002-2132-1327",
+        "works_count": 120,
+        "cited_by_count": 2400,
+        "summary_stats": {
+          "h_index": 27
+        },
+        "topics": [
+          {"display_name": "Astrophysics and Cosmic Phenomena", "count": 5},
+          {"display_name": "Galaxies: Formation, Evolution, Phenomena", "count": 4},
+          {"display_name": "Neutrino Physics Research", "count": 3},
+          {"display_name": "Astronomy and Astrophysical Research", "count": 2},
+          {"display_name": "Microstructure and mechanical properties", "count": 1}
+        ]
+      },
+      {
+        "id": "https://openalex.org/A5131605084",
+        "display_name": "Nobuhiro Tsuji",
+        "orcid": "https://orcid.org/0000-0002-2132-1327",
+        "works_count": 9,
+        "cited_by_count": 40,
+        "summary_stats": {
+          "h_index": 4
+        },
+        "topics": [
+          {"display_name": "Legal and Regulatory Analysis", "count": 5},
+          {"display_name": "Linguistic, Cultural, and Literary Studies", "count": 4},
+          {"display_name": "Military Technology and Strategies", "count": 3},
+          {"display_name": "Microstructure and mechanical properties", "count": 2},
+          {"display_name": "Copper Interconnects and Reliability", "count": 1}
+        ]
+      }
+    ]
+  },
+  "uniqueOrcid": "0000-0002-2468-8407",
+  "uniqueResponse": {
+    "meta": {
+      "count": 1
+    },
+    "results": [
+      {
+        "id": "https://openalex.org/A5026939790",
+        "display_name": "Francisco J. Maldonado‐Hódar",
+        "orcid": "https://orcid.org/0000-0002-2468-8407",
+        "works_count": 140,
+        "cited_by_count": 5200,
+        "summary_stats": {
+          "h_index": 33
+        },
+        "topics": [
+          {"display_name": "Catalytic Processes in Materials Science", "count": 5},
+          {"display_name": "Aerogels and thermal insulation", "count": 4},
+          {"display_name": "Advanced Photocatalysis Techniques", "count": 3},
+          {"display_name": "Mesoporous Materials and Catalysis", "count": 2},
+          {"display_name": "Catalysis and Oxidation Reactions", "count": 1}
+        ]
+      }
+    ]
+  },
+  "emptyResponse": {
+    "meta": {
+      "count": 0
+    },
+    "results": []
+  }
+}

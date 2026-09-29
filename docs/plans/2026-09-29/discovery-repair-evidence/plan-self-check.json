@@ -1,0 +1,56 @@
+{
+  "checkedAt": "2026-09-29",
+  "kind": "PLAN_DOCUMENT_VALIDATION_ONLY",
+  "plans": [
+    {
+      "plan": "discovery-repair-01-contact-ownership.md",
+      "implementationFiles": 7,
+      "newFiles": [
+        "src/test/resources/discovery/ownership-20260929.zip",
+        "src/test/resources/discovery/ownership-20260929-expected.json"
+      ],
+      "sectionsInOrder": true
+    },
+    {
+      "plan": "discovery-repair-02-orcid-enrichment.md",
+      "implementationFiles": 7,
+      "newFiles": [
+        "src/test/resources/discovery/orcid-collision-20260929.json"
+      ],
+      "sectionsInOrder": true
+    },
+    {
+      "plan": "discovery-repair-03-schedule-backend.md",
+      "implementationFiles": 9,
+      "newFiles": [
+        "src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryScheduleSettingRepository.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryScheduleSettingService.kt",
+        "src/main/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryScheduleController.kt",
+        "src/main/resources/db/migration/V144__create_discovery_schedule_setting.sql",
+        "src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryScheduleSettingServiceTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/discovery/controller/DiscoveryScheduleControllerTest.kt",
+        "src/test/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryScheduleSettingRepositoryIT.kt"
+      ],
+      "sectionsInOrder": true
+    },
+    {
+      "plan": "discovery-repair-04-schedule-ui.md",
+      "implementationFiles": 7,
+      "newFiles": [
+        "src/test/js/discoveryScheduleSetting.test.js"
+      ],
+      "sectionsInOrder": true
+    }
+  ],
+  "brokenLocalLinks": [],
+  "sourceArchiveItemsHashVerified": 12,
+  "productFilesChangedSinceResearchBaseline": [],
+  "currentHead": "1cd59e31164d11e962203e31c9f61310f2bc5912",
+  "implementationTestsRun": false,
+  "productionWritesPerformed": false,
+  "notes": [
+    "Implementation not started; source PDF replay documents existing behavior, not repaired behavior.",
+    "Final code and runtime acceptance remain mandatory after execution.",
+    "Knowledge write-back appended PDF ownership rule and added ORCID collision rule; no entry crossed promotion threshold; no agents/templates role context present."
+  ]
+}

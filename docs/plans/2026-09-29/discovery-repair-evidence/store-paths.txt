@@ -1,0 +1,116 @@
+$ rg -n expert_academic_enrichment_job|discovery_paper_job|discovery_pipeline|batch_send_setting src/main/kotlin src/main/resources/db/migration
+exit=0
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:43:CREATE TABLE discovery_pipeline (
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:72:    CONSTRAINT chk_discovery_pipeline_desired_state
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:74:    CONSTRAINT chk_discovery_pipeline_phase
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:76:    CONSTRAINT chk_discovery_pipeline_counters
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:118:CREATE TABLE discovery_paper_job (
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:141:    UNIQUE KEY uk_discovery_paper_job_item (stream_id, item_key),
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:142:    KEY idx_discovery_paper_job_due (status, next_attempt_at, stream_id, id),
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:143:    KEY idx_discovery_paper_job_terminal (completed_at, id),
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:144:    CONSTRAINT chk_discovery_paper_job_status
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:146:    CONSTRAINT chk_discovery_paper_job_unit
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:148:    CONSTRAINT chk_discovery_paper_job_identity_quality
+src/main/resources/db/migration/V133__create_discovery_paper_queue.sql:150:    CONSTRAINT chk_discovery_paper_job_amounts
+src/main/resources/db/migration/V50__add_global_auto_reply_setting.sql:1:INSERT INTO batch_send_setting (setting_key, setting_value) VALUES
+src/main/resources/db/migration/V27__create_batch_send_setting.sql:1:CREATE TABLE batch_send_setting (
+src/main/resources/db/migration/V27__create_batch_send_setting.sql:8:INSERT INTO batch_send_setting (setting_key, setting_value) VALUES
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:57:    COALESCE((SELECT CASE WHEN setting_value = 'true' THEN 1 ELSE 0 END FROM batch_send_setting WHERE setting_key = 'batchSend.autoEnabled' LIMIT 1), 0),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:58:    COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.cron' LIMIT 1), '0 0 0 * * ?'),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:59:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.dailyCap' LIMIT 1), 1000),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:60:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.roundSize' LIMIT 1), 50),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:61:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.perMailIntervalMs' LIMIT 1), 1000),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:62:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.perRoundIntervalMs' LIMIT 1), 60000),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:63:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.selfCheckTtlMinutes' LIMIT 1), 30),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:66:    NULLIF(COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.emailDomain' LIMIT 1), ''), ''),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:67:    NULLIF(COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.discipline' LIMIT 1), ''), ''),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:73:        FROM batch_send_setting
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:110:    COALESCE((SELECT CASE WHEN setting_value = 'true' THEN 1 ELSE 0 END FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.autoEnabled' LIMIT 1), 0),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:111:    COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.cron' LIMIT 1), '0 0 8 * * ?'),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:112:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.dailyCap' LIMIT 1), 60),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:113:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.roundSize' LIMIT 1), 30),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:114:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.perMailIntervalMs' LIMIT 1), 3000),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:115:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.perRoundIntervalMs' LIMIT 1), 120000),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:116:    COALESCE((SELECT CAST(setting_value AS UNSIGNED) FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.selfCheckTtlMinutes' LIMIT 1), 30),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:119:    NULLIF(COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.emailDomain' LIMIT 1), ''), ''),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:120:    NULLIF(COALESCE((SELECT setting_value FROM batch_send_setting WHERE setting_key = 'batchSend.materialReminder.discipline' LIMIT 1), ''), ''),
+src/main/resources/db/migration/V72__create_batch_send_task_config.sql:127:            FROM batch_send_setting
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql:29:CREATE TABLE expert_academic_enrichment_job (
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql:44:    UNIQUE KEY uk_expert_academic_enrichment_job_doc (expert_doc_id),
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql:45:    KEY idx_expert_academic_enrichment_job_due (status, next_attempt_at, id),
+src/main/resources/db/migration/V131__create_expert_academic_enrichment_job.sql:46:    CONSTRAINT chk_expert_academic_enrichment_job_status
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/ExpertAcademicEnrichmentJob.kt:8: * expert_academic_enrichment_job：一行 = 一个专家文档（真实 ES `_id`）的学术补全生命周期。
+src/main/kotlin/com/weibo/talentintroduction/discovery/domain/ExpertAcademicEnrichmentJob.kt:26:@Table("expert_academic_enrichment_job")
+src/main/kotlin/com/weibo/talentintroduction/campaign/domain/BatchSendSetting.kt:7:@Table("batch_send_setting")
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:355: * - 每个公开方法自成一个事务；同时触及多张表时一律按固定锁序 `discovery_pipeline` →
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:356: *   `discovery_collection_stream` → `discovery_paper_job` 加行锁，因此多连接并发不交叉死锁；
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:373:            INSERT INTO discovery_pipeline (id, desired_state, phase, generation, created_at, updated_at)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:402:                UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:420:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:444:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:464:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:479:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:498:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:517:        UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:535:        UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:544:        "UPDATE discovery_pipeline SET execution_id = ?, updated_at = ? WHERE id = ? AND owner_token = ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:557:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:577:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:587:        "UPDATE discovery_pipeline SET raw_scan_done = 1, updated_at = ? WHERE id = ? AND owner_token = ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:600:        UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:609:        "UPDATE discovery_pipeline SET capacity_paused = ?, updated_at = ? WHERE id = ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:616:            "SELECT COUNT(*) FROM discovery_paper_job WHERE status IN ('PENDING','RUNNING','RETRY_WAIT')",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:622:            "SELECT COUNT(*) FROM discovery_paper_job WHERE status IN ('PENDING','RUNNING','RETRY_WAIT','FAILED')",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:629:            "SELECT COUNT(*) FROM discovery_paper_job WHERE stream_id = ? AND status IN ('PENDING','RUNNING','RETRY_WAIT')",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:705:            "SELECT COUNT(*) FROM discovery_paper_job WHERE stream_id = ?", Long::class.java, streamId
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:786:        val pipeline = lockPipeline() ?: error("discovery_pipeline 行缺失")
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:816:                INSERT INTO discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:874:            "SELECT item_key FROM discovery_paper_job WHERE stream_id = ? AND item_key IN ($placeholders)",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:892:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:975:            UPDATE discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:981:                     SELECT 1 FROM discovery_pipeline p
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:995:            UPDATE discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1024:            UPDATE discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1036:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1076:            UPDATE discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1092:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1104:                "UPDATE discovery_paper_job SET reserved_result_bytes = 0 WHERE id = ?", jobId
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1139:            UPDATE discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1153:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1165:            jdbcTemplate.update("UPDATE discovery_paper_job SET reserved_result_bytes = 0 WHERE id = ?", jobId)
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1195:            UPDATE discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1222:            UPDATE discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1239:            UPDATE discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1267:            "SELECT COUNT(*) FROM discovery_paper_job WHERE stream_id = ? AND item_key = ?",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1273:            INSERT INTO discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1290:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1320:              FROM discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1338:            "SELECT stream_id, status, COUNT(*) AS cnt FROM discovery_paper_job WHERE stream_id IN ($placeholders) GROUP BY stream_id, status",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1356:              FROM discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1373:            "UPDATE discovery_paper_job SET metadata_json = '', extraction_json = NULL, payload_bytes = 0, reserved_result_bytes = 0, updated_at = ? WHERE id IN ($placeholders)",
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1378:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1396:              FROM discovery_paper_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1409:        jdbcTemplate.update("DELETE FROM discovery_paper_job WHERE id IN ($placeholders)", *ids.toTypedArray())
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1412:            UPDATE discovery_pipeline
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1526:                "FROM discovery_pipeline"
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/DiscoveryPaperQueueRepository.kt:1537:                "lease_token, lease_until, generation, last_error FROM discovery_paper_job"
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:130:     * 只是 `/enrich/stats` 的进程内观测值，任务生命周期的唯一事实仍是 expert_academic_enrichment_job。
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:10: * expert_academic_enrichment_job 的全部状态写路径（I-1/I-2/I-3）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:26: * 排序 `(next_attempt_at, id)` 与队列索引 `idx_expert_academic_enrichment_job_due` 同形；
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:31:    @Query("SELECT expert_doc_id, source FROM expert_academic_enrichment_job WHERE discovery_execution_id = :executionId")
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:34:    @Query("SELECT * FROM expert_academic_enrichment_job WHERE expert_doc_id = :docId")
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:44:        INSERT INTO expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:64:        UPDATE expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:86:        SELECT * FROM expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:102:        UPDATE expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:123:        UPDATE expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:145:        UPDATE expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/ExpertAcademicEnrichmentJobRepository.kt:174:        UPDATE expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/discovery/repository/OpenAlexBudgetRepository.kt:319:            SELECT COUNT(*) FROM expert_academic_enrichment_job
+src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchSendSettingRepository.kt:9:    @Query("SELECT * FROM batch_send_setting WHERE setting_key = :settingKey LIMIT 1")
+src/main/kotlin/com/weibo/talentintroduction/config/OpenAlexRequestPolicy.kt:361:    /** I-5：测试可控的待补全任务数（生产由 expert_academic_enrichment_job 统计）。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineService.kt:536:        val row = requireNotNull(repository.findPipeline()) { "discovery_pipeline 行缺失" }
+src/main/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendSettingService.kt:176:            log.warn("Failed to load batch_send_setting rows, using defaults", e)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepository.kt:48:        "SELECT setting_value FROM batch_send_setting WHERE setting_key = ?",
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepository.kt:54:            "INSERT INTO batch_send_setting (setting_key, setting_value, updated_at) VALUES (?, ?, ?) " +
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailOpenTrackingRepository.kt:83:               SELECT 1 FROM batch_send_setting s

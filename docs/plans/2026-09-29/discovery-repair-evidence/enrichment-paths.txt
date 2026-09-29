@@ -1,0 +1,147 @@
+$ rg -n batchEnrichByOrcids|batchEnrichByAuthorIds|enrichAuthorByOrcid|EnrichmentOutcome|researchFields|enrichedAt src/main/kotlin/com/weibo/talentintroduction/discovery src/main/kotlin/com/weibo/talentintroduction/expert
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:18:    val researchFields: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/domain/ExpertProfile.kt:31:    val enrichedAt: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2332:            listOf(mapOf("range" to mapOf("enrichedAt" to mapOf("gte" to cutoff))))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2351:                        mapOf("bool" to mapOf("must_not" to listOf(mapOf("exists" to mapOf("field" to "enrichedAt"))))),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2352:                        mapOf("range" to mapOf("enrichedAt" to mapOf("lt" to cutoff))),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2356:                                    mapOf("exists" to mapOf("field" to "enrichedAt")),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2357:                                    mapOf("exists" to mapOf("field" to "researchFields"))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2374:    /** I5a2-1/I5a2-3：补采只针对 OpenAlex 认得（有 enrichedAt）且尚无 institutionType 的人。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2377:            "must" to listOf(mapOf("exists" to mapOf("field" to "enrichedAt"))),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2385:    /** I1-5：只针对 OpenAlex 认得（有 enrichedAt）且尚无发表年份的人。 */
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2388:            "must" to listOf(mapOf("exists" to mapOf("field" to "enrichedAt"))),
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2533:                            val outcome = outcomes[enrichmentDocId(profile)] ?: ProfileEnrichmentOutcome.NotFound
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2535:                                is ProfileEnrichmentOutcome.Success -> outcome.layers
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2536:                                is ProfileEnrichmentOutcome.Partial -> outcome.layers
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2555:                                is ProfileEnrichmentOutcome.NotFound -> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2559:                                is ProfileEnrichmentOutcome.NoId -> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2563:                                is ProfileEnrichmentOutcome.RetryableError -> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2572:                                is ProfileEnrichmentOutcome.Deferred -> budgetDeferred = true
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2864:            val initial = profile?.let { outcomes[enrichmentDocId(it)] } ?: ProfileEnrichmentOutcome.RetryableError()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2865:            val outcome = if (initial is ProfileEnrichmentOutcome.Success && isRawOnly(initial.layers) &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2871:            if (initial is ProfileEnrichmentOutcome.Success && profile != null &&
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2874:                if (initial.promoted && outcome is ProfileEnrichmentOutcome.Success) counters.promoted++
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2876:            if (outcome is ProfileEnrichmentOutcome.Deferred && deferredUntil == null) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2957:    private fun classifyBatchOutcome(outcome: ProfileEnrichmentOutcome, currentAttempts: Int): BatchOutcomeBucket =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2959:            is ProfileEnrichmentOutcome.Success -> BatchOutcomeBucket.SUCCEEDED
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2960:            is ProfileEnrichmentOutcome.Deferred -> BatchOutcomeBucket.PENDING
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2961:            ProfileEnrichmentOutcome.NotFound, ProfileEnrichmentOutcome.NoId -> BatchOutcomeBucket.UNMATCHED
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2962:            is ProfileEnrichmentOutcome.Partial ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:2964:            is ProfileEnrichmentOutcome.RetryableError -> when {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3008:            // V-1/I-3：补全只写学术事实与 enrichedAt，不推进根级 `updatedAt`（那是发现/运营写入的语义）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3009:            "enrichedAt" to now,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3016:        enrichment.topics?.takeIf { it.isNotEmpty() }?.let { doc["researchFields"] = it.joinToString(", ") }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3030:            researchFields = enrichment.topics?.takeIf { it.isNotEmpty() }?.joinToString(", ")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3031:                ?: profile.researchFields,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3126:     *   缺失时用有效 ORCID；两者都没有 = [ProfileEnrichmentOutcome.NoId]，不发作者查询；
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3129:     * - 额度延期是 [ProfileEnrichmentOutcome.Deferred]（未发请求、不消耗尝试次数），限流/网络失败才是
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3130:     *   [ProfileEnrichmentOutcome.RetryableError]；
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3131:     * - 基础事实写入成功、但开关控制的最近论文/专利标题子请求失败时是 [ProfileEnrichmentOutcome.Partial]。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3137:    ): Map<String, ProfileEnrichmentOutcome> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3138:        val outcomes = LinkedHashMap<String, ProfileEnrichmentOutcome>()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3144:            profiles.forEach { outcomes[enrichmentDocId(it)] = ProfileEnrichmentOutcome.RetryableError() }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3156:                else -> outcomes[enrichmentDocId(profile)] = ProfileEnrichmentOutcome.NoId
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3161:            openAlex.batchEnrichByAuthorIds(ids, kind)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3165:                openAlex.batchEnrichByOrcids(ids, kind)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3172:                if (!outcomes.containsKey(docId)) outcomes[docId] = ProfileEnrichmentOutcome.Deferred(deferredResetAt)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3184:        outcomes: MutableMap<String, ProfileEnrichmentOutcome>,
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3186:        query: (List<String>, RequestKind) -> Map<String, EnrichmentOutcome>
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3197:                when (val found = lookup[identity] ?: EnrichmentOutcome.NotFound) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3198:                    is EnrichmentOutcome.Success -> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3203:                                outcomes[docId] = ProfileEnrichmentOutcome.Partial(layers, recentWorksFailed = found.titlesFailed)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3212:                                    PromotionOutcome.Promoted -> ProfileEnrichmentOutcome.Success(layers, promoted = true)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3214:                                        ProfileEnrichmentOutcome.Success(layers)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3215:                                    else -> ProfileEnrichmentOutcome.RetryableError()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3217:                            } else outcomes[docId] = ProfileEnrichmentOutcome.Success(layers)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3220:                    is EnrichmentOutcome.NotFound ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3221:                        profiles.forEach { outcomes[enrichmentDocId(it)] = ProfileEnrichmentOutcome.NotFound }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3222:                    is EnrichmentOutcome.ApiError ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3224:                            outcomes[enrichmentDocId(it)] = ProfileEnrichmentOutcome.RetryableError()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3226:                    is EnrichmentOutcome.RateLimited ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3228:                            outcomes[enrichmentDocId(it)] = ProfileEnrichmentOutcome.RetryableError(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3713:sealed class ProfileEnrichmentOutcome {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3715:    data class Success(val layers: LayerUpdateResult, val promoted: Boolean = false) : ProfileEnrichmentOutcome()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3722:    data class Partial(val layers: LayerUpdateResult, val recentWorksFailed: Boolean) : ProfileEnrichmentOutcome()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3725:    data class Deferred(val resetAt: Instant) : ProfileEnrichmentOutcome()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3728:    object NotFound : ProfileEnrichmentOutcome()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3731:    object NoId : ProfileEnrichmentOutcome()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt:3737:    ) : ProfileEnrichmentOutcome()
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:398:    val researchFields: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:402:    val enrichedAt: String? = null,
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:447:                researchFields = expert.researchFields,
+src/main/kotlin/com/weibo/talentintroduction/expert/controller/ExpertIndexController.kt:451:                enrichedAt = expert.enrichedAt,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:36:        val ALLOWED_HAS_FIELDS = setOf("employment", "degree", "institution", "researchFields", "patentTitles", "recentWorkTitles")
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:48:            "researchFields", "recentWorkTitles", "patentTitles", "degree", "country"
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:486:            researchFields = source.nullableText("researchFields"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:504:            enrichedAt = source.nullableText("enrichedAt"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:594:            "researchFields", "researchFieldIds", "disciplineCategory", "institution", "institutionType",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:601:            "recentWorkTitles", "patentTitles", "enrichedAt", "enrichmentSource",
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertSearchService.kt:965:            "researchFields" -> !researchFields.isNullOrBlank()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:362:        (enrichAuthorOutcome(openAlexAuthorId, kind) as? EnrichmentOutcome.Success)?.data
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:366:     * 的细分（[EnrichmentOutcome.Success.titlesFailed]），附加数据可单独重试，不改变基础事实的可用性。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:367:     * 404/网络错误与限流分开：前者 [EnrichmentOutcome.NotFound]/[EnrichmentOutcome.ApiError]，限流原样抛出。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:369:    private fun enrichAuthorOutcome(openAlexAuthorId: String, kind: RequestKind): EnrichmentOutcome {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:374:            val response = getJson(kind, Operation.SINGLETON, url) ?: return EnrichmentOutcome.NotFound
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:383:            if (code == 404) EnrichmentOutcome.NotFound else EnrichmentOutcome.ApiError("HTTP $code")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:386:            EnrichmentOutcome.ApiError(e.message ?: "unknown error")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:428:    fun enrichAuthorByOrcid(orcid: String): AuthorEnrichment? =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:429:        enrichAuthorByOrcid(orcid, RequestKind.HISTORY_ENRICHMENT)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:431:    fun enrichAuthorByOrcid(orcid: String, kind: RequestKind): AuthorEnrichment? {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:432:        return when (val outcome = enrichAuthorByOrcidWithReason(orcid, kind)) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:433:            is EnrichmentOutcome.Success -> outcome.data
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:439:    fun enrichAuthorByOrcidWithReason(orcid: String): EnrichmentOutcome =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:440:        enrichAuthorByOrcidWithReason(orcid, RequestKind.HISTORY_ENRICHMENT)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:442:    fun enrichAuthorByOrcidWithReason(orcid: String, kind: RequestKind): EnrichmentOutcome {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:451:                return EnrichmentOutcome.NotFound
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:461:                return EnrichmentOutcome.RateLimited(retryAfter)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:464:            EnrichmentOutcome.ApiError("HTTP $code: ${e.message}")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:467:            EnrichmentOutcome.ApiError(e.message ?: "unknown error")
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:472:    fun batchEnrichByOrcids(orcids: List<String>): Map<String, EnrichmentOutcome> =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:473:        batchEnrichByOrcids(orcids, RequestKind.HISTORY_ENRICHMENT)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:475:    fun batchEnrichByOrcids(orcids: List<String>, kind: RequestKind): Map<String, EnrichmentOutcome> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:485:    fun batchEnrichByAuthorIds(authorIds: List<String>): Map<String, EnrichmentOutcome> =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:486:        batchEnrichByAuthorIds(authorIds, RequestKind.HISTORY_ENRICHMENT)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:490:     * 调用方保证每批 ≤100 个不同身份；结果对每个传入身份逐一给出（响应中缺失 = [EnrichmentOutcome.NotFound]）。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:493:    fun batchEnrichByAuthorIds(authorIds: List<String>, kind: RequestKind): Map<String, EnrichmentOutcome> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:508:     * [EnrichmentOutcome.RateLimited]，其余 HTTP/网络失败标 [EnrichmentOutcome.ApiError]。
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:515:    ): Map<String, EnrichmentOutcome> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:529:                    EnrichmentOutcome.RateLimited(retryAfterHeader?.toLongOrNull()?.times(1000))
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:532:            return identities.associateWith { EnrichmentOutcome.ApiError("HTTP $code") }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:534:            return identities.associateWith { EnrichmentOutcome.ApiError(e.message ?: "unknown") }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:543:        val results = mutableMapOf<String, EnrichmentOutcome>()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:546:                results[identity] = EnrichmentOutcome.NotFound
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:558:                results[identity] = EnrichmentOutcome.Success(parseAuthorBase(node), titlesFailed = true)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:561:                val rateLimited = EnrichmentOutcome.RateLimited(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:571:        return identities.associateWith { results[it] ?: EnrichmentOutcome.NotFound }
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:643:    private fun enrichmentOutcome(node: JsonNode, kind: RequestKind): EnrichmentOutcome {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:645:        return EnrichmentOutcome.Success(parsed.data, parsed.titlesFailed)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:675:sealed class EnrichmentOutcome {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:680:    data class Success(val data: AuthorEnrichment, val titlesFailed: Boolean = false) : EnrichmentOutcome()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:681:    object NotFound : EnrichmentOutcome()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:682:    data class ApiError(val message: String) : EnrichmentOutcome()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt:683:    data class RateLimited(val retryAfterMs: Long? = null) : EnrichmentOutcome()
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:80:    fun complete(id: Long, leaseToken: String, outcome: ProfileEnrichmentOutcome): Boolean {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:114:    private fun classify(attempts: Int, outcome: ProfileEnrichmentOutcome, now: LocalDateTime): Completion =
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:116:            is ProfileEnrichmentOutcome.Success ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:120:            is ProfileEnrichmentOutcome.Partial -> transientFailure(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:127:            is ProfileEnrichmentOutcome.Deferred -> Completion(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:134:            is ProfileEnrichmentOutcome.RetryableError -> if (outcome.rateLimited) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:147:            ProfileEnrichmentOutcome.NotFound -> unmatched(attempts, now, REASON_AUTHOR_NOT_FOUND)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:148:            ProfileEnrichmentOutcome.NoId -> unmatched(attempts, now, REASON_NO_TRUSTED_IDENTITY)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:169:    private fun rateLimitedDelay(outcome: ProfileEnrichmentOutcome.RetryableError): Duration {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:178:    private fun resultJson(outcome: ProfileEnrichmentOutcome): String = when (outcome) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:179:        is ProfileEnrichmentOutcome.Success ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:182:        is ProfileEnrichmentOutcome.Partial ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:185:        is ProfileEnrichmentOutcome.Deferred ->
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:188:        is ProfileEnrichmentOutcome.RetryableError -> {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:193:        ProfileEnrichmentOutcome.NotFound -> """{"outcome":"NOT_FOUND"}"""
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt:194:        ProfileEnrichmentOutcome.NoId -> """{"outcome":"NO_ID"}"""
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:725:            researchFields = text("researchFields"), disciplineCategory = text("disciplineCategory"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:731:            patentTitles = strings("patentTitles"), enrichedAt = text("enrichedAt"),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:82:        val researchFields: String,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:93:            listOf(employment, keyword, researchFields, institution, recentWorkTitles, patentTitles)
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:102:            researchFields = normalizeText(profile.researchFields),
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:128:        if (PRODUCTION_THEME_TERMS.any { containsTerm(n.keyword, it) || containsTerm(n.researchFields, it) }) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:157:        if (n.researchFields.isNotEmpty()) {
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertClassificationService.kt:192:            n.employment, n.keyword, n.researchFields, n.institution,

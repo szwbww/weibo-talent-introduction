@@ -22,7 +22,8 @@ import java.util.UUID
  *   事务内绝不做外部 HTTP 调用（worker 在事务外调用补全核心）。
  * - **I-3 重试分类**：429 / OpenAlex 日额度延期只推迟 `next_attempt_at`，**不消耗** [ExpertAcademicEnrichmentJob.attempts]；
  *   网络/5xx 与层写失败按 [BACKOFF_MINUTES]（1m/5m/30m/2h）退避，故障尝试达到
- *   [MAX_FAILURE_ATTEMPTS] 次后 `FAILED`；无可靠身份或查无作者是 `UNMATCHED`，绝不伪造 `SUCCEEDED`；
+ *   [MAX_FAILURE_ATTEMPTS] 次后 `FAILED`；无可靠身份、查无作者或**身份歧义**都是 `UNMATCHED`
+ *   （用原因码区分，均为终态、不消耗故障尝试），绝不伪造 `SUCCEEDED`；
  *   [reopenFailed] 是人工显式重开 `FAILED` 的唯一路径。
  *
  * 本类不持有调度、开关或进程内队列：c8 负责调度与默认关闭的开关，重启后任务只从本表恢复。
@@ -143,9 +144,13 @@ class ExpertAcademicEnrichmentJobService(
                 transientFailure(attempts, now, REASON_TRANSIENT_ERROR)
             }
 
-            // 有可靠身份但查无作者 / 无可靠身份：都不是成功，也不是可重试故障。
+            // 有可靠身份但查无作者 / 无可靠身份 / 身份歧义：都不是成功，也不是可重试故障。
             ProfileEnrichmentOutcome.NotFound -> unmatched(attempts, now, REASON_AUTHOR_NOT_FOUND)
             ProfileEnrichmentOutcome.NoId -> unmatched(attempts, now, REASON_NO_TRUSTED_IDENTITY)
+            // I-3：同一 ORCID 对应多个作者 ID 复用 `UNMATCHED`（有多个作者 ≠ 查无作者），
+            // 固定原因码区分二者；既有重开规则不变，故障 attempts 不增加。
+            ProfileEnrichmentOutcome.AmbiguousIdentity ->
+                unmatched(attempts, now, REASON_AUTHOR_IDENTITY_AMBIGUOUS)
         }
 
     private fun unmatched(attempts: Int, now: LocalDateTime, reason: String): Completion =
@@ -192,6 +197,8 @@ class ExpertAcademicEnrichmentJobService(
 
         ProfileEnrichmentOutcome.NotFound -> """{"outcome":"NOT_FOUND"}"""
         ProfileEnrichmentOutcome.NoId -> """{"outcome":"NO_ID"}"""
+        // I-3：固定 outcome 码，与 UNMATCHED + AUTHOR_IDENTITY_AMBIGUOUS 一一对应。
+        ProfileEnrichmentOutcome.AmbiguousIdentity -> """{"outcome":"AMBIGUOUS_IDENTITY"}"""
     }
 
     private fun layersJson(layers: LayerUpdateResult): String =
@@ -218,5 +225,8 @@ class ExpertAcademicEnrichmentJobService(
         const val REASON_RECENT_WORKS_FAILED = "RECENT_WORKS_FAILED"
         const val REASON_AUTHOR_NOT_FOUND = "AUTHOR_NOT_FOUND"
         const val REASON_NO_TRUSTED_IDENTITY = "NO_TRUSTED_IDENTITY"
+
+        /** I-3：同一 ORCID 对应多个作者 ID（复用 `UNMATCHED`，与「查无作者」分开）。 */
+        const val REASON_AUTHOR_IDENTITY_AMBIGUOUS = "AUTHOR_IDENTITY_AMBIGUOUS"
     }
 }

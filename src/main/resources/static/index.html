@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260929-mailbox-replied">
-    <link rel="stylesheet" href="expert-materials.css?v=20260929-mailbox-replied">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20260929-mailbox-replied">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20260929-mailbox-replied">
-    <link rel="stylesheet" href="world-clock.css?v=20260929-mailbox-replied">
+    <link rel="stylesheet" href="styles.css?v=20260929-discovery-schedule">
+    <link rel="stylesheet" href="expert-materials.css?v=20260929-discovery-schedule">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20260929-discovery-schedule">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20260929-discovery-schedule">
+    <link rel="stylesheet" href="world-clock.css?v=20260929-discovery-schedule">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1120,6 +1120,19 @@
         </div>
         <div id="taskModalToast" class="task-modal-toast" hidden></div>
         <div class="modal-body" style="gap: 20px;">
+            <div id="discoverySchedulePanel" class="discovery-schedule-panel" hidden>
+                <div id="discoveryScheduleControls" class="discovery-schedule-row">
+                    <label for="discoveryScheduleHours" class="task-modal-input-label">
+                        执行间隔（小时）
+                        <input id="discoveryScheduleHours" class="task-modal-input-field discovery-schedule-hours"
+                               type="number" min="1" max="168" step="1"
+                               aria-describedby="discoveryScheduleHint" disabled>
+                    </label>
+                    <button id="discoveryScheduleSave" class="button primary discovery-schedule-save"
+                            type="button" disabled>保存定时</button>
+                </div>
+                <p id="discoveryScheduleHint" class="discovery-schedule-hint" role="status" aria-live="polite"></p>
+            </div>
             <!-- Configuration Section (visible when starting task) -->
             <div id="taskModalConfigSection" class="task-modal-config-section">
                 <p id="taskLaunchDesc" class="text-muted" style="margin: 0; font-size: 13px; line-height: 1.5; color: var(--text-muted);"></p>
@@ -2307,11 +2320,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260929-mailbox-replied"></script>
-<script src="expert-materials.js?v=20260929-mailbox-replied"></script>
-<script src="meeting-confirmation.js?v=20260929-mailbox-replied"></script>
-<script src="mailbox-chat.js?v=20260929-mailbox-replied"></script>
-<script src="app.js?v=20260929-mailbox-replied"></script>
-<script src="world-clock.js?v=20260929-mailbox-replied"></script>
+<script src="trust-reply-workbench.js?v=20260929-discovery-schedule"></script>
+<script src="expert-materials.js?v=20260929-discovery-schedule"></script>
+<script src="meeting-confirmation.js?v=20260929-discovery-schedule"></script>
+<script src="mailbox-chat.js?v=20260929-discovery-schedule"></script>
+<script src="app.js?v=20260929-discovery-schedule"></script>
+<script src="world-clock.js?v=20260929-discovery-schedule"></script>
 </body>
 </html>

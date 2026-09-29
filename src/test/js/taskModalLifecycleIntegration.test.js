@@ -43,6 +43,8 @@ function createSandbox() {
         openTaskLaunchModal: () => {},
         stopTaskModalPolling: () => {},
         stopBatchSendStatusPoll: () => {},
+        // c4/I-2：关闭入口的设置面板清理由 closeTaskModal 负责；真实函数在 app.js 内。
+        resetDiscoverySchedulePanel: () => {},
         showStatus: () => {},
         restoreTaskButton: () => {}
     };
@@ -88,6 +90,24 @@ describe("task modal lifecycle integration", () => {
         assert.strictEqual(events[3][0], "status");
         assert.strictEqual(events[3][1], "重新验证候选人 已完成");
         assert.strictEqual(events[3][2], "ok");
+    });
+
+    it("closing the modal clears the discovery schedule panel state exactly once (c4/I-2)", () => {
+        const sandbox = createSandbox();
+        let resets = 0;
+        sandbox.resetDiscoverySchedulePanel = () => { resets += 1; };
+        sandbox.openTaskModal = (taskType, label, btnId, options) => {
+            const ctx = sandbox.createTaskModalContext(taskType, label, btnId, "PROGRESS");
+            ctx.knownActiveAtOpen = options.knownActiveAtOpen;
+            sandbox.currentTaskModal = ctx;
+        };
+
+        sandbox.openTaskModal("EXPERT_DISCOVERY", "深度发现（外部数据源）", null, { knownActiveAtOpen: true });
+        sandbox.closeTaskModal();
+        assert.strictEqual(resets, 1, "closeTaskModal must clear the discovery schedule panel state");
+
+        sandbox.closeTaskModal();
+        assert.strictEqual(resets, 1, "a close without an open modal must not clear the panel again");
     });
 
     it("A/B watcher replacement keeps B alive and only completes/notifies on B", async () => {

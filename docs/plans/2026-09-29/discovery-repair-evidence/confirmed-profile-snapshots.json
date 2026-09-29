@@ -1,0 +1,473 @@
+{
+  "capturedAt": "2026-09-29 11:31 Asia/Shanghai",
+  "source": "read-only MySQL enrichment jobs + ES _mget",
+  "rows": [
+    {
+      "kind": "profile",
+      "id": "EMAIL-084476f902318562777",
+      "found": true,
+      "execution": 20846,
+      "jobSource": "OPENALEX",
+      "jobStatus": "SUCCEEDED",
+      "jobCreated": "2026-09-29 04:20:51.605000",
+      "jobUpdated": "2026-09-29 04:21:16.601000",
+      "lastError": null,
+      "resultJson": "{\"outcome\":\"SUCCESS\",\"layers\":{\"raw\":\"UPDATED\",\"candidate\":\"ABSENT\",\"application\":\"ABSENT\"}}",
+      "givenNames": "Simona",
+      "familyNames": "Crea",
+      "email": "ristic@iat.uni-bremen.de",
+      "orcidId": "EMAIL-084476f902318562777",
+      "dataSource": "OPENALEX",
+      "institution": "Scuola Superiore Sant'Anna",
+      "institutionType": "education",
+      "institutionEvidence": "OPENALEX:768c78c07edb40539eaddbbc14f44fe03c73f5ac8bdcba553e37c88cc62fc624",
+      "country": "IT",
+      "employment": null,
+      "researchFields": "Muscle activation and electromyography studies, Prosthetics and Rehabilitation Robotics, Stroke Rehabilitation and Recovery, Balance, Gait, and Falls Prevention, Diabetic Foot Ulcer Assessment and Management",
+      "researchFieldIds": [
+        "22",
+        "27",
+        "36"
+      ],
+      "enrichmentSource": "OPENALEX",
+      "enrichedAt": "2026-09-29 04:21:15",
+      "discoveredAt": "2026-09-29 04:20:51",
+      "updatedAt": "2026-09-29 04:20:51",
+      "identityVerification": {
+        "status": "VERIFIED",
+        "version": 20260925,
+        "email": "ristic@iat.uni-bremen.de",
+        "givenNames": "Simona",
+        "familyNames": "Crea",
+        "source": "SOURCE_SHA256",
+        "evidenceHash": "9512f60fcbd86120f30e3d2d12729fd824a8eb83cb1262410e5086d757f1fdf0",
+        "orcid": "0000-0001-9833-4401",
+        "openAlexAuthorId": "A5008055713"
+      },
+      "externalIds": {
+        "doi": "10.1017/wtc.2021.11",
+        "pmid": "38486625",
+        "orcid": "0000-0001-9833-4401",
+        "openAlexAuthorId": "A5008055713"
+      },
+      "filterResult": "PASSED",
+      "tags": [
+        "discovered"
+      ],
+      "recentWorkTitles": null
+    },
+    {
+      "kind": "profile",
+      "id": "EMAIL-24c29e682f994948f62",
+      "found": true,
+      "execution": 20846,
+      "jobSource": "OPENALEX",
+      "jobStatus": "SUCCEEDED",
+      "jobCreated": "2026-09-29 04:20:51.664000",
+      "jobUpdated": "2026-09-29 04:21:16.604000",
+      "lastError": null,
+      "resultJson": "{\"outcome\":\"SUCCESS\",\"layers\":{\"raw\":\"UPDATED\",\"candidate\":\"ABSENT\",\"application\":\"ABSENT\"}}",
+      "givenNames": "Simona",
+      "familyNames": "Crea",
+      "email": "jan.veneman.cost@gmail.com",
+      "orcidId": "EMAIL-24c29e682f994948f62",
+      "dataSource": "OPENALEX",
+      "institution": "Scuola Superiore Sant'Anna",
+      "institutionType": "education",
+      "institutionEvidence": "OPENALEX:6c1305c857f4e090f544e7be75e29d9962e1a81331d2b6ce9178509330f39f9d",
+      "country": "IT",
+      "employment": null,
+      "researchFields": "Muscle activation and electromyography studies, Prosthetics and Rehabilitation Robotics, Stroke Rehabilitation and Recovery, Balance, Gait, and Falls Prevention, Diabetic Foot Ulcer Assessment and Management",
+      "researchFieldIds": [
+        "22",
+        "27",
+        "36"
+      ],
+      "enrichmentSource": "OPENALEX",
+      "enrichedAt": "2026-09-29 04:21:16",
+      "discoveredAt": "2026-09-29 04:20:51",
+      "updatedAt": "2026-09-29 04:20:51",
+      "identityVerification": {
+        "status": "VERIFIED",
+        "version": 20260925,
+        "email": "jan.veneman.cost@gmail.com",
+        "givenNames": "Simona",
+        "familyNames": "Crea",
+        "source": "SOURCE_SHA256",
+        "evidenceHash": "9512f60fcbd86120f30e3d2d12729fd824a8eb83cb1262410e5086d757f1fdf0",
+        "orcid": "0000-0001-9833-4401",
+        "openAlexAuthorId": "A5008055713"
+      },
+      "externalIds": {
+        "doi": "10.1017/wtc.2021.11",
+        "pmid": "38486625",
+        "orcid": "0000-0001-9833-4401",
+        "openAlexAuthorId": "A5008055713"
+      },
+      "filterResult": "PASSED",
+      "tags": [
+        "discovered"
+      ],
+      "recentWorkTitles": null
+    },
+    {
+      "kind": "profile",
+      "id": "EMAIL-a68616b33ad9432a694",
+      "found": true,
+      "execution": 20846,
+      "jobSource": "OPENALEX",
+      "jobStatus": "SUCCEEDED",
+      "jobCreated": "2026-09-29 04:20:51.442000",
+      "jobUpdated": "2026-09-29 04:21:16.593000",
+      "lastError": null,
+      "resultJson": "{\"outcome\":\"SUCCESS\",\"layers\":{\"raw\":\"UPDATED\",\"candidate\":\"ABSENT\",\"application\":\"ABSENT\"}}",
+      "givenNames": "Sao",
+      "familyNames": "Mai Nguyen",
+      "email": "damien.bouchabou@imt-atlantique.fr",
+      "orcidId": "EMAIL-a68616b33ad9432a694",
+      "dataSource": "OPENALEX",
+      "institution": null,
+      "institutionType": null,
+      "institutionEvidence": null,
+      "country": null,
+      "employment": null,
+      "researchFields": "Reinforcement Learning in Robotics, Robot Manipulation and Learning, Human Pose and Action Recognition, Context-Aware Activity Recognition Systems, Stroke Rehabilitation and Recovery",
+      "researchFieldIds": [
+        "17",
+        "22",
+        "27"
+      ],
+      "enrichmentSource": "OPENALEX",
+      "enrichedAt": "2026-09-29 04:21:15",
+      "discoveredAt": "2026-09-29 04:20:51",
+      "updatedAt": "2026-09-29 04:20:51",
+      "identityVerification": {
+        "status": "VERIFIED",
+        "version": 20260925,
+        "email": "damien.bouchabou@imt-atlantique.fr",
+        "givenNames": "Sao",
+        "familyNames": "Mai Nguyen",
+        "source": "SOURCE_SHA256",
+        "evidenceHash": "cade08fd78bdca4f73bf404f7be58988031fe33eba27ab26daf40a32835bdbd3",
+        "orcid": "0000-0003-0929-0019",
+        "openAlexAuthorId": "A5046094611"
+      },
+      "externalIds": {
+        "pmcId": "PMC8469092",
+        "doi": "10.3390/s21186037",
+        "pmid": "34577243",
+        "orcid": "0000-0003-0929-0019",
+        "openAlexAuthorId": "A5046094611"
+      },
+      "filterResult": "PASSED",
+      "tags": [
+        "discovered"
+      ],
+      "recentWorkTitles": null
+    },
+    {
+      "kind": "profile",
+      "id": "EMAIL-17ecbcafa3b295a5ec1",
+      "found": true,
+      "execution": 20954,
+      "jobSource": "OPENALEX",
+      "jobStatus": "UNMATCHED",
+      "jobCreated": "2026-09-29 07:28:13.837000",
+      "jobUpdated": "2026-09-29 07:28:16.628000",
+      "lastError": "NO_TRUSTED_IDENTITY",
+      "resultJson": "{\"outcome\":\"NO_ID\"}",
+      "givenNames": "Johannes",
+      "familyNames": "Lumma",
+      "email": "m.pauly@thphys.uni-heidelberg.de",
+      "orcidId": "EMAIL-17ecbcafa3b295a5ec1",
+      "dataSource": "OPENALEX",
+      "institution": "Heidelberg University",
+      "institutionType": "education",
+      "institutionEvidence": null,
+      "country": "DE",
+      "employment": null,
+      "researchFields": null,
+      "researchFieldIds": null,
+      "enrichmentSource": null,
+      "enrichedAt": null,
+      "discoveredAt": "2026-09-29 07:28:13",
+      "updatedAt": "2026-09-29 07:28:13",
+      "identityVerification": {
+        "status": "VERIFIED",
+        "version": 20260925,
+        "email": "m.pauly@thphys.uni-heidelberg.de",
+        "givenNames": "Johannes",
+        "familyNames": "Lumma",
+        "source": "SOURCE_SHA256",
+        "evidenceHash": "a5bcb30ae7226b6422f9f68b504c09924440d19c499de41bb6df98872ade2c1d",
+        "orcid": null,
+        "openAlexAuthorId": null
+      },
+      "externalIds": {
+        "doi": "10.21468/scipostphyslectnotes.24"
+      },
+      "filterResult": "REJECTED",
+      "tags": [
+        "discovered"
+      ],
+      "recentWorkTitles": null
+    },
+    {
+      "kind": "profile",
+      "id": "EMAIL-3fd20daad4e02b30aef",
+      "found": true,
+      "execution": 20954,
+      "jobSource": "OPENALEX",
+      "jobStatus": "SUCCEEDED",
+      "jobCreated": "2026-09-29 08:56:43.834000",
+      "jobUpdated": "2026-09-29 08:56:47.584000",
+      "lastError": null,
+      "resultJson": "{\"outcome\":\"SUCCESS\",\"layers\":{\"raw\":\"UPDATED\",\"candidate\":\"ABSENT\",\"application\":\"ABSENT\"}}",
+      "givenNames": "Michael",
+      "familyNames": "Everett",
+      "email": "aderuiter@ryerson.ca",
+      "orcidId": "EMAIL-3fd20daad4e02b30aef",
+      "dataSource": "OPENALEX",
+      "institution": "Massachusetts Institute of Technology",
+      "institutionType": "education",
+      "institutionEvidence": "OPENALEX:ceb9f50c60b6d3b40e765b4631221612ac3168a8a2830f5b2a349e4ab9c095bf",
+      "country": "US",
+      "employment": null,
+      "researchFields": "Robotic Path Planning Algorithms, Adversarial Robustness in Machine Learning, Autonomous Vehicle Technology and Safety, Robotics and Sensor-Based Localization, Reinforcement Learning in Robotics",
+      "researchFieldIds": [
+        "17",
+        "22"
+      ],
+      "enrichmentSource": "OPENALEX",
+      "enrichedAt": "2026-09-29 08:56:47",
+      "discoveredAt": "2026-09-29 08:56:43",
+      "updatedAt": "2026-09-29 08:56:43",
+      "identityVerification": {
+        "status": "VERIFIED",
+        "version": 20260925,
+        "email": "aderuiter@ryerson.ca",
+        "givenNames": "Michael",
+        "familyNames": "Everett",
+        "source": "SOURCE_SHA256",
+        "evidenceHash": "cc290e17b5253e62d0f58aedf416d99be009bd334f65b083070f57f13c742105",
+        "orcid": "0000-0001-9377-6745",
+        "openAlexAuthorId": "A5064513857"
+      },
+      "externalIds": {
+        "doi": "10.1109/lra.2020.2974695",
+        "orcid": "0000-0001-9377-6745",
+        "openAlexAuthorId": "A5064513857"
+      },
+      "filterResult": "PASSED",
+      "tags": [
+        "discovered"
+      ],
+      "recentWorkTitles": null
+    },
+    {
+      "kind": "profile",
+      "id": "EMAIL-9323fdcdef6f3d28eae",
+      "found": true,
+      "execution": 20954,
+      "jobSource": "ORCID",
+      "jobStatus": "SUCCEEDED",
+      "jobCreated": "2026-09-29 06:08:28.161000",
+      "jobUpdated": "2026-09-29 06:09:17.731000",
+      "lastError": null,
+      "resultJson": "{\"outcome\":\"SUCCESS\",\"layers\":{\"raw\":\"UPDATED\",\"candidate\":\"ABSENT\",\"application\":\"ABSENT\"}}",
+      "givenNames": "Nobuhiro",
+      "familyNames": "Tsuji",
+      "email": "nobuhiro-tsuji@mtl.kyoto-u.ac.jp",
+      "orcidId": "EMAIL-9323fdcdef6f3d28eae",
+      "dataSource": "ORCID",
+      "institution": null,
+      "institutionType": null,
+      "institutionEvidence": null,
+      "country": null,
+      "employment": null,
+      "researchFields": "Astrophysics and Cosmic Phenomena, Galaxies: Formation, Evolution, Phenomena, Neutrino Physics Research, Astronomy and Astrophysical Research, Microstructure and mechanical properties",
+      "researchFieldIds": [
+        "25",
+        "31"
+      ],
+      "enrichmentSource": "OPENALEX",
+      "enrichedAt": "2026-09-29 06:09:02",
+      "discoveredAt": "2026-09-29 06:08:28",
+      "updatedAt": "2026-09-29 06:08:28",
+      "identityVerification": {
+        "status": "VERIFIED",
+        "version": 20260925,
+        "email": "nobuhiro-tsuji@mtl.kyoto-u.ac.jp",
+        "givenNames": "Nobuhiro",
+        "familyNames": "Tsuji",
+        "source": "ORCID_RECORD_SHA256",
+        "evidenceHash": "8716af59294816e683b141f5d2ae0818f5c5c9caeed57038b5db2442c31e3216",
+        "orcid": "0000-0002-2132-1327",
+        "openAlexAuthorId": null
+      },
+      "externalIds": {
+        "orcid": "0000-0002-2132-1327"
+      },
+      "filterResult": "REJECTED",
+      "tags": [
+        "discovered"
+      ],
+      "recentWorkTitles": null
+    },
+    {
+      "kind": "profile",
+      "id": "EMAIL-9e92223bfcf02740232",
+      "found": true,
+      "execution": 20954,
+      "jobSource": "ORCID",
+      "jobStatus": "SUCCEEDED",
+      "jobCreated": "2026-09-29 06:08:28.281000",
+      "jobUpdated": "2026-09-29 06:09:17.734000",
+      "lastError": null,
+      "resultJson": "{\"outcome\":\"SUCCESS\",\"layers\":{\"raw\":\"UPDATED\",\"candidate\":\"ABSENT\",\"application\":\"ABSENT\"}}",
+      "givenNames": "Nobuhiro",
+      "familyNames": "Tsuji",
+      "email": "tsuji.nobuhiro.5a@kyoto-u.ac.jp",
+      "orcidId": "EMAIL-9e92223bfcf02740232",
+      "dataSource": "ORCID",
+      "institution": null,
+      "institutionType": null,
+      "institutionEvidence": null,
+      "country": null,
+      "employment": null,
+      "researchFields": "Astrophysics and Cosmic Phenomena, Galaxies: Formation, Evolution, Phenomena, Neutrino Physics Research, Astronomy and Astrophysical Research, Microstructure and mechanical properties",
+      "researchFieldIds": [
+        "25",
+        "31"
+      ],
+      "enrichmentSource": "OPENALEX",
+      "enrichedAt": "2026-09-29 06:09:02",
+      "discoveredAt": "2026-09-29 06:08:28",
+      "updatedAt": "2026-09-29 06:08:28",
+      "identityVerification": {
+        "status": "VERIFIED",
+        "version": 20260925,
+        "email": "tsuji.nobuhiro.5a@kyoto-u.ac.jp",
+        "givenNames": "Nobuhiro",
+        "familyNames": "Tsuji",
+        "source": "ORCID_RECORD_SHA256",
+        "evidenceHash": "19dc8bd56438a55b1c2f50751a3524dc14ce357f58597db60d85533719b0de4d",
+        "orcid": "0000-0002-2132-1327",
+        "openAlexAuthorId": null
+      },
+      "externalIds": {
+        "orcid": "0000-0002-2132-1327"
+      },
+      "filterResult": "REJECTED",
+      "tags": [
+        "discovered"
+      ],
+      "recentWorkTitles": null
+    },
+    {
+      "kind": "profile",
+      "id": "EMAIL-0a92fb9df24f8fca93d",
+      "found": true,
+      "execution": 21068,
+      "jobSource": "OPENALEX",
+      "jobStatus": "SUCCEEDED",
+      "jobCreated": "2026-09-29 10:24:41.622000",
+      "jobUpdated": "2026-09-29 10:24:47.638000",
+      "lastError": null,
+      "resultJson": "{\"outcome\":\"SUCCESS\",\"layers\":{\"raw\":\"UPDATED\",\"candidate\":\"ABSENT\",\"application\":\"ABSENT\"}}",
+      "givenNames": "Jitendra",
+      "familyNames": "Kumar",
+      "email": "ashutosh@nitkkr.ac.in",
+      "orcidId": "EMAIL-0a92fb9df24f8fca93d",
+      "dataSource": "OPENALEX",
+      "institution": "National Institute of Technology Tiruchirappalli",
+      "institutionType": "education",
+      "institutionEvidence": "OPENALEX:abf3934062b5def53519d62ee7ccb47faa786c13a1aaf456d08a0818828978a7",
+      "country": "IN",
+      "employment": null,
+      "researchFields": "Cloud Computing and Resource Management, IoT and Edge/Fog Computing, Parallel Computing and Optimization Techniques, Recommender Systems and Techniques, Data Stream Mining Techniques",
+      "researchFieldIds": [
+        "17"
+      ],
+      "enrichmentSource": "OPENALEX",
+      "enrichedAt": "2026-09-29 10:24:47",
+      "discoveredAt": "2026-09-29 10:24:41",
+      "updatedAt": "2026-09-29 11:02:01",
+      "identityVerification": {
+        "status": "VERIFIED",
+        "version": 20260925,
+        "email": "ashutosh@nitkkr.ac.in",
+        "givenNames": "Jitendra",
+        "familyNames": "Kumar",
+        "source": "SOURCE_SHA256",
+        "evidenceHash": "fe6eac5c8fa2bc314e7593c82dc3b1c55bfada003e45cce89462feb2a2c69482",
+        "orcid": "0000-0002-2938-6432",
+        "openAlexAuthorId": "A5038146323"
+      },
+      "externalIds": {
+        "doi": "10.1109/tpds.2023.3240567",
+        "orcid": "0000-0002-2938-6432",
+        "openAlexAuthorId": "A5038146323"
+      },
+      "filterResult": "PASSED",
+      "tags": [
+        "discovered"
+      ],
+      "recentWorkTitles": null
+    },
+    {
+      "kind": "profile",
+      "id": "EMAIL-3f0a2b400d1412e4cf8",
+      "found": true,
+      "execution": 21068,
+      "jobSource": "OPENALEX",
+      "jobStatus": "SUCCEEDED",
+      "jobCreated": "2026-09-29 10:35:29.136000",
+      "jobUpdated": "2026-09-29 10:35:47.058000",
+      "lastError": null,
+      "resultJson": "{\"outcome\":\"SUCCESS\",\"layers\":{\"raw\":\"UPDATED\",\"candidate\":\"ABSENT\",\"application\":\"ABSENT\"}}",
+      "givenNames": "Essam",
+      "familyNames": "Debie",
+      "email": "helge.janicke@cybersecuritycrc.org.au",
+      "orcidId": "EMAIL-3f0a2b400d1412e4cf8",
+      "dataSource": "OPENALEX",
+      "institution": null,
+      "institutionType": null,
+      "institutionEvidence": null,
+      "country": null,
+      "employment": null,
+      "researchFields": "Evolutionary Algorithms and Applications, Metaheuristic Optimization Algorithms Research, Viral Infectious Diseases and Gene Expression in Insects, EEG and Brain-Computer Interfaces, Human-Automation Interaction and Safety",
+      "researchFieldIds": [
+        "13",
+        "17",
+        "28",
+        "32"
+      ],
+      "enrichmentSource": "OPENALEX",
+      "enrichedAt": "2026-09-29 10:35:46",
+      "discoveredAt": "2026-09-29 10:35:29",
+      "updatedAt": "2026-09-29 10:35:29",
+      "identityVerification": {
+        "status": "VERIFIED",
+        "version": 20260925,
+        "email": "helge.janicke@cybersecuritycrc.org.au",
+        "givenNames": "Essam",
+        "familyNames": "Debie",
+        "source": "SOURCE_SHA256",
+        "evidenceHash": "1c18d8adf2a5dabf8a940a2203fc20f4cf5426303eba64a06cc420481c882d79",
+        "orcid": "0000-0003-4954-3631",
+        "openAlexAuthorId": "A5087557540"
+      },
+      "externalIds": {
+        "doi": "10.1109/trustcom50675.2020.00114",
+        "orcid": "0000-0003-4954-3631",
+        "openAlexAuthorId": "A5087557540"
+      },
+      "filterResult": "REJECTED",
+      "tags": [
+        "discovered"
+      ],
+      "recentWorkTitles": null
+    }
+  ]
+}

@@ -1,0 +1,404 @@
+{
+  "capturedAt": "2026-09-29 11:25 Asia/Shanghai",
+  "source": "OpenAlex authors ORCID batch API; topics reduced to count-desc top 5 by audit script",
+  "batches": [
+    {
+      "kind": "batch",
+      "start": 375,
+      "input": [
+        "0000-0002-2132-1327",
+        "0000-0002-2150-6487",
+        "0000-0002-2158-6819",
+        "0000-0002-2160-1142",
+        "0000-0002-2173-5642",
+        "0000-0002-2175-9812",
+        "0000-0002-2188-7320",
+        "0000-0002-2194-2078",
+        "0000-0002-2224-5768",
+        "0000-0002-2267-7560",
+        "0000-0002-2294-0170",
+        "0000-0002-2303-4305",
+        "0000-0002-2312-7704",
+        "0000-0002-2324-1101",
+        "0000-0002-2338-3775",
+        "0000-0002-2339-6672",
+        "0000-0002-2355-4335",
+        "0000-0002-2367-3932",
+        "0000-0002-2412-9859",
+        "0000-0002-2425-9047",
+        "0000-0002-2454-4083",
+        "0000-0002-2468-8407",
+        "0000-0002-2469-9026",
+        "0000-0002-2477-8664",
+        "0000-0002-2484-2910"
+      ],
+      "count": 31,
+      "authors": [
+        {
+          "id": "https://openalex.org/A5021048066",
+          "name": "Nobuhiro Tsuji",
+          "orcid": "https://orcid.org/0000-0002-2132-1327",
+          "topics": [
+            "Microstructure and mechanical properties",
+            "Microstructure and Mechanical Properties of Steels",
+            "Metallurgy and Material Forming",
+            "Aluminum Alloys Composites Properties",
+            "Metal Forming Simulation Techniques"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5026939790",
+          "name": "Francisco J. Maldonado‐Hódar",
+          "orcid": "https://orcid.org/0000-0002-2468-8407",
+          "topics": [
+            "Catalytic Processes in Materials Science",
+            "Aerogels and thermal insulation",
+            "Advanced Photocatalysis Techniques",
+            "Mesoporous Materials and Catalysis",
+            "Catalysis and Oxidation Reactions"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5052063007",
+          "name": "Heru Setyawan",
+          "orcid": "https://orcid.org/0000-0002-2158-6819",
+          "topics": [
+            "Supercapacitor Materials and Fabrication",
+            "Aerogels and thermal insulation",
+            "Mesoporous Materials and Catalysis",
+            "Advanced battery technologies research",
+            "Advancements in Battery Materials"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5060238508",
+          "name": "Thomas Samuel Miller",
+          "orcid": "https://orcid.org/0000-0002-2224-5768",
+          "topics": [
+            "Advancements in Battery Materials",
+            "Advanced Battery Materials and Technologies",
+            "Fuel Cells and Related Materials",
+            "Advanced Battery Technologies Research",
+            "Electrocatalysts for Energy Conversion"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5100767529",
+          "name": "Kyungho Lee",
+          "orcid": "https://orcid.org/0000-0002-2173-5642",
+          "topics": [
+            "Catalytic Processes in Materials Science",
+            "Ammonia Synthesis and Nitrogen Reduction",
+            "Catalysis and Hydrodesulfurization Studies",
+            "Zeolite Catalysis and Synthesis",
+            "Hydrogen Storage and Materials"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5101411938",
+          "name": "Jang‐Hyun Kim",
+          "orcid": "https://orcid.org/0000-0002-2324-1101",
+          "topics": [
+            "Healthcare and Venom Research",
+            "Legal and Regulatory Analysis",
+            "Linguistic, Cultural, and Literary Studies",
+            "Military Technology and Strategies",
+            "Traditional Chinese Medicine Studies"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5022893471",
+          "name": "Christian Tantardini",
+          "orcid": "https://orcid.org/0000-0002-2412-9859",
+          "topics": [
+            "X-ray Diffraction in Crystallography",
+            "Crystallization and Solubility Studies",
+            "Advanced Chemical Physics Studies",
+            "Machine Learning in Materials Science",
+            "Seismic Imaging and Inversion Techniques"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5100389859",
+          "name": "Dong Wook Kim",
+          "orcid": "https://orcid.org/0000-0002-2454-4083",
+          "topics": [
+            "Advanced Sensor and Energy Harvesting Materials",
+            "Conducting polymers and applications",
+            "Tactile and Sensory Interactions",
+            "Neuroscience and Neural Engineering",
+            "3D IC and TSV technologies"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5010575202",
+          "name": "R. Ramanujam",
+          "orcid": "https://orcid.org/0000-0002-2484-2910",
+          "topics": [
+            "Advanced Machining and Optimization Techniques",
+            "Advanced machining processes and optimization",
+            "Advanced Surface Polishing Techniques",
+            "Aluminum Alloys Composites Properties",
+            "Advanced ceramic materials synthesis"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5100750437",
+          "name": "Sangjoon Lee",
+          "orcid": "https://orcid.org/0000-0002-2367-3932",
+          "topics": [
+            "Machine Learning in Materials Science",
+            "Rare-earth and actinide compounds",
+            "Inorganic Chemistry and Materials",
+            "Graphene research and applications",
+            "Diamond and Carbon-based Materials Research"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5001206916",
+          "name": "Fahimeh Abrinaei",
+          "orcid": "https://orcid.org/0000-0002-2339-6672",
+          "topics": [
+            "Nonlinear Optical Materials Studies",
+            "Laser-Ablation Synthesis of Nanoparticles",
+            "Polymer Nanocomposite Synthesis and Irradiation",
+            "ZnO doping and properties",
+            "Diamond and Carbon-based Materials Research"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5019569823",
+          "name": "A.M.M. Tanveer Karim",
+          "orcid": "https://orcid.org/0000-0002-2150-6487",
+          "topics": [
+            "Chalcogenide Semiconductor Thin Films",
+            "Perovskite Materials and Applications",
+            "ZnO doping and properties",
+            "Quantum Dots Synthesis And Properties",
+            "Copper-based nanomaterials and applications"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5062920603",
+          "name": "Apostolos Koutsioukis",
+          "orcid": "https://orcid.org/0000-0002-2194-2078",
+          "topics": [
+            "Graphene research and applications",
+            "Advanced Sensor and Energy Harvesting Materials",
+            "Aluminum Alloys Composites Properties",
+            "MXene and MAX Phase Materials",
+            "Supercapacitor Materials and Fabrication"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5044412045",
+          "name": "Fahad H. Alshammari",
+          "orcid": "https://orcid.org/0000-0002-2175-9812",
+          "topics": [
+            "Software Engineering Techniques and Practices",
+            "Software Engineering Research",
+            "Software System Performance and Reliability",
+            "Outsourcing and Supply Chain Management",
+            "Software Reliability and Analysis Research"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5077262787",
+          "name": "Deniz Umut Yıldırım",
+          "orcid": "https://orcid.org/0000-0002-2160-1142",
+          "topics": [
+            "Metamaterials and Metasurfaces Applications",
+            "Plasmonic and Surface Plasmon Research",
+            "Thermal Radiation and Cooling Technologies",
+            "Energy Harvesting in Wireless Networks",
+            "Optical Coatings and Gratings"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5057838062",
+          "name": "Z. R. Harutyunyan",
+          "orcid": "https://orcid.org/0000-0002-2355-4335",
+          "topics": [
+            "Fusion materials and technologies",
+            "Nuclear Materials and Properties",
+            "Ion-surface interactions and analysis",
+            "Metal and Thin Film Mechanics",
+            "Advanced materials and composites"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5081412515",
+          "name": "Yee Lin Tan",
+          "orcid": "https://orcid.org/0000-0002-2338-3775",
+          "topics": [
+            "3D Printing in Biomedical Research",
+            "Polymer Surface Interaction Studies",
+            "Nanomaterials and Printing Technologies",
+            "Antimicrobial agents and applications",
+            "Hydrogels: synthesis, properties, applications"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5092500891",
+          "name": "Manuel Arcieri",
+          "orcid": "https://orcid.org/0000-0002-2312-7704",
+          "topics": [
+            "Genomics and Phylogenetic Studies",
+            "DNA and Nucleic Acid Chemistry",
+            "Gene expression and cancer classification",
+            "Single-cell and spatial transcriptomics",
+            "Cancer therapeutics and mechanisms"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5002790359",
+          "name": "S.V. Gabielkov",
+          "orcid": "https://orcid.org/0000-0002-2303-4305",
+          "topics": [
+            "Nuclear materials and radiation effects",
+            "X-ray Diffraction in Crystallography",
+            "Radioactive element chemistry and processing",
+            "Graphite, nuclear technology, radiation studies",
+            "Radioactive contamination and transfer"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5049687429",
+          "name": "Shafique Pineda",
+          "orcid": "https://orcid.org/0000-0002-2294-0170",
+          "topics": [
+            "Supercapacitor Materials and Fabrication",
+            "Advancements in Battery Materials",
+            "Graphene research and applications",
+            "Graphene and Nanomaterials Applications",
+            "Membrane Separation Technologies"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5079897503",
+          "name": "Mohamed S. El-Okaily",
+          "orcid": "https://orcid.org/0000-0002-2469-9026",
+          "topics": [
+            "Bone Tissue Engineering Materials",
+            "Dental materials and restorations",
+            "Dental Implant Techniques and Outcomes",
+            "Electrospun Nanofibers in Biomedical Applications",
+            "Wound Healing and Treatments"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5135738152",
+          "name": "Fahad H. Alshammari",
+          "orcid": "https://orcid.org/0000-0002-2175-9812",
+          "topics": [
+            "Economic and Technological Systems Analysis",
+            "Aerospace, Electronics, Mathematical Modeling",
+            "Technology Adoption and User Behaviour",
+            "Construction Project Management and Performance",
+            "Software Engineering Techniques and Practices"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5132247741",
+          "name": "N. Tsuji",
+          "orcid": "https://orcid.org/0000-0002-2132-1327",
+          "topics": [
+            "Astrophysics and Cosmic Phenomena",
+            "Galaxies: Formation, Evolution, Phenomena",
+            "Neutrino Physics Research",
+            "Astronomy and Astrophysical Research",
+            "Microstructure and mechanical properties"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5048536893",
+          "name": "Syrille Brice Tchinwoussi Youbi",
+          "orcid": "https://orcid.org/0000-0002-2188-7320",
+          "topics": [
+            "Natural Fiber Reinforced Composites",
+            "Innovative concrete reinforcement materials",
+            "Textile materials and evaluations",
+            "Concrete and Cement Materials Research",
+            "Mechanical Behavior of Composites"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5071323902",
+          "name": "Doreen Steven Mlote",
+          "orcid": "https://orcid.org/0000-0002-2267-7560",
+          "topics": [
+            "Sustainable Building Design and Assessment",
+            "Environmental Impact and Sustainability",
+            "Wood Treatment and Properties",
+            "Natural Fiber Reinforced Composites",
+            "Recycled Aggregate Concrete Performance"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5128662221",
+          "name": "Thomas Miller",
+          "orcid": "https://orcid.org/0000-0002-2224-5768",
+          "topics": [
+            "Electrocatalysts for Energy Conversion",
+            "Advancements in Solid Oxide Fuel Cells",
+            "Fuel Cells and Related Materials"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5131605084",
+          "name": "Nobuhiro Tsuji",
+          "orcid": "https://orcid.org/0000-0002-2132-1327",
+          "topics": [
+            "Legal and Regulatory Analysis",
+            "Linguistic, Cultural, and Literary Studies",
+            "Military Technology and Strategies",
+            "Microstructure and mechanical properties",
+            "Copper Interconnects and Reliability"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5022567156",
+          "name": "Protyasha Prachurja",
+          "orcid": "https://orcid.org/0000-0002-2477-8664",
+          "topics": [
+            "Fatigue and fracture mechanics",
+            "Metal Forming Simulation Techniques",
+            "Advanced Manufacturing and Logistics Optimization",
+            "Smart Parking Systems Research",
+            "Engineering Structural Analysis Methods"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5122236008",
+          "name": "Sergey GABIELKOV",
+          "orcid": "https://orcid.org/0000-0002-2303-4305",
+          "topics": [
+            "Astrophysics and Cosmic Phenomena",
+            "Radioactivity and Radon Measurements",
+            "Crystallography and Radiation Phenomena"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5124381570",
+          "name": "Kyungho Lee",
+          "orcid": "https://orcid.org/0000-0002-2173-5642",
+          "topics": [
+            "Electrocatalysts for Energy Conversion",
+            "Catalysts for Methane Reforming",
+            "Catalysis for Biomass Conversion"
+          ]
+        },
+        {
+          "id": "https://openalex.org/A5128897095",
+          "name": "Zhigang JIA",
+          "orcid": "https://orcid.org/0000-0002-2425-9047",
+          "topics": [
+            "Adsorption and biosorption for pollutant removal",
+            "Arsenic contamination and mitigation",
+            "Dye analysis and toxicity"
+          ]
+        }
+      ]
+    }
+  ]
+}

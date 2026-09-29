@@ -1,0 +1,50 @@
+$ rg -n taskModalConfigSection|task-modal-input|openTaskLaunchModal|function openTaskModal|function closeTaskModal|taskProgressModal|20260929-mailbox-replied src/main/resources/static/index.html src/main/resources/static/app.js src/main/resources/static/task-modal-runtime.js src/main/resources/static/styles.css src/test/js
+exit=0
+src/main/resources/static/styles.css:4668:.task-modal-input-label {
+src/main/resources/static/styles.css:4677:.task-modal-input-field {
+src/main/resources/static/styles.css:4689:.task-modal-input-field:focus {
+src/main/resources/static/styles.css:5103:    .task-modal-input-field {
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20260929-mailbox-replied">
+src/main/resources/static/index.html:12:    <link rel="stylesheet" href="expert-materials.css?v=20260929-mailbox-replied">
+src/main/resources/static/index.html:13:    <link rel="stylesheet" href="mailbox-chat.css?v=20260929-mailbox-replied">
+src/main/resources/static/index.html:14:    <link rel="stylesheet" href="meeting-confirmation.css?v=20260929-mailbox-replied">
+src/main/resources/static/index.html:15:    <link rel="stylesheet" href="world-clock.css?v=20260929-mailbox-replied">
+src/main/resources/static/index.html:1115:<div id="taskProgressModal" class="modal-overlay" hidden>
+src/main/resources/static/index.html:1124:            <div id="taskModalConfigSection" class="task-modal-config-section">
+src/main/resources/static/index.html:1128:                    <label class="task-modal-input-label">
+src/main/resources/static/index.html:1130:                        <input type="text" id="taskLaunchKeywordInput" class="task-modal-input-field" placeholder="输入关键词，如: AI, Machine Learning...">
+src/main/resources/static/index.html:1135:                    <label class="task-modal-input-label">
+src/main/resources/static/index.html:1137:                        <input type="number" id="taskLaunchMaxPromotions" class="task-modal-input-field" value="1000" min="1" max="10000" style="width: 120px;">
+src/main/resources/static/index.html:1142:                    <label class="task-modal-input-label">数据源平台:</label>
+src/main/resources/static/index.html:2310:<script src="trust-reply-workbench.js?v=20260929-mailbox-replied"></script>
+src/main/resources/static/index.html:2311:<script src="expert-materials.js?v=20260929-mailbox-replied"></script>
+src/main/resources/static/index.html:2312:<script src="meeting-confirmation.js?v=20260929-mailbox-replied"></script>
+src/main/resources/static/index.html:2313:<script src="mailbox-chat.js?v=20260929-mailbox-replied"></script>
+src/main/resources/static/index.html:2314:<script src="app.js?v=20260929-mailbox-replied"></script>
+src/main/resources/static/index.html:2315:<script src="world-clock.js?v=20260929-mailbox-replied"></script>
+src/main/resources/static/app.js:779:// openTaskLaunchModal / openBatchSendTaskModal，禁止改 currentTaskModal、body.modal-open
+src/main/resources/static/app.js:1897:    const configSection = $("#taskModalConfigSection");
+src/main/resources/static/app.js:2094:function openTaskModal(taskType, label, btnId, options = {}) {
+src/main/resources/static/app.js:2108:        const modal = $("#taskProgressModal");
+src/main/resources/static/app.js:2110:            console.error("#taskProgressModal not found!");
+src/main/resources/static/app.js:2124:        const configSection = $("#taskModalConfigSection");
+src/main/resources/static/app.js:2222:function closeTaskModal() {
+src/main/resources/static/app.js:2237:    $("#taskProgressModal").hidden = true;
+src/main/resources/static/app.js:7228:    openTaskLaunchModal(taskType);
+src/main/resources/static/app.js:7586:async function openTaskLaunchModal(taskType) {
+src/main/resources/static/app.js:7595:    const modal = $("#taskProgressModal");
+src/main/resources/static/app.js:7599:    $("#taskModalConfigSection").hidden = false;
+src/main/resources/static/app.js:7791:    openTaskLaunchModal(taskType);
+src/main/resources/static/app.js:7840:    openTaskLaunchModal(taskType);
+src/main/resources/static/app.js:7850:    openTaskLaunchModal(taskType);
+src/main/resources/static/app.js:7893:    openTaskLaunchModal(taskType);
+src/main/resources/static/app.js:16289:        $("#taskProgressModal").hidden = true;
+src/test/js/taskActivityCenter.test.js:478:        openTaskLaunchModalCalls: 0,
+src/test/js/taskActivityCenter.test.js:489:        openTaskLaunchModal: () => { sandbox.openTaskLaunchModalCalls += 1; },
+src/test/js/taskActivityCenter.test.js:762:        assert.strictEqual(sandbox.openTaskLaunchModalCalls, 0);
+src/test/js/taskModalLifecycleIntegration.test.js:43:        openTaskLaunchModal: () => {},
+src/test/js/discoveryContinuousRun.test.js:311:            assert.strictEqual(sandbox.$("#taskModalConfigSection").hidden, false,
+src/test/js/discoveryContinuousRun.test.js:606:            }, ["openTaskLaunchModal"]);
+src/test/js/discoveryContinuousRun.test.js:608:            await sandbox.openTaskLaunchModal("EXPERT_DISCOVERY");
+src/test/js/authFlow.test.js:147:            taskProgressModal: { hidden: true }
+src/test/js/authFlow.test.js:257:        taskProgressModal: { hidden: true }

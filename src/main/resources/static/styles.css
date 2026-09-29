@@ -4692,6 +4692,47 @@ tr td {
     box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
 }
 
+.discovery-schedule-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius-sm);
+}
+.discovery-schedule-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 8px;
+}
+.discovery-schedule-hours {
+    width: 120px;
+}
+.discovery-schedule-hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+.discovery-schedule-save:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+.discovery-schedule-save:disabled,
+.discovery-schedule-save:disabled:hover,
+.discovery-schedule-save:disabled:active {
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+    background-image: linear-gradient(180deg, var(--primary-bright), var(--primary));
+}
+.discovery-schedule-hours:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
 .task-modal-progress-section {
     display: flex;
     flex-direction: column;

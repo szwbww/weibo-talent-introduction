@@ -399,6 +399,7 @@ class OpenAlexDataSourceTest {
               "meta": {"count": 3},
               "results": [
                 {
+                  "id": "https://openalex.org/A1",
                   "orcid": "https://orcid.org/0000-0001",
                   "works_count": 10,
                   "cited_by_count": 100,
@@ -413,6 +414,7 @@ class OpenAlexDataSourceTest {
                   "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"
                 },
                 {
+                  "id": "https://openalex.org/A2",
                   "orcid": "https://orcid.org/0000-0002",
                   "works_count": 20,
                   "cited_by_count": 200,
@@ -421,6 +423,7 @@ class OpenAlexDataSourceTest {
                   "works_api_url": "https://api.openalex.org/works?filter=author.id:A2"
                 },
                 {
+                  "id": "https://openalex.org/A3",
                   "orcid": "https://orcid.org/0000-0003",
                   "works_count": 30,
                   "cited_by_count": 300,
@@ -477,6 +480,7 @@ class OpenAlexDataSourceTest {
               "meta": {"count": 1},
               "results": [
                 {
+                  "id": "https://openalex.org/A1",
                   "orcid": "https://orcid.org/0000-0001",
                   "works_count": 10,
                   "cited_by_count": 100,
@@ -516,6 +520,7 @@ class OpenAlexDataSourceTest {
               "meta": {"count": 1},
               "results": [
                 {
+                  "id": "https://openalex.org/A1",
                   "orcid": "https://orcid.org/0000-0001",
                   "works_count": 10,
                   "cited_by_count": 100,
@@ -709,6 +714,7 @@ class OpenAlexDataSourceTest {
               "meta": {"count": 2},
               "results": [
                 {
+                  "id": "https://openalex.org/A1",
                   "orcid": "https://orcid.org/0000-0001",
                   "works_count": 10,
                   "cited_by_count": 100,
@@ -717,6 +723,7 @@ class OpenAlexDataSourceTest {
                   "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"
                 },
                 {
+                  "id": "https://openalex.org/A2",
                   "orcid": "https://orcid.org/0000-0002",
                   "works_count": 20,
                   "cited_by_count": 200,
@@ -1868,7 +1875,7 @@ class OpenAlexDataSourceTest {
                     {
                       "meta": {"count": 1},
                       "results": [
-                        {"orcid": "https://orcid.org/0000-0001", "works_count": 10, "cited_by_count": 100,
+                        {"id": "https://openalex.org/A1", "orcid": "https://orcid.org/0000-0001", "works_count": 10, "cited_by_count": 100,
                          "summary_stats": {"h_index": 5}, "topics": [],
                          "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"}
                       ]
@@ -1908,7 +1915,7 @@ class OpenAlexDataSourceTest {
                     {
                       "meta": {"count": 1},
                       "results": [
-                        {"orcid": "https://orcid.org/0000-0001", "works_count": 10, "cited_by_count": 100,
+                        {"id": "https://openalex.org/A1", "orcid": "https://orcid.org/0000-0001", "works_count": 10, "cited_by_count": 100,
                          "summary_stats": {"h_index": 5}, "topics": [],
                          "works_api_url": "https://api.openalex.org/works?filter=author.id:A1"}
                       ]
@@ -1928,9 +1935,259 @@ class OpenAlexDataSourceTest {
         assertFalse(success.titlesFailed, "空结果只是该作者没有作品，不是请求失败")
     }
 
+    // ── 子计划 02（I-1、I-2、I-3）：同一 ORCID 多作者必须身份歧义 ──
+
+    private fun collisionFixture(): com.fasterxml.jackson.databind.JsonNode = mapper.readTree(
+        javaClass.classLoader.getResource("discovery/orcid-collision-20260929.json")!!.readText()
+    )
+
+    /** 记录每次作者请求的 URL（证明歧义路径的请求数，尤其是「不发标题请求」）。 */
+    private fun recordAuthorRequests(json: com.fasterxml.jackson.databind.JsonNode): MutableList<String> {
+        val urls = mutableListOf<String>()
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenAnswer { invocation ->
+            urls.add(invocation.arguments[0] as String)
+            ResponseEntity.ok(json)
+        }
+        return urls
+    }
+
+    /** 按给定节点顺序重建 ORCID 响应（可同时改写引用量），用于证明判定与顺序/引用量无关。 */
+    private fun orcidResponse(
+        nodes: List<com.fasterxml.jackson.databind.JsonNode>,
+        citations: List<Int> = emptyList()
+    ): com.fasterxml.jackson.databind.JsonNode {
+        val response = mapper.createObjectNode()
+        response.putObject("meta").put("count", nodes.size)
+        val results = response.putArray("results")
+        nodes.forEachIndexed { index, node ->
+            val copy = node.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+            citations.getOrNull(index)?.let { copy.put("cited_by_count", it) }
+            results.add(copy)
+        }
+        return response
+    }
+
+    @Test
+    fun `every ordering of the colliding authors is an identity ambiguity and requests no titles (I-1 I-3)`() {
+        val fixture = collisionFixture()
+        val colliding = fixture.path("collisionResponse").path("results").toList()
+        val orcid = fixture.path("collidingOrcid").asText()
+        val authorIds = colliding.map { it.path("id").asText() }
+        assertEquals(3, colliding.size, "真实摘录里该 ORCID 对应三个作者 ID")
+        assertEquals(3, authorIds.toSet().size, "三个节点必须是三个不同作者 ID")
+
+        val worksEnabledSource = OpenAlexDataSource(
+            restTemplate,
+            properties.copy(fetchWorksEnabled = true),
+            europePmc,
+            pdfExtractor,
+            unpaywallClient,
+            policy
+        )
+        val orderings = listOf(
+            listOf(0, 1, 2), listOf(0, 2, 1), listOf(1, 0, 2),
+            listOf(1, 2, 0), listOf(2, 0, 1), listOf(2, 1, 0)
+        )
+        for (ordering in orderings) {
+            Mockito.reset(restTemplate)
+            // 引用量随排列改写：判定不得依赖「引用最高的那个作者」。
+            val urls = recordAuthorRequests(orcidResponse(ordering.map { colliding[it] }, listOf(9100, 5200, 40)))
+
+            val outcomes = worksEnabledSource.batchEnrichByOrcids(listOf(orcid))
+
+            assertEquals(
+                EnrichmentOutcome.AmbiguousIdentity, outcomes[orcid],
+                "排列 $ordering 下同一 ORCID 仍是身份歧义，绝不任取一人"
+            )
+            // I-2：按每页 200 条请求；I-3：歧义不触发开关控制的最近论文请求（也不发作者详情）。
+            assertEquals(
+                listOf("https://api.openalex.org/authors?filter=orcid:$orcid&per_page=200"), urls,
+                "歧义路径只发这一次列表请求（排列 $ordering）"
+            )
+        }
+    }
+
+    @Test
+    fun `collision is ambiguous for the single, repeated-input and mixed batch paths while a unique author still enriches (I-1 I-3)`() {
+        val fixture = collisionFixture()
+        val orcid = fixture.path("collidingOrcid").asText()
+        val uniqueOrcid = fixture.path("uniqueOrcid").asText()
+
+        // 单条入口：身份歧义；兼容可空包装必须返回 null。
+        Mockito.reset(restTemplate)
+        val singleUrls = recordAuthorRequests(fixture.path("collisionResponse"))
+        assertEquals(EnrichmentOutcome.AmbiguousIdentity, dataSource.enrichAuthorByOrcidWithReason(orcid))
+        assertNull(dataSource.enrichAuthorByOrcid(orcid), "歧义不得通过可空包装变成「某个作者」")
+        val orcidSearch = "https://api.openalex.org/authors?filter=orcid:$orcid&per_page=200"
+        assertEquals(
+            listOf(orcidSearch, orcidSearch), singleUrls,
+            "两个入口都只发这一次列表查询（歧义不发作者详情，也不发标题）"
+        )
+
+        // 批量入口：同一 ORCID 重复两次仍然只有一个歧义判定；唯一作者照常补全。
+        Mockito.reset(restTemplate)
+        val mixed = mapper.createObjectNode()
+        mixed.putObject("meta").put("count", 4)
+        val mixedResults = mixed.putArray("results")
+        fixture.path("collisionResponse").path("results").forEach { mixedResults.add(it) }
+        fixture.path("uniqueResponse").path("results").forEach { mixedResults.add(it) }
+        val batchUrls = recordAuthorRequests(mixed)
+
+        val repeated = dataSource.batchEnrichByOrcids(listOf(orcid, orcid))
+        assertEquals(setOf(orcid), repeated.keys, "重复入参只产生一个身份结果")
+        assertEquals(EnrichmentOutcome.AmbiguousIdentity, repeated[orcid])
+        assertEquals(
+            listOf("https://api.openalex.org/authors?filter=orcid:$orcid|$orcid&per_page=200"), batchUrls
+        )
+
+        val outcomes = dataSource.batchEnrichByOrcids(listOf(orcid, uniqueOrcid))
+        assertEquals(EnrichmentOutcome.AmbiguousIdentity, outcomes[orcid])
+        val unique = outcomes[uniqueOrcid] as EnrichmentOutcome.Success
+        assertEquals(33, unique.data.hIndex, "唯一作者在批量路径照常拿到列表节点的事实")
+        assertEquals(
+            listOf(
+                "Catalytic Processes in Materials Science", "Aerogels and thermal insulation",
+                "Advanced Photocatalysis Techniques", "Mesoporous Materials and Catalysis",
+                "Catalysis and Oxidation Reactions"
+            ),
+            unique.data.topics
+        )
+    }
+
+    @Test
+    fun `a unique ORCID still reads the author detail endpoint instead of the list node (I-1 I-2)`() {
+        val fixture = collisionFixture()
+        val uniqueOrcid = fixture.path("uniqueOrcid").asText()
+        val urls = mutableListOf<String>()
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenAnswer { invocation ->
+            val url = invocation.arguments[0] as String
+            urls.add(url)
+            when {
+                url.contains("/authors?filter=orcid:") -> ResponseEntity.ok(fixture.path("uniqueResponse"))
+                url.contains("/authors/A5026939790") -> ResponseEntity.ok(
+                    mapper.readTree("""{"id":"https://openalex.org/A5026939790","works_count":7,"cited_by_count":70,"summary_stats":{"h_index":9},"topics":[]}""")
+                )
+                else -> throw AssertionError("unexpected OpenAlex request: $url")
+            }
+        }
+
+        val outcome = dataSource.enrichAuthorByOrcidWithReason(uniqueOrcid)
+
+        assertEquals(9, (outcome as EnrichmentOutcome.Success).data.hIndex, "唯一作者的事实来自既有详情接口")
+        assertEquals(
+            listOf(
+                "https://api.openalex.org/authors?filter=orcid:$uniqueOrcid&per_page=200",
+                "https://api.openalex.org/authors/A5026939790"
+            ), urls
+        )
+    }
+
+    @Test
+    fun `only a complete listing may decide unique or not-found, and a missing author id is not not-found (I-1 I-2)`() {
+        val fixture = collisionFixture()
+        val colliding = fixture.path("collisionResponse").path("results").toList()
+        val orcid = fixture.path("collidingOrcid").asText()
+        val uniqueOrcid = fixture.path("uniqueOrcid").asText()
+        val incomplete = EnrichmentOutcome.ApiError("ORCID_RESPONSE_INCOMPLETE")
+
+        // 截断：meta.count=3 但只返回 1 个作者 —— 恰好只见一个也绝不能判成唯一。
+        Mockito.reset(restTemplate)
+        val truncated = mapper.createObjectNode()
+        truncated.putObject("meta").put("count", 3)
+        truncated.putArray("results").add(colliding[0])
+        recordAuthorRequests(truncated)
+        assertEquals(incomplete, dataSource.batchEnrichByOrcids(listOf(orcid))[orcid])
+        assertEquals(incomplete, dataSource.enrichAuthorByOrcidWithReason(orcid))
+
+        // 超过一页：200 条返回 + meta.count=201（构造输入，不是在线抓取值）。
+        val oversized = mapper.createObjectNode()
+        oversized.putObject("meta").put("count", 201)
+        val oversizedResults = oversized.putArray("results")
+        repeat(200) { index ->
+            oversizedResults.add(
+                mapper.createObjectNode().apply {
+                    put("id", "https://openalex.org/A5000%06d".format(index))
+                    put("orcid", "https://orcid.org/$uniqueOrcid")
+                    put("summary_stats", mapper.createObjectNode().put("h_index", index))
+                }
+            )
+        }
+        Mockito.reset(restTemplate)
+        recordAuthorRequests(oversized)
+        val oversizedOutcomes = dataSource.batchEnrichByOrcids(listOf(uniqueOrcid))
+        assertEquals(incomplete, oversizedOutcomes[uniqueOrcid], "超过一页不做无界翻页，也不返回部分结果")
+        assertTrue(oversizedOutcomes.values.all { it is EnrichmentOutcome.ApiError }, "不得给出 Success 或 NotFound")
+
+        // 缺少 meta.count：不可判定。
+        Mockito.reset(restTemplate)
+        recordAuthorRequests(mapper.readTree("""{"results":[{"id":"https://openalex.org/A1","orcid":"https://orcid.org/$orcid"}]}"""))
+        assertEquals(incomplete, dataSource.batchEnrichByOrcids(listOf(orcid))[orcid])
+
+        // 结构损坏（results 不是数组）：不可判定，也绝不降级成「查无此人」。
+        Mockito.reset(restTemplate)
+        recordAuthorRequests(mapper.readTree("""{"meta":{"count":0},"results":"nonsense"}"""))
+        assertEquals(incomplete, dataSource.batchEnrichByOrcids(listOf(orcid))[orcid])
+        assertEquals(incomplete, dataSource.enrichAuthorByOrcidWithReason(orcid))
+        assertNull(dataSource.enrichAuthorByOrcid(orcid))
+
+        // 关联节点没有可信作者 ID：既不是唯一，也不是「查无此人」。
+        Mockito.reset(restTemplate)
+        recordAuthorRequests(orcidResponse(listOf(colliding[0].deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().also { it.remove("id") })))
+        val missingId = dataSource.batchEnrichByOrcids(listOf(orcid))[orcid]
+        assertEquals(EnrichmentOutcome.ApiError("ORCID_NODE_WITHOUT_AUTHOR_ID"), missingId)
+
+        // 完整且真的没有该作者：meta.count=0 且 results 为空 —— 这才是 NotFound。
+        Mockito.reset(restTemplate)
+        recordAuthorRequests(fixture.path("emptyResponse"))
+        assertEquals(EnrichmentOutcome.NotFound, dataSource.batchEnrichByOrcids(listOf(orcid))[orcid])
+        assertEquals(EnrichmentOutcome.NotFound, dataSource.enrichAuthorByOrcidWithReason(orcid))
+    }
+
+    @Test
+    fun `duplicate nodes with one author id count once while conflicting facts are an ApiError (I-1)`() {
+        val fixture = collisionFixture()
+        val orcid = fixture.path("collidingOrcid").asText()
+        val node = fixture.path("collisionResponse").path("results").get(0)
+
+        // 完全相同节点重复不算两个人：唯一作者正常补全。
+        Mockito.reset(restTemplate)
+        recordAuthorRequests(orcidResponse(listOf(node, node)))
+        val deduped = dataSource.batchEnrichByOrcids(listOf(orcid))[orcid]
+        assertEquals(46, (deduped as EnrichmentOutcome.Success).data.hIndex)
+
+        // 同一作者 ID 但学术事实不同：不靠响应顺序挑一份内容，也不写这一层。
+        Mockito.reset(restTemplate)
+        val conflicting = node.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+            .also { it.set<com.fasterxml.jackson.databind.JsonNode>("summary_stats", mapper.createObjectNode().put("h_index", 99)) }
+        recordAuthorRequests(orcidResponse(listOf(node, conflicting)))
+        assertEquals(
+            EnrichmentOutcome.ApiError("ORCID_NODE_CONTENT_CONFLICT"),
+            dataSource.batchEnrichByOrcids(listOf(orcid))[orcid]
+        )
+    }
+
+    @Test
+    fun `ORCID batch keeps the existing rate limit and budget failure semantics (I-2)`() {
+        Mockito.`when`(
+            restTemplate.exchange(Mockito.contains("/authors?filter=orcid:"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
+        ).thenThrow(
+            HttpClientErrorException.create(
+                HttpStatus.TOO_MANY_REQUESTS, "Too Many Requests", HttpHeaders(), ByteArray(0), null
+            )
+        )
+
+        val outcomes = dataSource.batchEnrichByOrcids(listOf("0000-0001", "0000-0002"))
+
+        assertTrue(outcomes.values.all { it is EnrichmentOutcome.RateLimited }, "429 原样传递为限流")
+    }
+
     @Test
     fun `enrichAuthorByOrcidWithReason keeps a 404 not-found apart from a retryable failure (V-3)`() {
-        val searchJson = """{"results":[{"id":"https://openalex.org/A1"}]}"""
+        val searchJson = """{"meta":{"count":1},"results":[{"id":"https://openalex.org/A1","orcid":"https://orcid.org/0000-0001"}]}"""
         Mockito.`when`(
             restTemplate.exchange(Mockito.contains("/authors?filter=orcid:"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java))
         ).thenReturn(ResponseEntity.ok(mapper.readTree(searchJson)))

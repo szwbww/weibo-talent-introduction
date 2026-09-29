@@ -1,0 +1,35 @@
+{
+  "head": "1cd59e31164d11e962203e31c9f61310f2bc5912",
+  "files": {
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/SourceAuthorEmailResolver.kt": "25eb98fd3d0769b9bf6cc486dce16abb4f582f1704c6e867f2151c620080fac3",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfAuthorContactLayout.kt": "1a9e9c3e49bf0c0818cf2cd0dcb562a3b46cd5dad5338311c458a7b578a6f907",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/PdfEmailExtractor.kt": "790b1030d49f68b5ad33cf17f4c9a8232d94eafa4461904d1cab418f1be7bfd5",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/OpenAlexDataSource.kt": "54f49eac7133c57706cb18cb388cf03401887f5ab6d8e5d5d7dc9cafcaf3b0e3",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryService.kt": "c0630b790132328b1b10adf3caadb362eb33ecfa6dfcfafc15306ae9dbacb014",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt": "59aa9a85f6ceb4e4b674e9e96ae43386a3a60ea1801cd2bcc0f528a9c4e6b101",
+    "src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertAcademicEnrichmentJobService.kt": "6a20e8f23eb7756db4453ad4e33f6ec9317d60bfac4ce63f72dbe5c175722910",
+    "src/main/resources/static/index.html": "1a6b95d71aabe9a74cf4631e11b99e55940754d0d196b2f15e7551f16abb9afd",
+    "src/main/resources/static/app.js": "f940ed92b7b343ca919afcb3f6dcf38d4b7360265cf58c3e44c9bd3b6f9f8b64",
+    "src/main/resources/static/styles.css": "fc5a6e8d0e2e7230d39a3a46612cf9023559b233fba4c57767dc149652786fe0"
+  },
+  "liveConfig": {
+    "EXPERT_DISCOVERY_ENABLED": "unset -> true",
+    "EXPERT_DISCOVERY_CRON": "unset -> 0 0 */2 * * ?",
+    "EXPERT_DISCOVERY_PIPELINE_ENABLED": "unset -> false"
+  },
+  "knowledgeUsed": [
+    "discovery/K-author-identity-needs-email-evidence.md",
+    "discovery/K-identity-cache-version-and-admission.md",
+    "es-index/K-enrichment-write-three-layers.md",
+    "es-index/K-openalex-author-full-object.md",
+    "frontend/K-frontend-cache-key-triad.md",
+    "campaign/K-batch-send-scheduler-reschedule-on-enable.md",
+    "mail/K-batch-send-setting-kv.md",
+    "audit/K-named-fixture-must-use-real-row.md",
+    "discovery/K-historical-identity-orcid-fallback.md"
+  ],
+  "knowledgeReadNotApplied": [
+    "frontend/K-task-launch-config-registration: no new task type",
+    "discovery/K-orcid-institution-first-is-ambiguous: prior institution repair; this plan does not change ORCID institution extraction"
+  ]
+}

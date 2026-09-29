@@ -1,0 +1,78 @@
+$ rg -n ExpertDiscoveryScheduler|EXPERT_DISCOVERY_CRON|discoveryProperties.cron|scheduleDiscovery|recoverPipelineTick|TaskScheduler|configureTasks src/main src/test
+exit=0
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3109:        private val schedTaskScheduler = Mockito.mock(org.springframework.scheduling.TaskScheduler::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3128:            Mockito.`when`(schedTaskScheduler.schedule(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3139:                schedConfigRepository, schedControlService, schedTaskScheduler
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3143:            Mockito.verify(schedTaskScheduler, Mockito.times(2)).schedule(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3155:                schedConfigRepository, schedControlService, schedTaskScheduler
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3159:            Mockito.verify(schedTaskScheduler, Mockito.times(1)).schedule(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3168:                schedConfigRepository, schedControlService, schedTaskScheduler
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3172:            Mockito.verify(schedTaskScheduler, Mockito.times(2)).schedule(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3184:            Mockito.verify(schedTaskScheduler, Mockito.times(2)).schedule(
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3194:                schedConfigRepository, schedControlService, schedTaskScheduler
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/ManualInitialOutreachServiceTest.kt:3205:            Mockito.verify(schedTaskScheduler, Mockito.times(3)).schedule(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:20: *   见 `application.yml` 的 `EXPERT_DISCOVERY_CRON` 默认值，北京时间），
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:32:class ExpertDiscoveryScheduler(
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:41:    private val log = LoggerFactory.getLogger(ExpertDiscoveryScheduler::class.java)
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:58:    override fun configureTasks(taskRegistrar: ScheduledTaskRegistrar) {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:61:            Runnable { recoverPipelineTick() },
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:73:    fun scheduleDiscovery() {
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:83:            message = "初始化定时深度发现: cron=${discoveryProperties.cron}, 时区 Asia/Shanghai, " +
+src/main/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoveryScheduler.kt:124:    fun recoverPipelineTick() {
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:54:import org.springframework.scheduling.TaskScheduler
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:72:        val taskScheduler = Mockito.mock(TaskScheduler::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:89:        val taskScheduler = Mockito.mock(TaskScheduler::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:110:        val taskScheduler = Mockito.mock(TaskScheduler::class.java)
+src/test/kotlin/com/weibo/talentintroduction/campaign/service/BatchSendTaskRuntimeIntegrationTest.kt:135:        val taskScheduler = Mockito.mock(TaskScheduler::class.java)
+src/main/kotlin/com/weibo/talentintroduction/config/SchedulingConfig.kt:5:import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler
+src/main/kotlin/com/weibo/talentintroduction/config/SchedulingConfig.kt:10:    fun taskScheduler(): ThreadPoolTaskScheduler =
+src/main/kotlin/com/weibo/talentintroduction/config/SchedulingConfig.kt:11:        ThreadPoolTaskScheduler().apply {
+src/test/kotlin/com/weibo/talentintroduction/config/SchedulingConfigTest.kt:6:import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler
+src/test/kotlin/com/weibo/talentintroduction/config/SchedulingConfigTest.kt:13:    fun `taskScheduler is ThreadPoolTaskScheduler with app-sched prefix`() {
+src/test/kotlin/com/weibo/talentintroduction/config/SchedulingConfigTest.kt:16:        assertTrue(scheduler is ThreadPoolTaskScheduler)
+src/test/resources/application.yml:86:    cron: ${EXPERT_DISCOVERY_CRON:0 0 2 * * ?}
+src/test/kotlin/com/weibo/talentintroduction/task/service/BatchSendSchedulerTest.kt:12:import org.springframework.scheduling.TaskScheduler
+src/test/kotlin/com/weibo/talentintroduction/task/service/BatchSendSchedulerTest.kt:19:    private val taskScheduler = Mockito.mock(TaskScheduler::class.java)
+src/main/kotlin/com/weibo/talentintroduction/task/service/DailyCountResetScheduler.kt:19:    override fun configureTasks(taskRegistrar: ScheduledTaskRegistrar) {
+src/main/kotlin/com/weibo/talentintroduction/task/service/BounceCollectionScheduler.kt:23:    override fun configureTasks(taskRegistrar: ScheduledTaskRegistrar) {
+src/main/kotlin/com/weibo/talentintroduction/task/service/BatchSendScheduler.kt:11:import org.springframework.scheduling.TaskScheduler
+src/main/kotlin/com/weibo/talentintroduction/task/service/BatchSendScheduler.kt:14:import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler
+src/main/kotlin/com/weibo/talentintroduction/task/service/BatchSendScheduler.kt:30:    @Qualifier("batchSendTaskScheduler") private val taskScheduler: TaskScheduler
+src/main/kotlin/com/weibo/talentintroduction/task/service/BatchSendScheduler.kt:100:    @Bean("batchSendTaskScheduler")
+src/main/kotlin/com/weibo/talentintroduction/task/service/BatchSendScheduler.kt:101:    fun batchSendTaskScheduler(): TaskScheduler =
+src/main/kotlin/com/weibo/talentintroduction/task/service/BatchSendScheduler.kt:102:        ThreadPoolTaskScheduler().apply {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:24:import org.springframework.scheduling.TaskScheduler
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:36:class ExpertDiscoverySchedulerTest {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:44:    private val scheduler = ExpertDiscoveryScheduler(
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:56:    fun `scheduleDiscovery does nothing when task already running`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:60:        scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:72:    fun `scheduleDiscovery starts a new run when a scheduled run already succeeded today (I-6)`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:91:        scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:103:    fun `scheduleDiscovery proceeds when only FAILED scheduled run exists today`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:117:        scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:127:    fun `scheduleDiscovery writes FAILED to progressStore when repository save fails`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:133:        scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:143:    fun `scheduleDiscovery runs successfully`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:157:        scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:167:    fun `scheduleDiscovery clears execution context on success`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:181:        scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:188:    fun `scheduleDiscovery clears token context when save fails`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:194:        scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:200:    fun `scheduleDiscovery criteria enables RND_TARGET subject scope`() {
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:214:        scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:245:    ): ExpertDiscoveryScheduler =
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:246:        ExpertDiscoveryScheduler(discoveryService, taskExecutionService, properties, progressStore, service)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:254:        scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:255:        scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:279:        scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:280:        scheduler.recoverPipelineTick()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:302:        continuousScheduler(enabled).configureTasks(registrar)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:312:        continuousScheduler(ExpertDiscoveryProperties(pipelineEnabled = false)).configureTasks(legacyRegistrar)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:321:            scheduler.scheduleDiscovery()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:324:            scheduler.recoverPipelineTick()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:334:        scheduler.recoverPipelineTick()
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:350:        val scheduledMethods = ExpertDiscoveryScheduler::class.java.methods
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:361:            yaml.contains("cron: \${EXPERT_DISCOVERY_CRON:0 0 */2 * * ?}"),
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:379:        val scheduler = ExpertDiscoveryScheduler(discoveryService, taskExecutionService, properties, progressStore)
+src/test/kotlin/com/weibo/talentintroduction/discovery/service/ExpertDiscoverySchedulerTest.kt:384:        scheduler.scheduleDiscovery()
+src/main/resources/application.yml:182:    cron: ${EXPERT_DISCOVERY_CRON:0 0 */2 * * ?}
