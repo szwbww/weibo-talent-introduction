@@ -142,6 +142,67 @@ class ExpertAcademicEnrichmentJobServiceTest {
         )
     }
 
+    @Test
+    fun `identity ambiguity reuses UNMATCHED with the fixed reason and never burns attempts (I-3)`() {
+        val now = LocalDateTime.now()
+        // attempts 已经是 4（下一次故障必然到 FAILED 上限）：歧义仍必须原样保留 attempts。
+        `when`(repository.findById(4L)).thenReturn(Optional.of(runningJob(4, "token-4", now).copy(attempts = 4)))
+        `when`(
+            repository.completeWithToken(
+                eqValue(4L),
+                eqValue("token-4"),
+                anyString(),
+                anyInt(),
+                any(LocalDateTime::class.java) ?: now,
+                any(),
+                any(),
+                any(LocalDateTime::class.java) ?: now
+            )
+        ).thenReturn(1)
+
+        assertTrue(service.complete(4L, "token-4", ProfileEnrichmentOutcome.AmbiguousIdentity))
+
+        val statusCaptor = ArgumentCaptor.forClass(String::class.java)
+        val attemptsCaptor = ArgumentCaptor.forClass(Int::class.java)
+        val errorCaptor = ArgumentCaptor.forClass(String::class.java)
+        val resultCaptor = ArgumentCaptor.forClass(String::class.java)
+        verify(repository).completeWithToken(
+            eqValue(4L),
+            eqValue("token-4"),
+            statusCaptor.capture() ?: "",
+            attemptsCaptor.capture() ?: 0,
+            any(LocalDateTime::class.java) ?: now,
+            errorCaptor.capture(),
+            resultCaptor.capture(),
+            any(LocalDateTime::class.java) ?: now
+        )
+        assertEquals(ExpertAcademicEnrichmentJob.STATUS_UNMATCHED, statusCaptor.value)
+        assertEquals(4, attemptsCaptor.value, "歧义不消耗故障尝试")
+        assertEquals("AUTHOR_IDENTITY_AMBIGUOUS", errorCaptor.value)
+        assertEquals("""{"outcome":"AMBIGUOUS_IDENTITY"}""", resultCaptor.value)
+    }
+
+    @Test
+    fun `identity ambiguity still requires the current lease token (I-3)`() {
+        val now = LocalDateTime.now()
+        `when`(repository.findById(6L)).thenReturn(Optional.of(runningJob(6, "token-6", now)))
+
+        assertFalse(
+            service.complete(6L, "stale-token", ProfileEnrichmentOutcome.AmbiguousIdentity),
+            "过期租约不得提交歧义结果"
+        )
+        verify(repository, never()).completeWithToken(
+            anyLong(),
+            anyString(),
+            anyString(),
+            anyInt(),
+            any(LocalDateTime::class.java) ?: now,
+            any(),
+            any(),
+            any(LocalDateTime::class.java) ?: now
+        )
+    }
+
     // ------------------------------------------------------------------
 
     /** 本仓既有写法：匹配器返回平台类型，直接入参会被 Kotlin 非空断言拦下（如 `eq(...)`）。 */

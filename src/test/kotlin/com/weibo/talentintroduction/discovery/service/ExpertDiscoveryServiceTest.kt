@@ -5765,6 +5765,93 @@ class ExpertDiscoveryServiceTest {
             .batchEnrichByAuthorIds(eqValue(listOf("0000-0001")), eqValue(RequestKind.HISTORY_ENRICHMENT))
     }
 
+    // ──── 02（I-1/I-2/I-3）：同一 ORCID 多作者必须身份歧义，且不写学术事实 ──────────
+
+    /** 真实摘录构造的碰撞响应（`orcid-collision-20260929.json`）；非列表查询一律视为违约并立即失败。 */
+    private fun stubCollisionResponse(): OpenAlexDataSource {
+        val fixture = objectMapper.readTree(
+            javaClass.classLoader.getResource("discovery/orcid-collision-20260929.json")!!.readText()
+        )
+        Mockito.`when`(
+            restTemplate.exchange(
+                Mockito.anyString(), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+                Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+            )
+        ).thenAnswer { invocation ->
+            val url = invocation.arguments[0] as String
+            check(url.contains("/authors?filter=orcid:")) { "身份歧义不得再请求作者详情或标题：$url" }
+            ResponseEntity.ok(fixture.path("collisionResponse"))
+        }
+        val source = OpenAlexDataSource(
+            restTemplate, openAlexProperties.copy(fetchWorksEnabled = true, requestDelayMs = 0),
+            europePmc, Mockito.mock(PdfEmailExtractor::class.java), Mockito.mock(UnpaywallClient::class.java)
+        )
+        Mockito.doReturn(source).`when`(openAlexProvider).getIfAvailable()
+        return source
+    }
+
+    /** 真实场景里的「同一 ORCID 的两个邮箱档案」：两个 ES 文档共享一个 ORCID。 */
+    private fun collidingOrcidArchive(docId: String) =
+        c6Expert("0000-0002-2132-1327", esDocId = docId).copy(email = "$docId@example.com")
+
+    @Test
+    fun `two archives sharing a colliding ORCID skip every academic write, revalidation and title request (I-1 I-3)`() {
+        val svc = createService(openAlexProps = openAlexProperties.copy(fetchWorksEnabled = true, requestDelayMs = 0))
+        stubCollisionResponse()
+
+        val outcomes = svc.enrichProfiles(
+            listOf(collidingOrcidArchive("DOC-A"), collidingOrcidArchive("DOC-B"))
+        )
+
+        assertEquals(setOf("DOC-A", "DOC-B"), outcomes.keys)
+        assertTrue(
+            outcomes.values.all { it === ProfileEnrichmentOutcome.AmbiguousIdentity },
+            "两个档案都必须判身份歧义：$outcomes"
+        )
+        // P-1：歧义必须在学术写入/再核验/标题请求之前被拒绝。
+        Mockito.verify(restTemplate, Mockito.never()).exchange(
+            Mockito.contains("/_update/"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        Mockito.verify(restTemplate, Mockito.never()).exchange(
+            Mockito.contains("/works?"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        Mockito.verify(restTemplate, Mockito.never()).exchange(
+            Mockito.contains("/authors/A"), Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        Mockito.verify(revalidationService, Mockito.never()).revalidateDiscovery(Mockito.anyString())
+        Mockito.verify(revalidationService, Mockito.never()).revalidateEnrichedRaw(Mockito.anyString())
+        // 同一 ORCID 的两个档案共享一次判定（去重后的一个身份），仍不产生第二套请求。
+        Mockito.verify(restTemplate, Mockito.times(1)).exchange(
+            Mockito.contains("/authors?filter=orcid:0000-0002-2132-1327&per_page=200"),
+            Mockito.eq(HttpMethod.GET), Mockito.nullable(HttpEntity::class.java),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
+    @Test
+    fun `manual backfill records AUTHOR_IDENTITY_AMBIGUOUS without touching academic fields (I-3)`() {
+        val svc = createService(openAlexProps = openAlexProperties.copy(requestDelayMs = 0))
+        stubCollisionResponse()
+        ScrollExpertsMockHelper.stubSearchAfterExpertsFiltered(
+            expertSearchService, listOf(listOf(collidingOrcidArchive("DOC-A")))
+        )
+        ScrollExpertsMockHelper.stubCountExperts(expertSearchService, 1L, 1L)
+
+        val result = svc.enrichExistingExperts()
+
+        assertEquals(0, result.enriched, "身份歧义绝不能计成补全成功")
+        assertEquals(1, result.failed)
+        assertEquals(1, result.failureReasons["AUTHOR_IDENTITY_AMBIGUOUS"])
+        assertFalse(result.failureReasons.containsKey("ORCID_NOT_IN_OPENALEX"), "有多个作者不等于查无此人")
+        Mockito.verify(restTemplate, Mockito.never()).exchange(
+            Mockito.contains("/_update/"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+    }
+
     @Test
     fun `discovery enrichment never treats the old business key or unverified external ids as identity`() {
         val svc = createService()
@@ -6427,6 +6514,45 @@ class ExpertDiscoveryServiceTest {
 
         // 附加计数同时出现在 stats 响应里（历史任务详情仍是当时快照）
         assertEquals(2, svc.getEnrichmentStats().autoEnrichment?.succeeded)
+    }
+
+    @Test
+    fun `worker marks both colliding-ORCID archives UNMATCHED and writes no academic fact (I-3)`() {
+        val svc = createService(openAlexProps = openAlexProperties.copy(fetchWorksEnabled = true, requestDelayMs = 0))
+        stubCollisionResponse()
+        val jobs = listOf(
+            enrichmentJob(1L, "DOC-A", "ORCID", "token-1"),
+            enrichmentJob(2L, "DOC-B", "ORCID", "token-2")
+        )
+        Mockito.doReturn(listOf(collidingOrcidArchive("DOC-A"), collidingOrcidArchive("DOC-B")))
+            .`when`(expertSearchService).findByDocumentIds(eqValue(ExpertIndexLevel.RAW), Mockito.anyList())
+        Mockito.doReturn(true)
+            .`when`(enrichmentJobService).complete(Mockito.anyLong(), Mockito.anyString(), anyOutcome())
+
+        val result = svc.processClaimedEnrichmentJobBatch(jobs, RequestKind.NEW_ENRICHMENT)
+
+        assertEquals(0, result.succeeded, "身份歧义不是成功")
+        assertEquals(2, result.unmatched, "两条任务都按未匹配计数")
+        assertEquals(0, result.pending)
+        assertEquals(0, result.failed, "身份歧义不消耗故障尝试，也不是失败")
+        assertFalse(result.budgetDeferred)
+        assertEquals(2, svc.getEnrichmentStats().autoEnrichment?.unmatched)
+        assertEquals(0, svc.getEnrichmentStats().autoEnrichment?.succeeded)
+
+        val captor = ArgumentCaptor.forClass(ProfileEnrichmentOutcome::class.java)
+        Mockito.verify(enrichmentJobService, Mockito.times(2)).complete(
+            Mockito.anyLong(), Mockito.anyString(), captor.capture() ?: ProfileEnrichmentOutcome.NoId
+        )
+        assertTrue(
+            captor.allValues.all { it === ProfileEnrichmentOutcome.AmbiguousIdentity },
+            "队列拿到的是身份歧义（由 07 落 UNMATCHED + AUTHOR_IDENTITY_AMBIGUOUS）：${captor.allValues}"
+        )
+        Mockito.verify(restTemplate, Mockito.never()).exchange(
+            Mockito.contains("/_update/"), Mockito.eq(HttpMethod.POST), Mockito.any(),
+            Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)
+        )
+        Mockito.verify(revalidationService, Mockito.never()).revalidateDiscovery(Mockito.anyString())
+        Mockito.verify(revalidationService, Mockito.never()).revalidateEnrichedRaw(Mockito.anyString())
     }
 
     @Test

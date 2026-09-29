@@ -2560,6 +2560,11 @@ class ExpertDiscoveryService(
                                     failed++
                                     failureReasons.merge("NO_TRUSTED_IDENTITY", 1) { a, b -> a + b }
                                 }
+                                is ProfileEnrichmentOutcome.AmbiguousIdentity -> {
+                                    // I-3：身份歧义是「本次没能唯一确定是谁」，不计成功、不改动任何学术字段。
+                                    failed++
+                                    failureReasons.merge("AUTHOR_IDENTITY_AMBIGUOUS", 1) { a, b -> a + b }
+                                }
                                 is ProfileEnrichmentOutcome.RetryableError -> {
                                     if (outcome.rateLimited) {
                                         retryable += profile
@@ -2959,6 +2964,8 @@ class ExpertDiscoveryService(
             is ProfileEnrichmentOutcome.Success -> BatchOutcomeBucket.SUCCEEDED
             is ProfileEnrichmentOutcome.Deferred -> BatchOutcomeBucket.PENDING
             ProfileEnrichmentOutcome.NotFound, ProfileEnrichmentOutcome.NoId -> BatchOutcomeBucket.UNMATCHED
+            // I-3：身份歧义与「查无此人」同属未匹配 —— 不写事实、不计成功、也不消耗故障尝试。
+            ProfileEnrichmentOutcome.AmbiguousIdentity -> BatchOutcomeBucket.UNMATCHED
             is ProfileEnrichmentOutcome.Partial ->
                 if (exhaustsFailureBudget(currentAttempts)) BatchOutcomeBucket.FAILED else BatchOutcomeBucket.PENDING
             is ProfileEnrichmentOutcome.RetryableError -> when {
@@ -3126,6 +3133,8 @@ class ExpertDiscoveryService(
      *   缺失时用有效 ORCID；两者都没有 = [ProfileEnrichmentOutcome.NoId]，不发作者查询；
      * - `EMAIL-*` 主键绝不当 ORCID 传出去，API ID/ORCID 也绝不替代真实 `_id` 定位文档；
      * - 结果以真实 `esDocId` 为键，逐人一个结果；
+     * - 同一 ORCID 在完整响应里对应多个作者 ID 时是 [ProfileEnrichmentOutcome.AmbiguousIdentity]：
+     *   该身份分组的全部文档都不写学术事实、不触发再核验、也不请求标题（I-3）；
      * - 额度延期是 [ProfileEnrichmentOutcome.Deferred]（未发请求、不消耗尝试次数），限流/网络失败才是
      *   [ProfileEnrichmentOutcome.RetryableError]；
      * - 基础事实写入成功、但开关控制的最近论文/专利标题子请求失败时是 [ProfileEnrichmentOutcome.Partial]。
@@ -3219,6 +3228,12 @@ class ExpertDiscoveryService(
                     }
                     is EnrichmentOutcome.NotFound ->
                         profiles.forEach { outcomes[enrichmentDocId(it)] = ProfileEnrichmentOutcome.NotFound }
+                    is EnrichmentOutcome.AmbiguousIdentity ->
+                        // I-3：同一 ORCID 对应多个作者 —— 该分组的**全部**文档都不写学术事实、不触发再核验，
+                        // 也不请求最近论文/标题（跳过 updateExpertAcademicFields 与 revalidationService）。
+                        profiles.forEach {
+                            outcomes[enrichmentDocId(it)] = ProfileEnrichmentOutcome.AmbiguousIdentity
+                        }
                     is EnrichmentOutcome.ApiError ->
                         profiles.forEach {
                             outcomes[enrichmentDocId(it)] = ProfileEnrichmentOutcome.RetryableError()
@@ -3729,6 +3744,13 @@ sealed class ProfileEnrichmentOutcome {
 
     /** 无可靠身份（既无 A ID 也无有效 ORCID）：绝不发作者查询。 */
     object NoId : ProfileEnrichmentOutcome()
+
+    /**
+     * I-3：同一 ORCID 在 OpenAlex 完整响应里对应多个不同作者 ID，本次无法唯一选择作者。
+     * 语义只表示「本次没有唯一身份」：不写任何学术事实、不触发再资格核验、不请求最近论文/标题，
+     * 也不清空既有字段；队列侧按未匹配处理（复用 `UNMATCHED` + `AUTHOR_IDENTITY_AMBIGUOUS`）。
+     */
+    object AmbiguousIdentity : ProfileEnrichmentOutcome()
 
     /** 可重试的失败。[rateLimited] = true 是供应商限流（旧人工入口按 WAIT/ABORT 语义退避重试）。 */
     data class RetryableError(

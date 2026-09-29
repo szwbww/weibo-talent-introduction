@@ -428,6 +428,7 @@ class OpenAlexDataSource(
     fun enrichAuthorByOrcid(orcid: String): AuthorEnrichment? =
         enrichAuthorByOrcid(orcid, RequestKind.HISTORY_ENRICHMENT)
 
+    /** 兼容包装：身份歧义与其余非成功结果一样返回 null（绝不任取一个作者）。 */
     fun enrichAuthorByOrcid(orcid: String, kind: RequestKind): AuthorEnrichment? {
         return when (val outcome = enrichAuthorByOrcidWithReason(orcid, kind)) {
             is EnrichmentOutcome.Success -> outcome.data
@@ -439,19 +440,24 @@ class OpenAlexDataSource(
     fun enrichAuthorByOrcidWithReason(orcid: String): EnrichmentOutcome =
         enrichAuthorByOrcidWithReason(orcid, RequestKind.HISTORY_ENRICHMENT)
 
+    /**
+     * I-1/I-2/I-3：单条 ORCID 查询 —— 与批量共用 [resolveOrcid] 的同一次响应完整性校验与身份分组，
+     * 只有唯一作者身份才继续调用既有作者详情接口（详情请求的 404/限流口径不变）。
+     */
     fun enrichAuthorByOrcidWithReason(orcid: String, kind: RequestKind): EnrichmentOutcome {
-        val searchUrl = "${properties.baseUrl}/authors?filter=orcid:$orcid" +
-            if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
+        val searchUrl = "${properties.baseUrl}/authors?filter=orcid:${canonicalOrcid(orcid)}" +
+            "&per_page=$ORCID_PAGE_SIZE" + mailtoSuffix()
         return try {
             if (properties.requestDelayMs > 0) Thread.sleep(properties.requestDelayMs)
             val searchResponse = getJson(kind, Operation.LIST, searchUrl)
-            val authorId = searchResponse?.path("results")?.get(0)?.path("id")?.asText(null)
-                ?.removePrefix("https://openalex.org/")
-            if (authorId == null) {
-                return EnrichmentOutcome.NotFound
+            when (val lookup = resolveOrcid(searchResponse, orcid)) {
+                // 唯一身份：仍走既有详情接口拿学术事实，不在列表节点上就地取数。
+                is OrcidLookup.Unique -> enrichAuthorOutcome(lookup.authorId, kind)
+                OrcidLookup.NotFound -> EnrichmentOutcome.NotFound
+                // I-3：同一 ORCID 对应多个作者 —— 绝不取第一条/最后一条，也不写任何学术事实。
+                OrcidLookup.Ambiguous -> EnrichmentOutcome.AmbiguousIdentity
+                is OrcidLookup.Invalid -> EnrichmentOutcome.ApiError(lookup.message)
             }
-            // V-3：作者详情请求的 404（查无此人）与可重试失败必须继续分开传递。
-            enrichAuthorOutcome(authorId, kind)
         } catch (e: OpenAlexBudgetDeferredException) {
             throw e
         } catch (e: HttpStatusCodeException) {
@@ -472,13 +478,73 @@ class OpenAlexDataSource(
     fun batchEnrichByOrcids(orcids: List<String>): Map<String, EnrichmentOutcome> =
         batchEnrichByOrcids(orcids, RequestKind.HISTORY_ENRICHMENT)
 
+    /**
+     * I-1/I-2/I-3：按 ORCID 批量查询 —— 与单条共用 [resolveOrcid] 的同一份完整性校验与身份判定。
+     * 每个入参恰好一个结果：唯一作者 → 该节点的学术事实；0 个有效身份 → [EnrichmentOutcome.NotFound]；
+     * 多个不同作者 ID → [EnrichmentOutcome.AmbiguousIdentity]（绝不任取一条）。
+     * 请求按每页 [ORCID_PAGE_SIZE] 条发出；响应超过一页或有任何结构缺口时整体判
+     * [ORCID_RESPONSE_INCOMPLETE]，不做无界翻页、也不降级成部分 Success/NotFound。
+     */
     fun batchEnrichByOrcids(orcids: List<String>, kind: RequestKind): Map<String, EnrichmentOutcome> {
         if (orcids.isEmpty()) return emptyMap()
-        val url = "${properties.baseUrl}/authors?filter=orcid:${orcids.joinToString("|")}" +
-            "&per_page=${orcids.size}" + mailtoSuffix()
-        return batchEnrichIdentities(orcids, url, kind) { node ->
-            node.path("orcid").asText(null)?.removePrefix("https://orcid.org/")
+        val url = "${properties.baseUrl}/authors?filter=orcid:${orcids.joinToString("|") { canonicalOrcid(it) }}" +
+            "&per_page=$ORCID_PAGE_SIZE" + mailtoSuffix()
+        val response = try {
+            getJson(kind, Operation.LIST, url)
+        } catch (e: OpenAlexBudgetDeferredException) {
+            throw e
+        } catch (e: HttpStatusCodeException) {
+            val code = e.statusCode.value()
+            if (code == 429 || code == 503) {
+                val retryAfterHeader = e.responseHeaders?.getFirst("Retry-After")
+                log.warn(
+                    "OpenAlex batch rate limited: status={}, Retry-After={}, body={}",
+                    code, retryAfterHeader, e.responseBodyAsString.take(500)
+                )
+                return orcids.associateWith {
+                    EnrichmentOutcome.RateLimited(retryAfterHeader?.toLongOrNull()?.times(1000))
+                }
+            }
+            return orcids.associateWith { EnrichmentOutcome.ApiError("HTTP $code") }
+        } catch (e: Exception) {
+            return orcids.associateWith { EnrichmentOutcome.ApiError(e.message ?: "unknown") }
         }
+
+        val outcomes = LinkedHashMap<String, EnrichmentOutcome>()
+        val lookups = HashMap<String, OrcidLookup>()
+        val facts = HashMap<String, EnrichmentOutcome>()
+        var rateLimited: EnrichmentOutcome.RateLimited? = null
+        for (input in orcids) {
+            val pending = rateLimited
+            if (pending != null) {
+                // I-3：已经限流后不再为其余身份打接口，但每个入参仍必须有一个结果。
+                outcomes[input] = pending
+                continue
+            }
+            val key = canonicalOrcid(input)
+            outcomes[input] = when (val lookup = lookups.getOrPut(key) { resolveOrcid(response, input) }) {
+                is OrcidLookup.Unique -> facts.getOrPut(key) {
+                    try {
+                        enrichmentOutcome(lookup.node, kind)
+                    } catch (e: OpenAlexBudgetDeferredException) {
+                        throw e
+                    } catch (e: HttpStatusCodeException) {
+                        // I-3：限流只影响开关控制的附加标题 —— 基础事实照常返回，其余身份标限流、不再打接口。
+                        val code = e.statusCode.value()
+                        if (code == 429 || code == 503) {
+                            rateLimited = EnrichmentOutcome.RateLimited(
+                                e.responseHeaders?.getFirst("Retry-After")?.toLongOrNull()?.times(1000)
+                            )
+                        }
+                        EnrichmentOutcome.Success(parseAuthorBase(lookup.node), titlesFailed = true)
+                    }
+                }
+                OrcidLookup.NotFound -> EnrichmentOutcome.NotFound
+                OrcidLookup.Ambiguous -> EnrichmentOutcome.AmbiguousIdentity
+                is OrcidLookup.Invalid -> EnrichmentOutcome.ApiError(lookup.message)
+            }
+        }
+        return outcomes
     }
 
     /** Legacy entry point: history enrichment (lowest priority). */
@@ -503,9 +569,55 @@ class OpenAlexDataSource(
         if (properties.politeEmail.isNotBlank()) "&mailto=${properties.politeEmail}" else ""
 
     /**
-     * 两种身份共用的批量查询：一次请求拿回多个作者，用 [identityOf] 把响应归因回传入身份。
+     * I-1/I-2：ORCID 列表响应 → 该 ORCID 的作者身份判定（单条与批量共用同一次分组，口径不漂移）。
+     *
+     * 先校验响应完整性：`results` 必须是数组，且 `meta.count` 必须是非负整数、等于返回数组长度；
+     * 截断/缺 count/结构损坏一律 [OrcidLookup.Invalid]（绝不当成「唯一」或「未找到」）。
+     * 再按规范化作者 ID 去重：0 个有效身份 → [OrcidLookup.NotFound]，恰好 1 个 → [OrcidLookup.Unique]，
+     * 超过 1 个 → [OrcidLookup.Ambiguous]（响应顺序、相同姓名、引用量都不改变该判定）。
+     * 关联节点缺可信作者 ID、或同一作者 ID 的多个节点给出不一致的学术事实 → [OrcidLookup.Invalid]。
+     */
+    private fun resolveOrcid(response: JsonNode?, orcid: String): OrcidLookup {
+        val results = response?.path("results")?.takeIf { it.isArray }
+            ?: return OrcidLookup.Invalid(ORCID_RESPONSE_INCOMPLETE)
+        val count = response.path("meta").path("count")
+        if (!count.isIntegralNumber || count.asLong() < 0 || count.asLong() != results.size().toLong()) {
+            return OrcidLookup.Invalid(ORCID_RESPONSE_INCOMPLETE)
+        }
+        val target = canonicalOrcid(orcid)
+        if (target.isEmpty()) return OrcidLookup.NotFound
+        val related = results.filter { canonicalOrcid(it.path("orcid").asText(null)) == target }
+        if (related.isEmpty()) return OrcidLookup.NotFound
+        val authorIds = related.map { normalizeOpenAlexAuthorId(it.path("id").asText(null)) }
+        if (authorIds.any { it == null }) {
+            // 关联节点没有可信作者 ID：这次说不清是谁，也不能退回「查无此人」。
+            return OrcidLookup.Invalid(ORCID_NODE_WITHOUT_AUTHOR_ID)
+        }
+        val identities = authorIds.filterNotNull().distinct()
+        if (identities.size > 1) return OrcidLookup.Ambiguous
+        if (related.map { parseAuthorBase(it) }.distinct().size > 1) {
+            // 同一作者 ID 的多个节点给出冲突的学术事实：不靠响应顺序挑一份内容。
+            return OrcidLookup.Invalid(ORCID_NODE_CONTENT_CONFLICT)
+        }
+        return OrcidLookup.Unique(identities.single(), related.first())
+    }
+
+    /** I-1/I-2：ORCID 响应的身份判定结果 —— 唯一身份 / 未找到 / 身份歧义 / 响应不可用（固定原因码）。 */
+    private sealed class OrcidLookup {
+        /** 唯一作者身份：[authorId] 供详情查询，[node] 供批量路径就地取学术事实。 */
+        data class Unique(val authorId: String, val node: JsonNode) : OrcidLookup()
+        object NotFound : OrcidLookup()
+        object Ambiguous : OrcidLookup()
+        data class Invalid(val message: String) : OrcidLookup()
+    }
+
+    /**
+     * 单条/批量 ORCID 列表请求共用的批量查询：一次请求拿回多个作者，用 [identityOf] 把响应归因回传入身份。
      * 结果覆盖全部入参（缺失 = NotFound，绝不猜测归属）；限流（429/503）标
      * [EnrichmentOutcome.RateLimited]，其余 HTTP/网络失败标 [EnrichmentOutcome.ApiError]。
+     *
+     * 只服务「显式作者 ID」查询：A ID 本身就是被请求的身份，响应里非规范形状的节点一律不参与匹配
+     * （`filter=openalex:A…` 的语义保持不变）。ORCID 身份有唯一性/完整性要求，走 [batchEnrichByOrcids]。
      */
     private fun batchEnrichIdentities(
         identities: List<String>,
@@ -672,6 +784,25 @@ internal fun normalizeOpenAlexAuthorId(raw: String?): String? {
 private val OPENALEX_AUTHOR_ID_PATTERN = Regex("A\\d+")
 private val FIELD_ID_PATTERN = Regex("(?:https://openalex\\.org/fields/)?([0-9]+)")
 
+/**
+ * I-1/I-2：ORCID 的规范比较形式 —— 去掉首尾空白与 ORCID URL 前缀；缺失/空串规范化为空串
+ * （空串不是有效身份，绝不用于身份匹配）。
+ */
+private fun canonicalOrcid(raw: String?): String =
+    raw.orEmpty().trim().removePrefix("https://orcid.org/").removePrefix("http://orcid.org/").trim()
+
+/** I-2：ORCID 列表查询的页大小 —— 与 `meta.count` 一起证明响应没有被截断。 */
+private const val ORCID_PAGE_SIZE = 200
+
+/** I-2：ORCID 响应不完整（截断、缺 `meta.count`、结构损坏）时的固定原因码。 */
+private const val ORCID_RESPONSE_INCOMPLETE = "ORCID_RESPONSE_INCOMPLETE"
+
+/** I-1：请求 ORCID 关联到的节点没有可信作者 ID 时的固定原因码。 */
+private const val ORCID_NODE_WITHOUT_AUTHOR_ID = "ORCID_NODE_WITHOUT_AUTHOR_ID"
+
+/** I-1：同一作者 ID 的多个节点学术事实冲突（不能靠顺序挑一份）时的固定原因码。 */
+private const val ORCID_NODE_CONTENT_CONFLICT = "ORCID_NODE_CONTENT_CONFLICT"
+
 sealed class EnrichmentOutcome {
     /**
      * 基础事实可用。[titlesFailed] = true 表示开关控制的最近论文/专利标题子请求失败（I-3：可单独重试），
@@ -679,6 +810,12 @@ sealed class EnrichmentOutcome {
      */
     data class Success(val data: AuthorEnrichment, val titlesFailed: Boolean = false) : EnrichmentOutcome()
     object NotFound : EnrichmentOutcome()
+
+    /**
+     * I-3：同一 ORCID 在完整响应里对应多个不同作者 ID，本次无法唯一选择作者身份。
+     * 它既不是成功也不是「查无此人」：不写任何学术事实，也不当作可无限即时重试的失败。
+     */
+    object AmbiguousIdentity : EnrichmentOutcome()
     data class ApiError(val message: String) : EnrichmentOutcome()
     data class RateLimited(val retryAfterMs: Long? = null) : EnrichmentOutcome()
 }
