@@ -1468,6 +1468,147 @@ class ExpertDiscoveryServiceTest {
     }
 
     @Test
+    fun `original ownership archive keeps the seven wrong owners out of the create-only consumer (I-1 I-2 I-3)`() {
+        // 只替换下载传输与外部数据库：PDF 解析、作者映射、消费链全部走生产实现。
+        val docs = installOwnershipStorage()
+        val service = createService()
+        val expected = ownershipExpectations()
+        val members = zipMembers(ownershipArchive())
+        val caseAuthors = mutableMapOf<String, List<PaperAuthor>>()
+        val relations = mutableListOf<Map<String, Any?>>()
+        val unattributed = linkedSetOf<String>()
+        var firstPaper: PaperMetadata? = null
+        var firstPayload: String? = null
+        val cases = mutableListOf<Map<String, Any?>>()
+        for (case in expected.path("cases")) {
+            val id = case.path("case").asText()
+            val pdf = requireNotNull(members[case.path("pdf").path("path").asText()])
+            val work = objectMapper.readTree(requireNotNull(members[case.path("metadata").path("path").asText()]))
+            val authors = openAlexPaperAuthors(work)
+            caseAuthors[id] = authors
+            val parsed = extractOwnershipContent(pdf, MediaType.APPLICATION_PDF, authors)
+            assertEquals("PDF_PARSE", parsed.methodUsed, id)
+            assertEquals(1, parsed.httpRequests, id)
+            for (email in parsed.emails) {
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, email.email, EmailValidationResult(3, true))
+            }
+            val paper = PaperMetadata(null, null, case.path("doi").asText(), id, 2021, null, authors, "OPENALEX")
+            val payload = objectMapper.writeValueAsString(
+                parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION))
+            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper), payload, null)
+            assertTrue(outcome.succeeded, "$id ${outcome.failureReasons}")
+            if (outcome.indexedExperts > 0 && firstPaper == null) {
+                firstPaper = paper
+                firstPayload = payload
+            }
+            for (forbidden in case.path("forbidden")) {
+                val wrongOwner = forbidden.path("wrongOwner").asText()
+                relations += mapOf(
+                    "case" to id, "email" to forbidden.path("email").asText(), "wrongOwner" to wrongOwner,
+                    "wrongInstitution" to forbidden.path("wrongInstitution").asText(null),
+                    "wrongAuthorId" to openAlexAuthorId(work, wrongOwner))
+            }
+            unattributed += case.path("mustRemainUnattributed").map { it.asText() }
+            cases += mapOf("case" to id, "designation" to "REAL_ORIGINAL",
+                "baselineReplay" to case.path("baselineReplay").asText(),
+                "indexed" to outcome.indexedExperts, "duplicate" to outcome.duplicateExperts,
+                "promoted" to outcome.promoted, "failureReasons" to outcome.failureReasons,
+                "unattributed" to case.path("mustRemainUnattributed").map { it.asText() })
+        }
+
+        // 七条线上确证的错误关系：不落错误姓名，也不落错误作者 ID / 机构。
+        assertEquals(7, relations.size)
+        for (relation in relations) {
+            val email = relation["email"] as String
+            val wrongOwner = relation["wrongOwner"] as String
+            val created = docs.values.filter { it["email"] == email }
+            assertTrue(created.none { "${it["givenNames"]} ${it["familyNames"]}" == wrongOwner }, email)
+            // 错误主人与正确主人同机构时（Lumma 与 Pauly 都是 Heidelberg University），机构值本身不是本关系的判据；
+            // 那条关系由下方 allowed 断言证明机构/作者 ID 来自正确主人。
+            val wrongAuthorId = relation["wrongAuthorId"] as String?
+            if (wrongAuthorId != null) {
+                assertTrue(created.none {
+                    (it["identityVerification"] as? com.weibo.talentintroduction.expert.domain.IdentityVerification)
+                        ?.openAlexAuthorId == wrongAuthorId ||
+                        (it["externalIds"] as? Map<*, *>)?.get("openAlexAuthorId") == wrongAuthorId
+                }, "$email must not carry $wrongOwner 的作者 ID")
+            }
+            if (email in unattributed) assertTrue(created.isEmpty(), "$email 只能留线索")
+        }
+        // 明确归属（含正确机构与作者 ID）仍然进入 create-only 捕获器。
+        for (case in expected.path("cases")) {
+            val id = case.path("case").asText()
+            val authors = caseAuthors.getValue(id)
+            for (allowed in case.path("allowed")) {
+                val email = allowed.path("email").asText()
+                val owner = allowed.path("owner").asText()
+                val created = docs.values.filter { it["email"] == email }
+                assertEquals(2, created.size, "$id $email RAW+CANDIDATE")
+                assertTrue(created.all { "${it["givenNames"]} ${it["familyNames"]}" == owner }, "$id $email")
+                val author = authors.single { "${it.givenNames} ${it.familyNames}" == owner }
+                assertTrue(created.all { it["institution"] == author.institutionName }, "$id $email institution")
+                if (author.openAlexAuthorId != null) {
+                    assertTrue(created.all {
+                        (it["identityVerification"] as? com.weibo.talentintroduction.expert.domain.IdentityVerification)
+                            ?.openAlexAuthorId == author.openAlexAuthorId
+                    }, "$id $email author id")
+                }
+            }
+        }
+        // 共享未知邮箱只留线索：不落档、不进校验、因此也不会补全作者。
+        for (email in unattributed) assertTrue(docs.values.none { it["email"] == email }, "$email must stay a clue")
+        val validated = Mockito.mockingDetails(emailValidationService).invocations
+            .filter { it.method.name == "validate" }.map { it.arguments.first() as String }
+        assertTrue(validated.none { it in unattributed }, "线索不得进入邮箱校验")
+        val enqueued = Mockito.mockingDetails(enrichmentJobService).invocations
+            .filter { it.method.name == "enqueue" }.size
+        assertEquals(docs.keys.count { it.contains("/orcid_info/_doc/") }, enqueued, "只有落档档案才补全")
+
+        // 邮箱去重：同一缓存再消费一次不新建档案。
+        val before = docs.toMap()
+        val replay = service.consumeQueuedItem(ownershipEnvelope(requireNotNull(firstPaper)),
+            requireNotNull(firstPayload), null)
+        assertEquals(0, replay.indexedExperts)
+        assertEquals(before, docs)
+
+        // 正确主人被既有资格校验拒绝时，不得回退到错误关系（Kumar 形状）。
+        val rejectionDocs = installOwnershipStorage()
+        val rejectionService = createService()
+        val kumar = expected.path("cases").single { it.path("case").asText() == "kumar" }
+        val kumarAuthors = caseAuthors.getValue("kumar")
+        val kumarParsed = extractOwnershipContent(
+            requireNotNull(members[kumar.path("pdf").path("path").asText()]),
+            MediaType.APPLICATION_PDF, kumarAuthors)
+        DiscoveryMockHelper.stubValidateEmail(emailValidationService, "jitendra@nitt.edu",
+            EmailValidationResult(level = 0, valid = false))
+        for (email in kumarParsed.emails.filter { it.email != "jitendra@nitt.edu" }) {
+            DiscoveryMockHelper.stubValidateEmail(emailValidationService, email.email, EmailValidationResult(3, true))
+        }
+        val kumarPaper = PaperMetadata(null, null, kumar.path("doi").asText(), "kumar", 2023, null,
+            kumarAuthors, "OPENALEX")
+        rejectionService.consumeQueuedItem(ownershipEnvelope(kumarPaper),
+            objectMapper.writeValueAsString(kumarParsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+        assertTrue(rejectionDocs.values.none { it["email"] == "jitendra@nitt.edu" }, "被拒邮箱不得落档")
+        assertTrue(rejectionDocs.values.none { "${it["givenNames"]} ${it["familyNames"]}" == "Jitendra Kumar" },
+            "正确主人被拒时不得把解析结果转给错误作者")
+        assertTrue(rejectionDocs.values.none { it["email"] == "ashutosh@nitkkr.ac.in" }, "错误关系不得落档")
+
+        val path = Paths.get("target/discovery-plan-acceptance/01-consumer.json")
+        Files.createDirectories(path.parent)
+        Files.write(path, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(mapOf(
+            "task" to "child-01", "designation" to "REAL_ORIGINAL",
+            "archiveSha256" to fixtureSha256(ownershipArchive()),
+            "cases" to cases,
+            "forbiddenRelations" to relations,
+            "rawDocuments" to docs.keys.count { it.contains("/orcid_info/_doc/") },
+            "candidateDocuments" to docs.keys.count { it.contains("/orcid_info_candidate/_doc/") },
+            "validatedAddresses" to validated.distinct().sorted(),
+            "unattributedAddresses" to unattributed.sorted(),
+            "rejectionCase" to mapOf("email" to "jitendra@nitt.edu", "validation" to "invalid",
+                "documents" to rejectionDocs.size))))
+    }
+
+    @Test
     fun `published HTML through parser consumer and writer admits two owned emails and zero shared ones`() {
         val docs = installOwnershipStorage()
         val svc = createService()

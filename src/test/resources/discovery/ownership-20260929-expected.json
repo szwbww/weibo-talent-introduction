@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "designation": "REAL_ORIGINAL",
+  "capturedDate": "2026-09-29",
+  "plan": "docs/plans/2026-09-29/discovery-repair-01-contact-ownership.md",
+  "archive": "src/test/resources/discovery/ownership-20260929.zip",
+  "archiveSha256": "d250220a9bd94519e3b15e36cfd48305b976dedeb29f1a57d6fc807ee9aa19e7",
+  "copiedVerbatimFrom": "docs/plans/2026-09-29/discovery-repair-evidence/original-source-evidence.zip",
+  "replayBaseline": "docs/plans/2026-09-29/discovery-repair-evidence/contact-replay.json",
+  "confirmedProfileSnapshot": "docs/plans/2026-09-29/discovery-repair-evidence/confirmed-profile-snapshots.json",
+  "authorMapping": "生产 OpenAlexDataSource.splitDisplayName：display_name 无逗号时按首个空格拆分为 givenNames/familyNames（测试不补中间名）",
+  "relations": "forbidden 为线上确证的错误邮箱归属；allowed 为修复后仍必须成立的明确归属；mustRemainUnattributed 必须保持邮箱线索（null 姓名/机构/作者 ID/凭证）",
+  "cases": [
+    {
+      "case": "crea",
+      "doi": "10.1017/wtc.2021.11",
+      "openAlexWork": "https://api.openalex.org/works/https://doi.org/10.1017/wtc.2021.11",
+      "pdf": {
+        "path": "crea.pdf",
+        "sha256": "1b754f880c8f35ed85f0b9a664aa42def78f73f621fc1b588774983cf5942f1a",
+        "url": "https://www.cambridge.org/core/services/aop-cambridge-core/content/view/33096E40515BC1CCBBB53B6A4B328E3F/S2631717621000116a.pdf/occupational-exoskeletons-a-roadmap-toward-large-scale-adoption-methodology-and-challenges-of-bringing-exoskeletons-to-workplaces.pdf"
+      },
+      "metadata": {
+        "path": "crea.openalex.json",
+        "sha256": "98b1acdd70513f435a9643ff7d4ff98ad39b0eb47c4b44a46a80dfc709136090",
+        "url": "https://api.openalex.org/works/https://doi.org/10.1017/wtc.2021.11"
+      },
+      "baselineReplay": "reproduced",
+      "forbidden": [
+        {
+          "email": "ristic@iat.uni-bremen.de",
+          "wrongOwner": "Simona Crea",
+          "wrongInstitution": "Scuola Superiore Sant'Anna",
+          "reason": "共享 * 的作者区拥有者含未匹配元数据的署名（Danijela Ristić-Durrant / Jan F. Veneman）"
+        },
+        {
+          "email": "jan.veneman.cost@gmail.com",
+          "wrongOwner": "Simona Crea",
+          "wrongInstitution": "Scuola Superiore Sant'Anna",
+          "reason": "同上：共享 * 不得整行归属首位作者"
+        }
+      ],
+      "allowed": [],
+      "mustRemainUnattributed": [
+        "simona.crea@santannapisa.it",
+        "ristic@iat.uni-bremen.de",
+        "jan.veneman.cost@gmail.com"
+      ]
+    },
+    {
+      "case": "debie",
+      "doi": "10.1109/trustcom50675.2020.00114",
+      "openAlexWork": "https://api.openalex.org/works/https://doi.org/10.1109/trustcom50675.2020.00114",
+      "pdf": {
+        "path": "debie.pdf",
+        "sha256": "83a5533a78a839d5e7592141a87ba18b2dbdc91d115a7d95bbc982649a696137",
+        "url": "https://arxiv.org/pdf/2010.08522"
+      },
+      "metadata": {
+        "path": "debie.openalex.json",
+        "sha256": "3dffb4cf09d2a2f4e582f942b4e3720c43d21e653cdf8e090373915b85937989",
+        "url": "https://api.openalex.org/works/https://doi.org/10.1109/trustcom50675.2020.00114"
+      },
+      "baselineReplay": "reproduced",
+      "forbidden": [
+        {
+          "email": "helge.janicke@cybersecuritycrc.org.au",
+          "wrongOwner": "Essam Debie",
+          "wrongInstitution": null,
+          "reason": "同一联系行 `‡e.debie@…, §helge.janicke@…` 未按标记边界分段"
+        }
+      ],
+      "allowed": [
+        { "email": "e.debie@unsw.edu.au", "owner": "Essam Debie" },
+        { "email": "helge.janicke@cybersecuritycrc.org.au", "owner": "Helge Janicke" }
+      ],
+      "mustRemainUnattributed": [
+        "nour.moustafa@unsw.edu.au",
+        "marwa.hassan@student.unsw.edu.au"
+      ]
+    },
+    {
+      "case": "kumar",
+      "doi": "10.1109/tpds.2023.3240567",
+      "openAlexWork": "https://api.openalex.org/works/https://doi.org/10.1109/tpds.2023.3240567",
+      "pdf": {
+        "path": "kumar.pdf",
+        "sha256": "3142005d13ca5abe55097abb32d10cc144373e44cb4b0877d6596f55cb7814a2",
+        "url": "https://eprints.cs.univie.ac.at/7850/1/tpds23.pdf"
+      },
+      "metadata": {
+        "path": "kumar.openalex.json",
+        "sha256": "37c9a6368203454a9103af335c7ab07f3cd034fc896bae540e1efde37b0258a8",
+        "url": "https://api.openalex.org/works/https://doi.org/10.1109/tpds.2023.3240567"
+      },
+      "baselineReplay": "reproduced",
+      "forbidden": [
+        {
+          "email": "ashutosh@nitkkr.ac.in",
+          "wrongOwner": "Jitendra Kumar",
+          "wrongInstitution": "National Institute of Technology Tiruchirappalli",
+          "reason": "`J.Kumar is with …` 后接 `A. K. Singh are with …` 未识别为下一作者段落边界"
+        }
+      ],
+      "allowed": [
+        { "email": "jitendra@nitt.edu", "owner": "Jitendra Kumar" },
+        { "email": "stefan.schmid@tu-berlin.de", "owner": "Stefan Schmid" }
+      ],
+      "mustRemainUnattributed": [
+        "ashutosh@nitkkr.ac.in",
+        "13deepikasaxena@gmail.com",
+        "d.saxena@em.uni-frankfurt.de"
+      ]
+    },
+    {
+      "case": "nguyen",
+      "doi": "10.3390/s21186037",
+      "openAlexWork": "https://api.openalex.org/works/https://doi.org/10.3390/s21186037",
+      "pdf": {
+        "path": "nguyen.pdf",
+        "sha256": "234368905cf0d8010c3df571a50f3d38d750f4ee7594831926469712edfc2fc6",
+        "url": "https://mdpi-res.com/d_attachment/sensors/sensors-21-06037/article_deploy/sensors-21-06037.pdf"
+      },
+      "metadata": {
+        "path": "nguyen.openalex.json",
+        "sha256": "7be10f069189de0dccaa859e8174847c148dff54f7648508543efc28cfebda4e",
+        "url": "https://api.openalex.org/works/https://doi.org/10.3390/s21186037"
+      },
+      "baselineReplay": "not-reproduced-in-rerun",
+      "forbidden": [
+        {
+          "email": "damien.bouchabou@imt-atlantique.fr",
+          "wrongOwner": "Sao Mai Nguyen",
+          "wrongInstitution": null,
+          "reason": "线上确证错误归属；本次下载版本重放未复现，作为真实负例回归"
+        }
+      ],
+      "allowed": [],
+      "mustRemainUnattributed": [
+        "damien.bouchabou@imt-atlantique.fr",
+        "nguyensmai@gmail.com",
+        "christophe.lohr@imt-atlantique.fr",
+        "ioannis.kanellos@imt-atlantique.fr",
+        "bleduc@deltadore.com"
+      ]
+    },
+    {
+      "case": "everett",
+      "doi": "10.1109/lra.2020.2974695",
+      "openAlexWork": "https://api.openalex.org/works/https://doi.org/10.1109/lra.2020.2974695",
+      "pdf": {
+        "path": "everett.pdf",
+        "sha256": "d5543cedba86d4a6ce13df0264cbf25eeb490523504cbca1eeecae7dcc071621",
+        "url": "https://flight.utias.utoronto.ca/wp-content/uploads/2020/03/ral2020ss.pdf"
+      },
+      "metadata": {
+        "path": "everett.openalex.json",
+        "sha256": "e2480745d8016c0ddf86ffc8a8a53c0219a53c8e90b59a8bd3c73ed01beadb57",
+        "url": "https://api.openalex.org/works/https://doi.org/10.1109/lra.2020.2974695"
+      },
+      "baselineReplay": "not-reproduced-in-rerun",
+      "forbidden": [
+        {
+          "email": "aderuiter@ryerson.ca",
+          "wrongOwner": "Michael Everett",
+          "wrongInstitution": "Massachusetts Institute of Technology",
+          "reason": "线上确证错误归属；本次下载版本重放未复现，作为真实负例回归"
+        }
+      ],
+      "allowed": [],
+      "mustRemainUnattributed": [
+        "aderuiter@ryerson.ca",
+        "samaneh.hoseini@cc.iut.ac.ir",
+        "liu@utias.utoronto.ca",
+        "mfe@mit.edu",
+        "jhow@mit.edu"
+      ]
+    },
+    {
+      "case": "lumma",
+      "doi": "10.21468/scipostphyslectnotes.24",
+      "openAlexWork": "https://api.openalex.org/works/https://doi.org/10.21468/scipostphyslectnotes.24",
+      "pdf": {
+        "path": "lumma.pdf",
+        "sha256": "a05aa6c3c6b6a694e058c04fefb3586206e4ae0be4bd65924263d686be47a5dc",
+        "url": "https://arxiv.org/pdf/2008.09136"
+      },
+      "metadata": {
+        "path": "lumma.openalex.json",
+        "sha256": "1372df711682fbfe2062981ed195607167f26e3d43a1deea6dd3f9b36aca61dc",
+        "url": "https://api.openalex.org/works/https://doi.org/10.21468/scipostphyslectnotes.24"
+      },
+      "baselineReplay": "not-reproduced-in-rerun",
+      "forbidden": [
+        {
+          "email": "m.pauly@thphys.uni-heidelberg.de",
+          "wrongOwner": "Johannes Lumma",
+          "wrongInstitution": "Heidelberg University",
+          "reason": "线上确证错误归属；本次下载版本重放未复现，作为真实负例回归"
+        }
+      ],
+      "allowed": [
+        { "email": "j.lumma@thphys.uni-heidelberg.de", "owner": "Johannes Lumma" },
+        { "email": "m.pauly@thphys.uni-heidelberg.de", "owner": "Martin Pauly" }
+      ],
+      "mustRemainUnattributed": [
+        "mark.hindmarsh@helsinki.fi",
+        "mlueben@mpp.mpg.de"
+      ]
+    }
+  ]
+}

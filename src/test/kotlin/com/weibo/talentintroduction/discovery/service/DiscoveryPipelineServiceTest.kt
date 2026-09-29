@@ -1847,6 +1847,46 @@ class DiscoveryPipelineServiceTest {
         Mockito.verify(openAlex, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper())
     }
 
+    /**
+     * I-3（01）：带有错误 PDF 邮箱归属规则的那一版非空缓存必须被拒绝，且不得重新下载或写 ES；
+     * 版本换成当前值、其余逐字相同的抽取结果仍走同一条消费链。
+     */
+    @Test
+    fun `superseded ownership extraction cache is rejected without writes while the current version is consumed (I-3)`() {
+        // 20261002 是修复前的抽取缓存版本（EXTRACTION_VERSION 提升前的值），它带有错误的 PDF 归属规则。
+        val supersededVersion = 20261002
+        DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
+        // 真实消费链会按邮箱查重；只给它一个空的 ES 查询响应，其余外部依赖仍是测试替身。
+        Mockito.`when`(restTemplate.exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST),
+            Mockito.any(), Mockito.eq(com.fasterxml.jackson.databind.JsonNode::class.java)))
+            .thenReturn(org.springframework.http.ResponseEntity.ok(
+                objectMapper.readTree("""{"hits":{"total":{"value":0},"hits":[]}}""")))
+        val discovery = realDiscoveryService()
+        val h = harnessWithRealDiscovery(discovery)
+        val stream = streamFor(h)
+        stream.cursorState = StreamCursorState.EXHAUSTED
+        val stale = objectMapper.readTree(extractionJson()) as com.fasterxml.jackson.databind.node.ObjectNode
+        stale.put("identityRuleVersion", supersededVersion)
+        val staleJob = h.store.seedJob(stream.id, "DOI:stale",
+            extractionJson = objectMapper.writeValueAsString(stale))
+        launch(h)
+        runWindow(h)
+        assertEquals(QueueJobStatus.FAILED, h.store.jobs[staleJob.id]!!.status)
+        assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", h.store.jobs[staleJob.id]!!.lastError)
+        assertEquals(0L, h.store.pipeline.indexedExperts)
+        Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        Mockito.verify(openAlex, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper())
+
+        val currentJob = h.store.seedJob(stream.id, "DOI:current", extractionJson = extractionJson())
+        h.store.jobs[currentJob.id]!!.metadataJson = objectMapper.writeValueAsString(paper(doi = "10.9/current"))
+        runWindow(h)
+        assertEquals(QueueJobStatus.SUCCEEDED, h.store.jobs[currentJob.id]!!.status,
+            "当前版本缓存必须可消费：lastError=${h.store.jobs[currentJob.id]!!.lastError}")
+        assertEquals(1L, h.store.pipeline.indexedExperts)
+        Mockito.verify(indexWriterService, Mockito.times(1)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
+        Mockito.verify(openAlex, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper())
+    }
+
     @Test
     fun `an already-saved extraction is consumed without downloading again (I-4)`() {
         val h = harness()

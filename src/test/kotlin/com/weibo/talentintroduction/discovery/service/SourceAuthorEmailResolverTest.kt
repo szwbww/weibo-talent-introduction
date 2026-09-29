@@ -5,6 +5,7 @@ import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
 
@@ -30,6 +31,65 @@ internal fun htmlContactAuthors(metadata: JsonNode): List<PaperAuthor> = metadat
 
 internal fun fixtureSha256(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+/** 原文证据 ZIP（逐字复制自 [docs/plans/2026-09-29/discovery-repair-evidence]）：只按名读取成员，不重排、不重生成。 */
+internal fun ownershipArchive(): ByteArray = requireNotNull(
+    SourceAuthorEmailResolverTest::class.java.getResourceAsStream("/discovery/ownership-20260929.zip")
+).use { it.readBytes() }
+
+internal fun zipMembers(archive: ByteArray): Map<String, ByteArray> {
+    val members = mutableMapOf<String, ByteArray>()
+    ZipInputStream(archive.inputStream()).use { zip ->
+        while (true) {
+            val entry = zip.nextEntry ?: break
+            members[entry.name] = zip.readBytes()
+        }
+    }
+    return members
+}
+
+internal fun ownershipExpectations(): JsonNode = jacksonObjectMapper().readTree(requireNotNull(
+    SourceAuthorEmailResolverTest::class.java.getResourceAsStream("/discovery/ownership-20260929-expected.json")))
+
+/**
+ * 生产作者映射：作品 JSON → 作者。走与线上同一条解析链（[OpenAlexDataSource] 的首个空格拆名、
+ * 唯一机构、ORCID 与 OpenAlex 作者 ID），因此测试既不手工补中间名，也不手工补机构。
+ */
+internal fun openAlexPaperAuthors(work: JsonNode): List<PaperAuthor> {
+    val restTemplate = Mockito.mock(org.springframework.web.client.RestTemplate::class.java)
+    val response = jacksonObjectMapper().createObjectNode().apply {
+        putObject("meta").put("count", 1)
+        putArray("results").add(work)
+    }
+    Mockito.`when`(restTemplate.exchange(Mockito.anyString(), Mockito.eq(org.springframework.http.HttpMethod.GET),
+        Mockito.nullable(org.springframework.http.HttpEntity::class.java), Mockito.eq(JsonNode::class.java)))
+        .thenReturn(org.springframework.http.ResponseEntity.ok(response))
+    return OpenAlexDataSource(restTemplate,
+        com.weibo.talentintroduction.config.OpenAlexProperties(requestDelayMs = 0),
+        Mockito.mock(EuropePmcDataSource::class.java), Mockito.mock(PdfEmailExtractor::class.java),
+        Mockito.mock(UnpaywallClient::class.java))
+        .searchPapers(com.weibo.talentintroduction.discovery.domain.PaperSearchCriteria())
+        .papers.single().authors
+}
+
+/** 该作品 JSON 中某位作者的 OpenAlex 作者 ID（生产同款去前缀）；找不到返回 null。 */
+internal fun openAlexAuthorId(work: JsonNode, displayName: String): String? {
+    val authorship = work.path("authorships").firstOrNull {
+        it.path("author").path("display_name").asText() == displayName
+    } ?: return null
+    return authorship.path("author").path("id").asText(null)?.substringAfterLast('/')
+}
+
+/** 与证据重放同一条链：真实 PDFBox 解析 + [SourceAuthorEmailResolver.resolvePdf]；只替换原文下载传输。 */
+internal fun replayOriginalOwnership(pdf: ByteArray, authors: List<PaperAuthor>):
+    List<com.weibo.talentintroduction.discovery.domain.AuthorEmail> {
+    val text = StringBuilder()
+    val contacts = org.apache.pdfbox.pdmodel.PDDocument.load(pdf).use { document ->
+        PdfAuthorContactLayout.collect(document, 2, authors, 1,
+            onPage = { page, pageText -> if (page <= 2) text.append(pageText).append('\n') })
+    }
+    return SourceAuthorEmailResolver.resolvePdf(text.toString(), authors, contacts)
+}
 
 internal fun sourceOwnershipCases(): List<JsonNode> = jacksonObjectMapper().readTree(
     requireNotNull(SourceAuthorEmailResolverTest::class.java.getResourceAsStream("/discovery/source-email-ownership-cases.json"))
@@ -70,6 +130,142 @@ class SourceAuthorEmailResolverTest {
                 "$id $badEmail: ${result.emails}")
         }
     }
+
+    @Test
+    fun `REAL_ORIGINAL six archived papers keep the seven confirmed wrong owners out (I-1 I-2 I-3)`() {
+        val archive = ownershipArchive()
+        val members = zipMembers(archive)
+        val expected = ownershipExpectations()
+        val manifest = jacksonObjectMapper().readTree(requireNotNull(members["manifest.json"]))
+        val manifestItems = manifest.path("items").associateBy { it.path("name").asText() }
+        assertEquals(expected.path("archiveSha256").asText(), fixtureSha256(archive), "ZIP 必须逐字复制")
+        val cases = expected.path("cases").toList()
+        assertEquals(6, cases.size)
+        assertEquals(7, cases.sumOf { it.path("forbidden").size() })
+        // 报告区分：4 条在当前版本可复现的错误关系，3 条线上确证但本次重放未复现的真实负例。
+        assertEquals(4, cases.filter { it.path("baselineReplay").asText() == "reproduced" }
+            .sumOf { it.path("forbidden").size() })
+        assertEquals(3, cases.filter { it.path("baselineReplay").asText() == "not-reproduced-in-rerun" }
+            .sumOf { it.path("forbidden").size() })
+        val report = mutableListOf<Map<String, Any?>>()
+        for (case in cases) {
+            val id = case.path("case").asText()
+            val pdfFile = case.path("pdf")
+            val metadataFile = case.path("metadata")
+            val pdf = requireNotNull(members[pdfFile.path("path").asText()])
+            val metadataBytes = requireNotNull(members[metadataFile.path("path").asText()])
+            // 逐项 SHA 同时对齐 ZIP 成员与原始 manifest。
+            assertEquals(pdfFile.path("sha256").asText(), fixtureSha256(pdf), "$id PDF")
+            assertEquals(manifestItems.getValue(pdfFile.path("path").asText()).path("sha256").asText(),
+                fixtureSha256(pdf), "$id PDF manifest")
+            assertEquals(metadataFile.path("sha256").asText(), fixtureSha256(metadataBytes), "$id metadata")
+            assertEquals(manifestItems.getValue(metadataFile.path("path").asText()).path("sha256").asText(),
+                fixtureSha256(metadataBytes), "$id metadata manifest")
+            val authors = openAlexPaperAuthors(jacksonObjectMapper().readTree(metadataBytes))
+            val resolved = replayOriginalOwnership(pdf, authors)
+            for (forbidden in case.path("forbidden")) {
+                val email = forbidden.path("email").asText()
+                val wrongOwner = forbidden.path("wrongOwner").asText()
+                val row = resolved.single { it.email == email }
+                // 归属错了名字就等于归属错了机构与作者 ID；机构值本身在 Lumma/Pauly
+                // （同属 Heidelberg University）上不可区分，因此这里以主人姓名为判据，机构由下一条 allowed 断言覆盖。
+                assertNotEquals(wrongOwner, "${row.givenNames} ${row.familyNames}", "$id $email")
+            }
+            for (allowed in case.path("allowed")) {
+                val email = allowed.path("email").asText()
+                val row = resolved.single { it.email == email }
+                assertEquals(allowed.path("owner").asText(), "${row.givenNames} ${row.familyNames}", "$id $email")
+                assertTrue(row.identityEvidence?.startsWith("SOURCE_SHA256:") == true, "$id $email")
+            }
+            for (email in case.path("mustRemainUnattributed").map { it.asText() }) {
+                val row = resolved.single { it.email == email }
+                assertNull(row.givenNames, "$id $email")
+                assertNull(row.familyNames, "$id $email")
+                assertNull(row.openAlexAuthorId, "$id $email")
+                assertNull(row.identityEvidence, "$id $email")
+                assertNull(row.institutionName, "$id $email")
+                assertNull(row.institutionSource, "$id $email")
+            }
+            report += mapOf(
+                "case" to id, "designation" to "REAL_ORIGINAL",
+                "baselineReplay" to case.path("baselineReplay").asText(),
+                "pdfSha256" to fixtureSha256(pdf), "metadataSha256" to fixtureSha256(metadataBytes),
+                "resolved" to resolved.map {
+                    mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+                        "openAlexAuthorId" to it.openAlexAuthorId, "institutionName" to it.institutionName,
+                        "institutionSource" to it.institutionSource, "identityEvidence" to it.identityEvidence)
+                })
+        }
+        val path = java.nio.file.Paths.get("target/discovery-plan-acceptance/01.json")
+        java.nio.file.Files.createDirectories(path.parent)
+        java.nio.file.Files.write(path, jacksonObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsBytes(
+            mapOf("task" to "child-01", "designation" to "REAL_ORIGINAL",
+                "archive" to "src/test/resources/discovery/ownership-20260929.zip",
+                "archiveSha256" to fixtureSha256(archive), "cases" to report)))
+    }
+
+    @Test
+    fun `SYNTHETIC shared marker with an unmatched signature never certifies the first author (I-1)`() {
+        // 合成 PDF（非原文）：同一标记的第二处署名不在元数据里 —— 不能只对成功匹配的作者计数。
+        val positioned = positionedPdf(listOf(
+            Triple(50f, 720f, "Jane Doe* and Unlisted Person*"),
+            Triple(50f, 600f, "*Email: opaque@uni.edu")))
+        assertTrue(org.apache.pdfbox.pdmodel.PDDocument.load(positioned).use {
+            PdfAuthorContactLayout.collect(it, 1, listOf(jane))
+        }.isEmpty())
+        val resolved = extractOwnershipContent(positioned, org.springframework.http.MediaType.APPLICATION_PDF,
+            listOf(jane)).emails.single { it.email == "opaque@uni.edu" }
+        assertNull(resolved.givenNames)
+        assertNull(resolved.identityEvidence)
+    }
+
+    @Test
+    fun `SYNTHETIC same line marker segments bind each mailbox to its own author (I-2)`() {
+        // 合成 PDF（非原文）：`∗`/`†`/`‡`/`§` 同属作者与联系两侧，同一行按标记边界分段。
+        val result = extractOwnershipContent(positionedPdf(listOf(
+            Triple(50f, 720f, "Jane Doe‡ and John Smith§"),
+            Triple(50f, 600f, "‡jane@uni.edu, §john@uni.edu"))),
+            org.springframework.http.MediaType.APPLICATION_PDF, listOf(jane, john)).emails
+        assertEquals("Jane", result.single { it.email == "jane@uni.edu" }.givenNames)
+        assertEquals("John", result.single { it.email == "john@uni.edu" }.givenNames)
+        // `∗` 与 `*` 归一：作者行用 Symbol 字体的 `∗`、联系行用 `*` 时仍是同一个标记。
+        val normalized = extractOwnershipContent(
+            positionedPdfWithSymbolAsterisk("Jane Doe", "*Contact: jane@uni.edu"),
+            org.springframework.http.MediaType.APPLICATION_PDF, listOf(jane)).emails
+        assertEquals("Jane", normalized.single { it.email == "jane@uni.edu" }.givenNames)
+    }
+
+    @Test
+    fun `SYNTHETIC next author statement ending in are with stops the previous paragraph (I-2)`() {
+        // 合成 PDF（非原文）：下一作者的 `are with` 语句必须终止上一段，即使它自己匹配不上元数据。
+        val result = extractOwnershipContent(positionedPdf(listOf(
+            Triple(50f, 720f, "Jane Doe and John Smith"),
+            Triple(50f, 230f, "J.Doe is with Lab One. E-mail: jane@uni.edu"),
+            Triple(50f, 220f, "J. Smith are with Lab Two. E-mail: john@uni.edu"))),
+            org.springframework.http.MediaType.APPLICATION_PDF, listOf(jane, john)).emails
+        assertEquals("Jane", result.single { it.email == "jane@uni.edu" }.givenNames)
+        assertNull(result.single { it.email == "john@uni.edu" }.givenNames)
+        assertNull(result.single { it.email == "john@uni.edu" }.identityEvidence)
+    }
+
+    @Test
+    fun `SYNTHETIC multi initial next author statement stops the previous paragraph (I-2)`() {
+        // 合成 PDF（非原文）：`A. K. Singh are with …` 这类多首字母边界同样终止上一段（Kumar 形状）。
+        val jitendra = PaperAuthor("Jitendra", "Kumar", null, null, false)
+        val ashutosh = PaperAuthor("Ashutosh", "Kumar Singh", null, null, false)
+        val result = extractOwnershipContent(positionedPdf(listOf(
+            Triple(50f, 720f, "Jitendra Kumar, Ashutosh Kumar Singh"),
+            Triple(50f, 230f, "J.Kumar is with NIT Tiruchirappalli. E-mail: jitendra@nitt.edu"),
+            Triple(50f, 220f, "A. K. Singh are with NIT Kurukshetra. E-mail: ashutosh@nitkkr.ac.in"))),
+            org.springframework.http.MediaType.APPLICATION_PDF, listOf(jitendra, ashutosh)).emails
+        assertEquals("Jitendra", result.single { it.email == "jitendra@nitt.edu" }.givenNames)
+        assertNull(result.single { it.email == "ashutosh@nitkkr.ac.in" }.givenNames)
+    }
+
+    // 合法「一人两邮箱」与纯文本/HTML 原有归属继续由本文件既有的
+    // `one unique PDF contact marker retains two explicit mailboxes`、
+    // `published source blocks preserve two owned mailboxes and reject shared correspondence`
+    // 与 `original Springer named mailto anchors bind only unique metadata authors` 覆盖，未弱化。
 
     @Test fun `original Springer named mailto anchors bind only unique metadata authors`() {
         val entries = htmlContactEntries()
@@ -395,6 +591,37 @@ internal fun positionedPdf(lines: List<Triple<Float, Float, String>>): ByteArray
                 stream.showText(text)
                 stream.endText()
             }
+        }
+        doc.save(output)
+    }
+    return output.toByteArray()
+}
+
+/**
+ * Synthetic PDF whose author line carries `∗` (U+2217): WinAnsi Helvetica cannot encode it, so the
+ * marker is drawn with the Symbol font on the same line. The contact line keeps the ASCII `*`.
+ */
+internal fun positionedPdfWithSymbolAsterisk(authorLine: String, contactLine: String): ByteArray {
+    val output = java.io.ByteArrayOutputStream()
+    org.apache.pdfbox.pdmodel.PDDocument().use { doc ->
+        val page = org.apache.pdfbox.pdmodel.PDPage()
+        doc.addPage(page)
+        org.apache.pdfbox.pdmodel.PDPageContentStream(doc, page).use { stream ->
+            stream.setFont(org.apache.pdfbox.pdmodel.font.PDType1Font.HELVETICA, 11f)
+            stream.beginText()
+            stream.newLineAtOffset(50f, 720f)
+            stream.showText(authorLine)
+            stream.endText()
+            stream.setFont(org.apache.pdfbox.pdmodel.font.PDType1Font.SYMBOL, 11f)
+            stream.beginText()
+            stream.newLineAtOffset(103f, 720f)
+            stream.showText("\u2217")
+            stream.endText()
+            stream.setFont(org.apache.pdfbox.pdmodel.font.PDType1Font.HELVETICA, 11f)
+            stream.beginText()
+            stream.newLineAtOffset(50f, 600f)
+            stream.showText(contactLine)
+            stream.endText()
         }
         doc.save(output)
     }

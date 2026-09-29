@@ -16,9 +16,21 @@ internal object PdfAuthorContactLayout {
     private data class Line(val page: Int, val x: Float, val right: Float, val y: Float, val text: String)
     private val mailbox = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}")
     private val emailExtractor = PlainTextEmailExtractor()
-    private val markerContact = Regex("^\\s*([*†‡])\\s*(?:(?:correspondence|e-?mail)\\s*:\\s*)?", RegexOption.IGNORE_CASE)
+    /** I-1/I-2：作者与联系两侧共用的标记集合，`∗` 与 `*` 归一。 */
+    private val markerGlyph = Regex("[*∗†‡§]")
+    private val markerContact = Regex("^\\s*([*∗†‡§])")
     private val paragraphStart = Regex("^\\s*((?:[A-Z]\\.\\s*){1,4}[A-Z][A-Za-z'-]+|[A-Z][A-Za-z'-]+(?:\\s+[A-Z][A-Za-z.'-]+){1,3})\\s+is\\s+with\\b", RegexOption.IGNORE_CASE)
+    /** I-2：下一个作者的联系语句（含 `are with` 与 `A. K. Singh` 这类多首字母）终止上一段，与元数据匹配无关。 */
+    private val paragraphBoundary = Regex("^\\s*((?:[A-Z]\\.\\s*){1,4}[A-Z][A-Za-z'-]+|[A-Z][A-Za-z'-]+(?:\\s+[A-Z][A-Za-z.'-]+){1,3})\\s+(?:is|are)\\s+with\\b", RegexOption.IGNORE_CASE)
     private val emailLabel = Regex("\\be-?mail\\s*:", RegexOption.IGNORE_CASE)
+    /** I-1：作者区之后的行（编号机构脚注、联系行、摘要等），其中的标记不是作者署名。 */
+    private val outsideAuthorArea = Regex(
+        "(?i)^\\s*(?:\\d|[*∗†‡§]|abstract\\b|keywords?\\b|received\\b|accepted\\b|published\\b|doi\\b|https?://|©|downloaded\\b|corresponding\\b|e-?mail\\b)")
+    /** I-1：机构行关键词；这类行只说明脚注归属，不产生邮箱拥有者。 */
+    private val affiliationLine = Regex(
+        "(?i)\\b(?:universit|institut|school|department|faculty|college|centre|center|academy|laborator|gmbh|fondazione|foundation|hospital|chair\\s+of|tno)\\b")
+    /** I-1：紧贴标记左侧的署名词串；中间只允许数字/逗号/空白，因此不会跨过上一个标记或前一位署名。 */
+    private val signatureBeforeMarker = Regex("([\\p{L}][\\p{L}'’.-]*(?:[\\s,]+[\\p{L}][\\p{L}'’.-]*)*)[\\d,\\s]*$")
 
     fun selectedPages(pageCount: Int, maxPages: Int, tailPages: Int): List<Int> {
         if (pageCount < 1) return emptyList()
@@ -56,21 +68,19 @@ internal object PdfAuthorContactLayout {
             val lines = toLines(page, glyphs, width)
             contacts += endContactBlocks(page, pageText, authors)
             val header = authorHeader(lines, height, authors) ?: continue
-            val owners = markerOwners(header.text, authors)
-            // The geometric header may contain only the first lines of a long author roster.
-            // Check the full pre-abstract roster before assigning a shared correspondence marker.
-            val abstractStart = Regex("(?im)^\\s*abstract\\b").find(pageText)?.range?.first ?: pageText.length
-            val rosterOwners = markerOwners(pageText.substring(0, minOf(abstractStart, 6000)), authors)
+            // I-1：拥有者计数取自作者署名区（含匹配不上元数据的署名）；分不清作者段则回退为空集。
+            val owners = markerOwners(authorArea(lines, header, height).orEmpty(), authors)
             for (line in lines) {
                 if (line.y <= header.y || line.y > height * .90f) continue
                 if (header.right < width * .48f && line.x > width * .52f) continue
                 if (header.x > width * .52f && line.right < width * .48f) continue
-                val marker = markerContact.find(line.text)?.groupValues?.get(1) ?: continue
-                val addresses = emailExtractor.extract(line.text)
-                val owner = owners[marker]?.singleOrNull() ?: continue
-                val rosterMatches = rosterOwners[marker]?.distinct().orEmpty()
-                if (rosterMatches.size > 1 || (rosterMatches.isNotEmpty() && rosterMatches.single() != owner)) continue
-                for (address in addresses) contacts += Contact(address, owner, page, header.text, line.text)
+                // I-2：同一联系行按标记边界切分，各自抽邮箱；分段不明确则整行不出证明。
+                for ((marker, segment) in markerSegments(line.text)) {
+                    val owner = uniqueOwner(owners, marker) ?: continue
+                    for (address in emailExtractor.extract(segment)) {
+                        contacts += Contact(address, owner, page, header.text, line.text)
+                    }
+                }
             }
             // A contact paragraph is its own column-local record, not a line chosen by nearest email.
             for (start in lines.indices) {
@@ -83,7 +93,7 @@ internal object PdfAuthorContactLayout {
                     if (next.y - paragraph.last().y > 16f || next.y > height * .95f) break
                     if (line.x < width * .5f && next.x >= width * .5f) continue
                     if (next.x > line.right + 24f || next.right < line.x - 24f) continue
-                    if (paragraphStart.containsMatchIn(next.text) ||
+                    if (paragraphBoundary.containsMatchIn(next.text) ||
                         next.text.startsWith("Corresponding author:", ignoreCase = true) || paragraph.size == 5) break
                     paragraph += next
                 }
@@ -137,19 +147,68 @@ internal object PdfAuthorContactLayout {
         return null
     }
 
-    private fun markerOwners(header: String, authors: List<PaperAuthor>): Map<String, List<Int>> {
-        val result = mutableMapOf<String, MutableList<Int>>()
-        for ((index, author) in authors.withIndex()) {
-            val name = fullName(author) ?: continue
-            val pattern = Regex("(?<![\\p{L}])${name.split(Regex("\\s+")).joinToString("\\s+") { Regex.escape(it) }}(?![\\p{L}])", RegexOption.IGNORE_CASE)
-            for (match in pattern.findAll(header)) {
-                val tail = header.substring(match.range.last + 1)
-                val marker = Regex("^(?:\\s*\\d+(?:\\s*[,;]\\s*\\d+)*)?\\s*([*†‡])").find(tail)?.groupValues?.get(1)
-                if (marker != null) result.getOrPut(marker) { mutableListOf() } += index
-            }
+    /**
+     * I-1：作者署名区 —— 作者标题行起，遇到机构行/联系行/摘要等即止的连续署名行。
+     * 分不清作者段时返回 null，调用方因此不产出任何标记归属。
+     */
+    private fun authorArea(lines: List<Line>, header: Line, height: Float): String? =
+        lines.filter { it.y >= header.y }
+            .takeWhile { it.y <= height * .36f && !outsideAuthorArea.containsMatchIn(it.text) &&
+                !affiliationLine.containsMatchIn(it.text) }
+            .joinToString(" ") { it.text }
+            .takeIf { it.isNotBlank() }
+
+    /**
+     * I-1：每个标记在作者署名区的拥有者集合；`null` 元素代表一处无法对应元数据的署名。
+     * 只对成功匹配的元数据作者计数会把共享标记漏判给首位作者，因此未匹配署名同样参与。
+     */
+    private fun markerOwners(area: String, authors: List<PaperAuthor>): Map<String, Set<Int?>> {
+        val result = mutableMapOf<String, MutableSet<Int?>>()
+        for (match in markerGlyph.findAll(area)) {
+            val signature = signatureBefore(area, match.range.first) ?: continue
+            val tokens = signature.split(' ')
+            // 最长候选优先：只删除左侧多余词（连接词/前一行残词），不为匹配去猜姓名变体。
+            val owners = tokens.indices.asSequence()
+                .map { ownersOfMetadataName(tokens.drop(it).joinToString(" "), authors) }
+                .firstOrNull { it.isNotEmpty() } ?: emptyList()
+            result.getOrPut(normalizeMarker(match.value)) { mutableSetOf() }
+                .addAll(owners.ifEmpty { listOf(null) })
         }
         return result
     }
+
+    /** I-1：标记紧邻左侧的署名词串；只有数字/逗号/空白间隔才算署名，标记之间的成组符号不算。 */
+    private fun signatureBefore(area: String, markerIndex: Int): String? =
+        signatureBeforeMarker.find(area.substring(0, markerIndex))
+            ?.groupValues?.get(1)
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+
+    private fun ownersOfMetadataName(candidate: String, authors: List<PaperAuthor>): List<Int> =
+        authors.indices.filter { normalize(candidate) == normalize(fullName(authors[it]).orEmpty()) }
+
+    /** I-1：只有唯一的、能对应元数据的拥有者才证明邮箱；否则该标记只留下邮箱线索。 */
+    private fun uniqueOwner(owners: Map<String, Set<Int?>>, marker: String): Int? =
+        owners[normalizeMarker(marker)]?.singleOrNull()
+
+    /** I-2：同一联系行按标记边界切分成 (标记, 片段)；标记成组时分段不明确，整行不出证明。 */
+    private fun markerSegments(text: String): List<Pair<String, String>> {
+        val first = markerContact.find(text) ?: return emptyList()
+        val marks = mutableListOf(first.range.last to first.groupValues[1])
+        var cursor = first.range.last + 1
+        while (cursor < text.length) {
+            val next = markerGlyph.find(text, cursor) ?: break
+            if (text.substring(marks.last().first + 1, next.range.first).isBlank()) return emptyList()
+            marks += next.range.first to next.value
+            cursor = next.range.last + 1
+        }
+        return marks.mapIndexed { position, (offset, marker) ->
+            val end = marks.getOrNull(position + 1)?.first ?: text.length
+            marker to text.substring(offset + 1, end)
+        }
+    }
+
+    private fun normalizeMarker(marker: String): String = if (marker == "∗") "*" else marker
 
     private fun uniqueAuthor(anchor: String, header: String, authors: List<PaperAuthor>): Int? {
         val matched = authors.indices.filter { index ->
