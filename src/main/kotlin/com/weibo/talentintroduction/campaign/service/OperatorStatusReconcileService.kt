@@ -71,8 +71,9 @@ class OperatorStatusReconcileService(
         // I-4 EMAIL_INVALID 地址证据（只读重算，与在线 ingest 同一判据）：
         // ① HARD 且 dsn_status 构成明确收件地址证据的退信记录（BounceCollectionService.ingest
         //    的同一白名单；策略/路由/容量类 5xx 与未知码在此不构成证据）；
-        // ② 首封外发 PERMANENT 失败（暂存的旧 SMTP 条件，03 再收紧）
-        // （ManualInitialOutreachService:697,706 + ManualOutreachTxHelper.recordFailure:96 的 errorSummary "PERMANENT:…"）
+        // ② 首封外发 PERMANENT 失败且 error_summary 内含可信行首增强码（03 收口：不再只凭
+        //    `PERMANENT:` 前缀——政策拒绝 5.7.1、裸 550、截断详情都不构成地址证据）
+        // （ManualInitialOutreachService 永久失败分支 + ManualOutreachTxHelper.recordFailure 的同一摘要）
         val addressEvidenceBounceContactIds = bounces
             .filter {
                 it.bounceType == "HARD" &&
@@ -86,7 +87,7 @@ class OperatorStatusReconcileService(
                 it.direction == "OUTBOUND" &&
                     it.mailType == "INTRODUCTION" &&
                     it.sendStatus == "FAILED" &&
-                    (it.errorSummary?.startsWith("PERMANENT:") == true)
+                    RecipientAddressFailureClassifier.isInvalidPermanentSummary(it.errorSummary)
             }
             .map { it.expertContactId }
             .toSet()
@@ -175,13 +176,13 @@ class OperatorStatusReconcileService(
      * - REPLIED：存在 INBOUND mail_record（AutoMailReplyService:802）
      * - MATERIALS_RECEIVED：INBOUND 邮件有材料附件（AutomaticApplicationPromotionService:50,57；
      *   附件经 MailAttachmentService.saveInboundAttachments 以 mailRecordId 落 mail_attachment）
-     * - EMAIL_INVALID：合格地址证据的 HARD 退信（`RecipientAddressFailureClassifier` 白名单）或
-     *   首封外发 PERMANENT 失败（ManualInitialOutreachService:706）
+     * - EMAIL_INVALID：合格地址证据的 HARD 退信（`RecipientAddressFailureClassifier.isInvalidDsnStatus`）
+     *   或具备同一地址证据的首封外发 PERMANENT 失败（`isInvalidPermanentSummary`）
      * - COMPLETED：不可派生（I-3），由调用方单独豁免
      *
      * **里程碑优先（I-4）**：先计算现有最高通信里程碑。已达 REPLIED 及以上（REPLIED /
      * MATERIALS_RECEIVED / INVITED）时直接返回该里程碑——已有回复/材料/邀请事实不被退信遮盖；
-     * 否则才回退到地址证据退信（或暂存的旧 SMTP 条件）推导 EMAIL_INVALID，
+     * 否则才回退到地址证据（退信 / 首封永久失败）推导 EMAIL_INVALID，
      * 最后才是低于 REPLIED 的里程碑或 NOT_CONTACTED。
      * 不从 DB 既有 EMAIL_INVALID 反推证据。
      */

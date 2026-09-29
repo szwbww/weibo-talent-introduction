@@ -183,7 +183,8 @@ class MailOpenTrackingPersistenceTest {
             SenderWarmupService(WarmupProperties(enabled = false),
                 ObjectMapper().registerKotlinModule()), autoSettings,
             Mockito.mock(ManualExpertMailService::class.java), Mockito.mock(TaskExecutionService::class.java),
-            binding, templates, verification)
+            binding, templates, verification,
+            Mockito.mock(com.weibo.talentintroduction.campaign.service.ExpertOperatorStatusService::class.java))
         Mockito.`when`(campaigns.findByCampaignCode("MANUAL_OUTREACH"))
             .thenReturn(Campaign(id = 1L, campaignCode = "MANUAL_OUTREACH", campaignName = "Outreach",
                 description = null, senderAccountId = 1L))

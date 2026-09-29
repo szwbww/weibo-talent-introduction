@@ -715,7 +715,8 @@ class BatchSendTaskRuntimeIntegrationTest {
             Mockito.mock(TaskExecutionService::class.java),
             Mockito.mock(SenderAccountBindingService::class.java),
             Mockito.mock(MailComposeTemplateService::class.java),
-            Mockito.mock(BatchEmailVerificationService::class.java)
+            Mockito.mock(BatchEmailVerificationService::class.java),
+            Mockito.mock(ExpertOperatorStatusService::class.java)
         )
         return ManualOutreachHarness(service, expertSearchService, expertContactRepository, mailRecordRepository)
     }

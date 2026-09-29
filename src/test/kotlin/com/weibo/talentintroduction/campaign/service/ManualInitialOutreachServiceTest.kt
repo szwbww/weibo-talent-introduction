@@ -91,6 +91,14 @@ class ManualInitialOutreachServiceTest {
     private val mailSenderAccountService = Mockito.mock(MailSenderAccountService::class.java)
     private val selfCheckService = Mockito.mock(SenderAccountSelfCheckService::class.java)
     private val expertIndexWriterService = Mockito.mock(ExpertIndexWriterService::class.java)
+    private val operatorActionLogService =
+        Mockito.mock(com.weibo.talentintroduction.audit.service.OperatorActionLogService::class.java)
+    /**
+     * I-3（03）：公共 `operator_status` 写入口使用**真实实现** + mock 仓储/审计/ES —— 断言既有
+     * DB/ES 语义（REPLIED 及以上保护、无人工审计、ES 同步）而不用替身。
+     */
+    private val expertOperatorStatusService =
+        ExpertOperatorStatusService(expertContactRepository, operatorActionLogService, expertIndexWriterService)
     private val accountRateLimiter = AccountRateLimiter()
     private val emailSuppressionService = Mockito.mock(EmailSuppressionService::class.java)
     private val autoReplySettingService = Mockito.mock(AutoReplySettingService::class.java)
@@ -145,7 +153,8 @@ class ManualInitialOutreachServiceTest {
         taskExecutionService = taskExecutionService,
         senderAccountBindingService = senderAccountBindingService,
         mailComposeTemplateService = mailComposeTemplateService,
-        batchEmailVerificationService = batchEmailVerificationService
+        batchEmailVerificationService = batchEmailVerificationService,
+        expertOperatorStatusService = expertOperatorStatusService
     )
 
     private fun fastConfig(
@@ -1355,20 +1364,51 @@ class ManualInitialOutreachServiceTest {
         assertEquals("AUTO", finalProgress.details!!["executionMode"])
     }
 
+    /**
+     * I-1（03）：把 mock 的 [ManualOutreachTxHelper.recordFailure] 变成真实事实源 —— 捕获调用并以
+     * 同一 contact / 同一 errorSummary 生成 mail_record 行，供第二次 run 的仓储原样返回。
+     * 禁止手工伪造 EMAIL_INVALID 来「证明」不会重发。
+     */
+    private fun captureIntroductionFailures(): MutableList<MailRecord> {
+        val rows = mutableListOf<MailRecord>()
+        Mockito.doAnswer { invocation ->
+            rows += MailRecord(
+                expertContactId = invocation.getArgument(0),
+                direction = "OUTBOUND",
+                mailType = "INTRODUCTION",
+                messageId = invocation.getArgument(2),
+                inReplyTo = null,
+                subject = invocation.getArgument(4),
+                body = invocation.getArgument(5),
+                matchedQaRuleId = null,
+                sendStatus = "FAILED",
+                receivedAt = null,
+                sentAt = null,
+                errorSummary = invocation.getArgument(3)
+            )
+            null
+        }.`when`(txHelper).recordFailure(
+            Mockito.anyLong(), Mockito.anyString(), Mockito.nullable(String::class.java),
+            Mockito.nullable(String::class.java), Mockito.nullable(String::class.java),
+            Mockito.nullable(String::class.java), Mockito.nullable(Long::class.javaObjectType),
+            Mockito.nullable(Long::class.javaObjectType)
+        )
+        return rows
+    }
+
+    /** 第二次 run 的既有 contact 行：真实状态是 NOT_CONTACTED（04 起不再旁标 EMAIL_INVALID）。 */
+    private fun persistedIntroductionContact(email: String, operatorStatus: String = "NOT_CONTACTED") =
+        ExpertContact(
+            id = 999L, campaignId = 10L, orcidId = "0001", expertEmail = email, expertName = "Given Family",
+            currentStatus = "NEW", operatorStatus = operatorStatus
+        )
+
     @Test
-    fun `run marks EMAIL_INVALID on PERMANENT SMTP error and excludes from next snapshot`() {
+    fun `address evidence permanent failure marks EMAIL_INVALID through the public entry and blocks the next snapshot`() {
         val account = account("chen")
-        val campaign = Campaign(id = 10L, campaignCode = "MANUAL_OUTREACH", campaignName = "Manual Outreach", description = null, senderAccountId = 1L)
-        Mockito.`when`(campaignRepository.findByCampaignCode("MANUAL_OUTREACH")).thenReturn(campaign)
-        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW")).thenReturn(emptyList())
-
-        stubScrolledExperts(listOf(expert("0001", "bad@example.com")))
-        Mockito.`when`(expertContactRepository.existsByOrcidId("0001")).thenReturn(false)
-        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(emptyList())
-
-        Mockito.`when`(senderAccountAssignmentService.selectAccount(anyValue(expert("","")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY))).thenReturn(account)
-        Mockito.`when`(introductionMailComposer.compose(eqValue("chen"), anyValue(expert("","")), Mockito.isNull())).thenReturn(ComposedMail("bad@example.com", "Subject", "Body"))
-        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("","","")))).thenReturn(
+        stubIntroSendPipeline(account, listOf(expert("0001", "bad@example.com")))
+        val failureRows = captureIntroductionFailures()
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("", "", "")))).thenReturn(
             DeliveredMail(
                 messageId = "msg-1",
                 status = "FAILED",
@@ -1379,31 +1419,206 @@ class ManualInitialOutreachServiceTest {
         )
 
         val firstRun = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
         assertEquals(1, firstRun.failed)
         assertEquals(0, firstRun.sent)
-
-        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0001", "EMAIL_INVALID")
+        // I-1：判定与 recordFailure 读的是同一份摘要。
+        Mockito.verify(txHelper).recordFailure(
+            contactId = Mockito.eq(999L),
+            accountCode = eqValue("chen"),
+            messageId = Mockito.anyString(),
+            errorSummary = eqValue("PERMANENT:550:550 5.1.1 User unknown"),
+            subject = eqValue("Subject"),
+            body = eqValue("Body"),
+            attemptId = Mockito.eq(77L),
+            taskExecutionId = Mockito.eq(12345L)
+        )
+        // I-3：合格地址证据 → 经公共入口写 DB/ES；自动路径不写人工审计。
         Mockito.verify(expertContactRepository, Mockito.atLeastOnce()).save(
             Mockito.argThat { contact: ExpertContact -> contact.operatorStatus == "EMAIL_INVALID" }
         )
+        Mockito.verify(expertIndexWriterService).syncOperatorStatus("0001", "EMAIL_INVALID")
+        Mockito.verifyNoInteractions(operatorActionLogService)
 
-        val invalidatedContact = ExpertContact(
-            id = 999L,
-            campaignId = 10L,
-            orcidId = "0001",
-            expertEmail = "bad@example.com",
-            expertName = "Given Family",
-            currentStatus = "NEW",
-            operatorStatus = "EMAIL_INVALID"
-        )
+        // 第二次 run：仓储原样返回第一次捕获的失败行（contact 仍是被公共入口改过的行）。
+        val persisted = persistedIntroductionContact("bad@example.com", operatorStatus = "EMAIL_INVALID")
         Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
-            .thenReturn(listOf(invalidatedContact))
-        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("0001"))).thenReturn(listOf(expert("0001", "bad@example.com")))
+            .thenReturn(listOf(persisted))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("0001")))
+            .thenReturn(listOf(expert("0001", "bad@example.com")))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(failureRows)
         stubScrolledExperts(emptyList())
 
         val secondRun = service.run(runScheduledSnapshot(), 12346L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
         assertEquals(0, secondRun.total)
-        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(account), anyValue(ComposedMail("","","")))
+        assertEquals(0, secondRun.failed)
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+        Mockito.verify(txHelper, Mockito.times(1)).recordFailure(
+            contactId = Mockito.anyLong(), accountCode = Mockito.anyString(), messageId = Mockito.anyString(),
+            errorSummary = Mockito.anyString(), subject = Mockito.anyString(), body = Mockito.anyString(),
+            attemptId = Mockito.anyLong(), taskExecutionId = Mockito.any()
+        )
+    }
+
+    @Test
+    fun `policy permanent failure keeps FAILED without EMAIL_INVALID and blocks automatic resend on the next run`() {
+        val account = account("chen")
+        stubIntroSendPipeline(account, listOf(expert("0001", "policy@example.com")))
+        val failureRows = captureIntroductionFailures()
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("", "", "")))).thenReturn(
+            DeliveredMail(
+                messageId = "msg-1",
+                status = "FAILED",
+                errorCategory = SmtpErrorCategory.PERMANENT,
+                smtpResponseCode = 550,
+                errorDetail = "550 5.7.1 Blocked by policy"
+            )
+        )
+
+        val firstRun = service.run(runScheduledSnapshot(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, firstRun.failed)
+        assertEquals(0, firstRun.sent)
+        Mockito.verify(txHelper).recordFailure(
+            contactId = Mockito.eq(999L),
+            accountCode = eqValue("chen"),
+            messageId = Mockito.anyString(),
+            errorSummary = eqValue("PERMANENT:550:550 5.7.1 Blocked by policy"),
+            subject = eqValue("Subject"),
+            body = eqValue("Body"),
+            attemptId = Mockito.eq(77L),
+            taskExecutionId = Mockito.eq(12345L)
+        )
+        // O-1/I-3：策略类永久失败没有地址证据 → 不写 EMAIL_INVALID、不同步 ES、不写人工审计。
+        Mockito.verify(expertContactRepository, Mockito.never()).save(
+            Mockito.argThat { contact: ExpertContact -> contact.operatorStatus == "EMAIL_INVALID" }
+        )
+        Mockito.verifyNoInteractions(expertIndexWriterService, operatorActionLogService)
+
+        // O-2/I-4：第二次 run 的仓储返回第一次实际捕获的失败行；contact 仍是 NOT_CONTACTED 且未绑定。
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(persistedIntroductionContact("policy@example.com")))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("0001")))
+            .thenReturn(listOf(expert("0001", "policy@example.com")))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(failureRows)
+        stubScrolledExperts(emptyList())
+
+        val secondRun = service.run(runScheduledSnapshot(), 12346L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, secondRun.total)
+        assertEquals(0, secondRun.sent)
+        assertEquals(0, secondRun.failed)
+        // 累计：仍只有第一次的 1 次 SMTP、1 条 FAILED、1 次 PREPARED，且无额度增长。
+        Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+        Mockito.verify(txHelper, Mockito.times(1)).recordFailure(
+            contactId = Mockito.anyLong(), accountCode = Mockito.anyString(), messageId = Mockito.anyString(),
+            errorSummary = Mockito.anyString(), subject = Mockito.anyString(), body = Mockito.anyString(),
+            attemptId = Mockito.anyLong(), taskExecutionId = Mockito.any()
+        )
+        Mockito.verify(mailSendAttemptRepository, Mockito.times(1)).save(Mockito.any(MailSendAttempt::class.java))
+        Mockito.verify(mailSenderAccountRepository, Mockito.never())
+            .incrementTodaySentCount(Mockito.anyString(), anyValue(LocalDateTime.now()))
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["REPLIED", "MATERIALS_RECEIVED", "INVITED", "COMPLETED"])
+    fun `address evidence never downgrades a contact already at REPLIED or above (I-3)`(operatorStatus: String) {
+        val account = account("chen")
+        stubIntroSendPipeline(account, listOf(expert("0001", "progressed@example.com")))
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(persistedIntroductionContact("progressed@example.com", operatorStatus = operatorStatus)))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("0001")))
+            .thenReturn(listOf(expert("0001", "progressed@example.com")))
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(listOf("0001")))
+            .thenReturn(listOf(persistedIntroductionContact("progressed@example.com", operatorStatus = operatorStatus)))
+        Mockito.`when`(mailDeliveryService.send(anyValue(account), anyValue(ComposedMail("", "", "")))).thenReturn(
+            DeliveredMail(
+                messageId = "msg-1",
+                status = "FAILED",
+                errorCategory = SmtpErrorCategory.PERMANENT,
+                smtpResponseCode = 550,
+                errorDetail = "550 5.1.1 User unknown"
+            )
+        )
+
+        val result = service.run(introSnapshot(roundSize = 10, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, false)
+
+        // 失败事实照记，但公共入口对 REPLIED 及以上零写入（状态不降级、不写人工审计）。
+        assertEquals(1, result.failed)
+        assertEquals(0, result.sent)
+        Mockito.verify(expertContactRepository, Mockito.never()).save(
+            Mockito.argThat { contact: ExpertContact -> contact.operatorStatus == "EMAIL_INVALID" }
+        )
+        Mockito.verify(expertIndexWriterService, Mockito.never())
+            .syncOperatorStatus(Mockito.anyString(), Mockito.anyString())
+        Mockito.verifyNoInteractions(operatorActionLogService)
+    }
+
+    @Test
+    fun `an ORCID reappearing from the ES page is blocked by the recorded permanent failure before any row or SMTP`() {
+        val account = account("chen")
+        stubIntroSendPipeline(account, listOf(expert("0001", "policy@example.com")))
+        stubVerificationDecision(passedRowId = 555L)
+        // NEW 重试已被 O-2 谓词排除（空列表），该 ORCID 仍从 ES 候选页重新出现。
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(emptyList())
+        val persisted = persistedIntroductionContact("policy@example.com")
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(listOf("0001"))).thenReturn(listOf(persisted))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(
+            listOf(
+                MailRecord(
+                    expertContactId = 999L, direction = "OUTBOUND", mailType = "INTRODUCTION",
+                    messageId = "msg-1", inReplyTo = null, subject = "Subject", body = "Body",
+                    matchedQaRuleId = null, sendStatus = "FAILED", receivedAt = null, sentAt = null,
+                    errorSummary = "PERMANENT:550:550 5.7.1 Blocked by policy"
+                )
+            )
+        )
+
+        val result = service.run(introSnapshotWithVerification(), 12346L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.skipped)
+        assertEquals(1, result.outcome!!.skippedReasons[BatchOutcomeReasonCodes.SEND_EXCEPTION]?.count)
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+        // 不新建/绑定 contact、不写发送尝试（PREPARED）、不碰 ES 状态。
+        Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
+        Mockito.verify(mailSendAttemptRepository, Mockito.never()).save(Mockito.any(MailSendAttempt::class.java))
+        Mockito.verify(expertIndexWriterService, Mockito.never()).syncOperatorStatus(Mockito.anyString(), Mockito.anyString())
+        // I-6：已 PASS 验证但被门禁拦下 → NOT_SENT + 具体原因。
+        Mockito.verify(batchEmailVerificationService)
+            .recordSend(555L, "NOT_SENT", BatchOutcomeReasonCodes.SEND_EXCEPTION)
+    }
+
+    @Test
+    fun `a transient failure row does not block the retry of the same contact`() {
+        val account = account("chen")
+        stubIntroSendPipeline(account, listOf(expert("0001", "retry@example.com")))
+        Mockito.`when`(expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(10L, "NEW"))
+            .thenReturn(listOf(persistedIntroductionContact("retry@example.com")))
+        Mockito.`when`(expertSearchService.searchByOrcidIds(listOf("0001")))
+            .thenReturn(listOf(expert("0001", "retry@example.com")))
+        Mockito.`when`(expertContactRepository.findByOrcidIdIn(listOf("0001")))
+            .thenReturn(listOf(persistedIntroductionContact("retry@example.com")))
+        Mockito.`when`(mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(999L)).thenReturn(
+            listOf(
+                MailRecord(
+                    expertContactId = 999L, direction = "OUTBOUND", mailType = "INTRODUCTION",
+                    messageId = "msg-0", inReplyTo = null, subject = "Subject", body = "Body",
+                    matchedQaRuleId = null, sendStatus = "FAILED", receivedAt = null, sentAt = null,
+                    errorSummary = "TRANSIENT:421:421 too many connections"
+                )
+            )
+        )
+
+        val result = service.run(introSnapshot(roundSize = 10, roundsPerRun = 1), 12345L, ExecutionMode.MANUAL, false)
+
+        assertEquals(1, result.sent)
+        assertEquals(0, result.failed)
+        Mockito.verify(mailDeliveryService, Mockito.times(1))
+            .send(anyValue(account), anyValue(ComposedMail("", "", "")))
     }
 
     @Test

@@ -21,6 +21,7 @@ import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import com.weibo.talentintroduction.expert.service.ExpertIdNormalizer
 import com.weibo.talentintroduction.expert.service.ExpertIndexWriterService
 import com.weibo.talentintroduction.expert.service.ExpertSearchService
+import com.weibo.talentintroduction.mail.domain.MailRecord
 import com.weibo.talentintroduction.mail.domain.MailSenderAccount
 import com.weibo.talentintroduction.mail.domain.SmtpErrorCategory
 import com.weibo.talentintroduction.mail.repository.MailRecordRepository
@@ -39,6 +40,7 @@ import com.weibo.talentintroduction.mail.service.ManualMailSendCommand
 import com.weibo.talentintroduction.mail.service.NoAvailableSenderAccountException
 import com.weibo.talentintroduction.mail.service.PersonalizationGateException
 import com.weibo.talentintroduction.mail.service.ProviderResolver
+import com.weibo.talentintroduction.mail.service.RecipientAddressFailureClassifier
 import com.weibo.talentintroduction.mail.service.SenderAccountAssignmentService
 import com.weibo.talentintroduction.mail.service.SenderAccountBindingService
 import com.weibo.talentintroduction.mail.service.SenderAccountSelfCheckService
@@ -69,6 +71,15 @@ private const val STOP_EMAIL_VERIFY_SEND_STATE_CONFLICT = "EMAIL_VERIFY_SEND_STA
 /** I-2：SMTP 前发现最终收件地址与已验证地址不一致时的停止原因码 / 明细 send_reason。 */
 private const val SEND_REASON_EMAIL_CHANGED = "EMAIL_CHANGED"
 
+/**
+ * I-1/I-4（03）：`buildSmtpErrorSummary` 的永久失败前缀 —— 在线判定与对账读取的是同一份持久化摘要。
+ * 只作「历史首封永久失败」事实门禁的判据，不用于地址证据判定（那是地址证据白名单的职责）。
+ */
+private const val PERMANENT_SUMMARY_PREFIX = "PERMANENT:"
+
+/** I-3（03）：传给公共状态入口的说明文本上限（该说明不落库，仅作调用点可读性）。 */
+private const val SUMMARY_REASON_LIMIT = 200
+
 @Service
 class ManualInitialOutreachService(
     private val expertSearchService: ExpertSearchService,
@@ -97,7 +108,12 @@ class ManualInitialOutreachService(
     private val senderAccountBindingService: SenderAccountBindingService,
     private val mailComposeTemplateService: MailComposeTemplateService,
     /** I-1/I-2/I-6：发送前邮箱验证（HTTP + 明细审计 + 标签）的唯一接入点。 */
-    private val batchEmailVerificationService: BatchEmailVerificationService
+    private val batchEmailVerificationService: BatchEmailVerificationService,
+    /**
+     * I-1/I-3（03）：`operator_status` 的公共写入口 —— 永久失败只有具备地址证据时才允许写
+     * EMAIL_INVALID；失败事实本身仍由 [txHelper] 记录，二者相互独立。
+     */
+    private val expertOperatorStatusService: ExpertOperatorStatusService
 ) {
     private val log = LoggerFactory.getLogger(ManualInitialOutreachService::class.java)
 
@@ -854,6 +870,22 @@ class ManualInitialOutreachService(
 
                 val stat = runAccountStats.getOrPut(account.accountCode) { AccountRunStat() }
                 val provider = providerResolver.resolve(expert.email)
+                // I-4（03）：历史首封永久失败事实门禁（与 NEW 重试构造共用同一谓词）。
+                // 位置在「contact 确定/原 SENT 去重检查」同一段门禁内、建行与写 PREPARED 与 SMTP 之前：
+                // ES 页重新出现的同一 ORCID 走同一事实（按 ORCID 读既有行），不会因重试集合排除而绕过。
+                // 跳过不新建/绑定 contact、不更新发送尝试、不调 SMTP、不计本次 failed/sent、不占额度。
+                if (hasPermanentFirstMailFailure(introductionHistoryContactIds(normOrcid, existingContact))) {
+                    log.info("Permanent introduction failure already recorded for ORCID {}, blocking automatic resend", normOrcid)
+                    accumulator.recordSkipped(
+                        BatchOutcomeReasonCodes.SEND_EXCEPTION,
+                        "历史首封永久失败，需人工处理：${expert.email}"
+                    )
+                    processedTotal++
+                    roundProcessed++
+                    // I-6：已 PASS 验证的目标在此跳过时保留 NOT_SENT + 具体原因。
+                    recordVerificationSend(verified, BatchEmailVerificationSendStatus.NOT_SENT, BatchOutcomeReasonCodes.SEND_EXCEPTION)
+                    continue
+                }
                 // I-6：区分「SMTP 前失败（NOT_SENT）」与「SMTP 结果不明（保持 SENDING）」。
                 var smtpAttempted = false
                 var accountFaulted = false
@@ -999,16 +1031,22 @@ class ManualInitialOutreachService(
                         val errorSummary = buildSmtpErrorSummary(delivered)
                         when (delivered.errorCategory) {
                             SmtpErrorCategory.PERMANENT -> {
+                                // I-1：失败事实先落库，且判定与 recordFailure 使用同一个 errorSummary。
                                 txHelper.recordFailure(
                                     contactId = contact.id, accountCode = account.accountCode,
                                     messageId = messageId, errorSummary = errorSummary,
                                     subject = mail.subject, body = mail.text ?: mail.body, attemptId = attempt.id,
                                     taskExecutionId = executionId
                                 )
-                                expertContactRepository.save(
-                                    contact.copy(operatorStatus = "EMAIL_INVALID", updatedAt = LocalDateTime.now())
-                                )
-                                expertIndexWriterService.syncOperatorStatus(normOrcid, "EMAIL_INVALID")
+                                // I-3：公共状态入口与失败事实独立 —— 只有明确收件地址证据（行首可信
+                                // 增强码命中白名单）才经公共入口写 EMAIL_INVALID（含 REPLIED 及以上保护、
+                                // 无人工审计、ES 同步语义）；政策/路由类永久失败只留 FAILED 记录。
+                                if (RecipientAddressFailureClassifier.isInvalidPermanentSummary(errorSummary)) {
+                                    expertOperatorStatusService.markEmailInvalid(
+                                        contact,
+                                        "SMTP 永久失败且地址证据成立：${errorSummary.take(SUMMARY_REASON_LIMIT)}"
+                                    )
+                                }
                                 accumulator.recordFailure(BatchOutcomeReasonCodes.SEND_EXCEPTION, "永久发送失败 (${expert.email}): ${delivered.errorDetail ?: delivered.status}")
                                 stat.failed++
                                 roundRejected++
@@ -1272,6 +1310,33 @@ class ManualInitialOutreachService(
     }
 
     /**
+     * I-4（03）：历史首封永久失败事实门禁的判据 —— OUTBOUND + INTRODUCTION + FAILED 且摘要以
+     * `PERMANENT:` 开头。**与地址证据解耦**：无法证明地址无效的政策/路由类永久失败同样阻断自动重发，
+     * 而 UNKNOWN / TRANSIENT（含 421 限流）不冒充永久失败。
+     */
+    private fun MailRecord.isPermanentIntroductionFailure(): Boolean =
+        direction == "OUTBOUND" && mailType == "INTRODUCTION" && sendStatus == "FAILED" &&
+            errorSummary?.startsWith(PERMANENT_SUMMARY_PREFIX) == true
+
+    /**
+     * I-4（03）：事实门禁要读的 contact 行 —— ES 页重新出现的同一 ORCID 也必须在发送前命中同一事实，
+     * 故按 ORCID 取既有行（复用既有 `findByOrcidIdIn`，不新增仓储方法/表/状态），
+     * 再逐个用现有 `findAllByExpertContactIdOrderByCreatedAtAsc` 读一次邮件列表。
+     */
+    private fun introductionHistoryContactIds(normOrcid: String, existingContact: ExpertContact?): List<Long> =
+        buildList {
+            existingContact?.id?.let { add(it) }
+            addAll(expertContactRepository.findByOrcidIdIn(listOf(normOrcid)).mapNotNull { it.id })
+        }.distinct()
+
+    /** I-4（03）：上述 contact 行中是否存在历史首封永久失败（每行一次列表读取，不做 N×M 查询）。 */
+    private fun hasPermanentFirstMailFailure(contactIds: List<Long>): Boolean =
+        contactIds.any { contactId ->
+            mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contactId)
+                .any { it.isPermanentIntroductionFailure() }
+        }
+
+    /**
      * Round gate (L3-1) for INTRODUCTION: reads TTL from INTRODUCTION config (compat — existing tests mock checkSendable(account)).
      * I-2: 非空 [allowedAccountCodes] 时候选与自检都只覆盖选中账号。
      */
@@ -1377,8 +1442,15 @@ class ManualInitialOutreachService(
 
         val newContacts = expertContactRepository.findAllByCampaignIdAndCurrentStatusOrderByUpdatedAtDesc(campaignId, "NEW")
         if (newContacts.isNotEmpty()) {
-            val retryableContacts = newContacts.filter {
-                !hasSentIntroduction(it.id!!) && it.operatorStatus != "EMAIL_INVALID"
+            val retryableContacts = newContacts.filter { contact ->
+                // I-4（03）：同一份邮件列表同时服务「已发首封」去重与「历史首封永久失败」阻断
+                // （复用现有查询，不新增每行第二次读取）——永久失败不自动重发，不依赖 EMAIL_INVALID 副作用。
+                val records = mailRecordRepository.findAllByExpertContactIdOrderByCreatedAtAsc(contact.id!!)
+                val hasSent = records.any {
+                    it.direction == "OUTBOUND" && it.mailType == "INTRODUCTION" && it.sendStatus == "SENT"
+                }
+                !hasSent && !records.any { it.isPermanentIntroductionFailure() } &&
+                    contact.operatorStatus != "EMAIL_INVALID"
             }
             val orcidIds = retryableContacts.map { it.orcidId }
             // I-3/I-4: 预估与执行共用本构造函数 —— 同一 ORCID 的任一 campaign 行已绑定即排除。
