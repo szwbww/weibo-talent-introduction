@@ -16,7 +16,7 @@ Read the full child plan from disk before implementing; it is the complete appro
 
 ## Hard constraints
 
-- Only the 7 Authorized Files below may change. No other product, test, resource, config, migration, or fixture file.
+- Only the 8 Authorized Files below may change. No other product, test, resource, config, migration, or fixture file.
 - No new DB migration; no ES field/schema change; no production or online-data writes; no real mail sending; no changes to scheduling or deployment.
 - Do not change `DiscoveryIdentity.VERSION`; only the extraction cache version constant (plan T-2). No data migration / re-enqueue.
 - Keep `SourceAuthorEmailResolver`'s public interface and its existing conflict rules. The plan forbids widening them without a plan amendment: if you believe new code in that file is required, stop with `PLAN_CONFLICT`.
@@ -25,7 +25,7 @@ Read the full child plan from disk before implementing; it is the complete appro
 - Minimal diff; no unrelated reformatting or refactoring. New shared "smart name splitting" service is explicitly forbidden.
 - One local commit with exact subject `feat(fast-p): implement 01`. No push/merge/rebase/amend/squash; do not touch other worktrees.
 
-## Authorized Files (7)
+## Authorized Files (8)
 
 | # | File | Action |
 |---|---|---|
@@ -36,6 +36,7 @@ Read the full child plan from disk before implementing; it is the complete appro
 | 5 | `src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt` | 缓存版本回归 |
 | 6 | `src/test/resources/discovery/ownership-20260929.zip` | 原文证据，逐字复制自 `docs/plans/2026-09-29/discovery-repair-evidence/original-source-evidence.zip` |
 | 7 | `src/test/resources/discovery/ownership-20260929-expected.json` | 逐案预期与出处（仅真实禁止/允许关系，基线值、来源、SHA） |
+| 8 | `src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt` | 同步 `EXTRACTION_VERSION` pin（`20261002 → 20261003`）— 由 amendment **A1** 授权（`commit:cc57128f3c2dc1f4bbadd86d2809a1ce787d7e7c`）；只允许改该一行断言 |
 
 ## Child invariants (verbatim contract)
 
