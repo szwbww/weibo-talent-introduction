@@ -8,7 +8,7 @@ Read the full child plan from disk before implementing; it is the complete appro
 
 - Retained worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-29-discovery-repair-00-master`
 - Branch: `fast/2026-09-29-discovery-repair-00-master`
-- `child_base_sha`: the terminal `Code head` of child 03, exactly as recorded in `docs/plans/fast/2026-09-29-discovery-repair-00-master/ledger.md` and stated in the dispatch message.
+- `child_base_sha`: `e94425cb0cd275254f33530548ba98033ddca6b4` — child 03's terminal `Code head` (recorded in `docs/plans/fast/2026-09-29-discovery-repair-00-master/ledger.md`). Intervening commits after it are child-03 fast-p evidence only.
 - Master plan: `docs/plans/2026-09-29/discovery-repair-00-master.md` (same seed commit). Master invariant **M-3（只调整后续触发）** is the parent rule; child invariants I-1–I-3 plus style contracts S-1/S-2 below are governing.
 - Execution report to write: `docs/plans/fast/2026-09-29-discovery-repair-00-master/children/04/execution.md` (controller commits it as fast-p evidence; never include `docs/plans/fast/**` in the implementation commit).
 - Use the `execute-p` skill with this brief plus the exact child plan; return its report shape.
