@@ -93,6 +93,7 @@
 | 5 | src/test/kotlin/com/weibo/talentintroduction/discovery/service/DiscoveryPipelineServiceTest.kt | 缓存版本回归 |
 | 6 | src/test/resources/discovery/ownership-20260929.zip | 原文证据，逐字复制 |
 | 7 | src/test/resources/discovery/ownership-20260929-expected.json | 逐案预期与出处 |
+| 8 | src/test/kotlin/com/weibo/talentintroduction/expert/domain/DiscoveryIdentityTest.kt | 同步 EXTRACTION_VERSION pin（20261002→20261003）；本文件被验收命令点名且逐字断言该常量（A1 修正） |
 
 ## 验收标准
 
