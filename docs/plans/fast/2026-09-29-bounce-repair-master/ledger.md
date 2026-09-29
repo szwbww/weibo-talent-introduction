@@ -19,8 +19,8 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-09-29/bounce-alert-observability.md | commit:9f5eb6818502c9b7079b771ee56464e8c4bff485 | none | 2 | LIGHT_PASS | 18c79797ef87022d0fd134d7890759993e377059 | 4bc9f11956fe77d87063afc8bc393689f0ec3487 | 0 | — | 4bc9f11956fe77d87063afc8bc393689f0ec3487 | | epochs: ImplBounce01 ff0d1eb (PLAN_CONFLICT pause), ImplBounce01E2 4bc9f11; verifier VerifyBounce01; A1 widened file list; full JS suite 1233/0 |
-| 02 | docs/plans/2026-09-29/bounce-address-invalid-separation.md | commit:4dccc7404dad92fc3a1dfe3224e2e6fe03feb331 | 01 | 1 | IMPLEMENTING | 4bc9f11956fe77d87063afc8bc393689f0ec3487 | | 0 | — | | | Master I-2 有界顺序；与 01 无共享文件；writer pending |
+| 01 | docs/plans/2026-09-29/bounce-alert-observability.md | commit:9f5eb6818502c9b7079b771ee56464e8c4bff485 | none | 2 | LIGHT_PASS | 18c79797ef87022d0fd134d7890759993e377059 | 4bc9f11956fe77d87063afc8bc393689f0ec3487 | 0 | — | 4bc9f11956fe77d87063afc8bc393689f0ec3487 | f9dd55b96cbbfde728ea8f6455cd2b48de9bbd9f | epochs: ImplBounce01 ff0d1eb (PLAN_CONFLICT pause), ImplBounce01E2 4bc9f11; verifier VerifyBounce01; A1 widened file list; full JS suite 1233/0 |
+| 02 | docs/plans/2026-09-29/bounce-address-invalid-separation.md | commit:4dccc7404dad92fc3a1dfe3224e2e6fe03feb331 | 01 | 1 | LIGHT_PASS_WITH_NOTES | 4bc9f11956fe77d87063afc8bc393689f0ec3487 | 9ab0b519bd7d0991a02b92c04746b78d14ce7d3b | 0 | — | 9ab0b519bd7d0991a02b92c04746b78d14ce7d3b | | writer ImplBounce02 (6446179+9ab0b51), verifier VerifyBounce02; RECORD_ONLY O-1 (BounceDetector.kt:269 heuristic regex) |
 | 03 | docs/plans/2026-09-29/bounce-smtp-invalid-separation.md | commit:4dccc7404dad92fc3a1dfe3224e2e6fe03feb331 | 02 | 1 | PENDING | | | 0 | — | | | 严格依赖 02 已验证；与 02 共用 helper/对账四文件，串行。 |
 
 ## Amendments
