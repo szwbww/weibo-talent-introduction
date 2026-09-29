@@ -15,7 +15,7 @@
 - O-1：告警显示近 7 天 HARD 数、成功发信数、百分比，并解释两个时间窗口。
 - O-2：低于 20 封显式返回样本不足；前端无偏高徽标，不能把无告警解释成零退信。
 
-## Authorized Files（恰好 7 个，不得增删）
+## Authorized Files（恰好 8 个，不得增删；第 8 个为 A1 追加）
 
 | # | 文件 |
 |---|---|
@@ -26,8 +26,12 @@
 | 5 | `src/test/kotlin/com/weibo/talentintroduction/mail/service/BounceRateMonitorServiceTest.kt` |
 | 6 | `src/test/kotlin/com/weibo/talentintroduction/mail/controller/MailSenderAccountControllerMvcTest.kt` |
 | 7 | `src/test/js/senderBindingDisplay.test.js` |
+| 8 | `src/test/js/providerUndeliveredColumn.test.js`（A1 追加：守卫断言收敛为服务商分布链路，不得全局否定 `hardBounceCount`） |
 
-禁止修改：`styles.css`、repository、`MailMonitoringService`、migration、其它任何文件。若无授权文件无法完成，返回 `PLAN_CONFLICT`。
+禁止修改：`styles.css`、repository、`MailMonitoringService`、migration、`taskActivityCenter.test.js`、其它任何文件。若无授权文件无法完成，返回 `PLAN_CONFLICT`。
+
+补充约束（A1 之后）：
+- 落盘后全量 JS 套件必须 0 失败：`node --test src/test/js/*.test.js`。特别是 `taskActivityCenter.test.js` 要求当前缓存键字面量**只能出现在 index.html**；修复 `senderBindingDisplay.test.js` 中的缓存键断言时，从 `index.html` 解析当前键（与 `taskActivityCenter.test.js` 同法），断言 11 个带版本资源共享同一键、旧键 `20260929-discovery-schedule` 不再出现、`task-modal-runtime.js` 保持无版本，但**不要在测试里固化新键字面量**。
 
 ## 关键不变量（子计划逐字要求，必须全部满足）
 
