@@ -11909,6 +11909,72 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .mail-chat .mc-person [data-action=mc-dismiss-replied]:hover { color: #244ca9; }
 .mail-chat .mc-person [data-action=mc-dismiss-replied]:disabled { opacity: .45; cursor: not-allowed; }
 
+.mail-chat .button.reply-template-trigger{color:#284cc3;border-color:#b6cafa;background:#eef4ff;gap:6px}
+.mail-chat .button.reply-template-trigger:hover:not(:disabled){background:#e5eeff;border-color:#93b4ec}
+.mail-chat .button.reply-template-trigger:active:not(:disabled){background:#dbeafe}
+.mail-chat .button.reply-template-trigger:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.mail-chat .button.reply-template-trigger:focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
+.reply-template-dialog{margin:auto;inset:0;box-sizing:border-box;width:min(1010px,calc(100vw - 48px));max-width:none;max-height:calc(100dvh - 48px);padding:0;border:1px solid #dce4ef;border-radius:18px;box-shadow:0 30px 100px #12274b45;background:#fff;color:#334155;overflow:hidden;font-family:var(--font-body);font-size:12px;line-height:1.6}
+.reply-template-dialog[open]{display:flex;flex-direction:column}
+.reply-template-dialog::backdrop{background:rgba(23,38,66,.32);backdrop-filter:blur(2px)}
+.reply-template-dialog *{box-sizing:border-box}
+.reply-template-dialog h2,.reply-template-dialog h3,.reply-template-dialog p{margin:0}
+.reply-template-head{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:23px 28px 19px;background:#fff;flex-shrink:0}
+.reply-template-head h2{font-size:20px;font-weight:600;line-height:1.4;color:#1e293b;letter-spacing:.2px}
+.reply-template-head p{font-size:12px;line-height:1.6;color:#94a3b8;margin-top:6px}
+.reply-template-close{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;flex:none;border:0;border-radius:5px;background:transparent;color:#94a3b8;font:inherit;font-size:26px;cursor:pointer}
+.reply-template-close:hover:not(:disabled){background:#edf3ff;color:#2451b9}
+.reply-template-close:active:not(:disabled){background:#dbeafe}
+.reply-template-context{display:flex;align-items:center;gap:12px;background:#f8faff;border-top:1px solid #e8edf5;border-bottom:1px solid #e8edf5;padding:13px 28px;flex-shrink:0}
+.reply-template-context>div{min-width:0}
+.reply-template-context strong{font-size:12px;color:#334155;overflow-wrap:anywhere}
+.reply-template-context small{display:block;margin-top:3px;color:#8b9bb1;font-size:11px;overflow-wrap:anywhere}
+.reply-template-avatar{display:grid;place-items:center;width:35px;height:35px;flex:none;border-radius:10px;color:#4064bd;background:#e9effc;font-size:14px}
+.reply-template-account{margin-left:auto;color:#8b9bb1;font-size:11px;overflow-wrap:anywhere}
+.reply-template-account b{font-weight:500;color:#526780;margin-left:9px}
+.reply-template-layout{display:grid;grid-template-columns:252px minmax(0,1fr);min-height:0;flex:1;overflow:auto;overscroll-behavior:contain}
+.reply-template-sidebar{border-right:1px solid #e6ecf4;background:#fbfcff;padding:18px 12px 12px;display:flex;flex-direction:column;min-width:0}
+.reply-template-search{height:37px;min-height:37px;width:100%;font-size:12px;border:1px solid #dce4ef;border-radius:8px;background:#fff;padding:0 11px;color:#334155}
+.reply-template-search:hover:not(:disabled){border-color:#93b4ec}
+.reply-template-search:focus{background:#fff;border-color:#3b82f6;box-shadow:none}
+.reply-template-search:disabled{background:#f1f5f9;color:#94a3b8;cursor:not-allowed}
+.reply-template-dialog .reply-template-caption{display:flex;justify-content:space-between;color:#94a3b8;font-size:11px;padding:18px 9px 10px}
+.reply-template-caption span{background:#eef2f8;border-radius:4px;padding:0 5px}
+.reply-template-list{display:flex;flex-direction:column;gap:5px}
+.reply-template-option{width:100%;text-align:left;border:1px solid transparent;border-radius:9px;background:transparent;padding:10px 12px;color:#475569;font:inherit;cursor:pointer;position:relative}
+.reply-template-option:hover:not(:disabled){background:#f0f4fb}
+.reply-template-option:active:not(:disabled){background:#dbeafe}
+.reply-template-option[aria-pressed=true]{background:#edf3ff;border-color:#bed0fa;color:#2c50b8}
+.reply-template-option strong{display:block;font-size:13px;font-weight:600;margin-bottom:7px;padding-right:18px;overflow-wrap:anywhere}
+.reply-template-option small{display:block;font-size:11px;color:#8c9bb0;line-height:1.6;overflow-wrap:anywhere}
+.reply-template-option[aria-pressed=true]::after{content:'✓';position:absolute;right:12px;top:10px;font-size:13px;color:#3865d6}
+.reply-template-dialog .reply-template-source{font-size:10px;color:#94a3b8;margin-top:auto;padding:12px 9px 3px}
+.reply-template-main{padding:23px 26px 14px;background:#fff;min-width:0}
+.reply-template-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:19px}
+.reply-template-preview-head h3{font-size:15px;color:#334155;font-weight:600;overflow-wrap:anywhere}
+.reply-template-badge{white-space:nowrap;color:#439079;background:#f0faf5;border:1px solid #d6eee2;border-radius:5px;padding:4px 7px;font-size:10px}
+.reply-template-dialog .reply-template-status{font-size:12px;line-height:1.7;color:#64748b;margin-bottom:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.reply-template-warning{font-size:12px;line-height:1.7;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:9px 11px;margin-bottom:12px;white-space:pre-wrap;overflow-wrap:anywhere}
+.reply-template-paper{border:1px solid #e1e7f0;border-radius:10px;overflow:hidden;box-shadow:0 3px 9px #182c4810;background:#fff}
+.reply-template-subject{display:flex;flex-direction:column;gap:8px;background:#fafbfd;padding:15px 20px;border-bottom:1px solid #e8edf5}
+.reply-template-subject span{font-size:10px;color:#94a3b8}
+.reply-template-subject strong{font-size:12px;font-weight:500;color:#34445b;line-height:1.6;overflow-wrap:anywhere}
+.reply-template-subject small{font-size:10px;color:#94a3b8}
+.reply-template-body{padding:17px 21px;color:#425268;font-size:12px;line-height:1.75;min-height:256px;white-space:pre-wrap;overflow-wrap:anywhere}
+.reply-template-footer{display:flex;align-items:center;justify-content:space-between;border-top:1px solid #e6ecf4;gap:16px;padding:19px 26px;background:#fff;flex-shrink:0}
+.reply-template-options{display:flex;flex-direction:column;gap:8px;min-width:0}
+.reply-template-options .checkbox-row{min-height:18px;gap:7px;font-size:12px;color:#52647b;font-weight:400;flex-direction:row;letter-spacing:0;text-transform:none}
+.reply-template-options input{width:14px;height:14px;min-height:0;margin:0;flex:none;accent-color:#3865d6;cursor:pointer}
+.reply-template-options input:disabled{cursor:not-allowed}
+.reply-template-modes{display:flex;gap:16px;align-items:center;flex-wrap:wrap;font-size:11px}
+.reply-template-modes>span{color:#94a3b8}
+.reply-template-dialog .reply-template-hint{font-size:11px;line-height:1.6;color:#92400e}
+.reply-template-actions{display:flex;gap:10px;flex-shrink:0}
+.reply-template-actions .button{min-width:86px;font-size:12px}
+.reply-template-dialog :is(button,input):focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
+.reply-template-dialog :is(button,.button):disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+@media(max-width:760px){.reply-template-dialog{width:calc(100vw - 24px);max-height:calc(100dvh - 24px)}.reply-template-layout{grid-template-columns:1fr}.reply-template-sidebar{border-right:0;border-bottom:1px solid #e6ecf4}.reply-template-list{max-height:170px;overflow:auto}.reply-template-head,.reply-template-context{padding:15px 18px}.reply-template-main{padding:16px}.reply-template-footer{padding:15px;align-items:flex-end;flex-wrap:wrap}.reply-template-actions{margin-left:auto}.reply-template-badge{display:none}.reply-template-account{max-width:120px}.reply-template-modes{gap:7px}}
+@media(prefers-reduced-motion:reduce){.reply-template-dialog *,.mail-chat .reply-template-trigger{transition:none!important;scroll-behavior:auto!important}}
 /* task-center-contract:start */
 .topnav.task-center-nav {
     flex-wrap: wrap;

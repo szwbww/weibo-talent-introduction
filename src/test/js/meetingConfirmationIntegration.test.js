@@ -863,6 +863,9 @@ function createChatSandbox(options) {
             if (typeof supplied === "function") return Promise.resolve(supplied(parsed));
             return Promise.resolve(defaultPreviewResponse(parsed.meeting || {}));
         }
+        // fast-p 01：引用模板只读链路（会议/附件互操作回归）
+        if (/\/api\/compose-templates\/preview-draft$/.test(url)) return Promise.resolve(opts.composePreview || null);
+        if (/\/api\/compose-templates$/.test(url)) return Promise.resolve(opts.composeTemplates || []);
         const failedEndpoint = opts.failEndpoints ? Object.keys(opts.failEndpoints).find((key) => url.includes(key)) : null;
         if (failedEndpoint) return Promise.reject(new Error(opts.failEndpoints[failedEndpoint]));
         return Promise.resolve({});
@@ -1421,13 +1424,16 @@ describe("fast-p 04: 组件门禁与 S-3 人工回复区（trigger/附件卡）"
         const ctx = await bootMeetingA();
         const compose = ctx.host.querySelector('[data-role="manual-compose"]');
         const tools = compose.querySelector('.mc-editor-tools').querySelectorAll("button");
-        // fast-p 07（I-5/S-1）+ fast-p 03（S-2）：工具栏顺序 B/I/列表/链接/回形针/会议确认/材料索取/跟进。
-        assert.strictEqual(tools.length, 8);
+        // fast-p 07（I-5/S-1）+ fast-p 03（S-2）+ fast-p 01（S-1）：
+        // 工具栏顺序 B/I/列表/链接/回形针/会议确认/材料索取/引用模板/跟进。
+        assert.strictEqual(tools.length, 9);
         assert.strictEqual(tools[4].getAttribute("data-action"), "mc-upload-attachment", "回形针紧随链接之后");
         assert.strictEqual(tools[4].textContent.trim(), "", "附件入口只有图标");
         assert.strictEqual(tools[5].getAttribute("data-action"), "mc-open-meeting");
         assert.strictEqual(tools[6].getAttribute("data-action"), "mc-open-material-request");
-        assert.strictEqual(tools[7].getAttribute("data-action"), "mc-open-followup");
+        assert.strictEqual(tools[7].getAttribute("data-action"), "mc-open-template-reference", "引用模板位于材料索取与跟进之间");
+        assert.strictEqual(tools[7].textContent.trim(), "引用模板");
+        assert.strictEqual(tools[8].getAttribute("data-action"), "mc-open-followup");
         const editor = compose.querySelector('[aria-label="人工回复正文"]');
         const container = compose.querySelector('[data-role="meeting-attachment"]');
         const footer = compose.querySelector(".mc-compose-footer");
@@ -2142,4 +2148,106 @@ describe("fast-p 04: 历史下载错误经宿主状态提示", () => {
     });
 });
 
+// ════════════════════════════════════════════════════════════════════════
+// fast-p 01：引用模板 × 会议/附件/RAG 互操作（I-5/I-7）
+// ════════════════════════════════════════════════════════════════════════
 
+const REF_TEMPLATE = {
+    id: 9,
+    templateName: "验收-A",
+    description: "会议互操作模板",
+    subject: "Template subject A",
+    enabled: true,
+    blocks: [{ id: 91, blockOrder: 1, blockType: "CUSTOM_TEXT", refId: null, refDisplayName: "自定义正文", customText: "模板正文" }]
+};
+
+const REF_PREVIEW = {
+    subject: "Template subject A",
+    body: "模板正文",
+    blocks: [{ blockOrder: 1, blockType: "CUSTOM_TEXT", refId: null, refDisplayName: "自定义正文", included: true, skipReason: null, textPreview: "模板正文" }],
+    fallbackKeys: [],
+    toEmail: "a@example.edu",
+    variables: [],
+    variantPoolSize: 1
+};
+
+function referenceDialog(ctx) {
+    return ctx.doc.body.querySelector(".reply-template-dialog");
+}
+
+function referenceTrigger(ctx) {
+    return ctx.host.querySelector('[data-action="mc-open-template-reference"]');
+}
+
+async function openReferenceDialog(ctx) {
+    click(referenceTrigger(ctx));
+    await flush();
+    return referenceDialog(ctx);
+}
+
+describe("fast-p 01: 引用模板 × 会议/附件/RAG 互操作", () => {
+    it("会议快照存在：仅允许追加并给出固定提示；追加不改写会议块，发送仍带 meeting/附件指纹/RAG", async () => {
+        const ctx = await bootMeetingA({ composeTemplates: [REF_TEMPLATE], composePreview: REF_PREVIEW });
+        const wb = ctx.host.querySelector('.mc-section[data-section="workbench"]');
+        toggleOpen(wb);
+        await flush();
+        await ctx.calls.workbenchMounts[0].callbacks.onComplete({
+            renderedDraftText: "Please review the attached agenda.",
+            text: "Please review the attached agenda.",
+            usedFactCodes: ["KB-COMM-044"],
+            ragCorpusFingerprint: "fp-2026"
+        });
+        await flush();
+        await openMeetingLoaded(ctx);
+        await confirmReadyMeeting(ctx);
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        const blockTextBefore = meetingBodyText(editor);
+        assert.ok(blockTextBefore.includes("Dear Professor Basdogan"), "会议正文已填入");
+        assert.strictEqual(ctx.host.querySelector('[data-role="meeting-attachment"]').getAttribute("data-state"), "ready");
+
+        const dialog = await openReferenceDialog(ctx);
+        assert.ok(dialog, "会议快照存在时仍可打开引用弹框");
+        const replaceRadio = dialog.querySelector('input[name="reply-template-mode"][value="replace"]');
+        const hint = dialog.querySelector('[data-role="template-meeting-hint"]');
+        assert.strictEqual(replaceRadio.disabled, true, "含日历附件时禁用「替换正文」");
+        assert.strictEqual(hint.hidden, false, "显示固定提示");
+        assert.strictEqual(hint.textContent, "含日历附件，仅支持追加；如需替换，请先移除日历附件");
+        const apply = dialog.querySelector('[data-action="mc-apply-template-reference"]');
+        assert.strictEqual(apply.disabled, false, "追加仍可填入");
+        click(apply);
+        await flush();
+
+        const after = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        const blocks = after.querySelectorAll('[data-meeting-block="true"]');
+        assert.strictEqual(blocks.length, 1, "会议块必须唯一且保留");
+        assert.strictEqual(meetingBodyText(after), blockTextBefore, "会议块正文不得改写");
+        assert.ok(after.innerText.includes("模板正文"), "模板正文追加在会议正文之后");
+        assert.strictEqual(ctx.host.querySelector('[data-role="meeting-attachment"]').getAttribute("data-state"), "ready", "会议附件卡仍为待发送");
+
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        const payload = ctx.calls.sendRich[ctx.calls.sendRich.length - 1].body;
+        assert.ok(payload.meeting, "模板应用不改变会议发送路径");
+        assert.strictEqual(payload.previewAttachmentSha256, "a".repeat(64), "会议附件指纹不变");
+        assert.deepStrictEqual(payload.ragFactCodes, ["KB-COMM-044"], "RAG 证据随追加保留");
+        assert.ok(payload.textBody.includes("模板正文"), "模板正文随会议正文一起外发");
+    });
+
+    it("移除日历附件后「替换正文」恢复可用；替换不清空会议附件卡", async () => {
+        const ctx = await bootMeetingA({ composeTemplates: [REF_TEMPLATE], composePreview: REF_PREVIEW });
+        await openMeetingLoaded(ctx);
+        await confirmReadyMeeting(ctx);
+        const dialog = await openReferenceDialog(ctx);
+        assert.strictEqual(dialog.querySelector('input[name="reply-template-mode"][value="replace"]').disabled, true);
+        click(dialog.querySelector('[data-action="mc-close-template-reference"]'));
+        await flush();
+        click(ctx.host.querySelector('[data-action="mc-remove-meeting"]'));
+        await flush();
+        const reopened = await openReferenceDialog(ctx);
+        const replaceRadio = reopened.querySelector('input[name="reply-template-mode"][value="replace"]');
+        assert.strictEqual(replaceRadio.disabled, false, "移除日历附件后允许替换");
+        assert.strictEqual(reopened.querySelector('[data-role="template-meeting-hint"]').hidden, true, "提示隐藏");
+        assert.strictEqual(reopened.querySelector('[data-action="mc-apply-template-reference"]').disabled, false);
+        assert.strictEqual(ctx.calls.sendRich.length, 0, "模板弹框不触发发送");
+    });
+});

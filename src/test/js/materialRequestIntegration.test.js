@@ -677,9 +677,13 @@ function createSandbox(options) {
                 return Promise.resolve(opts.messages || { items: [], nextBefore: null, hasMore: false });
             }
             if (/\/api\/expert-contacts\/\d+$/.test(url)) {
-                return Promise.resolve({ contact: { id: 1, operatorStatus: "REPLIED", currentIndexLevel: "APPLICATION" }, mails: [] });
+                // expertEmail 供 fast-p 01 引用模板预览的收件人核对使用（材料链路不读取它）。
+                return Promise.resolve({ contact: { id: 1, expertEmail: "expert1@example.edu", operatorStatus: "REPLIED", currentIndexLevel: "APPLICATION" }, mails: [] });
             }
             if (/\/api\/operator-action-logs/.test(url)) return Promise.resolve({ records: [] });
+            // fast-p 01：引用模板只读链路（材料 → 模板互操作用例）。
+            if (/\/api\/compose-templates\/preview-draft$/.test(url)) return Promise.resolve(opts.composePreview || null);
+            if (/\/api\/compose-templates$/.test(url)) return Promise.resolve(opts.composeTemplates || []);
             return Promise.resolve({});
         },
         mcHostGetMeetingSummaries: (contactIds) => Promise.resolve((contactIds || []).map((id) => ({ contactId: id, activeCount: 0, next: null }))),
@@ -816,8 +820,13 @@ describe("S-2: 工具栏入口与样式合同", () => {
         const ctx = await bootInbound();
         assert.deepStrictEqual(toolsOf(ctx).map((button) => button.getAttribute("data-action")), [
             "mc-rich-command", "mc-rich-command", "mc-rich-command", "mc-rich-command",
-            "mc-upload-attachment", "mc-open-meeting", "mc-open-material-request", "mc-open-followup"
-        ], "工具栏顺序必须是 B/I/列表/链接/回形针/会议确认/材料索取/跟进");
+            "mc-upload-attachment", "mc-open-meeting", "mc-open-material-request",
+            "mc-open-template-reference", "mc-open-followup"
+        ], "工具栏顺序必须是 B/I/列表/链接/回形针/会议确认/材料索取/引用模板/跟进");
+        const templateButton = toolsOf(ctx)[7];
+        assert.strictEqual(templateButton.getAttribute("data-action"), "mc-open-template-reference", "引用模板必须紧邻材料索取之后");
+        assert.strictEqual(toolsOf(ctx)[6].getAttribute("data-action"), "mc-open-material-request");
+        assert.strictEqual(toolsOf(ctx)[8].getAttribute("data-action"), "mc-open-followup");
         const button = materialTrigger(ctx);
         assert.ok(button.classList.contains("button"), "复用既有 .button");
         assert.ok(button.classList.contains("material-request-trigger"), "S-2 触发按钮 class");
@@ -1054,5 +1063,93 @@ describe("I-4: label/requestText 只作文本（XSS）", () => {
         assert.strictEqual(list.querySelectorAll("img").length, 0, "草稿不得生成 img 元素");
         assert.ok(materialEditor(ctx).innerHTML.includes("&lt;img"), "草稿里必须是转义后的字面文本");
         assert.strictEqual(ctx.sandbox.__pwned, undefined, "不得执行注入脚本");
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// fast-p 01：材料索取 → 引用模板互操作（S-1 顺序 / S-2 弹框所有权）
+// ════════════════════════════════════════════════════════════════════════
+
+const INTEROP_TEMPLATE = {
+    id: 7,
+    templateName: "验收-A",
+    description: "互操作模板",
+    subject: "Template subject A",
+    enabled: true,
+    blocks: [{ id: 71, blockOrder: 1, blockType: "CUSTOM_TEXT", refId: null, refDisplayName: "自定义正文", customText: "模板正文" }]
+};
+
+const INTEROP_PREVIEW = {
+    subject: "Template subject A",
+    body: "模板正文",
+    blocks: [{ blockOrder: 1, blockType: "CUSTOM_TEXT", refId: null, refDisplayName: "自定义正文", included: true, skipReason: null, textPreview: "模板正文" }],
+    fallbackKeys: [],
+    toEmail: "expert1@example.edu",
+    variables: [],
+    variantPoolSize: 1
+};
+
+function templateDialog(ctx) {
+    return ctx.doc.body.querySelector(".reply-template-dialog");
+}
+
+function templateTrigger(ctx) {
+    return ctx.host.querySelector('[data-action="mc-open-template-reference"]');
+}
+
+async function openTemplateDialog(ctx) {
+    click(templateTrigger(ctx));
+    await flush();
+    return templateDialog(ctx);
+}
+
+describe("fast-p 01: 材料索取 → 引用模板互操作", () => {
+    it("材料追加后再引用模板：两段都在、主题不变、零状态写零发送、工具条顺序不变", async () => {
+        const ctx = await bootInbound({ composeTemplates: [INTEROP_TEMPLATE], composePreview: INTEROP_PREVIEW });
+        const box = materialEditor(ctx);
+        box.innerText = "Dear Professor,";
+        inputEvent(box);
+        await openMaterialDialog(ctx);
+        click(applyButton(ctx));
+        await flush();
+
+        const dialog = await openTemplateDialog(ctx);
+        assert.ok(dialog, "引用模板弹框必须挂载到 portal");
+        assert.strictEqual(dialog.querySelector('[data-role="template-body"]').textContent, "模板正文");
+        const apply = dialog.querySelector('[data-action="mc-apply-template-reference"]');
+        assert.strictEqual(apply.disabled, false);
+        click(apply);
+        await flush();
+
+        const editor = materialEditor(ctx);
+        assert.deepStrictEqual(elementChildren(editor).map((child) => child.tagName), ["P", "UL", "DIV"], "材料段保留，模板正文追加在末尾");
+        assert.ok(editor.innerHTML.includes(LEAD), "材料引言仍在");
+        assert.deepStrictEqual(editor.querySelectorAll("ul li").map((li) => li.textContent), [
+            "Copies of your representative publications",
+            "Supporting documents for research projects",
+            "Patent certificates",
+            "Certificates of honors and awards",
+            "Bachelor’s, master’s, and doctoral degree certificates"
+        ], "材料项目符号顺序不变");
+        assert.ok(editor.textContent.includes("模板正文"), "模板正文仍在");
+        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value.includes("Template subject A"), false, "默认保留原回复主题");
+        assert.deepStrictEqual(materialStatusWrites(ctx), [], "模板应用不写材料状态");
+        assert.strictEqual(ctx.calls.sendRich.length, 0, "模板应用不发送");
+        assert.strictEqual(templateDialog(ctx), null, "应用后引用弹框关闭");
+
+        await openMaterialDialog(ctx);
+        assert.ok(materialDialog(ctx), "引用弹框关闭后材料弹窗仍可打开");
+        click(cancelButton(ctx));
+        await flush();
+    });
+
+    it("打开材料弹窗会关闭引用弹框，且旧 close 不会删掉材料弹窗", async () => {
+        const ctx = await bootInbound({ composeTemplates: [INTEROP_TEMPLATE], composePreview: INTEROP_PREVIEW });
+        await openTemplateDialog(ctx);
+        assert.ok(templateDialog(ctx), "引用弹框先打开");
+        await openMaterialDialog(ctx);
+        assert.strictEqual(templateDialog(ctx), null, "材料弹窗打开时关闭引用弹框");
+        assert.ok(materialDialog(ctx), "材料弹窗必须存在（不被旧 close 清掉）");
+        assert.strictEqual(ctx.calls.sendRich.length, 0);
     });
 });
