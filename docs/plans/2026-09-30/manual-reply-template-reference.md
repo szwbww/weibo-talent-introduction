@@ -5,7 +5,7 @@
 - 代码基线：`a37efe970e4446242b121c5628db02daa631fc92`，以当前工作树实际文件为审计对象。工作树已有其他任务改动，实施不得覆盖。
 - 视觉参考：[已演示的本地预览](/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/mockups/template-reference-preview/index.html)、[弹框截图](/Users/lukai/IdeaProjects/weibo-talent-introduction/docs/mockups/template-reference-preview/preview.png)。预览使用示例数据；其中模板内容、HTML 粗体、固定账号不是生产数据或接口能力证明。
 - 范围决策：先按截图中的**有真实来信的人工回复**拟定最小方案。无来信续信尚未获得明确扩展要求；其账号解析另有规则，不能猜测为联系人绑定账号。本计划不实现该分支。若用户选择同时支持，应先修订计划，不由执行者自行扩展。
-- 规模：7 个实施文件，1 个前端子系统；不新增后端接口、DB/ES 字段、依赖包、通用弹框框架。
+- 规模：8 个实施文件，1 个前端子系统；不新增后端接口、DB/ES 字段、依赖包、通用弹框框架。
 
 ## 需求描述
 
@@ -415,7 +415,7 @@
 ```
 
 - 注册套路：M:3026–3047 创建 body portal；材料弹框使用原生 dialog（4277–4298/4425–4433）；host click/portal click/portal change/keydown 分别委托。现有 closeMaterialRequestDialog/closeFollowUpDialog 会清空 portal，必须把新弹框关闭动作接在它们的替换入口前，并让新 close 只删除自己的节点。
-- 现有 toolbar 精确顺序断言：[materialRequestIntegration.test.js:815](/Users/lukai/IdeaProjects/weibo-talent-introduction/src/test/js/materialRequestIntegration.test.js:815)、[meetingConfirmationIntegration.test.js:1423](/Users/lukai/IdeaProjects/weibo-talent-introduction/src/test/js/meetingConfirmationIntegration.test.js:1423)，必须同步新增按钮位置，不能删断言。
+- 现有 toolbar 精确顺序断言（3 处，A1 追加第 3 处）：[materialRequestIntegration.test.js:815](/Users/lukai/IdeaProjects/weibo-talent-introduction/src/test/js/materialRequestIntegration.test.js:815)、[meetingConfirmationIntegration.test.js:1423](/Users/lukai/IdeaProjects/weibo-talent-introduction/src/test/js/meetingConfirmationIntegration.test.js:1423)、[mailboxOutboundAttachments.test.js:1559–1564](/Users/lukai/IdeaProjects/weibo-talent-introduction/src/test/js/mailboxOutboundAttachments.test.js:1559)（`deepStrictEqual` 钉死整条 8 项 action 序列），必须同步新增按钮位置，不能删断言。
 - mailbox-chat.css 与文档 target.css 字节比较、字面 class 白名单：mailboxChatStyle.test.js:37–41/118–145。故只新增 styles.css 规则。
 - 资源：index.html:11–15/2323–2328，5 CSS+6 JS，共11项，当前均 `20260929-bounce-alert`。`rg -l -F '20260929-bounce-alert' src/test` 无命中（exit=1）；当前无固定键测试要改。实施前重新查，不以历史知识扩大名单。
 - Interaction X-7：body portal→点击/输入/取消委托→异步回包→close/unmount；必须联合验证。
@@ -501,11 +501,11 @@ Phase 6 回写：纠正 `K-compose-templates-state-scope` 的“唯一加载链�
 
 ### T-4：行为测试与样式合同验证
 
-- 文件：`src/test/js/mailboxChatBehavior.test.js`、`src/test/js/materialRequestIntegration.test.js`、`src/test/js/meetingConfirmationIntegration.test.js`、`src/test/js/mailboxTemplateReferenceStyle.test.js`（新增）。
+- 文件：`src/test/js/mailboxChatBehavior.test.js`、`src/test/js/materialRequestIntegration.test.js`、`src/test/js/meetingConfirmationIntegration.test.js`、`src/test/js/mailboxOutboundAttachments.test.js`（A1 追加）、`src/test/js/mailboxTemplateReferenceStyle.test.js`（新增）。
 - 约束：I-1至I-8；S-1至S-4。
 - 在 mailboxChatBehavior.test.js 复用现有 MiniDOM/bootChat/API调用记录，为新 describe 增加明确模板 fixture 与可控延迟 Promise；不复制另一套完整测试框架。需真实 sanitizer 的用例以局部测试选项加载实际 meeting-confirmation.js，默认原有用例环境不变。
 - MiniDOM 不模拟浏览器排版，html/text 一致性用既有 setEditorContent 辅助；不能把 stub 的 innerText 与真实浏览器换行等同。真实 Tab/Esc、dialog 居中、换行和格式保存另外列人工验收。
-- materialRequestIntegration 与 meetingConfirmationIntegration 仅更新原顺序断言，加断言引用按钮位于材料之后/跟进之前，保留原断言意义；会议/附件互操作用现有真实 meeting harness 增加验证，不为新功能复制会议实现。
+- materialRequestIntegration、meetingConfirmationIntegration 与 mailboxOutboundAttachments（A1 追加）仅更新原顺序断言，加断言引用按钮位于材料之后/跟进之前并保留 9 项完整序列，保留原断言意义；会议/附件互操作用现有真实 meeting harness 增加验证，不为新功能复制会议实现。
 - 新 style 测试从本计划的 S-1/S-2 读取两个 css fenced blocks，逐字验证 styles.css 包含；断言 button/DOM role/class、资源键统一、无新增 inline style、mailbox-chat.css 字节不变。不把动态 HTML 原样字符串当唯一行为测试。
 
 ### T-5：版本键与收尾验证
@@ -526,8 +526,9 @@ Phase 6 回写：纠正 `K-compose-templates-state-scope` 的“唯一加载链�
 | 5 | `src/test/js/materialRequestIntegration.test.js` | 工具栏顺序契约与材料→模板互操作 |
 | 6 | `src/test/js/meetingConfirmationIntegration.test.js` | 工具栏顺序、会议/附件/RAG互操作回归 |
 | 7 | `src/test/js/mailboxTemplateReferenceStyle.test.js` | 新增 CSS 逐字合同、DOM/资源登记验证 |
+| 8 | `src/test/js/mailboxOutboundAttachments.test.js` | （A1）仅 :1559–1564 工具栏顺序断言插入引用模板按钮并同步消息文本 |
 
-共7文件。计划和 create-p 知识维护产物为本次规划输出，不是实现范围；mockups 保持原状。禁止修改 mailbox-chat.css、meeting-confirmation.js、app.js、Kotlin、SQL、历史计划基线、无关工作树改动。
+共8文件。计划和 create-p 知识维护产物为本次规划输出，不是实现范围；mockups 保持原状。禁止修改 mailbox-chat.css、meeting-confirmation.js、app.js、Kotlin、SQL、历史计划基线、无关工作树改动。
 
 ## 验收标准
 
@@ -648,7 +649,7 @@ X-1～X-7 分别由下方 A-3/A-7/A-8/A-9/A-1/A-10/A-6 覆盖。机器验证必�
 - [x] I-6覆盖唯一新增的临时状态；共享draft/DB/ES零新增字段。
 - [x] 读写审计包含普通setDraft之外的附件/发送捕获Map写入、迁移、删除；模板运行时与历史迁移区分。
 - [x] 每个新DOM/class归属S-1或S-2，状态归属S-3；新CSS全文提供，旧CSS只引用/摘录，不改字节基线。
-- [x] 7文件≤10；1子系统≤2；各任务列明确文件并引用I/S编号；无暗含后端任务。
+- [x] 8文件≤10；1子系统≤2；各任务列明确文件并引用I/S编号；无暗含后端任务。
 - [x] O-1/O-2与N-1至N-5均有A场景；X-1至X-7有跨路径验收；不将机器测试通过当人工验收完成。
 - [x] 知识条目逐项复核/取舍，未按旧行号、旧缓存键数量或原型数据猜测生产行为。
 - [x] 未生成acceptance衍生文件，未实施生产功能；范围扩展需修订本计划。
