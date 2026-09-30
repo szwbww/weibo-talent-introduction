@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-09-30/manual-reply-template-reference.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-09-30/manual-reply-template-reference.md (sha256 858646663e9fa61c83a7687218f7ebd0a2f5c83e44047e78e023275cc43c8dac)
+- Governing master identity: sha256 858646663e9fa61c83a7687218f7ebd0a2f5c83e44047e78e023275cc43c8dac; recorded commit 5adacbbad366065c633e6c9380a25084aa19fcba
+- Invoked master identity: sha256 47aa2d69319486c9abc1e406fea15c6484f0991306489779b02e1dccf9cdcfa1
+- Master identity state: AMENDMENT_RECORDED
+- Governing amendment: A1; 实现方案 T-4 / 变更文件清单; 审计遗漏第三处工具栏顺序断言，追加授权文件 #8 并最小化改写该断言（8 ≤ 上限 10）; HUMAN:批准 A1：追加授权文件 #8（推荐） (recorded 2026-09-30T04:46:16Z)
+- Amendments: A1 — docs/plans/2026-09-30/manual-reply-template-reference.md; before commit:697441829efdb7b438db71a786e5123faf94681c; after commit:5adacbbad366065c633e6c9380a25084aa19fcba
+- Fast-p ledger: docs/plans/fast/2026-09-30-manual-reply-template-reference/ledger.md (sha256 bb704ef0265e6246dfed6b02a0071642bc980082bccaf76482b181d7c589e970)
+- Fast-p handoff: docs/plans/fast/2026-09-30-manual-reply-template-reference/human-review-handoff.md (sha256 603813d75d25b70885083f99e60ebc124baa520710d4c2a583f93e6601a2e21f)
+- Master base: a37efe970e4446242b121c5628db02daa631fc92
+- Final code head: 960643302da78f6223aefa702f95d379ae9ef066
+- Evidence parent before next commit: 4f063e6f3122927526c412ac448864d68db9e094
+- Previous evidence commit: N/A
+- Branch: fast/2026-09-30-manual-reply-template-reference
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-09-30-manual-reply-template-reference
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; fast ledger/handoff READY_FOR_HUMAN_REVIEW; child 01 LIGHT_PASS_WITH_NOTES; 2026-09-30T05:24:10Z; invoked sha256 47aa2d69319486c9abc1e406fea15c6484f0991306489779b02e1dccf9cdcfa1; worktree sha256 858646663e9fa61c83a7687218f7ebd0a2f5c83e44047e78e023275cc43c8dac; master base a37efe970e4446242b121c5628db02daa631fc92; final code head 9606433
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md / Epoch 1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human performs A-1 through A-12 in the test environment and explicitly signs off boundary 960643302da78f6223aefa702f95d379ae9ef066 and governing master identity 858646663e9fa61c83a7687218f7ebd0a2f5c83e44047e78e023275cc43c8dac, including A1 file src/test/js/mailboxOutboundAttachments.test.js.

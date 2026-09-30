@@ -507,6 +507,18 @@
             },
             followup: { open: false, targetKey: null, selectedId: null, selectedCopy: null, trigger: null },
             materialRequest: { open: false, identity: null, items: [], seq: 0, trigger: null },
+            // fast-p 01（I-6）：引用模板弹框的单次临时状态；不是持久 store，不加 draft 字段。
+            templateReference: {
+                open: false,
+                seq: 0,
+                identity: null,
+                items: [],
+                selectedId: null,
+                preview: null,
+                loading: "",
+                error: "",
+                trigger: null
+            },
             popoverOpen: false,
             loadOlderBusy: false,
             pendingPrompt: null,
@@ -1616,6 +1628,7 @@
             closeManageOverlay({ restoreFocus: false });
             closeFollowUpDialog({ restoreFocus: false });
             closeMaterialRequestDialog({ restoreFocus: false });
+            closeTemplateReferenceDialog({ restoreFocus: false });
             if (instance.workbench.instance) {
                 try { instance.workbench.instance.unmount(); } catch (e) { /* noop */ }
                 instance.workbench.instance = null;
@@ -2875,6 +2888,11 @@
             const meetingTrigger = ui ? meetingTriggerHtml() : "";
             // S-2：材料索取紧随会议按钮之后，仍在跟进按钮之前。
             const materialTrigger = ui ? materialRequestTriggerHtml() : "";
+            // S-1（fast-p 01 I-1）：引用模板入口只属于有真实来信的人工回复（outbound=false），
+            // 不依赖会议组件；固定在材料索取之后、跟进按钮之前。
+            const templateReferenceTrigger = isOutbound
+                ? ""
+                : `<button class="button reply-template-trigger" type="button" data-action="mc-open-template-reference">引用模板</button>`;
             // S-1：跟进按钮只在当前专家确有成功发件时渲染，固定紧随既有会议按钮之后，
             // class 严格为 button（不新增按钮 class、不改会议按钮顺序）。
             const followUpButton = Number(instance.selectedSummary && instance.selectedSummary.sentCount) > 0
@@ -2897,7 +2915,7 @@
                         <button class="button" type="button" data-action="mc-rich-command" data-command="createLink">链接</button>
                         <button class="button outbound-upload" type="button" data-action="mc-upload-attachment" title="上传附件" aria-label="上传附件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l10.6-10.6a4 4 0 0 1 5.66 5.66L9.41 17.41a2 2 0 0 1-2.83-2.83l9.19-9.19"/></svg></button>
                         <input type="file" data-role="outbound-file-input" multiple hidden>
-                        ${meetingTrigger}${materialTrigger}${followUpButton}
+                        ${meetingTrigger}${materialTrigger}${templateReferenceTrigger}${followUpButton}
                     </div>
                     <div class="mc-editor" contenteditable="true" role="textbox" aria-multiline="true" aria-label="人工回复正文" data-role="mc-editor">${editorContent}</div>
                     ${anchorNote}
@@ -3099,6 +3117,7 @@
                 // 唯一 portal 只承载一个 overlay：管理面板打开前关闭跟进弹窗与材料索取（不触碰草稿状态）。
                 closeFollowUpDialog({ restoreFocus: false });
                 closeMaterialRequestDialog({ restoreFocus: false });
+                closeTemplateReferenceDialog({ restoreFocus: false });
                 const root = ensurePortalRoot();
                 if (!root) {
                     hostShowStatus("管理面板挂载失败", "error");
@@ -4106,6 +4125,7 @@
             // 唯一 portal 只承载一个 overlay：先关管理面板，避免互相覆盖后状态失同步。
             closeManageOverlay({ restoreFocus: false });
             closeMaterialRequestDialog({ restoreFocus: false });
+            closeTemplateReferenceDialog({ restoreFocus: false });
             const root = ensurePortalRoot();
             if (!root) {
                 hostShowStatus("跟进邮件面板挂载失败", "error");
@@ -4406,6 +4426,7 @@
             // 唯一 portal 只承载一个 overlay：先关管理面板与跟进弹窗，避免状态失同步。
             closeManageOverlay({ restoreFocus: false });
             closeFollowUpDialog({ restoreFocus: false });
+            closeTemplateReferenceDialog({ restoreFocus: false });
             const root = ensurePortalRoot();
             if (!root) {
                 hostShowStatus("材料索取面板挂载失败", "error");
@@ -4523,6 +4544,675 @@
             if (tag !== "input") return;
             setMaterialRequestError("");
             renderMaterialRequestPreview();
+        }
+
+        // --------------------------------------------------------------
+        // 引用邮件模板（fast-p 01 · I-1..I-8 / S-1..S-3）：人工回复工具栏入口 →
+        // body portal 里的原生 dialog → 只读 GET /api/compose-templates 与只读
+        // POST /api/compose-templates/preview-draft → 把当前预览快照以纯文本节点填入
+        // 当前人工草稿。只调用这两个只读接口；不加草稿字段、不改发送路由。
+        // --------------------------------------------------------------
+
+        /** 与 MailVariableService.PREVIEW_UNSUBSCRIBE_URL 同值：预览专用示例退订链接。 */
+        const TEMPLATE_PREVIEW_UNSUBSCRIBE_URL = "https://example.com/u/unsubscribe?token=preview";
+        const TEMPLATE_ACCOUNT_UNRESOLVED_TEXT = "无法确认当前跟进邮件的发件账号，请重新选择跟进邮件";
+        const TEMPLATE_STALE_TEXT = "回复目标或草稿已变化，请关闭后重新选择模板";
+        const TEMPLATE_UNSUBSCRIBE_TEXT = "退订链接尚未配置，当前仅为示例链接，请先配置后重试";
+
+        function templateReferenceDialogEl() {
+            const root = instance.elements.portalRoot;
+            if (!root || !root.querySelector) return null;
+            return root.querySelector(".reply-template-dialog") || null;
+        }
+
+        function templateReferenceNode(role) {
+            const dialog = templateReferenceDialogEl();
+            if (!dialog || !dialog.querySelector) return null;
+            return dialog.querySelector('[data-role="' + String(role) + '"]') || null;
+        }
+
+        function templateReferenceSearchInput() {
+            return templateReferenceNode("template-search");
+        }
+
+        /** 只在节点仍挂在文档里时恢复焦点：切上下文后不把焦点拉回已卸载的按钮。 */
+        function focusIfAvailable(node) {
+            if (!node || typeof node.focus !== "function") return;
+            if (node.isConnected === false) return;
+            if (node.isConnected === undefined && !node.parentNode) return;
+            node.focus();
+        }
+
+        /** S-2 静态层级合同：动态列表只替换 template-list 内部，动态文本只改 textContent。 */
+        function templateReferenceDialogHtml() {
+            return `
+                <dialog class="reply-template-dialog" aria-labelledby="replyTemplateTitle">
+                    <header class="reply-template-head">
+                        <div><h2 id="replyTemplateTitle">引用邮件模板</h2><p>选择模板，预览后填入当前回复</p></div>
+                        <button class="reply-template-close" type="button" data-action="mc-close-template-reference" aria-label="关闭模板弹框">×</button>
+                    </header>
+                    <div class="reply-template-context">
+                        <span class="reply-template-avatar" aria-hidden="true">✉</span>
+                        <div><strong data-role="template-contact-name"></strong><small data-role="template-contact-email"></small></div>
+                        <span class="reply-template-account">回复账号 <b data-role="template-account"></b></span>
+                    </div>
+                    <div class="reply-template-layout">
+                        <aside class="reply-template-sidebar">
+                            <input class="reply-template-search" type="search" data-role="template-search" aria-label="搜索邮件模板" placeholder="搜索模板名称、描述">
+                            <p class="reply-template-caption">已启用模板 <span data-role="template-count">0</span></p>
+                            <div class="reply-template-list" data-role="template-list" aria-label="邮件模板列表"></div>
+                            <p class="reply-template-source">模板来自「邮件模板」</p>
+                        </aside>
+                        <section class="reply-template-main" aria-label="模板预览" aria-busy="false">
+                            <div class="reply-template-preview-head"><h3 data-role="template-name"></h3><span class="reply-template-badge" data-role="template-preview-badge" hidden>预览已生成</span></div>
+                            <p class="reply-template-status" data-role="template-status" role="status">请选择邮件模板</p>
+                            <button class="button" type="button" data-action="mc-retry-template-reference" hidden>重试</button>
+                            <div class="reply-template-warning" data-role="template-warning" role="status" hidden></div>
+                            <div class="reply-template-paper" data-role="template-paper" hidden>
+                                <div class="reply-template-subject"><span>模板主题</span><strong data-role="template-subject"></strong><small>默认保留当前回复主题</small></div>
+                                <div class="reply-template-body" data-role="template-body"></div>
+                            </div>
+                        </section>
+                    </div>
+                    <footer class="reply-template-footer">
+                        <div class="reply-template-options">
+                            <label class="checkbox-row"><input type="checkbox" data-role="template-replace-subject">同时替换回复主题</label>
+                            <div class="reply-template-modes" data-role="template-modes" hidden>
+                                <span>正文已有内容</span>
+                                <label class="checkbox-row"><input type="radio" name="reply-template-mode" value="append" checked>追加到末尾</label>
+                                <label class="checkbox-row"><input type="radio" name="reply-template-mode" value="replace">替换正文</label>
+                            </div>
+                            <p class="reply-template-hint" data-role="template-meeting-hint" hidden>含日历附件，仅支持追加；如需替换，请先移除日历附件</p>
+                        </div>
+                        <div class="reply-template-actions">
+                            <button class="button" type="button" data-action="mc-close-template-reference">取消</button>
+                            <button class="button primary" type="button" data-action="mc-apply-template-reference" disabled>填入回复</button>
+                        </div>
+                    </footer>
+                </dialog>`;
+        }
+
+        /** I-6：打开时捕获的草稿身份（owner/contact/target/epoch + 主题与正文快照）。 */
+        function templateReferenceIdentity() {
+            const contactId = Number(instance.selectedContactId);
+            const contact = instance.conversation.contact || null;
+            const summary = instance.selectedSummary || {};
+            return {
+                ownerKey: conversationCacheKey(instance.user, instance.conversation.accountScope || "", contactId),
+                contactId,
+                expertEmail: contact ? String(contact.expertEmail || "") : "",
+                expertName: String(summary.name || (contact && contact.expertName) || ""),
+                targetKey: currentTargetKey(),
+                convEpoch: Number(instance.convEpoch),
+                editorRevision: Number(instance.meeting.editorRevision),
+                anchorId: null,
+                senderAccountCode: "",
+                subject: "",
+                html: "",
+                text: ""
+            };
+        }
+
+        /** I-2：普通来信取来信账号；有跟进锚点时必须找到相同 id 的成功发件，否则明确失败。 */
+        function templateReferenceSenderAccount(anchorId) {
+            if (anchorId == null) {
+                return { ok: true, code: String(instance.manual.targetAccountCode || "") };
+            }
+            const match = followupCandidates().find((item) => Number(item.id) === Number(anchorId));
+            if (!match) return { ok: false, code: "" };
+            return { ok: true, code: String(match.accountCode || "") };
+        }
+
+        /** I-6：在途回包只承认「弹框仍打开 + seq 未变 + owner/target/epoch 仍匹配」。 */
+        function templateReferenceSeqMatches(seq) {
+            const state = instance.templateReference;
+            if (instance.disposed || !state.open || state.seq !== seq) return false;
+            const captured = state.identity;
+            if (!captured) return false;
+            const now = templateReferenceIdentity();
+            return now.ownerKey === captured.ownerKey
+                && now.contactId === captured.contactId
+                && now.targetKey === captured.targetKey
+                && now.convEpoch === captured.convEpoch;
+        }
+
+        function templateReferenceSelectedItem() {
+            const state = instance.templateReference;
+            if (state.selectedId == null) return null;
+            return (state.items || []).find((item) => Number(item.id) === Number(state.selectedId)) || null;
+        }
+
+        function templateReferenceItemValid(item) {
+            if (!item) return false;
+            const id = Number(item.id);
+            if (!Number.isInteger(id) || id <= 0) return false;
+            if (typeof item.subject !== "string") return false;
+            return Array.isArray(item.blocks);
+        }
+
+        function templateReferencePreviewValid(result) {
+            if (!result || typeof result !== "object") return false;
+            if (typeof result.subject !== "string" || typeof result.body !== "string") return false;
+            return Array.isArray(result.blocks) && Array.isArray(result.fallbackKeys) && Array.isArray(result.variables);
+        }
+
+        function templateReferenceVisibleItems() {
+            const items = instance.templateReference.items || [];
+            const input = templateReferenceSearchInput();
+            const query = input ? String(input.value || "").trim().toLowerCase() : "";
+            if (!query) return items.slice();
+            return items.filter((item) => {
+                const name = String(item.templateName || "").toLowerCase();
+                const description = item.description == null ? "" : String(item.description).toLowerCase();
+                return name.indexOf(query) >= 0 || description.indexOf(query) >= 0;
+            });
+        }
+
+        function templateReferenceStatusText() {
+            const state = instance.templateReference;
+            if (state.loading === "list") return "正在加载邮件模板…";
+            if (state.error === "list") return "邮件模板加载失败，请重试";
+            if (state.loading === "preview") return "正在生成预览…";
+            if (state.error === "preview") return "模板预览失败，请重试";
+            if (state.preview) return "";
+            return "请选择邮件模板";
+        }
+
+        function templateReferenceApplyMode() {
+            const dialog = templateReferenceDialogEl();
+            if (!dialog || !dialog.querySelector) return "append";
+            const replace = dialog.querySelector('input[name="reply-template-mode"][value="replace"]');
+            return replace && replace.checked ? "replace" : "append";
+        }
+
+        function templateReferenceReplaceSubjectChecked() {
+            const node = templateReferenceNode("template-replace-subject");
+            return !!(node && node.checked);
+        }
+
+        function templateReferenceMeetingBlocked() {
+            return !!manualMeetingSnapshot();
+        }
+
+        /** 唯一的「填入回复」可用性判断：渲染与点击复核共用，不实现两套分叉判断。 */
+        function templateReferenceApplyState() {
+            const state = instance.templateReference;
+            if (instance.manual.busy) return { enabled: false, reason: "" };
+            if (state.loading !== "" || state.error !== "") return { enabled: false, reason: "" };
+            const item = templateReferenceSelectedItem();
+            if (!item || !templateReferenceItemValid(item)) return { enabled: false, reason: "" };
+            const preview = state.preview;
+            if (!preview) return { enabled: false, reason: "" };
+            if (templateReferenceApplyMode() === "replace" && templateReferenceMeetingBlocked()) {
+                return { enabled: false, reason: "" };
+            }
+            const body = String(preview.body || "");
+            if (!body.trim()) return { enabled: false, reason: "预览正文为空，无法填入" };
+            const toEmail = preview.toEmail == null ? "" : String(preview.toEmail);
+            const identity = state.identity || {};
+            if (!toEmail || toEmail !== String(identity.expertEmail || "")) {
+                return { enabled: false, reason: "预览联系人邮箱与当前专家邮箱不一致，请先核对专家资料" };
+            }
+            if (body.indexOf("${") >= 0) {
+                return { enabled: false, reason: "正文仍含未替换变量（${…}），请先补齐模板变量" };
+            }
+            const subject = String(preview.subject || "");
+            const replaceSubject = templateReferenceReplaceSubjectChecked();
+            if (replaceSubject && subject.indexOf("${") >= 0) {
+                return { enabled: false, reason: "主题仍含未替换变量（${…}），请先补齐模板变量" };
+            }
+            if (body.indexOf(TEMPLATE_PREVIEW_UNSUBSCRIBE_URL) >= 0
+                || (replaceSubject && subject.indexOf(TEMPLATE_PREVIEW_UNSUBSCRIBE_URL) >= 0)) {
+                return { enabled: false, reason: TEMPLATE_UNSUBSCRIBE_TEXT };
+            }
+            return { enabled: true, reason: "" };
+        }
+
+        /** I-3：默认值/缺值/被跳过块与禁填原因是人可读提示，不新建发送门禁。 */
+        function templateReferenceWarningText() {
+            const preview = instance.templateReference.preview;
+            if (!preview) return "";
+            const lines = [];
+            const skipped = (preview.blocks || []).filter((block) => block && block.included === false);
+            if (skipped.length) {
+                lines.push("未包含正文块：" + skipped.map((block) => {
+                    const label = String(block.refDisplayName || block.blockType || "");
+                    return `${Number(block.blockOrder)}. ${label}（${String(block.skipReason || "已跳过")}）`;
+                }).join("；"));
+            }
+            const fallbackKeys = Array.isArray(preview.fallbackKeys) ? preview.fallbackKeys : [];
+            if (fallbackKeys.length) lines.push("使用默认值：" + fallbackKeys.join("、"));
+            const missing = (Array.isArray(preview.variables) ? preview.variables : [])
+                .filter((entry) => entry && entry.filled === false && entry.usedFallback === false)
+                .map((entry) => String(entry.key || ""))
+                .filter((key) => key !== "");
+            if (missing.length) lines.push("缺少变量值：" + missing.join("、") + "；填入后请补齐");
+            const blocked = templateReferenceApplyState().reason;
+            if (blocked) lines.push(blocked);
+            return lines.join("\n");
+        }
+
+        function renderTemplateReferenceList() {
+            const state = instance.templateReference;
+            const list = templateReferenceNode("template-list");
+            const doc = docRoot();
+            if (!list || !doc) return;
+            const visible = templateReferenceVisibleItems();
+            const count = templateReferenceNode("template-count");
+            if (count) count.textContent = String(visible.length);
+            list.innerHTML = "";
+            if (!visible.length) {
+                const empty = doc.createElement("p");
+                empty.setAttribute("class", "reply-template-status");
+                empty.textContent = (state.items || []).length
+                    ? "未找到匹配模板"
+                    : (state.loading === "list" ? "正在加载邮件模板…" : "暂无已启用的邮件模板");
+                list.appendChild(empty);
+                return;
+            }
+            visible.forEach((item) => {
+                const option = doc.createElement("button");
+                option.setAttribute("class", "reply-template-option");
+                option.setAttribute("type", "button");
+                option.setAttribute("data-action", "mc-select-template-reference");
+                option.setAttribute("data-template-id", String(item.id));
+                option.setAttribute("aria-pressed", Number(item.id) === Number(state.selectedId) ? "true" : "false");
+                const title = doc.createElement("strong");
+                title.textContent = String(item.templateName || "");
+                option.appendChild(title);
+                const description = item.description == null ? "" : String(item.description);
+                if (description) {
+                    const sub = doc.createElement("small");
+                    sub.textContent = description;
+                    option.appendChild(sub);
+                }
+                list.appendChild(option);
+            });
+        }
+
+        function renderTemplateReferencePreview() {
+            const state = instance.templateReference;
+            if (!state.open) return;
+            const dialog = templateReferenceDialogEl();
+            if (!dialog) return;
+            const item = templateReferenceSelectedItem();
+            const main = dialog.querySelector(".reply-template-main");
+            if (main) main.setAttribute("aria-busy", state.loading === "preview" ? "true" : "false");
+            const nameNode = templateReferenceNode("template-name");
+            if (nameNode) nameNode.textContent = item ? String(item.templateName || "") : "";
+            const preview = state.preview;
+            const badge = templateReferenceNode("template-preview-badge");
+            if (badge) badge.hidden = !preview;
+            const status = templateReferenceNode("template-status");
+            if (status) status.textContent = templateReferenceStatusText();
+            const retry = dialog.querySelector('[data-action="mc-retry-template-reference"]');
+            if (retry) retry.hidden = !state.error;
+            const warning = templateReferenceNode("template-warning");
+            const warningText = templateReferenceWarningText();
+            if (warning) {
+                warning.textContent = warningText;
+                warning.hidden = warningText === "";
+            }
+            const subjectNode = templateReferenceNode("template-subject");
+            if (subjectNode) subjectNode.textContent = preview ? String(preview.subject || "") : "";
+            const bodyNode = templateReferenceNode("template-body");
+            if (bodyNode) bodyNode.textContent = preview ? String(preview.body || "") : "";
+            const paper = templateReferenceNode("template-paper");
+            if (paper) paper.hidden = !preview;
+            const modes = templateReferenceNode("template-modes");
+            const identity = state.identity || {};
+            if (modes) modes.hidden = String(identity.text || "").trim() === "";
+            const meetingBlocked = templateReferenceMeetingBlocked();
+            const hint = templateReferenceNode("template-meeting-hint");
+            if (hint) hint.hidden = !meetingBlocked;
+            const replaceRadio = dialog.querySelector('input[name="reply-template-mode"][value="replace"]');
+            if (replaceRadio) replaceRadio.disabled = meetingBlocked;
+            if (meetingBlocked) {
+                const appendRadio = dialog.querySelector('input[name="reply-template-mode"][value="append"]');
+                if (appendRadio) appendRadio.checked = true;
+            }
+            const applyButton = dialog.querySelector('[data-action="mc-apply-template-reference"]');
+            if (applyButton) applyButton.disabled = !templateReferenceApplyState().enabled;
+        }
+
+        function renderTemplateReference() {
+            const state = instance.templateReference;
+            if (!state.open) return;
+            if (!templateReferenceDialogEl()) return;
+            const identity = state.identity || {};
+            const name = templateReferenceNode("template-contact-name");
+            if (name) name.textContent = String(identity.expertName || "");
+            const email = templateReferenceNode("template-contact-email");
+            if (email) email.textContent = String(identity.expertEmail || "");
+            const account = templateReferenceNode("template-account");
+            if (account) account.textContent = String(identity.senderAccountCode || "");
+            renderTemplateReferenceList();
+            renderTemplateReferencePreview();
+        }
+
+        /** I-2：每次打开重读列表，只呈现 enabled === true 的模板，不使用宿主缓存。 */
+        function loadTemplateReferenceList() {
+            const state = instance.templateReference;
+            if (!state.open || !state.identity) return;
+            const seq = state.seq + 1;
+            state.seq = seq;
+            state.items = [];
+            state.selectedId = null;
+            state.preview = null;
+            state.loading = "list";
+            state.error = "";
+            renderTemplateReference();
+            hostApi()("/api/compose-templates").then((data) => {
+                if (!templateReferenceSeqMatches(seq)) return;
+                if (!Array.isArray(data)) {
+                    state.loading = "";
+                    state.error = "list";
+                    renderTemplateReference();
+                    return;
+                }
+                const items = data.filter((item) => item && item.enabled === true);
+                state.items = items;
+                state.loading = "";
+                state.error = "";
+                const first = items.length ? items[0] : null;
+                state.selectedId = first ? Number(first.id) : null;
+                renderTemplateReference();
+                if (state.selectedId != null) loadTemplateReferencePreview();
+            }).catch(() => {
+                if (!templateReferenceSeqMatches(seq)) return;
+                state.loading = "";
+                state.error = "list";
+                state.preview = null;
+                renderTemplateReference();
+            });
+        }
+
+        /** I-2：只读 preview-draft；回包经 seq/identity 校验后成为唯一填入快照。 */
+        function loadTemplateReferencePreview() {
+            const state = instance.templateReference;
+            if (!state.open || !state.identity) return;
+            const item = templateReferenceSelectedItem();
+            const seq = state.seq + 1;
+            state.seq = seq;
+            state.preview = null;
+            state.error = "";
+            if (!item || !templateReferenceItemValid(item)) {
+                state.loading = "";
+                state.error = item ? "preview" : "";
+                renderTemplateReference();
+                return;
+            }
+            state.loading = "preview";
+            renderTemplateReference();
+            const identity = state.identity;
+            const payload = {
+                subject: String(item.subject),
+                subjectSnippetId: item.subjectSnippetId != null ? item.subjectSnippetId : null,
+                blocks: (item.blocks || []).map((block) => ({
+                    blockOrder: block ? block.blockOrder : null,
+                    blockType: block ? block.blockType : null,
+                    refId: block && block.refId != null ? block.refId : null,
+                    customText: block && block.customText != null ? block.customText : null
+                })),
+                contactId: identity.contactId,
+                senderAccountCode: identity.senderAccountCode,
+                strictPlaceholders: false,
+                variantIndex: 0
+            };
+            hostApi()("/api/compose-templates/preview-draft", {
+                method: "POST",
+                body: JSON.stringify(payload)
+            }).then((result) => {
+                if (!templateReferenceSeqMatches(seq)) return;
+                if (!templateReferencePreviewValid(result)) {
+                    state.loading = "";
+                    state.error = "preview";
+                    state.preview = null;
+                    renderTemplateReference();
+                    return;
+                }
+                state.preview = result;
+                state.loading = "";
+                state.error = "";
+                renderTemplateReference();
+            }).catch(() => {
+                if (!templateReferenceSeqMatches(seq)) return;
+                state.loading = "";
+                state.error = "preview";
+                state.preview = null;
+                renderTemplateReference();
+            });
+        }
+
+        function retryTemplateReference() {
+            const state = instance.templateReference;
+            if (!state.open) return;
+            if (state.error === "list") {
+                loadTemplateReferenceList();
+                return;
+            }
+            if (state.error === "preview") loadTemplateReferencePreview();
+        }
+
+        function selectTemplateReferenceItem(id) {
+            const state = instance.templateReference;
+            if (!state.open) return;
+            const numeric = Number(id);
+            const item = (state.items || []).find((entry) => Number(entry.id) === numeric) || null;
+            if (!item) return;
+            state.selectedId = numeric;
+            state.preview = null;
+            state.error = "";
+            state.loading = "";
+            renderTemplateReference();
+            loadTemplateReferencePreview();
+        }
+
+        function openTemplateReferenceDialog() {
+            if (instance.manual.mode !== "inbound" || instance.manual.busy) return;
+            const contactId = Number(instance.selectedContactId);
+            const processingId = Number(instance.manual.targetProcessingId);
+            if (!Number.isInteger(contactId) || contactId <= 0) return;
+            if (!Number.isInteger(processingId) || processingId <= 0) return;
+            if (!currentTargetKey()) return;
+            const composeEl = manualComposeEl();
+            const inputs = manualInputs(composeEl);
+            if (!inputs) return;
+            const anchorId = currentFollowUpAnchorId();
+            const account = templateReferenceSenderAccount(anchorId);
+            if (!account.ok) {
+                hostShowStatus(TEMPLATE_ACCOUNT_UNRESOLVED_TEXT, "error");
+                return;
+            }
+            const values = readManualValues(composeEl);
+            if (!values) return;
+            const identity = templateReferenceIdentity();
+            identity.anchorId = anchorId;
+            identity.senderAccountCode = account.code;
+            identity.subject = values.subject;
+            identity.html = values.html;
+            identity.text = values.text;
+            // 唯一 portal 只承载一个 overlay：打开引用弹框前先关掉其它面板（不触碰草稿状态）。
+            closeManageOverlay({ restoreFocus: false });
+            closeFollowUpDialog({ restoreFocus: false });
+            closeMaterialRequestDialog({ restoreFocus: false });
+            closeTemplateReferenceDialog({ restoreFocus: false });
+            const root = ensurePortalRoot();
+            if (!root) {
+                hostShowStatus("引用模板弹框挂载失败", "error");
+                return;
+            }
+            const state = instance.templateReference;
+            state.open = true;
+            state.identity = identity;
+            state.items = [];
+            state.selectedId = null;
+            state.preview = null;
+            state.loading = "list";
+            state.error = "";
+            state.trigger = host.querySelector ? host.querySelector('[data-action="mc-open-template-reference"]') : null;
+            root.innerHTML = templateReferenceDialogHtml();
+            const dialog = templateReferenceDialogEl();
+            if (!dialog) {
+                closeTemplateReferenceDialog({ restoreFocus: false });
+                return;
+            }
+            // I-7：原生 cancel（Esc）走同一个关闭函数。
+            if (typeof dialog.addEventListener === "function") {
+                dialog.addEventListener("cancel", () => { closeTemplateReferenceDialog({ restoreFocus: true }); });
+            }
+            if (typeof dialog.showModal === "function") {
+                try {
+                    dialog.showModal();
+                } catch (e) {
+                    dialog.setAttribute("open", "");
+                }
+            } else {
+                dialog.setAttribute("open", "");
+            }
+            renderTemplateReference();
+            loadTemplateReferenceList();
+        }
+
+        /** I-7：只移除自己拥有的 .reply-template-dialog，绝不 portalRoot.innerHTML=""。 */
+        function closeTemplateReferenceDialog(options) {
+            const opts = options || {};
+            const state = instance.templateReference;
+            const wasOpen = state.open;
+            state.open = false;
+            state.seq += 1;
+            state.identity = null;
+            state.items = [];
+            state.selectedId = null;
+            state.preview = null;
+            state.loading = "";
+            state.error = "";
+            const dialog = templateReferenceDialogEl();
+            if (dialog) {
+                if (typeof dialog.close === "function") {
+                    try {
+                        dialog.close();
+                    } catch (e) { /* noop */ }
+                }
+                if (dialog.hasAttribute && dialog.hasAttribute("open")) dialog.removeAttribute("open");
+                if (dialog.parentNode && typeof dialog.parentNode.removeChild === "function") {
+                    dialog.parentNode.removeChild(dialog);
+                } else if (typeof dialog.remove === "function") {
+                    dialog.remove();
+                }
+            }
+            const trigger = state.trigger;
+            state.trigger = null;
+            if (wasOpen && opts.restoreFocus !== false) focusIfAvailable(trigger);
+        }
+
+        /** I-4：纯文本语义 —— 逐行 text node + <br>，包在无 class 的 div；不解析 HTML。 */
+        function templateReferenceBodyNodes(doc, text) {
+            const holder = doc.createElement("div");
+            normalizeManualTextLineBreaks(text).split("\n").forEach((line, index) => {
+                if (index > 0) holder.appendChild(doc.createElement("br"));
+                if (line !== "") holder.appendChild(doc.createTextNode(line));
+            });
+            return holder;
+        }
+
+        function insertTemplateReferenceBody(editor, text, mode) {
+            const doc = docRoot();
+            if (!doc || !editor) return false;
+            if (mode === "replace") {
+                while (editor.firstChild) editor.removeChild(editor.firstChild);
+            }
+            editor.appendChild(templateReferenceBodyNodes(doc, text));
+            return true;
+        }
+
+        /** I-5/I-6：应用前复核身份、正文/主题快照、busy 与会议替换禁用条件。 */
+        function applyTemplateReference() {
+            const state = instance.templateReference;
+            if (!state.open || !state.identity) return;
+            if (instance.manual.mode !== "inbound" || instance.manual.busy) return;
+            if (!templateReferenceSeqMatches(state.seq)) {
+                hostShowStatus(TEMPLATE_STALE_TEXT, "error");
+                closeTemplateReferenceDialog({ restoreFocus: true });
+                return;
+            }
+            if (!templateReferenceApplyState().enabled) {
+                renderTemplateReferencePreview();
+                return;
+            }
+            const composeEl = manualComposeEl();
+            const inputs = manualInputs(composeEl);
+            if (!inputs) return;
+            const identity = state.identity;
+            const values = readManualValues(composeEl);
+            if (!values
+                || values.subject !== identity.subject
+                || values.html !== identity.html
+                || values.text !== identity.text) {
+                const dialog = templateReferenceDialogEl();
+                const applyButton = dialog ? dialog.querySelector('[data-action="mc-apply-template-reference"]') : null;
+                if (applyButton) applyButton.disabled = true;
+                const status = templateReferenceNode("template-status");
+                if (status) status.textContent = TEMPLATE_STALE_TEXT;
+                hostShowStatus(TEMPLATE_STALE_TEXT, "error");
+                return;
+            }
+            const mode = templateReferenceApplyMode();
+            if (mode === "replace" && templateReferenceMeetingBlocked()) {
+                renderTemplateReferencePreview();
+                return;
+            }
+            const preview = state.preview;
+            if (templateReferenceReplaceSubjectChecked()) {
+                inputs.subjectInput.value = String(preview.subject == null ? "" : preview.subject);
+            }
+            if (mode === "replace") {
+                // I-5：替换正文清除 QA/RAG 证据，由既有保存入口同步清 draft.qa。
+                instance.manual.qa = null;
+            }
+            if (!insertTemplateReferenceBody(inputs.editor, String(preview.body || ""), mode)) return;
+            // I-4/I-6：走既有编辑器输入入口保存，读取的是当前 draft（保留晚到的附件与锚点）。
+            handleManualComposeInput(inputs.editor);
+            saveConversationState();
+            closeTemplateReferenceDialog({ restoreFocus: false });
+            focusIfAvailable(inputs.editor);
+            hostShowStatus("模板已填入回复，可继续编辑", "ok");
+        }
+
+        /** 纯本地搜索：保留仍在结果中的选择，否则回退首个，空结果清选中与快照。 */
+        function onTemplateReferenceInput(event) {
+            if (instance.disposed) return;
+            const state = instance.templateReference;
+            if (!state.open) return;
+            const target = event ? event.target : null;
+            const search = templateReferenceSearchInput();
+            if (!search || target !== search) return;
+            const visible = templateReferenceVisibleItems();
+            if (visible.some((item) => Number(item.id) === Number(state.selectedId))) {
+                renderTemplateReference();
+                return;
+            }
+            state.preview = null;
+            state.error = "";
+            state.loading = "";
+            const first = visible.length ? visible[0] : null;
+            state.selectedId = first ? Number(first.id) : null;
+            renderTemplateReference();
+            if (state.selectedId != null) loadTemplateReferencePreview();
+        }
+
+        function onTemplateReferenceChange(event) {
+            if (instance.disposed) return;
+            const state = instance.templateReference;
+            if (!state.open) return;
+            const dialog = templateReferenceDialogEl();
+            const target = event ? event.target : null;
+            if (!dialog || !target || typeof dialog.contains !== "function" || !dialog.contains(target)) return;
+            const role = target.getAttribute ? target.getAttribute("data-role") : null;
+            const name = target.getAttribute ? target.getAttribute("name") : null;
+            if (role === "template-replace-subject" || name === "reply-template-mode") {
+                renderTemplateReferencePreview();
+            }
         }
 
         // --------------------------------------------------------------
@@ -4721,6 +5411,7 @@
             // 跟进候选绑定账号范围：范围变化即关闭弹窗（草稿缓存不清，I-7）。
             closeFollowUpDialog({ restoreFocus: false });
             closeMaterialRequestDialog({ restoreFocus: false });
+            closeTemplateReferenceDialog({ restoreFocus: false });
             teardownMeetingViews();
         }
 
@@ -5297,6 +5988,8 @@
                 try { meetingController.close({ restoreFocus: false }); } catch (e) { /* noop */ }
             }
             revokeMeetingBlob();
+            // fast-p 01（I-7）：回复目标切换即关闭引用模板弹框（旧快照与旧身份全部作废）。
+            closeTemplateReferenceDialog({ restoreFocus: false });
             if (draft) {
                 let migrated = Object.assign({}, draft, { subject: "", updatedAt: new Date().toISOString() });
                 if (draft.meeting) {
@@ -5538,6 +6231,10 @@
                 openMaterialRequestDialog();
                 return;
             }
+            if (action === "mc-open-template-reference") {
+                openTemplateReferenceDialog();
+                return;
+            }
             if (action === "mc-open-followup") {
                 openFollowUpDialog();
                 return;
@@ -5636,10 +6333,31 @@
                 applyMaterialRequestFromDialog();
                 return;
             }
+            if (action === "mc-close-template-reference") {
+                closeTemplateReferenceDialog({ restoreFocus: true });
+                return;
+            }
+            if (action === "mc-select-template-reference") {
+                selectTemplateReferenceItem(button.dataset ? button.dataset.templateId : null);
+                return;
+            }
+            if (action === "mc-retry-template-reference") {
+                retryTemplateReference();
+                return;
+            }
+            if (action === "mc-apply-template-reference") {
+                applyTemplateReference();
+                return;
+            }
         }
 
         function onPortalKeyDown(event) {
             if (instance.disposed) return;
+            if (event.key === "Escape" && instance.templateReference.open) {
+                event.preventDefault();
+                closeTemplateReferenceDialog({ restoreFocus: true });
+                return;
+            }
             if (event.key === "Escape" && instance.materialRequest.open) {
                 event.preventDefault();
                 closeMaterialRequestDialog({ restoreFocus: true });
@@ -5913,6 +6631,8 @@
             ensurePortalRoot();
             listenPortal("click", onClickPortal);
             listenPortal("change", onMaterialRequestOptionChange);
+            listenPortal("change", onTemplateReferenceChange);
+            listenPortal("input", onTemplateReferenceInput);
             listenPortal("keydown", onPortalKeyDown);
             bindDetails(host);
             setRefined(true);

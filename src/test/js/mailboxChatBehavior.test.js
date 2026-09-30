@@ -793,6 +793,15 @@ function createChatSandbox(options) {
             if (opts.markResolvedError) return Promise.reject(new Error(opts.markResolvedError));
             return Promise.resolve({});
         }
+        // fast-p 01：引用邮件模板只读链路（列表 + preview-draft）。竞态用例用 opts.route 自行控制。
+        if (url === "/api/compose-templates/preview-draft") {
+            if (opts.composePreviewError) return Promise.reject(new Error(opts.composePreviewError));
+            return Promise.resolve(opts.composePreview === undefined ? null : opts.composePreview);
+        }
+        if (url === "/api/compose-templates") {
+            if (opts.composeTemplatesError) return Promise.reject(new Error(opts.composeTemplatesError));
+            return Promise.resolve(opts.composeTemplates || []);
+        }
         if (/\/api\/mail\/mailbox\/conversations\/\d+\/follow/.test(url)) {
             return Promise.resolve({ followed: opts.followResult !== false });
         }
@@ -3812,5 +3821,719 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         assert.strictEqual(bad.calls.sendConversation.length, 1);
         assert.ok(anchorNote(bad), "发送失败保留草稿与锚点提示");
         assert.ok(bad.host.querySelector('[aria-label="人工回复正文"]').innerText.indexOf("On 2026-09-05 11:49, acc1 wrote:") >= 0);
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// fast-p 01：人工回复「引用邮件模板」（I-1..I-8 / S-1..S-3）
+// ════════════════════════════════════════════════════════════════════════
+
+const TEMPLATE_A = {
+    id: 1,
+    templateCode: "TPL_A",
+    templateName: "验收-A",
+    description: "第一套模板",
+    subject: "Template subject A",
+    enabled: true,
+    subjectSnippetId: 5,
+    blocks: [
+        { id: 11, blockOrder: 1, blockType: "CUSTOM_TEXT", refId: null, refDisplayName: "自定义正文", customText: "第一段" },
+        { id: 12, blockOrder: 2, blockType: "REPLY_SNIPPET", refId: 3, refDisplayName: "回复片段", customText: null }
+    ]
+};
+
+const TEMPLATE_B = {
+    id: 2,
+    templateName: "验收-B",
+    description: "第二套模板",
+    subject: "Template subject B",
+    enabled: true,
+    blocks: [{ id: 21, blockOrder: 1, blockType: "CUSTOM_TEXT", refId: null, refDisplayName: "自定义正文", customText: "B 正文" }]
+};
+
+const TEMPLATE_DISABLED = Object.assign({}, TEMPLATE_B, { id: 3, templateName: "验收-B(停用)", enabled: false });
+
+function templatePreviewResponse(extra) {
+    return Object.assign({
+        subject: "Template subject A",
+        body: "第一段\n\n第二段",
+        blocks: [{ blockOrder: 1, blockType: "CUSTOM_TEXT", refId: null, refDisplayName: "自定义正文", included: true, skipReason: null, textPreview: "第一段" }],
+        fallbackKeys: [],
+        toEmail: "a@example.edu",
+        variables: [],
+        variantPoolSize: 1
+    }, extra || {});
+}
+
+describe("fast-p 01 引用邮件模板：入口 / 只读上下文 / 竞态 / 填入（I-1..I-8/S-1..S-3）", () => {
+    const PREVIEW_BODY = "第一段\n\n第二段";
+    const STALE_TEXT = "回复目标或草稿已变化，请关闭后重新选择模板";
+    const UNRESOLVED_ACCOUNT_TEXT = "无法确认当前跟进邮件的发件账号，请重新选择跟进邮件";
+
+    async function bootInboundTemplates(overrides, mountOptions) {
+        const conversations = { items: [expertA(), expertB()], total: 2 };
+        const ctx = await bootChat(Object.assign({
+            conversations,
+            messages: messagesA(),
+            contact: contactA(),
+            composeTemplates: [TEMPLATE_A, TEMPLATE_B, TEMPLATE_DISABLED],
+            composePreview: templatePreviewResponse()
+        }, overrides || {}), mountOptions);
+        const a = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "1");
+        click(a.querySelector(".mc-person-main"));
+        await flush();
+        return ctx;
+    }
+
+    function triggerOf(ctx) {
+        return ctx.host.querySelector('[data-action="mc-open-template-reference"]');
+    }
+    function dialogOf(ctx) {
+        return ctx.doc.body.querySelector(".reply-template-dialog");
+    }
+    function nodeOf(ctx, role) {
+        const dialog = dialogOf(ctx);
+        return dialog ? dialog.querySelector(`[data-role="${role}"]`) : null;
+    }
+    function optionsOf(ctx) {
+        const dialog = dialogOf(ctx);
+        return dialog ? dialog.querySelectorAll('[data-action="mc-select-template-reference"]') : [];
+    }
+    function applyOf(ctx) {
+        const dialog = dialogOf(ctx);
+        return dialog ? dialog.querySelector('[data-action="mc-apply-template-reference"]') : null;
+    }
+    function editorOf(ctx) {
+        return ctx.host.querySelector('[aria-label="人工回复正文"]');
+    }
+    function subjectOf(ctx) {
+        return ctx.host.querySelector('input[aria-label="回复主题"]');
+    }
+    function listCalls(ctx) {
+        return ctx.calls.api.filter((entry) => entry.url === "/api/compose-templates");
+    }
+    function previewCalls(ctx) {
+        return ctx.calls.api.filter((entry) => entry.url === "/api/compose-templates/preview-draft");
+    }
+    function templateCalls(ctx) {
+        return ctx.calls.api.filter((entry) => entry.url.indexOf("/api/compose-templates") === 0);
+    }
+    function draftCards(ctx) {
+        return ctx.host.querySelectorAll('[data-role="outbound-draft-files"] .outbound-file');
+    }
+    // MiniDOM 不做排版：br 不产生换行文本，故用节点结构断言纯文本语义（文本节点 + <br>）。
+    function structureOf(node) {
+        return Array.prototype.slice.call(node.childNodes).map((child) => {
+            if (child.nodeType === 3) return `text:${child.data}`;
+            const tag = String(child.tagName).toLowerCase();
+            if (tag === "br") return "br";
+            return `${tag}:${child.getAttribute("class") || ""}`;
+        });
+    }
+    function holderOf(ctx) {
+        const editor = editorOf(ctx);
+        return editor.children[editor.children.length - 1];
+    }
+    async function openTemplate(ctx) {
+        click(triggerOf(ctx));
+        await flush();
+        return dialogOf(ctx);
+    }
+    function selectTemplate(ctx, id) {
+        const option = optionsOf(ctx).find((node) => node.dataset.templateId === String(id));
+        assert.ok(option, `模板 ${id} 必须在列表里`);
+        click(option);
+    }
+    function setSearch(ctx, value) {
+        const input = nodeOf(ctx, "template-search");
+        input.value = value;
+        inputEvent(input);
+    }
+    function setReplaceSubject(ctx, on) {
+        const box = nodeOf(ctx, "template-replace-subject");
+        box.checked = !!on;
+        changeEvent(box);
+    }
+    function setReplaceMode(ctx, on) {
+        const dialog = dialogOf(ctx);
+        const append = dialog.querySelector('input[name="reply-template-mode"][value="append"]');
+        const replace = dialog.querySelector('input[name="reply-template-mode"][value="replace"]');
+        append.checked = !on;
+        replace.checked = !!on;
+        changeEvent(on ? replace : append);
+    }
+    function statusTexts(ctx) {
+        return ctx.calls.status.map((entry) => entry.message);
+    }
+
+    it("S-1/I-1：入口只属于来信人工回复，位于回形针之后、跟进之前；outbound/unavailable 无入口", async () => {
+        const ctx = await bootInboundTemplates();
+        const actions = ctx.host.querySelector(".mc-editor-tools").querySelectorAll("button[data-action]")
+            .map((button) => button.getAttribute("data-action"));
+        assert.deepStrictEqual(actions, [
+            "mc-rich-command", "mc-rich-command", "mc-rich-command", "mc-rich-command",
+            "mc-upload-attachment", "mc-open-template-reference", "mc-open-followup"
+        ], "引用模板固定在回形针之后、跟进之前");
+        const button = triggerOf(ctx);
+        assert.strictEqual(button.getAttribute("class"), "button reply-template-trigger");
+        assert.strictEqual(button.getAttribute("type"), "button");
+        assert.strictEqual(button.textContent.trim(), "引用模板");
+        // 会议组件缺席（本 harness 无 MailboxMeeting）仍可打开纯文本引用
+        await openTemplate(ctx);
+        assert.ok(dialogOf(ctx), "会议组件缺席仍可打开引用弹框");
+        assert.ok(nodeOf(ctx, "template-body"), "纯文本预览容器存在");
+
+        const outbound = await bootChat({ conversations: { items: [expertB(), expertA()], total: 2 }, messages: messagesA(), contact: contactB() });
+        click(outbound.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2").querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(outbound.host.querySelector('[data-action="mc-open-template-reference"]'), null, "outbound 不渲染入口");
+
+        const none = await bootChat({ conversations: { items: [expertB({ sentCount: 0 }), expertA()], total: 2 }, messages: [], contact: contactB() });
+        click(none.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2").querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(none.host.querySelector('[data-action="mc-open-template-reference"]'), null, "unavailable 不渲染入口");
+    });
+
+    it("I-1/I-2：打开即重读列表、只呈现 enabled、payload 为四字段 blocks 与真实上下文", async () => {
+        const ctx = await bootInboundTemplates();
+        assert.strictEqual(listCalls(ctx).length, 0, "未打开时不请求模板");
+        await openTemplate(ctx);
+        assert.strictEqual(listCalls(ctx).length, 1, "打开即读取模板列表");
+        assert.strictEqual(listCalls(ctx)[0].method, "GET");
+        assert.deepStrictEqual(optionsOf(ctx).map((node) => node.dataset.templateId), ["1", "2"], "只呈现 enabled 模板");
+        assert.deepStrictEqual(optionsOf(ctx).map((node) => node.getAttribute("aria-pressed")), ["true", "false"], "默认选中首个");
+        assert.strictEqual(nodeOf(ctx, "template-count").textContent, "2");
+        assert.strictEqual(previewCalls(ctx).length, 1, "默认选中即预览一次");
+        assert.deepStrictEqual(JSON.parse(previewCalls(ctx)[0].body), {
+            subject: "Template subject A",
+            subjectSnippetId: 5,
+            blocks: [
+                { blockOrder: 1, blockType: "CUSTOM_TEXT", refId: null, customText: "第一段" },
+                { blockOrder: 2, blockType: "REPLY_SNIPPET", refId: 3, customText: null }
+            ],
+            contactId: 1,
+            senderAccountCode: "acc1",
+            strictPlaceholders: false,
+            variantIndex: 0
+        });
+        assert.strictEqual(nodeOf(ctx, "template-contact-email").textContent, "a@example.edu");
+        assert.strictEqual(nodeOf(ctx, "template-contact-name").textContent, "专家A");
+        assert.strictEqual(nodeOf(ctx, "template-account").textContent, "acc1");
+        assert.strictEqual(nodeOf(ctx, "template-subject").textContent, "Template subject A");
+        assert.strictEqual(nodeOf(ctx, "template-body").textContent, PREVIEW_BODY);
+        assert.strictEqual(nodeOf(ctx, "template-preview-badge").hidden, false, "成功预览显示徽标");
+        assert.strictEqual(applyOf(ctx).disabled, false);
+        assert.deepStrictEqual(templateCalls(ctx).map((entry) => entry.method), ["GET", "POST"], "只使用两个只读接口");
+    });
+
+    it("I-2：每次打开重读列表；换模板只保留新快照；应用不再重新预览", async () => {
+        const seen = [];
+        const ctx = await bootInboundTemplates({
+            route: (url, method, body, entry, next) => {
+                if (url === "/api/compose-templates") return Promise.resolve([TEMPLATE_A, TEMPLATE_B]);
+                if (url === "/api/compose-templates/preview-draft") {
+                    const parsed = JSON.parse(body);
+                    seen.push(parsed.subject);
+                    return Promise.resolve(templatePreviewResponse({
+                        subject: parsed.subject,
+                        body: parsed.subject === "Template subject B" ? "B 正文" : PREVIEW_BODY
+                    }));
+                }
+                return next(url, method, body, entry);
+            }
+        });
+        await openTemplate(ctx);
+        assert.strictEqual(nodeOf(ctx, "template-body").textContent, PREVIEW_BODY);
+        selectTemplate(ctx, 2);
+        await flush();
+        assert.deepStrictEqual(seen, ["Template subject A", "Template subject B"], "换模板重新预览一次");
+        assert.strictEqual(nodeOf(ctx, "template-body").textContent, "B 正文", "只保留新模板快照");
+        assert.strictEqual(nodeOf(ctx, "template-subject").textContent, "Template subject B");
+        click(applyOf(ctx));
+        await flush();
+        assert.strictEqual(previewCalls(ctx).length, 2, "应用不再调用预览");
+        assert.deepStrictEqual(structureOf(holderOf(ctx)), ["text:B 正文"], "只填入当前快照");
+        await openTemplate(ctx);
+        assert.strictEqual(listCalls(ctx).length, 2, "每次打开重读列表");
+        assert.strictEqual(nodeOf(ctx, "template-body").textContent, PREVIEW_BODY, "重开后默认选中首个");
+    });
+
+    it("I-2：搜索只在本地过滤，保留仍在结果中的选择，空结果清选中", async () => {
+        const ctx = await bootInboundTemplates();
+        await openTemplate(ctx);
+        setSearch(ctx, "第二");
+        await flush();
+        assert.deepStrictEqual(optionsOf(ctx).map((node) => node.dataset.templateId), ["2"], "按名称本地过滤");
+        assert.strictEqual(previewCalls(ctx).length, 2, "搜索后选择变化才重新预览一次");
+        setSearch(ctx, "不存在的模板");
+        await flush();
+        assert.deepStrictEqual(optionsOf(ctx).map((node) => node.dataset.templateId), []);
+        assert.match(dialogOf(ctx).querySelector('[data-role="template-list"]').textContent, /未找到匹配模板/);
+        assert.strictEqual(applyOf(ctx).disabled, true, "无选中模板禁止填入");
+        assert.strictEqual(previewCalls(ctx).length, 2, "空结果不发预览请求");
+    });
+
+    it("I-3：toEmail 缺失/不匹配、空正文、残留变量、示例退订值都禁止填入并给出提示", async () => {
+        const cases = [
+            { name: "toEmail 缺失", preview: templatePreviewResponse({ toEmail: null }), expect: /预览联系人邮箱与当前专家邮箱不一致/ },
+            { name: "toEmail 不匹配", preview: templatePreviewResponse({ toEmail: "other@example.edu" }), expect: /预览联系人邮箱与当前专家邮箱不一致/ },
+            { name: "空正文", preview: templatePreviewResponse({ body: "   " }), expect: /预览正文为空/ },
+            { name: "残留变量", preview: templatePreviewResponse({ body: "Dear ${expertFamilyName}," }), expect: /正文仍含未替换变量/ },
+            { name: "示例退订值", preview: templatePreviewResponse({ body: "退订：https://example.com/u/unsubscribe?token=preview" }), expect: /退订链接尚未配置，当前仅为示例链接，请先配置后重试/ }
+        ];
+        for (const item of cases) {
+            const ctx = await bootInboundTemplates({ composePreview: item.preview });
+            await openTemplate(ctx);
+            assert.strictEqual(applyOf(ctx).disabled, true, `${item.name} 必须禁止填入`);
+            assert.strictEqual(nodeOf(ctx, "template-warning").hidden, false, `${item.name} 必须显示提示`);
+            assert.match(nodeOf(ctx, "template-warning").textContent, item.expect, `${item.name} 提示文案`);
+            click(applyOf(ctx));
+            await flush();
+            assert.strictEqual(editorOf(ctx).textContent.trim(), "", `${item.name} 不得改正文`);
+            assert.strictEqual(ctx.calls.sendRich.length, 0, `${item.name} 不得触发发送`);
+            assert.ok(dialogOf(ctx), `${item.name} 弹框保持打开`);
+        }
+    });
+
+    it("I-3：主题残留 ${ 只在勾选「同时替换回复主题」时阻止填入", async () => {
+        const ctx = await bootInboundTemplates({
+            composePreview: templatePreviewResponse({ subject: "Hi ${expertName}", body: "正文正常" })
+        });
+        await openTemplate(ctx);
+        assert.strictEqual(applyOf(ctx).disabled, false, "未勾选时不因主题残留阻止正文");
+        setReplaceSubject(ctx, true);
+        assert.strictEqual(applyOf(ctx).disabled, true, "勾选后主题残留阻止填入");
+        assert.match(nodeOf(ctx, "template-warning").textContent, /主题仍含未替换变量/);
+        setReplaceSubject(ctx, false);
+        assert.strictEqual(applyOf(ctx).disabled, false);
+    });
+
+    it("I-3：默认值/缺值/跳过块分别提示；textPreview 截断不影响完整正文", async () => {
+        const longBody = "长正文".repeat(120);
+        const ctx = await bootInboundTemplates({
+            composePreview: templatePreviewResponse({
+                body: longBody,
+                blocks: [
+                    { blockOrder: 1, blockType: "CUSTOM_TEXT", refId: null, refDisplayName: "自定义正文", included: true, skipReason: null, textPreview: longBody.slice(0, 200) },
+                    { blockOrder: 2, blockType: "REPLY_SNIPPET", refId: 9, refDisplayName: "停用片段", included: false, skipReason: "片段已禁用", textPreview: null }
+                ],
+                fallbackKeys: ["expertFamilyName"],
+                variables: [
+                    { key: "expertFamilyName", label: "姓氏", value: "Professor", filled: true, usedFallback: true },
+                    { key: "programmeName", label: "项目", value: "", filled: false, usedFallback: false }
+                ]
+            })
+        });
+        await openTemplate(ctx);
+        const warning = nodeOf(ctx, "template-warning").textContent;
+        assert.match(warning, /未包含正文块：2\. 停用片段（片段已禁用）/);
+        assert.match(warning, /使用默认值：expertFamilyName/);
+        assert.match(warning, /缺少变量值：programmeName；填入后请补齐/);
+        assert.strictEqual(nodeOf(ctx, "template-body").textContent, longBody, "正文使用完整 body 而非截断的 textPreview");
+        assert.strictEqual(applyOf(ctx).disabled, false, "默认值/缺值只是人工提示，不新建发送门禁");
+    });
+
+    it("I-3：加载失败与预览失败分别提示；重试只重试当前失败阶段", async () => {
+        const listFailed = await bootInboundTemplates({ composeTemplatesError: "list down" });
+        await openTemplate(listFailed);
+        assert.strictEqual(nodeOf(listFailed, "template-status").textContent, "邮件模板加载失败，请重试");
+        assert.strictEqual(applyOf(listFailed).disabled, true);
+        const retry = dialogOf(listFailed).querySelector('[data-action="mc-retry-template-reference"]');
+        assert.strictEqual(retry.hidden, false, "失败显示重试");
+        assert.strictEqual(previewCalls(listFailed).length, 0, "列表失败不请求预览");
+        click(retry);
+        await flush();
+        assert.strictEqual(listCalls(listFailed).length, 2, "重试只重读列表");
+        assert.strictEqual(previewCalls(listFailed).length, 0);
+
+        const previewFailed = await bootInboundTemplates({ composePreviewError: "preview down" });
+        await openTemplate(previewFailed);
+        assert.strictEqual(nodeOf(previewFailed, "template-status").textContent, "模板预览失败，请重试");
+        assert.strictEqual(applyOf(previewFailed).disabled, true);
+        click(dialogOf(previewFailed).querySelector('[data-action="mc-retry-template-reference"]'));
+        await flush();
+        assert.strictEqual(listCalls(previewFailed).length, 1, "预览重试不重读列表");
+        assert.strictEqual(previewCalls(previewFailed).length, 2);
+    });
+
+    it("I-4：预览与编辑器保持字面纯文本；发送 payload 为完整 html/text；不写 localStorage", async () => {
+        const literal = "<img src=x onerror=alert(1)> A & B\n第二行";
+        let localStorageWrites = 0;
+        const ctx = await bootInboundTemplates({ composePreview: templatePreviewResponse({ body: literal }) });
+        ctx.sandbox.localStorage = {
+            getItem: () => null,
+            setItem: () => { localStorageWrites += 1; },
+            removeItem: () => {}
+        };
+        await openTemplate(ctx);
+        const bodyNode = nodeOf(ctx, "template-body");
+        assert.strictEqual(bodyNode.textContent, literal, "预览逐字字面文本");
+        assert.strictEqual(bodyNode.querySelector("img"), null, "预览不生成图片节点");
+        assert.strictEqual(bodyNode.querySelector("script"), null, "预览不生成脚本节点");
+        click(applyOf(ctx));
+        await flush();
+        const editor = editorOf(ctx);
+        assert.strictEqual(editor.querySelector("img"), null, "编辑器不产生可执行节点");
+        assert.strictEqual(editor.querySelector("script"), null);
+        const holder = holderOf(ctx);
+        assert.strictEqual(holder.tagName, "DIV", "模板正文包在无 class 的 div");
+        assert.strictEqual(holder.getAttribute("class"), null);
+        assert.deepStrictEqual(structureOf(holder), [
+            "text:<img src=x onerror=alert(1)> A & B", "br", "text:第二行"
+        ], "字面文本进文本节点，换行只由 <br> 表达");
+        // 浏览器把该结构渲染成带换行的纯文本；按既有约定注入真实 innerText 后再发送。
+        setEditorContent(editor, editor.innerHTML, literal);
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        const body = ctx.calls.sendRich[0].body;
+        assert.ok(body.textBody.includes("<img src=x onerror=alert(1)> A & B"), "纯文本逐字外发");
+        assert.ok(body.htmlBody.includes("&lt;img src=x onerror=alert(1)&gt;"), "HTML 逐字转义，不执行");
+        assert.strictEqual(localStorageWrites, 0, "不写 localStorage 正文");
+        assert.strictEqual(ctx.calls.sendRich.length, 1, "只有用户点击发送才发信");
+    });
+
+    it("I-5：默认不改主题；空正文直接填、非空默认追加、显式替换只清正文", async () => {
+        const ctx = await bootInboundTemplates();
+        const editor = editorOf(ctx);
+        setEditorContent(editor, "<b>原有正文</b>", "原有正文");
+        inputEvent(editor);
+        const subjectBefore = subjectOf(ctx).value;
+        await openTemplate(ctx);
+        assert.strictEqual(nodeOf(ctx, "template-modes").hidden, false, "正文非空显示模式选择");
+        click(applyOf(ctx));
+        await flush();
+        assert.strictEqual(subjectOf(ctx).value, subjectBefore, "默认保留回复主题");
+        assert.ok(editorOf(ctx).querySelector("b"), "追加保留原有富文本节点");
+        assert.deepStrictEqual(editorOf(ctx).children.map((child) => child.tagName), ["B", "DIV"], "原有节点不重建，模板正文追加到末尾");
+        assert.deepStrictEqual(structureOf(holderOf(ctx)), ["text:第一段", "br", "br", "text:第二段"]);
+
+        await openTemplate(ctx);
+        setReplaceSubject(ctx, true);
+        setReplaceMode(ctx, true);
+        click(applyOf(ctx));
+        await flush();
+        assert.strictEqual(subjectOf(ctx).value, "Template subject A", "勾选后逐字采用预览主题");
+        assert.strictEqual(editorOf(ctx).querySelector("b"), null, "旧节点被清除");
+        assert.deepStrictEqual(editorOf(ctx).children.map((child) => child.tagName), ["DIV"], "替换后只留模板正文");
+        assert.deepStrictEqual(structureOf(holderOf(ctx)), ["text:第一段", "br", "br", "text:第二段"]);
+
+        const empty = await bootInboundTemplates();
+        await openTemplate(empty);
+        assert.strictEqual(nodeOf(empty, "template-modes").hidden, true, "正文为空时不显示模式选择");
+        click(applyOf(empty));
+        await flush();
+        assert.deepStrictEqual(structureOf(holderOf(empty)), ["text:第一段", "br", "br", "text:第二段"], "空正文直接填入");
+    });
+
+    it("I-5：追加保留 QA/RAG 证据，替换清除；追加不改变主题外的既有引用锚点", async () => {
+        const ctx = await bootInboundTemplates();
+        const wb = ctx.host.querySelector('.mc-section[data-section="workbench"]');
+        toggleOpen(wb);
+        await flush();
+        await ctx.calls.workbenchMounts[0].callbacks.onComplete({
+            renderedDraftText: "adopted body",
+            text: "adopted body",
+            usedFactCodes: ["KB-COMM-044"],
+            ragCorpusFingerprint: "fp-2026"
+        });
+        await flush();
+        await openTemplate(ctx);
+        click(applyOf(ctx));
+        await flush();
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        const appended = ctx.calls.sendRich[0].body;
+        assert.deepStrictEqual(appended.ragFactCodes, ["KB-COMM-044"], "追加保留 QA/RAG 证据");
+        assert.strictEqual(appended.ragCorpusFingerprint, "fp-2026", "追加保留语料指纹");
+        assert.strictEqual(appended.edited, true, "正文变化后 edited=true");
+        // 采用稿以纯文本节点落地，追加只在其后插入模板正文块（原节点不重建）
+        assert.deepStrictEqual(structureOf(editorOf(ctx)), ["text:adopted body", "div:"], "追加保留采用稿并追加模板正文块");
+        assert.ok(appended.textBody.includes("adopted body") && appended.textBody.includes("第一段"), "追加保留原文与模板正文");
+
+        const replaced = await bootInboundTemplates();
+        toggleOpen(replaced.host.querySelector('.mc-section[data-section="workbench"]'));
+        await flush();
+        await replaced.calls.workbenchMounts[0].callbacks.onComplete({
+            renderedDraftText: "adopted body",
+            text: "adopted body",
+            usedFactCodes: ["KB-COMM-044"],
+            ragCorpusFingerprint: "fp-2026"
+        });
+        await flush();
+        await openTemplate(replaced);
+        setReplaceMode(replaced, true);
+        click(applyOf(replaced));
+        await flush();
+        click(replaced.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        const replacedBody = replaced.calls.sendRich[0].body;
+        assert.strictEqual(replacedBody.ragFactCodes, undefined, "替换正文清除 QA/RAG 证据");
+        assert.strictEqual(replacedBody.ragCorpusFingerprint, undefined);
+        assert.deepStrictEqual(editorOf(replaced).children.map((child) => child.tagName), ["DIV"], "只剩模板正文");
+    });
+
+    it("I-2/I-5：跟进锚点账号取该封成功发件账号；发送仍携带原锚点", async () => {
+        const ctx = await bootInboundTemplates({
+            messages: {
+                items: [
+                    { source: "MAIL_RECORD", id: 4007, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Intro", body: "b", cleanedBody: "b", eventAt: "2026-09-06T09:00:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m4007", inReplyTo: null, tags: [] },
+                    { source: "MAIL_RECORD", id: 4011, contactId: 1, direction: "OUTBOUND", accountCode: "acc9", subject: "Other account send", body: "b", cleanedBody: "b", eventAt: "2026-09-06T10:00:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m4011", inReplyTo: null, tags: [] },
+                    { source: "INBOUND_PROCESSING", id: 101, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Question 1", body: "raw", cleanedBody: "cleaned", eventAt: "2026-09-07T03:00:00", sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m101", inReplyTo: null, tags: [] }
+                ],
+                nextBefore: null,
+                hasMore: false
+            }
+        });
+        ctx.sandbox.state = { accounts: [{ accountCode: "acc1", senderName: "Alice" }, { accountCode: "acc9", senderName: "Bob" }] };
+        vm.runInContext(extractFn("mcHostGetSenderName"), ctx.sandbox);
+        // 普通来信：账号取来信账号 acc1
+        await openTemplate(ctx);
+        assert.strictEqual(nodeOf(ctx, "template-account").textContent, "acc1");
+        assert.strictEqual(JSON.parse(previewCalls(ctx)[0].body).senderAccountCode, "acc1");
+        click(dialogOf(ctx).querySelector('[data-action="mc-close-template-reference"]'));
+        // 选择 acc9 的成功发件作为跟进锚点
+        click(ctx.host.querySelector('[data-action="mc-open-followup"]'));
+        await flush();
+        const option = ctx.doc.body.querySelector(".followup-dialog").querySelectorAll('[data-action="mc-select-followup"]')
+            .find((node) => node.dataset.mailRecordId === "4011");
+        assert.ok(option, "acc9 的成功发件必须是候选项");
+        click(option);
+        click(ctx.doc.body.querySelector(".followup-dialog").querySelector('[data-action="mc-select-followup-copy"]'));
+        click(ctx.doc.body.querySelector(".followup-dialog").querySelector('[data-action="mc-apply-followup"]'));
+        await flush();
+        await openTemplate(ctx);
+        assert.strictEqual(nodeOf(ctx, "template-account").textContent, "acc9", "锚点账号优先于来信账号与联系人绑定账号");
+        const anchored = previewCalls(ctx);
+        assert.strictEqual(JSON.parse(anchored[anchored.length - 1].body).senderAccountCode, "acc9");
+        click(applyOf(ctx));
+        await flush();
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.sendConversation.length, 1, "带锚点走会话发送路径");
+        assert.strictEqual(ctx.calls.sendConversation[0].body.anchorMailRecordId, 4011, "模板应用保留跟进锚点");
+        assert.strictEqual(ctx.calls.sendRich.length, 0);
+    });
+
+    it("I-2：跟进锚点失效（该邮件不再是合法成功发件）时显示固定文案且不发请求", async () => {
+        let messagesCalls = 0;
+        const baseItems = [
+            { source: "MAIL_RECORD", id: 4011, contactId: 1, direction: "OUTBOUND", accountCode: "acc1", subject: "Sent", body: "b", cleanedBody: "b", eventAt: "2026-09-06T10:00:00", sendStatus: "SENT", processStatus: null, attachmentCount: 0, firstAttachmentNames: [], messageId: "m4011", inReplyTo: null, tags: [] },
+            { source: "INBOUND_PROCESSING", id: 101, contactId: 1, direction: "INBOUND", accountCode: "acc1", subject: "Question 1", body: "raw", cleanedBody: "cleaned", eventAt: "2026-09-07T03:00:00", sendStatus: null, processStatus: "MANUAL_REVIEW", attachmentCount: 0, firstAttachmentNames: [], messageId: "m101", inReplyTo: null, tags: [] }
+        ];
+        const ctx = await bootInboundTemplates({
+            messages: { items: baseItems, nextBefore: null, hasMore: false },
+            route: (url, method, body, entry, next) => {
+                if (/\/messages\?/.test(url)) {
+                    messagesCalls += 1;
+                    const items = messagesCalls === 1
+                        ? baseItems
+                        : baseItems.map((item) => (item.id === 4011 ? Object.assign({}, item, { sendStatus: "FAILED" }) : item));
+                    return Promise.resolve({ items, nextBefore: null, hasMore: false });
+                }
+                return next(url, method, body, entry);
+            }
+        });
+        ctx.sandbox.state = { accounts: [{ accountCode: "acc1", senderName: "Alice" }] };
+        vm.runInContext(extractFn("mcHostGetSenderName"), ctx.sandbox);
+        click(ctx.host.querySelector('[data-action="mc-open-followup"]'));
+        await flush();
+        click(ctx.doc.body.querySelector(".followup-dialog").querySelector('[data-action="mc-select-followup"]'));
+        click(ctx.doc.body.querySelector(".followup-dialog").querySelector('[data-action="mc-select-followup-copy"]'));
+        click(ctx.doc.body.querySelector(".followup-dialog").querySelector('[data-action="mc-apply-followup"]'));
+        await flush();
+        // 服务端随后报告该发件为 FAILED：锚点不再是合法候选
+        const api = ctx.sandbox.MailboxChat.mount(ctx.host, {});
+        await api.refreshFromHost();
+        await flush();
+        const before = templateCalls(ctx).length;
+        click(triggerOf(ctx));
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "锚点无法解析时不得打开弹框");
+        assert.strictEqual(templateCalls(ctx).length, before, "锚点无法解析时零请求");
+        assert.ok(statusTexts(ctx).includes(UNRESOLVED_ACCOUNT_TEXT), "显示固定失败文案");
+    });
+
+    it("I-5/I-1：应用保留已就绪的通用附件；发送中入口禁用且不会打开弹框", async () => {
+        let pendingSend = null;
+        const ctx = await bootInboundTemplates({
+            route: (url, method, body, entry, next) => {
+                if (/\/api\/mail\/conversations\/\d+\/outbound-attachments$/.test(url)) {
+                    return Promise.resolve({
+                        id: "att-1", filename: "template-reference-check.txt", contentType: "text/plain",
+                        byteLength: 3, sha256: "sha-att-1", downloadUrl: "/api/mail/attachments/att-1"
+                    });
+                }
+                return next(url, method, body, entry);
+            }
+        });
+        ctx.sandbox.FormData = class SandboxFormData { append() {} };
+        ctx.sandbox.mcHostSendRichReply = (processingId, body) => {
+            ctx.calls.sendRich.push({ processingId: Number(processingId), body });
+            return new Promise((resolve) => { pendingSend = resolve; });
+        };
+        const fileInput = ctx.host.querySelector('[data-role="outbound-file-input"]');
+        fileInput.files = [{ name: "template-reference-check.txt", size: 3 }];
+        changeEvent(fileInput);
+        await flush();
+        assert.deepStrictEqual(draftCards(ctx).map((card) => card.getAttribute("data-state")), ["ready"], "附件上传完成");
+        await openTemplate(ctx);
+        click(applyOf(ctx));
+        await flush();
+        assert.deepStrictEqual(draftCards(ctx).map((card) => card.getAttribute("data-state")), ["ready"], "模板应用后附件仍就绪");
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]'));
+        await flush();
+        assert.strictEqual(triggerOf(ctx).disabled, true, "发送中入口 disabled");
+        const before = templateCalls(ctx).length;
+        click(triggerOf(ctx));
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "发送中不打开引用弹框");
+        assert.strictEqual(templateCalls(ctx).length, before, "发送中零请求");
+        assert.strictEqual(pendingSend !== null, true, "发送请求已发出");
+        pendingSend(true);
+        await flush();
+        assert.strictEqual(ctx.calls.sendRich[0].body.attachmentIds.join(","), "att-1", "模板应用保留通用附件");
+    });
+
+    it("I-6：慢响应不得覆盖新选择；关闭/切专家后的回包不再写入", async () => {
+        const pending = [];
+        const ctx = await bootInboundTemplates({
+            route: (url, method, body, entry, next) => {
+                if (url === "/api/compose-templates") return Promise.resolve([TEMPLATE_A, TEMPLATE_B]);
+                if (url === "/api/compose-templates/preview-draft") {
+                    const parsed = JSON.parse(body);
+                    return new Promise((resolve) => {
+                        pending.push({
+                            subject: parsed.subject,
+                            resolve: () => resolve(templatePreviewResponse({ subject: parsed.subject, body: `body:${parsed.subject}` }))
+                        });
+                    });
+                }
+                return next(url, method, body, entry);
+            }
+        });
+        await openTemplate(ctx);
+        assert.strictEqual(pending.length, 1);
+        pending[0].resolve();
+        await flush();
+        assert.strictEqual(nodeOf(ctx, "template-body").textContent, "body:Template subject A");
+        // A 慢 B 快：只显示 B
+        selectTemplate(ctx, 1);
+        assert.strictEqual(pending.length, 2);
+        selectTemplate(ctx, 2);
+        assert.strictEqual(pending.length, 3);
+        pending[2].resolve();
+        await flush();
+        assert.strictEqual(nodeOf(ctx, "template-body").textContent, "body:Template subject B");
+        pending[1].resolve();
+        await flush();
+        assert.strictEqual(nodeOf(ctx, "template-body").textContent, "body:Template subject B", "迟到的 A 响应不得覆盖 B");
+        // 关闭后回包不再挂载
+        selectTemplate(ctx, 1);
+        const late = pending[pending.length - 1];
+        click(dialogOf(ctx).querySelectorAll('[data-action="mc-close-template-reference"]')[1]);
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "取消关闭弹框");
+        late.resolve();
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "关闭后迟到回包不得重新渲染");
+        // 切专家（新 epoch）后回包不写入
+        await openTemplate(ctx);
+        selectTemplate(ctx, 2);
+        const stale = pending[pending.length - 1];
+        const b = ctx.host.querySelectorAll(".mc-person").find((person) => person.dataset.contactId === "2");
+        click(b.querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "切专家关闭引用弹框");
+        stale.resolve();
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "切专家后迟到回包不写入新目标");
+    });
+
+    it("I-6：打开后修改正文/主题 → 应用被禁用并提示固定文案，不写入任何内容", async () => {
+        const ctx = await bootInboundTemplates();
+        await openTemplate(ctx);
+        const editor = editorOf(ctx);
+        setEditorContent(editor, "打开后输入", "打开后输入");
+        inputEvent(editor);
+        click(applyOf(ctx));
+        await flush();
+        assert.strictEqual(editorOf(ctx).textContent, "打开后输入", "不得写入模板正文");
+        assert.strictEqual(subjectOf(ctx).value.includes("Template subject A"), false, "不得写入模板主题");
+        assert.ok(statusTexts(ctx).includes(STALE_TEXT), "显示固定的草稿已变化提示");
+        assert.strictEqual(nodeOf(ctx, "template-status").textContent, STALE_TEXT);
+        assert.strictEqual(applyOf(ctx).disabled, true, "变化后禁用填入");
+        assert.ok(dialogOf(ctx), "弹框保持打开");
+    });
+
+    it("I-7：Esc/X/取消走同一关闭路径；应用后焦点回正文；unmount 关闭并移除弹框", async () => {
+        const ctx = await bootInboundTemplates();
+        const focused = [];
+        const trigger = triggerOf(ctx);
+        trigger.focus = () => { focused.push("trigger"); };
+        await openTemplate(ctx);
+        assert.ok(dialogOf(ctx));
+        keyEvent(nodeOf(ctx, "template-search"), "Escape");
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "Esc 关闭");
+        assert.deepStrictEqual(focused, ["trigger"], "Esc 后焦点回到仍在 DOM 中的触发按钮");
+        await openTemplate(ctx);
+        click(dialogOf(ctx).querySelectorAll('[data-action="mc-close-template-reference"]')[0]);
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "关闭按钮关闭");
+        await openTemplate(ctx);
+        click(dialogOf(ctx).querySelectorAll('[data-action="mc-close-template-reference"]')[1]);
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "取消关闭");
+        // 重复开关不残留遮罩/弹框，Esc 一次即可关闭
+        for (let i = 0; i < 3; i += 1) {
+            await openTemplate(ctx);
+            keyEvent(nodeOf(ctx, "template-search"), "Escape");
+            await flush();
+        }
+        assert.strictEqual(ctx.doc.body.querySelectorAll(".reply-template-dialog").length, 0, "反复开关后不留残影");
+        const editor = editorOf(ctx);
+        editor.focus = () => { focused.push("editor"); };
+        await openTemplate(ctx);
+        click(applyOf(ctx));
+        await flush();
+        assert.deepStrictEqual(focused.slice(-1), ["editor"], "应用后聚焦正文");
+        assert.ok(statusTexts(ctx).includes("模板已填入回复，可继续编辑"));
+        // 打开跟进弹窗：引用弹框关闭，且新面板不被旧 close 清掉
+        await openTemplate(ctx);
+        click(ctx.host.querySelector('[data-action="mc-open-followup"]'));
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null, "打开跟进弹窗关闭引用弹框");
+        assert.ok(ctx.doc.body.querySelector(".followup-dialog"), "跟进弹窗正常打开");
+        // 打开管理面板：引用弹框关闭，管理面板正常
+        await openTemplate(ctx);
+        click(ctx.host.querySelector('[data-action="mc-manage-expert"]'));
+        await flush();
+        assert.strictEqual(dialogOf(ctx), null);
+        assert.ok(ctx.doc.body.querySelector(".mc-manage-overlay"), "管理面板正常打开");
+        closeManageFromTest(ctx);
+        // unmount 关闭并移除
+        await openTemplate(ctx);
+        assert.ok(dialogOf(ctx));
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        assert.strictEqual(ctx.doc.body.querySelector(".reply-template-dialog"), null, "unmount 关闭并移除弹框");
+    });
+
+    function closeManageFromTest(ctx) {
+        const close = ctx.doc.body.querySelector('[data-action="mc-close-manage"]');
+        if (close) click(close);
+    }
+
+    it("I-8：整个交互只发生两个只读请求，且应用不触发任何发送/模板写入", async () => {
+        const ctx = await bootInboundTemplates();
+        await openTemplate(ctx);
+        selectTemplate(ctx, 2);
+        await flush();
+        click(applyOf(ctx));
+        await flush();
+        const urls = templateCalls(ctx).map((entry) => `${entry.method} ${entry.url}`);
+        assert.deepStrictEqual(Array.from(new Set(urls)), ["GET /api/compose-templates", "POST /api/compose-templates/preview-draft"], "只使用两个只读接口");
+        assert.strictEqual(ctx.calls.sendRich.length, 0, "应用不发送邮件");
+        assert.strictEqual(ctx.calls.sendConversation.length, 0);
+        assert.strictEqual(ctx.calls.api.filter((entry) => entry.method !== "GET" && entry.url.indexOf("/api/compose-templates") !== 0).length, 0, "无其它写请求");
     });
 });
