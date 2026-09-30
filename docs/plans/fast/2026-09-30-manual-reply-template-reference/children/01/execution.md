@@ -164,3 +164,54 @@ index.html       cfb1c4a8a25661d6024825f22a5eb87e61d248d3b15c740d0cb95802c6b91d9
 
 - 提交后工作树只剩本报告：` M docs/plans/fast/2026-09-30-manual-reply-template-reference/children/01/execution.md`。
 - `pom.xml:196` 的 JS 门禁是 glob（`node --test src/test/js/*.test.js`），新增用例会被 `mvn test` 自动纳入，无需改 pom；因此若走 Maven 全量门禁，会看到同一个 `mailboxOutboundAttachments.test.js:1559` 失败（未按 brief 要求运行 Maven，仅静态核对该配置）。
+
+## Epoch 2（应用修订 A1）
+
+- Epoch: 2；fix_round: 0；执行者 `ImplTemplateRef01E2`（execute-p）。
+- 起始边界：`555ab1bafd2d475ead9353c19119d80680ea051f`（`docs(fast-p): record amendment A1`，含批准后的 8 文件清单 / T-4 / 现状审计 §4）。
+- Epoch 1 事实不变：产品实现提交仍为 `2df9170`（7/7 文件），本次未回改任何产品代码。
+
+### A1 改动（唯一文件：`src/test/js/mailboxOutboundAttachments.test.js`）
+
+用例 `fast-p 07 · I-1/S-1`（约 `:1539`，「按钮无可见文字、title/aria=上传附件；input multiple 无 accept；工具栏顺序 …」）中的 `assert.deepStrictEqual` 全序列断言（`:1559–1565`）：
+
+- 在 `"mc-open-material-request"` 与 `"mc-open-followup"` 之间插入 `"mc-open-template-reference"`（8 项 → 9 项）。
+- 断言消息由「工具栏顺序必须是 B/I/列表/链接/回形针/会议确认/材料索取/跟进」更新为「…/材料索取/**引用模板**/跟进」，与 `materialRequestIntegration.test.js:825`、`meetingConfirmationIntegration.test.js:1427–1436` 的措辞一致。
+- 未删除/未弱化该断言，未放宽为子序列或包含判断；未改动同一用例的其余断言与 `it` 标题；未新增/删除其他文件。
+
+复核旧 8 项顺序是否还有其它断言：`grep -n 'mc-open-followup\|mc-open-material-request\|mc-open-meeting\|mc-upload-attachment' src/test/js/mailboxOutboundAttachments.test.js` 命中 1542（附件按钮存在性）、1562–1563（本次断言行）、1592/1854/2214（附件入口点选/禁用/源码检查）、1325/2114（会议/跟进弹框打开）。仅 `:1559–1565` 一处编码整条 action 顺序，已按 A1 更新；其余语义与顺序无关。
+
+```
+1559:        assert.deepStrictEqual(
+1560:            tools.map((node) => node.getAttribute("data-action")),
+1561:            ["mc-rich-command", "mc-rich-command", "mc-rich-command", "mc-rich-command",
+1562:                "mc-upload-attachment", "mc-open-meeting", "mc-open-material-request",
+1563:                "mc-open-template-reference", "mc-open-followup"],
+1564:            "工具栏顺序必须是 B/I/列表/链接/回形针/会议确认/材料索取/引用模板/跟进"
+1565:        );
+```
+
+### 必需命令（fresh，A1 改动后、提交前）
+
+| 命令 | exit | 计数 |
+| --- | --- | --- |
+| `node --check src/main/resources/static/mailbox-chat.js` | 0 | 无输出 |
+| `node --test <计划 9 个目标文件>` | 0 | tests 234 / suites 50 / pass 234 / fail 0 / skipped 0 |
+| `node --test src/test/js/*.test.js` | 0 | tests 1265 / suites 249 / pass 1265 / fail 0 / skipped 0 / duration 3.35s |
+| `git diff --check` | 0 | 无空白错误 |
+
+- 相对 epoch 1 的 `234/233/1` 与 `1265/1264/1`：唯一失败 `mailboxOutboundAttachments.test.js:1559` 已消除，其余用例无变化。
+- 基线对照（`children/01/baseline.md`）：实施前 1233/1233；本 child 净增 32 用例（1265−1233）。
+
+### 提交与工作树
+
+- 实现提交：`9606433 feat(fast-p): implement 01 epoch 2`（仅 `src/test/js/mailboxOutboundAttachments.test.js`，+3/−2；`git show --name-only HEAD` 无 `docs/` 命中）。
+- 提交前 `git status --porcelain`：仅 ` M src/test/js/mailboxOutboundAttachments.test.js`（epoch 1 报告已由控制方入库，工作树无其它改动）。
+- 提交后工作树：仅本报告（` M docs/plans/fast/2026-09-30-manual-reply-template-reference/children/01/execution.md`），按 brief 保持未提交。
+
+### 偏差
+
+- 无。未触碰另外 7 个已实现文件、`mailbox-chat.css`、`app.js`、Kotlin、SQL、计划或 fast-p 其它产物；未 push/merge/rebase/amend/reset；未新增依赖；未运行 Maven / 格式化 / 仓库级 linter（本次无 Kotlin/SQL 改动）。
+- 未执行人工验收 A-1～A-12；未连测试环境、未发信、未部署。
+
+提交后 fresh 复跑（`9606433`，与上表逐条一致）：`node --check` exit 0；目标 9 文件 exit 0、tests 234 / pass 234 / fail 0；`node --test src/test/js/*.test.js` exit 0、tests 1265 / pass 1265 / fail 0；`git diff --check` exit 0。
