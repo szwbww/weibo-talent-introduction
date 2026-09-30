@@ -6,6 +6,7 @@ import com.weibo.talentintroduction.config.PdfExtractionProperties
 import com.weibo.talentintroduction.config.SlowHttpServer
 import com.weibo.talentintroduction.discovery.domain.PaperAuthor
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -136,6 +137,130 @@ class PdfEmailExtractorTest {
                 }
             }
         }
+    }
+
+    /**
+     * I-1～I-6：归档三篇真实异常原文（逐字复制，SHA256 校验）经真实 PDFBox / layout / resolver /
+     * extractor 重放，并现场写出 `target/discovery-plan-acceptance/pdf-contact-integrity.json`
+     * （fixture SHA、每篇 contacts/resolved、合成控制、正向控制、I-3 文本边界表）。
+     * 报告先落盘再断言：断言失败也保留本次观测数据。
+     */
+    @Test
+    fun `three archived original cases replay with the shipped rules and emit acceptance report (I-1 I-2 I-3 I-4 I-6)`() {
+        val archive = threeCaseArchive()
+        val members = threeCaseMembers()
+        val manifest = jacksonObjectMapper().readTree(requireNotNull(members["manifest.json"]))
+        val observations = threeCaseNames().map { observeThreeCase(members, it) }
+        val textTable = bareMarkerTextBoundaryCases().map { (label, input, expected) ->
+            mapOf("label" to label, "input" to input, "expected" to expected,
+                "actual" to plainTextExtractor.extract(input))
+        }
+        fun identityRow(email: com.weibo.talentintroduction.discovery.domain.AuthorEmail) = mapOf(
+            "email" to email.email, "givenNames" to email.givenNames, "familyNames" to email.familyNames,
+            "isCorresponding" to email.isCorresponding, "affiliation" to email.affiliation,
+            "orcidId" to email.orcidId, "institutionType" to email.institutionType,
+            "openAlexAuthorId" to email.openAlexAuthorId, "identityEvidence" to email.identityEvidence,
+            "institutionName" to email.institutionName, "institutionCountry" to email.institutionCountry,
+            "institutionSource" to email.institutionSource
+        )
+        val report = mapOf(
+            "task" to "fast-p-child-01",
+            "fixture" to mapOf(
+                "archive" to "src/test/resources/discovery/ownership-20260930.zip",
+                "archiveSha256" to fixtureSha256(archive),
+                "members" to members.entries.sortedBy { it.key }.associate { it.key to fixtureSha256(it.value) },
+                "manifestPdfSha256" to manifest.path("pdfSha256"),
+                "manifestMetadataSha256" to manifest.path("metadataSha256")
+            ),
+            "papers" to observations.map { observation ->
+                mapOf(
+                    "case" to observation.case, "designation" to "REAL_ORIGINAL",
+                    "pdfSha256" to observation.pdfSha256, "metadataSha256" to observation.metadataSha256,
+                    "methodUsed" to observation.methodUsed, "httpRequests" to observation.httpRequests,
+                    "fulltextObtained" to observation.fulltextObtained,
+                    "mailtoClues" to observation.mailtoClues,
+                    "authors" to observation.authors.map {
+                        mapOf("givenNames" to it.givenNames, "familyNames" to it.familyNames,
+                            "orcidId" to it.orcidId, "openAlexAuthorId" to it.openAlexAuthorId,
+                            "isCorresponding" to it.isCorresponding)
+                    },
+                    "contacts" to observation.contacts.map {
+                        mapOf("email" to it.email, "authorIndex" to it.authorIndex, "page" to it.page,
+                            "authorText" to it.authorText, "contactText" to it.contactText)
+                    },
+                    "resolved" to observation.resolved.map(::identityRow)
+                )
+            },
+            "syntheticControls" to markerOwnershipControls(),
+            "positiveControls" to pdfPositiveControls().map { control ->
+                mapOf(
+                    "label" to control.label, "designation" to control.designation,
+                    "authors" to control.authors.map { "${it.givenNames} ${it.familyNames}" },
+                    "methodUsed" to control.parsed.methodUsed, "httpRequests" to control.parsed.httpRequests,
+                    "contacts" to control.contacts.map {
+                        mapOf("email" to it.email, "authorIndex" to it.authorIndex, "page" to it.page,
+                            "authorText" to it.authorText)
+                    },
+                    "resolved" to control.parsed.emails.map(::identityRow)
+                )
+            },
+            "textTable" to textTable
+        )
+        val output = java.nio.file.Paths.get("target/discovery-plan-acceptance/pdf-contact-integrity.json")
+        java.nio.file.Files.createDirectories(output.parent)
+        java.nio.file.Files.write(output, jacksonObjectMapper().writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+        assertTrue(java.nio.file.Files.size(output) > 0, "报告必须落盘")
+
+        // I-6：归档与成员字节一致（逐字复制，不重生成、不重排）。
+        assertEquals("9f5802b0d0862126c570c81f15a0e6053d26fa3abc99ab25ce69aaa81fec6a27", fixtureSha256(archive))
+        val expectedPdfSha = mapOf(
+            "chee" to "0daf96634f750d280bb1330d9b95d87f4ea04e54bee813db5c372092028fdb99",
+            "lyderic" to "7459f1af390be438463bbd1b97d5cc79a183fd2ffb09310e2448d12736fb8f9b",
+            "lun" to "7e2468ed9ad9ada830f943a1a5b1bc423704c0a6b51ea672fe250b5aa74805ba")
+        for (observation in observations) {
+            assertEquals(expectedPdfSha.getValue(observation.case), observation.pdfSha256, observation.case)
+            assertEquals(manifest.path("pdfSha256").path("${observation.case}.pdf").asText(),
+                observation.pdfSha256, "${observation.case} manifest")
+            assertEquals("PDF_PARSE", observation.methodUsed, observation.case)
+            assertEquals(1, observation.httpRequests, observation.case)
+            assertEquals(true, observation.fulltextObtained, observation.case)
+            // X-1：错误归属不允许出现在中间 Contact，也不允许出现在最终 emails。
+            assertTrue(observation.contacts.isEmpty(), "${observation.case} contacts: ${observation.contacts}")
+            for (email in observation.resolved) {
+                assertNull(email.givenNames, "${observation.case} ${email.email}")
+                assertNull(email.familyNames, "${observation.case} ${email.email}")
+                assertNull(email.orcidId, "${observation.case} ${email.email}")
+                assertNull(email.openAlexAuthorId, "${observation.case} ${email.email}")
+                assertNull(email.institutionName, "${observation.case} ${email.email}")
+                assertNull(email.institutionCountry, "${observation.case} ${email.email}")
+                assertNull(email.institutionSource, "${observation.case} ${email.email}")
+                assertNull(email.identityEvidence, "${observation.case} ${email.email}")
+                assertFalse(email.isCorresponding, "${observation.case} ${email.email}")
+            }
+        }
+        val observed = observations.associate { it.case to it.resolved.map { email -> email.email }.toSet() }
+        assertEquals(setOf("ysjang@ucla.edu", "cheewei.wong@ucla.edu"), observed.getValue("chee"))
+        assertEquals(setOf("lyderic.bocquet@ens.fr", "alessandro.siria@ens.fr"), observed.getValue("lyderic"))
+        // O-2/I-3：断裂后缀 `yue@msn.com` 在 contacts 与 resolved 两路都缺席，正确 mailto 保留为线索。
+        assertEquals(setOf("lun_yue@msn.com", "mgaarde1@lsu.edu"), observed.getValue("lun"))
+
+        // I-3 文本边界表逐项复核（与 PlainTextEmailExtractorTest 同源输入）。
+        for ((label, input, expected) in bareMarkerTextBoundaryCases()) {
+            assertEquals(expected, plainTextExtractor.extract(input), "$label: $input")
+        }
+
+        // N-1/N-2 正向控制：正常唯一联系人仍完整绑定（真实现有 PDF + 合成一人两邮箱）。
+        val positive = pdfPositiveControls()
+        val real = positive.single { it.label == "realNormalPdfSingleOwnedMailbox" }
+        val realOwned = real.parsed.emails.single { it.email == "davidechicco@davidechicco.it" }
+        assertEquals("Davide Chicco", "${realOwned.givenNames} ${realOwned.familyNames}")
+        assertTrue(realOwned.identityEvidence!!.startsWith("SOURCE_SHA256:"))
+        val synthetic = positive.single { it.label == "syntheticOneAuthorTwoMailboxes" }
+        assertEquals(setOf("first@uni.edu", "second@uni.edu"), synthetic.parsed.emails.map { it.email }.toSet())
+        assertTrue(synthetic.parsed.emails.all {
+            it.givenNames == "Jane" && it.familyNames == "Doe" && it.openAlexAuthorId == "A123" &&
+                it.institutionName == "Jane University" && it.identityEvidence!!.startsWith("SOURCE_SHA256:")
+        }, synthetic.parsed.emails.toString())
     }
 
     @Test

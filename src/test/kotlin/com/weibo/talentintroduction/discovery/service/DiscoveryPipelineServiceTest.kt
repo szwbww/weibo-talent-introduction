@@ -1848,13 +1848,13 @@ class DiscoveryPipelineServiceTest {
     }
 
     /**
-     * I-3（01）：带有错误 PDF 邮箱归属规则的那一版非空缓存必须被拒绝，且不得重新下载或写 ES；
-     * 版本换成当前值、其余逐字相同的抽取结果仍走同一条消费链。
+     * I-3/I-5（01）：带有错误 PDF 邮箱归属规则的那几版非空缓存必须被拒绝，且不得重新下载或写 ES；
+     * 版本换成当前值、其余逐字相同的抽取结果仍走同一条消费链。逐版记录队列状态到
+     * `target/discovery-plan-acceptance/pdf-contact-cache.json`。
      */
     @Test
     fun `superseded ownership extraction cache is rejected without writes while the current version is consumed (I-3)`() {
-        // 20261002 是修复前的抽取缓存版本（EXTRACTION_VERSION 提升前的值），它带有错误的 PDF 归属规则。
-        val supersededVersion = 20261002
+        // 20261003 是本次修复前的当前抽取缓存版本，20261002 更早；两者都带错误的 PDF 归属规则。
         DiscoveryMockHelper.stubEligibilityTrue(eligibilityService)
         // 真实消费链会按邮箱查重；只给它一个空的 ES 查询响应，其余外部依赖仍是测试替身。
         Mockito.`when`(restTemplate.exchange(Mockito.contains("/_search"), Mockito.eq(HttpMethod.POST),
@@ -1865,15 +1865,36 @@ class DiscoveryPipelineServiceTest {
         val h = harnessWithRealDiscovery(discovery)
         val stream = streamFor(h)
         stream.cursorState = StreamCursorState.EXHAUSTED
-        val stale = objectMapper.readTree(extractionJson()) as com.fasterxml.jackson.databind.node.ObjectNode
-        stale.put("identityRuleVersion", supersededVersion)
-        val staleJob = h.store.seedJob(stream.id, "DOI:stale",
-            extractionJson = objectMapper.writeValueAsString(stale))
+        val supersededVersions: List<Int?> = listOf(20261003, 20261002, null)
+        val staleJobs = supersededVersions.associateWith { version ->
+            val stale = objectMapper.readTree(extractionJson()) as com.fasterxml.jackson.databind.node.ObjectNode
+            if (version == null) stale.putNull("identityRuleVersion") else stale.put("identityRuleVersion", version)
+            val job = h.store.seedJob(stream.id, "DOI:stale-$version",
+                extractionJson = objectMapper.writeValueAsString(stale))
+            h.store.jobs[job.id]!!.metadataJson = objectMapper.writeValueAsString(paper(doi = "10.9/stale-$version"))
+            job
+        }
         launch(h)
         runWindow(h)
-        assertEquals(QueueJobStatus.FAILED, h.store.jobs[staleJob.id]!!.status)
-        assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", h.store.jobs[staleJob.id]!!.lastError)
-        assertEquals(0L, h.store.pipeline.indexedExperts)
+        val staleCases = supersededVersions.map { version ->
+            val job = staleJobs.getValue(version)
+            val state = h.store.jobs[job.id]!!
+            val row = mapOf(
+                "consumer" to "pipeline", "cachedExtractionVersion" to version,
+                "currentExtractionVersion" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.EXTRACTION_VERSION,
+                "jobStatus" to state.status, "lastError" to state.lastError,
+                "indexedExperts" to h.store.pipeline.indexedExperts,
+                "downloadCalls" to extractAuthorEmailCalls(),
+                "rawWrites" to rawWriteCalls(),
+                "attempts" to state.attempts
+            )
+            assertEquals(QueueJobStatus.FAILED, state.status, "version=$version")
+            assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", state.lastError, "version=$version")
+            assertEquals(0L, h.store.pipeline.indexedExperts, "version=$version")
+            assertEquals(0, row["downloadCalls"], "version=$version")
+            assertEquals(0, row["rawWrites"], "version=$version")
+            row
+        }
         Mockito.verify(indexWriterService, Mockito.never()).indexToRaw(Mockito.anyString(), Mockito.anyMap())
         Mockito.verify(openAlex, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper())
 
@@ -1885,7 +1906,36 @@ class DiscoveryPipelineServiceTest {
         assertEquals(1L, h.store.pipeline.indexedExperts)
         Mockito.verify(indexWriterService, Mockito.times(1)).indexToRaw(Mockito.anyString(), Mockito.anyMap())
         Mockito.verify(openAlex, Mockito.never()).extractAuthorEmails(Mockito.any(PaperMetadata::class.java) ?: paper())
+        val positiveControl = mapOf(
+            "consumer" to "pipeline",
+            "cachedExtractionVersion" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.EXTRACTION_VERSION,
+            "jobStatus" to h.store.jobs[currentJob.id]!!.status,
+            "lastError" to h.store.jobs[currentJob.id]!!.lastError,
+            "indexedExperts" to h.store.pipeline.indexedExperts,
+            "downloadCalls" to extractAuthorEmailCalls(),
+            "rawWrites" to rawWriteCalls()
+        )
+        assertEquals(0, positiveControl["downloadCalls"], "已保存的抽取结果不得再次下载")
+        val report = mapOf(
+            "task" to "fast-p-child-01",
+            "extractionVersion" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.EXTRACTION_VERSION,
+            "evidenceVersion" to com.weibo.talentintroduction.expert.domain.DiscoveryIdentity.VERSION,
+            "pipelineCases" to staleCases,
+            "positiveControl" to positiveControl,
+            "note" to "In-memory queue store; no online MySQL/ES, no deployment."
+        )
+        val path = java.nio.file.Paths.get("target/discovery-plan-acceptance/pdf-contact-cache.json")
+        java.nio.file.Files.createDirectories(path.parent)
+        java.nio.file.Files.write(path, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+        assertTrue(java.nio.file.Files.size(path) > 0)
     }
+
+    /** 队列窗口里真实来源的全文下载次数（已保存缓存不得触发）。 */
+    private fun extractAuthorEmailCalls(): Int = Mockito.mockingDetails(openAlex).invocations
+        .count { it.method.name == "extractAuthorEmails" }
+
+    private fun rawWriteCalls(): Int = Mockito.mockingDetails(indexWriterService).invocations
+        .count { it.method.name == "indexToRaw" }
 
     @Test
     fun `an already-saved extraction is consumed without downloading again (I-4)`() {

@@ -77,7 +77,9 @@ internal object PdfAuthorContactLayout {
                 // I-2：同一联系行按标记边界切分，各自抽邮箱；分段不明确则整行不出证明。
                 for ((marker, segment) in markerSegments(line.text)) {
                     val owner = uniqueOwner(owners, marker) ?: continue
-                    for (address in emailExtractor.extract(segment)) {
+                    // I-3：把该片段自己的标记一起交给提取器，裸标记残缺邮箱（`∗ lun yue@msn.com`）
+                    // 才与整页文本走同一条过滤；Contact/evidenceText 仍保留原始行。
+                    for (address in emailExtractor.extract("$marker$segment")) {
                         contacts += Contact(address, owner, page, header.text, line.text)
                     }
                 }
@@ -141,7 +143,8 @@ internal object PdfAuthorContactLayout {
             val text = if (next != null && next.y - line.y in 1f..20f && next.y < height * .36f)
                 line.text + " " + next.text else line.text
             val matching = authors.count { containsName(text, it) }
-            if (matching >= 2 || (matching == 1 && markerOwners(text, authors).isNotEmpty()))
+            // I-1：标题行判据保持「至少一个受支持标记前面能解析出署名」，与归属计数（含 null 拥有者）解耦。
+            if (matching >= 2 || (matching == 1 && hasSignatureMarker(text)))
                 return line.copy(text = text)
         }
         return null
@@ -160,22 +163,50 @@ internal object PdfAuthorContactLayout {
 
     /**
      * I-1：每个标记在作者署名区的拥有者集合；`null` 元素代表一处无法对应元数据的署名。
-     * 只对成功匹配的元数据作者计数会把共享标记漏判给首位作者，因此未匹配署名同样参与。
+     * 连续标记组（数字/逗号/空白连接、至少一个受支持符号，如 `1,†,*`）只为组首解析一次前置署名，
+     * 组内每个符号共享同一个拥有者集合；解析不出署名的符号登记 null 而不是跳过 ——
+     * 只对成功匹配的元数据作者计数会把共享标记误判给首位作者。
      */
     private fun markerOwners(area: String, authors: List<PaperAuthor>): Map<String, Set<Int?>> {
+        // I-2：署名区出现已证实的解码损坏（`?` 或 U+FFFD）时，本页「标记 → 作者」归属不可用。
+        if (damagedSignature.containsMatchIn(area)) return emptyMap()
         val result = mutableMapOf<String, MutableSet<Int?>>()
-        for (match in markerGlyph.findAll(area)) {
-            val signature = signatureBefore(area, match.range.first) ?: continue
-            val tokens = signature.split(' ')
-            // 最长候选优先：只删除左侧多余词（连接词/前一行残词），不为匹配去猜姓名变体。
-            val owners = tokens.indices.asSequence()
-                .map { ownersOfMetadataName(tokens.drop(it).joinToString(" "), authors) }
-                .firstOrNull { it.isNotEmpty() } ?: emptyList()
-            result.getOrPut(normalizeMarker(match.value)) { mutableSetOf() }
-                .addAll(owners.ifEmpty { listOf(null) })
+        val markers = markerGlyph.findAll(area).toList()
+        var index = 0
+        while (index < markers.size) {
+            var end = index
+            while (end + 1 < markers.size &&
+                markerGroupGap.matches(area.substring(markers[end].range.last + 1, markers[end + 1].range.first))) {
+                end++
+            }
+            val owners = ownersOfSignature(signatureBefore(area, markers[index].range.first), authors)
+            for (position in index..end) {
+                result.getOrPut(normalizeMarker(markers[position].value)) { mutableSetOf() }.addAll(owners)
+            }
+            index = end + 1
         }
         return result
     }
+
+    /** I-2：已证实的解码损坏符号（原文视觉星号解码成 `?`）；不做 `? → *` 猜测替换。 */
+    private val damagedSignature = Regex("[?\\uFFFD]")
+
+    /** I-1：组内相邻符号之间只允许数字/逗号/空白；出现字母即跨姓名边界，成为新的一组。 */
+    private val markerGroupGap = Regex("[\\d,\\s]*")
+
+    /** I-1：解析出的署名词串 → 元数据作者；解析不出署名或对不上元数据都登记 null 拥有者。 */
+    private fun ownersOfSignature(signature: String?, authors: List<PaperAuthor>): Set<Int?> {
+        val tokens = signature?.split(' ') ?: return setOf(null)
+        // 最长候选优先：只删除左侧多余词（连接词/前一行残词），不为匹配去猜姓名变体。
+        val owners = tokens.indices.asSequence()
+            .map { ownersOfMetadataName(tokens.drop(it).joinToString(" "), authors) }
+            .firstOrNull { it.isNotEmpty() } ?: emptyList()
+        return owners.ifEmpty { listOf(null) }.toSet()
+    }
+
+    /** 作者标题行的既有判据：至少一个受支持标记前面能解析出署名词串（与归属计数无关）。 */
+    private fun hasSignatureMarker(text: String): Boolean =
+        markerGlyph.findAll(text).any { signatureBefore(text, it.range.first) != null }
 
     /** I-1：标记紧邻左侧的署名词串；只有数字/逗号/空白间隔才算署名，标记之间的成组符号不算。 */
     private fun signatureBefore(area: String, markerIndex: Int): String? =

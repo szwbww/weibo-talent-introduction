@@ -86,4 +86,33 @@ class PlainTextEmailExtractorTest {
         assertTrue(original.contains('\n'))
         assertTrue(normalized.contains('\n'))
     }
+
+    /**
+     * I-3：裸作者标记后跟着一个被横向空白断开的 local-part 片段时，剩下的后缀不是来源邮箱。
+     * 这里的表是唯一权威输入输出清单：本用例逐项断言，`pdf-contact-integrity.json` 报告复用同一份输入。
+     */
+    @Test
+    fun `bare author marker with a horizontal split local part cannot become a mailbox (I-3)`() {
+        for ((label, input, expected) in bareMarkerTextBoundaryCases()) {
+            assertEquals(expected, extractor.extract(input), "$label: $input")
+        }
+    }
 }
+
+/**
+ * I-3 文本边界表：输入 → 期望输出。期望值来自计划阶段 3 的明确回归清单；
+ * 实际值由调用方现场运行 [PlainTextEmailExtractor.extract] 取得（报告与断言共用同一份输入）。
+ */
+internal fun bareMarkerTextBoundaryCases(): List<Triple<String, String, List<String>>> = listOf(
+    Triple("bareMarkerSplitLocalPart", "\u2217 lun yue@msn.com", emptyList()),
+    Triple("bareMarkerSplitLocalPartAscii", "* yin- qiu001@e.ntu.edu.sg", emptyList()),
+    Triple("existingEmailLabelTruncation", "*Email: lixingwang- bupt@gmail.com", emptyList()),
+    Triple("completeAddressWithoutSpace", "*lun_yue@msn.com", listOf("lun_yue@msn.com")),
+    Triple("completeAddressAfterMarkerSpace", "* lun_yue@msn.com", listOf("lun_yue@msn.com")),
+    Triple("twoCompleteAddresses", "* a@uni.edu; b@uni.edu", listOf("a@uni.edu", "b@uni.edu")),
+    Triple("labeledAddress", "* Email: a@uni.edu", listOf("a@uni.edu")),
+    Triple("correspondingHeader", "*Corresponding author: a@uni.edu", listOf("a@uni.edu")),
+    Triple("plainContactLabel", "Contact: a@uni.edu", listOf("a@uni.edu")),
+    Triple("oneLineWrapAfterMarker", "* a@\nuni.edu", listOf("a@uni.edu")),
+    Triple("paragraphBreakAfterMarker", "* a@\n\nuni.edu", emptyList())
+)

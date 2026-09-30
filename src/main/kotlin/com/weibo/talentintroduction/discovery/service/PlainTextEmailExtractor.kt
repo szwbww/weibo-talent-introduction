@@ -18,6 +18,13 @@ class PlainTextEmailExtractor {
     private val splitLocalPartBeforeMailbox = Regex(
         "(?i)(?:e-?mail|email address)\\s*:\\s*[A-Za-z0-9._%+-]+(?:\\s+|[-_]\\s*)$"
     )
+    /**
+     * I-3：裸作者标记脚注里的残缺邮箱 —— 行首空白 + 一个受支持标记 + 空白 + 一个 local-part 词片段 +
+     * 水平空白，紧跟的邮箱只是被横向空白截断后的后缀（`∗ lun yue@msn.com` 里的 `yue@msn.com`）。
+     * 只匹配到输入末尾（`\z`），横向空白显式写成 `[ \t]`，绝不跨段吞上一个作者姓名；
+     * 完整的 `* x@host.edu` 与既有 `Email:` 标签句式不在此列。
+     */
+    private val bareMarkerTruncatedMailbox = Regex("(?m)^[ \\t]*[*∗†‡§][ \\t]+[A-Za-z0-9._%+-]+[ \\t]+\\z")
     private val atObfuscation = Regex("\\(at\\)|\\[at\\]|\\{at\\}|\\s+at\\s+")
     private val dotObfuscation = Regex("\\(dot\\)|\\[dot\\]|\\{dot\\}|\\s+dot\\s+")
     private val blacklistDomains = setOf("example.com", "example.org", "domain.com")
@@ -35,7 +42,8 @@ class PlainTextEmailExtractor {
         return emailRegex.findAll(cleaned)
             .filterNot { match ->
                 val before = cleaned.substring(maxOf(0, match.range.first - 120), match.range.first)
-                splitLocalPartBeforeMailbox.containsMatchIn(before)
+                splitLocalPartBeforeMailbox.containsMatchIn(before) ||
+                    bareMarkerTruncatedMailbox.containsMatchIn(before)
             }
             .map { it.value.lowercase(Locale.ROOT) }
             .filter { email ->

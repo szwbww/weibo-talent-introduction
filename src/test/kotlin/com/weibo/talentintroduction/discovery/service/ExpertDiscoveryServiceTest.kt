@@ -1608,6 +1608,164 @@ class ExpertDiscoveryServiceTest {
                 "documents" to rejectionDocs.size))))
     }
 
+    /**
+     * I-4/I-5/I-6：2026-09-30 三条异常原文的归档字节 → 真实 parser → 真实消费者 + create-only 写入器。
+     * 未归属邮箱计 IDENTITY_UNRESOLVED、不进邮箱校验、不产生 raw/candidate 写入；Lun 的断裂后缀根本不进消费者；
+     * 正向控制（真实现有正常 PDF + 合成一人两邮箱）仍完整传递姓名/作者 ID/机构；
+     * 旧版（20261003/20261002/null）缓存按现有版本拒绝语义不可消费。报告：
+     * `target/discovery-plan-acceptance/pdf-contact-consumer.json`。
+     */
+    @Test
+    fun `three archived ownership cases enter the real consumer without wrong writes and controls still pass (I-4 I-5 I-6)`() {
+        val docs = installOwnershipStorage()
+        val service = createService()
+        val members = threeCaseMembers()
+        val cases = mutableListOf<Map<String, Any?>>()
+        for (case in threeCaseNames()) {
+            val authors = threeCaseAuthors(members, case)
+            val parsed = extractOwnershipContent(requireNotNull(members["$case.pdf"]), MediaType.APPLICATION_PDF, authors)
+            parsed.emails.forEach {
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, it.email, EmailValidationResult(3, true))
+            }
+            val validationBefore = ownershipValidateCalls()
+            val paper = PaperMetadata(null, null, "10.9/$case", case, 2020, null, authors, "OPENALEX")
+            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper), objectMapper.writeValueAsString(
+                parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+            val created = docs.values.filter { it["email"] in parsed.emails.map { email -> email.email } }
+            cases += mapOf(
+                "case" to case, "designation" to "REAL_ORIGINAL",
+                "resolvedEmails" to parsed.emails.map { it.email },
+                "unownedEmails" to parsed.emails.filter { it.givenNames == null }.map { it.email },
+                "methodUsed" to parsed.methodUsed, "httpRequests" to parsed.httpRequests,
+                "identityUnresolved" to outcome.failureReasons["IDENTITY_UNRESOLVED"],
+                "indexedExperts" to outcome.indexedExperts, "promoted" to outcome.promoted,
+                "validationCalls" to (ownershipValidateCalls() - validationBefore),
+                "capturedDocuments" to created.map {
+                    mapOf("email" to it["email"], "givenNames" to it["givenNames"],
+                        "familyNames" to it["familyNames"], "externalIds" to it["externalIds"])
+                }
+            )
+        }
+
+        // 旧缓存版本：直连消费者一律 unsupported，0 专家写入、文档不变。
+        val versionRows = listOf<Int?>(20261003, 20261002, 20260928, null).map { version ->
+            val before = docs.toMap()
+            val payload = if (version == null) """{"emails":[],"methodUsed":"PDF_PARSE"}"""
+            else """{"emails":[],"methodUsed":"PDF_PARSE","identityRuleVersion":$version}"""
+            val outcome = service.consumeQueuedItem(ownershipEnvelope(paper("stale", "Stale")), payload, null)
+            mapOf("consumer" to "direct", "version" to version,
+                "unrecoverableReason" to outcome.unrecoverableReason,
+                "indexedExperts" to outcome.indexedExperts,
+                "documentsUnchanged" to (docs == before))
+        }
+
+        // 真实 producer：extractQueuedItem 序列化的 JSON 必须自带当前抽取版本。
+        val source = mockOpenAlex()
+        DiscoveryMockHelper.stubExtractAuthorEmails(source, listOf(
+            AuthorEmail("producer@uni.edu", "Jane", "Doe", true, "Jane Lab", "0000-0002-1825-0097",
+                identityEvidence = "JATS_SHA256:" + "a".repeat(64))))
+        val producerEnvelope = ownershipEnvelope(paper("producer", "Producer").copy(source = "OPENALEX"))
+        val extraction = createService().extractQueuedItem(producerEnvelope, PaperSearchCriteria(), 2, 1_048_576)
+        val extracted = extraction as QueuedItemExtraction.Extracted
+        val producerVersion = objectMapper.readTree(extracted.extractionJson).path("identityRuleVersion").asInt()
+
+        // 正向控制：真实现有正常 PDF（单一明确联系人）与合成一人两邮箱，走同一条消费链。
+        val positive = pdfPositiveControls().map { control ->
+            val emails = control.parsed.emails.map { it.email }
+            emails.forEach {
+                DiscoveryMockHelper.stubValidateEmail(emailValidationService, it, EmailValidationResult(3, true))
+            }
+            val validationBefore = ownershipValidateCalls()
+            val controlPaper = paper(control.label, control.label)
+                .copy(source = "OPENALEX", doi = "10.9/${control.label}", authors = control.authors)
+            val outcome = service.consumeQueuedItem(ownershipEnvelope(controlPaper), objectMapper.writeValueAsString(
+                control.parsed.copy(identityRuleVersion = DiscoveryIdentity.EXTRACTION_VERSION)), null)
+            val created = docs.values.filter { it["email"] in emails }
+            mapOf(
+                "label" to control.label, "designation" to control.designation, "emails" to emails,
+                "indexedExperts" to outcome.indexedExperts, "promoted" to outcome.promoted,
+                "validationCalls" to (ownershipValidateCalls() - validationBefore),
+                "documents" to created.map {
+                    mapOf("email" to it["email"], "givenNames" to it["givenNames"],
+                        "familyNames" to it["familyNames"], "institution" to it["institution"],
+                        "openAlexAuthorId" to (it["identityVerification"]
+                            as? com.weibo.talentintroduction.expert.domain.IdentityVerification)?.openAlexAuthorId)
+                }
+            )
+        }
+        val report = mapOf(
+            "task" to "fast-p-child-01",
+            "archiveSha256" to fixtureSha256(threeCaseArchive()),
+            "currentExtractionVersion" to DiscoveryIdentity.EXTRACTION_VERSION,
+            "evidenceVersion" to DiscoveryIdentity.VERSION,
+            "cases" to cases,
+            "directConsumerVersionCases" to versionRows,
+            "producer" to mapOf(
+                "call" to "extractQueuedItem", "stampedExtractionVersion" to producerVersion,
+                "currentExtractionVersion" to DiscoveryIdentity.EXTRACTION_VERSION,
+                "emailsEmpty" to extracted.emailsEmpty, "httpRequests" to extracted.httpRequests),
+            "positiveControls" to positive,
+            "validatedAddresses" to ownershipValidateAddresses(),
+            "capturedDocuments" to docs.size
+        )
+        val output = Paths.get("target/discovery-plan-acceptance/pdf-contact-consumer.json")
+        Files.createDirectories(output.parent)
+        Files.write(output, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(report))
+        assertTrue(Files.size(output) > 0, "报告必须落盘")
+
+        for (row in cases) {
+            val case = row["case"] as String
+            assertEquals(row["resolvedEmails"] as List<*>, row["unownedEmails"] as List<*>, "$case 全部为无身份线索")
+            assertEquals(row["resolvedEmails"] as List<*>, (row["resolvedEmails"] as List<*>).distinct(), case)
+            assertEquals((row["resolvedEmails"] as List<*>).size, row["identityUnresolved"], case)
+            assertEquals(0, row["indexedExperts"], case)
+            assertEquals(0, row["validationCalls"], case)
+            assertEquals(emptyList<Any>(), row["capturedDocuments"], case)
+            assertEquals("PDF_PARSE", row["methodUsed"], case)
+            assertEquals(1, row["httpRequests"], case)
+        }
+        val observed = cases.associate { (it["case"] as String) to (it["resolvedEmails"] as List<*>) }
+        assertEquals(listOf("ysjang@ucla.edu", "cheewei.wong@ucla.edu"), observed.getValue("chee"))
+        assertEquals(listOf("lyderic.bocquet@ens.fr", "alessandro.siria@ens.fr"), observed.getValue("lyderic"))
+        // O-2：断裂后缀不进消费者；正确 mailto 与另一位作者的完整地址保留为无身份线索。
+        assertTrue(observed.getValue("lun").none { it == "yue@msn.com" }, "yue@msn.com 不得进入消费者")
+        assertTrue(observed.getValue("lun").containsAll(listOf("lun_yue@msn.com", "mgaarde1@lsu.edu")))
+
+        for (row in versionRows) {
+            assertEquals("IDENTITY_EXTRACTION_VERSION_UNSUPPORTED", row["unrecoverableReason"], "version=${row["version"]}")
+            assertEquals(0, row["indexedExperts"], "version=${row["version"]}")
+            assertEquals(true, row["documentsUnchanged"], "version=${row["version"]}")
+        }
+        assertEquals(DiscoveryIdentity.EXTRACTION_VERSION, producerVersion)
+        val realControl = positive.single { it["label"] == "realNormalPdfSingleOwnedMailbox" }
+        assertEquals(listOf("davidechicco@davidechicco.it"), realControl["emails"])
+        assertEquals(1, realControl["indexedExperts"], "真实正常 PDF 的唯一明确联系人写入一份专家")
+        val realDocuments = realControl["documents"] as List<*>
+        assertEquals(2, realDocuments.size, "该邮箱 RAW+CANDIDATE")
+        assertTrue(realDocuments.all {
+            val document = it as Map<*, *>
+            document["givenNames"] == "Davide" && document["familyNames"] == "Chicco" &&
+                document["openAlexAuthorId"] == "A5011556172"
+        }, realControl["documents"].toString())
+        val syntheticControl = positive.single { it["label"] == "syntheticOneAuthorTwoMailboxes" }
+        assertEquals(2, syntheticControl["indexedExperts"], "一人两邮箱各写一份")
+        assertEquals(2, syntheticControl["validationCalls"], "两个地址都经真实校验")
+        val syntheticDocuments = syntheticControl["documents"] as List<*>
+        assertEquals(4, syntheticDocuments.size, "两个地址各 RAW+CANDIDATE")
+        for (email in listOf("first@uni.edu", "second@uni.edu")) {
+            val pair = syntheticDocuments.map { it as Map<*, *> }.filter { it["email"] == email }
+            assertEquals(2, pair.size, email)
+            assertTrue(pair.all { it["givenNames"] == "Jane" && it["familyNames"] == "Doe" &&
+                it["institution"] == "Jane University" && it["openAlexAuthorId"] == "A123" }, "$email: $pair")
+        }
+    }
+
+    private fun ownershipValidateCalls(): Int = Mockito.mockingDetails(emailValidationService).invocations
+        .count { it.method.name == "validate" }
+
+    private fun ownershipValidateAddresses(): List<String> = Mockito.mockingDetails(emailValidationService)
+        .invocations.filter { it.method.name == "validate" }.map { it.arguments.first() as String }.distinct().sorted()
+
     @Test
     fun `published HTML through parser consumer and writer admits two owned emails and zero shared ones`() {
         val docs = installOwnershipStorage()

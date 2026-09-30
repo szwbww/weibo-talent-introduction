@@ -99,6 +99,163 @@ internal fun sourceOwnershipAuthors(case: JsonNode): List<PaperAuthor> = case.pa
     PaperAuthor(it.path("givenNames").asText(), it.path("familyNames").asText(), null, null, false)
 }
 
+/**
+ * 2026-09-30 三条真实异常原文归档（逐字复制自审计 `original-inputs.zip`，SHA256 `9f5802…`）。
+ * `chee`/`lyderic`/`lun` 各自带 PDF 与当次 OpenAlex JSON；测试只按名读取成员，不重排、不重生成。
+ */
+internal fun threeCaseArchive(): ByteArray = requireNotNull(
+    SourceAuthorEmailResolverTest::class.java.getResourceAsStream("/discovery/ownership-20260930.zip")
+).use { it.readBytes() }
+
+internal fun threeCaseMembers(): Map<String, ByteArray> = zipMembers(threeCaseArchive())
+
+internal fun threeCaseAuthors(members: Map<String, ByteArray>, case: String): List<PaperAuthor> =
+    openAlexPaperAuthors(jacksonObjectMapper().readTree(requireNotNull(members["$case.openalex.json"])))
+
+/** 原文重放的观测结果：同一篇 PDF 的 layout contacts、mailto 链接线索、最终 emails、方法与下载事实。 */
+internal data class ThreeCaseObservation(
+    val case: String,
+    val archiveSha256: String,
+    val pdfSha256: String,
+    val metadataSha256: String,
+    val authors: List<PaperAuthor>,
+    val contacts: List<PdfAuthorContactLayout.Contact>,
+    val mailtoClues: List<String>,
+    val resolved: List<com.weibo.talentintroduction.discovery.domain.AuthorEmail>,
+    val methodUsed: String?,
+    val httpRequests: Int,
+    val fulltextObtained: Boolean?
+)
+
+/** X-1/X-2：真实 PDFBox + 真实 layout + 真实 resolver/extractor；只有 HTTP 传输被替换。 */
+internal fun observeThreeCase(members: Map<String, ByteArray>, case: String): ThreeCaseObservation {
+    val pdf = requireNotNull(members["$case.pdf"])
+    val metadata = requireNotNull(members["$case.openalex.json"])
+    val authors = threeCaseAuthors(members, case)
+    val contacts = mutableListOf<PdfAuthorContactLayout.Contact>()
+    val mailtoClues = mutableListOf<String>()
+    org.apache.pdfbox.pdmodel.PDDocument.load(pdf).use { document ->
+        contacts += PdfAuthorContactLayout.collect(document, 2, authors, 1)
+        // 与生产同一条 mailto 线索读取范围：只扫描被选中的页面（头两页 + 尾页）。
+        for (page in PdfAuthorContactLayout.selectedPages(document.numberOfPages, 2, 1)) {
+            for (annotation in document.getPage(page - 1).annotations) {
+                val uri = ((annotation as? org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationLink)
+                    ?.action as? org.apache.pdfbox.pdmodel.interactive.action.PDActionURI)?.uri ?: continue
+                if (!uri.startsWith("mailto:", ignoreCase = true)) continue
+                mailtoClues += uri.substring(7).substringBefore('?').lowercase()
+            }
+        }
+    }
+    val outcome = extractOwnershipContent(pdf, org.springframework.http.MediaType.APPLICATION_PDF, authors)
+    return ThreeCaseObservation(
+        case = case,
+        archiveSha256 = fixtureSha256(threeCaseArchive()),
+        pdfSha256 = fixtureSha256(pdf),
+        metadataSha256 = fixtureSha256(metadata),
+        authors = authors,
+        contacts = contacts,
+        mailtoClues = mailtoClues,
+        resolved = outcome.emails,
+        methodUsed = outcome.methodUsed,
+        httpRequests = outcome.httpRequests,
+        fulltextObtained = outcome.fulltextObtained
+    )
+}
+
+internal fun threeCaseNames(): List<String> = listOf("chee", "lyderic", "lun")
+
+/**
+ * I-1/I-2 合成控制（非原文）：连续标记组、未匹配署名参与歧义、署名区解码损坏、
+ * 署名区之外的问号不阻断、损坏标记下独立姓名记录仍生效、同一联系行多标记。
+ * 返回现场观测值（contacts/resolved），断言由调用方按 label 逐项执行。
+ */
+internal fun markerOwnershipControls(): List<Map<String, Any?>> {
+    val jane = PaperAuthor("Jane", "Doe", "0000-0002-1825-0097", "Jane Lab", true, openAlexAuthorId = "A123")
+    val john = PaperAuthor("John", "Smith", "0000-0002-1825-0098", "John Lab", false, openAlexAuthorId = "A456")
+    val controls = listOf(
+        Triple("continuousMarkerGroupSharesOneSignature", listOf(jane), listOf(
+            Triple(50f, 720f, "Jane Doe1,\u2020,*"),
+            Triple(50f, 600f, "\u2020jane@uni.edu"),
+            Triple(50f, 580f, "*jane@uni.edu"))),
+        Triple("unmatchedSecondSignatureJoinsTheSharedMarker", listOf(jane), listOf(
+            Triple(50f, 720f, "Jane Doe1,\u2020,* and John Smith2,*"),
+            Triple(50f, 600f, "\u2020jane@uni.edu"),
+            Triple(50f, 580f, "*unknown@uni.edu"))),
+        Triple("damagedSignatureAreaCannotProve", listOf(jane, john), listOf(
+            Triple(50f, 720f, "Jane Doe1,\u2020 and John Smith2,?"),
+            Triple(50f, 600f, "\u2020jane@uni.edu"),
+            Triple(50f, 580f, "\u2020john@uni.edu"))),
+        Triple("questionMarkOutsideAuthorAreaDoesNotBlock", listOf(jane), listOf(
+            Triple(50f, 720f, "Jane Doe*"),
+            Triple(50f, 600f, "*jane@uni.edu"),
+            Triple(50f, 230f, "Why does a question mark matter?"))),
+        Triple("damagedMarkerKeepsIndependentNameRecord", listOf(jane), listOf(
+            Triple(50f, 720f, "Jane Doe1,?"),
+            Triple(50f, 600f, "Jane Doe: jane@uni.edu"))),
+        Triple("sameContactLineTwoMarkersBindEachOwner", listOf(jane, john), listOf(
+            Triple(50f, 720f, "Jane Doe\u2020 and John Smith\u00a7"),
+            Triple(50f, 600f, "\u2020jane@uni.edu, \u00a7john@uni.edu")))
+    )
+    return controls.map { (label, authors, lines) ->
+        val pdf = positionedPdf(lines)
+        val contacts = org.apache.pdfbox.pdmodel.PDDocument.load(pdf).use {
+            PdfAuthorContactLayout.collect(it, 1, authors)
+        }
+        val resolved = extractOwnershipContent(pdf, org.springframework.http.MediaType.APPLICATION_PDF, authors).emails
+        mapOf(
+            "label" to label, "designation" to "SYNTHETIC",
+            "authors" to authors.map { "${it.givenNames} ${it.familyNames}" },
+            "lines" to lines.map { listOf(it.first, it.second, it.third) },
+            "contacts" to contacts.map {
+                mapOf("email" to it.email, "authorIndex" to it.authorIndex,
+                    "author" to "${authors[it.authorIndex].givenNames} ${authors[it.authorIndex].familyNames}")
+            },
+            "resolved" to resolved.map {
+                mapOf("email" to it.email, "givenNames" to it.givenNames, "familyNames" to it.familyNames,
+                    "identityEvidence" to it.identityEvidence)
+            }
+        )
+    }
+}
+
+/**
+ * 正向控制（X-3 / N-1 / N-2）：一篇真实现有正常 PDF（单一明确联系人）与合成「一人两邮箱」PDF。
+ * 两者都走真实 layout + resolver + extractor；合成控制自带完整结构机构字段。
+ */
+internal data class PdfPositiveControl(
+    val label: String,
+    val designation: String,
+    val authors: List<PaperAuthor>,
+    val pdf: ByteArray,
+    val contacts: List<PdfAuthorContactLayout.Contact>,
+    val parsed: com.weibo.talentintroduction.discovery.domain.EmailExtractionOutcome
+)
+
+internal fun pdfPositiveControls(): List<PdfPositiveControl> {
+    val realMembers = zipMembers(requireNotNull(
+        SourceAuthorEmailResolverTest::class.java.getResourceAsStream("/discovery/source-contact-recall.zip")
+    ).use { it.readBytes() })
+    val realPdf = requireNotNull(realMembers["sources/W2999309192/source.pdf"])
+    val realAuthors = openAlexPaperAuthors(jacksonObjectMapper().readTree(
+        requireNotNull(realMembers["sources/W2999309192/metadata.json"])))
+    val syntheticAuthor = PaperAuthor("Jane", "Doe", "0000-0002-1825-0097", "Jane Lab", true,
+        openAlexAuthorId = "A123", institutionName = "Jane University", institutionCountry = "GB",
+        institutionSource = com.weibo.talentintroduction.discovery.domain.INSTITUTION_SOURCE_OPENALEX)
+    val syntheticPdf = positionedPdf(listOf(
+        Triple(50f, 720f, "Jane Doe*"),
+        Triple(50f, 600f, "*Email: first@uni.edu; second@uni.edu")))
+    fun contactsOf(pdf: ByteArray, authors: List<PaperAuthor>) =
+        org.apache.pdfbox.pdmodel.PDDocument.load(pdf).use { PdfAuthorContactLayout.collect(it, 2, authors, 1) }
+    return listOf(
+        PdfPositiveControl("realNormalPdfSingleOwnedMailbox", "REAL_ORIGINAL", realAuthors, realPdf,
+            contactsOf(realPdf, realAuthors),
+            extractOwnershipContent(realPdf, org.springframework.http.MediaType.APPLICATION_PDF, realAuthors)),
+        PdfPositiveControl("syntheticOneAuthorTwoMailboxes", "SYNTHETIC", listOf(syntheticAuthor), syntheticPdf,
+            contactsOf(syntheticPdf, listOf(syntheticAuthor)),
+            extractOwnershipContent(syntheticPdf, org.springframework.http.MediaType.APPLICATION_PDF, listOf(syntheticAuthor)))
+    )
+}
+
 class SourceAuthorEmailResolverTest {
     private val jane = PaperAuthor("Jane", "Doe", "0000-0002-1825-0097", "Jane Lab", true, openAlexAuthorId = "A123")
     private val john = PaperAuthor("John", "Smith", null, "John Lab", false)
@@ -530,6 +687,55 @@ class SourceAuthorEmailResolverTest {
         assertTrue(braceResults.all { it.givenNames == null && it.familyNames == null && it.identityEvidence == null })
         val wrapped = SourceAuthorEmailResolver.resolveText(fixture.path("wrappedSource").path("text").asText(), listOf(jane))
         assertTrue(wrapped.any { it.email == "kairouz@google.com" && it.givenNames == null && it.identityEvidence == null })
+    }
+
+    /**
+     * I-1/I-2 合成控制（非原文）：连续标记组共享组首署名、未匹配署名参与歧义使共享标记不再独占、
+     * 署名区解码损坏使本页标记归属不可用、署名区之外的问号不阻断、损坏标记下独立姓名记录仍生效。
+     */
+    @Test
+    fun `SYNTHETIC continuous marker groups and damaged signature areas (I-1 I-2 I-4)`() {
+        val controls = markerOwnershipControls().associateBy { it.getValue("label") }
+        fun contacts(label: String) = controls.getValue(label)["contacts"] as List<Map<*, *>>
+        fun resolved(label: String) = controls.getValue(label)["resolved"] as List<Map<*, *>>
+        fun contactOwner(label: String, email: String) =
+            contacts(label).singleOrNull { it["email"] == email }?.get("author")
+        fun row(label: String, email: String) = resolved(label).single { it["email"] == email }
+
+        // I-1：`1,†,*` 是一个连续标记组，组内每个符号都共享组首解析到的 Jane Doe。
+        val sharedGroupContacts = contacts("continuousMarkerGroupSharesOneSignature")
+        assertEquals(listOf("jane@uni.edu", "jane@uni.edu"), sharedGroupContacts.map { it["email"] })
+        assertEquals(listOf("Jane Doe", "Jane Doe"), sharedGroupContacts.map { it["author"] })
+        assertEquals("Jane", row("continuousMarkerGroupSharesOneSignature", "jane@uni.edu")["givenNames"])
+
+        // I-1：第二个 `*` 所在组的署名（John Smith）不在元数据里 → 该符号拥有者为「Jane Doe + 未知」，
+        // 不再是独占证明；未被其他符号证明的邮箱只留线索（Chee 形状）。
+        assertEquals(1, contacts("unmatchedSecondSignatureJoinsTheSharedMarker").size)
+        assertEquals("Jane Doe", contactOwner("unmatchedSecondSignatureJoinsTheSharedMarker", "jane@uni.edu"))
+        assertNull(contactOwner("unmatchedSecondSignatureJoinsTheSharedMarker", "unknown@uni.edu"))
+        assertEquals("Jane", row("unmatchedSecondSignatureJoinsTheSharedMarker", "jane@uni.edu")["givenNames"])
+        assertNull(row("unmatchedSecondSignatureJoinsTheSharedMarker", "unknown@uni.edu")["givenNames"])
+        assertNull(row("unmatchedSecondSignatureJoinsTheSharedMarker", "unknown@uni.edu")["identityEvidence"])
+
+        // I-2：署名区里的 `?` 使本页标记 → 作者归属不可用（不猜测替换成 `*`）。
+        assertTrue(contacts("damagedSignatureAreaCannotProve").isEmpty())
+        for (email in listOf("jane@uni.edu", "john@uni.edu")) {
+            assertNull(row("damagedSignatureAreaCannotProve", email)["givenNames"], email)
+            assertNull(row("damagedSignatureAreaCannotProve", email)["identityEvidence"], email)
+        }
+
+        // I-2 边界：问号只出现在署名区之外（正文）时，已确定的正常署名区仍能出证明。
+        assertEquals("Jane Doe", contactOwner("questionMarkOutsideAuthorAreaDoesNotBlock", "jane@uni.edu"))
+
+        // I-2/I-4：损坏标记使标记证明不可用，但独立的 `Jane Doe: a@uni.edu` 记录仍凭自身绑定。
+        assertTrue(contacts("damagedMarkerKeepsIndependentNameRecord").isEmpty())
+        val independent = row("damagedMarkerKeepsIndependentNameRecord", "jane@uni.edu")
+        assertEquals("Jane", independent["givenNames"])
+        assertTrue((independent["identityEvidence"] as String).startsWith("SOURCE_SHA256:"))
+
+        // 既有回归：同一联系行多标记仍各自绑定自己的作者。
+        assertEquals("Jane Doe", contactOwner("sameContactLineTwoMarkersBindEachOwner", "jane@uni.edu"))
+        assertEquals("John Smith", contactOwner("sameContactLineTwoMarkersBindEachOwner", "john@uni.edu"))
     }
 }
 
