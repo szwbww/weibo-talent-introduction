@@ -19,7 +19,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| c1 | docs/plans/2026-10-02/contact-timing-01-location.md | commit:d9b237d7a018e288b87fcbb270e70bcffdcb5917 | none | 1 | PENDING | — | — | 0 | — | — | — | 9 授权文件；迁移 V146（A1）；待实现 |
+| c1 | docs/plans/2026-10-02/contact-timing-01-location.md | commit:d9b237d7a018e288b87fcbb270e70bcffdcb5917 | none | 1 | LIGHT_PASS_WITH_NOTES | 9b7c04c98f669e5c3b3e27fe09502a5e90e3eafe | dc5546a6e914c23249a8b7dbadcc977e5df1b7e3 | 0 | — | dc5546a6e914c23249a8b7dbadcc977e5df1b7e3 | — | 9 授权文件（新增）；迁移 V146；实现者 C1Impl；验证者 C1Verify：四门全 PASS，cmd1 18/0/0（基线 1）、cmd2 IT 7/0/0（基线 no-tests）、RECORD_ONLY R-1/R-2 见 verify-log |
 | c2 | docs/plans/2026-10-02/contact-timing-02-recommendation.md | commit:0f96a49a667074eca32bb6037d20344044131611 | c1 | 1 | PENDING | — | — | 0 | — | — | — | 8 授权文件，扩展 01 的 service/models/controller/测试 |
 | c3 | docs/plans/2026-10-02/contact-timing-03-compact-ui.md | commit:0f96a49a667074eca32bb6037d20344044131611 | c2 | 1 | PENDING | — | — | 0 | — | — | — | 5 授权文件；index.html 当前键 20261001-email-verification-allowlist（计划文本陈旧） |
 
