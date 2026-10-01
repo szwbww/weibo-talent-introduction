@@ -429,6 +429,62 @@ class BatchEmailVerificationRepositoryIT {
         assertNull(repository.findReusable("expired@b.com", now))
     }
 
+    @Test
+    fun `a policy skipped deliverable is a reusable original and beats an older denial`() {
+        fun original(orcid: String, decision: String, state: String, at: LocalDateTime): Long {
+            val id = repository.insertPending(EXECUTION_ID, null, orcid, "Name", "policy@b.com", NOW)
+            repository.recordDecision(id, decision, state, null, null, 1, at, NOW)
+            return id
+        }
+        val olderDenial = original("old-denial", "SKIP", "undeliverable", NOW.minusDays(10))
+        val newerPolicySkip = original("new-policy-skip", "SKIP", "deliverable", NOW.minusDays(2))
+
+        val row = repository.findReusable("policy@b.com", NOW)!!
+
+        // I-4：原始 SKIP deliverable 是有效供应商事实 —— 它成为最新行，不再让旧 undeliverable 顶上来。
+        assertEquals(newerPolicySkip, row.id)
+        assertEquals("SKIP", row.decision)
+        assertEquals("deliverable", row.providerState)
+        assertTrue(olderDenial < newerPolicySkip)
+        // 一年窗口与原始行条件仍然成立。
+        assertNull(repository.findReusable("policy@b.com", NOW.plusYears(2)))
+    }
+
+    @Test
+    fun `the newest effective predicate counts a policy skipped deliverable in both the query and its mirror`() {
+        fun original(orcid: String, decision: String, state: String, at: LocalDateTime): Long {
+            val id = repository.insertPending(EXECUTION_ID, null, orcid, "Name", "mirror@b.com", NOW)
+            repository.recordDecision(id, decision, state, null, null, 1, at, NOW)
+            return id
+        }
+        val olderPass = original("old-pass", "PASS", "deliverable", NOW.minusDays(10))
+        val newerPolicySkip = original("new-policy-skip", "SKIP", "deliverable", NOW.minusDays(2))
+
+        val rows = repository.findReusableByEmails(listOf("mirror@b.com"), NOW)
+
+        // 主查询与 NOT EXISTS 镜像必须同时认 SKIP deliverable：同一邮箱只返回最新有效行。
+        assertEquals(1, rows.size)
+        assertEquals(newerPolicySkip, rows.single().id)
+        assertTrue(olderPass < newerPolicySkip)
+    }
+
+    @Test
+    fun `retention preserves a policy skipped deliverable for the full year`() {
+        val now = jdbcTemplate.queryForObject(
+            "SELECT CONVERT_TZ(UTC_TIMESTAMP(3), '+00:00', '+08:00')", LocalDateTime::class.java)!!
+        jdbcTemplate.update("UPDATE task_execution SET started_at = ?", now.minusDays(200))
+        val policySkip = repository.insertPending(EXECUTION_ID, null, "policy", null, "policy@b.com", now)
+        repository.recordDecision(policySkip, "SKIP", "deliverable", null, null, 1, now.minusDays(100), now)
+        // 另一个只带过期行的执行必须照常清理，证明保留来自 SKIP deliverable 而不是整批跳过。
+        val expired = repository.insertPending(OTHER_EXECUTION_ID, null, "expired", null, "expired@b.com", now)
+        repository.recordDecision(expired, "PASS", "deliverable", null, null, 1, now.minusYears(1).minusDays(1), now)
+
+        assertEquals(1, taskExecutionRepository.deleteOlderThan(now.minusDays(90), 10))
+        assertEquals(1L, countRows(EXECUTION_ID))
+        assertEquals(0L, countRows(OTHER_EXECUTION_ID))
+        assertEquals(policySkip, repository.findReusable("policy@b.com", now)!!.id)
+    }
+
     private fun seedExecution(executionId: Long) {
         jdbcTemplate.update(
             """

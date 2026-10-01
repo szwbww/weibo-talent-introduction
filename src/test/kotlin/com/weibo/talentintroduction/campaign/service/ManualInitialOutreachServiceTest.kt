@@ -417,7 +417,8 @@ class ManualInitialOutreachServiceTest {
         Mockito.verify(batchEmailVerificationService, Mockito.never()).requireConfiguredApiKey()
         Mockito.verify(batchEmailVerificationService, Mockito.never()).verify(
             anyValue(verificationContext),
-            anyValue(verificationTarget())
+            anyValue(verificationTarget()),
+            anyAllowedStates()
         )
     }
 
@@ -554,7 +555,7 @@ class ManualInitialOutreachServiceTest {
         Mockito.verify(expertContactRepository, Mockito.times(2)).save(saved.capture())
         assertEquals(setOf("E071", "E073"), saved.allValues.map { it.orcidId }.toSet())
         Mockito.verify(batchEmailVerificationService, Mockito.never()).verify(
-            anyValue(verificationContext), anyValue(verificationTarget())
+            anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates()
         )
         Mockito.verifyNoInteractions(expertIndexWriterService)
     }
@@ -617,7 +618,7 @@ class ManualInitialOutreachServiceTest {
         )
         Mockito.verifyNoInteractions(senderAccountAssignmentService, mailDeliveryService)
         Mockito.verify(batchEmailVerificationService, Mockito.never()).verify(
-            anyValue(verificationContext), anyValue(verificationTarget())
+            anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates()
         )
         val progress = ArgumentCaptor.forClass(TaskProgress::class.java)
         Mockito.verify(progressStore, Mockito.atLeastOnce()).update(
@@ -5852,6 +5853,131 @@ class ManualInitialOutreachServiceTest {
     }
 
     @Test
+    fun `a policy skipped address is skipped without contact smtp account selection or abnormal tag (I-2 I-3)`() {
+        val account = account("chen")
+        stubIntroSendPipeline(account, listOf(expert("0001", "a@b.com")))
+        stubVerificationDecision(policySkipped = setOf("a@b.com"))
+
+        val result = service.run(introSnapshotWithVerification(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(0, result.sent)
+        assertEquals(0, result.failed)
+        assertEquals(1, result.skipped)
+        assertEquals(
+            1,
+            result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_POLICY_SKIP)?.count ?: 0
+        )
+        assertNull(result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_REJECTED))
+        // 策略跳过：不建/绑 contact、不写 PREPARED、不选号、不发 SMTP、不计发送量、不写发送结论。
+        Mockito.verify(expertContactRepository, Mockito.never()).save(Mockito.any(ExpertContact::class.java))
+        Mockito.verify(mailSendAttemptRepository, Mockito.never()).save(Mockito.any(MailSendAttempt::class.java))
+        Mockito.verify(senderAccountAssignmentService, Mockito.never()).selectAccount(
+            anyValue(expert("", "")), anyValue(mutableListOf()), anyBooleanValue(), anyValue(SenderBindingStock.EMPTY)
+        )
+        Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+        Mockito.verify(batchEmailVerificationService, Mockito.never())
+            .recordSend(Mockito.anyLong(), Mockito.anyString(), Mockito.any())
+        Mockito.verify(introductionMailComposer, Mockito.never())
+            .compose(Mockito.anyString(), anyValue(expert("", "")), Mockito.any())
+        Mockito.verifyNoInteractions(txHelper)
+    }
+
+    @Test
+    fun `policy skipped addresses do not consume the successful send quota`() {
+        val account = account("chen")
+        val experts = listOf(
+            expert("0001", "a@b.com"), expert("0002", "b@b.com"), expert("0003", "c@b.com"),
+            expert("0004", "d@b.com"), expert("0005", "e@b.com"), expert("0006", "f@b.com")
+        )
+        stubIntroSendPipeline(account, experts)
+        stubIntroChunkedExperts(experts, pageSize = 4)
+        // 共享 fixture 的 compose 固定返回 a@b.com —— 多邮箱用例必须按专家返回其真实收件地址，
+        // 否则 SMTP 前的「收件地址 = 已验证地址」断言会（正确地）终止本次执行。
+        Mockito.`when`(introductionMailComposer.compose(anyValue("chen"), anyValue(expert("", "")), Mockito.any()))
+            .thenAnswer { invocation ->
+                val profile = invocation.getArgument<ExpertProfile>(1)
+                ComposedMail(profile.email.orEmpty(), "Subject", "Body")
+            }
+        stubVerificationDecision(policySkipped = setOf("b@b.com", "c@b.com", "d@b.com"))
+
+        val result = service.run(
+            introSnapshotWithVerification(roundSize = 2),
+            12345L,
+            ExecutionMode.MANUAL,
+            oneRoundOnly = false
+        )
+
+        // 策略跳过仍继续扫描补足本轮成功配额；达到成功上限后不验证第 6 个目标。
+        assertEquals(2, result.sent)
+        assertEquals(3, result.skipped)
+        assertEquals(1, result.remaining)
+        assertEquals(
+            3,
+            result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_POLICY_SKIP)?.count ?: 0
+        )
+        Mockito.verify(batchEmailVerificationService, Mockito.times(5))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
+        Mockito.verify(mailDeliveryService, Mockito.times(2)).send(anyValue(account), anyValue(ComposedMail("", "", "")))
+    }
+
+    @Test
+    fun `the run passes this snapshot's allow list to every verification (I-1)`() {
+        val account = account("chen")
+        stubIntroSendPipeline(account, listOf(expert("0001", "a@b.com")))
+        val seen = mutableListOf<List<String>?>()
+        Mockito.`when`(
+            batchEmailVerificationService.beginExecution(Mockito.anyLong(), anyValue<() -> Boolean>({ false }))
+        ).thenReturn(verificationContext)
+        Mockito.`when`(
+            batchEmailVerificationService.verify(
+                anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates()
+            )
+        ).thenAnswer { invocation ->
+            seen += invocation.getArgument<List<String>?>(2)
+            VerificationResult.Passed(
+                rowId = 555L,
+                normalizedEmail = normalizeVerificationEmail(invocation.getArgument<EmailVerificationTarget>(1).email)
+            )
+        }
+        Mockito.`when`(batchEmailVerificationService.markSending(Mockito.anyLong())).thenReturn(true)
+
+        val result = service.run(
+            // 快照里顺序打乱也要按固定顺序复制成有效集合。
+            introSnapshotWithVerification().copy(emailVerificationAllowedStates = listOf("unknown", "deliverable")),
+            12345L,
+            ExecutionMode.MANUAL,
+            oneRoundOnly = false
+        )
+
+        assertEquals(1, result.sent)
+        assertEquals(listOf(listOf("deliverable", "unknown")), seen)
+    }
+
+    @Test
+    fun `legacy snapshots without an allow list keep passing all three explicit states`() {
+        val account = account("chen")
+        stubIntroSendPipeline(account, listOf(expert("0001", "a@b.com")))
+        val seen = mutableListOf<List<String>?>()
+        Mockito.`when`(
+            batchEmailVerificationService.beginExecution(Mockito.anyLong(), anyValue<() -> Boolean>({ false }))
+        ).thenReturn(verificationContext)
+        Mockito.`when`(
+            batchEmailVerificationService.verify(
+                anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates()
+            )
+        ).thenAnswer { invocation ->
+            seen += invocation.getArgument<List<String>?>(2)
+            VerificationResult.Passed(555L, normalizeVerificationEmail(invocation.getArgument<EmailVerificationTarget>(1).email))
+        }
+        Mockito.`when`(batchEmailVerificationService.markSending(Mockito.anyLong())).thenReturn(true)
+
+        val result = service.run(introSnapshotWithVerification(), 12345L, ExecutionMode.MANUAL, oneRoundOnly = false)
+
+        assertEquals(1, result.sent)
+        assertEquals(listOf(null), seen)
+    }
+
+    @Test
     fun `a verification service failure stops the run with remaining preserved and no abnormal tag (I-4 I-7)`() {
         val account = account("chen")
         stubIntroSendPipeline(account, listOf(expert("0001", "a@b.com"), expert("0002", "b@b.com"), expert("0003", "c@b.com")))
@@ -5875,7 +6001,7 @@ class ManualInitialOutreachServiceTest {
         // 故障目标之后的目标不得继续验证或发送。
         val targets = ArgumentCaptor.forClass(EmailVerificationTarget::class.java)
         Mockito.verify(batchEmailVerificationService, Mockito.times(2))
-            .verify(anyValue(verificationContext), captureValue(targets, verificationTarget()))
+            .verify(anyValue(verificationContext), captureValue(targets, verificationTarget()), anyAllowedStates())
         assertEquals(listOf("a@b.com", "b@b.com"), targets.allValues.map { it.email })
         Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(account), anyValue(ComposedMail("", "", "")))
     }
@@ -5922,7 +6048,7 @@ class ManualInitialOutreachServiceTest {
         )
         val targets = ArgumentCaptor.forClass(EmailVerificationTarget::class.java)
         Mockito.verify(batchEmailVerificationService, Mockito.times(3))
-            .verify(anyValue(verificationContext), captureValue(targets, verificationTarget()))
+            .verify(anyValue(verificationContext), captureValue(targets, verificationTarget()), anyAllowedStates())
         assertEquals(listOf("a@b.com", "b@b.com", "c@b.com"), targets.allValues.map { it.email })
         val sentMails = ArgumentCaptor.forClass(ComposedMail::class.java)
         Mockito.verify(mailDeliveryService, Mockito.times(2))
@@ -5974,7 +6100,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_DEFERRED)?.count)
         assertEquals(1, result.outcome?.skippedReasons?.get(BatchOutcomeReasonCodes.CANCELLED)?.count)
         Mockito.verify(batchEmailVerificationService, Mockito.times(1))
-            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
         Mockito.verifyNoInteractions(mailDeliveryService)
     }
 
@@ -5996,7 +6122,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals("FAILED", result.finalStatus)
         assertEquals("EMAIL_VERIFY_AUDIT_FAILED", result.stopReason)
         Mockito.verify(batchEmailVerificationService, Mockito.times(1))
-            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
         Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
     }
 
@@ -6036,7 +6162,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals("FAILED", result.finalStatus)
         assertEquals("EMAIL_VERIFY_FUTURE_CODE", result.stopReason)
         Mockito.verify(batchEmailVerificationService, Mockito.times(1))
-            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
         Mockito.verify(mailDeliveryService, Mockito.never()).send(anyValue(account), anyValue(ComposedMail("", "", "")))
     }
 
@@ -6133,7 +6259,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals("PARTIAL_SUCCESS", result.finalStatus)
         assertEquals("EMAIL_VERIFY_AUDIT_FAILED", result.stopReason)
         Mockito.verify(batchEmailVerificationService, Mockito.times(1))
-            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
         Mockito.verify(mailDeliveryService, Mockito.times(1)).send(anyValue(account), anyValue(ComposedMail("", "", "")))
     }
 
@@ -6167,7 +6293,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, result.remaining)
         // 跳过 3 个仍补足 2 封成功；达到成功上限后不验证第 6 个目标。
         Mockito.verify(batchEmailVerificationService, Mockito.times(5))
-            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
         Mockito.verify(mailDeliveryService, Mockito.times(2)).send(anyValue(account), anyValue(ComposedMail("", "", "")))
     }
 
@@ -6189,7 +6315,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals(1, result.remaining)
         assertEquals("ONE_ROUND_DONE", result.stopReason)
         Mockito.verify(batchEmailVerificationService, Mockito.times(32))
-            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
         Mockito.verify(mailDeliveryService, Mockito.times(20)).send(anyValue(acc), anyValue(ComposedMail("", "", "")))
     }
 
@@ -6226,7 +6352,7 @@ class ManualInitialOutreachServiceTest {
         assertEquals(42, result.remaining)
         assertEquals("ROUNDS_PER_RUN_REACHED", result.stopReason)
         Mockito.verify(batchEmailVerificationService, Mockito.times(58))
-            .verify(anyValue(verificationContext), anyValue(verificationTarget()))
+            .verify(anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates())
     }
 
     @Test
@@ -6330,29 +6456,38 @@ class ManualInitialOutreachServiceTest {
         )
 
     /**
-     * I-2/I-4：按邮箱给出验证结论 —— 默认全部 PASS；[rejected] 内为 SKIP，[failing] 为服务故障。
+     * I-1/I-2/I-3：按邮箱给出验证结论 —— 默认全部 PASS；[rejected] 内为 undeliverable 拒绝，
+     * [policySkipped] 内为「结果明确但不在本次放行集合」的策略跳过，[failing] 为服务故障。
      * 明细 id 固定 [passedRowId]，便于断言审计调用顺序。
      */
     private fun stubVerificationDecision(
         rejected: Set<String> = emptySet(),
         failing: String? = null,
         failureCode: String = BatchEmailVerificationErrorCodes.NO_CREDITS,
-        passedRowId: Long = 555L
+        passedRowId: Long = 555L,
+        policySkipped: Set<String> = emptySet()
     ) {
         Mockito.`when`(
             batchEmailVerificationService.beginExecution(Mockito.anyLong(), anyValue<() -> Boolean>({ false }))
         ).thenReturn(verificationContext)
-        Mockito.`when`(batchEmailVerificationService.verify(anyValue(verificationContext), anyValue(verificationTarget())))
-            .thenAnswer { invocation ->
-                val target = invocation.getArgument<EmailVerificationTarget>(1)
-                when (target.email) {
-                    failing -> VerificationResult.ServiceFailure(passedRowId, failureCode)
-                    in rejected -> VerificationResult.Rejected(passedRowId, BatchEmailVerificationTagStatus.APPLIED)
-                    else -> VerificationResult.Passed(passedRowId, normalizeVerificationEmail(target.email))
-                }
+        Mockito.`when`(
+            batchEmailVerificationService.verify(
+                anyValue(verificationContext), anyValue(verificationTarget()), anyAllowedStates()
+            )
+        ).thenAnswer { invocation ->
+            val target = invocation.getArgument<EmailVerificationTarget>(1)
+            when (target.email) {
+                failing -> VerificationResult.ServiceFailure(passedRowId, failureCode)
+                in rejected -> VerificationResult.Rejected(passedRowId, BatchEmailVerificationTagStatus.APPLIED)
+                in policySkipped -> VerificationResult.PolicySkipped(passedRowId)
+                else -> VerificationResult.Passed(passedRowId, normalizeVerificationEmail(target.email))
             }
+        }
         Mockito.`when`(batchEmailVerificationService.markSending(Mockito.anyLong())).thenReturn(true)
     }
+
+    /** 第三参（本次放行集合）的 any 匹配；null 是合法值（旧请求三态全放行）。 */
+    private fun anyAllowedStates(): List<String>? = Mockito.any()
 
     /** any 匹配用的非空目标占位（Mockito.any() 返回 null，不能传给 Kotlin 非空参数）。 */
     private fun verificationTarget() = EmailVerificationTarget(null, "", null, "")

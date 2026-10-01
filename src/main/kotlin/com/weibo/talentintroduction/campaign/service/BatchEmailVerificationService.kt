@@ -2,6 +2,7 @@ package com.weibo.talentintroduction.campaign.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.weibo.talentintroduction.campaign.domain.BatchOutcomeReasonCodes
+import com.weibo.talentintroduction.campaign.domain.EmailVerificationAllowedStates
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationDecision
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationErrorCodes
 import com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRepository
@@ -32,7 +33,8 @@ import java.util.Locale
  *
  * 关键不变量（子计划 01）：
  * - I-2 验证对象 = 最终收件地址：规范化（trim + lowercase(Locale.ROOT)，保留 `+tag`、不合并点号）后作验证键；
- *   HTTP 200 且返回 email 匹配时，deliverable/risky/unknown 放行，只有 undeliverable 跳过；
+ *   HTTP 200 且返回 email 匹配时，deliverable/risky/unknown 按**本次快照允许集合**决定放行（`null` 集合 =
+ *   旧请求三态全放行），只有 undeliverable 恒跳过；复用只复用供应商事实，决定每次按本次集合重算；
  *   unknown 是供应商明确结果，不等于 HTTP 超时（超时是 ERROR）。
  * - I-4 服务异常绝不当邮箱异常：249 最多两次物理请求；402/401/403/429/网络超时/5xx/非法 JSON 或 state/
  *   邮箱不匹配一律 ERROR + 受控错误码；不做自动重试（249 除外）；供应商故障绝不追加「邮箱异常」标签。
@@ -98,10 +100,20 @@ class BatchEmailVerificationService(
     /**
      * 验证一个目标：先落 PENDING 明细，再出结论，SKIP 追加标签并写标签结果。
      * 审计写入失败抛 [EmailVerificationAuditException]；调用方据此停止本次执行且不得发信。
+     *
+     * [allowedStates] 是本次执行的放行白名单（I-1/I-2）：`null` = 旧调用/旧请求的三态全放行。
+     * 供应商事实（provider_state/provider_reason/checked_at）与放行决定彻底分离 —— 新请求、
+     * 同执行内存复用、跨执行仓储复用都按**本次**集合重算 PASS/SKIP；`undeliverable` 恒为 SKIP。
      */
-    fun verify(context: ExecutionVerificationContext, target: EmailVerificationTarget): VerificationResult {
+    fun verify(
+        context: ExecutionVerificationContext,
+        target: EmailVerificationTarget,
+        allowedStates: List<String>? = null
+    ): VerificationResult {
         val normalizedEmail = normalizeVerificationEmail(target.email)
         val normalizedOrcid = ExpertIdNormalizer.normalize(target.orcidId)
+        // I-2：本次执行的放行集合只在入口解析一次；非法值在此明确失败而不是静默放宽。
+        val allowed = EmailVerificationAllowedStates.allowedFor(allowedStates)
         val rowId = audit("插入验证明细") {
             repository.insertPending(
                 taskExecutionId = context.executionId,
@@ -119,24 +131,29 @@ class BatchEmailVerificationService(
             it.checkedAt > now.minusYears(1) && it.checkedAt <= now
         } ?: audit("查询历史验证") {
             repository.findReusable(normalizedEmail, now)?.let {
-                // 复用供应商事实，不沿用旧发送策略的 SKIP；原行与原检查时间保持不变。
-                ReusedProviderResult(requireNotNull(decisionForState(it.providerState)), it.providerState,
-                    it.providerReason, requireNotNull(it.checkedAt), it.id)
+                // 只复用供应商事实；原行与原检查时间保持不变，决定由本次集合重算。
+                ReusedProviderResult(it.providerState, it.providerReason, requireNotNull(it.checkedAt), it.id)
             }
         }
         if (context.isCancelled()) return VerificationResult.Cancelled(rowId)
         if (reused != null) {
+            val decision = requireNotNull(decisionForState(reused.providerState, allowed)) {
+                "复用的供应商状态无法决策：${reused.providerState}"
+            }
             audit("记录历史验证复用") {
                 require(repository.recordReusedDecision(
-                    rowId, reused.sourceRowId, reused.decision, reused.providerState,
+                    rowId, reused.sourceRowId, decision, reused.providerState,
                     reused.providerReason, reused.checkedAt, verificationNow()
                 ) == 1) { "复用验证结论未落库：id=$rowId" }
             }
             context.remember(normalizedEmail, reused)
-            return conclude(context, target.copy(orcidId = normalizedOrcid), normalizedEmail, rowId, reused.decision, null)
+            return conclude(
+                context, target.copy(orcidId = normalizedOrcid), normalizedEmail, rowId,
+                decision, null, reused.providerState
+            )
         }
 
-        val outcome = requestNewResult(context, normalizedEmail) ?: return VerificationResult.Cancelled(rowId)
+        val outcome = requestNewResult(context, normalizedEmail, allowed) ?: return VerificationResult.Cancelled(rowId)
         val checkedAt = verificationNow()
         persistDecision(
             rowId, outcome.decision, outcome.providerState, outcome.providerReason,
@@ -145,7 +162,7 @@ class BatchEmailVerificationService(
         if (outcome.decision in REUSABLE_DECISIONS) {
             context.remember(
                 normalizedEmail,
-                ReusedProviderResult(outcome.decision, outcome.providerState, outcome.providerReason, checkedAt, rowId)
+                ReusedProviderResult(outcome.providerState, outcome.providerReason, checkedAt, rowId)
             )
         }
         return conclude(
@@ -154,7 +171,8 @@ class BatchEmailVerificationService(
             normalizedEmail,
             rowId,
             outcome.decision,
-            outcome.errorCode
+            outcome.errorCode,
+            outcome.providerState
         )
     }
 
@@ -185,11 +203,13 @@ class BatchEmailVerificationService(
         normalizedEmail: String,
         rowId: Long,
         decision: String,
-        errorCode: String?
+        errorCode: String?,
+        providerState: String?
     ): VerificationResult = when (decision) {
         BatchEmailVerificationDecision.PASS -> VerificationResult.Passed(rowId, normalizedEmail)
-        BatchEmailVerificationDecision.SKIP -> {
-            // 标签处理是 SKIP 的独立结果：先 PENDING（崩溃后可见未完成），ES 处理完再写 APPLIED/FAILED。
+        BatchEmailVerificationDecision.SKIP -> if (providerState?.lowercase(Locale.ROOT) == STATE_UNDELIVERABLE) {
+            // 标签处理是 undeliverable SKIP 的独立结果：先 PENDING（崩溃后可见未完成），
+            // ES 处理完再写 APPLIED/FAILED。
             audit("记录标签待处理") {
                 require(repository.recordTag(rowId, BatchEmailVerificationTagStatus.PENDING, null, verificationNow()) == 1) {
                     "标签待处理未落库（受影响 0 行）：id=$rowId"
@@ -204,6 +224,14 @@ class BatchEmailVerificationService(
             // SKIP 行不进 SMTP：send_status=SKIPPED + 跳过码（≠ 发送成功）。
             recordSend(rowId, BatchEmailVerificationSendStatus.SKIPPED, BatchOutcomeReasonCodes.EMAIL_VERIFICATION_REJECTED)
             VerificationResult.Rejected(rowId, tag.status)
+        } else {
+            // I-2/I-3：供应商结果是明确的，只是不在本次放行集合内 —— 只记策略跳过，
+            // 绝不追加「邮箱异常」（该标签只属于 undeliverable），也不进 SMTP。
+            recordSend(
+                rowId, BatchEmailVerificationSendStatus.SKIPPED,
+                BatchOutcomeReasonCodes.EMAIL_VERIFICATION_POLICY_SKIP
+            )
+            VerificationResult.PolicySkipped(rowId)
         }
         else -> VerificationResult.ServiceFailure(rowId, errorCode ?: BatchEmailVerificationErrorCodes.SERVICE_ERROR)
     }
@@ -228,7 +256,11 @@ class BatchEmailVerificationService(
      * 物理请求循环：249（供应商明确「未完成」）只再试一次，间隔 500ms；其它失败不重试。
      * 返回 null 表示等待期间被取消（未验证者不标记）。requestCount 记物理请求次数。
      */
-    private fun requestNewResult(context: ExecutionVerificationContext, normalizedEmail: String): ProviderOutcome? {
+    private fun requestNewResult(
+        context: ExecutionVerificationContext,
+        normalizedEmail: String,
+        allowed: Set<String>
+    ): ProviderOutcome? {
         var attempt = 0
         while (true) {
             attempt++
@@ -242,7 +274,7 @@ class BatchEmailVerificationService(
                 log.warn("Email verification transport failure for {}: {}", normalizedEmail, e.message)
                 return ProviderOutcome.failed(BatchEmailVerificationErrorCodes.SERVICE_ERROR, attempt)
             }
-            val outcome = classifyResponse(response, normalizedEmail, attempt)
+            val outcome = classifyResponse(response, normalizedEmail, attempt, allowed)
             if (!outcome.incomplete || attempt >= MAX_ATTEMPTS_PER_EMAIL) {
                 return outcome.copy(incomplete = false)
             }
@@ -253,9 +285,10 @@ class BatchEmailVerificationService(
     private fun classifyResponse(
         response: EmailableHttpResponse,
         normalizedEmail: String,
-        requestCount: Int
+        requestCount: Int,
+        allowed: Set<String>
     ): ProviderOutcome = when (response.statusCode) {
-        HTTP_OK -> classifyBody(response.body, normalizedEmail, requestCount)
+        HTTP_OK -> classifyBody(response.body, normalizedEmail, requestCount, allowed)
         HTTP_INCOMPLETE -> ProviderOutcome(
             decision = BatchEmailVerificationDecision.ERROR,
             errorCode = BatchEmailVerificationErrorCodes.INCOMPLETE,
@@ -269,8 +302,16 @@ class BatchEmailVerificationService(
         else -> ProviderOutcome.failed(BatchEmailVerificationErrorCodes.SERVICE_ERROR, requestCount)
     }
 
-    /** 200 响应必须同时给出可确认的 state、匹配的 email，才可能 PASS；否则是受控 ERROR。 */
-    private fun classifyBody(body: String, normalizedEmail: String, requestCount: Int): ProviderOutcome {
+    /**
+     * 200 响应必须同时给出可确认的 state、匹配的 email，才可能 PASS/SKIP；否则是受控 ERROR。
+     * 只有走完这两项协议校验的明确结果才按本次放行集合决策 —— 坏响应即使带回 state 也不改判。
+     */
+    private fun classifyBody(
+        body: String,
+        normalizedEmail: String,
+        requestCount: Int,
+        allowed: Set<String>
+    ): ProviderOutcome {
         val node = try {
             objectMapper.readTree(body)
         } catch (e: Exception) {
@@ -290,17 +331,23 @@ class BatchEmailVerificationService(
             log.warn("Email verification response does not echo the requested address for {}", normalizedEmail)
             return ProviderOutcome.failed(BatchEmailVerificationErrorCodes.BAD_RESPONSE, requestCount, state, reason)
         }
-        val decision = decisionForState(state)
+        val decision = decisionForState(state, allowed)
             ?: return ProviderOutcome.failed(BatchEmailVerificationErrorCodes.BAD_RESPONSE, requestCount, state, reason)
         return ProviderOutcome(decision, null, requestCount, state, reason)
     }
 
-    /** 当前发送策略；未知协议值不是供应商明确的 unknown 结果。 */
-    private fun decisionForState(state: String?): String? = when (state?.lowercase(Locale.ROOT)) {
-        STATE_DELIVERABLE, STATE_RISKY, STATE_UNKNOWN -> BatchEmailVerificationDecision.PASS
-        STATE_UNDELIVERABLE -> BatchEmailVerificationDecision.SKIP
-        else -> null
-    }
+    /**
+     * I-2：供应商状态 → 本次放行决定。`undeliverable` 恒为 SKIP（永不放行）；其余三个明确结果
+     * 命中本次集合才是 PASS，否则是策略 SKIP。未知协议值不是供应商明确结果（返回 null → 受控错误）。
+     */
+    private fun decisionForState(state: String?, allowed: Set<String>): String? =
+        when (val normalized = state?.lowercase(Locale.ROOT)) {
+            STATE_UNDELIVERABLE -> BatchEmailVerificationDecision.SKIP
+            STATE_DELIVERABLE, STATE_RISKY, STATE_UNKNOWN ->
+                if (normalized in allowed) BatchEmailVerificationDecision.PASS
+                else BatchEmailVerificationDecision.SKIP
+            else -> null
+        }
 
     /**
      * I-5：只在 RAW/CANDIDATE/APPLICATION 中**已存在**且真实 ID、ORCID、当前邮箱三者都匹配的副本上
@@ -416,8 +463,15 @@ sealed class VerificationResult {
     /** 通过：只有放行目标会带到这里，行内决策已是 PASS。 */
     data class Passed(val rowId: Long, val normalizedEmail: String) : VerificationResult()
 
-    /** 明确非通过：行内决策已是 SKIP，邮件不发，标签结果为 [tagStatus]。 */
+    /** 明确非通过（undeliverable）：行内决策已是 SKIP，邮件不发，标签结果为 [tagStatus]。 */
     data class Rejected(val rowId: Long, val tagStatus: String) : VerificationResult()
+
+    /**
+     * I-2/I-3：供应商给出明确结果，但不在本次放行集合内（未选中的 deliverable/risky/unknown）。
+     * 行内已是 `decision=SKIP` + `send_status=SKIPPED` + `EMAIL_VERIFICATION_POLICY_SKIP`；
+     * 不打「邮箱异常」标签、不建/绑 contact、不进 SMTP。
+     */
+    data class PolicySkipped(val rowId: Long) : VerificationResult()
 
     /** 服务故障：行内决策已是 ERROR + [errorCode]，调用方必须停止本次执行且不追加「邮箱异常」。 */
     data class ServiceFailure(val rowId: Long, val errorCode: String) : VerificationResult()
@@ -426,9 +480,11 @@ sealed class VerificationResult {
     data class Cancelled(val rowId: Long?) : VerificationResult()
 }
 
-/** 内存/持久化复用结果；sourceRowId 始终指实际调用供应商的原始明细。 */
+/**
+ * 复用的**供应商事实**（不含放行决定）：内存与跨执行复用都只用它，决定由本次快照集合重算。
+ * sourceRowId 始终指实际调用供应商的原始明细。
+ */
 internal data class ReusedProviderResult(
-    val decision: String,
     val providerState: String?,
     val providerReason: String?,
     val checkedAt: LocalDateTime,

@@ -1,5 +1,6 @@
 package com.weibo.talentintroduction.task.service
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -23,6 +24,9 @@ class TaskRetentionMigrationTest {
     )
     private val executionRepoSource = Files.readString(
         Path.of("src/main/kotlin/com/weibo/talentintroduction/task/repository/TaskExecutionRepository.kt")
+    )
+    private val verificationRepoSource = Files.readString(
+        Path.of("src/main/kotlin/com/weibo/talentintroduction/campaign/repository/BatchEmailVerificationRepository.kt")
     )
 
     @Test
@@ -79,6 +83,46 @@ class TaskRetentionMigrationTest {
     fun `production flyway config disables placeholder replacement`() {
         val yml = Files.readString(Path.of("src/main/resources/application.yml"))
         assertTrue(yml.contains("placeholder-replacement: false"), "flyway placeholder replacement must be disabled")
+    }
+
+    @Test
+    fun `execution retention also protects policy skipped deliverable originals`() {
+        val queryBlock = queryBlockOf(executionRepoSource, "deleteOlderThan")
+        assertTrue(
+            queryBlock.contains(
+                "(v.decision = 'SKIP' AND v.provider_state IN ('deliverable', 'risky', 'unknown', 'undeliverable'))"
+            ),
+            "retention must keep a policy skipped deliverable reusable for the full year (I-4)"
+        )
+        assertTrue(
+            queryBlock.contains("(v.decision = 'PASS' AND v.provider_state IN ('deliverable', 'risky', 'unknown'))"),
+            "retention must keep the original PASS states unchanged"
+        )
+    }
+
+    @Test
+    fun `reusable history predicate stays symmetric with its not exists mirror`() {
+        val skipStates = "'deliverable', 'risky', 'unknown', 'undeliverable'"
+        assertEquals(
+            2,
+            countOccurrences(verificationRepoSource, skipStates),
+            "FIND_REUSABLE_BY_EMAILS_SQL 的主查询与 NOT EXISTS 镜像必须同时认 SKIP deliverable"
+        )
+        assertEquals(
+            2,
+            countOccurrences(verificationRepoSource, "decision = 'SKIP' AND"),
+            "有效行谓词必须恰好出现在主查询与镜像两处"
+        )
+    }
+
+    private fun countOccurrences(source: String, needle: String): Int {
+        var count = 0
+        var index = source.indexOf(needle)
+        while (index >= 0) {
+            count++
+            index = source.indexOf(needle, index + needle.length)
+        }
+        return count
     }
 
     /** 取 @Modifying 之后到 fun 声明行末尾的窗口（含 @Query 注解、不含方法注释）。 */

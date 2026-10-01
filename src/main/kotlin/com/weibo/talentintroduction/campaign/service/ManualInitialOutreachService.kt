@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.campaign.service
 import com.weibo.talentintroduction.campaign.domain.Campaign
 import com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot
 import com.weibo.talentintroduction.campaign.domain.BatchOutcomeReasonCodes
+import com.weibo.talentintroduction.campaign.domain.EmailVerificationAllowedStates
 import com.weibo.talentintroduction.campaign.domain.OutcomeAccumulator
 import com.weibo.talentintroduction.campaign.domain.OutcomeBreakdown
 import com.weibo.talentintroduction.campaign.domain.RecipientScope
@@ -570,6 +571,8 @@ class ManualInitialOutreachService(
         val allowedAccountCodes = allowedAccountCodesOf(snapshot)
         // I-1/I-2/I-7：验证开关与逐次执行上下文。关闭时不建立上下文 —— 零 HTTP、零验证明细仓储调用。
         val emailVerificationEnabled = snapshot.emailVerificationEnabled
+        // I-1：本次执行的放行集合只来自启动快照 —— 入口防御性复核并复制有效集合，绝不读取可变配置。
+        val emailVerificationAllowedStates = EmailVerificationAllowedStates.normalize(snapshot.emailVerificationAllowedStates)
         val verificationContext = if (emailVerificationEnabled) {
             batchEmailVerificationService.beginExecution(executionId) {
                 progressStore.isCancelled("MANUAL_INITIAL_OUTREACH", executionId)
@@ -774,7 +777,9 @@ class ManualInitialOutreachService(
                                 orcidId = normOrcid,
                                 expertName = expert.displayName,
                                 email = email
-                            )
+                            ),
+                            // I-1/I-2：本次执行的放行集合来自启动快照（旧请求缺字段 = 三态全放行）。
+                            emailVerificationAllowedStates
                         )
                     } catch (e: EmailVerificationAuditException) {
                         log.error("Email verification audit unavailable for ORCID {}: {}", normOrcid, e.message)
@@ -795,6 +800,21 @@ class ManualInitialOutreachService(
                             roundRejected++
                             updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
                                 "RUNNING", "已跳过邮箱验证未通过：$email", errors, mode, roundNumber, config, runAccountStats,
+                                roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
+                            continue
+                        }
+                        is VerificationResult.PolicySkipped -> {
+                            // I-2/I-3：供应商结果明确但不在本次放行集合内 —— 只记策略跳过，
+                            // 不打「邮箱异常」标签、不建/绑 contact、不选号、不发 SMTP；继续补足本轮成功数。
+                            accumulator.recordSkipped(
+                                BatchOutcomeReasonCodes.EMAIL_VERIFICATION_POLICY_SKIP,
+                                "不在本次放行范围：$email"
+                            )
+                            processedTotal++
+                            roundProcessed++
+                            roundRejected++
+                            updateProgressWithAccumulator(executionId, accumulator, processedTotal, totalEstimate,
+                                "RUNNING", "已跳过不在本次放行范围的邮箱：$email", errors, mode, roundNumber, config, runAccountStats,
                                 roundNumber, roundProcessed, roundPassed, roundRejected, ignoreWarmup = ignoreWarmup, roundsPerRun = snapshot.roundsPerRun)
                             continue
                         }

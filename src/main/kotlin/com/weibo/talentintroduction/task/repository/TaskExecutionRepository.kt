@@ -186,7 +186,7 @@ interface TaskExecutionRepository : CrudRepository<TaskExecution, Long> {
                   AND v.checked_at > DATE_SUB(CONVERT_TZ(UTC_TIMESTAMP(3), '+00:00', '+08:00'), INTERVAL 1 YEAR)
                   AND v.checked_at <= CONVERT_TZ(UTC_TIMESTAMP(3), '+00:00', '+08:00')
                   AND ((v.decision = 'PASS' AND v.provider_state IN ('deliverable', 'risky', 'unknown'))
-                    OR (v.decision = 'SKIP' AND v.provider_state IN ('undeliverable', 'risky', 'unknown')))
+                    OR (v.decision = 'SKIP' AND v.provider_state IN ('deliverable', 'risky', 'unknown', 'undeliverable')))
            )
          ORDER BY started_at LIMIT :batchSize
     """)

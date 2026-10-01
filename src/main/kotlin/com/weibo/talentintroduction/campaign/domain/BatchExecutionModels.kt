@@ -8,6 +8,46 @@ import com.weibo.talentintroduction.expert.domain.DiscoveryIdentity
 import com.weibo.talentintroduction.expert.domain.ExpertProfile
 import java.time.LocalDateTime
 
+/**
+ * I-1: Emailable 放行结果白名单的**唯一**允许值集合与严格校验（快照与任务配置共用）。
+ *
+ * `null` 只代表旧请求缺字段 —— 维持 deliverable/risky/unknown 三态全放行；非 null 数组可以为空
+ * （明确不放行任何明确结果），但每个元素必须逐字等于三个允许值之一。`undeliverable`、未知值、
+ * 大小写/空白变体与非字符串元素一律拒绝，绝不静默降级成「不限」或把非法值当成放行。
+ */
+object EmailVerificationAllowedStates {
+    const val DELIVERABLE = "deliverable"
+    const val RISKY = "risky"
+    const val UNKNOWN = "unknown"
+
+    /** 规范化顺序固定为 deliverable, risky, unknown。 */
+    val ALLOWED: List<String> = listOf(DELIVERABLE, RISKY, UNKNOWN)
+
+    private val ALLOWED_SET: Set<String> = ALLOWED.toSet()
+
+    /** 严格校验（含 null 元素）；非法值抛 [IllegalArgumentException]。 */
+    fun requireValid(states: List<String>?) {
+        states?.forEach { state ->
+            require(state in ALLOWED_SET) {
+                "emailVerificationAllowedStates 含非法值：$state（仅允许 $ALLOWED）"
+            }
+        }
+    }
+
+    /** 校验后去重并按固定顺序规范化；`null` 原样返回。 */
+    fun normalize(states: List<String>?): List<String>? {
+        if (states == null) return null
+        requireValid(states)
+        return ALLOWED.filter { it in states }
+    }
+
+    /** 本次放行的状态集合；`null` = 三态全放行。 */
+    fun allowedFor(states: List<String>?): Set<String> {
+        requireValid(states)
+        return states?.toSet() ?: ALLOWED_SET
+    }
+}
+
 /** Immutable launch snapshot consumed once per execution (I-1). */
 data class BatchExecutionSnapshot(
     val mailType: String,
@@ -42,9 +82,20 @@ data class BatchExecutionSnapshot(
      * 关闭时不调用验证 HTTP / 验证明细仓储，也不要求密钥。
      */
     val emailVerificationEnabled: Boolean = false,
+    /**
+     * I-1/I-2: 本次执行唯一的 Emailable 放行白名单快照。`null` = 旧请求缺字段（三态全放行）；
+     * `[]` = 明确不放行任何明确结果；非空元素必须逐字属于 [EmailVerificationAllowedStates.ALLOWED]。
+     * 启动前严格校验（含 JSON 绑定）并固定进 `task_execution.request_payload`，本次执行不再读取可变配置。
+     */
+    val emailVerificationAllowedStates: List<String>? = null,
     /** Historical verified-undeliverable filtering is independent of live verification. */
     val excludeVerifiedUnavailableEmails: Boolean = false
-)
+) {
+    init {
+        // I-1：直接构造与 JSON 绑定都在启动前拒绝非法白名单，绝不带着未校验策略开跑。
+        EmailVerificationAllowedStates.requireValid(emailVerificationAllowedStates)
+    }
+}
 
 data class ManualBatchExecutionRequest(
     val sourceConfigId: Long? = null,
@@ -265,11 +316,17 @@ object BatchOutcomeReasonCodes {
      */
     const val BOUND_SENDER_ALREADY_SET = "BOUND_SENDER_ALREADY_SET"
     /**
-     * I-2/I-6: 发送前验证明确不通过（undeliverable/risky/unknown）。
-     * 该目标跳过并占本轮处理槽，但不计 success、不计发送失败、不占账号发送量；
-     * 明细行的 send_status=SKIPPED 使用同一码。
+     * I-2/I-6: 发送前验证明确不通过（undeliverable）。
+     * 该目标只计 processed/skipped，**不占本轮成功配额**（循环继续扫描补足 roundPassed），
+     * 不计 success、不计发送失败、不占账号发送量；明细行的 send_status=SKIPPED 使用同一码。
      */
     const val EMAIL_VERIFICATION_REJECTED = "EMAIL_VERIFICATION_REJECTED"
+    /**
+     * I-2/I-3: 供应商给出明确结果，但不在本次快照放行集合内（未选中的 deliverable/risky/unknown）。
+     * 与 [EMAIL_VERIFICATION_REJECTED] 一样只计 processed/skipped、不占本轮成功配额，但**不**追加
+     * 「邮箱异常」标签、不改联系人/账号状态；明细行 `decision=SKIP` + `send_status=SKIPPED` 使用同一码。
+     */
+    const val EMAIL_VERIFICATION_POLICY_SKIP = "EMAIL_VERIFICATION_POLICY_SKIP"
     const val EMAIL_VERIFICATION_DEFERRED = "EMAIL_VERIFICATION_DEFERRED"
 
     val LABELS = mapOf(
@@ -286,6 +343,7 @@ object BatchOutcomeReasonCodes {
         DISCOVERY_EVIDENCE_MISSING to "新发现机构证据不足",
         BOUND_SENDER_ALREADY_SET to "专家已绑定发件账号",
         EMAIL_VERIFICATION_REJECTED to "邮箱验证未通过",
+        EMAIL_VERIFICATION_POLICY_SKIP to "邮箱验证策略跳过",
         EMAIL_VERIFICATION_DEFERRED to "邮箱验证暂缓"
     )
 
