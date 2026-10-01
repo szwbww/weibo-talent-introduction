@@ -9,11 +9,15 @@ import com.weibo.talentintroduction.auth.domain.AdminUser
 import com.weibo.talentintroduction.auth.service.AuthService
 import com.weibo.talentintroduction.mail.service.ContactCountryEntry
 import com.weibo.talentintroduction.mail.service.ContactCountryTimezoneCatalog
+import com.weibo.talentintroduction.mail.service.ContactLocationTimingView
 import com.weibo.talentintroduction.mail.service.ContactLocationView
 import com.weibo.talentintroduction.mail.service.ContactTimezoneEntry
 import com.weibo.talentintroduction.mail.service.ExpertContactLocationCatalog
 import com.weibo.talentintroduction.mail.service.ExpertContactLocationService
 import com.weibo.talentintroduction.mail.service.SaveContactLocationRequest
+import com.weibo.talentintroduction.mail.service.TimingMode
+import com.weibo.talentintroduction.mail.service.TimingRecentSampleView
+import com.weibo.talentintroduction.mail.service.TimingRecommendationView
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito
@@ -110,6 +114,23 @@ class ExpertContactLocationControllerTest {
         effectiveZoneId = "America/Manaus",
         zoneLabel = "巴西 · 马瑙斯",
         usingDefaultZone = false
+    )
+
+    /** 与 service/calculator 同形的推荐对象（只用于接口层字段冻结断言）。 */
+    private fun recommendation(): TimingRecommendationView = TimingRecommendationView(
+        mode = TimingMode.REPLY_PATTERN,
+        localStart = "2026-10-02T13:00:00-03:00",
+        localEnd = "2026-10-02T15:00:00-03:00",
+        beijingStart = "2026-10-03T00:00:00+08:00",
+        beijingEnd = "2026-10-03T02:00:00+08:00",
+        sampleCount = 3,
+        replyDayCount = 3,
+        historyDays = 180,
+        historyTruncated = false,
+        recentSamples = listOf(
+            TimingRecentSampleView("2026-10-02T01:15:00+08:00", "2026-10-01T14:15:00-03:00")
+        ),
+        calculatedAt = "2026-10-02T00:00:00Z"
     )
 
     // ------------------------------------------------------------------
@@ -297,6 +318,162 @@ class ExpertContactLocationControllerTest {
                 .content("""{"countryCode":"BR","zoneId":null}""")
         ).andExpect(status().isNotFound)
             .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+    }
+
+    // ------------------------------------------------------------------
+    // timing（只读推荐，plan 02 / c2）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `unconfigured timing GET is 200 with a null recommendation`() {
+        Mockito.`when`(service.timing(42L)).thenReturn(ContactLocationTimingView(unconfigured(), null))
+
+        mvc.perform(get("/api/mail/contact-locations/42/timing").session(session()))
+            .andExpect(status().isOk)
+            .andExpect(content().json(
+                """
+                {
+                  "location": {
+                    "contactId": 42,
+                    "configured": false,
+                    "countryCode": null,
+                    "countryLabel": null,
+                    "zoneId": null,
+                    "effectiveZoneId": null,
+                    "zoneLabel": null,
+                    "usingDefaultZone": false
+                  },
+                  "recommendation": null
+                }
+                """.trimIndent(),
+                true
+            ))
+
+        verify(service).timing(42L)
+        assertEquals(emptyList<List<Any?>>(), saveInvocations(), "只读 timing 不得触发任何写入")
+    }
+
+    @Test
+    fun `timing GET exposes exactly the frozen recommendation fields`() {
+        Mockito.`when`(service.timing(42L)).thenReturn(ContactLocationTimingView(configured(), recommendation()))
+
+        mvc.perform(get("/api/mail/contact-locations/42/timing").session(session()))
+            .andExpect(status().isOk)
+            .andExpect(content().json(
+                """
+                {
+                  "location": {
+                    "contactId": 42,
+                    "configured": true,
+                    "countryCode": "BR",
+                    "countryLabel": "巴西",
+                    "zoneId": "America/Manaus",
+                    "effectiveZoneId": "America/Manaus",
+                    "zoneLabel": "巴西 · 马瑙斯",
+                    "usingDefaultZone": false
+                  },
+                  "recommendation": {
+                    "mode": "REPLY_PATTERN",
+                    "localStart": "2026-10-02T13:00:00-03:00",
+                    "localEnd": "2026-10-02T15:00:00-03:00",
+                    "beijingStart": "2026-10-03T00:00:00+08:00",
+                    "beijingEnd": "2026-10-03T02:00:00+08:00",
+                    "sampleCount": 3,
+                    "replyDayCount": 3,
+                    "historyDays": 180,
+                    "historyTruncated": false,
+                    "recentSamples": [
+                      {
+                        "receivedAtBeijing": "2026-10-02T01:15:00+08:00",
+                        "receivedAtLocal": "2026-10-01T14:15:00-03:00"
+                      }
+                    ],
+                    "calculatedAt": "2026-10-02T00:00:00Z"
+                  }
+                }
+                """.trimIndent(),
+                true
+            ))
+
+        verify(service).timing(42L)
+        assertEquals(emptyList<List<Any?>>(), saveInvocations())
+    }
+
+    @Test
+    fun `work hours mode is serialized with the same field set`() {
+        Mockito.`when`(service.timing(42L)).thenReturn(
+            ContactLocationTimingView(
+                configured(),
+                recommendation().copy(
+                    mode = TimingMode.WORK_HOURS,
+                    localStart = "2026-10-02T08:00:00-04:00",
+                    localEnd = "2026-10-02T17:00:00-04:00",
+                    sampleCount = 0,
+                    replyDayCount = 0,
+                    historyTruncated = true,
+                    recentSamples = emptyList()
+                )
+            )
+        )
+
+        mvc.perform(get("/api/mail/contact-locations/42/timing").session(session()))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.recommendation.mode").value("WORK_HOURS"))
+            .andExpect(jsonPath("$.recommendation.localStart").value("2026-10-02T08:00:00-04:00"))
+            .andExpect(jsonPath("$.recommendation.historyTruncated").value(true))
+            .andExpect(jsonPath("$.recommendation.recentSamples").isArray)
+            .andExpect(jsonPath("$.recommendation.recentSamples.length()").value(0))
+    }
+
+    @Test
+    fun `timing for a missing contact is 404`() {
+        Mockito.`when`(service.timing(404L)).thenThrow(NoSuchElementException("联系人不存在：404"))
+
+        mvc.perform(get("/api/mail/contact-locations/404/timing").session(session()))
+            .andExpect(status().isNotFound)
+            .andExpect(jsonPath("$.code").value("NOT_FOUND"))
+    }
+
+    @Test
+    fun `anonymous timing requests are 401 and never reach the service`() {
+        mvc.perform(get("/api/mail/contact-locations/42/timing")).andExpect(status().isUnauthorized)
+    }
+
+    /**
+     * c1 的 RECORD_ONLY R-1：`configured=true` 且使用国家默认时区的 JSON 形态在 HTTP 层直接断言。
+     */
+    @Test
+    fun `configured location on the country default serializes the expanded default zone`() {
+        Mockito.`when`(service.get(42L)).thenReturn(
+            ContactLocationView(
+                contactId = 42L,
+                configured = true,
+                countryCode = "BR",
+                countryLabel = "巴西",
+                zoneId = null,
+                effectiveZoneId = "America/Sao_Paulo",
+                zoneLabel = "巴西 · 圣保罗",
+                usingDefaultZone = true
+            )
+        )
+
+        mvc.perform(get("/api/mail/contact-locations/42").session(session()))
+            .andExpect(status().isOk)
+            .andExpect(content().json(
+                """
+                {
+                  "contactId": 42,
+                  "configured": true,
+                  "countryCode": "BR",
+                  "countryLabel": "巴西",
+                  "zoneId": null,
+                  "effectiveZoneId": "America/Sao_Paulo",
+                  "zoneLabel": "巴西 · 圣保罗",
+                  "usingDefaultZone": true
+                }
+                """.trimIndent(),
+                true
+            ))
     }
 
     /** 真实调用参数（避免对 Kotlin 非空形参使用 matcher 的 null 陷阱）。 */

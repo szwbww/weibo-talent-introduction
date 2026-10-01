@@ -1,7 +1,7 @@
 package com.weibo.talentintroduction.mail.service
 
 // ---------------------------------------------------------------------------
-// 人工所在地配置（plan 01 / c1）模型。
+// 人工所在地配置（plan 01 / c1）与回复时间推荐（plan 02 / c2）模型。
 //
 // 身份口径（I-1）：配置属于 expert_contact，不属于登录用户或 ORCID；无行即未配置，
 // 绝不以空 country 或「未知国家」占位。
@@ -62,3 +62,49 @@ data class ContactCountryTimezoneCatalog(
 
     fun find(code: String): ContactCountryEntry? = index[code]
 }
+
+// ---------------------------------------------------------------------------
+// 回复时间推荐（plan 02 / c2）
+//
+// 字段集合冻结（计划 T-3）：只有下面这一套语义，不再增加 confidence/preferredHour/
+// bestHour 等同义字段。时刻一律完整 ISO offset date-time，跨日不丢日期（I-5）。
+// ---------------------------------------------------------------------------
+
+/** 推荐模式：样本不足用完整工作时间；回复日数达到阈值后改用四桶峰值窗口（I-3）。 */
+enum class TimingMode { WORK_HOURS, REPLY_PATTERN }
+
+/** 最近来信时刻（当地 + 北京）。只回时刻：不含正文、主题、邮箱或内部 message-id（I-4）。 */
+data class TimingRecentSampleView(
+    val receivedAtBeijing: String,
+    val receivedAtLocal: String
+)
+
+/**
+ * 推荐窗口与解释字段：
+ * - 窗口端点分别为专家生效时区（local*）与北京时间（beijing*）；
+ * - `sampleCount`/`replyDayCount` 是去重后的实际条数 / 目标时区当地日期数；
+ * - `historyDays` 固定 180，`historyTruncated` 如实表示最近 1000 条上限被触及；
+ * - `calculatedAt` 是本请求取定的 now（ISO_INSTANT）。
+ */
+data class TimingRecommendationView(
+    val mode: TimingMode,
+    val localStart: String,
+    val localEnd: String,
+    val beijingStart: String,
+    val beijingEnd: String,
+    val sampleCount: Int,
+    val replyDayCount: Int,
+    val historyDays: Int,
+    val historyTruncated: Boolean,
+    val recentSamples: List<TimingRecentSampleView>,
+    val calculatedAt: String
+)
+
+/**
+ * `GET /api/mail/contact-locations/{contactId}/timing` 的响应：所在地 + 推荐。
+ * 未配置所在地时 `configured=false` 且 `recommendation=null`（绝不猜时区，I-3）。
+ */
+data class ContactLocationTimingView(
+    val location: ContactLocationView,
+    val recommendation: TimingRecommendationView?
+)

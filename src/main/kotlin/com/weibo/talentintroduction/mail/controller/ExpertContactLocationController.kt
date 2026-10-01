@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.controller
 import com.weibo.talentintroduction.auth.config.AuthSessionKeys
 import com.weibo.talentintroduction.common.controller.ApiErrorResponse
 import com.weibo.talentintroduction.mail.service.ContactCountryTimezoneCatalog
+import com.weibo.talentintroduction.mail.service.ContactLocationTimingView
 import com.weibo.talentintroduction.mail.service.ContactLocationView
 import com.weibo.talentintroduction.mail.service.ExpertContactLocationCatalog
 import com.weibo.talentintroduction.mail.service.ExpertContactLocationService
@@ -18,11 +19,13 @@ import org.springframework.web.bind.annotation.RestController
 import javax.servlet.http.HttpServletRequest
 
 /**
- * 人工所在地配置接口（plan 01 / c1；三个路由冻结给 c2/c3 逐字复用）。
+ * 人工所在地配置接口（plan 01 / c1；三个路由冻结给 c2/c3 逐字复用）与只读回复时间
+ * 推荐（plan 02 / c2）。
  *
  * - `GET /countries`：只读目录（随包快照）；
  * - `GET /{contactId}`：未配置返回 200 `configured:false`，不创建占位行；
- * - `PUT /{contactId}`：body `{countryCode, zoneId:null|string}`，返回已持久化配置。
+ * - `PUT /{contactId}`：body `{countryCode, zoneId:null|string}`，返回已持久化配置；
+ * - `GET /{contactId}/timing`：只读推荐窗口；未配置返回 `recommendation:null`。
  *
  * 身份边界（I-4）：PUT 显式要求会话 username（`AuthSessionKeys.USERNAME`），
  * 绝不从请求体接收 username；`/api/` 下另有 AuthInterceptor 兜底 401。
@@ -40,6 +43,13 @@ class ExpertContactLocationController(
 
     @GetMapping("/{contactId}")
     fun get(@PathVariable contactId: Long): ContactLocationView = service.get(contactId)
+
+    /**
+     * 只读推荐（plan 02 / c2，I-6）：不写任何表、不收信、不发信、不改处理状态；
+     * 保存所在地仍只走 [save]。
+     */
+    @GetMapping("/{contactId}/timing")
+    fun timing(@PathVariable contactId: Long): ContactLocationTimingView = service.timing(contactId)
 
     @PutMapping("/{contactId}")
     fun save(
