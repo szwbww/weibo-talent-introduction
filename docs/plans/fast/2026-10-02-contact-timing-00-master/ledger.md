@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-02/contact-timing-00-master.md
 
-- Status: RUNNING
+- Status: PAUSED_FOR_HUMAN
 - Master plan: docs/plans/2026-10-02/contact-timing-00-master.md (commit 0f96a49a667074eca32bb6037d20344044131611)
 - Amendments: A1
 - Master base: d41495e590ee2fae2eb757ffc172c2ba1e1f9212
@@ -9,19 +9,19 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-02T00:49:00+08:00
-- Current child: c1
-- Waiting role: IMPLEMENTER
+- Current child: c3
+- Waiting role: N/A
 - Agent attempt: 0
 - Last agent error: N/A
-- Pause reason: N/A
-- Resume from: N/A
+- Pause reason: c3 PLAN_CONFLICT（2026-10-02T02:20+08:00 起）：两处既有守卫测试与 c3 逐字契约结构性冲突——taskActivityCenter.test.js S-0「task-center-contract:end 之后必须为空」vs 计划要求在 styles.css 尾部追加 S-1/S-2/S-3；mailboxCalendarIntegration.test.js 全文件 zoneId 扫描 vs S-2 骨架与冻结 API 字段 zoneId。两文件均不在 c3 授权清单，需人工批准计划修订（提案 A2 收窄守卫 + A3 同步 master 并集计数 16→18）
+- Resume from: ab8e4cb82bace355c06412d260a42b5fbe6cce74（c3 base；C3Impl 已实现计划契约、未提交、未触碰两守卫；批准后新 epoch 2 收尾）
 
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | c1 | docs/plans/2026-10-02/contact-timing-01-location.md | commit:d9b237d7a018e288b87fcbb270e70bcffdcb5917 | none | 1 | LIGHT_PASS_WITH_NOTES | 9b7c04c98f669e5c3b3e27fe09502a5e90e3eafe | dc5546a6e914c23249a8b7dbadcc977e5df1b7e3 | 0 | — | dc5546a6e914c23249a8b7dbadcc977e5df1b7e3 | a1217b3a2995da6a725f8205ea4238adb1a1331c | 9 授权文件（新增）；迁移 V146；实现者 C1Impl；验证者 C1Verify：四门全 PASS，cmd1 18/0/0（基线 1）、cmd2 IT 7/0/0（基线 no-tests）、RECORD_ONLY R-1/R-2 见 verify-log |
-| c2 | docs/plans/2026-10-02/contact-timing-02-recommendation.md | commit:0f96a49a667074eca32bb6037d20344044131611 | c1 | 1 | LIGHT_PASS_WITH_NOTES | dc5546a6e914c23249a8b7dbadcc977e5df1b7e3 | ab8e4cb82bace355c06412d260a42b5fbe6cce74 | 0 | — | ab8e4cb82bace355c06412d260a42b5fbe6cce74 | — | 8 授权文件（3 扩展 + ReplyTimeRecommender/测试新增 + 3 测试扩展）；实现者 C2Impl；验证者 C2Verify：四门全 PASS，cmd1 53/0/0（基线 17/0/0）、cmd2 IT 14/0/0（基线 7/0/0）、EXPLAIN+1001 行 21ms、RECORD_ONLY R-1 见 verify-log |
-| c3 | docs/plans/2026-10-02/contact-timing-03-compact-ui.md | commit:0f96a49a667074eca32bb6037d20344044131611 | c2 | 1 | PENDING | — | — | 0 | — | — | — | 5 授权文件；index.html 当前键 20261001-email-verification-allowlist（计划文本陈旧） |
+| c2 | docs/plans/2026-10-02/contact-timing-02-recommendation.md | commit:0f96a49a667074eca32bb6037d20344044131611 | c1 | 1 | LIGHT_PASS_WITH_NOTES | dc5546a6e914c23249a8b7dbadcc977e5df1b7e3 | ab8e4cb82bace355c06412d260a42b5fbe6cce74 | 0 | — | ab8e4cb82bace355c06412d260a42b5fbe6cce74 | f912511f34164e72dc7c2c3a31f6f8eb2728b2b2 | 8 授权文件（3 扩展 + ReplyTimeRecommender/测试新增 + 3 测试扩展）；实现者 C2Impl；验证者 C2Verify：四门全 PASS，cmd1 53/0/0（基线 17/0/0）、cmd2 IT 14/0/0（基线 7/0/0）、EXPLAIN+1001 行 21ms、RECORD_ONLY R-1 见 verify-log |
+| c3 | docs/plans/2026-10-02/contact-timing-03-compact-ui.md | commit:0f96a49a667074eca32bb6037d20344044131611 | c2 | 1 | IMPLEMENTING | ab8e4cb82bace355c06412d260a42b5fbe6cce74 | — | 0 | — | — | — | 5 授权文件；index.html 当前键 20261001-email-verification-allowlist（计划文本陈旧，目标键 20261002-contact-timing 不变）；实现者 C3Impl |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
