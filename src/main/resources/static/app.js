@@ -18079,8 +18079,10 @@ function renderBatchConfigRow(c) {
     // 不并入 scopeParts，否则「无限制」分支会被 pill 顶掉（V9/W9 回归约束）。
     scopeHtml += '<span class="batch-task-scope-line">' + batchGatePillHtml(c) + '</span>';
     // 03 T2（S-1）：邮箱验证 pill 追加在门禁 pill 旁，同样恒输出一行（两态：开/关）。
+    // S-3：开启时在同一 scope 行内追加本次放行结果；关闭时不消费列表，维持原「关」pill。
     scopeHtml += '<span class="batch-task-scope-line">' + (c.emailVerificationEnabled === true
-        ? '<span class="batch-gate-pill">邮箱验证 · 开</span>'
+        ? '<span class="batch-gate-pill">邮箱验证 · 开</span>' +
+            escapeHtml(emailVerificationAllowedStatesScopeText(c.emailVerificationAllowedStates))
         : '<span class="batch-gate-pill is-off">邮箱验证 · 关</span>') + '</span>';
     scopeHtml += '<span class="batch-task-scope-line">' + (c.excludeVerifiedUnavailableEmails === true
         ? '<span class="batch-gate-pill">过滤已验证不可用邮箱 · 开</span>'
@@ -18235,6 +18237,10 @@ function showBatchConfigEditor(config) {
     if (emailVerificationCheckbox) {
         emailVerificationCheckbox.checked = Boolean(config && config.emailVerificationEnabled === true);
     }
+    // I-1：新建只勾 deliverable；编辑/旧响应缺字段按三态回显，每次都全量重写，不继承上次编辑值。
+    fillEmailVerificationAllowedStates("editor", config
+        ? config.emailVerificationAllowedStates
+        : ["deliverable"]);
     var excludeVerifiedUnavailableCheckbox = document.getElementById("batchConfigEditorExcludeVerifiedUnavailableEmails");
     if (excludeVerifiedUnavailableCheckbox) {
         excludeVerifiedUnavailableCheckbox.checked = !config || config.excludeVerifiedUnavailableEmails === true;
@@ -19011,8 +19017,8 @@ async function refreshBatchGateState(kind) {
 // 不新增 CSS。只有介绍邮件支持；材料提醒在 UI 层禁用并置回 false（后端另有同口径 require）。
 
 var BATCH_EMAIL_VERIFICATION_HINT = {
-    editor: "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。",
-    manual: "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。仅影响本次执行。"
+    editor: "按下方勾选结果放行；不可投递始终跳过并标记邮箱异常。单邮箱验证未完成、超时或响应异常时暂缓；鉴权、额度、限流或服务故障停止执行。会消耗 Emailable 额度。",
+    manual: "按下方勾选结果放行；不可投递始终跳过并标记邮箱异常。单邮箱验证未完成、超时或响应异常时暂缓；鉴权、额度、限流或服务故障停止执行。会消耗 Emailable 额度。仅影响本次执行。"
 };
 var BATCH_EMAIL_VERIFICATION_UNSUPPORTED_HINT = "仅介绍邮件支持发送前验证";
 
@@ -19039,8 +19045,89 @@ function emailVerificationToggleChecked(kind) {
 
 function updateEmailVerificationToggleLabel(kind) {
     var label = document.getElementById(emailVerificationLabelId(kind));
-    if (!label) return;
-    label.textContent = emailVerificationToggleChecked(kind) ? "已开启" : "已关闭";
+    if (label) label.textContent = emailVerificationToggleChecked(kind) ? "已开启" : "已关闭";
+    // I-2：总开关状态是放行组可用性的唯一来源，这里统一收敛（关闭只禁用，绝不清空勾选）。
+    updateEmailVerificationPolicyState(kind);
+}
+
+/* ── 放行结果白名单（03 T3 / I-1 / I-2 / S-2） ─────────────────────────────────────
+   三态固定顺序 deliverable,risky,unknown：DOM 顺序、读取顺序与请求顺序同源，
+   不允许 undeliverable（后端同样永不放行）。 */
+
+function batchEmailVerificationAllowedStates() {
+    return ["deliverable", "risky", "unknown"];
+}
+
+function emailVerificationAllowedStateLabel(state) {
+    if (state === "deliverable") return "可投递";
+    if (state === "risky") return "有风险";
+    if (state === "unknown") return "未知";
+    return String(state);
+}
+
+function emailVerificationPolicyFieldId(kind) {
+    return kind === "editor" ? "editorFieldEmailVerificationAllowedStates" : "manualFieldEmailVerificationAllowedStates";
+}
+
+function emailVerificationPolicyOptionId(kind, state) {
+    var prefix = kind === "editor" ? "batchConfigEditorAllow" : "batchManualAllow";
+    if (state === "deliverable") return prefix + "Deliverable";
+    if (state === "risky") return prefix + "Risky";
+    return prefix + "Unknown";
+}
+
+/* I-1/I-3：固定顺序去重克隆；`null`/缺字段 = 三态放行（旧任务兼容），`[]` 原样保留（明确不放行任何结果）。 */
+function normalizeEmailVerificationAllowedStates(raw) {
+    if (!Array.isArray(raw)) return batchEmailVerificationAllowedStates();
+    return batchEmailVerificationAllowedStates().filter(function(state) {
+        return raw.indexOf(state) >= 0;
+    });
+}
+
+/* I-1/I-2：只读勾选项；关闭验证只是 disabled，选择值仍留在草稿里，所以这里不看 disabled。 */
+function readEmailVerificationAllowedStates(kind) {
+    return batchEmailVerificationAllowedStates().filter(function(state) {
+        var el = document.getElementById(emailVerificationPolicyOptionId(kind, state));
+        return Boolean(el && el.checked === true);
+    });
+}
+
+/* I-1：三个框每次全量写入（含 false），绝不沿用上一次编辑/上一次来源的残留勾选。 */
+function fillEmailVerificationAllowedStates(kind, states) {
+    var normalized = normalizeEmailVerificationAllowedStates(states);
+    batchEmailVerificationAllowedStates().forEach(function(state) {
+        var el = document.getElementById(emailVerificationPolicyOptionId(kind, state));
+        if (el) el.checked = normalized.indexOf(state) >= 0;
+    });
+}
+
+/* I-2：组可用性 = 总开关开启且模板支持；禁用保留 checked 与草稿值。 */
+function updateEmailVerificationPolicyState(kind) {
+    var field = document.getElementById(emailVerificationPolicyFieldId(kind));
+    var toggle = document.getElementById(emailVerificationToggleId(kind));
+    var usable = Boolean(toggle && toggle.checked === true && toggle.disabled !== true);
+    if (field) {
+        if (usable) field.classList.remove("is-disabled");
+        else field.classList.add("is-disabled");
+    }
+    batchEmailVerificationAllowedStates().forEach(function(state) {
+        var el = document.getElementById(emailVerificationPolicyOptionId(kind, state));
+        if (el) el.disabled = !usable;
+    });
+}
+
+/* 空数组不是「不限」，是明确不放行任何验证结果（I-1/I-3）。 */
+function emailVerificationAllowedStatesText(states) {
+    var normalized = normalizeEmailVerificationAllowedStates(states);
+    if (normalized.length === 0) return "不放行任何结果";
+    return normalized.map(emailVerificationAllowedStateLabel).join("、");
+}
+
+/* 任务列表 scope 行（S-3）：全空显示「放行：无」。 */
+function emailVerificationAllowedStatesScopeText(states) {
+    var normalized = normalizeEmailVerificationAllowedStates(states);
+    if (normalized.length === 0) return "放行：无";
+    return "放行：" + normalized.map(emailVerificationAllowedStateLabel).join("、");
 }
 
 /* 生效规则（I-1）：材料提醒禁用并**显式置回 false**；介绍邮件恢复可操作但不自动开启
@@ -19050,7 +19137,11 @@ function refreshEmailVerificationState(kind) {
     var field = document.getElementById(emailVerificationFieldId(kind));
     var checkbox = document.getElementById(emailVerificationToggleId(kind));
     var hint = document.getElementById(emailVerificationHintId(kind));
-    if (!field || !checkbox || !hint) return;
+    if (!field || !checkbox || !hint) {
+        // I-2：骨架缺失时也要把放行组收敛到不可用，不留下半套可点击控件。
+        updateEmailVerificationPolicyState(kind);
+        return;
+    }
     var templateEl = document.getElementById(kind === "editor" ? "batchConfigEditorTemplateId" : "batchManualTemplateId");
     var rawTemplate = templateEl ? templateEl.value : "";
     var mailType = resolveBatchTemplateMailType(rawTemplate ? Number(rawTemplate) : null);
@@ -19114,6 +19205,8 @@ function buildConfigEditorRecipientSnapshot() {
         researchDirectionFilter: val("batchConfigEditorResearchDirectionFilter") || "ANY",
         gateFilterEnabled: gateToggleChecked("editor"),
         emailVerificationEnabled: Boolean(emailVerificationEl && emailVerificationEl.checked),
+        // I-1：与保存同一读取口径（固定顺序、含空数组），预估只携带不额外请求供应商。
+        emailVerificationAllowedStates: readEmailVerificationAllowedStates("editor"),
         excludeVerifiedUnavailableEmails: document.getElementById("batchConfigEditorExcludeVerifiedUnavailableEmails")?.checked === true,
         templateId: templateId
     };
@@ -19140,6 +19233,7 @@ function buildManualExecutionSnapshot() {
         gateFilterEnabled: values.gateFilterEnabled,
         // I-1：与预估/执行共用同一完整快照，手动覆盖不回写原配置。
         emailVerificationEnabled: values.emailVerificationEnabled,
+        emailVerificationAllowedStates: values.emailVerificationAllowedStates,
         excludeVerifiedUnavailableEmails: values.excludeVerifiedUnavailableEmails,
         templateId: values.templateId
     };
@@ -19274,6 +19368,8 @@ async function saveBatchConfigEditor() {
         researchDirectionFilter: val("batchConfigEditorResearchDirectionFilter") || "ANY",
         gateFilterEnabled: gateToggleChecked("editor"),
         emailVerificationEnabled: Boolean(emailVerificationEl && emailVerificationEl.checked),
+        // I-1：显式数组往返（含 `[]`）；不因空数组回退默认三态。
+        emailVerificationAllowedStates: readEmailVerificationAllowedStates("editor"),
         templateId: templateId
     };
 
@@ -19368,6 +19464,8 @@ function deepCloneConfig(c) {
         researchDirectionFilter: c.researchDirectionFilter || "ANY",
         gateFilterEnabled: c.gateFilterEnabled === true,
         emailVerificationEnabled: c.emailVerificationEnabled === true,
+        // I-3：数组 slice 克隆（固定顺序），不与被克隆的配置共享引用；缺字段按三态兼容。
+        emailVerificationAllowedStates: normalizeEmailVerificationAllowedStates(c.emailVerificationAllowedStates),
         excludeVerifiedUnavailableEmails: c.excludeVerifiedUnavailableEmails === true,
         roundSize: c.roundSize || 50,
         roundsPerRun: c.roundsPerRun || 1,
@@ -19395,6 +19493,8 @@ function fillManualFormDefaults() {
         researchDirectionFilter: "ANY",
         gateFilterEnabled: false,
         emailVerificationEnabled: false,
+        // I-1：独立手动默认只放行 deliverable（与新建任务同口径，不同于旧配置的三态）。
+        emailVerificationAllowedStates: ["deliverable"],
         roundSize: 50,
         roundsPerRun: 1,
         perMailIntervalMs: 1000,
@@ -19440,6 +19540,8 @@ function fillManualFormFromDraft() {
     // I-1：手动草稿回填后由同一处收口材料提醒的禁用/置回 false（选源、还原、清空都走这里）。
     var emailVerificationCheckbox = document.getElementById("batchManualEmailVerification");
     if (emailVerificationCheckbox) emailVerificationCheckbox.checked = Boolean(d.emailVerificationEnabled);
+    // I-1：来源数组回填；三个框全量重写（来源切换不留残留）。
+    fillEmailVerificationAllowedStates("manual", d.emailVerificationAllowedStates);
 
     fillBatchManualTemplateSelector(d.templateId);
     if (typeof refreshEmailVerificationState === "function") refreshEmailVerificationState("manual");
@@ -19521,6 +19623,8 @@ function readManualFormValues() {
         senderAccountCodes: typeof readBatchMultiPickerValue === "function" ? readBatchMultiPickerValue("batchManualSenderAccounts") : [],
         gateFilterEnabled: Boolean(gateCheckboxEl && gateCheckboxEl.checked),
         emailVerificationEnabled: Boolean(emailVerificationEl && emailVerificationEl.checked),
+        // I-1/I-2：只读勾选项；关闭验证只是禁用控件，选择值仍随本次执行提交。
+        emailVerificationAllowedStates: readEmailVerificationAllowedStates("manual"),
         excludeVerifiedUnavailableEmails: document.getElementById("batchManualExcludeVerifiedUnavailableEmails")?.checked === true,
         roundSize: parseNum("batchManualRoundSize"),
         roundsPerRun: parseNum("batchManualRoundsPerRun"),
@@ -19545,6 +19649,8 @@ function normalizeManualSnapshot(v) {
         senderAccountCodes: (Array.isArray(v.senderAccountCodes) ? v.senderAccountCodes : []).map(function(s){return String(s).trim();}).filter(Boolean).slice().sort(),
         gateFilterEnabled: Boolean(v.gateFilterEnabled),
         emailVerificationEnabled: Boolean(v.emailVerificationEnabled),
+        // I-1/I-3：固定顺序去重 → 差异按集合比较；`[]` 保持空集。
+        emailVerificationAllowedStates: normalizeEmailVerificationAllowedStates(v.emailVerificationAllowedStates),
         roundSize: Number.isFinite(v.roundSize) ? v.roundSize : null,
         roundsPerRun: Number.isFinite(v.roundsPerRun) ? v.roundsPerRun : null,
         perMailIntervalMs: Number.isFinite(v.perMailIntervalMs) ? v.perMailIntervalMs : null,
@@ -19556,6 +19662,7 @@ function normalizeManualSnapshot(v) {
 function formatManualDiffValue(key, value) {
     if (key === "gateFilterEnabled") return value ? "开启" : "关闭";
     if (key === "emailVerificationEnabled") return value ? "开启" : "关闭";
+    if (key === "emailVerificationAllowedStates") return emailVerificationAllowedStatesText(value);
     if (key === "excludeVerifiedUnavailableEmails") return value ? "开启" : "关闭";
     if (key === "templateId") {
         if (!value) return "系统默认介绍邮件模板";
@@ -19611,6 +19718,8 @@ function computeManualDiffs() {
         { key: "senderAccountCodes", label: "发件邮箱" },
         { key: "gateFilterEnabled", label: "邮件模版门禁过滤" },
         { key: "emailVerificationEnabled", label: "发送前验证邮箱" },
+        // S-3：独立字段行，不与旧开关共用 fieldMap key / 差异 DOM。
+        { key: "emailVerificationAllowedStates", label: "允许发送的验证结果" },
         { key: "roundsPerRun", label: "执行轮次" },
         { key: "roundSize", label: "每轮数量" },
         { key: "perMailIntervalMs", label: "每封间隔" },
@@ -19662,6 +19771,7 @@ function computeAndRenderDiffs() {
         senderAccountCodes: "manualFieldSenderAccounts",
         gateFilterEnabled: "manualFieldGateFilter",
         emailVerificationEnabled: "manualFieldEmailVerification",
+        emailVerificationAllowedStates: "manualFieldEmailVerificationAllowedStates",
         excludeVerifiedUnavailableEmails: "manualFieldExcludeVerifiedUnavailableEmails",
         roundsPerRun: "manualFieldRoundsPerRun",
         roundSize: "manualFieldRoundSize",
@@ -19692,7 +19802,7 @@ function computeAndRenderDiffs() {
 
 function clearAllDiffMarkers() {
     var fields = ["manualFieldTemplate", "manualFieldFunnelLevel", "manualFieldTags", "manualFieldRegions", "manualFieldEmailDomain",
-        "manualFieldDiscipline", "manualFieldResearchDirectionFilter", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldSenderAccounts", "manualFieldGateFilter", "manualFieldEmailVerification", "manualFieldExcludeVerifiedUnavailableEmails", "manualFieldRoundsPerRun", "manualFieldRoundSize",
+        "manualFieldDiscipline", "manualFieldResearchDirectionFilter", "manualFieldOperatorStatus", "manualFieldExpertTypes", "manualFieldSenderAccounts", "manualFieldGateFilter", "manualFieldEmailVerification", "manualFieldEmailVerificationAllowedStates", "manualFieldExcludeVerifiedUnavailableEmails", "manualFieldRoundsPerRun", "manualFieldRoundSize",
         "manualFieldPerMailIntervalSec", "manualFieldPerRoundIntervalSec", "manualFieldSelfCheckTtlMin"];
     fields.forEach(function(id) {
         var el = document.getElementById(id);
@@ -19718,6 +19828,10 @@ function showBatchManualConfirm() {
     // I-1：确认页显示本次执行的开关值（同源读取勾选状态，不回写原配置）。
     var emailVerificationEl = document.getElementById("batchManualEmailVerification");
     var emailVerificationText = emailVerificationEl && emailVerificationEl.checked ? "开启" : "关闭";
+    // I-3：关闭验证时不消费放行列表，显示「未启用」；开启时显示本次有效选择（空集不是「不限」）。
+    var allowedStatesText = emailVerificationEl && emailVerificationEl.checked
+        ? emailVerificationAllowedStatesText(readEmailVerificationAllowedStates("manual"))
+        : "未启用";
     var excludeVerifiedUnavailableEl = document.getElementById("batchManualExcludeVerifiedUnavailableEmails");
     var excludeVerifiedUnavailableText = excludeVerifiedUnavailableEl && excludeVerifiedUnavailableEl.checked ? "开启" : "关闭";
 
@@ -19740,6 +19854,7 @@ function showBatchManualConfirm() {
             '<strong>' + escapeHtml(source.configName) + '</strong><br>' +
             '轮次: ' + source.roundsPerRun + ' 轮 · 每轮: ' + source.roundSize + ' 封<br>' +
             '发送前验证邮箱: ' + emailVerificationText + '<br>' +
+            '允许发送的验证结果：' + escapeHtml(allowedStatesText) + '<br>' +
             '排除已验证不可用邮箱: ' + excludeVerifiedUnavailableText + '<br>' +
             '来源配置: ' + escapeHtml(source.configName) +
             '</div>';
@@ -19750,6 +19865,7 @@ function showBatchManualConfirm() {
             '未关联定时配置，本次参数不会保存。<br>' +
             '每轮: ' + escapeHtml(String(document.getElementById("batchManualRoundSize")?.value || "50")) + ' 封<br>' +
             '发送前验证邮箱: ' + emailVerificationText + '<br>' +
+            '允许发送的验证结果：' + escapeHtml(allowedStatesText) + '<br>' +
             '排除已验证不可用邮箱: ' + excludeVerifiedUnavailableText + '<br>' +
             '</div>' +
             '<p class="batch-manual-confirm-warning">此为独立执行，不关联任何定时配置。</p>';
@@ -20253,6 +20369,8 @@ var BATCH_EMAIL_VERIFICATION_ERROR_LABELS = {
 };
 var BATCH_EMAIL_VERIFICATION_SEND_REASON_LABELS = {
     EMAIL_VERIFICATION_REJECTED: "验证未通过，未发送",
+    // I-4：本次未勾选该验证结果导致的跳过 —— 不是坏邮箱，必须与「未通过」区分。
+    EMAIL_VERIFICATION_POLICY_SKIP: "未勾选该验证结果，本次未发送",
     EMAIL_VERIFICATION_DEFERRED: "邮箱验证暂缓，本次未发送",
     SEND_EXCEPTION: "发送异常",
     TEMPLATE_RENDER_FAILED: "模板渲染失败",
@@ -20273,6 +20391,8 @@ var BATCH_EMAIL_VERIFICATION_TAG_ERROR_LABELS = {
 
 function emailVerificationDecisionText(row, running) {
     if (row.decision === "PASS") return "按策略放行";
+    // I-4：策略跳过优先按本次放行列表解释；历史 EMAIL_VERIFICATION_REJECTED 仍是「未通过」。
+    if (row.decision === "SKIP" && row.sendReason === "EMAIL_VERIFICATION_POLICY_SKIP") return "按策略跳过";
     if (row.decision === "SKIP") return "未通过";
     if (row.decision === "ERROR" && row.sendReason === "EMAIL_VERIFICATION_DEFERRED") return "验证暂缓";
     if (row.decision === "ERROR") return "验证服务异常";

@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20260930-manual-template-reference">
-    <link rel="stylesheet" href="expert-materials.css?v=20260930-manual-template-reference">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20260930-manual-template-reference">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20260930-manual-template-reference">
-    <link rel="stylesheet" href="world-clock.css?v=20260930-manual-template-reference">
+    <link rel="stylesheet" href="styles.css?v=20261001-email-verification-allowlist">
+    <link rel="stylesheet" href="expert-materials.css?v=20261001-email-verification-allowlist">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261001-email-verification-allowlist">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261001-email-verification-allowlist">
+    <link rel="stylesheet" href="world-clock.css?v=20261001-email-verification-allowlist">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -1461,8 +1461,18 @@
                                     <span class="batch-task-status-switch" aria-hidden="true"></span>
                                     <span class="batch-task-status-label" id="batchConfigEditorEmailVerificationLabel">已关闭</span>
                                 </label>
-                                <span class="batch-gate-hint" id="batchConfigEditorEmailVerificationHint">仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。</span>
+                                <span class="batch-gate-hint" id="batchConfigEditorEmailVerificationHint">按下方勾选结果放行；不可投递始终跳过并标记邮箱异常。单邮箱验证未完成、超时或响应异常时暂缓；鉴权、额度、限流或服务故障停止执行。会消耗 Emailable 额度。</span>
                             </div>
+                        </div>
+                        <div class="batch-config-field batch-gate-field batch-email-policy-field" id="editorFieldEmailVerificationAllowedStates">
+                            <span class="batch-config-field-label" id="batchConfigEditorEmailVerificationAllowedStatesLabel">允许发送的验证结果</span>
+                            <div class="batch-email-policy-options" role="group" aria-labelledby="batchConfigEditorEmailVerificationAllowedStatesLabel" aria-describedby="batchConfigEditorEmailVerificationPolicyHint">
+                                <label class="batch-email-policy-option"><input type="checkbox" id="batchConfigEditorAllowDeliverable" value="deliverable"><span>可投递 <small>deliverable</small></span></label>
+                                <label class="batch-email-policy-option"><input type="checkbox" id="batchConfigEditorAllowRisky" value="risky"><span>有风险 <small>risky</small></span></label>
+                                <label class="batch-email-policy-option"><input type="checkbox" id="batchConfigEditorAllowUnknown" value="unknown"><span>未知 <small>unknown</small></span></label>
+                            </div>
+                            <div class="batch-email-policy-fixed">不可投递（undeliverable）始终跳过，不可放行。</div>
+                            <div class="batch-email-policy-hint" id="batchConfigEditorEmailVerificationPolicyHint">仅在发送前验证开启时生效；未勾选结果跳过并记入日志，不占成功发信额度。全不选时不放行任何验证结果。</div>
                         </div>
                         <label class="batch-config-field">
                             <span class="batch-config-field-label">执行轮次（轮）</span>
@@ -1723,8 +1733,20 @@
                                 <span class="batch-task-status-switch" aria-hidden="true"></span>
                                 <span class="batch-task-status-label" id="batchManualEmailVerificationLabel">已关闭</span>
                             </label>
-                            <span class="batch-gate-hint" id="batchManualEmailVerificationHint">仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。仅影响本次执行。</span>
+                            <span class="batch-gate-hint" id="batchManualEmailVerificationHint">按下方勾选结果放行；不可投递始终跳过并标记邮箱异常。单邮箱验证未完成、超时或响应异常时暂缓；鉴权、额度、限流或服务故障停止执行。会消耗 Emailable 额度。仅影响本次执行。</span>
                         </div>
+                        <span class="batch-config-diff-badge" hidden>已修改</span>
+                        <div class="batch-config-diff-original" hidden></div>
+                    </div>
+                    <div class="batch-config-field batch-gate-field batch-email-policy-field" id="manualFieldEmailVerificationAllowedStates">
+                        <span class="batch-config-field-label" id="batchManualEmailVerificationAllowedStatesLabel">允许发送的验证结果</span>
+                        <div class="batch-email-policy-options" role="group" aria-labelledby="batchManualEmailVerificationAllowedStatesLabel" aria-describedby="batchManualEmailVerificationPolicyHint">
+                            <label class="batch-email-policy-option"><input type="checkbox" id="batchManualAllowDeliverable" value="deliverable"><span>可投递 <small>deliverable</small></span></label>
+                            <label class="batch-email-policy-option"><input type="checkbox" id="batchManualAllowRisky" value="risky"><span>有风险 <small>risky</small></span></label>
+                            <label class="batch-email-policy-option"><input type="checkbox" id="batchManualAllowUnknown" value="unknown"><span>未知 <small>unknown</small></span></label>
+                        </div>
+                        <div class="batch-email-policy-fixed">不可投递（undeliverable）始终跳过，不可放行。</div>
+                        <div class="batch-email-policy-hint" id="batchManualEmailVerificationPolicyHint">仅在发送前验证开启时生效；未勾选结果跳过并记入日志，不占成功发信额度。全不选时不放行任何验证结果。</div>
                         <span class="batch-config-diff-badge" hidden>已修改</span>
                         <div class="batch-config-diff-original" hidden></div>
                     </div>
@@ -2320,11 +2342,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20260930-manual-template-reference"></script>
-<script src="expert-materials.js?v=20260930-manual-template-reference"></script>
-<script src="meeting-confirmation.js?v=20260930-manual-template-reference"></script>
-<script src="mailbox-chat.js?v=20260930-manual-template-reference"></script>
-<script src="app.js?v=20260930-manual-template-reference"></script>
-<script src="world-clock.js?v=20260930-manual-template-reference"></script>
+<script src="trust-reply-workbench.js?v=20261001-email-verification-allowlist"></script>
+<script src="expert-materials.js?v=20261001-email-verification-allowlist"></script>
+<script src="meeting-confirmation.js?v=20261001-email-verification-allowlist"></script>
+<script src="mailbox-chat.js?v=20261001-email-verification-allowlist"></script>
+<script src="app.js?v=20261001-email-verification-allowlist"></script>
+<script src="world-clock.js?v=20261001-email-verification-allowlist"></script>
 </body>
 </html>

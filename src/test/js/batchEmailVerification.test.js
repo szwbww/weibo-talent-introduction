@@ -49,6 +49,25 @@ const VERIFICATION_DECLARATIONS = [
     "BATCH_EMAIL_VERIFICATION_TAG_ERROR_LABELS"
 ].map(extractDeclaration);
 
+/** c3: 放行结果白名单 helper —— 由被抽取的 app.js 函数直接调用，必须与宿主函数一起加载。 */
+const EMAIL_POLICY_HELPERS = [
+    "batchEmailVerificationAllowedStates",
+    "emailVerificationAllowedStateLabel",
+    "emailVerificationPolicyFieldId",
+    "emailVerificationPolicyOptionId",
+    "normalizeEmailVerificationAllowedStates",
+    "readEmailVerificationAllowedStates",
+    "fillEmailVerificationAllowedStates",
+    "updateEmailVerificationPolicyState",
+    "emailVerificationAllowedStatesText",
+    "emailVerificationAllowedStatesScopeText"
+];
+
+function loadEmailPolicyHelpers(sandbox) {
+    EMAIL_POLICY_HELPERS.forEach((name) => vm.runInContext(extractFn(name), sandbox));
+    return sandbox;
+}
+
 const VERIFICATION_FUNCTIONS = [
     "emailVerificationFieldId",
     "emailVerificationToggleId",
@@ -57,6 +76,7 @@ const VERIFICATION_FUNCTIONS = [
     "emailVerificationToggleChecked",
     "updateEmailVerificationToggleLabel",
     "refreshEmailVerificationState",
+    ...EMAIL_POLICY_HELPERS,
     "emailVerificationDecisionText",
     "emailVerificationDecisionBadgeClass",
     "emailVerificationReasonText",
@@ -217,6 +237,7 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
             }
         };
         vm.createContext(sandbox);
+        loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("saveBatchConfigEditor"), sandbox);
         vm.runInContext(extractFn("buildConfigEditorRecipientSnapshot"), sandbox);
 
@@ -298,7 +319,7 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
         assert.strictEqual(checkbox.checked, false, "re-enabling must never silently turn verification on");
         assert.strictEqual(elements.get("editorFieldEmailVerification").classList.contains("is-disabled"), false);
         assert.strictEqual(elements.get("batchConfigEditorEmailVerificationHint").textContent,
-            "仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。");
+            "按下方勾选结果放行；不可投递始终跳过并标记邮箱异常。单邮箱验证未完成、超时或响应异常时暂缓；鉴权、额度、限流或服务故障停止执行。会消耗 Emailable 额度。");
     });
 
     it("V4: the manual draft keeps the switch and reports it as a diff against the source", () => {
@@ -312,6 +333,7 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
             resolveBatchTemplateMailType: () => "INTRODUCTION"
         };
         vm.createContext(sandbox);
+        loadEmailPolicyHelpers(sandbox);
         [
             "deepCloneConfig",
             "normalizeManualSnapshot",
@@ -332,10 +354,15 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
             templateId: null, funnelLevel: null, tags: [], regions: [], emailDomains: [],
             discipline: null, researchDirectionFilter: "ANY", operatorStatuses: [],
             expertTypes: [], senderAccountCodes: [], gateFilterEnabled: false,
+            emailVerificationAllowedStates: ["deliverable", "risky", "unknown"],
             roundSize: null, roundsPerRun: null, perMailIntervalMs: null,
             perRoundIntervalMs: null, selfCheckTtlMinutes: null
         };
         sandbox.batchTaskState.manualSource = source;
+        // 表单已按来源回填（三态），放行组与本用例无关，必须保持与来源一致以免多出一条差异。
+        ["batchManualAllowDeliverable", "batchManualAllowRisky", "batchManualAllowUnknown"].forEach((id) => {
+            elements.get(id).checked = true;
+        });
 
         assert.strictEqual(sandbox.computeManualDiffs().length, 0, "identical values must not read as a diff");
 
@@ -404,6 +431,7 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
             computeManualDiffs: () => []
         };
         vm.createContext(sandbox);
+        loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("showBatchManualConfirm"), sandbox);
 
         elements.get("batchManualEmailVerification").checked = true;
@@ -431,6 +459,7 @@ describe("batch email verification switch propagation (I-1 / S-1)", () => {
             batchGatePillHtml: () => '<span class="batch-gate-pill">门禁过滤 · 开</span>'
         };
         vm.createContext(sandbox);
+        loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("renderBatchConfigRow"), sandbox);
 
         const base = { id: 1, configName: "任务", mailType: "INTRODUCTION", cron: null, nextFireTime: null, lastExecutedAt: null };
@@ -836,7 +865,7 @@ describe("batch email verification static contract (S-1 / S-2 / I-5)", () => {
         });
         assert.strictEqual(indexSource.split('<span class="batch-config-field-label">发送前验证邮箱（Emailable）</span>').length - 1, 2,
             "both panels must label the switch identically");
-        assert.ok(indexSource.includes("仅不可投递（undeliverable）跳过并标记邮箱异常；risky / unknown 按策略放行。单邮箱验证未完成、超时或响应异常时暂缓该邮箱；鉴权、额度、限流或服务故障停止本次执行。会消耗 Emailable 额度。仅影响本次执行。"),
+        assert.ok(indexSource.includes("按下方勾选结果放行；不可投递始终跳过并标记邮箱异常。单邮箱验证未完成、超时或响应异常时暂缓；鉴权、额度、限流或服务故障停止执行。会消耗 Emailable 额度。仅影响本次执行。"),
             "the manual hint must spell out local defer and global stop behavior");
         ["batchConfigEditorEmailVerification", "batchManualEmailVerification"].forEach((id) => {
             const at = indexSource.indexOf('id="' + id + '"');
@@ -969,6 +998,7 @@ function exclusionFilterSandbox(extra = {}) {
         "baseHintHtml",
         "refreshRecipientPreview"
     ].forEach((name) => vm.runInContext(extractFn(name), sandbox));
+    loadEmailPolicyHelpers(sandbox);
     return { sandbox, elements };
 }
 
@@ -1180,5 +1210,399 @@ describe("verified-unavailable email filter UI (04-filter-ui)", () => {
         assert.strictEqual(elements.get("preview").textContent, "预估失败：ES unavailable");
         assert.ok(!elements.get("preview").innerHTML.includes("已排除不可用邮箱"),
             "failed preview must not retain a stale count");
+    });
+});
+
+// ── c3：Emailable 放行结果白名单（I-1～I-4 / S-1～S-3） ────────────────────────────────
+
+/** 只加载放行组 helper + 一个 DOM stub store 的最小 sandbox。 */
+function policySandbox(extra = {}) {
+    const elements = createElementStore();
+    const sandbox = Object.assign({
+        document: { getElementById: (id) => (extra.missingElements || []).includes(id) ? null : elements.get(id) }
+    }, extra.extra || {});
+    vm.createContext(sandbox);
+    loadEmailPolicyHelpers(sandbox);
+    return { sandbox, elements };
+}
+
+describe("batch email verification allow-list (c3 / I-1 / I-2 / I-3 / I-4 / S-2)", () => {
+    it("S-2: both panels carry one real three-state checkbox group with unique ids and the declared CSS", () => {
+        const ids = [
+            "editorFieldEmailVerificationAllowedStates", "batchConfigEditorEmailVerificationAllowedStatesLabel",
+            "batchConfigEditorEmailVerificationPolicyHint", "manualFieldEmailVerificationAllowedStates",
+            "batchManualEmailVerificationAllowedStatesLabel", "batchManualEmailVerificationPolicyHint"
+        ];
+        ids.forEach((id) => {
+            assert.strictEqual(indexSource.split('id="' + id + '"').length - 1, 1,
+                id + " must exist exactly once in the real index.html");
+        });
+        [["batchConfigEditorAllow", "editor"], ["batchManualAllow", "manual"]].forEach(([prefix]) => {
+            [["Deliverable", "deliverable"], ["Risky", "risky"], ["Unknown", "unknown"]].forEach(([suffix, value]) => {
+                const id = prefix + suffix;
+                assert.strictEqual(indexSource.split('id="' + id + '"').length - 1, 1,
+                    id + " must exist exactly once in the real index.html");
+                const at = indexSource.indexOf('id="' + id + '"');
+                const tag = indexSource.slice(indexSource.lastIndexOf("<", at), indexSource.indexOf(">", at));
+                assert.ok(tag.includes('type="checkbox"'), id + " must be a real checkbox");
+                assert.ok(tag.includes('value="' + value + '"'), id + " must carry its literal state value");
+                assert.ok(!tag.includes("style="), id + " must not use inline styles");
+            });
+        });
+        assert.strictEqual((indexSource.match(/class="batch-email-policy-option"/g) || []).length, 6,
+            "exactly two groups of three options");
+        assert.ok(!indexSource.includes("AllowUndeliverable"),
+            "undeliverable must never be a selectable option");
+        ["batchConfigEditorEmailVerificationAllowedStatesLabel", "batchManualEmailVerificationAllowedStatesLabel"].forEach((labelId, i) => {
+            const hintId = i === 0 ? "batchConfigEditorEmailVerificationPolicyHint" : "batchManualEmailVerificationPolicyHint";
+            assert.ok(indexSource.includes('role="group" aria-labelledby="' + labelId + '" aria-describedby="' + hintId + '"'),
+                "the options must be a labelled group");
+        });
+        assert.strictEqual(indexSource.split("不可投递（undeliverable）始终跳过，不可放行。").length - 1, 2);
+        assert.strictEqual(indexSource.split("仅在发送前验证开启时生效；未勾选结果跳过并记入日志，不占成功发信额度。全不选时不放行任何验证结果。").length - 1, 2,
+            "both panels must state that the list only applies while verification is on");
+
+        const block = [
+            ".batch-email-policy-options {",
+            "  display: flex;",
+            "  flex-wrap: wrap;",
+            "  gap: 9px 18px;",
+            "  align-items: center;",
+            "}",
+            ".batch-config-field .batch-email-policy-option {",
+            "  display: inline-flex;",
+            "  flex-direction: row;",
+            "  align-items: center;",
+            "  gap: 7px;",
+            "  min-height: 34px;",
+            "  color: var(--text-main);",
+            "  font-size: 13px;",
+            "  cursor: pointer;",
+            "}",
+            ".batch-email-policy-option input[type=\"checkbox\"] {",
+            "  width: 16px;",
+            "  height: 16px;",
+            "  min-height: 16px;",
+            "  margin: 0;",
+            "  padding: 0;",
+            "  accent-color: var(--primary);",
+            "}",
+            ".batch-email-policy-option input[type=\"checkbox\"]:focus-visible {",
+            "  outline: 2px solid var(--primary);",
+            "  outline-offset: 2px;",
+            "}",
+            ".batch-email-policy-option small {",
+            "  color: var(--text-muted);",
+            "  font-size: 11px;",
+            "}",
+            ".batch-email-policy-fixed {",
+            "  margin-top: 9px;",
+            "  color: var(--text-muted);",
+            "  font-size: 11px;",
+            "}",
+            ".batch-email-policy-hint {",
+            "  margin-top: 9px;",
+            "  color: var(--text-muted);",
+            "  font-size: 11px;",
+            "  line-height: 1.6;",
+            "}",
+            ".batch-email-policy-field.is-disabled {",
+            "  opacity: .52;",
+            "}",
+            ".batch-email-policy-field.is-disabled .batch-email-policy-option,",
+            ".batch-email-policy-field.is-disabled input[type=\"checkbox\"] {",
+            "  cursor: not-allowed;",
+            "}",
+            "@media (max-width: 600px) {",
+            "  .batch-email-policy-options { gap: 4px 10px; }",
+            "}"
+        ].join("\n");
+        assert.ok(stylesSource.includes(block), "the S-2 allow-list CSS must appear verbatim");
+        assert.strictEqual(stylesSource.split(".batch-email-policy-field.is-disabled {").length - 1, 1);
+    });
+
+    it("I-1: the editor fills from the API array in fixed order, keeps [] verbatim and defaults a new task to deliverable", () => {
+        const { sandbox, elements } = policySandbox();
+
+        sandbox.fillEmailVerificationAllowedStates("editor", ["deliverable", "risky"]);
+        assert.deepStrictEqual(Array.from(sandbox.readEmailVerificationAllowedStates("editor")), ["deliverable", "risky"]);
+        assert.strictEqual(elements.get("batchConfigEditorAllowUnknown").checked, false);
+
+        sandbox.fillEmailVerificationAllowedStates("editor", ["unknown", "deliverable"]);
+        assert.deepStrictEqual(Array.from(sandbox.readEmailVerificationAllowedStates("editor")), ["deliverable", "unknown"],
+            "the stored/read order is the fixed deliverable,risky,unknown order");
+
+        sandbox.fillEmailVerificationAllowedStates("editor", []);
+        assert.deepStrictEqual(Array.from(sandbox.readEmailVerificationAllowedStates("editor")), [],
+            "an explicit empty selection must never fall back to a default");
+
+        sandbox.fillEmailVerificationAllowedStates("editor", undefined);
+        assert.deepStrictEqual(Array.from(sandbox.readEmailVerificationAllowedStates("editor")),
+            ["deliverable", "risky", "unknown"],
+            "a legacy response without the field is the three-state compat branch, not the previous edit value");
+
+        sandbox.fillEmailVerificationAllowedStates("editor", ["deliverable"]);
+        assert.deepStrictEqual(Array.from(sandbox.readEmailVerificationAllowedStates("editor")), ["deliverable"],
+            "a new task / explicit selection only allows deliverable");
+        assert.strictEqual(elements.get("batchConfigEditorAllowRisky").checked, false);
+        assert.strictEqual(elements.get("batchConfigEditorAllowUnknown").checked, false);
+    });
+
+    it("I-1: the editor save payload and the recipient preview carry exactly the checked states", async () => {
+        const elements = createElementStore();
+        const bodies = [];
+        const sandbox = {
+            document: { getElementById: (id) => elements.get(id) },
+            batchTaskState: { editorMode: "create", editorId: null, editorAutoEnabled: false },
+            readBatchTagPickerValue: () => [],
+            readBatchRegionPickerValue: () => [],
+            readBatchMultiPickerValue: () => ["PRODUCTION_RND"],
+            gateToggleChecked: () => false,
+            resolveBatchTemplateMailType: () => "INTRODUCTION",
+            showStatus: () => {},
+            hideBatchConfigEditor: () => {},
+            loadBatchConfigList: () => {},
+            api: async (url, options) => { bodies.push(JSON.parse(options.body)); return {}; }
+        };
+        vm.createContext(sandbox);
+        loadEmailPolicyHelpers(sandbox);
+        vm.runInContext(extractFn("saveBatchConfigEditor"), sandbox);
+        vm.runInContext(extractFn("buildConfigEditorRecipientSnapshot"), sandbox);
+
+        elements.get("batchConfigEditorName").value = "介绍邮件任务";
+        elements.get("batchConfigEditorFrequency").value = "daily";
+        elements.get("batchConfigEditorTime").value = "07:30";
+        elements.get("batchConfigEditorEmailVerification").checked = true;
+
+        elements.get("batchConfigEditorAllowRisky").checked = true;
+        await sandbox.saveBatchConfigEditor();
+        assert.deepStrictEqual(Array.from(bodies[0].emailVerificationAllowedStates), ["risky"],
+            "only the checked states may be submitted");
+        assert.deepStrictEqual(Array.from(sandbox.buildConfigEditorRecipientSnapshot().emailVerificationAllowedStates), ["risky"],
+            "the preview must carry the same selection as the save path");
+
+        elements.get("batchConfigEditorAllowRisky").checked = false;
+        await sandbox.saveBatchConfigEditor();
+        assert.deepStrictEqual(Array.from(bodies[1].emailVerificationAllowedStates), [],
+            "an all-unchecked save must stay [] — never a three-state default");
+        assert.deepStrictEqual(Array.from(sandbox.buildConfigEditorRecipientSnapshot().emailVerificationAllowedStates), []);
+    });
+
+    it("I-2: the master switch disables the group without losing the selection and material reminders keep it disabled", () => {
+        const elements = createElementStore();
+        let mailType = "INTRODUCTION";
+        const sandbox = {
+            document: { getElementById: (id) => elements.get(id) },
+            resolveBatchTemplateMailType: () => mailType
+        };
+        vm.createContext(sandbox);
+        loadVerificationFunctions(sandbox);
+
+        sandbox.fillEmailVerificationAllowedStates("editor", ["deliverable", "risky"]);
+        sandbox.refreshEmailVerificationState("editor");
+
+        const group = elements.get("editorFieldEmailVerificationAllowedStates");
+        const options = ["batchConfigEditorAllowDeliverable", "batchConfigEditorAllowRisky", "batchConfigEditorAllowUnknown"];
+        options.forEach((id) => assert.strictEqual(elements.get(id).disabled, true, id + " must be disabled while the switch is off"));
+        assert.strictEqual(group.classList.contains("is-disabled"), true);
+        assert.strictEqual(elements.get("batchConfigEditorAllowDeliverable").checked, true, "off must keep the selection");
+        assert.strictEqual(elements.get("batchConfigEditorAllowRisky").checked, true);
+
+        elements.get("batchConfigEditorEmailVerification").checked = true;
+        sandbox.updateEmailVerificationToggleLabel("editor");
+        options.forEach((id) => assert.strictEqual(elements.get(id).disabled, false, id + " must be operable once the switch is on"));
+        assert.strictEqual(group.classList.contains("is-disabled"), false);
+        sandbox.refreshEmailVerificationState("editor");
+        assert.strictEqual(elements.get("batchConfigEditorEmailVerificationLabel").textContent, "已开启");
+
+        mailType = "MATERIAL_REMINDER";
+        sandbox.refreshEmailVerificationState("editor");
+        options.forEach((id) => assert.strictEqual(elements.get(id).disabled, true, "material reminders must disable the group"));
+        assert.strictEqual(group.classList.contains("is-disabled"), true);
+
+        mailType = "INTRODUCTION";
+        sandbox.refreshEmailVerificationState("editor");
+        assert.strictEqual(elements.get("batchConfigEditorEmailVerification").checked, false,
+            "switching back to an introduction template must not turn verification on");
+        options.forEach((id) => assert.strictEqual(elements.get(id).disabled, true,
+            "an off switch keeps the group unavailable after switching back"));
+        assert.strictEqual(elements.get("batchConfigEditorEmailVerificationHint").textContent,
+            "按下方勾选结果放行；不可投递始终跳过并标记邮箱异常。单邮箱验证未完成、超时或响应异常时暂缓；鉴权、额度、限流或服务故障停止执行。会消耗 Emailable 额度。");
+    });
+
+    it("I-3: the manual panel clones the source array, diffs it in its own row and restores the independent default", () => {
+        const { sandbox, elements } = exclusionFilterSandbox();
+
+        sandbox.fillManualFormDefaults();
+        assert.deepStrictEqual(Array.from(sandbox.batchTaskState.manualDraft.emailVerificationAllowedStates), ["deliverable"],
+            "an independent manual run defaults to deliverable only");
+        assert.deepStrictEqual(Array.from(sandbox.readEmailVerificationAllowedStates("manual")), ["deliverable"]);
+        assert.strictEqual(elements.get("batchManualAllowRisky").checked, false);
+        assert.strictEqual(elements.get("batchManualAllowUnknown").checked, false);
+
+        const source = sandbox.deepCloneConfig({
+            id: 7, configName: "来源任务", emailVerificationEnabled: true,
+            emailVerificationAllowedStates: ["deliverable", "risky"]
+        });
+        assert.deepStrictEqual(Array.from(source.emailVerificationAllowedStates), ["deliverable", "risky"]);
+        source.emailVerificationAllowedStates.push("unknown");
+        assert.deepStrictEqual(Array.from(sandbox.deepCloneConfig({
+            id: 7, configName: "来源任务", emailVerificationAllowedStates: ["deliverable", "risky"]
+        }).emailVerificationAllowedStates), ["deliverable", "risky"],
+            "the clone must be a copy, never a shared reference");
+
+        const bound = sandbox.deepCloneConfig({ id: 7, configName: "来源任务", emailVerificationAllowedStates: ["deliverable", "risky"] });
+        sandbox.batchTaskState.manualSource = bound;
+        sandbox.batchTaskState.manualDraft = sandbox.deepCloneConfig(bound);
+        sandbox.fillManualFormFromDraft();
+        assert.strictEqual(elements.get("batchManualAllowDeliverable").checked, true);
+        assert.strictEqual(elements.get("batchManualAllowRisky").checked, true);
+        assert.strictEqual(elements.get("batchManualAllowUnknown").checked, false, "the source array rules the manual panel");
+
+        elements.get("batchManualAllowUnknown").checked = true;
+        const diffs = sandbox.computeManualDiffs();
+        assert.strictEqual(diffs.length, 1, "only the allow-list changed");
+        assert.deepStrictEqual(JSON.parse(JSON.stringify(diffs[0])), {
+            key: "emailVerificationAllowedStates",
+            label: "允许发送的验证结果",
+            oldDisplay: "可投递、有风险",
+            newDisplay: "可投递、有风险、未知"
+        });
+        sandbox.computeAndRenderDiffs();
+        const allowField = elements.get("manualFieldEmailVerificationAllowedStates");
+        assert.strictEqual(allowField.classList.contains("is-config-diff"), true);
+        assert.strictEqual(allowField.querySelector(".batch-config-diff-original").textContent, "原：可投递、有风险");
+        assert.strictEqual(elements.get("manualFieldEmailVerification").classList.contains("is-config-diff"), false,
+            "the allow-list must not reuse the switch's diff container");
+        assert.deepStrictEqual(Array.from(sandbox.buildManualExecutionSnapshot().emailVerificationAllowedStates),
+            ["deliverable", "risky", "unknown"]);
+        assert.deepStrictEqual(Array.from(bound.emailVerificationAllowedStates), ["deliverable", "risky"],
+            "a manual override must never rewrite its source config");
+
+        elements.get("batchManualAllowDeliverable").checked = false;
+        elements.get("batchManualAllowRisky").checked = false;
+        elements.get("batchManualAllowUnknown").checked = false;
+        const emptyDiff = sandbox.computeManualDiffs();
+        assert.strictEqual(emptyDiff.length, 1);
+        assert.strictEqual(emptyDiff[0].newDisplay, "不放行任何结果",
+            "an empty selection is displayed as an explicit decision, not as 不限");
+        assert.deepStrictEqual(Array.from(sandbox.buildManualExecutionSnapshot().emailVerificationAllowedStates), []);
+
+        sandbox.batchTaskState.manualSource = null;
+        sandbox.fillManualFormDefaults();
+        assert.deepStrictEqual(Array.from(sandbox.readEmailVerificationAllowedStates("manual")), ["deliverable"],
+            "clearing the source restores the independent default");
+    });
+
+    it("I-3: the confirm dialog spells out the effective selection and 未启用 while verification is off", () => {
+        const elements = createElementStore();
+        const sandbox = {
+            batchTaskState: { manualSource: { id: 7, configName: "介绍邮件任务", roundsPerRun: 2, roundSize: 20 } },
+            document: { getElementById: (id) => elements.get(id) },
+            escapeHtml: (value) => String(value == null ? "" : value),
+            computeManualDiffs: () => []
+        };
+        vm.createContext(sandbox);
+        loadEmailPolicyHelpers(sandbox);
+        vm.runInContext(extractFn("showBatchManualConfirm"), sandbox);
+
+        sandbox.showBatchManualConfirm();
+        assert.ok(elements.get("batchManualConfirmBody").innerHTML.includes("允许发送的验证结果：未启用"),
+            "an off switch shows 未启用 instead of a stale list");
+
+        elements.get("batchManualEmailVerification").checked = true;
+        elements.get("batchManualAllowDeliverable").checked = true;
+        elements.get("batchManualAllowUnknown").checked = true;
+        sandbox.showBatchManualConfirm();
+        assert.ok(elements.get("batchManualConfirmBody").innerHTML.includes("允许发送的验证结果：可投递、未知"),
+            "the confirmation must show this run's effective selection");
+
+        elements.get("batchManualAllowDeliverable").checked = false;
+        elements.get("batchManualAllowUnknown").checked = false;
+        sandbox.showBatchManualConfirm();
+        assert.ok(elements.get("batchManualConfirmBody").innerHTML.includes("允许发送的验证结果：不放行任何结果"));
+    });
+
+    it("I-4: a policy skip is explained as a selection skip, never as an invalid address", () => {
+        const { sandbox, elements } = verificationSandbox();
+        const policySkipRow = verificationRow({
+            id: 1, decision: "SKIP", providerState: "risky", providerReason: "low_deliverability",
+            sendStatus: "SKIPPED", sendReason: "EMAIL_VERIFICATION_POLICY_SKIP", tagStatus: "NOT_REQUIRED"
+        });
+
+        sandbox.renderBatchEmailVerification(verificationPayload({ items: [policySkipRow] }), "SUCCESS");
+        const policyHtml = elements.get("batchLogEmailVerificationRows").innerHTML;
+        assert.ok(policyHtml.includes('<span class="badge warn">按策略跳过</span>'),
+            "a policy skip must be labelled as a policy decision");
+        assert.ok(policyHtml.includes("未勾选该验证结果，本次未发送（EMAIL_VERIFICATION_POLICY_SKIP）"),
+            "the send cell must say the state was not selected this run");
+        assert.ok(policyHtml.includes("risky / low_deliverability"), "the provider verdict stays verbatim");
+        assert.ok(policyHtml.includes("无需处理"), "a NOT_REQUIRED tag must read as nothing to do");
+        assert.ok(!policyHtml.includes("未通过") && !policyHtml.includes("已标记邮箱异常"),
+            "a policy skip must never be presented as an invalid address or an abnormal mailbox");
+
+        sandbox.renderBatchEmailVerification(verificationPayload({
+            items: [
+                verificationRow({
+                    id: 2, decision: "SKIP", providerState: "undeliverable", providerReason: "rejected_email",
+                    sendStatus: "SKIPPED", sendReason: "EMAIL_VERIFICATION_REJECTED", tagStatus: "APPLIED"
+                }),
+                verificationRow({
+                    id: 3, decision: "SKIP", providerState: "unknown", providerReason: null,
+                    sendStatus: "SKIPPED", sendReason: "SOME_UNKNOWN_REASON", tagStatus: "NOT_REQUIRED"
+                })
+            ]
+        }), "SUCCESS");
+        const rows = elements.get("batchLogEmailVerificationRows").innerHTML;
+        assert.ok(rows.includes('<span class="badge warn">未通过</span>'),
+            "the historical rejection keeps its original wording");
+        assert.ok(rows.includes("验证未通过，未发送（EMAIL_VERIFICATION_REJECTED）"));
+        assert.ok(rows.includes("已标记邮箱异常"), "a real rejection still carries the tag");
+        assert.ok(rows.includes("SOME_UNKNOWN_REASON"), "an unknown reason is shown verbatim instead of being guessed");
+        assert.ok(!rows.includes("按策略跳过"),
+            "the policy wording must not leak onto rows without the policy-skip reason");
+    });
+
+    it("S-3: the task row carries the allowed states inside the existing scope line", () => {
+        const sandbox = {
+            escapeHtml: (value) => String(value == null ? "" : value),
+            regionLabel: (value) => value || "",
+            cronToDisplayText: () => "",
+            renderBatchConfigStatusToggle: () => "",
+            batchGatePillHtml: () => '<span class="batch-gate-pill">门禁过滤 · 开</span>'
+        };
+        vm.createContext(sandbox);
+        loadEmailPolicyHelpers(sandbox);
+        vm.runInContext(extractFn("renderBatchConfigRow"), sandbox);
+
+        const base = { id: 1, configName: "任务", mailType: "INTRODUCTION", cron: null, nextFireTime: null, lastExecutedAt: null };
+        const selected = sandbox.renderBatchConfigRow(Object.assign({}, base, {
+            emailVerificationEnabled: true, emailVerificationAllowedStates: ["deliverable", "unknown"]
+        }));
+        assert.ok(selected.includes('<span class="batch-task-scope-line"><span class="batch-gate-pill">邮箱验证 · 开</span>放行：可投递、未知</span>'),
+            "the allowed states share the existing pill's scope line");
+
+        const empty = sandbox.renderBatchConfigRow(Object.assign({}, base, {
+            emailVerificationEnabled: true, emailVerificationAllowedStates: []
+        }));
+        assert.ok(empty.includes("放行：无"), "an empty list says 放行：无, not 不限");
+
+        const legacy = sandbox.renderBatchConfigRow(Object.assign({}, base, {
+            emailVerificationEnabled: true
+        }));
+        assert.ok(legacy.includes("放行：可投递、有风险、未知"),
+            "a legacy row without the field keeps the three-state wording");
+
+        const off = sandbox.renderBatchConfigRow(Object.assign({}, base, {
+            emailVerificationEnabled: false, emailVerificationAllowedStates: ["deliverable"]
+        }));
+        assert.ok(off.includes('<span class="batch-gate-pill is-off">邮箱验证 · 关</span>'));
+        assert.ok(!off.includes("放行："), "an off switch does not consume the list");
+
+        const hostile = sandbox.renderBatchConfigRow(Object.assign({}, base, {
+            emailVerificationEnabled: true, emailVerificationAllowedStates: ['<img onerror="boom">']
+        }));
+        assert.ok(!hostile.includes("<img"), "an unrecognised state can never become markup");
+        assert.ok(hostile.includes("放行：无"));
     });
 });
