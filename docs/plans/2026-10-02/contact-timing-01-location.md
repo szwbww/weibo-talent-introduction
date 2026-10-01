@@ -78,8 +78,8 @@ ExpertRepliedDismissalService:12–51 已有“窄服务 + NamedParameterJdbcTem
 
 ### T-1：迁移与模型（I-1/I-2/I-3/I-5）
 
-文件：`V145__create_expert_contact_location.sql`、`ExpertContactLocationModels.kt`。
-执行前重新检查最大迁移号；当前最大 V144。若 V145 已被其他工作占用，先修订本计划清单为下一个未用号，不能覆盖已有迁移。
+文件：`V146__create_expert_contact_location.sql`、`ExpertContactLocationModels.kt`。
+执行前重新检查最大迁移号（2026-10-02 基线 HEAD：V145 已被 `V145__add_batch_email_verification_allowed_states.sql` 占用）；本计划清单按该复核指令改用下一个未用号 V146（fast-p ledger A1），不能覆盖已有迁移。
 
 ```sql
 CREATE TABLE expert_contact_location (
@@ -123,7 +123,7 @@ CREATE TABLE expert_contact_location (
 
 | # | 路径 | 操作 |
 |---:|---|---|
-| 1 | src/main/resources/db/migration/V145__create_expert_contact_location.sql | 新增 |
+| 1 | src/main/resources/db/migration/V146__create_expert_contact_location.sql | 新增 |
 | 2 | src/main/resources/contact-country-timezones.json | 新增，复制证据快照 |
 | 3 | src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationModels.kt | 新增 |
 | 4 | src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationCatalog.kt | 新增 |
