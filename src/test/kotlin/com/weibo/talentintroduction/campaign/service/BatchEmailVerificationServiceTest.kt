@@ -186,6 +186,182 @@ class BatchEmailVerificationServiceTest {
         Mockito.verify(repository, Mockito.never()).recordSend(Mockito.anyLong(), Mockito.anyString(), Mockito.any(), anyTime())
     }
 
+    // ──── I-1/I-2/I-3：本次快照的放行集合 ────
+
+    @Test
+    fun `the allow list decides every explicit provider state`() {
+        val cases = listOf(
+            null to mapOf("deliverable" to "PASS", "risky" to "PASS", "unknown" to "PASS"),
+            emptyList<String>() to mapOf("deliverable" to "SKIP", "risky" to "SKIP", "unknown" to "SKIP"),
+            listOf("deliverable") to mapOf("deliverable" to "PASS", "risky" to "SKIP", "unknown" to "SKIP"),
+            listOf("risky", "unknown") to mapOf("deliverable" to "SKIP", "risky" to "PASS", "unknown" to "PASS")
+        )
+        cases.forEachIndexed { caseIndex, (allowed, expected) ->
+            val subject = subject()
+            val context = subject.beginExecution(70L + caseIndex) { false }
+            expected.entries.forEachIndexed { stateIndex, (state, expectedDecision) ->
+                val email = "$state-$caseIndex@b.com"
+                val rowId = 100L + stateIndex
+                client.respond(ok(email, state))
+                val result = subject.verify(context, target(orcid = "$state-$caseIndex", email = email), allowed)
+                when (expectedDecision) {
+                    BatchEmailVerificationDecision.PASS -> assertEquals(VerificationResult.Passed(rowId, email), result)
+                    else -> assertEquals(VerificationResult.PolicySkipped(rowId), result)
+                }
+                Mockito.verify(repository).recordDecision(
+                    Mockito.eq(rowId), eqValue(expectedDecision), Mockito.eq(state), Mockito.isNull(),
+                    Mockito.isNull(), Mockito.eq(1), Mockito.any(), anyTime()
+                )
+            }
+            assertEquals((caseIndex + 1) * 3, client.requests.size, "每个明确状态恰好一次物理请求")
+            // 策略跳过与 PASS 都绝不写标签。
+            Mockito.verify(repository, Mockito.never()).recordTag(Mockito.anyLong(), Mockito.anyString(), Mockito.any(), anyTime())
+            Mockito.clearInvocations(repository)
+        }
+        Mockito.verifyNoInteractions(expertIndexWriterService, expertSearchService)
+    }
+
+    @Test
+    fun `an unselected state is skipped with the policy reason and no tag while undeliverable stays rejected`() {
+        val subject = subject()
+        val context = subject.beginExecution(7L) { false }
+        val allowed = listOf("risky", "unknown")
+
+        client.respond(ok("a@b.com", "deliverable"))
+        assertEquals(
+            VerificationResult.PolicySkipped(100L),
+            subject.verify(context, target(email = "a@b.com"), allowed)
+        )
+        Mockito.verify(repository).recordSend(
+            Mockito.eq(100L), eqValue(BatchEmailVerificationSendStatus.SKIPPED),
+            eqValue(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_POLICY_SKIP), anyTime()
+        )
+        Mockito.verify(repository, Mockito.never()).recordTag(
+            Mockito.eq(100L), Mockito.anyString(), Mockito.any(), anyTime()
+        )
+
+        client.respond(ok("b@b.com", "risky"))
+        assertEquals(
+            VerificationResult.Passed(101L, "b@b.com"),
+            subject.verify(context, target(orcid = "b", email = "b@b.com"), allowed)
+        )
+
+        // undeliverable 即使不在列表里也走原拒绝路径（标签 + EMAIL_VERIFICATION_REJECTED）。
+        stubMatchingCandidateCopy(email = "c@b.com")
+        client.respond(ok("c@b.com", "undeliverable"))
+        assertEquals(
+            VerificationResult.Rejected(102L, BatchEmailVerificationTagStatus.APPLIED),
+            subject.verify(context, target(orcid = "0001", email = "c@b.com", docId = DOC_ID), allowed)
+        )
+        Mockito.verify(repository).recordSend(
+            Mockito.eq(102L), eqValue(BatchEmailVerificationSendStatus.SKIPPED),
+            eqValue(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_REJECTED), anyTime()
+        )
+        Mockito.verify(expertIndexWriterService).addTag(
+            eqValue(DOC_ID), eqValue(BatchEmailVerificationService.EMAIL_ABNORMAL_TAG), eqValue(ExpertIndexLevel.CANDIDATE)
+        )
+    }
+
+    @Test
+    fun `reused provider facts are re-decided by this run's allow list`() {
+        val original = history(42L, "PASS", "deliverable")
+        Mockito.`when`(repository.findReusable(eqValue("a@b.com"), anyTime())).thenReturn(original)
+        val subject = subject()
+
+        val result = subject.verify(subject.beginExecution(8L) { false }, target(), listOf("risky"))
+
+        // 旧 PASS deliverable 在本次只放行 risky 时降级为策略跳过：供应商事实不变、不新增物理请求。
+        assertEquals(VerificationResult.PolicySkipped(100L), result)
+        assertEquals(0, client.requests.size)
+        Mockito.verify(repository).recordReusedDecision(
+            Mockito.eq(100L), Mockito.eq(42L), eqValue(BatchEmailVerificationDecision.SKIP),
+            Mockito.eq("deliverable"), Mockito.isNull(), eqValue(original.checkedAt!!), anyTime()
+        )
+        Mockito.verify(repository).recordSend(
+            Mockito.eq(100L), eqValue(BatchEmailVerificationSendStatus.SKIPPED),
+            eqValue(BatchOutcomeReasonCodes.EMAIL_VERIFICATION_POLICY_SKIP), anyTime()
+        )
+        Mockito.verify(repository, Mockito.never()).recordTag(Mockito.anyLong(), Mockito.anyString(), Mockito.any(), anyTime())
+        Mockito.verifyNoInteractions(expertIndexWriterService, expertSearchService)
+    }
+
+    @Test
+    fun `a policy skipped original becomes a pass when this run allows its state`() {
+        val original = history(42L, "SKIP", "deliverable")
+        Mockito.`when`(repository.findReusable(eqValue("a@b.com"), anyTime())).thenReturn(original)
+        val subject = subject()
+
+        val result = subject.verify(subject.beginExecution(8L) { false }, target(), listOf("deliverable"))
+
+        assertEquals(VerificationResult.Passed(100L, "a@b.com"), result)
+        assertEquals(0, client.requests.size)
+        Mockito.verify(repository).recordReusedDecision(
+            Mockito.eq(100L), Mockito.eq(42L), eqValue(BatchEmailVerificationDecision.PASS),
+            Mockito.eq("deliverable"), Mockito.isNull(), eqValue(original.checkedAt!!), anyTime()
+        )
+    }
+
+    @Test
+    fun `a policy skip is reused in memory without a second request and without tagging`() {
+        client.respond(ok("a@b.com", "risky"))
+        val subject = subject()
+        val context = subject.beginExecution(7L) { false }
+
+        assertEquals(
+            VerificationResult.PolicySkipped(100L),
+            subject.verify(context, target(orcid = "0001", email = "a@b.com"), listOf("deliverable"))
+        )
+        assertEquals(
+            VerificationResult.PolicySkipped(101L),
+            subject.verify(context, target(orcid = "0002", email = "A@B.com"), listOf("deliverable"))
+        )
+
+        assertEquals(1, client.requests.size, "同执行同邮箱只允许一次物理请求")
+        Mockito.verify(repository).recordReusedDecision(
+            Mockito.eq(101L), Mockito.eq(100L), eqValue(BatchEmailVerificationDecision.SKIP),
+            Mockito.eq("risky"), Mockito.isNull(), anyTime(), anyTime()
+        )
+        Mockito.verify(repository, Mockito.never()).recordTag(Mockito.anyLong(), Mockito.anyString(), Mockito.any(), anyTime())
+    }
+
+    @Test
+    fun `a bad response never reuses its residual provider state for a decision`() {
+        // 200 但邮箱回显不匹配（残留 state=undeliverable）→ 受控 ERROR，不得按残留状态跳过/打标签。
+        client.respond(ok("someone-else@b.com", "undeliverable"))
+        val subject = subject()
+
+        val result = subject.verify(
+            subject.beginExecution(7L) { false },
+            target(email = "a@b.com", docId = DOC_ID),
+            listOf("deliverable")
+        )
+
+        assertEquals(VerificationResult.ServiceFailure(100L, BatchEmailVerificationErrorCodes.BAD_RESPONSE), result)
+        Mockito.verify(repository).recordDecision(
+            Mockito.eq(100L), eqValue(BatchEmailVerificationDecision.ERROR), Mockito.eq("undeliverable"),
+            Mockito.isNull(), eqValue(BatchEmailVerificationErrorCodes.BAD_RESPONSE), Mockito.eq(1), Mockito.any(), anyTime()
+        )
+        Mockito.verify(repository, Mockito.never()).recordSend(Mockito.anyLong(), Mockito.anyString(), Mockito.any(), anyTime())
+        Mockito.verify(repository, Mockito.never()).recordTag(Mockito.anyLong(), Mockito.anyString(), Mockito.any(), anyTime())
+        Mockito.verifyNoInteractions(expertIndexWriterService, expertSearchService)
+    }
+
+    @Test
+    fun `an illegal allow list is rejected instead of widening or narrowing silently`() {
+        val subject = subject()
+
+        assertThrows(IllegalArgumentException::class.java) {
+            subject.verify(subject.beginExecution(7L) { false }, target(), listOf("undeliverable"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            subject.verify(subject.beginExecution(7L) { false }, target(), listOf("Deliverable"))
+        }
+        assertEquals(0, client.requests.size, "非法集合不得产生任何物理请求")
+        Mockito.verify(repository, Mockito.never()).insertPending(
+            Mockito.anyLong(), Mockito.any(), Mockito.anyString(), Mockito.any(), Mockito.anyString(), anyTime()
+        )
+    }
+
     @Test
     fun `missing or unknown state is a controlled bad response`() {
         client.respond(EmailableHttpResponse(200, """{"email":"a@b.com","reason":"no_state"}"""))

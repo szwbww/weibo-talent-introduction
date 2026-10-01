@@ -9,6 +9,8 @@ import com.weibo.talentintroduction.task.service.TaskProgressStore
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -53,7 +55,7 @@ class BatchSendControlServiceTest {
     private fun <T> captureValue(captor: ArgumentCaptor<T>, defaultValue: T): T = captor.capture() ?: defaultValue
 
     /** I-1: 存量介绍邮件任务的配置实体形态（研发类型非空 → 过快照校验）。 */
-    private fun verificationConfig(id: Long, enabled: Boolean) =
+    private fun verificationConfig(id: Long, enabled: Boolean, allowedStatesJson: String? = null) =
         com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfig(
             id = id,
             configName = "INTRODUCTION",
@@ -66,6 +68,7 @@ class BatchSendControlServiceTest {
             selfCheckTtlMinutes = 30,
             expertTypesJson = """["PRODUCTION_RND","ACADEMIC_RND","HYBRID_RND"]""",
             emailVerificationEnabled = enabled,
+            emailVerificationAllowedStatesJson = allowedStatesJson,
             legacyCode = null
         )
 
@@ -1008,4 +1011,218 @@ class BatchSendControlServiceTest {
 
         assertFalse(request.snapshot.emailVerificationEnabled)
     }
+
+    // ──── I-1: Emailable 放行白名单（emailVerificationAllowedStates） ────
+
+    /** 手动执行请求体；[allowedStatesJson] 为 null 时完全省略该字段（旧请求形态）。 */
+    private fun manualRequestBody(allowedStatesJson: String? = null): String {
+        val allowed = if (allowedStatesJson == null) "" else ",\"emailVerificationAllowedStates\":$allowedStatesJson"
+        return """
+            {"sourceConfigId":null,"sourceUpdatedAt":null,"snapshot":{
+              "mailType":"INTRODUCTION","roundSize":10,"perMailIntervalMs":0,"perRoundIntervalMs":0,
+              "selfCheckTtlMinutes":30,"expertTypes":["PRODUCTION_RND"]$allowed}}
+        """.trimIndent()
+    }
+
+    @Test
+    fun `a manual request without the allow list binds to null (I-1)`() {
+        val request = objectMapper.readValue(
+            manualRequestBody(null),
+            com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest::class.java
+        )
+
+        assertNull(request.snapshot.emailVerificationAllowedStates)
+    }
+
+    @Test
+    fun `an explicit allow list is fixed into the launch snapshot and payload unchanged (I-1 I-4)`() {
+        for (states in listOf("[]", """["risky","unknown"]""")) {
+            Mockito.clearInvocations(taskExecutionService, manualOutreachExecutor)
+            val expected = if (states == "[]") emptyList<String>() else listOf("risky", "unknown")
+            val request = objectMapper.readValue(
+                manualRequestBody(states),
+                com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest::class.java
+            )
+            val captor = ArgumentCaptor.forClass(
+                com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot::class.java
+            )
+            Mockito.doReturn(
+                ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED")
+            ).`when`(manualInitialOutreachService).run(
+                captureValue(
+                    captor,
+                    com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                        mailType = "INTRODUCTION", roundSize = 10,
+                        perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+                    )
+                ),
+                eqValue(99L),
+                eqValue(ExecutionMode.MANUAL),
+                eqValue(false)
+            )
+
+            val response = control.startManual(request)
+
+            assertEquals(HttpStatus.ACCEPTED, response.statusCode, "states=$states")
+            assertEquals(expected, captor.value.emailVerificationAllowedStates, "states=$states")
+            assertEquals(expected, capturedLaunchRequest().snapshot.emailVerificationAllowedStates, "states=$states")
+        }
+        // 手动覆盖只进本次执行快照，绝不回写来源配置。
+        Mockito.verify(batchSendTaskConfigRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `an illegal allow list cannot be constructed into a snapshot at all (I-1)`() {
+        fun snapshot() = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+            mailType = "INTRODUCTION", roundSize = 10,
+            perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+            expertTypes = listOf("PRODUCTION_RND")
+        )
+
+        listOf(
+            listOf("undeliverable"),
+            listOf("invalid"),
+            listOf("Deliverable"),
+            listOf("deliverable", "unknown", "risky ")
+        ).forEach { illegal ->
+            assertThrows(IllegalArgumentException::class.java, { snapshot().copy(emailVerificationAllowedStates = illegal) }, "$illegal")
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                mailType = "INTRODUCTION", roundSize = 10,
+                perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                expertTypes = listOf("PRODUCTION_RND"),
+                emailVerificationAllowedStates = listOf("undeliverable")
+            )
+        }
+    }
+
+    @Test
+    fun `the manual endpoint rejects an illegal allow list with 4xx before any execution (I-1)`() {
+        val mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders
+            .standaloneSetup(manualController())
+            .setControllerAdvice(com.weibo.talentintroduction.common.controller.GlobalExceptionHandler())
+            .setMessageConverters(
+                org.springframework.http.converter.json.MappingJackson2HttpMessageConverter(objectMapper)
+            )
+            .build()
+        fun post(body: String) = mvc.perform(
+            org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                .post("/api/mail/batch-send/manual-executions")
+                .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                .content(body)
+        ).andReturn().response
+
+        // 正对照：合法列表通过绑定并正常启动（证明拒绝不是绑定器/映射的环境假象）。
+        assertEquals(202, post(manualRequestBody("""["risky","unknown"]""")).status)
+
+        listOf(
+            """["undeliverable"]""", """["invalid"]""", """[123]""",
+            """["deliverable",null]""", "\"deliverable\""
+        ).forEach { illegal ->
+            val status = post(manualRequestBody(illegal)).status
+            assertEquals(400, status, "非法白名单必须在启动前 4xx 拒绝：$illegal")
+        }
+        // 只有那条合法请求启动过执行，非法请求一次业务写入都没有。
+        Mockito.verify(manualOutreachExecutor, Mockito.times(1)).execute(Mockito.any(Runnable::class.java))
+        Mockito.verify(batchSendTaskConfigRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    // ──── I-1/I-3: Emailable 放行白名单（配置列 → 启动快照） ────
+
+    @Test
+    fun `startScheduled copies the configured allow list into snapshot and payload (I-1 I-3)`() {
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(6L))
+            .thenReturn(verificationConfig(6L, enabled = true, allowedStatesJson = """["risky"]"""))
+
+        val response = control.startScheduled(6L)
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        assertEquals(listOf("risky"), capturedLaunchRequest().snapshot.emailVerificationAllowedStates)
+        // 启动流程只读配置，绝不回写配置列。
+        Mockito.verify(batchSendTaskConfigRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    @Test
+    fun `a legacy config without the column launches with the three states fixed in the payload (I-1)`() {
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(6L))
+            .thenReturn(verificationConfig(6L, enabled = true))
+
+        val response = control.startScheduled(6L)
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        assertEquals(
+            listOf("deliverable", "risky", "unknown"),
+            capturedLaunchRequest().snapshot.emailVerificationAllowedStates
+        )
+    }
+
+    @Test
+    fun `startManualFromConfig derives the allow list from the persisted config entity (I-1 I-3)`() {
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(6L))
+            .thenReturn(verificationConfig(6L, enabled = true, allowedStatesJson = """["unknown","deliverable"]"""))
+        val captor = ArgumentCaptor.forClass(
+            com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot::class.java
+        )
+        Mockito.doReturn(
+            ManualOutreachResult(total = 1, sent = 1, failed = 0, skippedNoAccount = 0, wasCancelled = false, finalStatus = "COMPLETED")
+        ).`when`(manualInitialOutreachService).run(
+            captureValue(
+                captor,
+                com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                    mailType = "INTRODUCTION", roundSize = 10,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30
+                )
+            ),
+            eqValue(99L),
+            eqValue(ExecutionMode.MANUAL),
+            eqValue(false)
+        )
+
+        val response = control.startManualFromConfig(6L)
+
+        assertEquals(HttpStatus.ACCEPTED, response.statusCode)
+        // 读取侧规范化顺序（deliverable,risky,unknown），执行快照与配置列同源。
+        assertEquals(listOf("deliverable", "unknown"), captor.value.emailVerificationAllowedStates)
+    }
+
+    @Test
+    fun `a manual override replaces the configured allow list without rewriting the config (I-3)`() {
+        Mockito.`when`(batchSendTaskConfigRepository.findByIdAndDeletedAtIsNull(6L))
+            .thenReturn(verificationConfig(6L, enabled = true, allowedStatesJson = """["deliverable"]"""))
+
+        for (override in listOf(emptyList<String>(), listOf("risky", "unknown"))) {
+            Mockito.clearInvocations(taskExecutionService)
+            val request = com.weibo.talentintroduction.campaign.domain.ManualBatchExecutionRequest(
+                sourceConfigId = 6L,
+                sourceUpdatedAt = LocalDateTime.of(2026, 9, 24, 9, 0),
+                snapshot = com.weibo.talentintroduction.campaign.domain.BatchExecutionSnapshot(
+                    mailType = "INTRODUCTION", roundSize = 10,
+                    perMailIntervalMs = 0, perRoundIntervalMs = 0, selfCheckTtlMinutes = 30,
+                    expertTypes = listOf("PRODUCTION_RND", "ACADEMIC_RND", "HYBRID_RND"),
+                    emailVerificationEnabled = true,
+                    emailVerificationAllowedStates = override
+                )
+            )
+
+            val response = control.startManual(request)
+
+            assertEquals(HttpStatus.ACCEPTED, response.statusCode, "override=$override")
+            // I-3: 手动覆盖只进本次执行快照；来源配置列（[deliverable]）不被改写。
+            assertEquals(override, capturedLaunchRequest().snapshot.emailVerificationAllowedStates, "override=$override")
+        }
+        Mockito.verify(batchSendTaskConfigRepository, Mockito.never()).save(Mockito.any())
+    }
+
+    /** 只挂手动执行入口的控制器；其余协作者用 mock，控制器本身不在此计划范围内。 */
+    private fun manualController() = com.weibo.talentintroduction.mail.controller.BatchSendConfigController(
+        batchSendTaskConfigService = Mockito.mock(com.weibo.talentintroduction.campaign.service.BatchSendTaskConfigService::class.java),
+        templateRepository = Mockito.mock(com.weibo.talentintroduction.template.repository.MailComposeTemplateRepository::class.java),
+        batchSendControlService = control,
+        manualInitialOutreachService = manualInitialOutreachService,
+        taskExecutionService = taskExecutionService,
+        progressLogRepository = Mockito.mock(com.weibo.talentintroduction.task.repository.TaskProgressLogRepository::class.java),
+        objectMapper = objectMapper,
+        batchEmailVerificationRepository = Mockito.mock(com.weibo.talentintroduction.campaign.repository.BatchEmailVerificationRepository::class.java)
+    )
 }

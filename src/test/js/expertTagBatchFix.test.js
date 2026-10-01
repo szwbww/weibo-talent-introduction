@@ -16,12 +16,31 @@ function extractFn(name) {
     return match[0];
 }
 
+// c3：放行结果白名单 helper —— 被抽取的 app.js 函数（编辑/手动放行组）会直接调用，必须随宿主函数一起注入。
+const EMAIL_POLICY_HELPERS = [
+    "batchEmailVerificationAllowedStates",
+    "emailVerificationAllowedStateLabel",
+    "emailVerificationPolicyFieldId",
+    "emailVerificationPolicyOptionId",
+    "normalizeEmailVerificationAllowedStates",
+    "readEmailVerificationAllowedStates",
+    "fillEmailVerificationAllowedStates",
+    "updateEmailVerificationPolicyState",
+    "emailVerificationAllowedStatesText",
+    "emailVerificationAllowedStatesScopeText"
+];
+
+function loadEmailPolicyHelpers(target) {
+    EMAIL_POLICY_HELPERS.forEach((name) => vm.runInContext(extractFn(name), target));
+    return target;
+}
+
 function createTagFetchSandbox() {
     const sandbox = {
         api: async () => ({ found: true, tags: [] }),
         URLSearchParams
     };
-    vm.createContext(sandbox);
+    vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
     vm.runInContext(extractFn("fetchExpertTagsFromEs"), sandbox);
     vm.runInContext(extractFn("renderExpertTagEditor"), sandbox);
     vm.runInContext(`
@@ -46,7 +65,7 @@ function createMailboxExpertTagSandbox() {
         },
         escapeHtml: (v) => String(v == null ? "" : v)
     };
-    vm.createContext(sandbox);
+    vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
     vm.runInContext(extractFn("renderExpertTagEditor"), sandbox);
     vm.runInContext(extractFn("renderMailboxExpertTagEditor"), sandbox);
     return sandbox;
@@ -89,7 +108,7 @@ function createBatchSendTypeSandbox() {
         },
         $: (sel) => (sel === "#batchSendEmailDomain" ? select : null)
     };
-    vm.createContext(sandbox);
+    vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
     vm.runInContext(`function batchSendTypeBase(sendType) { return '/api/mail/batch-send/types/' + (sendType || batchSendType); }`, sandbox);
     vm.runInContext(extractFn("fillBatchSendProviderSelect"), sandbox);
     return { sandbox, select, insertedFallbacks };
@@ -117,7 +136,7 @@ function createPendingCountSandbox() {
         __apiCalls: apiCalls,
         __resolveNext: (val) => { const fn = apiResolvers.shift(); if (fn) fn(val); }
     };
-    vm.createContext(sandbox);
+    vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
     vm.runInContext(
         `function batchSendTypeBase(sendType) { return '/api/mail/batch-send/types/' + (sendType || batchSendType); }`,
         sandbox
@@ -405,7 +424,7 @@ function createDiffSandbox() {
         batchTaskState: { manualSource: null, manualDraft: null },
         console: console
     };
-    vm.createContext(sandbox);
+    vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
     vm.runInContext(extractFn("normalizeManualSnapshot"), sandbox);
     vm.runInContext(extractFn("computeManualDiffs"), sandbox);
     return sandbox;
@@ -456,7 +475,7 @@ function createFormValuesSandbox() {
         },
         console: console
     };
-    vm.createContext(sandbox);
+    vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
     sandbox.batchTaskState = { preloadedTemplates: [] };
     vm.runInContext(extractFn("supportedBatchComposeTemplates"), sandbox);
     vm.runInContext(extractFn("resolveBatchTemplateMailType"), sandbox);
@@ -556,7 +575,7 @@ function createLogSandbox() {
         __intervals: intervals,
         __select: selectEl
     };
-    vm.createContext(sandbox);
+    vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
     vm.runInContext(extractFn("openBatchConfigLogs"), sandbox);
     vm.runInContext(extractFn("closeBatchLogDrawer"), sandbox);
     vm.runInContext(extractFn("clearBatchLogRefreshTimer"), sandbox);

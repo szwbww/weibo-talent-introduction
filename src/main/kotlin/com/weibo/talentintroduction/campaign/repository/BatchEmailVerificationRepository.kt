@@ -206,6 +206,11 @@ class BatchEmailVerificationRepository(private val jdbcTemplate: JdbcTemplate) {
              WHERE id = ? AND decision = 'PENDING'
         """
 
+        /**
+         * I-2/I-4：一年内「有效原始行」= 真实请求过的供应商明确结果（request_count>0、非复用、无错误码），
+         * 包含 PASS 三态与 SKIP deliverable/risky/unknown/undeliverable —— 放行决定由调用方按本次集合重算。
+         * 主查询与 `NOT EXISTS` 镜像必须逐字对称，否则同邮箱会同时返回新旧两行。
+         */
         private const val FIND_REUSABLE_BY_EMAILS_SQL = """
             SELECT v.*
               FROM batch_email_verification v
@@ -213,7 +218,7 @@ class BatchEmailVerificationRepository(private val jdbcTemplate: JdbcTemplate) {
                AND v.checked_at > ? AND v.checked_at <= ?
                AND v.request_count > 0 AND v.reused_from_id IS NULL AND v.error_code IS NULL
                AND ((v.decision = 'PASS' AND v.provider_state IN ('deliverable', 'risky', 'unknown'))
-                 OR (v.decision = 'SKIP' AND v.provider_state IN ('undeliverable', 'risky', 'unknown')))
+                 OR (v.decision = 'SKIP' AND v.provider_state IN ('deliverable', 'risky', 'unknown', 'undeliverable')))
                AND NOT EXISTS (
                     SELECT 1
                       FROM batch_email_verification n
@@ -221,7 +226,7 @@ class BatchEmailVerificationRepository(private val jdbcTemplate: JdbcTemplate) {
                        AND n.checked_at > ? AND n.checked_at <= ?
                        AND n.request_count > 0 AND n.reused_from_id IS NULL AND n.error_code IS NULL
                        AND ((n.decision = 'PASS' AND n.provider_state IN ('deliverable', 'risky', 'unknown'))
-                         OR (n.decision = 'SKIP' AND n.provider_state IN ('undeliverable', 'risky', 'unknown')))
+                         OR (n.decision = 'SKIP' AND n.provider_state IN ('deliverable', 'risky', 'unknown', 'undeliverable')))
                        AND (n.checked_at > v.checked_at OR (n.checked_at = v.checked_at AND n.id > v.id))
                )
              ORDER BY v.email

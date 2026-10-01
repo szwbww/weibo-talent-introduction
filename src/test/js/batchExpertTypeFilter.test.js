@@ -14,6 +14,25 @@ function extractFn(name) {
     return match[0];
 }
 
+// c3：放行结果白名单 helper —— 被抽取的 app.js 函数（编辑/手动放行组）会直接调用，必须随宿主函数一起注入。
+const EMAIL_POLICY_HELPERS = [
+    "batchEmailVerificationAllowedStates",
+    "emailVerificationAllowedStateLabel",
+    "emailVerificationPolicyFieldId",
+    "emailVerificationPolicyOptionId",
+    "normalizeEmailVerificationAllowedStates",
+    "readEmailVerificationAllowedStates",
+    "fillEmailVerificationAllowedStates",
+    "updateEmailVerificationPolicyState",
+    "emailVerificationAllowedStatesText",
+    "emailVerificationAllowedStatesScopeText"
+];
+
+function loadEmailPolicyHelpers(target) {
+    EMAIL_POLICY_HELPERS.forEach((name) => vm.runInContext(extractFn(name), target));
+    return target;
+}
+
 // The multi-picker registry is a top-level `var` assignment; capture its object literal.
 function extractRegistry() {
     const start = appJsSource.indexOf("var BATCH_MULTI_PICKER_REGISTRY = {");
@@ -73,7 +92,7 @@ function createSandbox(extra) {
         gateToggleChecked: () => false,
         resolveBatchTemplateMailType: () => "INTRODUCTION"
     }, extra || {});
-    vm.createContext(sandbox);
+    vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
     sandbox.__store = store;
     return sandbox;
 }

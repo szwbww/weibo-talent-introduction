@@ -15,6 +15,25 @@ function extractFn(name) {
     return match ? match[0] : null;
 }
 
+// c3：放行结果白名单 helper —— 被抽取的 app.js 函数（编辑/手动放行组）会直接调用，必须随宿主函数一起注入。
+const EMAIL_POLICY_HELPERS = [
+    "batchEmailVerificationAllowedStates",
+    "emailVerificationAllowedStateLabel",
+    "emailVerificationPolicyFieldId",
+    "emailVerificationPolicyOptionId",
+    "normalizeEmailVerificationAllowedStates",
+    "readEmailVerificationAllowedStates",
+    "fillEmailVerificationAllowedStates",
+    "updateEmailVerificationPolicyState",
+    "emailVerificationAllowedStatesText",
+    "emailVerificationAllowedStatesScopeText"
+];
+
+function loadEmailPolicyHelpers(target) {
+    EMAIL_POLICY_HELPERS.forEach((name) => vm.runInContext(extractFn(name), target));
+    return target;
+}
+
 function element(value = "") {
     return {
         value,
@@ -55,7 +74,7 @@ describe("batch send task console interactions", () => {
             fillManualFormFromDraft: () => { calls.form = true; },
             switchBatchSendTab: (tab) => { calls.switchedTab = tab; }
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(applySource, sandbox);
         vm.runInContext(extractFn("openManualTabFromConfig"), sandbox);
 
@@ -86,7 +105,7 @@ describe("batch send task console interactions", () => {
             renderBatchManualSourceEmpty: () => {},
             console
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(loadOptions, sandbox);
 
         await sandbox.loadBatchManualSourceOptions("");
@@ -115,7 +134,7 @@ describe("batch send task console interactions", () => {
             document: { getElementById: (id) => id === "batchManualTemplateId" ? templateSelect : null },
             escapeHtml: (value) => String(value == null ? "" : value)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(supportedTemplates, sandbox);
         vm.runInContext(resolveMailType, sandbox);
         vm.runInContext(extractFn("fillBatchManualTemplateSelector"), sandbox);
@@ -162,7 +181,7 @@ describe("batch send task console interactions", () => {
             fillBatchConfigEditorTemplateSelector: () => {},
             fillBatchManualTemplateSelector: (id) => selected.push(id)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(refreshSelectors, sandbox);
 
         sandbox.refreshBatchTemplateSelectors();
@@ -189,7 +208,7 @@ describe("batch send task console interactions", () => {
             fillBatchConfigEditorTemplateSelector: (id) => { editorSelect.value = String(id); },
             refreshBatchGateState: (kind) => gateRefreshes.push(kind)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(refreshSelectors, sandbox);
 
         sandbox.refreshBatchTemplateSelectors();
@@ -224,7 +243,7 @@ describe("batch send task console interactions", () => {
             clearTimeout: () => {},
             setTimeout: (callback) => { callback(); return 1; }
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(detachSource, sandbox);
         vm.runInContext(searchSource, sandbox);
 
@@ -247,7 +266,7 @@ describe("batch send task console interactions", () => {
         assert.ok(mergeTags, "mergeBatchTagOptions must exist");
 
         const sandbox = {};
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(normalizeTags, sandbox);
         vm.runInContext(mergeTags, sandbox);
 
@@ -273,7 +292,7 @@ describe("batch send task console interactions", () => {
             renderBatchTagPicker: (id) => rendered.push(id),
             notifyBatchTagPickerChanged: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(normalizeTags, sandbox);
         vm.runInContext(readTags, sandbox);
         vm.runInContext(setTags, sandbox);
@@ -297,7 +316,7 @@ describe("batch send task console interactions", () => {
             batchTaskState: { preloadedTemplates: [] },
             supportedBatchComposeTemplates: () => []
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(formatDiffValue, sandbox);
 
         assert.strictEqual(sandbox.formatManualDiffValue("funnelLevel", null), "全部层级");
@@ -323,7 +342,7 @@ describe("batch send task console interactions", () => {
             document: { getElementById: (id) => id === "batchConfigEditorRegions" ? hidden : null },
             renderBatchRegionPicker: (id) => rendered.push(id)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(regionLabelsSrc[0], sandbox);
         vm.runInContext(regionOptionsSrc[0], sandbox);
         vm.runInContext(readRegions, sandbox);
@@ -354,7 +373,7 @@ describe("batch send task console interactions", () => {
         const regionLabelsSrc = appSource.match(/var REGION_LABELS = \{[\s\S]*?\};/);
         assert.ok(regionLabelsSrc, "REGION_LABELS must be defined");
         const sandbox = {};
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(regionLabelsSrc[0], sandbox);
         vm.runInContext(regionOptionsSrc[0], sandbox);
 
@@ -373,7 +392,7 @@ describe("batch send task console interactions", () => {
         const regionLabelsSrc = appSource.match(/var REGION_LABELS = \{[\s\S]*?\};/);
         assert.ok(regionLabelsSrc, "REGION_LABELS must be defined");
         const sandbox = {};
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(regionLabelsSrc[0], sandbox);
 
         const expectedKeys = ["China", "Asia (Japan & Korea)", "Asia (Other)", "Europe", "North America", "South America", "Africa", "Oceania", "Other"];
@@ -389,7 +408,7 @@ describe("batch send task console interactions", () => {
         const regionLabelsSrc = appSource.match(/var REGION_LABELS = \{[\s\S]*?\};/);
         assert.ok(regionLabelsSrc, "REGION_LABELS must be defined");
         const sandbox = {};
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(regionLabelsSrc[0], sandbox);
         vm.runInContext(regionLabelSrc, sandbox);
 
@@ -421,7 +440,7 @@ describe("batch send task console interactions", () => {
             hideBatchConfigEditor: () => {},
             loadBatchConfigList: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(saveConfig, sandbox);
 
         el("batchConfigEditorName").value = "地区任务";
@@ -458,7 +477,7 @@ describe("batch send task console interactions", () => {
             hideBatchConfigEditor: () => {},
             loadBatchConfigList: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(saveConfig, sandbox);
 
         el("batchConfigEditorName").value = "每日任务";
@@ -495,7 +514,7 @@ describe("batch send task console interactions", () => {
             hideBatchConfigEditor: () => {},
             loadBatchConfigList: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(saveConfig, sandbox);
 
         el("batchConfigEditorName").value = "自定义任务";
@@ -530,7 +549,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -564,7 +583,7 @@ describe("batch send task console interactions", () => {
             updateBatchConfigVolumeHint: () => {},
             refreshBatchGateState: () => { events.push("gate"); }
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -595,7 +614,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -627,7 +646,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -659,7 +678,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -691,7 +710,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -723,7 +742,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -756,7 +775,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -789,7 +808,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -822,7 +841,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -854,7 +873,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -890,7 +909,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
         vm.runInContext(extractFn("padClock"), sandbox);
         vm.runInContext(showEditor, sandbox);
@@ -924,7 +943,7 @@ describe("batch send task console interactions", () => {
             hideBatchConfigEditor: () => {},
             loadBatchConfigList: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(saveConfig, sandbox);
 
         el("batchConfigEditorName").value = "自定义任务";
@@ -959,7 +978,7 @@ describe("batch send task console interactions", () => {
             setBatchMultiPickerValue: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(showEditor, sandbox);
 
         sandbox.showBatchConfigEditor({ id: 1, configName: "任务", cron: "0 0 9 ? * MON#2", tags: [], regions: [] });
@@ -980,7 +999,7 @@ describe("batch send task console interactions", () => {
                     : id === "batchConfigEditorRoundSize" ? { value: "20" } : null
             }
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(updateHint, sandbox);
 
         sandbox.updateBatchConfigVolumeHint();
@@ -993,7 +1012,7 @@ describe("batch send task console interactions", () => {
         const display = extractFn("cronToDisplayText");
         assert.ok(display, "cronToDisplayText must exist");
         const sandbox = { escapeHtml: (v) => String(v == null ? "" : v) };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(display, sandbox);
 
         assert.strictEqual(sandbox.cronToDisplayText("0 0 9 ? * MON#2"), "0 0 9 ? * MON#2");
@@ -1007,7 +1026,7 @@ describe("batch send task console interactions", () => {
         assert.ok(clone, "deepCloneConfig must exist");
 
         const sandbox = {};
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(clone, sandbox);
 
         const withRounds = sandbox.deepCloneConfig({ id: 7, configName: "每日介绍", roundsPerRun: 2, roundSize: 20 });
@@ -1026,7 +1045,7 @@ describe("batch send task console interactions", () => {
             batchTaskState: {},
             fillManualFormFromDraft: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(defaults, sandbox);
 
         sandbox.fillManualFormDefaults();
@@ -1058,7 +1077,7 @@ describe("batch send task console interactions", () => {
             computeManualDiffs: () => [],
             escapeHtml: (v) => String(v == null ? "" : v)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("deepCloneConfig"), sandbox);
         vm.runInContext(applySource, sandbox);
         vm.runInContext(confirm, sandbox);
@@ -1088,7 +1107,7 @@ describe("batch send task console interactions", () => {
             computeAndRenderDiffs: () => {},
             scheduleRecipientPreview: (kind) => scheduled.push(kind)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(notifyRegionChange, sandbox);
 
         sandbox.notifyBatchRegionPickerChanged("batchManualRegions");
@@ -1128,7 +1147,7 @@ describe("batch send task console interactions", () => {
             templateId: 7
         };
         const sandbox = { readManualFormValues: () => values, Number };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(buildSnapshot, sandbox);
 
         assert.deepStrictEqual(
@@ -1154,7 +1173,7 @@ describe("batch send task console interactions", () => {
             api: () => new Promise((resolve, reject) => { rejectRequest = reject; }),
             console: { warn: () => {} }
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(refresh, sandbox);
 
         sandbox.refreshRecipientPreview("manual");
@@ -1183,7 +1202,7 @@ describe("batch send task console interactions", () => {
             document: { getElementById: (id) => id === "batchConfigEditorEmailDomains" ? hidden : null },
             renderBatchMultiPicker: (id) => rendered.push(id)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(readValue, sandbox);
         vm.runInContext(setValue, sandbox);
 
@@ -1229,7 +1248,7 @@ describe("batch send task console interactions", () => {
             },
             escapeHtml: (v) => String(v == null ? "" : v)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(readValue, sandbox);
         vm.runInContext(setValue, sandbox);
         vm.runInContext(renderValue, sandbox);
@@ -1270,7 +1289,7 @@ describe("batch send task console interactions", () => {
             },
             escapeHtml: (v) => String(v == null ? "" : v)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(readValue, sandbox);
         vm.runInContext(renderValue, sandbox);
 
@@ -1301,7 +1320,7 @@ describe("batch send task console interactions", () => {
             fillBatchConfigEditorTemplateSelector: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("readBatchMultiPickerValue"), sandbox);
         vm.runInContext(extractFn("setBatchMultiPickerValue"), sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
@@ -1339,7 +1358,7 @@ describe("batch send task console interactions", () => {
             hideBatchConfigEditor: () => {},
             loadBatchConfigList: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(saveConfig, sandbox);
 
         el("batchConfigEditorName").value = "多选服务商任务";
@@ -1362,7 +1381,7 @@ describe("batch send task console interactions", () => {
         assert.ok(normalize, "normalizeManualSnapshot must exist");
 
         const sandbox = { Number };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(normalize, sandbox);
 
         const a = sandbox.normalizeManualSnapshot({ emailDomains: ["b.com", "a.com"], tags: [], regions: [] });
@@ -1381,7 +1400,7 @@ describe("batch send task console interactions", () => {
             batchTaskState: { preloadedTemplates: [] },
             supportedBatchComposeTemplates: () => []
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(formatDiffValue, sandbox);
 
         assert.strictEqual(sandbox.formatManualDiffValue("emailDomains", []), "全部服务商");
@@ -1409,7 +1428,7 @@ describe("batch send task console interactions", () => {
                 supportedBatchComposeTemplates: () => [],
                 operatorStatusOptions: []
             };
-            vm.createContext(sandbox);
+            vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
             vm.runInContext(normalize, sandbox);
             vm.runInContext(formatDiffValue, sandbox);
             vm.runInContext(computeDiffs, sandbox);
@@ -1443,7 +1462,7 @@ describe("batch send task console interactions", () => {
             renderBatchConfigStatusToggle: () => "",
             batchGatePillHtml: () => ""
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(renderRow, sandbox);
 
         const html = sandbox.renderBatchConfigRow(makeConfig(["a.com", "b.com"]));
@@ -1468,7 +1487,7 @@ describe("batch send task console interactions", () => {
                 getElementById: (id) => id === "batchManualTags" ? tagHidden : (id === "batchConfigEditorRegions" ? regionHidden : null)
             }
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("normalizeBatchTags"), sandbox);
         vm.runInContext(readTags, sandbox);
         vm.runInContext(readRegions, sandbox);
@@ -1488,7 +1507,7 @@ describe("batch send task console interactions", () => {
             "batchOperatorStatusOptions must derive from the existing constant (I3b-3)");
 
         const sandbox = {};
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(statusOptionsSrc[0], sandbox);
         vm.runInContext(fnSrc, sandbox);
 
@@ -1511,7 +1530,7 @@ describe("batch send task console interactions", () => {
             document: { getElementById: (id) => id === "batchConfigEditorOperatorStatuses" ? hidden : null },
             renderBatchMultiPicker: (id) => rendered.push(id)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(setValue, sandbox);
 
         sandbox.setBatchMultiPickerValue("batchConfigEditorOperatorStatuses", ["NOT_CONTACTED", "CONTACTED"]);
@@ -1554,7 +1573,7 @@ describe("batch send task console interactions", () => {
             },
             escapeHtml: (v) => String(v == null ? "" : v)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(readValue, sandbox);
         vm.runInContext(setValue, sandbox);
         vm.runInContext(renderValue, sandbox);
@@ -1590,7 +1609,7 @@ describe("batch send task console interactions", () => {
             fillBatchConfigEditorTemplateSelector: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("readBatchMultiPickerValue"), sandbox);
         vm.runInContext(extractFn("setBatchMultiPickerValue"), sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
@@ -1628,7 +1647,7 @@ describe("batch send task console interactions", () => {
             hideBatchConfigEditor: () => {},
             loadBatchConfigList: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(saveConfig, sandbox);
 
         el("batchConfigEditorName").value = "状态筛选任务";
@@ -1655,7 +1674,7 @@ describe("batch send task console interactions", () => {
             supportedBatchComposeTemplates: () => [],
             operatorStatusOptions: [["NOT_CONTACTED", "未联系"], ["CONTACTED", "已联系"]]
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("operatorStatusLabel"), sandbox);
         vm.runInContext(formatDiffValue, sandbox);
 
@@ -1669,7 +1688,7 @@ describe("batch send task console interactions", () => {
         assert.ok(normalize, "normalizeManualSnapshot must exist");
 
         const sandbox = { Number };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(normalize, sandbox);
 
         const a = sandbox.normalizeManualSnapshot({ operatorStatuses: ["CONTACTED", "NOT_CONTACTED"], tags: [], regions: [], emailDomains: [] });
@@ -1702,7 +1721,7 @@ describe("batch send task console interactions", () => {
                 supportedBatchComposeTemplates: () => [],
                 operatorStatusOptions: [["NOT_CONTACTED", "未联系"], ["CONTACTED", "已联系"]]
             };
-            vm.createContext(sandbox);
+            vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
             vm.runInContext(extractFn("operatorStatusLabel"), sandbox);
             vm.runInContext(normalize, sandbox);
             vm.runInContext(formatDiffValue, sandbox);
@@ -1738,7 +1757,7 @@ describe("batch send task console interactions", () => {
             renderBatchConfigStatusToggle: () => "",
             batchGatePillHtml: () => ""
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("operatorStatusLabel"), sandbox);
         vm.runInContext(renderRow, sandbox);
 
@@ -1762,7 +1781,7 @@ describe("batch send task console interactions", () => {
             document: { getElementById: (id) => id === "batchManualEmailDomains" ? hidden : null },
             renderBatchMultiPicker: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(setValue, sandbox);
         vm.runInContext(readValue, sandbox);
 
@@ -1816,7 +1835,7 @@ describe("batch send task console interactions", () => {
             updateGateToggleLabel: () => {},
             scheduleRecipientPreview: (k) => scheduled.push(k)
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         assert.ok(BATCH_GATE_FILTERABLE_FIELDS_SRC, "BATCH_GATE_FILTERABLE_FIELDS must exist (I4b-4)");
         vm.runInContext(BATCH_GATE_FILTERABLE_FIELDS_SRC[0], sandbox);
         vm.runInContext(extractFn("gateToggleId"), sandbox);
@@ -1926,7 +1945,7 @@ describe("batch send task console interactions", () => {
             api: async (url, opts) => { bodies.push(JSON.parse(opts.body)); return { pending: 5, retryable: 3 }; },
             console: { warn: () => {} }
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(baseHint, sandbox);
         vm.runInContext(gateToggle, sandbox);
         vm.runInContext(refresh, sandbox);
@@ -1965,7 +1984,7 @@ describe("batch send task console interactions", () => {
             },
             console: { warn: () => {} }
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(baseHint, sandbox);
         vm.runInContext(gateToggle, sandbox);
         vm.runInContext(refresh, sandbox);
@@ -2005,7 +2024,7 @@ describe("batch send task console interactions", () => {
             },
             console: { warn: () => {} }
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(baseHint, sandbox);
         vm.runInContext(gateToggle, sandbox);
         vm.runInContext(refresh, sandbox);
@@ -2042,7 +2061,7 @@ describe("batch send task console interactions", () => {
             api: () => new Promise((resolve, reject) => { pending.push({ resolve, reject }); }),
             console: { warn: () => {} }
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(baseHint, sandbox);
         vm.runInContext(gateToggle, sandbox);
         vm.runInContext(refresh, sandbox);
@@ -2085,7 +2104,7 @@ describe("batch send task console interactions", () => {
             api: () => new Promise((resolve, reject) => { pending.push({ resolve, reject }); }),
             console: { warn: () => {} }
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(baseHint, sandbox);
         vm.runInContext(gateToggle, sandbox);
         vm.runInContext(refresh, sandbox);
@@ -2122,7 +2141,7 @@ describe("batch send task console interactions", () => {
                 readManualFormValues: () => makeConfig(draftGate),
                 supportedBatchComposeTemplates: () => []
             };
-            vm.createContext(sandbox);
+            vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
             vm.runInContext(normalize, sandbox);
             vm.runInContext(formatDiffValue, sandbox);
             vm.runInContext(computeDiffs, sandbox);
@@ -2140,7 +2159,7 @@ describe("batch send task console interactions", () => {
             "identical gate state must not be flagged (I4b-5)");
 
         const formatSandbox = { supportedBatchComposeTemplates: () => [] };
-        vm.createContext(formatSandbox);
+        vm.createContext(formatSandbox); loadEmailPolicyHelpers(formatSandbox);
         vm.runInContext(formatDiffValue, formatSandbox);
         assert.strictEqual(formatSandbox.formatManualDiffValue("gateFilterEnabled", true), "开启");
         assert.strictEqual(formatSandbox.formatManualDiffValue("gateFilterEnabled", false), "关闭");
@@ -2151,7 +2170,7 @@ describe("batch send task console interactions", () => {
         assert.ok(pillHtml, "batchGatePillHtml must exist (S4b-2)");
 
         const sandbox = {};
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(pillHtml, sandbox);
 
         const na = sandbox.batchGatePillHtml({ templateId: null, gateFilterEnabled: true });
@@ -2178,7 +2197,7 @@ describe("batch send task console interactions", () => {
             document: { getElementById: (id) => id === "batchManualEmailDomains" ? hidden : null },
             renderBatchMultiPicker: () => {}
         };
-        vm.createContext(sandbox1);
+        vm.createContext(sandbox1); loadEmailPolicyHelpers(sandbox1);
         vm.runInContext(setValue, sandbox1);
         vm.runInContext(readValue, sandbox1);
         sandbox1.setBatchMultiPickerValue("batchManualEmailDomains", ["a.com", "b.com"]);
@@ -2194,7 +2213,7 @@ describe("batch send task console interactions", () => {
         const fnSrc = extractFn("batchOperatorStatusOptions");
         assert.ok(fnSrc, "batchOperatorStatusOptions must remain (W1)");
         const sandbox2 = {};
-        vm.createContext(sandbox2);
+        vm.createContext(sandbox2); loadEmailPolicyHelpers(sandbox2);
         vm.runInContext(statusOptionsSrc[0], sandbox2);
         vm.runInContext(fnSrc, sandbox2);
         const options = sandbox2.batchOperatorStatusOptions();
@@ -2228,7 +2247,7 @@ describe("batch send task console interactions", () => {
             fillBatchConfigEditorTemplateSelector: () => {},
             updateBatchConfigVolumeHint: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(extractFn("readBatchMultiPickerValue"), sandbox);
         vm.runInContext(extractFn("setBatchMultiPickerValue"), sandbox);
         vm.runInContext(extractFn("isCronClock"), sandbox);
@@ -2273,7 +2292,7 @@ describe("batch send task console interactions", () => {
             hideBatchConfigEditor: () => {},
             loadBatchConfigList: () => {}
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(saveConfig, sandbox);
 
         el("batchConfigEditorName").value = "无方向任务";
@@ -2295,7 +2314,7 @@ describe("batch send task console interactions", () => {
         assert.ok(clone && defaults, "draft helpers must exist");
 
         const sandbox = { batchTaskState: {}, fillManualFormFromDraft: () => {} };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(clone, sandbox);
         vm.runInContext(defaults, sandbox);
 
@@ -2327,7 +2346,7 @@ describe("batch send task console interactions", () => {
             readBatchMultiPickerValue: () => [],
             resolveBatchTemplateMailType: () => "INTRODUCTION"
         };
-        vm.createContext(sandbox);
+        vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
         vm.runInContext(readValues, sandbox);
 
         assert.strictEqual(sandbox.readManualFormValues().researchDirectionFilter, "ANY",
@@ -2359,7 +2378,7 @@ describe("batch send task console interactions", () => {
                 readManualFormValues: () => makeConfig(draftDirection),
                 supportedBatchComposeTemplates: () => []
             };
-            vm.createContext(sandbox);
+            vm.createContext(sandbox); loadEmailPolicyHelpers(sandbox);
             vm.runInContext(normalize, sandbox);
             vm.runInContext(formatDiffValue, sandbox);
             vm.runInContext(computeDiffs, sandbox);
@@ -2377,7 +2396,7 @@ describe("batch send task console interactions", () => {
             "an unchanged direction must not be flagged (I-1)");
 
         const formatSandbox = {};
-        vm.createContext(formatSandbox);
+        vm.createContext(formatSandbox); loadEmailPolicyHelpers(formatSandbox);
         vm.runInContext(formatDiffValue, formatSandbox);
         assert.strictEqual(formatSandbox.formatManualDiffValue("researchDirectionFilter", "ANY"), "不限");
         assert.strictEqual(formatSandbox.formatManualDiffValue("researchDirectionFilter", "PRESENT"), "有研究方向");

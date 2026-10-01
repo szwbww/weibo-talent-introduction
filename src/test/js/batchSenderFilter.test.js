@@ -35,6 +35,25 @@ function extractFn(name) {
     return match[0];
 }
 
+// c3：放行结果白名单 helper —— 被抽取的 app.js 函数（编辑/手动放行组）会直接调用，必须随宿主函数一起注入。
+const EMAIL_POLICY_HELPERS = [
+    "batchEmailVerificationAllowedStates",
+    "emailVerificationAllowedStateLabel",
+    "emailVerificationPolicyFieldId",
+    "emailVerificationPolicyOptionId",
+    "normalizeEmailVerificationAllowedStates",
+    "readEmailVerificationAllowedStates",
+    "fillEmailVerificationAllowedStates",
+    "updateEmailVerificationPolicyState",
+    "emailVerificationAllowedStatesText",
+    "emailVerificationAllowedStatesScopeText"
+];
+
+function loadEmailPolicyHelpers(target) {
+    EMAIL_POLICY_HELPERS.forEach((name) => vm.runInContext(extractFn(name), target));
+    return target;
+}
+
 // The multi-picker registry is a top-level `var` assignment; capture its object literal.
 function extractRegistry() {
     const start = appSource.indexOf("var BATCH_MULTI_PICKER_REGISTRY = {");
@@ -92,7 +111,7 @@ function sandbox(extra) {
         },
         escapeHtml: (v) => String(v == null ? "" : v)
     }, extra || {});
-    vm.createContext(ctx);
+    vm.createContext(ctx); loadEmailPolicyHelpers(ctx);
     ctx.__store = store;
     return ctx;
 }
@@ -452,6 +471,7 @@ describe("batch sender account filter: manual diff and execution snapshots (I-2/
         senderAccountCodes: ["A"],
         researchDirectionFilter: "ANY",
         gateFilterEnabled: false,
+        emailVerificationAllowedStates: ["deliverable", "risky", "unknown"],
         roundSize: 50,
         roundsPerRun: 1,
         perMailIntervalMs: 1000,
@@ -493,6 +513,10 @@ describe("batch sender account filter: manual diff and execution snapshots (I-2/
         store.get("batchManualSelfCheckTtlMin").value = "30";
         store.get(MANUAL_PICKER).value = "B";
         store.get(EDITOR_PICKER).value = "B";
+        // c3 fixture：来源配置的三态放行已回填到手动表单，本用例只关心发件账号差异。
+        ["batchManualAllowDeliverable", "batchManualAllowRisky", "batchManualAllowUnknown"].forEach((id) => {
+            store.get(id).checked = true;
+        });
         return ctx;
     }
 

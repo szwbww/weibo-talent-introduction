@@ -105,7 +105,8 @@ class BatchSendTaskConfigServiceTest {
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false,
         emailVerificationEnabled: Boolean = false,
-        excludeVerifiedUnavailableEmails: Boolean = true
+        excludeVerifiedUnavailableEmails: Boolean = true,
+        emailVerificationAllowedStates: List<String> = listOf("deliverable")
     ) = BatchSendTaskConfigCreateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -126,7 +127,8 @@ class BatchSendTaskConfigServiceTest {
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         emailVerificationEnabled = emailVerificationEnabled,
-        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails
+        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails,
+        emailVerificationAllowedStates = emailVerificationAllowedStates
     )
 
     private fun updateCmd(
@@ -149,7 +151,8 @@ class BatchSendTaskConfigServiceTest {
         templateId: Long? = null,
         gateFilterEnabled: Boolean = false,
         emailVerificationEnabled: Boolean? = null,
-        excludeVerifiedUnavailableEmails: Boolean? = null
+        excludeVerifiedUnavailableEmails: Boolean? = null,
+        emailVerificationAllowedStates: List<String>? = null
     ) = BatchSendTaskConfigUpdateCommand(
         configName = name,
         autoEnabled = autoEnabled,
@@ -170,7 +173,8 @@ class BatchSendTaskConfigServiceTest {
         templateId = templateId,
         gateFilterEnabled = gateFilterEnabled,
         emailVerificationEnabled = emailVerificationEnabled,
-        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails
+        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails,
+        emailVerificationAllowedStates = emailVerificationAllowedStates
     )
 
     private fun row(
@@ -191,6 +195,7 @@ class BatchSendTaskConfigServiceTest {
         gateFilterEnabled: Boolean = false,
         emailVerificationEnabled: Boolean = false,
         excludeVerifiedUnavailableEmails: Boolean = false,
+        emailVerificationAllowedStatesJson: String? = null,
         deletedAt: LocalDateTime? = null,
         updatedAt: LocalDateTime = LocalDateTime.of(2026, 7, 14, 10, 0)
     ) = BatchSendTaskConfig(
@@ -215,6 +220,7 @@ class BatchSendTaskConfigServiceTest {
         gateFilterEnabled = gateFilterEnabled,
         emailVerificationEnabled = emailVerificationEnabled,
         excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails,
+        emailVerificationAllowedStatesJson = emailVerificationAllowedStatesJson,
         deletedAt = deletedAt,
         createdAt = updatedAt,
         updatedAt = updatedAt
@@ -1949,5 +1955,318 @@ class BatchSendTaskConfigServiceTest {
 
         assertFalse(service().get(1L).excludeVerifiedUnavailableEmails)
         assertFalse(row(id = 1L).toExecutionSnapshot(objectMapper).excludeVerifiedUnavailableEmails)
+    }
+
+    // ──── I-1/I-2/I-3: Emailable 放行白名单列（email_verification_allowed_states_json） ────
+
+    @Test
+    fun `create defaults the allow list to deliverable in entity view and launch snapshot (I-1 I-2)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("缺省放行")).thenReturn(null)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 95L)
+        }
+
+        val view = service().create(createCmd(name = "缺省放行"))
+
+        verify(repository).save(captor.capture())
+        // I-2: 未传字段 = [deliverable]（绝不放行 risky/unknown）。
+        assertEquals("""["deliverable"]""", captor.value.emailVerificationAllowedStatesJson)
+        assertEquals(listOf("deliverable"), view.emailVerificationAllowedStates)
+        assertEquals(
+            listOf("deliverable"),
+            captor.value.toExecutionSnapshot(objectMapper).emailVerificationAllowedStates
+        )
+    }
+
+    @Test
+    fun `create normalizes explicit allow lists and stores an explicit empty list (I-1 I-2)`() {
+        val saved = mutableListOf<BatchSendTaskConfig>()
+        `when`(repository.findByConfigNameAndDeletedAtIsNull(anyString())).thenReturn(null)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            val entity = invocation.arguments[0] as BatchSendTaskConfig
+            saved.add(entity)
+            entity.copy(id = 90L + saved.size)
+        }
+
+        service().create(
+            createCmd(name = "顺序去重", emailVerificationAllowedStates = listOf("risky", "deliverable", "risky"))
+        )
+        service().create(createCmd(name = "全跳过", emailVerificationAllowedStates = emptyList()))
+
+        // I-1: 固定顺序 deliverable,risky,unknown + 去重。
+        assertEquals("""["deliverable","risky"]""", saved[0].emailVerificationAllowedStatesJson)
+        assertEquals(
+            listOf("deliverable", "risky"),
+            saved[0].toExecutionSnapshot(objectMapper).emailVerificationAllowedStates
+        )
+        // I-2: 显式 [] 存 []（明确全跳过），不与旧 NULL（三态放行）同义。
+        assertEquals("[]", saved[1].emailVerificationAllowedStatesJson)
+        assertEquals(
+            emptyList<String>(),
+            saved[1].toExecutionSnapshot(objectMapper).emailVerificationAllowedStates
+        )
+    }
+
+    @Test
+    fun `create rejects an illegal allow list before saving (I-1)`() {
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("非法放行")).thenReturn(null)
+
+        listOf(
+            listOf("undeliverable"),
+            listOf("deliverable", "invalid"),
+            listOf("Deliverable"),
+            listOf("deliverable "),
+            listOf("RISKY")
+        ).forEach { illegal ->
+            val ex = assertThrows(IllegalArgumentException::class.java, {
+                service().create(createCmd(name = "非法放行", emailVerificationAllowedStates = illegal))
+            }, "illegal=$illegal")
+            assertTrue(ex.message!!.contains("emailVerificationAllowedStates"), ex.message)
+        }
+        verify(repository, never()).save(any())
+    }
+
+    @Test
+    fun `create binding rejects an explicit null allow list instead of falling back to legacy full allow (I-2)`() {
+        val mapper = ObjectMapper().registerKotlinModule()
+        val body = """
+            {"configName":"显式null","cron":"0 0 9 * * ?","roundSize":10,"perMailIntervalMs":1000,
+             "perRoundIntervalMs":60000,"selfCheckTtlMinutes":30,"expertTypes":["PRODUCTION_RND"],
+             "emailVerificationAllowedStates":null}
+        """.trimIndent()
+
+        // I-2: 非 nullable DTO 绑定拒绝显式 null —— 不能升级成旧的「三态全放行」。
+        assertThrows(com.fasterxml.jackson.databind.JsonMappingException::class.java) {
+            mapper.readValue(body, BatchSendTaskConfigCreateCommand::class.java)
+        }
+    }
+
+    @Test
+    fun `update without the field preserves the stored allow list text verbatim (I-2)`() {
+        val existing = row(
+            id = 5L,
+            name = "每日介绍",
+            emailVerificationAllowedStatesJson = "[ \"unknown\" ]"
+        )
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 5L)
+        }
+
+        val view = service().update(5L, updateCmd())
+
+        verify(repository).save(captor.capture())
+        // 逐字保留：不重新序列化，运营原始文本（空格/顺序）原样留住。
+        assertEquals("[ \"unknown\" ]", captor.value.emailVerificationAllowedStatesJson)
+        assertEquals(listOf("unknown"), view.emailVerificationAllowedStates)
+    }
+
+    @Test
+    fun `update without the field keeps a legacy sql null column null (I-2)`() {
+        val existing = row(id = 5L, name = "每日介绍")
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 5L)
+        }
+
+        val view = service().update(5L, updateCmd())
+
+        verify(repository).save(captor.capture())
+        // 旧 SQL NULL 必须保持 NULL：回显三态只是读侧投影，不能把列改写成显式三态数组。
+        assertNull(captor.value.emailVerificationAllowedStatesJson)
+        assertEquals(listOf("deliverable", "risky", "unknown"), view.emailVerificationAllowedStates)
+        assertEquals(
+            listOf("deliverable", "risky", "unknown"),
+            captor.value.toExecutionSnapshot(objectMapper).emailVerificationAllowedStates
+        )
+    }
+
+    @Test
+    fun `update with an explicit empty list stores an explicit empty list (I-2)`() {
+        val existing = row(id = 5L, name = "每日介绍")
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 5L)
+        }
+
+        val view = service().update(5L, updateCmd(emailVerificationAllowedStates = emptyList()))
+
+        verify(repository).save(captor.capture())
+        assertEquals("[]", captor.value.emailVerificationAllowedStatesJson)
+        assertEquals(emptyList<String>(), view.emailVerificationAllowedStates)
+        assertEquals(
+            emptyList<String>(),
+            captor.value.toExecutionSnapshot(objectMapper).emailVerificationAllowedStates
+        )
+    }
+
+    @Test
+    fun `update with an explicit list normalizes it and keeps the verification switch untouched (I-1 I-2 I-4)`() {
+        val existing = row(id = 5L, name = "每日介绍", emailVerificationEnabled = false)
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 5L)
+        }
+
+        val view = service().update(
+            5L,
+            updateCmd(emailVerificationAllowedStates = listOf("unknown", "deliverable", "unknown"))
+        )
+
+        verify(repository).save(captor.capture())
+        assertEquals("""["deliverable","unknown"]""", captor.value.emailVerificationAllowedStatesJson)
+        assertEquals(listOf("deliverable", "unknown"), view.emailVerificationAllowedStates)
+        // I-4: 保存放行选择不修改验证开关本身。
+        assertFalse(captor.value.emailVerificationEnabled)
+    }
+
+    @Test
+    fun `update rejects an illegal allow list without saving (I-1)`() {
+        val existing = row(id = 5L, name = "每日介绍")
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("每日介绍")).thenReturn(existing)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            service().update(5L, updateCmd(emailVerificationAllowedStates = listOf("undeliverable")))
+        }
+
+        verify(repository, never()).save(any())
+    }
+
+    /** I-2/I-4: 执行一次旧 typed 更新并回传落库实体；[storedJson] 为存量列原始文本（null = SQL NULL）。 */
+    private fun updateLegacyConfigOnce(storedJson: String?): BatchSendTaskConfig {
+        val existing = BatchSendTaskConfig(
+            id = 2L, configName = "默认介绍邮件任务", mailType = "INTRODUCTION",
+            autoEnabled = false, cron = "0 0 0 * * ?", roundSize = 50,
+            roundsPerRun = 7,
+            perMailIntervalMs = 1000, perRoundIntervalMs = 60000, selfCheckTtlMinutes = 30,
+            funnelLevel = "CANDIDATE", tagsJson = """["保留标签"]""",
+            emailDomainsJson = "[]", operatorStatusesJson = "[]",
+            expertTypesJson = """["PRODUCTION_RND"]""",
+            emailVerificationEnabled = false,
+            emailVerificationAllowedStatesJson = storedJson,
+            discipline = null, templateId = null, legacyCode = "INTRODUCTION",
+            createdAt = LocalDateTime.now(), updatedAt = LocalDateTime.now()
+        )
+        `when`(repository.findByLegacyCode("INTRODUCTION")).thenReturn(existing)
+        `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(existing)
+        `when`(repository.findByConfigNameAndDeletedAtIsNull("默认介绍邮件任务")).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 2L, legacyCode = "INTRODUCTION")
+        }
+
+        service().updateLegacyConfig(
+            BatchSendType.INTRODUCTION,
+            BatchSendConfigUpdateRequest(
+                autoEnabled = true,
+                cron = "0 30 8 * * ?",
+                dailyCap = 200,
+                roundSize = 20,
+                perMailIntervalMs = 2000,
+                perRoundIntervalMs = 120000,
+                selfCheckTtlMinutes = 15,
+                emailDomain = "",
+                discipline = "HUMANITIES",
+                templateId = null
+            )
+        )
+
+        verify(repository).save(captor.capture())
+        return captor.value
+    }
+
+    @Test
+    fun `updateLegacyConfig keeps a legacy sql null allow list column null (I-2 I-4)`() {
+        // I-2/I-4: 旧 typed API 不传白名单 —— SQL NULL 保持 NULL，不得被写成显式三态数组。
+        assertNull(updateLegacyConfigOnce(null).emailVerificationAllowedStatesJson)
+    }
+
+    @Test
+    fun `updateLegacyConfig preserves stored allow list text verbatim (I-2 I-4)`() {
+        // I-2/I-4: 既有列文本逐字保留（不重新序列化）。
+        assertEquals("[ \"unknown\" ]", updateLegacyConfigOnce("[ \"unknown\" ]").emailVerificationAllowedStatesJson)
+    }
+
+    @Test
+    fun `setEnabled and softDelete preserve the allow list column (I-3 I-4)`() {
+        val existing = row(
+            id = 5L,
+            name = "每日介绍",
+            expertTypesJson = """["PRODUCTION_RND"]""",
+            emailVerificationAllowedStatesJson = """["risky"]"""
+        )
+        `when`(repository.findByIdAndDeletedAtIsNull(5L)).thenReturn(existing)
+        val captor = ArgumentCaptor.forClass(BatchSendTaskConfig::class.java)
+        `when`(repository.save(any())).thenAnswer { invocation ->
+            (invocation.arguments[0] as BatchSendTaskConfig).copy(id = 5L)
+        }
+
+        service().setEnabled(5L, true)
+        service().setEnabled(5L, false)
+        service().softDelete(5L)
+
+        verify(repository, times(3)).save(captor.capture())
+        captor.allValues.forEach { assertEquals("""["risky"]""", it.emailVerificationAllowedStatesJson) }
+        // 软删只改 autoEnabled/deletedAt，不触碰放行选择。
+        assertNotNull(captor.allValues.last().deletedAt)
+        assertFalse(captor.allValues.last().autoEnabled)
+    }
+
+    @Test
+    fun `a legacy null allow list column reads as the three states and corrupt text is rejected (I-1)`() {
+        `when`(repository.findByIdAndDeletedAtIsNull(1L)).thenReturn(row(id = 1L))
+
+        // 旧 SQL NULL = 三态全放行（读侧投影），且快照同样固定该列表。
+        assertEquals(listOf("deliverable", "risky", "unknown"), service().get(1L).emailVerificationAllowedStates)
+        assertEquals(
+            listOf("deliverable", "risky", "unknown"),
+            row(id = 1L).toExecutionSnapshot(objectMapper).emailVerificationAllowedStates
+        )
+
+        listOf(
+            "not-json",
+            "null",
+            "{}",
+            "\"deliverable\"",
+            "[123]",
+            "[\"deliverable\",null]",
+            "[\"undeliverable\"]",
+            "[ \"unknown\" ",
+            " ",
+            ""
+        ).forEach { corrupt ->
+            val bad = row(id = 2L, name = "坏放行列", emailVerificationAllowedStatesJson = corrupt)
+            `when`(repository.findByIdAndDeletedAtIsNull(2L)).thenReturn(bad)
+            // I-1: 坏列不得当旧 NULL（= 全放行），读取与启动两侧都必须拒绝。
+            assertThrows(IllegalStateException::class.java, { service().get(2L) }, "corrupt=$corrupt")
+            assertThrows(
+                IllegalStateException::class.java,
+                { bad.toExecutionSnapshot(objectMapper) },
+                "corrupt=$corrupt"
+            )
+        }
+    }
+
+    @Test
+    fun `a stored allow list is normalized on read (I-1)`() {
+        `when`(repository.findByIdAndDeletedAtIsNull(3L)).thenReturn(
+            row(
+                id = 3L,
+                name = "顺序",
+                emailVerificationAllowedStatesJson = "[\"risky\",\"risky\",\"deliverable\"]"
+            )
+        )
+
+        assertEquals(listOf("deliverable", "risky"), service().get(3L).emailVerificationAllowedStates)
     }
 }

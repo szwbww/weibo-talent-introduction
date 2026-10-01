@@ -40,6 +40,13 @@ data class BatchSendTaskConfig(
     val emailVerificationEnabled: Boolean = false,
     /** I-1: only excludes targets with a current verified-undeliverable history; default off for old rows. */
     val excludeVerifiedUnavailableEmails: Boolean = false,
+    /**
+     * I-1: Emailable 放行结果白名单列（迁移 V145 `email_verification_allowed_states_json TEXT NULL`）。
+     * SQL NULL = 旧行/未传字段（三态全放行）；非 NULL 必须是合法 JSON 数组且元素仅
+     * deliverable/risky/unknown，`[]` = 明确全跳过。坏 JSON / JSON null / 非数组 / 非法元素由
+     * [parseEmailVerificationAllowedStates] 在读取与启动两侧拒绝，绝不降级为 NULL（= 放行）。
+     */
+    val emailVerificationAllowedStatesJson: String? = null,
     val legacyCode: String? = null,
     val deletedAt: LocalDateTime? = null,
     val createdAt: LocalDateTime? = null,
@@ -75,6 +82,11 @@ data class BatchSendTaskConfigView(
      */
     val emailVerificationEnabled: Boolean = false,
     val excludeVerifiedUnavailableEmails: Boolean = false,
+    /**
+     * I-1/I-2: 放行结果白名单回显（c3 编辑回填的读取面）。恒为有效数组：
+     * 旧 SQL NULL 回三态 `deliverable,risky,unknown`；`[]` 原样回显；坏列直接拒绝（不静默回三态）。
+     */
+    val emailVerificationAllowedStates: List<String> = EmailVerificationAllowedStates.ALLOWED,
     val createdAt: LocalDateTime?,
     val updatedAt: LocalDateTime?,
     /** Next planned trigger time; null when the cron is invalid (I-1/I-2/I-3). */
@@ -111,7 +123,13 @@ data class BatchSendTaskConfigCreateCommand(
      */
     val emailVerificationEnabled: Boolean = false,
     /** New task default enables historical exclusion; existing tasks remain false via the entity/migration. */
-    val excludeVerifiedUnavailableEmails: Boolean = true
+    val excludeVerifiedUnavailableEmails: Boolean = true,
+    /**
+     * I-2: 新建默认只放行 deliverable（未传字段 = `[deliverable]`）；显式 `[]` = 全跳过。
+     * 非 nullable：请求体显式 null 由绑定器拒绝（不可升级成旧的三态全放行）；非法值由配置服务拒绝。
+     */
+    val emailVerificationAllowedStates: List<String> =
+        listOf(EmailVerificationAllowedStates.DELIVERABLE)
 )
 
 data class BatchSendTaskConfigUpdateCommand(
@@ -141,7 +159,13 @@ data class BatchSendTaskConfigUpdateCommand(
      * 合并由 `BatchSendTaskConfigService.update` 显式完成（`cmd.x ?: existing.x`），不走空值清空逻辑。
      */
     val emailVerificationEnabled: Boolean? = null,
-    val excludeVerifiedUnavailableEmails: Boolean? = null
+    val excludeVerifiedUnavailableEmails: Boolean? = null,
+    /**
+     * I-2: 缺省或 null = **逐字保留** existing 原始列（含 SQL NULL = 旧配置三态放行）；
+     * 显式 `[]` 存 `[]`；显式数组按固定顺序去重后落库。合并由
+     * `BatchSendTaskConfigService.update` 在入口完成，绝不用「空值即清空」推断。
+     */
+    val emailVerificationAllowedStates: List<String>? = null
 )
 
 /**

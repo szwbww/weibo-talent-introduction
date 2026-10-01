@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-10-01/email-verification-allowlist.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-10-01/email-verification-allowlist.md (sha256 49d61d1ebb0babee9517010c245827d406916bf2040a2558c0717ccbc2a94b73)
+- Governing master identity: worktree sha256 49d61d1ebb0babee9517010c245827d406916bf2040a2558c0717ccbc2a94b73; commit 143d9caccaef16e848927dd03923f3172f1b74a1
+- Invoked master identity: sha256 49d61d1ebb0babee9517010c245827d406916bf2040a2558c0717ccbc2a94b73
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: docs/plans/fast/2026-10-01-email-verification-allowlist/ledger.md (sha256 f8b8af96ced7d99f5d51ac5a797bb08509123e22815acb374207681bcb1fb09e)
+- Fast-p handoff: docs/plans/fast/2026-10-01-email-verification-allowlist/human-review-handoff.md (sha256 66bbd354a29c92cf4c18e0c63349713c53cbd04b8cd343e25cb09e5772d332c8)
+- Master base: 2b036ccce7e9956f6ea27420d8bc9e057a011da2
+- Final code head: e6c36e294cb26ce36684a96a0908c305f871e4b4
+- Evidence parent before next commit: 7f14bdff577727234887b982f995db1e4da22995
+- Previous evidence commit: N/A
+- Branch: fast/2026-10-01-email-verification-allowlist
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-01-email-verification-allowlist
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: SELECTED; exact matching READY_FOR_HUMAN_REVIEW ledger/handoff; 3 terminal children; valid base/code ancestry; master identity CONSISTENT
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md#epoch-1
+- Repair artifact: docs/plans/fix/email-verification-allowlist/repair.md
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Complete every pending mandatory manual-acceptance item and explicitly sign off boundary e6c36e294cb26ce36684a96a0908c305f871e4b4.

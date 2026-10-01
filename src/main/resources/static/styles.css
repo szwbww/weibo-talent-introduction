@@ -11854,6 +11854,61 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .batch-email-verification-pager { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .batch-email-verification-pager .button:disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
 
+/* 批量介绍邮件：Emailable 放行结果复选组（仅此两组，S-2） */
+.batch-email-policy-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px 18px;
+  align-items: center;
+}
+.batch-config-field .batch-email-policy-option {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  color: var(--text-main);
+  font-size: 13px;
+  cursor: pointer;
+}
+.batch-email-policy-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--primary);
+}
+.batch-email-policy-option input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.batch-email-policy-option small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.batch-email-policy-fixed {
+  margin-top: 9px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.batch-email-policy-hint {
+  margin-top: 9px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.batch-email-policy-field.is-disabled {
+  opacity: .52;
+}
+.batch-email-policy-field.is-disabled .batch-email-policy-option,
+.batch-email-policy-field.is-disabled input[type="checkbox"] {
+  cursor: not-allowed;
+}
+@media (max-width: 600px) {
+  .batch-email-policy-options { gap: 4px 10px; }
+}
+
 .mot-root {
     padding: 0 24px 24px;
 }
