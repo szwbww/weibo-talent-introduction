@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-01T13:08:05Z
-- Current child: c1
+- Current child: c2
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
@@ -19,8 +19,8 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| c1 | docs/plans/2026-10-01/email-verification-allowlist-backend.md | commit:143d9caccaef16e848927dd03923f3172f1b74a1 | none | 1 | IMPLEMENTING | 26a81bfa0467aaa6ea07613730a326759b9337f4 | — | 0 | — | — | — | 10 授权文件；I-1..I-5；下游：快照字段/严格校验 helper/EMAIL_VERIFICATION_POLICY_SKIP/verify 第三参；实现者 C1Impl |
-| c2 | docs/plans/2026-10-01/email-verification-allowlist-config.md | commit:143d9caccaef16e848927dd03923f3172f1b74a1 | c1 | 1 | PENDING | — | — | 0 | — | — | — | 7 授权文件；V145 迁移；复用 c1 允许值校验 |
+| c1 | docs/plans/2026-10-01/email-verification-allowlist-backend.md | commit:143d9caccaef16e848927dd03923f3172f1b74a1 | none | 1 | LIGHT_PASS | 26a81bfa0467aaa6ea07613730a326759b9337f4 | e7441004aa6dd68fb3f8e486537d3e520f71e0fd | 0 | — | e7441004aa6dd68fb3f8e486537d3e520f71e0fd | — | 10 授权文件；实现者 C1Impl；验证者 C1Verify 四门全过 LIGHT_PASS/COMPLETE_CHILD（264/0 与 17/0，基线 247/14，+17/+3 为新增用例）；O-1 基线计数差异为新增用例所致，无 AUTO_FIX |
+| c2 | docs/plans/2026-10-01/email-verification-allowlist-config.md | commit:143d9caccaef16e848927dd03923f3172f1b74a1 | c1 | 1 | IMPLEMENTING | e7441004aa6dd68fb3f8e486537d3e520f71e0fd | — | 0 | — | — | — | 7 授权文件；V145 迁移；复用 c1 的 EmailVerificationAllowedStates；实现者 C2Impl |
 | c3 | docs/plans/2026-10-01/email-verification-allowlist-frontend.md | commit:143d9caccaef16e848927dd03923f3172f1b74a1 | c2 | 1 | PENDING | — | — | 0 | — | — | — | 9 授权文件；缓存键 20261001-email-verification-allowlist |
 
 ## Amendments
@@ -53,4 +53,4 @@
 | `DOCKER_HOST=… mvn -B -DmigrationIt=true -Dapi.version=1.40 -Dtest=FlywayMigrationIntegrationTest test` | 1 | 33 tests / 24 failures，全部为既有 latest-version 断言 `expected: <142> but was: <144>`（c2 计划已文档化的基线红；c2 更新最新断言后复跑）；`baseline/mvn-migrationit.txt` |
 
 ## Verification Log
-（各 child 完整报告见 `children/<id>/verify-log.md`。）
+- c1：`LIGHT_PASS`，Required Action `COMPLETE_CHILD`，boundary `2452f4a..e744100`，验证者 C1Verify（epoch 1/attempt 1）；必需命令：targeted exit 0 / 264 tests / 0 fail（基线 247/0），MySQL IT exit 0 / 17 tests / 0 fail（基线 14/0）；O-1 见 `children/c1/verify-log.md`（基线计数差异 = 新增用例，0→0 失败对比）。
