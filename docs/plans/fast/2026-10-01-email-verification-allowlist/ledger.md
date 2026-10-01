@@ -9,7 +9,7 @@
 - Finalization mode: NORMAL
 - Finalization repair parent: N/A
 - Started: 2026-10-01T13:08:05Z
-- Current child: c2
+- Current child: c3
 - Waiting role: IMPLEMENTER
 - Agent attempt: 0
 - Last agent error: N/A
@@ -19,9 +19,9 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| c1 | docs/plans/2026-10-01/email-verification-allowlist-backend.md | commit:143d9caccaef16e848927dd03923f3172f1b74a1 | none | 1 | LIGHT_PASS | 26a81bfa0467aaa6ea07613730a326759b9337f4 | e7441004aa6dd68fb3f8e486537d3e520f71e0fd | 0 | — | e7441004aa6dd68fb3f8e486537d3e520f71e0fd | — | 10 授权文件；实现者 C1Impl；验证者 C1Verify 四门全过 LIGHT_PASS/COMPLETE_CHILD（264/0 与 17/0，基线 247/14，+17/+3 为新增用例）；O-1 基线计数差异为新增用例所致，无 AUTO_FIX |
-| c2 | docs/plans/2026-10-01/email-verification-allowlist-config.md | commit:143d9caccaef16e848927dd03923f3172f1b74a1 | c1 | 1 | IMPLEMENTING | e7441004aa6dd68fb3f8e486537d3e520f71e0fd | — | 0 | — | — | — | 7 授权文件；V145 迁移；复用 c1 的 EmailVerificationAllowedStates；实现者 C2Impl |
-| c3 | docs/plans/2026-10-01/email-verification-allowlist-frontend.md | commit:143d9caccaef16e848927dd03923f3172f1b74a1 | c2 | 1 | PENDING | — | — | 0 | — | — | — | 9 授权文件；缓存键 20261001-email-verification-allowlist |
+| c1 | docs/plans/2026-10-01/email-verification-allowlist-backend.md | commit:143d9caccaef16e848927dd03923f3172f1b74a1 | none | 1 | LIGHT_PASS | 26a81bfa0467aaa6ea07613730a326759b9337f4 | e7441004aa6dd68fb3f8e486537d3e520f71e0fd | 0 | — | e7441004aa6dd68fb3f8e486537d3e520f71e0fd | 692262514628e65d4da3da97be54e73e16cec865 | 10 授权文件；实现者 C1Impl；验证者 C1Verify 四门全过 LIGHT_PASS/COMPLETE_CHILD（264/0 与 17/0，基线 247/14，+17/+3 为新增用例）；O-1 基线计数差异为新增用例所致，无 AUTO_FIX |
+| c2 | docs/plans/2026-10-01/email-verification-allowlist-config.md | commit:143d9caccaef16e848927dd03923f3172f1b74a1 | c1 | 1 | LIGHT_PASS | e7441004aa6dd68fb3f8e486537d3e520f71e0fd | ac37fcd9fc570897ec42b3ce7745a9a7104cebe7 | 0 | — | ac37fcd9fc570897ec42b3ce7745a9a7104cebe7 | — | 7 授权文件；V145；实现者 C2Impl；验证者 C2Verify 四门全过 LIGHT_PASS/COMPLETE_CHILD（targeted 156/0；迁移 IT 34/0，基线 33/24 红转全绿）；verify-log 初稿经相对路径误落主工作区，controller 原样移入本 worktree 并清理主工作区；无 AUTO_FIX |
+| c3 | docs/plans/2026-10-01/email-verification-allowlist-frontend.md | commit:143d9caccaef16e848927dd03923f3172f1b74a1 | c2 | 1 | IMPLEMENTING | ac37fcd9fc570897ec42b3ce7745a9a7104cebe7 | — | 0 | — | — | — | 9 授权文件；缓存键统一为 20261001-email-verification-allowlist（当前 11 处 20260930-manual-template-reference，src/test 0 命中）；run 级收尾全量 mvn test 归本 child；实现者 C3Impl |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
@@ -50,7 +50,8 @@
 | `node --check src/main/resources/static/app.js` | 0 | 语法通过；`baseline/js-check.txt` |
 | `node --test src/test/js/*.test.js` | 0 | 1265 pass / 249 suites / 0 fail；`baseline/js-full.txt` |
 | `DOCKER_HOST=… mvn -B -DmysqlIt=true -Dapi.version=1.40 -Dtest=BatchEmailVerificationRepositoryIT test` | 0 | 14 tests / 0 failures（Testcontainers MySQL，OrbStack 29.4.0）；`baseline/mvn-mysqlit.txt` |
-| `DOCKER_HOST=… mvn -B -DmigrationIt=true -Dapi.version=1.40 -Dtest=FlywayMigrationIntegrationTest test` | 1 | 33 tests / 24 failures，全部为既有 latest-version 断言 `expected: <142> but was: <144>`（c2 计划已文档化的基线红；c2 更新最新断言后复跑）；`baseline/mvn-migrationit.txt` |
+| `DOCKER_HOST=… mvn -B -DmigrationIt=true -Dapi.version=1.40 -Dtest=FlywayMigrationIntegrationTest test` | 1 | 33 tests / 24 failures，全部为既有 latest-version 断言 `expected: <142> but was: <144>`（c2 已修复为 145 并全绿）；`baseline/mvn-migrationit.txt` |
 
 ## Verification Log
 - c1：`LIGHT_PASS`，Required Action `COMPLETE_CHILD`，boundary `2452f4a..e744100`，验证者 C1Verify（epoch 1/attempt 1）；必需命令：targeted exit 0 / 264 tests / 0 fail（基线 247/0），MySQL IT exit 0 / 17 tests / 0 fail（基线 14/0）；O-1 见 `children/c1/verify-log.md`（基线计数差异 = 新增用例，0→0 失败对比）。
+- c2：`LIGHT_PASS`，Required Action `COMPLETE_CHILD`，boundary `6922625..ac37fcd`，验证者 C2Verify（epoch 1/attempt 1）；必需命令：targeted exit 0 / 156 tests / 0 fail（105+51），迁移 IT exit 0 / 34 tests / 0 fail（基线 33/24 全部 `expected: <142> but was: <144>` → 0）；无 AUTO_FIX/RECORD_ONLY。
