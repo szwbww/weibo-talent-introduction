@@ -493,8 +493,52 @@ fun BatchSendTaskConfig.toExecutionSnapshot(
         oneRoundOnly = oneRoundOnly,
         // I-1/I-4: 配置实体是快照的唯一来源；启动时逐字复制，运行中改配置/软删不改本次快照。
         emailVerificationEnabled = emailVerificationEnabled,
+        // I-1/I-3: 本列同样只经唯一解析点读取（旧 SQL NULL → 三态全放行），坏值在此拒绝启动。
+        emailVerificationAllowedStates = parseEmailVerificationAllowedStates(
+            objectMapper,
+            emailVerificationAllowedStatesJson
+        ),
         excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails
     )
+}
+
+/**
+ * I-1: `batch_send_task_config.email_verification_allowed_states_json` 的唯一解析点
+ * （配置 View 与启动快照共用）。
+ *
+ * SQL NULL = 升级前的旧配置，逐字返回三态全放行（[EmailVerificationAllowedStates.ALLOWED]）；
+ * 非 NULL 文本必须是合法 JSON 数组且元素逐字属于允许值，`[]` 明确表示不实施发送前验证。
+ * JSON null、非数组、非字符串元素、未知值与大小写/空白变体一律拒绝（[IllegalStateException]），
+ * 绝不降级成旧 NULL —— 降级会把「明确不放行」静默放宽成三态放行。
+ * 返回值为按固定顺序去重后的列表。
+ */
+fun parseEmailVerificationAllowedStates(objectMapper: ObjectMapper, json: String?): List<String> {
+    // 只有 SQL NULL 才是「旧配置」；非 NULL 的空白文本不是合法 JSON 数组，必须拒绝，
+    // 绝不能像 sender_account_codes_json 那样把空文本当作未设置（那会把非法数据放行为三态）。
+    if (json == null) return EmailVerificationAllowedStates.ALLOWED
+    val text = json.trim()
+    if (text.isEmpty()) {
+        throw IllegalStateException("email_verification_allowed_states_json must not be blank: '$json'")
+    }
+    val node = try {
+        objectMapper.readTree(text)
+    } catch (e: Exception) {
+        throw IllegalStateException("email_verification_allowed_states_json is not valid JSON: $text", e)
+    }
+    if (node == null || node.isNull || !node.isArray) {
+        throw IllegalStateException("email_verification_allowed_states_json must be a JSON array: $text")
+    }
+    val states = node.map { element ->
+        if (!element.isTextual) {
+            throw IllegalStateException("email_verification_allowed_states_json must contain only strings: $text")
+        }
+        element.asText()
+    }
+    return try {
+        EmailVerificationAllowedStates.normalize(states) ?: EmailVerificationAllowedStates.ALLOWED
+    } catch (e: IllegalArgumentException) {
+        throw IllegalStateException("email_verification_allowed_states_json contains invalid states: $text", e)
+    }
 }
 
 /**

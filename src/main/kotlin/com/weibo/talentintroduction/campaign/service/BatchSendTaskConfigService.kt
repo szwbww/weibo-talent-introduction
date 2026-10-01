@@ -7,7 +7,9 @@ import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigCreateCom
 import com.weibo.talentintroduction.campaign.domain.OperatorStatus
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigUpdateCommand
 import com.weibo.talentintroduction.campaign.domain.BatchSendTaskConfigView
+import com.weibo.talentintroduction.campaign.domain.EmailVerificationAllowedStates
 import com.weibo.talentintroduction.campaign.domain.ResearchDirectionFilters
+import com.weibo.talentintroduction.campaign.domain.parseEmailVerificationAllowedStates
 import com.weibo.talentintroduction.campaign.domain.parseSenderAccountCodes
 import com.weibo.talentintroduction.campaign.event.BatchSendCronChangedEvent
 import com.weibo.talentintroduction.campaign.repository.BatchSendTaskConfigRepository
@@ -90,6 +92,7 @@ class BatchSendTaskConfigService(
                 researchDirectionFilter = normalized.researchDirectionFilter,
                 emailVerificationEnabled = normalized.emailVerificationEnabled,
                 excludeVerifiedUnavailableEmails = normalized.excludeVerifiedUnavailableEmails,
+                emailVerificationAllowedStatesJson = normalized.emailVerificationAllowedStatesJson,
                 createdAt = now,
                 updatedAt = now
             ),
@@ -105,10 +108,16 @@ class BatchSendTaskConfigService(
             ?: throw NoSuchElementException("Batch send task config not found: $id")
         // I-1: 缺省/null 保留现值 —— Update 命令的 nullable 字段在这里与实体显式合并，
         // 绝不走「空值即清空」逻辑（旧客户端不传该字段时必须保住开启状态）。
+        // I-2: 放行白名单同理，但缺字段时逐字保留 existing 原始列文本（含 SQL NULL）——
+        // 显式 [] / 显式数组才重新规范化序列化。
+        val mergedEmailVerificationAllowedStatesJson = cmd.emailVerificationAllowedStates
+            ?.let { encodeEmailVerificationAllowedStates(it) }
+            ?: existing.emailVerificationAllowedStatesJson
         val normalized = normalizeAndValidate(
             cmd.toFields(
                 mergedEmailVerificationEnabled = cmd.emailVerificationEnabled ?: existing.emailVerificationEnabled,
-                mergedExcludeVerifiedUnavailableEmails = cmd.excludeVerifiedUnavailableEmails ?: existing.excludeVerifiedUnavailableEmails
+                mergedExcludeVerifiedUnavailableEmails = cmd.excludeVerifiedUnavailableEmails ?: existing.excludeVerifiedUnavailableEmails,
+                mergedEmailVerificationAllowedStatesJson = mergedEmailVerificationAllowedStatesJson
             ),
             excludeId = id
         )
@@ -137,6 +146,7 @@ class BatchSendTaskConfigService(
                 researchDirectionFilter = normalized.researchDirectionFilter,
                 emailVerificationEnabled = normalized.emailVerificationEnabled,
                 excludeVerifiedUnavailableEmails = normalized.excludeVerifiedUnavailableEmails,
+                emailVerificationAllowedStatesJson = normalized.emailVerificationAllowedStatesJson,
                 updatedAt = now
             ),
             configName = normalized.configName
@@ -230,6 +240,11 @@ class BatchSendTaskConfigService(
                 // 的默认值，把已开启的验证策略静默关掉）。
                 emailVerificationEnabled = existing.emailVerificationEnabled,
                 excludeVerifiedUnavailableEmails = existing.excludeVerifiedUnavailableEmails,
+                // I-1/I-2（K-batch-config-legacy-adapter-field-preservation）：旧 typed API 不传放行白名单，
+                // 每个新增列都必须显式表态。本列 UpdateCommand 的 null 语义正是「逐字保留 existing
+                // 原始列（含 SQL NULL）」，因此这里显式写 null；若改成回传解析后的三态列表，
+                // 旧 SQL NULL 会被写成显式三态数组，不再是逐字保留。
+                emailVerificationAllowedStates = null,
             )
         )
         return BatchSendConfig(
@@ -376,6 +391,11 @@ class BatchSendTaskConfigService(
         // I-1: 三态白名单是权威 —— 非法值在此拒绝（未传值/空白归一为 ANY）。
         val researchDirectionFilter = ResearchDirectionFilters.requireAllowed(fields.researchDirectionFilter)
 
+        // I-1/I-2: 放行白名单是严格列 —— 待写入文本必须是合法 JSON 数组且元素逐字属于允许值；
+        // 坏 JSON / JSON null / 非数组 / 非法元素一律拒绝，绝不降级成旧 NULL（= 三态全放行）。
+        // null 是「保留 existing 原始列」路径（update 缺字段 / 旧行 SQL NULL），原样透传。
+        fields.emailVerificationAllowedStatesJson?.let { parseEmailVerificationAllowedStates(objectMapper, it) }
+
         // I3-1/I3-2: INTRODUCTION 的研发类型必填非空 —— 空集合在子计划 04 之后
         // 等价于「发给零个人」，必须在保存时就拒绝，不能留到运行时。
         if (mailType == BatchSendType.INTRODUCTION.name) {
@@ -404,8 +424,20 @@ class BatchSendTaskConfigService(
             gateFilterEnabled = fields.gateFilterEnabled,
             researchDirectionFilter = researchDirectionFilter,
             emailVerificationEnabled = fields.emailVerificationEnabled,
-            excludeVerifiedUnavailableEmails = fields.excludeVerifiedUnavailableEmails
+            excludeVerifiedUnavailableEmails = fields.excludeVerifiedUnavailableEmails,
+            emailVerificationAllowedStatesJson = fields.emailVerificationAllowedStatesJson
         )
+    }
+
+    /**
+     * I-2: 显式传值的规范化序列化（Create 的非 null 列表、Update 的显式列表）。
+     * 校验与规范化都由 c1 的 [EmailVerificationAllowedStates.normalize] 完成（固定顺序 + 去重，
+     * 非法值抛 [IllegalArgumentException] → 400），此处不复制第二套校验。
+     */
+    private fun encodeEmailVerificationAllowedStates(states: List<String>): String {
+        // states 非 null 时 normalize 恒返回非 null 的规范化列表（null 只对 null 入参出现）。
+        val normalized: List<String> = EmailVerificationAllowedStates.normalize(states) ?: emptyList()
+        return objectMapper.writeValueAsString(normalized)
     }
 
     /**
@@ -555,6 +587,11 @@ class BatchSendTaskConfigService(
             researchDirectionFilter = row.researchDirectionFilter,
             emailVerificationEnabled = row.emailVerificationEnabled,
             excludeVerifiedUnavailableEmails = row.excludeVerifiedUnavailableEmails,
+            // I-1/I-2: 旧 SQL NULL 回三态；[] 原样；坏列在读取处拒绝，绝不静默回三态。
+            emailVerificationAllowedStates = parseEmailVerificationAllowedStates(
+                objectMapper,
+                row.emailVerificationAllowedStatesJson
+            ),
             createdAt = row.createdAt,
             updatedAt = row.updatedAt,
             nextFireTime = computeNextFireTime(row.cron),
@@ -652,7 +689,13 @@ class BatchSendTaskConfigService(
         val researchDirectionFilter: String = ResearchDirectionFilters.ANY,
         /** I-1: 合并后的权威开关值（update 路径先与实体现值合并再进入 ConfigFields）。 */
         val emailVerificationEnabled: Boolean = false,
-        val excludeVerifiedUnavailableEmails: Boolean = false
+        val excludeVerifiedUnavailableEmails: Boolean = false,
+        /**
+         * I-1/I-2: 本列待写入的原始 JSON 文本；null = 保留 existing 原始列（含 SQL NULL =
+         * 旧配置三态全放行）。create 与显式传值路径经 [encodeEmailVerificationAllowedStates]
+         * 规范化序列化；update 缺字段路径逐字透传 existing 列文本。
+         */
+        val emailVerificationAllowedStatesJson: String? = null
     )
 
     private data class NormalizedConfig(
@@ -678,7 +721,11 @@ class BatchSendTaskConfigService(
         val researchDirectionFilter: String = ResearchDirectionFilters.ANY,
         /** I-1: 校验通过后的权威开关值，原样落到实体列。 */
         val emailVerificationEnabled: Boolean = false,
-        val excludeVerifiedUnavailableEmails: Boolean = false
+        val excludeVerifiedUnavailableEmails: Boolean = false,
+        /**
+         * I-1/I-2: 本列待写入的原始 JSON 文本；null 只出现在「保留 existing 原始列」（含 SQL NULL）。
+         */
+        val emailVerificationAllowedStatesJson: String? = null
     )
 
     private fun BatchSendTaskConfigCreateCommand.toFields() = ConfigFields(
@@ -702,16 +749,20 @@ class BatchSendTaskConfigService(
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter,
         emailVerificationEnabled = emailVerificationEnabled,
-        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails
+        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails,
+        // I-2: Create 非 nullable（默认 [deliverable]）—— 这里规范化序列化，显式 [] 也存 []。
+        emailVerificationAllowedStatesJson = encodeEmailVerificationAllowedStates(emailVerificationAllowedStates)
     )
 
     /**
      * I-1: update 路径的开关值由调用方（[update]）与实体现值显式合并后传入 ——
      * 命令上的 nullable 字段不在这里做「空值即清空」推断。
+     * I-2: 放行白名单同理，合并后的列文本（显式值规范化序列化 / 缺字段逐字保留）由 [update] 计算。
      */
     private fun BatchSendTaskConfigUpdateCommand.toFields(
         mergedEmailVerificationEnabled: Boolean,
-        mergedExcludeVerifiedUnavailableEmails: Boolean
+        mergedExcludeVerifiedUnavailableEmails: Boolean,
+        mergedEmailVerificationAllowedStatesJson: String?
     ) = ConfigFields(
         configName = configName,
         autoEnabled = autoEnabled,
@@ -733,7 +784,8 @@ class BatchSendTaskConfigService(
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter,
         emailVerificationEnabled = mergedEmailVerificationEnabled,
-        excludeVerifiedUnavailableEmails = mergedExcludeVerifiedUnavailableEmails
+        excludeVerifiedUnavailableEmails = mergedExcludeVerifiedUnavailableEmails,
+        emailVerificationAllowedStatesJson = mergedEmailVerificationAllowedStatesJson
     )
 
     private fun BatchSendTaskConfig.toFields() = ConfigFields(
@@ -757,7 +809,10 @@ class BatchSendTaskConfigService(
         gateFilterEnabled = gateFilterEnabled,
         researchDirectionFilter = researchDirectionFilter,
         emailVerificationEnabled = emailVerificationEnabled,
-        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails
+        excludeVerifiedUnavailableEmails = excludeVerifiedUnavailableEmails,
+        // I-1/I-2: 实体列文本原样透传 —— setEnabled 的重校验按同一严格解析点判定，
+        // 保留路径（SQL NULL）不得被翻译成显式三态数组。
+        emailVerificationAllowedStatesJson = emailVerificationAllowedStatesJson
     )
 
     private companion object {
