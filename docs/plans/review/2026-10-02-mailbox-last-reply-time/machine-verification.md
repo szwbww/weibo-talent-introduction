@@ -321,3 +321,112 @@ Artifact SHA-256: `d0a0e708fec53c4b8862b6b9b0e0313c487f32823ec64568674e1059c2470
 |---|---|---|---|
 | O-1 | Master worktree `git diff --check` must pass; product/test changes remain in authorized scope. | RECORD_ONLY | Worktree command exits 0. Range-level failure is only three non-product controller-doc EOF markers. |
 | O-2 | Required product/test boundary and mandatory command evidence must be assessed independently. | RECORD_ONLY | Markdown hard-break whitespace is only in the prior aggregate control report; it does not affect source, tests, or a master-required command. |
+
+## Epoch 4 — 2026-10-03
+
+- Master plan: `docs/plans/2026-10-02/mailbox-last-reply-time.md` (worktree sha256 `cb491bebb31ab8e4a8e5379c731c5bf66f6b4a3c633a7f7440acf518bab7332e`; recorded `commit 5d1789f90716a27e265b63340a9aef562a0035d9`)
+- Governing master identity: worktree sha256 `cb491bebb31ab8e4a8e5379c731c5bf66f6b4a3c633a7f7440acf518bab7332e`; recorded `commit 5d1789f90716a27e265b63340a9aef562a0035d9`
+- Master identity state: CONSISTENT (no amendments)
+- Boundary: `bf19fdfcb24336a41106d1c46fa7147bc6546892`..`d3c7709f0f2d2460f5b6eed015a443ab83f94558` (post-repair delta `5a792f50ec006ff7297db75e0ff6c09e5efd3d9c`..`d3c7709f0f2d2460f5b6eed015a443ab83f94558`; evidence head `1ceac74b66b7cadf5cd89a1352864326cc7ef528`)
+- Reviewer: `AggregateReviewerEpoch4`
+- Result: PASS
+- Convergence: PROGRESSING
+- Repair artifact/result: `docs/plans/fix/mailbox-last-reply-time/repair.md` (sha256 `d0a0e708fec53c4b8862b6b9b0e0313c487f32823ec64568674e1059c2470ace`) executed at epoch 3 → `READY_FOR_VERIFICATION`; no new repair artifact written (PASS route).
+
+### Complete review-p Output
+
+```json
+{
+  "review_skill": "review-p",
+  "phase": "aggregate/master",
+  "review_epoch": 4,
+  "master_plan": "docs/plans/2026-10-02/mailbox-last-reply-time.md",
+  "master_identity": {
+    "worktree_sha256": "cb491bebb31ab8e4a8e5379c731c5bf66f6b4a3c633a7f7440acf518bab7332e",
+    "recorded_commit": "5d1789f90716a27e265b63340a9aef562a0035d9",
+    "state": "CONSISTENT",
+    "amendments": "none"
+  },
+  "boundary": {
+    "MASTER_BASE_SHA": "bf19fdfcb24336a41106d1c46fa7147bc6546892",
+    "final_code_head": "d3c7709f0f2d2460f5b6eed015a443ab83f94558",
+    "evidence_head": "1ceac74b66b7cadf5cd89a1352864326cc7ef528",
+    "resolution": "EXPLICIT",
+    "post_repair_delta": "5a792f50ec006ff7297db75e0ff6c09e5efd3d9c..d3c7709f0f2d2460f5b6eed015a443ab83f94558",
+    "worktree_head": "1ceac74",
+    "worktree_dirty": "only docs/plans/review/2026-10-02-mailbox-last-reply-time/ledger.md (pre-existing control-doc edit by orchestrator; no src/ change: git status --porcelain -- src/ empty)"
+  },
+  "verification_result": "PASS",
+  "convergence": "PROGRESSING",
+  "manual_acceptance": "PENDING (A-1..A-8)",
+  "commands": [
+    {"command": "node --check src/main/resources/static/mailbox-chat.js", "result": "PASS", "evidence": "exit 0"},
+    {"command": "node --test src/test/js/mailboxChatBehavior.test.js src/test/js/mailboxChatStyle.test.js", "result": "PASS", "evidence": "exit 0; tests 155, suites 23, pass 155, fail 0, cancelled 0, skipped 0, todo 0 (baseline 134)"},
+    {"command": "TZ=UTC node --test --test-name-pattern='上次回复' src/test/js/mailboxChatBehavior.test.js", "result": "PASS", "evidence": "exit 0; tests 14, suites 1, pass 14, fail 0, skipped 0 (real named cases, not file-level skip)"},
+    {"command": "TZ=America/Los_Angeles node --test --test-name-pattern='上次回复' src/test/js/mailboxChatBehavior.test.js", "result": "PASS", "evidence": "exit 0; tests 14, suites 1, pass 14, fail 0, skipped 0"},
+    {"command": "node --test src/test/js/*.test.js", "result": "PASS", "evidence": "exit 0; tests 1319, suites 257, pass 1319, fail 0, cancelled 0, skipped 0, todo 0 (baseline 1298)"},
+    {"command": "cmp src/main/resources/static/mailbox-chat.css docs/plans/2026-09-09/mailbox-refinement-evidence/mailbox-chat.target.css", "result": "PASS", "evidence": "exit 0 (byte-identical)"},
+    {"command": "git diff --check", "result": "PASS", "evidence": "exit 0; no output"}
+  ],
+  "contract_matrix": [
+    {"id": "R-1 list/detail visible Beijing date+weekday+minute; detail Beijing label", "verdict": "PASS", "evidence": "src/main/resources/static/mailbox-chat.js:327-345, 1385-1400, 1969-1973; B-1"},
+    {"id": "R-2 latestInbound only (newer outbound ignored); refresh synchronizes list+detail", "verdict": "PASS", "evidence": "mailbox-chat.js:304-325, 1491-1508, 1948-1956; B-2/B-6/B-7/B-9"},
+    {"id": "R-3 no-reply vs unavailable distinct; no cross-value on account filter/tab/page", "verdict": "PASS", "evidence": "mailbox-chat.js:306-317; B-3/B-3b/B-3c/B-8/B-9/B-10"},
+    {"id": "I-1 source & account scope", "verdict": "PASS", "evidence": "mailbox-chat.js:304-316 reads only summary.latestInbound.receivedAt; no Kotlin/SQL/API diff in base..head; B-2/B-9"},
+    {"id": "I-2 strict complete ISO-local input, Beijing rendering, same-source weekday/date, +08:00 datetime, title", "verdict": "PASS", "evidence": "mailbox-chat.js:245-292 (full-match regex, no trim, explicit +08:00 + Asia/Shanghai Intl, component cross-check); independent in-memory probe of production source: valid/valid-no-sec/frac3/frac6/frac9 render '2026-10-02 星期五 17:59', lead/trail space/tab/newline -> null, 2026-02-30 -> null, leap/year-end correct; B-1/B-4/B-4b/B-4c/B-5; both TZ commands"},
+    {"id": "I-3 exact null+0 discriminator; malformed/missing -> unavailable; no rollover/Invalid Date/empty <time>", "verdict": "PASS", "evidence": "mailbox-chat.js:306-317; independent probe: null+0=none, null+2/null+missing/null+null/null+'0'/missing-field/[]/empty/bad -> unavailable; B-3/B-3b/B-3c/B-4"},
+    {"id": "I-4 guarded same-row slot-only refresh; editor/draft/target/selectedSummary untouched", "verdict": "PASS", "evidence": "mailbox-chat.js:1491-1508 (refresh after disposed/listSeq check, renderList, non-unmatched only), 1948-1956 (writes only [data-role=last-reply-time] innerHTML), 1969-1973; B-6/B-7/B-8"},
+    {"id": "I-5 no new request/state/cache/timer; CSS byte lock; unified cache activation", "verdict": "PASS", "evidence": "added block contains only DOM string builders + querySelector/innerHTML, no fetch/setInterval/localStorage/sessionStorage; cmp exit 0; index.html 11/11 keys = 20261002-mailbox-last-reply; B-10"},
+    {"id": "M-1 existing sort/pagination/search/tabs/filters/unmatched view", "verdict": "PASS", "evidence": "renderList dispatch unchanged (unmatched -> renderUnmatchedList); full suite 1319 pass; B-10/B-9"},
+    {"id": "M-2 editor/target/workbench/attachments/scroll; refresh must not send or rebuild editor", "verdict": "PASS", "evidence": "B-6 (editor DOM identity, reply target, workbench mount count, no send call)"},
+    {"id": "M-3 names/account/follow/counts/tags/materials/location structures", "verdict": "PASS", "evidence": "renderPerson only inserts S-1 row between latest-summary and .mc-person-meta, aria extended; counts/tags markup unchanged; B-6/B-8/B-9/B-10"},
+    {"id": "M-4 backend receive/mark/bind/visibility/history/interface", "verdict": "PASS", "evidence": "base..head product/test diff = 5 files, zero Kotlin/SQL/migration/API; B-9/B-10"},
+    {"id": "S-1 list row DOM order/label/aria/empty branch", "verdict": "PASS", "evidence": "mailbox-chat.js:330-338, 1385-1400; style suite S-1 assertions; B-1/B-3"},
+    {"id": "S-2 detail slot order h2->p->slot->calendar-summary; single slot after rebuild; zone omitted on empty", "verdict": "PASS", "evidence": "mailbox-chat.js:1969 (identity template), 1948-1956; lastReplyDetailInner adds zone only for kind==='time'; style suite; B-1/B-7"},
+    {"id": "S-3 verbatim scoped style block in styles.css; byte-locked mailbox-chat.css untouched", "verdict": "PASS", "evidence": "styles.css +10 lines identical to plan S-3 block; mailbox-chat.css cmp exit 0; style suite"},
+    {"id": "S-4 11 existing versioned resources, same tags/order, unified key; task-modal-runtime.js unchanged", "verdict": "PASS", "evidence": "index.html: 11 ?v= all =20261002-mailbox-last-reply, 0 old key, task-modal-runtime.js has no version; style suite; B-10"},
+    {"id": "T-1..T-4 mandatory implementation requirements", "verdict": "PASS", "evidence": "private formatLastReplyTime/lastReplyDisplay/markup helpers; renderPerson+renderHeader+fetchList wiring; styles.css/index.html; behavior+style suites mount the real mailbox-chat.js"},
+    {"id": "Scope/non-goals (5 implementation files; repair delta inside Authorized Files)", "verdict": "PASS", "evidence": "base..head = 5 product/test files (index.html, mailbox-chat.js, styles.css, mailboxChatBehavior.test.js, mailboxChatStyle.test.js) + control docs; git diff --name-status 5a792f5..d3c7709 src/ = exactly mailbox-chat.js (+3/-3) and mailboxChatBehavior.test.js (+23); no other product/test file changed"}
+  ],
+  "finding_lineage": [
+    {"finding": "V-1", "state": "RESOLVED", "evidence": "fraction grammar (?:\\\\.(\\\\d+))? with slice(0,3); independent probe frac6/frac9 -> normal Beijing model; B-4b passes under both TZ"},
+    {"finding": "V-2", "state": "RESOLVED", "evidence": "item.receivedCount === 0 strict; independent probe null+null/null+'0'/missing -> unavailable; B-3c"},
+    {"finding": "V-3", "state": "RESOLVED", "evidence": "mailbox-chat.js:246 raw = receivedAt (no .trim()); independent probe lead/trail space, tab, newline -> null and unavailable; B-4c"},
+    {"finding": "O-1 (RECORD_ONLY)", "state": "PERSISTENT (non-blocking)", "evidence": "git diff --check 5d1789f..bb0b9f1 -> exit 2 for exactly children/01/{execution,fix-log,verify-log}.md EOF blank lines; worktree git diff --check -> exit 0"},
+    {"finding": "O-2 (RECORD_ONLY)", "state": "PERSISTENT (non-blocking)", "evidence": "git diff --check base..head -> exit 2 only for control/evidence docs (mailbox-last-reply-evidence/code-baseline.txt trailing whitespace, review machine-verification.md hard-break whitespace, verify-log.md EOF); no product/test file"}
+  ],
+  "findings": {
+    "P1": [],
+    "P2": [],
+    "observations": [
+      "O-1 (RECORD_ONLY): range-level git diff --check reports EOF blank lines only in fast-p controller docs; the master-required worktree git diff --check passes exit 0; no product/test impact.",
+      "O-2 (RECORD_ONLY): broader historical range reports trailing whitespace only in control/evidence documents (code-baseline.txt excerpt, prior aggregate machine-verification.md, verify-log.md); no product/test or master-command impact.",
+      "Evidence HEAD self-reference: repair-execution.md fields record 'Evidence HEAD: pending'; durable external evidence commit is 1ceac74; control-document only."
+    ]
+  },
+  "evidence_boundaries": [
+    "Manual acceptance A-1..A-8 remain PENDING; not required before machine verification per plan.",
+    "No live browser/backend integration was run (not required by the master plan).",
+    "review-p repair planning did not run (PASS route); no repair.md was written."
+  ],
+  "repair_planning": "N/A",
+  "next_action": "PASS -> perform the pending human acceptance (A-1..A-8) or finish the branch; no automated repair round.",
+  "record_only_reevaluation": [
+    {"source_item": "fast-p handoff O-1", "master_requirement": "master-required worktree `git diff --check` must exit 0; product/test changes stay in authorized scope", "result": "RECORD_ONLY (non-blocking)", "evidence": "fresh: worktree git diff --check exit 0; range check 5d1789f..bb0b9f1 exit 2 limited to 3 fast-p controller docs"},
+    {"source_item": "aggregate O-2", "master_requirement": "product/test boundary and mandatory command evidence assessed independently of control docs", "result": "RECORD_ONLY (non-blocking)", "evidence": "fresh: base..head range failures confined to evidence/control md/txt; no src/ path appears in git diff --check output"}
+  ],
+  "repair_artifact": {
+    "path": "docs/plans/fix/mailbox-last-reply-time/repair.md",
+    "executed_result": "READY_FOR_VERIFICATION (epoch 3, V-3) cross-confirmed; seven command counts match this review's fresh runs",
+    "new_repair_written": false
+  },
+  "product_code_modified": "No product code was modified.",
+  "explicit_statement": "No product code, test, master plan, aggregate report, index, HEAD, branch, or repair artifact was modified, staged, or committed by this review. Only read-only inspection and freshly-run required commands were performed; the one working-tree change (review ledger.md) pre-existed this review. The aggregate report destination docs/plans/review/2026-10-02-mailbox-last-reply-time/machine-verification.md was NOT written."
+}
+```
+
+### Fast-P RECORD_ONLY Re-evaluation
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| O-1 | Master worktree `git diff --check` must exit 0; product/test changes stay in authorized scope. | RECORD_ONLY (non-blocking) | Fresh worktree check exit 0; range check limited to 3 fast-p controller docs. |
+| O-2 | Product/test boundary and mandatory command evidence assessed independently of control docs. | RECORD_ONLY (non-blocking) | Range failures confined to evidence/control md/txt; no `src/` path in output. |
