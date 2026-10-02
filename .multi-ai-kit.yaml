@@ -2,7 +2,12 @@ release:
   production:
     type: ssh-tomcat-war
     ssh_target: root@150.158.92.103
-    build_command: JAVA_HOME=/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home mvn clean package
+    # G-0/A4（2026-10-02）：随包时区目录（contact-country-timezones.json 的 418 个 id、
+    # meeting-timezones-zh.properties）要求运行期 tzdb 覆盖全部目录 id。系统 zulu-11
+    # （11.0.15 / tzdb 2021e）缺 America/Ciudad_Juarez、America/Coyhaique、Europe/Kyiv
+    # 且偏移断言失败，不能用于构建/发布。构建 JDK 必须与生产 JVM 同族（当前两者均为
+    # Zulu/OpenJDK 11 + tzdb 2026b）；发布前用 scripts/tzdb_catalog_probe.py 对两边取证。
+    build_command: JAVA_HOME=/Users/lukai/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home mvn clean package
     local_war: target/weibo-talent-introduction-1.0.0-SNAPSHOT.war
     tomcat_home: /opt/apache-tomcat-9.0.71
     war_name: talent.war

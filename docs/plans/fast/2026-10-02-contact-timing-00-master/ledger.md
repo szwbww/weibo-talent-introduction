@@ -2,7 +2,7 @@
 
 - Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-02/contact-timing-00-master.md (commit 317fe8143e25118c3d7f11c345c34f5fa995f5af)
-- Amendments: A1, A2, A3
+- Amendments: A1, A2, A3, A4
 - Master base: d41495e590ee2fae2eb757ffc172c2ba1e1f9212
 - Branch: fast/2026-10-02-contact-timing-00-master
 - Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-02-contact-timing-00-master
@@ -29,6 +29,7 @@
 | A1 | docs/plans/2026-10-02/contact-timing-01-location.md | commit:0f96a49a667074eca32bb6037d20344044131611 | commit:d9b237d7a018e288b87fcbb270e70bcffdcb5917 | contact-timing-00-master.md 顺序子计划表 01 前置「迁移号未冲突」；01 T-1 执行前复核指令 | V145 在基线 HEAD 已被 V145__add_batch_email_verification_allowed_states.sql 占用；按计划指令改用下一未用号 V146 | HUMAN:/fast-p docs/plans/2026-10-02/contact-timing-00-master.md(@2026-10-02 00:47+08:00) 执行计划内 T-1 预授权 |
 | A2 | docs/plans/2026-10-02/contact-timing-03-compact-ui.md | commit:85df3b664d767f3ffab54a694ec32d6a2627d63e | commit:317fe8143e25118c3d7f11c345c34f5fa995f5af | contact-timing-03-compact-ui.md 变更文件清单 / T-3 资源与回归（I-6） | c3 逐字契约（styles.css 尾部追加 S-1/S-2/S-3、S-2 骨架与冻结 API 字段 zoneId）结构性撞红两个授权外既有守卫；按其主题最小收窄两个守卫文件并列入授权 | HUMAN:批准 A2+A3（最小收窄守卫）@2026-10-02（解除 c3 PLAN_CONFLICT 暂停） |
 | A3 | docs/plans/2026-10-02/contact-timing-00-master.md | commit:85df3b664d767f3ffab54a694ec32d6a2627d63e | commit:317fe8143e25118c3d7f11c345c34f5fa995f5af | contact-timing-00-master.md 变更文件清单（三清单并集计数） | A2 将 03 授权文件扩至 7 个，master 并集计数 16→18 同步 | HUMAN:批准 A2+A3（最小收窄守卫）@2026-10-02（解除 c3 PLAN_CONFLICT 暂停） |
+| A4 | docs/plans/2026-10-02/contact-timing-00-master.md（G-0 判据）+ 授权外 3 个实施文件 + 生产 JDK | commit:a276b4f6da739fc6f1809dea50564c01ce6eb1bf | commit:（本修复提交） | contact-timing-00-master.md 实现方案 G-0「运行时前提」 | G-0 的「≥2026c 版本号线」不可满足（可获得的最高 JDK 11 为 tzdb 2026b），且生产 JVM（11.0.23/tzdb 2024a）解析不了 America/Coyhaique → a276b4f 在生产无法启动；改写为可执行判据（随包目录 ⊆ 运行期 tzdb + 构建/生产同族 + 偏移断言，脚本 scripts/tzdb_catalog_probe.py），并同步补齐会议时区目录缺口、发布 build JDK 与生产 JVM tzdb | HUMAN:「好的 就按你推荐的修复 并 发布」@2026-10-02 |
 
 ## Agent Availability Events
 | Child | Role | Attempt | Error | Timestamp | Code head | Action |

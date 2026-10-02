@@ -57,7 +57,7 @@
 
 ### G-0：运行时前提
 
-在开发和实际部署的 JDK 11 上记录 tzdb 版本与目录兼容结果；要求数据至少达到本次目录版本 2026c，418 个目录 id 均可解析，日期偏移断言通过。当前本机 2021e 不满足。更新 Java 11 补丁版本/时区数据是环境前提，不修改 Java 主版本、不改 pom、不在本轮自动部署。生产 JVM 尚未检查，不推断生产与本机相同。环境未满足时，允许继续编写不依赖新库的代码，但不得通过时区验收或发布本功能。
+在开发和实际部署的 JDK 11 上记录 tzdb 版本与目录兼容结果；要求数据至少达到本次目录版本 2026c，418 个目录 id 均可解析，日期偏移断言通过。**（2026-10-02 A4 已把「至少 2026c 版本号线」改写为可执行判据，见文末《修正记录》。）**当前本机 2021e 不满足。更新 Java 11 补丁版本/时区数据是环境前提，不修改 Java 主版本、不改 pom、不在本轮自动部署。生产 JVM 尚未检查，不推断生产与本机相同。环境未满足时，允许继续编写不依赖新库的代码，但不得通过时区验收或发布本功能。
 
 ### 顺序子计划
 
@@ -118,3 +118,22 @@
 - 覆盖: I-1/I-4；需求 3；全部必须保持项；03 的 S-1/S-2/S-3。
 
 开始人工验收时再从各计划 A-n 导出 acceptance 文件；现在不生成第二份清单。
+
+## 修正记录
+
+### A4（2026-10-02）：G-0 判据改写 + 时区目录/发布配置修复 + 本轮发布授权
+
+- 授权：HUMAN「好的 就按你推荐的修复 并 发布」@2026-10-02。原文《实现方案 · G-0》的「数据至少达到本次目录版本 2026c」在任何可获得 JDK 11 上不可满足（最高 tzdb=2026b，系统 zoneinfo 2026c 不进入 JVM），故改写为可执行判据并授权本轮发布。
+- **G-0 新判据**（未满足则不得发布，判据由 `scripts/tzdb_catalog_probe.py` 承载）：
+  1. 随包目录 ⊆ 运行期 tzdb：`contact-country-timezones.json` 的 418 个 id 全部可解析；`meeting-timezones-zh.properties` 覆盖运行期全部可选取 id（与 `MeetingConfirmationService.catalogZoneIds()` 同口径）；
+  2. 构建 JDK 与生产 JVM 同 tzdb 族；
+  3. 固定时刻 `2026-07-01T12:00Z` 的偏移断言全部通过。
+- **触发事实**（`job_20261002-093907_publish-production_32f71510`，failed/exit 1）：发布 `build_command` 的 JDK（系统 zulu-11.0.15 / tzdb 2021e）缺 `America/Ciudad_Juarez`、`America/Coyhaique`、`Europe/Kyiv` → `ExpertContactLocationServiceTest` 19 errors，WAR 未构建、未上传、未部署。另实测生产 JVM（OpenJDK 11.0.23 / tzdb 2024a，`lib/tzdb.dat` 符号链接到 el7 `tzdata`，该源上限 `tzdata-2024a`）解析不了 `America/Coyhaique` → 即便构建成功，`ExpertContactLocationCatalog` 也会在上下文启动期抛错，health 校验失败并自动回滚。
+- **本次授权变更**（三个实施清单并集 18 个文件之外）：
+  - `src/main/resources/meeting-timezones-zh.properties`：用 `scripts/generate_meeting_timezone_catalog.py`（CLDR 48.2 + 2026b 时区表）重新生成；增量 = 新增 `America/Coyhaique`，`America/Ciudad_Juarez`/`Europe/Kyiv` 补英文别名，`Indian/Kerguelen` 标签细化。必须先于运行期 tzdb 升级落地，否则 `MeetingConfirmationService.timeZones()` 在新 tzdb 上命中 `MeetingConfirmationService.kt:71` 硬失败。
+  - `.multi-ai-kit.yaml`：`build_command` 的 JAVA_HOME 由系统 zulu-11.0.15 改为 `~/Library/Java/JavaVirtualMachines/zulu-11.0.32.jdk/Contents/Home`。
+  - `scripts/tzdb_catalog_probe.py`（新增）：G-0 探针。
+  - 生产环境：Tomcat JVM 由 OpenJDK 11.0.23 换为 Zulu 11.0.32.1（tzdb 2026b），`setenv.sh` 的 `JAVA_HOME`/`JRE_HOME` 改指新 JDK。
+- **证据**：探针在 zulu-11.0.32.1 上 `RESULT: PASS`（418 缺失 0 / meeting 未覆盖 0 / 偏移 10-10），在 zulu-11.0.15 上 `RESULT: FAIL`（418 缺失 3 / 偏移 7-10）；新 build JDK 下 `mvn clean package` 绿；生产端换 JDK 后同一探针输出见发布记录。
+- **残余风险（接受）**：目录快照声明 IANA 2026c，可运行 tzdb 最高 2026b，两者规则差异在本环境不可验证；`contact-country-timezones.json` 是冻结证据快照（有 byte-for-byte 断言），不随运行期 tzdb 改写。
+- A1–A3 记录位置不变；本 A4 同步记入 `docs/plans/fast/2026-10-02-contact-timing-00-master/ledger.md` 的 Amendments 表。
