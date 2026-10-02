@@ -247,3 +247,82 @@ describe("S-2: 跟进弹窗逐字样式（followup 01 合同）", () => {
         assert.ok(!/\.followup-button|\.followup-trigger/.test(stylesSource), "跟进按钮只允许既有 .button class");
     });
 });
+
+// ---------------------------------------------------------------------------
+// fast-p 2026-10-02 · mailbox-last-reply-time（S-1..S-4）
+// 上次回复：S-3 逐字样式块、S-1/S-2 节点顺序、字节与资源键门禁（键值从 index 派生）。
+// ---------------------------------------------------------------------------
+
+describe("上次回复：S-3 逐字样式与 S-1/S-2 结构（mailbox-last-reply-time）", () => {
+    const PLAN_PATH = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-10-02", "mailbox-last-reply-time.md");
+    const planSource = fs.readFileSync(PLAN_PATH, "utf-8");
+    const S3_BLOCK = planSource.slice(planSource.indexOf("### S-3")).match(/```css\n([\s\S]*?)```/)[1];
+
+    it("styles.css 逐字包含 S-3 合同样式块（不删一行、不改一个值）", () => {
+        assert.ok(
+            stylesSource.includes(S3_BLOCK),
+            "S-3 的完整 CSS 块必须逐字追加在 styles.css（含注释、活跃态与响应式规则）"
+        );
+    });
+
+    it("S-3 四个业务类的声明/活态/窄屏规则均在 styles.css", () => {
+        [
+            ".mail-chat .mailbox-reply-list{",
+            ".mail-chat .mailbox-reply-list time{",
+            ".mail-chat .mc-person[data-active=true] .mailbox-reply-list time{",
+            ".mail-chat .mailbox-reply-detail{",
+            ".mail-chat .mailbox-reply-detail time{",
+            ".mail-chat .mailbox-reply-zone{",
+            ".mail-chat .mailbox-reply-empty{",
+            "@media(max-width:760px){.mail-chat .mailbox-reply-detail time{font-size:12px}}"
+        ].forEach((rule) => assert.ok(stylesSource.includes(rule), rule + " 必须存在"));
+    });
+
+    it("S-3 不写入字节锁定的 mailbox-chat.css", () => {
+        assert.ok(!/mailbox-reply-/.test(cssSource), "mailbox-chat.css 不得出现 mailbox-reply-* 规则");
+    });
+
+    it("S-1 列表：时间行由共享展示函数插入在最近摘要之后、计数标签之前；aria 追加说明", () => {
+        const fn = chatSource.slice(chatSource.indexOf("function renderPerson"), chatSource.indexOf("function renderExpertList"));
+        assert.ok(fn.includes("${lastReplyListMarkup(item)}"), "列表时间行必须由共享展示函数插入");
+        assert.ok(fn.indexOf("latestLine") < fn.indexOf("lastReplyListMarkup(item)"), "时间行在最近摘要之后");
+        assert.ok(fn.indexOf("lastReplyListMarkup(item)") < fn.indexOf("mc-person-meta"), "时间行在计数标签之前");
+        assert.ok(fn.includes("lastReplyAriaSuffix("), "按钮 aria 追加同一纯文本说明");
+        assert.ok(chatSource.includes('class="mailbox-reply-list"'), "列表行 class 由共享标记函数生成");
+        assert.ok(!fn.includes('data-role="last-reply-time"'), "列表不写详情槽");
+    });
+
+    it("S-2 详情：identity 顺序 h2→p→时间槽→排期；只在 renderHeader 建槽", () => {
+        const hdr = chatSource.slice(chatSource.indexOf("function renderHeader"), chatSource.indexOf("function renderHeaderMeta"));
+        assert.match(
+            hdr,
+            /<h2>[^<]*<\/h2><p>[^<]*<\/p><span class="mailbox-reply-detail" data-role="last-reply-time">/,
+            "identity 层级：名称→邮箱账号→时间槽"
+        );
+        assert.ok(hdr.indexOf('data-role="last-reply-time"') < hdr.indexOf('data-role="meeting-summary"'), "时间槽在排期摘要之前");
+        assert.strictEqual((chatSource.match(/data-role="last-reply-time"/g) || []).length, 2, "建槽 1 处 + 局部刷新选择器 1 处");
+        assert.ok(chatSource.includes('class="mailbox-reply-zone"'), "北京时间尾注存在");
+    });
+
+    it("S-1/S-2 新增 class 已在 styles.css 声明（不落字节锁定的 mailbox-chat.css）", () => {
+        ["mailbox-reply-list", "mailbox-reply-detail", "mailbox-reply-zone", "mailbox-reply-empty"].forEach((cls) => {
+            assert.ok(new RegExp(`\\.${cls}(?=[\\s,{.:\\[])`).test(stylesSource), cls + " 必须在 styles.css 声明");
+        });
+    });
+
+    it("S-4 既有 11 个版本化资源统一为新键、标签与注册顺序不变", () => {
+        const keys = Array.from(indexSource.matchAll(/\?v=([^"'&<>\s]+)/g)).map((match) => match[1]);
+        assert.strictEqual(keys.length, 11, "仍为 11 个版本化资源（不新增 script/link）");
+        assert.deepStrictEqual(Array.from(new Set(keys)), [CACHE_KEY], "全部资源键必须同值");
+        const ordered = ["styles.css", "expert-materials.css", "mailbox-chat.css", "meeting-confirmation.css",
+            "world-clock.css", "trust-reply-workbench.js", "expert-materials.js", "meeting-confirmation.js",
+            "mailbox-chat.js", "app.js", "world-clock.js"];
+        let previous = -1;
+        for (const asset of ordered) {
+            const at = indexSource.indexOf(`${asset}?v=${CACHE_KEY}`);
+            assert.ok(at > previous, `${asset} 必须保持注册顺序`);
+            previous = at;
+        }
+        assert.ok(indexSource.includes('<script src="task-modal-runtime.js"></script>'), "task-modal-runtime.js 保持无版本键");
+    });
+});

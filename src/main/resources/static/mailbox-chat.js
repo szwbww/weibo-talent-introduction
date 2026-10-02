@@ -227,6 +227,123 @@
         return idx >= 0 ? value.slice(idx + 1, idx + 6) : "";
     }
 
+    // --------------------------------------------------------------
+    // 上次回复（fast-p 2026-10-02 · mailbox-last-reply-time；I-1..I-5 / S-1..S-3）
+    // 唯一数据来源：当前 summary 的 latestInbound.receivedAt（I-1）；接口是无 offset 的
+    // ISO_LOCAL_DATE_TIME，一律按北京时间解释（I-2）。本块只做纯展示，不写任何缓存/状态（I-5）。
+    // --------------------------------------------------------------
+
+    const LAST_REPLY_ZONE_LABEL = "北京时间";
+    const LAST_REPLY_EMPTY_TEXT = "尚未回复";
+    const LAST_REPLY_UNAVAILABLE_TEXT = "回复时间暂不可用";
+
+    /**
+     * I-2：无 offset 的本地日期时间 → 北京时间显示模型 { display, title, datetime }，不可信时 null。
+     * 支持日期+时分、可选秒与小数秒；只接受严格完整字符串，拒绝空白/普通日期文本/非法分量，
+     * 且对照输入分量拒绝 Date 自动进位（如 2 月 30 日）与 Intl 异常。秒仅校验不显示。
+     */
+    function formatLastReplyTime(receivedAt) {
+        const raw = typeof receivedAt === "string" ? receivedAt.trim() : "";
+        const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(raw);
+        if (!match) return null;
+        const year = Number(match[1]);
+        const month = Number(match[2]);
+        const day = Number(match[3]);
+        const hour = Number(match[4]);
+        const minute = Number(match[5]);
+        const second = match[6] == null ? 0 : Number(match[6]);
+        if (month < 1 || month > 12) return null;
+        if (day < 1 || day > 31) return null;
+        if (hour > 23 || minute > 59 || second > 59) return null;
+        const intl = global.Intl;
+        if (!intl || typeof intl.DateTimeFormat !== "function") return null;
+        // 显式附加 +08:00 按北京时间解释；小数秒截取到毫秒精度（界面不显示毫秒）。
+        const fraction = match[7] ? "." + match[7] : "";
+        const date = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${String(second).padStart(2, "0")}${fraction}+08:00`);
+        if (Number.isNaN(date.getTime())) return null;
+        let parts;
+        try {
+            parts = new intl.DateTimeFormat("zh-CN", {
+                timeZone: "Asia/Shanghai",
+                hourCycle: "h23",
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                weekday: "long",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit"
+            }).formatToParts(date);
+        } catch (e) {
+            return null;
+        }
+        const fields = {};
+        (parts || []).forEach((part) => {
+            if (part && part.type && part.type !== "literal") fields[part.type] = part.value;
+        });
+        if (!fields.year || !fields.month || !fields.day || !fields.weekday || !fields.hour || !fields.minute) return null;
+        if (Number(fields.year) !== year || Number(fields.month) !== month || Number(fields.day) !== day) return null;
+        if (Number(fields.hour) % 24 !== hour || Number(fields.minute) !== minute) return null;
+        const dateLabel = `${fields.year}-${fields.month}-${fields.day}`;
+        const clock = `${String(Number(fields.hour) % 24).padStart(2, "0")}:${fields.minute}`;
+        const display = `${dateLabel} ${fields.weekday} ${clock}`;
+        return {
+            display,
+            title: `${LAST_REPLY_ZONE_LABEL} ${display}`,
+            datetime: `${dateLabel}T${clock}:00+08:00`
+        };
+    }
+
+    /**
+     * I-1/I-3：列表与详情共用的展示模型。
+     * kind = time（正常北京时间）| none（仅 latestInbound===null 且 receivedCount===0）
+     * | unavailable（字段缺失/结构异常/时间空白或非法等其余情况）。
+     */
+    function lastReplyDisplay(summary) {
+        const item = summary || {};
+        const inbound = item.latestInbound;
+        if (inbound == null || typeof inbound !== "object" || Array.isArray(inbound)) {
+            if ((Number(item.receivedCount) || 0) === 0) {
+                return { kind: "none", text: LAST_REPLY_EMPTY_TEXT, aria: LAST_REPLY_EMPTY_TEXT };
+            }
+            return { kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT, aria: LAST_REPLY_UNAVAILABLE_TEXT };
+        }
+        const formatted = formatLastReplyTime(inbound.receivedAt);
+        if (!formatted) return { kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT, aria: LAST_REPLY_UNAVAILABLE_TEXT };
+        return {
+            kind: "time",
+            display: formatted.display,
+            title: formatted.title,
+            datetime: formatted.datetime,
+            text: formatted.display,
+            aria: formatted.title
+        };
+    }
+
+    /** I-2：time 元素（正常）或 empty span（空/异常）；普通文本与属性值都经 escapeText（S-1/S-2）。 */
+    function lastReplyContentMarkup(display) {
+        if (display && display.kind === "time") {
+            return `<time datetime="${escapeText(display.datetime)}" title="${escapeText(display.title)}">${escapeText(display.display)}</time>`;
+        }
+        return `<span class="mailbox-reply-empty">${escapeText(display ? display.text : LAST_REPLY_UNAVAILABLE_TEXT)}</span>`;
+    }
+
+    /** S-1：列表行（标签 + 内容）。 */
+    function lastReplyListMarkup(summary) {
+        return `<span class="mailbox-reply-list"><span>上次回复</span>${lastReplyContentMarkup(lastReplyDisplay(summary))}</span>`;
+    }
+
+    /** S-2：详情槽内部（标签 + 内容 + 北京时间尾注）；空/异常分支省略尾注。 */
+    function lastReplyDetailInner(display) {
+        const zone = display && display.kind === "time" ? `<span class="mailbox-reply-zone">${LAST_REPLY_ZONE_LABEL}</span>` : "";
+        return `<span>专家上次回复</span>${lastReplyContentMarkup(display)}${zone}`;
+    }
+
+    /** S-1：按钮 aria-label 末尾追加同一纯文本说明（含北京时间）。 */
+    function lastReplyAriaSuffix(display) {
+        return `上次回复 ${display ? display.aria : LAST_REPLY_UNAVAILABLE_TEXT}`;
+    }
+
     /**
      * fast-p 03（I-2）：会议草稿卡时间文本。只用 preview 的真实 UTC 值经统一的中文北京
      * formatter（宿主 formatBeijingMeetingRange）渲染；不回显 input.zoneId 的原 IANA 串，
@@ -1260,15 +1377,17 @@
             const tagLine = tagNames === null
                 ? `<span class="mc-person-tags-unavailable" title="标签暂不可用">标签暂不可用</span>`
                 : (tagNames.length === 0 ? "" : `<span class="mc-person-tags" title="专家标签：${escapeText(tagNames.join("、"))}">${tagNames.map((name) => `<span class="mc-person-tag">${escapeText(name)}</span>`).join("")}</span>`);
-            const ariaLabel = tagNames !== null && tagNames.length > 0
+            const ariaLabel = (tagNames !== null && tagNames.length > 0
                 ? `查看${item.name || item.email || ""}往来邮件；专家标签：${tagNames.join("、")}`
-                : `查看${item.name || item.email || ""}往来邮件`;
+                : `查看${item.name || item.email || ""}往来邮件`)
+                + `；${lastReplyAriaSuffix(lastReplyDisplay(item))}`;
             return `
                 <div class="mc-person" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
                         <span class="mc-person-heading"><strong>${escapeText(item.name || item.email || "-")}</strong></span>
                         <small>${escapeText(accounts)}</small>
                         <small>${escapeText(latestLine)}</small>
+                        ${lastReplyListMarkup(item)}
                         <span class="mc-person-meta">
                             <span class="mc-person-counts">收 ${Number(item.receivedCount) || 0} · 发 ${Number(item.sentCount) || 0}</span>
                             ${tagLine}
@@ -1375,8 +1494,16 @@
                 renderList();
                 renderPager();
                 if (unmatched) resolveUnmatchedSelection();
-                // fast-p 03（I-3）：批量摘要按当前页专家 id，epoch = 本次列表请求
-                else loadMeetingSummaries();
+                else {
+                    // I-4：列表与已选专家详情取同一份当前行，只替换详情回复时间槽。
+                    const selectedId = instance.selectedContactId;
+                    if (selectedId != null) {
+                        const selectedRow = findSummaryByContactId(selectedId);
+                        if (selectedRow) renderLastReplyHeader(selectedRow);
+                    }
+                    // fast-p 03（I-3）：批量摘要按当前页专家 id，epoch = 本次列表请求
+                    loadMeetingSummaries();
+                }
                 return data;
             }).catch((err) => {
                 if (instance.disposed || mySeq !== instance.listSeq) return null;
@@ -1812,6 +1939,17 @@
             return parts.join(" · ");
         }
 
+        // I-4：只替换详情回复时间槽；不改选中对象、不重建 header、不触发草稿/锚点/请求。
+        function renderLastReplyHeader(summary) {
+            if (isUnmatchedChip()) return;
+            if (instance.selectedContactId == null) return;
+            if (!summary || String(summary.contactId) !== String(instance.selectedContactId)) return;
+            const body = conversationBody();
+            const slot = body && body.querySelector ? body.querySelector('[data-role="last-reply-time"]') : null;
+            if (!slot) return;
+            slot.innerHTML = lastReplyDetailInner(lastReplyDisplay(summary));
+        }
+
         function renderHeader() {
             const body = conversationBody();
             if (!body) return;
@@ -1823,8 +1961,11 @@
             if (!head) return;
             const identity = head.querySelector(".mc-identity");
             if (identity) {
-                identity.innerHTML = `<h2>${escapeText(summary.name || summary.email || "-")}</h2><p>${escapeText(conversationSummaryInfo() || "-")}</p><span class="calendar-summary" data-role="meeting-summary"></span>`;
+                identity.innerHTML = `<h2>${escapeText(summary.name || summary.email || "-")}</h2><p>${escapeText(conversationSummaryInfo() || "-")}</p><span class="mailbox-reply-detail" data-role="last-reply-time">${lastReplyDetailInner({ kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT })}</span><span class="calendar-summary" data-role="meeting-summary"></span>`;
             }
+            // I-4：优先取当前页同一行，回退身份匹配的 selectedSummary；都不可用保留默认文案。
+            const selectedRow = contactId ? findSummaryByContactId(contactId) : null;
+            renderLastReplyHeader(selectedRow || summary);
             const actions = head.querySelector(".mc-actions");
             if (actions) {
                 actions.innerHTML = `
