@@ -12409,3 +12409,49 @@ body.preview-available:not(.preview-docked) .preview-rail {
 }
 .task-center-interrupt button { justify-self: start; }
 /* task-center-contract:end */
+
+/* contact-timing S-1 */
+.mail-chat .contact-timing{display:inline-flex;align-items:center;flex-wrap:wrap;gap:9px;margin-left:auto;padding-left:10px;border-left:1px solid #e1e8f2;min-height:22px;max-width:100%;font-size:11px;line-height:1.6}
+.mail-chat .contact-timing-location{max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#61748e}
+.mail-chat .contact-timing-recommend{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;color:#8494aa;font-size:11px}
+.mail-chat .contact-timing-recommend strong{font-size:12px;font-weight:600;color:#285ac0;font-variant-numeric:tabular-nums}
+.mail-chat .contact-timing-info{justify-content:center;width:20px;height:22px;padding:0;font-size:14px;color:#8a9bb2}
+.mail-chat .contact-timing-note{color:#8494aa;font-size:11px}
+.mail-chat .contact-timing .mc-text-button:hover{color:#244ca9;background:#edf3ff}
+.mail-chat .contact-timing .mc-text-button:active{background:#dbeafe}
+.mail-chat .contact-timing .mc-text-button:disabled{opacity:.45;cursor:not-allowed}
+.mail-chat .contact-timing .mc-text-button:focus-visible{outline:2px solid #6389d3;outline-offset:2px}
+
+/* contact-timing S-2 */
+.contact-timing-dialog{position:fixed;inset:0;margin:auto;padding:0;width:440px;max-width:calc(100vw - 32px);height:fit-content;max-height:calc(100dvh - 48px);overflow:auto;border:1px solid #d9e3f1;border-radius:14px;background:#fff;color:#475d79;box-shadow:0 20px 90px #17325730;font-family:var(--font-body);font-size:12px;line-height:1.6}
+.contact-timing-dialog[open]{display:flex;flex-direction:column}
+.contact-timing-dialog[data-kind=evidence]{width:360px}
+.contact-timing-dialog,.contact-timing-dialog *{box-sizing:border-box}
+.contact-timing-dialog [hidden]{display:none!important}
+.contact-timing-dialog::backdrop{background:#172c4738;backdrop-filter:blur(2px)}
+.contact-timing-dialog header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:18px 20px;border-bottom:1px solid #edf1f7}
+.contact-timing-dialog h3{margin:0;color:#475d79;font-size:16px;font-weight:600;line-height:1.6}
+.contact-timing-dialog header p{margin:6px 0 0;color:#8799b0;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.contact-timing-dialog form{margin:0;min-width:0}
+.contact-timing-body{display:flex;flex-direction:column;gap:12px;padding:20px;min-width:0}
+.contact-timing-field{display:flex;flex-direction:column;gap:8px;color:#61748e;font-size:12px}
+.contact-timing-field select{width:100%;min-width:0;height:37px;min-height:37px;margin:0;padding:0 10px;border:1px solid #dce4ef;border-radius:7px;background:#fcfdff;color:#475d79;font:inherit;font-size:12px}
+.contact-timing-field select:hover{border-color:#93b4ec}
+.contact-timing-field select:focus-visible{outline:2px solid #6389d3;outline-offset:2px}
+.contact-timing-field select:disabled{opacity:.55;cursor:not-allowed}
+.contact-timing-dialog .contact-timing-help{margin:0;color:#71849f;font-size:11px;line-height:1.7;overflow-wrap:anywhere}
+.contact-timing-dialog .contact-timing-error{margin:0;color:#be123c;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.contact-timing-range{display:flex;flex-direction:column;gap:4px;color:#61748e;font-size:12px;font-variant-numeric:tabular-nums}
+.contact-timing-range strong{color:#285ac0;font-size:13px;font-weight:600}
+.contact-timing-history{display:flex;flex-direction:column;gap:6px;margin:0;padding:10px 0 0;list-style:none;border-top:1px solid #edf1f7;color:#71849f;font-size:11px;font-variant-numeric:tabular-nums}
+.contact-timing-history li{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 12px}
+.contact-timing-dialog footer{display:flex;justify-content:flex-end;gap:9px;padding:14px 20px;border-top:1px solid #edf1f7}
+.contact-timing-dialog .button{min-height:33px;height:33px;padding:0 13px;font-size:12px}
+.contact-timing-dialog .button:focus-visible{outline:2px solid #6389d3;outline-offset:2px}
+.contact-timing-dialog .button:disabled{opacity:.45;cursor:not-allowed;transform:none;box-shadow:none}
+.contact-timing-dialog .contact-timing-close{width:28px;height:28px;min-height:28px;padding:0;border:0;background:transparent;color:#91a1b7;font-size:23px}
+.contact-timing-dialog .contact-timing-close:hover{background:#edf3ff;color:#2451b9}
+.contact-timing-dialog .contact-timing-close:active{background:#dbeafe}
+
+/* contact-timing S-3 */
+@media(max-width:760px){.mail-chat .contact-timing{margin-left:0;padding-left:0;border-left:0}.contact-timing-dialog{max-height:calc(100dvh - 24px)}.contact-timing-dialog header{padding:14px 16px}.contact-timing-body{padding:16px}.contact-timing-dialog footer{padding:12px 16px}}
