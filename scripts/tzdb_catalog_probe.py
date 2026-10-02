@@ -13,9 +13,9 @@
 
 构建 JDK 与生产 JVM 必须使用同一 tzdb 族（见 contact-timing 总计划 G-0 / A4）：
 发布前对两边各跑一次本脚本，输出即 G-0 证据。
-"""
 
-from __future__ import annotations
+脚本需在 python3.6+ 上可运行（生产主机 el7 自带 3.6.8）：不使用 PEP 585/604 注解。
+"""
 
 import argparse
 import json
@@ -64,12 +64,12 @@ public class TzdbCatalogProbe {
 """
 
 
-def load_location_catalog_zones() -> list[str]:
+def load_location_catalog_zones():
     catalog = json.loads(LOCATION_CATALOG.read_text(encoding="utf-8"))
     return sorted({zone["id"] for country in catalog["countries"] for zone in country.get("zones", [])})
 
 
-def load_meeting_catalog_keys() -> set[str]:
+def load_meeting_catalog_keys():
     keys = set()
     for line in MEETING_CATALOG.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -79,14 +79,14 @@ def load_meeting_catalog_keys() -> set[str]:
     return keys
 
 
-def meeting_selectable_ids(jvm_zone_ids: set[str]) -> set[str]:
+def meeting_selectable_ids(jvm_zone_ids):
     """与 MeetingConfirmationService.catalogZoneIds() 同口径。"""
     selectable = {zone for zone in jvm_zone_ids if "/" in zone and not zone.startswith("Etc/")}
     selectable.add("UTC")
     return selectable
 
 
-def run_probe(java: str) -> tuple[dict[str, str], set[str], dict[str, str]]:
+def run_probe(java):
     with tempfile.TemporaryDirectory(prefix="tzdb-catalog-probe-") as work:
         source = Path(work) / "TzdbCatalogProbe.java"
         source.write_text(PROBE_SOURCE, encoding="utf-8")
@@ -95,11 +95,11 @@ def run_probe(java: str) -> tuple[dict[str, str], set[str], dict[str, str]]:
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=180,
         )
     if proc.returncode != 0:
-        raise SystemExit(f"探针 JVM 调用失败（退出码 {proc.returncode}）：\n{proc.stderr.strip()}")
+        raise SystemExit("探针 JVM 调用失败（退出码 %d）：\n%s" % (proc.returncode, proc.stderr.strip()))
 
-    meta: dict[str, str] = {}
-    zone_ids: set[str] = set()
-    offsets: dict[str, str] = {}
+    meta = {}
+    zone_ids = set()
+    offsets = {}
     for line in proc.stdout.splitlines():
         if line.startswith("#java."):
             key, _, value = line[1:].partition("=")
@@ -112,7 +112,7 @@ def run_probe(java: str) -> tuple[dict[str, str], set[str], dict[str, str]]:
     return meta, zone_ids, offsets
 
 
-def main() -> int:
+def main():
     parser = argparse.ArgumentParser(description="tzdb 目录覆盖探针（G-0）")
     parser.add_argument("--java", default="java", help="要探测的 java 可执行文件；默认取 PATH 上的 java")
     args = parser.parse_args()
@@ -130,13 +130,14 @@ def main() -> int:
         if offsets.get(zone) != EXPECTED_OFFSETS[zone]
     ]
 
-    print(f"java: {meta.get('java.version', '?')}  ({meta.get('java.home', '?')})")
-    print(f"jvm zone ids: {len(jvm_zone_ids)}")
-    print(f"location catalog ids: {len(location_zones)}  缺失: {len(missing_location)} {missing_location}")
-    print(f"meeting selectable ids: {len(selectable)}  目录未覆盖: {len(missing_meeting)} {missing_meeting}")
-    print(f"offset assertions @ {PROBE_DATE_UTC}: {len(EXPECTED_OFFSETS) - len(offset_mismatch)}/{len(EXPECTED_OFFSETS)} 通过")
+    print("java: %s  (%s)" % (meta.get("java.version", "?"), meta.get("java.home", "?")))
+    print("jvm zone ids: %d" % len(jvm_zone_ids))
+    print("location catalog ids: %d  缺失: %d %s" % (len(location_zones), len(missing_location), missing_location))
+    print("meeting selectable ids: %d  目录未覆盖: %d %s" % (len(selectable), len(missing_meeting), missing_meeting))
+    print("offset assertions @ %s: %d/%d 通过"
+          % (PROBE_DATE_UTC, len(EXPECTED_OFFSETS) - len(offset_mismatch), len(EXPECTED_OFFSETS)))
     for zone, expected, actual in offset_mismatch:
-        print(f"  offset mismatch: {zone} 期望 {expected} 实际 {actual}")
+        print("  offset mismatch: %s 期望 %s 实际 %s" % (zone, expected, actual))
 
     failures = bool(missing_location or missing_meeting or offset_mismatch)
     print("RESULT: " + ("FAIL" if failures else "PASS"))
