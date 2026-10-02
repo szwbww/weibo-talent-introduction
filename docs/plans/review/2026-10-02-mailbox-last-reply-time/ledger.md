@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-10-02/mailbox-last-reply-time.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 4
+- Master plan: `docs/plans/2026-10-02/mailbox-last-reply-time.md` (sha256 `cb491bebb31ab8e4a8e5379c731c5bf66f6b4a3c633a7f7440acf518bab7332e`)
+- Governing master identity: worktree sha256 `cb491bebb31ab8e4a8e5379c731c5bf66f6b4a3c633a7f7440acf518bab7332e`; recorded `commit 5d1789f90716a27e265b63340a9aef562a0035d9`
+- Invoked master identity: SAME (`cb491bebb31ab8e4a8e5379c731c5bf66f6b4a3c633a7f7440acf518bab7332e`)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: N/A
+- Fast-p ledger: `docs/plans/fast/2026-10-02-mailbox-last-reply-time/ledger.md` (sha256 `65ff378b9cc847b6033166fe22f04e6f4e2edcdb07225caeeda7bb2d7374fd85`)
+- Fast-p handoff: `docs/plans/fast/2026-10-02-mailbox-last-reply-time/human-review-handoff.md` (sha256 `375d964c1d268bdbb184b2957fc70eeea4c785cbe82d14cfd976982e5e702221`)
+- Master base: `bf19fdfcb24336a41106d1c46fa7147bc6546892`
+- Final code head: `d3c7709f0f2d2460f5b6eed015a443ab83f94558`
+- Evidence parent before next commit: `1ceac74b66b7cadf5cd89a1352864326cc7ef528`
+- Previous evidence commit: `1ceac74b66b7cadf5cd89a1352864326cc7ef528`
+- Branch: `fast/2026-10-02-mailbox-last-reply-time`
+- Worktree: `/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-02-mailbox-last-reply-time`
+- Worktree resolution: EXPLICIT
+- Discovery evidence: N/A
+- Misdirected review evidence: N/A
+- Reviewer: `AggregateReviewerEpoch4`
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: `machine-verification.md` epoch 4
+- Repair artifact: `docs/plans/fix/mailbox-last-reply-time/repair.md` (sha256 `d0a0e708fec53c4b8862b6b9b0e0313c487f32823ec64568674e1059c2470ace`)
+- Repair evidence mode: DURABLE_HANDOFF
+- Repair approval source: human-originated `$execute-p /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-02-mailbox-last-reply-time/docs/plans/fix/mailbox-last-reply-time/repair.md` (2026-10-03, this session)
+- Repair executor: omp main session
+- Repair code head: `d3c7709f0f2d2460f5b6eed015a443ab83f94558`
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: Human acceptance A-1..A-8 pending for boundary `bf19fdfcb24336a41106d1c46fa7147bc6546892..d3c7709f0f2d2460f5b6eed015a443ab83f94558`; after all mandatory items pass and the human signs off, append `final-decision.md` (READY_TO_INTEGRATE).

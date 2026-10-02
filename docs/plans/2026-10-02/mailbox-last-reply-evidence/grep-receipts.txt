@@ -1,0 +1,368 @@
+R1 production input constructors and repository writes
+$ rg -n 'InboundMailProcessing\(|inboundMailProcessingRepository\.(save|delete|reopen)' src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/InboundMailProcessing.kt:8:data class InboundMailProcessing(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:193:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:238:        val saved = inboundMailProcessingRepository.save(record.copy(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1308:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1309:            InboundMailProcessing(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1364:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1365:            InboundMailProcessing(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1524:        inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1595:        val updated = inboundMailProcessingRepository.reopenManualResolved(inboundProcessingId, now)
+
+
+R2 schema and direct SQL writes
+$ rg -n --hidden '(INSERT INTO|UPDATE|DELETE FROM|ALTER TABLE)\s+inbound_mail_processing' src/main scripts ops
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:50:        UPDATE inbound_mail_processing
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:18:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:23:UPDATE inbound_mail_processing
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:17:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:20:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:28:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:32:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:100:        'ALTER TABLE inbound_mail_processing ADD COLUMN in_reply_to VARCHAR(255) DEFAULT NULL AFTER message_id'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:105:        'ALTER TABLE inbound_mail_processing ADD COLUMN body TEXT DEFAULT NULL AFTER subject'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:110:        'ALTER TABLE inbound_mail_processing ADD COLUMN cleaned_body TEXT DEFAULT NULL AFTER body'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:115:        'ALTER TABLE inbound_mail_processing ADD COLUMN resolved_at DATETIME DEFAULT NULL AFTER process_reason'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:120:        'ALTER TABLE inbound_mail_processing ADD COLUMN resolved_by VARCHAR(100) DEFAULT NULL AFTER resolved_at'
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:37:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:43:UPDATE inbound_mail_processing
+
+
+R3 repository calls and SQL consumers
+$ rg -n 'inboundMailProcessingRepository\.|FROM inbound_mail_processing|JOIN inbound_mail_processing' src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:80:            manualReviewInbound = inboundMailProcessingRepository.countManualReviewBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:81:            unmatchedInbound = inboundMailProcessingRepository.countUnmatchedBetween(start, end),
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:185:        val records = inboundMailProcessingRepository.listInboundActivity(
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:214:            totalCount = inboundMailProcessingRepository.countInboundActivity(start, end, processStatus, reasonType)
+src/main/kotlin/com/weibo/talentintroduction/monitoring/service/MailMonitoringService.kt:246:        val lastReceived = inboundMailProcessingRepository.findLastReceivedAtPerAccount()
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:97:        val inbound = inboundMailProcessingRepository.findById(sourceId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:259:        inboundMailProcessingRepository.findAllByExpertContactId(contactId)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:477:                val processing = inboundMailProcessingRepository.findById(candidate.id).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:730:                val processing = inboundMailProcessingRepository.findById(id).orElse(null)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:855:              LEFT JOIN inbound_mail_processing p ON p.id = COALESCE(t.inbound_processing_id, a.inbound_processing_id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:865:                     SELECT p.id FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:877:                     SELECT p.id FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceBackfillService.kt:23:        val total = inboundMailProcessingRepository.countAll()
+src/main/kotlin/com/weibo/talentintroduction/mail/service/BounceBackfillService.kt:25:            val batch = inboundMailProcessingRepository.findAllPagedOrderByReceivedAtAsc(batchSize, offset)
+src/main/kotlin/com/weibo/talentintroduction/llm/service/TrustReplyWorkbenchService.kt:2373:        val inbound = inboundMailProcessingRepository.findById(source.sourceId).orElseThrow {
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:410:                ?: inboundMailProcessingRepository.findAllByExpertContactId(contactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoReplyPreviewService.kt:50:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:292:            FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:162:        inboundMailProcessingRepository.findByMailboxOwnerCodeAndUidValidityAndImapUid(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:183:        val legacySameUid = inboundMailProcessingRepository.findLegacyOwnerlessByGroupAndImapUid(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1308:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1364:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertRepliedDismissalService.kt:27:            "SELECT MAX(id) FROM inbound_mail_processing WHERE expert_contact_id = :contactId",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:51:                inboundMailProcessingRepository.findUnmatchedManualReviewQueue(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:53:                ) to inboundMailProcessingRepository.countUnmatchedManualReviewQueue(activeCodes, normalizedQuery)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:56:            inboundMailProcessingRepository.findManualReviewQueue(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:62:            ) to inboundMailProcessingRepository.countManualReviewQueue(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:71:            val total = inboundMailProcessingRepository.countManualReviewByAccounts(activeCodes)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:72:            val grouped = inboundMailProcessingRepository.countGroupedByReasonTypeForAccounts(activeCodes)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:85:        val record = inboundMailProcessingRepository.findById(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:158:        val record = inboundMailProcessingRepository.findById(recordId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:193:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:234:        val record = inboundMailProcessingRepository.findById(recordId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:238:        val saved = inboundMailProcessingRepository.save(record.copy(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:249:            val remaining = inboundMailProcessingRepository.countByExpertContactIdAndProcessStatus(contactId, "MANUAL_REVIEW")
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:126:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:146:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:192:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1037:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1053:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1518:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1524:        inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1537:            val remaining = inboundMailProcessingRepository.countByExpertContactIdAndProcessStatus(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1576:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1595:        val updated = inboundMailProcessingRepository.reopenManualResolved(inboundProcessingId, now)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1656:        val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/InboundMailTagService.kt:242:        if (!inboundMailProcessingRepository.existsById(inboundProcessingId)) {
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MeetingConfirmationService.kt:195:        val processing = inboundMailProcessingRepository.findById(processingId)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxService.kt:270:                val record = inboundMailProcessingRepository.findById(id)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:40:        val records = inboundMailProcessingRepository.listInboundSummary(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:48:        val totalCount = inboundMailProcessingRepository.countInboundSummary(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:83:        val inbound = inboundMailProcessingRepository.findById(inboundId)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:87:            inboundMailProcessingRepository.findAllByExpertContactId(inbound.expertContactId)
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/InboundMailSummaryController.kt:149:        val inbound = inboundMailProcessingRepository.findById(inboundId)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:492:              FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:550:                SELECT 1 FROM inbound_mail_processing impi
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:614:                    SELECT 1 FROM inbound_mail_processing imp_replied
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:46:        JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:69:        JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:84:                    JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:89:                    JOIN inbound_mail_processing p2 ON p2.id = t2.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:118:                    JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:123:                    JOIN inbound_mail_processing p2 ON p2.id = t2.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:550:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:597:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:667:                FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:733:                FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:826:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:37:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:87:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:104:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:121:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:140:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:152:        FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:159:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:167:        FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:176:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:185:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:194:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:213:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:229:          FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:238:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:245:    @Query("SELECT COUNT(*) FROM inbound_mail_processing")
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:250:        SELECT p.* FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:276:        SELECT COUNT(*) FROM inbound_mail_processing p
+
+
+R4 production DTO field use
+$ rg -n 'latestInbound|latestInboundByContacts' src/main
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:47: * latestInbound.processingId 是真实 inbound_mail_processing.id（供可信工作台），
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:68:    val latestInbound: ConversationLatestInboundItem?,
+src/main/kotlin/com/weibo/talentintroduction/expert/service/ExpertIndexWriterService.kt:511:                updates["latestInboundIntent"] = intent
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:141:     * 时间，绝不含邮件正文；latestMessage/latestInbound/accountCodes/materialCount
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:295:    fun latestInboundByContacts(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:155:        val latestInbounds = repository.latestInboundByContacts(contactIds, activeCodes, accountCode)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:188:                latestInbound = latestInbounds[row.expertContactId]?.let { i ->
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertRepliedDismissalService.kt:26:        val latestInboundId = jdbcTemplate.queryForObject(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertRepliedDismissalService.kt:31:        params.addValue("lastInboundId", latestInboundId)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:184:            val latestInbound = mailRecordRepository.findLatestInboundByExpertContactId(contactId)
+src/main/kotlin/com/weibo/talentintroduction/llm/controller/AiTrainingController.kt:189:                lastSubject = latestInbound?.subject
+src/main/resources/es/orcid_info_application.json:32:      "latestInboundIntent": { "type": "keyword" },
+src/main/resources/static/mailbox-chat.js:2713:        function latestInboundMessage() {
+src/main/resources/static/mailbox-chat.js:2716:            const latest = summary.latestInbound || null;
+src/main/resources/static/mailbox-chat.js:3378:            const latestInbound = summary.latestInbound || null;
+src/main/resources/static/mailbox-chat.js:3379:            const canGenerate = latestInbound && latestInbound.processingId != null;
+src/main/resources/static/mailbox-chat.js:3393:            const latestInbound = summary.latestInbound || null;
+src/main/resources/static/mailbox-chat.js:3394:            const processingId = latestInbound && latestInbound.processingId != null ? Number(latestInbound.processingId) : null;
+src/main/resources/static/mailbox-chat.js:3418:            const latestInbound = summary.latestInbound || null;
+src/main/resources/static/mailbox-chat.js:3421:            const hasInbound = latestInbound && latestInbound.processingId != null;
+src/main/resources/static/mailbox-chat.js:3424:            const targetProcessingId = hasInbound ? Number(latestInbound.processingId) : null;
+src/main/resources/static/mailbox-chat.js:3425:            const targetAccount = hasInbound ? (latestInbound.accountCode || "") : "";
+src/main/resources/static/mailbox-chat.js:3433:                ? latestInboundMessage()
+src/main/resources/static/mailbox-chat.js:6637:            const latest = summary.latestInbound || null;
+
+
+R5 frontend summary state writes and list reads
+$ rg -n 'instance\.selectedSummary\s*=|instance\.list\.items\s*=|findSummaryByContactId|fetchList\(|renderHeader\(' src/main/resources/static/mailbox-chat.js
+exit=0
+1353:        function fetchList(extra) {
+1367:                instance.list.items = unmatched
+1402:            return fetchList({ page: instance.list.page }).then((data) => {
+1413:            return fetchList({ page }).then((data) => {
+1418:                    return fetchList({ page: page - 1 }).then((retryData) => {
+1555:            instance.selectedSummary = null;
+1595:                    const freshSummary = findSummaryByContactId(instance.selectedContactId);
+1596:                    if (freshSummary) instance.selectedSummary = freshSummary;
+1657:        function findSummaryByContactId(contactId) {
+1689:            instance.selectedSummary = item;
+1753:                    fetchList({ page: instance.list.page });
+1815:        function renderHeader() {
+2987:            renderHeader();
+3315:                fetchList({ page: instance.list.page });
+3661:            renderHeader();
+3694:                fetchList({ page: instance.list.page });
+3980:                    renderHeader();
+3987:                    if (failures.length < results.length) renderHeader();
+4082:            fetchList({ page: instance.list.page }).then(() => {
+4084:                const fresh = findSummaryByContactId(instance.selectedContactId);
+4085:                if (fresh) instance.selectedSummary = fresh;
+6600:            fetchList({ page: instance.list.page });
+6635:            const summary = instance.selectedSummary || findSummaryByContactId(instance.selectedContactId);
+6754:                const item = findSummaryByContactId(contactId);
+6833:                    fetchList({ page: instance.list.page });
+6839:                fetchList({ page: instance.list.page });
+6843:                fetchList({ page: instance.list.page });
+6847:                const item = findSummaryByContactId(instance.selectedContactId);
+7297:            return fetchList({ page: instance.list.page }).then((data) => {
+
+
+R6 current cache key references
+$ rg -n -F 20261002-location-search src/main/resources/static/index.html src/test
+exit=0
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20261002-location-search">
+src/main/resources/static/index.html:12:    <link rel="stylesheet" href="expert-materials.css?v=20261002-location-search">
+src/main/resources/static/index.html:13:    <link rel="stylesheet" href="mailbox-chat.css?v=20261002-location-search">
+src/main/resources/static/index.html:14:    <link rel="stylesheet" href="meeting-confirmation.css?v=20261002-location-search">
+src/main/resources/static/index.html:15:    <link rel="stylesheet" href="world-clock.css?v=20261002-location-search">
+src/main/resources/static/index.html:2345:<script src="trust-reply-workbench.js?v=20261002-location-search"></script>
+src/main/resources/static/index.html:2346:<script src="expert-materials.js?v=20261002-location-search"></script>
+src/main/resources/static/index.html:2347:<script src="meeting-confirmation.js?v=20261002-location-search"></script>
+src/main/resources/static/index.html:2348:<script src="mailbox-chat.js?v=20261002-location-search"></script>
+src/main/resources/static/index.html:2349:<script src="app.js?v=20261002-location-search"></script>
+src/main/resources/static/index.html:2350:<script src="world-clock.js?v=20261002-location-search"></script>
+
+
+R7 fixed cache key in tests (exit 1 means none)
+$ rg -n -F 20261002-location-search src/test
+exit=1
+
+
+R8 existing selectors use
+$ rg -n 'mc-person-main|mc-person-meta|mc-identity|mc-header-meta' src/main/resources/static/mailbox-chat.js src/main/resources/static/mailbox-chat.css
+exit=0
+src/main/resources/static/mailbox-chat.css:19:.mail-chat .mc-person-main{display:flex;flex-direction:column;align-items:stretch;min-width:0;gap:5px;padding:12px 0 12px 10px;border:0;background:transparent;color:#475569;text-align:left;font:inherit;cursor:pointer}
+src/main/resources/static/mailbox-chat.css:20:.mail-chat .mc-person-main:active{opacity:.85}
+src/main/resources/static/mailbox-chat.css:21:.mail-chat .mc-person-main strong{font-size:13px;font-weight:600;color:#1e293b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+src/main/resources/static/mailbox-chat.css:22:.mail-chat .mc-person-main small{font-size:11px;color:#64748b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+src/main/resources/static/mailbox-chat.css:23:.mail-chat .mc-person-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px}
+src/main/resources/static/mailbox-chat.css:35:.mail-chat .mc-identity{flex:1;min-width:180px}
+src/main/resources/static/mailbox-chat.css:36:.mail-chat .mc-identity h2{font-size:16px;font-weight:600;color:#1e293b;overflow-wrap:anywhere}
+src/main/resources/static/mailbox-chat.css:37:.mail-chat .mc-identity p{margin-top:4px;color:#64748b;font-size:11px;overflow-wrap:anywhere}
+src/main/resources/static/mailbox-chat.css:70:@media(max-width:760px){.mail-chat{display:flex;flex-direction:column;height:auto;min-height:0;gap:12px}.mail-chat .mc-experts{max-height:320px;min-height:240px}.mail-chat .mc-expert-list{min-height:100px}.mail-chat .mc-conversation{min-height:560px}.mail-chat .mc-scroll{max-height:none;overflow:visible;padding:12px}.mail-chat .mc-message{width:100%}.mail-chat .mc-header{padding:12px}.mail-chat .mc-identity{min-width:0;width:100%;flex-basis:100%}.mail-chat .mc-section-content{padding:12px}.mail-chat .mc-actions{width:100%}}
+src/main/resources/static/mailbox-chat.css:103:.mail-chat .mc-header-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;flex-basis:100%;font-size:11px;color:#8a9bb2}
+src/main/resources/static/mailbox-chat.css:104:.mail-chat .mc-identity h2{font-size:17px;font-weight:600;letter-spacing:-.25px}
+src/main/resources/static/mailbox-chat.css:121:.mail-chat .mc-tag-row .inbound-tag-chip,.mail-chat .mc-header-meta .expert-tag{font-size:10px;line-height:1.6;padding:2px 6px;border-radius:5px;margin:0}
+src/main/resources/static/mailbox-chat.css:159:.mail-chat .mc-person-meta{flex-wrap:nowrap;min-width:0;gap:6px;max-width:100%}
+src/main/resources/static/mailbox-chat.js:1268:                    <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
+src/main/resources/static/mailbox-chat.js:1272:                        <span class="mc-person-meta">
+src/main/resources/static/mailbox-chat.js:1309:                    <button class="mc-person-main" type="button" data-action="mc-select-unmatched" data-unmatched-id="${escapeText(id)}"${active ? ' aria-current="true"' : ""}>
+src/main/resources/static/mailbox-chat.js:1313:                        <span class="mc-person-meta"><span class="mc-badge" data-tone="pending">未关联专家</span></span>
+src/main/resources/static/mailbox-chat.js:1797:                <header class="mc-header"><div class="mc-identity"><h2>${escapeText(name)}</h2><p>正在加载往来信件…</p></div><div class="mc-actions"></div></header>
+src/main/resources/static/mailbox-chat.js:1824:            const identity = head.querySelector(".mc-identity");
+src/main/resources/static/mailbox-chat.js:1841:            const meta = head.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:1892:                    const meta = body.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:2055:            const meta = body.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:2597:            const identity = body.querySelector(".mc-identity");
+src/main/resources/static/mailbox-chat.js:2960:                    <div class="mc-identity"></div>
+src/main/resources/static/mailbox-chat.js:2962:                    <div class="mc-header-meta"></div>
+src/main/resources/static/mailbox-chat.js:3859:                    const meta = body.querySelector(".mc-header-meta");
+src/main/resources/static/mailbox-chat.js:4079:            const meta = conversationBody() ? conversationBody().querySelector(".mc-header-meta") : null;
+
+
+R9 related existing tests
+$ rg -n 'latestInbound|latest inbound|receivedAt|refreshFromHost|DateTimeFormat|TARGET_CSS|CACHE_KEY' src/test/js/mailboxChatBehavior.test.js src/test/js/mailboxChatStyle.test.js src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt
+exit=0
+src/test/js/mailboxChatStyle.test.js:25:const TARGET_CSS = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-09", "mailbox-refinement-evidence", "mailbox-chat.target.css");
+src/test/js/mailboxChatStyle.test.js:28:const CACHE_KEY = (() => {
+src/test/js/mailboxChatStyle.test.js:37:        const expected = fs.readFileSync(TARGET_CSS, "utf-8");
+src/test/js/mailboxChatStyle.test.js:103:            new RegExp('href="mailbox-chat\\.css\\?v=' + escapeRegExp(CACHE_KEY) + '"'),
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:36: * - latestInbound 携带真实 processing.id；
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:37: * - I-2 平局证据：同秒跨来源 rank 2 胜出、同来源更大 id 胜出、latestInbound 取真实最大
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:126:        // 真实 processing id 作为 latestInbound（never derived from mail_record）
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:127:        val latestInbound = repository.latestInboundByContacts(listOf(1L, 2L, 3L, 4L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:128:        assertEquals(cInboundId, latestInbound[3L]!!.processingId)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:129:        assertEquals(dInboundId, latestInbound[4L]!!.processingId)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:130:        assertNull(latestInbound[1L], "A 无任何 processing 来信 → latestInbound null")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:131:        assertNull(latestInbound[2L])
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:478:        // latestInbound 指向同秒下真实的最大 processing id（绝不取自 mail_record）。
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:479:        val inbound = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:482:        // 更晚的 OUTBOUND 只改 latestMessage；latestInbound 候选恒为 processing，不受其扰动。
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:487:        val inboundAfter = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:492:        assertTrue(repository.latestInboundByContacts(emptyList(), allAccounts, null).isEmpty())
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:506:        val narrowedInbound = repository.latestInboundByContacts(listOf(1L), allAccounts, "acc-a")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:507:        assertNull(narrowedInbound[1L], "acc-a 无 processing 来信 → latestInbound 为空（不越界）")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:512:        val allInbound = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:677:    fun `keyword and recipient filters keep pending count and latest inbound at full range`() {
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:691:        val latestInbound = repository.latestInboundByContacts(listOf(8L), allAccounts, null)
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:692:        assertEquals("full-h2", latestInbound[8L]!!.messageId, "最近来信仍取全账号范围最新一封")
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:813:        receivedAt: String
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:822:        Timestamp.valueOf(LocalDateTime.parse(receivedAt.replace(' ', 'T'))),
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:823:        Timestamp.valueOf(LocalDateTime.parse(receivedAt.replace(' ', 'T')))
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:832:        receivedAt: String,
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:845:        Timestamp.valueOf(LocalDateTime.parse(receivedAt.replace(' ', 'T'))),
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt:906:        for (method in listOf("latestMessageByContacts(", "latestInboundByContacts(")) {
+src/test/js/mailboxChatBehavior.test.js:1065:        latestInbound: { processingId: 101, accountCode: "acc1", messageId: "m101", receivedAt: "2026-09-07T03:00:00" },
+src/test/js/mailboxChatBehavior.test.js:1085:        latestInbound: null,
+src/test/js/mailboxChatBehavior.test.js:1105:        latestInbound: null,
+src/test/js/mailboxChatBehavior.test.js:1167:        receivedAt: "2026-09-10T10:00:00",
+src/test/js/mailboxChatBehavior.test.js:2140:        assert.ok(compose, "pendingCount=0 + latestInbound 仍显示编辑器");
+src/test/js/mailboxChatBehavior.test.js:2435:                    if (current.latestInbound && current.latestInbound.processingId === 102) {
+src/test/js/mailboxChatBehavior.test.js:2457:            latestInbound: { processingId: 102, accountCode: "acc1", messageId: "m102", receivedAt: "2026-09-08T10:00:00" },
+src/test/js/mailboxChatBehavior.test.js:4430:        await api.refreshFromHost();
+src/test/js/mailboxChatBehavior.test.js:4675:            { receivedAtBeijing: "2026-10-01T01:15:00+08:00", receivedAtLocal: "2026-09-30T22:45:00+05:30" },
+src/test/js/mailboxChatBehavior.test.js:4676:            { receivedAtBeijing: "2026-10-02T00:30:00+08:00", receivedAtLocal: "2026-10-01T22:00:00+05:30" }
+src/test/js/mailboxChatBehavior.test.js:4790:                tz: Intl.DateTimeFormat().resolvedOptions().timeZone
+
+
+R10 proposed production classes absent (exit 1 means none)
+$ rg -n 'mailbox-reply-(list|detail|zone|empty)' src/main
+exit=1
+
+
+R11 frontend storage use
+$ rg -n 'sessionStore\.|getConversationRecord|upsertConversationRecord|draftsRef|localStorage|sessionStorage' src/main/resources/static/mailbox-chat.js
+exit=0
+26: *   每会话 ≤500 条已加载消息；不写 localStorage 正文。scroll/selectExpert/unmount/
+120:    // 不写 localStorage/sessionStorage；所有日期按显式时区（Asia/Shanghai /
+157:            return (global.localStorage && global.localStorage.getItem("operatorName")) || "console";
+400:        const rec = sessionStore.get(key);
+402:        sessionStore.delete(key);
+403:        sessionStore.set(key, rec);
+406:    function getConversationRecord(user, accountScope, contactId) {
+408:        const rec = sessionStore.get(key);
+410:            sessionStore.delete(key);
+411:            sessionStore.set(key, rec);
+417:    function upsertConversationRecord(user, accountScope, contactId, patch) {
+419:        let rec = sessionStore.get(key);
+447:        sessionStore.delete(key);
+448:        sessionStore.set(key, rec);
+450:        if (sessionStore.size > SESSION_CACHE_LIMIT) {
+453:            sessionStore.forEach((entry, entryKey) => {
+459:            if (oldestKey !== null && oldestKey !== key) sessionStore.delete(oldestKey);
+465:        sessionStore.delete(conversationCacheKey(user, accountScope, contactId));
+514:            draftsRef: null,
+544:            // 不是持久 store，不写草稿 Map/localStorage/sessionStorage。
+611:            if (instance.draftsRef) return instance.draftsRef;
+612:            const record = getConversationRecord(instance.user, instance.conversation.accountScope || "", Number(instance.selectedContactId || 0));
+614:                instance.draftsRef = record.drafts;
+626:            const record = upsertConversationRecord(instance.user, scope, contactId, {});
+627:            instance.draftsRef = record.drafts;
+1557:            instance.draftsRef = null;
+1713:            instance.draftsRef = null;
+1734:                const cached = getConversationRecord(instance.user, accountFilter, contactId);
+1744:                    instance.draftsRef = cached.drafts;
+1757:                const cached = getConversationRecord(instance.user, accountFilter, contactId);
+1763:                    instance.draftsRef = cached.drafts;
+3145:            const rec = upsertConversationRecord(instance.user, instance.conversation.accountScope || "", contactId, {
+3155:            instance.draftsRef = rec.drafts;
+4088:            const record = getConversationRecord(instance.user, scope, Number(contactId));
+
+
+R12 versioned resource contract
+$ rg -n '11|versioned|cache key|CACHE_KEY|cacheKey' src/test/js/meetingConfirmationAssets.test.js src/test/js/trustReplyWorkbenchSharedMount.test.js
+exit=0
+src/test/js/meetingConfirmationAssets.test.js:4:// 1) index.html 恰好 11 个带 ?v= 资源（7 旧 + meeting-confirmation.css/.js 与
+src/test/js/meetingConfirmationAssets.test.js:25:const CACHE_KEY = (() => {
+src/test/js/meetingConfirmationAssets.test.js:27:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/meetingConfirmationAssets.test.js:37:describe("T3: 11 个带版本资源统一键与注册（I-1/S-1）", () => {
+src/test/js/meetingConfirmationAssets.test.js:38:    it(`恰好 11 个带 ?v= 资源且全部等于 ${CACHE_KEY}，无旧键残留`, () => {
+src/test/js/meetingConfirmationAssets.test.js:40:        assert.strictEqual(keys.length, 11, `index.html 必须恰好注册 11 个带版本资源，实际 ${keys.length}`);
+src/test/js/meetingConfirmationAssets.test.js:41:        assert.ok(keys.every((key) => key === CACHE_KEY), `全部键必须等于 ${CACHE_KEY}: ${keys}`);
+src/test/js/meetingConfirmationAssets.test.js:46:    it("11 个资源 = 9 旧资源 + world-clock.css/.js，各恰好注册 1 次（无重复）", () => {
+src/test/js/meetingConfirmationAssets.test.js:53:        assert.strictEqual(refs.length, 11, "link+script 带版本注册行合计必须为 11");
+src/test/js/meetingConfirmationAssets.test.js:58:        // 无重名：11 个名字互不重复
+src/test/js/meetingConfirmationAssets.test.js:59:        assert.strictEqual(new Set(refs.map((ref) => ref.name)).size, 11,
+src/test/js/meetingConfirmationAssets.test.js:60:            "11 个注册资源名不得重复");
+src/test/js/meetingConfirmationAssets.test.js:67:        const linkRe = new RegExp('<link rel="stylesheet" href="[^"]+\\.css\\?v=' + escapeRegExp(CACHE_KEY) + '">', "g");
+src/test/js/meetingConfirmationAssets.test.js:68:        const scriptRe = new RegExp('<script src="[^"]+\\.js\\?v=' + escapeRegExp(CACHE_KEY) + '"><\\/script>', "g");
+src/test/js/meetingConfirmationAssets.test.js:77:        const trustAt = html.indexOf("trust-reply-workbench.js?v=" + CACHE_KEY);
+src/test/js/meetingConfirmationAssets.test.js:87:            const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:97:            const at = html.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:111:        assert.ok(html.includes(`meeting-confirmation.css?v=${CACHE_KEY}`),
+src/test/js/meetingConfirmationAssets.test.js:113:        assert.ok(html.includes(`meeting-confirmation.js?v=${CACHE_KEY}`),
+src/test/js/meetingConfirmationAssets.test.js:125:            assert.ok(line.includes(`?v=${CACHE_KEY}`), `注册行必须携带统一键: ${line.trim()}`);
+src/test/js/meetingConfirmationAssets.test.js:141:    const versionedRefs = () => {
+src/test/js/meetingConfirmationAssets.test.js:154:            const hits = versionedRefs().filter((ref) => ref.name === name);
+src/test/js/meetingConfirmationAssets.test.js:157:            assert.strictEqual(hits[0].key, CACHE_KEY, `${name} 必须携带统一键 ${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:162:        const lastOldCssAt = html.indexOf(`meeting-confirmation.css?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:163:        const clockCssAt = html.indexOf(`world-clock.css?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:166:        const appAt = html.indexOf(`app.js?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:167:        const clockJsAt = html.indexOf(`world-clock.js?v=${CACHE_KEY}`);
+src/test/js/meetingConfirmationAssets.test.js:169:        const lastScript = versionedRefs().filter((ref) => ref.tag === "script").pop();
+src/test/js/meetingConfirmationAssets.test.js:171:        const scriptAt = html.indexOf(`meeting-confirmation.js?v=${CACHE_KEY}`);
+src/test/js/trustReplyWorkbenchSharedMount.test.js:5:// 2) G-5 11 个缓存资源同值（index.html 的 styles.css?v= 键）；
+src/test/js/trustReplyWorkbenchSharedMount.test.js:23:const CACHE_KEY = (() => {
+src/test/js/trustReplyWorkbenchSharedMount.test.js:25:    if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+src/test/js/trustReplyWorkbenchSharedMount.test.js:180:    it(`G-5: the eleven cache-busted assets share one key (${CACHE_KEY})`, () => {
+src/test/js/trustReplyWorkbenchSharedMount.test.js:182:        assert.strictEqual(keys.length, 11, "index.html must carry exactly eleven cache-busted asset URLs");
+src/test/js/trustReplyWorkbenchSharedMount.test.js:184:        assert.strictEqual(keys[0], CACHE_KEY, `the shared key must be ${CACHE_KEY}`);
+src/test/js/trustReplyWorkbenchSharedMount.test.js:190:            const at = indexSource.indexOf(`${asset}?v=${CACHE_KEY}`);
+src/test/js/trustReplyWorkbenchSharedMount.test.js:195:            "the old cache key must have zero hits in index.html");

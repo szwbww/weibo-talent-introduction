@@ -1,0 +1,1304 @@
+src/main/resources/static/mailbox-chat.js SHA256 8f9590da78d9a1e407d27aabdafdc06abbe46fbe3fc9630588cf86d913d9e4b4
+
+380: 
+381:     function sessionUserFromOptions(options) {
+382:         const value = options && options.sessionUser ? String(options.sessionUser) : "";
+383:         return value || operatorName();
+384:     }
+385: 
+386:     function filterAccountScope(filters) {
+387:         const value = filters && filters.accountCode ? String(filters.accountCode) : "";
+388:         return value;
+389:     }
+390: 
+391:     // ------------------------------------------------------------------
+392:     // 会话缓存（位置/窗口/草稿）
+393:     // ------------------------------------------------------------------
+394: 
+395:     function conversationCacheKey(user, accountScope, contactId) {
+396:         return `${user}|${accountScope || ""}|${contactId}`;
+397:     }
+398: 
+399:     function touchSession(key) {
+400:         const rec = sessionStore.get(key);
+401:         if (!rec) return;
+402:         sessionStore.delete(key);
+403:         sessionStore.set(key, rec);
+404:     }
+405: 
+406:     function getConversationRecord(user, accountScope, contactId) {
+407:         const key = conversationCacheKey(user, accountScope, contactId);
+408:         const rec = sessionStore.get(key);
+409:         if (rec) {
+410:             sessionStore.delete(key);
+411:             sessionStore.set(key, rec);
+412:             rec.lastUsed = Date.now();
+413:         }
+414:         return rec || null;
+415:     }
+416: 
+417:     function upsertConversationRecord(user, accountScope, contactId, patch) {
+418:         const key = conversationCacheKey(user, accountScope, contactId);
+419:         let rec = sessionStore.get(key);
+420:         if (!rec) {
+421:             rec = {
+422:                 key,
+423:                 contactId,
+424:                 accountScope: accountScope || "",
+425:                 items: [],
+426:                 nextBefore: null,
+427:                 hasMore: false,
+428:                 anchorKey: null,
+429:                 anchorRelTop: 0,
+430:                 scrollTop: 0,
+431:                 scrollTopValid: false,
+432:                 drafts: new Map(),
+433:                 lastUsed: Date.now()
+434:             };
+435:         }
+436:         if (patch) {
+437:             if (patch.items) rec.items = patch.items;
+438:             if (patch.nextBefore !== undefined) rec.nextBefore = patch.nextBefore;
+439:             if (patch.hasMore !== undefined) rec.hasMore = patch.hasMore;
+440:             if (patch.anchorKey !== undefined) rec.anchorKey = patch.anchorKey;
+441:             if (patch.anchorRelTop !== undefined) rec.anchorRelTop = patch.anchorRelTop;
+442:             if (patch.scrollTop !== undefined) rec.scrollTop = patch.scrollTop;
+443:             if (patch.scrollTopValid !== undefined) rec.scrollTopValid = patch.scrollTopValid;
+444:             if (patch.drafts) rec.drafts = patch.drafts;
+445:         }
+446:         rec.lastUsed = Date.now();
+447:         sessionStore.delete(key);
+448:         sessionStore.set(key, rec);
+449:         // LRU：超出上限淘汰最旧
+450:         if (sessionStore.size > SESSION_CACHE_LIMIT) {
+451:             let oldestKey = null;
+452:             let oldestTs = Infinity;
+453:             sessionStore.forEach((entry, entryKey) => {
+454:                 if (entry.lastUsed < oldestTs) {
+455:                     oldestTs = entry.lastUsed;
+456:                     oldestKey = entryKey;
+457:                 }
+458:             });
+459:             if (oldestKey !== null && oldestKey !== key) sessionStore.delete(oldestKey);
+460:         }
+461:         return rec;
+462:     }
+463: 
+464:     function dropConversationRecord(user, accountScope, contactId) {
+465:         sessionStore.delete(conversationCacheKey(user, accountScope, contactId));
+466:     }
+467: 
+468:     function createInstance(host, options) {
+
+1206:         function conversationsParams(page) {
+1207:             const params = new URLSearchParams();
+1208:             params.set("page", String(page));
+1209:             params.set("size", String(PAGE_SIZE));
+1210:             const q = instance.searchText.trim();
+1211:             if (q) params.set("q", q);
+1212:             const chipValues = chipParams(instance.chip);
+1213:             if (chipValues.followed) params.set("followed", "true");
+1214:             if (chipValues.repliedOnly) params.set("repliedOnly", "true");
+1215:             if (chipValues.pendingOnly) params.set("pendingOnly", "true");
+1216:             const filters = instance.filters || {};
+1217:             if (filters.accountCode) params.set("accountCode", filters.accountCode);
+1218:             if (filters.direction) params.set("direction", filters.direction);
+1219:             if (filters.startDate) params.set("startDate", filters.startDate);
+1220:             if (filters.endDate) params.set("endDate", filters.endDate);
+1221:             if (filters.recipientEmail) params.set("recipientEmail", filters.recipientEmail);
+1222:             if (filters.keyword) params.set("keyword", filters.keyword);
+1223:             if (filters.label) params.set("label", filters.label);
+1224:             return params;
+1225:         }
+1226: 
+1227:         // 待匹配（邮件级）请求：不带任何专家会话高级筛选（I-3/I-8）。
+1228:         function unmatchedParams(page) {
+
+1258:                 && String(item.contactId) === String(instance.selectedContactId);
+1259:             const tagNames = personTagNames(item);
+1260:             const tagLine = tagNames === null
+1261:                 ? `<span class="mc-person-tags-unavailable" title="标签暂不可用">标签暂不可用</span>`
+1262:                 : (tagNames.length === 0 ? "" : `<span class="mc-person-tags" title="专家标签：${escapeText(tagNames.join("、"))}">${tagNames.map((name) => `<span class="mc-person-tag">${escapeText(name)}</span>`).join("")}</span>`);
+1263:             const ariaLabel = tagNames !== null && tagNames.length > 0
+1264:                 ? `查看${item.name || item.email || ""}往来邮件；专家标签：${tagNames.join("、")}`
+1265:                 : `查看${item.name || item.email || ""}往来邮件`;
+1266:             return `
+1267:                 <div class="mc-person" data-replied="${instance.chip === CHIP_REPLIED ? "true" : "false"}" data-active="${active ? "true" : "false"}" data-contact-id="${escapeText(item.contactId)}">
+1268:                     <button class="mc-person-main" type="button" data-action="mc-select-expert" data-contact-id="${escapeText(item.contactId)}" aria-label="${escapeText(ariaLabel)}"${active ? ' aria-current="true"' : ""}>
+1269:                         <span class="mc-person-heading"><strong>${escapeText(item.name || item.email || "-")}</strong></span>
+1270:                         <small>${escapeText(accounts)}</small>
+1271:                         <small>${escapeText(latestLine)}</small>
+1272:                         <span class="mc-person-meta">
+1273:                             <span class="mc-person-counts">收 ${Number(item.receivedCount) || 0} · 发 ${Number(item.sentCount) || 0}</span>
+1274:                             ${tagLine}
+1275:                         </span>
+1276:                         <span class="calendar-summary" data-role="meeting-summary"></span>
+1277:                     </button>
+1278:                     <span data-role="person-actions">
+1279:                         <button class="mc-follow" type="button" data-action="mc-toggle-follow" data-contact-id="${escapeText(item.contactId)}" aria-label="${item.followed ? "取消关注该专家" : "关注该专家"}" aria-pressed="${item.followed ? "true" : "false"}">${item.followed ? "★" : "☆"}</button>
+1280:                         ${instance.chip === CHIP_REPLIED ? `<button class="mc-text-button" type="button" data-action="mc-dismiss-replied" data-contact-id="${escapeText(item.contactId)}" aria-label="将${escapeText(item.name || item.email || "该专家")}移出已回复" title="移出已回复，仍可在全部查看">移出</button>` : ""}
+1281:                     </span>
+1282:                 </div>
+1283:             `;
+1284:         }
+1285: 
+1286:         function renderExpertList() {
+1287:             const root = expertsRoot();
+1288:             if (!root) return;
+1289:             if (instance.list.error) {
+1290:                 root.innerHTML = `<div class="mc-error" role="alert">加载失败，请重试。<button class="button" type="button" data-action="mc-retry-list">重试</button></div>`;
+1291:                 return;
+1292:             }
+1293:             const items = instance.list.items || [];
+1294:             if (items.length === 0) {
+1295:                 root.innerHTML = `<div class="mc-empty">没有符合条件的专家</div>`;
+1296:                 return;
+1297:             }
+1298:             root.innerHTML = items.map(renderPerson).join("");
+1299:             root.querySelectorAll(".mc-person").forEach(applyMeetingSummaryToCard);
+1300:         }
+1301: 
+1302:         // S-2：待匹配邮件卡片（邮件级，无关注星标/专家标签/收发计数）。
+1303:         function renderUnmatchedPerson(item) {
+1304:             const id = Number(item.id);
+
+1353:         function fetchList(extra) {
+1354:             const options = extra || {};
+1355:             const page = options.page != null ? options.page : instance.list.page;
+1356:             instance.listSeq += 1;
+1357:             const mySeq = instance.listSeq;
+1358:             instance.list.loading = true;
+1359:             instance.list.error = "";
+1360:             // 请求模式在发出时固化；晚到的另一模式响应由 listSeq 拒绝（I-3）。
+1361:             const unmatched = isUnmatchedChip();
+1362:             const url = unmatched
+1363:                 ? `/api/mail/unmatched-inbound?${unmatchedParams(page).toString()}`
+1364:                 : `/api/mail/mailbox/conversations?${conversationsParams(page).toString()}`;
+1365:             return hostApi()(url).then((data) => {
+1366:                 if (instance.disposed || mySeq !== instance.listSeq) return null;
+1367:                 instance.list.items = unmatched
+1368:                     ? ((data && Array.isArray(data.records)) ? data.records : [])
+1369:                     : ((data && Array.isArray(data.items)) ? data.items : []);
+1370:                 instance.list.total = unmatched
+1371:                     ? (Number(data && data.totalCount) || 0)
+1372:                     : (Number(data && data.total) || 0);
+1373:                 instance.list.page = page;
+1374:                 instance.list.loading = false;
+1375:                 renderList();
+1376:                 renderPager();
+1377:                 if (unmatched) resolveUnmatchedSelection();
+1378:                 // fast-p 03（I-3）：批量摘要按当前页专家 id，epoch = 本次列表请求
+1379:                 else loadMeetingSummaries();
+1380:                 return data;
+1381:             }).catch((err) => {
+1382:                 if (instance.disposed || mySeq !== instance.listSeq) return null;
+1383:                 instance.list.loading = false;
+1384:                 instance.list.error = err && err.message ? err.message : "加载失败";
+1385:                 renderList();
+1386:                 renderPager();
+1387:                 hostShowStatus(
+1388:                     unmatched
+1389:                         ? `获取待匹配来信失败: ${instance.list.error}`
+1390:                         : `获取邮件记录失败: ${instance.list.error}`,
+1391:                     "error"
+1392:                 );
+1393:                 if (unmatched) {
+1394:                     clearUnmatchedState();
+1395:                     renderUnmatchedEmpty();
+1396:                 }
+1397:                 return null;
+1398:             });
+1399:         }
+1400: 
+1401:         function loadList() {
+1402:             return fetchList({ page: instance.list.page }).then((data) => {
+1403:                 if (instance.disposed) return data;
+1404:                 if (isUnmatchedChip()) resolveUnmatchedSelection();
+1405:                 else resolveFocusAndSelection();
+1406:                 return data;
+1407:             });
+
+1552:         function clearSelectedConversation() {
+1553:             teardownConversationSubViews();
+1554:             instance.selectedContactId = null;
+1555:             instance.selectedSummary = null;
+1556:             instance.conversation.contact = null;
+1557:             instance.draftsRef = null;
+1558:         }
+1559: 
+1560:         function renderFocusMissed(focus) {
+1561:             const identity = focus && focus.email ? `${focus.email}` : (focus && focus.contactId != null ? `#${focus.contactId}` : "");
+1562:             const body = conversationBody();
+1563:             if (!body) return;
+1564:             body.innerHTML = `<div class="mc-empty">未找到该专家${identity ? `（${escapeText(identity)}）` : ""}的会话记录，可能无访问权限或暂无邮件。</div>`;
+1565:         }
+1566: 
+1567:         function renderConversationEmpty() {
+1568:             const body = conversationBody();
+1569:             if (!body) return;
+1570:             body.innerHTML = '<div class="mc-empty">请选择左侧专家查看往来信件</div>';
+1571:         }
+1572: 
+1573:         function resolveFocusAndSelection() {
+1574:             const items = instance.list.items || [];
+1575:             const focus = instance.options.focus;
+1576:             if (focus && focus.contactId != null
+1577:                 && String(instance.focusHandledContactId || "") !== String(focus.contactId)) {
+1578:                 if (instance.selectedContactId == null
+1579:                     || String(instance.selectedContactId) !== String(focus.contactId)) {
+1580:                     const found = items.find((item) => String(item.contactId) === String(focus.contactId));
+1581:                     if (found) {
+1582:                         selectExpert(found, { skipListReload: true });
+1583:                         return;
+1584:                     }
+1585:                     locateFocusExpert(focus);
+1586:                     return;
+1587:                 }
+1588:                 instance.focusHandledContactId = focus.contactId;
+1589:             }
+1590:             if (instance.selectedContactId != null && instance.list.items && instance.list.items.length > 0) {
+1591:                 const stillPresent = instance.list.items.some(
+1592:                     (item) => String(item.contactId) === String(instance.selectedContactId)
+1593:                 );
+1594:                 if (stillPresent) {
+1595:                     const freshSummary = findSummaryByContactId(instance.selectedContactId);
+1596:                     if (freshSummary) instance.selectedSummary = freshSummary;
+1597:                     refreshConversationQuiet();
+1598:                 } else {
+1599:                     // 当前筛选不再包含该专家：先保存，再回到“请选择专家”空态
+1600:                     saveConversationState();
+1601:                     clearSelectedConversation();
+1602:                     renderConversationEmpty();
+1603:                 }
+1604:                 return;
+1605:             }
+1606:             if (instance.selectedContactId == null && items.length === 0 && !focus) {
+1607:                 renderConversationEmpty();
+1608:             }
+1609:         }
+
+1683:         function selectExpert(item, options) {
+1684:             const opts = options || {};
+1685:             // 切换前保存旧会话
+1686:             saveConversationState();
+1687:             teardownConversationSubViews();
+1688:             instance.selectedContactId = Number(item.contactId);
+1689:             instance.selectedSummary = item;
+1690:             instance.seq += 1;
+1691:             instance.convEpoch += 1;
+1692:             const mySeq = instance.seq;
+1693:             const myEpoch = instance.convEpoch;
+1694:             instance.conversation.loading = true;
+1695:             instance.conversation.error = "";
+1696:             instance.conversation.items = [];
+1697:             instance.conversation.nextBefore = null;
+1698:             instance.conversation.hasMore = false;
+1699:             instance.conversation.contact = null;
+1700:             instance.manual = {
+1701:                 mode: "none",
+1702:                 targetProcessingId: null,
+1703:                 targetAccountCode: "",
+1704:                 targetKey: null,
+1705:                 qa: null,
+1706:                 busy: false
+1707:             };
+1708:             instance.logs = { loaded: false };
+1709:             instance.dismissedNewInbound = null;
+1710:             instance.pendingPrompt = null;
+1711:             instance.translations = new Map();
+1712:             instance.loadOlderBusy = false;
+1713:             instance.draftsRef = null;
+1714:             renderConversationScaffold();
+1715: 
+1716:             const contactId = Number(item.contactId);
+1717:             // c3（I-3）：换专家即作废旧 timing 代次，再按新 contact 取推荐。
+1718:             loadContactTiming(contactId);
+1719:             const accountFilter = accountFilterFromOptions();
+1720:             const msgParams = new URLSearchParams();
+1721:             msgParams.set("limit", String(MESSAGE_LIMIT));
+1722:             if (accountFilter) msgParams.set("accountCode", accountFilter);
+1723:             const contactPromise = hostApi()(`/api/expert-contacts/${contactId}`).catch(() => null);
+1724:             const messagesPromise = hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${msgParams.toString()}`)
+1725:                 .catch(() => null);
+1726: 
+1727:             Promise.all([contactPromise, messagesPromise]).then(([contact, msgData]) => {
+1728:                 if (instance.disposed || mySeq !== instance.seq || myEpoch !== instance.convEpoch) return;
+1729:                 instance.conversation.contact = contact && contact.contact ? contact.contact : (contact || null);
+1730:                 instance.conversation.accountScope = accountFilter;
+1731:                 const serverItems = (msgData && Array.isArray(msgData.items)) ? msgData.items : [];
+1732:                 instance.conversation.nextBefore = (msgData && msgData.nextBefore) || null;
+1733:                 instance.conversation.hasMore = !!(msgData && msgData.hasMore);
+1734:                 const cached = getConversationRecord(instance.user, accountFilter, contactId);
+1735:                 if (cached && cached.items && cached.items.length > 0) {
+1736:                     // 恢复缓存窗口（保留已加载历史），服务端同 key 状态胜
+1737:                     instance.conversation.items = mergeServerIntoWindow(cached.items, serverItems);
+1738:                     if (cached.nextBefore && (!instance.conversation.nextBefore || cached.items.length > serverItems.length)) {
+1739:                         instance.conversation.nextBefore = cached.nextBefore;
+1740:                     }
+1741:                     if (cached.hasMore && cached.items.length > serverItems.length) {
+1742:                         instance.conversation.hasMore = cached.hasMore;
+1743:                     }
+1744:                     instance.draftsRef = cached.drafts;
+1745:                     instance.conversation.loading = false;
+1746:                     renderConversationContent({ restoreRecord: cached });
+1747:                 } else {
+1748:                     instance.conversation.items = serverItems;
+1749:                     instance.conversation.loading = false;
+1750:                     renderConversationContent({ locateLatest: true });
+1751:                 }
+1752:                 if (!opts.skipListReload) {
+1753:                     fetchList({ page: instance.list.page });
+1754:                 }
+1755:             }).catch(() => {
+
+1804:         function conversationSummaryInfo() {
+1805:             const summary = instance.selectedSummary || {};
+1806:             const parts = [];
+1807:             if (summary.email) parts.push(summary.email);
+1808:             const accounts = Array.isArray(summary.accountCodes) && summary.accountCodes.length
+1809:                 ? summary.accountCodes.join("、")
+1810:                 : "";
+1811:             if (accounts) parts.push(`账号 ${accounts}`);
+1812:             return parts.join(" · ");
+1813:         }
+1814: 
+1815:         function renderHeader() {
+1816:             const body = conversationBody();
+1817:             if (!body) return;
+1818:             const summary = instance.selectedSummary || {};
+1819:             const contactId = Number(instance.selectedContactId);
+1820:             const followed = summary.followed === true;
+1821:             const materialCount = Number(summary.materialCount) || 0;
+1822:             const head = body.querySelector(".mc-header");
+1823:             if (!head) return;
+1824:             const identity = head.querySelector(".mc-identity");
+1825:             if (identity) {
+1826:                 identity.innerHTML = `<h2>${escapeText(summary.name || summary.email || "-")}</h2><p>${escapeText(conversationSummaryInfo() || "-")}</p><span class="calendar-summary" data-role="meeting-summary"></span>`;
+1827:             }
+1828:             const actions = head.querySelector(".mc-actions");
+1829:             if (actions) {
+1830:                 actions.innerHTML = `
+1831:                     <button class="button" type="button" data-action="mc-toggle-follow" data-contact-id="${escapeText(contactId)}">${followed ? "★ 已关注" : "☆ 关注"}</button>
+1832:                     <button class="button" type="button" data-action="mc-open-materials" data-contact-id="${escapeText(contactId)}">材料 ${materialCount}</button>
+1833:                     <button class="button" type="button" data-action="mc-manage-expert">管理</button>
+1834:                     <button class="button" type="button" data-action="mc-add-schedule">新增排期</button>
+1835:                     <button class="button" type="button" data-action="mc-edit-schedule">变更日期</button>
+1836:                     <button class="button danger" type="button" data-action="mc-cancel-schedule">取消排期</button>
+1837:                 `;
+1838:             }
+1839:             renderHeaderMeetingSummary();
+1840:             ensureMeetingSummaryFor(contactId);
+1841:             const meta = head.querySelector(".mc-header-meta");
+1842:             if (meta) {
+1843:                 renderHeaderMeta(meta);
+1844:             }
+1845:         }
+1846: 
+1847:         function renderHeaderMeta(metaEl) {
+1848:             if (!metaEl) return;
+1849:             const contact = instance.conversation.contact || null;
+1850:             const summary = instance.selectedSummary || {};
+1851:             const statusText = contact ? displayNameForCatalog(statusCatalog(), contact.operatorStatus) : "";
+1852:             const levelText = contact ? displayNameForCatalog(levelCatalog(), contact.currentIndexLevel) : "";
+1853:             const statusBadge = statusText ? `<span class="mc-badge" data-tone="success">${escapeText(statusText)}</span>` : "";
+1854:             const levelBadge = levelText ? `<span class="mc-badge">${escapeText(levelText)}</span>` : "";
+1855:             const orcid = (contact && contact.orcidId) || summary.orcid || "";
+1856:             const expertTagSpans = headerExpertTagSpans();
+1857:             metaEl.innerHTML = `
+1858:                 ${statusBadge}${levelBadge}${expertTagSpans}${orcid ? `<span>ORCID ${escapeText(orcid)}</span>` : ""}<button class="mc-text-button" type="button" data-action="mc-open-expert" data-contact-id="${escapeText(Number(instance.selectedContactId))}">查看专家详情 ↗</button>${contactTimingMarkup()}
+1859:             `;
+1860:         }
+1861: 
+1862:         function headerExpertTagSpans() {
+
+1953:         // ---- 时间格式化：显式时区，结果与设备时区无关（I-2） ----
+1954: 
+1955:         function contactZoneParts(iso, zoneId) {
+1956:             if (!iso || !zoneId) return null;
+1957:             const intl = global.Intl;
+1958:             if (!intl || typeof intl.DateTimeFormat !== "function") return null;
+1959:             let parts = null;
+1960:             try {
+1961:                 parts = new intl.DateTimeFormat("zh-CN", {
+1962:                     timeZone: String(zoneId),
+1963:                     hourCycle: "h23",
+1964:                     year: "numeric",
+1965:                     month: "numeric",
+1966:                     day: "numeric",
+1967:                     hour: "2-digit",
+1968:                     minute: "2-digit"
+1969:                 }).formatToParts(new Date(String(iso)));
+1970:             } catch (e) {
+1971:                 return null;
+1972:             }
+1973:             const fields = {};
+1974:             (parts || []).forEach((part) => {
+1975:                 if (part && part.type && part.type !== "literal") fields[part.type] = part.value;
+1976:             });
+1977:             if (!fields.year || !fields.month || !fields.day || !fields.hour || !fields.minute) return null;
+1978:             return {
+1979:                 year: Number(fields.year),
+1980:                 month: Number(fields.month),
+1981:                 day: Number(fields.day),
+1982:                 hour: String(Number(fields.hour) % 24).padStart(2, "0"),
+1983:                 minute: String(fields.minute).padStart(2, "0")
+1984:             };
+1985:         }
+
+6599:             }).catch(() => {});
+6600:             fetchList({ page: instance.list.page });
+6601:             // fast-p 03（IP-3）：发送成功恰由服务端产生排期，按 contactId 使两端失效并回读
+6602:             notifyMeetingScheduleChanged(contactId);
+6603:         }
+6604: 
+6605:         // ---- quiet refresh（I-5：合并保留已加载窗口） ----
+6606: 
+6607:         function refreshConversationQuiet() {
+6608:             const contactId = Number(instance.selectedContactId);
+6609:             if (!Number.isFinite(contactId) || contactId <= 0) return;
+6610:             const myEpoch = instance.convEpoch;
+6611:             const params = new URLSearchParams();
+6612:             params.set("limit", String(MESSAGE_LIMIT));
+6613:             const scopeAccount = instance.conversation.accountScope || "";
+6614:             if (scopeAccount) params.set("accountCode", scopeAccount);
+6615:             hostApi()(`/api/mail/mailbox/conversations/${contactId}/messages?${params.toString()}`).then((msgData) => {
+6616:                 if (instance.disposed || myEpoch !== instance.convEpoch) return;
+6617:                 const serverItems = (msgData && Array.isArray(msgData.items)) ? msgData.items : [];
+6618:                 if (serverItems.length === 0 && (instance.conversation.items || []).length === 0) {
+6619:                     instance.conversation.nextBefore = (msgData && msgData.nextBefore) || null;
+6620:                     instance.conversation.hasMore = !!(msgData && msgData.hasMore);
+6621:                     return;
+6622:                 }
+6623:                 instance.conversation.items = mergeServerIntoWindow(instance.conversation.items, serverItems);
+6624:                 instance.conversation.nextBefore = (msgData && msgData.nextBefore) || null;
+6625:                 instance.conversation.hasMore = !!(msgData && msgData.hasMore);
+6626:                 renderTimeline();
+6627:                 checkInboundChangeQuiet();
+6628:                 saveConversationState();
+6629:                 // c3（T-1）：现有刷新成功后按同一 contact 重读推荐（渲染只重绘状态行）。
+6630:                 loadContactTiming(contactId);
+6631:             }).catch(() => {});
+6632:         }
+
+7244:             }
+7245:             if (next.filters) {
+7246:                 // 快照完整替换，不能合并残留旧值（I-2）
+7247:                 const prevAccount = String(instance.filters.accountCode || "");
+7248:                 instance.filters = Object.assign({}, next.filters);
+7249:                 meetingCloseDisposeOnAccountScopeChange(prevAccount, String(next.filters.accountCode || ""));
+7250:                 // 仅初次（用户尚未操作 tab）允许外部 onlyPending 初始化
+7251:                 if (typeof next.filters.pendingOnly === "boolean" && !instance.chipUserTouched) {
+7252:                     if (next.filters.pendingOnly && instance.chip !== CHIP_PENDING) {
+7253:                         instance.chip = CHIP_PENDING;
+7254:                         syncChipButtons();
+7255:                     } else if (!next.filters.pendingOnly && instance.chip === CHIP_PENDING) {
+7256:                         instance.chip = CHIP_ALL;
+7257:                         syncChipButtons();
+7258:                     }
+7259:                 }
+7260:                 renderFilterChrome();
+7261:             }
+7262:             return next;
+7263:         }
+7264: 
+7265:         function unmount() {
+7266:             if (instance.disposed) return;
+7267:             saveConversationState();
+7268:             // 右栏/根节点清空前必须先归还详情面板 lease（I-5）。
+7269:             clearUnmatchedState();
+7270:             instance.disposed = true;
+7271:             clearTimeout(instance.searchTimer);
+7272:             clearTimeout(instance.saveTimer);
+7273:             teardownConversationSubViews();
+7274:             handlers.forEach((pair) => host.removeEventListener(pair[0], pair[1]));
+
+7294:         function refreshFromHost() {
+7295:             if (instance.disposed) return;
+7296:             saveConversationState();
+7297:             return fetchList({ page: instance.list.page }).then((data) => {
+7298:                 if (instance.disposed) return data;
+7299:                 if (instance.selectedContactId != null) refreshConversationQuiet();
+7300:                 return data;
+7301:             });
+7302:         }
+7303: 
+7304:         function refresh() {
+7305:             if (instance.disposed) return Promise.resolve();
+7306:             instance.list.page = 0;
+7307:             return loadList();
+7308:         }
+
+src/main/resources/static/mailbox-chat.css SHA256 0fd354027e54ae69f0a2ba76451801b85c6b74cd2792e98a3852cbb14bade17d
+
+1: .mail-chat{display:grid;grid-template-columns:306px minmax(0,1fr);gap:16px;min-height:480px;height:calc(100dvh - 216px);color:#475569;font-size:12px;line-height:1.6}
+2: .mail-chat *{box-sizing:border-box}
+3: .mail-chat [hidden]{display:none!important}
+4: .mail-chat :is(h2,h3,p){margin:0}
+5: .mail-chat .mc-experts,.mail-chat .mc-conversation{display:flex;flex-direction:column;min-width:0;min-height:0;border:1px solid rgba(15,23,42,.11);border-radius:14px;background:#f8faff;overflow:hidden}
+6: .mail-chat .mc-list-tools{display:flex;flex-direction:column;gap:10px;padding:14px;border-bottom:1px solid #e2e8f0}
+7: .mail-chat .mc-list-tools input{width:100%;height:32px;min-height:32px;margin:0;padding:0 10px;border:1px solid #dce4ef;border-radius:7px;background:#fff;color:#475569;font:inherit}
+8: .mail-chat .mc-list-tools input::placeholder{color:#94a3b8}
+9: .mail-chat .mc-filters{display:flex;flex-wrap:wrap;gap:6px}
+10: .mail-chat .mc-filter{min-height:28px;padding:3px 8px;border:1px solid #dce4ef;border-radius:7px;background:#f8faff;color:#64748b;font:inherit;cursor:pointer}
+11: .mail-chat .mc-filter:hover{border-color:#93b4ec;background:#eff5ff}
+12: .mail-chat .mc-filter:active{background:#dbeafe}
+13: .mail-chat .mc-filter[aria-pressed=true]{border-color:#1e40af;background:#eff5ff;color:#1e40af;font-weight:600}
+14: .mail-chat .mc-filter:disabled{opacity:.45;cursor:not-allowed}
+15: .mail-chat .mc-expert-list{flex:1;min-height:0;overflow:auto;padding:8px;overscroll-behavior:contain}
+16: .mail-chat .mc-person{position:relative;display:grid;grid-template-columns:minmax(0,1fr) 28px;gap:8px;margin-bottom:6px;border:1px solid transparent;border-left:3px solid transparent;border-radius:10px;background:transparent}
+17: .mail-chat .mc-person:hover{background:#eff5ff}
+18: .mail-chat .mc-person[data-active=true]{border-color:#c2d3f2;border-left-color:#3c65cd;background:#eaf1ff}
+19: .mail-chat .mc-person-main{display:flex;flex-direction:column;align-items:stretch;min-width:0;gap:5px;padding:12px 0 12px 10px;border:0;background:transparent;color:#475569;text-align:left;font:inherit;cursor:pointer}
+20: .mail-chat .mc-person-main:active{opacity:.85}
+21: .mail-chat .mc-person-main strong{font-size:13px;font-weight:600;color:#1e293b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+22: .mail-chat .mc-person-main small{font-size:11px;color:#64748b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+23: .mail-chat .mc-person-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:11px}
+24: .mail-chat .mc-follow{align-self:start;margin:10px 4px 0 0;padding:0;width:24px;height:28px;border:0;border-radius:7px;background:transparent;color:#94a3b8;font-size:20px;line-height:1;cursor:pointer}
+25: .mail-chat .mc-follow:hover{background:#fef3c7;color:#b45309}
+26: .mail-chat .mc-follow:active{background:#fde68a}
+27: .mail-chat .mc-follow[aria-pressed=true]{color:#d97706}
+28: .mail-chat .mc-follow:disabled{opacity:.45;cursor:not-allowed}
+29: .mail-chat .mc-badge{display:inline-flex;align-items:center;padding:1px 7px;border:1px solid #dce4ef;border-radius:12px;background:#f1f5f9;color:#64748b;font-size:11px;white-space:nowrap}
+30: .mail-chat .mc-badge[data-tone=pending]{background:#fff7ed;border-color:#fed7aa;color:#b45309}
+31: .mail-chat .mc-badge[data-tone=success]{background:#ecfdf5;border-color:#a7f3d0;color:#059669}
+32: .mail-chat .mc-badge[data-tone=error]{background:#fff1f2;border-color:#fecdd3;color:#e11d48}
+33: .mail-chat .mc-pager{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;padding:10px 12px;border-top:1px solid #e2e8f0;color:#64748b;font-size:11px}
+34: .mail-chat .mc-header{display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px 18px;border-bottom:1px solid #e2e8f0}
+35: .mail-chat .mc-identity{flex:1;min-width:180px}
+36: .mail-chat .mc-identity h2{font-size:16px;font-weight:600;color:#1e293b;overflow-wrap:anywhere}
+37: .mail-chat .mc-identity p{margin-top:4px;color:#64748b;font-size:11px;overflow-wrap:anywhere}
+38: .mail-chat .mc-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+
+68: .mail-chat :is(button,a,input,select,summary,[contenteditable=true]):focus-visible{outline:2px solid #3b82f6;outline-offset:2px}
+69: @media(max-width:1100px){.mail-chat{grid-template-columns:280px minmax(0,1fr);gap:12px}.mail-chat .mc-header{padding:14px}.mail-chat .mc-scroll{padding:14px}.mail-chat .mc-message{width:94%}}
+70: @media(max-width:760px){.mail-chat{display:flex;flex-direction:column;height:auto;min-height:0;gap:12px}.mail-chat .mc-experts{max-height:320px;min-height:240px}.mail-chat .mc-expert-list{min-height:100px}.mail-chat .mc-conversation{min-height:560px}.mail-chat .mc-scroll{max-height:none;overflow:visible;padding:12px}.mail-chat .mc-message{width:100%}.mail-chat .mc-header{padding:12px}.mail-chat .mc-identity{min-width:0;width:100%;flex-basis:100%}.mail-chat .mc-section-content{padding:12px}.mail-chat .mc-actions{width:100%}}
+71: @media(prefers-reduced-motion:reduce){.mail-chat .button{transition:none}.mail-chat .button:hover,.mail-chat .button:active{transform:none}}
+72: /* S-1..S-6: mailbox only; retain production shell. */
+73: #view-mailbox.mc-refined #mailboxLegacyToolbar{display:none}
+74: #view-mailbox.mc-refined #mailboxConversationPanel{overflow:visible}
+75: #view-mailbox.mc-refined #mailboxList{padding:16px}
+
+96: .mail-chat .mc-filter-popover footer{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid #edf1f7}
+97: .mail-chat .mc-filter-popover footer .mc-text-button{margin-right:auto}
+98: .mail-chat .mc-close{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:0;border-radius:5px;background:transparent;color:#91a1b7;font-size:21px;cursor:pointer}
+99: .mail-chat .mc-close:hover{background:#edf3ff;color:#2451b9}
+100: .mail-chat .mc-close:active{background:#dbeafe}
+101: .mail-chat .mc-close:disabled{opacity:.45;cursor:not-allowed}
+102: .mail-chat .mc-header{flex:none;background:#fff;padding:17px 22px 14px}
+103: .mail-chat .mc-header-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px;flex-basis:100%;font-size:11px;color:#8a9bb2}
+104: .mail-chat .mc-identity h2{font-size:17px;font-weight:600;letter-spacing:-.25px}
+105: .mail-chat .mc-badge{border-radius:5px;font-size:10px;line-height:1.6;padding:2px 7px}
+106: .mail-chat .mc-badge[data-tone=pending]{background:#fff5e9;border-color:#f6dfc6;color:#bb7838}
+107: .mail-chat .mc-timeline-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 22px;color:#8b9bb1;font-size:11px}
+108: .mail-chat .mc-position-hint{margin-left:auto;font-size:10px;color:#8b9bb1}
+109: .mail-chat .mc-text-button{display:inline-flex;align-items:center;gap:4px;border:0;border-radius:4px;background:transparent;color:#6482b2;font:inherit;font-size:11px;line-height:1.5;padding:3px 0;cursor:pointer}
+110: .mail-chat .mc-text-button:hover{color:#244ca9;background:#edf3ff}
+111: .mail-chat .mc-text-button:active{background:#dbeafe}
+112: .mail-chat .mc-text-button:disabled{opacity:.45;cursor:not-allowed}
+113: .mail-chat .mc-message{width:min(92%,820px);padding:14px 17px;border-radius:11px;box-shadow:0 2px 6px #334b7210}
+
+150: @media(max-width:1100px){.mail-chat{grid-template-columns:275px minmax(0,1fr);gap:12px}.mail-chat .mc-header{padding:15px}.mail-chat .mc-timeline-head{padding:10px 15px}.mail-chat .mc-message{width:96%}.mail-chat .mc-header .button{font-size:11px;padding:0 8px}}
+151: @media(max-width:760px){#view-mailbox.mc-refined #mailboxList{padding:12px}.mail-chat{height:auto;min-height:0}.mail-chat .mc-search-row{position:static}.mail-chat .mc-filter-popover{position:fixed;top:100px;left:16px;width:calc(100vw - 32px);max-width:none;max-height:calc(100dvh - 116px)}.mail-chat .mc-scroll{max-height:65dvh;overflow:auto}.mail-chat .mc-message{width:100%}.mail-chat .mc-timeline-head{padding:10px 12px}.mail-chat .mc-position-hint{display:none}.mail-chat .mc-status-grid{grid-template-columns:1fr}.mail-chat .mc-manage-dialog{max-height:calc(100dvh - 32px)}}
+152: @media(prefers-reduced-motion:reduce){.mail-chat *{scroll-behavior:auto!important;transition:none!important}}
+153: 
+154: .mail-chat.mc-overlay-root{display:contents}
+155: 
+156: /* S-7: expert tags in the list, one line only. */
+157: .mail-chat .mc-person-heading{display:flex;align-items:center;gap:6px;min-width:0}
+158: .mail-chat .mc-person-heading strong{flex:1;min-width:0}
+159: .mail-chat .mc-person-meta{flex-wrap:nowrap;min-width:0;gap:6px;max-width:100%}
+160: .mail-chat .mc-person-counts{flex:none;white-space:nowrap;font-size:11px;color:#79899f}
+161: .mail-chat .mc-person-tags{display:block;flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;line-height:20px;color:#6482b2;cursor:help}
+162: .mail-chat .mc-person-tag{display:inline;padding:2px 5px;margin-right:4px;border:1px solid #d5e2fb;border-radius:5px;background:#edf3ff;color:#5476ba;font-size:10px;line-height:16px;white-space:nowrap}
+163: .mail-chat .mc-person-tags:hover .mc-person-tag{background:#e6efff;border-color:#b8cef3}
+164: .mail-chat .mc-person-tags-unavailable{color:#94a3b8;font-size:10px}
+
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt SHA256 f5a69f1d2ac2d9393ab4f04d8de77aa6b5eb582c982310ac1d4c5a54af6c8a1b
+
+293:     /** 每位专家最近一封来信（真实 processing.id，绝不从 mail_record 推算）。
+294:      *  MySQL 5.7 兼容：候选与反连接对手都限 INBOUND_PROCESSING，见 [latestMessageByContacts]。 */
+295:     fun latestInboundByContacts(
+296:         contactIds: List<Long>,
+297:         accountCodes: List<String>,
+298:         accountCode: String?
+299:     ): Map<Long, ConversationLatestInboundRow> {
+300:         if (contactIds.isEmpty()) return emptyMap()
+301:         val sql = """
+302:             SELECT u.expert_contact_id AS expert_contact_id,
+303:                    u.id AS processing_id,
+304:                    u.account_code AS account_code,
+305:                    u.message_id AS message_id,
+306:                    u.event_at AS received_at
+307:               FROM (${rangeUnionSql(includeBody = false)}) u
+308:              WHERE u.expert_contact_id IN (:contactIds)
+309:                AND u.source = 'INBOUND_PROCESSING'
+310:                AND NOT EXISTS (
+311:                    SELECT 1
+312:                      FROM (${rangeUnionSql(includeBody = false)}) newer
+313:                     WHERE newer.expert_contact_id = u.expert_contact_id
+314:                       AND newer.source = 'INBOUND_PROCESSING'
+315:                       AND (newer.event_at > u.event_at
+316:                            OR (newer.event_at = u.event_at
+317:                                AND newer.source_rank > u.source_rank)
+318:                            OR (newer.event_at = u.event_at
+319:                                AND newer.source_rank = u.source_rank
+320:                                AND newer.id > u.id))
+321:                )
+322:         """.trimIndent()
+323:         val p = MapSqlParameterSource()
+324:             .addValue("contactIds", contactIds)
+325:             .addValue("accountCodes", accountCodes)
+326:             .addValue("accountCode", accountCode)
+327:         return jdbcTemplate.query(sql, p) { rs, _ ->
+328:             rs.getLong("expert_contact_id") to ConversationLatestInboundRow(
+329:                 processingId = rs.getLong("processing_id"),
+330:                 accountCode = rs.getString("account_code"),
+331:                 messageId = rs.getString("message_id"),
+332:                 receivedAt = rs.localDateTime("received_at")
+333:             )
+334:         }.toMap()
+335:     }
+
+433:     /**
+434:      * 归一化 UNION 基础：OUTBOUND mail_record UNION ALL linked inbound_mail_processing。
+435:      * 两个分支的文本列显式 CONVERT + COLLATE utf8mb4_unicode_ci，避免 UNION 排序/物化
+436:      * 时字符集冲突。includeBody 仅 timeline 需要（summary 永不读正文列）。
+437:      * 注意：本 SQL 片段同时作为 count/summary/latest 系列/accountCodes/timeline 的数据基础，
+438:      * 各列位置与别名必须保持一致。
+439:      */
+440:     private fun rangeUnionSql(includeBody: Boolean): String {
+441:         val outboundBody = if (includeBody) {
+442:             """,
+443:                    CONVERT(mr.body USING utf8mb4) COLLATE utf8mb4_unicode_ci AS body,
+444:                    CONVERT(mr.cleaned_body USING utf8mb4) COLLATE utf8mb4_unicode_ci AS cleaned_body"""
+445:         } else ""
+446:         val inboundBody = if (includeBody) {
+447:             """,
+448:                    CONVERT(imp.body USING utf8mb4) COLLATE utf8mb4_unicode_ci AS body,
+449:                    CONVERT(imp.cleaned_body USING utf8mb4) COLLATE utf8mb4_unicode_ci AS cleaned_body"""
+450:         } else ""
+451:         return """
+452:             SELECT mr.expert_contact_id AS expert_contact_id,
+453:                    1 AS source_rank,
+454:                    CONVERT('MAIL_RECORD' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS source,
+455:                    mr.id AS id,
+456:                    CONVERT('OUTBOUND' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS direction,
+457:                    CONVERT(mr.sender_account_code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS account_code,
+458:                    COALESCE(mr.sent_at, mr.created_at) AS event_at,
+459:                    CONVERT(mr.send_status USING utf8mb4) COLLATE utf8mb4_unicode_ci AS send_status,
+460:                    CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS process_status,
+461:                    CONVERT(mr.subject USING utf8mb4) COLLATE utf8mb4_unicode_ci AS subject,
+462:                    CONVERT(SUBSTRING(COALESCE(mr.cleaned_body, mr.body), 1, 200) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS preview,
+463:                    CONVERT(mr.message_id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS message_id,
+464:                    CONVERT(mr.in_reply_to USING utf8mb4) COLLATE utf8mb4_unicode_ci AS in_reply_to,
+465:                    CASE WHEN mr.send_status = 'SENT' THEN 1 ELSE 0 END AS sent_flag,
+466:                    CASE WHEN mr.send_status = 'FAILED' THEN 1 ELSE 0 END AS failed_flag,
+467:                    0 AS received_flag,
+468:                    0 AS pending_flag$outboundBody
+469:               FROM mail_record mr
+470:              WHERE mr.direction = 'OUTBOUND'
+471:                AND mr.expert_contact_id IS NOT NULL
+472:                AND mr.sender_account_code IN (:accountCodes)
+473:                AND (:accountCode IS NULL OR mr.sender_account_code = :accountCode)
+474:             UNION ALL
+475:             SELECT imp.expert_contact_id AS expert_contact_id,
+476:                    2 AS source_rank,
+477:                    CONVERT('INBOUND_PROCESSING' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS source,
+478:                    imp.id AS id,
+479:                    CONVERT('INBOUND' USING utf8mb4) COLLATE utf8mb4_unicode_ci AS direction,
+480:                    CONVERT(imp.sender_account_code USING utf8mb4) COLLATE utf8mb4_unicode_ci AS account_code,
+481:                    imp.received_at AS event_at,
+482:                    CONVERT(CAST(NULL AS CHAR) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS send_status,
+483:                    CONVERT(imp.process_status USING utf8mb4) COLLATE utf8mb4_unicode_ci AS process_status,
+484:                    CONVERT(imp.subject USING utf8mb4) COLLATE utf8mb4_unicode_ci AS subject,
+485:                    CONVERT(SUBSTRING(COALESCE(imp.cleaned_body, imp.body), 1, 200) USING utf8mb4) COLLATE utf8mb4_unicode_ci AS preview,
+486:                    CONVERT(imp.message_id USING utf8mb4) COLLATE utf8mb4_unicode_ci AS message_id,
+487:                    CONVERT(imp.in_reply_to USING utf8mb4) COLLATE utf8mb4_unicode_ci AS in_reply_to,
+488:                    0 AS sent_flag,
+489:                    0 AS failed_flag,
+490:                    1 AS received_flag,
+491:                    CASE WHEN imp.process_status = 'MANUAL_REVIEW' THEN 1 ELSE 0 END AS pending_flag$inboundBody
+492:               FROM inbound_mail_processing imp
+493:              WHERE imp.expert_contact_id IS NOT NULL
+494:                AND imp.sender_account_code IN (:accountCodes)
+495:                AND (:accountCode IS NULL OR imp.sender_account_code = :accountCode)
+496:         """.trimIndent()
+497:     }
+
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt SHA256 50de05bc351870ef47d2661ebe9d98a6290ca8c6494b709f0ec5040f89dffb40
+
+73: 
+74:         /** 专家层级白名单：只在合法层级查询 ES 画像（I-6，禁止跨层猜测回退）。 */
+75:         private val LEVEL_NAMES = ExpertIndexLevel.values().map { it.name }.toSet()
+76: 
+77:         private val ISO = DateTimeFormatter.ISO_LOCAL_DATE_TIME
+78:         private val DATE = DateTimeFormatter.ISO_LOCAL_DATE
+79:         private val CURSOR_SEPARATOR = "\u001F"
+80:         private val SOURCE_RANK_OF = mapOf(
+81:             MailboxConversationRepository.SOURCE_MAIL_RECORD to 1,
+82:             MailboxConversationRepository.SOURCE_INBOUND_PROCESSING to 2
+83:         )
+
+149:         val rows = repository.pageConversations(sessionUser, filter, pageSize, offset)
+150:         if (rows.isEmpty()) {
+151:             return ConversationListResponse(emptyList(), total, pageIndex, pageSize)
+152:         }
+153:         val contactIds = rows.map { it.expertContactId }
+154:         val latestMessages = repository.latestMessageByContacts(contactIds, activeCodes, accountCode)
+155:         val latestInbounds = repository.latestInboundByContacts(contactIds, activeCodes, accountCode)
+156:         val accountCodesByContact = repository.accountCodesByContacts(contactIds, activeCodes, accountCode)
+157:         val materialCounts = repository.materialCountByContacts(contactIds)
+158:         val expertTagsByContact = currentPageExpertTags(rows)
+159: 
+160:         val items = rows.map { row ->
+161:             ConversationItemResponse(
+162:                 contactId = row.expertContactId,
+163:                 name = row.expertName,
+164:                 email = row.expertEmail,
+165:                 orcid = row.orcidId,
+166:                 // expert_contact 无机构列（MySQL 无 institution 存储），此处恒 null，
+167:                 // 由前端从专家资料（ES 画像）展示；不伪造 DB 事实。
+168:                 institution = null,
+169:                 accountCodes = accountCodesByContact[row.expertContactId].orEmpty(),
+170:                 followed = row.followed,
+171:                 receivedCount = row.receivedCount,
+172:                 sentCount = row.sentCount,
+173:                 failedCount = row.failedCount,
+174:                 pendingCount = row.pendingCount,
+175:                 waitingReply = row.receivedCount == 0L && row.sentCount > 0L,
+176:                 latestMessage = latestMessages[row.expertContactId]?.let { m ->
+177:                     ConversationLatestMessageItem(
+178:                         source = m.source,
+179:                         id = m.id,
+180:                         direction = m.direction,
+181:                         // 读兼容解码：历史行可能是编码 subject（旧库不 UPDATE，I-4）。
+182:                         subject = MailSubjectDecoder.decode(m.subject),
+183:                         preview = m.preview,
+184:                         time = m.eventAt.format(ISO),
+185:                         sendStatus = m.sendStatus
+186:                     )
+187:                 },
+188:                 latestInbound = latestInbounds[row.expertContactId]?.let { i ->
+189:                     ConversationLatestInboundItem(
+190:                         processingId = i.processingId,
+191:                         accountCode = i.accountCode,
+192:                         messageId = i.messageId,
+193:                         receivedAt = i.receivedAt.format(ISO)
+194:                     )
+195:                 },
+196:                 materialCount = materialCounts[row.expertContactId] ?: 0L,
+197:                 expertTags = expertTagsByContact[row.expertContactId]
+198:             )
+199:         }
+200:         return ConversationListResponse(items, total, pageIndex, pageSize)
+
+528:     /** 活跃发件账号（排除模拟器），与 MailboxService 同一口径。 */
+529:     fun activeAccountCodes(): List<String> =
+530:         senderAccountRepository.findAllByAccountCodeNot(MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+531:             .map { it.accountCode }
+532: }
+
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt SHA256 9395f20c13064497a467e7b0f47a132f77d12e9649074eb302ef2bc40fe07129
+
+38: data class ConversationLatestInboundItem(
+39:     val processingId: Long,
+40:     val accountCode: String,
+41:     val messageId: String?,
+42:     val receivedAt: String
+43: )
+44: 
+45: /**
+46:  * 会话 summary 项：只含聚合口径与最新消息投影，绝不携带全量正文；
+47:  * latestInbound.processingId 是真实 inbound_mail_processing.id（供可信工作台），
+48:  * 绝不从 mail_record 推算。
+49:  * expertTags：本页该专家的 ES 画像标签（I-6）。null = 未取得有效画像结果
+50:  * （无 ORCID/层级非法/画像缺失/该层 ES 查询异常，前端不得显示为空）；[] = 画像已读取
+51:  * 且确实没有标签。与消息 timeline.tags（邮件标签）完全分离。
+52:  */
+53: data class ConversationItemResponse(
+54:     val contactId: Long,
+55:     val name: String?,
+56:     val email: String,
+57:     val orcid: String,
+58:     /** expert_contact 无机构列（DB 无 institution 存储）；恒 null，UI 自专家资料流程补充。 */
+59:     val institution: String?,
+60:     val accountCodes: List<String>,
+61:     val followed: Boolean,
+62:     val receivedCount: Long,
+63:     val sentCount: Long,
+64:     val failedCount: Long,
+65:     val pendingCount: Long,
+66:     val waitingReply: Boolean,
+67:     val latestMessage: ConversationLatestMessageItem?,
+68:     val latestInbound: ConversationLatestInboundItem?,
+69:     val materialCount: Long,
+70:     val expertTags: List<String>? = null
+71: )
+
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/InboundMailProcessing.kt SHA256 47b38b1334d653f4604284f2cb80301d9e784a5fcb72d80fd7b5585170f6ebc7
+
+1: package com.weibo.talentintroduction.mail.domain
+2: 
+3: import org.springframework.data.annotation.Id
+4: import org.springframework.data.relational.core.mapping.Table
+5: import java.time.LocalDateTime
+6: 
+7: @Table("inbound_mail_processing")
+8: data class InboundMailProcessing(
+9:     @Id
+10:     val id: Long? = null,
+11:     val senderAccountCode: String,
+12:     /**
+13:      * 物理收件箱主账号代码（I-2，V134）：NULL = 历史未知行，不回填；
+14:      * 新收件由收信路由写入真实物理 owner（唯一键 mailbox_owner_code + 代际 + UID）。
+15:      */
+16:     val mailboxOwnerCode: String? = null,
+17:     /** 远端邮箱代际（I-1）：0 仅历史未知（V120 默认），新接收必须为实际正值。 */
+18:     val uidValidity: Long = 0,
+19:     val imapUid: Long,
+20:     val messageId: String?,
+21:     val inReplyTo: String? = null,
+22:     val fromEmail: String,
+23:     val subject: String?,
+24:     val body: String? = null,
+25:     val cleanedBody: String? = null,
+26:     val receivedAt: LocalDateTime,
+27:     val processStatus: String,
+28:     val processReason: String,
+29:     val reasonType: String? = null,
+30:     val resolvedAt: LocalDateTime? = null,
+31:     val resolvedBy: String? = null,
+32:     val expertContactId: Long?,
+33:     val retryCount: Int = 0,
+34:     val lastError: String? = null,
+35:     val createdAt: LocalDateTime? = null,
+36:     val updatedAt: LocalDateTime? = null
+37: )
+
+src/main/kotlin/com/weibo/talentintroduction/config/TimeZoneConfig.kt SHA256 90e5dae8b66bbb4d50e56390088ba49ae51eeb5955df3f2033899e5ce6d77ce1
+
+1: package com.weibo.talentintroduction.config
+2: 
+3: import org.springframework.context.annotation.Configuration
+4: import java.util.TimeZone
+5: import javax.annotation.PostConstruct
+6: 
+7: @Configuration
+8: class TimeZoneConfig {
+9:     @PostConstruct
+10:     fun init() {
+11:         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"))
+12:     }
+13: }
+
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ImapMailReceiveService.kt SHA256 5e15a545fe4df57539833bfb32b8b0d650e2ef5e4f928203c8f3c38c83a5b16c
+
+333:             from = extractFromHeader(headers.from) ?: extractFromEnvelope(message),
+334:             subject = headers.subject,
+335:             body = extracted.bodyText,
+336:             messageId = headers.messageId,
+337:             inReplyTo = headers.inReplyTo,
+338:             recipientAddresses = parseTopLevelRecipients(headers.to, headers.cc),
+339:             receivedAt = message.receivedDate
+340:                 ?.toInstant()
+341:                 ?.atZone(ZoneId.systemDefault())
+342:                 ?.toLocalDateTime()
+343:                 ?: LocalDateTime.now(),
+344:             attachments = extracted.attachments,
+345:             uidValidity = uidValidity,
+346:             bodyTruncated = extracted.bodyTruncated,
+347:             linkedMaterials = extracted.linkedMaterials
+
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt SHA256 4b5f2bbac3c20f4278674e04ef21f4c47350fe3aeb8fb6337d9a1042757db78a
+
+1298:     private fun confirmManualReviewWithBody(
+1299:         account: MailSenderAccount,
+1300:         received: ReceivedMail,
+1301:         expertContactId: Long?,
+1302:         reason: String,
+1303:         reasonType: String?,
+1304:         cleanedBody: String,
+1305:         bridgeMetadata: Boolean = true
+1306:     ): InboundMailProcessing {
+1307:         val now = LocalDateTime.now()
+1308:         val saved = inboundMailProcessingRepository.save(
+1309:             InboundMailProcessing(
+1310:                 senderAccountCode = account.accountCode,
+1311:                 // I-3：物理 owner 由逻辑账号唯一决定（单层归属），新行必须带物理键，
+1312:                 // 唯一键 (owner, uid_validity, imap_uid) 才能约束并发重复。
+1313:                 mailboxOwnerCode = mailSenderAccountService.resolveInboundOwner(account).accountCode,
+1314:                 uidValidity = received.uidValidity,
+1315:                 imapUid = received.imapUid,
+1316:                 messageId = received.messageId,
+1317:                 inReplyTo = received.inReplyTo,
+1318:                 fromEmail = received.from,
+1319:                 subject = received.subject,
+1320:                 body = received.body,
+1321:                 cleanedBody = cleanedBody,
+1322:                 receivedAt = received.receivedAt,
+1323:                 processStatus = "MANUAL_REVIEW",
+1324:                 processReason = reason,
+1325:                 reasonType = reasonType,
+1326:                 expertContactId = expertContactId,
+1327:                 createdAt = now,
+1328:                 updatedAt = now
+1329:             )
+1330:         )
+
+1352:     private fun confirmProcessed(
+1353:         account: MailSenderAccount,
+1354:         received: ReceivedMail,
+1355:         expertContactId: Long?,
+1356:         status: String,
+1357:         reason: String,
+1358:         reasonType: String? = null,
+1359:         bridgeMetadata: Boolean = true,
+1360:         body: String? = null,
+1361:         cleanedBody: String? = null
+1362:     ): InboundMailProcessing {
+1363:         val now = LocalDateTime.now()
+1364:         val saved = inboundMailProcessingRepository.save(
+1365:             InboundMailProcessing(
+1366:                 senderAccountCode = account.accountCode,
+1367:                 // I-3：同 confirmManualReviewWithBody —— 新行必须带物理 owner 键。
+1368:                 mailboxOwnerCode = mailSenderAccountService.resolveInboundOwner(account).accountCode,
+1369:                 uidValidity = received.uidValidity,
+1370:                 imapUid = received.imapUid,
+1371:                 messageId = received.messageId,
+1372:                 inReplyTo = received.inReplyTo,
+1373:                 fromEmail = received.from,
+1374:                 subject = received.subject,
+1375:                 body = body ?: received.body,
+1376:                 cleanedBody = cleanedBody,
+1377:                 receivedAt = received.receivedAt,
+1378:                 processStatus = status,
+1379:                 processReason = reason,
+1380:                 reasonType = reasonType,
+1381:                 expertContactId = expertContactId,
+1382:                 createdAt = now,
+1383:                 updatedAt = now
+1384:             )
+1385:         )
+
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt SHA256 183c75f7ac2f961eb1d36f49517d64af9346b41837fce788013f7d0cba99ceaa
+
+190:         expertContactRepository.save(currentContact)
+191: 
+192:         val now = LocalDateTime.now()
+193:         val saved = inboundMailProcessingRepository.save(
+194:             record.copy(
+195:                 expertContactId = contactId,
+196:                 processStatus = "MANUAL_REVIEW",
+197:                 processReason = "MANUAL_BOUND",
+198:                 resolvedBy = null,
+199:                 resolvedAt = null,
+200:                 updatedAt = now
+201:             )
+202:         )
+
+233:     fun markResolved(recordId: Long, resolvedBy: String, note: String?): InboundMailProcessing {
+234:         val record = inboundMailProcessingRepository.findById(recordId)
+235:             .orElseThrow { error("Inbound mail processing not found: $recordId") }
+236:         require(record.processStatus == "MANUAL_REVIEW") { "Record $recordId is not in MANUAL_REVIEW" }
+237:         val now = LocalDateTime.now()
+238:         val saved = inboundMailProcessingRepository.save(record.copy(
+239:             processStatus = "PROCESSED",
+240:             processReason = "MANUAL_RESOLVED",
+241:             reasonType = "MANUAL_RESOLVED",
+242:             resolvedBy = resolvedBy,
+243:             resolvedAt = now,
+244:             updatedAt = now
+245:         ))
+
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt SHA256 1735fdbf9c300156fa9c510fce9bf8c94012331dc58d09a98fae30bdc5a86462
+
+1517:     ) {
+1518:         val record = inboundMailProcessingRepository.findById(inboundProcessingId)
+1519:             .orElseThrow { error("Inbound mail processing not found: $inboundProcessingId") }
+1520:         require(record.processStatus == "MANUAL_REVIEW") { "Record $inboundProcessingId is not in MANUAL_REVIEW" }
+1521: 
+1522:         val actualOperator = operatorName?.takeIf { it.isNotBlank() } ?: resolvedBy ?: "UNKNOWN"
+1523:         val now = LocalDateTime.now()
+1524:         inboundMailProcessingRepository.save(
+1525:             record.copy(
+1526:                 processStatus = "PROCESSED",
+1527:                 processReason = "MANUAL_RESOLVED",
+1528:                 reasonType = "MANUAL_RESOLVED",
+1529:                 resolvedBy = actualOperator,
+1530:                 resolvedAt = now,
+1531:                 updatedAt = now
+1532:             )
+1533:         )
+
+1590:             )
+1591:         }
+1592: 
+1593:         val actualOperator = operatorName?.takeIf { it.isNotBlank() } ?: "UNKNOWN"
+1594:         val now = LocalDateTime.now()
+1595:         val updated = inboundMailProcessingRepository.reopenManualResolved(inboundProcessingId, now)
+1596:         if (updated != 1) {
+1597:             throw ResponseStatusException(
+1598:                 HttpStatus.CONFLICT,
+1599:                 "Record $inboundProcessingId changed concurrently and cannot be cancelled"
+1600:             )
+1601:         }
+1602: 
+1603:         val contactId = record.expertContactId
+
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt SHA256 f04f15560af634f9d17f351217ae5af84407625411555e5030d68ae0177c842d
+
+48:     @Modifying
+49:     @Query("""
+50:         UPDATE inbound_mail_processing
+51:            SET process_status = 'MANUAL_REVIEW',
+52:                process_reason = 'MANUAL_REOPENED',
+53:                reason_type = NULL,
+54:                resolved_at = NULL,
+55:                resolved_by = NULL,
+56:                updated_at = :now
+57:          WHERE id = :id
+58:            AND process_status = 'PROCESSED'
+59:            AND process_reason = 'MANUAL_RESOLVED'
+60:            AND reason_type = 'MANUAL_RESOLVED'
+61:     """)
+62:     fun reopenManualResolved(id: Long, now: LocalDateTime): Int
+
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql SHA256 f7d08b96902eeed587f7b3a8f0e08ab68d514f0515458c56f0f7a3206d4299d0
+
+1: CREATE TABLE inbound_mail_processing (
+2:     id BIGINT PRIMARY KEY AUTO_INCREMENT,
+3:     sender_account_code VARCHAR(64) NOT NULL,
+4:     imap_uid BIGINT NOT NULL,
+5:     message_id VARCHAR(255),
+6:     from_email VARCHAR(255) NOT NULL,
+7:     subject VARCHAR(255),
+8:     received_at DATETIME NOT NULL,
+9:     process_status VARCHAR(32) NOT NULL,
+10:     process_reason VARCHAR(64) NOT NULL,
+11:     expert_contact_id BIGINT,
+12:     retry_count INT NOT NULL DEFAULT 0,
+13:     last_error TEXT,
+14:     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+15:     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+16:     UNIQUE KEY uk_inbound_mail_processing_uid (sender_account_code, imap_uid),
+17:     KEY idx_inbound_mail_processing_status (process_status, received_at),
+18:     CONSTRAINT fk_inbound_mail_processing_contact
+19:         FOREIGN KEY (expert_contact_id) REFERENCES expert_contact(id)
+20: );
+
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql SHA256 5e8c390b1d30b7285e9a164beefc50df6b4937ccdf81ecc54e8559b246a90a4f
+
+17: ALTER TABLE inbound_mail_processing
+18:     ADD COLUMN uid_validity BIGINT NOT NULL DEFAULT 0 COMMENT '远端邮箱代际；0 仅历史未知，新接收必须为实际正值';
+19: 
+20: ALTER TABLE inbound_mail_processing
+21:     DROP INDEX uk_inbound_mail_processing_uid,
+22:     ADD UNIQUE KEY uk_inbound_mail_processing_uid_validity (sender_account_code, uid_validity, imap_uid);
+
+src/main/resources/db/migration/V134__shared_inbox_owner.sql SHA256 a54c78f0fd731b8aa55462c12511a00cc27a82267718ea6e88e7cd3b7533835d
+
+28: ALTER TABLE inbound_mail_processing
+29:     ADD COLUMN mailbox_owner_code VARCHAR(64) NULL
+30:         COMMENT '物理收件箱主账号代码；NULL=历史未知行（不回填）';
+31: 
+32: ALTER TABLE inbound_mail_processing
+33:     ADD UNIQUE KEY uk_inbound_mail_processing_owner_uid (mailbox_owner_code, uid_validity, imap_uid);
+
+src/test/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepositoryIT.kt SHA256 0b485537efad47a34a49a39a2e1098e1b29cdcdb3184d3b830f56bb462096afd
+
+475:         assertEquals(inboundHigh, latest[1L]!!.id)
+476:         assertEquals("Re high", latest[1L]!!.subject)
+477: 
+478:         // latestInbound 指向同秒下真实的最大 processing id（绝不取自 mail_record）。
+479:         val inbound = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+480:         assertEquals(inboundHigh, inbound[1L]!!.processingId)
+481: 
+482:         // 更晚的 OUTBOUND 只改 latestMessage；latestInbound 候选恒为 processing，不受其扰动。
+483:         insertOutbound(1, "acc-a", "QA_REPLY", "SENT", "Later outbound", "2026-09-08 13:00:00")
+484:         val later = repository.latestMessageByContacts(listOf(1L), allAccounts, null)
+485:         assertEquals(MailboxConversationRepository.SOURCE_MAIL_RECORD, later[1L]!!.source)
+486:         assertEquals("Later outbound", later[1L]!!.subject)
+487:         val inboundAfter = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+488:         assertEquals(inboundHigh, inboundAfter[1L]!!.processingId)
+489: 
+490:         // I-4：空 contactIds 短路仍返回空（不执行 IN () 查询）。
+491:         assertTrue(repository.latestMessageByContacts(emptyList(), allAccounts, null).isEmpty())
+492:         assertTrue(repository.latestInboundByContacts(emptyList(), allAccounts, null).isEmpty())
+493:     }
+494: 
+495:     @Test
+496:     fun `latest respects accountCode scope despite newer rows on other accounts`() {
+497:         insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "A acc-a", "2026-09-01 09:00:00")
+498:         insertOutbound(1, "acc-a", "QA_REPLY", "SENT", "A2 acc-a", "2026-09-02 09:00:00")
+499:         // 专家在 acc-b 存在更晚的来信：全账号口径胜出，但 acc-a 收窄口径不得越界选取。
+500:         insertProcessing(1, "acc-b", 951, "PROCESSED", "Re acc-b", "2026-09-08 10:00:00",
+501:             "msg-acc-b-new", "alice@example.org")
+502: 
+503:         val narrowed = repository.latestMessageByContacts(listOf(1L), allAccounts, "acc-a")
+504:         assertEquals(MailboxConversationRepository.SOURCE_MAIL_RECORD, narrowed[1L]!!.source)
+505:         assertEquals("A2 acc-a", narrowed[1L]!!.subject, "acc-a 口径不得选中 acc-b 的更新消息")
+506:         val narrowedInbound = repository.latestInboundByContacts(listOf(1L), allAccounts, "acc-a")
+507:         assertNull(narrowedInbound[1L], "acc-a 无 processing 来信 → latestInbound 为空（不越界）")
+508: 
+509:         val all = repository.latestMessageByContacts(listOf(1L), allAccounts, null)
+510:         assertEquals(MailboxConversationRepository.SOURCE_INBOUND_PROCESSING, all[1L]!!.source)
+511:         assertEquals("Re acc-b", all[1L]!!.subject)
+512:         val allInbound = repository.latestInboundByContacts(listOf(1L), allAccounts, null)
+513:         assertEquals("msg-acc-b-new", allInbound[1L]!!.messageId)
+514:     }
+
+677:     fun `keyword and recipient filters keep pending count and latest inbound at full range`() {
+678:         seedContact(8, "Helen Expert", "helen@example.org", "0000-0000-0000-0008")
+679:         // H(8)：一封 MANUAL_REVIEW（pending）+ 一封 PROCESSED（正文含 unique-term）。
+680:         insertProcessing(8, "acc-a", 1401, "MANUAL_REVIEW", "Pending topic", "2026-09-01 09:00:00",
+681:             "full-h", "h@example.org")
+682:         insertProcessing(8, "acc-a", 1402, "PROCESSED", "Processed topic", "2026-09-06 09:00:00",
+683:             "full-h2", "h@example.org", body = "contains alpha-marker-77", cleanedBody = "cleaned-h2")
+684: 
+685:         val rows = page(filter(keyword = "alpha-marker-77"))
+686:         assertEquals(listOf(8L), rows.map { it.expertContactId })
+687:         assertEquals(2L, rows[0].receivedCount, "筛选后聚合仍为全账号范围")
+688:         assertEquals(1L, rows[0].pendingCount, "pending 由另一封 MANUAL_REVIEW 统计，不随关键词 membership 缩水")
+689:         assertEquals(1L, repository.countConversations("", filter(keyword = "alpha-marker-77")))
+690: 
+691:         val latestInbound = repository.latestInboundByContacts(listOf(8L), allAccounts, null)
+692:         assertEquals("full-h2", latestInbound[8L]!!.messageId, "最近来信仍取全账号范围最新一封")
+693:     }
+694: 
+
+src/test/js/mailboxChatStyle.test.js SHA256 4c907ad5182a6c528a6729b31936690b10c38ad6b7640cdcffb69caecbe14985
+
+17: 
+18: const ROOT = path.join(__dirname, "..", "..", "main", "resources", "static");
+19: const cssPath = path.join(ROOT, "mailbox-chat.css");
+20: const cssSource = fs.readFileSync(cssPath, "utf-8");
+21: const stylesSource = fs.readFileSync(path.join(ROOT, "styles.css"), "utf-8");
+22: const chatSource = fs.readFileSync(path.join(ROOT, "mailbox-chat.js"), "utf-8");
+23: const indexSource = fs.readFileSync(path.join(ROOT, "index.html"), "utf-8");
+24: 
+25: const TARGET_CSS = path.join(__dirname, "..", "..", "..", "docs", "plans", "2026-09-09", "mailbox-refinement-evidence", "mailbox-chat.target.css");
+26: 
+27: // I-1：版本键唯一来源是 index.html 的 styles.css?v=<key>，本文件不得写死字面量。
+28: const CACHE_KEY = (() => {
+29:     const match = indexSource.match(/styles\.css\?v=([^"'&<>]+)/);
+30:     if (!match) throw new Error("index.html must register styles.css with a ?v= cache key");
+31:     return match[1];
+32: })();
+33: const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+34: 
+35: describe("S-6: 落地 CSS 与 02 evidence 逐字一致", () => {
+36:     it("mailbox-chat.css 与 evidence/mailbox-chat.target.css 字节一致", () => {
+37:         const expected = fs.readFileSync(TARGET_CSS, "utf-8");
+38:         assert.strictEqual(cssSource, expected, "mailbox-chat.css 必须与 S-6 合同证据逐字一致");
+39:     });
+40: });
+41: 
+42: describe("S-1/S-2: index.html 宿主 id 与唯一筛选节点（源文本断言）", () => {
+
+105:         );
+106:     });
+107: });
+108: 
+109: describe("S-6: DOM class 白名单与模板卫生", () => {
+110:     function literalClasses(source) {
+111:         const out = new Set();
+112:         const re = /class="([^"]*)"/g;
+113:         let match;
+114:         while ((match = re.exec(source)) !== null) {
+115:             String(match[1]).split(/\s+/).filter(Boolean).forEach((cls) => out.add(cls));
+116:         }
+117:         const singleRe = /class='([^']*)'/g;
+118:         while ((match = singleRe.exec(source)) !== null) {
+119:             String(match[1]).split(/\s+/).filter(Boolean).forEach((cls) => out.add(cls));
+120:         }
+121:         return out;
+122:     }
+123: 
+124:     it("模板字面量 class 全部命中 mailbox-chat.css 或既有 styles.css", () => {
+125:         const classes = literalClasses(chatSource);
+126:         assert.ok(classes.size > 0, "must find template classes to audit");
+127:         const unknown = [];
+128:         classes.forEach((cls) => {
+129:             if (/\$/.test(cls)) return;
+130:             if (cls.startsWith("mc-") || cls === "mail-chat") {
+131:                 if (!new RegExp(`\\.${cls}(?=[\\s,{.:\\[])`).test(cssSource)) unknown.push(`${cls} (mc-* 未在 mailbox-chat.css 声明)`);
+132:                 return;
+133:             }
+134:             if (!new RegExp(`\\.${cls}(?=[\\s,{.:\\[])`).test(stylesSource)) unknown.push(`${cls} (复用类未在 styles.css 声明)`);
+135:         });
+136:         assert.deepStrictEqual(unknown, [], "新增模板 class 必须已声明（S-6 / styles.css）");
+137:     });
+138: 
+139:     it("模板不写 inline style", () => {
+140:         assert.ok(!/"style="/.test(chatSource), "mailbox-chat.js 模板不得出现 style 属性");
+141:         assert.ok(!/'style='/.test(chatSource), "mailbox-chat.js 模板不得出现 style 属性");
+142:     });
+143: 
+144:     it("样式契约无新增未授权全局规则（mailbox view 宿主钩子除外）", () => {
+145:         const lines = cssSource.split("\n").map((line) => line.trim()).filter(Boolean);
+146:         for (const line of lines) {
+147:             if (line.startsWith("/*") || line.startsWith("*") || line.startsWith("//")) continue;
+148:             const selectorPart = line.slice(0, line.indexOf("{") === -1 ? line.length : line.indexOf("{"));
+149:             if (!selectorPart) continue;
+150:             if (selectorPart.startsWith("@media") || selectorPart.startsWith("@")) continue;
+151:             const isScoped = selectorPart.includes(".mail-chat")
+152:                 || selectorPart.startsWith("#view-mailbox.mc-refined")
+153:                 || selectorPart.startsWith("#view-mailbox:not(.mc-refined)");
+154:             assert.ok(isScoped, `rule must stay mailbox-scoped: ${selectorPart}`);
+
+pom.xml SHA256 58e5999fad9df89d6479045d5ea70d86c33ccf7591da3f93470669dc30b6f21f
+
+180:                         <DYLD_LIBRARY_PATH>/Library/Java/JavaVirtualMachines/zulu-11.jdk/Contents/Home/lib</DYLD_LIBRARY_PATH>
+181:                     </environmentVariables>
+182:                 </configuration>
+183:             </plugin>
+184:             <plugin>
+185:                 <groupId>org.codehaus.mojo</groupId>
+186:                 <artifactId>exec-maven-plugin</artifactId>
+187:                 <version>3.1.0</version>
+188:                 <executions>
+189:                     <execution>
+190:                         <id>node-test</id>
+191:                         <phase>test</phase>
+192:                         <goals>
+193:                             <goal>exec</goal>
+194:                         </goals>
+195:                         <configuration>
+196:                             <executable>bash</executable>
+197:                             <arguments>
+198:                                 <argument>-lc</argument>
+199:                                 <argument>node --test src/test/js/*.test.js</argument>
+200:                             </arguments>
+201:                             <skip>${skipNodeTests}</skip>
+202:                         </configuration>
+203:                     </execution>
+204:                     <execution>
+205:                         <id>node-check-app</id>
+206:                         <phase>test</phase>
+207:                         <goals>
+208:                             <goal>exec</goal>
+209:                         </goals>
+210:                         <configuration>
+211:                             <executable>node</executable>
+212:                             <arguments>
+213:                                 <argument>--check</argument>
+214:                                 <argument>src/main/resources/static/app.js</argument>
+215:                             </arguments>
+216:                             <skip>${skipNodeTests}</skip>
+217:                         </configuration>
+218:                     </execution>
+219:                     <execution>
+220:                         <id>node-check-task-modal-runtime</id>
+221:                         <phase>test</phase>
+222:                         <goals>
+223:                             <goal>exec</goal>
+224:                         </goals>
+225:                         <configuration>
+226:                             <executable>node</executable>
+227:                             <arguments>
+228:                                 <argument>--check</argument>
+229:                                 <argument>src/main/resources/static/task-modal-runtime.js</argument>
+230:                             </arguments>
+231:                             <skip>${skipNodeTests}</skip>
+232:                         </configuration>
+233:                     </execution>

@@ -5156,3 +5156,432 @@ describe("fast-p c3 收发信箱紧凑所在地与推荐时间（I-1..I-6 / S-1.
         assert.strictEqual(ctx.doc.body.querySelectorAll(".contact-timing-dialog").length, 0);
     });
 });
+
+// ---------------------------------------------------------------------------
+// fast-p 2026-10-02 · mailbox-last-reply-time（I-1..I-5 / S-1..S-3）
+// 在生产 mailbox-chat.js 上验证收发件箱「上次回复」：列表行 + 详情槽、北京时间语义、
+// 空值/异常区分、刷新同步（沿用 disposed/listSeq 守卫）与取值来源纪律。
+// ---------------------------------------------------------------------------
+
+describe("fast-p 上次回复：收发件箱列表与详情时间（I-1..I-5 / S-1..S-3）", () => {
+    const EIGHT_TEXT = "2026-10-02 星期五 17:59";
+    const EIGHT_TITLE = "北京时间 2026-10-02 星期五 17:59";
+    const EIGHT_DATETIME = "2026-10-02T17:59:00+08:00";
+    const UNAVAILABLE = "回复时间暂不可用";
+    const EMPTY_TEXT = "尚未回复";
+
+    function personOf(ctx, contactId) {
+        return ctx.host.querySelectorAll(".mc-person").find((node) => node.dataset.contactId === String(contactId));
+    }
+    function replyRow(ctx, contactId) {
+        return personOf(ctx, contactId).querySelector(".mailbox-reply-list");
+    }
+    function replyTime(ctx, contactId) {
+        return replyRow(ctx, contactId).querySelector("time");
+    }
+    function openPerson(ctx, contactId) {
+        click(personOf(ctx, contactId).querySelector(".mc-person-main"));
+        return flush();
+    }
+    function detailSlot(ctx) {
+        return ctx.host.querySelector('[data-role="last-reply-time"]');
+    }
+    function inbound(receivedAt) {
+        return receivedAt === null
+            ? null
+            : { processingId: 101, accountCode: "acc1", messageId: "m101", receivedAt };
+    }
+    /** 列表夹具：默认专家 A，可覆写 latestInbound/receivedCount。 */
+    function expertRow(inboundValue, extra) {
+        return expertA(Object.assign({ latestInbound: inboundValue }, extra || {}));
+    }
+    async function bootRow(inboundValue, extra) {
+        const ctx = await bootChat({
+            conversations: { items: [expertRow(inboundValue, extra)], total: 1 },
+            messages: messagesA(),
+            contact: contactA()
+        });
+        return ctx;
+    }
+    /** 需要组件 api（refreshFromHost/loadList/unmount）的挂载，避免 mountChat 的双重 loadList。 */
+    function mountWithApi(options) {
+        const ctx = createChatSandbox(options || {});
+        const dom = createDom();
+        ctx.doc = dom.doc;
+        ctx.host = dom.host;
+        ctx.sandbox.document = dom.doc;
+        ctx.api = ctx.sandbox.MailboxChat.mount(dom.host, { filters: {} });
+        return ctx;
+    }
+    async function bootWithApi(options) {
+        const ctx = mountWithApi(options);
+        await flush();
+        return ctx;
+    }
+    function listPayloadAtom(receivedAt) {
+        return { items: [expertRow(inbound(receivedAt))], total: 1 };
+    }
+    const KNOWN_ENDPOINTS = /^\/api\/(mail\/(mailbox\/conversations|unmatched-inbound)|expert-contacts|operator-action-logs|inbound-summary|translate|compose-templates|mail\/contact-locations)/;
+
+    it("上次回复 B-1：列表与详情显示北京时间日期+星期+时分，datetime 带 +08:00", async () => {
+        const ctx = await bootRow(inbound("2026-10-02T17:59:00"));
+        const row = replyRow(ctx, 1);
+        assert.ok(row, "列表必须有 .mailbox-reply-list");
+        assert.strictEqual(row.querySelectorAll("span")[0].textContent, "上次回复", "列表标签");
+        const time = row.querySelector("time");
+        assert.strictEqual(time.textContent, EIGHT_TEXT, "可见日期+星期+时分");
+        assert.strictEqual(time.getAttribute("datetime"), EIGHT_DATETIME);
+        assert.strictEqual(time.getAttribute("title"), EIGHT_TITLE);
+        const aria = personOf(ctx, 1).querySelector(".mc-person-main").getAttribute("aria-label");
+        assert.ok(aria.includes("查看专家A往来邮件"), "保留专家名称描述");
+        assert.ok(aria.includes("专家标签：学术科研、重点关注"), "保留标签描述");
+        assert.ok(aria.includes(EIGHT_TITLE), "aria 含同一北京时间说明");
+
+        await openPerson(ctx, 1);
+        const slot = detailSlot(ctx);
+        assert.ok(slot, "详情必须有回复时间槽");
+        assert.strictEqual(slot.querySelector("span").textContent, "专家上次回复");
+        assert.strictEqual(slot.querySelector("time").textContent, EIGHT_TEXT, "详情与列表同值");
+        assert.strictEqual(slot.querySelector("time").getAttribute("datetime"), EIGHT_DATETIME);
+        assert.strictEqual(slot.querySelector(".mailbox-reply-zone").textContent, "北京时间");
+        const kids = ctx.host.querySelector(".mc-identity").children;
+        assert.deepStrictEqual(kids.map((node) => node.tagName), ["H2", "P", "SPAN", "SPAN"], "identity 顺序：名称→账号→时间槽→排期");
+        assert.strictEqual(kids[2], slot);
+        assert.strictEqual(kids[3].getAttribute("data-role"), "meeting-summary");
+    });
+
+    it("上次回复 B-2：更晚的我方发件不改变时间（只认 latestInbound）", async () => {
+        const ctx = await bootChat({
+            conversations: {
+                items: [expertA({
+                    latestInbound: inbound("2026-10-01T20:48:00"),
+                    latestMessage: { source: "MAIL_RECORD", id: 88, direction: "OUTBOUND", subject: "Follow up", time: "2026-10-02T08:45:00", sendStatus: "SENT" }
+                })],
+                total: 1
+            },
+            messages: messagesA(),
+            contact: contactA()
+        });
+        assert.strictEqual(replyTime(ctx, 1).textContent, "2026-10-01 星期四 20:48");
+        await openPerson(ctx, 1);
+        assert.strictEqual(detailSlot(ctx).querySelector("time").textContent, "2026-10-01 星期四 20:48");
+    });
+
+    it("上次回复 B-3：null+0 才是尚未回复；其余异常一律回复时间暂不可用且无 time 元素", async () => {
+        const empty = await bootRow(null, { receivedCount: 0 });
+        assert.strictEqual(replyRow(empty, 1).querySelector(".mailbox-reply-empty").textContent, EMPTY_TEXT);
+        assert.strictEqual(replyRow(empty, 1).querySelector("time"), null);
+        assert.ok(personOf(empty, 1).querySelector(".mc-person-main").getAttribute("aria-label").includes(`上次回复 ${EMPTY_TEXT}`));
+        await openPerson(empty, 1);
+        const emptySlot = detailSlot(empty);
+        assert.strictEqual(emptySlot.querySelector(".mailbox-reply-empty").textContent, EMPTY_TEXT);
+        assert.strictEqual(emptySlot.querySelector("time"), null);
+        assert.strictEqual(emptySlot.querySelector(".mailbox-reply-zone"), null, "空值分支省略北京时间尾注");
+
+        const cases = [
+            { label: "null+2", value: null, extra: { receivedCount: 2 } },
+            { label: "空字符串时间", value: inbound(""), extra: {} },
+            { label: "非法时间", value: inbound("not-a-time"), extra: {} },
+            { label: "结构异常", value: "oops", extra: {} }
+        ];
+        for (const item of cases) {
+            const ctx = await bootRow(item.value, item.extra);
+            const row = replyRow(ctx, 1);
+            assert.strictEqual(row.querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, item.label);
+            assert.strictEqual(row.querySelector("time"), null, `${item.label}: 不得输出 time/Invalid Date`);
+            await openPerson(ctx, 1);
+            const slot = detailSlot(ctx);
+            assert.strictEqual(slot.querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, item.label);
+            assert.strictEqual(slot.querySelector("time"), null, item.label);
+            assert.strictEqual(slot.querySelector(".mailbox-reply-zone"), null, `${item.label}: 省略北京时间尾注`);
+        }
+    });
+
+    it("上次回复 B-3b：字段缺失/非对象即使 receivedCount=0 也不是尚未回复", async () => {
+        const missing = expertA({ receivedCount: 0 });
+        delete missing.latestInbound;
+        const missingCtx = await bootChat({
+            conversations: { items: [missing], total: 1 },
+            messages: messagesA(),
+            contact: contactA()
+        });
+        assert.strictEqual(replyRow(missingCtx, 1).querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, "缺失 latestInbound 字段");
+        assert.strictEqual(replyRow(missingCtx, 1).querySelector("time"), null);
+        await openPerson(missingCtx, 1);
+        assert.strictEqual(detailSlot(missingCtx).querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE);
+        assert.strictEqual(detailSlot(missingCtx).querySelector("time"), null);
+
+        const oops = await bootRow("oops", { receivedCount: 0 });
+        assert.strictEqual(replyRow(oops, 1).querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, "非对象 latestInbound");
+        assert.strictEqual(replyRow(oops, 1).querySelector("time"), null);
+        await openPerson(oops, 1);
+        assert.strictEqual(detailSlot(oops).querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE);
+        assert.strictEqual(detailSlot(oops).querySelector("time"), null);
+
+        const nullZero = await bootRow(null, { receivedCount: 0 });
+        assert.strictEqual(replyRow(nullZero, 1).querySelector(".mailbox-reply-empty").textContent, EMPTY_TEXT, "仅 null+0 才是尚未回复");
+        assert.strictEqual(replyRow(nullZero, 1).querySelector("time"), null);
+    });
+
+    it("上次回复 B-3c：null 来信下缺失/非数字计数不是尚未回复（I-3 判别式）", async () => {
+        const rows = [
+            ["计数缺失", () => {
+                const row = expertRow(null);
+                delete row.receivedCount;
+                return row;
+            }],
+            ["计数为 null", () => expertRow(null, { receivedCount: null })],
+            ["计数为字符串 \"0\"", () => expertRow(null, { receivedCount: "0" })]
+        ];
+        for (const [label, build] of rows) {
+            const ctx = await bootChat({
+                conversations: { items: [build()], total: 1 },
+                messages: messagesA(),
+                contact: contactA()
+            });
+            const row = replyRow(ctx, 1);
+            assert.strictEqual(row.querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, `${label}: 列表`);
+            assert.strictEqual(row.querySelector("time"), null, `${label}: 列表不得有 time`);
+            await openPerson(ctx, 1);
+            const slot = detailSlot(ctx);
+            assert.strictEqual(slot.querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, `${label}: 详情`);
+            assert.strictEqual(slot.querySelector("time"), null, `${label}: 详情不得有 time`);
+        }
+        const nullZero = await bootRow(null, { receivedCount: 0 });
+        assert.strictEqual(replyRow(nullZero, 1).querySelector(".mailbox-reply-empty").textContent, EMPTY_TEXT, "数字 0 仍是尚未回复");
+        assert.strictEqual(replyRow(nullZero, 1).querySelector("time"), null);
+    });
+
+    it("上次回复 B-4：跨年/闰日边界正确，2 月 30 日不进位，小数秒不影响日期星期与分钟", async () => {
+        const cases = [
+            ["2025-12-31T23:58:00", "2025-12-31 星期三 23:58"],
+            ["2024-02-29T00:00:00", "2024-02-29 星期四 00:00"],
+            ["2026-10-02T17:59:59.123", "2026-10-02 星期五 17:59"]
+        ];
+        for (const [input, expected] of cases) {
+            const ctx = await bootRow(inbound(input));
+            assert.strictEqual(replyTime(ctx, 1).textContent, expected, input);
+            await openPerson(ctx, 1);
+            assert.strictEqual(detailSlot(ctx).querySelector("time").textContent, expected, input);
+        }
+        const bad = await bootRow(inbound("2026-02-30T10:00:00"));
+        assert.strictEqual(replyRow(bad, 1).querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE);
+        assert.strictEqual(replyRow(bad, 1).querySelector("time"), null, "2 月 30 日不得自动进位成 3 月日期");
+    });
+
+    it("上次回复 B-4b：4–9 位小数秒截断到毫秒后仍正常显示北京时间", async () => {
+        const cases = [
+            ["2026-10-02T17:59:59.1234", "4 位小数秒"],
+            ["2026-10-02T17:59:59.123456789", "9 位小数秒"]
+        ];
+        for (const [input, label] of cases) {
+            const ctx = await bootRow(inbound(input));
+            const listTime = replyTime(ctx, 1);
+            assert.ok(listTime, `${label}: 列表必须有 time 元素`);
+            assert.strictEqual(listTime.textContent, EIGHT_TEXT, `${label}: 列表可见北京时间`);
+            assert.strictEqual(listTime.getAttribute("datetime"), EIGHT_DATETIME, `${label}: 列表 datetime`);
+            await openPerson(ctx, 1);
+            const slot = detailSlot(ctx);
+            assert.strictEqual(slot.querySelector(".mailbox-reply-empty"), null, `${label}: 详情不得落入不可用分支`);
+            assert.strictEqual(slot.querySelector("time").textContent, EIGHT_TEXT, `${label}: 详情可见北京时间`);
+            assert.strictEqual(slot.querySelector("time").getAttribute("datetime"), EIGHT_DATETIME, `${label}: 详情 datetime`);
+        }
+    });
+
+    it("上次回复 B-4c：前后空白/制表/换行的 ISO 时间不 trim，一律不可用", async () => {
+        const padded = [
+            " 2026-10-02T17:59:00",
+            "2026-10-02T17:59:00 ",
+            "\t2026-10-02T17:59:00\n",
+            "\n2026-10-02T17:59:00\t"
+        ];
+        for (const input of padded) {
+            const ctx = await bootRow(inbound(input));
+            const row = replyRow(ctx, 1);
+            assert.strictEqual(row.querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, `${JSON.stringify(input)}: 列表`);
+            assert.strictEqual(row.querySelector("time"), null, `${JSON.stringify(input)}: 列表不得有 time`);
+            await openPerson(ctx, 1);
+            const slot = detailSlot(ctx);
+            assert.strictEqual(slot.querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, `${JSON.stringify(input)}: 详情`);
+            assert.strictEqual(slot.querySelector("time"), null, `${JSON.stringify(input)}: 详情不得有 time`);
+        }
+        const exact = await bootRow(inbound("2026-10-02T17:59:00"));
+        assert.strictEqual(replyTime(exact, 1).textContent, EIGHT_TEXT, "无空白输入保持正常显示");
+        await openPerson(exact, 1);
+        assert.strictEqual(detailSlot(exact).querySelector("time").textContent, EIGHT_TEXT, "无空白输入详情正常显示");
+    });
+
+    it("上次回复 B-5：输出与设备时区无关（运行期切换 TZ 仍为同一北京时间）", async () => {
+        const originalTz = process.env.TZ;
+        const render = async (tz) => {
+            process.env.TZ = tz;
+            const ctx = await bootRow(inbound("2026-10-02T17:59:00"));
+            await openPerson(ctx, 1);
+            return {
+                list: replyTime(ctx, 1).textContent,
+                detail: detailSlot(ctx).querySelector("time").textContent,
+                tz: Intl.DateTimeFormat().resolvedOptions().timeZone
+            };
+        };
+        try {
+            const first = await render("UTC");
+            const second = await render("America/Los_Angeles");
+            assert.strictEqual(first.tz, "UTC");
+            assert.strictEqual(second.tz, "America/Los_Angeles");
+            assert.notStrictEqual(first.tz, second.tz, "两次运行的设备时区确实不同（防空洞断言）");
+            [first, second].forEach((out) => {
+                assert.strictEqual(out.list, EIGHT_TEXT, "列表与设备时区无关");
+                assert.strictEqual(out.detail, EIGHT_TEXT, "详情与设备时区无关");
+            });
+        } finally {
+            process.env.TZ = originalTz;
+        }
+    });
+
+    it("上次回复 B-6：宿主刷新同步两处并保留编辑器/回复目标/工作台；无发送请求", async () => {
+        let updated = false;
+        const ctx = await bootWithApi({
+            messages: messagesA(),
+            contact: contactA(),
+            route: (url, method, body, entry, next) => {
+                if (url.startsWith("/api/mail/mailbox/conversations?")) {
+                    return Promise.resolve(listPayloadAtom(updated ? "2026-10-02T18:05:00" : "2026-10-02T17:59:00"));
+                }
+                return next(url, method, body);
+            }
+        });
+        await openPerson(ctx, 1);
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        assert.ok(editor, "人工回复编辑器存在");
+        editor.innerText = "保留的草稿";
+        const subject = ctx.host.querySelector('input[aria-label="回复主题"]');
+        subject.value = "Re: KEEP";
+        const targetInfo = ctx.host.querySelector('[data-role="target-info"]').textContent;
+        const workbenchMounts = ctx.calls.workbenchMounts.length;
+        const sends = ctx.calls.sendConversation.length + ctx.calls.sendRich.length;
+
+        updated = true;
+        await ctx.api.refreshFromHost();
+        await flush();
+
+        assert.strictEqual(replyTime(ctx, 1).textContent, "2026-10-02 星期五 18:05", "列表更新为新 summary");
+        assert.strictEqual(detailSlot(ctx).querySelector("time").textContent, "2026-10-02 星期五 18:05", "详情取同一份当前行");
+        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]'), editor, "编辑器 DOM 身份不变");
+        assert.strictEqual(editor.innerText, "保留的草稿", "正文保留");
+        assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: KEEP", "回复主题保留");
+        assert.strictEqual(ctx.host.querySelector('[data-role="target-info"]').textContent, targetInfo, "回复目标不变");
+        assert.strictEqual(ctx.calls.workbenchMounts.length, workbenchMounts, "不额外挂载工作台");
+        assert.strictEqual(ctx.calls.sendConversation.length + ctx.calls.sendRich.length, sends, "无发送请求");
+    });
+
+    it("上次回复 B-7：loadList 与 header 重建后仍恰好一个槽且为新值", async () => {
+        let updated = false;
+        const ctx = await bootWithApi({
+            messages: messagesA(),
+            contact: contactA(),
+            route: (url, method, body, entry, next) => {
+                if (url.startsWith("/api/mail/mailbox/conversations?")) {
+                    return Promise.resolve({ items: [expertRow(inbound(updated ? "2026-10-02T18:05:00" : "2026-10-02T17:59:00")), expertB()], total: 2 });
+                }
+                return next(url, method, body);
+            }
+        });
+        await openPerson(ctx, 1);
+        updated = true;
+        await ctx.api.loadList();
+        await flush();
+        assert.strictEqual(detailSlot(ctx).querySelector("time").textContent, "2026-10-02 星期五 18:05", "loadList 后详情刷新");
+
+        await openPerson(ctx, 2);
+        await openPerson(ctx, 1);
+        assert.strictEqual(ctx.host.querySelectorAll('[data-role="last-reply-time"]').length, 1, "重建后恰一个槽");
+        assert.strictEqual(detailSlot(ctx).querySelector("time").textContent, "2026-10-02 星期五 18:05", "不退回旧 selectedSummary 时间");
+        assert.strictEqual(replyTime(ctx, 1).textContent, "2026-10-02 星期五 18:05", "列表同值");
+    });
+
+    it("上次回复 B-8：迟到旧回包不覆盖；卸载后不写 DOM", async () => {
+        const pending = [];
+        let mode = "normal";
+        const ctx = await bootWithApi({
+            messages: messagesA(),
+            contact: contactA(),
+            route: (url, method, body, entry, next) => {
+                if (url.startsWith("/api/mail/mailbox/conversations?")) {
+                    if (mode === "defer") return new Promise((resolve) => pending.push(resolve));
+                    return Promise.resolve(listPayloadAtom(mode === "new" ? "2026-10-02T18:05:00" : "2026-10-02T17:59:00"));
+                }
+                return next(url, method, body);
+            }
+        });
+        await openPerson(ctx, 1);
+        assert.strictEqual(detailSlot(ctx).querySelector("time").textContent, EIGHT_TEXT);
+
+        mode = "defer";
+        const slow = ctx.api.refreshFromHost();
+        mode = "new";
+        await ctx.api.refreshFromHost();
+        await flush();
+        assert.strictEqual(detailSlot(ctx).querySelector("time").textContent, "2026-10-02 星期五 18:05", "新回包生效");
+        // 放行迟到旧回包（携带更旧的时间，若被采纳会覆盖）
+        pending.shift()(listPayloadAtom("2026-10-01T20:48:00"));
+        await slow;
+        await flush();
+        assert.strictEqual(detailSlot(ctx).querySelector("time").textContent, "2026-10-02 星期五 18:05", "迟到旧回包不得覆盖");
+        assert.strictEqual(replyTime(ctx, 1).textContent, "2026-10-02 星期五 18:05");
+
+        mode = "defer";
+        const inFlight = ctx.api.loadList();
+        ctx.api.unmount();
+        pending.shift()(listPayloadAtom("2026-10-02T17:59:00"));
+        await inFlight;
+        await flush();
+        assert.strictEqual(ctx.host.querySelectorAll(".mailbox-reply-list").length, 0, "卸载后不写列表");
+        assert.strictEqual(ctx.host.querySelectorAll('[data-role="last-reply-time"]').length, 0, "卸载后不写详情槽");
+    });
+
+    it("上次回复 B-9：账号筛选后显示当前回包时间，不回退取历史最大值", async () => {
+        const ctx = await bootWithApi({
+            messages: messagesA(),
+            contact: contactA(),
+            route: (url, method, body, entry, next) => {
+                if (url.startsWith("/api/mail/mailbox/conversations?")) {
+                    const account = queryOf(url).get("accountCode");
+                    const at = account === "acc-a" ? "2026-10-01T20:48:00" : "2026-10-02T17:59:00";
+                    return Promise.resolve({ items: [expertA({ latestInbound: inbound(at), accountCodes: ["acc-a", "acc-b"] })], total: 1 });
+                }
+                return next(url, method, body);
+            }
+        });
+        await openPerson(ctx, 1);
+        assert.strictEqual(replyTime(ctx, 1).textContent, EIGHT_TEXT);
+        click(ctx.host.querySelector('[data-action="mc-more-filters"]'));
+        await flush();
+        const account = popoverField(ctx, "mailboxFilterAccountCode");
+        account.value = "acc-a";
+        changeEvent(account);
+        click(docById(ctx, "mailboxSearchBtn"));
+        await flush();
+        assert.strictEqual(replyTime(ctx, 1).textContent, "2026-10-01 星期四 20:48", "按当前账号回包显示");
+        assert.strictEqual(detailSlot(ctx).querySelector("time").textContent, "2026-10-01 星期四 20:48", "详情与列表同源");
+    });
+
+    it("上次回复 B-10：待匹配视图无新增时间行；不引入额外 endpoint/存储", async () => {
+        const ctx = await bootChat({
+            conversations: { items: [expertRow(inbound("2026-10-02T17:59:00"))], total: 1 },
+            unmatched: { records: [unmatchedMail(901)], totalCount: 1, manualReviewTotal: 1, countsByReasonType: {} }
+        });
+        assert.ok(replyRow(ctx, 1), "专家列表有上次回复行");
+        const unmatchedChip = ctx.host.querySelectorAll(".mc-filter").find((chip) => chip.dataset.chip === "unmatched");
+        click(unmatchedChip);
+        await flush();
+        const card = ctx.host.querySelector(".mc-person");
+        click(card.querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(ctx.host.querySelectorAll(".mailbox-reply-list").length, 0, "待匹配列表不新增时间行");
+        assert.strictEqual(ctx.host.querySelectorAll('[data-role="last-reply-time"]').length, 0, "待匹配详情不新增时间槽");
+        const unknown = ctx.calls.api.map((entry) => entry.url).filter((url) => !KNOWN_ENDPOINTS.test(url));
+        assert.deepStrictEqual(unknown, [], "不得引入额外 endpoint");
+        assert.strictEqual(ctx.sandbox.localStorage, undefined, "不新增 localStorage 状态");
+        assert.strictEqual(ctx.sandbox.sessionStorage, undefined, "不新增 sessionStorage 状态");
+    });
+});
