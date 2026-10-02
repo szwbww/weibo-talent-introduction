@@ -95,7 +95,7 @@ def run_probe(java):
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=180,
         )
     if proc.returncode != 0:
-        raise SystemExit("探针 JVM 调用失败（退出码 %d）：\n%s" % (proc.returncode, proc.stderr.strip()))
+        raise SystemExit("probe JVM failed (exit %d):\n%s" % (proc.returncode, proc.stderr.strip()))
 
     meta = {}
     zone_ids = set()
@@ -132,12 +132,12 @@ def main():
 
     print("java: %s  (%s)" % (meta.get("java.version", "?"), meta.get("java.home", "?")))
     print("jvm zone ids: %d" % len(jvm_zone_ids))
-    print("location catalog ids: %d  缺失: %d %s" % (len(location_zones), len(missing_location), missing_location))
-    print("meeting selectable ids: %d  目录未覆盖: %d %s" % (len(selectable), len(missing_meeting), missing_meeting))
-    print("offset assertions @ %s: %d/%d 通过"
+    print("location catalog ids: %d  missing: %d %s" % (len(location_zones), len(missing_location), missing_location))
+    print("meeting selectable ids: %d  catalog uncovered: %d %s" % (len(selectable), len(missing_meeting), missing_meeting))
+    print("offset assertions @ %s: %d/%d passed"
           % (PROBE_DATE_UTC, len(EXPECTED_OFFSETS) - len(offset_mismatch), len(EXPECTED_OFFSETS)))
     for zone, expected, actual in offset_mismatch:
-        print("  offset mismatch: %s 期望 %s 实际 %s" % (zone, expected, actual))
+        print("  offset mismatch: %s expected %s actual %s" % (zone, expected, actual))
 
     failures = bool(missing_location or missing_meeting or offset_mismatch)
     print("RESULT: " + ("FAIL" if failures else "PASS"))
