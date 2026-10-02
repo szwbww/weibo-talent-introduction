@@ -92,7 +92,7 @@ def run_probe(java: str) -> tuple[dict[str, str], set[str], dict[str, str]]:
         source.write_text(PROBE_SOURCE, encoding="utf-8")
         proc = subprocess.run(
             [java, str(source), *EXPECTED_OFFSETS.keys()],
-            capture_output=True, text=True, timeout=180,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=180,
         )
     if proc.returncode != 0:
         raise SystemExit(f"探针 JVM 调用失败（退出码 {proc.returncode}）：\n{proc.stderr.strip()}")
