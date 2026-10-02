@@ -1,0 +1,851 @@
+V	2021e
+Z	Africa/Abidjan
+Z	Africa/Accra
+Z	Africa/Addis_Ababa
+Z	Africa/Algiers
+Z	Africa/Asmara
+Z	Africa/Asmera
+Z	Africa/Bamako
+Z	Africa/Bangui
+Z	Africa/Banjul
+Z	Africa/Bissau
+Z	Africa/Blantyre
+Z	Africa/Brazzaville
+Z	Africa/Bujumbura
+Z	Africa/Cairo
+Z	Africa/Casablanca
+Z	Africa/Ceuta
+Z	Africa/Conakry
+Z	Africa/Dakar
+Z	Africa/Dar_es_Salaam
+Z	Africa/Djibouti
+Z	Africa/Douala
+Z	Africa/El_Aaiun
+Z	Africa/Freetown
+Z	Africa/Gaborone
+Z	Africa/Harare
+Z	Africa/Johannesburg
+Z	Africa/Juba
+Z	Africa/Kampala
+Z	Africa/Khartoum
+Z	Africa/Kigali
+Z	Africa/Kinshasa
+Z	Africa/Lagos
+Z	Africa/Libreville
+Z	Africa/Lome
+Z	Africa/Luanda
+Z	Africa/Lubumbashi
+Z	Africa/Lusaka
+Z	Africa/Malabo
+Z	Africa/Maputo
+Z	Africa/Maseru
+Z	Africa/Mbabane
+Z	Africa/Mogadishu
+Z	Africa/Monrovia
+Z	Africa/Nairobi
+Z	Africa/Ndjamena
+Z	Africa/Niamey
+Z	Africa/Nouakchott
+Z	Africa/Ouagadougou
+Z	Africa/Porto-Novo
+Z	Africa/Sao_Tome
+Z	Africa/Timbuktu
+Z	Africa/Tripoli
+Z	Africa/Tunis
+Z	Africa/Windhoek
+Z	America/Adak
+Z	America/Anchorage
+Z	America/Anguilla
+Z	America/Antigua
+Z	America/Araguaina
+Z	America/Argentina/Buenos_Aires
+Z	America/Argentina/Catamarca
+Z	America/Argentina/ComodRivadavia
+Z	America/Argentina/Cordoba
+Z	America/Argentina/Jujuy
+Z	America/Argentina/La_Rioja
+Z	America/Argentina/Mendoza
+Z	America/Argentina/Rio_Gallegos
+Z	America/Argentina/Salta
+Z	America/Argentina/San_Juan
+Z	America/Argentina/San_Luis
+Z	America/Argentina/Tucuman
+Z	America/Argentina/Ushuaia
+Z	America/Aruba
+Z	America/Asuncion
+Z	America/Atikokan
+Z	America/Atka
+Z	America/Bahia
+Z	America/Bahia_Banderas
+Z	America/Barbados
+Z	America/Belem
+Z	America/Belize
+Z	America/Blanc-Sablon
+Z	America/Boa_Vista
+Z	America/Bogota
+Z	America/Boise
+Z	America/Buenos_Aires
+Z	America/Cambridge_Bay
+Z	America/Campo_Grande
+Z	America/Cancun
+Z	America/Caracas
+Z	America/Catamarca
+Z	America/Cayenne
+Z	America/Cayman
+Z	America/Chicago
+Z	America/Chihuahua
+Z	America/Coral_Harbour
+Z	America/Cordoba
+Z	America/Costa_Rica
+Z	America/Creston
+Z	America/Cuiaba
+Z	America/Curacao
+Z	America/Danmarkshavn
+Z	America/Dawson
+Z	America/Dawson_Creek
+Z	America/Denver
+Z	America/Detroit
+Z	America/Dominica
+Z	America/Edmonton
+Z	America/Eirunepe
+Z	America/El_Salvador
+Z	America/Ensenada
+Z	America/Fort_Nelson
+Z	America/Fort_Wayne
+Z	America/Fortaleza
+Z	America/Glace_Bay
+Z	America/Godthab
+Z	America/Goose_Bay
+Z	America/Grand_Turk
+Z	America/Grenada
+Z	America/Guadeloupe
+Z	America/Guatemala
+Z	America/Guayaquil
+Z	America/Guyana
+Z	America/Halifax
+Z	America/Havana
+Z	America/Hermosillo
+Z	America/Indiana/Indianapolis
+Z	America/Indiana/Knox
+Z	America/Indiana/Marengo
+Z	America/Indiana/Petersburg
+Z	America/Indiana/Tell_City
+Z	America/Indiana/Vevay
+Z	America/Indiana/Vincennes
+Z	America/Indiana/Winamac
+Z	America/Indianapolis
+Z	America/Inuvik
+Z	America/Iqaluit
+Z	America/Jamaica
+Z	America/Jujuy
+Z	America/Juneau
+Z	America/Kentucky/Louisville
+Z	America/Kentucky/Monticello
+Z	America/Knox_IN
+Z	America/Kralendijk
+Z	America/La_Paz
+Z	America/Lima
+Z	America/Los_Angeles
+Z	America/Louisville
+Z	America/Lower_Princes
+Z	America/Maceio
+Z	America/Managua
+Z	America/Manaus
+Z	America/Marigot
+Z	America/Martinique
+Z	America/Matamoros
+Z	America/Mazatlan
+Z	America/Mendoza
+Z	America/Menominee
+Z	America/Merida
+Z	America/Metlakatla
+Z	America/Mexico_City
+Z	America/Miquelon
+Z	America/Moncton
+Z	America/Monterrey
+Z	America/Montevideo
+Z	America/Montreal
+Z	America/Montserrat
+Z	America/Nassau
+Z	America/New_York
+Z	America/Nipigon
+Z	America/Nome
+Z	America/Noronha
+Z	America/North_Dakota/Beulah
+Z	America/North_Dakota/Center
+Z	America/North_Dakota/New_Salem
+Z	America/Nuuk
+Z	America/Ojinaga
+Z	America/Panama
+Z	America/Pangnirtung
+Z	America/Paramaribo
+Z	America/Phoenix
+Z	America/Port-au-Prince
+Z	America/Port_of_Spain
+Z	America/Porto_Acre
+Z	America/Porto_Velho
+Z	America/Puerto_Rico
+Z	America/Punta_Arenas
+Z	America/Rainy_River
+Z	America/Rankin_Inlet
+Z	America/Recife
+Z	America/Regina
+Z	America/Resolute
+Z	America/Rio_Branco
+Z	America/Rosario
+Z	America/Santa_Isabel
+Z	America/Santarem
+Z	America/Santiago
+Z	America/Santo_Domingo
+Z	America/Sao_Paulo
+Z	America/Scoresbysund
+Z	America/Shiprock
+Z	America/Sitka
+Z	America/St_Barthelemy
+Z	America/St_Johns
+Z	America/St_Kitts
+Z	America/St_Lucia
+Z	America/St_Thomas
+Z	America/St_Vincent
+Z	America/Swift_Current
+Z	America/Tegucigalpa
+Z	America/Thule
+Z	America/Thunder_Bay
+Z	America/Tijuana
+Z	America/Toronto
+Z	America/Tortola
+Z	America/Vancouver
+Z	America/Virgin
+Z	America/Whitehorse
+Z	America/Winnipeg
+Z	America/Yakutat
+Z	America/Yellowknife
+Z	Antarctica/Casey
+Z	Antarctica/Davis
+Z	Antarctica/DumontDUrville
+Z	Antarctica/Macquarie
+Z	Antarctica/Mawson
+Z	Antarctica/McMurdo
+Z	Antarctica/Palmer
+Z	Antarctica/Rothera
+Z	Antarctica/South_Pole
+Z	Antarctica/Syowa
+Z	Antarctica/Troll
+Z	Antarctica/Vostok
+Z	Arctic/Longyearbyen
+Z	Asia/Aden
+Z	Asia/Almaty
+Z	Asia/Amman
+Z	Asia/Anadyr
+Z	Asia/Aqtau
+Z	Asia/Aqtobe
+Z	Asia/Ashgabat
+Z	Asia/Ashkhabad
+Z	Asia/Atyrau
+Z	Asia/Baghdad
+Z	Asia/Bahrain
+Z	Asia/Baku
+Z	Asia/Bangkok
+Z	Asia/Barnaul
+Z	Asia/Beirut
+Z	Asia/Bishkek
+Z	Asia/Brunei
+Z	Asia/Calcutta
+Z	Asia/Chita
+Z	Asia/Choibalsan
+Z	Asia/Chongqing
+Z	Asia/Chungking
+Z	Asia/Colombo
+Z	Asia/Dacca
+Z	Asia/Damascus
+Z	Asia/Dhaka
+Z	Asia/Dili
+Z	Asia/Dubai
+Z	Asia/Dushanbe
+Z	Asia/Famagusta
+Z	Asia/Gaza
+Z	Asia/Harbin
+Z	Asia/Hebron
+Z	Asia/Ho_Chi_Minh
+Z	Asia/Hong_Kong
+Z	Asia/Hovd
+Z	Asia/Irkutsk
+Z	Asia/Istanbul
+Z	Asia/Jakarta
+Z	Asia/Jayapura
+Z	Asia/Jerusalem
+Z	Asia/Kabul
+Z	Asia/Kamchatka
+Z	Asia/Karachi
+Z	Asia/Kashgar
+Z	Asia/Kathmandu
+Z	Asia/Katmandu
+Z	Asia/Khandyga
+Z	Asia/Kolkata
+Z	Asia/Krasnoyarsk
+Z	Asia/Kuala_Lumpur
+Z	Asia/Kuching
+Z	Asia/Kuwait
+Z	Asia/Macao
+Z	Asia/Macau
+Z	Asia/Magadan
+Z	Asia/Makassar
+Z	Asia/Manila
+Z	Asia/Muscat
+Z	Asia/Nicosia
+Z	Asia/Novokuznetsk
+Z	Asia/Novosibirsk
+Z	Asia/Omsk
+Z	Asia/Oral
+Z	Asia/Phnom_Penh
+Z	Asia/Pontianak
+Z	Asia/Pyongyang
+Z	Asia/Qatar
+Z	Asia/Qostanay
+Z	Asia/Qyzylorda
+Z	Asia/Rangoon
+Z	Asia/Riyadh
+Z	Asia/Saigon
+Z	Asia/Sakhalin
+Z	Asia/Samarkand
+Z	Asia/Seoul
+Z	Asia/Shanghai
+Z	Asia/Singapore
+Z	Asia/Srednekolymsk
+Z	Asia/Taipei
+Z	Asia/Tashkent
+Z	Asia/Tbilisi
+Z	Asia/Tehran
+Z	Asia/Tel_Aviv
+Z	Asia/Thimbu
+Z	Asia/Thimphu
+Z	Asia/Tokyo
+Z	Asia/Tomsk
+Z	Asia/Ujung_Pandang
+Z	Asia/Ulaanbaatar
+Z	Asia/Ulan_Bator
+Z	Asia/Urumqi
+Z	Asia/Ust-Nera
+Z	Asia/Vientiane
+Z	Asia/Vladivostok
+Z	Asia/Yakutsk
+Z	Asia/Yangon
+Z	Asia/Yekaterinburg
+Z	Asia/Yerevan
+Z	Atlantic/Azores
+Z	Atlantic/Bermuda
+Z	Atlantic/Canary
+Z	Atlantic/Cape_Verde
+Z	Atlantic/Faeroe
+Z	Atlantic/Faroe
+Z	Atlantic/Jan_Mayen
+Z	Atlantic/Madeira
+Z	Atlantic/Reykjavik
+Z	Atlantic/South_Georgia
+Z	Atlantic/St_Helena
+Z	Atlantic/Stanley
+Z	Australia/ACT
+Z	Australia/Adelaide
+Z	Australia/Brisbane
+Z	Australia/Broken_Hill
+Z	Australia/Canberra
+Z	Australia/Currie
+Z	Australia/Darwin
+Z	Australia/Eucla
+Z	Australia/Hobart
+Z	Australia/LHI
+Z	Australia/Lindeman
+Z	Australia/Lord_Howe
+Z	Australia/Melbourne
+Z	Australia/NSW
+Z	Australia/North
+Z	Australia/Perth
+Z	Australia/Queensland
+Z	Australia/South
+Z	Australia/Sydney
+Z	Australia/Tasmania
+Z	Australia/Victoria
+Z	Australia/West
+Z	Australia/Yancowinna
+Z	Brazil/Acre
+Z	Brazil/DeNoronha
+Z	Brazil/East
+Z	Brazil/West
+Z	CET
+Z	CST6CDT
+Z	Canada/Atlantic
+Z	Canada/Central
+Z	Canada/Eastern
+Z	Canada/Mountain
+Z	Canada/Newfoundland
+Z	Canada/Pacific
+Z	Canada/Saskatchewan
+Z	Canada/Yukon
+Z	Chile/Continental
+Z	Chile/EasterIsland
+Z	Cuba
+Z	EET
+Z	EST5EDT
+Z	Egypt
+Z	Eire
+Z	Etc/GMT
+Z	Etc/GMT+0
+Z	Etc/GMT+1
+Z	Etc/GMT+10
+Z	Etc/GMT+11
+Z	Etc/GMT+12
+Z	Etc/GMT+2
+Z	Etc/GMT+3
+Z	Etc/GMT+4
+Z	Etc/GMT+5
+Z	Etc/GMT+6
+Z	Etc/GMT+7
+Z	Etc/GMT+8
+Z	Etc/GMT+9
+Z	Etc/GMT-0
+Z	Etc/GMT-1
+Z	Etc/GMT-10
+Z	Etc/GMT-11
+Z	Etc/GMT-12
+Z	Etc/GMT-13
+Z	Etc/GMT-14
+Z	Etc/GMT-2
+Z	Etc/GMT-3
+Z	Etc/GMT-4
+Z	Etc/GMT-5
+Z	Etc/GMT-6
+Z	Etc/GMT-7
+Z	Etc/GMT-8
+Z	Etc/GMT-9
+Z	Etc/GMT0
+Z	Etc/Greenwich
+Z	Etc/UCT
+Z	Etc/UTC
+Z	Etc/Universal
+Z	Etc/Zulu
+Z	Europe/Amsterdam
+Z	Europe/Andorra
+Z	Europe/Astrakhan
+Z	Europe/Athens
+Z	Europe/Belfast
+Z	Europe/Belgrade
+Z	Europe/Berlin
+Z	Europe/Bratislava
+Z	Europe/Brussels
+Z	Europe/Bucharest
+Z	Europe/Budapest
+Z	Europe/Busingen
+Z	Europe/Chisinau
+Z	Europe/Copenhagen
+Z	Europe/Dublin
+Z	Europe/Gibraltar
+Z	Europe/Guernsey
+Z	Europe/Helsinki
+Z	Europe/Isle_of_Man
+Z	Europe/Istanbul
+Z	Europe/Jersey
+Z	Europe/Kaliningrad
+Z	Europe/Kiev
+Z	Europe/Kirov
+Z	Europe/Lisbon
+Z	Europe/Ljubljana
+Z	Europe/London
+Z	Europe/Luxembourg
+Z	Europe/Madrid
+Z	Europe/Malta
+Z	Europe/Mariehamn
+Z	Europe/Minsk
+Z	Europe/Monaco
+Z	Europe/Moscow
+Z	Europe/Nicosia
+Z	Europe/Oslo
+Z	Europe/Paris
+Z	Europe/Podgorica
+Z	Europe/Prague
+Z	Europe/Riga
+Z	Europe/Rome
+Z	Europe/Samara
+Z	Europe/San_Marino
+Z	Europe/Sarajevo
+Z	Europe/Saratov
+Z	Europe/Simferopol
+Z	Europe/Skopje
+Z	Europe/Sofia
+Z	Europe/Stockholm
+Z	Europe/Tallinn
+Z	Europe/Tirane
+Z	Europe/Tiraspol
+Z	Europe/Ulyanovsk
+Z	Europe/Uzhgorod
+Z	Europe/Vaduz
+Z	Europe/Vatican
+Z	Europe/Vienna
+Z	Europe/Vilnius
+Z	Europe/Volgograd
+Z	Europe/Warsaw
+Z	Europe/Zagreb
+Z	Europe/Zaporozhye
+Z	Europe/Zurich
+Z	GB
+Z	GB-Eire
+Z	GMT
+Z	GMT0
+Z	Greenwich
+Z	Hongkong
+Z	Iceland
+Z	Indian/Antananarivo
+Z	Indian/Chagos
+Z	Indian/Christmas
+Z	Indian/Cocos
+Z	Indian/Comoro
+Z	Indian/Kerguelen
+Z	Indian/Mahe
+Z	Indian/Maldives
+Z	Indian/Mauritius
+Z	Indian/Mayotte
+Z	Indian/Reunion
+Z	Iran
+Z	Israel
+Z	Jamaica
+Z	Japan
+Z	Kwajalein
+Z	Libya
+Z	MET
+Z	MST7MDT
+Z	Mexico/BajaNorte
+Z	Mexico/BajaSur
+Z	Mexico/General
+Z	NZ
+Z	NZ-CHAT
+Z	Navajo
+Z	PRC
+Z	PST8PDT
+Z	Pacific/Apia
+Z	Pacific/Auckland
+Z	Pacific/Bougainville
+Z	Pacific/Chatham
+Z	Pacific/Chuuk
+Z	Pacific/Easter
+Z	Pacific/Efate
+Z	Pacific/Enderbury
+Z	Pacific/Fakaofo
+Z	Pacific/Fiji
+Z	Pacific/Funafuti
+Z	Pacific/Galapagos
+Z	Pacific/Gambier
+Z	Pacific/Guadalcanal
+Z	Pacific/Guam
+Z	Pacific/Honolulu
+Z	Pacific/Johnston
+Z	Pacific/Kanton
+Z	Pacific/Kiritimati
+Z	Pacific/Kosrae
+Z	Pacific/Kwajalein
+Z	Pacific/Majuro
+Z	Pacific/Marquesas
+Z	Pacific/Midway
+Z	Pacific/Nauru
+Z	Pacific/Niue
+Z	Pacific/Norfolk
+Z	Pacific/Noumea
+Z	Pacific/Pago_Pago
+Z	Pacific/Palau
+Z	Pacific/Pitcairn
+Z	Pacific/Pohnpei
+Z	Pacific/Ponape
+Z	Pacific/Port_Moresby
+Z	Pacific/Rarotonga
+Z	Pacific/Saipan
+Z	Pacific/Samoa
+Z	Pacific/Tahiti
+Z	Pacific/Tarawa
+Z	Pacific/Tongatapu
+Z	Pacific/Truk
+Z	Pacific/Wake
+Z	Pacific/Wallis
+Z	Pacific/Yap
+Z	Poland
+Z	Portugal
+Z	ROK
+Z	Singapore
+Z	SystemV/AST4
+Z	SystemV/AST4ADT
+Z	SystemV/CST6
+Z	SystemV/CST6CDT
+Z	SystemV/EST5
+Z	SystemV/EST5EDT
+Z	SystemV/HST10
+Z	SystemV/MST7
+Z	SystemV/MST7MDT
+Z	SystemV/PST8
+Z	SystemV/PST8PDT
+Z	SystemV/YST9
+Z	SystemV/YST9YDT
+Z	Turkey
+Z	UCT
+Z	US/Alaska
+Z	US/Aleutian
+Z	US/Arizona
+Z	US/Central
+Z	US/East-Indiana
+Z	US/Eastern
+Z	US/Hawaii
+Z	US/Indiana-Starke
+Z	US/Michigan
+Z	US/Mountain
+Z	US/Pacific
+Z	US/Samoa
+Z	UTC
+Z	Universal
+Z	W-SU
+Z	WET
+Z	Zulu
+C	AD	安道尔
+C	AE	阿拉伯联合酋长国
+C	AF	阿富汗
+C	AG	安提瓜和巴布达
+C	AI	安圭拉
+C	AL	阿尔巴尼亚
+C	AM	亚美尼亚
+C	AO	安哥拉
+C	AQ	南极洲
+C	AR	阿根廷
+C	AS	美属萨摩亚
+C	AT	奥地利
+C	AU	澳大利亚
+C	AW	阿鲁巴
+C	AX	奥兰群岛
+C	AZ	阿塞拜疆
+C	BA	波斯尼亚和黑塞哥维那
+C	BB	巴巴多斯
+C	BD	孟加拉国
+C	BE	比利时
+C	BF	布基纳法索
+C	BG	保加利亚
+C	BH	巴林
+C	BI	布隆迪
+C	BJ	贝宁
+C	BL	圣巴泰勒米
+C	BM	百慕大
+C	BN	文莱
+C	BO	玻利维亚
+C	BQ	荷属加勒比区
+C	BR	巴西
+C	BS	巴哈马
+C	BT	不丹
+C	BV	布韦岛
+C	BW	博茨瓦纳
+C	BY	白俄罗斯
+C	BZ	伯利兹
+C	CA	加拿大
+C	CC	科科斯（基林）群岛
+C	CD	刚果（金）
+C	CF	中非共和国
+C	CG	刚果（布）
+C	CH	瑞士
+C	CI	科特迪瓦
+C	CK	库克群岛
+C	CL	智利
+C	CM	喀麦隆
+C	CN	中国
+C	CO	哥伦比亚
+C	CR	哥斯达黎加
+C	CU	古巴
+C	CV	佛得角
+C	CW	库拉索
+C	CX	圣诞岛
+C	CY	塞浦路斯
+C	CZ	捷克
+C	DE	德国
+C	DJ	吉布提
+C	DK	丹麦
+C	DM	多米尼克
+C	DO	多米尼加共和国
+C	DZ	阿尔及利亚
+C	EC	厄瓜多尔
+C	EE	爱沙尼亚
+C	EG	埃及
+C	EH	西撒哈拉
+C	ER	厄立特里亚
+C	ES	西班牙
+C	ET	埃塞俄比亚
+C	FI	芬兰
+C	FJ	斐济
+C	FK	福克兰群岛
+C	FM	密克罗尼西亚
+C	FO	法罗群岛
+C	FR	法国
+C	GA	加蓬
+C	GB	英国
+C	GD	格林纳达
+C	GE	格鲁吉亚
+C	GF	法属圭亚那
+C	GG	根西岛
+C	GH	加纳
+C	GI	直布罗陀
+C	GL	格陵兰
+C	GM	冈比亚
+C	GN	几内亚
+C	GP	瓜德罗普
+C	GQ	赤道几内亚
+C	GR	希腊
+C	GS	南乔治亚和南桑威奇群岛
+C	GT	危地马拉
+C	GU	关岛
+C	GW	几内亚比绍
+C	GY	圭亚那
+C	HK	中国香港特别行政区
+C	HM	赫德岛和麦克唐纳群岛
+C	HN	洪都拉斯
+C	HR	克罗地亚
+C	HT	海地
+C	HU	匈牙利
+C	ID	印度尼西亚
+C	IE	爱尔兰
+C	IL	以色列
+C	IM	马恩岛
+C	IN	印度
+C	IO	英属印度洋领地
+C	IQ	伊拉克
+C	IR	伊朗
+C	IS	冰岛
+C	IT	意大利
+C	JE	泽西岛
+C	JM	牙买加
+C	JO	约旦
+C	JP	日本
+C	KE	肯尼亚
+C	KG	吉尔吉斯斯坦
+C	KH	柬埔寨
+C	KI	基里巴斯
+C	KM	科摩罗
+C	KN	圣基茨和尼维斯
+C	KP	朝鲜
+C	KR	韩国
+C	KW	科威特
+C	KY	开曼群岛
+C	KZ	哈萨克斯坦
+C	LA	老挝
+C	LB	黎巴嫩
+C	LC	圣卢西亚
+C	LI	列支敦士登
+C	LK	斯里兰卡
+C	LR	利比里亚
+C	LS	莱索托
+C	LT	立陶宛
+C	LU	卢森堡
+C	LV	拉脱维亚
+C	LY	利比亚
+C	MA	摩洛哥
+C	MC	摩纳哥
+C	MD	摩尔多瓦
+C	ME	黑山
+C	MF	法属圣马丁
+C	MG	马达加斯加
+C	MH	马绍尔群岛
+C	MK	马其顿
+C	ML	马里
+C	MM	缅甸
+C	MN	蒙古
+C	MO	中国澳门特别行政区
+C	MP	北马里亚纳群岛
+C	MQ	马提尼克
+C	MR	毛里塔尼亚
+C	MS	蒙特塞拉特
+C	MT	马耳他
+C	MU	毛里求斯
+C	MV	马尔代夫
+C	MW	马拉维
+C	MX	墨西哥
+C	MY	马来西亚
+C	MZ	莫桑比克
+C	NA	纳米比亚
+C	NC	新喀里多尼亚
+C	NE	尼日尔
+C	NF	诺福克岛
+C	NG	尼日利亚
+C	NI	尼加拉瓜
+C	NL	荷兰
+C	NO	挪威
+C	NP	尼泊尔
+C	NR	瑙鲁
+C	NU	纽埃
+C	NZ	新西兰
+C	OM	阿曼
+C	PA	巴拿马
+C	PE	秘鲁
+C	PF	法属波利尼西亚
+C	PG	巴布亚新几内亚
+C	PH	菲律宾
+C	PK	巴基斯坦
+C	PL	波兰
+C	PM	圣皮埃尔和密克隆群岛
+C	PN	皮特凯恩群岛
+C	PR	波多黎各
+C	PS	巴勒斯坦领土
+C	PT	葡萄牙
+C	PW	帕劳
+C	PY	巴拉圭
+C	QA	卡塔尔
+C	RE	留尼汪
+C	RO	罗马尼亚
+C	RS	塞尔维亚
+C	RU	俄罗斯
+C	RW	卢旺达
+C	SA	沙特阿拉伯
+C	SB	所罗门群岛
+C	SC	塞舌尔
+C	SD	苏丹
+C	SE	瑞典
+C	SG	新加坡
+C	SH	圣赫勒拿
+C	SI	斯洛文尼亚
+C	SJ	斯瓦尔巴和扬马延
+C	SK	斯洛伐克
+C	SL	塞拉利昂
+C	SM	圣马力诺
+C	SN	塞内加尔
+C	SO	索马里
+C	SR	苏里南
+C	SS	南苏丹
+C	ST	圣多美和普林西比
+C	SV	萨尔瓦多
+C	SX	荷属圣马丁
+C	SY	叙利亚
+C	SZ	斯威士兰
+C	TC	特克斯和凯科斯群岛
+C	TD	乍得
+C	TF	法属南部领地
+C	TG	多哥
+C	TH	泰国
+C	TJ	塔吉克斯坦
+C	TK	托克劳
+C	TL	东帝汶
+C	TM	土库曼斯坦
+C	TN	突尼斯
+C	TO	汤加
+C	TR	土耳其
+C	TT	特立尼达和多巴哥
+C	TV	图瓦卢
+C	TW	台湾
+C	TZ	坦桑尼亚
+C	UA	乌克兰
+C	UG	乌干达
+C	UM	美国本土外小岛屿
+C	US	美国
+C	UY	乌拉圭
+C	UZ	乌兹别克斯坦
+C	VA	梵蒂冈
+C	VC	圣文森特和格林纳丁斯
+C	VE	委内瑞拉
+C	VG	英属维尔京群岛
+C	VI	美属维尔京群岛
+C	VN	越南
+C	VU	瓦努阿图
+C	WF	瓦利斯和富图纳
+C	WS	萨摩亚
+C	YE	也门
+C	YT	马约特
+C	ZA	南非
+C	ZM	赞比亚
+C	ZW	津巴布韦

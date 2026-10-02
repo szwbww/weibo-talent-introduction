@@ -723,6 +723,30 @@ const EXPERT_TAG_LABELS = {
     承诺回复材料: "承诺回复材料"
 };
 
+// fast-p 2026-10-02 c3：所在地目录桩（与随包目录同结构；顺序即资源顺序）。
+const CONTACT_TIMING_CATALOG = {
+    sourceVersion: "2026c",
+    sourceUrl: "https://data.iana.org/time-zones/tzdb/zone.tab",
+    defaultPolicy: "preview-28-overrides-otherwise-first-zone-tab-row",
+    countries: [
+        { code: "BR", labelZh: "巴西", defaultZoneId: "America/Sao_Paulo", zones: [
+            { id: "America/Sao_Paulo", labelZh: "巴西 · 圣保罗" },
+            { id: "America/Manaus", labelZh: "巴西 · 马瑙斯" }
+        ] },
+        { code: "CN", labelZh: "中国", defaultZoneId: "Asia/Shanghai", zones: [
+            { id: "Asia/Shanghai", labelZh: "Asia/Shanghai" },
+            { id: "Asia/Urumqi", labelZh: "中国 · 乌鲁木齐" }
+        ] },
+        { code: "IN", labelZh: "印度", defaultZoneId: "Asia/Kolkata", zones: [
+            { id: "Asia/Kolkata", labelZh: "印度 · 加尔各答" }
+        ] },
+        { code: "US", labelZh: "美国", defaultZoneId: "America/New_York", zones: [
+            { id: "America/New_York", labelZh: "美国东部 · 纽约" },
+            { id: "America/Los_Angeles", labelZh: "美国 · 洛杉矶" }
+        ] }
+    ]
+};
+
 function expertTagEditorHtml(orcidId, tags, level, editorId, missing) {
     if (missing) {
         return `<div class="detail-section expert-tag-editor" id="${escapeHtmlLike(editorId)}" data-orcid="${escapeHtmlLike(orcidId)}" data-level="${escapeHtmlLike(level)}" data-profile-missing="true"><div class="inbound-tag-editor-head"><h3>专家标签</h3></div><div class="inbound-tag-editor-chips"><span class="muted">该专家在 ES 中无画像文档，标签功能不可用</span></div></div>`;
@@ -735,6 +759,8 @@ function expertTagEditorHtml(orcidId, tags, level, editorId, missing) {
 
 function createChatSandbox(options) {
     const opts = options || {};
+    // fast-p c3：所在地配置的服务端桩状态（PUT 写入，GET/timing 读取）。
+    const contactLocations = Object.assign({}, opts.contactLocations || {});
     const requests = [];
     const calls = {
         api: requests,
@@ -805,10 +831,67 @@ function createChatSandbox(options) {
         if (/\/api\/mail\/mailbox\/conversations\/\d+\/follow/.test(url)) {
             return Promise.resolve({ followed: opts.followResult !== false });
         }
+        // fast-p c3：所在地目录 / 配置 / 推荐时间（只读消费 + 唯一写路径 PUT /{contactId}）。
+        if (url === "/api/mail/contact-locations/countries") {
+            if (opts.contactCatalogError) return Promise.reject(new Error(opts.contactCatalogError));
+            return Promise.resolve(opts.contactCatalog || CONTACT_TIMING_CATALOG);
+        }
+        if (/^\/api\/mail\/contact-locations\/\d+\/timing$/.test(url)) {
+            const id = Number(url.split("/")[4]);
+            if (opts.contactTimingError) return Promise.reject(new Error(opts.contactTimingError));
+            if (typeof opts.contactTiming === "function") return Promise.resolve(opts.contactTiming(id, contactLocationView(id)));
+            if (opts.contactTiming !== undefined) return Promise.resolve(opts.contactTiming);
+            return Promise.resolve({ location: contactLocationView(id), recommendation: null });
+        }
+        if (/^\/api\/mail\/contact-locations\/\d+$/.test(url)) {
+            const id = Number(url.split("/")[4]);
+            if (method === "PUT") {
+                if (opts.contactLocationSaveError) return Promise.reject(new Error(opts.contactLocationSaveError));
+                const parsed = body ? JSON.parse(body) : {};
+                contactLocations[id] = {
+                    countryCode: parsed.countryCode,
+                    zoneId: parsed.zoneId == null ? null : String(parsed.zoneId)
+                };
+                return Promise.resolve(contactLocationView(id));
+            }
+            if (opts.contactLocationError) return Promise.reject(new Error(opts.contactLocationError));
+            if (typeof opts.contactLocation === "function") return Promise.resolve(opts.contactLocation(id));
+            if (opts.contactLocation !== undefined) return Promise.resolve(opts.contactLocation);
+            return Promise.resolve(contactLocationView(id));
+        }
         const failedEndpoint = opts.failEndpoints ? Object.keys(opts.failEndpoints).find((key) => url.includes(key)) : null;
         if (failedEndpoint) return Promise.reject(new Error(opts.failEndpoints[failedEndpoint]));
         return Promise.resolve({});
     };
+
+    function catalogCountry(code) {
+        return CONTACT_TIMING_CATALOG.countries.find((country) => country.code === String(code)) || null;
+    }
+
+    /** 与后端 ContactLocationView 同形：未配置 configured=false 且 zone 三字段为 null。 */
+    function contactLocationView(contactId) {
+        const id = Number(contactId);
+        const saved = contactLocations[id] || null;
+        if (!saved) {
+            return {
+                contactId: id, configured: false, countryCode: null, countryLabel: null,
+                zoneId: null, effectiveZoneId: null, zoneLabel: null, usingDefaultZone: false
+            };
+        }
+        const country = catalogCountry(saved.countryCode);
+        const zoneId = saved.zoneId || (country ? country.defaultZoneId : null);
+        const entry = country ? country.zones.find((zone) => zone.id === zoneId) : null;
+        return {
+            contactId: id,
+            configured: true,
+            countryCode: saved.countryCode,
+            countryLabel: country ? country.labelZh : saved.countryCode,
+            zoneId: saved.zoneId == null ? null : saved.zoneId,
+            effectiveZoneId: zoneId,
+            zoneLabel: entry ? entry.labelZh : zoneId,
+            usingDefaultZone: !saved.zoneId
+        };
+    }
 
     // 自定义 route 可调用第 5 参 next() 回退到默认路由
     const route = opts.route
@@ -959,6 +1042,7 @@ function createChatSandbox(options) {
         sandbox,
         calls,
         timers,
+        contactLocations,
         runTimers: () => { while (timers.length) { const fn = timers.shift(); fn(); } }
     };
 }
@@ -4535,5 +4619,467 @@ describe("fast-p 01 引用邮件模板：入口 / 只读上下文 / 竞态 / 填
         assert.strictEqual(ctx.calls.sendRich.length, 0, "应用不发送邮件");
         assert.strictEqual(ctx.calls.sendConversation.length, 0);
         assert.strictEqual(ctx.calls.api.filter((entry) => entry.method !== "GET" && entry.url.indexOf("/api/compose-templates") !== 0).length, 0, "无其它写请求");
+    });
+});
+
+// ════════════════════════════════════════════════════════════════════════
+// fast-p 2026-10-02 c3：紧凑所在地 + 北京时间推荐（I-1..I-6 / S-1..S-3）
+// 只读消费 /api/mail/contact-locations/*；唯一写路径是配置弹窗的 PUT。
+// ════════════════════════════════════════════════════════════════════════
+
+function unconfiguredLocation(contactId) {
+    return {
+        contactId: Number(contactId), configured: false, countryCode: null, countryLabel: null,
+        zoneId: null, effectiveZoneId: null, zoneLabel: null, usingDefaultZone: false
+    };
+}
+
+// 巴西默认时区 America/Sao_Paulo：当地 08:00–17:00 → 北京 20:00–次日 05:00（跨北京日期）
+const TIMING_WORK_HOURS_BR = {
+    location: {
+        contactId: 1, configured: true, countryCode: "BR", countryLabel: "巴西",
+        zoneId: null, effectiveZoneId: "America/Sao_Paulo", zoneLabel: "巴西 · 圣保罗", usingDefaultZone: true
+    },
+    recommendation: {
+        mode: "WORK_HOURS",
+        localStart: "2026-10-02T09:00:00-03:00",
+        localEnd: "2026-10-02T18:00:00-03:00",
+        beijingStart: "2026-10-02T20:00:00+08:00",
+        beijingEnd: "2026-10-03T05:00:00+08:00",
+        sampleCount: 0,
+        replyDayCount: 0,
+        historyDays: 180,
+        historyTruncated: false,
+        recentSamples: [],
+        calculatedAt: "2026-10-02T12:00:00Z"
+    }
+};
+
+// 印度显式时区 Asia/Kolkata（+05:30）：窗口同北京日期，样本跨当地日期
+const TIMING_REPLY_IN = {
+    location: {
+        contactId: 1, configured: true, countryCode: "IN", countryLabel: "印度",
+        zoneId: "Asia/Kolkata", effectiveZoneId: "Asia/Kolkata", zoneLabel: "印度 · 加尔各答", usingDefaultZone: false
+    },
+    recommendation: {
+        mode: "REPLY_PATTERN",
+        localStart: "2026-10-02T13:00:00+05:30",
+        localEnd: "2026-10-02T15:00:00+05:30",
+        beijingStart: "2026-10-02T15:30:00+08:00",
+        beijingEnd: "2026-10-02T17:30:00+08:00",
+        sampleCount: 3,
+        replyDayCount: 3,
+        historyDays: 180,
+        historyTruncated: false,
+        recentSamples: [
+            { receivedAtBeijing: "2026-10-01T01:15:00+08:00", receivedAtLocal: "2026-09-30T22:45:00+05:30" },
+            { receivedAtBeijing: "2026-10-02T00:30:00+08:00", receivedAtLocal: "2026-10-01T22:00:00+05:30" }
+        ],
+        calculatedAt: "2026-10-02T12:00:00Z"
+    }
+};
+
+describe("fast-p c3 收发信箱紧凑所在地与推荐时间（I-1..I-6 / S-1..S-3）", () => {
+    function timingGroup(ctx) {
+        return ctx.host.querySelector('[data-role="contact-timing"]');
+    }
+    function timingDialog(ctx) {
+        return ctx.doc.body.querySelector(".contact-timing-dialog");
+    }
+    function personOf(ctx, contactId) {
+        return ctx.host.querySelectorAll(".mc-person").find((node) => node.dataset.contactId === String(contactId));
+    }
+    function timingRequests(ctx) {
+        return ctx.calls.api.filter((entry) => /^\/api\/mail\/contact-locations\/\d+\/timing$/.test(entry.url));
+    }
+    function putRequests(ctx) {
+        return ctx.calls.api.filter((entry) => entry.method === "PUT" && /^\/api\/mail\/contact-locations\/\d+$/.test(entry.url));
+    }
+    function submitDialog(dialog) {
+        dialog.querySelector('[data-role="contact-location-form"]')
+            .dispatchEvent(new MiniEvent("submit", { bubbles: true }));
+    }
+    function contactFixture(contactId, orcidId) {
+        return {
+            contact: {
+                id: Number(contactId),
+                orcidId,
+                expertEmail: `e${contactId}@example.edu`,
+                expertName: `专家${contactId}`,
+                currentIndexLevel: "APPLICATION",
+                operatorStatus: "REPLIED",
+                currentStatus: "WAITING_REPLY"
+            },
+            mails: []
+        };
+    }
+    async function bootSelected(contactId, extra) {
+        const id = Number(contactId);
+        const ctx = await bootChat(Object.assign({
+            conversations: { items: [expertA(), expertB()], total: 2 },
+            messages: { items: [], nextBefore: null, hasMore: false },
+            contact: contactFixture(id === 2 ? 2 : 1, id === 2 ? "0000-0002" : "0000-0001")
+        }, extra || {}));
+        click(personOf(ctx, id).querySelector(".mc-person-main"));
+        await flush();
+        return ctx;
+    }
+    function openLocation(ctx) {
+        click(timingGroup(ctx).querySelector('[data-action="mc-contact-location"]'));
+        return flush();
+    }
+
+    it("I-1/S-1：状态行末尾只追加一组，三态文案与位置正确", async () => {
+        const ctx = await bootSelected(1, { contactTiming: TIMING_WORK_HOURS_BR });
+        const group = timingGroup(ctx);
+        assert.ok(group, "状态行必须有 .contact-timing");
+        assert.strictEqual(ctx.host.querySelectorAll('[data-role="contact-timing"]').length, 1, "只追加一组");
+        assert.strictEqual(group.querySelector(".contact-timing-location").textContent, "巴西 ▾");
+        assert.strictEqual(group.querySelector(".contact-timing-recommend").textContent, "建议北京 20:00–次日05:00");
+        assert.strictEqual(
+            group.querySelector(".contact-timing-recommend strong").getAttribute("title"),
+            "北京时间 10月2日 20:00–10月3日 05:00",
+            "title 显示完整日期区间"
+        );
+        assert.strictEqual(group.querySelector('[data-action="mc-contact-timing-evidence"]').textContent, "ⓘ");
+        const meta = ctx.host.querySelector(".mc-header-meta");
+        const kids = meta.children;
+        assert.strictEqual(kids[kids.length - 1], group, "只能追加在既有状态行末尾");
+        assert.strictEqual(kids[kids.length - 2].getAttribute("data-action"), "mc-open-expert", "原「查看专家详情」语义不变");
+
+        const bare = await bootSelected(1, { contactTiming: { location: unconfiguredLocation(1), recommendation: null } });
+        const bareGroup = timingGroup(bare);
+        assert.strictEqual(bareGroup.querySelector(".contact-timing-location").textContent, "配置所在地 ▾");
+        assert.strictEqual(bareGroup.querySelectorAll(".contact-timing-recommend").length, 0);
+        assert.strictEqual(bareGroup.querySelectorAll('[data-action="mc-contact-timing-evidence"]').length, 0, "无推荐不渲染 ⓘ");
+        assert.strictEqual(bareGroup.querySelectorAll(".contact-timing-note").length, 0, "未配置不显示加载/错误文案");
+    });
+
+    it("I-1：标签更新与现有刷新后仍只有一组，配置入口不丢", async () => {
+        const ctx = await bootSelected(1, {
+            contactTiming: TIMING_WORK_HOURS_BR,
+            nextExpertTag: "重点关注"
+        });
+        assert.strictEqual(ctx.host.querySelectorAll('[data-role="contact-timing"]').length, 1);
+        // 标签即时保存（管理 overlay）会重新渲染状态行
+        click(ctx.host.querySelector('[data-action="mc-manage-expert"]'));
+        await flush();
+        const editor = ctx.doc.querySelector('[data-action="expert-add-tag-open"]');
+        assert.ok(editor, "标签编辑器在 portal 内");
+        click(editor);
+        await flush();
+        assert.strictEqual(ctx.calls.tagMutations.length, 1, "走共享标签 seam");
+        assert.strictEqual(ctx.host.querySelectorAll('[data-role="contact-timing"]').length, 1, "标签更新后仍只有一组");
+        assert.ok(timingGroup(ctx).querySelector('[data-action="mc-contact-location"]'), "配置入口不丢");
+        assert.strictEqual(timingGroup(ctx).querySelector(".contact-timing-recommend").textContent, "建议北京 20:00–次日05:00");
+    });
+
+    it("I-2：日期按显式时区格式化，设备时区变化不改变文字，且不写 localStorage", async () => {
+        const originalTz = process.env.TZ;
+        const render = async (tz) => {
+            process.env.TZ = tz;
+            const ctx = await bootSelected(1, { contactTiming: TIMING_WORK_HOURS_BR });
+            let writes = 0;
+            ctx.sandbox.localStorage = { getItem: () => null, setItem: () => { writes += 1; } };
+            await openLocation(ctx);
+            click(timingDialog(ctx).querySelectorAll('[data-action="mc-contact-dialog-close"]')[0]);
+            await flush();
+            return {
+                text: timingGroup(ctx).querySelector(".contact-timing-recommend").textContent,
+                writes,
+                tz: Intl.DateTimeFormat().resolvedOptions().timeZone
+            };
+        };
+        try {
+            const utc = await render("UTC");
+            const tokyo = await render("Asia/Tokyo");
+            assert.strictEqual(utc.text, tokyo.text, "北京时间文字不得随设备时区变化");
+            assert.strictEqual(utc.text, "建议北京 20:00–次日05:00");
+            assert.notStrictEqual(utc.tz, tokyo.tz, "两次运行的设备时区确实不同（防空洞断言）");
+            assert.strictEqual(utc.writes + tokyo.writes, 0, "不写 localStorage");
+        } finally {
+            process.env.TZ = originalTz;
+        }
+    });
+
+    it("S-2/I-2：依据弹窗只读已取得的响应，日期完整、0 样本隐藏列表", async () => {
+        const ctx = await bootSelected(1, { contactTiming: TIMING_REPLY_IN });
+        const before = ctx.calls.api.length;
+        click(timingGroup(ctx).querySelector('[data-action="mc-contact-timing-evidence"]'));
+        await flush();
+        assert.strictEqual(ctx.calls.api.length, before, "查看依据不新增任何请求");
+        const dialog = timingDialog(ctx);
+        assert.ok(dialog, "依据弹窗存在");
+        assert.strictEqual(dialog.getAttribute("data-kind"), "evidence");
+        const range = dialog.querySelector(".contact-timing-range");
+        assert.strictEqual(range.querySelector("strong").textContent, "北京 10月2日 15:30–17:30");
+        assert.strictEqual(range.querySelector("span").textContent, "当地 10月2日 13:00–15:00");
+        assert.strictEqual(dialog.querySelector("header p").textContent, "印度 · 手动时区 Asia/Kolkata");
+        const helps = dialog.querySelectorAll(".contact-timing-help");
+        assert.strictEqual(helps[0].textContent, "结合历史回复 · 3 次来信 · 3 个回复日");
+        assert.strictEqual(helps[2].textContent, "仅使用最近 1000 条范围内的去重来信。");
+        assert.strictEqual(helps[2].hidden, true, "未截断不显示 1000 条提示");
+        const items = dialog.querySelectorAll(".contact-timing-history li");
+        assert.strictEqual(items.length, 2);
+        assert.strictEqual(items[0].querySelectorAll("span")[0].textContent, "北京 10月1日 01:15");
+        assert.strictEqual(items[0].querySelectorAll("span")[1].textContent, "当地 9月30日 22:45");
+
+        const ctx2 = await bootSelected(1, { contactTiming: TIMING_WORK_HOURS_BR });
+        click(timingGroup(ctx2).querySelector('[data-action="mc-contact-timing-evidence"]'));
+        await flush();
+        const dialog2 = timingDialog(ctx2);
+        assert.strictEqual(dialog2.querySelectorAll(".contact-timing-history").length, 0, "0 样本隐藏列表");
+        assert.strictEqual(
+            dialog2.querySelectorAll(".contact-timing-help")[0].textContent,
+            "样本不足，使用当地工作时间 08:00–17:00 · 0 次来信 · 0 个回复日"
+        );
+    });
+
+    it("I-4/S-2：取消与 Escape 零 PUT；换国家清空 zone；null 与显式值请求 JSON 准确；保存中禁重复提交", async () => {
+        const ctx = await bootSelected(1, {
+            contactTiming: TIMING_REPLY_IN,
+            contactLocations: { 1: { countryCode: "US", zoneId: null } }
+        });
+        await openLocation(ctx);
+        let dialog = timingDialog(ctx);
+        assert.strictEqual(dialog.parentNode, ctx.doc.body, "dialog 直接挂在 body 下");
+        assert.deepStrictEqual(
+            dialog.querySelectorAll('select[name="countryCode"] option').map((option) => option.getAttribute("value")),
+            ["", "BR", "CN", "IN", "US"],
+            "国家 option 来自目录"
+        );
+        assert.strictEqual(dialog.querySelector('select[name="countryCode"]').value, "US", "回填已保存国家");
+        assert.strictEqual(dialog.querySelector('select[name="zoneId"]').value, "");
+        assert.strictEqual(dialog.querySelector('[data-role="contact-default-zone"]').textContent, "默认时区：America/New_York");
+        assert.strictEqual(
+            dialog.querySelector('select[name="zoneId"] option').textContent,
+            "使用默认时区 · 美国东部 · 纽约（America/New_York）"
+        );
+        // 选具体时区后取消：零 PUT，且不落库
+        dialog.querySelector('select[name="zoneId"]').value = "America/Los_Angeles";
+        changeEvent(dialog.querySelector('select[name="zoneId"]'));
+        click(dialog.querySelectorAll('[data-action="mc-contact-dialog-close"]')[1]);
+        await flush();
+        assert.strictEqual(timingDialog(ctx), null, "取消关闭弹窗");
+        assert.strictEqual(putRequests(ctx).length, 0, "取消零 PUT");
+        await openLocation(ctx);
+        dialog = timingDialog(ctx);
+        assert.strictEqual(dialog.querySelector('select[name="countryCode"]').value, "US", "取消后原值不变");
+        assert.strictEqual(dialog.querySelector('select[name="zoneId"]').value, "");
+        keyEvent(dialog, "Escape");
+        await flush();
+        assert.strictEqual(timingDialog(ctx), null, "Escape 关闭");
+        assert.strictEqual(putRequests(ctx).length, 0, "Escape 零 PUT");
+        // 换国家清空 zone 草稿；显式值原样提交
+        await openLocation(ctx);
+        dialog = timingDialog(ctx);
+        dialog.querySelector('select[name="zoneId"]').value = "America/Los_Angeles";
+        const country = dialog.querySelector('select[name="countryCode"]');
+        country.value = "BR";
+        changeEvent(country);
+        assert.strictEqual(dialog.querySelector('select[name="zoneId"]').value, "", "换国家清空 zone 草稿");
+        assert.strictEqual(dialog.querySelector('select[name="zoneId"] option').textContent, "使用默认时区 · 巴西 · 圣保罗（America/Sao_Paulo）");
+        dialog.querySelector('select[name="zoneId"]').value = "America/Manaus";
+        changeEvent(dialog.querySelector('select[name="zoneId"]'));
+        submitDialog(dialog);
+        submitDialog(dialog);
+        assert.strictEqual(putRequests(ctx).length, 1, "保存中禁重复提交");
+        await flush();
+        assert.deepStrictEqual(JSON.parse(putRequests(ctx)[0].body), { countryCode: "BR", zoneId: "America/Manaus" });
+        assert.strictEqual(timingDialog(ctx), null, "保存成功关闭弹窗");
+        // 重开：显式时区往返一致（服务端桩已持久化）
+        await openLocation(ctx);
+        dialog = timingDialog(ctx);
+        assert.strictEqual(dialog.querySelector('select[name="zoneId"]').value, "America/Manaus", "显式时区往返一致");
+        // 单时区国家：字段 hidden 且提交 null
+        const single = dialog.querySelector('select[name="countryCode"]');
+        single.value = "IN";
+        changeEvent(single);
+        assert.strictEqual(dialog.querySelector('[data-role="contact-zone-field"]').hidden, true, "单时区隐藏具体时区字段");
+        submitDialog(dialog);
+        await flush();
+        assert.deepStrictEqual(JSON.parse(putRequests(ctx)[1].body), { countryCode: "IN", zoneId: null }, "空值传 null");
+    });
+
+    it("I-4：保存失败保留草稿与错误、不假装成功；PUT 成功但重读失败不保留旧时间", async () => {
+        const failing = await bootSelected(1, { contactTiming: TIMING_REPLY_IN, contactLocationSaveError: "save down" });
+        await openLocation(failing);
+        let dialog = timingDialog(failing);
+        dialog.querySelector('select[name="countryCode"]').value = "BR";
+        changeEvent(dialog.querySelector('select[name="countryCode"]'));
+        dialog.querySelector('select[name="zoneId"]').value = "America/Manaus";
+        changeEvent(dialog.querySelector('select[name="zoneId"]'));
+        submitDialog(dialog);
+        await flush();
+        assert.strictEqual(putRequests(failing).length, 1);
+        dialog = timingDialog(failing);
+        assert.ok(dialog, "失败不关闭弹窗");
+        assert.strictEqual(dialog.querySelector('select[name="countryCode"]').value, "BR", "草稿保留");
+        assert.strictEqual(dialog.querySelector('select[name="zoneId"]').value, "America/Manaus", "时区草稿保留");
+        const error = dialog.querySelector(".contact-timing-error");
+        assert.strictEqual(error.hidden, false);
+        assert.strictEqual(error.textContent, "save down");
+        assert.strictEqual(dialog.querySelector('button[type="submit"]').disabled, false, "可再次保存");
+        assert.strictEqual(dialog.querySelector('button[type="submit"]').textContent, "保存");
+
+        let failTiming = false;
+        const ctx = await bootSelected(1, {
+            contactTiming: TIMING_WORK_HOURS_BR,
+            route: (url, method, body, entry, next) => {
+                if (/^\/api\/mail\/contact-locations\/\d+$/.test(url) && method === "PUT") {
+                    failTiming = true;
+                    return next(url, method, body, entry);
+                }
+                if (/\/timing$/.test(url) && failTiming) return Promise.reject(new Error("timing down"));
+                return next(url, method, body, entry);
+            }
+        });
+        assert.ok(timingGroup(ctx).querySelector(".contact-timing-recommend"), "保存前有推荐");
+        await openLocation(ctx);
+        dialog = timingDialog(ctx);
+        dialog.querySelector('select[name="countryCode"]').value = "IN";
+        changeEvent(dialog.querySelector('select[name="countryCode"]'));
+        submitDialog(dialog);
+        await flush();
+        assert.strictEqual(timingDialog(ctx), null, "保存成功关闭弹窗");
+        const group = timingGroup(ctx);
+        assert.strictEqual(group.querySelectorAll(".contact-timing-recommend").length, 0, "重读失败不得保留旧推荐");
+        assert.strictEqual(group.querySelector(".contact-timing-note").textContent, "所在地已保存，推荐更新失败");
+        const retry = group.querySelector('[data-action="mc-contact-timing-retry"]');
+        assert.ok(retry, "提供重试入口");
+        const putsBefore = putRequests(ctx).length;
+        assert.strictEqual(timingRequests(ctx).length, 2, "选择 1 次 + 保存后 1 次");
+        failTiming = false;
+        click(retry);
+        await flush();
+        assert.strictEqual(putRequests(ctx).length, putsBefore, "重试只重读，不自动保存");
+        assert.strictEqual(timingRequests(ctx).length, 3, "重试读当前 contact 一次");
+        assert.ok(timingGroup(ctx).querySelector(".contact-timing-recommend"), "重试成功后恢复推荐");
+    });
+
+    it("S-2/I-4：目录或配置加载失败显示错误、保存禁用，重试只重读", async () => {
+        let fail = true;
+        const ctx = await bootSelected(1, {
+            contactTiming: TIMING_REPLY_IN,
+            route: (url, method, body, entry, next) => {
+                if (url === "/api/mail/contact-locations/countries" && fail) return Promise.reject(new Error("catalog down"));
+                return next(url, method, body, entry);
+            }
+        });
+        await openLocation(ctx);
+        let dialog = timingDialog(ctx);
+        assert.strictEqual(dialog.querySelector(".contact-timing-error").hidden, false, "加载失败显示错误");
+        assert.strictEqual(dialog.querySelector(".contact-timing-error").textContent, "所在地配置加载失败");
+        assert.strictEqual(dialog.querySelector('button[type="submit"]').disabled, true, "加载失败时保存禁用");
+        assert.strictEqual(dialog.querySelector('[data-action="mc-contact-dialog-retry"]').hidden, false, "footer 提供重试");
+        fail = false;
+        click(dialog.querySelector('[data-action="mc-contact-dialog-retry"]'));
+        await flush();
+        dialog = timingDialog(ctx);
+        assert.strictEqual(dialog.querySelector(".contact-timing-error").hidden, true, "重试成功后清除错误");
+        assert.strictEqual(dialog.querySelector('button[type="submit"]').disabled, false, "重试成功后启用保存");
+        assert.strictEqual(dialog.querySelector('[data-action="mc-contact-dialog-retry"]').hidden, true);
+        assert.strictEqual(putRequests(ctx).length, 0, "加载与重试零 PUT");
+    });
+
+    it("I-3：迟到的推荐响应不覆盖新选择；保存 A 期间切 B 不写 B 界面也不重开 A 弹窗", async () => {
+        const pending = [];
+        const ctx = await bootChat({
+            conversations: { items: [expertA(), expertB()], total: 2 },
+            messages: { items: [], nextBefore: null, hasMore: false },
+            contact: contactFixture(1, "0000-0001"),
+            route: (url, method, body, entry, next) => {
+                if (/^\/api\/mail\/contact-locations\/\d+\/timing$/.test(url)) {
+                    const id = Number(url.split("/")[4]);
+                    return new Promise((resolve) => {
+                        pending.push({ id, resolve: () => resolve(id === 1 ? TIMING_WORK_HOURS_BR : TIMING_REPLY_IN) });
+                    });
+                }
+                if (/^\/api\/mail\/contact-locations\/\d+$/.test(url) && method === "PUT") {
+                    const id = Number(url.split("/")[4]);
+                    return new Promise((resolve) => { pending.push({ id, put: true, resolve: () => resolve({}) }); });
+                }
+                return next(url, method, body, entry);
+            }
+        });
+        click(personOf(ctx, 1).querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(pending.length, 1, "A 的推荐请求已发出");
+        assert.strictEqual(timingGroup(ctx).querySelector(".contact-timing-note").textContent, "推荐计算中…", "加载态文案");
+        click(personOf(ctx, 2).querySelector(".mc-person-main"));
+        await flush();
+        assert.strictEqual(pending.length, 2, "B 的推荐请求已发出");
+        pending[1].resolve();
+        await flush();
+        assert.strictEqual(timingGroup(ctx).querySelector(".contact-timing-location").textContent, "印度 ▾");
+        pending[0].resolve();
+        await flush();
+        assert.strictEqual(timingGroup(ctx).querySelector(".contact-timing-location").textContent, "印度 ▾", "迟到的 A 响应不得覆盖 B");
+        // B 保存中切回 A：A 的保存完成不得重开弹窗或写 B 界面
+        await openLocation(ctx);
+        const dialog = timingDialog(ctx);
+        dialog.querySelector('select[name="countryCode"]').value = "BR";
+        changeEvent(dialog.querySelector('select[name="countryCode"]'));
+        submitDialog(dialog);
+        await flush();
+        const putEntry = pending.find((entry) => entry.put);
+        assert.ok(putEntry, "PUT 已发出");
+        click(personOf(ctx, 1).querySelector(".mc-person-main"));
+        await flush();
+        putEntry.resolve();
+        await flush();
+        assert.strictEqual(timingDialog(ctx), null, "迟到保存不得重开旧弹窗");
+    });
+
+    it("I-5：自有 dialog 最多一个、直挂 body，关闭只移除自有节点，既有面板不受影响", async () => {
+        const ctx = await bootSelected(1, { contactTiming: TIMING_REPLY_IN });
+        click(ctx.host.querySelector('[data-action="mc-manage-expert"]'));
+        await flush();
+        assert.ok(ctx.doc.body.querySelector(".mc-manage-overlay"), "管理面板已打开");
+        await openLocation(ctx);
+        const dialog = timingDialog(ctx);
+        assert.ok(dialog);
+        assert.strictEqual(dialog.parentNode, ctx.doc.body, "dialog 直接挂在 body 下");
+        assert.strictEqual(ctx.doc.body.querySelectorAll(".contact-timing-dialog").length, 1, "最多一个本功能弹窗");
+        assert.ok(ctx.doc.body.querySelector(".mc-manage-overlay"), "打开所在地弹窗不移除既有面板");
+        // 关闭管理面板（portal innerHTML 清空）不得删除自有弹窗
+        click(ctx.doc.querySelector('[data-action="mc-close-manage"]'));
+        await flush();
+        assert.strictEqual(timingDialog(ctx), dialog, "旧弹窗生命周期不得删除新弹窗");
+        click(timingDialog(ctx).querySelectorAll('[data-action="mc-contact-dialog-close"]')[0]);
+        await flush();
+        assert.strictEqual(timingDialog(ctx), null, "关闭按钮只移除自有节点");
+        // 既有管理面板仍能重新打开（IP-2）
+        click(ctx.host.querySelector('[data-action="mc-manage-expert"]'));
+        await flush();
+        assert.ok(ctx.doc.body.querySelector(".mc-manage-overlay"), "管理面板仍可打开");
+        // 依据弹窗替换所在地弹窗：始终只有一个
+        await openLocation(ctx);
+        assert.strictEqual(ctx.doc.body.querySelectorAll(".contact-timing-dialog").length, 1);
+    });
+
+    it("I-3/I-5：unmount 关闭并移除自有弹窗，迟到响应不再写 DOM", async () => {
+        const pending = [];
+        const ctx = await bootChat({
+            conversations: { items: [expertA()], total: 1 },
+            messages: { items: [], nextBefore: null, hasMore: false },
+            contact: contactFixture(1, "0000-0001"),
+            route: (url, method, body, entry, next) => {
+                if (/^\/api\/mail\/contact-locations\/\d+\/timing$/.test(url)) {
+                    return new Promise((resolve) => { pending.push({ resolve: () => resolve(TIMING_REPLY_IN) }); });
+                }
+                return next(url, method, body, entry);
+            }
+        });
+        click(personOf(ctx, 1).querySelector(".mc-person-main"));
+        await flush();
+        await openLocation(ctx);
+        assert.ok(timingDialog(ctx));
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        assert.strictEqual(timingDialog(ctx), null, "unmount 关闭并移除自有弹窗");
+        pending.forEach((entry) => entry.resolve());
+        await flush();
+        assert.strictEqual(timingDialog(ctx), null, "unmount 后迟到响应不得重开弹窗");
+        assert.strictEqual(ctx.doc.body.querySelectorAll(".contact-timing-dialog").length, 0);
     });
 });

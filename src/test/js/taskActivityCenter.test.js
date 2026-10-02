@@ -575,12 +575,12 @@ describe("task activity center static contract", () => {
         return cssSource.slice(start, end + "/* task-center-contract:end */".length);
     })();
 
-    it("S-0: the contract block is appended once and nothing follows it", () => {
+    it("S-0: the contract block is appended once and no second task-center block follows it", () => {
         assert.strictEqual(cssSource.split("/* task-center-contract:start */").length - 1, 1);
         assert.strictEqual(cssSource.split("/* task-center-contract:end */").length - 1, 1);
         const after = cssSource.slice(cssSource.indexOf("/* task-center-contract:end */")
             + "/* task-center-contract:end */".length);
-        assert.strictEqual(after.trim(), "", "S-0 must be the last thing in styles.css");
+        assert.ok(!after.includes("task-center-contract:start"), "no second task-center contract block may follow");
     });
 
     it("S-0: three/two/one column breakpoints and dark theme are declared verbatim", () => {

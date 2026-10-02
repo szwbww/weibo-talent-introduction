@@ -64,6 +64,15 @@ function extractChatModuleFn(name) {
     return chatSource.slice(start, end + "\n    }".length);
 }
 
+// A2 最小收窄（2026-10-02 人工批准）：按起止标记切出邮件草稿卡时间渲染代码路径，
+// 供 zoneId/startLocal 扫描使用；不再用「整个 mailbox-chat.js」的全文件扫描。
+function chatRegion(startMarker, endMarker) {
+    const start = chatSource.indexOf(startMarker);
+    const end = chatSource.indexOf(endMarker, start);
+    if (start < 0 || end < 0 || end <= start) throw new Error("mailbox-chat.js region not found: " + startMarker);
+    return chatSource.slice(start, end);
+}
+
 // ── 源文本契约 ───────────────────────────────────────────────────────────
 
 describe("S-3: 收发件箱排期源文本契约", () => {
@@ -101,12 +110,17 @@ describe("S-3: 收发件箱排期源文本契约", () => {
 
     it("草稿卡时间不再回显原 IANA zone 串/英文本地串", () => {
         assert.ok(chatSource.includes('hostFn("formatBeijingMeetingRange")'), "草稿卡必须走统一中文北京 formatter");
-        const codeOnly = chatSource
+        // A2 最小收窄：只扫描草稿卡时间渲染代码路径，不再全文件扫描。
+        const draftCardCode = [
+            chatRegion("function meetingCardMetaTextFor(", "function chatSubjectPrefill("),
+            chatRegion("function meetingCardMetaText(", "function meetingAttachmentFilename(")
+        ].join("\n")
             .split("\n")
             .filter((line) => !/^\s*(\/\/|\*|\/\*)/.test(line))
             .join("\n");
-        assert.ok(!codeOnly.includes("zoneId"), "不得回显 zoneId");
-        assert.ok(!codeOnly.includes("startLocal"), "不得改用本地字符串兜底");
+        assert.ok(draftCardCode.includes('hostFn("formatBeijingMeetingRange")'), "草稿卡渲染路径必须走统一中文北京 formatter");
+        assert.ok(!draftCardCode.includes("zoneId"), "不得回显 zoneId");
+        assert.ok(!draftCardCode.includes("startLocal"), "不得改用本地字符串兜底");
     });
 });
 

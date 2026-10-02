@@ -115,6 +115,27 @@
 
 
     // ------------------------------------------------------------------
+    // 联系时间（fast-p 2026-10-02 c3）：状态行紧凑所在地 + 北京时间推荐。
+    // 真值在后台：前端只读 /api/mail/contact-locations/*，不推断国家、不重算习惯、
+    // 不写 localStorage/sessionStorage；所有日期按显式时区（Asia/Shanghai /
+    // effectiveZoneId）格式化，绝不交给设备默认时区。弹窗是自有原生 dialog，
+    // 直接挂 document.body（.mc-conversation overflow:hidden、.panel backdrop-filter
+    // 的包含块会裁剪 fixed 浮层），关闭只移除自有节点。
+    // ------------------------------------------------------------------
+
+    const CONTACT_TIMING_BEIJING_ZONE = "Asia/Shanghai";
+    const CONTACT_TIMING_LOADING_TEXT = "推荐计算中…";
+    const CONTACT_TIMING_ERROR_TEXT = "推荐暂不可用";
+    const CONTACT_TIMING_SAVED_NO_TIMING_TEXT = "所在地已保存，推荐更新失败";
+    const CONTACT_TIMING_SAVE_ERROR_TEXT = "保存失败，请重试";
+    const CONTACT_TIMING_LOAD_ERROR_TEXT = "所在地配置加载失败";
+    const CONTACT_TIMING_COUNTRY_REQUIRED_TEXT = "请选择国家 / 地区";
+
+    // 每次打开弹窗生成唯一 id 前缀，避免同页不同实例的 label/id 互撞。
+    let contactTimingInstanceSeq = 0;
+
+
+    // ------------------------------------------------------------------
     // 宿主上下文访问（app.js 顶层全局函数；缺失时按渐进式降级）
     // ------------------------------------------------------------------
 
@@ -518,6 +539,20 @@
                 loading: "",
                 error: "",
                 trigger: null
+            },
+            // fast-p 2026-10-02 c3（I-1..I-6）：所在地/推荐时间的单次临时状态；
+            // 不是持久 store，不写草稿 Map/localStorage/sessionStorage。
+            // data 只属于 contactId 对应的 timing 响应；dialog 为当前打开的弹窗（多则一）。
+            contactTiming: {
+                contactId: null,
+                seq: 0,
+                data: null,
+                loading: false,
+                error: "",
+                dialog: null,
+                dialogSeq: 0,
+                prefix: "",
+                catalog: null
             },
             popoverOpen: false,
             loadOlderBusy: false,
@@ -1625,6 +1660,8 @@
         }
 
         function teardownConversationSubViews() {
+            closeContactTimingDialog({ restoreFocus: false });
+            invalidateContactTiming();
             closeManageOverlay({ restoreFocus: false });
             closeFollowUpDialog({ restoreFocus: false });
             closeMaterialRequestDialog({ restoreFocus: false });
@@ -1677,6 +1714,8 @@
             renderConversationScaffold();
 
             const contactId = Number(item.contactId);
+            // c3（I-3）：换专家即作废旧 timing 代次，再按新 contact 取推荐。
+            loadContactTiming(contactId);
             const accountFilter = accountFilterFromOptions();
             const msgParams = new URLSearchParams();
             msgParams.set("limit", String(MESSAGE_LIMIT));
@@ -1816,7 +1855,7 @@
             const orcid = (contact && contact.orcidId) || summary.orcid || "";
             const expertTagSpans = headerExpertTagSpans();
             metaEl.innerHTML = `
-                ${statusBadge}${levelBadge}${expertTagSpans}${orcid ? `<span>ORCID ${escapeText(orcid)}</span>` : ""}<button class="mc-text-button" type="button" data-action="mc-open-expert" data-contact-id="${escapeText(Number(instance.selectedContactId))}">查看专家详情 ↗</button>
+                ${statusBadge}${levelBadge}${expertTagSpans}${orcid ? `<span>ORCID ${escapeText(orcid)}</span>` : ""}<button class="mc-text-button" type="button" data-action="mc-open-expert" data-contact-id="${escapeText(Number(instance.selectedContactId))}">查看专家详情 ↗</button>${contactTimingMarkup()}
             `;
         }
 
@@ -1857,6 +1896,582 @@
                 if (instance.disposed) return;
                 instance.headerTags = instance.headerTags || [];
             });
+        }
+
+        // --------------------------------------------------------------
+        // 联系时间（fast-p 2026-10-02 c3 · I-1..I-6；S-1/S-2/S-3）
+        // 读：GET /api/mail/contact-locations/{id}/timing（主行 + 依据）、
+        //     GET /api/mail/contact-locations/countries 与 GET /{id}（配置弹窗）；
+        // 写：唯一写路径是配置弹窗的 PUT /{id}。
+        // GET 代次由 timing.seq 固化；弹窗加载/保存由独立 dialogSeq 固化（I-3）。
+        // --------------------------------------------------------------
+
+        function contactTimingState() {
+            return instance.contactTiming;
+        }
+
+        /** GET 代次失效：旧响应一律丢弃，且不留旧时间（I-3/I-4）。 */
+        function forgetContactTiming() {
+            const state = contactTimingState();
+            state.seq += 1;
+            state.data = null;
+            state.loading = false;
+            state.error = "";
+        }
+
+        function invalidateContactTiming() {
+            forgetContactTiming();
+            contactTimingState().contactId = null;
+        }
+
+        /** S-1：状态行末尾的紧凑组；只读实例状态，绝不在渲染里发请求（I-1）。 */
+        function contactTimingMarkup() {
+            const contactId = Number(instance.selectedContactId);
+            if (!Number.isFinite(contactId) || contactId <= 0) return "";
+            const state = contactTimingState();
+            const fresh = state.contactId === contactId;
+            const data = fresh ? state.data : null;
+            const error = fresh ? state.error : "";
+            const loading = fresh ? state.loading : true;
+            const location = data && data.location ? data.location : null;
+            const configured = !!(location && location.configured);
+            const label = configured
+                ? String(location.countryLabel || location.countryCode || "已配置")
+                : "配置所在地";
+            let extra = "";
+            if (error) {
+                extra = `<span class="contact-timing-note">${escapeText(error)}</span><button class="mc-text-button" type="button" data-action="mc-contact-timing-retry">重试</button>`;
+            } else if (loading && !data) {
+                extra = `<span class="contact-timing-note">${CONTACT_TIMING_LOADING_TEXT}</span>`;
+            } else if (data && data.recommendation) {
+                const rec = data.recommendation;
+                extra = `<span class="contact-timing-recommend">建议北京 <strong title="${escapeText(contactBeijingRangeTitle(rec))}">${escapeText(contactBeijingRangeShort(rec))}</strong></span><button class="mc-text-button contact-timing-info" type="button" data-action="mc-contact-timing-evidence" aria-label="查看推荐依据" aria-haspopup="dialog">ⓘ</button>`;
+            }
+            return `<div class="contact-timing" data-role="contact-timing" aria-live="polite"><button class="mc-text-button contact-timing-location" type="button" data-action="mc-contact-location" aria-haspopup="dialog">${escapeText(label)} ▾</button>${extra}</div>`;
+        }
+
+        // ---- 时间格式化：显式时区，结果与设备时区无关（I-2） ----
+
+        function contactZoneParts(iso, zoneId) {
+            if (!iso || !zoneId) return null;
+            const intl = global.Intl;
+            if (!intl || typeof intl.DateTimeFormat !== "function") return null;
+            let parts = null;
+            try {
+                parts = new intl.DateTimeFormat("zh-CN", {
+                    timeZone: String(zoneId),
+                    hourCycle: "h23",
+                    year: "numeric",
+                    month: "numeric",
+                    day: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit"
+                }).formatToParts(new Date(String(iso)));
+            } catch (e) {
+                return null;
+            }
+            const fields = {};
+            (parts || []).forEach((part) => {
+                if (part && part.type && part.type !== "literal") fields[part.type] = part.value;
+            });
+            if (!fields.year || !fields.month || !fields.day || !fields.hour || !fields.minute) return null;
+            return {
+                year: Number(fields.year),
+                month: Number(fields.month),
+                day: Number(fields.day),
+                hour: String(Number(fields.hour) % 24).padStart(2, "0"),
+                minute: String(fields.minute).padStart(2, "0")
+            };
+        }
+
+        function contactClock(parts) {
+            return parts ? `${parts.hour}:${parts.minute}` : "";
+        }
+
+        function contactDayLabel(parts, withYear) {
+            if (!parts) return "";
+            return `${withYear ? `${parts.year}年` : ""}${parts.month}月${parts.day}日`;
+        }
+
+        function contactSameDay(a, b) {
+            return !!(a && b && a.year === b.year && a.month === b.month && a.day === b.day);
+        }
+
+        /** 主行只显示两位时:分；跨北京日期时末端写“次日”（I-2）。 */
+        function contactBeijingRangeShort(rec) {
+            const start = contactZoneParts(rec && rec.beijingStart, CONTACT_TIMING_BEIJING_ZONE);
+            const end = contactZoneParts(rec && rec.beijingEnd, CONTACT_TIMING_BEIJING_ZONE);
+            if (!start || !end) return "";
+            return `${contactClock(start)}–${contactSameDay(start, end) ? "" : "次日"}${contactClock(end)}`;
+        }
+
+        /** 完整日期区间；起止不同日两端都带日期，跨年再带年份（I-2）。 */
+        function contactRangeLabel(start, end) {
+            if (!start || !end) return "";
+            const withYear = start.year !== end.year;
+            if (contactSameDay(start, end)) {
+                return `${contactDayLabel(start, withYear)} ${contactClock(start)}–${contactClock(end)}`;
+            }
+            return `${contactDayLabel(start, withYear)} ${contactClock(start)}–${contactDayLabel(end, withYear)} ${contactClock(end)}`;
+        }
+
+        function contactBeijingRangeTitle(rec) {
+            const start = contactZoneParts(rec && rec.beijingStart, CONTACT_TIMING_BEIJING_ZONE);
+            const end = contactZoneParts(rec && rec.beijingEnd, CONTACT_TIMING_BEIJING_ZONE);
+            const label = contactRangeLabel(start, end);
+            return label ? `北京时间 ${label}` : "";
+        }
+
+        // ---- 推荐读取（主行 + 依据；失败不影响会话加载） ----
+
+        function loadContactTiming(contactId, failureText) {
+            const id = Number(contactId);
+            if (!Number.isFinite(id) || id <= 0) return;
+            const state = contactTimingState();
+            state.contactId = id;
+            state.seq += 1;
+            state.loading = true;
+            state.error = "";
+            const mySeq = state.seq;
+            hostApi()(`/api/mail/contact-locations/${id}/timing`).then((data) => {
+                if (instance.disposed || mySeq !== state.seq) return;
+                state.data = data || null;
+                state.loading = false;
+                state.error = "";
+                repaintContactTiming();
+            }).catch(() => {
+                if (instance.disposed || mySeq !== state.seq) return;
+                state.data = null;
+                state.loading = false;
+                state.error = failureText || CONTACT_TIMING_ERROR_TEXT;
+                repaintContactTiming();
+            });
+        }
+
+        /** 只重绘状态行：不重建时间线、不碰草稿与滚动（T-1）。 */
+        function repaintContactTiming() {
+            const body = conversationBody();
+            if (!body || typeof body.querySelector !== "function") return;
+            const meta = body.querySelector(".mc-header-meta");
+            if (meta) renderHeaderMeta(meta);
+        }
+
+        // ---- 自有 dialog 生命周期（I-5：直接挂 body，只移除自己的节点） ----
+
+        function contactDialogNode(dialog) {
+            return dialog && dialog.node ? dialog.node : null;
+        }
+
+        function contactDialogField(dialog, selector) {
+            const node = contactDialogNode(dialog);
+            if (!node || typeof node.querySelector !== "function") return null;
+            return node.querySelector(selector);
+        }
+
+        function contactDialogCurrent(seq) {
+            if (instance.disposed) return null;
+            const dialog = contactTimingState().dialog;
+            return dialog && dialog.seq === seq ? dialog : null;
+        }
+
+        function contactDialogError(dialog, message) {
+            const box = contactDialogField(dialog, ".contact-timing-error");
+            if (!box) return;
+            box.textContent = message ? String(message) : "";
+            if (message) {
+                if (typeof box.removeAttribute === "function") box.removeAttribute("hidden");
+            } else if (typeof box.setAttribute === "function") {
+                box.setAttribute("hidden", "");
+            }
+        }
+
+        /** 保存中/未就绪时字段与主按钮禁用；关闭/取消始终可用（I-4）。 */
+        function syncContactDialogForm(dialog) {
+            const locked = !!dialog.busy || !dialog.ready;
+            const save = contactDialogField(dialog, 'button[type="submit"]');
+            if (save) {
+                save.disabled = locked;
+                save.textContent = dialog.busy ? "保存中…" : "保存";
+            }
+            const node = contactDialogNode(dialog);
+            if (!node || typeof node.querySelectorAll !== "function") return;
+            node.querySelectorAll("select").forEach((select) => {
+                select.disabled = locked;
+            });
+        }
+
+        function beginContactDialog(kind, contactId, trigger) {
+            const state = contactTimingState();
+            closeContactTimingDialog({ restoreFocus: false });
+            state.dialogSeq += 1;
+            contactTimingInstanceSeq += 1;
+            state.prefix = `ct${contactTimingInstanceSeq}`;
+            const doc = docRoot();
+            if (!doc || typeof doc.createElement !== "function" || !doc.body) return null;
+            const dialog = {
+                kind,
+                seq: state.dialogSeq,
+                contactId: Number(contactId),
+                node: null,
+                trigger: trigger || null,
+                ready: false,
+                busy: false,
+                catalog: state.catalog || null,
+                location: null,
+                error: ""
+            };
+            const node = doc.createElement("dialog");
+            node.setAttribute("class", "contact-timing-dialog");
+            node.setAttribute("data-kind", kind);
+            node.setAttribute("aria-labelledby", `${state.prefix}-${kind === "evidence" ? "evidence" : "location"}-title`);
+            dialog.node = node;
+            // 自有节点自己绑事件，不借共享 portal 委托，也不进其 innerHTML（I-5）。
+            if (typeof node.addEventListener === "function") {
+                node.addEventListener("click", onContactDialogClick);
+                node.addEventListener("change", onContactDialogChange);
+                node.addEventListener("submit", onContactDialogSubmit);
+                node.addEventListener("cancel", onContactDialogCancel);
+                node.addEventListener("keydown", onContactDialogKeyDown);
+            }
+            state.dialog = dialog;
+            doc.body.appendChild(node);
+            return dialog;
+        }
+
+        function showContactDialog(dialog) {
+            const node = contactDialogNode(dialog);
+            if (!node) return;
+            if (typeof node.showModal === "function") {
+                try {
+                    node.showModal();
+                    return;
+                } catch (e) { /* fallback: 静态 open */ }
+            }
+            if (typeof node.setAttribute === "function") node.setAttribute("open", "");
+        }
+
+        /** 只移除本实例拥有的 dialog，绝不清空共享 portal（I-5）。 */
+        function closeContactTimingDialog(options) {
+            const opts = options || {};
+            const state = contactTimingState();
+            const dialog = state.dialog;
+            state.dialogSeq += 1;
+            state.dialog = null;
+            if (!dialog) return;
+            const node = dialog.node;
+            if (node) {
+                if (typeof node.close === "function") {
+                    try {
+                        node.close();
+                    } catch (e) { /* noop */ }
+                }
+                if (typeof node.hasAttribute === "function" && node.hasAttribute("open")) node.removeAttribute("open");
+                if (node.parentNode && typeof node.parentNode.removeChild === "function") {
+                    node.parentNode.removeChild(node);
+                } else if (typeof node.remove === "function") {
+                    node.remove();
+                }
+            }
+            if (opts.restoreFocus !== false) focusIfAvailable(dialog.trigger);
+        }
+
+        function onContactDialogCancel(event) {
+            if (event && typeof event.preventDefault === "function") event.preventDefault();
+            closeContactTimingDialog({ restoreFocus: true });
+        }
+
+        function onContactDialogKeyDown(event) {
+            if (!event || event.key !== "Escape") return;
+            if (typeof event.preventDefault === "function") event.preventDefault();
+            closeContactTimingDialog({ restoreFocus: true });
+        }
+
+        function onContactDialogClick(event) {
+            if (instance.disposed) return;
+            const dialog = contactTimingState().dialog;
+            if (!dialog) return;
+            const target = event.target;
+            const button = target && typeof target.closest === "function" ? target.closest("[data-action]") : null;
+            const action = button && button.dataset ? button.dataset.action : "";
+            if (action === "mc-contact-dialog-close") {
+                closeContactTimingDialog({ restoreFocus: true });
+                return;
+            }
+            if (action === "mc-contact-dialog-retry") {
+                dialog.ready = false;
+                contactDialogError(dialog, "");
+                syncContactDialogForm(dialog);
+                loadContactDialogData(dialog);
+            }
+        }
+
+        /** 换国家只改草稿：zone 重置为空并重建选项，未提交前零 PUT（I-4）。 */
+        function onContactDialogChange(event) {
+            if (instance.disposed) return;
+            const dialog = contactTimingState().dialog;
+            if (!dialog || dialog.kind !== "location") return;
+            const target = event.target;
+            if (!target || typeof target.getAttribute !== "function") return;
+            if (target.getAttribute("name") !== "countryCode") return;
+            renderContactDialogZoneOptions(dialog, String(target.value || ""), null);
+        }
+
+        function onContactDialogSubmit(event) {
+            if (event && typeof event.preventDefault === "function") event.preventDefault();
+            if (instance.disposed) return;
+            const dialog = contactTimingState().dialog;
+            if (!dialog || dialog.kind !== "location") return;
+            submitContactLocation(dialog);
+        }
+
+        // ---- 配置弹窗（目录 + 当前配置 + PUT） ----
+
+        function contactCatalogCountries() {
+            const catalog = contactTimingState().catalog;
+            return catalog && Array.isArray(catalog.countries) ? catalog.countries : [];
+        }
+
+        function findContactCountry(code) {
+            const wanted = String(code || "");
+            if (!wanted) return null;
+            return contactCatalogCountries().find((country) => country && String(country.code) === wanted) || null;
+        }
+
+        /** `{labelZh}（{id}）`；labelZh 已等于 id 时只显示一次（S-2）。 */
+        function contactZoneOptionText(entry) {
+            const id = entry && entry.id != null ? String(entry.id) : "";
+            const label = entry && entry.labelZh ? String(entry.labelZh) : id;
+            if (!id) return label;
+            return label === id ? id : `${label}（${id}）`;
+        }
+
+        function renderContactDialogCountryOptions(dialog) {
+            const select = contactDialogField(dialog, 'select[name="countryCode"]');
+            if (!select) return;
+            const options = ['<option value="">请选择国家 / 地区</option>'];
+            contactCatalogCountries().forEach((country) => {
+                if (!country || country.code == null) return;
+                options.push(`<option value="${escapeText(country.code)}">${escapeText(country.labelZh || country.code)}</option>`);
+            });
+            select.innerHTML = options.join("");
+        }
+
+        /** 多时区才展示具体时区字段；只有单个 zone 时 hidden 且提交 null（S-2/I-4）。 */
+        function renderContactDialogZoneOptions(dialog, countryCode, selectedZoneId) {
+            const country = findContactCountry(countryCode);
+            const zones = country && Array.isArray(country.zones) ? country.zones : [];
+            const multi = zones.length > 1;
+            const field = contactDialogField(dialog, '[data-role="contact-zone-field"]');
+            if (field) {
+                if (multi) {
+                    if (typeof field.removeAttribute === "function") field.removeAttribute("hidden");
+                } else if (typeof field.setAttribute === "function") {
+                    field.setAttribute("hidden", "");
+                }
+            }
+            const help = contactDialogField(dialog, '[data-role="contact-default-zone"]');
+            if (help) {
+                if (country && country.defaultZoneId) {
+                    help.textContent = `默认时区：${String(country.defaultZoneId)}`;
+                    if (typeof help.removeAttribute === "function") help.removeAttribute("hidden");
+                } else {
+                    help.textContent = "";
+                    if (typeof help.setAttribute === "function") help.setAttribute("hidden", "");
+                }
+            }
+            const select = contactDialogField(dialog, 'select[name="zoneId"]');
+            if (!select) return;
+            if (!multi) {
+                select.innerHTML = '<option value="">使用默认时区</option>';
+                select.value = "";
+                return;
+            }
+            const defaultEntry = zones.find((zone) => zone && String(zone.id) === String(country.defaultZoneId)) || null;
+            const options = [`<option value="">${escapeText(`使用默认时区${defaultEntry ? ` · ${contactZoneOptionText(defaultEntry)}` : ""}`)}</option>`];
+            zones.forEach((zone) => {
+                if (!zone || zone.id == null) return;
+                options.push(`<option value="${escapeText(zone.id)}">${escapeText(contactZoneOptionText(zone))}</option>`);
+            });
+            select.innerHTML = options.join("");
+            const wanted = selectedZoneId == null ? "" : String(selectedZoneId);
+            const present = wanted !== "" && zones.some((zone) => zone && String(zone.id) === wanted);
+            select.value = present ? wanted : "";
+        }
+
+        function contactLocationDialogHtml(prefix) {
+            const p = escapeText(prefix);
+            return `
+  <header>
+    <div><h3 id="${p}-location-title">配置所在地</h3><p>仅用于联系时间推荐</p></div>
+    <button class="button contact-timing-close" type="button" data-action="mc-contact-dialog-close" aria-label="关闭所在地配置">×</button>
+  </header>
+  <form data-role="contact-location-form">
+    <div class="contact-timing-body">
+      <label class="contact-timing-field" for="${p}-country">国家 / 地区<select id="${p}-country" name="countryCode" required><option value="">请选择国家 / 地区</option></select></label>
+      <label class="contact-timing-field" for="${p}-zone" data-role="contact-zone-field" hidden>具体时区（可选）<select id="${p}-zone" name="zoneId"><option value="">使用默认时区</option></select></label>
+      <p class="contact-timing-help" data-role="contact-default-zone" hidden></p>
+      <p class="contact-timing-help">样本不足时按当地 08:00–17:00 推荐，保存后显示北京时间。</p>
+      <p class="contact-timing-error" role="alert" hidden></p>
+    </div>
+    <footer><button class="button" type="button" data-action="mc-contact-dialog-retry" hidden>重试</button><button class="button" type="button" data-action="mc-contact-dialog-close">取消</button><button class="button primary" type="submit">保存</button></footer>
+  </form>
+`;
+        }
+
+        function contactEvidenceDialogHtml(prefix, data) {
+            const p = escapeText(prefix);
+            const rec = (data && data.recommendation) || null;
+            const location = (data && data.location) || {};
+            const zoneId = String(location.effectiveZoneId || CONTACT_TIMING_BEIJING_ZONE);
+            const beijing = contactRangeLabel(
+                contactZoneParts(rec && rec.beijingStart, CONTACT_TIMING_BEIJING_ZONE),
+                contactZoneParts(rec && rec.beijingEnd, CONTACT_TIMING_BEIJING_ZONE)
+            );
+            const local = contactRangeLabel(
+                contactZoneParts(rec && rec.localStart, zoneId),
+                contactZoneParts(rec && rec.localEnd, zoneId)
+            );
+            const samples = (rec && Array.isArray(rec.recentSamples)) ? rec.recentSamples.slice(0, 8) : [];
+            const sampleItems = samples.map((sample) => {
+                const beijingParts = contactZoneParts(sample && sample.receivedAtBeijing, CONTACT_TIMING_BEIJING_ZONE);
+                const localParts = contactZoneParts(sample && sample.receivedAtLocal, zoneId);
+                if (!beijingParts || !localParts) return "";
+                return `<li><span>北京 ${escapeText(`${contactDayLabel(beijingParts, false)} ${contactClock(beijingParts)}`)}</span><span>当地 ${escapeText(`${contactDayLabel(localParts, false)} ${contactClock(localParts)}`)}</span></li>`;
+            }).filter((item) => item).join("");
+            const history = sampleItems ? `<ul class="contact-timing-history" aria-label="最近回复时间">${sampleItems}</ul>` : "";
+            const sampleCount = Number(rec && rec.sampleCount) || 0;
+            const replyDayCount = Number(rec && rec.replyDayCount) || 0;
+            const modeLine = (rec && rec.mode === "WORK_HOURS")
+                ? `样本不足，使用当地工作时间 08:00–17:00 · ${sampleCount} 次来信 · ${replyDayCount} 个回复日`
+                : `结合历史回复 · ${sampleCount} 次来信 · ${replyDayCount} 个回复日`;
+            const zoneText = location.usingDefaultZone === true ? `默认时区 ${zoneId}` : `手动时区 ${zoneId}`;
+            const country = String(location.countryLabel || location.countryCode || "");
+            const head = country ? `${country} · ${zoneText}` : zoneText;
+            const limitAttr = rec && rec.historyTruncated ? "" : " hidden";
+            return `
+  <header><div><h3 id="${p}-evidence-title">推荐依据</h3><p>${escapeText(head)}</p></div><button class="button contact-timing-close" type="button" data-action="mc-contact-dialog-close" aria-label="关闭推荐依据">×</button></header>
+  <div class="contact-timing-body">
+    <div class="contact-timing-range"><strong>北京 ${escapeText(beijing)}</strong><span>当地 ${escapeText(local)}</span></div>
+    <p class="contact-timing-help">${escapeText(modeLine)}</p>
+    <p class="contact-timing-help">基于全部业务账号的已关联来信；最近 180 天，近期记录权重更高。</p>
+    <p class="contact-timing-help" data-role="contact-history-limit"${limitAttr}>仅使用最近 1000 条范围内的去重来信。</p>
+    ${history}
+  </div>
+  <footer><button class="button" type="button" data-action="mc-contact-dialog-close">关闭</button></footer>
+`;
+        }
+
+        function contactLocationTrigger() {
+            return host.querySelector ? host.querySelector('[data-action="mc-contact-location"]') : null;
+        }
+
+        /** 目录可在本实例内复用成功结果；失败可重试（T-2）。 */
+        function loadContactDialogData(dialog) {
+            const seq = dialog.seq;
+            const contactId = dialog.contactId;
+            const catalogPromise = dialog.catalog
+                ? Promise.resolve(dialog.catalog)
+                : hostApi()("/api/mail/contact-locations/countries").catch(() => null);
+            const locationPromise = hostApi()(`/api/mail/contact-locations/${contactId}`).catch(() => null);
+            Promise.all([catalogPromise, locationPromise]).then(([catalog, location]) => {
+                const current = contactDialogCurrent(seq);
+                if (!current || current.contactId !== contactId || current.kind !== "location") return;
+                const catalogOk = !!(catalog && Array.isArray(catalog.countries));
+                const locationOk = !!(location && typeof location.configured === "boolean");
+                if (!catalogOk || !locationOk) {
+                    current.ready = false;
+                    syncContactDialogForm(current);
+                    contactDialogError(current, CONTACT_TIMING_LOAD_ERROR_TEXT);
+                    const retry = contactDialogField(current, '[data-action="mc-contact-dialog-retry"]');
+                    if (retry && typeof retry.removeAttribute === "function") retry.removeAttribute("hidden");
+                    return;
+                }
+                contactTimingState().catalog = catalog;
+                current.catalog = catalog;
+                current.location = location;
+                current.ready = true;
+                renderContactDialogCountryOptions(current);
+                const countrySelect = contactDialogField(current, 'select[name="countryCode"]');
+                const countryCode = location.configured ? String(location.countryCode || "") : "";
+                if (countrySelect) countrySelect.value = countryCode;
+                renderContactDialogZoneOptions(current, countryCode, location.configured ? location.zoneId : null);
+                const retry = contactDialogField(current, '[data-action="mc-contact-dialog-retry"]');
+                if (retry && typeof retry.setAttribute === "function") retry.setAttribute("hidden", "");
+                contactDialogError(current, "");
+                syncContactDialogForm(current);
+            });
+        }
+
+        function submitContactLocation(dialog) {
+            if (dialog.busy || !dialog.ready) return;
+            const countrySelect = contactDialogField(dialog, 'select[name="countryCode"]');
+            const countryCode = countrySelect ? String(countrySelect.value || "") : "";
+            if (!countryCode) {
+                contactDialogError(dialog, CONTACT_TIMING_COUNTRY_REQUIRED_TEXT);
+                return;
+            }
+            const country = findContactCountry(countryCode);
+            const zones = country && Array.isArray(country.zones) ? country.zones : [];
+            const zoneSelect = contactDialogField(dialog, 'select[name="zoneId"]');
+            const zoneRaw = zones.length > 1 && zoneSelect ? String(zoneSelect.value || "") : "";
+            const payload = { countryCode, zoneId: zoneRaw ? zoneRaw : null };
+            const seq = dialog.seq;
+            const contactId = dialog.contactId;
+            dialog.busy = true;
+            contactDialogError(dialog, "");
+            syncContactDialogForm(dialog);
+            hostApi()(`/api/mail/contact-locations/${contactId}`, {
+                method: "PUT",
+                body: JSON.stringify(payload)
+            }).then(() => {
+                // A 的保存可以在服务器完成，但绝不能写 B 的界面或重开 A 的弹窗（I-3）。
+                const current = contactDialogCurrent(seq);
+                if (!current || current.contactId !== contactId) return;
+                current.busy = false;
+                closeContactTimingDialog({ restoreFocus: true });
+                // 只有 PUT 成功后才重新读推荐；GET 失败不得把旧时间标成新推荐（I-4）。
+                forgetContactTiming();
+                loadContactTiming(contactId, CONTACT_TIMING_SAVED_NO_TIMING_TEXT);
+            }).catch((err) => {
+                const current = contactDialogCurrent(seq);
+                if (!current || current.contactId !== contactId) return;
+                current.busy = false;
+                syncContactDialogForm(current);
+                contactDialogError(current, (err && err.message) ? String(err.message) : CONTACT_TIMING_SAVE_ERROR_TEXT);
+            });
+        }
+
+        function openContactLocationDialog() {
+            const contactId = Number(instance.selectedContactId);
+            if (!Number.isFinite(contactId) || contactId <= 0) return;
+            const dialog = beginContactDialog("location", contactId, contactLocationTrigger());
+            if (!dialog) return;
+            dialog.node.innerHTML = contactLocationDialogHtml(contactTimingState().prefix);
+            showContactDialog(dialog);
+            syncContactDialogForm(dialog);
+            focusIfAvailable(contactDialogField(dialog, "select"));
+            loadContactDialogData(dialog);
+        }
+
+        /** 依据只展示已成功取得的该 contact 响应，不额外查正文、不发新请求（T-2）。 */
+        function openContactEvidenceDialog() {
+            const contactId = Number(instance.selectedContactId);
+            if (!Number.isFinite(contactId) || contactId <= 0) return;
+            const state = contactTimingState();
+            const data = (state.contactId === contactId && state.data) ? state.data : null;
+            if (!data || !data.recommendation) return;
+            const trigger = host.querySelector ? host.querySelector('[data-action="mc-contact-timing-evidence"]') : null;
+            const dialog = beginContactDialog("evidence", contactId, trigger);
+            if (!dialog) return;
+            dialog.node.innerHTML = contactEvidenceDialogHtml(state.prefix, data);
+            showContactDialog(dialog);
+            focusIfAvailable(contactDialogField(dialog, ".contact-timing-close"));
+        }
+
+        function retryContactTiming() {
+            const contactId = Number(instance.selectedContactId);
+            if (!Number.isFinite(contactId) || contactId <= 0) return;
+            loadContactTiming(contactId);
         }
 
         // --------------------------------------------------------------
@@ -5413,6 +6028,9 @@
             closeMaterialRequestDialog({ restoreFocus: false });
             closeTemplateReferenceDialog({ restoreFocus: false });
             teardownMeetingViews();
+            // c3（I-3）：账号上下文变化同样作废推荐代次与自有弹窗。
+            closeContactTimingDialog({ restoreFocus: false });
+            invalidateContactTiming();
         }
 
         function meetingCardActionsDisabled(disabled) {
@@ -5944,6 +6562,8 @@
                 renderTimeline();
                 checkInboundChangeQuiet();
                 saveConversationState();
+                // c3（T-1）：现有刷新成功后按同一 contact 重读推荐（渲染只重绘状态行）。
+                loadContactTiming(contactId);
             }).catch(() => {});
         }
 
@@ -6129,6 +6749,18 @@
                 instance.tagOptions.failed = false;
                 clearFilterError();
                 loadTagOptions(false);
+                return;
+            }
+            if (action === "mc-contact-location") {
+                openContactLocationDialog();
+                return;
+            }
+            if (action === "mc-contact-timing-evidence") {
+                openContactEvidenceDialog();
+                return;
+            }
+            if (action === "mc-contact-timing-retry") {
+                retryContactTiming();
                 return;
             }
             if (action === "mc-page-prev") {
