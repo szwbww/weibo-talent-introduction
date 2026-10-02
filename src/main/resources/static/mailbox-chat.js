@@ -305,7 +305,7 @@
         const item = summary || {};
         const inbound = item.latestInbound;
         if (inbound === null) {
-            if ((Number(item.receivedCount) || 0) === 0) {
+            if (item.receivedCount === 0) {
                 return { kind: "none", text: LAST_REPLY_EMPTY_TEXT, aria: LAST_REPLY_EMPTY_TEXT };
             }
             return { kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT, aria: LAST_REPLY_UNAVAILABLE_TEXT };

@@ -5323,6 +5323,35 @@ describe("fast-p 上次回复：收发件箱列表与详情时间（I-1..I-5 / S
         assert.strictEqual(replyRow(nullZero, 1).querySelector("time"), null);
     });
 
+    it("上次回复 B-3c：null 来信下缺失/非数字计数不是尚未回复（I-3 判别式）", async () => {
+        const rows = [
+            ["计数缺失", () => {
+                const row = expertRow(null);
+                delete row.receivedCount;
+                return row;
+            }],
+            ["计数为 null", () => expertRow(null, { receivedCount: null })],
+            ["计数为字符串 \"0\"", () => expertRow(null, { receivedCount: "0" })]
+        ];
+        for (const [label, build] of rows) {
+            const ctx = await bootChat({
+                conversations: { items: [build()], total: 1 },
+                messages: messagesA(),
+                contact: contactA()
+            });
+            const row = replyRow(ctx, 1);
+            assert.strictEqual(row.querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, `${label}: 列表`);
+            assert.strictEqual(row.querySelector("time"), null, `${label}: 列表不得有 time`);
+            await openPerson(ctx, 1);
+            const slot = detailSlot(ctx);
+            assert.strictEqual(slot.querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, `${label}: 详情`);
+            assert.strictEqual(slot.querySelector("time"), null, `${label}: 详情不得有 time`);
+        }
+        const nullZero = await bootRow(null, { receivedCount: 0 });
+        assert.strictEqual(replyRow(nullZero, 1).querySelector(".mailbox-reply-empty").textContent, EMPTY_TEXT, "数字 0 仍是尚未回复");
+        assert.strictEqual(replyRow(nullZero, 1).querySelector("time"), null);
+    });
+
     it("上次回复 B-4：跨年/闰日边界正确，2 月 30 日不进位，小数秒不影响日期星期与分钟", async () => {
         const cases = [
             ["2025-12-31T23:58:00", "2025-12-31 星期三 23:58"],
