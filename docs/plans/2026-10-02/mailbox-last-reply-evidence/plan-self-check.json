@@ -1,0 +1,17 @@
+{
+  "required_sections_in_order": true,
+  "file_count_5": true,
+  "invariants_5": true,
+  "styles_4": true,
+  "acceptance_8": true,
+  "implementation_4": true,
+  "local_links_exist": true,
+  "before_dom_exact": true,
+  "before_css_exact": true,
+  "no_implementation_change": true,
+  "audited_sources_unchanged": true,
+  "exact_dom_source_location": true,
+  "implementation_file_paths_exist": true,
+  "new_class_scope_complete": true,
+  "acceptance_not_generated": true
+}
