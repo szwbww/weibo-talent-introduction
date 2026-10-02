@@ -1,6 +1,6 @@
 # Fast-P Ledger — master: docs/plans/2026-10-02/mailbox-last-reply-time.md
 
-- Status: RUNNING
+- Status: READY_FOR_HUMAN_REVIEW
 - Master plan: docs/plans/2026-10-02/mailbox-last-reply-time.md (commit 5d1789f90716a27e265b63340a9aef562a0035d9)
 - Amendments: N/A
 - Master base: bf19fdfcb24336a41106d1c46fa7147bc6546892
@@ -19,7 +19,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---:|---|---|---|---:|---|---|---|---|
-| 01 | docs/plans/2026-10-02/mailbox-last-reply-time.md | commit:5d1789f90716a27e265b63340a9aef562a0035d9 | none | 1 | LIGHT_PASS_WITH_NOTES | 5d1789f90716a27e265b63340a9aef562a0035d9 | 135558e762ef8f0f3bbfdba38a23cfce2eb56810 | 1 | bb0b9f1be4abd1fbd7b63aacaec333d4ec3e6019 | bb0b9f1be4abd1fbd7b63aacaec333d4ec3e6019 | — | 单子计划 run（master 计划即唯一 child 计划）；5 个授权文件；无下游 child；人工验收 A-1～A-8 在 run 外。写者 ImplMailboxReply01（135558e，5 文件）→ 核实者 VerifyMailboxReply01 LIGHT_FAIL/AUTO_FIX F-1（I-3 异常分支把 undefined/数组/非对象当 null）→ 修复轮 1（bb0b9f1，mailbox-chat.js + mailboxChatBehavior.test.js 共 2 文件）→ 复验者 ReVerifyMailboxReply01 LIGHT_PASS_WITH_NOTES（O-1 控制方 docs 存根 EOF 空行，非产品）。必需命令 @bb0b9f1：check exit 0、targeted 152/152、TZ 两组 11/11、全量 1316/1316、cmp exit 0、diff-check exit 0（基线 134/134、1298/1298）。 |
+| 01 | docs/plans/2026-10-02/mailbox-last-reply-time.md | commit:5d1789f90716a27e265b63340a9aef562a0035d9 | none | 1 | LIGHT_PASS_WITH_NOTES | 5d1789f90716a27e265b63340a9aef562a0035d9 | 135558e762ef8f0f3bbfdba38a23cfce2eb56810 | 1 | bb0b9f1be4abd1fbd7b63aacaec333d4ec3e6019 | bb0b9f1be4abd1fbd7b63aacaec333d4ec3e6019 | 6a7cd117b9e09018a7911406dcd83608315a2cd7 | 单子计划 run（master 计划即唯一 child 计划）；5 个授权文件；无下游 child；人工验收 A-1～A-8 在 run 外。写者 ImplMailboxReply01（135558e，5 文件）→ 核实者 VerifyMailboxReply01 LIGHT_FAIL/AUTO_FIX F-1（I-3 异常分支把 undefined/数组/非对象当 null）→ 修复轮 1（bb0b9f1，mailbox-chat.js + mailboxChatBehavior.test.js 共 2 文件）→ 复验者 ReVerifyMailboxReply01 LIGHT_PASS_WITH_NOTES（O-1 控制方 docs 存根 EOF 空行，非产品）。必需命令 @bb0b9f1：check exit 0、targeted 152/152、TZ 两组 11/11、全量 1316/1316、cmp exit 0、diff-check exit 0（基线 134/134、1298/1298）。 |
 
 ## Amendments
 | ID | Plan | Before | After | Master rule | Reason | Approval |
