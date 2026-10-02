@@ -255,7 +255,7 @@ WORK_HOURS 时依据文案为“样本不足，使用当地工作时间 08:00–
 
 - 统一更新当前11个资源key；其他标签/注册顺序保持。不给app.js新增入口，不复制world-clock算法。
 - 扩展现有mailboxChatBehavior测试harness的配置/timing路由响应以及必要的dialog行为；测试真实组件挂载、点击、提交、异步迟到，不仅抽取新函数做字符串断言。
-- 新style测试携带S-1/S-2/S-3完整期望文本，与styles.css追加块对比；检查新class有声明、模板无inline style、聊天CSS字节不变、11个版本键一致。不要删改旧CSS守卫来迁就实现。
+- 新style测试携带S-1/S-2/S-3完整期望文本，与styles.css追加块对比；检查新class有声明、模板无inline style、聊天CSS字节不变、11个版本键一致。不要删改旧CSS守卫来迁就实现；唯一例外是 A2（2026-10-02 人工批准，见变更文件清单 6/7）的两处守卫最小收窄：① `taskActivityCenter.test.js` S-0 把「end 标记之后必须为空」改为「end 标记后不得再出现第二个 task-center 契约块」（start/end 唯一性与整块逐字内容断言保留）；② `mailboxCalendarIntegration.test.js` 草稿卡用例把 `zoneId`/`startLocal` 的全文件扫描收窄到草稿卡渲染代码路径（保留「必须走 formatBeijingMeetingRange」等断言）。禁止字符串拼接等规避；mailbox-chat.css 字节守卫与其余断言一律不动。
 
 ## 变更文件清单
 
@@ -266,6 +266,8 @@ WORK_HOURS 时依据文案为“样本不足，使用当地工作时间 08:00–
 | 3 | src/main/resources/static/index.html | 统一11个资源版本键 |
 | 4 | src/test/js/mailboxChatBehavior.test.js | 扩展行为用例与harness |
 | 5 | src/test/js/contactTimingStyle.test.js | 新增样式契约验证 |
+| 6 | src/test/js/taskActivityCenter.test.js | A2 最小收窄：S-0 尾部空断言改为「end 标记后不得再出现第二个 task-center 契约块」 |
+| 7 | src/test/js/mailboxCalendarIntegration.test.js | A2 最小收窄：草稿卡 zoneId/startLocal 扫描收窄到草稿卡渲染代码路径 |
 
 ## 验收标准
 
