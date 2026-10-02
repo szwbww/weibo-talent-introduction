@@ -12455,3 +12455,9 @@ body.preview-available:not(.preview-docked) .preview-rail {
 
 /* contact-timing S-3 */
 @media(max-width:760px){.mail-chat .contact-timing{margin-left:0;padding-left:0;border-left:0}.contact-timing-dialog{max-height:calc(100dvh - 24px)}.contact-timing-dialog header{padding:14px 16px}.contact-timing-body{padding:16px}.contact-timing-dialog footer{padding:12px 16px}}
+
+/* 所在地选项搜索 */
+.contact-timing-field input[type=search]{width:100%;min-width:0;height:37px;min-height:37px;margin:0;padding:0 10px;border:1px solid #dce4ef;border-radius:7px;background:#fcfdff;color:#475d79;font:inherit;font-size:12px}
+.contact-timing-field input[type=search]:hover{border-color:#93b4ec}
+.contact-timing-field input[type=search]:focus-visible{outline:2px solid #6389d3;outline-offset:2px}
+.contact-timing-field input[type=search]:disabled{opacity:.55;cursor:not-allowed}

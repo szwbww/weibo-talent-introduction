@@ -4835,6 +4835,79 @@ describe("fast-p c3 收发信箱紧凑所在地与推荐时间（I-1..I-6 / S-1.
         );
     });
 
+    it("所在地筛选：中文与代码匹配，清空恢复，无结果仍保留已选国家和时区", async () => {
+        const ctx = await bootSelected(1, { contactLocations: { 1: { countryCode: "US", zoneId: "America/Los_Angeles" } } });
+        await openLocation(ctx);
+        const dialog = timingDialog(ctx);
+        const search = dialog.querySelector('[data-contact-filter="countryCode"]');
+        const country = dialog.querySelector('select[name="countryCode"]');
+        const zone = dialog.querySelector('select[name="zoneId"]');
+        const values = () => country.querySelectorAll("option").map((option) => option.getAttribute("value"));
+        const requestCount = ctx.calls.api.length;
+        search.value = "中国";
+        inputEvent(search);
+        assert.deepStrictEqual(values(), ["", "CN", "US"], "仅保留匹配项与当前选择");
+        const enter = new MiniEvent("keydown", { bubbles: true });
+        enter.key = "Enter";
+        let prevented = false;
+        enter.preventDefault = () => { prevented = true; };
+        search.dispatchEvent(enter);
+        assert.strictEqual(prevented, true, "搜索时回车不触发表单保存");
+        assert.strictEqual(country.value, "US");
+        assert.strictEqual(zone.value, "America/Los_Angeles", "搜索不能清空已选时区");
+        search.value = "  cN  ";
+        inputEvent(search);
+        assert.deepStrictEqual(values(), ["", "CN", "US"], "代码忽略大小写和首尾空格");
+        search.value = "不存在";
+        inputEvent(search);
+        assert.deepStrictEqual(values(), ["", "US"]);
+        assert.strictEqual(dialog.querySelector('[data-contact-filter-hint="countryCode"]').textContent, "无匹配结果，请更换关键词");
+        search.value = "";
+        inputEvent(search);
+        assert.deepStrictEqual(values(), ["", "BR", "CN", "IN", "US"]);
+        assert.strictEqual(dialog.querySelector('[data-contact-filter-hint="countryCode"]').hidden, true);
+        assert.strictEqual(ctx.calls.api.length, requestCount, "筛选不请求或保存");
+        submitDialog(dialog);
+        assert.strictEqual(search.disabled, true, "保存中搜索也禁用");
+        await flush();
+        assert.deepStrictEqual(JSON.parse(putRequests(ctx)[0].body), { countryCode: "US", zoneId: "America/Los_Angeles" });
+    });
+
+    it("所在地筛选：时区支持城市和标识搜索，换国家重置搜索，筛选后选择可保存", async () => {
+        const ctx = await bootSelected(1, { contactLocations: { 1: { countryCode: "US", zoneId: null } } });
+        await openLocation(ctx);
+        const dialog = timingDialog(ctx);
+        const search = dialog.querySelector('[data-contact-filter="zoneId"]');
+        const zone = dialog.querySelector('select[name="zoneId"]');
+        const values = () => zone.querySelectorAll("option").map((option) => option.getAttribute("value"));
+        search.value = "洛杉矶";
+        inputEvent(search);
+        assert.deepStrictEqual(values(), ["", "America/Los_Angeles"]);
+        assert.strictEqual(zone.value, "", "搜索不自动选中第一个匹配项");
+        search.value = "new_york";
+        inputEvent(search);
+        assert.deepStrictEqual(values(), ["", "America/New_York"]);
+        zone.value = "America/New_York";
+        changeEvent(zone);
+        search.value = "无匹配";
+        inputEvent(search);
+        assert.deepStrictEqual(values(), ["", "America/New_York"]);
+        assert.strictEqual(zone.value, "America/New_York");
+        const country = dialog.querySelector('select[name="countryCode"]');
+        country.value = "BR";
+        changeEvent(country);
+        assert.strictEqual(search.value, "");
+        assert.strictEqual(zone.value, "");
+        assert.deepStrictEqual(values(), ["", "America/Sao_Paulo", "America/Manaus"]);
+        search.value = "马瑙斯";
+        inputEvent(search);
+        zone.value = "America/Manaus";
+        changeEvent(zone);
+        submitDialog(dialog);
+        await flush();
+        assert.deepStrictEqual(JSON.parse(putRequests(ctx)[0].body), { countryCode: "BR", zoneId: "America/Manaus" });
+    });
+
     it("I-4/S-2：取消与 Escape 零 PUT；换国家清空 zone；null 与显式值请求 JSON 准确；保存中禁重复提交", async () => {
         const ctx = await bootSelected(1, {
             contactTiming: TIMING_REPLY_IN,

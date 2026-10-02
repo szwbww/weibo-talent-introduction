@@ -2,7 +2,7 @@
 
 // fast-p 2026-10-02 c3 样式契约测试（S-1/S-2/S-3）：
 // 1) 计划文本是唯一实现依据：从 plan 的 S-1/S-2/S-3 ```css 块逐字读取期望文本，断言
-//    styles.css 尾部逐字包含并按 S-1→S-2→S-3 顺序收尾（唯一例外是 A2 最小收窄后的
+//    styles.css 逐字包含并按 S-1→S-2→S-3 顺序保留（后续搜索增强可追加局部样式；A2 最小收窄后的
 //    task-center 守卫：本功能按合同追加在文件尾部）。
 // 2) 新增 class 必须在 styles.css 声明；字节锁定的 mailbox-chat.css 不得吸收任何
 //    contact-timing 规则。
@@ -53,15 +53,15 @@ const S3_CSS = cssBlockAfter("/* contact-timing S-3 */");
 const APPENDED_CSS = S1_CSS + "\n" + S2_CSS + "\n" + S3_CSS;
 
 describe("S-1/S-2/S-3: styles.css 逐字追加合同", () => {
-    it("styles.css 按 S-1→S-2→S-3 逐字收尾（不删一行、不改一个值）", () => {
+    it("styles.css 按 S-1→S-2→S-3 连续保留（不删一行、不改一个值）", () => {
         [["S-1", S1_CSS], ["S-2", S2_CSS], ["S-3", S3_CSS]].forEach(([name, block]) => {
             assert.ok(stylesSource.includes(block), `${name} 的完整 CSS 块必须逐字出现在 styles.css`);
         });
-        assert.ok(stylesSource.endsWith(APPENDED_CSS), "三块必须按 S-1→S-2→S-3 顺序追加在 styles.css 尾部");
+        assert.ok(stylesSource.includes(APPENDED_CSS), "三块必须按 S-1→S-2→S-3 顺序连续保留");
     });
 
     it("追加点紧接既有契约块（A2 后的 task-center 守卫语义：其后不得再有第二个 task-center 块）", () => {
-        const before = stylesSource.slice(0, stylesSource.length - APPENDED_CSS.length);
+        const before = stylesSource.slice(0, stylesSource.indexOf(APPENDED_CSS));
         assert.match(before, /\/\* task-center-contract:end \*\/\n\n$/, "追加点必须紧跟既有契约块之后");
         assert.ok(!before.includes("/* contact-timing S-1 */"), "S-1 块只能出现一次");
         assert.strictEqual(stylesSource.split("/* contact-timing S-1 */").length - 1, 1);

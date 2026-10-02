@@ -2095,8 +2095,8 @@
             }
             const node = contactDialogNode(dialog);
             if (!node || typeof node.querySelectorAll !== "function") return;
-            node.querySelectorAll("select").forEach((select) => {
-                select.disabled = locked;
+            [...node.querySelectorAll("select"), ...node.querySelectorAll("input")].forEach((field) => {
+                field.disabled = locked;
             });
         }
 
@@ -2129,6 +2129,7 @@
             if (typeof node.addEventListener === "function") {
                 node.addEventListener("click", onContactDialogClick);
                 node.addEventListener("change", onContactDialogChange);
+                node.addEventListener("input", onContactDialogInput);
                 node.addEventListener("submit", onContactDialogSubmit);
                 node.addEventListener("cancel", onContactDialogCancel);
                 node.addEventListener("keydown", onContactDialogKeyDown);
@@ -2181,6 +2182,14 @@
         }
 
         function onContactDialogKeyDown(event) {
+            if (event && event.key === "Enter" && event.target && typeof event.target.getAttribute === "function") {
+                const field = event.target.getAttribute("data-contact-filter");
+                if (field === "countryCode" || field === "zoneId") {
+                    if (typeof event.preventDefault === "function") event.preventDefault();
+                    focusIfAvailable(contactDialogField(contactTimingState().dialog, `select[name="${field}"]`));
+                    return;
+                }
+            }
             if (!event || event.key !== "Escape") return;
             if (typeof event.preventDefault === "function") event.preventDefault();
             closeContactTimingDialog({ restoreFocus: true });
@@ -2212,8 +2221,31 @@
             if (!dialog || dialog.kind !== "location") return;
             const target = event.target;
             if (!target || typeof target.getAttribute !== "function") return;
+            if (target.getAttribute("name") === "zoneId") {
+                const country = contactDialogField(dialog, 'select[name="countryCode"]');
+                renderContactDialogZoneOptions(dialog, country ? country.value : "", target.value);
+                return;
+            }
             if (target.getAttribute("name") !== "countryCode") return;
+            const zoneSearch = contactDialogField(dialog, '[data-contact-filter="zoneId"]');
+            if (zoneSearch) zoneSearch.value = "";
+            renderContactDialogCountryOptions(dialog);
             renderContactDialogZoneOptions(dialog, String(target.value || ""), null);
+        }
+
+        function onContactDialogInput(event) {
+            if (instance.disposed) return;
+            const dialog = contactTimingState().dialog;
+            if (!dialog || dialog.kind !== "location" || !dialog.ready || dialog.busy) return;
+            const target = event.target;
+            const field = target && typeof target.getAttribute === "function"
+                ? target.getAttribute("data-contact-filter") : null;
+            if (field === "countryCode") renderContactDialogCountryOptions(dialog);
+            if (field === "zoneId") {
+                const country = contactDialogField(dialog, 'select[name="countryCode"]');
+                const zone = contactDialogField(dialog, 'select[name="zoneId"]');
+                renderContactDialogZoneOptions(dialog, country ? country.value : "", zone ? zone.value : null);
+            }
         }
 
         function onContactDialogSubmit(event) {
@@ -2245,15 +2277,38 @@
             return label === id ? id : `${label}（${id}）`;
         }
 
+        /** 搜索不改变草稿；未命中的已选项保留并标注，避免保存时误改所在地。 */
+        function filterContactDialogOptions(dialog, field, entries, selectedValue) {
+            const search = contactDialogField(dialog, `[data-contact-filter="${field}"]`);
+            const query = String(search ? search.value : "").trim().toLowerCase();
+            let matches = 0;
+            const options = [];
+            entries.forEach((entry) => {
+                const matched = !query || `${entry.label} ${entry.value}`.toLowerCase().includes(query);
+                if (matched) matches += 1;
+                if (matched || entry.value === selectedValue) {
+                    const label = `${entry.label}${matched ? "" : "（当前选择）"}`;
+                    options.push(`<option value="${escapeText(entry.value)}">${escapeText(label)}</option>`);
+                }
+            });
+            const hint = contactDialogField(dialog, `[data-contact-filter-hint="${field}"]`);
+            if (hint) {
+                hint.textContent = !query ? "" : matches ? `匹配 ${matches} 项，请在下方选择` : "无匹配结果，请更换关键词";
+                hint.hidden = !query;
+            }
+            return options;
+        }
+
         function renderContactDialogCountryOptions(dialog) {
             const select = contactDialogField(dialog, 'select[name="countryCode"]');
             if (!select) return;
+            const selected = String(select.value || "");
             const options = ['<option value="">请选择国家 / 地区</option>'];
-            contactCatalogCountries().forEach((country) => {
-                if (!country || country.code == null) return;
-                options.push(`<option value="${escapeText(country.code)}">${escapeText(country.labelZh || country.code)}</option>`);
-            });
+            const entries = contactCatalogCountries().filter((country) => country && country.code != null)
+                .map((country) => ({ value: String(country.code), label: String(country.labelZh || country.code) }));
+            options.push(...filterContactDialogOptions(dialog, "countryCode", entries, selected));
             select.innerHTML = options.join("");
+            select.value = selected;
         }
 
         /** 多时区才展示具体时区字段；只有单个 zone 时 hidden 且提交 null（S-2/I-4）。 */
@@ -2288,12 +2343,11 @@
             }
             const defaultEntry = zones.find((zone) => zone && String(zone.id) === String(country.defaultZoneId)) || null;
             const options = [`<option value="">${escapeText(`使用默认时区${defaultEntry ? ` · ${contactZoneOptionText(defaultEntry)}` : ""}`)}</option>`];
-            zones.forEach((zone) => {
-                if (!zone || zone.id == null) return;
-                options.push(`<option value="${escapeText(zone.id)}">${escapeText(contactZoneOptionText(zone))}</option>`);
-            });
-            select.innerHTML = options.join("");
             const wanted = selectedZoneId == null ? "" : String(selectedZoneId);
+            const entries = zones.filter((zone) => zone && zone.id != null)
+                .map((zone) => ({ value: String(zone.id), label: contactZoneOptionText(zone) }));
+            options.push(...filterContactDialogOptions(dialog, "zoneId", entries, wanted));
+            select.innerHTML = options.join("");
             const present = wanted !== "" && zones.some((zone) => zone && String(zone.id) === wanted);
             select.value = present ? wanted : "";
         }
@@ -2307,8 +2361,18 @@
   </header>
   <form data-role="contact-location-form">
     <div class="contact-timing-body">
-      <label class="contact-timing-field" for="${p}-country">国家 / 地区<select id="${p}-country" name="countryCode" required><option value="">请选择国家 / 地区</option></select></label>
-      <label class="contact-timing-field" for="${p}-zone" data-role="contact-zone-field" hidden>具体时区（可选）<select id="${p}-zone" name="zoneId"><option value="">使用默认时区</option></select></label>
+      <div class="contact-timing-field">
+        <label for="${p}-country">国家 / 地区</label>
+        <input type="search" data-contact-filter="countryCode" aria-label="搜索国家 / 地区" aria-controls="${p}-country" placeholder="输入国家名称或代码，如：中国、US" autocomplete="off">
+        <span class="contact-timing-help" data-contact-filter-hint="countryCode" role="status" hidden></span>
+        <select id="${p}-country" name="countryCode" required><option value="">请选择国家 / 地区</option></select>
+      </div>
+      <div class="contact-timing-field" data-role="contact-zone-field" hidden>
+        <label for="${p}-zone">具体时区（可选）</label>
+        <input type="search" data-contact-filter="zoneId" aria-label="搜索时区" aria-controls="${p}-zone" placeholder="输入城市或时区，如：纽约、New_York" autocomplete="off">
+        <span class="contact-timing-help" data-contact-filter-hint="zoneId" role="status" hidden></span>
+        <select id="${p}-zone" name="zoneId"><option value="">使用默认时区</option></select>
+      </div>
       <p class="contact-timing-help" data-role="contact-default-zone" hidden></p>
       <p class="contact-timing-help">样本不足时按当地 08:00–17:00 推荐，保存后显示北京时间。</p>
       <p class="contact-timing-error" role="alert" hidden></p>
