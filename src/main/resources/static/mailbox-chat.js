@@ -239,12 +239,12 @@
 
     /**
      * I-2：无 offset 的本地日期时间 → 北京时间显示模型 { display, title, datetime }，不可信时 null。
-     * 支持日期+时分、可选秒与小数秒；只接受严格完整字符串，拒绝空白/普通日期文本/非法分量，
+     * 支持日期+时分、可选秒与任意位小数秒（截断到毫秒）；只接受严格完整字符串，拒绝空白/普通日期文本/非法分量，
      * 且对照输入分量拒绝 Date 自动进位（如 2 月 30 日）与 Intl 异常。秒仅校验不显示。
      */
     function formatLastReplyTime(receivedAt) {
         const raw = typeof receivedAt === "string" ? receivedAt.trim() : "";
-        const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(raw);
+        const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?$/.exec(raw);
         if (!match) return null;
         const year = Number(match[1]);
         const month = Number(match[2]);
@@ -258,7 +258,7 @@
         const intl = global.Intl;
         if (!intl || typeof intl.DateTimeFormat !== "function") return null;
         // 显式附加 +08:00 按北京时间解释；小数秒截取到毫秒精度（界面不显示毫秒）。
-        const fraction = match[7] ? "." + match[7] : "";
+        const fraction = match[7] ? "." + match[7].slice(0, 3) : "";
         const date = new Date(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${String(second).padStart(2, "0")}${fraction}+08:00`);
         if (Number.isNaN(date.getTime())) return null;
         let parts;

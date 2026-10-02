@@ -5340,6 +5340,25 @@ describe("fast-p 上次回复：收发件箱列表与详情时间（I-1..I-5 / S
         assert.strictEqual(replyRow(bad, 1).querySelector("time"), null, "2 月 30 日不得自动进位成 3 月日期");
     });
 
+    it("上次回复 B-4b：4–9 位小数秒截断到毫秒后仍正常显示北京时间", async () => {
+        const cases = [
+            ["2026-10-02T17:59:59.1234", "4 位小数秒"],
+            ["2026-10-02T17:59:59.123456789", "9 位小数秒"]
+        ];
+        for (const [input, label] of cases) {
+            const ctx = await bootRow(inbound(input));
+            const listTime = replyTime(ctx, 1);
+            assert.ok(listTime, `${label}: 列表必须有 time 元素`);
+            assert.strictEqual(listTime.textContent, EIGHT_TEXT, `${label}: 列表可见北京时间`);
+            assert.strictEqual(listTime.getAttribute("datetime"), EIGHT_DATETIME, `${label}: 列表 datetime`);
+            await openPerson(ctx, 1);
+            const slot = detailSlot(ctx);
+            assert.strictEqual(slot.querySelector(".mailbox-reply-empty"), null, `${label}: 详情不得落入不可用分支`);
+            assert.strictEqual(slot.querySelector("time").textContent, EIGHT_TEXT, `${label}: 详情可见北京时间`);
+            assert.strictEqual(slot.querySelector("time").getAttribute("datetime"), EIGHT_DATETIME, `${label}: 详情 datetime`);
+        }
+    });
+
     it("上次回复 B-5：输出与设备时区无关（运行期切换 TZ 仍为同一北京时间）", async () => {
         const originalTz = process.env.TZ;
         const render = async (tz) => {
