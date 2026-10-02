@@ -296,16 +296,21 @@
 
     /**
      * I-1/I-3：列表与详情共用的展示模型。
-     * kind = time（正常北京时间）| none（仅 latestInbound===null 且 receivedCount===0）
-     * | unavailable（字段缺失/结构异常/时间空白或非法等其余情况）。
+     * kind = time（正常北京时间）
+     * | none（仅严格 `latestInbound === null` 且 `receivedCount === 0`）
+     * | unavailable（`latestInbound` 缺失/undefined/数组/非对象/结构异常，或时间空白、非法；
+     *   这些一律不可用，与 receivedCount 无关；`null && receivedCount > 0` 同样不可用）。
      */
     function lastReplyDisplay(summary) {
         const item = summary || {};
         const inbound = item.latestInbound;
-        if (inbound == null || typeof inbound !== "object" || Array.isArray(inbound)) {
+        if (inbound === null) {
             if ((Number(item.receivedCount) || 0) === 0) {
                 return { kind: "none", text: LAST_REPLY_EMPTY_TEXT, aria: LAST_REPLY_EMPTY_TEXT };
             }
+            return { kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT, aria: LAST_REPLY_UNAVAILABLE_TEXT };
+        }
+        if (typeof inbound !== "object" || Array.isArray(inbound)) {
             return { kind: "unavailable", text: LAST_REPLY_UNAVAILABLE_TEXT, aria: LAST_REPLY_UNAVAILABLE_TEXT };
         }
         const formatted = formatLastReplyTime(inbound.receivedAt);

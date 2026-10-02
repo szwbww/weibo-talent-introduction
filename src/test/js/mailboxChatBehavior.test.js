@@ -5297,6 +5297,32 @@ describe("fast-p 上次回复：收发件箱列表与详情时间（I-1..I-5 / S
         }
     });
 
+    it("上次回复 B-3b：字段缺失/非对象即使 receivedCount=0 也不是尚未回复", async () => {
+        const missing = expertA({ receivedCount: 0 });
+        delete missing.latestInbound;
+        const missingCtx = await bootChat({
+            conversations: { items: [missing], total: 1 },
+            messages: messagesA(),
+            contact: contactA()
+        });
+        assert.strictEqual(replyRow(missingCtx, 1).querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, "缺失 latestInbound 字段");
+        assert.strictEqual(replyRow(missingCtx, 1).querySelector("time"), null);
+        await openPerson(missingCtx, 1);
+        assert.strictEqual(detailSlot(missingCtx).querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE);
+        assert.strictEqual(detailSlot(missingCtx).querySelector("time"), null);
+
+        const oops = await bootRow("oops", { receivedCount: 0 });
+        assert.strictEqual(replyRow(oops, 1).querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, "非对象 latestInbound");
+        assert.strictEqual(replyRow(oops, 1).querySelector("time"), null);
+        await openPerson(oops, 1);
+        assert.strictEqual(detailSlot(oops).querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE);
+        assert.strictEqual(detailSlot(oops).querySelector("time"), null);
+
+        const nullZero = await bootRow(null, { receivedCount: 0 });
+        assert.strictEqual(replyRow(nullZero, 1).querySelector(".mailbox-reply-empty").textContent, EMPTY_TEXT, "仅 null+0 才是尚未回复");
+        assert.strictEqual(replyRow(nullZero, 1).querySelector("time"), null);
+    });
+
     it("上次回复 B-4：跨年/闰日边界正确，2 月 30 日不进位，小数秒不影响日期星期与分钟", async () => {
         const cases = [
             ["2025-12-31T23:58:00", "2025-12-31 星期三 23:58"],
