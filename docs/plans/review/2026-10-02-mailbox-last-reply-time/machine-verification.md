@@ -209,3 +209,115 @@ Artifact SHA-256: `181364f510968b7eb077a400c67089eeadc8d5e49dd54355ed2c3c2e9bf7e
 |---|---|---|---|
 | O-1 | Master worktree `git diff --check` must pass; product/test changes remain in authorized scope. | RECORD_ONLY | Worktree command exits 0. Range-level failure is only three non-product controller-doc EOF markers. |
 | O-2 | Required product/test boundary and mandatory command evidence must be assessed independently. | RECORD_ONLY | Markdown hard-break whitespace is only in the prior aggregate control report; it does not affect source, tests, or a master-required command. |
+
+## Epoch 3 — 2026-10-02T16:06:21Z
+
+- Master plan: `docs/plans/2026-10-02/mailbox-last-reply-time.md` (sha256 `cb491bebb31ab8e4a8e5379c731c5bf66f6b4a3c633a7f7440acf518bab7332e`)
+- Governing master identity: worktree sha256 `cb491bebb31ab8e4a8e5379c731c5bf66f6b4a3c633a7f7440acf518bab7332e`; recorded `commit 5d1789f90716a27e265b63340a9aef562a0035d9`
+- Master identity state: CONSISTENT
+- Boundary: `bf19fdfcb24336a41106d1c46fa7147bc6546892..5a792f50ec006ff7297db75e0ff6c09e5efd3d9c`
+- Reviewer: `/root/aggregate_reviewer_epoch3`
+- Result: FAIL
+- Convergence: PROGRESSING
+- Repair artifact/result: `docs/plans/fix/mailbox-last-reply-time/repair.md` (sha256 `d0a0e708fec53c4b8862b6b9b0e0313c487f32823ec64568674e1059c2470ace`) — DRAFT_READY
+
+## Verification Result: FAIL
+
+Plan: `docs/plans/2026-10-02/mailbox-last-reply-time.md`
+Master identity: CONSISTENT — `cb491bebb31ab8e4a8e5379c731c5bf66f6b4a3c633a7f7440acf518bab7332e`
+Boundary: `bf19fdfcb24336a41106d1c46fa7147bc6546892..5a792f50ec006ff7297db75e0ff6c09e5efd3d9c`
+Evidence HEAD: `7674a795abc5fc0b5d6b113c3564188881fd3ac3`
+Convergence: PROGRESSING
+Manual acceptance: PENDING (A-1–A-8)
+
+### Commands
+
+| Command | Result | Evidence |
+|---|---|---|
+| `node --check src/main/resources/static/mailbox-chat.js` | PASS | exit 0 |
+| `node --test src/test/js/mailboxChatBehavior.test.js src/test/js/mailboxChatStyle.test.js` | PASS | exit 0; 154 tests, 23 suites, 154 pass, 0 fail |
+| `TZ=UTC node --test --test-name-pattern='上次回复' src/test/js/mailboxChatBehavior.test.js` | PASS | exit 0; 13 tests, 1 suite, 13 pass, 0 fail |
+| `TZ=America/Los_Angeles node --test --test-name-pattern='上次回复' src/test/js/mailboxChatBehavior.test.js` | PASS | exit 0; 13 tests, 1 suite, 13 pass, 0 fail |
+| `node --test src/test/js/*.test.js` | PASS | exit 0; 1318 tests, 257 suites, 1318 pass, 0 fail, 0 cancelled, 0 skipped, 0 todo |
+| `cmp src/main/resources/static/mailbox-chat.css docs/plans/2026-09-09/mailbox-refinement-evidence/mailbox-chat.target.css` | PASS | exit 0 |
+| `git diff --check` | PASS | exit 0 |
+
+The reviewer's first sandboxed full-suite attempt exited 1 with transient `EPERM` while writing `target/discovery-plan-acceptance/08.html`; the required command reran with workspace write access and passed as reported above.
+
+### Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| R-1 list/detail visible Beijing date, weekday, minute | PASS | B-1; `mailbox-chat.js:1370-1400,1969-1973` |
+| R-2 latest inbound only; refresh synchronizes both views | PASS | B-2/B-6/B-7/B-9; `mailbox-chat.js:304-325,1503-1508` |
+| R-3 no-reply versus unavailable; no cross-value | PASS | B-3/B-3b/B-3c/B-8/B-10 |
+| I-1 source/account scope | PASS | `mailbox-chat.js:304-316`; B-2/B-9 |
+| I-2 strict complete ISO-local input; Beijing rendering | FAIL | V-3; `mailbox-chat.js:246` trims padded input before strict regex |
+| I-3 exact null-plus-numeric-zero discriminator | PASS | `mailbox-chat.js:307-315`; B-3c |
+| I-4 guarded same-row detail refresh | PASS | `mailbox-chat.js:1489-1512,1947-1973`; B-6/B-7/B-8 |
+| I-5 no request/state/cache/polling; CSS lock | PASS | B-10; CSS `cmp` passes |
+| M-1–M-4 preserved behavior/interfaces | PASS | Full suite; B-6/B-8/B-9/B-10; no Kotlin/SQL/API diff |
+| S-1/S-2 DOM order, aria, detail slot | PASS | B-1/B-3; style suite |
+| S-3 exact scoped CSS | PASS | `styles.css`; style suite; CSS lock passes |
+| S-4 11 ordered cache keys | PASS | `index.html:11-15,2345-2350`; style suite |
+| Scope/non-goals | PASS | Base→code diff changes five planned implementation/test files; `5a792f5` changes only authorized JS + behavior test |
+
+Runtime diagnostic: executing the production parser in-memory returns a normal Beijing model for padded space, tab, and newline ISO inputs. I-2/T-1 requires strict complete input and rejection of whitespace.
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | Arbitrary fraction accepted/truncated; B-4b passes in both TZ processes |
+| V-2 | RESOLVED | `receivedCount === 0` exact discriminator; B-3c passes |
+| V-3 | NEW | `mailbox-chat.js:246` normalizes padded input via `.trim()` |
+
+### Findings
+
+#### P1
+
+- V-3: I-2/T-1 requires a strict complete ISO-local value and rejection of whitespace. `formatLastReplyTime` trims before regex validation, so padded values render a trusted time instead of “回复时间暂不可用”. Scope: `mailbox-chat.js` plus one mounted behavior regression.
+
+#### P2
+
+- N/A
+
+#### Observations
+
+- O-1 RECORD_ONLY: `git diff --check 5d1789f..bb0b9f1` exits 2 only for three fast-p controller docs’ EOF blank lines. Required worktree command exits 0.
+- O-2 RECORD_ONLY: broad historical range reports trailing Markdown hard-break whitespace only in prior aggregate `machine-verification.md`; no product/test impact.
+
+### Evidence Boundaries
+
+- Manual A-1–A-8 and live browser/backend integration remain pending.
+- Repair evidence mode: DURABLE_HANDOFF.
+- `repair-execution.md` records `Evidence HEAD: pending` due self-reference; durable external evidence HEAD is `7674a795abc5fc0b5d6b113c3564188881fd3ac3`.
+- No mandatory machine evidence unavailable.
+- The reviewer made no product-code modification.
+
+## Repair Planning Result: DRAFT_READY
+
+Baseline plan: `docs/plans/2026-10-02/mailbox-last-reply-time.md`
+Verification result: FAIL / PROGRESSING
+Repair artifact: `docs/plans/fix/mailbox-last-reply-time/repair.md`
+Artifact SHA-256: `d0a0e708fec53c4b8862b6b9b0e0313c487f32823ec64568674e1059c2470ace`
+
+### Included Findings
+
+- V-3
+
+### Excluded Findings
+
+- V-1/V-2 — resolved.
+- O-1/O-2 — RECORD_ONLY.
+
+### Required Human Decision
+
+- Approve the exact bounded repair artifact before execution.
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| O-1 | Master worktree `git diff --check` must pass; product/test changes remain in authorized scope. | RECORD_ONLY | Worktree command exits 0. Range-level failure is only three non-product controller-doc EOF markers. |
+| O-2 | Required product/test boundary and mandatory command evidence must be assessed independently. | RECORD_ONLY | Markdown hard-break whitespace is only in the prior aggregate control report; it does not affect source, tests, or a master-required command. |
