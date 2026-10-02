@@ -5388,6 +5388,29 @@ describe("fast-p 上次回复：收发件箱列表与详情时间（I-1..I-5 / S
         }
     });
 
+    it("上次回复 B-4c：前后空白/制表/换行的 ISO 时间不 trim，一律不可用", async () => {
+        const padded = [
+            " 2026-10-02T17:59:00",
+            "2026-10-02T17:59:00 ",
+            "\t2026-10-02T17:59:00\n",
+            "\n2026-10-02T17:59:00\t"
+        ];
+        for (const input of padded) {
+            const ctx = await bootRow(inbound(input));
+            const row = replyRow(ctx, 1);
+            assert.strictEqual(row.querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, `${JSON.stringify(input)}: 列表`);
+            assert.strictEqual(row.querySelector("time"), null, `${JSON.stringify(input)}: 列表不得有 time`);
+            await openPerson(ctx, 1);
+            const slot = detailSlot(ctx);
+            assert.strictEqual(slot.querySelector(".mailbox-reply-empty").textContent, UNAVAILABLE, `${JSON.stringify(input)}: 详情`);
+            assert.strictEqual(slot.querySelector("time"), null, `${JSON.stringify(input)}: 详情不得有 time`);
+        }
+        const exact = await bootRow(inbound("2026-10-02T17:59:00"));
+        assert.strictEqual(replyTime(exact, 1).textContent, EIGHT_TEXT, "无空白输入保持正常显示");
+        await openPerson(exact, 1);
+        assert.strictEqual(detailSlot(exact).querySelector("time").textContent, EIGHT_TEXT, "无空白输入详情正常显示");
+    });
+
     it("上次回复 B-5：输出与设备时区无关（运行期切换 TZ 仍为同一北京时间）", async () => {
         const originalTz = process.env.TZ;
         const render = async (tz) => {

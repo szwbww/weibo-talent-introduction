@@ -239,11 +239,11 @@
 
     /**
      * I-2：无 offset 的本地日期时间 → 北京时间显示模型 { display, title, datetime }，不可信时 null。
-     * 支持日期+时分、可选秒与任意位小数秒（截断到毫秒）；只接受严格完整字符串，拒绝空白/普通日期文本/非法分量，
-     * 且对照输入分量拒绝 Date 自动进位（如 2 月 30 日）与 Intl 异常。秒仅校验不显示。
+     * 支持日期+时分、可选秒与任意位小数秒（截断到毫秒）；只接受严格完整字符串（不做 trim，前后空白即不可用），
+     * 拒绝空白/普通日期文本/非法分量，且对照输入分量拒绝 Date 自动进位（如 2 月 30 日）与 Intl 异常。秒仅校验不显示。
      */
     function formatLastReplyTime(receivedAt) {
-        const raw = typeof receivedAt === "string" ? receivedAt.trim() : "";
+        const raw = typeof receivedAt === "string" ? receivedAt : "";
         const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?$/.exec(raw);
         if (!match) return null;
         const year = Number(match[1]);
