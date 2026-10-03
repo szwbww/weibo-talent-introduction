@@ -1635,3 +1635,162 @@ describe("02 · I-5/I-6 守卫与身份", () => {
         assert.ok(!ctx.host.querySelector(".mailbox-suspend-banner"), "专家 1 的迟到状态不得挂到专家 2");
     });
 });
+
+describe("02 · R-1 迟到挂起回包绑定详情上下文（V-1）", () => {
+    it("移动端返回列表：迟到的挂起状态回包不写入隐藏详情（V-1）", async () => {
+        let release = null;
+        const ctx = await bootChat({
+            mobile: true,
+            conversations: { items: [suspendExpert(1)], total: 1 },
+            messages: suspendMessages([inboundMsg(101, 1, "MANUAL_REVIEW")]),
+            contact: { contact: { id: 1 } },
+            route: (url, method, body, entry, next) => {
+                if (url === "/api/mail/mailbox/conversations/1/suspension" && method === "GET") {
+                    return new Promise((resolve) => {
+                        release = () => resolve({ contactId: 1, suspended: true, suspendReason: "迟到A", suspensionPendingCount: 0, followed: false });
+                    });
+                }
+                return next(url, method, body);
+            }
+        });
+        openExpert(ctx, 1);
+        await flush();
+        click(ctx.host.querySelector('[data-action="mobile-mailbox-back"]'));
+        await flush();
+        if (release) release();
+        await flush();
+        assert.ok(!ctx.host.querySelector(".mailbox-suspend-banner"), "迟到的挂起状态不得写入详情");
+        const detailButton = ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]');
+        assert.ok(!detailButton || detailButton.textContent.trim() !== "取消挂起", "详情按钮不得被迟到回包改写");
+        assert.strictEqual(ctx.host.querySelector(".mobile-core-mailbox").getAttribute("data-mobile-pane"), "list", "不得抢回详情");
+    });
+
+    it("移动端返回列表：迟到的原因表单 GET 不打开隐藏详情的表单（V-1）", async () => {
+        let defer = false;
+        let release = null;
+        const ctx = await bootChat({
+            mobile: true,
+            conversations: { items: [suspendExpert(1)], total: 1 },
+            suspension: (id) => ({ contactId: id, suspended: false, suspendReason: null, suspensionPendingCount: 2, followed: false }),
+            messages: suspendMessages([inboundMsg(101, 1, "MANUAL_REVIEW")]),
+            contact: { contact: { id: 1 } },
+            route: (url, method, body, entry, next) => {
+                if (defer && url === "/api/mail/mailbox/conversations/1/suspension" && method === "GET") {
+                    return new Promise((resolve) => {
+                        release = () => resolve({ contactId: 1, suspended: false, suspendReason: null, suspensionPendingCount: 2, followed: false });
+                    });
+                }
+                return next(url, method, body);
+            }
+        });
+        openExpert(ctx, 1);
+        await flush();
+        defer = true;
+        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]'));
+        await flush();
+        click(ctx.host.querySelector('[data-action="mobile-mailbox-back"]'));
+        await flush();
+        if (release) release();
+        await flush();
+        assert.ok(!reasonForm(ctx), "迟到的原因 GET 不得为隐藏详情打开表单");
+    });
+
+    it("切到专家 B 并打开 B 的表单后：A 的迟到 PUT 不撤下 B 的表单（V-1）", async () => {
+        let releasePut = null;
+        const ctx = await bootChat({
+            conversations: { items: [suspendExpert(1), suspendExpert(2)], total: 2 },
+            suspension: (id) => ({ contactId: id, suspended: false, suspendReason: null, suspensionPendingCount: 2, followed: false }),
+            messages: suspendMessages([inboundMsg(101, 1, "MANUAL_REVIEW")]),
+            contact: { contact: { id: 1 } },
+            route: (url, method, body, entry, next) => {
+                if (url === "/api/mail/mailbox/conversations/1/suspension" && method === "PUT") {
+                    return new Promise((resolve) => {
+                        releasePut = () => resolve({ contactId: 1, suspended: true, suspendReason: "A", suspensionPendingCount: 0, followed: false });
+                    });
+                }
+                return next(url, method, body);
+            }
+        });
+        openExpert(ctx, 1);
+        await flush();
+        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]'));
+        await flush();
+        const formA = reasonForm(ctx);
+        assert.ok(formA, "A 的表单已打开");
+        formA.querySelector("textarea").value = "A 原因";
+        click(formA.querySelector('[data-action="mc-suspension-reason-confirm"]'));
+        await flush();
+        openExpert(ctx, 2);
+        await flush();
+        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]'));
+        await flush();
+        const formB = reasonForm(ctx);
+        assert.ok(formB && String(formB.dataset.contactId) === "2", "B 的表单已打开");
+        if (releasePut) releasePut();
+        await flush();
+        assert.strictEqual(reasonForm(ctx), formB, "A 的迟到 PUT 不得撤下 B 的表单");
+        assert.ok(!ctx.calls.status.some((entry) => entry.message.includes("已挂起该会话")), "迟到 PUT 不得报成功");
+    });
+
+    it("移动端返回列表：迟到的取消挂起（DELETE）不切换 Tab 不报成功（V-1）", async () => {
+        let releaseDel = null;
+        const ctx = await bootChat({
+            mobile: true,
+            conversations: { items: [suspendExpert(1, { suspended: true, suspensionPendingCount: 0 })], total: 1 },
+            suspension: { contactId: 1, suspended: true, suspendReason: null, suspensionPendingCount: 0, followed: false },
+            messages: suspendMessages([inboundMsg(101, 1, "MANUAL_REVIEW")]),
+            contact: { contact: { id: 1 } },
+            route: (url, method, body, entry, next) => {
+                if (url === "/api/mail/mailbox/conversations/1/suspension" && method === "DELETE") {
+                    return new Promise((resolve) => {
+                        releaseDel = () => resolve({ contactId: 1, suspended: false, suspendReason: null, suspensionPendingCount: 0, followed: false });
+                    });
+                }
+                return next(url, method, body);
+            }
+        });
+        openExpert(ctx, 1);
+        await flush();
+        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]'));
+        await flush();
+        click(ctx.host.querySelector('[data-action="mobile-mailbox-back"]'));
+        await flush();
+        if (releaseDel) releaseDel();
+        await flush();
+        assert.strictEqual(chipButton(ctx, "replied").getAttribute("aria-pressed"), "false", "迟到 DELETE 不得切换 Tab");
+        assert.ok(!ctx.calls.status.some((entry) => /已(结束|取消)挂起/.test(entry.message)), "迟到 DELETE 不得报成功");
+    });
+
+    it("切到专家 B 后：A 的迟到结束挂起（DELETE）不改 B 详情与导航（V-1）", async () => {
+        let releaseDel = null;
+        const ctx = await bootChat({
+            conversations: { items: [suspendExpert(1, { suspended: true, suspensionPendingCount: 0 }), suspendExpert(2)], total: 2 },
+            suspension: (id) => (id === 1
+                ? { contactId: 1, suspended: true, suspendReason: "等待材料", suspensionPendingCount: 0, followed: false }
+                : { contactId: id, suspended: false, suspendReason: null, suspensionPendingCount: 2, followed: false }),
+            messages: suspendMessages([inboundMsg(90, 1, "PROCESSED"), inboundMsg(101, 1, "MANUAL_REVIEW")]),
+            contact: { contact: { id: 1 } },
+            route: (url, method, body, entry, next) => {
+                if (url === "/api/mail/mailbox/conversations/1/suspension" && method === "DELETE") {
+                    return new Promise((resolve) => {
+                        releaseDel = () => resolve({ contactId: 1, suspended: false, suspendReason: null, suspensionPendingCount: 0, followed: false });
+                    });
+                }
+                return next(url, method, body);
+            }
+        });
+        openExpert(ctx, 1);
+        await flush();
+        const endButton = ctx.host.querySelector('[data-action="mc-suspension-end"]');
+        assert.ok(endButton, "完成行已出现");
+        click(endButton);
+        await flush();
+        openExpert(ctx, 2);
+        await flush();
+        if (releaseDel) releaseDel();
+        await flush();
+        assert.strictEqual(chipButton(ctx, "replied").getAttribute("aria-pressed"), "false", "迟到 DELETE 不得切换 Tab");
+        assert.ok(!ctx.calls.status.some((entry) => entry.message.includes("已结束挂起")), "迟到 DELETE 不得报成功");
+        assert.ok(ctx.host.querySelector(".mc-header"), "B 的详情仍在");
+    });
+});

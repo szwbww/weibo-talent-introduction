@@ -628,6 +628,7 @@
             suspension: {
                 contactId: null,
                 seq: 0,
+                workEpoch: 0,
                 loading: false,
                 error: "",
                 loaded: false,
@@ -1184,6 +1185,8 @@
         function returnToMobileList() {
             saveCurrentConversation();
             setMobilePane("list");
+            // R-1（V-1）：离开详情即作废在途挂起 UI 工作并撤下未提交的原因表单。
+            invalidateSuspensionWork();
         }
 
         function onMobileViewportChange() {
@@ -1798,6 +1801,7 @@
             instance.suspension = {
                 contactId: null,
                 seq: instance.suspension.seq + 1,
+                workEpoch: instance.suspension.workEpoch + 1,
                 loading: false,
                 error: "",
                 loaded: false,
@@ -1839,21 +1843,50 @@
             };
         }
 
+        // R-1（V-1）：挂起异步回包只在发起时的详情上下文仍当前时生效。
+        // 移动端返回列表、换专家/Tab/账号、卸载都会让旧回包成为 no-op。
+        function captureSuspensionContext(contactId) {
+            return {
+                contactId: Number(contactId),
+                user: instance.user,
+                convEpoch: instance.convEpoch,
+                paneEpoch: instance.paneEpoch,
+                workEpoch: instance.suspension.workEpoch
+            };
+        }
+
+        function suspensionContextAlive(ctx) {
+            if (!ctx || instance.disposed) return false;
+            if (ctx.workEpoch !== instance.suspension.workEpoch) return false;
+            if (ctx.convEpoch !== instance.convEpoch) return false;
+            if (ctx.paneEpoch !== instance.paneEpoch) return false;
+            return String(ctx.user) === String(instance.user);
+        }
+
+        // 离开详情/切 Tab/销毁：作废在途挂起工作并撤下未提交的原因表单（不清挂起真值）。
+        function invalidateSuspensionWork() {
+            instance.suspension.workEpoch += 1;
+            instance.suspension.seq += 1;
+            instance.suspension.loading = false;
+            instance.completion.busy = false;
+            detachReasonForm();
+        }
+
         function loadSuspensionState(contactId) {
             const id = Number(contactId);
             if (!Number.isFinite(id) || id <= 0) return;
             if (isUnmatchedChip()) return;
             instance.suspension.seq += 1;
             const mySeq = instance.suspension.seq;
-            const myEpoch = instance.convEpoch;
+            const ctx = captureSuspensionContext(id);
             instance.suspension.contactId = id;
             instance.suspension.loading = true;
             instance.suspension.error = "";
             return hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`).then((data) => {
-                if (instance.disposed || mySeq !== instance.suspension.seq || myEpoch !== instance.convEpoch) return;
+                if (mySeq !== instance.suspension.seq || !suspensionContextAlive(ctx)) return;
                 applySuspensionState(id, data);
             }).catch((err) => {
-                if (instance.disposed || mySeq !== instance.suspension.seq || myEpoch !== instance.convEpoch) return;
+                if (mySeq !== instance.suspension.seq || !suspensionContextAlive(ctx)) return;
                 instance.suspension.loading = false;
                 instance.suspension.loaded = false;
                 instance.suspension.error = err && err.message ? err.message : SUSPENSION_LOAD_ERROR_TEXT;
@@ -2122,22 +2155,30 @@
             if (!section || instance.reasonForm.busy) return;
             const textarea = section.querySelector("textarea");
             const reasonText = textarea && typeof textarea.value === "string" ? textarea.value.trim() : "";
+            const ctx = captureSuspensionContext(id);
             setReasonFormBusy(section, true);
             setReasonFormError(section, "");
             hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`, {
                 method: "PUT",
                 body: JSON.stringify({ reason: reasonText || null })
             }).then((data) => {
-                if (instance.disposed) return;
+                if (!suspensionContextAlive(ctx)) {
+                    // R-1（V-1）：迟到回包只解除本表单 busy，不撤下/不改写新上下文。
+                    if (reasonFormSection(id) === section) setReasonFormBusy(section, false);
+                    return;
+                }
                 instance.reasonForm.busy = false;
-                detachReasonForm();
+                if (reasonFormSection(id) === section) detachReasonForm();
                 hostShowStatus("已挂起该会话", "ok");
                 if (String(instance.selectedContactId) === String(id)) {
                     applySuspensionState(id, data);
                 }
                 refreshListWithFallback();
             }).catch((err) => {
-                if (instance.disposed) return;
+                if (!suspensionContextAlive(ctx)) {
+                    if (reasonFormSection(id) === section) setReasonFormBusy(section, false);
+                    return;
+                }
                 setReasonFormBusy(section, false);
                 setReasonFormError(section, err && err.message ? err.message : "挂起失败，请重试");
             });
@@ -2218,16 +2259,17 @@
             }
             const seq = instance.suspension.seq + 1;
             instance.suspension.seq = seq;
+            const ctx = captureSuspensionContext(id);
             hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`).then((data) => {
-                if (instance.disposed || seq !== instance.suspension.seq) return;
+                if (seq !== instance.suspension.seq || !suspensionContextAlive(ctx)) return;
                 if (data && data.suspended === true) {
-                    if (detailSelected) applySuspensionState(id, data);
+                    if (String(instance.selectedContactId) === String(id)) applySuspensionState(id, data);
                     else refreshListWithFallback();
                     return;
                 }
                 openReasonForm(id, trigger);
             }).catch((err) => {
-                if (instance.disposed || seq !== instance.suspension.seq) return;
+                if (seq !== instance.suspension.seq || !suspensionContextAlive(ctx)) return;
                 hostShowStatus(err && err.message ? err.message : SUSPENSION_LOAD_ERROR_TEXT, "error");
             });
         }
@@ -2236,13 +2278,21 @@
             if (!instance.auth.ready || instance.reasonForm.busy) return;
             const contactId = Number(id);
             if (!Number.isFinite(contactId) || contactId <= 0) return;
+            const ctx = captureSuspensionContext(contactId);
             if (trigger) trigger.disabled = true;
             clearSuspensionActionError();
             hostApi()(`/api/mail/mailbox/conversations/${contactId}/suspension`, { method: "DELETE" }).then((data) => {
-                if (instance.disposed) return;
+                if (!suspensionContextAlive(ctx)) {
+                    // R-1（V-1）：迟到回包只恢复按钮，不改导航/列表/挂起状态。
+                    if (trigger && trigger.isConnected !== false) trigger.disabled = false;
+                    return;
+                }
                 afterSuspensionRemoved(contactId, data);
             }).catch((err) => {
-                if (instance.disposed) return;
+                if (!suspensionContextAlive(ctx)) {
+                    if (trigger && trigger.isConnected !== false) trigger.disabled = false;
+                    return;
+                }
                 if (trigger) trigger.disabled = false;
                 suspensionActionError(trigger, err && err.message ? err.message : "取消挂起失败，请重试");
             });
@@ -2251,15 +2301,25 @@
         function endSuspension(contactId) {
             const id = Number(contactId);
             if (instance.completion.busy) return;
+            const ctx = captureSuspensionContext(id);
             instance.completion.busy = true;
             const line = completionLineEl();
             setCompletionBusy(line, true);
             hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`, { method: "DELETE" }).then((data) => {
-                if (instance.disposed) return;
+                if (!suspensionContextAlive(ctx)) {
+                    // R-1（V-1）：迟到回包只解除完成行 busy，不改导航/列表/挂起状态。
+                    instance.completion.busy = false;
+                    setCompletionBusy(line, false);
+                    return;
+                }
                 instance.completion.busy = false;
                 afterSuspensionRemoved(id, data);
             }).catch((err) => {
-                if (instance.disposed) return;
+                if (!suspensionContextAlive(ctx)) {
+                    instance.completion.busy = false;
+                    setCompletionBusy(line, false);
+                    return;
+                }
                 instance.completion.busy = false;
                 setCompletionBusy(line, false);
                 if (line) setCompletionError(line, err && err.message ? err.message : "结束挂起失败，请重试");
