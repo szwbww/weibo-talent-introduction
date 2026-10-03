@@ -1,0 +1,170 @@
+$ rg -n inbound_mail_processing|expert_follow|expert_replied_dismissal src/main/kotlin scripts src/main/resources/db/migration
+exit=0
+src/main/resources/db/migration/V143__create_expert_replied_dismissal.sql:1:CREATE TABLE expert_replied_dismissal (
+src/main/resources/db/migration/V143__create_expert_replied_dismissal.sql:7:    CONSTRAINT fk_expert_replied_dismissal_contact
+src/main/resources/db/migration/V121__create_expert_follow.sql:2:-- V121 expert_follow：专家会话关注（fast-p 07，最终 schema 迁移）
+src/main/resources/db/migration/V121__create_expert_follow.sql:10:CREATE TABLE expert_follow (
+src/main/resources/db/migration/V121__create_expert_follow.sql:15:    CONSTRAINT fk_expert_follow_contact
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:1:CREATE TABLE inbound_mail_processing (
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:16:    UNIQUE KEY uk_inbound_mail_processing_uid (sender_account_code, imap_uid),
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:17:    KEY idx_inbound_mail_processing_status (process_status, received_at),
+src/main/resources/db/migration/V5__create_inbound_mail_processing.sql:18:    CONSTRAINT fk_inbound_mail_processing_contact
+src/main/resources/db/migration/V36__add_mail_attachment_inbound_processing_link.sql:12:        FOREIGN KEY (inbound_processing_id) REFERENCES inbound_mail_processing(id);
+src/main/resources/db/migration/V13__merge_manual_review_into_handoff.sql:3:-- The MANUAL_REVIEW value used by inbound_mail_processing.process_status is a
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:18:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V15__add_mail_monitoring_columns_and_promotion_audit.sql:23:UPDATE inbound_mail_processing
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:2:-- V120 inbound_mail_processing: UID 唯一性以 UIDVALIDITY 界定（fast-p 04）
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:17:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:20:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:21:    DROP INDEX uk_inbound_mail_processing_uid,
+src/main/resources/db/migration/V120__scope_inbound_uid_by_validity.sql:22:    ADD UNIQUE KEY uk_inbound_mail_processing_uid_validity (sender_account_code, uid_validity, imap_uid);
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:36:-- 2. inbound_mail_processing 增加 reason_type 列，给前端按原因过滤用
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:37:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V14__contact_index_level_and_reason_type_and_qa_display_name.sql:43:UPDATE inbound_mail_processing
+src/main/resources/db/migration/V119__create_mail_attachment_transfer.sql:62:        FOREIGN KEY (inbound_processing_id) REFERENCES inbound_mail_processing(id),
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:98:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:100:        'ALTER TABLE inbound_mail_processing ADD COLUMN in_reply_to VARCHAR(255) DEFAULT NULL AFTER message_id'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:103:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:105:        'ALTER TABLE inbound_mail_processing ADD COLUMN body TEXT DEFAULT NULL AFTER subject'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:108:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:110:        'ALTER TABLE inbound_mail_processing ADD COLUMN cleaned_body TEXT DEFAULT NULL AFTER body'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:113:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:115:        'ALTER TABLE inbound_mail_processing ADD COLUMN resolved_at DATETIME DEFAULT NULL AFTER process_reason'
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:118:        'inbound_mail_processing',
+src/main/resources/db/migration/V10__create_expert_email_alias_and_extend_unmatched_mail.sql:120:        'ALTER TABLE inbound_mail_processing ADD COLUMN resolved_by VARCHAR(100) DEFAULT NULL AFTER resolved_at'
+src/main/resources/db/migration/V19__add_operator_status_and_action_log.sql:52:        FOREIGN KEY (inbound_processing_id) REFERENCES inbound_mail_processing(id)
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:2:-- V134 共享物理收件箱归属：mail_sender_account / inbound_mail_processing（fast-p 01）
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:18:--     uk_inbound_mail_processing_uid_validity（逻辑账号 + 代际 + UID）。
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:28:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:32:ALTER TABLE inbound_mail_processing
+src/main/resources/db/migration/V134__shared_inbox_owner.sql:33:    ADD UNIQUE KEY uk_inbound_mail_processing_owner_uid (mailbox_owner_code, uid_validity, imap_uid);
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:95:    /** 线上来信：inbound_mail_processing 行；必须已绑定联系人。 */
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:101:                "inbound_mail_processing $sourceId does not exist"
+src/main/kotlin/com/weibo/talentintroduction/rag/controller/RagReplyController.kt:107:            "inbound_mail_processing $sourceId has no expert contact"
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/InboundMailProcessing.kt:7:@Table("inbound_mail_processing")
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:33: * 其唯一 owner（mail_record 或 inbound_mail_processing）→ contact。
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:855:              LEFT JOIN inbound_mail_processing p ON p.id = COALESCE(t.inbound_processing_id, a.inbound_processing_id)
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:865:                     SELECT p.id FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/document/service/ExpertMaterialService.kt:877:                     SELECT p.id FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:47: * latestInbound.processingId 是真实 inbound_mail_processing.id（供可信工作台），
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:37:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:50:        UPDATE inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:87:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:104:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:121:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:140:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:152:        FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:159:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:167:        FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:176:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:185:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:194:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:213:        SELECT COUNT(*) FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:229:          FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:238:        SELECT * FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:245:    @Query("SELECT COUNT(*) FROM inbound_mail_processing")
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:250:        SELECT p.* FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:276:        SELECT COUNT(*) FROM inbound_mail_processing p
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:12: * 数据权威（I-1）：来信只取 linked inbound_mail_processing（排除未匹配与独立机器信；
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:163:                       SELECT 1 FROM expert_follow ef
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:204:                       SELECT 1 FROM expert_follow ef
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:434:     * 归一化 UNION 基础：OUTBOUND mail_record UNION ALL linked inbound_mail_processing。
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:492:              FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:526:        // 入站匹配 inbound_mail_processing.from_email（别名）。recipientEmail/keyword 与
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:550:                SELECT 1 FROM inbound_mail_processing impi
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:592:                SELECT 1 FROM expert_follow eff
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:599:                    SELECT 1 FROM expert_follow ef_replied
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:614:                    SELECT 1 FROM inbound_mail_processing imp_replied
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailboxConversationRepository.kt:619:                           SELECT erd.last_inbound_id FROM expert_replied_dismissal erd
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:84:                    JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:89:                    JOIN inbound_mail_processing p2 ON p2.id = t2.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:118:                    JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:123:                    JOIN inbound_mail_processing p2 ON p2.id = t2.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:550:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:597:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:667:                FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:733:                FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/MailRecordRepository.kt:826:            FROM inbound_mail_processing imp
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:46:        JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailTagRepository.kt:69:        JOIN inbound_mail_processing p ON p.id = t.inbound_processing_id
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ManualReplySendAttemptService.kt:56:        /** 来信路径 = 真实 inbound_mail_processing.id；会话回信路径 = null（I-3）。 */
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:30: * - 推荐（[timing]）：只读配置、业务账号集合与 `inbound_mail_processing` 的窄投影，
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:84:     * 样本只来自指定 contact 的 `inbound_mail_processing`；账号集合复用
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertContactLocationService.kt:292:            FROM inbound_mail_processing
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:12: * expert_follow 的唯一写者（I-3）。
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:40:                INSERT IGNORE INTO expert_follow (username, expert_contact_id, created_at)
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertFollowService.kt:51:                DELETE FROM expert_follow
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertRepliedDismissalService.kt:27:            "SELECT MAX(id) FROM inbound_mail_processing WHERE expert_contact_id = :contactId",
+src/main/kotlin/com/weibo/talentintroduction/mail/service/ExpertRepliedDismissalService.kt:35:            INSERT INTO expert_replied_dismissal
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:120:        // `inbound_mail_processing`/`mail_record`/意图/标签/附件/专家状态，只在允许确认时
+
+$ rg -n inboundMailProcessingRepository.save|reopenManualResolved|InboundMailProcessing\(|pendingMailOperationService.markResolved src/main/kotlin
+exit=0
+src/main/kotlin/com/weibo/talentintroduction/mail/domain/InboundMailProcessing.kt:8:data class InboundMailProcessing(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:193:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/UnmatchedInboundMailService.kt:238:        val saved = inboundMailProcessingRepository.save(record.copy(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1524:        inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/PendingMailOperationService.kt:1595:        val updated = inboundMailProcessingRepository.reopenManualResolved(inboundProcessingId, now)
+src/main/kotlin/com/weibo/talentintroduction/mail/repository/InboundMailProcessingRepository.kt:62:    fun reopenManualResolved(id: Long, now: LocalDateTime): Int
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt:179:        pendingMailOperationService.markResolved(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1308:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1309:            InboundMailProcessing(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1364:        val saved = inboundMailProcessingRepository.save(
+src/main/kotlin/com/weibo/talentintroduction/mail/service/AutoMailReplyService.kt:1365:            InboundMailProcessing(
+
+$ rg -n markResolvedByKey|mark-resolved|resolvedBy|sessionUserFromOptions|returnToMobileList|paneEpoch|conversationVisible src/main/resources/static/mailbox-chat.js
+exit=0
+503:    function sessionUserFromOptions(options) {
+603:            user: sessionUserFromOptions(options),
+617:            paneEpoch: 0,
+1078:        function conversationVisible() {
+1097:            const paneEpoch = instance.paneEpoch;
+1100:                if (!instance.disposed && paneEpoch === instance.paneEpoch && convEpoch === instance.convEpoch) callback();
+1107:            if (!conversationVisible()) return;
+1123:            instance.paneEpoch += 1;
+1141:        function returnToMobileList() {
+1148:            instance.paneEpoch += 1;
+1819:                        selectExpert(found, { skipListReload: true, present: instance.focusPaneEpoch === instance.paneEpoch });
+1880:                    selectExpert(located, { skipListReload: true, present: presentationEpoch === instance.paneEpoch });
+3094:                footerButtons.push(`<button class="mc-text-button mc-process" type="button" data-action="mc-mark-resolved" data-message-key="${escapeText(key)}">✓ 标记已处理</button>`);
+3263:            if (!conversationVisible()) {
+3352:            if (!conversationVisible()) return null;
+3367:            if (!anchor || !conversationVisible()) return;
+3384:            if (!conversationVisible()) return;
+3415:            const geometry = conversationVisible() && !instance.pendingPosition && scroll ? {
+3432:            if (!record || !conversationVisible()) return;
+3487:        function markResolvedByKey(key) {
+3493:                return hostApi()(`/api/mail/unmatched-inbound/${processingId}/mark-resolved`, {
+7028:                returnToMobileList();
+7055:                    returnToMobileList();
+7136:            if (action === "mc-mark-resolved") {
+7137:                markResolvedByKey(data.messageKey || "");
+7541:                instance.focusPaneEpoch = instance.paneEpoch;
+7622:                instance.focusPaneEpoch = instance.paneEpoch;
+
+$ rg -n mark-unmatched-resolved|sessionUser|const mountOptions src/main/resources/static/app.js
+exit=0
+12855:        actions.push(`<button class="button" data-action="mark-unmatched-resolved" data-id="${row.inboundProcessingId}">标记已处理</button>`);
+13486:        ? `<button class="button primary" data-action="mark-unmatched-resolved" data-id="${id}">标记已处理</button>`
+13610:    if (action === "mark-unmatched-resolved") {
+13611:        const payload = await openActionDialog("mark-unmatched-resolved");
+16090:    "mark-unmatched-resolved": {
+16435:        if (["open-pending", "mark-unmatched-resolved", "view-unmatched", "open-contact-from-unmatched", "cancel-unmatched-resolved"].includes(target.dataset.action)) {
+16855:    const mountOptions = { filters: mailboxChatFilterSnapshot() };
+
+$ rg -n 20261003-mobile-core-03 src/main/resources/static/index.html src/test
+exit=0
+src/main/resources/static/index.html:11:    <link rel="stylesheet" href="styles.css?v=20261003-mobile-core-03">
+src/main/resources/static/index.html:12:    <link rel="stylesheet" href="expert-materials.css?v=20261003-mobile-core-03">
+src/main/resources/static/index.html:13:    <link rel="stylesheet" href="mailbox-chat.css?v=20261003-mobile-core-03">
+src/main/resources/static/index.html:14:    <link rel="stylesheet" href="meeting-confirmation.css?v=20261003-mobile-core-03">
+src/main/resources/static/index.html:15:    <link rel="stylesheet" href="world-clock.css?v=20261003-mobile-core-03">
+src/main/resources/static/index.html:2352:<script src="trust-reply-workbench.js?v=20261003-mobile-core-03"></script>
+src/main/resources/static/index.html:2353:<script src="expert-materials.js?v=20261003-mobile-core-03"></script>
+src/main/resources/static/index.html:2354:<script src="meeting-confirmation.js?v=20261003-mobile-core-03"></script>
+src/main/resources/static/index.html:2355:<script src="mailbox-chat.js?v=20261003-mobile-core-03-generic-followup"></script>
+src/main/resources/static/index.html:2356:<script src="app.js?v=20261003-mobile-core-03"></script>
+src/main/resources/static/index.html:2357:<script src="world-clock.js?v=20261003-mobile-core-03"></script>
+
+$ rg -n suspended|suspension src/main/kotlin/com/weibo/talentintroduction/mail src/main/resources/static/mailbox-chat.js
+exit=1
