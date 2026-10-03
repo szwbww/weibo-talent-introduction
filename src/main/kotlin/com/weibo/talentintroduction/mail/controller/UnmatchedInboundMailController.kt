@@ -171,16 +171,21 @@ class UnmatchedInboundMailController(
     @PostMapping("/unmatched-inbound/{id}/mark-resolved")
     fun markResolved(
         @PathVariable id: Long,
-        @RequestBody request: MarkResolvedRequest
-    ) {
-        val actualOperator = request.operatorName?.takeIf { it.isNotBlank() }
-            ?: request.resolvedBy
-            ?: "UNKNOWN"
+        @RequestBody request: MarkResolvedRequest,
+        servletRequest: HttpServletRequest
+    ): MarkResolvedResponse {
+        val sessionUsername = servletRequest.sessionUsernameOrNull()?.takeIf { it.isNotBlank() }
+            ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "未登录")
         pendingMailOperationService.markResolved(
             inboundProcessingId = id,
-            resolvedBy = actualOperator,
-            operatorName = actualOperator,
+            resolvedBy = sessionUsername,
+            operatorName = sessionUsername,
             note = request.note
+        )
+        return MarkResolvedResponse(
+            id = id,
+            processStatus = "PROCESSED",
+            resolvedBy = sessionUsername
         )
     }
 
@@ -892,9 +897,15 @@ data class PendingMailContactResponse(
 )
 
 data class MarkResolvedRequest(
-    val resolvedBy: String?,
+    val resolvedBy: String? = null,
     val operatorName: String? = null,
-    val note: String?
+    val note: String? = null
+)
+
+data class MarkResolvedResponse(
+    val id: Long,
+    val processStatus: String,
+    val resolvedBy: String
 )
 
 data class CancelResolvedRequest(
