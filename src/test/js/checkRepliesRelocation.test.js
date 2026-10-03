@@ -236,7 +236,9 @@ describe("check replies relocation (p1)", () => {
             "handleContactAction must route open-contact-mailbox");
         assert.ok(app.includes("focusExpertContactId") && app.includes("focusExpertEmail"),
             "mailbox state must carry focus fields");
-        assert.ok(app.includes('if (tab.dataset.view === "mailbox") clearMailboxExpertFocus();'),
-            "normal nav into mailbox must clear the expert focus");
+        assert.match(app, /function navigateFromCoreMenu\(view\) \{[\s\S]*?if \(view === "mailbox"\) clearMailboxExpertFocus\(\);[\s\S]*?setView\(view\);/,
+            "shared user menu navigation must clear mailbox expert focus before setView");
+        assert.ok(app.includes('navigateFromCoreMenu(tab.dataset.view);'),
+            "desktop navigation must delegate to the shared user menu handler");
     });
 });

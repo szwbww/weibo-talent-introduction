@@ -183,7 +183,7 @@ describe("资源版本：11 个键同值且无旧键残留", () => {
         assert.deepStrictEqual(Array.from(new Set(keys)), [CACHE_KEY], "全部资源键必须同值");
         assert.match(CACHE_KEY, /^\d{8}-[a-z0-9-]+$/, "键必须是 <yyyymmdd>-<slug>");
         assert.notStrictEqual(CACHE_KEY, RETIRED_CACHE_KEY, "本次实施必须换键（新键值以 index.html 为唯一来源）");
-        assert.match(CACHE_KEY, /^20261002-/, "键日期段必须是本次实施日期 20261002");
+        assert.ok(CACHE_KEY.slice(0, 8) >= "20261002", "资源日期不得早于联系时间样式实施日期");
         assert.ok(indexSource.indexOf(RETIRED_CACHE_KEY) === -1, "不得残留旧键");
         assert.strictEqual(
             (indexSource.match(/href="styles\.css\?v=/g) || []).length, 1,

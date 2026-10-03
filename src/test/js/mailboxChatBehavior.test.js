@@ -1036,6 +1036,13 @@ function createChatSandbox(options) {
     }
     sandbox.expertTagLabels = EXPERT_TAG_LABELS;
 
+    const mediaListeners = new Set();
+    const media = { matches: !!opts.mobile,
+        addEventListener: (type, fn) => mediaListeners.add(fn),
+        removeEventListener: (type, fn) => mediaListeners.delete(fn) };
+    const frames = [];
+    sandbox.matchMedia = () => media;
+    sandbox.requestAnimationFrame = (fn) => { frames.push(fn); return frames.length; };
     vm.createContext(sandbox);
     vm.runInContext(chatSource, sandbox, { filename: "mailbox-chat.js" });
     return {
@@ -1043,6 +1050,9 @@ function createChatSandbox(options) {
         calls,
         timers,
         contactLocations,
+        mediaListeners,
+        resize: (mobile) => { media.matches = mobile; mediaListeners.forEach((fn) => fn({ matches: mobile })); },
+        runFrames: () => { while (frames.length) frames.shift()(); },
         runTimers: () => { while (timers.length) { const fn = timers.shift(); fn(); } }
     };
 }
@@ -1311,7 +1321,7 @@ describe("mailbox chat mount + S-1 skeleton + S-7 expert tag rows", () => {
         const conversations = { items: [expertA(), expertB(), expertCTagsNull()], total: 3 };
         const ctx = await bootChat({ conversations });
         const html = ctx.host.innerHTML;
-        assert.match(html, /class="mail-chat"/);
+        assert.match(html, /class="mail-chat mobile-core-mailbox" data-mobile-pane="list"/);
         assert.ok(ctx.host.querySelector('aside.mc-experts[aria-label="专家会话列表"]'));
         assert.ok(ctx.host.querySelector('section.mc-conversation[aria-label="专家往来信件"]'));
         assert.ok(ctx.host.querySelector('.mc-search-row input[aria-label="搜索专家"]'));
@@ -5584,4 +5594,178 @@ describe("fast-p 上次回复：收发件箱列表与详情时间（I-1..I-5 / S
         assert.strictEqual(ctx.sandbox.localStorage, undefined, "不新增 localStorage 状态");
         assert.strictEqual(ctx.sandbox.sessionStorage, undefined, "不新增 sessionStorage 状态");
     });
+});
+
+
+describe("mobile-core-02: pane、草稿归属与隐藏几何", () => {
+    const pane = (ctx) => ctx.host.querySelector(".mobile-core-mailbox").dataset.mobilePane;
+    const back = (ctx) => click(ctx.host.querySelector('[data-action="mobile-mailbox-back"]'));
+    const choose = (ctx, id = 1) => click(ctx.host.querySelector(`[data-action="mc-select-expert"][data-contact-id="${id}"]`));
+    async function mobile(overrides, mountOptions, dom) {
+        return bootChat(Object.assign({ mobile: true, conversations: { items: [expertA(), expertB()], total: 2 },
+            messages: messagesA(), contact: contactA() }, overrides), mountOptions, dom);
+    }
+    it("初访列表；返回采集无 input 事件草稿，同专家重开复用编辑器且不请求", async () => {
+        const ctx = await mobile();
+        assert.equal(pane(ctx), "list");
+        ctx.host.querySelector(".mc-expert-list").scrollTop = 123;
+        choose(ctx); await flush(); ctx.runFrames();
+        assert.equal(pane(ctx), "detail");
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        editor.innerText = "手机草稿";
+        ctx.host.querySelector('input[aria-label="回复主题"]').value = "手机主题";
+        const count = ctx.calls.api.length;
+        back(ctx); ctx.runFrames();
+        assert.equal(pane(ctx), "list");
+        assert.equal(ctx.host.querySelector(".mc-expert-list").scrollTop, 123);
+        choose(ctx); ctx.runFrames();
+        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]'), editor);
+        assert.equal(ctx.calls.api.length, count);
+        choose(ctx, 2); await flush(); choose(ctx); await flush();
+        assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "手机草稿");
+        assert.equal(ctx.host.querySelector('input[aria-label="回复主题"]').value, "手机主题");
+    });
+    for (const position of [0, 245]) it(`隐藏刷新保留 scrollTop=${position}，重开在 rAF 恢复`, async () => {
+        const ctx = await mobile(); choose(ctx); await flush(); ctx.runFrames();
+        const scroll = ctx.host.querySelector(".mc-scroll");
+        scroll.scrollTop = position;
+        back(ctx); ctx.runFrames();
+        scroll.scrollTop = 0; // display:none 的无效几何
+        scrollEvent(scroll); ctx.runTimers();
+        await ctx.sandbox.MailboxChat.mount(ctx.host).refreshFromHost(); await flush();
+        assert.equal(pane(ctx), "list");
+        choose(ctx); ctx.runFrames();
+        assert.equal(scroll.scrollTop, position);
+    });
+    it("慢 select 返回后响应不跳屏；同项重开复用迟到加载的编辑器", async () => {
+        let resolve;
+        const ctx = await mobile({ route: (url, method, body, entry, next) => /conversations\/1\/messages/.test(url)
+            ? new Promise((done) => { resolve = done; }) : next(url, method, body) });
+        choose(ctx); back(ctx); ctx.runFrames(); resolve(messagesA()); await flush(); ctx.runFrames();
+        assert.equal(pane(ctx), "list");
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]');
+        choose(ctx); ctx.runFrames();
+        assert.equal(pane(ctx), "detail"); assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]'), editor);
+    });
+    it("外部 focus 慢定位、无 email/无权限均有返回；迟到定位不抢焦点", async () => {
+        let resolve;
+        const ctx = await mobile({ conversations: { items: [], total: 0 }, route: (url, method, body, entry, next) =>
+            url.includes("q=a%40example.edu") ? new Promise((done) => { resolve = done; }) : next(url, method, body)
+        }, { filters: {}, focus: { contactId: 1, email: "a@example.edu" } });
+        assert.equal(pane(ctx), "detail"); back(ctx); ctx.runFrames();
+        const focused = ctx.doc.activeElement;
+        resolve({ items: [expertA()], total: 1 }); await flush(); ctx.runFrames();
+        assert.equal(pane(ctx), "list"); assert.strictEqual(ctx.doc.activeElement, focused);
+        const missing = await mobile({ conversations: { items: [], total: 0 } }, { filters: {}, focus: { contactId: 7 } });
+        assert.equal(pane(missing), "detail"); back(missing); assert.equal(pane(missing), "list");
+    });
+    it("scope 变更在旧 owner 采集；账号 A/B 和用户互不污染", async () => {
+        const ctx = await mobile({}, { filters: { accountCode: "acc1" }, sessionUser: "u1" });
+        choose(ctx); await flush();
+        ctx.host.querySelector('[aria-label="人工回复正文"]').innerText = "A账号草稿";
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc2" } }); await flush();
+        assert.notEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "A账号草稿");
+        ctx.host.querySelector('[aria-label="人工回复正文"]').innerText = "B账号草稿";
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc1" } }); await flush();
+        assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "A账号草稿");
+        ctx.sandbox.MailboxChat.mount(ctx.host, { sessionUser: "u2" }); await flush(); choose(ctx); await flush();
+        assert.notEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "A账号草稿");
+        ctx.sandbox.MailboxChat.unmount(ctx.host);
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: { accountCode: "acc2" }, sessionUser: "u1" }); await flush();
+        choose(ctx); await flush(); assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "B账号草稿");
+    });
+    it("旋转零业务请求、编辑器不重建；unmount 清监听且采集正文", async () => {
+        const ctx = await mobile(); choose(ctx); await flush(); ctx.runFrames();
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]'); editor.innerText = "卸载前草稿";
+        const count = ctx.calls.api.length;
+        assert.equal(ctx.mediaListeners.size, 1);
+        ctx.resize(false); ctx.runFrames(); ctx.resize(true); ctx.runFrames();
+        assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]'), editor); assert.equal(ctx.calls.api.length, count);
+        ctx.sandbox.MailboxChat.unmount(ctx.host); assert.equal(ctx.mediaListeners.size, 0);
+        ctx.sandbox.MailboxChat.mount(ctx.host, { filters: {} }); await flush(); choose(ctx); await flush();
+        assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "卸载前草稿"); assert.equal(ctx.mediaListeners.size, 1);
+    });
+    it("待匹配返回保留唯一 lease；项消失回列表且归还", async () => {
+        let items = [unmatchedMail(501)];
+        const dom = createUnmatchedPanelDom();
+        const ctx = await mobile({ unmatchedPanel: dom.panel, route: (url, method, body, entry, next) => url.startsWith("/api/mail/unmatched-inbound?")
+            ? Promise.resolve({ records: items, totalCount: items.length }) : next(url, method, body) }, undefined, dom);
+        click(ctx.host.querySelector('[data-chip="unmatched"]')); await flush();
+        click(ctx.host.querySelector('[data-action="mc-select-unmatched"]')); await flush();
+        assert.equal(pane(ctx), "detail"); const mounts = ctx.calls.unmatchedMounts.length;
+        back(ctx); click(ctx.host.querySelector('[data-action="mc-select-unmatched"]')); await flush();
+        assert.equal(ctx.calls.unmatchedMounts.length, mounts);
+        items = []; await ctx.sandbox.MailboxChat.mount(ctx.host).loadList(); await flush();
+        assert.equal(pane(ctx), "list"); assert.equal(ctx.host.querySelectorAll("#unmatchedDetailPanel").length, 0);
+    });
+    it("返回后重新打开又立即返回，不得用尚未恢复的零位置覆盖缓存", async () => {
+        const ctx = await mobile(); choose(ctx); await flush(); ctx.runFrames();
+        const scroll = ctx.host.querySelector(".mc-scroll"); scroll.scrollTop = 245;
+        back(ctx); ctx.runFrames(); scroll.scrollTop = 0;
+        choose(ctx); back(ctx); ctx.runFrames(); choose(ctx); ctx.runFrames();
+        assert.equal(scroll.scrollTop, 245);
+    });
+    it("隐藏刷新重排消息后按锚点相对位置恢复，而非旧 scrollTop", async () => {
+        const ctx = await mobile(); choose(ctx); await flush(); ctx.runFrames();
+        const scroll = ctx.host.querySelector(".mc-scroll");
+        const layout = (shift) => ctx.host.querySelectorAll(".mc-message").forEach((el, i) => {
+            el.offsetTop = i * 150 + shift; el.offsetHeight = 150;
+        });
+        layout(0); scroll.scrollTop = 245; back(ctx); ctx.runFrames(); scroll.scrollTop = 0;
+        await ctx.sandbox.MailboxChat.mount(ctx.host).refreshFromHost(); await flush(); layout(40);
+        choose(ctx); ctx.runFrames(); assert.equal(scroll.scrollTop, 285);
+    });
+    it("旧 focus 定位完成不得替换用户后来显式选择的专家", async () => {
+        let locate, messagesB;
+        const ctx = await mobile({ conversations: { items: [expertB()], total: 1 }, route: (url, method, body, entry, next) => {
+            if (url.includes("q=a%40example.edu")) return new Promise((done) => { locate = done; });
+            if (url.includes("conversations/2/messages")) return new Promise((done) => { messagesB = done; });
+            return next(url, method, body);
+        } }, { filters: {}, focus: { contactId: 1, email: "a@example.edu" } });
+        back(ctx); choose(ctx, 2); await flush(); locate({ items: [expertA()], total: 1 }); await flush();
+        messagesB(messagesA()); await flush();
+        assert.match(ctx.host.querySelector(".mc-header h2").textContent, /专家B/);
+        await ctx.sandbox.MailboxChat.mount(ctx.host).loadList(); await flush();
+        assert.match(ctx.host.querySelector(".mc-header h2").textContent, /专家B/);
+    });
+    it("发送中返回再切 B，A 迟到成功不清 B 草稿也不重开 pane", async () => {
+        const ctx = await mobile(); choose(ctx); await flush();
+        let resolveSend;
+        ctx.sandbox.mcHostSendRichReply = () => new Promise((done) => { resolveSend = done; });
+        ctx.host.querySelector('[aria-label="人工回复正文"]').innerText = "A提交版本";
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]')); await flush();
+        back(ctx); choose(ctx, 2); await flush();
+        ctx.host.querySelector('[aria-label="人工回复正文"]').innerText = "B保留";
+        back(ctx); resolveSend(true); await flush(); ctx.runFrames();
+        assert.equal(pane(ctx), "list"); choose(ctx, 2); ctx.runFrames();
+        assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "B保留");
+    });
+
+    it("发送成功后返回/换专家不复活已清草稿，显式新输入仍保存", async () => {
+        const ctx = await mobile(); choose(ctx); await flush();
+        const editor = ctx.host.querySelector('[aria-label="人工回复正文"]'); editor.innerText = "已发送正文";
+        const subject = ctx.host.querySelector('input[aria-label="回复主题"]'); subject.value = "已发送主题"; inputEvent(subject); inputEvent(editor);
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]')); await flush();
+        back(ctx); choose(ctx, 2); await flush(); choose(ctx); await flush();
+        assert.notEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "已发送主题");
+        const nextEditor = ctx.host.querySelector('[aria-label="人工回复正文"]'); nextEditor.innerText = "重发正文"; inputEvent(nextEditor);
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]')); await flush();
+        // 用户再次输入同文案：input 事件明确建立新草稿，不被生命周期快照抑制。
+        inputEvent(nextEditor); back(ctx); choose(ctx, 2); await flush(); choose(ctx); await flush();
+        assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "重发正文");
+        click(ctx.host.querySelector('[data-action="mc-send-manual"]')); await flush();
+        ctx.host.querySelector('[aria-label="人工回复正文"]').innerText = "发送后新正文";
+        back(ctx); choose(ctx, 2); await flush(); choose(ctx); await flush();
+        assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "发送后新正文");
+    });
+
+    it("外部 focus 不存在时先保存当前正文，返回后仍可恢复原专家", async () => {
+        const ctx = await mobile(); choose(ctx); await flush();
+        ctx.host.querySelector('[aria-label="人工回复正文"]').innerText = "定位失败前草稿";
+        ctx.sandbox.MailboxChat.mount(ctx.host, { focus: { contactId: 999 } }); await flush();
+        assert.match(ctx.host.querySelector(".mc-conversation").textContent, /未找到该专家/);
+        back(ctx); choose(ctx); await flush();
+        assert.equal(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "定位失败前草稿");
+    });
+
 });

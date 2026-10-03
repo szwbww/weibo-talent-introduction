@@ -3211,7 +3211,115 @@ function numberValue(value, fallback = 0) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+// Mobile presentation is deliberately separate from expert filters and selection.
+let mobileCoreNavigationBound = false;
+const mobileContactPresentation = { generation: 0, mainScrollTop: 0, listScrollTop: 0, trigger: null };
+
+function isMobileCoreViewport() {
+    return window.matchMedia("(max-width: 760px)").matches;
+}
+
+function navigateFromCoreMenu(view) {
+    if (!Object.prototype.hasOwnProperty.call(viewMeta, view)) return;
+    if (view === "mailbox") clearMailboxExpertFocus();
+    setView(view);
+}
+
+function bindMobileCoreNavigation() {
+    if (mobileCoreNavigationBound) return;
+    mobileCoreNavigationBound = true;
+    const menu = $("#mobileCoreView");
+    if (menu) {
+        menu.replaceChildren();
+        $$(".nav-tabs .nav-tab[data-view]").forEach((tab) => {
+            if (!Object.prototype.hasOwnProperty.call(viewMeta, tab.dataset.view)) return;
+            const option = document.createElement("option");
+            option.value = tab.dataset.view;
+            option.textContent = viewMeta[tab.dataset.view][0];
+            menu.appendChild(option);
+        });
+        menu.value = state.view;
+        menu.addEventListener("change", () => navigateFromCoreMenu(menu.value));
+    }
+    $("#mobileContactsBack")?.addEventListener("click", returnToMobileContactsList);
+    window.matchMedia("(max-width: 760px)").addEventListener("change", onMobileCoreViewportChange);
+}
+
+function onMobileCoreViewportChange() {
+    // CSS owns visibility across this boundary; retain the selected pane and DOM.
+    const menu = $("#mobileCoreView");
+    if (menu) menu.value = state.view;
+    if (state.view === "meeting-calendar" && meetingCalendarState.viewPreference === null) {
+        renderMeetingCalendar();
+    }
+}
+
+function beginContactDetailPresentation(trigger = document.activeElement) {
+    const generation = ++mobileContactPresentation.generation;
+    const view = $("#view-contacts");
+    if (!view || state.view !== "contacts") return generation;
+    if (view.dataset.mobilePane !== "detail") {
+        mobileContactPresentation.mainScrollTop = $(".main")?.scrollTop || 0;
+        mobileContactPresentation.listScrollTop = $("#contactList")?.scrollTop || 0;
+        mobileContactPresentation.trigger = trigger;
+    }
+    view.dataset.mobilePane = "detail";
+    view.dataset.mobileLoading = "true";
+    const status = $("#mobileContactStatus");
+    if (status) { status.hidden = false; status.textContent = "正在加载专家详情…"; }
+    return generation;
+}
+
+function isCurrentContactDetailPresentation(generation) {
+    return generation === mobileContactPresentation.generation && state.view === "contacts";
+}
+
+function finishContactDetailPresentation(generation) {
+    if (!isCurrentContactDetailPresentation(generation)) return;
+    const view = $("#view-contacts");
+    if (view) view.dataset.mobileLoading = "false";
+    const status = $("#mobileContactStatus");
+    if (status) { status.hidden = true; status.textContent = ""; }
+}
+
+function failContactDetailPresentation(generation, error) {
+    if (!isCurrentContactDetailPresentation(generation)) return;
+    const status = $("#mobileContactStatus");
+    if (status) { status.hidden = false; status.textContent = "专家详情加载失败，请返回列表重试"; }
+    showStatus(error.message, "error");
+}
+
+function returnToMobileContactsList() {
+    const generation = ++mobileContactPresentation.generation;
+    const view = $("#view-contacts");
+    if (view) { view.dataset.mobilePane = "list"; view.dataset.mobileLoading = "false"; }
+    const status = $("#mobileContactStatus");
+    if (status) { status.hidden = true; status.textContent = ""; }
+    requestAnimationFrame(() => {
+        if (!isCurrentContactDetailPresentation(generation) || !isMobileCoreViewport()) return;
+        const main = $(".main"), list = $("#contactList");
+        const trigger = mobileContactPresentation.trigger;
+        if (trigger?.isConnected) {
+            if (trigger.matches?.(".list-item") && !trigger.hasAttribute("tabindex")) trigger.setAttribute("tabindex", "-1");
+            trigger.focus({ preventScroll: true });
+        }
+        if (main) main.scrollTop = mobileContactPresentation.mainScrollTop;
+        if (list) list.scrollTop = mobileContactPresentation.listScrollTop;
+    });
+}
+
 function setView(view) {
+    if (!Object.prototype.hasOwnProperty.call(viewMeta, view)) return;
+    if (view !== "contacts") {
+        ++mobileContactPresentation.generation;
+        const contactsView = $("#view-contacts");
+        if (contactsView) {
+            contactsView.dataset.mobilePane = "list";
+            contactsView.dataset.mobileLoading = "false";
+        }
+    }
+    const mobileMenu = $("#mobileCoreView");
+    if (mobileMenu) mobileMenu.value = view;
     if (view !== "ai-training") unmountAiTrainingTrustReply();
     if (view !== "mailbox") unmountMailboxTrustReplyHosts();
     // child 10（I-2）：离开收发件箱即销毁聊天 mount（草稿为内存态、随销毁清空，
@@ -9217,10 +9325,10 @@ function backToListBtnHtml() {
 }
 
 function scrollBackToContactsList() {
-    document.querySelector(".contacts-list-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function scrollBackToContactsList() {
+    if (isMobileCoreViewport()) {
+        returnToMobileContactsList();
+        return;
+    }
     document.querySelector(".contacts-list-panel")?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -9354,7 +9462,9 @@ function calculateExpertVariableCoverage(vars) {
     };
 }
 
-async function showExpertDetail(expert) {
+async function showExpertDetail(expert, generation) {
+    if (generation === undefined) generation = beginContactDetailPresentation();
+    try {
     const name = expert.displayName || expert.email || expert.orcidId || "?";
     const initial = name.charAt(0).toUpperCase();
     const contactDetail = $("#contactDetail");
@@ -9368,9 +9478,15 @@ async function showExpertDetail(expert) {
         try {
             expertTags = await fetchExpertTagsFromEs(expert.orcidId, tagLevel);
         } catch (error) {
+            if (!isCurrentContactDetailPresentation(generation)) return;
+            if (isMobileCoreViewport()) {
+                failContactDetailPresentation(generation, error);
+                return;
+            }
             showStatus(error.message, "error");
         }
     }
+    if (!isCurrentContactDetailPresentation(generation)) return;
     $("#contactHeadActions").hidden = true;
     $("#contactHeadActions").innerHTML = "";
     contactDetail.classList.remove("detail-empty");
@@ -9478,12 +9594,17 @@ async function showExpertDetail(expert) {
             </div>
         </div>
     `;
+    finishContactDetailPresentation(generation);
     requestAnimationFrame(() => {
+        if (!isCurrentContactDetailPresentation(generation)) return;
         contactDetail.scrollTop = 0;
         if (window.innerWidth <= 1024) {
             document.querySelector(".contact-detail-panel")?.scrollIntoView({ behavior: "smooth" });
         }
     });
+    } catch (error) {
+        failContactDetailPresentation(generation, error);
+    }
 }
 
 function formatMailTime(mail) {
@@ -9644,6 +9765,7 @@ function renderMeetingSchedule(detail) {
 }
 
 async function confirmMeetingSchedule(form) {
+    const detailGeneration = mobileContactPresentation.generation;
     const contactId = form.dataset.contactId;
     const scheduleId = form.dataset.scheduleId;
     const values = formValues(form);
@@ -9657,7 +9779,7 @@ async function confirmMeetingSchedule(form) {
         })
     });
     showStatus("会议已确认并已向专家发送确认邮件");
-    await loadContactDetail(contactId);
+    if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(contactId);
     await loadContacts();
 }
 
@@ -9783,7 +9905,9 @@ async function saveExpertMaterialStatus(button) {
     }
 }
 
-async function loadContactDetail(contactId) {
+async function loadContactDetail(contactId, generation) {
+    if (generation === undefined) generation = beginContactDetailPresentation();
+    try {
     const [detail, options, documents, logs, materials, mailSummary] = await Promise.all([
         api(`/api/expert-contacts/${contactId}`),
         loadMailSendOptions(),
@@ -9798,11 +9922,31 @@ async function loadContactDetail(contactId) {
             return null;
         })
     ]);
+    if (!isCurrentContactDetailPresentation(generation)) return;
     const contact = detail.contact;
     const expert = state.contacts.find(item => item.orcidId === state.selectedExpertOrcid) || {};
     const name = contact.expertName || contact.expertEmail || expert.displayName || "?";
     const initial = name.charAt(0).toUpperCase();
     const boundSenderAccountCode = (contact.boundSenderAccountCode || "").trim();
+    const tagLevel = contact.currentIndexLevel || expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
+    const orcidId = contact.orcidId || expert.orcidId || "";
+    let expertTags = { found: false, tags: [] };
+    if (orcidId) {
+        try {
+            expertTags = await fetchExpertTagsFromEs(orcidId, tagLevel);
+        } catch (error) {
+            if (!isCurrentContactDetailPresentation(generation)) return;
+            if (isMobileCoreViewport()) {
+                failContactDetailPresentation(generation, error);
+                return;
+            }
+            showStatus(error.message, "error");
+        }
+    }
+    const accounts = state.accounts && state.accounts.length
+        ? state.accounts
+        : await api("/api/mail/sender-accounts").catch(() => []);
+    if (!isCurrentContactDetailPresentation(generation)) return;
     $("#contactHeadActions").hidden = false;
     $("#contactHeadActions").innerHTML = `
         <div class="contact-head-main-row">
@@ -9854,9 +9998,6 @@ async function loadContactDetail(contactId) {
     `;
     const sel = $("#senderBindingSelect");
     if (sel) {
-        const accounts = state.accounts && state.accounts.length
-            ? state.accounts
-            : await api("/api/mail/sender-accounts").catch(() => []);
         const options = (Array.isArray(accounts) ? accounts : []).filter(a => a.enabled && a.accountCode !== "SIMULATOR_NOOP");
         sel.innerHTML = options.map(a =>
             `<option value="${escapeHtml(a.accountCode)}"${
@@ -9871,16 +10012,6 @@ async function loadContactDetail(contactId) {
     // 切专家/刷新详情前先释放上一专家的材料组件视图（轮询、监听、在途读请求）
     if (typeof unmountExpertMaterialsHosts === "function") {
         unmountExpertMaterialsHosts(contactDetail);
-    }
-    const tagLevel = contact.currentIndexLevel || expert.indexLevel || $("#expertIndexLevel").value || "CANDIDATE";
-    const orcidId = contact.orcidId || expert.orcidId || "";
-    let expertTags = { found: false, tags: [] };
-    if (orcidId) {
-        try {
-            expertTags = await fetchExpertTagsFromEs(orcidId, tagLevel);
-        } catch (error) {
-            showStatus(error.message, "error");
-        }
     }
     contactDetail.classList.remove("detail-empty");
     contactDetail.scrollTop = 0;
@@ -10080,7 +10211,9 @@ async function loadContactDetail(contactId) {
 
         </div>
     `;
+    finishContactDetailPresentation(generation);
     requestAnimationFrame(() => {
+        if (!isCurrentContactDetailPresentation(generation)) return;
         contactDetail.scrollTop = 0;
         if (window.innerWidth <= 1024) {
             document.querySelector(".contact-detail-panel")?.scrollIntoView({ behavior: "smooth" });
@@ -10094,14 +10227,28 @@ async function loadContactDetail(contactId) {
         loadEmailAliases(contact.id, contact);
     }
     return contact;
+    } catch (error) {
+        if (!isCurrentContactDetailPresentation(generation)) return;
+        failContactDetailPresentation(generation, error);
+        throw error;
+    }
 }
 
 async function openContactInList(contactId) {
     setView("contacts");
+    const generation = beginContactDetailPresentation();
     if (!state.contacts || state.contacts.length === 0) {
-        await loadContacts();
+        try {
+            await loadContacts();
+        } catch (error) {
+            if (!isCurrentContactDetailPresentation(generation)) return;
+            failContactDetailPresentation(generation, error);
+            throw error;
+        }
     }
-    const contact = await loadContactDetail(contactId);
+    if (!isCurrentContactDetailPresentation(generation)) return;
+    const contact = await loadContactDetail(contactId, generation);
+    if (!contact || !isCurrentContactDetailPresentation(generation)) return;
     state.selectedExpertOrcid = contact?.orcidId || null;
     if (contact && !state.contacts.some(item => item.orcidId === contact.orcidId)) {
         state.contacts.unshift({
@@ -10122,7 +10269,9 @@ async function openContactInList(contactId) {
         });
     }
     renderContactListItems();
-    document.querySelector("#contactList .list-item.active")?.scrollIntoView({ block: "nearest" });
+    if (!isMobileCoreViewport()) {
+        document.querySelector("#contactList .list-item.active")?.scrollIntoView({ block: "nearest" });
+    }
 }
 
 async function loadEmailAliases(contactId, contact) {
@@ -12095,6 +12244,8 @@ async function handleContactAction(element) {
         if (toggle) toggle.setAttribute("aria-expanded", String(state.contactHeadExpanded));
         return;
     }
+    // Business completion may refresh only the presentation that initiated it.
+    const detailGeneration = mobileContactPresentation.generation;
     if (action === "select-expert") {
         const orcidId = element.dataset.orcid;
         const expert = state.contacts.find((item) => item.orcidId === orcidId);
@@ -12103,14 +12254,14 @@ async function handleContactAction(element) {
             item.classList.toggle("active", item.dataset.orcid === orcidId);
         });
         if (expert?.contactId) {
-            await loadContactDetail(expert.contactId);
+            await loadContactDetail(expert.contactId, beginContactDetailPresentation(element));
         } else if (expert) {
-            await showExpertDetail(expert);
+            await showExpertDetail(expert, beginContactDetailPresentation(element));
         }
         return;
     }
     if (action === "select-contact") {
-        await loadContactDetail(id);
+        await loadContactDetail(id, beginContactDetailPresentation(element));
         return;
     }
     if (action === "open-contact-mailbox") {
@@ -12133,7 +12284,7 @@ async function handleContactAction(element) {
             })
         });
         showStatus("邮件已发送");
-        await loadContactDetail(id);
+        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
         return;
     }
     if (action === "rebind-sender-account") {
@@ -12144,7 +12295,7 @@ async function handleContactAction(element) {
             body: JSON.stringify({ senderAccountCode: code, operatorName: null, note: null })
         });
         showStatus("发件账号已变更");
-        await loadContactDetail(id);   // I-4
+        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);   // I-4
         await loadContacts();
         return;
     }
@@ -12154,7 +12305,7 @@ async function handleContactAction(element) {
             body: JSON.stringify({ operatorName: null, note: null })
         });
         showStatus("已清除变更标记");
-        await loadContactDetail(id);
+        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
         await loadContacts();
         return;
     }
@@ -12233,21 +12384,21 @@ async function handleContactAction(element) {
             });
             showStatus("已恢复自动回复");
         }
-        await loadContactDetail(id);
+        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
         await loadContacts();
         return;
     }
     if (action === "promote-to-candidate") {
         await api(`/api/expert-contacts/${id}/promote-to-candidate`, { method: "POST" });
         showStatus("已加入筛选层");
-        await loadContactDetail(id);
+        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
         await loadContacts();
         return;
     }
     if (action === "promote-to-application") {
         await api(`/api/expert-contacts/${id}/promote-to-application`, { method: "POST" });
         showStatus("已加入有效层");
-        await loadContactDetail(id);
+        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
         await loadContacts();
         return;
     }
@@ -12256,7 +12407,7 @@ async function handleContactAction(element) {
         if (!confirmDemote) return;
         await api(`/api/expert-contacts/${id}/demote-to-raw`, { method: "POST" });
         showStatus("已退回到原始层");
-        await loadContactDetail(id);
+        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
         await loadContacts();
         return;
     }
@@ -12276,7 +12427,7 @@ async function handleContactAction(element) {
             })
         });
         showStatus("已发起会议排期");
-        await loadContactDetail(id);
+        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(id);
         return;
     }
     if (action === "save-meeting-schedule") {
@@ -12295,7 +12446,7 @@ async function handleContactAction(element) {
             })
         });
         showStatus("会议排期已更新");
-        await loadContactDetail(contactId);
+        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(contactId);
         return;
     }
     if (action === "cancel-meeting-schedule") {
@@ -12307,7 +12458,7 @@ async function handleContactAction(element) {
             method: "POST"
         });
         showStatus("会议排期已取消");
-        await loadContactDetail(contactId);
+        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(contactId);
         await loadContacts();
         return;
     }
@@ -12318,7 +12469,7 @@ async function handleContactAction(element) {
             method: "POST"
         });
         showStatus("已标记会议完成，进入材料准备阶段");
-        await loadContactDetail(contactId);
+        if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(contactId);
         await loadContacts();
         return;
     }
@@ -14861,9 +15012,8 @@ function bindMonitoringEvents() {
 
 function bindEvents() {
     ensureTranslateClickHandler();
-    $$(".nav-tab").forEach((tab) => tab.addEventListener("click", () => {
-        if (tab.dataset.view === "mailbox") clearMailboxExpertFocus();
-        setView(tab.dataset.view);
+    $$(".nav-tabs .nav-tab[data-view]").forEach((tab) => tab.addEventListener("click", () => {
+        navigateFromCoreMenu(tab.dataset.view);
     }));
     $("#refreshBtn").addEventListener("click", () => {
         refreshCurrentView();
@@ -15207,6 +15357,7 @@ function bindEvents() {
         }
 
         if (event.target.closest("#saveContactChangesBtn")) {
+            const detailGeneration = mobileContactPresentation.generation;
             const saveBtn = $("#saveContactChangesBtn");
             const contactId = saveBtn.dataset.contactId;
             if (!contactId || saveBtn.disabled) return;
@@ -15262,7 +15413,7 @@ function bindEvents() {
                     }
                 }
                 showStatus("变更已保存", "ok");
-                await loadContactDetail(contactId);
+                if (isCurrentContactDetailPresentation(detailGeneration)) await loadContactDetail(contactId);
                 await loadContacts();
             } catch (e) {
                 showStatus("保存失败: " + e.message, "error");
@@ -15706,6 +15857,7 @@ function bindEvents() {
             return;
         }
         if (action === "add-alias") {
+            const detailGeneration = mobileContactPresentation.generation;
             const contactId = element.dataset.contactId;
             const email = $("#newAliasEmail").value.trim();
             if (!email) { showStatus("请输入邮箱地址", "error"); return; }
@@ -15714,10 +15866,11 @@ function bindEvents() {
                 body: JSON.stringify({ email, source: "MANUAL_ADD" })
             }).then(() => {
                 showStatus("别名已添加");
-                loadContactDetail(contactId);
+                if (isCurrentContactDetailPresentation(detailGeneration)) return loadContactDetail(contactId);
             }).catch((e) => showStatus(e.message, "error"));
         }
         if (action === "delete-alias") {
+            const detailGeneration = mobileContactPresentation.generation;
             const contactId = element.dataset.contactId;
             const aliasId = element.dataset.aliasId;
             const confirmDelete = await openActionDialog("confirm", { message: "确定移除该别名？" });
@@ -15726,7 +15879,7 @@ function bindEvents() {
                 method: "DELETE"
             }).then(() => {
                 showStatus("别名已移除");
-                loadContactDetail(contactId);
+                if (isCurrentContactDetailPresentation(detailGeneration)) return loadContactDetail(contactId);
             }).catch((e) => showStatus(e.message, "error"));
         }
     });
@@ -16347,9 +16500,8 @@ function initLayoutResizer() {
     let isDragging = false;
 
     // Load saved layout width or default
-    const savedWidth = localStorage.getItem("contacts-list-width");
-
     function setListWidth(width, updateStorage = true) {
+        if (window.innerWidth <= 1024) return;
         // Ensure within reasonable boundaries: min 200px, max 60% window width
         const maxWidth = Math.min(800, window.innerWidth * 0.6);
         const targetWidth = Math.max(200, Math.min(maxWidth, width));
@@ -16372,6 +16524,7 @@ function initLayoutResizer() {
 
     // Pointer events: 同时支持鼠标和触屏拖拽
     resizer.addEventListener("pointerdown", (e) => {
+        if (window.innerWidth <= 1024) return;
         isDragging = true;
         resizer.setPointerCapture(e.pointerId);
         resizer.classList.add("dragging");
@@ -16408,12 +16561,16 @@ function initLayoutResizer() {
         setListWidth(Math.floor(containerWidth / 2) - 3);
     });
 
-    // Initialize state
-    if (savedWidth) {
-        setListWidth(parseInt(savedWidth), false);
-    } else {
-        resetToDefault();
+    function restoreDesktopWidth() {
+        if (window.innerWidth <= 1024) {
+            endDrag({});
+            return;
+        }
+        const savedWidth = Number(localStorage.getItem("contacts-list-width"));
+        setListWidth(Number.isFinite(savedWidth) && savedWidth > 0 ? savedWidth : 500, false);
     }
+    window.matchMedia("(max-width: 1024px)").addEventListener("change", restoreDesktopWidth);
+    restoreDesktopWidth();
 }
 
 let appStarted = false;
@@ -17846,6 +18003,7 @@ function bindInboundSummaryEvents() {
 }
 
 function bootstrap() {
+    bindMobileCoreNavigation();
     bindEvents();
     initBulkAutoReply();
     initPollLogPanel();
@@ -21005,7 +21163,8 @@ const MEETING_CALENDAR_FORMATTER = new Intl.DateTimeFormat("zh-CN", {
 
 const meetingCalendarState = {
     month: null,            // {year, month}：北京月份锚点（月初/月末/今天均按北京日期）
-    viewMode: "month",      // "month" | "list"
+    viewMode: "month",      // effective "month" | "list"
+    viewPreference: null,   // explicit in-memory choice; null follows the viewport
     showCancelled: false,
     events: [],
     loading: false,
@@ -21279,6 +21438,20 @@ const MEETING_CALENDAR_DAY_CLOSE = '</div>';
 const MEETING_CALENDAR_EVENT_SKELETON =
     '<button class="calendar-event" data-cancelled="false" data-event-id=""><time></time><strong></strong><span data-role="event-status"></span></button>';
 
+function meetingCalendarEffectiveView() {
+    return meetingCalendarState.viewPreference || (isMobileCoreViewport() ? "list" : "month");
+}
+
+function meetingCalendarLinkLabel(link) {
+    try {
+        const host = new URL(link).hostname.toLowerCase();
+        if (host === "zoom.us" || host.endsWith(".zoom.us") || host === "zoom.com" || host.endsWith(".zoom.com")) {
+            return "Zoom 会议链接";
+        }
+    } catch (_) { /* A nonstandard address retains the generic label. */ }
+    return "会议链接";
+}
+
 function meetingCalendarRootEl() {
     if (typeof document === "undefined" || !document) return null;
     return $("#meetingCalendarRoot");
@@ -21346,7 +21519,19 @@ function renderMeetingCalendarList(listEl, events) {
     }
     listEl.innerHTML = MEETING_CALENDAR_EVENT_SKELETON.repeat(events.length);
     const buttons = listEl.querySelectorAll(".calendar-event");
-    events.forEach((event, index) => meetingCalendarFillEventButton(buttons[index], event, "list"));
+    events.forEach((event, index) => {
+        const button = buttons[index];
+        meetingCalendarFillEventButton(button, event, "list");
+        const link = meetingCalendarSafeLink(event && event.meetingLink);
+        if (!button || !link) return;
+        const anchor = document.createElement("a");
+        anchor.className = "calendar-meeting-link";
+        anchor.setAttribute("href", link);
+        anchor.setAttribute("target", "_blank");
+        anchor.setAttribute("rel", "noopener");
+        anchor.textContent = meetingCalendarLinkLabel(link);
+        button.after(anchor);
+    });
 }
 
 function meetingCalendarStatusText() {
@@ -21409,6 +21594,7 @@ function renderMeetingCalendarOverview(root, events) {
 function renderMeetingCalendar() {
     const root = meetingCalendarRootEl();
     if (!root) return;
+    meetingCalendarState.viewMode = meetingCalendarEffectiveView();
     if (root.dataset.meetingCalendarSkeleton !== "1") {
         root.innerHTML = MEETING_CALENDAR_CHROME_HTML;
         root.dataset.meetingCalendarSkeleton = "1";
@@ -21545,7 +21731,7 @@ function renderMeetingCalendarDialogSourceSummary() {
     anchor.setAttribute("href", link);
     anchor.setAttribute("target", "_blank");
     anchor.setAttribute("rel", "noopener");
-    anchor.textContent = "会议链接";
+    anchor.textContent = meetingCalendarLinkLabel(link);
     el.appendChild(anchor);
 }
 
@@ -21903,7 +22089,7 @@ function onMeetingCalendarClick(event) {
             return;
         }
         if (action === "month" || action === "list") {
-            meetingCalendarState.viewMode = action;
+            meetingCalendarState.viewPreference = action;
             renderMeetingCalendar();
             return;
         }

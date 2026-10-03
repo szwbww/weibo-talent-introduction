@@ -613,6 +613,14 @@
             selectedUnmatchedId: null,
             /** 当前承载 #unmatchedDetailPanel 的 .mc-scroll 宿主；null = 未持有 lease（I-5）。 */
             unmatchedDetailHost: null,
+            mobilePane: "list",
+            paneEpoch: 0,
+            focusPaneEpoch: null,
+            listScrollTop: 0,
+            listTrigger: null,
+            mobileMedia: null,
+            pendingPosition: null,
+            clearedEditorSnapshot: null,
             focusHandledContactId: null,
             focusLocating: false,
             focusMissedContactId: null,
@@ -1024,7 +1032,7 @@
                 `<button class="mc-filter" type="button" data-action="mc-filter" data-chip="${chip.key}" aria-pressed="${instance.chip === chip.key ? "true" : "false"}">${escapeText(chip.label)}</button>`
             ).join("");
             return `
-                <div class="mail-chat">
+                <div class="mail-chat mobile-core-mailbox" data-mobile-pane="list">
                     <aside class="mc-experts" aria-label="专家会话列表">
                         <div class="mc-list-tools">
                             <div class="mc-search-row">
@@ -1045,6 +1053,7 @@
                         <div class="mc-expert-list" aria-live="polite"></div>
                         <div class="mc-pager"></div>
                     </aside>
+                    <button type="button" class="button mobile-mailbox-back" data-action="mobile-mailbox-back">返回会话列表</button>
                     <section class="mc-conversation" aria-label="专家往来信件"></section>
                 </div>
             `;
@@ -1064,6 +1073,91 @@
 
         function renderSkeleton() {
             host.innerHTML = skeletonHtml();
+        }
+
+        function conversationVisible() {
+            if (instance.mobileMedia && instance.mobileMedia.matches && instance.mobilePane === "list") return false;
+            const scroll = scrollEl();
+            return !scroll || typeof scroll.getClientRects !== "function" || scroll.getClientRects().length > 0;
+        }
+
+        function saveCurrentConversation() {
+            const cleared = instance.clearedEditorSnapshot;
+            const values = readManualValues();
+            const key = currentTargetKey();
+            // 已发送且已删的草稿仍可能留在 DOM；生命周期采集不能复活它。
+            const unchangedSent = cleared && cleared.key === key && cleared.draftsMap === currentDraftsMap()
+                && !getDraft(key) && values && values.subject === cleared.snapshot.subject
+                && values.html === cleared.snapshot.html && values.text === cleared.snapshot.text;
+            if (!unchangedSent) saveDraftFromInputs();
+            saveConversationState();
+        }
+
+        function afterPaneFrame(callback) {
+            const paneEpoch = instance.paneEpoch;
+            const convEpoch = instance.convEpoch;
+            const run = () => {
+                if (!instance.disposed && paneEpoch === instance.paneEpoch && convEpoch === instance.convEpoch) callback();
+            };
+            if (typeof global.requestAnimationFrame === "function") global.requestAnimationFrame(run);
+            else run();
+        }
+
+        function restoreVisiblePosition() {
+            if (!conversationVisible()) return;
+            const record = instance.pendingPosition || getConversationRecord(instance.user,
+                instance.conversation.accountScope || "", Number(instance.selectedContactId || 0));
+            if (record) restoreFromRecord(record);
+            instance.pendingPosition = null;
+        }
+
+        function setMobilePane(pane, trigger) {
+            if (pane === "detail" && instance.mobilePane === "list") {
+                const list = expertsRoot();
+                instance.listScrollTop = list ? Number(list.scrollTop) || 0 : 0;
+                instance.pendingPosition = instance.pendingPosition || getConversationRecord(instance.user,
+                    instance.conversation.accountScope || "", Number(instance.selectedContactId || 0));
+            }
+            if (trigger) instance.listTrigger = trigger;
+            instance.mobilePane = pane;
+            instance.paneEpoch += 1;
+            const root = host.querySelector ? host.querySelector(".mobile-core-mailbox") : null;
+            if (root) root.setAttribute("data-mobile-pane", pane);
+            afterPaneFrame(() => {
+                if (pane === "detail") restoreVisiblePosition();
+                else if (instance.mobileMedia && instance.mobileMedia.matches) {
+                    const list = expertsRoot();
+                    if (list) list.scrollTop = instance.listScrollTop;
+                    const action = isUnmatchedChip() ? "mc-select-unmatched" : "mc-select-expert";
+                    const idKey = isUnmatchedChip() ? "unmatched-id" : "contact-id";
+                    const id = isUnmatchedChip() ? instance.selectedUnmatchedId : instance.selectedContactId;
+                    const current = host.querySelector(`[data-action="${action}"][data-${idKey}="${id}"]`);
+                    const trigger = current || (host.contains && host.contains(instance.listTrigger) ? instance.listTrigger : null);
+                    if (trigger && typeof trigger.focus === "function") trigger.focus({ preventScroll: true });
+                }
+            });
+        }
+
+        function returnToMobileList() {
+            saveCurrentConversation();
+            setMobilePane("list");
+        }
+
+        function onMobileViewportChange() {
+            // CSS owns layout; resizing never rebuilds an editor or issues a request.
+            instance.paneEpoch += 1;
+            afterPaneFrame(restoreVisiblePosition);
+        }
+
+        function bindMobileViewport() {
+            if (typeof global.matchMedia !== "function") return;
+            instance.mobileMedia = global.matchMedia("(max-width: 760px)");
+            if (typeof instance.mobileMedia.addEventListener === "function") instance.mobileMedia.addEventListener("change", onMobileViewportChange);
+            else if (typeof instance.mobileMedia.addListener === "function") instance.mobileMedia.addListener(onMobileViewportChange);
+        }
+
+        function saveBeforeScopeChange(prev, next) {
+            if (String(prev || "") !== String(next || "")) saveCurrentConversation();
         }
 
         function bindFilterEvents() {
@@ -1216,6 +1310,7 @@
                 if (value) next[key] = value;
             });
             const prevAccount = String(instance.filters.accountCode || "");
+            saveBeforeScopeChange(prevAccount, next.accountCode);
             instance.filters = next;
             meetingCloseDisposeOnAccountScopeChange(prevAccount, String(next.accountCode || ""));
             syncTagOptionsWithCommitted();
@@ -1227,6 +1322,7 @@
 
         function resetAdvancedFilters() {
             const prevAccount = String(instance.filters.accountCode || "");
+            saveBeforeScopeChange(prevAccount, "");
             instance.filters = {};
             meetingCloseDisposeOnAccountScopeChange(prevAccount, "");
             populateFieldsFromCommitted();
@@ -1239,6 +1335,7 @@
 
         function restoreAdvancedFilters() {
             const prevAccount = String(instance.filters.accountCode || "");
+            saveBeforeScopeChange(prevAccount, "");
             instance.filters = {};
             meetingCloseDisposeOnAccountScopeChange(prevAccount, "");
             populateFieldsFromCommitted();
@@ -1606,6 +1703,7 @@
             if (!stillPresent) {
                 // 选中记录经服务端刷新消失（绑定成功/已标记处理/切页）：先归还，再回空态。
                 clearUnmatchedState();
+                setMobilePane("list");
                 renderUnmatchedEmpty();
                 return;
             }
@@ -1616,6 +1714,7 @@
             const items = instance.list.items || [];
             const item = items.find((entry) => String(entry.id) === String(id));
             if (!item) return;
+            setMobilePane("detail");
             const changed = String(instance.selectedUnmatchedId) !== String(item.id);
             instance.selectedUnmatchedId = Number(item.id);
             renderUnmatchedList();
@@ -1682,6 +1781,9 @@
         // --------------------------------------------------------------
 
         function clearSelectedConversation() {
+            instance.seq += 1;
+            instance.convEpoch += 1;
+            instance.pendingPosition = null;
             teardownConversationSubViews();
             instance.selectedContactId = null;
             instance.selectedSummary = null;
@@ -1690,6 +1792,8 @@
         }
 
         function renderFocusMissed(focus) {
+            saveCurrentConversation();
+            clearSelectedConversation();
             const identity = focus && focus.email ? `${focus.email}` : (focus && focus.contactId != null ? `#${focus.contactId}` : "");
             const body = conversationBody();
             if (!body) return;
@@ -1711,7 +1815,8 @@
                     || String(instance.selectedContactId) !== String(focus.contactId)) {
                     const found = items.find((item) => String(item.contactId) === String(focus.contactId));
                     if (found) {
-                        selectExpert(found, { skipListReload: true });
+                        instance.focusHandledContactId = focus.contactId;
+                        selectExpert(found, { skipListReload: true, present: instance.focusPaneEpoch === instance.paneEpoch });
                         return;
                     }
                     locateFocusExpert(focus);
@@ -1719,18 +1824,21 @@
                 }
                 instance.focusHandledContactId = focus.contactId;
             }
-            if (instance.selectedContactId != null && instance.list.items && instance.list.items.length > 0) {
+            if (instance.selectedContactId != null && !instance.list.error) {
                 const stillPresent = instance.list.items.some(
                     (item) => String(item.contactId) === String(instance.selectedContactId)
                 );
                 if (stillPresent) {
                     const freshSummary = findSummaryByContactId(instance.selectedContactId);
                     if (freshSummary) instance.selectedSummary = freshSummary;
-                    refreshConversationQuiet();
+                    if (String(instance.conversation.accountScope || "") !== accountFilterFromOptions()) {
+                        selectExpert(freshSummary, { skipListReload: true, present: false, force: true });
+                    } else if (!instance.conversation.loading) refreshConversationQuiet();
                 } else {
                     // 当前筛选不再包含该专家：先保存，再回到“请选择专家”空态
-                    saveConversationState();
+                    saveCurrentConversation();
                     clearSelectedConversation();
+                    setMobilePane("list");
                     renderConversationEmpty();
                 }
                 return;
@@ -1752,6 +1860,8 @@
                 renderFocusMissed(focus);
                 return;
             }
+            const presentationEpoch = instance.focusPaneEpoch;
+            const selectionEpoch = instance.convEpoch;
             instance.focusLocating = true;
             instance.listSeq += 1;
             const mySeq = instance.listSeq;
@@ -1761,13 +1871,13 @@
             params.set("q", String(focus.email).trim());
             hostApi()(`/api/mail/mailbox/conversations?${params.toString()}`).then((data) => {
                 instance.focusLocating = false;
-                if (instance.disposed || mySeq !== instance.listSeq) return;
+                if (instance.disposed || mySeq !== instance.listSeq || selectionEpoch !== instance.convEpoch) return;
                 const located = (data && Array.isArray(data.items) ? data.items : []).find(
                     (item) => String(item.contactId) === String(focus.contactId)
                 );
                 if (located) {
                     instance.focusHandledContactId = focus.contactId;
-                    selectExpert(located, { skipListReload: true });
+                    selectExpert(located, { skipListReload: true, present: presentationEpoch === instance.paneEpoch });
                 } else {
                     instance.focusMissedContactId = focus.contactId;
                     instance.focusHandledContactId = focus.contactId;
@@ -1775,7 +1885,7 @@
                 }
             }).catch(() => {
                 instance.focusLocating = false;
-                if (instance.disposed || mySeq !== instance.listSeq) return;
+                if (instance.disposed || mySeq !== instance.listSeq || selectionEpoch !== instance.convEpoch) return;
                 instance.focusMissedContactId = focus.contactId;
                 instance.focusHandledContactId = focus.contactId;
                 renderFocusMissed(focus);
@@ -1814,15 +1924,25 @@
 
         function selectExpert(item, options) {
             const opts = options || {};
-            // 切换前保存旧会话
-            saveConversationState();
+            const sameOwner = Number(instance.selectedContactId) === Number(item.contactId)
+                && String(instance.conversation.accountScope || "") === accountFilterFromOptions();
+            if (sameOwner && !opts.force && !instance.conversation.error) {
+                if (opts.present !== false) setMobilePane("detail", opts.trigger);
+                return;
+            }
+            // DOM 草稿必须在切换旧 owner 之前采集。
+            saveCurrentConversation();
+            if (opts.present !== false) setMobilePane("detail", opts.trigger);
             teardownConversationSubViews();
+            instance.pendingPosition = null;
+            instance.clearedEditorSnapshot = null;
             instance.selectedContactId = Number(item.contactId);
             instance.selectedSummary = item;
             instance.seq += 1;
             instance.convEpoch += 1;
             const mySeq = instance.seq;
             const myEpoch = instance.convEpoch;
+            instance.conversation.accountScope = accountFilterFromOptions();
             instance.conversation.loading = true;
             instance.conversation.error = "";
             instance.conversation.items = [];
@@ -3140,7 +3260,9 @@
             }
             rebindDetails();
             const record = opts.restoreRecord || null;
-            if (record) {
+            if (!conversationVisible()) {
+                instance.pendingPosition = record || { scrollTopValid: false };
+            } else if (record) {
                 restoreFromRecord(record);
             } else if (opts.locateLatest) {
                 locateLatestTop();
@@ -3227,6 +3349,7 @@
         }
 
         function captureAnchor() {
+            if (!conversationVisible()) return null;
             const scroll = scrollEl();
             if (!scroll) return null;
             const anchorKey = visibleAnchorKey(scroll);
@@ -3241,7 +3364,7 @@
         }
 
         function restoreToAnchor(anchor) {
-            if (!anchor) return;
+            if (!anchor || !conversationVisible()) return;
             const scroll = scrollEl();
             if (!scroll) return;
             if (anchor.anchorKey) {
@@ -3258,6 +3381,7 @@
         }
 
         function locateLatestTop() {
+            if (!conversationVisible()) return;
             const scroll = scrollEl();
             if (!scroll) return;
             const articles = scroll.querySelectorAll ? scroll.querySelectorAll(".mc-timeline .mc-message") : [];
@@ -3277,6 +3401,7 @@
         // ---- 会话状态保存（scroll/selectExpert/unmount/loadOlder/quiet） ----
 
         function saveConversationState() {
+            if (instance.conversation.loading || isUnmatchedChip()) return;
             const contactId = Number(instance.selectedContactId);
             if (!Number.isFinite(contactId) || contactId <= 0) return;
             const items = instance.conversation.items || [];
@@ -3287,22 +3412,24 @@
             }
             const scroll = scrollEl();
             const anchor = captureAnchor();
+            const geometry = conversationVisible() && !instance.pendingPosition && scroll ? {
+                anchorKey: anchor ? anchor.anchorKey : null,
+                anchorRelTop: anchor ? anchor.anchorRelTop : 0,
+                scrollTop: getScrollTop(),
+                scrollTopValid: true
+            } : {};
             const drafts = currentDraftsMap();
-            const rec = upsertConversationRecord(instance.user, instance.conversation.accountScope || "", contactId, {
+            const rec = upsertConversationRecord(instance.user, instance.conversation.accountScope || "", contactId, Object.assign({
                 items: items.slice(),
                 nextBefore: instance.conversation.nextBefore,
                 hasMore: instance.conversation.hasMore,
-                anchorKey: anchor ? anchor.anchorKey : null,
-                anchorRelTop: anchor ? anchor.anchorRelTop : 0,
-                scrollTop: scroll ? getScrollTop() : 0,
-                scrollTopValid: !!scroll,
                 drafts: drafts || new Map()
-            });
+            }, geometry));
             instance.draftsRef = rec.drafts;
         }
 
         function restoreFromRecord(record) {
-            if (!record) return;
+            if (!record || !conversationVisible()) return;
             if (record.anchorKey) {
                 const scroll = scrollEl();
                 if (scroll) {
@@ -6678,6 +6805,7 @@
                     if (currentMeeting && Number(currentMeeting.revision) === Number(capturedRevision)) {
                         draftsMap.delete(key);
                         if (stillCurrent) {
+                            instance.clearedEditorSnapshot = { key, draftsMap, snapshot: sentDraftSnapshot };
                             instance.manual.qa = null;
                             refreshMeetingAttachmentCard();
                             // 07：该草稿连同通用附件一起被清，卡片同步重建（无文件 → hidden）。
@@ -6701,6 +6829,7 @@
                 const cleared = outboundDraftMatchesSnapshot(capturedDraft, sentDraftSnapshot);
                 if (cleared) draftsMap.delete(key);
                 if (stillCurrent && cleared) {
+                    instance.clearedEditorSnapshot = { key, draftsMap, snapshot: sentDraftSnapshot };
                     instance.manual.qa = null;
                     refreshFollowupAnchorNote();
                     refreshOutboundFilesCard();
@@ -6895,10 +7024,15 @@
                 if (event && typeof event.preventDefault === "function") event.preventDefault();
                 return;
             }
+            if (action === "mobile-mailbox-back") {
+                returnToMobileList();
+                return;
+            }
             if (action === "mc-select-expert") {
+                if (instance.options.focus) instance.focusHandledContactId = instance.options.focus.contactId;
                 const contactId = Number(data.contactId);
                 const item = findSummaryByContactId(contactId);
-                if (item) selectExpert(item);
+                if (item) selectExpert(item, { trigger: button });
                 return;
             }
             if (action === "mc-toggle-follow") {
@@ -6918,10 +7052,11 @@
                 const chip = data.chip || CHIP_ALL;
                 const nextChip = FILTER_CHIPS.some((entry) => entry.key === chip) ? chip : CHIP_ALL;
                 if (nextChip !== instance.chip) {
+                    returnToMobileList();
                     if (instance.chip === CHIP_UNMATCHED) leaveUnmatchedMode();
                     if (nextChip === CHIP_UNMATCHED) {
                         // 离开专家会话前保存草稿/滚动，但邮件 id 绝不写入 selectedContactId（I-6）。
-                        saveConversationState();
+                        saveCurrentConversation();
                         clearSelectedConversation();
                     }
                 }
@@ -6991,7 +7126,7 @@
             }
             if (action === "mc-retry-conversation") {
                 const item = findSummaryByContactId(instance.selectedContactId);
-                if (item) selectExpert(item);
+                if (item) selectExpert(item, { force: true });
                 return;
             }
             if (action === "mc-load-older") {
@@ -7385,12 +7520,30 @@
 
         function applyOptions(options) {
             const next = options || {};
+            if (next.sessionUser && String(next.sessionUser) !== instance.user) {
+                saveCurrentConversation();
+                clearSelectedConversation();
+                clearUnmatchedState();
+                instance.listSeq += 1;
+                instance.focusLocating = false;
+                instance.focusHandledContactId = null;
+                instance.focusMissedContactId = null;
+                instance.options.focus = null;
+                instance.user = String(next.sessionUser);
+                setMobilePane("list");
+                renderConversationEmpty();
+            }
             if (next.focus && next.focus.contactId != null) {
                 instance.options.focus = { contactId: next.focus.contactId, email: next.focus.email || "" };
+                instance.focusHandledContactId = null;
+                instance.focusMissedContactId = null;
+                setMobilePane("detail");
+                instance.focusPaneEpoch = instance.paneEpoch;
             }
             if (next.filters) {
                 // 快照完整替换，不能合并残留旧值（I-2）
                 const prevAccount = String(instance.filters.accountCode || "");
+                saveBeforeScopeChange(prevAccount, next.filters.accountCode);
                 instance.filters = Object.assign({}, next.filters);
                 meetingCloseDisposeOnAccountScopeChange(prevAccount, String(next.filters.accountCode || ""));
                 // 仅初次（用户尚未操作 tab）允许外部 onlyPending 初始化
@@ -7410,7 +7563,11 @@
 
         function unmount() {
             if (instance.disposed) return;
-            saveConversationState();
+            saveCurrentConversation();
+            if (instance.mobileMedia) {
+                if (typeof instance.mobileMedia.removeEventListener === "function") instance.mobileMedia.removeEventListener("change", onMobileViewportChange);
+                else if (typeof instance.mobileMedia.removeListener === "function") instance.mobileMedia.removeListener(onMobileViewportChange);
+            }
             // 右栏/根节点清空前必须先归还详情面板 lease（I-5）。
             clearUnmatchedState();
             instance.disposed = true;
@@ -7459,6 +7616,11 @@
 
         function attach() {
             renderSkeleton();
+            bindMobileViewport();
+            if (instance.options.focus && instance.options.focus.contactId != null) {
+                setMobilePane("detail");
+                instance.focusPaneEpoch = instance.paneEpoch;
+            }
             rememberLegacyFilterTexts();
             ensureFilterFieldsPresent();
             renderFilterChrome();

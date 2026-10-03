@@ -326,3 +326,19 @@ describe("上次回复：S-3 逐字样式与 S-1/S-2 结构（mailbox-last-reply
         assert.ok(indexSource.includes('<script src="task-modal-runtime.js"></script>'), "task-modal-runtime.js 保持无版本键");
     });
 });
+
+
+describe("mobile-core-02 CSS 与独立返回条", () => {
+    it("逐字追加计划 CSS；唯一返回按钮在 aside 与 section 之间", () => {
+        const plan = fs.readFileSync(path.join(__dirname, "../../../docs/plans/2026-10-03/mobile-core-02-mailbox.md"), "utf8");
+        const block = plan.match(/```css\n([\s\S]*?)```/)[1];
+        assert.ok(stylesSource.includes(block));
+        assert.match(chatSource, /class="mail-chat mobile-core-mailbox" data-mobile-pane="list"/);
+        assert.match(chatSource, /<\/aside>\s*<button type="button" class="button mobile-mailbox-back" data-action="mobile-mailbox-back">返回会话列表<\/button>\s*<section class="mc-conversation"/);
+    });
+});
+
+
+it("手机编辑器用 contenteditable 特异性保护 160px 最小高度", () => {
+    assert.match(stylesSource, /@media \(max-width: 760px\) \{\s*\.mail-chat\.mobile-core-mailbox div\.mc-editor\[contenteditable="true"\] \{ min-height: 160px; max-height: 40dvh; \}/);
+});

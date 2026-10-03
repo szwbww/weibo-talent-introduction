@@ -312,6 +312,7 @@ function createBootstrapSandbox(authMeResponse) {
         stopBatchSendStatusPoll: () => {},
 
         // Stubs for bootstrap sub-functions (not auth-relevant, just need to not crash)
+        bindMobileCoreNavigation: () => {},
         bindEvents: () => {},
         initManualOutreach: () => {},
         initBulkAutoReply: () => {},

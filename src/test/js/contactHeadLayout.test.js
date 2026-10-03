@@ -171,6 +171,8 @@ describe("contact head layout C (P2 S-8)", () => {
                 return {};
             },
             showStatus: () => {},
+            mobileContactPresentation: { generation: 1 },
+            isCurrentContactDetailPresentation: () => true,
             loadContactDetail: async () => {},
             loadContacts: async () => {}
         };

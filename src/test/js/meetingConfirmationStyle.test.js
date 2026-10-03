@@ -94,7 +94,10 @@ describe("S-1/I-6: DOM class 白名单与模板卫生", () => {
 
     it("既有 mailbox-chat.css 未被会议规则污染（独立 CSS 边界）", () => {
         assert.ok(!mailboxChatCss.includes(".meeting-"), "mailbox-chat.css 不含会议 class");
-        assert.ok(!stylesSource.includes(".meeting-dialog"), "全局 styles.css 不含会议弹窗规则");
+        const mobilePlan = fs.readFileSync(path.join(__dirname, "../../../docs/plans/2026-10-03/mobile-core-02-mailbox.md"), "utf8");
+        const mobileBlock = mobilePlan.match(/```css\n([\s\S]*?)```/)[1];
+        assert.ok(stylesSource.includes(mobileBlock), "手机覆盖必须逐字等于批准的 02 CSS");
+        assert.ok(!stylesSource.replace(mobileBlock, "").includes(".meeting-dialog"), "批准的手机块外 styles.css 不含会议弹窗规则");
         // 会议标记 class 全部经 ${mcCls(...)} 动态拼接（模板字面量含 $，被旧白名单跳过）
         assert.ok(/class="\$\{mcCls\(/.test(chatSource), "会议标记必须以 ${mcCls(...)} 模板字面量出现");
         assert.ok(!chatSource.includes('class="meeting-'), "不得出现字面量 meeting- class");

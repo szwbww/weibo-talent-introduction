@@ -288,6 +288,12 @@ function createRendererSandbox() {
             }
             return {};
         },
+        // Presentation helpers are exercised by mobileCoreNavigation; this harness isolates rendering.
+        beginContactDetailPresentation: () => 1,
+        isCurrentContactDetailPresentation: () => true,
+        finishContactDetailPresentation() {},
+        failContactDetailPresentation(generation, error) { throw error; },
+        isMobileCoreViewport: () => false,
         loadMailSendOptions: async () => [],
         unmountMailboxTrustReplyHosts() {},
         mountLiveTrustReply() {},

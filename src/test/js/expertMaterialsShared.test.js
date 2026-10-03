@@ -1257,6 +1257,12 @@ describe("expert-materials: I-4 app.js 宿主 —— 无 contactId 空态与真�
             console,
             URLSearchParams,
             $,
+        // Presentation helpers are exercised by mobileCoreNavigation; this harness isolates rendering.
+        beginContactDetailPresentation: () => 1,
+        isCurrentContactDetailPresentation: () => true,
+        finishContactDetailPresentation() {},
+        failContactDetailPresentation(generation, error) { throw error; },
+        isMobileCoreViewport: () => false,
             showStatus() {},
             api: async (url) => {
                 serverCalls.push(url);

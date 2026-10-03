@@ -1,0 +1,7 @@
+{
+  "src/main/resources/static/app.js": "612bf68251d2ba73cef9c0a0b6387c1f252a639034ce311fdadbacdaf8664c4f",
+  "src/main/resources/static/index.html": "072b0a81e5abbf10fe71ff4a3133025e64f8b8c6750de524909153cd20bd5124",
+  "src/main/resources/static/styles.css": "7894f9cdaa434164e42b0621fb69db5915285005eeec2814c2602917f2eb783b",
+  "src/test/js/meetingCalendar.test.js": "6157c8c51bb61034a9f50ec83147f5c613d6ad0e984f764089aaae7b4c6f43f1",
+  "src/test/js/taskRecordsSemantics.test.js": "07d01718f0fd1e131398710ea82940ed3d07073c457c6b7326653bf7b62d60a8"
+}

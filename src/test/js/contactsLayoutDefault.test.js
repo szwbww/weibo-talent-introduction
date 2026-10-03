@@ -25,7 +25,8 @@ function createElement(listeners) {
     };
 }
 
-function initLayout(savedWidth) {
+function initLayout(savedWidth, width = 1440) {
+    const viewportListeners = [];
     const resizerListeners = {};
     const defaultListeners = {};
     const wideListeners = {};
@@ -51,19 +52,19 @@ function initLayout(savedWidth) {
             getItem: () => savedWidth,
             setItem: (key, value) => writes.push([key, value])
         },
-        window: { innerWidth: 1440 }
+        window: { innerWidth: width, matchMedia: () => ({ addEventListener: (type, listener) => viewportListeners.push(listener) }) }
     };
     vm.createContext(sandbox);
     vm.runInContext(extractFn("initLayoutResizer"), sandbox);
     sandbox.initLayoutResizer();
-    return { container, writes, resizerListeners, defaultListeners };
+    return { container, writes, resizerListeners, defaultListeners, wideListeners, splitListeners, resize(nextWidth) { sandbox.window.innerWidth = nextWidth; viewportListeners.forEach(listener => listener()); } };
 }
 
 describe("contacts layout default", () => {
     it("uses the middle 500px preset for a fresh layout and every reset path", () => {
         const result = initLayout(null);
         assert.strictEqual(result.container.style.gridTemplateColumns, "500px 6px minmax(0, 1fr)");
-        assert.deepStrictEqual(result.writes, [["contacts-list-width", 500]]);
+        assert.deepStrictEqual(result.writes, []);
 
         result.container.style.gridTemplateColumns = "360px 6px minmax(0, 1fr)";
         result.defaultListeners.click();
@@ -95,3 +96,21 @@ describe("contacts layout default", () => {
         assert.match(indexSource, /id="btnLayoutDefault" title="默认分栏 \(500px\)"/);
     });
 });
+
+for (const width of [390, 760, 761, 1024]) {
+    for (const saved of [null, "620"]) {
+        it(`preserves storage at ${width}px with preference ${saved}`, () => {
+            const result = initLayout(saved, width);
+            result.defaultListeners.click();
+            result.wideListeners.click();
+            result.splitListeners.click();
+            result.resizerListeners.dblclick();
+            result.resizerListeners.pointerdown({ pointerId: 1 });
+            result.resizerListeners.pointermove({ clientX: 250 });
+            assert.deepStrictEqual(result.writes, []);
+            result.resize(1440);
+            assert.strictEqual(result.container.style.gridTemplateColumns, `${saved || 500}px 6px minmax(0, 1fr)`);
+            assert.deepStrictEqual(result.writes, []);
+        });
+    }
+}

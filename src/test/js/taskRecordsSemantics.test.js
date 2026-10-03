@@ -369,3 +369,18 @@ describe("task records semantics (b2)", () => {
         }, null, 2) + "\n");
     });
 });
+
+describe("mobile-core-03: accessible task history keeps all columns and controls", () => {
+    it("history table has a named keyboard-focusable local scroll region and original seven headers", () => {
+        const section = html.slice(html.indexOf('id="view-tasks"'), html.indexOf('id="view-tasks"') + 14000);
+        const tableStart = section.lastIndexOf('<div class="table-wrap"', section.indexOf('id="tasksTable"'));
+        const table = section.slice(tableStart, section.indexOf('</table>', tableStart));
+        assert.match(table, /^<div class="table-wrap" tabindex="0" role="region" aria-label="任务历史记录，可横向滚动">/);
+        assert.deepStrictEqual([...table.matchAll(/<th>([^<]+)<\/th>/g)].map(match => match[1]),
+            ['审计 ID', '任务类型', '触发方式', '当前状态', '发信统计/成功数', '开始时间', '异常堆栈/错误原因']);
+        for (const id of ['taskActiveCards','taskActiveDetail','taskActiveOpenControl','taskActiveLogs','tasksTable']) {
+            assert.ok(section.includes(`id="${id}"`), `real DOM must retain ${id}`);
+        }
+        assert.ok(section.includes('id="taskPager"'), 'history pagination stays present');
+    });
+});

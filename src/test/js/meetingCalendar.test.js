@@ -445,3 +445,173 @@ describe("预览对齐：真实排期统计", () => {
         });
     });
 });
+
+// mobile-core-03: exercise production view switching without a second event store.
+function createMobileCalendarHarness(width) {
+    const harness = createSandbox();
+    const { sandbox } = harness;
+    const nodes = new Map();
+    const root = { dataset: { meetingCalendarSkeleton: "1" }, querySelector(selector) {
+        if (!nodes.has(selector)) nodes.set(selector, { hidden: false, attributes: {},
+            setAttribute(name, value) { this.attributes[name] = value; } });
+        return nodes.get(selector);
+    } };
+    let viewport = width;
+    let listEvents = [];
+    Object.assign(sandbox, {
+        document: {}, state: { view: "meeting-calendar" },
+        window: { matchMedia: () => ({ matches: viewport <= 760 }) },
+        $: (selector) => selector === "#meetingCalendarRoot" ? root : null,
+        ensureMeetingCalendarBound: () => {}, renderMeetingCalendarOverview: () => {},
+        renderMeetingCalendarGrid: () => {},
+        renderMeetingCalendarList: (_, events) => { listEvents = events; }
+    });
+    ["isMobileCoreViewport", "meetingCalendarEffectiveView", "meetingCalendarRootEl", "meetingCalendarSetHidden",
+        "meetingCalendarStatusText", "renderMeetingCalendar", "loadMeetingCalendar", "onMeetingCalendarClick",
+        "onMobileCoreViewportChange"].forEach(name => vm.runInContext(extractFn(name), sandbox));
+    return { ...harness, nodes,
+        run: code => vm.runInContext(code, sandbox),
+        resize: next => { viewport = next; sandbox.onMobileCoreViewportChange(); },
+        click: action => sandbox.onMeetingCalendarClick({ target: { closest: selector =>
+            selector === "[data-calendar-action]" ? { getAttribute: () => action } : null } }),
+        listEvents: () => JSON.parse(JSON.stringify(listEvents))
+    };
+}
+
+describe("mobile-core-03: viewport defaults and explicit calendar preference", () => {
+    it("fresh 390/760px uses list, 761/1440px uses month, hidden and aria state agree", () => {
+        for (const width of [390, 760, 761, 1440]) {
+            const h = createMobileCalendarHarness(width);
+            h.sandbox.renderMeetingCalendar();
+            const mobile = width <= 760;
+            assert.strictEqual(h.run("meetingCalendarState.viewPreference"), null);
+            assert.strictEqual(h.run("meetingCalendarState.viewMode"), mobile ? "list" : "month");
+            assert.strictEqual(h.nodes.get(".calendar-scroll").hidden, mobile);
+            assert.strictEqual(h.nodes.get('[data-role="calendar-list"]').hidden, !mobile);
+            assert.strictEqual(h.nodes.get('[data-calendar-action="list"]').attributes["aria-pressed"], String(mobile));
+            assert.strictEqual(h.nodes.get('[data-calendar-action="month"]').attributes["aria-pressed"], String(!mobile));
+            assert.strictEqual(h.requests.length, 0);
+        }
+    });
+
+    it("unselected mode follows width only on calendar page, preserves open dialog and query state", () => {
+        const h = createMobileCalendarHarness(1440);
+        h.run("meetingCalendarState.dialog.open = true; meetingCalendarState.dialog.event = {id: 7}; meetingCalendarState.showCancelled = true;");
+        const before = h.run("JSON.stringify({seq:meetingCalendarState.seq,dialog:meetingCalendarState.dialog,events:meetingCalendarState.events})");
+        h.sandbox.renderMeetingCalendar();
+        h.resize(390);
+        assert.strictEqual(h.run("meetingCalendarState.viewMode"), "list");
+        h.resize(761);
+        assert.strictEqual(h.run("meetingCalendarState.viewMode"), "month");
+        h.sandbox.state.view = "mailbox";
+        h.resize(390);
+        assert.strictEqual(h.run("meetingCalendarState.viewMode"), "month");
+        assert.strictEqual(h.run("JSON.stringify({seq:meetingCalendarState.seq,dialog:meetingCalendarState.dialog,events:meetingCalendarState.events})"), before);
+        assert.strictEqual(h.run("meetingCalendarState.showCancelled"), true);
+        assert.strictEqual(h.requests.length, 0);
+    });
+
+    it("explicit month/list survives resize, month navigation and refresh with only original fetches", async () => {
+        const h = createMobileCalendarHarness(390);
+        h.run("meetingCalendarState.month = {year: 2026, month: 10};");
+        h.sandbox.renderMeetingCalendar();
+        h.click("month");
+        h.resize(1440); h.resize(390);
+        assert.strictEqual(h.run("meetingCalendarState.viewPreference"), "month");
+        assert.strictEqual(h.run("meetingCalendarState.viewMode"), "month");
+        assert.strictEqual(h.requests.length, 0);
+        h.click("next");
+        await new Promise(resolve => setImmediate(resolve));
+        assert.strictEqual(h.requests.length, 1, "month navigation retains one original fetch");
+        assert.strictEqual(h.run("meetingCalendarState.month.month"), 11);
+        assert.strictEqual(h.run("meetingCalendarState.viewMode"), "month");
+        await h.sandbox.loadMeetingCalendar();
+        assert.strictEqual(h.requests.length, 2, "refresh retains one original fetch");
+        assert.strictEqual(h.run("meetingCalendarState.viewMode"), "month");
+        h.click("list"); h.resize(1440);
+        assert.strictEqual(h.run("meetingCalendarState.viewPreference"), "list");
+        assert.strictEqual(h.run("meetingCalendarState.viewMode"), "list");
+        assert.strictEqual(h.requests.length, 2);
+        const fresh = createMobileCalendarHarness(1440);
+        fresh.sandbox.renderMeetingCalendar();
+        assert.strictEqual(fresh.run("meetingCalendarState.viewMode"), "month", "reload discards memory preference");
+    });
+
+    it("mobile list still filters intersecting Beijing month and sorts original events", () => {
+        const h = createMobileCalendarHarness(390);
+        h.run(`meetingCalendarState.month = {year:2026,month:10}; meetingCalendarState.events = [
+            {id:3,startUtc:'2026-11-01T00:00:00Z',endUtc:'2026-11-01T01:00:00Z'},
+            {id:2,startUtc:'2026-10-03T02:00:00Z',endUtc:'2026-10-03T03:00:00Z',status:'CANCELLED'},
+            {id:1,startUtc:'2026-09-30T15:30:00Z',endUtc:'2026-09-30T16:30:00Z'}];`);
+        h.sandbox.renderMeetingCalendar();
+        assert.deepStrictEqual(h.listEvents().map(event => event.id), [1, 2]);
+        assert.strictEqual(h.requests.length, 0);
+    });
+
+    it("exact approved mobile CSS remains appended and no preference storage or new listener", () => {
+        const plan = fs.readFileSync(path.join(__dirname, '../../../docs/plans/2026-10-03/mobile-core-03-calendar-tasks.md'), 'utf8');
+        const css = /```css\n([\s\S]*?)```/.exec(plan)[1];
+        assert.ok(stylesSource.includes(css));
+        assert.strictEqual(countOccurrences(appSource, 'addEventListener("change", onMobileCoreViewportChange)'), 1);
+        for (const fn of ['meetingCalendarEffectiveView', 'renderMeetingCalendar', 'onMeetingCalendarClick', 'onMobileCoreViewportChange']) {
+            assert.ok(!/localStorage|sessionStorage|addEventListener/.test(extractFn(fn)));
+        }
+    });
+});
+
+describe("mobile-core-03 amendment: real meeting links", () => {
+    function setup() {
+        const { sandbox } = createSandbox();
+        const makeNode = () => ({ attributes: {}, textContent: '', children: [],
+            setAttribute(name, value) { this.attributes[name] = value; },
+            appendChild(child) { this.children.push(child); },
+            querySelector() { return makeNode(); },
+            after(node) { this.siblingLink = node; }
+        });
+        const summary = makeNode();
+        Object.assign(sandbox, { URL, document: { createElement: makeNode },
+            meetingCalendarDialogEl: () => ({querySelector: () => summary}) });
+        ['meetingCalendarLinkLabel', 'meetingCalendarFillEventButton', 'renderMeetingCalendarList',
+            'renderMeetingCalendarDialogSourceSummary'].forEach(name => vm.runInContext(extractFn(name), sandbox));
+        return { sandbox, makeNode, summary };
+    }
+
+    it("list keeps detail buttons and appends safe sibling links, never fabricated links", () => {
+        const { sandbox, makeNode } = setup();
+        const events = [
+            {id:1,meetingLink:'https://us02web.zoom.us/j/123?pwd=actual'},
+            {id:2,meetingLink:'https://meet.example.test/abc'},
+            {id:3,meetingLink:null}, {id:4,meetingLink:'javascript:alert(1)'},
+            {id:5,meetingLink:'https://zoom.us.evil.test/j/123'},
+            {id:6,meetingLink:'https://zoom.com/j/789'}
+        ];
+        const buttons = events.map(makeNode);
+        const list = { innerHTML:'', querySelectorAll: () => buttons };
+        sandbox.renderMeetingCalendarList(list, events);
+        assert.strictEqual(countOccurrences(list.innerHTML, 'class="calendar-event"'), events.length);
+        [0,1,4,5].forEach(index => {
+            const link = buttons[index].siblingLink;
+            assert.strictEqual(link.attributes.href, events[index].meetingLink);
+            assert.strictEqual(link.attributes.target, '_blank');
+            assert.strictEqual(link.attributes.rel, 'noopener');
+            assert.strictEqual(buttons[index].children.length, 0, 'anchor cannot be nested inside button');
+        });
+        assert.match(buttons[0].siblingLink.textContent, /Zoom/);
+        assert.match(buttons[5].siblingLink.textContent, /Zoom/);
+        assert.strictEqual(buttons[1].siblingLink.textContent, '会议链接');
+        assert.strictEqual(buttons[4].siblingLink.textContent, '会议链接');
+        assert.strictEqual(buttons[2].siblingLink, undefined);
+        assert.strictEqual(buttons[3].siblingLink, undefined);
+    });
+
+    it("shared event details expose the same safe real Zoom link", () => {
+        const { sandbox, summary } = setup();
+        vm.runInContext("meetingCalendarState.dialog.event = {meetingLink:'https://us02web.zoom.us/j/123',sourceMailRecordId:42};", sandbox);
+        sandbox.renderMeetingCalendarDialogSourceSummary();
+        assert.strictEqual(summary.children.length, 1);
+        assert.strictEqual(summary.children[0].attributes.href, 'https://us02web.zoom.us/j/123');
+        assert.strictEqual(summary.children[0].attributes.rel, 'noopener');
+        assert.match(summary.children[0].textContent, /Zoom/);
+        assert.match(summary.textContent, /来源邮件 #42/);
+    });
+});

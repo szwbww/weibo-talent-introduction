@@ -81,7 +81,10 @@ describe("fast-p 01 S-1/S-2：计划逐字 CSS 合同", () => {
     });
 
     it("新增 class 全部只在 S-1/S-2 块内声明，未污染历史块", () => {
-        const withoutNew = stylesSource.replace(S1_CSS, "").replace(S2_CSS, "");
+        const mobilePlan = fs.readFileSync(path.join(__dirname, "../../../docs/plans/2026-10-03/mobile-core-02-mailbox.md"), "utf8");
+        const mobileBlock = mobilePlan.match(/```css\n([\s\S]*?)```/)[1];
+        assert.ok(stylesSource.includes(mobileBlock), "手机覆盖必须逐字等于批准的 02 CSS");
+        const withoutNew = stylesSource.replace(S1_CSS, "").replace(S2_CSS, "").replace(mobileBlock, "");
         const newClasses = new Set();
         [S1_CSS, S2_CSS].forEach((block) => {
             Array.from(block.matchAll(/\.([a-z][a-z0-9-]*)\s*[,{:[. ]/g)).forEach((match) => {

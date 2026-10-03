@@ -12471,3 +12471,174 @@ body.preview-available:not(.preview-docked) .preview-rail {
 .mail-chat .mailbox-reply-zone{font-size:11px;color:#94a3b8}
 .mail-chat .mailbox-reply-empty{color:#94a3b8;font-weight:400}
 @media(max-width:760px){.mail-chat .mailbox-reply-detail time{font-size:12px}}
+
+/* mobile-core-01:start */
+.mobile-core-nav,
+.mobile-contact-bar {
+    display: none;
+}
+@media (max-width: 760px) {
+    .app-shell { height: 100dvh; min-width: 0; }
+    .topnav.task-center-nav { padding: 8px 12px; gap: 8px; }
+    .topnav.task-center-nav > .nav-tabs { display: none; }
+    .topnav .brand-subtitle,
+    .topnav-side .user-info { display: none; }
+    .mobile-core-nav {
+        display: flex; align-items: center; gap: 8px;
+        order: 4; flex: 1 0 100%; min-width: 0;
+        font-size: 12px; color: var(--text-secondary);
+    }
+    .mobile-core-nav select {
+        flex: 1; min-width: 0; min-height: 44px; font-size: 16px;
+        padding: 8px 12px; border: 1px solid var(--border);
+        border-radius: 7px; background: var(--bg-main); color: var(--text-main);
+    }
+    .mobile-core-nav select:focus-visible,
+    .mobile-contact-bar .button:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+    .main { padding: 12px; gap: 12px; }
+    .main > .topbar { flex-wrap: wrap; gap: 8px; }
+    .main > .topbar > div { min-width: 0; }
+    .topbar-actions { flex-wrap: wrap; }
+    .topnav .logout-btn,
+    .topbar-actions .button,
+    .topbar-actions .task-center-global { min-height: 44px; height: auto; }
+    .auth-card { width: calc(100% - 24px); padding: 24px; }
+    .auth-card input { min-height: 44px; font-size: 16px; }
+    .auth-card .button { min-height: 44px; height: auto; }
+    #view-contacts .contacts-layout { min-width: 0; grid-template-columns: minmax(0, 1fr) !important; }
+    #view-contacts[data-mobile-pane="list"] .contact-detail-panel { display: none; }
+    #view-contacts[data-mobile-pane="detail"] .contacts-list-panel,
+    #view-contacts[data-mobile-pane="detail"] > .contacts-toolbar { display: none !important; }
+    #view-contacts .contacts-list-panel,
+    #view-contacts .contact-detail-panel { min-width: 0; height: auto; }
+    #view-contacts .contacts-layout .list { max-height: none; overflow: visible; }
+    #view-contacts .back-to-list { display: none; }
+    #view-contacts .mobile-contact-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; }
+    #view-contacts[data-mobile-loading="true"] #contactDetail,
+    #view-contacts[data-mobile-loading="true"] .contact-detail-head { display: none; }
+    #view-contacts .button { min-height: 44px; height: auto; white-space: normal; }
+    #view-contacts .contacts-toolbar,
+    #view-contacts .toolbar-actions,
+    #view-contacts .list-pager,
+    #view-contacts .contact-head-main-row { flex-wrap: wrap; min-width: 0; }
+    #view-contacts .toolbar-label { min-width: 0; max-width: 100%; }
+    #view-contacts :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+        min-width: 0; max-width: 100%; min-height: 44px; font-size: 16px;
+    }
+    #view-contacts .detail-sub-tabs { overflow-x: auto; max-width: 100%; }
+    #view-contacts .detail-sub-tab { min-height: 44px; flex-shrink: 0; }
+    #view-contacts #contactDetail { min-width: 0; overflow-wrap: anywhere; }
+    #view-contacts #contactDetail .table-wrap { max-width: 100%; overflow-x: auto; }
+}
+/* mobile-core-01:end */
+
+/* WorldClock mounts this header class after the core shell initializes. */
+@media (max-width: 760px) {
+    .topnav.task-center-nav.world-clock-header { flex-wrap: wrap; padding: 8px 12px; gap: 8px; }
+}
+
+/* mobile-core-02:start */
+.mobile-mailbox-back { display: none; }
+@media (max-width: 760px) {
+    #view-mailbox .panel-head,
+    #view-mailbox .panel-head-actions,
+    #view-mailbox .toolbar { flex-wrap: wrap; gap: 8px; min-width: 0; }
+    #view-mailbox .panel-head .button { min-height: 44px; height: auto; white-space: normal; }
+    #view-mailbox .mailbox-list { min-width: 0; }
+    #view-mailbox .table-wrap { max-width: 100%; overflow-x: auto; }
+    .mail-chat.mobile-core-mailbox { display: flex; flex-direction: column; height: auto; min-height: 0; gap: 12px; }
+    .mail-chat.mobile-core-mailbox[data-mobile-pane="list"] > .mc-conversation,
+    .mail-chat.mobile-core-mailbox[data-mobile-pane="list"] > .mobile-mailbox-back,
+    .mail-chat.mobile-core-mailbox[data-mobile-pane="detail"] > .mc-experts { display: none; }
+    .mail-chat.mobile-core-mailbox[data-mobile-pane="detail"] > .mobile-mailbox-back {
+        display: inline-flex; align-self: flex-start; min-height: 44px; height: auto;
+    }
+    .mail-chat.mobile-core-mailbox .mc-experts { min-height: 0; max-height: none; }
+    .mail-chat.mobile-core-mailbox .mc-expert-list { min-height: 120px; max-height: 65dvh; overflow: auto; }
+    .mail-chat.mobile-core-mailbox .mc-conversation { min-height: 0; }
+    .mail-chat.mobile-core-mailbox .mc-scroll { flex: none; height: 65dvh; min-height: 240px; max-height: none; overflow: auto; }
+    .mail-chat.mobile-core-mailbox .mc-header,
+    .mail-chat.mobile-core-mailbox .mc-actions,
+    .mail-chat.mobile-core-mailbox .mc-compose-footer,
+    .mail-chat.mobile-core-mailbox .mc-message footer { flex-wrap: wrap; gap: 8px; }
+    .mail-chat.mobile-core-mailbox .mc-header-meta { overflow-wrap: anywhere; }
+    .mail-chat.mobile-core-mailbox :is(button, .button) { min-height: 44px; height: auto; white-space: normal; }
+    .mail-chat.mobile-core-mailbox .mc-icon { min-width: 44px; }
+    .mail-chat.mobile-core-mailbox .mc-search-row { flex-wrap: wrap; }
+    .mail-chat.mobile-core-mailbox .mc-filter-popover {
+        position: static; inset: auto; flex: 1 0 100%;
+        width: 100%; max-width: 100%; max-height: none;
+    }
+    .mail-chat.mobile-core-mailbox .mc-filter-fields { grid-template-columns: minmax(0, 1fr); }
+    .mail-chat.mobile-core-mailbox :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea, [contenteditable="true"]) {
+        min-width: 0; max-width: 100%; min-height: 44px; font-size: 16px;
+    }
+    .mail-chat.mobile-core-mailbox .mc-editor { min-height: 160px; max-height: 40dvh; }
+    .mail-chat.mobile-core-mailbox .mc-body { font-size: 14px; line-height: 1.8; }
+    .mail-chat.mobile-core-mailbox .mc-compose-footer > [data-role="target-info"] { width: 100%; overflow-wrap: anywhere; }
+    .mail-chat.mobile-core-mailbox .outbound-file { min-width: 0; }
+    body .mail-chat.mc-overlay-root .mc-manage-dialog { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+    body .mail-chat.mc-overlay-root .mc-manage-dialog .button,
+    body .reply-template-dialog .button,
+    body .meeting-dialog .button,
+    body .meeting-dialog .meeting-close { min-height: 44px; height: auto; }
+    body .meeting-dialog .meeting-form :is(input, select, textarea),
+    body .reply-template-dialog :is(input:not([type="radio"]):not([type="checkbox"]), select, textarea) {
+        min-height: 44px; font-size: 16px; max-width: 100%;
+    }
+}
+/* mobile-core-02:end */
+
+/* Preserve the editor minimum against the mobile form selector specificity. */
+@media (max-width: 760px) {
+    .mail-chat.mobile-core-mailbox div.mc-editor[contenteditable="true"] { min-height: 160px; max-height: 40dvh; }
+}
+
+/* mobile-core-03:start */
+@media (max-width: 760px) {
+    #view-meeting-calendar .calendar-toolbar,
+    #view-meeting-calendar .calendar-month-controls,
+    #view-meeting-calendar .calendar-actions,
+    #view-meeting-calendar .calendar-filter-bar { flex-wrap: wrap; gap: 8px; min-width: 0; }
+    #view-meeting-calendar .calendar-toolbar { padding: 12px; }
+    #view-meeting-calendar .calendar-actions { width: 100%; }
+    #view-meeting-calendar .calendar-segmented { max-width: 100%; }
+    #view-meeting-calendar .calendar-scroll { max-width: 100%; overflow-x: auto; }
+    #view-meeting-calendar .calendar-list { padding: 12px; }
+    #view-meeting-calendar .calendar-list .calendar-event { min-height: 44px; font-size: 14px; }
+    #view-meeting-calendar .button { min-height: 44px; height: auto; white-space: normal; }
+    body .calendar-dialog { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); padding: 16px; }
+    body .calendar-dialog .calendar-form { grid-template-columns: minmax(0, 1fr); }
+    body .calendar-dialog :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+        min-width: 0; max-width: 100%; min-height: 44px; font-size: 16px;
+    }
+    body .calendar-dialog .calendar-actions { flex-wrap: wrap; gap: 8px; }
+    body .calendar-dialog .button { min-height: 44px; height: auto; white-space: normal; }
+    #view-tasks .task-center-grid { grid-template-columns: minmax(0, 1fr); }
+    #view-tasks .task-center-detail { padding: 12px; }
+    #view-tasks .toolbar,
+    #view-tasks .list-pager,
+    #view-tasks .task-center-interrupt { flex-wrap: wrap; gap: 8px; min-width: 0; }
+    #view-tasks .toolbar :is(input, select),
+    #view-tasks .task-center-interrupt :is(select, textarea) {
+        min-width: 0; max-width: 100%; min-height: 44px; font-size: 16px;
+    }
+    #view-tasks :is(.button, .task-center-link) { min-height: 44px; height: auto; white-space: normal; }
+    #view-tasks .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; }
+    #view-tasks .table-wrap > table { min-width: 720px; }
+    #view-tasks .table-wrap:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+    #view-tasks .task-center-log { max-width: 100%; max-height: 50dvh; white-space: pre-wrap; overflow-wrap: anywhere; overflow: auto; }
+    #view-tasks .pre { max-width: 100%; overflow: auto; }
+}
+/* mobile-core-03:end */
+
+/* mobile-core-03: real meeting links remain separate from detail buttons. */
+#view-meeting-calendar .calendar-list > .calendar-meeting-link {
+    align-self: flex-start; max-width: 100%; padding: 0 12px;
+    color: #1e40af; font-size: 13px; overflow-wrap: anywhere;
+}
+@media (max-width: 760px) {
+    #view-meeting-calendar .calendar-list > .calendar-meeting-link {
+        display: inline-flex; align-items: center; min-height: 44px; font-size: 14px;
+    }
+}

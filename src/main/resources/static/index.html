@@ -8,11 +8,11 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=20261002-mailbox-last-reply">
-    <link rel="stylesheet" href="expert-materials.css?v=20261002-mailbox-last-reply">
-    <link rel="stylesheet" href="mailbox-chat.css?v=20261002-mailbox-last-reply">
-    <link rel="stylesheet" href="meeting-confirmation.css?v=20261002-mailbox-last-reply">
-    <link rel="stylesheet" href="world-clock.css?v=20261002-mailbox-last-reply">
+    <link rel="stylesheet" href="styles.css?v=20261003-mobile-core-03">
+    <link rel="stylesheet" href="expert-materials.css?v=20261003-mobile-core-03">
+    <link rel="stylesheet" href="mailbox-chat.css?v=20261003-mobile-core-03">
+    <link rel="stylesheet" href="meeting-confirmation.css?v=20261003-mobile-core-03">
+    <link rel="stylesheet" href="world-clock.css?v=20261003-mobile-core-03">
 </head>
 <body>
 <!-- Login Overlay -->
@@ -146,6 +146,9 @@
                 </span>
             </button>
         </nav>
+        <label class="mobile-core-nav" for="mobileCoreView">切换页面
+            <select id="mobileCoreView" aria-label="切换页面"></select>
+        </label>
         <div class="topnav-side">
             <div class="user-info">
                 当前登录: <span id="currentUserDisplay">admin</span>
@@ -479,7 +482,7 @@
         </section>
 
         <!-- View 4: Expert Contacts funnel & timelines -->
-        <section class="view" id="view-contacts">
+        <section class="view" id="view-contacts" data-mobile-pane="list">
             <div class="toolbar contacts-toolbar">
                 <button class="button filter-toggle" id="filterToggleBtn" aria-expanded="false">
                     <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
@@ -721,6 +724,10 @@
 
                 <!-- Right panel: detail & timeline view -->
                 <section class="panel contact-detail-panel">
+                    <div class="mobile-contact-bar">
+                        <button type="button" class="button" id="mobileContactsBack">返回专家列表</button>
+                        <span id="mobileContactStatus" role="status" aria-live="polite" hidden></span>
+                    </div>
                     <div class="panel-head contact-detail-head">
                         <div style="display: flex; align-items: center; gap: 8px; width: 100%; margin-bottom: 8px;">
                             <h2 style="flex: 1; margin: 0;">专家引进状态与联系详情</h2>
@@ -1085,7 +1092,7 @@
 
             <section class="panel">
                 <div class="panel-head"><h2>执行记录</h2></div>
-                <div class="table-wrap">
+                <div class="table-wrap" tabindex="0" role="region" aria-label="任务历史记录，可横向滚动">
                     <table>
                         <thead>
                         <tr>
@@ -2342,11 +2349,11 @@
 
 <!-- App Core controller -->
 <script src="task-modal-runtime.js"></script>
-<script src="trust-reply-workbench.js?v=20261002-mailbox-last-reply"></script>
-<script src="expert-materials.js?v=20261002-mailbox-last-reply"></script>
-<script src="meeting-confirmation.js?v=20261002-mailbox-last-reply"></script>
-<script src="mailbox-chat.js?v=20261002-mailbox-last-reply"></script>
-<script src="app.js?v=20261002-mailbox-last-reply"></script>
-<script src="world-clock.js?v=20261002-mailbox-last-reply"></script>
+<script src="trust-reply-workbench.js?v=20261003-mobile-core-03"></script>
+<script src="expert-materials.js?v=20261003-mobile-core-03"></script>
+<script src="meeting-confirmation.js?v=20261003-mobile-core-03"></script>
+<script src="mailbox-chat.js?v=20261003-mobile-core-03"></script>
+<script src="app.js?v=20261003-mobile-core-03"></script>
+<script src="world-clock.js?v=20261003-mobile-core-03"></script>
 </body>
 </html>

@@ -1,0 +1,53 @@
+{
+  "worktree": "/Users/lukai/IdeaProjects/weibo-talent-introduction",
+  "branch": "main",
+  "baselineHead": "b6be5f4604867f78c26fe9b4b1a32847068ad21e",
+  "approval": "User: 好 你开始开发吧; prior amendment: 会议日历要显示zoomh会议链接",
+  "plans": {
+    "mobile-core-master.md": "60cae71496e342a0165a881fffa99b40332066cdbeb63e1d1d2a56fad7ab17ea",
+    "mobile-core-03-calendar-tasks.md": "8a79cab01c47657d1bf3d25059f8bd48b6c1a015f68e054336aa2d75c94b62c9",
+    "mobile-core-01-shell-contacts.md": "60e77aab9a36cdf7f04bd81bd00c446451d3a44253c06d422c2005dc105fcfaf",
+    "mobile-core-02-mailbox.md": "b4b6438fc3ad4f53563b7cde021c0f247aae8bf8a7e6ae2f7f56f4b4670d95d3"
+  },
+  "children": {
+    "01": {
+      "status": "MACHINE_PASS",
+      "executor": "mobile01",
+      "verifier": "verify01",
+      "tests": 1361,
+      "focusedTests": 77,
+      "repair": "R1 stale business completion reopening detail resolved"
+    },
+    "02": {
+      "status": "MACHINE_PASS",
+      "executor": "mobile02",
+      "verifier": "mobile01",
+      "tests": 1377,
+      "focusedTests": 217
+    },
+    "03": {
+      "status": "MACHINE_PASS",
+      "executor": "mobile03",
+      "verifier": "mobile02",
+      "tests": 1385,
+      "focusedTests": 116
+    }
+  },
+  "testFixture": "http://127.0.0.1:18776/",
+  "manualAcceptance": "PENDING physical iPhone Safari/Android Chrome keyboard, real upload/send/meeting writes. Browser fixture writes return405.",
+  "deviations": [
+    "01 mechanical existing test harness updates (six files) for new helper dependencies/delegated navigation/cache coherence",
+    "01 narrow WorldClock mobile flex-wrap override after observed393->538 horizontal overflow; exact plan CSS block retained",
+    "02 two historical CSS guard tests exclude only the exact approved mobile CSS block; all block-external assertions preserved",
+    "02 narrow div.mc-editor[contenteditable] selector restores160px planned editor height against mobile form selector specificity",
+    "03 user-approved Zoom link addition uses actual event.meetingLink and safe sibling anchors; narrow link CSS appended after exact03 block"
+  ],
+  "commits": "none; existing unrelated dirty changes preserved",
+  "status": "IMPLEMENTATION_COMPLETE_MACHINE_PASS_DEVICE_ACCEPTANCE_PENDING",
+  "browserEvidence": {
+    "viewportCases": 11,
+    "corePageHorizontalOverflow": false,
+    "meetingResizeRequests": "one initial fetch only",
+    "physicalDevice": false
+  }
+}
