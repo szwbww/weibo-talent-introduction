@@ -5,6 +5,9 @@ import com.weibo.talentintroduction.common.controller.ApiErrorResponse
 import com.weibo.talentintroduction.mail.service.ExpertFollowService
 import com.weibo.talentintroduction.mail.service.ExpertRepliedDismissalService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
+import com.weibo.talentintroduction.mail.service.MailboxSuspensionConflictException
+import com.weibo.talentintroduction.mail.service.MailboxSuspensionRequest
+import com.weibo.talentintroduction.mail.service.MailboxSuspensionService
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
 import com.weibo.talentintroduction.mail.service.PendingMailSendResult
 import com.weibo.talentintroduction.mail.service.TagView
@@ -67,7 +70,14 @@ data class ConversationItemResponse(
     val latestMessage: ConversationLatestMessageItem?,
     val latestInbound: ConversationLatestInboundItem?,
     val materialCount: Long,
-    val expertTags: List<String>? = null
+    val expertTags: List<String>? = null,
+    /**
+     * 01 (I-1/I-3)：当前登录用户对该专家的真实挂起状态。旧响应/旧调用兼容默认 false；
+     * 未挂起行的 suspendReason 恒 null，suspensionPendingCount 仍是跨账号真实待处理数。
+     */
+    val suspended: Boolean = false,
+    val suspendReason: String? = null,
+    val suspensionPendingCount: Long = 0
 )
 
 /**
@@ -183,7 +193,9 @@ class MailboxConversationController(
     private val conversationService: MailboxConversationService,
     private val expertFollowService: ExpertFollowService,
     private val expertRepliedDismissalService: ExpertRepliedDismissalService,
-    private val pendingMailOperationService: PendingMailOperationService
+    private val pendingMailOperationService: PendingMailOperationService,
+    // 01 (T2)：独立挂起服务；MailboxConversationService 构造保持不变（I-6）。
+    private val mailboxSuspensionService: MailboxSuspensionService
 ) {
     @GetMapping
     fun list(
@@ -202,7 +214,8 @@ class MailboxConversationController(
         @RequestParam(required = false) subject: String?,
         @RequestParam(required = false) label: String?,
         @RequestParam(required = false) recipientEmail: String?,
-        @RequestParam(required = false) keyword: String?
+        @RequestParam(required = false) keyword: String?,
+        @RequestParam(defaultValue = "false") suspendedOnly: Boolean
     ): ConversationListResponse = conversationService.listConversations(
         username = sessionUsername(request),
         q = q,
@@ -219,7 +232,8 @@ class MailboxConversationController(
         recipientEmail = recipientEmail,
         keyword = keyword,
         page = page,
-        size = size
+        size = size,
+        suspendedOnly = suspendedOnly
     )
 
     @GetMapping("/{contactId}/messages")
@@ -252,6 +266,48 @@ class MailboxConversationController(
     ): ResponseEntity<Any> {
         val username = sessionUsername(request) ?: return unauthorized()
         return ResponseEntity.ok(expertRepliedDismissalService.dismiss(username, contactId))
+    }
+
+    // ------------------------------------------------------------------
+    // 01 (T2/I-1/I-2/I-5)：显式挂起/取消。身份只取 Session（username 永不来自 body/query）；
+    // 不存在 404、无未处理不能新挂起 409、非法输入 400、未登录 401。状态对象固定
+    // { contactId, suspended, suspendReason, suspensionPendingCount, followed }（child 02 消费）。
+    // ------------------------------------------------------------------
+
+    @GetMapping("/{contactId}/suspension")
+    fun suspension(
+        request: HttpServletRequest,
+        @PathVariable contactId: Long
+    ): ResponseEntity<Any> {
+        val username = sessionUsername(request) ?: return unauthorized()
+        return ResponseEntity.ok(mailboxSuspensionService.get(username, contactId))
+    }
+
+    @PutMapping("/{contactId}/suspension")
+    fun suspend(
+        request: HttpServletRequest,
+        @PathVariable contactId: Long,
+        // 缺省 body（或 reason 缺省）按 null；username 不在此 DTO。
+        @RequestBody(required = false) body: MailboxSuspensionRequest? = null
+    ): ResponseEntity<Any> {
+        val username = sessionUsername(request) ?: return unauthorized()
+        return try {
+            ResponseEntity.ok(mailboxSuspensionService.suspend(username, contactId, body?.reason))
+        } catch (ex: MailboxSuspensionConflictException) {
+            // GlobalExceptionHandler 的 Exception handler 会把 ResponseStatusException 吞成
+            // 500，因此冲突在边界显式映射为 409（统一 ApiErrorResponse 形状）。
+            ResponseEntity.status(HttpStatus.CONFLICT)
+                .body<Any>(ApiErrorResponse("CONFLICT", ex.message ?: "无法挂起", HttpStatus.CONFLICT.reasonPhrase))
+        }
+    }
+
+    @DeleteMapping("/{contactId}/suspension")
+    fun resumeSuspension(
+        request: HttpServletRequest,
+        @PathVariable contactId: Long
+    ): ResponseEntity<Any> {
+        val username = sessionUsername(request) ?: return unauthorized()
+        return ResponseEntity.ok(mailboxSuspensionService.resume(username, contactId))
     }
 
     // ------------------------------------------------------------------

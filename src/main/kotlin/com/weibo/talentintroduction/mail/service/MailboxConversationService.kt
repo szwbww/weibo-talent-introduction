@@ -104,7 +104,9 @@ class MailboxConversationService(
         recipientEmail: String?,
         keyword: String?,
         page: Int,
-        size: Int
+        size: Int,
+        /** 01 (T3/I-4)：只看当前用户挂起专家；默认 false 保持既有调用兼容。 */
+        suspendedOnly: Boolean = false
     ): ConversationListResponse {
         validateDirection(direction)
         validateTextFilter("q", q)
@@ -138,7 +140,8 @@ class MailboxConversationService(
             subject = subject,
             label = label,
             recipientEmail = recipientEmailFilter,
-            keyword = keywordFilter
+            keyword = keywordFilter,
+            suspendedOnly = suspendedOnly
         )
         val sessionUser = username.orEmpty()
         val total = repository.countConversations(sessionUser, filter)
@@ -156,6 +159,8 @@ class MailboxConversationService(
         val accountCodesByContact = repository.accountCodesByContacts(contactIds, activeCodes, accountCode)
         val materialCounts = repository.materialCountByContacts(contactIds)
         val expertTagsByContact = currentPageExpertTags(rows)
+        // 01 (T3/I-3)：本页挂起摘要一次批量读取；新表无行也拿到真实跨账号 pending。
+        val suspensionStates = repository.suspensionStatesByContacts(sessionUser, contactIds)
 
         val items = rows.map { row ->
             ConversationItemResponse(
@@ -194,7 +199,11 @@ class MailboxConversationService(
                     )
                 },
                 materialCount = materialCounts[row.expertContactId] ?: 0L,
-                expertTags = expertTagsByContact[row.expertContactId]
+                expertTags = expertTagsByContact[row.expertContactId],
+                // 01 (I-1/I-3)：逐项填真实值；未挂起行也带真实跨账号 pending 计数。
+                suspended = suspensionStates[row.expertContactId]?.suspended ?: false,
+                suspendReason = suspensionStates[row.expertContactId]?.suspendReason,
+                suspensionPendingCount = suspensionStates[row.expertContactId]?.suspensionPendingCount ?: 0L
             )
         }
         return ConversationListResponse(items, total, pageIndex, pageSize)

@@ -27,6 +27,7 @@ import com.weibo.talentintroduction.mail.service.InboundMailTagService
 import com.weibo.talentintroduction.mail.service.MailContentService
 import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
+import com.weibo.talentintroduction.mail.service.MailboxSuspensionService
 import com.weibo.talentintroduction.mail.service.PendingMailOperationService
 import com.weibo.talentintroduction.mail.service.PendingMailSendResult
 import com.weibo.talentintroduction.mail.service.MeetingConfirmationService
@@ -72,6 +73,9 @@ import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.jdbc.datasource.DriverManagerDataSource
+import org.springframework.jdbc.datasource.DataSourceTransactionManager
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean
+import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.mock.web.MockHttpSession
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
@@ -121,7 +125,9 @@ import org.springframework.test.web.servlet.MvcResult
     MailboxConversationRepository::class,
     MailboxConversationService::class,
     ExpertFollowService::class,
-    ExpertRepliedDismissalService::class
+    ExpertRepliedDismissalService::class,
+    // 01 (T2/T4)：三个挂起端点走真实服务 + 真实 MySQL JDBC（不只 mock HTTP 成功）。
+    MailboxSuspensionService::class
 )
 @TestPropertySource(properties = ["talent-introduction.auth.enabled=true"])
 class MailboxConversationControllerTest {
@@ -1141,6 +1147,185 @@ class MailboxConversationControllerTest {
     }
 
     // ------------------------------------------------------------------
+    // 01（T2/T4）：显式挂起/取消三端点（真实服务 + 真实 MySQL）
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `explicit suspension endpoints persist per session user with idempotency`() {
+        insertProcessing(1, "MANUAL_REVIEW", "2026-09-01 09:00:00", "susp-msg-1")
+
+        // 匿名 401（真实 AuthInterceptor）：GET/PUT/DELETE 都不放行，不写行。
+        mockMvc.perform(get("/api/mail/mailbox/conversations/1/suspension"))
+            .andExpect(status().isUnauthorized)
+        mockMvc.perform(put("/api/mail/mailbox/conversations/1/suspension")
+            .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"等待材料"}"""))
+            .andExpect(status().isUnauthorized)
+        mockMvc.perform(delete("/api/mail/mailbox/conversations/1/suspension"))
+            .andExpect(status().isUnauthorized)
+        assertEquals(0L, suspendRows("op1", 1L))
+
+        // 首次挂起：reason trim 后落库；回包真实跨账号 pending。
+        mockMvc.perform(
+            put("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"  等待材料  "}""")
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.contactId").value(1))
+            .andExpect(jsonPath("$.suspended").value(true))
+            .andExpect(jsonPath("$.suspendReason").value("等待材料"))
+            .andExpect(jsonPath("$.suspensionPendingCount").value(1))
+            .andExpect(jsonPath("$.followed").value(false))
+        assertEquals(1L, suspendRows("op1", 1L))
+
+        // 重复 PUT：原样返回原原因，不覆盖。
+        mockMvc.perform(
+            put("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"新原因"}""")
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.suspendReason").value("等待材料"))
+        assertEquals(1L, suspendRows("op1", 1L))
+        assertEquals("等待材料", jdbcTemplate.queryForObject(
+            "SELECT reason FROM expert_mailbox_suspension WHERE username = 'op1' AND expert_contact_id = 1",
+            String::class.java
+        ))
+
+        // GET 身份隔离：op1=true 且带原因；op2=false 且 reason 为 null。
+        mockMvc.perform(get("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.suspended").value(true))
+            .andExpect(jsonPath("$.suspendReason").value("等待材料"))
+        val op2Body = objectMapper.readTree(
+            utf8Body(
+                mockMvc.perform(get("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("op2")))
+                    .andExpect(status().isOk).andReturn()
+            )
+        )
+        assertFalse(op2Body["suspended"].asBoolean())
+        assertTrue(op2Body["suspendReason"].isNull)
+        assertEquals(1L, op2Body["suspensionPendingCount"].asLong())
+
+        // 会话用户名不存在 → 401（AuthInterceptor findUser null）。
+        mockMvc.perform(get("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("ghost-user")))
+            .andExpect(status().isUnauthorized)
+
+        // 未知专家 → 404（GET/PUT/DELETE 都不伪造成功）。
+        mockMvc.perform(get("/api/mail/mailbox/conversations/999/suspension").session(sessionOf("op1")))
+            .andExpect(status().isNotFound)
+        mockMvc.perform(put("/api/mail/mailbox/conversations/999/suspension").session(sessionOf("op1"))
+            .contentType(MediaType.APPLICATION_JSON).content("""{"reason":null}"""))
+            .andExpect(status().isNotFound)
+        mockMvc.perform(delete("/api/mail/mailbox/conversations/999/suspension").session(sessionOf("op1")))
+            .andExpect(status().isNotFound)
+
+        // DELETE 幂等；第二次仍 suspended=false。
+        mockMvc.perform(delete("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.suspended").value(false))
+        mockMvc.perform(delete("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.suspended").value(false))
+        assertEquals(0L, suspendRows("op1", 1L))
+    }
+
+    @Test
+    fun `suspending a contact without pending mail returns 409 and writes nothing`() {
+        // contact 2 存在但无待处理来信 → 409；不落行。
+        mockMvc.perform(
+            put("/api/mail/mailbox/conversations/2/suspension").session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"等待材料"}""")
+        ).andExpect(status().isConflict)
+            .andExpect(jsonPath("$.code").value("CONFLICT"))
+        assertEquals(0L, suspendRows("op1", 2L))
+    }
+
+    @Test
+    fun `suspension reason validation rejects overlong and blanks to null`() {
+        insertProcessing(1, "MANUAL_REVIEW", "2026-09-01 09:00:00", "susp-len-1")
+        insertProcessing(3, "MANUAL_REVIEW", "2026-09-01 09:00:00", "susp-len-3")
+
+        // 501 个 UTF-16 code units → 400，且不写行。
+        mockMvc.perform(
+            put("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"${"x".repeat(501)}"}""")
+        ).andExpect(status().isBadRequest)
+        assertEquals(0L, suspendRows("op1", 1L))
+
+        // 恰好 500 可存。
+        mockMvc.perform(
+            put("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"${"y".repeat(500)}"}""")
+        ).andExpect(status().isOk)
+            .andExpect(jsonPath("$.suspended").value(true))
+        assertEquals(500, jdbcTemplate.queryForObject(
+            "SELECT CHAR_LENGTH(reason) FROM expert_mailbox_suspension " +
+                "WHERE username = 'op1' AND expert_contact_id = 1",
+            Int::class.java
+        ))
+
+        // 空白 reason → null；缺省 body 亦按 null。
+        val blankBody = objectMapper.readTree(
+            utf8Body(
+                mockMvc.perform(
+                    put("/api/mail/mailbox/conversations/3/suspension").session(sessionOf("op1"))
+                        .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"   "}""")
+                ).andExpect(status().isOk).andReturn()
+            )
+        )
+        assertTrue(blankBody["suspended"].asBoolean())
+        assertTrue(blankBody["suspendReason"].isNull)
+        assertNull(jdbcTemplate.queryForObject(
+            "SELECT reason FROM expert_mailbox_suspension WHERE username = 'op1' AND expert_contact_id = 3",
+            String::class.java
+        ))
+    }
+
+    @Test
+    fun `list exposes real suspension fields and suspendedOnly filter`() {
+        insertOutbound(1, "SENT", "2026-09-01 09:00:00")
+        insertProcessing(1, "MANUAL_REVIEW", "2026-09-02 09:00:00", "list-susp-1")
+        insertOutbound(2, "SENT", "2026-09-03 09:00:00")
+        mockMvc.perform(
+            put("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("op1"))
+                .contentType(MediaType.APPLICATION_JSON).content("""{"reason":"等待材料"}""")
+        ).andExpect(status().isOk)
+
+        val all = objectMapper.readTree(
+            utf8Body(
+                mockMvc.perform(get("/api/mail/mailbox/conversations?size=50").session(sessionOf("op1")))
+                    .andExpect(status().isOk).andReturn()
+            )
+        )
+        assertEquals(2, all["total"].asInt())
+        val one = all["items"].first { it["contactId"].asLong() == 1L }
+        assertTrue(one["suspended"].asBoolean())
+        assertEquals("等待材料", one["suspendReason"].asText())
+        assertEquals(1, one["suspensionPendingCount"].asInt())
+        val two = all["items"].first { it["contactId"].asLong() == 2L }
+        assertFalse(two["suspended"].asBoolean())
+        assertTrue(two["suspendReason"].isNull)
+        assertEquals(0, two["suspensionPendingCount"].asInt())
+
+        val suspended = objectMapper.readTree(
+            utf8Body(
+                mockMvc.perform(
+                    get("/api/mail/mailbox/conversations?suspendedOnly=true&size=50").session(sessionOf("op1"))
+                ).andExpect(status().isOk).andReturn()
+            )
+        )
+        assertEquals(1, suspended["total"].asInt())
+        assertEquals(1L, suspended["items"][0]["contactId"].asLong())
+
+        // 挂起按用户隔离：op2 的已挂起列表为空。
+        val op2 = objectMapper.readTree(
+            utf8Body(
+                mockMvc.perform(
+                    get("/api/mail/mailbox/conversations?suspendedOnly=true&size=50").session(sessionOf("op2"))
+                ).andExpect(status().isOk).andReturn()
+            )
+        )
+        assertEquals(0, op2["total"].asInt())
+    }
+
+    // ------------------------------------------------------------------
     // 工具
     // ------------------------------------------------------------------
 
@@ -1250,9 +1435,17 @@ class MailboxConversationControllerTest {
             Long::class.java, username, contactId
         )!!
 
+    private fun suspendRows(username: String, contactId: Long): Long =
+        jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM expert_mailbox_suspension WHERE username = ? AND expert_contact_id = ?",
+            Long::class.java, username, contactId
+        )!!
+
     private fun cleanup() {
         jdbcTemplate.update("DELETE FROM expert_replied_dismissal")
         jdbcTemplate.update("DELETE FROM expert_follow")
+        // 01：挂起表 FK→expert_contact，必须在删联系人前清理。
+        jdbcTemplate.update("DELETE FROM expert_mailbox_suspension")
         jdbcTemplate.update("DELETE FROM mail_attachment")
         jdbcTemplate.update("DELETE FROM inbound_mail_tag")
         jdbcTemplate.update("DELETE FROM inbound_mail_processing")
@@ -1516,6 +1709,10 @@ class CalendarAttachmentIntegrationTest {
 
     @MockBean
     private lateinit var expertRepliedDismissalService: ExpertRepliedDismissalService
+
+    // 01 (T2/T4)：controller 新增构造依赖；本 context 不测挂起端点，仅满足装配。
+    @MockBean
+    private lateinit var mailboxSuspensionService: MailboxSuspensionService
 
     private val meetingTemplateId = 9001L
     private val variableServiceForMeeting = Mockito.mock(MailVariableService::class.java)
@@ -1876,6 +2073,8 @@ class CalendarAttachmentIntegrationTest {
     private fun cleanup() {
         jdbcTemplate.update("DELETE FROM expert_replied_dismissal")
         jdbcTemplate.update("DELETE FROM expert_follow")
+        // 01：挂起表 FK→expert_contact，必须在删联系人前清理。
+        jdbcTemplate.update("DELETE FROM expert_mailbox_suspension")
         jdbcTemplate.update("DELETE FROM mail_attachment")
         jdbcTemplate.update("DELETE FROM inbound_mail_tag")
         jdbcTemplate.update("DELETE FROM inbound_mail_processing")
@@ -2029,4 +2228,13 @@ class MailboxConversationRealJdbcConfig {
     @Bean
     fun mailboxConversationNamedJdbc(dataSource: DataSource): NamedParameterJdbcTemplate =
         NamedParameterJdbcTemplate(dataSource)
+
+    /**
+     * 01 (T4)：挂起服务 PUT/DELETE 标注 @Transactional（FOR UPDATE 串行化）；@WebMvcTest
+     * slice 不自动配置 DataSource 事务管理器。仅在缺失时提供，避免与任何 slice 自带 bean 冲突。
+     */
+    @Bean
+    @ConditionalOnMissingBean(PlatformTransactionManager::class)
+    fun mailboxConversationTransactionManager(dataSource: DataSource): PlatformTransactionManager =
+        DataSourceTransactionManager(dataSource)
 }
