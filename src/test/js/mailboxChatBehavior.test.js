@@ -788,6 +788,47 @@ function createChatSandbox(options) {
         if (url.startsWith("/api/mail/mailbox/conversations?")) {
             return Promise.resolve(opts.conversations || { items: [], total: 0 });
         }
+        if (url === "/api/auth/me") {
+            return Promise.resolve(opts.authMe !== undefined
+                ? opts.authMe
+                : { authenticated: true, username: "admin", mustChangePassword: false });
+        }
+        if (/^\/api\/mail\/mailbox\/conversations\/\d+\/suspension$/.test(url)) {
+            const id = Number(url.split("/")[5]);
+            if (method === "GET") {
+                if (opts.suspensionError) return Promise.reject(new Error(opts.suspensionError));
+                if (typeof opts.suspension === "function") return Promise.resolve(opts.suspension(id));
+                if (opts.suspension !== undefined) return Promise.resolve(opts.suspension);
+                return Promise.resolve({ contactId: id, suspended: false, suspendReason: null, suspensionPendingCount: 0, followed: false });
+            }
+            if (method === "PUT") {
+                if (opts.suspendError) return Promise.reject(new Error(opts.suspendError));
+                const parsed = body ? JSON.parse(body) : {};
+                const current = (typeof opts.suspension === "function" ? opts.suspension(id) : opts.suspension) || {};
+                const next = {
+                    contactId: id,
+                    suspended: true,
+                    suspendReason: parsed.reason == null ? null : String(parsed.reason),
+                    suspensionPendingCount: Number(current.suspensionPendingCount) || 0,
+                    followed: current.followed === true
+                };
+                opts.suspension = next;
+                return Promise.resolve(next);
+            }
+            if (method === "DELETE") {
+                if (opts.resumeError) return Promise.reject(new Error(opts.resumeError));
+                const current = (typeof opts.suspension === "function" ? opts.suspension(id) : opts.suspension) || {};
+                const next = {
+                    contactId: id,
+                    suspended: false,
+                    suspendReason: null,
+                    suspensionPendingCount: Number(current.suspensionPendingCount) || 0,
+                    followed: current.followed === true
+                };
+                opts.suspension = next;
+                return Promise.resolve(next);
+            }
+        }
         if (url.startsWith("/api/mail/unmatched-inbound?")) {
             if (opts.unmatchedError) return Promise.reject(new Error(opts.unmatchedError));
             return Promise.resolve(opts.unmatched || { records: [], totalCount: 0, manualReviewTotal: 0, countsByReasonType: {} });
@@ -817,7 +858,8 @@ function createChatSandbox(options) {
         }
         if (/\/api\/mail\/unmatched-inbound\/\d+\/mark-resolved/.test(url)) {
             if (opts.markResolvedError) return Promise.reject(new Error(opts.markResolvedError));
-            return Promise.resolve({});
+            const id = Number(url.split("/")[4]);
+            return Promise.resolve({ id, processStatus: "PROCESSED", resolvedBy: "admin" });
         }
         // fast-p 01：引用邮件模板只读链路（列表 + preview-draft）。竞态用例用 opts.route 自行控制。
         if (url === "/api/compose-templates/preview-draft") {
@@ -1285,7 +1327,9 @@ function popoverField(ctx, id) {
 }
 
 function conversationsRequests(ctx) {
-    return ctx.calls.api.filter((entry) => entry.url.startsWith("/api/mail/mailbox/conversations?"));
+    // 02：Tab 计数请求（page=0&size=1）不算列表请求。
+    return ctx.calls.api.filter((entry) => entry.url.startsWith("/api/mail/mailbox/conversations?")
+        && queryOf(entry.url).get("size") !== "1");
 }
 
 function unmatchedRequests(ctx) {
@@ -1326,9 +1370,12 @@ describe("mailbox chat mount + S-1 skeleton + S-7 expert tag rows", () => {
         assert.ok(ctx.host.querySelector('section.mc-conversation[aria-label="专家往来信件"]'));
         assert.ok(ctx.host.querySelector('.mc-search-row input[aria-label="搜索专家"]'));
         const chips = ctx.host.querySelectorAll(".mc-filter");
-        assert.deepStrictEqual(chips.map((chip) => chip.textContent), ["全部", "关注", "已回复", "待处理", "待匹配"]);
-        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "replied", "pending", "unmatched"]);
-        assert.strictEqual(chips[0].getAttribute("aria-pressed"), "true");
+        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "pending", "suspended", "replied", "unmatched"]);
+        assert.deepStrictEqual(
+            chips.map((chip) => chip.textContent.replace(/\d+/g, "")),
+            ["全部", "关注", "待处理", "已挂起", "已回复", "待匹配"]
+        );
+        assert.strictEqual(chips.find((chip) => chip.dataset.chip === "pending").getAttribute("aria-pressed"), "true", "普通首次进入默认待处理（total>0）");
         const popover = ctx.host.querySelector("#mcFilterPopover");
         assert.ok(popover, "⋯ popover 存在");
         assert.ok(popover.getAttribute("hidden") !== null, "popover 默认关闭");
@@ -1677,7 +1724,8 @@ describe("mailbox chat conversation (source,id) keys + S-4 卡片", () => {
         const pendingActions = pending.querySelectorAll("footer button").map((btn) => btn.dataset.action);
         assert.deepStrictEqual(pendingActions, ["mc-translate", "mc-add-mail-tag", "mc-mark-resolved"], "来信 footer：翻译/加标签/标记处理");
         const processed = articles.find((article) => article.dataset.messageKey === "INBOUND_PROCESSING:90");
-        assert.ok(processed.querySelector(".mc-done"), "已处理来信显示 ✓ 已处理");
+        assert.ok(processed.querySelector(".mailbox-suspend-processed-label"), "已处理来信显示已处理标签");
+        assert.match(processed.querySelector(".mailbox-suspend-processed-label").textContent, /已处理/);
         assert.ok(!processed.querySelector('[data-action="mc-mark-resolved"]'), "已处理不再标记");
         assert.ok(processed.querySelector('[data-action="mc-add-mail-tag"]'), "已处理来信仍能加标签");
         const outbound = articles.find((article) => article.dataset.messageKey === "MAIL_RECORD:88");
@@ -1850,7 +1898,7 @@ describe("mailbox chat conversation (source,id) keys + S-4 卡片", () => {
                 }
                 if (/\/api\/mail\/unmatched-inbound\/101\/mark-resolved/.test(url)) {
                     resolved = true;
-                    return Promise.resolve({});
+                    return Promise.resolve({ id: 101, processStatus: "PROCESSED", resolvedBy: "admin" });
                 }
                 return next(url, method, body);
             }
@@ -1862,15 +1910,20 @@ describe("mailbox chat conversation (source,id) keys + S-4 卡片", () => {
         const markBtn = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-action="mc-mark-resolved"]');
         click(markBtn);
         await flush();
+        assert.ok(!ctx.calls.api.some((entry) => /mark-resolved/.test(entry.url)), "第一次点击只进入原位确认，不发 POST");
+        click(ctx.host.querySelector('[data-action="mc-process-confirm"]'));
+        await flush();
         const markRequest = ctx.calls.api.find((entry) => entry.url === "/api/mail/unmatched-inbound/101/mark-resolved");
         assert.ok(markRequest, "调既有 mark-resolved API");
+        assert.strictEqual(markRequest.body, JSON.stringify({ note: null }), "body 只带 note:null，不传操作人");
         assert.ok(conversationsRequests(ctx).length > listBefore, "mark 成功后重查服务端列表");
         const lastUrl = conversationsRequests(ctx)[conversationsRequests(ctx).length - 1].url;
         assert.ok(lastUrl.includes("page=0"), "重查当前页（服务端顺序）");
         // 草稿保留（编辑器未重建）
         assert.strictEqual(ctx.host.querySelector('[aria-label="人工回复正文"]').innerText, "draft keeps", "编辑器草稿保留");
         const article = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"]');
-        assert.match(article.textContent, /✓ 已处理/, "消息局部更新为已处理（静默窗口校验不回滚）");
+        assert.match(article.textContent, /已处理/, "消息局部更新为已处理（静默窗口校验不回滚）");
+        assert.ok(article.querySelector(".mailbox-suspend-processed-label"), "显示服务端回包账号");
         assert.ok(!article.querySelector('[data-action="mc-mark-resolved"]'), "按钮消失");
     });
 
@@ -1897,6 +1950,8 @@ describe("mailbox chat conversation (source,id) keys + S-4 卡片", () => {
         await flush();
         const markBtn = ctx.host.querySelector('[data-message-key="INBOUND_PROCESSING:101"] [data-action="mc-mark-resolved"]');
         click(markBtn);
+        await flush();
+        click(ctx.host.querySelector('[data-action="mc-process-confirm"]'));
         await flush();
         const urls = conversationsRequests(ctx).map((entry) => entry.url);
         assert.ok(urls[urls.length - 1].includes("page=0"), "空页自动回退到上一有效页");
@@ -2873,16 +2928,19 @@ describe("待匹配 Tab：第五 chip、请求契约与邮件级列表", () => {
     it("S-1：五个 tab 顺序/anchor 固定，待匹配只请求 unmatched-inbound（offset=page*20、无专家参数）", async () => {
         const ctx = await bootChat({ conversations, unmatched: { records: [unmatchedMail(901)], totalCount: 1 } });
         const chips = ctx.host.querySelectorAll(".mc-filter");
-        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "replied", "pending", "unmatched"]);
-        assert.deepStrictEqual(chips.map((chip) => chip.textContent), ["全部", "关注", "已回复", "待处理", "待匹配"]);
-        assert.strictEqual(chips[0].getAttribute("aria-pressed"), "true", "默认全部");
-        assert.strictEqual(chips[3].getAttribute("aria-pressed"), "false");
+        assert.deepStrictEqual(chips.map((chip) => chip.dataset.chip), ["all", "followed", "pending", "suspended", "replied", "unmatched"]);
+        assert.deepStrictEqual(
+            chips.map((chip) => chip.textContent.replace(/\d+/g, "")),
+            ["全部", "关注", "待处理", "已挂起", "已回复", "待匹配"]
+        );
+        assert.strictEqual(chips[2].getAttribute("aria-pressed"), "true", "普通首次进入默认待处理");
+        assert.strictEqual(chips[5].getAttribute("aria-pressed"), "false");
 
-        click(chips[4]);
+        click(chips[5]);
         await flush();
 
-        assert.strictEqual(chips[4].getAttribute("aria-pressed"), "true", "待匹配选中态");
-        assert.strictEqual(chips[0].getAttribute("aria-pressed"), "false");
+        assert.strictEqual(chips[5].getAttribute("aria-pressed"), "true", "待匹配选中态");
+        assert.strictEqual(chips[2].getAttribute("aria-pressed"), "false");
         const q = queryOf(lastUnmatchedRequest(ctx).url);
         assert.strictEqual(q.get("unmatchedOnly"), "true");
         assert.strictEqual(q.get("pageSize"), "20");
@@ -5231,7 +5289,7 @@ describe("fast-p 上次回复：收发件箱列表与详情时间（I-1..I-5 / S
     function listPayloadAtom(receivedAt) {
         return { items: [expertRow(inbound(receivedAt))], total: 1 };
     }
-    const KNOWN_ENDPOINTS = /^\/api\/(mail\/(mailbox\/conversations|unmatched-inbound)|expert-contacts|operator-action-logs|inbound-summary|translate|compose-templates|mail\/contact-locations)/;
+    const KNOWN_ENDPOINTS = /^\/api\/(auth\/me|mail\/(mailbox\/conversations|unmatched-inbound)|expert-contacts|operator-action-logs|inbound-summary|translate|compose-templates|mail\/contact-locations)/;
 
     it("上次回复 B-1：列表与详情显示北京时间日期+星期+时分，datetime 带 +08:00", async () => {
         const ctx = await bootRow(inbound("2026-10-02T17:59:00"));
