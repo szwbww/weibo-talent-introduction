@@ -48,7 +48,9 @@ class OperatorStatusWriteSeamGuardTest {
         // （2026-09-10 待匹配计划在 :95-96/:104-105 新增 unmatchedOnly/query 两参数两转发，:215 平移至 :219）
         // 06 (A3, 行号钉随授权改动平移 +2): 82a46dc 在 import 段新增 AuthSessionKeys(:5) 与
         // javax.servlet.http.HttpServletRequest(:47) 两行，使本噪声行 :219 平移至 :221，path/context 不变。
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 221, "operatorStatus = request.operatorStatus"),
+        // 01b (A3, 行号钉随授权改动平移 +5): 94378f6 重写 markResolved（:171-192，会话身份校验 +
+        // MarkResolvedResponse 返回）净增 5 行，使本噪声行 :221 平移至 :226，path/context 不变。
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 226, "operatorStatus = request.operatorStatus"),
         // 响应 DTO 构造：把当前值原样回显到出参 DTO
         // （守卫误报修正：行号登记 1098 → 实际 1099，2026-08-20 人工回复透传新增一行导致偏移；
         //   2026-08-27 取消处理计划新增 CancelResolvedRequest/cancel-resolved endpoint 使 :1099 偏移至 :1116）
@@ -61,7 +63,10 @@ class OperatorStatusWriteSeamGuardTest {
         // sendManualRichReply 形参 servletRequest 与注释三行（:255-257）、转发实参
         // attachmentIds/authenticatedUsername 与注释三行（:282-284）、会话身份 helper 四行（:288-291），
         // 使本噪声行 :1125 平移至 :1137，path/context 不变。
-        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1137, "operatorStatus = operatorStatus"),
+        // 01b (A3, 行号钉随授权改动平移 +11): 94378f6 在同一文件 markResolved 段（:171-192）净增 5 行、
+        // MarkResolvedRequest 默认值 + 新增 MarkResolvedResponse（:897-911）净增 6 行，合计使本噪声行
+        // :1137 平移至 :1148，path/context 不变。
+        NoiseSite("com/weibo/talentintroduction/mail/controller/UnmatchedInboundMailController.kt", 1148, "operatorStatus = operatorStatus"),
         // 邮箱汇总响应 DTO 构造：把汇总行字段映射到响应 DTO
         NoiseSite("com/weibo/talentintroduction/mail/service/MailboxService.kt", 168, "operatorStatus = summary.operatorStatus"),
         // 专家联系人列表响应 DTO 构造：查询参数回显到 DTO
