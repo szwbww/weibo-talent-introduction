@@ -20,7 +20,7 @@
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---:|---|---|---|---:|---|---|---|---|
 | 01 | docs/plans/2026-10-03/mailbox-suspension-01-backend.md | commit:c486c5c44806b5b4c4db654606c358efb94fec5a | none | 1 | LIGHT_PASS_WITH_NOTES | c486c5c44806b5b4c4db654606c358efb94fec5a | 79fb15d350621ab2c39b79217d9a4b7a28b9cb0d | 0 | — | 79fb15d350621ab2c39b79217d9a4b7a28b9cb0d | e989ec0bce857662670033df2e80771c335aef5d | 写者 ImplMailboxSuspension01；核实者 VerifyMailboxSuspension01 LIGHT_PASS_WITH_NOTES（O-1 既有 B2 6 错、O-2 B3 尾部既有 18 前端失败，均 RECORD_ONLY） |
-| 01b | docs/plans/2026-10-03/mailbox-suspension-01b-processing-identity.md | commit:c486c5c44806b5b4c4db654606c358efb94fec5a | 01 | 1 | PENDING | — | — | 0 | — | — | — | 依赖 01；2 授权文件 |
+| 01b | docs/plans/2026-10-03/mailbox-suspension-01b-processing-identity.md | commit:c486c5c44806b5b4c4db654606c358efb94fec5a | 01 | 1 | IMPLEMENTING | 79fb15d350621ab2c39b79217d9a4b7a28b9cb0d | — | 0 | — | — | — | Base=01 Code head；写者 ImplMailboxSuspension01b；2 授权文件 |
 | 02 | docs/plans/2026-10-03/mailbox-suspension-02-frontend.md | commit:c486c5c44806b5b4c4db654606c358efb94fec5a | 01,01b | 1 | PENDING | — | — | 0 | — | — | — | 依赖 01,01b；6 授权文件 |
 
 ## Amendments
