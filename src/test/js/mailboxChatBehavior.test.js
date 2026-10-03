@@ -3316,7 +3316,7 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
     const VIDEO_BODY = "Just following up on my email below about a brief Zoom call. Would you be available sometime this week or next? We’re happy to work around your time zone.";
     const MEETING_REMINDER_BODY = "This is a courteous reminder of our scheduled meeting. We would be honored by your participation at the appointed time.";
     const CV_BODY = "Just following up on my note below. When convenient, could you please send your CV? It will help us identify suitable industry partners.";
-    const GENERIC_BODY = "Just following up on my email below. Please let me know when you have a chance.";
+    const GENERIC_BODY = "I hope you’re doing well. I wanted to follow up on my previous email and would be happy to continue our conversation. Please feel free to share any thoughts or questions you may have. I look forward to hearing from you.";
 
     // 时间线夹具：合法 SENT（acc1：#2893 较旧、#4007 最新）+ 全部非法形态。
     function followupMessage(extra) {
@@ -3699,7 +3699,7 @@ describe("followup 01：人工选择引用邮件与自然正文（I-1..I-8/S-1/S
         await flush();
         assert.strictEqual(ctx.host.querySelector('input[aria-label="回复主题"]').value, "Re: Older introduction");
         const filled = ctx.host.querySelector('[aria-label="人工回复正文"]').innerText;
-        assert.ok(filled.indexOf("Just following up on my email below. Please let me know when you have a chance.") >= 0, "正文含通用文案");
+        assert.ok(filled.indexOf(GENERIC_BODY) >= 0, "正文含通用文案");
         assert.ok(filled.indexOf("On 2026-09-05 11:49, acc1 wrote:\n\nA\n\nB\nC") >= 0, "正文含同源完整引用");
         const note = anchorNote(ctx);
         assert.ok(note, "填入后必须显示锚点提示");

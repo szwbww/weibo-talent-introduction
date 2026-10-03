@@ -389,7 +389,7 @@
         video: "Just following up on my email below about a brief Zoom call. Would you be available sometime this week or next? We’re happy to work around your time zone.",
         meetingReminder: "This is a courteous reminder of our scheduled meeting. We would be honored by your participation at the appointed time.",
         cv: "Just following up on my note below. When convenient, could you please send your CV? It will help us identify suitable industry partners.",
-        generic: "Just following up on my email below. Please let me know when you have a chance."
+        generic: "I hope you’re doing well. I wanted to follow up on my previous email and would be happy to continue our conversation. Please feel free to share any thoughts or questions you may have. I look forward to hearing from you."
     };
 
     function quotePlainTextFromSource(raw) {
