@@ -1,0 +1,26 @@
+# 01 验证日志（append-only）
+
+（待验证者填写）
+
+## Light Verification: LIGHT_PASS_WITH_NOTES
+Child: 01 (docs/plans/2026-10-03/mailbox-suspension-01-backend.md)
+Boundary: 6d58bd4593b250fdc3bf800a65b5ee6655fac219..79fb15d350621ab2c39b79217d9a4b7a28b9cb0d
+Verifier: VerifyMailboxSuspension01
+
+### Four Gates
+|Gate|Result|Evidence|
+|---|---|---|
+|1 Authorized files|PASS|`git diff --name-only <range>` = exactly the 9 authorized paths (V147 migration, MailboxSuspensionService.kt new, MailboxConversationRepository.kt, MailboxConversationService.kt, MailboxConversationController.kt, MailboxConversationRepositoryIT.kt, MailboxConversationControllerTest.kt, MailboxSuspensionServiceIT.kt new, FlywayMigrationIntegrationTest.kt). No path outside the table; no static/JS file touched (empty `--stat` for `src/main/resources/static`). docs/plans only execution.md (implementer report, uncommitted) + this verify-log.|
+|2 Plan requirements + I-1..I-6|PASS|I-1: V147 SQL exactly `PK(username, expert_contact_id)`, `reason VARCHAR(500) NULL`, FK→expert_contact(id), InnoDB/utf8mb4; `suspensionRow` returns "exists" independent of reason; ServiceIT `suspend and resume are idempotent...` + Flyway test assert empty table/columns/PK/FK and `reason` nullable. I-2: only PUT INSERT IGNORE / DELETE in `MailboxSuspensionService`; ServiceIT `pending count...` asserts row persists after a message is processed and count drops; `suspend never writes other business tables` asserts expert_contact/follow/dismissal/mail_record/inbound counts unchanged across suspend+resume. I-3: both pending queries `inbound_mail_processing JOIN mail_sender_account ... AND msa.account_code <> :simulatorCode`, no enabled/date/q; ServiceIT `pending count aggregates cross account real accounts only` (acc-a + disabled inactive-acc count, SIMULATOR_NOOP/ghost/processed excluded, op2 same) and RepoIT batch-summary case. I-4: shared `expertPredicates` adds current-user EXISTS for `suspendedOnly`, NOT EXISTS for pendingOnly/repliedOnly; count(148)/page(186)/explain(227) all call it; `orderByClause` includes `filter.suspendedOnly`; RepoIT `suspended experts leave pending and replied but remain in all and followed` + `suspended pagination keeps count and page on the same predicate even at zero pending` (45 experts, 3 pages). I-5: username only from `sessionUsername(request)`; `suspend` validates/trims reason → existing row returned as-is → pending==0 throws `MailboxSuspensionConflictException` → `INSERT IGNORE`; reason length ≤500 UTF-16 units (String.length) else IllegalArgumentException; ControllerTest (401/404/409/400, idempotent PUT/DELETE) + ServiceIT boundary/concurrency single-row. I-6: new DTO fields have defaults, `MailboxConversationService` constructor unchanged, no writes to ES/other tables (ServiceIT counts).|
+|3 Required commands fresh|PASS|B1 `mvn -DskipTests test-compile` exit 0 BUILD SUCCESS (baseline exit 0). B2 (JDK11 + mysqlIt) exit 1, Tests 71/F0/E6 — baseline 57/F0/E6; the same 6 pre-existing errors (`replied filter excludes followed and dismissed experts...` dismissed_at `DataIntegrityViolationException`; 5× CalendarAttachmentIntegrationTest `Failed to load ApplicationContext` missing PendingMailOperationService); +14 new tests all green (RepoIT 25/0/1, SqlCompat 2/0/0, ControllerTest 32/0/0, ServiceIT 7/0/0). B3 (migrationIt + OrbStack workaround) surefire FlywayMigrationIntegrationTest 35/F0/E0 — baseline 34/F25; all 25 `145 vs 146` latest-target failures eliminated by updating to 147, +1 new V147 case; overall exit 1 only from the bound `exec-maven-plugin:node-test` (see O-2).|
+|4 Downstream interfaces|PASS|GET/PUT/DELETE `/api/mail/mailbox/conversations/{contactId}/suspension` present; `MailboxSuspensionState` = `{ contactId: Long, suspended: Boolean, suspendReason: String?, suspensionPendingCount: Long, followed: Boolean }` (exact names/types). PUT body `MailboxSuspensionRequest(reason: String? = null)`. List endpoint adds `@RequestParam(defaultValue="false") suspendedOnly: Boolean`; `ConversationItemResponse` gains `suspended=false`, `suspendReason=null`, `suspensionPendingCount=0`. Errors: no session → 401 (`unauthorized()`); unknown contact → NoSuchElementException → 404; pending==0 first suspend → explicit 409 ApiErrorResponse; bad input (`IllegalArgumentException`) → 400; no 200-on-anonymous.|
+
+### AUTO_FIX
+- N/A (no four-gate violation found; all six invariants have direct code+test evidence, file scope exactly the 9 authorized paths, interfaces match the brief).
+
+### RECORD_ONLY
+- O-1 Pre-existing B2 errors unchanged: `MailboxConversationRepositoryIT.replied filter excludes followed and dismissed experts until a new inbound arrives` (`dismissed_at` no default) and 5× `CalendarAttachmentIntegrationTest` context load (missing PendingMailOperationService). Identical to baseline.md, outside child 01 scope.
+- O-2 B3 whole-`test`-phase exit 1 from pre-existing frontend node tests: node summary `tests 1385 / pass 1367 / fail 18` (cache-key triad assertions: `20261003-mobile-core-03` vs `...-generic-followup`). No static/JS file is in the review range (gate 1), so these are worktree-baseline failures; baseline B3 never reached node-test because surefire failed first. Not child 01's responsibility (child 02).
+
+### Required Action
+- COMPLETE_CHILD

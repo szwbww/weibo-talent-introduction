@@ -52,21 +52,15 @@
     const CHIP_FOLLOWED = "followed";
     const CHIP_REPLIED = "replied";
     const CHIP_PENDING = "pending";
-    // 02（I-1/S-1）：新增「已挂起」Tab；固定顺序 全部/关注/待处理/已挂起/已回复/待匹配。
-    const CHIP_SUSPENDED = "suspended";
     const CHIP_UNMATCHED = "unmatched";
 
     const FILTER_CHIPS = [
         { key: CHIP_ALL, label: "全部" },
         { key: CHIP_FOLLOWED, label: "关注" },
-        { key: CHIP_PENDING, label: "待处理" },
-        { key: CHIP_SUSPENDED, label: "已挂起" },
         { key: CHIP_REPLIED, label: "已回复" },
+        { key: CHIP_PENDING, label: "待处理" },
         { key: CHIP_UNMATCHED, label: "待匹配" }
     ];
-
-    // 02（S-1）：待处理/已挂起各有专家数计数 span；不可用时隐藏，绝不伪造 0。
-    const CHIP_COUNT_KEYS = [CHIP_PENDING, CHIP_SUSPENDED];
 
     const SOURCE_LABELS = {
         INBOUND_PROCESSING: "专家来信",
@@ -395,7 +389,7 @@
         video: "Just following up on my email below about a brief Zoom call. Would you be available sometime this week or next? We’re happy to work around your time zone.",
         meetingReminder: "This is a courteous reminder of our scheduled meeting. We would be honored by your participation at the appointed time.",
         cv: "Just following up on my note below. When convenient, could you please send your CV? It will help us identify suitable industry partners.",
-        generic: "I hope you’re doing well. I wanted to follow up on my previous email and would be happy to continue our conversation. Please feel free to share any thoughts or questions you may have. I look forward to hearing from you."
+        generic: "Just following up on my email below. Please let me know when you have a chance."
     };
 
     function quotePlainTextFromSource(raw) {
@@ -503,7 +497,6 @@
         if (chip === CHIP_FOLLOWED) return { followed: true };
         if (chip === CHIP_REPLIED) return { repliedOnly: true };
         if (chip === CHIP_PENDING) return { pendingOnly: true };
-        if (chip === CHIP_SUSPENDED) return { suspendedOnly: true };
         return {};
     }
 
@@ -609,43 +602,9 @@
             searchText: "",
             user: sessionUserFromOptions(options),
             filters: Object.assign({}, (options && options.filters) || {}),
-            // 02（I-1）：普通新 mount 默认暂定「待处理」，由首次列表探测决定是否转「关注」；
-            // 深链接 focus 优先，按其原语义（pendingOnly ? 待处理 : 全部）选出初始 Tab。
-            chip: ((options && options.focus && options.focus.contactId != null)
-                ? ((options && options.filters && options.filters.pendingOnly) ? CHIP_PENDING : CHIP_ALL)
-                : CHIP_PENDING),
+            chip: (options && options.filters && typeof options.filters.pendingOnly === "boolean" && options.filters.pendingOnly) ? CHIP_PENDING : CHIP_ALL,
             chipUserTouched: false,
-            // 02（I-1）：默认 Tab 探测（实例级，不写 localStorage）。focus 深链接不探测。
-            defaultProbe: {
-                active: !(options && options.focus && options.focus.contactId != null),
-                decided: false
-            },
-            initialized: false,
             legacyFilterState: null,
-            // 02（T1）：Tab 专家数计数（pending/suspended 各一个独立请求序号）。
-            chipCounts: { pending: null, suspended: null, seq: 0 },
-            // 02（T2/I-2）：当前选中专家的挂起真值（只来自 01 GET/PUT/DELETE 回包）。
-            suspension: {
-                contactId: null,
-                seq: 0,
-                workEpoch: 0,
-                loading: false,
-                error: "",
-                loaded: false,
-                suspended: false,
-                suspendReason: null,
-                suspensionPendingCount: 0,
-                followed: false
-            },
-            // 02（S-3）：行内挂起原因表单（同一实例只保留一份）。
-            reasonForm: { contactId: null, trigger: null, busy: false },
-            // 02（T3/I-7）：authenticated 身份只从 GET /api/auth/me 取（不读 localStorage 冒充）。
-            auth: { ready: false, username: "", seq: 0, loading: false, failed: false },
-            // 02（T3/I-7）：原位处理确认（同一实例只保留一条）与本次挂起周期的服务端 resolvedBy。
-            processConfirm: { key: null, busy: false },
-            resolvedLabels: new Map(),
-            // 02（I-3）：完成提示行状态（anchorKey=归零的那条 PROCESSED 来信）。
-            completion: { anchorKey: null, kept: false, busy: false, pendingAnchorKey: null },
             tagOptions: { loading: false, loaded: false, failed: false, items: [] },
             list: { page: 0, total: 0, items: [], loading: false, error: "" },
             selectedContactId: null,
@@ -654,14 +613,6 @@
             selectedUnmatchedId: null,
             /** 当前承载 #unmatchedDetailPanel 的 .mc-scroll 宿主；null = 未持有 lease（I-5）。 */
             unmatchedDetailHost: null,
-            mobilePane: "list",
-            paneEpoch: 0,
-            focusPaneEpoch: null,
-            listScrollTop: 0,
-            listTrigger: null,
-            mobileMedia: null,
-            pendingPosition: null,
-            clearedEditorSnapshot: null,
             focusHandledContactId: null,
             focusLocating: false,
             focusMissedContactId: null,
@@ -1069,14 +1020,11 @@
         // --------------------------------------------------------------
 
         function skeletonHtml() {
-            const chipButtons = FILTER_CHIPS.map((chip) => {
-                const countSpan = CHIP_COUNT_KEYS.indexOf(chip.key) >= 0
-                    ? `<span class="mailbox-suspend-count" data-chip-count="${chip.key}" hidden></span>`
-                    : "";
-                return `<button class="mc-filter" type="button" data-action="mc-filter" data-chip="${chip.key}" aria-pressed="${instance.chip === chip.key ? "true" : "false"}">${escapeText(chip.label)}${countSpan}</button>`;
-            }).join("");
+            const chipButtons = FILTER_CHIPS.map((chip) =>
+                `<button class="mc-filter" type="button" data-action="mc-filter" data-chip="${chip.key}" aria-pressed="${instance.chip === chip.key ? "true" : "false"}">${escapeText(chip.label)}</button>`
+            ).join("");
             return `
-                <div class="mail-chat mobile-core-mailbox" data-mobile-pane="list">
+                <div class="mail-chat">
                     <aside class="mc-experts" aria-label="专家会话列表">
                         <div class="mc-list-tools">
                             <div class="mc-search-row">
@@ -1097,7 +1045,6 @@
                         <div class="mc-expert-list" aria-live="polite"></div>
                         <div class="mc-pager"></div>
                     </aside>
-                    <button type="button" class="button mobile-mailbox-back" data-action="mobile-mailbox-back">返回会话列表</button>
                     <section class="mc-conversation" aria-label="专家往来信件"></section>
                 </div>
             `;
@@ -1117,93 +1064,6 @@
 
         function renderSkeleton() {
             host.innerHTML = skeletonHtml();
-        }
-
-        function conversationVisible() {
-            if (instance.mobileMedia && instance.mobileMedia.matches && instance.mobilePane === "list") return false;
-            const scroll = scrollEl();
-            return !scroll || typeof scroll.getClientRects !== "function" || scroll.getClientRects().length > 0;
-        }
-
-        function saveCurrentConversation() {
-            const cleared = instance.clearedEditorSnapshot;
-            const values = readManualValues();
-            const key = currentTargetKey();
-            // 已发送且已删的草稿仍可能留在 DOM；生命周期采集不能复活它。
-            const unchangedSent = cleared && cleared.key === key && cleared.draftsMap === currentDraftsMap()
-                && !getDraft(key) && values && values.subject === cleared.snapshot.subject
-                && values.html === cleared.snapshot.html && values.text === cleared.snapshot.text;
-            if (!unchangedSent) saveDraftFromInputs();
-            saveConversationState();
-        }
-
-        function afterPaneFrame(callback) {
-            const paneEpoch = instance.paneEpoch;
-            const convEpoch = instance.convEpoch;
-            const run = () => {
-                if (!instance.disposed && paneEpoch === instance.paneEpoch && convEpoch === instance.convEpoch) callback();
-            };
-            if (typeof global.requestAnimationFrame === "function") global.requestAnimationFrame(run);
-            else run();
-        }
-
-        function restoreVisiblePosition() {
-            if (!conversationVisible()) return;
-            const record = instance.pendingPosition || getConversationRecord(instance.user,
-                instance.conversation.accountScope || "", Number(instance.selectedContactId || 0));
-            if (record) restoreFromRecord(record);
-            instance.pendingPosition = null;
-        }
-
-        function setMobilePane(pane, trigger) {
-            if (pane === "detail" && instance.mobilePane === "list") {
-                const list = expertsRoot();
-                instance.listScrollTop = list ? Number(list.scrollTop) || 0 : 0;
-                instance.pendingPosition = instance.pendingPosition || getConversationRecord(instance.user,
-                    instance.conversation.accountScope || "", Number(instance.selectedContactId || 0));
-            }
-            if (trigger) instance.listTrigger = trigger;
-            instance.mobilePane = pane;
-            instance.paneEpoch += 1;
-            const root = host.querySelector ? host.querySelector(".mobile-core-mailbox") : null;
-            if (root) root.setAttribute("data-mobile-pane", pane);
-            afterPaneFrame(() => {
-                if (pane === "detail") restoreVisiblePosition();
-                else if (instance.mobileMedia && instance.mobileMedia.matches) {
-                    const list = expertsRoot();
-                    if (list) list.scrollTop = instance.listScrollTop;
-                    const action = isUnmatchedChip() ? "mc-select-unmatched" : "mc-select-expert";
-                    const idKey = isUnmatchedChip() ? "unmatched-id" : "contact-id";
-                    const id = isUnmatchedChip() ? instance.selectedUnmatchedId : instance.selectedContactId;
-                    const current = host.querySelector(`[data-action="${action}"][data-${idKey}="${id}"]`);
-                    const trigger = current || (host.contains && host.contains(instance.listTrigger) ? instance.listTrigger : null);
-                    if (trigger && typeof trigger.focus === "function") trigger.focus({ preventScroll: true });
-                }
-            });
-        }
-
-        function returnToMobileList() {
-            saveCurrentConversation();
-            setMobilePane("list");
-            // R-1（V-1）：离开详情即作废在途挂起 UI 工作并撤下未提交的原因表单。
-            invalidateSuspensionWork();
-        }
-
-        function onMobileViewportChange() {
-            // CSS owns layout; resizing never rebuilds an editor or issues a request.
-            instance.paneEpoch += 1;
-            afterPaneFrame(restoreVisiblePosition);
-        }
-
-        function bindMobileViewport() {
-            if (typeof global.matchMedia !== "function") return;
-            instance.mobileMedia = global.matchMedia("(max-width: 760px)");
-            if (typeof instance.mobileMedia.addEventListener === "function") instance.mobileMedia.addEventListener("change", onMobileViewportChange);
-            else if (typeof instance.mobileMedia.addListener === "function") instance.mobileMedia.addListener(onMobileViewportChange);
-        }
-
-        function saveBeforeScopeChange(prev, next) {
-            if (String(prev || "") !== String(next || "")) saveCurrentConversation();
         }
 
         function bindFilterEvents() {
@@ -1356,39 +1216,33 @@
                 if (value) next[key] = value;
             });
             const prevAccount = String(instance.filters.accountCode || "");
-            saveBeforeScopeChange(prevAccount, next.accountCode);
             instance.filters = next;
             meetingCloseDisposeOnAccountScopeChange(prevAccount, String(next.accountCode || ""));
             syncTagOptionsWithCommitted();
             setPopoverOpen(false);
             renderFilterChrome();
-            freezeDefaultProbe();
             instance.list.page = 0;
             loadList();
         }
 
         function resetAdvancedFilters() {
             const prevAccount = String(instance.filters.accountCode || "");
-            saveBeforeScopeChange(prevAccount, "");
             instance.filters = {};
             meetingCloseDisposeOnAccountScopeChange(prevAccount, "");
             populateFieldsFromCommitted();
             clearFilterError();
             setPopoverOpen(false);
             renderFilterChrome();
-            freezeDefaultProbe();
             instance.list.page = 0;
             loadList();
         }
 
         function restoreAdvancedFilters() {
             const prevAccount = String(instance.filters.accountCode || "");
-            saveBeforeScopeChange(prevAccount, "");
             instance.filters = {};
             meetingCloseDisposeOnAccountScopeChange(prevAccount, "");
             populateFieldsFromCommitted();
             renderFilterChrome();
-            freezeDefaultProbe();
             instance.list.page = 0;
             loadList();
         }
@@ -1471,17 +1325,16 @@
         // 专家列表
         // --------------------------------------------------------------
 
-        function conversationsParams(page, chipOverride, sizeOverride) {
+        function conversationsParams(page) {
             const params = new URLSearchParams();
             params.set("page", String(page));
-            params.set("size", String(sizeOverride != null ? sizeOverride : PAGE_SIZE));
+            params.set("size", String(PAGE_SIZE));
             const q = instance.searchText.trim();
             if (q) params.set("q", q);
-            const chipValues = chipParams(chipOverride != null ? chipOverride : instance.chip);
+            const chipValues = chipParams(instance.chip);
             if (chipValues.followed) params.set("followed", "true");
             if (chipValues.repliedOnly) params.set("repliedOnly", "true");
             if (chipValues.pendingOnly) params.set("pendingOnly", "true");
-            if (chipValues.suspendedOnly) params.set("suspendedOnly", "true");
             const filters = instance.filters || {};
             if (filters.accountCode) params.set("accountCode", filters.accountCode);
             if (filters.direction) params.set("direction", filters.direction);
@@ -1512,31 +1365,6 @@
             const tags = item && Array.isArray(item.expertTags) ? item.expertTags : null;
             if (!tags) return null;
             return tags.map((tag) => expertTagLabel(tag));
-        }
-
-        // 02（S-2/I-2/I-6）：卡片挂起 footer。N 一律用跨账号 suspensionPendingCount；
-        // 未挂起且 N=0 不渲染；已挂起即使 N>0 也不得 data-pending=true。
-        function suspensionCardValues(item) {
-            const suspended = item && item.suspended === true;
-            const count = Number(item && item.suspensionPendingCount) || 0;
-            return { suspended, count, show: suspended || count > 0 };
-        }
-
-        function suspensionStateText(suspended, count) {
-            return suspended ? `已挂起 · ${count} 条待处理` : `${count} 条待处理`;
-        }
-
-        function suspensionCardFooterHtml(item) {
-            const values = suspensionCardValues(item);
-            if (!values.show) return "";
-            const pendingFlag = (!values.suspended && values.count > 0) ? "true" : "false";
-            const label = values.suspended ? "取消挂起" : "挂起";
-            const disabled = instance.auth.ready ? "" : " disabled";
-            return `
-                    <div class="mailbox-suspend-card-footer">
-                        <span class="mailbox-suspend-state" data-pending="${pendingFlag}">${escapeText(suspensionStateText(values.suspended, values.count))}</span>
-                        <button type="button" class="mailbox-suspend-card-action" data-action="mc-suspension" data-contact-id="${escapeText(item.contactId)}"${disabled}>${label}</button>
-                    </div>`;
         }
 
         function renderPerson(item) {
@@ -1574,7 +1402,7 @@
                     <span data-role="person-actions">
                         <button class="mc-follow" type="button" data-action="mc-toggle-follow" data-contact-id="${escapeText(item.contactId)}" aria-label="${item.followed ? "取消关注该专家" : "关注该专家"}" aria-pressed="${item.followed ? "true" : "false"}">${item.followed ? "★" : "☆"}</button>
                         ${instance.chip === CHIP_REPLIED ? `<button class="mc-text-button" type="button" data-action="mc-dismiss-replied" data-contact-id="${escapeText(item.contactId)}" aria-label="将${escapeText(item.name || item.email || "该专家")}移出已回复" title="移出已回复，仍可在全部查看">移出</button>` : ""}
-                    </span>${suspensionCardFooterHtml(item)}
+                    </span>
                 </div>
             `;
         }
@@ -1632,49 +1460,6 @@
             else renderExpertList();
         }
 
-        // 02（T1/S-1）：Tab 计数=同一筛选范围的专家数（GET total，page=0&size=1）。
-        // 复用当前列表结果；另一 Tab 只作一次请求；失败隐藏数字，绝不显示假 0。
-        function setChipCount(key, total) {
-            instance.chipCounts[key] = total == null ? null : (Number(total) || 0);
-            const span = host.querySelector
-                ? host.querySelector(`.mailbox-suspend-count[data-chip-count="${key}"]`)
-                : null;
-            if (!span) return;
-            if (total == null) {
-                span.textContent = "";
-                span.hidden = true;
-            } else {
-                span.textContent = String(Number(total) || 0);
-                span.hidden = false;
-            }
-        }
-
-        // 02（I-1/I-5）：用户点击 Tab/改动筛选即冻结默认决策，晚到的首查探测不得覆盖。
-        function freezeDefaultProbe() {
-            instance.defaultProbe.active = false;
-            instance.defaultProbe.decided = true;
-        }
-
-        function loadChipCounts() {
-            if (instance.disposed) return;
-            instance.chipCounts.seq += 1;
-            const mySeq = instance.chipCounts.seq;
-            CHIP_COUNT_KEYS.forEach((key) => {
-                if (instance.chip === key && !instance.list.error) {
-                    setChipCount(key, Number(instance.list.total) || 0);
-                    return;
-                }
-                const params = conversationsParams(0, key, 1);
-                hostApi()(`/api/mail/mailbox/conversations?${params.toString()}`).then((data) => {
-                    if (instance.disposed || mySeq !== instance.chipCounts.seq) return;
-                    setChipCount(key, data && data.total != null ? Number(data.total) : 0);
-                }).catch(() => {
-                    if (instance.disposed || mySeq !== instance.chipCounts.seq) return;
-                    setChipCount(key, null);
-                });
-            });
-        }
-
         function renderPager() {
             const root = pagerRoot();
             if (!root) return;
@@ -1713,21 +1498,6 @@
                 instance.list.loading = false;
                 renderList();
                 renderPager();
-                // 02（I-1）：首次 mount 默认 Tab 探测。仅普通（非 focus）新实例、用户尚未
-                // 点击 Tab/筛选、且本次就是暂定的待处理首查时生效；total=0 才切关注。
-                instance.initialized = true;
-                if (instance.defaultProbe.active && !instance.defaultProbe.decided
-                    && !unmatched && instance.chip === CHIP_PENDING) {
-                    instance.defaultProbe.decided = true;
-                    instance.defaultProbe.active = false;
-                    if ((Number(instance.list.total) || 0) === 0) {
-                        instance.chip = CHIP_FOLLOWED;
-                        syncChipButtons();
-                        instance.list.page = 0;
-                        loadChipCounts();
-                        return fetchList({ page: 0 });
-                    }
-                }
                 if (unmatched) resolveUnmatchedSelection();
                 else {
                     // I-4：列表与已选专家详情取同一份当前行，只替换详情回复时间槽。
@@ -1739,7 +1509,6 @@
                     // fast-p 03（I-3）：批量摘要按当前页专家 id，epoch = 本次列表请求
                     loadMeetingSummaries();
                 }
-                loadChipCounts();
                 return data;
             }).catch((err) => {
                 if (instance.disposed || mySeq !== instance.listSeq) return null;
@@ -1768,647 +1537,6 @@
                 else resolveFocusAndSelection();
                 return data;
             });
-        }
-
-        // --------------------------------------------------------------
-        // 02（T2/T3/I-2/I-3/I-4/I-7）：挂起状态、行内原因、取消/结束、完成提示。
-        // 真值与原因只来自 01 GET/PUT/DELETE；状态变更后一律重查，绝不本地自减推断。
-        // --------------------------------------------------------------
-
-        const SUSPENSION_LOAD_ERROR_TEXT = "挂起状态读取失败，请重试";
-        const AUTH_LOAD_ERROR_TEXT = "登录状态读取失败，请刷新重试";
-
-        // 相对引用节点插入 HTML（afterbegin/beforeend 之外的相对位置，兼容真实 DOM 与测试桩）。
-        function insertHtmlRelative(referenceEl, html, position) {
-            if (!referenceEl || !referenceEl.parentNode) return null;
-            const doc = docRoot();
-            if (!doc || typeof doc.createElement !== "function") return null;
-            const parent = referenceEl.parentNode;
-            const temp = doc.createElement("div");
-            temp.innerHTML = html;
-            const nodes = Array.prototype.slice.call(temp.childNodes || []);
-            const list = parent.childNodes || [];
-            const idx = Array.prototype.indexOf.call(list, referenceEl);
-            const ref = idx >= 0 ? (list[idx + 1] || null) : null;
-            nodes.forEach((node) => {
-                if (position === "before") parent.insertBefore(node, referenceEl);
-                else parent.insertBefore(node, ref);
-            });
-            return nodes[0] || null;
-        }
-
-        function resetSuspensionState() {
-            instance.suspension = {
-                contactId: null,
-                seq: instance.suspension.seq + 1,
-                workEpoch: instance.suspension.workEpoch + 1,
-                loading: false,
-                error: "",
-                loaded: false,
-                suspended: false,
-                suspendReason: null,
-                suspensionPendingCount: 0,
-                followed: false
-            };
-            instance.completion = {
-                anchorKey: null, kept: false, busy: false,
-                pendingAnchorKey: null, renderedAnchor: null, renderedKept: false
-            };
-            instance.processConfirm = { key: null, busy: false };
-            instance.resolvedLabels = new Map();
-            detachReasonForm();
-        }
-
-        function suspensionMatchesContact(contactId) {
-            return instance.suspension.contactId != null
-                && String(instance.suspension.contactId) === String(contactId);
-        }
-
-        // 详情视图的挂起真值：优先权威 GET，其次列表行摘要（只在匹配 contactId 时）。
-        function suspensionViewForContact(contactId, summary) {
-            if (suspensionMatchesContact(contactId) && instance.suspension.loaded) {
-                return {
-                    suspended: instance.suspension.suspended,
-                    suspendReason: instance.suspension.suspendReason,
-                    count: instance.suspension.suspensionPendingCount,
-                    followed: instance.suspension.followed
-                };
-            }
-            const row = summary || findSummaryByContactId(contactId) || {};
-            return {
-                suspended: row.suspended === true,
-                suspendReason: row.suspendReason == null ? null : String(row.suspendReason),
-                count: Number(row.suspensionPendingCount) || 0,
-                followed: row.followed === true
-            };
-        }
-
-        // R-1（V-1）：挂起异步回包只在发起时的详情上下文仍当前时生效。
-        // 移动端返回列表、换专家/Tab/账号、卸载都会让旧回包成为 no-op。
-        function captureSuspensionContext(contactId) {
-            return {
-                contactId: Number(contactId),
-                user: instance.user,
-                convEpoch: instance.convEpoch,
-                paneEpoch: instance.paneEpoch,
-                workEpoch: instance.suspension.workEpoch
-            };
-        }
-
-        function suspensionContextAlive(ctx) {
-            if (!ctx || instance.disposed) return false;
-            if (ctx.workEpoch !== instance.suspension.workEpoch) return false;
-            if (ctx.convEpoch !== instance.convEpoch) return false;
-            if (ctx.paneEpoch !== instance.paneEpoch) return false;
-            return String(ctx.user) === String(instance.user);
-        }
-
-        // 离开详情/切 Tab/销毁：作废在途挂起工作并撤下未提交的原因表单（不清挂起真值）。
-        function invalidateSuspensionWork() {
-            instance.suspension.workEpoch += 1;
-            instance.suspension.seq += 1;
-            instance.suspension.loading = false;
-            instance.completion.busy = false;
-            detachReasonForm();
-        }
-
-        function loadSuspensionState(contactId) {
-            const id = Number(contactId);
-            if (!Number.isFinite(id) || id <= 0) return;
-            if (isUnmatchedChip()) return;
-            instance.suspension.seq += 1;
-            const mySeq = instance.suspension.seq;
-            const ctx = captureSuspensionContext(id);
-            instance.suspension.contactId = id;
-            instance.suspension.loading = true;
-            instance.suspension.error = "";
-            return hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`).then((data) => {
-                if (mySeq !== instance.suspension.seq || !suspensionContextAlive(ctx)) return;
-                applySuspensionState(id, data);
-            }).catch((err) => {
-                if (mySeq !== instance.suspension.seq || !suspensionContextAlive(ctx)) return;
-                instance.suspension.loading = false;
-                instance.suspension.loaded = false;
-                instance.suspension.error = err && err.message ? err.message : SUSPENSION_LOAD_ERROR_TEXT;
-                renderSuspensionDetail();
-            });
-        }
-
-        function applySuspensionState(contactId, data) {
-            const state = (data && typeof data === "object") ? data : {};
-            instance.suspension.contactId = Number(contactId);
-            instance.suspension.loading = false;
-            instance.suspension.loaded = true;
-            instance.suspension.error = "";
-            instance.suspension.suspended = state.suspended === true;
-            instance.suspension.suspendReason = state.suspendReason == null ? null : String(state.suspendReason);
-            instance.suspension.suspensionPendingCount = Number(state.suspensionPendingCount) || 0;
-            instance.suspension.followed = state.followed === true;
-            recomputeCompletionLine();
-            renderSuspensionDetail();
-        }
-
-        function lastProcessedInboundKey() {
-            const items = instance.conversation.items || [];
-            for (let i = items.length - 1; i >= 0; i -= 1) {
-                const message = items[i];
-                if (message.source === "INBOUND_PROCESSING" && message.processStatus === "PROCESSED") {
-                    return `${message.source}:${message.id}`;
-                }
-            }
-            return null;
-        }
-
-        // I-3：suspended 且跨账号计数=0 才允许提示；锚点仍须是已加载且 PROCESSED 的来信。
-        function recomputeCompletionLine() {
-            const state = instance.suspension;
-            if (!state.suspended || state.suspensionPendingCount > 0) {
-                instance.completion.anchorKey = null;
-                instance.completion.kept = false;
-                instance.completion.pendingAnchorKey = null;
-                return;
-            }
-            let anchor = null;
-            const pendingAnchor = instance.completion.pendingAnchorKey;
-            const pendingMessage = pendingAnchor ? messageByKey(pendingAnchor) : null;
-            if (pendingMessage && pendingMessage.processStatus === "PROCESSED") {
-                anchor = pendingAnchor;
-            } else {
-                anchor = lastProcessedInboundKey();
-            }
-            instance.completion.pendingAnchorKey = null;
-            if (!anchor) {
-                instance.completion.anchorKey = null;
-                instance.completion.kept = false;
-                return;
-            }
-            if (instance.completion.anchorKey !== anchor) {
-                instance.completion.anchorKey = anchor;
-                instance.completion.kept = false;
-            }
-        }
-
-        function suspensionDetailButtonHtml(contactId, view) {
-            if (!view.suspended && !(view.count > 0)) return "";
-            const label = view.suspended ? "取消挂起" : "挂起";
-            const disabled = instance.auth.ready ? "" : " disabled";
-            return `<button type="button" class="button mailbox-suspend-action" data-action="mc-suspension" data-contact-id="${escapeText(contactId)}"${disabled}>${label}</button>`;
-        }
-
-        function suspensionBannerHtml(view) {
-            if (!view.suspended) return "";
-            const title = view.count > 0
-                ? `此会话已挂起 · ${view.count} 条待处理`
-                : "消息已全部处理 · 等待结束挂起";
-            const reason = view.suspendReason ? `挂起原因：${view.suspendReason}` : "未填写挂起原因";
-            const guide = view.count > 0
-                ? "全部处理完成后，可在消息下方确认是否结束挂起。"
-                : "挂起仍然保留，可点击「取消挂起」结束。";
-            return `
-                <div class="mailbox-suspend-banner" role="status">
-                    <span class="mailbox-suspend-symbol" aria-hidden="true">Ⅱ</span>
-                    <div class="mailbox-suspend-banner-content">
-                        <strong>${escapeText(title)}</strong>
-                        <small>${escapeText(reason)}</small>
-                        <small>${escapeText(guide)}</small>
-                    </div>
-                </div>`;
-        }
-
-        function renderSuspensionBanner() {
-            const body = conversationBody();
-            if (!body) return;
-            const html = suspensionBannerHtml(suspensionViewForContact(instance.selectedContactId));
-            const existing = body.querySelector(".mailbox-suspend-banner");
-            if (existing) {
-                if (html) existing.outerHTML = html;
-                else if (existing.parentNode) existing.parentNode.removeChild(existing);
-                return;
-            }
-            if (!html) return;
-            const head = body.querySelector(".mc-timeline-head");
-            if (head && head.parentNode) insertHtmlRelative(head, html, "before");
-        }
-
-        // 只更新挂起按钮槽/banner/完成行，不重建整个详情（草稿/滚动/材料/排期不动）。
-        function renderSuspensionDetail() {
-            if (isUnmatchedChip()) return;
-            if (instance.selectedContactId == null) return;
-            if (!suspensionMatchesContact(instance.selectedContactId)) return;
-            const body = conversationBody();
-            if (!body) return;
-            recomputeCompletionLine();
-            const contactId = Number(instance.selectedContactId);
-            const view = suspensionViewForContact(contactId);
-            const actions = body.querySelector(".mc-actions");
-            if (actions) {
-                const existing = actions.querySelector('[data-action="mc-suspension"]');
-                if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
-                const html = suspensionDetailButtonHtml(contactId, view);
-                if (html) actions.insertAdjacentHTML("afterbegin", html);
-            }
-            renderSuspensionBanner();
-            syncCompletionLine();
-        }
-
-        // 完成行重绘按 anchor/kept 变化触发；renderMessage 读取 completion 状态。
-        function syncCompletionLine() {
-            const want = instance.completion.anchorKey != null;
-            const rendered = instance.completion.renderedAnchor || null;
-            const changed = (want !== !!rendered)
-                || (want && rendered !== instance.completion.anchorKey)
-                || (instance.completion.renderedKept !== instance.completion.kept);
-            if (!changed) return;
-            renderTimeline();
-            instance.completion.renderedAnchor = want ? instance.completion.anchorKey : null;
-            instance.completion.renderedKept = instance.completion.kept;
-        }
-
-        // 身份就绪前禁用新挂起/处理按钮；读取失败的提示只在用户尝试挂起/处理时给出，
-        // 避免在未提供 /api/auth/me 的宿主上于 mount 阶段弹出全局错误。
-        function loadAuthenticatedUser() {
-            instance.auth.seq += 1;
-            const mySeq = instance.auth.seq;
-            instance.auth.loading = true;
-            hostApi()("/api/auth/me").then((data) => {
-                if (instance.disposed || mySeq !== instance.auth.seq) return;
-                instance.auth.loading = false;
-                if (data && data.authenticated === true && data.username) {
-                    instance.auth.ready = true;
-                    instance.auth.username = String(data.username);
-                    instance.auth.failed = false;
-                    renderList();
-                    renderSuspensionDetail();
-                    renderTimeline();
-                } else {
-                    instance.auth.ready = false;
-                    instance.auth.failed = true;
-                }
-            }).catch(() => {
-                if (instance.disposed || mySeq !== instance.auth.seq) return;
-                instance.auth.loading = false;
-                instance.auth.failed = true;
-            });
-        }
-
-        // ---- 行内挂起原因（S-3；禁止 dialog/alert/confirm/prompt） ----
-
-        function reasonFormSection(contactId) {
-            const section = host.querySelector ? host.querySelector(".mailbox-suspend-inline-reason") : null;
-            if (!section) return null;
-            if (contactId != null && String(section.dataset ? section.dataset.contactId : "") !== String(contactId)) return null;
-            return section;
-        }
-
-        function detachReasonForm() {
-            const section = host.querySelector ? host.querySelector(".mailbox-suspend-inline-reason") : null;
-            if (section && section.parentNode) section.parentNode.removeChild(section);
-            instance.reasonForm.contactId = null;
-            instance.reasonForm.busy = false;
-            const trigger = instance.reasonForm.trigger;
-            instance.reasonForm.trigger = null;
-            return trigger;
-        }
-
-        function reasonFormHtml(contactId) {
-            return `
-                <section class="mailbox-suspend-inline-reason" aria-label="填写挂起原因" data-contact-id="${escapeText(contactId)}">
-                    <div class="mailbox-suspend-inline-reason-head"><strong>挂起此会话</strong><span>原因选填</span></div>
-                    <textarea aria-label="挂起原因（选填）" maxlength="500" rows="2" placeholder="例如：等待专家补充材料，稍后跟进"></textarea>
-                    <div class="mailbox-suspend-inline-reason-bottom">
-                        <small>仅内部可见 · <span class="mailbox-suspend-reason-count">0 / 500</span></small>
-                        <div>
-                            <button type="button" class="mailbox-suspend-inline-secondary" data-action="mc-suspension-reason-cancel">取消</button>
-                            <button type="button" class="mailbox-suspend-inline-primary" data-action="mc-suspension-reason-confirm" data-contact-id="${escapeText(contactId)}">确认挂起</button>
-                        </div>
-                    </div>
-                    <div class="mailbox-suspend-error" role="alert" hidden></div>
-                </section>`;
-        }
-
-        function openReasonForm(contactId, trigger) {
-            const id = Number(contactId);
-            if (!Number.isFinite(id) || id <= 0) return;
-            detachReasonForm();
-            const body = conversationBody();
-            let anchor = null;
-            if (trigger && typeof trigger.closest === "function") {
-                anchor = trigger.closest(".mc-person") || trigger.closest(".mc-header");
-            }
-            if (!anchor && body) anchor = body.querySelector(".mc-header");
-            if (!anchor || !anchor.parentNode) {
-                hostShowStatus("挂起操作不可用，请刷新后重试", "error");
-                return;
-            }
-            insertHtmlRelative(anchor, reasonFormHtml(id), "after");
-            instance.reasonForm.contactId = id;
-            instance.reasonForm.trigger = trigger || null;
-            instance.reasonForm.busy = false;
-            const section = reasonFormSection(id);
-            const textarea = section ? section.querySelector("textarea") : null;
-            if (textarea && typeof textarea.focus === "function") textarea.focus();
-        }
-
-        function setReasonFormBusy(section, busy) {
-            instance.reasonForm.busy = !!busy;
-            if (!section) return;
-            const textarea = section.querySelector("textarea");
-            if (textarea) textarea.disabled = !!busy;
-            const cancel = section.querySelector('[data-action="mc-suspension-reason-cancel"]');
-            const confirm = section.querySelector('[data-action="mc-suspension-reason-confirm"]');
-            if (cancel) cancel.disabled = !!busy;
-            if (confirm) {
-                confirm.disabled = !!busy;
-                confirm.textContent = busy ? "正在挂起…" : "确认挂起";
-            }
-        }
-
-        function setReasonFormError(section, message) {
-            if (!section) return;
-            const error = section.querySelector(".mailbox-suspend-error");
-            if (!error) return;
-            error.textContent = message || "";
-            error.hidden = !message;
-        }
-
-        function updateReasonCount(section, value) {
-            if (!section) return;
-            const counter = section.querySelector(".mailbox-suspend-reason-count");
-            if (!counter) return;
-            const text = value == null ? "" : String(value);
-            counter.textContent = `${text.length} / 500`;
-        }
-
-        function cancelReasonForm() {
-            const trigger = detachReasonForm();
-            if (trigger && trigger.isConnected !== false && typeof trigger.focus === "function") {
-                trigger.focus();
-                return;
-            }
-            const chip = host.querySelector ? host.querySelector(`.mc-filter[data-chip="${instance.chip}"]`) : null;
-            if (chip && typeof chip.focus === "function") chip.focus();
-        }
-
-        function confirmSuspensionReason(contactId) {
-            const id = Number(contactId);
-            const section = reasonFormSection(id);
-            if (!section || instance.reasonForm.busy) return;
-            const textarea = section.querySelector("textarea");
-            const reasonText = textarea && typeof textarea.value === "string" ? textarea.value.trim() : "";
-            const ctx = captureSuspensionContext(id);
-            setReasonFormBusy(section, true);
-            setReasonFormError(section, "");
-            hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`, {
-                method: "PUT",
-                body: JSON.stringify({ reason: reasonText || null })
-            }).then((data) => {
-                if (!suspensionContextAlive(ctx)) {
-                    // R-1（V-1）：迟到回包只解除本表单 busy，不撤下/不改写新上下文。
-                    if (reasonFormSection(id) === section) setReasonFormBusy(section, false);
-                    return;
-                }
-                instance.reasonForm.busy = false;
-                if (reasonFormSection(id) === section) detachReasonForm();
-                hostShowStatus("已挂起该会话", "ok");
-                if (String(instance.selectedContactId) === String(id)) {
-                    applySuspensionState(id, data);
-                }
-                refreshListWithFallback();
-            }).catch((err) => {
-                if (!suspensionContextAlive(ctx)) {
-                    if (reasonFormSection(id) === section) setReasonFormBusy(section, false);
-                    return;
-                }
-                setReasonFormBusy(section, false);
-                setReasonFormError(section, err && err.message ? err.message : "挂起失败，请重试");
-            });
-        }
-
-        // ---- 显式取消/结束（DELETE；I-4 用服务端回包决定归入哪个 Tab） ----
-
-        function suspensionActionError(trigger, message) {
-            let section = null;
-            if (trigger && typeof trigger.closest === "function") {
-                section = trigger.closest(".mailbox-suspend-card-footer") || trigger.closest(".mc-actions");
-            }
-            if (!section || !section.parentNode) return;
-            let error = section.parentNode.querySelector(".mailbox-suspend-error[data-role=suspension-action]");
-            if (!error) {
-                insertHtmlRelative(section, `<div class="mailbox-suspend-error" role="alert" data-role="suspension-action" hidden></div>`, "after");
-                error = section.parentNode.querySelector(".mailbox-suspend-error[data-role=suspension-action]");
-            }
-            if (!error) return;
-            error.textContent = message || "";
-            error.hidden = !message;
-        }
-
-        function clearSuspensionActionError() {
-            const el = host.querySelector ? host.querySelector('.mailbox-suspend-error[data-role="suspension-action"]') : null;
-            if (el && el.parentNode) el.parentNode.removeChild(el);
-        }
-
-        function afterSuspensionRemoved(id, data) {
-            const state = (data && typeof data === "object") ? data : {};
-            const count = Number(state.suspensionPendingCount) || 0;
-            const followed = state.followed === true;
-            hostShowStatus(
-                count > 0
-                    ? "已取消挂起，回到「待处理」"
-                    : (followed ? "已结束挂起，可在「关注」查看" : "已结束挂起"),
-                "ok"
-            );
-            returnToMobileList();
-            clearSuspensionActionError();
-            const nextChip = count > 0 ? CHIP_PENDING : (followed ? CHIP_FOLLOWED : CHIP_REPLIED);
-            instance.chip = nextChip;
-            instance.chipUserTouched = true;
-            freezeDefaultProbe();
-            instance.list.page = 0;
-            syncChipButtons();
-            syncSearchChrome();
-            instance.completion.anchorKey = null;
-            instance.completion.kept = false;
-            instance.completion.busy = false;
-            instance.completion.pendingAnchorKey = null;
-            if (suspensionMatchesContact(id)) {
-                instance.suspension.suspended = false;
-                instance.suspension.suspensionPendingCount = count;
-                instance.suspension.followed = followed;
-                instance.suspension.loaded = true;
-            }
-            renderList();
-            loadList();
-        }
-
-        // 02（T2.2）：点击挂起先 GET 该 contact 状态；仍可挂起才插入行内原因表单。
-        function onSuspensionClick(contactId, trigger) {
-            const id = Number(contactId);
-            if (!Number.isFinite(id) || id <= 0) return;
-            if (instance.reasonForm.busy) return;
-            const detailSelected = String(instance.selectedContactId) === String(id);
-            const view = detailSelected
-                ? suspensionViewForContact(id)
-                : suspensionViewForContact(id, findSummaryByContactId(id));
-            if (view.suspended) {
-                resumeSuspension(id, trigger);
-                return;
-            }
-            if (!instance.auth.ready) {
-                hostShowStatus(AUTH_LOAD_ERROR_TEXT, "error");
-                return;
-            }
-            const seq = instance.suspension.seq + 1;
-            instance.suspension.seq = seq;
-            const ctx = captureSuspensionContext(id);
-            hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`).then((data) => {
-                if (seq !== instance.suspension.seq || !suspensionContextAlive(ctx)) return;
-                if (data && data.suspended === true) {
-                    if (String(instance.selectedContactId) === String(id)) applySuspensionState(id, data);
-                    else refreshListWithFallback();
-                    return;
-                }
-                openReasonForm(id, trigger);
-            }).catch((err) => {
-                if (seq !== instance.suspension.seq || !suspensionContextAlive(ctx)) return;
-                hostShowStatus(err && err.message ? err.message : SUSPENSION_LOAD_ERROR_TEXT, "error");
-            });
-        }
-
-        function resumeSuspension(id, trigger) {
-            if (!instance.auth.ready || instance.reasonForm.busy) return;
-            const contactId = Number(id);
-            if (!Number.isFinite(contactId) || contactId <= 0) return;
-            const ctx = captureSuspensionContext(contactId);
-            if (trigger) trigger.disabled = true;
-            clearSuspensionActionError();
-            hostApi()(`/api/mail/mailbox/conversations/${contactId}/suspension`, { method: "DELETE" }).then((data) => {
-                if (!suspensionContextAlive(ctx)) {
-                    // R-1（V-1）：迟到回包只恢复按钮，不改导航/列表/挂起状态。
-                    if (trigger && trigger.isConnected !== false) trigger.disabled = false;
-                    return;
-                }
-                afterSuspensionRemoved(contactId, data);
-            }).catch((err) => {
-                if (!suspensionContextAlive(ctx)) {
-                    if (trigger && trigger.isConnected !== false) trigger.disabled = false;
-                    return;
-                }
-                if (trigger) trigger.disabled = false;
-                suspensionActionError(trigger, err && err.message ? err.message : "取消挂起失败，请重试");
-            });
-        }
-
-        function endSuspension(contactId) {
-            const id = Number(contactId);
-            if (instance.completion.busy) return;
-            const ctx = captureSuspensionContext(id);
-            instance.completion.busy = true;
-            const line = completionLineEl();
-            setCompletionBusy(line, true);
-            hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`, { method: "DELETE" }).then((data) => {
-                if (!suspensionContextAlive(ctx)) {
-                    // R-1（V-1）：迟到回包只解除完成行 busy，不改导航/列表/挂起状态。
-                    instance.completion.busy = false;
-                    setCompletionBusy(line, false);
-                    return;
-                }
-                instance.completion.busy = false;
-                afterSuspensionRemoved(id, data);
-            }).catch((err) => {
-                if (!suspensionContextAlive(ctx)) {
-                    instance.completion.busy = false;
-                    setCompletionBusy(line, false);
-                    return;
-                }
-                instance.completion.busy = false;
-                setCompletionBusy(line, false);
-                if (line) setCompletionError(line, err && err.message ? err.message : "结束挂起失败，请重试");
-            });
-        }
-
-        function completionLineEl() {
-            const scroll = scrollEl();
-            return scroll && scroll.querySelector ? scroll.querySelector(".mailbox-suspend-completion-line") : null;
-        }
-
-        function setCompletionBusy(line, busy) {
-            if (!line) return;
-            const keep = line.querySelector('[data-action="mc-suspension-keep"]');
-            const end = line.querySelector('[data-action="mc-suspension-end"]');
-            if (keep) keep.disabled = !!busy;
-            if (end) {
-                end.disabled = !!busy;
-                end.textContent = busy ? "正在结束…" : "结束挂起";
-            }
-        }
-
-        function setCompletionError(line, message) {
-            if (!line) return;
-            const error = line.querySelector(".mailbox-suspend-error");
-            if (!error) return;
-            error.textContent = message || "";
-            error.hidden = !message;
-        }
-
-        function completionLineHtml() {
-            const contactId = Number(instance.selectedContactId);
-            const kept = instance.completion.kept;
-            const followed = instance.suspension.followed;
-            const busy = instance.completion.busy;
-            const small = kept
-                ? "会话仍保留在「已挂起」，可随时结束。"
-                : (followed ? "结束后仍保留关注，可在「关注」查看。" : "结束后按现有「已回复」规则归类。");
-            return `
-                <div class="mailbox-suspend-completion-line" role="status" data-contact-id="${escapeText(contactId)}">
-                    <div>
-                        <strong>${kept ? "已继续挂起" : "所有消息已处理，是否结束挂起？"}</strong>
-                        <small>${escapeText(small)}</small>
-                        <div class="mailbox-suspend-error" role="alert" hidden></div>
-                    </div>
-                    <div class="mailbox-suspend-completion-actions">
-                        ${kept ? "" : `<button type="button" class="mailbox-suspend-inline-secondary" data-action="mc-suspension-keep" data-contact-id="${escapeText(contactId)}"${busy ? " disabled" : ""}>继续挂起</button>`}
-                        <button type="button" class="mailbox-suspend-inline-primary" data-action="mc-suspension-end" data-contact-id="${escapeText(contactId)}"${busy ? " disabled" : ""}>${busy ? "正在结束…" : "结束挂起"}</button>
-                    </div>
-                </div>`;
-        }
-
-        function keepSuspension() {
-            if (instance.completion.kept) return;
-            instance.completion.kept = true;
-            instance.completion.renderedKept = null;
-            syncCompletionLine();
-        }
-
-        // ---- 原位处理确认（S-3/I-7） ----
-
-        function openProcessConfirm(key) {
-            const message = messageByKey(key);
-            if (!message || message.processStatus !== "MANUAL_REVIEW") return;
-            if (!instance.auth.ready) {
-                hostShowStatus(AUTH_LOAD_ERROR_TEXT, "error");
-                return;
-            }
-            instance.processConfirm.key = key;
-            instance.processConfirm.busy = false;
-            renderTimeline();
-        }
-
-        function cancelProcessConfirm() {
-            if (instance.processConfirm.key == null) return;
-            const key = instance.processConfirm.key;
-            instance.processConfirm.key = null;
-            instance.processConfirm.busy = false;
-            renderTimeline();
-            const article = messageElByKey(key);
-            const pending = article ? article.querySelector('[data-action="mc-mark-resolved"]') : null;
-            if (pending && typeof pending.focus === "function") pending.focus();
-        }
-
-        function focusArticle(key) {
-            const article = messageElByKey(key);
-            if (!article) return;
-            if (article.setAttribute && !article.getAttribute("tabindex")) article.setAttribute("tabindex", "-1");
-            if (typeof article.focus === "function") article.focus();
         }
 
         // 空页回退最后有效页（I-1：处理最后待处理信后列表可能空页）
@@ -2478,7 +1606,6 @@
             if (!stillPresent) {
                 // 选中记录经服务端刷新消失（绑定成功/已标记处理/切页）：先归还，再回空态。
                 clearUnmatchedState();
-                setMobilePane("list");
                 renderUnmatchedEmpty();
                 return;
             }
@@ -2489,7 +1616,6 @@
             const items = instance.list.items || [];
             const item = items.find((entry) => String(entry.id) === String(id));
             if (!item) return;
-            setMobilePane("detail");
             const changed = String(instance.selectedUnmatchedId) !== String(item.id);
             instance.selectedUnmatchedId = Number(item.id);
             renderUnmatchedList();
@@ -2556,11 +1682,7 @@
         // --------------------------------------------------------------
 
         function clearSelectedConversation() {
-            instance.seq += 1;
-            instance.convEpoch += 1;
-            instance.pendingPosition = null;
             teardownConversationSubViews();
-            resetSuspensionState();
             instance.selectedContactId = null;
             instance.selectedSummary = null;
             instance.conversation.contact = null;
@@ -2568,8 +1690,6 @@
         }
 
         function renderFocusMissed(focus) {
-            saveCurrentConversation();
-            clearSelectedConversation();
             const identity = focus && focus.email ? `${focus.email}` : (focus && focus.contactId != null ? `#${focus.contactId}` : "");
             const body = conversationBody();
             if (!body) return;
@@ -2591,8 +1711,7 @@
                     || String(instance.selectedContactId) !== String(focus.contactId)) {
                     const found = items.find((item) => String(item.contactId) === String(focus.contactId));
                     if (found) {
-                        instance.focusHandledContactId = focus.contactId;
-                        selectExpert(found, { skipListReload: true, present: instance.focusPaneEpoch === instance.paneEpoch });
+                        selectExpert(found, { skipListReload: true });
                         return;
                     }
                     locateFocusExpert(focus);
@@ -2600,21 +1719,18 @@
                 }
                 instance.focusHandledContactId = focus.contactId;
             }
-            if (instance.selectedContactId != null && !instance.list.error) {
+            if (instance.selectedContactId != null && instance.list.items && instance.list.items.length > 0) {
                 const stillPresent = instance.list.items.some(
                     (item) => String(item.contactId) === String(instance.selectedContactId)
                 );
                 if (stillPresent) {
                     const freshSummary = findSummaryByContactId(instance.selectedContactId);
                     if (freshSummary) instance.selectedSummary = freshSummary;
-                    if (String(instance.conversation.accountScope || "") !== accountFilterFromOptions()) {
-                        selectExpert(freshSummary, { skipListReload: true, present: false, force: true });
-                    } else if (!instance.conversation.loading) refreshConversationQuiet();
+                    refreshConversationQuiet();
                 } else {
                     // 当前筛选不再包含该专家：先保存，再回到“请选择专家”空态
-                    saveCurrentConversation();
+                    saveConversationState();
                     clearSelectedConversation();
-                    setMobilePane("list");
                     renderConversationEmpty();
                 }
                 return;
@@ -2636,8 +1752,6 @@
                 renderFocusMissed(focus);
                 return;
             }
-            const presentationEpoch = instance.focusPaneEpoch;
-            const selectionEpoch = instance.convEpoch;
             instance.focusLocating = true;
             instance.listSeq += 1;
             const mySeq = instance.listSeq;
@@ -2647,13 +1761,13 @@
             params.set("q", String(focus.email).trim());
             hostApi()(`/api/mail/mailbox/conversations?${params.toString()}`).then((data) => {
                 instance.focusLocating = false;
-                if (instance.disposed || mySeq !== instance.listSeq || selectionEpoch !== instance.convEpoch) return;
+                if (instance.disposed || mySeq !== instance.listSeq) return;
                 const located = (data && Array.isArray(data.items) ? data.items : []).find(
                     (item) => String(item.contactId) === String(focus.contactId)
                 );
                 if (located) {
                     instance.focusHandledContactId = focus.contactId;
-                    selectExpert(located, { skipListReload: true, present: presentationEpoch === instance.paneEpoch });
+                    selectExpert(located, { skipListReload: true });
                 } else {
                     instance.focusMissedContactId = focus.contactId;
                     instance.focusHandledContactId = focus.contactId;
@@ -2661,7 +1775,7 @@
                 }
             }).catch(() => {
                 instance.focusLocating = false;
-                if (instance.disposed || mySeq !== instance.listSeq || selectionEpoch !== instance.convEpoch) return;
+                if (instance.disposed || mySeq !== instance.listSeq) return;
                 instance.focusMissedContactId = focus.contactId;
                 instance.focusHandledContactId = focus.contactId;
                 renderFocusMissed(focus);
@@ -2700,25 +1814,15 @@
 
         function selectExpert(item, options) {
             const opts = options || {};
-            const sameOwner = Number(instance.selectedContactId) === Number(item.contactId)
-                && String(instance.conversation.accountScope || "") === accountFilterFromOptions();
-            if (sameOwner && !opts.force && !instance.conversation.error) {
-                if (opts.present !== false) setMobilePane("detail", opts.trigger);
-                return;
-            }
-            // DOM 草稿必须在切换旧 owner 之前采集。
-            saveCurrentConversation();
-            if (opts.present !== false) setMobilePane("detail", opts.trigger);
+            // 切换前保存旧会话
+            saveConversationState();
             teardownConversationSubViews();
-            instance.pendingPosition = null;
-            instance.clearedEditorSnapshot = null;
             instance.selectedContactId = Number(item.contactId);
             instance.selectedSummary = item;
             instance.seq += 1;
             instance.convEpoch += 1;
             const mySeq = instance.seq;
             const myEpoch = instance.convEpoch;
-            instance.conversation.accountScope = accountFilterFromOptions();
             instance.conversation.loading = true;
             instance.conversation.error = "";
             instance.conversation.items = [];
@@ -2739,11 +1843,9 @@
             instance.translations = new Map();
             instance.loadOlderBusy = false;
             instance.draftsRef = null;
-            resetSuspensionState();
             renderConversationScaffold();
 
             const contactId = Number(item.contactId);
-            loadSuspensionState(contactId);
             // c3（I-3）：换专家即作废旧 timing 代次，再按新 contact 取推荐。
             loadContactTiming(contactId);
             const accountFilter = accountFilterFromOptions();
@@ -2779,8 +1881,6 @@
                     instance.conversation.loading = false;
                     renderConversationContent({ locateLatest: true });
                 }
-                // 02（I-3）：时间线就绪后重算完成提示锚点位置。
-                renderSuspensionDetail();
                 if (!opts.skipListReload) {
                     fetchList({ page: instance.list.page });
                 }
@@ -2799,7 +1899,6 @@
                     instance.conversation.error = "加载失败";
                     renderConversationContent({});
                 }
-                renderSuspensionDetail();
             });
         }
 
@@ -2874,9 +1973,7 @@
             renderLastReplyHeader(selectedRow || summary);
             const actions = head.querySelector(".mc-actions");
             if (actions) {
-                const suspendView = suspensionViewForContact(contactId, summary);
                 actions.innerHTML = `
-                    ${suspensionDetailButtonHtml(contactId, suspendView)}
                     <button class="button" type="button" data-action="mc-toggle-follow" data-contact-id="${escapeText(contactId)}">${followed ? "★ 已关注" : "☆ 关注"}</button>
                     <button class="button" type="button" data-action="mc-open-materials" data-contact-id="${escapeText(contactId)}">材料 ${materialCount}</button>
                     <button class="button" type="button" data-action="mc-manage-expert">管理</button>
@@ -3874,25 +2971,13 @@
                 footerButtons.push(`<button class="mc-text-button" type="button" data-action="mc-add-mail-tag" data-message-key="${escapeText(key)}">＋ 添加标签</button>`);
             }
             if (pending) {
-                if (instance.processConfirm.key === key) {
-                    const processBusy = instance.processConfirm.busy;
-                    footerButtons.push(`<span class="mailbox-suspend-process-confirm">
-                        <span>确认标记为已处理？</span>
-                        <button type="button" class="mailbox-suspend-inline-secondary" data-action="mc-process-cancel" data-message-key="${escapeText(key)}"${processBusy ? " disabled" : ""}>取消</button>
-                        <button type="button" class="mailbox-suspend-inline-primary" data-action="mc-process-confirm" data-message-key="${escapeText(key)}"${processBusy ? " disabled" : ""}>${processBusy ? "处理中…" : "确认"}</button>
-                    </span>`);
-                } else {
-                    const pendingDisabled = instance.auth.ready ? "" : " disabled";
-                    footerButtons.push(`<button class="mc-text-button mc-process mailbox-suspend-pending-action" type="button" data-action="mc-mark-resolved" data-message-key="${escapeText(key)}"${pendingDisabled}>待处理</button>`);
-                }
+                footerButtons.push(`<button class="mc-text-button mc-process" type="button" data-action="mc-mark-resolved" data-message-key="${escapeText(key)}">✓ 标记已处理</button>`);
             } else if (processed) {
-                const resolvedBy = instance.resolvedLabels.get(key);
-                footerButtons.push(`<span class="mailbox-suspend-processed-label">已处理${resolvedBy ? ` · ${escapeText(resolvedBy)}` : ""}</span>`);
+                footerButtons.push(`<span class="mc-done">✓ 已处理</span>`);
             }
             const footerHtml = footerButtons.length > 0
                 ? `<footer>${footerButtons.join("")}</footer>`
                 : "";
-            const completionHtml = instance.completion.anchorKey === key ? completionLineHtml() : "";
             return `
                 <article class="mc-message" data-direction="${direction}" data-source="${escapeText(message.source)}" data-id="${escapeText(message.id)}" data-message-key="${escapeText(key)}">
                     <header><span>${who}</span>${statusBadge ? `<span>${statusBadge}</span>` : ""}</header>
@@ -3905,7 +2990,6 @@
                     ${tagRow}
                     <p class="mc-inline-error" role="alert" hidden></p>
                     ${footerHtml}
-                    ${completionHtml}
                 </article>
             `;
         }
@@ -4032,8 +3116,7 @@
                     ${timelineMarkup()}
                 </div>
             `;
-            const banner = suspensionBannerHtml(suspensionViewForContact(instance.selectedContactId));
-            return { header, banner, timelineHead, scroll };
+            return { header, timelineHead, scroll };
         }
 
         function renderConversationContent(options) {
@@ -4044,8 +3127,8 @@
                 renderConversationEmpty();
                 return;
             }
-            const { header, banner, timelineHead, scroll } = conversationContentHtml();
-            body.innerHTML = header + (banner || "") + timelineHead + scroll;
+            const { header, timelineHead, scroll } = conversationContentHtml();
+            body.innerHTML = header + timelineHead + scroll;
             bindScrollListener();
             renderHeader();
             const scrollNode = body.querySelector(".mc-scroll");
@@ -4057,9 +3140,7 @@
             }
             rebindDetails();
             const record = opts.restoreRecord || null;
-            if (!conversationVisible()) {
-                instance.pendingPosition = record || { scrollTopValid: false };
-            } else if (record) {
+            if (record) {
                 restoreFromRecord(record);
             } else if (opts.locateLatest) {
                 locateLatestTop();
@@ -4146,7 +3227,6 @@
         }
 
         function captureAnchor() {
-            if (!conversationVisible()) return null;
             const scroll = scrollEl();
             if (!scroll) return null;
             const anchorKey = visibleAnchorKey(scroll);
@@ -4161,7 +3241,7 @@
         }
 
         function restoreToAnchor(anchor) {
-            if (!anchor || !conversationVisible()) return;
+            if (!anchor) return;
             const scroll = scrollEl();
             if (!scroll) return;
             if (anchor.anchorKey) {
@@ -4178,7 +3258,6 @@
         }
 
         function locateLatestTop() {
-            if (!conversationVisible()) return;
             const scroll = scrollEl();
             if (!scroll) return;
             const articles = scroll.querySelectorAll ? scroll.querySelectorAll(".mc-timeline .mc-message") : [];
@@ -4198,7 +3277,6 @@
         // ---- 会话状态保存（scroll/selectExpert/unmount/loadOlder/quiet） ----
 
         function saveConversationState() {
-            if (instance.conversation.loading || isUnmatchedChip()) return;
             const contactId = Number(instance.selectedContactId);
             if (!Number.isFinite(contactId) || contactId <= 0) return;
             const items = instance.conversation.items || [];
@@ -4209,24 +3287,22 @@
             }
             const scroll = scrollEl();
             const anchor = captureAnchor();
-            const geometry = conversationVisible() && !instance.pendingPosition && scroll ? {
-                anchorKey: anchor ? anchor.anchorKey : null,
-                anchorRelTop: anchor ? anchor.anchorRelTop : 0,
-                scrollTop: getScrollTop(),
-                scrollTopValid: true
-            } : {};
             const drafts = currentDraftsMap();
-            const rec = upsertConversationRecord(instance.user, instance.conversation.accountScope || "", contactId, Object.assign({
+            const rec = upsertConversationRecord(instance.user, instance.conversation.accountScope || "", contactId, {
                 items: items.slice(),
                 nextBefore: instance.conversation.nextBefore,
                 hasMore: instance.conversation.hasMore,
+                anchorKey: anchor ? anchor.anchorKey : null,
+                anchorRelTop: anchor ? anchor.anchorRelTop : 0,
+                scrollTop: scroll ? getScrollTop() : 0,
+                scrollTopValid: !!scroll,
                 drafts: drafts || new Map()
-            }, geometry));
+            });
             instance.draftsRef = rec.drafts;
         }
 
         function restoreFromRecord(record) {
-            if (!record || !conversationVisible()) return;
+            if (!record) return;
             if (record.anchorKey) {
                 const scroll = scrollEl();
                 if (scroll) {
@@ -4285,53 +3361,44 @@
             const message = messageByKey(key);
             if (!message || !(message.processStatus === "MANUAL_REVIEW")) return;
             const processingId = Number(message.id);
-            const contactId = Number(instance.selectedContactId);
-            const myEpoch = instance.convEpoch;
-            if (instance.processConfirm.key === key) {
-                instance.processConfirm.busy = true;
-                renderTimeline();
-            }
-            hostApi()(`/api/mail/unmatched-inbound/${processingId}/mark-resolved`, {
-                method: "POST",
-                body: JSON.stringify({ note: null })
-            }).then((data) => {
-                if (instance.disposed || myEpoch !== instance.convEpoch) return;
-                // I-7：回包必须与目标一致，账号只取服务端 resolvedBy。
-                if (!data || Number(data.id) !== processingId || data.processStatus !== "PROCESSED") {
-                    throw new Error("标记结果校验失败，请重试");
-                }
-                const resolvedBy = data.resolvedBy == null ? null : String(data.resolvedBy);
-                instance.processConfirm.key = null;
-                instance.processConfirm.busy = false;
-                const index = (instance.conversation.items || []).findIndex((item) => `${item.source}:${item.id}` === key);
-                if (index >= 0) {
-                    const updated = Object.assign({}, instance.conversation.items[index], {
-                        processStatus: "PROCESSED"
-                    });
-                    const items = instance.conversation.items.slice();
-                    items[index] = updated;
-                    instance.conversation.items = items;
-                }
-                if (resolvedBy) instance.resolvedLabels.set(key, resolvedBy);
-                // I-3：本 mount 本次处理锚点；只有随后状态 GET 归零才真正落位。
-                instance.completion.pendingAnchorKey = key;
-                const refreshBadge = hostFn("refreshUnmatchedBadge");
-                if (refreshBadge) refreshBadge();
-                renderTimeline();
-                focusArticle(key);
-                // 服务端顺序重查当前页；空页回退
-                refreshListWithFallback();
-                // I-2：收到成功才 GET 挂起状态（跨账号真值）。
-                if (Number.isFinite(contactId) && contactId > 0) loadSuspensionState(contactId);
-                // 新来信检查（可能最新来信变化）但不打断编辑器
-                checkInboundChangeQuiet();
-                saveConversationState();
+            openDialog("mark-unmatched-resolved").then((payload) => {
+                if (!payload) return;
+                return hostApi()(`/api/mail/unmatched-inbound/${processingId}/mark-resolved`, {
+                    method: "POST",
+                    body: JSON.stringify(payload)
+                }).then(() => {
+                    if (instance.disposed) return;
+                    hostShowStatus("已标记为处理完成");
+                    const index = (instance.conversation.items || []).findIndex((item) => `${item.source}:${item.id}` === key);
+                    if (index >= 0) {
+                        const updated = Object.assign({}, instance.conversation.items[index], {
+                            processStatus: "PROCESSED"
+                        });
+                        const items = instance.conversation.items.slice();
+                        items[index] = updated;
+                        instance.conversation.items = items;
+                    }
+                    const summary = instance.selectedSummary;
+                    if (summary) {
+                        summary.pendingCount = Math.max(0, (Number(summary.pendingCount) || 0) - 1);
+                    }
+                    const refreshBadge = hostFn("refreshUnmatchedBadge");
+                    if (refreshBadge) refreshBadge();
+                    renderTimeline();
+                    // 服务端顺序重查当前页；空页回退
+                    refreshListWithFallback();
+                    // 新来信检查（可能最新来信变化）但不打断编辑器
+                    checkInboundChangeQuiet();
+                    saveConversationState();
+                }).catch((err) => {
+                    if (instance.disposed) return;
+                    hostShowStatus(err && err.message ? err.message : "标记失败", "error");
+                    const article = messageElByKey(key);
+                    if (article) setInlineError(article, err && err.message ? err.message : "标记失败，请重试");
+                });
             }).catch((err) => {
-                if (instance.disposed || myEpoch !== instance.convEpoch) return;
-                instance.processConfirm.busy = false;
-                renderTimeline();
-                const article = messageElByKey(key);
-                if (article) setInlineError(article, err && err.message ? err.message : "标记失败，请重试");
+                if (instance.disposed) return;
+                hostShowStatus(err && err.message ? err.message : "标记失败", "error");
             });
         }
 
@@ -7611,7 +6678,6 @@
                     if (currentMeeting && Number(currentMeeting.revision) === Number(capturedRevision)) {
                         draftsMap.delete(key);
                         if (stillCurrent) {
-                            instance.clearedEditorSnapshot = { key, draftsMap, snapshot: sentDraftSnapshot };
                             instance.manual.qa = null;
                             refreshMeetingAttachmentCard();
                             // 07：该草稿连同通用附件一起被清，卡片同步重建（无文件 → hidden）。
@@ -7635,7 +6701,6 @@
                 const cleared = outboundDraftMatchesSnapshot(capturedDraft, sentDraftSnapshot);
                 if (cleared) draftsMap.delete(key);
                 if (stillCurrent && cleared) {
-                    instance.clearedEditorSnapshot = { key, draftsMap, snapshot: sentDraftSnapshot };
                     instance.manual.qa = null;
                     refreshFollowupAnchorNote();
                     refreshOutboundFilesCard();
@@ -7709,8 +6774,6 @@
                 saveConversationState();
                 // c3（T-1）：现有刷新成功后按同一 contact 重读推荐（渲染只重绘状态行）。
                 loadContactTiming(contactId);
-                // 02（T3.4）：已有会话刷新成功也是挂起状态 GET 的统一入口。
-                loadSuspensionState(contactId);
             }).catch(() => {});
         }
 
@@ -7832,15 +6895,10 @@
                 if (event && typeof event.preventDefault === "function") event.preventDefault();
                 return;
             }
-            if (action === "mobile-mailbox-back") {
-                returnToMobileList();
-                return;
-            }
             if (action === "mc-select-expert") {
-                if (instance.options.focus) instance.focusHandledContactId = instance.options.focus.contactId;
                 const contactId = Number(data.contactId);
                 const item = findSummaryByContactId(contactId);
-                if (item) selectExpert(item, { trigger: button });
+                if (item) selectExpert(item);
                 return;
             }
             if (action === "mc-toggle-follow") {
@@ -7860,17 +6918,15 @@
                 const chip = data.chip || CHIP_ALL;
                 const nextChip = FILTER_CHIPS.some((entry) => entry.key === chip) ? chip : CHIP_ALL;
                 if (nextChip !== instance.chip) {
-                    returnToMobileList();
                     if (instance.chip === CHIP_UNMATCHED) leaveUnmatchedMode();
                     if (nextChip === CHIP_UNMATCHED) {
                         // 离开专家会话前保存草稿/滚动，但邮件 id 绝不写入 selectedContactId（I-6）。
-                        saveCurrentConversation();
+                        saveConversationState();
                         clearSelectedConversation();
                     }
                 }
                 instance.chip = nextChip;
                 instance.chipUserTouched = true;
-                freezeDefaultProbe();
                 instance.list.page = 0;
                 syncChipButtons();
                 syncSearchChrome();
@@ -7935,43 +6991,15 @@
             }
             if (action === "mc-retry-conversation") {
                 const item = findSummaryByContactId(instance.selectedContactId);
-                if (item) selectExpert(item, { force: true });
+                if (item) selectExpert(item);
                 return;
             }
             if (action === "mc-load-older") {
                 loadOlderMessages();
                 return;
             }
-            if (action === "mc-suspension") {
-                onSuspensionClick(data.contactId, button);
-                return;
-            }
-            if (action === "mc-suspension-reason-cancel") {
-                cancelReasonForm();
-                return;
-            }
-            if (action === "mc-suspension-reason-confirm") {
-                confirmSuspensionReason(data.contactId);
-                return;
-            }
-            if (action === "mc-process-cancel") {
-                cancelProcessConfirm();
-                return;
-            }
-            if (action === "mc-process-confirm") {
-                markResolvedByKey(data.messageKey || "");
-                return;
-            }
-            if (action === "mc-suspension-keep") {
-                keepSuspension();
-                return;
-            }
-            if (action === "mc-suspension-end") {
-                endSuspension(data.contactId);
-                return;
-            }
             if (action === "mc-mark-resolved") {
-                openProcessConfirm(data.messageKey || "");
+                markResolvedByKey(data.messageKey || "");
                 return;
             }
             if (action === "mc-remove-mail-tag") {
@@ -8193,22 +7221,6 @@
             trapManageFocus(event);
         }
 
-        // 02（S-3）：行内原因/处理确认的 Escape 取消必须在 document 层捕获——按钮被原位
-        // 替换后焦点落到 body，host 委托收不到该键事件。
-        function onDocumentKeyDown(event) {
-            if (instance.disposed) return;
-            if (event.key !== "Escape") return;
-            if (reasonFormSection(null)) {
-                if (event.preventDefault) event.preventDefault();
-                cancelReasonForm();
-                return;
-            }
-            if (instance.processConfirm.key != null) {
-                if (event.preventDefault) event.preventDefault();
-                cancelProcessConfirm();
-            }
-        }
-
         function onOutsideFilterClick(event) {
             if (instance.disposed) return;
             if (!instance.popoverOpen) return;
@@ -8254,13 +7266,6 @@
             if (instance.disposed) return;
             const target = event.target;
             if (!target) return;
-            const reasonSection = typeof target.closest === "function"
-                ? target.closest(".mailbox-suspend-inline-reason")
-                : null;
-            if (reasonSection && target.tagName && String(target.tagName).toLowerCase() === "textarea") {
-                updateReasonCount(reasonSection, target.value);
-                return;
-            }
             const searchInput = host.querySelector ? host.querySelector('.mc-search-row input[type="search"]') : null;
             if (searchInput && target === searchInput) {
                 clearTimeout(instance.searchTimer);
@@ -8270,7 +7275,6 @@
                     if (instance.disposed) return;
                     if (instance.searchText === value) return;
                     instance.searchText = value;
-                    freezeDefaultProbe();
                     instance.list.page = 0;
                     loadList();
                 }, SEARCH_DEBOUNCE_MS);
@@ -8381,37 +7385,16 @@
 
         function applyOptions(options) {
             const next = options || {};
-            if (next.sessionUser && String(next.sessionUser) !== instance.user) {
-                saveCurrentConversation();
-                clearSelectedConversation();
-                clearUnmatchedState();
-                resetSuspensionState();
-                loadAuthenticatedUser();
-                instance.listSeq += 1;
-                instance.focusLocating = false;
-                instance.focusHandledContactId = null;
-                instance.focusMissedContactId = null;
-                instance.options.focus = null;
-                instance.user = String(next.sessionUser);
-                setMobilePane("list");
-                renderConversationEmpty();
-            }
             if (next.focus && next.focus.contactId != null) {
                 instance.options.focus = { contactId: next.focus.contactId, email: next.focus.email || "" };
-                instance.focusHandledContactId = null;
-                instance.focusMissedContactId = null;
-                setMobilePane("detail");
-                instance.focusPaneEpoch = instance.paneEpoch;
             }
             if (next.filters) {
                 // 快照完整替换，不能合并残留旧值（I-2）
                 const prevAccount = String(instance.filters.accountCode || "");
-                saveBeforeScopeChange(prevAccount, next.filters.accountCode);
                 instance.filters = Object.assign({}, next.filters);
                 meetingCloseDisposeOnAccountScopeChange(prevAccount, String(next.filters.accountCode || ""));
-                // 仅初次（用户尚未操作 tab 且默认探测未介入）允许外部 onlyPending 初始化
-                if (typeof next.filters.pendingOnly === "boolean" && !instance.chipUserTouched
-                    && !instance.initialized && !instance.defaultProbe.active) {
+                // 仅初次（用户尚未操作 tab）允许外部 onlyPending 初始化
+                if (typeof next.filters.pendingOnly === "boolean" && !instance.chipUserTouched) {
                     if (next.filters.pendingOnly && instance.chip !== CHIP_PENDING) {
                         instance.chip = CHIP_PENDING;
                         syncChipButtons();
@@ -8427,14 +7410,9 @@
 
         function unmount() {
             if (instance.disposed) return;
-            saveCurrentConversation();
-            if (instance.mobileMedia) {
-                if (typeof instance.mobileMedia.removeEventListener === "function") instance.mobileMedia.removeEventListener("change", onMobileViewportChange);
-                else if (typeof instance.mobileMedia.removeListener === "function") instance.mobileMedia.removeListener(onMobileViewportChange);
-            }
+            saveConversationState();
             // 右栏/根节点清空前必须先归还详情面板 lease（I-5）。
             clearUnmatchedState();
-            resetSuspensionState();
             instance.disposed = true;
             clearTimeout(instance.searchTimer);
             clearTimeout(instance.saveTimer);
@@ -8449,7 +7427,6 @@
             const doc = docRoot();
             if (doc && typeof doc.removeEventListener === "function") {
                 doc.removeEventListener("click", onOutsideFilterClick);
-                doc.removeEventListener("keydown", onDocumentKeyDown);
                 doc.removeEventListener("meeting-calendar-changed", onMeetingScheduleChanged);
             }
             restoreRefreshButton();
@@ -8482,11 +7459,6 @@
 
         function attach() {
             renderSkeleton();
-            bindMobileViewport();
-            if (instance.options.focus && instance.options.focus.contactId != null) {
-                setMobilePane("detail");
-                instance.focusPaneEpoch = instance.paneEpoch;
-            }
             rememberLegacyFilterTexts();
             ensureFilterFieldsPresent();
             renderFilterChrome();
@@ -8494,12 +7466,10 @@
             const doc = docRoot();
             if (doc && typeof doc.addEventListener === "function") {
                 doc.addEventListener("click", onOutsideFilterClick);
-                doc.addEventListener("keydown", onDocumentKeyDown);
                 // fast-p 03（I-1/I-3）：排期写成功后由宿主广播，组件只刷新自己当前 owner
                 doc.addEventListener("meeting-calendar-changed", onMeetingScheduleChanged);
             }
             bindFilterEvents();
-            loadAuthenticatedUser();
             ensurePortalRoot();
             listenPortal("click", onClickPortal);
             listenPortal("change", onMaterialRequestOptionChange);

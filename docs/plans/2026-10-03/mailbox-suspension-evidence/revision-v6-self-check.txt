@@ -1,0 +1,6 @@
+mailbox-suspension-01-backend.md: sections PASS; implementation files=9; obsolete modal contract absent
+mailbox-suspension-01b-processing-identity.md: sections PASS; implementation files=2; obsolete modal contract absent
+mailbox-suspension-02-frontend.md: sections PASS; implementation files=6; obsolete modal contract absent
+mailbox-suspension.md: sections PASS; implementation files=master index; obsolete modal contract absent
+CSS block == target-suspension.css byte-for-byte; 19 new DOM classes covered; CSS sha256=00289a6c0a550c9c2946f304bfc00ca48f14767b08e82a2e818b7c571bde7da2
+Relative artifact links PASS; implementation tests not run (documentation update only).

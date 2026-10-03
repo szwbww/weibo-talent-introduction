@@ -1,0 +1,6 @@
+$ rg -n MailboxConversationService\(|MailboxConversationController\( src/main src/test
+src/main/kotlin/com/weibo/talentintroduction/mail/service/MailboxConversationService.kt:45:class MailboxConversationService(
+src/main/kotlin/com/weibo/talentintroduction/mail/controller/MailboxConversationController.kt:182:class MailboxConversationController(
+src/test/kotlin/com/weibo/talentintroduction/mail/controller/OutboundAttachmentFlowTest.kt:238:        conversationService = MailboxConversationService(
+
+exit=0

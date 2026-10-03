@@ -1,0 +1,4 @@
+03f718752e47ba7ebcce01d83ce3f9daa551af95ed18508fb45af9d0a750b36a  src/main/resources/static/mailbox-chat.js
+12417c776d75720605e64a98ea4b99d4a2c007b8ad3ddc4c8d874410469b96f3  src/main/resources/static/styles.css
+79cae0c887c7ea32b0e7183457583a8fb87e0ba2f2ace69773ffa5212157d9a7  src/main/resources/static/index.html
+88fa2040f6f963af6e8af2b120237d8c56a43b2fe03dd160fba9c08bd6125f3f  src/test/js/mailboxChatStyle.test.js

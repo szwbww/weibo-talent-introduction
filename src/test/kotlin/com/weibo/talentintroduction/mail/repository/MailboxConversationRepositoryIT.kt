@@ -693,6 +693,136 @@ class MailboxConversationRepositoryIT {
     }
 
     // ------------------------------------------------------------------
+    // 01：挂起筛选与批量摘要
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `suspended experts leave pending and replied but remain in all and followed`() {
+        // 1：有 SENT 出站 + 真实来信 → 具备已回复资格（未关注）
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "Intro A", "2026-09-01 09:00:00")
+        insertProcessing(1, "acc-a", 2001, "PROCESSED", "Re A", "2026-09-02 09:00:00",
+            "susp-a", "alice@example.org")
+        // 3：同样具备已回复资格，但被 op1 关注 → 原 repliedOnly 语义将其排除
+        insertOutbound(3, "acc-a", "INTRODUCTION", "SENT", "Intro C", "2026-09-01 09:00:00")
+        insertProcessing(3, "acc-a", 2003, "PROCESSED", "Re C", "2026-09-02 09:00:00",
+            "susp-c", "carol@example.org")
+        // 4：一封 MANUAL_REVIEW 待处理
+        insertProcessing(4, "acc-a", 2004, "MANUAL_REVIEW", "Re D", "2026-09-03 09:00:00",
+            "susp-d", "dan@example.org")
+        jdbcTemplate.update(
+            "INSERT INTO expert_follow (username, expert_contact_id, created_at) VALUES ('op1', 3, NOW())"
+        )
+        insertSuspension("op1", 4L, "等待材料")
+
+        // 待处理：D 被当前用户挂起后移出（NOT EXISTS）
+        assertTrue(page(username = "op1", filter = filter(pendingOnly = true)).isEmpty(),
+            "挂起的待处理专家不再进待处理")
+        // 已挂起：只看有行（不加 pending>0）
+        assertEquals(listOf(4L),
+            page(username = "op1", filter = filter(suspendedOnly = true)).map { it.expertContactId })
+        assertEquals(1L, repository.countConversations("op1", filter(suspendedOnly = true)))
+        // 已回复：1 命中；3 因被 op1 关注按原规则排除，D 无出站资格
+        assertEquals(listOf(1L),
+            page(username = "op1", filter = filter(repliedOnly = true)).map { it.expertContactId })
+        // 全部：挂起专家仍保留
+        assertTrue(page(username = "op1", filter = emptyFilter()).any { it.expertContactId == 4L })
+        // 关注：挂起不改变关注可见性
+        assertEquals(listOf(3L),
+            page(username = "op1", filter = filter(followed = true)).map { it.expertContactId })
+
+        // 挂起已回复专家后也移出已回复；另一用户不受影响
+        insertSuspension("op1", 1L, null)
+        assertTrue(page(username = "op1", filter = filter(repliedOnly = true)).isEmpty(),
+            "挂起的已回复专家移出已回复")
+        assertEquals(listOf(1L, 3L),
+            page(username = "op2", filter = filter(repliedOnly = true)).map { it.expertContactId }.sorted(),
+            "op1 的挂起/关注不影响 op2")
+        assertTrue(page(username = "op2", filter = filter(suspendedOnly = true)).isEmpty())
+
+        // suspendedOnly 与 pendingOnly 同传：冲突条件按 AND 得空集
+        assertTrue(page(username = "op1", filter = filter(pendingOnly = true, suspendedOnly = true)).isEmpty())
+
+        // 取消行后恢复原归类（只删挂起行，不动其它状态）
+        jdbcTemplate.update(
+            "DELETE FROM expert_mailbox_suspension WHERE username = 'op1' AND expert_contact_id = 4"
+        )
+        assertEquals(listOf(4L),
+            page(username = "op1", filter = filter(pendingOnly = true)).map { it.expertContactId })
+    }
+
+    @Test
+    fun `suspension state batch aggregates cross account pending excluding simulator and missing accounts`() {
+        seedAccount("SIMULATOR_NOOP")
+        seedContact(5, "Eve Expert", "eve@example.org", "0000-0000-0000-0005")
+        // 4：acc-a + disabled inactive-acc 的真实待处理都计入；模拟器/不存在账号/已处理不计。
+        insertProcessing(4, "acc-a", 2101, "MANUAL_REVIEW", "p1", "2026-09-01 09:00:00",
+            "batch-1", "dan@example.org")
+        insertProcessing(4, "inactive-acc", 2102, "MANUAL_REVIEW", "p2", "2026-09-02 09:00:00",
+            "batch-2", "dan@example.org")
+        insertProcessing(4, "SIMULATOR_NOOP", 2103, "MANUAL_REVIEW", "p3", "2026-09-03 09:00:00",
+            "batch-3", "dan@example.org")
+        insertProcessing(4, "ghost-acc", 2104, "MANUAL_REVIEW", "p4", "2026-09-04 09:00:00",
+            "batch-4", "dan@example.org")
+        insertProcessing(4, "acc-a", 2105, "PROCESSED", "p5", "2026-09-05 09:00:00",
+            "batch-5", "dan@example.org")
+        insertSuspension("op1", 4L, "等待材料")
+        insertSuspension("op1", 5L, null)
+
+        val states = repository.suspensionStatesByContacts("op1", listOf(4L, 5L, 1L))
+        assertTrue(states[4L]!!.suspended)
+        assertEquals("等待材料", states[4L]!!.suspendReason)
+        assertEquals(2L, states[4L]!!.suspensionPendingCount,
+            "acc-a 与 disabled inactive-acc 计入；模拟器/不存在账号/已处理不计")
+        assertTrue(states[5L]!!.suspended, "reason=null 仍是挂起（I-1）")
+        assertNull(states[5L]!!.suspendReason)
+        assertEquals(0L, states[5L]!!.suspensionPendingCount)
+        assertFalse(states[1L]!!.suspended)
+        assertEquals(0L, states[1L]!!.suspensionPendingCount)
+
+        // 跨账号 pending 与用户无关；挂起状态按用户隔离。
+        val op2 = repository.suspensionStatesByContacts("op2", listOf(4L))
+        assertFalse(op2[4L]!!.suspended, "op1 的挂起不属于 op2")
+        assertEquals(2L, op2[4L]!!.suspensionPendingCount)
+
+        // 空集合短路：不执行 IN ()。
+        assertTrue(repository.suspensionStatesByContacts("op1", emptyList()).isEmpty())
+    }
+
+    @Test
+    fun `suspended pagination keeps count and page on the same predicate even at zero pending`() {
+        // 45 位专家：奇数号已处理（0 待处理）后挂起，偶数号留待处理但未挂起。
+        for (id in 5L..49L) {
+            seedContact(id, "Expert $id", "expert$id@example.org", "0000-0000-0000-%04d".format(id))
+            insertProcessing(
+                id, "acc-a", 3000L + id,
+                if (id % 2L == 0L) "MANUAL_REVIEW" else "PROCESSED",
+                "Re $id", "2026-09-%02d 09:00:00".format(1 + (id % 27L)),
+                "susp-page-$id", "expert$id@example.org"
+            )
+        }
+        val suspendedIds = (5L..49L).filter { it % 2L == 1L }
+        suspendedIds.forEach { insertSuspension("op1", it, null) }
+
+        val suspendedFilter = filter(suspendedOnly = true)
+        assertEquals(suspendedIds.size.toLong(), repository.countConversations("op1", suspendedFilter),
+            "count 与 page 同谓词；零待处理的挂起专家仍计数")
+
+        val collected = mutableListOf<Long>()
+        var offset = 0L
+        while (true) {
+            val rows = page(username = "op1", filter = suspendedFilter, size = 10, offset = offset)
+            if (rows.isEmpty()) break
+            collected += rows.map { it.expertContactId }
+            offset += 10
+        }
+        assertEquals(suspendedIds.sorted(), collected.sorted(), "跨页无重复/缺失")
+        assertEquals(collected.size, collected.toSet().size)
+
+        // explain 与 count/page 同筛选（不抛异常且产出计划行）。
+        assertTrue(repository.explainConversationsPage("op1", suspendedFilter, 10, 0).isNotEmpty())
+    }
+
+    // ------------------------------------------------------------------
     // 工具
     // ------------------------------------------------------------------
 
@@ -701,6 +831,7 @@ class MailboxConversationRepositoryIT {
     private fun filter(
         q: String? = null,
         followed: Boolean = false,
+        repliedOnly: Boolean = false,
         waitingReply: Boolean = false,
         pendingOnly: Boolean = false,
         accountCode: String? = null,
@@ -710,12 +841,14 @@ class MailboxConversationRepositoryIT {
         startTime: LocalDateTime? = null,
         endTime: LocalDateTime? = null,
         recipientEmail: String? = null,
-        keyword: String? = null
+        keyword: String? = null,
+        suspendedOnly: Boolean = false
     ) = MailboxConversationRepository.ConversationFilter(
         accountCodes = allAccounts,
         accountCode = accountCode,
         q = q,
         followed = followed,
+        repliedOnly = repliedOnly,
         waitingReply = waitingReply,
         pendingOnly = pendingOnly,
         direction = direction,
@@ -724,7 +857,8 @@ class MailboxConversationRepositoryIT {
         startTime = startTime,
         endTime = endTime,
         recipientEmail = recipientEmail,
-        keyword = keyword
+        keyword = keyword,
+        suspendedOnly = suspendedOnly
     )
 
     private fun page(
@@ -744,6 +878,8 @@ class MailboxConversationRepositoryIT {
     private fun cleanup() {
         jdbcTemplate.update("DELETE FROM expert_replied_dismissal")
         jdbcTemplate.update("DELETE FROM expert_follow")
+        // 01：挂起表 FK→expert_contact，必须在删联系人前清理。
+        jdbcTemplate.update("DELETE FROM expert_mailbox_suspension")
         jdbcTemplate.update("DELETE FROM inbound_mail_tag")
         jdbcTemplate.update("DELETE FROM mail_attachment_transfer")
         jdbcTemplate.update("DELETE FROM expert_document")
@@ -854,6 +990,16 @@ class MailboxConversationRepositoryIT {
             """.trimIndent(),
             processingId, tagType, label,
             Timestamp.valueOf(LocalDateTime.of(2026, 9, 1, 10, 0))
+        )
+    }
+
+    private fun insertSuspension(username: String, contactId: Long, reason: String?) {
+        jdbcTemplate.update(
+            """
+            INSERT INTO expert_mailbox_suspension (username, expert_contact_id, reason)
+            VALUES (?, ?, ?)
+            """.trimIndent(),
+            username, contactId, reason
         )
     }
 

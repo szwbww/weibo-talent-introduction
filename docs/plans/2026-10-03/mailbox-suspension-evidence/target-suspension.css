@@ -1,0 +1,50 @@
+/* mailbox-suspension-contract:start */
+#view-mailbox.mc-refined .mc-filters{display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;scrollbar-width:thin}
+#view-mailbox.mc-refined .mc-filter{flex:0 0 auto;min-height:36px;padding:7px 5px 10px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#7d8ca2;font-size:12px;line-height:1.5;white-space:nowrap}
+#view-mailbox.mc-refined .mc-filter:hover{background:#f4f7ff;color:#3762d8}
+#view-mailbox.mc-refined .mc-filter:active{background:#e9efff}
+#view-mailbox.mc-refined .mc-filter[aria-pressed=true]{background:transparent;border-bottom-color:#3762d8;color:#3762d8;font-weight:600}
+#view-mailbox.mc-refined .mc-filter:disabled{opacity:.45;cursor:not-allowed}
+#view-mailbox.mc-refined .mc-filter:focus-visible{outline:2px solid #9eb9ff;outline-offset:-2px}
+.mailbox-suspend-count{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;margin-left:3px;padding:0 4px;border-radius:5px;background:#f0f3f8;color:#8a98ab;font-size:10px;font-weight:600;line-height:16px}
+#view-mailbox.mc-refined .mc-filter[aria-pressed=true] .mailbox-suspend-count{background:#e9efff;color:#3762d8}
+.mailbox-suspend-card-footer{grid-column:1 / -1;display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0;padding:0 12px 12px 10px}
+.mailbox-suspend-state{display:inline-flex;align-items:center;gap:5px;min-width:0;color:#64748b;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.mailbox-suspend-state::before{content:'';flex:none;width:5px;height:5px;border-radius:50%;background:#94a3b8}
+.mailbox-suspend-state[data-pending=true]{color:#8195b6}
+.mailbox-suspend-state[data-pending=true]::before{background:#91aad7}
+.mailbox-suspend-card-action{flex:none;min-height:30px;padding:4px 9px;border:1px solid #cbd5e1;border-radius:6px;background:#fff;color:#64748b;font:inherit;font-size:11px;font-weight:500;line-height:1.5;white-space:nowrap;cursor:pointer}
+.mailbox-suspend-card-action:hover:not(:disabled){border-color:#94a3b8;background:#f1f5f9;color:#334155}
+.mailbox-suspend-card-action:active:not(:disabled){background:#e2e8f0}
+#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action{order:-1;min-height:32px;padding:6px 13px;border:1px solid #b8c4d3;border-radius:7px;background:#fff;color:#475569;font:inherit;font-size:12px;font-weight:500;line-height:1.5;box-shadow:none;cursor:pointer}
+#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action:hover:not(:disabled){border-color:#94a3b8;background:#f1f5f9;color:#334155;transform:none}
+#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action:active:not(:disabled){background:#e2e8f0}
+.mailbox-suspend-card-action::before,.mailbox-suspend-action::before{content:none;display:none}
+.mailbox-suspend-card-action:disabled,#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+.mailbox-suspend-card-action:focus-visible,.mailbox-suspend-action:focus-visible{outline:3px solid #9eb9ff;outline-offset:3px}
+.mailbox-suspend-banner{display:flex;align-items:flex-start;gap:11px;flex:none;margin:16px 22px 3px;padding:12px 14px;border:1px solid #dde4ec;border-radius:9px;background:#f1f5f9;color:#475569;font-size:12px}
+.mailbox-suspend-symbol{display:flex;align-items:center;justify-content:center;flex:none;width:29px;height:29px;border-radius:8px;background:#e2e8f0;color:#64748b;font-size:14px;font-weight:600;line-height:29px}
+.mailbox-suspend-banner-content{flex:1;min-width:0}
+.mailbox-suspend-banner strong{display:block;font-size:12px;font-weight:600;line-height:1.6}
+.mailbox-suspend-banner small{display:block;margin-top:4px;color:#7c8a9d;font-size:11px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+#view-mailbox.mc-refined .mc-filter[data-chip=suspended][aria-pressed=true]{color:#475569;border-bottom-color:#64748b}
+#view-mailbox.mc-refined .mc-filter[data-chip=suspended][aria-pressed=true] .mailbox-suspend-count{color:#475569;background:#e2e8f0}
+.mailbox-suspend-inline-reason{flex:none;margin:12px 18px;padding:15px;border:1px solid #dde4ec;border-radius:10px;background:#f8fafc;color:#33465f;text-align:left}
+.mailbox-suspend-inline-reason-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}.mailbox-suspend-inline-reason-head strong{font-size:12px;font-weight:600}.mailbox-suspend-inline-reason-head span{color:#8a99ad;font-size:10px}
+.mailbox-suspend-inline-reason textarea{display:block;box-sizing:border-box;width:100%;min-height:64px;margin:0;padding:9px 11px;resize:vertical;border:1px solid #dce5f0;border-radius:7px;background:#fff;color:#435773;font:inherit;font-size:12px;line-height:1.65;box-shadow:none}.mailbox-suspend-inline-reason textarea:focus{outline:2px solid #bdd0ff;outline-offset:1px}.mailbox-suspend-inline-reason textarea::placeholder{color:#96a5b9}
+.mailbox-suspend-inline-reason-bottom{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:9px;margin-top:11px}.mailbox-suspend-inline-reason-bottom small{font-size:10px;color:#91a0b5}.mailbox-suspend-inline-reason-bottom>div{display:flex;gap:7px}
+.mailbox-suspend-inline-secondary,.mailbox-suspend-inline-primary{display:inline-flex;align-items:center;justify-content:center;min-height:30px;margin:0;padding:5px 11px;border:1px solid #dce5f0;border-radius:6px;background:#fff;color:#72849d;font:inherit;font-size:11px;font-weight:500;line-height:1.5;white-space:nowrap;box-shadow:none;cursor:pointer}
+.mailbox-suspend-inline-secondary:hover:not(:disabled){border-color:#bbcae2;background:#f4f7fc}.mailbox-suspend-inline-primary{border-color:#3762d8;background:#3762d8;color:#fff}.mailbox-suspend-inline-primary:hover:not(:disabled){border-color:#2954c8;background:#2954c8}.mailbox-suspend-inline-secondary:active:not(:disabled),.mailbox-suspend-inline-primary:active:not(:disabled){transform:translateY(1px)}.mailbox-suspend-inline-secondary:disabled,.mailbox-suspend-inline-primary:disabled{opacity:.5;cursor:not-allowed;transform:none}.mailbox-suspend-inline-secondary:focus-visible,.mailbox-suspend-inline-primary:focus-visible{outline:3px solid #9eb9ff;outline-offset:2px}
+.mailbox-suspend-process-confirm{display:inline-flex;align-items:center;flex-wrap:wrap;gap:7px;margin-left:auto}.mailbox-suspend-process-confirm>span{color:#8a9bb2;font-size:11px;margin-right:3px}#view-mailbox.mc-refined .mc-message footer .mc-process{margin-left:auto}.mailbox-suspend-processed-label{margin-left:auto;color:#679481;font-size:11px;line-height:30px}
+#view-mailbox.mc-refined .mc-message .mailbox-suspend-completion-line{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:14px 0 0;padding:14px;border:1px solid #dde4ec;border-radius:8px;background:#f1f5f9;text-align:left}.mailbox-suspend-completion-line>div:first-child{min-width:0}.mailbox-suspend-completion-line strong{display:block;color:#475569;font-size:12px;font-weight:600;line-height:1.6}.mailbox-suspend-completion-line small{display:block;color:#7c8a9d;font-size:10px;line-height:1.65;margin-top:3px}.mailbox-suspend-completion-actions{display:flex;flex:none;align-items:center;gap:7px}.mailbox-suspend-completion-line .mailbox-suspend-inline-secondary{border-color:#cbd5e1;color:#64748b;background:#ffffff}.mailbox-suspend-completion-line .mailbox-suspend-inline-secondary:hover:not(:disabled){background:#e9eef4}
+#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action{margin-left:auto;padding:4px 10px;border:1px solid #dbe4f4;border-radius:6px;background:#f7faff;color:#6c87b1;font-size:11px;line-height:1.5;cursor:pointer}
+#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action:hover:not(:disabled){background:#edf3ff;color:#3762d8;border-color:#bfd0f4}
+#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action:active:not(:disabled){background:#e1ebff}
+#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action:disabled{opacity:.5;cursor:not-allowed}
+#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action:focus-visible{outline:3px solid #9eb9ff;outline-offset:2px}
+.mailbox-suspend-inline-reason,.mailbox-suspend-inline-reason *,.mailbox-suspend-completion-line,.mailbox-suspend-completion-line *{box-sizing:border-box}
+.mailbox-suspend-inline-reason [hidden],.mailbox-suspend-completion-line [hidden]{display:none!important}
+.mailbox-suspend-error{margin:10px 0 0;color:#b34740;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.mailbox-suspend-reason-count{white-space:nowrap}
+@media(max-width:760px){.mailbox-suspend-banner{margin:12px 12px 3px;padding:11px 12px}#view-mailbox.mc-refined .mc-filter{min-height:44px;padding-left:6px;padding-right:6px}.mailbox-suspend-card-action,#view-mailbox.mc-refined .mc-actions .mailbox-suspend-action,.mailbox-suspend-inline-secondary,.mailbox-suspend-inline-primary,#view-mailbox.mc-refined .mc-message footer .mailbox-suspend-pending-action{min-height:44px}.mailbox-suspend-inline-reason textarea{font-size:16px}.mailbox-suspend-inline-reason{margin:10px 12px}#view-mailbox.mc-refined .mc-message .mailbox-suspend-completion-line{flex-direction:column;align-items:flex-start;gap:10px}.mailbox-suspend-completion-actions{align-self:flex-end}.mailbox-suspend-process-confirm>span{flex-basis:100%;text-align:right}}
+/* mailbox-suspension-contract:end */

@@ -3,6 +3,7 @@ package com.weibo.talentintroduction.mail.repository
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
 import org.springframework.stereotype.Repository
+import com.weibo.talentintroduction.mail.service.MailSenderAccountService
 import java.sql.ResultSet
 import java.time.LocalDateTime
 
@@ -42,7 +43,9 @@ class MailboxConversationRepository(
         val subject: String? = null,
         val label: String? = null,
         val recipientEmail: String? = null,
-        val keyword: String? = null
+        val keyword: String? = null,
+        /** 01 (I-4)：只看当前用户的挂起专家；默认 false 保持既有调用兼容。 */
+        val suspendedOnly: Boolean = false
     )
 
     data class ConversationSummarySqlRow(
@@ -85,6 +88,20 @@ class MailboxConversationRepository(
     data class ConversationMaterialCountRow(
         val expertContactId: Long,
         val materialCount: Long
+    )
+
+    /**
+     * 当前页专家的真实挂起摘要（01/T3/I-1/I-3）。
+     *
+     * suspended/suspendReason 来自新表 `expert_mailbox_suspension` 的 (username, contactId)
+     * 行存在性；suspensionPendingCount 是跨该专家所有真实账号的 MANUAL_REVIEW 聚合
+     * （排除 SIMULATOR_NOOP 与不存在账号），与列表原 pendingCount（受账号筛选）语义分离。
+     */
+    data class ConversationSuspensionStateRow(
+        val expertContactId: Long,
+        val suspended: Boolean,
+        val suspendReason: String?,
+        val suspensionPendingCount: Long
     )
 
     data class ConversationMessageSqlRow(
@@ -235,7 +252,9 @@ class MailboxConversationRepository(
             "$latestReply DESC",
             "u.expert_contact_id DESC"
         )
-        val pendingFirst = if (filter.followed || filter.repliedOnly || filter.pendingOnly || filter.waitingReply) {
+        val pendingFirst = if (filter.followed || filter.repliedOnly || filter.pendingOnly ||
+            filter.waitingReply || filter.suspendedOnly
+        ) {
             emptyList()
         } else {
             listOf("CASE WHEN SUM(u.pending_flag) > 0 THEN 0 ELSE 1 END ASC")
@@ -373,6 +392,71 @@ class MailboxConversationRepository(
         return jdbcTemplate.query(sql, MapSqlParameterSource("contactIds", contactIds)) { rs, _ ->
             rs.getLong("expert_contact_id") to rs.getLong("material_count")
         }.toMap()
+    }
+
+    /**
+     * 当前页专家挂起摘要（01/T3/I-1/I-3）：一次批量读取，禁止逐专家 N+1 与窗口函数。
+     *
+     * 两条参数化查询各覆盖当前页真实 id 集合（空集合直接返回，绝不执行 `IN ()`）：
+     * 1. `expert_mailbox_suspension` 当前用户行 → suspended/reason（行存在即挂起 I-1）；
+     * 2. `inbound_mail_processing JOIN mail_sender_account` 的 MANUAL_REVIEW 分组聚合 →
+     *    跨账号 pending（排除 SIMULATOR_NOOP，不带 enabled/账号/date I-3）。
+     *
+     * 未出现在任一结果中的 id 填默认 (false, null, 0)，因此新表无行时也返回真实跨账号
+     * pending，绝不把未挂起当 0 展示为已挂起。
+     */
+    fun suspensionStatesByContacts(
+        username: String,
+        contactIds: List<Long>
+    ): Map<Long, ConversationSuspensionStateRow> {
+        if (contactIds.isEmpty()) return emptyMap()
+        val states = contactIds.associateWith { id ->
+            ConversationSuspensionStateRow(
+                expertContactId = id,
+                suspended = false,
+                suspendReason = null,
+                suspensionPendingCount = 0L
+            )
+        }.toMutableMap()
+
+        val suspensionSql = """
+            SELECT expert_contact_id AS expert_contact_id, reason AS reason
+              FROM expert_mailbox_suspension
+             WHERE username = :username
+               AND expert_contact_id IN (:contactIds)
+        """.trimIndent()
+        jdbcTemplate.query(
+            suspensionSql,
+            MapSqlParameterSource()
+                .addValue("username", username)
+                .addValue("contactIds", contactIds)
+        ) { rs, _ -> rs.getLong("expert_contact_id") to rs.getString("reason") }
+            .forEach { (id, reason) ->
+                states[id]?.let { states[id] = it.copy(suspended = true, suspendReason = reason) }
+            }
+
+        // 跨账号真实待处理：JOIN 排除不存在账号，显式排除模拟账号；不含 enabled / date / 账号范围。
+        val pendingSql = """
+            SELECT imp.expert_contact_id AS expert_contact_id, COUNT(*) AS pending_count
+              FROM inbound_mail_processing imp
+              JOIN mail_sender_account msa ON msa.account_code = imp.sender_account_code
+             WHERE imp.expert_contact_id IN (:contactIds)
+               AND imp.process_status = :manualReviewStatus
+               AND msa.account_code <> :simulatorCode
+             GROUP BY imp.expert_contact_id
+        """.trimIndent()
+        jdbcTemplate.query(
+            pendingSql,
+            MapSqlParameterSource()
+                .addValue("contactIds", contactIds)
+                .addValue("manualReviewStatus", PROCESS_STATUS_MANUAL_REVIEW)
+                .addValue("simulatorCode", MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+        ) { rs, _ -> rs.getLong("expert_contact_id") to rs.getLong("pending_count") }
+            .forEach { (id, count) ->
+                states[id]?.let { states[id] = it.copy(suspensionPendingCount = count) }
+            }
+
+        return states
     }
 
     // ------------------------------------------------------------------
@@ -593,6 +677,25 @@ class MailboxConversationRepository(
                  WHERE eff.username = :username
                    AND eff.expert_contact_id = u.expert_contact_id))
         """.trimIndent()
+        // 01 (I-4)：挂起归类与关注/待处理同层，OR 组外再 AND（q/followed 不可被绕过）。
+        // suspendedOnly=true 用 EXISTS（有行）；待处理/已回复用 NOT EXISTS（无当前用户挂起行）。
+        // 同传相互冲突条件按 AND 得空集，不隐藏改写参数。
+        if (filter.suspendedOnly) {
+            clauses += """
+                EXISTS (
+                    SELECT 1 FROM expert_mailbox_suspension ems_suspended
+                     WHERE ems_suspended.username = :username
+                       AND ems_suspended.expert_contact_id = u.expert_contact_id)
+            """.trimIndent()
+        }
+        if (filter.pendingOnly || filter.repliedOnly) {
+            clauses += """
+                NOT EXISTS (
+                    SELECT 1 FROM expert_mailbox_suspension ems_not_suspended
+                     WHERE ems_not_suspended.username = :username
+                       AND ems_not_suspended.expert_contact_id = u.expert_contact_id)
+            """.trimIndent()
+        }
         if (filter.repliedOnly) {
             clauses += """
                 NOT EXISTS (
@@ -711,5 +814,8 @@ class MailboxConversationRepository(
         const val DIRECTION_OUTBOUND = "OUTBOUND"
         const val SOURCE_MAIL_RECORD = "MAIL_RECORD"
         const val SOURCE_INBOUND_PROCESSING = "INBOUND_PROCESSING"
+
+        /** 01 (I-3)：跨账号挂起摘要复用的待处理权威谓词。 */
+        const val PROCESS_STATUS_MANUAL_REVIEW = "MANUAL_REVIEW"
     }
 }
