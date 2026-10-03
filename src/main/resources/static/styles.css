@@ -12642,6 +12642,14 @@ body.preview-available:not(.preview-docked) .preview-rail {
         display: inline-flex; align-items: center; min-height: 44px; font-size: 14px;
     }
 }
+
+/* mailbox-suspension-followup: full tabs and optional editable reason */
+@media(min-width:761px){#view-mailbox.mc-refined .mail-chat{grid-template-columns:380px minmax(0,1fr)}}
+#view-mailbox.mc-refined .mail-chat .mc-filters{flex-wrap:wrap;overflow-x:visible;row-gap:0}
+[data-role=suspension-reason-actions]{display:flex;flex:none;align-items:center;margin-left:auto}
+.mailbox-suspend-banner-content strong{overflow-wrap:anywhere}
+@media(max-width:760px){.mailbox-suspend-banner{flex-wrap:wrap}[data-role=suspension-reason-actions]{margin-left:auto}.mailbox-suspend-banner-content{flex-basis:calc(100% - 40px)}}
+
 /* mailbox-suspension-contract:start */
 #view-mailbox.mc-refined .mc-filters{display:flex;flex-wrap:nowrap;gap:4px;overflow-x:auto;scrollbar-width:thin}
 #view-mailbox.mc-refined .mc-filter{flex:0 0 auto;min-height:36px;padding:7px 5px 10px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:#7d8ca2;font-size:12px;line-height:1.5;white-space:nowrap}

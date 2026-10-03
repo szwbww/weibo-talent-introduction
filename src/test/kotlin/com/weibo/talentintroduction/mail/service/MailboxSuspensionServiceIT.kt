@@ -206,6 +206,51 @@ class MailboxSuspensionServiceIT {
         assertEquals(1L, suspensionRows("op1", 1L))
     }
 
+    @Test
+    fun `reason edit preserves suspension and can clear after all mail processed`() {
+        insertProcessing(1, "acc-a", 901, "MANUAL_REVIEW", "2026-10-04 09:00:00", "reason-edit")
+        service.suspend("op1", 1, null)
+        assertEquals("等待材料", service.updateReason("op1", 1, "  等待材料  ").suspendReason)
+        assertThrows(MailboxSuspensionConflictException::class.java) { service.updateReason("op2", 1, "other") }
+        assertEquals("等待材料", service.get("op1", 1).suspendReason)
+        jdbcTemplate.update("UPDATE inbound_mail_processing SET process_status = 'PROCESSED'")
+        val cleared = service.updateReason("op1", 1, "  ")
+        assertTrue(cleared.suspended)
+        assertNull(cleared.suspendReason)
+        assertEquals(0L, cleared.suspensionPendingCount)
+        assertEquals(500, service.updateReason("op1", 1, "字".repeat(500)).suspendReason!!.length)
+        assertThrows(IllegalArgumentException::class.java) { service.updateReason("op1", 1, "字".repeat(501)) }
+        service.resume("op1", 1)
+        assertThrows(MailboxSuspensionConflictException::class.java) { service.updateReason("op1", 1, "late") }
+        assertFalse(service.get("op1", 1).suspended)
+        assertThrows(NoSuchElementException::class.java) { service.updateReason("op1", 9999, "missing") }
+    }
+
+    @Test
+    fun `pending badge counts mail excluding only current user suspended contacts`() {
+        insertProcessing(1, "acc-a", 911, "MANUAL_REVIEW", "2026-10-04 09:00:00", "badge-1")
+        insertProcessing(1, "acc-b", 912, "MANUAL_REVIEW", "2026-10-04 09:00:00", "badge-2")
+        insertProcessing(2, "inactive-acc", 913, "MANUAL_REVIEW", "2026-10-04 09:00:00", "badge-3")
+        insertProcessing(2, "acc-a", 914, "MANUAL_REVIEW", "2026-10-04 09:00:00", "badge-unmatched")
+        insertProcessing(2, "acc-a", 915, "PROCESSED", "2026-10-04 09:00:00", "badge-done")
+        seedAccount("SIMULATOR_NOOP")
+        insertProcessing(2, "SIMULATOR_NOOP", 916, "MANUAL_REVIEW", "2026-10-04 09:00:00", "badge-simulator")
+        insertProcessing(2, "missing-account", 917, "MANUAL_REVIEW", "2026-10-04 09:00:00", "badge-orphan")
+        jdbcTemplate.update("UPDATE mail_sender_account SET enabled = false WHERE account_code = 'inactive-acc'")
+        jdbcTemplate.update("UPDATE inbound_mail_processing SET reason_type = 'QA_NO_MATCH' WHERE expert_contact_id = 1")
+        jdbcTemplate.update("UPDATE inbound_mail_processing SET expert_contact_id = NULL, reason_type = 'UNMATCHED_CONTACT' WHERE message_id = 'badge-unmatched'")
+        assertEquals(4L, service.pendingBadge("op1").manualReviewTotal)
+        service.suspend("op1", 1, null)
+        val badge = service.pendingBadge("op1")
+        assertEquals(2L, badge.manualReviewTotal)
+        assertEquals(1L, badge.countsByReasonType["UNMATCHED_CONTACT"])
+        assertEquals(1L, badge.countsByReasonType["UNKNOWN"])
+        assertFalse(badge.countsByReasonType.containsKey("QA_NO_MATCH"))
+        assertEquals(4L, service.pendingBadge("op2").manualReviewTotal)
+        service.resume("op1", 1)
+        assertEquals(4L, service.pendingBadge("op1").manualReviewTotal)
+    }
+
     // ------------------------------------------------------------------
     // 工具
     // ------------------------------------------------------------------

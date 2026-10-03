@@ -24,6 +24,11 @@ data class MailboxSuspensionState(
     val followed: Boolean
 )
 
+data class MailboxPendingBadge(
+    val manualReviewTotal: Long,
+    val countsByReasonType: Map<String, Long>
+)
+
 /** PUT 请求体：`{ "reason": null }` 或字符串；缺省按 null。username 永不出现在请求体。 */
 data class MailboxSuspensionRequest(
     val reason: String? = null
@@ -87,6 +92,45 @@ class MailboxSuspensionService(
                 .addValue("reason", reason)
         )
         return stateOf(contactId, username, suspended = true, reason = reason)
+    }
+
+    /** 仅编辑当前用户已存在的挂起；与取消使用相同contact锁，迟到保存不能重建挂起。 */
+    @Transactional
+    fun updateReason(username: String, contactId: Long, rawReason: String?): MailboxSuspensionState {
+        require(username.isNotBlank()) { "未登录" }
+        val reason = normalizeReason(rawReason)
+        lockContact(contactId)
+        if (!suspensionRow(username, contactId).first) {
+            throw MailboxSuspensionConflictException("该会话已不在挂起状态，请刷新后重试")
+        }
+        jdbcTemplate.update(
+            "UPDATE expert_mailbox_suspension SET reason = :reason WHERE username = :username AND expert_contact_id = :contactId",
+            MapSqlParameterSource("username", username).addValue("contactId", contactId).addValue("reason", reason)
+        )
+        return readState(username, contactId)
+    }
+
+    /** 导航角标统计邮件数，未关联邮件保留；不改变原待匹配队列的数据或分页。 */
+    fun pendingBadge(username: String): MailboxPendingBadge {
+        require(username.isNotBlank()) { "未登录" }
+        val grouped = jdbcTemplate.query(
+            """
+            SELECT COALESCE(imp.reason_type, 'UNKNOWN') AS reason_type, COUNT(*) AS mail_count
+              FROM inbound_mail_processing imp
+              JOIN mail_sender_account msa ON msa.account_code = imp.sender_account_code
+             WHERE imp.process_status = :status
+               AND msa.account_code <> :simulatorCode
+               AND NOT EXISTS (
+                   SELECT 1 FROM expert_mailbox_suspension ems
+                    WHERE ems.username = :username AND ems.expert_contact_id = imp.expert_contact_id
+               )
+             GROUP BY COALESCE(imp.reason_type, 'UNKNOWN')
+            """.trimIndent(),
+            MapSqlParameterSource("username", username)
+                .addValue("status", PROCESS_STATUS_MANUAL_REVIEW)
+                .addValue("simulatorCode", MailSenderAccountService.SIMULATOR_ACCOUNT_CODE)
+        ) { rs, _ -> rs.getString("reason_type") to rs.getLong("mail_count") }.toMap()
+        return MailboxPendingBadge(grouped.values.sum(), grouped)
     }
 
     /** DELETE：显式取消（幂等；不删除/更新其它任何表 I-2/I-6）。 */

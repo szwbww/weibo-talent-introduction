@@ -638,7 +638,7 @@
                 followed: false
             },
             // 02（S-3）：行内挂起原因表单（同一实例只保留一份）。
-            reasonForm: { contactId: null, trigger: null, busy: false },
+            reasonForm: { contactId: null, trigger: null, busy: false, editing: false },
             // 02（T3/I-7）：authenticated 身份只从 GET /api/auth/me 取（不读 localStorage 冒充）。
             auth: { ready: false, username: "", seq: 0, loading: false, failed: false },
             // 02（T3/I-7）：原位处理确认（同一实例只保留一条）与本次挂起周期的服务端 resolvedBy。
@@ -1960,17 +1960,17 @@
             const title = view.count > 0
                 ? `此会话已挂起 · ${view.count} 条待处理`
                 : "消息已全部处理 · 等待结束挂起";
-            const reason = view.suspendReason ? `挂起原因：${view.suspendReason}` : "未填写挂起原因";
-            const guide = view.count > 0
-                ? "全部处理完成后，可在消息下方确认是否结束挂起。"
-                : "挂起仍然保留，可点击「取消挂起」结束。";
+            const reason = view.suspendReason ? `<small>${escapeText(`挂起原因：${view.suspendReason}`)}</small>` : "";
+            const disabled = !instance.auth.ready || instance.reasonForm.busy ? " disabled" : "";
             return `
                 <div class="mailbox-suspend-banner" role="status">
                     <span class="mailbox-suspend-symbol" aria-hidden="true">Ⅱ</span>
                     <div class="mailbox-suspend-banner-content">
                         <strong>${escapeText(title)}</strong>
-                        <small>${escapeText(reason)}</small>
-                        <small>${escapeText(guide)}</small>
+                        ${reason}
+                    </div>
+                    <div data-role="suspension-reason-actions">
+                        <button type="button" class="mailbox-suspend-card-action" data-action="mc-suspension-edit-reason" data-contact-id="${escapeText(instance.selectedContactId)}"${disabled}>${view.suspendReason ? "编辑原因" : "添加原因"}</button>
                     </div>
                 </div>`;
         }
@@ -2070,23 +2070,23 @@
             return trigger;
         }
 
-        function reasonFormHtml(contactId) {
+        function reasonFormHtml(contactId, editing, reason) {
             return `
                 <section class="mailbox-suspend-inline-reason" aria-label="填写挂起原因" data-contact-id="${escapeText(contactId)}">
-                    <div class="mailbox-suspend-inline-reason-head"><strong>挂起此会话</strong><span>原因选填</span></div>
-                    <textarea aria-label="挂起原因（选填）" maxlength="500" rows="2" placeholder="例如：等待专家补充材料，稍后跟进"></textarea>
+                    <div class="mailbox-suspend-inline-reason-head"><strong>${editing ? "编辑挂起原因" : "挂起此会话"}</strong><span>原因选填</span></div>
+                    <textarea aria-label="挂起原因（选填）" maxlength="500" rows="2" placeholder="例如：等待专家补充材料，稍后跟进">${escapeText(reason || "")}</textarea>
                     <div class="mailbox-suspend-inline-reason-bottom">
                         <small>仅内部可见 · <span class="mailbox-suspend-reason-count">0 / 500</span></small>
                         <div>
                             <button type="button" class="mailbox-suspend-inline-secondary" data-action="mc-suspension-reason-cancel">取消</button>
-                            <button type="button" class="mailbox-suspend-inline-primary" data-action="mc-suspension-reason-confirm" data-contact-id="${escapeText(contactId)}">确认挂起</button>
+                            <button type="button" class="mailbox-suspend-inline-primary" data-action="mc-suspension-reason-confirm" data-contact-id="${escapeText(contactId)}">${editing ? "保存" : "确认挂起"}</button>
                         </div>
                     </div>
                     <div class="mailbox-suspend-error" role="alert" hidden></div>
                 </section>`;
         }
 
-        function openReasonForm(contactId, trigger) {
+        function openReasonForm(contactId, trigger, editing = false) {
             const id = Number(contactId);
             if (!Number.isFinite(id) || id <= 0) return;
             detachReasonForm();
@@ -2100,12 +2100,16 @@
                 hostShowStatus("挂起操作不可用，请刷新后重试", "error");
                 return;
             }
-            insertHtmlRelative(anchor, reasonFormHtml(id), "after");
+            const reason = editing ? suspensionViewForContact(id).suspendReason || "" : "";
+            insertHtmlRelative(anchor, reasonFormHtml(id, editing, reason), "after");
+            instance.reasonForm.editing = editing;
             instance.reasonForm.contactId = id;
             instance.reasonForm.trigger = trigger || null;
             instance.reasonForm.busy = false;
             const section = reasonFormSection(id);
             const textarea = section ? section.querySelector("textarea") : null;
+            if (textarea) textarea.value = reason;
+            updateReasonCount(section, reason);
             if (textarea && typeof textarea.focus === "function") textarea.focus();
         }
 
@@ -2119,7 +2123,7 @@
             if (cancel) cancel.disabled = !!busy;
             if (confirm) {
                 confirm.disabled = !!busy;
-                confirm.textContent = busy ? "正在挂起…" : "确认挂起";
+                confirm.textContent = instance.reasonForm.editing ? (busy ? "正在保存…" : "保存") : (busy ? "正在挂起…" : "确认挂起");
             }
         }
 
@@ -2158,10 +2162,12 @@
             const ctx = captureSuspensionContext(id);
             setReasonFormBusy(section, true);
             setReasonFormError(section, "");
-            hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`, {
-                method: "PUT",
+            const editing = instance.reasonForm.editing;
+            hostApi()(`/api/mail/mailbox/conversations/${id}/suspension${editing ? "/reason" : ""}`, {
+                method: editing ? "PATCH" : "PUT",
                 body: JSON.stringify({ reason: reasonText || null })
             }).then((data) => {
+                if (!editing) refreshSuspensionBadge();
                 if (!suspensionContextAlive(ctx)) {
                     // R-1（V-1）：迟到回包只解除本表单 busy，不撤下/不改写新上下文。
                     if (reasonFormSection(id) === section) setReasonFormBusy(section, false);
@@ -2169,7 +2175,7 @@
                 }
                 instance.reasonForm.busy = false;
                 if (reasonFormSection(id) === section) detachReasonForm();
-                hostShowStatus("已挂起该会话", "ok");
+                if (!editing) hostShowStatus("已挂起该会话", "ok");
                 if (String(instance.selectedContactId) === String(id)) {
                     applySuspensionState(id, data);
                 }
@@ -2180,7 +2186,7 @@
                     return;
                 }
                 setReasonFormBusy(section, false);
-                setReasonFormError(section, err && err.message ? err.message : "挂起失败，请重试");
+                setReasonFormError(section, err && err.message ? err.message : (editing ? "保存失败，请重试" : "挂起失败，请重试"));
             });
         }
 
@@ -2205,6 +2211,11 @@
         function clearSuspensionActionError() {
             const el = host.querySelector ? host.querySelector('.mailbox-suspend-error[data-role="suspension-action"]') : null;
             if (el && el.parentNode) el.parentNode.removeChild(el);
+        }
+
+        function refreshSuspensionBadge() {
+            const refreshBadge = hostFn("refreshUnmatchedBadge");
+            if (refreshBadge) refreshBadge();
         }
 
         function afterSuspensionRemoved(id, data) {
@@ -2282,6 +2293,7 @@
             if (trigger) trigger.disabled = true;
             clearSuspensionActionError();
             hostApi()(`/api/mail/mailbox/conversations/${contactId}/suspension`, { method: "DELETE" }).then((data) => {
+                refreshSuspensionBadge();
                 if (!suspensionContextAlive(ctx)) {
                     // R-1（V-1）：迟到回包只恢复按钮，不改导航/列表/挂起状态。
                     if (trigger && trigger.isConnected !== false) trigger.disabled = false;
@@ -2306,6 +2318,7 @@
             const line = completionLineEl();
             setCompletionBusy(line, true);
             hostApi()(`/api/mail/mailbox/conversations/${id}/suspension`, { method: "DELETE" }).then((data) => {
+                refreshSuspensionBadge();
                 if (!suspensionContextAlive(ctx)) {
                     // R-1（V-1）：迟到回包只解除完成行 busy，不改导航/列表/挂起状态。
                     instance.completion.busy = false;
@@ -7944,6 +7957,12 @@
             }
             if (action === "mc-suspension") {
                 onSuspensionClick(data.contactId, button);
+                return;
+            }
+            if (action === "mc-suspension-edit-reason") {
+                if (!instance.auth.ready || instance.reasonForm.busy) return;
+                const view = suspensionViewForContact(data.contactId);
+                if (view.suspended) openReasonForm(data.contactId, button, true);
                 return;
             }
             if (action === "mc-suspension-reason-cancel") {

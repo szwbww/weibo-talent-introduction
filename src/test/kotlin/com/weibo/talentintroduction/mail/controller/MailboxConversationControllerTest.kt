@@ -81,6 +81,7 @@ import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
@@ -1149,6 +1150,42 @@ class MailboxConversationControllerTest {
     // ------------------------------------------------------------------
     // 01（T2/T4）：显式挂起/取消三端点（真实服务 + 真实 MySQL）
     // ------------------------------------------------------------------
+
+    @Test
+    fun `badge and edit reason use session and preserve existing suspension`() {
+        insertProcessing(1, "MANUAL_REVIEW", "2026-10-04 09:00:00", "followup-mail")
+        val badge = "/api/mail/mailbox/conversations/pending-badge"
+        val reason = "/api/mail/mailbox/conversations/1/suspension/reason"
+        mockMvc.perform(get(badge)).andExpect(status().isUnauthorized)
+        mockMvc.perform(patch(reason).contentType(MediaType.APPLICATION_JSON).content("{}"))
+            .andExpect(status().isUnauthorized)
+        mockMvc.perform(get(badge).session(sessionOf("op1")))
+            .andExpect(status().isOk).andExpect(jsonPath("$.manualReviewTotal").value(1))
+        mockMvc.perform(put("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+        mockMvc.perform(get(badge).session(sessionOf("op1")))
+            .andExpect(status().isOk).andExpect(jsonPath("$.manualReviewTotal").value(0))
+        mockMvc.perform(get(badge).session(sessionOf("op2")))
+            .andExpect(status().isOk).andExpect(jsonPath("$.manualReviewTotal").value(1))
+        mockMvc.perform(patch(reason).session(sessionOf("op1")).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"reason":" 补充材料 "}"""))
+            .andExpect(status().isOk).andExpect(jsonPath("$.suspended").value(true))
+            .andExpect(jsonPath("$.suspendReason").value("补充材料"))
+        mockMvc.perform(patch(reason).session(sessionOf("op2")).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"reason":"冒用","username":"op1"}"""))
+            .andExpect(status().isConflict)
+        mockMvc.perform(patch(reason).session(sessionOf("op1")).contentType(MediaType.APPLICATION_JSON)
+            .content(objectMapper.writeValueAsString(mapOf("reason" to "x".repeat(501)))))
+            .andExpect(status().isBadRequest)
+        mockMvc.perform(patch(reason).session(sessionOf("op1")).contentType(MediaType.APPLICATION_JSON)
+            .content("""{"reason":null}"""))
+            .andExpect(status().isOk).andExpect(jsonPath("$.suspended").value(true))
+            .andExpect(jsonPath("$.suspendReason").doesNotExist())
+        mockMvc.perform(delete("/api/mail/mailbox/conversations/1/suspension").session(sessionOf("op1")))
+            .andExpect(status().isOk)
+        mockMvc.perform(patch(reason).session(sessionOf("op1")).contentType(MediaType.APPLICATION_JSON).content("{}"))
+            .andExpect(status().isConflict)
+    }
 
     @Test
     fun `explicit suspension endpoints persist per session user with idempotency`() {

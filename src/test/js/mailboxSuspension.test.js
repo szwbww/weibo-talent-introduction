@@ -784,6 +784,12 @@ function createChatSandbox(options) {
                 ? opts.authMe
                 : { authenticated: true, username: "admin", mustChangePassword: false });
         }
+        if (url.endsWith("/suspension/reason") && method === "PATCH") {
+            if (opts.suspendError) return Promise.reject(new Error(opts.suspendError));
+            const next = Object.assign({}, opts.suspension, { suspendReason: JSON.parse(body).reason });
+            opts.suspension = next;
+            return Promise.resolve(next);
+        }
         if (/^\/api\/mail\/mailbox\/conversations\/\d+\/suspension$/.test(url)) {
             const id = Number(url.split("/")[5]);
             if (method === "GET") {
@@ -1290,7 +1296,7 @@ describe("02 · S-2 卡片/详情挂起入口", () => {
         assert.strictEqual(footer.querySelector('[data-action="mc-suspension"]').textContent, "取消挂起");
     });
 
-    it("详情：挂起按钮在 mc-actions 最前，banner 渲染原因与引导", async () => {
+    it("详情：挂起按钮在 mc-actions 最前，banner 渲染非空原因与编辑入口", async () => {
         const ctx = await bootChat({
             conversations: { items: [suspendExpert(1, { suspended: true, suspendReason: "等待材料\n下周跟进", suspensionPendingCount: 0 })], total: 1 },
             suspension: { contactId: 1, suspended: true, suspendReason: "等待材料\n下周跟进", suspensionPendingCount: 0, followed: false },
@@ -1305,7 +1311,7 @@ describe("02 · S-2 卡片/详情挂起入口", () => {
         assert.ok(banner, "banner 显示");
         assert.match(banner.textContent, /消息已全部处理 · 等待结束挂起/);
         assert.match(banner.textContent, /挂起原因：等待材料/);
-        assert.ok(!banner.querySelector("button"), "banner 内无按钮");
+        assert.strictEqual(banner.querySelector("button").textContent, "编辑原因");
     });
 });
 
@@ -1793,4 +1799,92 @@ describe("02 · R-1 迟到挂起回包绑定详情上下文（V-1）", () => {
         assert.ok(!ctx.calls.status.some((entry) => entry.message.includes("已结束挂起")), "迟到 DELETE 不得报成功");
         assert.ok(ctx.host.querySelector(".mc-header"), "B 的详情仍在");
     });
+});
+
+
+describe("挂起后续 · 行内补充原因", () => {
+    async function suspendedChat(reason, route) {
+        const ctx = await bootChat({
+            conversations: { items: [suspendExpert(1, { suspended: true, suspendReason: reason, suspensionPendingCount: 0 })], total: 1 },
+            suspension: { contactId: 1, suspended: true, suspendReason: reason, suspensionPendingCount: 0, followed: false },
+            route
+        });
+        openExpert(ctx, 1);
+        await flush();
+        return ctx;
+    }
+    it("未填原因不显示占位和说明，添加原因原位可取消", async () => {
+        const ctx = await suspendedChat(null);
+        const banner = ctx.host.querySelector(".mailbox-suspend-banner");
+        assert.ok(!banner.textContent.includes("未填写挂起原因"));
+        assert.ok(!banner.textContent.includes("全部处理完成后"));
+        assert.ok(!banner.textContent.includes("可点击"));
+        const edit = banner.querySelector('[data-action="mc-suspension-edit-reason"]');
+        assert.strictEqual(edit.textContent, "添加原因");
+        click(edit); await flush();
+        assert.ok(reasonForm(ctx));
+        click(reasonForm(ctx).querySelector('[data-action="mc-suspension-reason-cancel"]'));
+        assert.ok(!reasonForm(ctx));
+        assert.strictEqual(ctx.calls.api.filter(r => r.method === "PATCH").length, 0);
+    });
+    it("编辑预填，保存PATCH后更新原因并保留挂起", async () => {
+        const ctx = await suspendedChat("原原因");
+        click(ctx.host.querySelector('[data-action="mc-suspension-edit-reason"]')); await flush();
+        const form = reasonForm(ctx);
+        assert.strictEqual(form.querySelector("textarea").value, "原原因");
+        form.querySelector("textarea").value = "  新原因  ";
+        assert.strictEqual(form.querySelector('[data-action="mc-suspension-reason-confirm"]').textContent, "保存");
+        click(form.querySelector('[data-action="mc-suspension-reason-confirm"]')); await flush();
+        const write = ctx.calls.api.find(r => r.method === "PATCH");
+        assert.ok(write && write.url.endsWith("/suspension/reason"));
+        assert.strictEqual(JSON.parse(write.body).reason, "新原因");
+        assert.ok(ctx.host.querySelector(".mailbox-suspend-banner").textContent.includes("新原因"));
+        assert.ok(!reasonForm(ctx));
+        assert.strictEqual(ctx.calls.api.filter(r => r.method === "DELETE").length, 0);
+    });
+    it("清空原因后隐藏，失败仍保留输入且不取消挂起", async () => {
+        let fail = true;
+        const ctx = await suspendedChat("原原因", (url, method, body, entry, next) => {
+            if (method === "PATCH" && fail) return Promise.reject(new Error("保存失败"));
+            return next(url, method, body);
+        });
+        click(ctx.host.querySelector('[data-action="mc-suspension-edit-reason"]')); await flush();
+        let form = reasonForm(ctx);
+        form.querySelector("textarea").value = "  ";
+        click(form.querySelector('[data-action="mc-suspension-reason-confirm"]')); await flush();
+        form = reasonForm(ctx);
+        assert.ok(form);
+        assert.equal(form.querySelector("textarea").value, "  ");
+        assert.ok(form.querySelector(".mailbox-suspend-error").textContent.includes("保存失败"));
+        fail = false;
+        click(form.querySelector('[data-action="mc-suspension-reason-confirm"]')); await flush();
+        assert.ok(!ctx.host.querySelector(".mailbox-suspend-banner").textContent.includes("挂起原因："));
+        assert.equal(ctx.host.querySelector('[data-action="mc-suspension-edit-reason"]').textContent, "添加原因");
+        assert.equal(JSON.parse(ctx.calls.api.filter(r => r.method === "PATCH").at(-1).body).reason, null);
+    });
+    it("编辑保存迟到回包不能修改另一专家的详情", async () => {
+        let release;
+        const ctx = await bootChat({
+            conversations: { items: [suspendExpert(1, { suspended: true }), suspendExpert(2, { suspended: true })], total: 2 },
+            suspension: id => ({contactId:id,suspended:true,suspendReason:id === 1 ? "A原因" : "B原因",suspensionPendingCount:0,followed:false}),
+            route: (url,method,body,entry,next) => method === "PATCH" ? new Promise(resolve => { release=resolve; }) : next(url,method,body)
+        });
+        openExpert(ctx,1); await flush();
+        click(ctx.host.querySelector('[data-action="mc-suspension-edit-reason"]')); await flush();
+        click(reasonForm(ctx).querySelector('[data-action="mc-suspension-reason-confirm"]')); await flush();
+        openExpert(ctx,2); await flush();
+        release({contactId:1,suspended:true,suspendReason:"迟到原因",suspensionPendingCount:0,followed:false}); await flush();
+        assert.ok(ctx.host.querySelector(".mailbox-suspend-banner").textContent.includes("B原因"));
+        assert.ok(!ctx.host.querySelector(".mailbox-suspend-banner").textContent.includes("迟到原因"));
+    });
+    it("挂起与取消成功都刷新全局角标", async () => {
+        const ctx = await bootChat({conversations:{items:[suspendExpert(1)],total:1},suspension:{contactId:1,suspended:false,suspendReason:null,suspensionPendingCount:2,followed:false}});
+        openExpert(ctx,1); await flush();
+        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]')); await flush();
+        click(reasonForm(ctx).querySelector('[data-action="mc-suspension-reason-confirm"]')); await flush();
+        assert.equal(ctx.calls.badgeRefresh,1);
+        click(ctx.host.querySelector('.mc-actions [data-action="mc-suspension"]')); await flush();
+        assert.equal(ctx.calls.badgeRefresh,2);
+    });
+
 });

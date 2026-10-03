@@ -15,6 +15,7 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -273,6 +274,27 @@ class MailboxConversationController(
     // 不存在 404、无未处理不能新挂起 409、非法输入 400、未登录 401。状态对象固定
     // { contactId, suspended, suspendReason, suspensionPendingCount, followed }（child 02 消费）。
     // ------------------------------------------------------------------
+
+    @GetMapping("/pending-badge")
+    fun pendingBadge(request: HttpServletRequest): ResponseEntity<Any> {
+        val username = sessionUsername(request) ?: return unauthorized()
+        return ResponseEntity.ok(mailboxSuspensionService.pendingBadge(username))
+    }
+
+    @PatchMapping("/{contactId}/suspension/reason")
+    fun updateSuspensionReason(
+        request: HttpServletRequest,
+        @PathVariable contactId: Long,
+        @RequestBody body: MailboxSuspensionRequest
+    ): ResponseEntity<Any> {
+        val username = sessionUsername(request) ?: return unauthorized()
+        return try {
+            ResponseEntity.ok(mailboxSuspensionService.updateReason(username, contactId, body.reason))
+        } catch (ex: MailboxSuspensionConflictException) {
+            ResponseEntity.status(HttpStatus.CONFLICT)
+                .body<Any>(ApiErrorResponse("CONFLICT", ex.message ?: "无法更新原因", HttpStatus.CONFLICT.reasonPhrase))
+        }
+    }
 
     @GetMapping("/{contactId}/suspension")
     fun suspension(

@@ -12799,9 +12799,12 @@ const REASON_TYPE_BADGE_CLASS = {
 };
 const HIGH_PRIORITY_REASON_TYPES = new Set(["NOT_INTERESTED", "QA_NO_MATCH"]);
 
+let unmatchedBadgeRefreshSeq = 0;
 async function refreshUnmatchedBadge() {
+    const seq = ++unmatchedBadgeRefreshSeq;
     try {
-        const data = await api("/api/mail/unmatched-inbound?pageSize=1&pageOffset=0");
+        const data = await api("/api/mail/mailbox/conversations/pending-badge");
+        if (seq !== unmatchedBadgeRefreshSeq) return;
         updateUnmatchedBadge(data.countsByReasonType, data.manualReviewTotal);
     } catch (_) {
     }
@@ -12809,10 +12812,7 @@ async function refreshUnmatchedBadge() {
 
 function updateUnmatchedBadge(counts, total) {
     if (!counts) {
-        api("/api/mail/unmatched-inbound?pageSize=1&pageOffset=0").then(data => {
-            updateUnmatchedBadge(data.countsByReasonType, data.manualReviewTotal);
-        }).catch(() => {});
-        return;
+        return refreshUnmatchedBadge();
     }
     const high = Array.from(HIGH_PRIORITY_REASON_TYPES).reduce((s, k) => s + (counts[k] || 0), 0);
     const t = typeof total === "number" ? total : Object.values(counts).reduce((s, v) => s + (v || 0), 0);
