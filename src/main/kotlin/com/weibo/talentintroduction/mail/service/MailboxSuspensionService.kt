@@ -7,21 +7,29 @@ import org.springframework.transaction.annotation.Transactional
 
 /**
  * 挂起状态对象（GET/PUT/DELETE 统一返回形状；child 02 消费，字段名/类型逐字固定）：
- * `{ contactId, suspended, suspendReason, suspensionPendingCount, followed }`。
+ * `{ contactId, suspended, suspendReason, suspensionPendingCount, followed, progressStatus }`。
  *
  * - suspended：真实新表 `expert_mailbox_suspension` 是否存在 (username, contactId) 行（I-1）。
  * - suspendReason：行内 reason；null = 用户未填写原因，绝不表示未挂起。
  * - suspensionPendingCount：跨该专家**所有真实账号**的 MANUAL_REVIEW 待处理数（I-3），
  *   排除 SIMULATOR_NOOP 与不存在账号，包含 enabled=false 的真实账号；不受日期/主题/
  *   分页/时间线窗口影响。
- * - followed：既有 expert_follow 归属（只读，不因挂起改变 I-6）。
+ * - followed：既有 expert_follow 归属（只读，不因挂起改变 I-6）；恒等于
+ *   `progressStatus == FOLLOWING`。
  */
 data class MailboxSuspensionState(
     val contactId: Long,
     val suspended: Boolean,
     val suspendReason: String?,
     val suspensionPendingCount: Long,
-    val followed: Boolean
+    val followed: Boolean,
+    /**
+     * 01 (T4/I-4/I-6)：当前用户对该专家的真实三态标记（DB 真值，无行 = NONE）。
+     * `followed` 恒等于 `progressStatus == FOLLOWING`（已提供绝不误报为跟进中）。
+     * 字段放尾部并默认从 `followed` 派生，仅为旧构造兼容；stateOf 显式传入同一份读取。
+     */
+    val progressStatus: MailboxProgressStatus =
+        if (followed) MailboxProgressStatus.FOLLOWING else MailboxProgressStatus.NONE
 )
 
 data class MailboxPendingBadge(
@@ -171,13 +179,18 @@ class MailboxSuspensionService(
         username: String,
         suspended: Boolean,
         reason: String?
-    ): MailboxSuspensionState = MailboxSuspensionState(
-        contactId = contactId,
-        suspended = suspended,
-        suspendReason = if (suspended) reason else null,
-        suspensionPendingCount = pendingCount(contactId),
-        followed = isFollowed(username, contactId)
-    )
+    ): MailboxSuspensionState {
+        // 01 (T4/I-4)：一次读取 DB 真值三态，followed 由同一份结果派生（已提供不再误报跟进中）。
+        val progressStatus = progressStatusOf(username, contactId)
+        return MailboxSuspensionState(
+            contactId = contactId,
+            suspended = suspended,
+            suspendReason = if (suspended) reason else null,
+            suspensionPendingCount = pendingCount(contactId),
+            followed = progressStatus == MailboxProgressStatus.FOLLOWING,
+            progressStatus = progressStatus
+        )
+    }
 
     /** 行存在即挂起：返回 (存在, reason)。空 reason 仍为存在（I-1）。 */
     private fun suspensionRow(username: String, contactId: Long): Pair<Boolean, String?> {
@@ -193,17 +206,22 @@ class MailboxSuspensionService(
         return if (rows.isEmpty()) false to null else true to rows[0]
     }
 
-    private fun isFollowed(username: String, contactId: Long): Boolean =
-        (jdbcTemplate.queryForObject(
+    /**
+     * 01 (T4/I-4/I-6)：一次读取当前用户对该专家的真实三态；无行 = NONE。
+     * 不再只判断行存在 —— 否则已提供会被误说成跟进中。
+     */
+    private fun progressStatusOf(username: String, contactId: Long): MailboxProgressStatus {
+        val stored = jdbcTemplate.query(
             """
-            SELECT COUNT(*) FROM expert_follow
+            SELECT progress_status FROM expert_follow
              WHERE username = :username AND expert_contact_id = :contactId
             """.trimIndent(),
             MapSqlParameterSource()
                 .addValue("username", username)
-                .addValue("contactId", contactId),
-            Long::class.java
-        ) ?: 0L) > 0L
+                .addValue("contactId", contactId)
+        ) { rs, _ -> rs.getString("progress_status") }.firstOrNull()
+        return if (stored == null) MailboxProgressStatus.NONE else MailboxProgressStatus.valueOf(stored)
+    }
 
     /**
      * 跨账号真实待处理计数（I-3）：JOIN mail_sender_account 排除不存在账号，显式排除

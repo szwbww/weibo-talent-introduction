@@ -106,7 +106,9 @@ class MailboxConversationService(
         page: Int,
         size: Int,
         /** 01 (T3/I-4)：只看当前用户挂起专家；默认 false 保持既有调用兼容。 */
-        suspendedOnly: Boolean = false
+        suspendedOnly: Boolean = false,
+        /** 01 (T3/I-4)：只看当前用户已提供专家；默认 false 保持既有调用兼容。 */
+        providedOnly: Boolean = false
     ): ConversationListResponse {
         validateDirection(direction)
         validateTextFilter("q", q)
@@ -141,7 +143,8 @@ class MailboxConversationService(
             label = label,
             recipientEmail = recipientEmailFilter,
             keyword = keywordFilter,
-            suspendedOnly = suspendedOnly
+            suspendedOnly = suspendedOnly,
+            providedOnly = providedOnly
         )
         val sessionUser = username.orEmpty()
         val total = repository.countConversations(sessionUser, filter)
@@ -203,7 +206,9 @@ class MailboxConversationService(
                 // 01 (I-1/I-3)：逐项填真实值；未挂起行也带真实跨账号 pending 计数。
                 suspended = suspensionStates[row.expertContactId]?.suspended ?: false,
                 suspendReason = suspensionStates[row.expertContactId]?.suspendReason,
-                suspensionPendingCount = suspensionStates[row.expertContactId]?.suspensionPendingCount ?: 0L
+                suspensionPendingCount = suspensionStates[row.expertContactId]?.suspensionPendingCount ?: 0L,
+                // 01 (I-1/I-4)：一次读取的 DB 真值；followed 由同一状态派生。
+                progressStatus = row.progressStatus
             )
         }
         return ConversationListResponse(items, total, pageIndex, pageSize)

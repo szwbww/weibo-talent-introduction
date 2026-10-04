@@ -14,6 +14,7 @@ import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabas
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.test.context.TestPropertySource
+import com.weibo.talentintroduction.mail.service.MailboxProgressStatus
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 import java.nio.file.Files
@@ -823,6 +824,149 @@ class MailboxConversationRepositoryIT {
     }
 
     // ------------------------------------------------------------------
+    // 01：三态标记筛选、分页、排序与投影
+    // ------------------------------------------------------------------
+
+    @Test
+    fun `progress status projection and provided filter are per user`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "A1", "2026-09-01 09:00:00")
+        insertOutbound(2, "acc-a", "INTRODUCTION", "SENT", "B1", "2026-09-01 09:00:00")
+        insertOutbound(3, "acc-a", "INTRODUCTION", "SENT", "C1", "2026-09-01 09:00:00")
+        insertMark("op1", 1L, "PROVIDED")
+        insertMark("op1", 2L, "FOLLOWING")
+        insertMark("op2", 3L, "PROVIDED")
+
+        val all = page(username = "op1", filter = emptyFilter())
+        assertEquals(MailboxProgressStatus.PROVIDED, all.first { it.expertContactId == 1L }.progressStatus)
+        assertFalse(all.first { it.expertContactId == 1L }.followed, "已提供不是跟进中")
+        assertEquals(MailboxProgressStatus.FOLLOWING, all.first { it.expertContactId == 2L }.progressStatus)
+        assertTrue(all.first { it.expertContactId == 2L }.followed)
+        assertEquals(MailboxProgressStatus.NONE, all.first { it.expertContactId == 3L }.progressStatus,
+            "op2 的标记不属于 op1，投影为 NONE")
+
+        assertEquals(listOf(1L),
+            page(username = "op1", filter = filter(providedOnly = true)).map { it.expertContactId })
+        assertEquals(listOf(2L),
+            page(username = "op1", filter = filter(followed = true)).map { it.expertContactId })
+        assertEquals(listOf(3L),
+            page(username = "op2", filter = filter(providedOnly = true)).map { it.expertContactId })
+
+        // I-4：同一行状态互斥，同传两个筛选得空集（count 与 page 同谓词）。
+        val conflicting = filter(followed = true, providedOnly = true)
+        assertTrue(page(username = "op1", filter = conflicting).isEmpty())
+        assertEquals(0L, repository.countConversations("op1", conflicting))
+        assertEquals(1L, repository.countConversations("op1", filter(providedOnly = true)))
+        assertEquals(1L, repository.countConversations("op1", filter(followed = true)))
+    }
+
+    @Test
+    fun `provided pagination keeps total and page on the same predicate`() {
+        val providedIds = (5L..25L).toList()
+        for (id in providedIds) {
+            seedContact(id, "Expert $id", "expert$id@example.org", "0000-0000-0000-%04d".format(id))
+            insertOutbound(id, "acc-a", "INTRODUCTION", "SENT", "Intro $id",
+                "2026-09-%02d 09:00:00".format(1 + (id % 27L)))
+            insertMark("op1", id, "PROVIDED")
+        }
+        val f = filter(providedOnly = true)
+        assertEquals(providedIds.size.toLong(), repository.countConversations("op1", f))
+
+        val first = page(username = "op1", filter = f, size = 20, offset = 0)
+        val second = page(username = "op1", filter = f, size = 20, offset = 20)
+        assertEquals(20, first.size)
+        assertEquals(1, second.size)
+        val collected = (first + second).map { it.expertContactId }
+        assertEquals(providedIds.sorted(), collected.sorted(), "21 位 = 20 + 1，无重复无缺失")
+        assertEquals(collected.size, collected.toSet().size)
+
+        // EXPLAIN 与 page 共用同一投影与谓词，可执行且产出计划行。
+        val plan = repository.explainConversationsPage("op1", f, 20, 0)
+        assertTrue(plan.isNotEmpty())
+    }
+
+    @Test
+    fun `provided filter ANDs with q account date subject and label`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "Quantum Progress", "2026-09-05 09:00:00")
+        insertOutbound(2, "acc-b", "INTRODUCTION", "SENT", "Materials Progress", "2026-09-05 09:00:00")
+        val inbound1 = insertProcessing(1, "acc-a", 4301, "PROCESSED", "Re A",
+            "2026-09-06 09:00:00", "prov-a", "alice@example.org")
+        insertTag(inbound1, "CUSTOM", "提供材料")
+        insertMark("op1", 1L, "PROVIDED")
+        insertMark("op1", 2L, "PROVIDED")
+
+        assertEquals(listOf(1L),
+            page(username = "op1", filter = filter(providedOnly = true, q = "alice")).map { it.expertContactId },
+            "已提供 AND q")
+        assertEquals(listOf(1L),
+            page(username = "op1", filter = filter(providedOnly = true, accountCode = "acc-a"))
+                .map { it.expertContactId },
+            "已提供 AND 账号")
+        assertEquals(listOf(1L),
+            page(
+                username = "op1",
+                filter = filter(
+                    providedOnly = true,
+                    subject = "Quantum",
+                    startTime = LocalDateTime.of(2026, 9, 4, 0, 0),
+                    endTime = LocalDateTime.of(2026, 9, 9, 0, 0)
+                )
+            ).map { it.expertContactId },
+            "已提供 AND 主题/日期")
+        assertEquals(listOf(1L),
+            page(username = "op1", filter = filter(providedOnly = true, label = "提供材料"))
+                .map { it.expertContactId },
+            "已提供 AND 标签")
+        assertEquals(1L, repository.countConversations(
+            "op1", filter(providedOnly = true, q = "alice")
+        ))
+    }
+
+    @Test
+    fun `provided ordering follows latest real inbound then contact id with nulls last`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "A", "2026-09-01 09:00:00")
+        insertProcessing(1, "acc-a", 4401, "PROCESSED", "Re A", "2026-09-02 09:00:00",
+            "ord-a", "alice@example.org")
+        // 2：只有发件（无真实来信）→ 置底，即使发件时间最新。
+        insertOutbound(2, "acc-a", "INTRODUCTION", "SENT", "B", "2026-09-09 09:00:00")
+        insertOutbound(3, "acc-a", "INTRODUCTION", "SENT", "C", "2026-09-05 09:00:00")
+        insertProcessing(3, "acc-a", 4403, "PROCESSED", "Re C", "2026-09-06 09:00:00",
+            "ord-c", "carol@example.org")
+        listOf(1L, 2L, 3L).forEach { insertMark("op1", it, "PROVIDED") }
+
+        assertEquals(listOf(3L, 1L, 2L),
+            page(username = "op1", filter = filter(providedOnly = true)).map { it.expertContactId },
+            "最近真实来信倒序，无来信置底，不因发送时间提升")
+    }
+
+    @Test
+    fun `replied filter excludes both provided and following until the mark is cleared`() {
+        insertOutbound(1, "acc-a", "INTRODUCTION", "SENT", "A", "2026-09-01 09:00:00")
+        insertProcessing(1, "acc-a", 4501, "PROCESSED", "Re A", "2026-09-02 09:00:00",
+            "rp-a", "alice@example.org")
+        insertOutbound(2, "acc-a", "INTRODUCTION", "SENT", "B", "2026-09-01 09:00:00")
+        insertProcessing(2, "acc-a", 4502, "PROCESSED", "Re B", "2026-09-02 09:00:00",
+            "rp-b", "bob@example.org")
+        insertMark("op1", 1L, "PROVIDED")
+        insertMark("op1", 2L, "FOLLOWING")
+
+        assertTrue(page(username = "op1", filter = filter(repliedOnly = true)).isEmpty(),
+            "FOLLOWING 与 PROVIDED 都按 NOT EXISTS 整行排除")
+        assertEquals(listOf(1L, 2L),
+            page(username = "op2", filter = filter(repliedOnly = true)).map { it.expertContactId }.sorted(),
+            "op1 的标记不影响 op2")
+
+        // 取消标记（删行）后按原已回复资格恢复；不改变水位。
+        jdbcTemplate.update("DELETE FROM expert_follow WHERE username = 'op1' AND expert_contact_id = 1")
+        assertEquals(listOf(1L),
+            page(username = "op1", filter = filter(repliedOnly = true)).map { it.expertContactId })
+        assertTrue(page(username = "op1", filter = filter(providedOnly = true)).isEmpty(),
+            "取消标记后已提供队列不再含该专家")
+        assertEquals(listOf(2L),
+            page(username = "op1", filter = filter(followed = true)).map { it.expertContactId },
+            "取消 1 的标记不影响仍为跟进中的 2")
+    }
+
+    // ------------------------------------------------------------------
     // 工具
     // ------------------------------------------------------------------
 
@@ -842,7 +986,8 @@ class MailboxConversationRepositoryIT {
         endTime: LocalDateTime? = null,
         recipientEmail: String? = null,
         keyword: String? = null,
-        suspendedOnly: Boolean = false
+        suspendedOnly: Boolean = false,
+        providedOnly: Boolean = false
     ) = MailboxConversationRepository.ConversationFilter(
         accountCodes = allAccounts,
         accountCode = accountCode,
@@ -858,7 +1003,8 @@ class MailboxConversationRepositoryIT {
         endTime = endTime,
         recipientEmail = recipientEmail,
         keyword = keyword,
-        suspendedOnly = suspendedOnly
+        suspendedOnly = suspendedOnly,
+        providedOnly = providedOnly
     )
 
     private fun page(
@@ -913,6 +1059,14 @@ class MailboxConversationRepositoryIT {
             VALUES (?, ?, ?, ?, ?, 'NEW')
             """.trimIndent(),
             id, id, orcid, email, name
+        )
+    }
+
+    private fun insertMark(username: String, contactId: Long, status: String) {
+        jdbcTemplate.update(
+            "INSERT INTO expert_follow (username, expert_contact_id, created_at, progress_status) " +
+                "VALUES (?, ?, ?, ?)",
+            username, contactId, Timestamp.valueOf(LocalDateTime.of(2026, 9, 1, 10, 0)), status
         )
     }
 

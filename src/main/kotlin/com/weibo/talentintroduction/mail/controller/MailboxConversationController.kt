@@ -5,6 +5,7 @@ import com.weibo.talentintroduction.common.controller.ApiErrorResponse
 import com.weibo.talentintroduction.mail.service.ExpertFollowService
 import com.weibo.talentintroduction.mail.service.ExpertRepliedDismissalService
 import com.weibo.talentintroduction.mail.service.MailboxConversationService
+import com.weibo.talentintroduction.mail.service.MailboxProgressStatus
 import com.weibo.talentintroduction.mail.service.MailboxSuspensionConflictException
 import com.weibo.talentintroduction.mail.service.MailboxSuspensionRequest
 import com.weibo.talentintroduction.mail.service.MailboxSuspensionService
@@ -78,7 +79,24 @@ data class ConversationItemResponse(
      */
     val suspended: Boolean = false,
     val suspendReason: String? = null,
-    val suspensionPendingCount: Long = 0
+    val suspensionPendingCount: Long = 0,
+    /**
+     * 01 (I-1/I-4)：当前登录用户对该专家的真实三态标记（DB 真值）。
+     * `followed` 恒等于 `progressStatus == FOLLOWING`；未标记行 = NONE。
+     * 新增字段放参数尾部并默认从 `followed` 派生，只为旧构造点兼容 —— 真实 SQL 路径
+     * （MailboxConversationService）必须显式传入同一份读取结果，绝不二次查询。
+     */
+    val progressStatus: MailboxProgressStatus =
+        if (followed) MailboxProgressStatus.FOLLOWING else MailboxProgressStatus.NONE
+)
+
+/**
+ * 01 (T2/I-1/I-2)：显式三态写入请求体。`status` 用枚举：非法值与缺失 status 都由
+ * 既有 `HttpMessageNotReadableException` → 400 机制拒绝，不新增异常处理器。
+ * username 永不出现在请求体（身份只取 Session）。
+ */
+data class MailboxProgressRequest(
+    val status: MailboxProgressStatus
 )
 
 /**
@@ -216,7 +234,9 @@ class MailboxConversationController(
         @RequestParam(required = false) label: String?,
         @RequestParam(required = false) recipientEmail: String?,
         @RequestParam(required = false) keyword: String?,
-        @RequestParam(defaultValue = "false") suspendedOnly: Boolean
+        @RequestParam(defaultValue = "false") suspendedOnly: Boolean,
+        /** 01 (T3/I-4)：只看已提供三态标记的专家；默认 false 保持既有调用兼容。 */
+        @RequestParam(defaultValue = "false") providedOnly: Boolean
     ): ConversationListResponse = conversationService.listConversations(
         username = sessionUsername(request),
         q = q,
@@ -234,7 +254,8 @@ class MailboxConversationController(
         keyword = keyword,
         page = page,
         size = size,
-        suspendedOnly = suspendedOnly
+        suspendedOnly = suspendedOnly,
+        providedOnly = providedOnly
     )
 
     @GetMapping("/{contactId}/messages")
@@ -258,6 +279,27 @@ class MailboxConversationController(
         val username = sessionUsername(request)
             ?: return unauthorized()
         return ResponseEntity.ok(expertFollowService.setFollowed(username, contactId, true))
+    }
+
+    // ------------------------------------------------------------------
+    // 01 (T2/I-1/I-2/I-3)：显式三态标记 PUT。身份只取 Session（body 不含 username）；
+    // 空白用户名 401、未知专家 404、非法/缺失 status 由枚举绑定 400，失败不写表。
+    // 200 回包逐字 { contactId, progressStatus, followed }（主计划接口契约，child 02 消费）。
+    // ------------------------------------------------------------------
+
+    @PutMapping("/{contactId}/progress-status")
+    fun setProgressStatus(
+        request: HttpServletRequest,
+        @PathVariable contactId: Long,
+        @RequestBody body: MailboxProgressRequest
+    ): ResponseEntity<Any> {
+        val username = sessionUsername(request)
+        if (username == null || username.isBlank()) {
+            return unauthorized()
+        }
+        return ResponseEntity.ok(
+            expertFollowService.setProgressStatus(username, contactId, body.status)
+        )
     }
 
     @PutMapping("/{contactId}/replied-dismissal")
