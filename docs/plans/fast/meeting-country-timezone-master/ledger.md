@@ -28,7 +28,7 @@
 ## Children
 | ID | Plan | Plan identity | Depends on | Epoch | State | Base | Implementation | Fix round | Fix commits | Code head | Evidence commit | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 01-backend | docs/plans/2026-10-04/meeting-country-timezone-01-backend.md | commit:3a896ce28a533cc68fe9107638c3c74b141afc38 | none | 2 | IMPLEMENTING | e6e1bf10dc5be548db9c5034ae13f0080ceb4654 | — | 0 | — | — | — | A1 widened authorized files to 11; epoch 1 paused (agent MCT01Impl) |
+| 01-backend | docs/plans/2026-10-04/meeting-country-timezone-01-backend.md | commit:3a896ce28a533cc68fe9107638c3c74b141afc38 | none | 2 | LIGHT_PASS_WITH_NOTES | e6e1bf10dc5be548db9c5034ae13f0080ceb4654 | 4edfffdbd1f7820f73aa38c0f1449d30e812ad3b | 0 | — | 4edfffdbd1f7820f73aa38c0f1449d30e812ad3b | — | A1 widened authorized files to 11; writers MCT01Impl (epoch 1 pause), MCT01Impl2; verifier MCT01Verify LIGHT_PASS_WITH_NOTES (O-1/O-2/O-3 RECORD_ONLY) |
 | 02-frontend | docs/plans/2026-10-04/meeting-country-timezone-02-frontend.md | commit:fee3a7ca2f3b3b619ac46ee90dc88ddcb459f35f | 01-backend | 1 | PENDING | — | — | 0 | — | — | — | 6 authorized files |
 
 ## Amendments

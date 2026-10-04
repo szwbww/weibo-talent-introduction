@@ -1,5 +1,79 @@
 # Child 01-backend 执行报告
 
+## Epoch 2 — READY_FOR_VERIFICATION（2026-10-04）
+
+### 身份
+
+- Executor: `MCT01Impl2`（fast-p child 01-backend，epoch 2）
+- 批准子计划：`docs/plans/2026-10-04/meeting-country-timezone-01-backend.md`
+  - 当前磁盘 SHA-256：`45ded221a832e4c73358f29ea49778a23835189bdbad65f5f7d472ebef40a12c`（含 A1 修订）
+  - 原始批准 identity：`commit:fee3a7ca2f3b3b619ac46ee90dc88ddcb459f35f`；A1 修订 commit：`3a896ce28a533cc68fe9107638c3c74b141afc38`（人工批准，10→11 文件）
+- 主计划：`docs/plans/2026-10-04/meeting-country-timezone-master.md`
+- Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-country-timezone-master`
+- Branch：`fast/meeting-country-timezone-master`
+- 执行前 code SHA / HEAD：`1911c044692914b2ebc5a5ada35d2659f73f2051`（child_base `e6e1bf10dc5be548db9c5034ae13f0080ceb4654` 的祖先）
+- 执行后 code SHA / Evidence HEAD：`4edfffd`（本地提交 `feat(fast-p): implement 01-backend`，仅 11 个授权文件；evidence 报告由控制器单独提交）
+
+### 改动文件（恰好 11 个授权文件，无清单外改动）
+
+| # | 文件 | 修改 |
+|---:|---|---|
+| 1 | `src/main/kotlin/.../mail/service/MeetingConfirmationService.kt` | 国家元信息 lazy 目录、`timeZonesForMeeting`、英文国家文案、新附件名、`MSG_DATE_MISMATCH`/`MSG_ZONE_NO_COUNTRY`；删除 `DASH_RUN` 与按姓名生成文件名 |
+| 2 | `src/main/kotlin/.../mail/service/MeetingConfirmationModels.kt` | `MeetingTimeZoneOption` 尾部新增 6 个默认 null 字段 |
+| 3 | `src/main/kotlin/.../mail/controller/MeetingConfirmationController.kt` | 可选 `startLocal`/`endLocal` 成对分派；旧模式调用不变 |
+| 4 | `scripts/generate_meeting_zone_countries.py` | 新增纯离线确定性生成器（精确匹配→`#=` 原目标→Link，循环/未知/缺名失败；SystemV 精确豁免） |
+| 5 | `src/main/resources/meeting-zone-countries.properties` | 新增 519 条派生国家元信息（含 UTC；无 SystemV） |
+| 6 | `scripts/test_generate_meeting_zone_countries.py` | 12 个映射/别名/`#=`/循环/未知/缺名/幂等/格式单测 |
+| 7 | `src/test/kotlin/.../mail/service/MeetingConfirmationServiceTest.kt` | 英文文案/文件名/会议模式/UTC/SystemV/codec 新旧名回归 |
+| 8 | `src/test/kotlin/.../mail/controller/MeetingConfirmationControllerTest.kt` | 新旧目录 HTTP 契约、成对校验 400、服务错误 400 |
+| 9 | `src/test/kotlin/.../mail/service/PendingMailOperationServiceTest.kt` | Brazil 固定例同源发送重建回归 |
+| 10 | `src/test/kotlin/.../mail/controller/MailboxConversationControllerTest.kt` | 新/旧文件名快照 timeline + 下载回归 |
+| 11 | `src/test/kotlin/.../mail/service/SmtpMailDeliveryServiceTest.kt` | 仅 4 处附件名字面量改为真实生成器派生的新命名期望 |
+
+### 关键决策
+
+- **国家元信息形态**：`zoneId=countryCode\tcountryLabelZh\tcountryLabelEn\tcanonicalZoneId`，按 ID 排序 + 头部注释记录 `sourceVersion`/四个输入 SHA256；`Properties.load` 读取，缺失/格式不合法抛 `IllegalStateException`。运行时零联网、零脚本调用。
+- **会议模式校验顺序**：请求级 `parseLocalDateTime`→年限→`date==start 日期`；每项起点 gap/overlap→终点 gap/overlap→duration(1..1440)。无效项 `localTimeIssue` 取既有文案、`endOffsetSeconds=null`、旧 offset 字段保留 12:00 UTC 目录辅助值。
+- **旧模式零变化**：`timeZones(date)` 仍读中文目录、同一排序与字段；仅尾部加法国家字段。
+- **文件名**：`meeting-${startLocalDate}-${HHmm}-${semanticSha256.take(8)}.ics`；`HHmm` 用固定 `DateTimeFormatter`；不收紧 `CALENDAR_FILENAME_REGEX`、不升 schemaVersion。`buildCalendarFilename` 的 salutation 参数与 `DASH_RUN` 一并删除（grep 证明唯一用途）。
+- **SystemV**：不输出国家条目；会议预览命中 `COUNTRY_METADATA` 缺失即 400「该旧时区没有国家归属，请重新选择国家和时区」，发生在任何 claim/SMTP 之前（生成器只在 preview 出现）。
+- **Smtp 夹具**：4 处断言改为 `meeting-2026-09-11-1000-${semanticSha256.take(8)}.ics`（从真实生成器产物取摘要前 8 位，不猜），filename/bytes-equals-snapshot 语义保留。
+
+### 命令与证据（本 epoch 全新执行）
+
+| 命令 | 结果 | 证据 |
+|---|---|---|
+| `python3 -m unittest discover -s scripts -p 'test_generate_meeting_zone_countries.py'` | PASS | exit 0，Ran 12 tests，OK |
+| 生成器重跑并 `diff -q` 比对资源 | PASS | exit 0，bytes identical；`sha256=2ec901c2eccf08fb84253bba3496224d69779b48d441f548450288042d5813f4`；519 条与 `country-mapping-audit.json` 逐项相等（set 相等、0 差异） |
+| `mvn test -Dtest=MeetingConfirmationServiceTest,MeetingConfirmationControllerTest,PendingMailOperationServiceTest,MailboxConversationControllerTest,SmtpMailDeliveryServiceTest,ManualReplySendAttemptServiceTest,MeetingCalendarServiceTest`（JDK zulu-11） | PASS | exit 0 / `BUILD SUCCESS`；Kotlin 合计 Tests run 217, Failures 0, Errors 0, Skipped 1；JS 套件（exec 绑定）1434 pass / 0 fail |
+| `node --test src/test/js/worldClock.test.js` | PASS | exit 0；tests 41 / pass 41 / fail 0 |
+
+Kotlin 各类计数：MeetingConfirmationControllerTest 16/0/0；PendingMailOperationServiceTest 38/0/0；ManualReplySendAttemptServiceTest 56/0/0；SmtpMailDeliveryServiceTest 40/0/0；MeetingConfirmationServiceTest 48/0/0；MeetingCalendarServiceTest 18/0/0；MailboxConversationControllerTest 1/0/0（**Skipped 1**，`@EnabledIfSystemProperty(mysqlIt=true)` 门控，未配置隔离 MySQL）。
+
+### 基线对照
+
+- 控制器记录基线：7 个 Kotlin 测试类 → exit 0 / BUILD SUCCESS（JS 1434 pass）；`worldClock.test.js` 41 pass / 0 fail。本次一致。
+- `MailboxConversationControllerTest` 在基线与本次均为 mysqlIt 门控跳过（非新增偏差）。
+
+### 残余风险 / 不确定项
+
+- `MailboxConversationControllerTest`（含新增新旧文件名 timeline/download 回归）在未加 `-DmysqlIt=true` 时整类跳过，本 epoch 未获得真实 MySQL 证据；如需执行须指向隔离测试库，且不得宣称真实库验证通过。
+- `MeetingCalendarSendIntegrationTest` 同样 mysqlIt 门控，本 epoch 未运行。
+- `zoneLabel` 英文名取自同版 `iso3166.tab`，个别标签为官方原文（如 `GB` → `Britain (UK)`），文案观感可能与自然语言习惯不同；这是 I-1 冻结来源的直接结果，不在本 child 调优范围。
+
+### 自检
+
+- 计划身份：读取当前磁盘字节（含 A1），未变更。
+- 工作树身份：`fast/meeting-country-timezone-master` @ worktree gitdir 未变。
+- 变更文件：11/11 均在授权清单内，`git status` 无清单外文件。
+- 提交：仅一次本地提交（见文末），不含 `docs/plans/**`；未 push/merge/rebase/amend/squash/reset。
+
+---
+
+## Epoch 1（历史记录，PLAN_CONFLICT）
+
+以下为 epoch 1 的冲突结论，保留作为历史证据；A1 修订已解除该冲突（`SmtpMailDeliveryServiceTest.kt` 列入授权文件 #11）。
+
 ## Execution Result: PLAN_CONFLICT
 
 - Executor: `MCT01Impl`（fast-p child 01-backend）
