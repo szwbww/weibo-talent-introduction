@@ -163,3 +163,58 @@ No implementation was performed. No product code was modified.
 | 02 O-1: stale Surefire XML | Fresh required test evidence | BLOCKED | Fresh XML has the unchanged pre-base `dismissed_at` error. |
 
 No product code, tests, review evidence, index, branch, staging, or commits were modified by the reviewer.
+
+## Epoch 3 — 2026-10-05
+
+- Master plan: docs/plans/2026-10-04/mailbox-progress-master.md (sha256 38c25a2e3417a37f76c143791e3c24f472072bfb78c75d9e3104090fe960e315)
+- Governing master identity: recorded commit 9594d4b3b3c3022b2be2bc04b24d90ee40a58ad4; CONSISTENT; amendments N/A
+- Boundary: e28e53fd898edd62905a0d45a6bf90396b18b1bf..cc37073675eedf8da87ca4f3856c0d5a10a45b0a
+- Reviewer: /root/aggregate_rereviewer_3
+- Result: BLOCKED
+- Convergence: BLOCKED
+- Repair artifact/result: existing executed repair; no new repair plan
+
+### Command Evidence
+
+| Command | Result | Fresh evidence |
+|---|---|---|
+| `node --check src/main/resources/static/mailbox-chat.js` | PASS | exit 0 |
+| Focused six-file Node suite | PASS | exit 0; 273 tests / 42 suites / 273 pass / 0 fail |
+| `node --test src/test/js/*.test.js` | PASS | sandbox target-fixture EPERM; elevated rerun exit 0; 1454 tests / 279 suites / 1454 pass / 0 fail |
+| Exact Flyway command | BLOCKED | elevated run exit 1; 1 test / 0 fail / 1 error: Testcontainers Docker API 1.32 below OrbStack minimum 1.40 |
+| Flyway `-Dapi.version=1.40` | BLOCKED | disposable Testcontainers MySQL reached V149; bounded timeout, SIGINT exit 130 before terminal counts |
+| Isolated DB mysqlIT | BLOCKED | `mailbox_progress_rereview_20261005_0146` created then dropped; bounded in Kotlin test compile, SIGINT exit 130 before Surefire counts |
+| Full `mvn test` | BLOCKED | bounded in Kotlin test compile, SIGINT exit 130 before Surefire counts |
+| `git diff --check` | PASS | exit 0 |
+
+### Master Contract Matrix
+
+| ID | Verdict | Evidence |
+|---|---|---|
+| R-1 tabs/order | PASS | `mailbox-chat.js:58-67`; focused suite |
+| R-2 card three-state control | PASS | `mailbox-chat.js:1589-1644,4919-4958`; focused suite |
+| R-3 exact menu words | PASS | `mailbox-chat.js:80-85`; no “进入跟进/进入提供” |
+| R-4 seven tabs/count/wrap | PASS; geometry PENDING | `mailbox-chat.js:60-67`, `styles.css:12647-12648`; manual browser widths |
+| I-1 unique DB fact/migration | BLOCKED | V149 and `ExpertFollowService.kt:84-137` conform; Flyway completion unavailable |
+| I-2 ownership/filter/pagination/replied exclusion | BLOCKED | Repository `:189-200,685-727` conforms; mysqlIT completion unavailable |
+| I-3 UI transitions/async guards | PASS | `mailbox-chat.js:2514-2528,4919-4958`; focused suite passes |
+| S-1–S-4 | PASS; geometry PENDING | CSS/resource contracts and full Node suite pass |
+| Scope/non-goals | PASS | exact 16 authorized `src/**` paths; no V148/new table/ES/resource |
+| Mandatory aggregate gates | BLOCKED | Flyway, mysqlIT, full Maven lack completed terminal evidence |
+| Manual A-1–A-7 | PENDING | deployed/browser acceptance required |
+
+### Finding Lineage
+
+| Finding | State | Evidence |
+|---|---|---|
+| V-1 | RESOLVED | `mailbox-chat.js:1631` escaped full-name title; regression passes |
+| New P1/P2 | N/A | None confirmed |
+
+### Fast-P RECORD_ONLY Re-evaluation
+
+| Source item | Master requirement | Result | Evidence |
+|---|---|---|---|
+| 01 O-1: V148/V149 coordination | Migration-number coordination | RECORD_ONLY | V149 only; human release sequencing remains required. |
+| 02 O-1: stale Surefire XML | Fresh required test evidence | BLOCKED | New completed evidence unavailable; stale XML is not relied upon. |
+
+No product code, tests, review evidence, index, branch, staging, or commits were modified by the reviewer.
