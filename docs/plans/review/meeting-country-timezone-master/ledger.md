@@ -1,0 +1,33 @@
+# Review-Fast-P Ledger — master: docs/plans/2026-10-04/meeting-country-timezone-master.md
+
+- Status: AWAITING_HUMAN_ACCEPTANCE
+- Review epoch: 1
+- Master plan: docs/plans/2026-10-04/meeting-country-timezone-master.md (sha256 49b666ca1068eadc0c9454890091678eb569263434db10e831dd8744c7586f9c)
+- Governing master identity: sha256 49b666ca1068eadc0c9454890091678eb569263434db10e831dd8744c7586f9c; recorded commit fee3a7ca2f3b3b619ac46ee90dc88ddcb459f35f
+- Invoked master identity: SAME (sha256 49b666ca1068eadc0c9454890091678eb569263434db10e831dd8744c7586f9c)
+- Master identity state: CONSISTENT
+- Governing amendment: N/A
+- Amendments: A1 — docs/plans/2026-10-04/meeting-country-timezone-01-backend.md (before commit fee3a7ca2f3b3b619ac46ee90dc88ddcb459f35f; after commit 3a896ce28a533cc68fe9107638c3c74b141afc38; master rule M-4/M-5 附件名派生与同源快照传播回归; approved HUMAN:修订 01 计划：加入第 11 个授权文件 (2026-10-04, fast-p pause 329206f))
+- Fast-p ledger: docs/plans/fast/meeting-country-timezone-master/ledger.md (sha256 fa0559a14580f6b5e3e242c5bcb19d24f7672867fc1077f9680d421a16e739f1)
+- Fast-p handoff: docs/plans/fast/meeting-country-timezone-master/human-review-handoff.md (sha256 36081e54629ece0d34ef7399268c81a1aa7de43887e6dc1d2934e46ec03a1e3a)
+- Master base: e28e53fd898edd62905a0d45a6bf90396b18b1bf
+- Final code head: eaf4fedbfa0ab09ae1d9f6bbb65764870461fe2d
+- Evidence parent before next commit: 9ca2df2dea3a1c1fbe3276072294c6e85cd82d3d
+- Previous evidence commit: N/A
+- Branch: fast/meeting-country-timezone-master
+- Worktree: /Users/lukai/IdeaProjects/weibo-talent-introduction-fast-meeting-country-timezone-master
+- Worktree resolution: DISCOVERED_FROM_GIT_WORKTREES
+- Discovery evidence: /Users/lukai/.agents/skills/review-fast-p/scripts/discover_fast_p.py -> SELECTED; one candidate; invoked/worktree sha256 49b666ca1068eadc0c9454890091678eb569263434db10e831dd8744c7586f9c; recorded identity commit fee3a7ca2f3b3b619ac46ee90dc88ddcb459f35f
+- Misdirected review evidence: N/A
+- Reviewer: /root/aggregate_reviewer (fresh; created after final code head)
+- Reviewer attempt: 1
+- Machine result: PASS
+- Machine report epoch: machine-verification.md#epoch-1
+- Repair artifact: N/A
+- Repair evidence mode: N/A
+- Repair approval source: N/A
+- Repair executor: N/A
+- Repair code head: N/A
+- Manual status: PENDING
+- Human sign-off boundary: N/A
+- Blocker/next action: human must record A-M1 and A-M2 verdicts/evidence and explicitly accept final code head eaf4fedbfa0ab09ae1d9f6bbb65764870461fe2d
