@@ -4,7 +4,7 @@
 
 - Master plan（批准版，字节冻结）：`docs/plans/2026-10-04/discovery-review-master.md`，identity `commit:07beaafc111a1b14ed3c48d514db527c8a13fc31`。
 - 本 child 批准计划（完整合同，必须先通读）：`docs/plans/2026-10-04/discovery-review-02-review.md`，identity `commit:07beaafc111a1b14ed3c48d514db527c8a13fc31`。「需求描述」「关键不变量」I-1～I-4、「实现方案」1～6、「变更文件清单」「验收标准」逐条生效；本 brief 摘要与计划原文冲突时以计划原文为准。
-- Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`；branch `fast/2026-10-04-discovery-review-master`；`child_base_sha = <见派发消息>`。
+- Worktree：`/Users/lukai/IdeaProjects/weibo-talent-introduction-fast-2026-10-04-discovery-review-master`；branch `fast/2026-10-04-discovery-review-master`；`child_base_sha = 209315103a89c5ea7807e4707bb87967d8579525`（= child 01 code head）。
 - 依赖：01（解释器与模型已交付，见下方「上游产出」）。下游：03（抽出同一 source 读取/筛选为 ScanService、扩展 ALL_MATCHING 与任务恢复）、04（消费 admission 表与 applyManual/recordAutomatic 接缝）、05（批量读取准入结论）、06（前端消费 02 API 契约）。
 - 取证材料（worktree 内只读）：`docs/plans/2026-10-04/discovery-review-audit.md`（E5/X2/X3/X5）、`docs/plans/2026-10-04/discovery-review-evidence/`。
 - 基线命令结果：`docs/plans/fast/2026-10-04-discovery-review-master/baseline.md`。
@@ -60,9 +60,14 @@ DB_URL="jdbc:mysql://localhost:3306/talent_introduction?useUnicode=true&characte
 - `GET /api/discovery/review/batches/{batchKey}`（明细计数）；`GET /api/discovery/review/history?docId=...`；`POST /api/discovery/review/items/{id}/revoke`（仅撤销当前有效决策，否则 409）。
 - 表结构/状态枚举按计划 1 逐字；`DiscoveryReviewService` 的 source 读取与分批准入查询将被 03 抽为 ScanService，不得另写第二套条件。
 
-## 上游产出（01，由控制方在派发消息中补全）
+## 上游产出（01 已交付，code head 209315103a89c5ea7807e4707bb87967d8579525）
 
-- 见派发消息中的 01 code head 与 execution.md 摘要；01 的 `DiscoveryAdmissionPolicy/DiscoveryAdmissionModels/DiscoveryIdentity.explain*` 为只读依赖。
+- 新增 `discovery/domain/DiscoveryAdmissionModels.kt`：`AdmissionReason`（code/label/field/observed/expected/sourceLocation）、`AutomaticAdmissionResult`（status/blockingReasons/hints/policyVersion/checkedAt/configSnapshot，`eligible` 派生，无 REVIEW_REQUIRED）、`AdmissionConfigSnapshot`、`DiscoveryAdmissionStatus`、`AdmissionReasonCodes`（12 个自有码 + 现有 13 个 candidate 原码）。
+- 新增 `discovery/service/DiscoveryAdmissionPolicy.kt`（`@Service`）：`evaluate(profile, eligibility)` 与实时重载 `evaluate(profile)`；判定 = 现有 CandidateEligibilityService 规则 + `DiscoveryIdentity.explainIdentity` + 机构非空 + 国家可映射 + `explainInstitutionEvidence`；有效 LEGACY_APPROVED 单独返回，机构/国家/凭证/资格事实进 hints（不阻断）。
+- `DiscoveryIdentity` 仅新增 `explainIdentity(profile)` / `explainInstitutionEvidence(profile)`（`(ExpertProfile) -> List<AdmissionReason>`）；`allowed`/`validInstitutionEvidence`/签发算法逐字未改。
+- 02 只负责落库与查询/API，不另写资格判定；04 将用 `DiscoveryAdmissionPolicy.evaluate(...)` 生成 AUTO_PASSED/NEEDS_REVIEW。
+- 已接受 RECORD_ONLY O-1：`AdmissionReasonCodes.CANDIDATE_RULE_CODES` 是 `CandidateEligibilityService` 拒绝码的手抄快照，无编译期绑定（新增码只降级为未知码路径）。不得在本片顺手改造（非授权文件）。
+- 01 验证：VerifyDiscoveryReview01 `LIGHT_PASS_WITH_NOTES`；命令 exit 0/0（35 tests：17/13/5，JS 1434/1434）。
 
 ## 交付物
 
