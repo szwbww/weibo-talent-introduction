@@ -129,3 +129,7 @@ B3 中新增用例已确认执行：`testcase name="V149 upgrades old follows to
 ## Next Action
 
 - READY_FOR_VERIFICATION → run `verify-p`
+
+## Fast-P Archive
+
+本报告与同目录 verify-log.md、fix-log.md 随 01 证据提交归档（fast-p 控制方）。

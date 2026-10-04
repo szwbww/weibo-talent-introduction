@@ -37,3 +37,5 @@ Command receipts（fresh）：B2 per-file `MailboxConversationControllerTest 41/
 
 ### Required Action
 - COMPLETE_CHILD
+
+（归档说明：本报告随 01 证据提交入库；O-1 为环境协调项，保留原样。）
